@@ -521,6 +521,30 @@ src/frontend/sema/escape_analysis.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.s
 .PHONY : src/frontend/sema/escape_analysis.cpp.s
 
+src/frontend/sema/type_checker.o: src/frontend/sema/type_checker.cpp.o
+.PHONY : src/frontend/sema/type_checker.o
+
+# target to build an object file
+src/frontend/sema/type_checker.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o
+.PHONY : src/frontend/sema/type_checker.cpp.o
+
+src/frontend/sema/type_checker.i: src/frontend/sema/type_checker.cpp.i
+.PHONY : src/frontend/sema/type_checker.i
+
+# target to preprocess a source file
+src/frontend/sema/type_checker.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.i
+.PHONY : src/frontend/sema/type_checker.cpp.i
+
+src/frontend/sema/type_checker.s: src/frontend/sema/type_checker.cpp.s
+.PHONY : src/frontend/sema/type_checker.s
+
+# target to generate assembly for a file
+src/frontend/sema/type_checker.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.s
+.PHONY : src/frontend/sema/type_checker.cpp.s
+
 src/runtime/concurrency/ramp.o: src/runtime/concurrency/ramp.cpp.o
 .PHONY : src/runtime/concurrency/ramp.o
 
@@ -833,6 +857,9 @@ help:
 	@echo "... src/frontend/sema/escape_analysis.o"
 	@echo "... src/frontend/sema/escape_analysis.i"
 	@echo "... src/frontend/sema/escape_analysis.s"
+	@echo "... src/frontend/sema/type_checker.o"
+	@echo "... src/frontend/sema/type_checker.i"
+	@echo "... src/frontend/sema/type_checker.s"
 	@echo "... src/runtime/concurrency/ramp.o"
 	@echo "... src/runtime/concurrency/ramp.i"
 	@echo "... src/runtime/concurrency/ramp.s"

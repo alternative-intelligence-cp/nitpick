@@ -13,6 +13,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o.d"
   "CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o"
   "CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o.d"
+  "CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o"
+  "CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o.d"
   "ariac"
   "ariac.pdb"
 )

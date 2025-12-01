@@ -325,5 +325,12 @@ CMakeFiles/ariac.dir/src/driver/main.cpp.o: \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/borrow_checker.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/escape_analysis.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/../ast.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/type_checker.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/../ast/expr.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/../ast/stmt.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/types.h \
+ /usr/include/c++/13/map /usr/include/c++/13/bits/stl_tree.h \
+ /usr/include/c++/13/bits/stl_map.h \
+ /usr/include/c++/13/bits/stl_multimap.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../backend/codegen.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../backend/../frontend/ast.h
