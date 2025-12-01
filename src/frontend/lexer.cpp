@@ -245,8 +245,250 @@ Token AriaLexer::nextToken() {
            return {TOKEN_INT_LITERAL, number, start_line, start_col};
        }
 
-       //... Standard tokenization logic...
-       return {TOKEN_INVALID, "UNKNOWN", line, col};
+       // String literals (double-quoted strings)
+       if (c == '"') {
+           size_t start_line = line, start_col = col;
+           advance(); // Skip opening "
+           std::string str;
+           while (peek() != '"' && peek() != 0) {
+               if (peek() == '\\') {
+                   advance();
+                   char next = peek();
+                   if (next == 'n') str += '\n';
+                   else if (next == 't') str += '\t';
+                   else if (next == 'r') str += '\r';
+                   else if (next == '\\') str += '\\';
+                   else if (next == '"') str += '"';
+                   else if (next == '0') str += '\0';
+                   else str += next;
+                   advance();
+               } else {
+                   str += peek();
+                   advance();
+               }
+           }
+           if (peek() == 0) {
+               return {TOKEN_INVALID, "UNTERMINATED_STRING", start_line, start_col};
+           }
+           advance(); // Skip closing "
+           return {TOKEN_STRING_LITERAL, str, start_line, start_col};
+       }
+
+       // Template string literals (backtick)
+       if (c == '`') {
+           advance();
+           stateStack.push(STATE_STRING_TEMPLATE);
+           return {TOKEN_BACKTICK, "`", line, col};
+       }
+
+       // OPERATOR TOKENIZATION
+       // Multi-character operators (maximal munch) and single-character operators
+       size_t op_line = line, op_col = col;
+
+       // Division and division-assign (/, /=)
+       // Note: // and /* are handled earlier as comments
+       if (c == '/') {
+           advance();
+           if (peek() == '=') {
+               advance();
+               return {TOKEN_SLASH_ASSIGN, "/=", op_line, op_col};
+           }
+           return {TOKEN_SLASH, "/", op_line, op_col};
+       }
+
+       // Plus and plus-assign (+, +=)
+       if (c == '+') {
+           advance();
+           if (peek() == '=') {
+               advance();
+               return {TOKEN_PLUS_ASSIGN, "+=", op_line, op_col};
+           }
+           return {TOKEN_PLUS, "+", op_line, op_col};
+       }
+
+       // Minus, minus-assign, and arrow (-, -=, ->)
+       if (c == '-') {
+           advance();
+           if (peek() == '=') {
+               advance();
+               return {TOKEN_MINUS_ASSIGN, "-=", op_line, op_col};
+           }
+           if (peek() == '>') {
+               advance();
+               return {TOKEN_ARROW, "->", op_line, op_col};
+           }
+           return {TOKEN_MINUS, "-", op_line, op_col};
+       }
+
+       // Star and star-assign (*, *=)
+       if (c == '*') {
+           advance();
+           if (peek() == '=') {
+               advance();
+               return {TOKEN_STAR_ASSIGN, "*=", op_line, op_col};
+           }
+           return {TOKEN_STAR, "*", op_line, op_col};
+       }
+
+       // Percent (%)
+       if (c == '%') {
+           advance();
+           return {TOKEN_PERCENT, "%", op_line, op_col};
+       }
+
+       // Ampersand and logical-and (&, &&)
+       // Note: &{ for template interpolation is handled in STATE_STRING_TEMPLATE
+       if (c == '&') {
+           advance();
+           if (peek() == '&') {
+               advance();
+               return {TOKEN_LOGICAL_AND, "&&", op_line, op_col};
+           }
+           return {TOKEN_AMPERSAND, "&", op_line, op_col};
+       }
+
+       // Pipe and logical-or (|, ||)
+       if (c == '|') {
+           advance();
+           if (peek() == '|') {
+               advance();
+               return {TOKEN_LOGICAL_OR, "||", op_line, op_col};
+           }
+           return {TOKEN_PIPE, "|", op_line, op_col};
+       }
+
+       // Caret (^)
+       if (c == '^') {
+           advance();
+           return {TOKEN_CARET, "^", op_line, op_col};
+       }
+
+       // Tilde (~)
+       if (c == '~') {
+           advance();
+           return {TOKEN_TILDE, "~", op_line, op_col};
+       }
+
+       // Less-than, less-or-equal, left-shift (<, <=, <<)
+       if (c == '<') {
+           advance();
+           if (peek() == '=') {
+               advance();
+               return {TOKEN_LE, "<=", op_line, op_col};
+           }
+           if (peek() == '<') {
+               advance();
+               return {TOKEN_LSHIFT, "<<", op_line, op_col};
+           }
+           return {TOKEN_LT, "<", op_line, op_col};
+       }
+
+       // Greater-than, greater-or-equal, right-shift (>, >=, >>)
+       if (c == '>') {
+           advance();
+           if (peek() == '=') {
+               advance();
+               return {TOKEN_GE, ">=", op_line, op_col};
+           }
+           if (peek() == '>') {
+               advance();
+               return {TOKEN_RSHIFT, ">>", op_line, op_col};
+           }
+           return {TOKEN_GT, ">", op_line, op_col};
+       }
+
+       // Equal and equals-comparison (=, ==, =>)
+       if (c == '=') {
+           advance();
+           if (peek() == '=') {
+               advance();
+               return {TOKEN_EQ, "==", op_line, op_col};
+           }
+           if (peek() == '>') {
+               advance();
+               return {TOKEN_FAT_ARROW, "=>", op_line, op_col};
+           }
+           return {TOKEN_ASSIGN, "=", op_line, op_col};
+       }
+
+       // Not and not-equal (!, !=)
+       if (c == '!') {
+           advance();
+           if (peek() == '=') {
+               advance();
+               return {TOKEN_NE, "!=", op_line, op_col};
+           }
+           return {TOKEN_LOGICAL_NOT, "!", op_line, op_col};
+       }
+
+       // Colon and double-colon (:, ::)
+       if (c == ':') {
+           advance();
+           if (peek() == ':') {
+               advance();
+               return {TOKEN_DOUBLE_COLON, "::", op_line, op_col};
+           }
+           return {TOKEN_COLON, ":", op_line, op_col};
+       }
+
+       // Dot and range (.., .)
+       if (c == '.') {
+           advance();
+           if (peek() == '.') {
+               advance();
+               return {TOKEN_RANGE, "..", op_line, op_col};
+           }
+           return {TOKEN_DOT, ".", op_line, op_col};
+       }
+
+       // Dollar ($)
+       if (c == '$') {
+           advance();
+           return {TOKEN_DOLLAR, "$", op_line, op_col};
+       }
+
+       // Question (?)
+       if (c == '?') {
+           advance();
+           return {TOKEN_QUESTION, "?", op_line, op_col};
+       }
+
+       // DELIMITERS
+       if (c == '(') {
+           advance();
+           return {TOKEN_LPAREN, "(", op_line, op_col};
+       }
+       if (c == ')') {
+           advance();
+           return {TOKEN_RPAREN, ")", op_line, op_col};
+       }
+       if (c == '{') {
+           advance();
+           return {TOKEN_LBRACE, "{", op_line, op_col};
+       }
+       if (c == '}') {
+           advance();
+           return {TOKEN_RBRACE, "}", op_line, op_col};
+       }
+       if (c == '[') {
+           advance();
+           return {TOKEN_LBRACKET, "[", op_line, op_col};
+       }
+       if (c == ']') {
+           advance();
+           return {TOKEN_RBRACKET, "]", op_line, op_col};
+       }
+       if (c == ',') {
+           advance();
+           return {TOKEN_COMMA, ",", op_line, op_col};
+       }
+       if (c == ';') {
+           advance();
+           return {TOKEN_SEMICOLON, ";", op_line, op_col};
+       }
+
+       // Unknown character
+       return {TOKEN_INVALID, std::string(1, c), line, col};
 }
 
 } // namespace frontend
