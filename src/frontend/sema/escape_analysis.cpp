@@ -77,10 +77,7 @@ private:
     
     // Symbol Table: Map variable names to Graph Nodes for O(1) lookup
     std::map<std::string, EscapeNode*> sym_table;
-    
-    // Track if we are currently analyzing a loop (for conservative analysis)
-    int loop_depth = 0;
-    
+
     bool has_errors = false;
 
     // --- Graph Operations ---
@@ -206,13 +203,11 @@ public:
     }
     
     void visit(TillLoop* node) override {
-        loop_depth++;
         node->limit->accept(*this);
         node->step->accept(*this);
         // Implicit iterator '$' handled by parser/symbol table usually,
         // but here we treat body as normal block.
         node->body->accept(*this);
-        loop_depth--;
     }
     
     void visit(PickStmt* node) override {
