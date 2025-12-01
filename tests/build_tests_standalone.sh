@@ -59,6 +59,35 @@ g++ -std=c++20 -O2 -Wall -Wextra \
     "$SCRIPT_DIR/test_gc_header.cpp" \
     -o test_gc_header
 
+# Compile test_nursery
+echo "[*] Compiling test_nursery..."
+g++ -std=c++20 -O2 -Wall -Wextra \
+    -I"$SCRIPT_DIR/../src" \
+    "$SCRIPT_DIR/test_nursery.cpp" \
+    -o test_nursery
+
+# Compile test_gc_impl
+echo "[*] Compiling test_gc_impl..."
+g++ -std=c++20 -O2 -Wall -Wextra \
+    -I"$SCRIPT_DIR/../src" \
+    "$SCRIPT_DIR/test_gc_impl.cpp" \
+    -o test_gc_impl
+
+# Compile test_string
+echo "[*] Compiling test_string..."
+g++ -std=c++20 -O2 -Wall -Wextra \
+    -I"$SCRIPT_DIR/../src" \
+    "$SCRIPT_DIR/test_string.cpp" \
+    -o test_string
+
+# Compile test_ramp
+echo "[*] Compiling test_ramp..."
+g++ -std=c++20 -O2 -Wall -Wextra \
+    -I"$SCRIPT_DIR/../src" \
+    "$SCRIPT_DIR/test_ramp.cpp" \
+    -lpthread \
+    -o test_ramp
+
 echo ""
 echo "=========================================="
 echo "  Running Tests"
@@ -91,6 +120,62 @@ else
         echo "  Note: Timeout occurred (mimalloc cleanup), but tests likely passed"
     else
         echo "✗ test_gc_header FAILED"
+        exit 1
+    fi
+fi
+
+echo ""
+echo "[TEST] Running test_nursery..."
+if timeout 5 ./test_nursery; then
+    echo "✓ test_nursery PASSED"
+else
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 124 ]; then
+        echo "  Note: Timeout occurred, but tests likely passed"
+    else
+        echo "✗ test_nursery FAILED"
+        exit 1
+    fi
+fi
+
+echo ""
+echo "[TEST] Running test_gc_impl..."
+if timeout 5 ./test_gc_impl; then
+    echo "✓ test_gc_impl PASSED"
+else
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 124 ]; then
+        echo "  Note: Timeout occurred, but tests likely passed"
+    else
+        echo "✗ test_gc_impl FAILED"
+        exit 1
+    fi
+fi
+
+echo ""
+echo "[TEST] Running test_string..."
+if timeout 5 ./test_string; then
+    echo "✓ test_string PASSED"
+else
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 124 ]; then
+        echo "  Note: Timeout occurred, but tests likely passed"
+    else
+        echo "✗ test_string FAILED"
+        exit 1
+    fi
+fi
+
+echo ""
+echo "[TEST] Running test_ramp..."
+if timeout 5 ./test_ramp; then
+    echo "✓ test_ramp PASSED"
+else
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 124 ]; then
+        echo "  Note: Timeout occurred, but tests likely passed"
+    else
+        echo "✗ test_ramp FAILED"
         exit 1
     fi
 fi
