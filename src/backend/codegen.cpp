@@ -48,6 +48,22 @@ namespace aria {
 namespace backend {
 
 // =============================================================================
+// RAII Scope Guard for Symbol Table Management
+// =============================================================================
+
+// Ensures popScope() is called even if exceptions occur or early returns happen
+// This prevents scope leaks in the symbol table
+class ScopeGuard {
+    CodeGenContext& ctx;
+public:
+    ScopeGuard(CodeGenContext& c) : ctx(c) { ctx.pushScope(); }
+    ~ScopeGuard() { ctx.popScope(); }
+    // Prevent copying to avoid double-pop
+    ScopeGuard(const ScopeGuard&) = delete;
+    ScopeGuard& operator=(const ScopeGuard&) = delete;
+};
+
+// =============================================================================
 // Code Generation Context
 // =============================================================================
 
@@ -234,9 +250,10 @@ public:
             
             // Body Generation
             ctx.builder->SetInsertPoint(caseBodyBB);
-            ctx.pushScope();
-            pcase.body->accept(*this);
-            ctx.popScope();
+            {
+                ScopeGuard guard(ctx);
+                pcase.body->accept(*this);
+            }
 
             // Auto-break (unless fallthrough logic is added here via labels)
             if (!ctx.builder->GetInsertBlock()->getTerminator()) {
@@ -272,13 +289,12 @@ public:
         PHINode* iterVar = ctx.builder->CreatePHI(Type::getInt64Ty(ctx.llvmContext), 2, "$");
         iterVar->addIncoming(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0), preheader);
 
-        // Define '$' in scope
-        ctx.pushScope();
-        ctx.define("$", iterVar, false); // False = Value itself, not ref
-
-        // Body
-        node->body->accept(*this);
-        ctx.popScope();
+        // Define '$' in scope and generate body
+        {
+            ScopeGuard guard(ctx);
+            ctx.define("$", iterVar, false); // False = Value itself, not ref
+            node->body->accept(*this);
+        }
 
         // Increment
         Value* nextVal = ctx.builder->CreateAdd(iterVar, step, "next_val");
