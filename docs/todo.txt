@@ -1,0 +1,6 @@
+
+Escape Analysis: The current Borrow Checker verifies safety within a scope. A full escape analysis pass is required to verify that Wild pointers are not returned from functions, which would create dangling references after the stack frame is destroyed.
+
+Linking Infrastructure: The main.cpp driver currently outputs LLVM IR. To produce standalone executables, the driver must link against the aria_runtime library (containing the GC and mimalloc symbols ). Integrating lld (the LLVM linker) directly into the ariac binary is recommended to remove external dependencies.   
+
+Standard Library Expansion: While ternary.aria 1 provides basic exotic math, the standard library requires broader support for the 6-channel I/O system, particularly formatted output for stddbg and serialization for stddati/stddato.

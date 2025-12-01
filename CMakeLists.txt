@@ -83,90 +83,17 @@ add_library(aria_runtime STATIC
 target_link_libraries(aria_runtime mimalloc-static)
 
 # ==============================================================================
-# 5. Build Artifacts
+# 5. Testing Infrastructure
+# ==============================================================================
+# Enable testing support
+enable_testing()
+
+# Add the tests subdirectory
+add_subdirectory(tests)
+
+# ==============================================================================
+# 6. Build Artifacts
 # ==============================================================================
 message(STATUS "Aria Compiler Build Configured.")
-message(STATUS "Run 'cmake --build.' to compile.")
-
-/* ==========================================================================
-   MODULE: DISTRIBUTION / INSTALLER
-   FILE: dist/install_aria.sh
-   ========================================================================== */
-#!/bin/bash
-# dist/install_aria.sh
-# Official Aria Language AppImage Installer
-# Best Practices Enforced:
-# 1. No absolute paths in binary (handled by build system configuration)
-# 2. Integration with ~/.local/share/applications for desktop menus
-# 3. Symlinking to ~/.local/bin for CLI access without altering global /usr
-
-set -e
-
-# Resolve the absolute path of the installer script
-APPIMAGE_PATH=$(realpath "$0")
-INSTALL_DIR="$HOME/.local/bin"
-DESKTOP_DIR="$HOME/.local/share/applications"
-ICON_DIR="$HOME/.local/share/icons"
-
-echo "=========================================="
-echo "   Aria Language Environment Installer    "
-echo "=========================================="
-
-# 1. Create Directories
-echo "[*] Creating user-local directories..."
-mkdir -p "$INSTALL_DIR"
-mkdir -p "$DESKTOP_DIR"
-mkdir -p "$ICON_DIR"
-
-# 2. Install Executable
-# We recommend keeping the AppImage in a stable location like ~/Applications
-TARGET_DIR="$HOME/Applications"
-TARGET_APPIMAGE="$TARGET_DIR/aria-lang.AppImage"
-
-mkdir -p "$TARGET_DIR"
-
-if; then
-   echo "[*] Copying AppImage to $TARGET_APPIMAGE..."
-   cp "$APPIMAGE_PATH" "$TARGET_APPIMAGE"
-fi
-
-chmod +x "$TARGET_APPIMAGE"
-
-# 3. Create Desktop Entry
-# This allows the Aria IDE or Compiler GUI to appear in system menus.
-echo "[*] Generating Desktop Entry..."
-cat > "$DESKTOP_DIR/aria-lang.desktop" <<EOF
-
-Type=Application
-Name=Aria Language
-Comment=Aria High-Performance Systems Language
-Exec="$TARGET_APPIMAGE"
-Icon=aria-lang
-Categories=Development;IDE;
-Terminal=true
-StartupNotify=true
-EOF
-
-# Make the desktop entry executable (required by some DEs)
-chmod +x "$DESKTOP_DIR/aria-lang.desktop"
-
-# 4. CLI Integration
-# Add a symlink to PATH if it doesn't exist
-if; then
-   rm "$INSTALL_DIR/aria"
-fi
-
-echo "[*] Linking 'aria' command to $INSTALL_DIR/aria..."
-ln -s "$TARGET_APPIMAGE" "$INSTALL_DIR/aria"
-
-# 5. Environment Check
-if]; then
-   echo "WARNING: $INSTALL_DIR is not in your PATH."
-   echo "Add the following to your shell config (.bashrc /.zshrc):"
-   echo "export PATH=\"\$HOME/.local/bin:\$PATH\""
-fi
-
-echo "=========================================="
-echo "   Installation Complete. Run 'aria'      "
-echo "=========================================="
-
+message(STATUS "Run 'cmake --build .' to compile.")
+message(STATUS "Run 'make test' or 'ninja test' to run unit tests.")
