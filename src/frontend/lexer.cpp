@@ -234,14 +234,127 @@ Token AriaLexer::nextToken() {
            return {TOKEN_IDENTIFIER, identifier, start_line, start_col};
        }
 
-       // Numbers (basic integer literal parsing)
+       // Numeric Literals: Integers (decimal, hex, binary, octal) and Floating-point
        if (isdigit(c)) {
            size_t start_line = line, start_col = col;
            std::string number;
-           while (isdigit(peek())) {
-               number += peek();
+
+           // Special prefixes for non-decimal bases
+           if (c == '0' && pos + 1 < source.length()) {
+               char prefix = peekNext();
+
+               // Hexadecimal: 0x[0-9a-fA-F]+
+               if (prefix == 'x' || prefix == 'X') {
+                   number += peek(); advance(); // consume '0'
+                   number += peek(); advance(); // consume 'x'
+
+                   if (!isxdigit(peek())) {
+                       return {TOKEN_INVALID, "INVALID_HEX_LITERAL", start_line, start_col};
+                   }
+
+                   while (isxdigit(peek()) || peek() == '_') {
+                       if (peek() != '_') number += peek();
+                       advance();
+                   }
+                   return {TOKEN_INT_LITERAL, number, start_line, start_col};
+               }
+
+               // Binary: 0b[01]+
+               if (prefix == 'b' || prefix == 'B') {
+                   number += peek(); advance(); // consume '0'
+                   number += peek(); advance(); // consume 'b'
+
+                   if (peek() != '0' && peek() != '1') {
+                       return {TOKEN_INVALID, "INVALID_BINARY_LITERAL", start_line, start_col};
+                   }
+
+                   while (peek() == '0' || peek() == '1' || peek() == '_') {
+                       if (peek() != '_') number += peek();
+                       advance();
+                   }
+                   return {TOKEN_INT_LITERAL, number, start_line, start_col};
+               }
+
+               // Octal: 0o[0-7]+
+               if (prefix == 'o' || prefix == 'O') {
+                   number += peek(); advance(); // consume '0'
+                   number += peek(); advance(); // consume 'o'
+
+                   if (peek() < '0' || peek() > '7') {
+                       return {TOKEN_INVALID, "INVALID_OCTAL_LITERAL", start_line, start_col};
+                   }
+
+                   while ((peek() >= '0' && peek() <= '7') || peek() == '_') {
+                       if (peek() != '_') number += peek();
+                       advance();
+                   }
+                   return {TOKEN_INT_LITERAL, number, start_line, start_col};
+               }
+           }
+
+           // Decimal integer or floating-point
+           // Consume integer part
+           while (isdigit(peek()) || peek() == '_') {
+               if (peek() != '_') number += peek();
                advance();
            }
+
+           // Check for decimal point (floating-point)
+           if (peek() == '.' && isdigit(peekNext())) {
+               number += peek(); advance(); // consume '.'
+
+               // Consume fractional part
+               while (isdigit(peek()) || peek() == '_') {
+                   if (peek() != '_') number += peek();
+                   advance();
+               }
+
+               // Check for exponent (e or E)
+               if (peek() == 'e' || peek() == 'E') {
+                   number += peek(); advance(); // consume 'e'
+
+                   // Optional sign
+                   if (peek() == '+' || peek() == '-') {
+                       number += peek(); advance();
+                   }
+
+                   // Exponent digits
+                   if (!isdigit(peek())) {
+                       return {TOKEN_INVALID, "INVALID_FLOAT_EXPONENT", start_line, start_col};
+                   }
+
+                   while (isdigit(peek()) || peek() == '_') {
+                       if (peek() != '_') number += peek();
+                       advance();
+                   }
+               }
+
+               return {TOKEN_FLOAT_LITERAL, number, start_line, start_col};
+           }
+
+           // Check for exponent without decimal point (e.g., 1e10)
+           if (peek() == 'e' || peek() == 'E') {
+               number += peek(); advance(); // consume 'e'
+
+               // Optional sign
+               if (peek() == '+' || peek() == '-') {
+                   number += peek(); advance();
+               }
+
+               // Exponent digits
+               if (!isdigit(peek())) {
+                   return {TOKEN_INVALID, "INVALID_FLOAT_EXPONENT", start_line, start_col};
+               }
+
+               while (isdigit(peek()) || peek() == '_') {
+                   if (peek() != '_') number += peek();
+                   advance();
+               }
+
+               return {TOKEN_FLOAT_LITERAL, number, start_line, start_col};
+           }
+
+           // Plain decimal integer
            return {TOKEN_INT_LITERAL, number, start_line, start_col};
        }
 
