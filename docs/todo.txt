@@ -1,6 +1,173 @@
+ARIA v0.0.6 - MISSING FEATURES AND TODO ITEMS
+==============================================
 
-Escape Analysis: The current Borrow Checker verifies safety within a scope. A full escape analysis pass is required to verify that Wild pointers are not returned from functions, which would create dangling references after the stack frame is destroyed.
+CRITICAL INFRASTRUCTURE (Referenced in docs but not implemented):
 
-Linking Infrastructure: The main.cpp driver currently outputs LLVM IR. To produce standalone executables, the driver must link against the aria_runtime library (containing the GC and mimalloc symbols ). Integrating lld (the LLVM linker) directly into the ariac binary is recommended to remove external dependencies.   
+1. MISSING HEADER FILES:
+   - src/frontend/parser.h - Referenced by all parser_*.cpp files but doesn't exist
+   - src/frontend/tokens.h - Referenced by lexer.cpp and other files but doesn't exist
+   - src/frontend/ast.h - Referenced by parser files and codegen but doesn't exist
+   - src/frontend/ast/control_flow.h - Referenced in escape_analysis.cpp
+   - src/frontend/ast/expr.h - Referenced in escape_analysis.cpp
+   - src/frontend/ast/stmt.h - Referenced in escape_analysis.cpp
+   - src/frontend/ast/defer.h - Referenced in codegen.cpp
+   - src/frontend/lexer.h - Referenced in main.cpp
+   - src/frontend/sema/borrow_checker.h - Referenced in main.cpp
+   - src/frontend/sema/escape_analysis.h - Referenced in escape_analysis.cpp
+   - src/backend/codegen.h - Referenced in main.cpp and codegen.cpp
 
-Standard Library Expansion: While ternary.aria 1 provides basic exotic math, the standard library requires broader support for the 6-channel I/O system, particularly formatted output for stddbg and serialization for stddati/stddato.
+2. FRONTEND - INCOMPLETE LEXER:
+   - lexer.cpp is a skeleton with incomplete token parsing
+   - Missing implementation for most token types from spec
+   - Template literal parsing incomplete (only basic structure shown)
+   - Range operators (.., ...) maximal munch logic missing
+   - Numeric literal parsing (hex, binary, octal) not implemented
+   - String escape sequences not handled
+   - Comment parsing (line // and block /* */) not implemented
+   - Missing lexer state machine for complex interpolation nesting
+
+3. FRONTEND - MISSING PARSER COMPONENTS:
+   - No parser.h base class definition
+   - parser_func.cpp exists but no function definition parsing implementation visible
+   - Module system parsing (use, mod, pub, extern) - NOT IMPLEMENTED
+   - Async/await syntax parsing - NOT IMPLEMENTED
+   - Generic/template parsing (<T>) - NOT IMPLEMENTED
+   - Destructuring in pick statements - INCOMPLETE
+   - Range expression parsing (0..10, 0...10) - NOT IMPLEMENTED
+   - Lambda expression parsing (=>) - NOT IMPLEMENTED
+   - Safe navigation (?.) and null coalesce (??) operators - NOT IMPLEMENTED
+   - Unwrap operator (?) - NOT IMPLEMENTED
+
+4. FRONTEND - INCOMPLETE AST DEFINITIONS:
+   - Most AST node types not defined (only referenced in code)
+   - Missing: VarDecl, BinaryOp, UnaryOp, CallExpr, VarExpr, IntLiteral
+   - Missing: Block, IfStmt, ReturnStmt, PickStmt, TillLoop, DeferStmt
+   - Missing: WhenLoop (when/then/end construct)
+   - Missing visitor pattern base classes
+
+5. SEMANTIC ANALYSIS:
+   - escape_analysis.cpp is IMPLEMENTED but escape analysis is NOT CALLED from main.cpp
+   - borrow_checker.cpp exists but implementation not visible
+   - Type checking system - NOT IMPLEMENTED
+   - Const evaluation (comptime) - NOT IMPLEMENTED
+   - Module resolution - NOT IMPLEMENTED
+
+6. BACKEND - INCOMPLETE CODE GENERATION:
+   - codegen.cpp only has class skeleton (first 80 lines)
+   - No implementation of exotic type lowering (trit, tryte, nit, nyte)
+   - No int512/uint512 lowering to AVX-512
+   - No implementation of memory allocation IR generation
+   - No defer statement code generation
+   - No async/await state machine generation
+   - No generic instantiation
+   - lowering_ternary.cpp exists but implementation not visible
+
+7. RUNTIME - INCOMPLETE IMPLEMENTATIONS:
+   - gc_impl.cpp referenced but major/minor GC logic not fully visible
+   - nursery.cpp only shows allocation, missing collection implementation
+   - allocator.c exists but bridge functions not visible
+   - scheduler.cpp/scheduler.h exist but work-stealing logic not visible
+   - ramp.cpp exists but RAMP optimization not visible
+   - io_windows.cpp/io_linux.cpp exist but 6-channel I/O not visible
+
+8. STANDARD LIBRARY - MOSTLY MISSING:
+   COMPLETE:
+   - ternary.aria (basic exotic math) - IMPLEMENTED
+   - logger.aria - EXISTS (not reviewed)
+   - fast_read.cpp - EXISTS (not reviewed)
+
+   MISSING:
+   - I/O Functions: print(), readFile(), writeFile(), readJSON(), readCSV(), openFile()
+   - Process Management: spawn(), fork(), exec(), createPipe(), wait()
+   - Network: httpGet(), getUser()
+   - Functional: filter(), transform(), reduce(), sort(), reverse(), unique()
+   - Math: Math.round() and other math functions beyond ternary
+   - System: getMemoryUsage(), getActiveConnections()
+   - 6-Channel I/O wrappers (stdin, stdout, stderr, stddbg, stddati, stddato)
+   - String manipulation functions
+   - Array/collection utilities
+   - Result type utilities
+
+9. LINKER INTEGRATION:
+   - main.cpp outputs LLVM IR only
+   - No integration with lld (LLVM linker)
+   - No automatic linking with aria_runtime library
+   - No object file generation
+   - Cannot produce standalone executables
+
+10. BUILD SYSTEM ISSUES:
+   - CMakeLists.txt references src/frontend/ast/control_flow.cpp which doesn't exist
+   - Mimalloc vendor subdirectory referenced but not present in repo
+   - No Docker build environment (spec requires Ubuntu 24.04 container)
+   - No AppImage distribution infrastructure
+
+11. MODULE SYSTEM - NOT IMPLEMENTED:
+   - No use statement parsing or implementation
+   - No mod keyword support
+   - No pub visibility system
+   - No extern C FFI implementation
+   - No conditional compilation (cfg)
+   - No path resolution for imports
+
+12. ADVANCED FEATURES - NOT IMPLEMENTED:
+   - Coroutines/async runtime
+   - NASM-style macros with context stack
+   - Comptime evaluation (Zig-style)
+   - Atomics library
+   - Timer/clock library
+   - Docker dev environment
+   - Self-hosting capability
+
+13. OPTIONAL BATTERIES - NOT IMPLEMENTED:
+   - HTML5/CSS/JS GUI system
+   - Blockchain library (pow.aria exists but is skeleton)
+   - ML library (transformer, mamba, jamba, trainer, embedder)
+
+14. TESTING INFRASTRUCTURE:
+   - Unit tests exist for runtime components only
+   - No integration tests for compiler pipeline
+   - No tests for parser, lexer, semantic analysis
+   - No end-to-end compilation tests
+
+15. DOCUMENTATION:
+   - No user documentation
+   - No API reference for standard library
+   - No language tutorial/guide
+   - README.md is minimal (26 bytes)
+
+PRIORITY ORDER (High to Low):
+
+IMMEDIATE (Compiler Won't Work Without These):
+1. Create all missing header files with proper definitions
+2. Complete lexer implementation with all token types
+3. Implement parser for basic constructs (variables, functions, control flow)
+4. Complete codegen for basic types and operations
+5. Implement basic standard library functions (print, basic I/O)
+
+HIGH PRIORITY (Core Language Features):
+6. Complete type system implementation
+7. Finish borrow checker integration
+8. Complete escape analysis integration into compilation pipeline
+9. Implement defer statement fully
+10. Module system parsing and implementation
+
+MEDIUM PRIORITY (Advanced Features):
+11. Exotic type lowering (ternary/nonary)
+12. Async/await implementation
+13. Generic/template system
+14. Advanced operators (pipeline, spaceship, etc.)
+15. Complete standard library
+
+LOW PRIORITY (Ecosystem):
+16. Linker integration for standalone executables
+17. Docker build environment
+18. AppImage distribution
+19. Self-hosting capability
+20. Optional batteries (GUI, blockchain, ML)
+
+NOTES:
+- Current implementation is approximately 15-20% complete
+- Most files are skeletal implementations or contain only partial code
+- Build system will not work due to missing files and dependencies
+- Tests exist only for isolated runtime components
+- No file can be compiled end-to-end at present
