@@ -49,7 +49,7 @@ add_executable(ariac
  src/frontend/parser_decl.cpp      # Implementation of Variable Declaration Parsing
  src/frontend/parser_pick.cpp      # Pick Parser
  src/frontend/parser_stmt.cpp      # [New] Defer and Stmt Parser
- src/frontend/ast/control_flow.cpp
+ # src/frontend/ast/control_flow.cpp  # TODO: Create when implementing control flow AST nodes
  src/backend/codegen.cpp
  src/backend/lowering_ternary.cpp  # AVX-512 Lowering Logic
 )
