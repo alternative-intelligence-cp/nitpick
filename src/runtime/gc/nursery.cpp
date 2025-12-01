@@ -31,11 +31,20 @@ struct Nursery {
 // Global config
 const size_t NURSERY_SIZE = 4 * 1024 * 1024; // 4MB
 
+// Alignment helpers
+// Most architectures require 8-byte alignment for optimal performance
+// and correctness (especially for int64, double, pointers)
+#define ALLOCATION_ALIGNMENT 8
+#define ALIGN_UP(n, align) (((n) + (align) - 1) & ~((align) - 1))
+
 // The core allocation routine (Hot Path)
 extern "C" void* aria_gc_alloc(Nursery* nursery, size_t size) {
    // 1. Fast Path: Standard Bump Allocation
+   // Align the size to ensure proper memory alignment for all types
+   size_t aligned_size = ALIGN_UP(size, ALLOCATION_ALIGNMENT);
+
    // Check if we fit in the current fragment or main buffer
-   uint8_t* new_bump = nursery->bump_ptr + size;
+   uint8_t* new_bump = nursery->bump_ptr + aligned_size;
    // Check against the end of the current active region (fragment or main)
    if (new_bump <= nursery->end_addr) {
        void* ptr = nursery->bump_ptr;
@@ -48,15 +57,15 @@ extern "C" void* aria_gc_alloc(Nursery* nursery, size_t size) {
    if (nursery->fragments) {
        FreeFragment* prev = nullptr;
        FreeFragment* curr = nursery->fragments;
-       
+
        while (curr) {
            size_t frag_size = curr->end - curr->start;
-           if (frag_size >= size) {
+           if (frag_size >= aligned_size) {
                // Found a fit!
                void* ptr = curr->start;
-               
-               // Update fragment
-               curr->start += size;
+
+               // Update fragment (use aligned_size to maintain alignment)
+               curr->start += aligned_size;
                // If fragment is exhausted, remove it from list
                if (curr->start == curr->end) {
                    FreeFragment* exhausted = curr;
