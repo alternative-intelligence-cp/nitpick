@@ -8,6 +8,8 @@
 #include "ast/stmt.h"
 #include "ast/control_flow.h"
 #include "ast/defer.h"
+#include "ast/loops.h"
+#include "ast/module.h"
 #include <memory>
 #include <vector>
 
@@ -57,6 +59,18 @@ public:
     std::unique_ptr<VarDecl> parseVarDecl();
     std::unique_ptr<PickStmt> parsePickStmt();
     std::unique_ptr<Statement> parseDeferStmt();
+    
+    // Control flow (Bug #67-71)
+    std::unique_ptr<Statement> parseForLoop();
+    std::unique_ptr<Statement> parseWhileLoop();
+    std::unique_ptr<Expression> parseWhenExpr();
+    std::unique_ptr<Statement> parseBreak();
+    std::unique_ptr<Statement> parseContinue();
+    
+    // Module system (Bug #73-75)
+    std::unique_ptr<Statement> parseUseStmt();
+    std::unique_ptr<Statement> parseExternBlock();
+    std::unique_ptr<Statement> parseModDef();
 };
 
 } // namespace frontend
