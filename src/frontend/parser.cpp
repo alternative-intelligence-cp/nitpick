@@ -68,6 +68,16 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         return std::make_unique<IntLiteral>(value);
     }
 
+    // Boolean literals
+    if (current.type == TOKEN_KW_TRUE) {
+        advance();
+        return std::make_unique<BoolLiteral>(true);
+    }
+    if (current.type == TOKEN_KW_FALSE) {
+        advance();
+        return std::make_unique<BoolLiteral>(false);
+    }
+
     // Identifier (variable reference)
     if (current.type == TOKEN_IDENTIFIER) {
         std::string name = current.value;
@@ -322,6 +332,9 @@ std::unique_ptr<VarDecl> Parser::parseVarDecl() {
     // Type
     Token typeToken = current;
     advance();
+
+    // Colon (Aria syntax: type:name)
+    expect(TOKEN_COLON);
 
     // Name
     Token nameToken = expect(TOKEN_IDENTIFIER);

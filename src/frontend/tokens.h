@@ -47,6 +47,8 @@ enum TokenType {
     TOKEN_KW_EXPORT,
     TOKEN_KW_MUT,           // Mutable
     TOKEN_KW_PUB,           // Public
+    TOKEN_KW_TRUE,          // Boolean literal: true
+    TOKEN_KW_FALSE,         // Boolean literal: false
 
     // Primitive Types
     TOKEN_TYPE_VOID,

@@ -60,6 +60,7 @@ using aria::frontend::IfStmt;
 using aria::frontend::DeferStmt;
 using aria::frontend::Expression;
 using aria::frontend::IntLiteral;
+using aria::frontend::BoolLiteral;
 using aria::frontend::VarExpr;
 using aria::frontend::CallExpr;
 using aria::frontend::BinaryOp;
@@ -330,6 +331,9 @@ public:
         if (auto* lit = dynamic_cast<aria::frontend::IntLiteral*>(node)) {
             return ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), lit->value);
         }
+        if (auto* blit = dynamic_cast<aria::frontend::BoolLiteral*>(node)) {
+            return ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), blit->value ? 1 : 0);
+        }
         if (auto* var = dynamic_cast<aria::frontend::VarExpr*>(node)) {
             auto* sym = ctx.lookup(var->name);
             if (!sym) return nullptr;
@@ -346,8 +350,9 @@ public:
     // AST Visitor Stubs
     void visit(Block* node) override { for(auto& s: node->statements) s->accept(*this); }
     void visit(IfStmt* node) override {} // Omitted for brevity
-    void visit(DeferStmt* node) override {} 
+    void visit(DeferStmt* node) override {}
     void visit(IntLiteral* node) override {} // Handled by visitExpr()
+    void visit(BoolLiteral* node) override {} // Handled by visitExpr()
     void visit(VarExpr* node) override {}
     void visit(CallExpr* node) override {}
     void visit(BinaryOp* node) override {} // Omitted for brevity

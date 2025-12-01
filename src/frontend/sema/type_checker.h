@@ -50,6 +50,7 @@ public:
     // Visitor methods for expressions
     void visit(frontend::VarExpr* node) override;
     void visit(frontend::IntLiteral* node) override;
+    void visit(frontend::BoolLiteral* node) override;
     void visit(frontend::BinaryOp* node) override;
     void visit(frontend::UnaryOp* node) override;
     void visit(frontend::CallExpr* node) override;

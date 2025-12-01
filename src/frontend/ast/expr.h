@@ -41,6 +41,19 @@ public:
     }
 };
 
+// Boolean Literal Expression
+// Example: true, false
+class BoolLiteral : public Expression {
+public:
+    bool value;
+
+    BoolLiteral(bool v) : value(v) {}
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
 // Binary Operation Expression
 // Example: a + b, x * y
 class BinaryOp : public Expression {
