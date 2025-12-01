@@ -1,9 +1,9 @@
 /**
  * src/driver/main.cpp
- * 
+ *
  * Aria Compiler Driver (ariac)
  * Version: 0.0.6
- * 
+ *
  * Entry point for the Aria Compiler. Orchestrates the compilation pipeline:
  * 1. Command Line Parsing (LLVM cl)
  * 2. Source File Reading
@@ -11,7 +11,13 @@
  * 4. Syntactic Analysis (Parser)
  * 5. Semantic Analysis (Borrow Checker)
  * 6. Code Generation (LLVM IR / Object Emission)
- * 
+ *
+ * ERROR HANDLING STRATEGY:
+ * - I/O errors (file read): exit(1) immediately (unrecoverable)
+ * - Parse errors: throw exceptions, caught in main with return 1
+ * - Semantic errors: return bool, main checks and returns 1
+ * - All errors print to stderr before terminating
+ *
  * Dependencies: LLVM 18, Aria Frontend, Aria Backend
  */
 
