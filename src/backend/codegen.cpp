@@ -20,6 +20,8 @@
 
 #include "codegen.h"
 #include "../frontend/ast.h"
+#include "../frontend/ast/stmt.h"
+#include "../frontend/ast/expr.h"
 #include "../frontend/ast/control_flow.h"
 #include "../frontend/ast/loops.h"
 #include "../frontend/ast/defer.h"
@@ -47,21 +49,22 @@ using namespace llvm;
 namespace aria {
 namespace backend {
 
-// =============================================================================
-// RAII Scope Guard for Symbol Table Management
-// =============================================================================
-
-// Ensures popScope() is called even if exceptions occur or early returns happen
-// This prevents scope leaks in the symbol table
-class ScopeGuard {
-    CodeGenContext& ctx;
-public:
-    ScopeGuard(CodeGenContext& c) : ctx(c) { ctx.pushScope(); }
-    ~ScopeGuard() { ctx.popScope(); }
-    // Prevent copying to avoid double-pop
-    ScopeGuard(const ScopeGuard&) = delete;
-    ScopeGuard& operator=(const ScopeGuard&) = delete;
-};
+// Import frontend types for use in this file
+using aria::frontend::AstVisitor;
+using aria::frontend::Block;
+using aria::frontend::VarDecl;
+using aria::frontend::PickStmt;
+using aria::frontend::PickCase;
+using aria::frontend::TillLoop;
+using aria::frontend::IfStmt;
+using aria::frontend::DeferStmt;
+using aria::frontend::Expression;
+using aria::frontend::IntLiteral;
+using aria::frontend::VarExpr;
+using aria::frontend::CallExpr;
+using aria::frontend::BinaryOp;
+using aria::frontend::UnaryOp;
+using aria::frontend::ReturnStmt;
 
 // =============================================================================
 // Code Generation Context
@@ -109,13 +112,10 @@ public:
     // Helper: Map Aria Types to LLVM Types
     llvm::Type* getLLVMType(const std::string& ariaType) {
         if (ariaType == "int1") return Type::getInt1Ty(llvmContext);
-        if (ariaType == "int8" |
-
-| ariaType == "byte" |
-| ariaType == "trit") return Type::getInt8Ty(llvmContext);
-        if (ariaType == "int16" |
-
-| ariaType == "tryte") return Type::getInt16Ty(llvmContext);
+        if (ariaType == "int8" || ariaType == "byte" || ariaType == "trit") 
+            return Type::getInt8Ty(llvmContext);
+        if (ariaType == "int16" || ariaType == "tryte") 
+            return Type::getInt16Ty(llvmContext);
         if (ariaType == "int32") return Type::getInt32Ty(llvmContext);
         if (ariaType == "int64") return Type::getInt64Ty(llvmContext);
         if (ariaType == "int128") return Type::getInt128Ty(llvmContext);
@@ -124,12 +124,10 @@ public:
         // Lowered to standard LLVM i512. LLVM backend handles splitting for x86.
         if (ariaType == "int512") return Type::getIntNTy(llvmContext, 512);
         
-        if (ariaType == "float" |
-
-| ariaType == "flt32") return Type::getFloatTy(llvmContext);
-        if (ariaType == "double" |
-
-| ariaType == "flt64") return Type::getDoubleTy(llvmContext);
+        if (ariaType == "float" || ariaType == "flt32") 
+            return Type::getFloatTy(llvmContext);
+        if (ariaType == "double" || ariaType == "flt64") 
+            return Type::getDoubleTy(llvmContext);
         
         if (ariaType == "void") return Type::getVoidTy(llvmContext);
         
@@ -137,6 +135,22 @@ public:
         // We return ptr for strings, arrays, objects
         return PointerType::getUnqual(llvmContext);
     }
+};
+
+// =============================================================================
+// RAII Scope Guard for Symbol Table Management
+// =============================================================================
+
+// Ensures popScope() is called even if exceptions occur or early returns happen
+// This prevents scope leaks in the symbol table
+class ScopeGuard {
+    CodeGenContext& ctx;
+public:
+    ScopeGuard(CodeGenContext& c) : ctx(c) { ctx.pushScope(); }
+    ~ScopeGuard() { ctx.popScope(); }
+    // Prevent copying to avoid double-pop
+    ScopeGuard(const ScopeGuard&) = delete;
+    ScopeGuard& operator=(const ScopeGuard&) = delete;
 };
 
 // =============================================================================
@@ -313,10 +327,10 @@ public:
 
     Value* visitExpr(Expression* node) {
         // Simplified Dispatcher
-        if (auto* lit = dynamic_cast<IntLiteral*>(node)) {
+        if (auto* lit = dynamic_cast<aria::frontend::IntLiteral*>(node)) {
             return ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), lit->value);
         }
-        if (auto* var = dynamic_cast<VarExpr*>(node)) {
+        if (auto* var = dynamic_cast<aria::frontend::VarExpr*>(node)) {
             auto* sym = ctx.lookup(var->name);
             if (!sym) return nullptr;
             if (sym->is_ref) {
@@ -333,8 +347,12 @@ public:
     void visit(Block* node) override { for(auto& s: node->statements) s->accept(*this); }
     void visit(IfStmt* node) override {} // Omitted for brevity
     void visit(DeferStmt* node) override {} 
+    void visit(IntLiteral* node) override {} // Handled by visitExpr()
     void visit(VarExpr* node) override {}
     void visit(CallExpr* node) override {}
+    void visit(BinaryOp* node) override {} // Omitted for brevity
+    void visit(UnaryOp* node) override {} // Omitted for brevity
+    void visit(ReturnStmt* node) override {} // Omitted for brevity
 
 private:
     // Runtime Linkage
@@ -362,7 +380,7 @@ private:
 // Main Entry Point for Code Generation
 // =============================================================================
 
-void generate_code(Block* root, const std::string& filename) {
+void generate_code(aria::frontend::Block* root, const std::string& filename) {
     CodeGenContext ctx("aria_module");
     CodeGenVisitor visitor(ctx);
 

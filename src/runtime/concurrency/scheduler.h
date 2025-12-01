@@ -5,6 +5,11 @@
 
 struct CoroutineFrame; // Forward decl
 
+// Coroutine state constants
+#define CORO_RUNNING 0
+#define CORO_SUSPENDED 1
+#define CORO_COMPLETE 2
+
 // Task represents a suspended coroutine
 struct Task {
    CoroutineFrame* frame;
@@ -39,4 +44,3 @@ struct CoroutineFrame {
     int state;             // RUNNING, SUSPENDED, COMPLETE
     char padding;      // Alignment for AVX
 };
-

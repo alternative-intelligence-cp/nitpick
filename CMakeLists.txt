@@ -8,12 +8,22 @@ project(AriaCompiler VERSION 1.0 LANGUAGES C CXX)
 # ==============================================================================
 
 # Find LLVM 18+
-# We require LLVM 18 specifically for the AVX-512 'VPTERNLOGD' intrinsic support
-find_package(LLVM 18 REQUIRED CONFIG)
+# We require LLVM 18+ for the AVX-512 'VPTERNLOGD' intrinsic support
+# LLVM 19.x is also compatible
+find_package(LLVM REQUIRED CONFIG)
+if(LLVM_VERSION_MAJOR LESS 18)
+    message(FATAL_ERROR "LLVM version must be 18 or higher, found ${LLVM_PACKAGE_VERSION}")
+endif()
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
-llvm_map_components_to_libnames(llvm_libs core support native irreader)
+llvm_map_components_to_libnames(llvm_libs 
+    core support native irreader
+    x86asmparser x86codegen x86desc x86info
+    aarch64asmparser aarch64codegen aarch64desc aarch64info
+    armasmparser armcodegen armdesc arminfo
+    riscvasmparser riscvcodegen riscvdesc riscvinfo
+)
 
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
@@ -49,6 +59,8 @@ add_executable(ariac
  src/frontend/parser_decl.cpp      # Implementation of Variable Declaration Parsing
  src/frontend/parser_pick.cpp      # Pick Parser
  src/frontend/parser_stmt.cpp      # [New] Defer and Stmt Parser
+ src/frontend/sema/borrow_checker.cpp  # Borrow Checker Implementation
+ src/frontend/sema/escape_analysis.cpp # Escape Analysis Implementation
  # src/frontend/ast/control_flow.cpp  # TODO: Create when implementing control flow AST nodes
  src/backend/codegen.cpp
  src/backend/lowering_ternary.cpp  # AVX-512 Lowering Logic

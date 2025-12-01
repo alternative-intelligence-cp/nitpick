@@ -6,6 +6,7 @@
 // We introduce a 'FastResult' which is a union of a direct value and a heap pointer.
 
 #include "scheduler.h"
+#include "../memory/allocator.h"
 #include <cstring>
 
 enum RampState {

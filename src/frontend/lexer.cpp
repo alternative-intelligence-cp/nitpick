@@ -1,44 +1,48 @@
-#include <stack>
-#include <string>
+#include "lexer.h"
 #include <map>
 #include <vector>
-#include "tokens.h" // Includes the complete token list defined in Section 9
+#include <cctype>
 
-enum LexerState { STATE_ROOT, STATE_STRING_TEMPLATE, STATE_INTERPOLATION };
+namespace aria {
+namespace frontend {
 
-class AriaLexer {
-private:
-   std::string source;
-   size_t pos = 0;
-   size_t line = 1, col = 1;
-   std::stack<LexerState> stateStack;
+// Constructor
+AriaLexer::AriaLexer(std::string src) : source(src), pos(0), line(1), col(1) {
+    stateStack.push(STATE_ROOT);
+}
 
-   // Returns the current character without advancing position.
-   // Returns 0 as EOF sentinel. Note: This means source files containing
-   // null bytes (\0) are not supported - they will be treated as EOF.
-   // This is acceptable since null bytes are not valid in Aria source code.
-   char peek() { return pos < source.length()? source[pos] : 0; }
+// Returns the current character without advancing position.
+// Returns 0 as EOF sentinel. Note: This means source files containing
+// null bytes (\0) are not supported - they will be treated as EOF.
+// This is acceptable since null bytes are not valid in Aria source code.
+char AriaLexer::peek() {
+    return pos < source.length() ? source[pos] : 0;
+}
 
-   // Returns the next character (peek + 1) without advancing position.
-   // Returns 0 as EOF sentinel.
-   char peekNext() { return (pos < source.length() && pos + 1 < source.length())? source[pos + 1] : 0; }
-   
-   void advance() { 
-       if (peek() == '\n') { line++; col=1; } else { col++; } 
-       pos++;
-   }
+// Returns the next character (peek + 1) without advancing position.
+// Returns 0 as EOF sentinel.
+char AriaLexer::peekNext() {
+    return (pos < source.length() && pos + 1 < source.length()) ? source[pos + 1] : 0;
+}
 
-   // Helper to parse identifier for sanitization check
-   std::string parseIdentifier() {
-       size_t start = pos;
-       while (isalnum(peek()) || peek() == '_') advance();
-       return source.substr(start, pos - start);
-   }
+void AriaLexer::advance() {
+    if (peek() == '\n') {
+        line++;
+        col = 1;
+    } else {
+        col++;
+    }
+    pos++;
+}
 
-public:
-   AriaLexer(std::string src) : source(src) { stateStack.push(STATE_ROOT); }
+// Helper to parse identifier for sanitization check
+std::string AriaLexer::parseIdentifier() {
+    size_t start = pos;
+    while (isalnum(peek()) || peek() == '_') advance();
+    return source.substr(start, pos - start);
+}
 
-   Token nextToken() {
+Token AriaLexer::nextToken() {
        char c = peek();
        if (c == 0) return {TOKEN_EOF, "", line, col};
 
@@ -118,6 +122,7 @@ public:
 
        //... Standard tokenization logic...
        return {TOKEN_INVALID, "UNKNOWN", line, col};
-   }
-};
+}
 
+} // namespace frontend
+} // namespace aria

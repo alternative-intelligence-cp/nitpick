@@ -91,8 +91,7 @@ extern "C" void* aria_gc_alloc(Nursery* nursery, size_t size) {
    // b) Identify pinned objects remaining in Nursery
    // c) Rebuild 'nursery->fragments' list with holes between pins
    // d) Reset bump_ptr to first fragment
-   aria_gc_collect_minor();
+   aria_gc_collect_minor(nursery);
    // Retry allocation after collection
    return aria_gc_alloc(nursery, size);
 }
-
