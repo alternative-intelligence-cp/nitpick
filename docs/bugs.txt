@@ -369,36 +369,30 @@ Step-by-step fix:
 
 BUG #11: ESCAPE ANALYSIS COMPARISON LOGIC
 Location: src/frontend/sema/escape_analysis.cpp:287-289
-Status: [ ] NOT STARTED
+Status: [X] COMPLETED
 
 Step-by-step fix:
-  [ ] 11.1 Open escape_analysis.cpp
+  [X] 11.1 Open escape_analysis.cpp
 
-  [ ] 11.2 Locate EscapeStatus enum (around line 41-46)
+  [X] 11.2 Locate EscapeStatus enum (around line 41-46)
 
-  [ ] 11.3 Fix ordering to match priority:
-      ```cpp
-      enum EscapeStatus {
-          NO_ESCAPE = 0,      // Lowest priority
-          ESCAPE_ARG = 1,
-          ESCAPE_GLOBAL = 2,
-          ESCAPE_RETURN = 3    // Highest priority
-      };
-      ```
+  [X] 11.3 Fix ordering to match priority:
+      - Added explicit values: NO_ESCAPE=0, ESCAPE_ARG=1, ESCAPE_GLOBAL=2, ESCAPE_RETURN=3
+      - Added clear comment about priority ordering
+      - Verified ordering makes ESCAPE_RETURN highest priority (most dangerous)
 
   [ ] 11.4 Or use explicit comparison logic:
-      ```cpp
-      bool isHigherPriority(EscapeStatus current, EscapeStatus newReason) {
-          const int priority[] = {0, 1, 3, 2}; // NO_ESCAPE, ARG, GLOBAL, RETURN
-          return priority[newReason] > priority[current];
-      }
-      ```
+      - Not needed - explicit enum values make >= comparison work correctly
 
-  [ ] 11.5 Update markEscape to use proper comparison
+  [X] 11.5 Update markEscape to use proper comparison
+      - Fixed syntax error: broken pipe operator || on line 287
+      - Comparison logic was already correct with explicit enum values
 
   [ ] 11.6 Add test case for escape priority
+      - Deferred until compiler is functional
 
-  [ ] 11.7 Commit fix
+  [X] 11.7 Commit fix
+      - Committed as: f260e3f
 
 --------------------------------------------------------------------------------
 
@@ -793,12 +787,12 @@ PROGRESS SUMMARY
 ================================================================================
 
 Critical Bugs:  [X] 3/8 complete (Bugs #2 ✓, #3 ✓, #5 ✓)
-High Priority:  [ ] 0/6 complete
+High Priority:  [X] 1/6 complete (Bug #11 ✓)
 Medium Priority: [ ] 0/6 complete
 Low Priority:   [ ] 0/5 complete
 Verification:   [ ] 0/5 complete
 
-Total: [X] 3/30 items complete (10.0%)
+Total: [X] 4/30 items complete (13.3%)
 
 NOTES:
 - Bug #6 (Incomplete Codegen) is DEFERRED - requires major implementation work
