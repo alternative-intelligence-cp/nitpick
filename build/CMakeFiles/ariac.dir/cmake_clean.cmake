@@ -1,0 +1,27 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/ariac.dir/src/backend/codegen.cpp.o"
+  "CMakeFiles/ariac.dir/src/backend/codegen.cpp.o.d"
+  "CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o"
+  "CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o.d"
+  "CMakeFiles/ariac.dir/src/driver/main.cpp.o"
+  "CMakeFiles/ariac.dir/src/driver/main.cpp.o.d"
+  "CMakeFiles/ariac.dir/src/frontend/lexer.cpp.o"
+  "CMakeFiles/ariac.dir/src/frontend/lexer.cpp.o.d"
+  "CMakeFiles/ariac.dir/src/frontend/parser_decl.cpp.o"
+  "CMakeFiles/ariac.dir/src/frontend/parser_decl.cpp.o.d"
+  "CMakeFiles/ariac.dir/src/frontend/parser_pick.cpp.o"
+  "CMakeFiles/ariac.dir/src/frontend/parser_pick.cpp.o.d"
+  "CMakeFiles/ariac.dir/src/frontend/parser_stmt.cpp.o"
+  "CMakeFiles/ariac.dir/src/frontend/parser_stmt.cpp.o.d"
+  "CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o"
+  "CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o.d"
+  "CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o"
+  "CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o.d"
+  "ariac"
+  "ariac.pdb"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang CXX)
+  include(CMakeFiles/ariac.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

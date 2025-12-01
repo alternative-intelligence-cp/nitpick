@@ -1,0 +1,27 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o"
+  "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o.d"
+  "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o"
+  "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o.d"
+  "CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o"
+  "CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o.d"
+  "CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o"
+  "CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o.d"
+  "CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o"
+  "CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o.d"
+  "CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.o"
+  "CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.o.d"
+  "CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.o"
+  "CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.o.d"
+  "CMakeFiles/aria_runtime.dir/src/runtime/memory/allocator.c.o"
+  "CMakeFiles/aria_runtime.dir/src/runtime/memory/allocator.c.o.d"
+  "CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o"
+  "CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o.d"
+  "libaria_runtime.a"
+  "libaria_runtime.pdb"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang C CXX)
+  include(CMakeFiles/aria_runtime.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

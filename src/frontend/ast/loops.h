@@ -1,22 +1,31 @@
-// New file implementation for loop constructs
+#ifndef ARIA_FRONTEND_AST_LOOPS_H
+#define ARIA_FRONTEND_AST_LOOPS_H
 
-struct LoopStmt : public AstNode {
-   std::unique_ptr<Block> body;
-   //...
+#include "../ast.h"
+#include "expr.h"
+#include <memory>
+
+namespace aria {
+namespace frontend {
+
+// Till Loop (Iteration Loop)
+// Example: till(100, 1) { ... }
+// Iterates from 0 to limit with step, using $ as iterator variable
+class TillLoop : public Statement {
+public:
+    std::unique_ptr<Expression> limit;
+    std::unique_ptr<Expression> step;
+    std::unique_ptr<Block> body;
+
+    TillLoop(std::unique_ptr<Expression> lim, std::unique_ptr<Expression> stp, std::unique_ptr<Block> b)
+        : limit(std::move(lim)), step(std::move(stp)), body(std::move(b)) {}
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
 };
 
-struct TillLoop : public LoopStmt {
-   std::unique_ptr<Expr> limit;
-   std::unique_ptr<Expr> step;
-   // The implicit iterator variable declaration
-   // This is created during the parsing phase, not by the user.
-   // It is marked as 'implicit' to prevent user redeclaration errors.
-   std::unique_ptr<VarDecl> implicit_iterator;
+} // namespace frontend
+} // namespace aria
 
-   TillLoop(std::unique_ptr<Expr> l, std::unique_ptr<Expr> s) 
-       : limit(std::move(l)), step(std::move(s)) {
-       // Construct the implicit '$' variable
-       implicit_iterator = std::make_unique<VarDecl>("$", TYPE_INT64, true);
-   }
-};
-
+#endif // ARIA_FRONTEND_AST_LOOPS_H

@@ -5,6 +5,7 @@
 //   out_ptr: Pointer to destination memory (64-byte aligned)
 //   a_ptr:   Pointer to first source operand (64-byte aligned)
 //   b_ptr:   Pointer to second source operand (64-byte aligned)
+__attribute__((target("avx512f")))
 void emit_ternary_add_avx512(void* out_ptr, void* a_ptr, void* b_ptr) {
    // Load 256 packed trits (512 bits) from memory into ZMM registers
    // Note: We use _mm512_load_si512 which requires 64-byte alignment.
@@ -32,4 +33,3 @@ void emit_ternary_add_avx512(void* out_ptr, void* a_ptr, void* b_ptr) {
    // For this reference, we store the low bits as the primary result.
    _mm512_store_si512((__m512i*)out_ptr, sum_lo);
 }
-

@@ -97,13 +97,11 @@ int main(int argc, char** argv) {
     // Required for TargetMachine lookup and AVX-512 backend support 
     InitLLVM X(argc, argv);
     
-    // Initialize all targets to ensure we can target the host architecture
-    // specifically for the AVX-512 instructions required by the spec.
-    InitializeAllTargetInfos();
-    InitializeAllTargets();
-    InitializeAllTargetMCs();
-    InitializeAllAsmParsers();
-    InitializeAllAsmPrinters();
+    // Initialize native target (host architecture) for AVX-512 instructions
+    // This is sufficient for compiling to the host platform
+    InitializeNativeTarget();
+    InitializeNativeTargetAsmParser();
+    InitializeNativeTargetAsmPrinter();
 
     // 2. Parse Command Line Arguments
     cl::HideUnrelatedOptions(AriaCategory);
@@ -119,13 +117,13 @@ int main(int argc, char** argv) {
     // 4. Frontend: Lexical Analysis
     // The Lexer handles sanitization (e.g., banning @tesla symbols )
     if (Verbose) outs() << "[Phase 1] Lexing...\n";
-    std::unique_ptr<aria::AriaLexer> lexer = std::make_unique<aria::AriaLexer>(sourceCode);
+    std::unique_ptr<aria::frontend::AriaLexer> lexer = std::make_unique<aria::frontend::AriaLexer>(sourceCode);
 
     // 5. Frontend: Parsing
     // Builds the AST (Abstract Syntax Tree)
     // Context holds compilation settings like strict mode
     if (Verbose) outs() << "[Phase 2] Parsing...\n";
-    aria::ParserContext parserCtx;
+    aria::frontend::ParserContext parserCtx;
     parserCtx.strictMode = StrictMode;
 
     // TODO: Strict mode should enable stricter checks in parser:
@@ -137,12 +135,12 @@ int main(int argc, char** argv) {
     // The parser will check this flag when implementing these features.
     
     // Instantiate Parser with the lexer
-    aria::Parser parser(std::move(lexer), &parserCtx);
+    aria::frontend::Parser parser(*lexer, parserCtx);
     
     // We expect the top level to be a block of statements (module level)
     // In the v0.0.6 spec, the file is treated as an implicit main block.
     // The parseBlock() function is defined in.
-    std::unique_ptr<aria::Block> astRoot;
+    std::unique_ptr<aria::frontend::Block> astRoot;
     try {
         astRoot = parser.parseBlock(); 
     } catch (const std::exception& e) {
@@ -171,11 +169,12 @@ int main(int argc, char** argv) {
     // Prevents stack pointers from escaping function scope (dangling references)
     // See src/frontend/sema/escape_analysis.cpp
     if (Verbose) outs() << "[Phase 3b] Escape Analysis...\n";
-    bool escapesSafe = aria::sema::run_escape_analysis(astRoot.get());
+    aria::sema::EscapeAnalysisResult escapeResult = aria::sema::run_escape_analysis(astRoot.get());
 
-    if (!escapesSafe) {
+    if (escapeResult.has_escapes) {
         errs() << "Compilation Failed: Escape Analysis Violations Detected.\n";
         errs() << "Wild pointers cannot escape their scope - this would create dangling references.\n";
+        errs() << "Found " << escapeResult.escaped_count << " escaped pointer(s).\n";
         return 1;
     }
 

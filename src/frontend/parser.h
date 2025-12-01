@@ -1,0 +1,47 @@
+#ifndef ARIA_FRONTEND_PARSER_H
+#define ARIA_FRONTEND_PARSER_H
+
+#include "tokens.h"
+#include "ast.h"
+#include "lexer.h"
+#include <memory>
+#include <vector>
+
+namespace aria {
+namespace frontend {
+
+// Parser Context
+// Stores configuration and state for parsing
+struct ParserContext {
+    bool strictMode = false;  // Enable strict type checking
+    // Future: Add more parser configuration options
+};
+
+// Aria Parser
+// Parses a stream of tokens into an Abstract Syntax Tree (AST)
+class Parser {
+private:
+    AriaLexer& lexer;
+    Token current;
+    ParserContext context;
+
+    void advance();
+    bool match(TokenType type);
+    Token expect(TokenType type);
+
+public:
+    Parser(AriaLexer& lex);
+    Parser(AriaLexer& lex, ParserContext ctx);
+
+    std::unique_ptr<Block> parseBlock();
+    std::unique_ptr<Expression> parseExpr();
+    std::unique_ptr<Statement> parseStmt();
+    std::unique_ptr<VarDecl> parseVarDecl();
+    std::unique_ptr<PickStmt> parsePickStmt();
+    std::unique_ptr<Statement> parseDeferStmt();
+};
+
+} // namespace frontend
+} // namespace aria
+
+#endif // ARIA_FRONTEND_PARSER_H

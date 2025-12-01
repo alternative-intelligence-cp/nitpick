@@ -14,11 +14,12 @@ std::vector<ObjHeader*> old_gen_objects;
 // In reality, this requires intricate stack frame walking (e.g., libunwind).
 extern std::vector<void*> get_thread_roots();
 
+// Forward declaration of C function
+extern "C" Nursery* get_current_thread_nursery();
+
 // Helper: Mark an object and its children (DFS)
 void mark_object(ObjHeader* obj) {
-   if (!obj |
-
-| obj->mark_bit) return;
+   if (!obj || obj->mark_bit) return;
    // 1. Mark Self
    obj->mark_bit = 1;
 
@@ -90,7 +91,6 @@ void aria_gc_collect_minor() {
    //  - Build fragment list around pinned objects
    //  - Handle case where ALL nursery space is pinned (trigger major GC)
    //  - Update forwarding pointers for moved objects
-   extern "C" Nursery* get_current_thread_nursery();
    Nursery* n = get_current_thread_nursery();
    if (n) {
        // Simple reset: assumes no pinned objects for now
@@ -127,4 +127,3 @@ void aria_gc_collect_major() {
        }
    }
 }
-
