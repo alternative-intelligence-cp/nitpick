@@ -82,6 +82,22 @@ void aria_gc_collect_minor() {
    // 3. Rebuild Fragments (Simplified)
    // The nursery bump pointer is reset, but we must construct the free list
    // to skip over the pinned objects identified in step 2.
+
+   // CRITICAL FIX: Reset nursery to prevent infinite recursion
+   // When aria_gc_alloc() calls this function and retries allocation,
+   // we must ensure space is available or the retry will recurse infinitely.
+   // TODO: This is a TEMPORARY FIX - proper implementation should:
+   //  - Build fragment list around pinned objects
+   //  - Handle case where ALL nursery space is pinned (trigger major GC)
+   //  - Update forwarding pointers for moved objects
+   extern "C" Nursery* get_current_thread_nursery();
+   Nursery* n = get_current_thread_nursery();
+   if (n) {
+       // Simple reset: assumes no pinned objects for now
+       // This prevents infinite recursion but loses pinned object support
+       n->bump_ptr = n->start_addr;
+       n->fragments = nullptr;
+   }
 }
 
 // Phase 2: Major Collection (Mark-Sweep)
