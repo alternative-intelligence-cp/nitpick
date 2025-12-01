@@ -15,6 +15,25 @@ public:
     virtual ~Expression() = default;
 };
 
+// When Expression (Pattern Matching Expression)
+// Example: when { x == 1 then 10; x == 2 then 20; end }
+struct WhenCase {
+    std::unique_ptr<Expression> condition;
+    std::unique_ptr<Expression> result;
+};
+
+class WhenExpr : public Expression {
+public:
+    std::vector<WhenCase> cases;
+    std::unique_ptr<Expression> else_result;  // Optional else case
+
+    WhenExpr() = default;
+
+    void accept(AstVisitor& visitor) override {
+        // visitor.visit(this);
+    }
+};
+
 // Variable Reference Expression
 // Example: x, myVar
 class VarExpr : public Expression {

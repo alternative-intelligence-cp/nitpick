@@ -214,6 +214,8 @@ CMakeFiles/ariac.dir/src/frontend/parser.cpp.o: \
  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/control_flow.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/stmt.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/defer.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/loops.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/module.h \
  /usr/include/c++/13/sstream /usr/include/c++/13/istream \
  /usr/include/c++/13/bits/istream.tcc \
  /usr/include/c++/13/bits/sstream.tcc

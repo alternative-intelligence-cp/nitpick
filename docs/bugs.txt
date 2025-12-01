@@ -1931,10 +1931,11 @@ Fix Required:
 
 --------------------------------------------------------------------------------
 
-BUG #67: PARSER DOESN'T SUPPORT when/then/end CONSTRUCT
+BUG #67: PARSER DOESN'T SUPPORT for LOOPS - FIXED
 Location: Parser implementation
-Impact: Cannot parse when loops from spec
+Impact: Cannot parse standard for loops
 Severity: HIGH
+STATUS: FIXED - parseForLoop() implemented in parser.cpp
 
 Details:
 The spec shows when/then/end construct:
@@ -1968,10 +1969,11 @@ Fix Required:
 
 --------------------------------------------------------------------------------
 
-BUG #68: PARSER DOESN'T SUPPORT for LOOPS
+BUG #68: PARSER DOESN'T SUPPORT while LOOPS - FIXED
 Location: Parser implementation
-Impact: Cannot parse standard for loops
+Impact: Cannot parse while loops
 Severity: HIGH
+STATUS: FIXED - parseWhileLoop() implemented in parser.cpp
 
 Details:
 The spec shows standard C-style for loops:
@@ -1996,10 +1998,11 @@ Fix Required:
 
 --------------------------------------------------------------------------------
 
-BUG #69: PARSER DOESN'T SUPPORT while LOOPS
+BUG #69: PARSER DOESN'T SUPPORT when/then/end CONSTRUCT - FIXED
 Location: Parser implementation
-Impact: Cannot parse while loops
+Impact: Cannot parse when expressions from spec
 Severity: HIGH
+STATUS: FIXED - parseWhenExpr() implemented in parser.cpp
 
 Details:
 The spec shows while loops:
@@ -2109,10 +2112,11 @@ Fix Required:
 
 --------------------------------------------------------------------------------
 
-BUG #73: MISSING MODULE IMPORT PARSING
+BUG #73: MISSING MODULE IMPORT PARSING - FIXED
 Location: Parser implementation
 Impact: Cannot use modules or standard library
 Severity: CRITICAL
+STATUS: FIXED - parseUseStmt() implemented in parser.cpp
 
 Details:
 The spec shows module imports:
@@ -2122,15 +2126,10 @@ use std.collections.{array, map};
 use math.*;
 use "./utils.aria" as utils;
 
-tokens.h is missing TOKEN_KW_USE (Bug #53).
-No parser support for import statements.
+tokens.h now has TOKEN_KW_USE (Bug #53 fixed).
+Parser now supports import statements with selective imports.
 
-WITHOUT this feature, users cannot:
-- Import standard library modules
-- Import user-defined modules
-- Use any modular code organization
-
-This makes the language essentially unusable for real projects.
+FIXED: parseUseStmt() handles dotted paths and selective imports in braces.
 
 Spec Reference:
 Section 5.1 "Compilation Units" shows use statements as fundamental.
@@ -2144,10 +2143,11 @@ Fix Required:
 
 --------------------------------------------------------------------------------
 
-BUG #74: MISSING extern BLOCK PARSING FOR FFI
+BUG #74: MISSING extern BLOCK PARSING FOR FFI - FIXED
 Location: Parser implementation
 Impact: Cannot call C libraries
 Severity: CRITICAL
+STATUS: FIXED - parseExternBlock() implemented in parser.cpp
 
 Details:
 The spec shows extern for FFI:
@@ -2158,15 +2158,10 @@ extern "libc" {
     func:printf(string:format, ...) -> int;
 }
 
-tokens.h is missing TOKEN_KW_EXTERN (Bug #53).
-No parser support for extern blocks.
+tokens.h now has TOKEN_KW_EXTERN (Bug #53 fixed).
+Parser now supports extern blocks.
 
-WITHOUT FFI support, Aria cannot:
-- Call C libraries (libc, OpenGL, SDL, etc.)
-- Integrate with existing codebases
-- Use OS APIs directly
-
-This is CRITICAL for a systems language.
+FIXED: parseExternBlock() handles extern { declarations }
 
 Spec Reference:
 Section 5.2 "External Interface (FFI)" shows extern as mandatory.

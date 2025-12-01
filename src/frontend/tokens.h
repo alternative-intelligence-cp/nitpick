@@ -157,69 +157,6 @@ enum TokenType {
     TOKEN_RIGHT_BRACE = TOKEN_RBRACE,
     TOKEN_LEFT_BRACKET = TOKEN_LBRACKET,
     TOKEN_RIGHT_BRACKET = TOKEN_RBRACKET
-};  TOKEN_TYPE_INT16,
-    TOKEN_TYPE_INT32,
-    TOKEN_TYPE_INT64,
-    TOKEN_TYPE_INT128,
-    TOKEN_TYPE_INT256,
-    TOKEN_TYPE_INT512,
-    TOKEN_TYPE_TRIT,        // Ternary digit type
-    TOKEN_TYPE_TRYTE,       // 6-trit (9-bit) type
-    TOKEN_TYPE_BYTE,
-    TOKEN_TYPE_FLT32,
-    TOKEN_TYPE_FLT64,
-    TOKEN_TYPE_STRING,
-
-    // Operators
-    TOKEN_PLUS,             // +
-    TOKEN_MINUS,            // -
-    TOKEN_STAR,             // *
-    TOKEN_SLASH,            // /
-    TOKEN_PERCENT,          // %
-    TOKEN_AMPERSAND,        // &
-    TOKEN_PIPE,             // |
-    TOKEN_CARET,            // ^
-    TOKEN_TILDE,            // ~
-    TOKEN_LSHIFT,           // <<
-    TOKEN_RSHIFT,           // >>
-    TOKEN_EQ,               // ==
-    TOKEN_NE,               // !=
-    TOKEN_LT,               // <
-    TOKEN_GT,               // >
-    TOKEN_LE,               // <=
-    TOKEN_GE,               // >=
-    TOKEN_LOGICAL_AND,      // &&
-    TOKEN_LOGICAL_OR,       // ||
-    TOKEN_LOGICAL_NOT,      // !
-    TOKEN_ASSIGN,           // =
-    TOKEN_PLUS_ASSIGN,      // +=
-    TOKEN_MINUS_ASSIGN,     // -=
-    TOKEN_STAR_ASSIGN,      // *=
-    TOKEN_SLASH_ASSIGN,     // /=
-    TOKEN_ARROW,            // ->
-    TOKEN_FAT_ARROW,        // =>
-    TOKEN_DOUBLE_COLON,     // ::
-    TOKEN_AT,               // @ (address-of for pinned, or directive)
-    TOKEN_DOLLAR,           // $ (iterator variable)
-    TOKEN_QUESTION,         // ? (result type)
-
-    // Delimiters
-    TOKEN_LPAREN,           // (
-    TOKEN_RPAREN,           // )
-    TOKEN_LBRACE,           // {
-    TOKEN_RBRACE,           // }
-    TOKEN_LBRACKET,         // [
-    TOKEN_RBRACKET,         // ]
-    TOKEN_COMMA,            // ,
-    TOKEN_SEMICOLON,        // ;
-    TOKEN_COLON,            // :
-    TOKEN_DOT,              // .
-    TOKEN_RANGE,            // .. (range operator)
-
-    // String Template Tokens
-    TOKEN_BACKTICK,         // `
-    TOKEN_INTERP_START,     // &{
-    TOKEN_STRING_CONTENT,   // String content between interpolations
 };
 
 // Token Structure

@@ -634,6 +634,8 @@ CMakeFiles/ariac.dir/src/driver/main.cpp.o: /home/randy/._____RANDY_____/REPOS/a
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/control_flow.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/defer.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/expr.h \
+  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/loops.h \
+  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/module.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/stmt.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/lexer.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/parser.h \
@@ -1196,6 +1198,8 @@ CMakeFiles/ariac.dir/src/frontend/parser.cpp.o: /home/randy/._____RANDY_____/REP
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/control_flow.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/defer.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/expr.h \
+  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/loops.h \
+  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/module.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/stmt.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/lexer.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/parser.h \
@@ -2369,6 +2373,8 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/c++/13/iomanip:
 
 /usr/include/c++/13/exception:
+
+/home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/module.h:
 
 /usr/include/c++/13/list:
 

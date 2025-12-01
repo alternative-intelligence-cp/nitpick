@@ -91,6 +91,11 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         expect(TOKEN_RPAREN);
         return expr;
     }
+    
+    // When expression (Bug #69)
+    if (current.type == TOKEN_KW_WHEN) {
+        return parseWhenExpr();
+    }
 
     // Error: unexpected token
     std::stringstream ss;
@@ -320,6 +325,47 @@ std::unique_ptr<Statement> Parser::parseStmt() {
     if (current.type == TOKEN_KW_PICK) {
         return parsePickStmt();
     }
+    
+    // For loop (Bug #67)
+    if (current.type == TOKEN_KW_FOR) {
+        return parseForLoop();
+    }
+    
+    // While loop (Bug #68)
+    if (current.type == TOKEN_KW_WHILE) {
+        return parseWhileLoop();
+    }
+    
+    // Break statement (Bug #71)
+    if (current.type == TOKEN_KW_BREAK) {
+        auto stmt = parseBreak();
+        expect(TOKEN_SEMICOLON);
+        return stmt;
+    }
+    
+    // Continue statement (Bug #71)
+    if (current.type == TOKEN_KW_CONTINUE) {
+        auto stmt = parseContinue();
+        expect(TOKEN_SEMICOLON);
+        return stmt;
+    }
+    
+    // Use statement (Bug #73)
+    if (current.type == TOKEN_KW_USE) {
+        auto stmt = parseUseStmt();
+        expect(TOKEN_SEMICOLON);
+        return stmt;
+    }
+    
+    // Extern block (Bug #74)
+    if (current.type == TOKEN_KW_EXTERN) {
+        return parseExternBlock();
+    }
+    
+    // Module definition (Bug #75)
+    if (current.type == TOKEN_KW_MOD) {
+        return parseModDef();
+    }
 
     // Expression statement (e.g., function call)
     auto expr = parseExpr();
@@ -428,6 +474,179 @@ std::unique_ptr<Block> Parser::parseBlock() {
     }
 
     return block;
+}
+
+// =============================================================================
+// Control Flow Parsing (Bug #67-71)
+// =============================================================================
+
+// Parse for loop: for x in iterable { ... }
+std::unique_ptr<Statement> Parser::parseForLoop() {
+    expect(TOKEN_KW_FOR);
+    
+    // Parse iterator variable name
+    Token iter_tok = expect(TOKEN_IDENTIFIER);
+    std::string iterator_name = iter_tok.value;
+    
+    // Expect 'in' keyword
+    expect(TOKEN_KW_IN);
+    
+    // Parse iterable expression
+    auto iterable = parseExpr();
+    
+    // Parse body block
+    auto body = parseBlock();
+    
+    return std::make_unique<ForLoop>(iterator_name, std::move(iterable), std::move(body));
+}
+
+// Parse while loop: while condition { ... }
+std::unique_ptr<Statement> Parser::parseWhileLoop() {
+    expect(TOKEN_KW_WHILE);
+    
+    // Parse condition expression
+    auto condition = parseExpr();
+    
+    // Parse body block
+    auto body = parseBlock();
+    
+    return std::make_unique<WhileLoop>(std::move(condition), std::move(body));
+}
+
+// Parse when expression: when { case1 then expr1; case2 then expr2; end }
+std::unique_ptr<Expression> Parser::parseWhenExpr() {
+    expect(TOKEN_KW_WHEN);
+    expect(TOKEN_LBRACE);
+    
+    auto when_expr = std::make_unique<WhenExpr>();
+    
+    // Parse cases until 'end' keyword
+    while (current.type != TOKEN_KW_END && current.type != TOKEN_EOF) {
+        WhenCase case_item;
+        
+        // Parse condition
+        case_item.condition = parseExpr();
+        
+        // Expect 'then' keyword
+        expect(TOKEN_KW_THEN);
+        
+        // Parse result expression
+        case_item.result = parseExpr();
+        
+        // Consume semicolon if present
+        match(TOKEN_SEMICOLON);
+        
+        when_expr->cases.push_back(std::move(case_item));
+    }
+    
+    expect(TOKEN_KW_END);
+    expect(TOKEN_RBRACE);
+    
+    return when_expr;
+}
+
+// Parse break statement: break; or break(label);
+std::unique_ptr<Statement> Parser::parseBreak() {
+    expect(TOKEN_KW_BREAK);
+    
+    std::string label;
+    
+    // Check for optional label in parentheses
+    if (match(TOKEN_LPAREN)) {
+        Token label_tok = expect(TOKEN_IDENTIFIER);
+        label = label_tok.value;
+        expect(TOKEN_RPAREN);
+    }
+    
+    return std::make_unique<BreakStmt>(label);
+}
+
+// Parse continue statement: continue; or continue(label);
+std::unique_ptr<Statement> Parser::parseContinue() {
+    expect(TOKEN_KW_CONTINUE);
+    
+    std::string label;
+    
+    // Check for optional label in parentheses
+    if (match(TOKEN_LPAREN)) {
+        Token label_tok = expect(TOKEN_IDENTIFIER);
+        label = label_tok.value;
+        expect(TOKEN_RPAREN);
+    }
+    
+    return std::make_unique<ContinueStmt>(label);
+}
+
+// =============================================================================
+// Module System Parsing (Bug #73-75)
+// =============================================================================
+
+// Parse use statement: use module.path; or use module.{item1, item2};
+std::unique_ptr<Statement> Parser::parseUseStmt() {
+    expect(TOKEN_KW_USE);
+    
+    // Parse module path (e.g., std.io)
+    std::string module_path;
+    Token first = expect(TOKEN_IDENTIFIER);
+    module_path = first.value;
+    
+    // Handle dotted path
+    while (match(TOKEN_DOT)) {
+        if (current.type == TOKEN_LBRACE) {
+            break;  // Start of selective imports
+        }
+        Token part = expect(TOKEN_IDENTIFIER);
+        module_path += "." + part.value;
+    }
+    
+    // Check for selective imports: use mod.{a, b, c}
+    std::vector<std::string> imports;
+    if (match(TOKEN_LBRACE)) {
+        while (current.type != TOKEN_RBRACE && current.type != TOKEN_EOF) {
+            Token item = expect(TOKEN_IDENTIFIER);
+            imports.push_back(item.value);
+            
+            if (!match(TOKEN_COMMA)) {
+                break;
+            }
+        }
+        expect(TOKEN_RBRACE);
+    }
+    
+    return std::make_unique<UseStmt>(module_path, imports);
+}
+
+// Parse extern block: extern { fn declarations... }
+std::unique_ptr<Statement> Parser::parseExternBlock() {
+    expect(TOKEN_KW_EXTERN);
+    expect(TOKEN_LBRACE);
+    
+    auto extern_block = std::make_unique<ExternBlock>();
+    
+    // Parse function declarations until closing brace
+    while (current.type != TOKEN_RBRACE && current.type != TOKEN_EOF) {
+        // For now, just parse statements (should be function declarations)
+        auto decl = parseStmt();
+        extern_block->declarations.push_back(std::move(decl));
+    }
+    
+    expect(TOKEN_RBRACE);
+    
+    return extern_block;
+}
+
+// Parse module definition: mod name { ... }
+std::unique_ptr<Statement> Parser::parseModDef() {
+    expect(TOKEN_KW_MOD);
+    
+    // Parse module name
+    Token name_tok = expect(TOKEN_IDENTIFIER);
+    std::string module_name = name_tok.value;
+    
+    // Parse module body
+    auto body = parseBlock();
+    
+    return std::make_unique<ModDef>(module_name, std::move(body));
 }
 
 } // namespace frontend
