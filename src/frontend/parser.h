@@ -59,6 +59,7 @@ public:
     std::unique_ptr<VarDecl> parseVarDecl();
     std::unique_ptr<PickStmt> parsePickStmt();
     std::unique_ptr<Statement> parseDeferStmt();
+    std::unique_ptr<Statement> parseFallStmt();  // Bug #66
     
     // Control flow (Bug #67-71)
     std::unique_ptr<Statement> parseForLoop();

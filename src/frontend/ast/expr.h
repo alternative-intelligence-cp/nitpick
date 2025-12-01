@@ -34,6 +34,20 @@ public:
     }
 };
 
+// Await Expression (Async/Await)
+// Example: await asyncFunction()
+class AwaitExpr : public Expression {
+public:
+    std::unique_ptr<Expression> expression;
+
+    AwaitExpr(std::unique_ptr<Expression> expr)
+        : expression(std::move(expr)) {}
+
+    void accept(AstVisitor& visitor) override {
+        // visitor.visit(this);
+    }
+};
+
 // Variable Reference Expression
 // Example: x, myVar
 class VarExpr : public Expression {
