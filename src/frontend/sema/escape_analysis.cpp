@@ -284,19 +284,30 @@ public:
     }
 
     // The Propagation Algorithm (Fix-Point Iteration)
-    void markEscape(EscapeNode* node, EscapeStatus reason) {
-        if (!node || node->status >= reason) return; // Already marked with equal/higher priority
+    // Uses visited set to prevent infinite loops on circular references
+    void markEscape(EscapeNode* node, EscapeStatus reason, std::set<EscapeNode*>& visited) {
+        if (!node || visited.count(node) > 0) return; // Already visited or null
+
+        visited.insert(node);
+
+        if (node->status >= reason) return; // Already marked with equal/higher priority
 
         node->status = reason;
 
         // Propagate: If 'node' escapes, everything 'node' points to also escapes.
-        // Example: global_ptr = &stack_var. 
-        // global_ptr escapes (Global). 
+        // Example: global_ptr = &stack_var.
+        // global_ptr escapes (Global).
         // global_ptr points_to stack_var.
         // Therefore, stack_var escapes (via global_ptr).
         for (EscapeNode* child : node->points_to) {
-            markEscape(child, reason);
+            markEscape(child, reason, visited);
         }
+    }
+
+    // Public wrapper that creates visited set
+    void markEscape(EscapeNode* node, EscapeStatus reason) {
+        std::set<EscapeNode*> visited;
+        markEscape(node, reason, visited);
     }
 
     // Final Validation Pass
