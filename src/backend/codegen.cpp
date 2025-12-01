@@ -349,11 +349,14 @@ private:
 void generate_code(Block* root, const std::string& filename) {
     CodeGenContext ctx("aria_module");
     CodeGenVisitor visitor(ctx);
-    
+
     // Create 'main' function wrapper
     FunctionType* ft = FunctionType::get(Type::getVoidTy(ctx.llvmContext), false);
     Function* mainFunc = Function::Create(ft, Function::ExternalLinkage, "main", ctx.module.get());
     BasicBlock* entry = BasicBlock::Create(ctx.llvmContext, "entry", mainFunc);
+
+    // IMPORTANT: Always call SetInsertPoint before using the builder!
+    // Without this, CreateAlloca and other builder calls will fail.
     ctx.builder->SetInsertPoint(entry);
     ctx.currentFunction = mainFunc;
 
