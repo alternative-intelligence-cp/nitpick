@@ -20,7 +20,7 @@ enum TokenType {
     TOKEN_FLOAT_LITERAL,
     TOKEN_STRING_LITERAL,
     TOKEN_CHAR_LITERAL,
-    TOKEN_TRIT_LITERAL,     // Ternary digit: -1, 0, 1 (BALANCED ternary)
+    TOKEN_TRIT_LITERAL,     // Balanced ternary digit: -1, 0, 1 (NON-NEGOTIABLE per spec!)
     TOKEN_TEMPLATE_LITERAL, // Template literal with interpolation
 
     // Identifiers and Keywords
