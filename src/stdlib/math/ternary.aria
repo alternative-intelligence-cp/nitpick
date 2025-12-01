@@ -43,13 +43,20 @@ mod std.math.ternary {
 
        // Allocate result in GC memory
        trit:res = aria.alloc_array<trit>(a.len);
+
        // Pin memory to ensure the GC doesn't move it during the extern call
        // This demonstrates the safety bridge: we pin the managed arrays
        // so the wild pointer arithmetic in the C++ backend is safe.
        wild trit:p_res = #res;
        wild trit:p_a   = #a;
        wild trit:p_b   = #b;
-       
+
+       // CRITICAL: Always unpin when done to allow GC to move objects
+       // Using defer ensures unpinning happens even if errors occur
+       defer unpin(res);
+       defer unpin(a);
+       defer unpin(b);
+
        // Perform hardware accelerated add
        // The '@' operator retrieves the raw memory address of the pinned variable
        __vec_add_trits(@p_res, @p_a, @p_b, a.len);
