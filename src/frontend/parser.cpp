@@ -96,6 +96,12 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
     if (current.type == TOKEN_KW_WHEN) {
         return parseWhenExpr();
     }
+    
+    // Await expression (Bug #70)
+    if (match(TOKEN_KW_AWAIT)) {
+        auto expr = parseUnary();  // Parse the expression to await
+        return std::make_unique<AwaitExpr>(std::move(expr));
+    }
 
     // Error: unexpected token
     std::stringstream ss;
@@ -298,8 +304,10 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         return std::make_unique<ReturnStmt>(std::move(expr));
     }
 
-    // Variable declaration: type name = expr;
-    if (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING) {
+    // Variable declaration: [const|wild|stack] type:name = expr;
+    if (current.type == TOKEN_KW_CONST || current.type == TOKEN_KW_WILD || 
+        current.type == TOKEN_KW_STACK || 
+        (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING)) {
         return parseVarDecl();
     }
 
@@ -366,6 +374,13 @@ std::unique_ptr<Statement> Parser::parseStmt() {
     if (current.type == TOKEN_KW_MOD) {
         return parseModDef();
     }
+    
+    // Fall statement (Bug #66)
+    if (current.type == TOKEN_KW_FALL) {
+        auto stmt = parseFallStmt();
+        expect(TOKEN_SEMICOLON);
+        return stmt;
+    }
 
     // Expression statement (e.g., function call)
     auto expr = parseExpr();
@@ -373,8 +388,24 @@ std::unique_ptr<Statement> Parser::parseStmt() {
     return std::make_unique<ExpressionStmt>(std::move(expr));
 }
 
-// Parse variable declaration: type name = value;
+// Parse variable declaration: [const|wild|stack] type:name = value;
 std::unique_ptr<VarDecl> Parser::parseVarDecl() {
+    // Optional const/wild/stack prefix
+    bool is_const = false;
+    bool is_wild = false;
+    bool is_stack = false;
+    
+    if (current.type == TOKEN_KW_CONST) {
+        is_const = true;
+        advance();
+    } else if (current.type == TOKEN_KW_WILD) {
+        is_wild = true;
+        advance();
+    } else if (current.type == TOKEN_KW_STACK) {
+        is_stack = true;
+        advance();
+    }
+    
     // Type
     Token typeToken = current;
     advance();
@@ -393,7 +424,12 @@ std::unique_ptr<VarDecl> Parser::parseVarDecl() {
 
     expect(TOKEN_SEMICOLON);
 
-    return std::make_unique<VarDecl>(typeToken.value, nameToken.value, std::move(init));
+    auto varDecl = std::make_unique<VarDecl>(typeToken.value, nameToken.value, std::move(init));
+    varDecl->is_const = is_const;
+    varDecl->is_wild = is_wild;
+    varDecl->is_stack = is_stack;
+    
+    return varDecl;
 }
 
 // Parse defer statement: defer { ... }
@@ -401,42 +437,6 @@ std::unique_ptr<Statement> Parser::parseDeferStmt() {
     expect(TOKEN_KW_DEFER);
     auto body = parseBlock();
     return std::make_unique<DeferStmt>(std::move(body));
-}
-
-// Parse pick statement (pattern matching)
-std::unique_ptr<PickStmt> Parser::parsePickStmt() {
-    expect(TOKEN_KW_PICK);
-    expect(TOKEN_LPAREN);
-    auto expr = parseExpr();
-    expect(TOKEN_RPAREN);
-    expect(TOKEN_LBRACE);
-
-    auto pickStmt = std::make_unique<PickStmt>(std::move(expr));
-
-    // Parse cases until we hit closing brace
-    while (current.type != TOKEN_RBRACE && current.type != TOKEN_EOF) {
-        // Parse pattern (for now, just integer literals)
-        auto pattern = parseExpr();
-        expect(TOKEN_COLON);
-
-        // Parse body (must be a block or single statement)
-        std::unique_ptr<Block> caseBody;
-        if (current.type == TOKEN_LBRACE) {
-            caseBody = parseBlock();
-        } else {
-            // Wrap single statement in a block
-            caseBody = std::make_unique<Block>();
-            caseBody->statements.push_back(parseStmt());
-        }
-
-        // Create and add the case
-        PickCase pickCase(PickCase::EXACT, std::move(caseBody));
-        pickCase.value_start = std::move(pattern);
-        pickStmt->cases.push_back(std::move(pickCase));
-    }
-
-    expect(TOKEN_RBRACE);
-    return pickStmt;
 }
 
 // Parse a block: { statement; statement; ... }
@@ -647,6 +647,164 @@ std::unique_ptr<Statement> Parser::parseModDef() {
     auto body = parseBlock();
     
     return std::make_unique<ModDef>(module_name, std::move(body));
+}
+
+// =============================================================================
+// Pattern Matching Enhancements (Bug #64-66)
+// =============================================================================
+
+// Parse pick statement with enhanced pattern matching
+// Supports: exact match, ranges, comparisons, wildcards, labels, destructuring
+std::unique_ptr<PickStmt> Parser::parsePickStmt() {
+    expect(TOKEN_KW_PICK);
+    expect(TOKEN_LPAREN);
+    
+    // Parse selector expression
+    auto selector = parseExpr();
+    
+    expect(TOKEN_RPAREN);
+    expect(TOKEN_LBRACE);
+    
+    auto pickStmt = std::make_unique<PickStmt>(std::move(selector));
+    
+    // Parse cases until closing brace
+    while (current.type != TOKEN_RBRACE && current.type != TOKEN_EOF) {
+        PickCase pickCase(PickCase::EXACT, nullptr);
+        
+        // Check for labeled case: label:(pattern) or label:(!)
+        if (current.type == TOKEN_IDENTIFIER) {
+            Token labelToken = current;
+            advance();
+            if (match(TOKEN_COLON)) {
+                pickCase.label = labelToken.value;
+                
+                // Check for unreachable marker (!)
+                if (match(TOKEN_LPAREN)) {
+                    if (match(TOKEN_LOGICAL_NOT)) {
+                        expect(TOKEN_RPAREN);
+                        pickCase.type = PickCase::UNREACHABLE;
+                        pickCase.body = parseBlock();
+                        pickStmt->cases.push_back(std::move(pickCase));
+                        continue;
+                    }
+                    // Otherwise, continue parsing pattern
+                }
+            } else {
+                // Not a label, backtrack - this is start of pattern
+                // For simplicity, we'll require patterns to be in parens
+                throw std::runtime_error("Expected ':' after label or pattern in parentheses");
+            }
+        }
+        
+        // Parse pattern in parentheses
+        if (!pickCase.label.empty() || match(TOKEN_LPAREN)) {
+            if (pickCase.label.empty()) {
+                // No label, just consumed opening paren
+            }
+            
+            // Check for wildcard pattern (*)
+            if (match(TOKEN_STAR)) {
+                pickCase.type = PickCase::WILDCARD;
+                expect(TOKEN_RPAREN);
+                pickCase.body = parseBlock();
+                pickStmt->cases.push_back(std::move(pickCase));
+                continue;
+            }
+            
+            // Check for comparison patterns (<, >, <=, >=)
+            if (current.type == TOKEN_LT || current.type == TOKEN_GT ||
+                current.type == TOKEN_LE || current.type == TOKEN_GE) {
+                TokenType op = current.type;
+                advance();
+                pickCase.value_start = parseExpr();
+                expect(TOKEN_RPAREN);
+                
+                if (op == TOKEN_LT) pickCase.type = PickCase::LESS_THAN;
+                else if (op == TOKEN_GT) pickCase.type = PickCase::GREATER_THAN;
+                else if (op == TOKEN_LE) pickCase.type = PickCase::LESS_EQUAL;
+                else if (op == TOKEN_GE) pickCase.type = PickCase::GREATER_EQUAL;
+                
+                pickCase.body = parseBlock();
+                pickStmt->cases.push_back(std::move(pickCase));
+                continue;
+            }
+            
+            // Check for object destructuring ({ ... })
+            if (current.type == TOKEN_LBRACE) {
+                pickCase.type = PickCase::DESTRUCTURE_OBJ;
+                // TODO: Parse object pattern properly
+                // For now, skip to closing brace
+                int brace_count = 1;
+                advance();
+                while (brace_count > 0 && current.type != TOKEN_EOF) {
+                    if (current.type == TOKEN_LBRACE) brace_count++;
+                    if (current.type == TOKEN_RBRACE) brace_count--;
+                    advance();
+                }
+                expect(TOKEN_RPAREN);
+                pickCase.body = parseBlock();
+                pickStmt->cases.push_back(std::move(pickCase));
+                continue;
+            }
+            
+            // Check for array destructuring ([ ... ])
+            if (current.type == TOKEN_LBRACKET) {
+                pickCase.type = PickCase::DESTRUCTURE_ARR;
+                // TODO: Parse array pattern properly
+                // For now, skip to closing bracket
+                int bracket_count = 1;
+                advance();
+                while (bracket_count > 0 && current.type != TOKEN_EOF) {
+                    if (current.type == TOKEN_LBRACKET) bracket_count++;
+                    if (current.type == TOKEN_RBRACKET) bracket_count--;
+                    advance();
+                }
+                expect(TOKEN_RPAREN);
+                pickCase.body = parseBlock();
+                pickStmt->cases.push_back(std::move(pickCase));
+                continue;
+            }
+            
+            // Parse expression for exact match or range
+            pickCase.value_start = parseExpr();
+            
+            // Check for range pattern (.. or ...)
+            if (current.type == TOKEN_RANGE || current.type == TOKEN_RANGE_EXCLUSIVE) {
+                pickCase.type = PickCase::RANGE;
+                pickCase.is_range_exclusive = (current.type == TOKEN_RANGE_EXCLUSIVE);
+                advance();
+                pickCase.value_end = parseExpr();
+            } else {
+                pickCase.type = PickCase::EXACT;
+            }
+            
+            expect(TOKEN_RPAREN);
+        }
+        
+        // Parse case body
+        pickCase.body = parseBlock();
+        
+        // Add case to pick statement
+        pickStmt->cases.push_back(std::move(pickCase));
+        
+        // Optional comma between cases
+        match(TOKEN_COMMA);
+    }
+    
+    expect(TOKEN_RBRACE);
+    return pickStmt;
+}
+
+// Parse fall statement: fall(label);
+std::unique_ptr<Statement> Parser::parseFallStmt() {
+    expect(TOKEN_KW_FALL);
+    expect(TOKEN_LPAREN);
+    
+    Token label = expect(TOKEN_IDENTIFIER);
+    
+    expect(TOKEN_RPAREN);
+    
+    return std::make_unique<FallStmt>(label.value);
 }
 
 } // namespace frontend

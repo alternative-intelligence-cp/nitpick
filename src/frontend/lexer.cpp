@@ -601,6 +601,10 @@ Token AriaLexer::nextToken() {
 
        // Tilde (~)
        if (c == '~') {
+           advance();
+           return {TOKEN_TILDE, "~", op_line, op_col};
+       }
+       
        // Less-than, less-or-equal, left-shift, spaceship, and pipeline backward (<, <=, <<, <=>, <|)
        if (c == '<') {
            advance();
@@ -636,10 +640,6 @@ Token AriaLexer::nextToken() {
                return {TOKEN_RSHIFT, ">>", op_line, op_col};
            }
            return {TOKEN_GT, ">", op_line, op_col};
-       }       advance();
-               return {TOKEN_RSHIFT, ">>", op_line, op_col};
-           }
-           return {TOKEN_GT, ">", op_line, op_col};
        }
 
        // Equal and equals-comparison (=, ==, =>)
@@ -663,6 +663,9 @@ Token AriaLexer::nextToken() {
                advance();
                return {TOKEN_NE, "!=", op_line, op_col};
            }
+           return {TOKEN_LOGICAL_NOT, "!", op_line, op_col};
+       }
+       
        // Dot, range inclusive, and range exclusive (., .., ...)
        // Maximal munch: ... before ..
        if (c == '.') {
@@ -704,19 +707,6 @@ Token AriaLexer::nextToken() {
                return {TOKEN_SAFE_NAV, "?.", op_line, op_col};
            }
            return {TOKEN_UNWRAP, "?", op_line, op_col};
-       }   return {TOKEN_DOT, ".", op_line, op_col};
-       }
-
-       // Dollar ($)
-       if (c == '$') {
-           advance();
-           return {TOKEN_DOLLAR, "$", op_line, op_col};
-       }
-
-       // Question (?)
-       if (c == '?') {
-           advance();
-           return {TOKEN_QUESTION, "?", op_line, op_col};
        }
 
        // DELIMITERS

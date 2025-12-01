@@ -15,18 +15,40 @@ namespace frontend {
 class PickCase {
 public:
     enum CaseType {
-        EXACT,      // Exact value match
-        RANGE,      // Range match: <9 or 5..10
-        WILDCARD    // Default case: _
+        EXACT,          // Exact value match: (5)
+        LESS_THAN,      // Less than: (<9)
+        GREATER_THAN,   // Greater than: (>9)
+        LESS_EQUAL,     // Less or equal: (<=9)
+        GREATER_EQUAL,  // Greater or equal: (>=9)
+        RANGE,          // Range match: (1..10) or (1...10)
+        WILDCARD,       // Default case: (*)
+        DESTRUCTURE_OBJ,// Object destructuring: ({ key: value })
+        DESTRUCTURE_ARR,// Array destructuring: ([a, b, c])
+        UNREACHABLE     // Labeled unreachable: label:(!)
     };
 
     CaseType type;
+    std::string label;  // Optional label for fall() targets
     std::unique_ptr<Expression> value_start;
     std::unique_ptr<Expression> value_end;  // For range cases
     std::unique_ptr<Block> body;
+    bool is_range_exclusive = false;  // true for ..., false for ..
 
     PickCase(CaseType t, std::unique_ptr<Block> b)
         : type(t), body(std::move(b)) {}
+};
+
+// Fall Statement (Explicit Fallthrough in pick)
+// Example: fall(label);
+class FallStmt : public Statement {
+public:
+    std::string target_label;
+
+    FallStmt(const std::string& label) : target_label(label) {}
+
+    void accept(AstVisitor& visitor) override {
+        // visitor.visit(this);
+    }
 };
 
 // Pick Statement (Pattern Matching)

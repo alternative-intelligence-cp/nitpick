@@ -25,6 +25,7 @@ public:
     std::unique_ptr<Expression> initializer;
     bool is_stack = false;
     bool is_wild = false;
+    bool is_const = false;  // Bug #72: compile-time constant
 
     VarDecl(const std::string& t, const std::string& n, std::unique_ptr<Expression> init = nullptr)
         : name(n), type(t), initializer(std::move(init)) {}
