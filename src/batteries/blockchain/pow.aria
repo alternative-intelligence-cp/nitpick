@@ -1,0 +1,51 @@
+// Reference Proof-of-Work Implementation in Aria
+use std.crypto.sha256;
+use std.time;
+
+mod blockchain {
+
+  // Block Header Structure
+  // Using int64 for timestamp and nonce
+  pub struct BlockHeader {
+      int64: version;
+      hash: prev_block; // 'hash' is a built-in 256-bit type alias
+      hash: merkle_root;
+      int64: timestamp;
+      int64: difficulty; // Target bits
+      int64: nonce;
+  }
+
+  // Mining Function
+  // Returns the nonce that satisfies the difficulty
+  pub func:mine = (BlockHeader:header) -> result<int64> {
+      wild int64:nonce = 0;
+      wild hash:target = calculateTarget(header.difficulty);
+      
+      // Start timing
+      int64:start_time = time.now();
+      // Infinite loop with manual break
+      while(true) {
+          header.nonce = nonce;
+          // Serialize and Hash
+          // Note: usage of unsafe wild pointer for buffer performance
+          wild byte*:buffer = aria.alloc_buffer(sizeof(BlockHeader));
+          defer aria.free(buffer); //
+          
+          memcpy(buffer, @header, sizeof(BlockHeader));
+          hash:h = sha256.hash(buffer);
+
+          // Check difficulty (Spaceship operator handles big-int comparison)
+          if (h < target) {
+               print(`Block found! Nonce: &{nonce}`);
+               return { val: nonce, err: NULL };
+          }
+
+          nonce++;
+          // Safety break to prevent infinite hang in demo
+          if (nonce > 10000000) {
+              return { val: 0, err: "Timeout" };
+          }
+      }
+  }
+}
+

@@ -1,0 +1,335 @@
+﻿Aria Language Technical Specification
+Version: 0.0.6
+Status: Draft / Request for Implementation
+
+1. Executive Summary
+Aria is a high-performance, systems-level programming language designed to bridge the gap between managed safety and raw metal control. It features a unique Hybrid Memory Model that combines a default Garbage Collector (GC) with an opt-out "Wild" manual memory management system, enforced via a Rust-style borrow checker.
+
+Core Philosophy:
+* Hybrid Memory: GC by default, manual (wild) when performance is critical.
+* Concurrency: Go-style coroutines and advanced threading.
+* Metaprogramming: Zig-style compile-time execution (comptime) and NASM-style macros with context stacks.
+* Ternary/Nonary logic: Native support for balanced ternary and nonary data types.
+
+2. Type System
+2.1 Primitive Types
+The language supports a wide array of specific bit-width integers and floats, along with specialized exotic types.
+* Standard Integers: int1, int2, int4, int8... int512 (and corresponding uint).
+* Floats: flt32, flt64, flt128, flt256, flt512.
+* Boolean: bool.
+2.2 Exotic Types (MANDATORY)
+These types are strictly required and non-negotiable.
+* trit: Balanced ternary digit. Values: {-1, 0, 1}.
+* tryte: 10 trits. Storage: uint16. Range: $3^{10}$ values.
+* nit: Balanced nonary digit. Values: {-4, -3, -2, -1, 0, 1, 2, 3, 4}.
+* nyte: 5 nits. Storage: uint16. Range: $9^5$ values.
+2.3 Compound & Reference Types
+* Vectors: vec2, vec3, vec9 (specialized for physics/math).
+* Structures: struct, obj (anonymous objects).
+* Collections: array, string, tensor, matrix.
+* Dynamic: dyn (dynamic typing support).
+* Functional: func (first-class functions), result (error handling wrapper).
+
+3. Memory Management Model
+This is the most critical implementation detail. The compiler must support three distinct allocation strategies existing in the same runtime.
+3.1 Allocation Keywords
+* gc (Default): Garbage collected memory.
+   * Example: gc int64*:ptr = aria.gc_alloc<int64>(100);
+* wild (Manual): Unmanaged heap memory. Requires manual free().
+   * Example: wild int64*:ptr = aria.alloc<int64>(1000);
+   * Must use defer aria.free(ptr) for RAII-style cleanup.
+* stack: Explicit stack allocation for performance-critical buffers.
+   * Example: stack int64[1000]:buffer;
+3.2 Safety & Borrow Checking
+To bridge GC and Wild memory safely, Aria uses specific operators:
+* Pinning (#): Pins a GC object in memory so it cannot be moved, allowing wild pointers to reference it.
+   * Syntax: wild int8:u = #managed_var;
+* Safe Reference ($): Creates a borrow-checked reference to pinned memory.
+   * Syntax: string$:safe_ref = #critical_data;
+* Address Of (@): Retrieves raw memory address.
+   * Syntax: wild int64@:addr = @var;
+* Dereference (*): Standard pointer dereferencing for wild pointers.
+* Member Access (.): Standard member access.
+* Pointer Member Access (->): Dereferencing member access (C-style) for wild pointers.
+
+4. Syntax & constructs
+4.1 Control Flow
+* Conditionals: if, else if, else.
+* Loops:
+   * while: Standard condition loop.
+   * for: C-style iteration.
+   * till: Numeric range iteration with automatic iterator variable $.
+      * Example: till(100, 1) { print($); } (0 to 100 step 1).
+   * when/then/end: Loop with completion blocks.
+      * Semantics: then runs if loop completes naturally; end runs if loop condition never met or broke early.
+* Pattern Matching (pick):
+   * Supports value matching, range matching (<9, >9), and wildcards (*).
+   * Explicit Fallthrough: Must use fall(label) to jump to specific case blocks.
+   * Destructuring: JSON-like object matching inside cases.
+4.2 Operators
+* Pipeline: |> (forward) and <| (backward) for functional chaining.
+* Spaceship: <=> (returns -1, 0, 1).
+* Null Safety: ?? (coalesce), ?. (safe navigation), ? (unwrap result).
+* String Interpolation: Backtick syntax with &{variable}.
+   * Example: `Value is &{val}`.
+* Lambdas: => operator.
+
+5. Module & Macro System
+5.1 Compilation Units
+* File Extension: .aria
+* Importing: use std.io; or use "./local.aria" as utils;.
+* Visibility: pub keyword for public exports.
+* Modules: Nested mod name { ... } structures supported.
+5.2 External Interface (FFI)
+* Syntax: extern "libc" { ... }.
+* Types: C-types mapped to Aria primitive types (e.g., void*, uint64).
+5.3 Conditional Compilation
+* Cfg Attribute: use cfg(target_os = "linux") std.os.linux;.
+* Comptime: computeOptimalSize() functions evaluated at compile time.
+
+6. Standard Library & Runtime
+6.1 I/O Stream Architecture
+Modern separation of concerns for I/O streams:
+1. stdin / stdout: Pure text input/output.
+2. stderr: Error reporting.
+3. stddbg: Dedicated debug channel (structured logs).
+4. stddati / stddato: Dedicated binary data streams.
+6.2 Process Management
+* Primitives: spawn, fork, exec, wait.
+* IPC: createPipe.
+* Concurrency: async / await keywords with Go-style coroutines foundation.
+6.3 Standard Utilities
+* Functional: filter, transform (map), reduce, sort, reverse, unique.
+* Math: Standard library including exotic scalar math for trit/nit.
+* System: getMemoryUsage(), getActiveConnections().
+* Allocators: aria.alloc, aria.gc_alloc, aria.alloc_buffer.
+6.4 Core Library Function List
+Required implementation of standard library functions:
+// Memory
+aria.alloc(), aria.free(), aria.gc_alloc(), aria.alloc_buffer(), 
+aria.alloc_string(), aria.alloc_array()
+
+// IO & Files
+print(), readFile(), writeFile(), readJSON(), readCSV(), openFile()
+
+// Process & IPC
+spawn(), fork(), exec(), createPipe(), wait()
+
+// Networking
+httpGet(), getUser()
+
+// Utilities
+filter(), transform(), reduce(), sort(), reverse(), unique(), 
+Math.round(), createLogger(), computeOptimalSize()
+
+7. Implementation Requirements
+7.1 Target Environment
+* Dev Environment: Docker container based on Ubuntu 24.04.
+* Bootstrapping: Initial implementation in C/C++ or Rust allowed, with goal of self-hosting (Aria compiler written in Aria).
+* Distribution: AppImage.
+7.2 Optional "Batteries" (Opt-in)
+* GUI: HTML5/CSS/JS engine.
+* Blockchain: Reference PoW/PoS implementation.
+* ML: Transformer/Mamba reference implementations.
+* Note: These must not bloat the core runtime; they are linked only if used.
+
+8. Reference Code Examples
+This section provides concrete examples of valid Aria syntax to guide the implementation of the parser and runtime.
+8.1 Variable Declarations
+int8:i = 9;
+string:str = "whats up";
+int8:c = 0;
+int8[]:arr; // empty array (cannot use without initializing)
+int8[256]:arr2; // empty int8 array with 256 elements allocated
+int8[]:arr3 = [100, 300, 550]; // 3 element int8 array with values
+
+dyn:d = "bob";
+d = 4;     // Dynamic typing allowed
+d = true;
+
+8.2 Loops and Control Flow
+// Standard while loop
+while(i < 100) {
+   print(`&{i}`);
+   i++;
+}
+
+// When/Then/End Loop (Loop with completion blocks)
+when(c <= i) {
+   print(`&{c}`);
+   c++;
+} then {
+   print(`when loop ran &{c} times successfully`);
+} end {
+   print(`when loop did not run or broke early`);
+}
+
+// Till Loop (Automatic iteration variable '$')
+till(100, 1) {
+   // counts up from 0 to 100 by 1
+   print(`iteration: &{$}`); 
+}
+till(100, -1) {
+   // counts down from 100 to 0 by 1
+   print(`iteration: &{$}`);
+}
+
+8.3 Pattern Matching (pick) with Fallthrough
+The pick construct replaces switch. It supports explicit fallthrough via fall(label).
+pick(c) {
+   (<9) {
+       fall(fail);
+   },
+   (>9) {
+       fall(fail);
+   },
+   (9) {
+       fall(success);
+   },
+   (*) { // Wildcard match
+       fall(err);
+   },
+   fail:(!) { // Label for fallthrough
+       // handle failure
+       fall(done);
+   },
+   success:(!) {
+       // handle success
+       fall(done);
+   },
+   err:(!) {
+       // handle error
+       fall(done);
+   },
+   done:(!) {
+       // cleanup
+   }
+}
+
+8.4 Functions and Closures
+int8:closureTest = 2;
+
+// Function definition
+func:test = (int8:a, int8:b) {
+   return {
+       err: NULL,
+       val: a * b * closureTest; // Captures 'closureTest'
+   }
+};
+
+// Function taking a function as argument
+func:test2 = (func:tt, int:a, int:b) {
+   return tt(a, b);
+};
+
+result:r = test(3, 4);
+// Use 'is' ternary operator to check result
+int8:t = is r.err == NULL : r.val : -1; 
+
+8.5 Memory Management Patterns
+The core "Hybrid" model in action.
+// 1. Wild (Manual) Memory
+wild int64:s = 100000;
+wild int64@:t = @s;      // '@' Address/Pointer operator
+
+// 2. Pinning & Safe References
+// '#' Pinning operator: locks GC memory in place
+wild string:critical_data = "must not move";
+wild int8:u = #critical_data; 
+
+// '$' Safe Reference: bridge between managed and wild
+string$:safe_ref = #critical_data; 
+
+// 3. RAII with Defer
+wild int64*:ptr = aria.alloc<int64>(1000);
+defer aria.free(ptr);
+
+8.6 Process & I/O
+// Forking
+result:fork_result = fork();
+if (fork_result.success) {
+   if (fork_result.is_child) {
+       exec("./child_program", ["arg1"]);
+   } else {
+       print(`Forked child with PID: &{fork_result.child_pid}`);
+       wait(fork_result.child_pid);
+   }
+}
+
+// Piping
+pipe:comm = createPipe();
+process:worker = spawn("./processor", [], { stdin: comm.write });
+comm.write_end.write("process this data");
+comm.write_end.close();
+
+9. Complete AST Token List
+The following list comprises the mandatory tokens for the Lexer/Parser implementation.
+Literals
+* INTEGER_LITERAL (42, 0xFF, 0b1010, 0o755)
+* FLOAT_LITERAL (3.14, 1e10, 0x1.2p3)
+* STRING_LITERAL ("hello", 'world')
+* TEMPLATE_LITERAL (template with &{var})
+* BOOLEAN_LITERAL (true, false)
+* NULL_LITERAL (NULL)
+* CHAR_LITERAL ('a')
+Identifiers
+* IDENTIFIER (variable names, function names)
+* TYPE_IDENTIFIER (int8, string, obj, etc.)
+Type Keywords
+* Integers: INT1, INT2, INT4, INT8, INT16, INT32, INT64, INT128, INT256, INT512 (and corresponding UINT).
+* Floats: FLT32, FLT64, FLT128, FLT256, FLT512
+* Exotic: TRIT, TRYTE, NIT, NYTE
+* Structs: VEC2, VEC3, VEC9, DYN, OBJ, STRUCT, STRING, RESULT, FUNC, ARRAY
+* System: BOOL, BINARY, BUFFER, STREAM, PROCESS, PIPE, DEBUG, LOG
+Memory Keywords
+* WILD (opt-out of GC)
+* DEFER (RAII cleanup)
+* CONST (compile-time constant)
+Control Flow Keywords
+* IF, ELSE, WHILE, FOR, TILL, WHEN, THEN, END, PICK, FALL
+* BREAK, CONTINUE, RETURN
+* ASYNC, AWAIT, CATCH
+Module System Keywords
+* USE (import)
+* MOD (define module)
+* PUB (public visibility)
+* EXTERN (external C functions)
+* CFG (conditional compilation)
+Assignment Operators
+* ASSIGN (=), PLUS_ASSIGN (+=), MINUS_ASSIGN (-=), MULT_ASSIGN (*=), DIV_ASSIGN (/=), MOD_ASSIGN (%=)
+Arithmetic Operators
+* PLUS (+), MINUS (-), MULTIPLY (*), DIVIDE (/), MODULO (%), INCREMENT (++), DECREMENT (--)
+Comparison Operators
+* EQUAL (==), NOT_EQUAL (!=), LESS_THAN (<), GREATER_THAN (>), LESS_EQUAL (<=), GREATER_EQUAL (>=), SPACESHIP (<=>)
+Logical & Bitwise Operators
+* LOGICAL_AND (&&), LOGICAL_OR (||), LOGICAL_NOT (!)
+* BITWISE_AND (&), BITWISE_OR (|), BITWISE_XOR (^), BITWISE_NOT (~), LEFT_SHIFT (<<), RIGHT_SHIFT (>>)
+Special Operators
+* ADDRESS (@ - address/pointer)
+* PIN (# - memory pinning)
+* ITERATION ($ - safe loop reference)
+* SAFE_NAV (?.)
+* NULL_COALESCE (??)
+* UNWRAP (?)
+* PIPE_FORWARD (|>)
+* PIPE_BACKWARD (<|)
+* RANGE_INCLUSIVE (..)
+* RANGE_EXCLUSIVE (...)
+* TERNARY_IS (is)
+* LAMBDA (=>)
+* FUNC_RETURN (->)
+* TEMPLATE_INTERP (&{ })
+Punctuation
+* LEFT_PAREN ( ), RIGHT_PAREN ( )
+* LEFT_BRACE { }, RIGHT_BRACE { }
+* LEFT_BRACKET [ ], RIGHT_BRACKET [ ]
+* SEMICOLON (;), COMMA (,), DOT (.), COLON (:), QUESTION (?), BACKTICK (`)
+Special Tokens
+* EOF, INVALID
+* WHITESPACE, NEWLINE
+* COMMENT_LINE (//), COMMENT_BLOCK_START (/), COMMENT_BLOCK_END (/)
+Stream Identifiers
+* STDOUT, STDERR, STDDBG, STDIN, STDDATI, STDDATO
+Allocator Functions (Keywords/Reserved)
+* ARIA_ALLOC, ARIA_FREE, ARIA_GC_ALLOC, ARIA_ALLOC_BUFFER, ARIA_ALLOC_STRING, ARIA_ALLOC_ARRAY
+End of Specification v0.0.6
