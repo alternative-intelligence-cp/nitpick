@@ -11,6 +11,9 @@ extern "C" void aria_free(void* ptr);
 // The exact layout of the Aria String Header
 // Must match the compiler's view of the 'string' primitive.
 struct AriaString {
+    // SSO (Small String Optimization) capacity:
+    // Total struct size is 24 bytes (3 uint64_t or equivalent)
+    // One byte is used for size/flag, leaving 23 bytes for data
     static const size_t SSO_CAPACITY = 23;
 
     union {
@@ -21,22 +24,22 @@ struct AriaString {
         } heap;
 
         struct {
-            char data; // Inline storage
-            uint8_t size_byte;       // Size stored in the last byte (with flag)
+            char data[SSO_CAPACITY]; // Inline storage (23 bytes)
+            uint8_t size_byte;       // Size stored in last byte (1 byte)
+                                     // High bit = 0 means SSO mode
+                                     // Total: 24 bytes matching heap layout
         } sso;
     } storage;
 
     // Helper to detect if we are in SSO mode.
-    // We use the last byte. In Little Endian, the high bit or specific bit pattern
-    // of 'capacity' in the heap struct usually avoids conflict if capacity is reasonable.
-    // For simplicity here: we assume specific bitmask logic on the last byte.
+    // We use the high bit of the last byte:
+    // - If (last_byte & 0x80) == 0: SSO mode (size <= 23)
+    // - If (last_byte & 0x80) != 0: Heap mode
     bool is_sso() const {
-        // In this implementation, we use the last byte of the struct (sso.size_byte).
-        // If it looks like a valid small size, we treat it as SSO.
-        // A robust implementation uses bit-stealing from capacity.
-        // Here, we define: if (last_byte & 0x80) == 0, it's SSO.
-        // This limits SSO size slightly but is safe.
-        return (reinterpret_cast<const uint8_t*>(&storage) & 0x80) == 0;
+        // Access the last byte of the storage union
+        const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&storage);
+        const uint8_t last_byte = bytes[sizeof(storage) - 1];
+        return (last_byte & 0x80) == 0;
     }
 };
 
@@ -69,12 +72,11 @@ AriaString* aria_string_from_literal(const char* literal, size_t len) {
         str->storage.heap.ptr = buffer;
         str->storage.heap.size = len;
         str->storage.heap.capacity = len; // Tight fit
-        
-        // Mark as Heap: Set high bit of the last byte to 1.
-        // We do this by manipulating the capacity field or a flag.
-        // Here we rely on the header bits set by the compiler/GC logic 
-        // or strictly check the capacity field > SSO_CAPACITY.
-        // For this reference impl, we assume the reader checks capacity field if is_sso logic allows.
+
+        // Mark as Heap mode: Set high bit of last byte to 1
+        // Since capacity uses uint64_t, we can safely set the high bit
+        // of the last byte without affecting capacity values < 2^63
+        str->storage.heap.capacity |= (1ULL << 63);
     }
 
     return str;
@@ -83,8 +85,9 @@ AriaString* aria_string_from_literal(const char* literal, size_t len) {
 // Concatenates two strings
 // string:res = a + b;
 AriaString* aria_string_concat(AriaString* a, AriaString* b) {
-    size_t len_a = a->is_sso()? a->storage.sso.size_byte : a->storage.heap.size;
-    size_t len_b = b->is_sso()? b->storage.sso.size_byte : b->storage.heap.size;
+    // Extract size, masking the SSO flag from size_byte if needed
+    size_t len_a = a->is_sso()? (a->storage.sso.size_byte & 0x7F) : a->storage.heap.size;
+    size_t len_b = b->is_sso()? (b->storage.sso.size_byte & 0x7F) : b->storage.heap.size;
     size_t total_len = len_a + len_b;
 
     extern void* get_current_thread_nursery();
@@ -113,6 +116,9 @@ AriaString* aria_string_concat(AriaString* a, AriaString* b) {
         res->storage.heap.ptr = buffer;
         res->storage.heap.size = total_len;
         res->storage.heap.capacity = total_len;
+
+        // Mark as Heap mode
+        res->storage.heap.capacity |= (1ULL << 63);
     }
     
     return res;
@@ -121,7 +127,8 @@ AriaString* aria_string_concat(AriaString* a, AriaString* b) {
 // Access character at index (safe)
 // char c = str[i];
 int8_t aria_string_get_at(AriaString* str, uint64_t index) {
-    size_t len = str->is_sso()? str->storage.sso.size_byte : str->storage.heap.size;
+    // Extract size, masking the SSO flag
+    size_t len = str->is_sso()? (str->storage.sso.size_byte & 0x7F) : str->storage.heap.size;
     if (index >= len) {
         // Runtime panic or return 0 (implementation defined)
         // Aria spec prefers crash on OOB or result<T>.
