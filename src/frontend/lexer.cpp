@@ -58,7 +58,11 @@ public:
            //... consume string content...
        }
       
-       // Symbol Sanitization: Reject @tesla
+       // Symbol Sanitization: Directive Validation
+       // The '@' operator is used for:
+       // 1. Taking addresses of pinned objects: @pinned_var
+       // 2. Compiler directives: @inline, @noinline, etc.
+       // The spec mentions rejecting unauthorized tokens like @tesla_sync.
        if (c == '@') {
            advance();
            // Check if what follows is an identifier (directive) or just the operator
@@ -70,11 +74,15 @@ public:
 
                std::string directive = parseIdentifier();
 
-               // Explicitly ban unauthorized symbols
-               if (directive.find("tesla")!= std::string::npos)
+               // TODO: Implement proper directive whitelist
+               // Currently blocks 'tesla' as placeholder (per spec: reject @tesla_sync)
+               // Should be replaced with comprehensive directive validation:
+               // - Known directives: inline, noinline, pack, align, etc.
+               // - Everything else: check in parser if it's a valid @ address-of
+               if (directive.find("tesla") != std::string::npos)
                    return {TOKEN_INVALID, "ILLEGAL_SYMBOL", line, col};
 
-               // If it's just @varname, it's valid, but we need to verify
+               // If it's just @varname, it's valid but we need to verify
                // in parser phase. For lexer, we just emit TOKEN_AT.
                // We reset all position state to let the parser consume the identifier next.
                pos = saved_pos;
