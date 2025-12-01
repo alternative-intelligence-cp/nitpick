@@ -127,6 +127,14 @@ int main(int argc, char** argv) {
     if (Verbose) outs() << "[Phase 2] Parsing...\n";
     aria::ParserContext parserCtx;
     parserCtx.strictMode = StrictMode;
+
+    // TODO: Strict mode should enable stricter checks in parser:
+    // - Require explicit type annotations (no type inference)
+    // - Disallow implicit conversions
+    // - Enforce stricter borrow checking rules
+    // - Warn on unused variables/imports
+    // - Require explicit wild pointer free() calls
+    // The parser will check this flag when implementing these features.
     
     // Instantiate Parser with the lexer
     aria::Parser parser(std::move(lexer), &parserCtx);
