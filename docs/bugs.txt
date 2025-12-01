@@ -1,1 +1,814 @@
+ARIA v0.0.6 - BUGS AND ISSUES WITH ACTIONABLE TODO CHECKLIST
+================================================================
 
+INSTRUCTIONS FOR FIXING BUGS:
+- Mark items as [X] when completed
+- Each bug has detailed step-by-step subtasks
+- Work through sections in order (Critical -> High -> Medium -> Low)
+- Verify fixes with compilation or tests where applicable
+
+================================================================================
+CRITICAL BUGS (Will Prevent Compilation) - MUST FIX FIRST
+================================================================================
+
+BUG #1: MISSING INCLUDE GUARDS AND HEADER FILES
+Location: Multiple files in src/frontend/ and src/backend/
+Impact: Project will not compile
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 1.1 Create src/frontend/tokens.h
+      - Define Token struct with: TokenType, string value, line, col
+      - Define all token type enums from spec (INT1-INT512, operators, keywords)
+      - Add include guards
+
+  [ ] 1.2 Create src/frontend/ast.h (base AST definitions)
+      - Define AstNode base class with virtual destructor
+      - Define AstVisitor base class
+      - Add forward declarations for all node types
+      - Add include guards
+
+  [ ] 1.3 Create src/frontend/ast/expr.h
+      - Define Expression base class (inherits AstNode)
+      - Define VarExpr, IntLiteral, BinaryOp, UnaryOp, CallExpr classes
+      - Add visitor accept() methods
+      - Add include guards
+
+  [ ] 1.4 Create src/frontend/ast/stmt.h
+      - Define Statement base class (inherits AstNode)
+      - Define ReturnStmt, IfStmt, Block classes
+      - Add visitor accept() methods
+      - Add include guards
+
+  [ ] 1.5 Create src/frontend/ast/control_flow.h
+      - Define PickStmt, WhenLoop classes
+      - Add case structures for pick statements
+      - Add include guards
+
+  [ ] 1.6 Create src/frontend/ast/defer.h
+      - Define DeferStmt class
+      - Add cleanup tracking structures
+      - Add include guards
+
+  [ ] 1.7 Create src/frontend/lexer.h
+      - Define AriaLexer class declaration
+      - Add LexerState enum
+      - Include tokens.h
+      - Add include guards
+
+  [ ] 1.8 Create src/frontend/parser.h
+      - Define Parser base class
+      - Define ParserContext struct with strictMode field
+      - Add method declarations for parseBlock(), parseExpr(), etc.
+      - Add include guards
+
+  [ ] 1.9 Create src/frontend/sema/borrow_checker.h
+      - Declare check_borrow_rules() function
+      - Add namespace aria::sema
+      - Add include guards
+
+  [ ] 1.10 Create src/frontend/sema/escape_analysis.h
+      - Declare run_escape_analysis() function
+      - Add forward declarations
+      - Add namespace aria::sema
+      - Add include guards
+
+  [ ] 1.11 Create src/backend/codegen.h
+      - Declare generate_code() function
+      - Add namespace aria::backend
+      - Add include guards
+
+  [ ] 1.12 Verify all includes compile
+      - Run: cd build && cmake ..
+      - Check for any remaining include errors
+      - Fix circular dependencies if any
+
+--------------------------------------------------------------------------------
+
+BUG #2: INCOMPLETE LEXER IMPLEMENTATION
+Location: src/frontend/lexer.cpp:27-29
+Impact: Syntax error, file won't compile
+Status: [X] COMPLETED
+
+Step-by-step fix:
+  [X] 2.1 Open src/frontend/lexer.cpp
+
+  [X] 2.2 Locate lines 27-29 with broken pipe operator
+
+  [X] 2.3 Fix the line to:
+      while (isalnum(peek()) || peek() == '_') advance();
+
+  [X] 2.4 Verify syntax:
+      - g++ -fsyntax-only -std=c++20 src/frontend/lexer.cpp
+      - Verified: Syntax is correct, only missing header error remains
+
+  [X] 2.5 Commit fix with message: "Fix lexer syntax error in parseIdentifier"
+      - Committed as: 5c7e474
+
+--------------------------------------------------------------------------------
+
+BUG #3: CMakeLists.txt REFERENCES NON-EXISTENT FILE
+Location: CMakeLists.txt:52
+Impact: CMake configuration will fail
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 3.1 Open CMakeLists.txt
+
+  [ ] 3.2 Locate line 52: src/frontend/ast/control_flow.cpp
+
+  [ ] 3.3 Decide on approach:
+      Option A: Remove the line (file not needed yet)
+      Option B: Create empty stub file
+      Decision: [ ] A or [ ] B
+
+  [ ] 3.4 If Option A: Comment out or remove line 52
+
+  [ ] 3.5 If Option B: Create src/frontend/ast/control_flow.cpp with:
+      - Include control_flow.h
+      - Empty implementations of methods declared in header
+
+  [ ] 3.6 Verify CMake runs:
+      - cd build && cmake ..
+      - Check for errors
+
+  [ ] 3.7 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #4: MISSING VENDOR DEPENDENCY
+Location: CMakeLists.txt:29, vendor/mimalloc missing
+Impact: Build will fail immediately
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 4.1 Choose approach:
+      Option A: Use system mimalloc (simpler)
+      Option B: Add mimalloc as git submodule (reproducible)
+      Option C: Download and vendor mimalloc source
+      Decision: [ ] A, [ ] B, or [ ] C
+
+  [ ] 4.2 If Option A (System mimalloc):
+      - Modify CMakeLists.txt lines 21-29
+      - Replace add_subdirectory with find_package(mimalloc)
+      - Update target_link_libraries to use mimalloc
+
+  [ ] 4.3 If Option B (Git submodule):
+      - cd /home/randy/._____RANDY_____/REPOS/aria
+      - mkdir -p vendor
+      - git submodule add https://github.com/microsoft/mimalloc vendor/mimalloc
+      - git submodule update --init --recursive
+
+  [ ] 4.4 If Option C (Vendor source):
+      - Download mimalloc release from GitHub
+      - Extract to vendor/mimalloc
+      - Verify CMakeLists.txt path is correct
+
+  [ ] 4.5 Test build configuration:
+      - cd build && cmake ..
+      - Verify mimalloc is found
+
+  [ ] 4.6 Commit changes
+
+--------------------------------------------------------------------------------
+
+BUG #5: ESCAPE ANALYSIS NOT INTEGRATED
+Location: src/driver/main.cpp, missing call to escape analysis
+Impact: Wild pointers can escape function scope (SAFETY VIOLATION)
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 5.1 Open src/driver/main.cpp
+
+  [ ] 5.2 Locate the borrow checker call (around line 147)
+
+  [ ] 5.3 After the borrow checker, add escape analysis:
+      ```cpp
+      // 6.5 Semantic Analysis: Escape Analysis
+      // Prevents stack pointers from escaping scope
+      if (Verbose) outs() << "[Phase 3b] Escape Analysis...\n";
+      bool escapesSafe = aria::sema::run_escape_analysis(astRoot.get());
+
+      if (!escapesSafe) {
+          errs() << "Compilation Failed: Escape Analysis Violations Detected.\n";
+          return 1;
+      }
+      ```
+
+  [ ] 5.4 Update comment numbering for subsequent phases
+
+  [ ] 5.5 Add include for escape_analysis.h at top:
+      #include "../frontend/sema/escape_analysis.h"
+
+  [ ] 5.6 Verify it compiles
+
+  [ ] 5.7 Test with a simple .aria file that has escaping pointer
+
+  [ ] 5.8 Commit fix with message: "Integrate escape analysis into compilation pipeline"
+
+--------------------------------------------------------------------------------
+
+BUG #6: INCOMPLETE CODEGEN CLASS
+Location: src/backend/codegen.cpp (only first 80 lines present)
+Impact: Cannot generate any code
+Status: [ ] NOT STARTED
+NOTE: This is a MAJOR implementation task, not a simple bug fix
+
+Step-by-step fix:
+  [ ] 6.1 This requires implementing full code generation
+      - This is beyond a simple bug fix
+      - Mark as DEFERRED until basic infrastructure is complete
+      - Will be addressed in feature implementation phase
+
+  [ ] 6.2 For now, add TODO comment at end of file:
+      ```cpp
+      // TODO: Complete CodeGenContext visitor methods
+      // - visitVarDecl()
+      // - visitBinaryOp()
+      // - visitCallExpr()
+      // - visitReturnStmt()
+      // - etc.
+      ```
+
+  [ ] 6.3 Mark this bug as DEFERRED in tracking
+
+--------------------------------------------------------------------------------
+
+BUG #7: LEXER STATE MACHINE INCOMPLETE
+Location: src/frontend/lexer.cpp:41-54
+Impact: Cannot parse template literals properly
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 7.1 Open src/frontend/lexer.cpp
+
+  [ ] 7.2 Locate STATE_STRING_TEMPLATE handler
+
+  [ ] 7.3 Add string content parsing between interpolations:
+      ```cpp
+      // After the interpolation start handling, add:
+      // Consume regular string content
+      std::string content;
+      while (c != '`' && c != '&' && c != 0) {
+          if (c == '\\') {
+              advance();
+              // Handle escape sequences
+              char next = peek();
+              if (next == 'n') content += '\n';
+              else if (next == 't') content += '\t';
+              else if (next == '\\') content += '\\';
+              else if (next == '`') content += '`';
+              else content += next;
+              advance();
+          } else {
+              content += c;
+              advance();
+          }
+          c = peek();
+      }
+      if (!content.empty()) {
+          return {TOKEN_STRING_CONTENT, content, line, col};
+      }
+      ```
+
+  [ ] 7.4 Test with simple template literal
+
+  [ ] 7.5 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #8: NURSERY ALLOCATION MISSING COLLECTION TRIGGER
+Location: src/runtime/gc/nursery.cpp:72
+Impact: Infinite recursion possible
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 8.1 Open src/runtime/gc/gc_impl.cpp
+
+  [ ] 8.2 Check if aria_gc_collect_minor() exists
+
+  [ ] 8.3 If not, add stub implementation:
+      ```cpp
+      extern "C" void aria_gc_collect_minor() {
+          // TODO: Implement minor collection
+          // For now, just reset the nursery
+          // WARNING: This is a placeholder, not production-ready
+
+          // Reset bump pointer to start
+          // Nursery* n = get_thread_local_nursery();
+          // n->bump_ptr = n->start_addr;
+          // n->fragments = nullptr;
+
+          fprintf(stderr, "WARNING: Minor GC triggered but not fully implemented\n");
+      }
+      ```
+
+  [ ] 8.4 Add forward declaration in nursery.cpp or header
+
+  [ ] 8.5 Add comment in nursery.cpp that this is incomplete
+
+  [ ] 8.6 Verify it compiles and doesn't crash
+
+  [ ] 8.7 Mark as PARTIAL FIX, needs full implementation later
+
+================================================================================
+HIGH PRIORITY BUGS (Affect Correctness)
+================================================================================
+
+BUG #9: LEXER SYMBOL SANITIZATION LOGIC ERROR
+Location: src/frontend/lexer.cpp:65-66
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 9.1 Review the @tesla sanitization logic
+
+  [ ] 9.2 Clarify intent with spec/requirements
+      - Is this blocking malicious directives?
+      - Is this a joke/easter egg?
+      - Should it block all @tesla* directives?
+
+  [ ] 9.3 Based on decision:
+      Option A: Remove sanitization (no security needed)
+      Option B: Implement proper directive whitelist
+      Decision: [ ] A or [ ] B
+
+  [ ] 9.4 If removing: Delete lines 57-74, keep basic @ operator handling
+
+  [ ] 9.5 If keeping: Implement directive whitelist/blacklist properly
+
+  [ ] 9.6 Test and commit
+
+--------------------------------------------------------------------------------
+
+BUG #10: PARSER CONTEXT STRICT MODE UNUSED
+Location: src/driver/main.cpp:122
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 10.1 In parser.h (after creating it), define ParserContext:
+      ```cpp
+      namespace aria {
+          struct ParserContext {
+              bool strictMode = true;
+              bool allowWildPointers = true;
+              bool enableExperimentalFeatures = false;
+              // Add other compilation options
+          };
+      }
+      ```
+
+  [ ] 10.2 Update Parser class to use context
+
+  [ ] 10.3 Add strict mode checks in parser methods (when implementing them)
+
+  [ ] 10.4 Document what strict mode affects
+
+  [ ] 10.5 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #11: ESCAPE ANALYSIS COMPARISON LOGIC
+Location: src/frontend/sema/escape_analysis.cpp:287-289
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 11.1 Open escape_analysis.cpp
+
+  [ ] 11.2 Locate EscapeStatus enum (around line 41-46)
+
+  [ ] 11.3 Fix ordering to match priority:
+      ```cpp
+      enum EscapeStatus {
+          NO_ESCAPE = 0,      // Lowest priority
+          ESCAPE_ARG = 1,
+          ESCAPE_GLOBAL = 2,
+          ESCAPE_RETURN = 3    // Highest priority
+      };
+      ```
+
+  [ ] 11.4 Or use explicit comparison logic:
+      ```cpp
+      bool isHigherPriority(EscapeStatus current, EscapeStatus newReason) {
+          const int priority[] = {0, 1, 3, 2}; // NO_ESCAPE, ARG, GLOBAL, RETURN
+          return priority[newReason] > priority[current];
+      }
+      ```
+
+  [ ] 11.5 Update markEscape to use proper comparison
+
+  [ ] 11.6 Add test case for escape priority
+
+  [ ] 11.7 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #12: MAIN DRIVER OUTPUT PATH LOGIC
+Location: src/driver/main.cpp:160-172
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 12.1 Open main.cpp
+
+  [ ] 12.2 Simplify output path logic to:
+      ```cpp
+      // Determine output path
+      std::string outPath;
+      if (!OutputFilename.empty()) {
+          outPath = OutputFilename;
+      } else if (EmitLLVM) {
+          outPath = "output.ll";
+      } else {
+          outPath = "a.out";
+      }
+
+      if (Verbose) outs() << "[Phase 4] Generating Code to: " << outPath << "\n";
+
+      aria::backend::generate_code(astRoot.get(), outPath);
+      ```
+
+  [ ] 12.3 Remove redundant logic
+
+  [ ] 12.4 Test with different flag combinations
+
+  [ ] 12.5 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #13: LEXER PEEK BOUNDARY CHECK
+Location: src/frontend/lexer.cpp:16-17
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 13.1 Open lexer.cpp
+
+  [ ] 13.2 Change peek() to use -1 as EOF sentinel:
+      ```cpp
+      char peek() {
+          if (pos >= source.length()) return -1;
+          return source[pos];
+      }
+      ```
+
+  [ ] 13.3 Update all comparisons to check for -1 instead of 0
+
+  [ ] 13.4 Or keep 0 but document that null bytes in source are not supported
+
+  [ ] 13.5 Add comment explaining EOF handling
+
+  [ ] 13.6 Test with file containing null bytes
+
+  [ ] 13.7 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #14: ESCAPE ANALYSIS TRANSITIVE CLOSURE
+Location: src/frontend/sema/escape_analysis.cpp:286-301
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 14.1 Open escape_analysis.cpp
+
+  [ ] 14.2 Modify markEscape() to use visited set:
+      ```cpp
+      void markEscape(EscapeNode* node, EscapeStatus reason, std::set<EscapeNode*>& visited) {
+          if (!node || visited.count(node) > 0) return;
+
+          visited.insert(node);
+
+          if (node->status >= reason) return;
+          node->status = reason;
+
+          for (EscapeNode* child : node->points_to) {
+              markEscape(child, reason, visited);
+          }
+      }
+      ```
+
+  [ ] 14.3 Update all calls to markEscape to pass visited set
+
+  [ ] 14.4 Create test case with circular references
+
+  [ ] 14.5 Verify no infinite loop
+
+  [ ] 14.6 Commit fix
+
+================================================================================
+MEDIUM PRIORITY BUGS
+================================================================================
+
+BUG #15: LEXER POSITION RESET WITHOUT ADVANCE
+Location: src/frontend/lexer.cpp:71
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 15.1 Save line/col before lookahead:
+      ```cpp
+      size_t saved_pos = pos;
+      size_t saved_line = line;
+      size_t saved_col = col;
+      std::string directive = parseIdentifier();
+      // ... check directive ...
+      pos = saved_pos;
+      line = saved_line;
+      col = saved_col;
+      ```
+
+  [ ] 15.2 Or avoid reset entirely by using peekIdentifier() instead
+
+  [ ] 15.3 Test error message accuracy
+
+  [ ] 15.4 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #16: CODEGEN SYMBOL TABLE SCOPE LEAK
+Location: src/backend/codegen.cpp:78-79
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 16.1 Add RAII scope guard class in codegen.cpp:
+      ```cpp
+      class ScopeGuard {
+          CodeGenContext& ctx;
+      public:
+          ScopeGuard(CodeGenContext& c) : ctx(c) { ctx.pushScope(); }
+          ~ScopeGuard() { ctx.popScope(); }
+          ScopeGuard(const ScopeGuard&) = delete;
+          ScopeGuard& operator=(const ScopeGuard&) = delete;
+      };
+      ```
+
+  [ ] 16.2 Use ScopeGuard instead of manual push/pop:
+      ```cpp
+      void visitBlock(Block* node) {
+          ScopeGuard guard(*this);
+          // ... block code ...
+      }
+      ```
+
+  [ ] 16.3 Test with exception-throwing scenario
+
+  [ ] 16.4 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #17: NURSERY ALLOCATION ALIGNMENT
+Location: src/runtime/gc/nursery.cpp:31
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 17.1 Add alignment macro:
+      ```cpp
+      #define ALIGN_UP(n, align) (((n) + (align) - 1) & ~((align) - 1))
+      const size_t ALLOCATION_ALIGNMENT = 8;
+      ```
+
+  [ ] 17.2 Align allocation size:
+      ```cpp
+      size_t aligned_size = ALIGN_UP(size, ALLOCATION_ALIGNMENT);
+      uint8_t* new_bump = nursery->bump_ptr + aligned_size;
+      ```
+
+  [ ] 17.3 Test with odd-sized allocations
+
+  [ ] 17.4 Verify performance improvement
+
+  [ ] 17.5 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #18: TERNARY.ARIA UNSAFE PINNING
+Location: src/stdlib/math/ternary.aria:49-51
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 18.1 Add defer statements after pinning:
+      ```aria
+      wild trit:p_res = #res;
+      wild trit:p_a   = #a;
+      wild trit:p_b   = #b;
+      defer unpin(res);
+      defer unpin(a);
+      defer unpin(b);
+      ```
+
+  [ ] 18.2 Or use RAII-style scoped pinning when available
+
+  [ ] 18.3 Document pinning semantics in comments
+
+  [ ] 18.4 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #19: ESCAPE ANALYSIS LOOP DEPTH UNUSED
+Location: src/frontend/sema/escape_analysis.cpp:81, 208-214
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 19.1 Decide: Remove or implement?
+      Option A: Remove dead code
+      Option B: Implement conservative loop analysis
+      Decision: [ ] A or [ ] B
+
+  [ ] 19.2 If Option A: Remove loop_depth member and tracking
+
+  [ ] 19.3 If Option B: Add conservative escaping for loop-captured variables
+
+  [ ] 19.4 Commit fix with explanation
+
+--------------------------------------------------------------------------------
+
+BUG #20: STRING_IMPL.CPP NOT REVIEWED
+Location: src/runtime/core/string_impl.cpp
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 20.1 Read string_impl.cpp thoroughly
+
+  [ ] 20.2 Check for:
+      - Buffer overflow in SSO boundary (15/16 byte threshold)
+      - Off-by-one errors in length calculations
+      - Null terminator handling
+      - Copy constructor safety
+      - Move semantics correctness
+
+  [ ] 20.3 Add unit tests for edge cases:
+      - String of length 15 (SSO boundary)
+      - String of length 16 (just over SSO)
+      - Empty string
+      - String with null bytes
+
+  [ ] 20.4 Run tests and fix any issues found
+
+  [ ] 20.5 Document findings in bugs.txt
+
+================================================================================
+LOW PRIORITY BUGS
+================================================================================
+
+BUG #21: LEXER PEEK_NEXT DOESN'T ADVANCE PROPERLY
+Location: src/frontend/lexer.cpp:17
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 21.1 Fix peekNext():
+      ```cpp
+      char peekNext() {
+          if (pos >= source.length() || pos + 1 >= source.length()) return -1;
+          return source[pos + 1];
+      }
+      ```
+
+  [ ] 21.2 Test with single-character input
+
+  [ ] 21.3 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #22: NURSERY FRAGMENT MEMORY LEAK
+Location: src/runtime/gc/nursery.cpp:56
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 22.1 Add fragment pool to Nursery struct:
+      ```cpp
+      FreeFragment fragment_pool[64];
+      int fragment_pool_used = 0;
+      ```
+
+  [ ] 22.2 Allocate fragments from pool instead of malloc
+
+  [ ] 22.3 Recycle fragments on collection
+
+  [ ] 22.4 Test for memory leaks with valgrind
+
+  [ ] 22.5 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #23: ESCAPE ANALYSIS VISITOR MISSING METHODS
+Location: src/frontend/sema/escape_analysis.cpp:232-234
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 23.1 Document why stubs are safe (or implement properly)
+
+  [ ] 23.2 If safe, add comments explaining
+
+  [ ] 23.3 If not safe, implement full analysis
+
+  [ ] 23.4 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #24: MAIN.CPP ERROR HANDLING INCONSISTENT
+Location: src/driver/main.cpp:134-136
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 24.1 Standardize on bool return for all semantic passes
+
+  [ ] 24.2 Or use std::expected<AST, Error> for all
+
+  [ ] 24.3 Update all error handling to match
+
+  [ ] 24.4 Document error handling strategy
+
+  [ ] 24.5 Commit fix
+
+--------------------------------------------------------------------------------
+
+BUG #25: CODEGEN BUILDER NOT POSITIONED
+Location: src/backend/codegen.cpp:74
+Status: [ ] NOT STARTED
+
+Step-by-step fix:
+  [ ] 25.1 When implementing codegen, ensure SetInsertPoint called:
+      ```cpp
+      Function* fn = ...;
+      BasicBlock* entry = BasicBlock::Create(llvmContext, "entry", fn);
+      builder->SetInsertPoint(entry);
+      ```
+
+  [ ] 25.2 Mark as reminder for codegen implementation
+
+  [ ] 25.3 Add assertion in generate_code to check builder position
+
+================================================================================
+VERIFICATION NEEDED
+================================================================================
+
+ISSUE #26: LLVM VERSION REQUIREMENT
+Status: [ ] NOT CHECKED
+
+Steps:
+  [ ] 26.1 Test with LLVM 18.1.x
+  [ ] 26.2 If works, update CMakeLists to allow 18.x
+  [ ] 26.3 Document compatible LLVM versions
+
+--------------------------------------------------------------------------------
+
+ISSUE #27: STATIC LINKING CONFLICTS
+Status: [ ] NOT CHECKED
+
+Steps:
+  [ ] 27.1 Attempt to build project
+  [ ] 27.2 Check for duplicate symbol errors
+  [ ] 27.3 If found, restructure linking in CMakeLists.txt
+  [ ] 27.4 Document resolution
+
+--------------------------------------------------------------------------------
+
+ISSUE #28: THREAD LOCAL STORAGE
+Status: [ ] NOT CHECKED
+
+Steps:
+  [ ] 28.1 Search for thread_local declaration of Nursery
+  [ ] 28.2 If missing, add: thread_local Nursery* current_nursery;
+  [ ] 28.3 Add initialization function
+  [ ] 28.4 Test with multi-threaded allocation
+
+--------------------------------------------------------------------------------
+
+ISSUE #29: MISSING NOEXCEPT SPECIFICATIONS
+Status: [ ] NOT CHECKED
+
+Steps:
+  [ ] 29.1 Add noexcept to all extern "C" functions
+  [ ] 29.2 Add noexcept to move constructors
+  [ ] 29.3 Profile performance improvement
+
+--------------------------------------------------------------------------------
+
+ISSUE #30: TEST BUILD DEPENDENCIES
+Status: [ ] NOT CHECKED
+
+Steps:
+  [ ] 30.1 Run: cd tests/build && cmake .. && make
+  [ ] 30.2 Fix any linking errors
+  [ ] 30.3 Verify all tests compile
+
+================================================================================
+PROGRESS SUMMARY
+================================================================================
+
+Critical Bugs:  [X] 1/8 complete (Bug #2 ✓)
+High Priority:  [ ] 0/6 complete
+Medium Priority: [ ] 0/6 complete
+Low Priority:   [ ] 0/5 complete
+Verification:   [ ] 0/5 complete
+
+Total: [X] 1/30 items complete (3.3%)
+
+NOTES:
+- Bug #6 (Incomplete Codegen) is DEFERRED - requires major implementation work
+- Focus on Critical bugs first to get compilation working
+- Many fixes depend on creating header files (Bug #1)
+- Start with Bug #1, then #2-5, then proceed to others
+
+NEXT STEPS:
+1. Work through Critical bugs in order
+2. Test compilation after each fix
+3. Move to High Priority bugs once project compiles
+4. Address Medium/Low priority as time permits
+5. Run verification checks when basic functionality works
