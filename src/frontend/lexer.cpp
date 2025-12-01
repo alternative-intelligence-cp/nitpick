@@ -24,9 +24,7 @@ private:
    // Helper to parse identifier for sanitization check
    std::string parseIdentifier() {
        size_t start = pos;
-       while (isalnum(peek()) |
-
-| peek() == '_') advance();
+       while (isalnum(peek()) || peek() == '_') advance();
        return source.substr(start, pos - start);
    }
 
