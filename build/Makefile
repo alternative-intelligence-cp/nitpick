@@ -641,6 +641,54 @@ src/runtime/gc/nursery.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.s
 .PHONY : src/runtime/gc/nursery.cpp.s
 
+src/runtime/io/file.o: src/runtime/io/file.cpp.o
+.PHONY : src/runtime/io/file.o
+
+# target to build an object file
+src/runtime/io/file.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.o
+.PHONY : src/runtime/io/file.cpp.o
+
+src/runtime/io/file.i: src/runtime/io/file.cpp.i
+.PHONY : src/runtime/io/file.i
+
+# target to preprocess a source file
+src/runtime/io/file.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.i
+.PHONY : src/runtime/io/file.cpp.i
+
+src/runtime/io/file.s: src/runtime/io/file.cpp.s
+.PHONY : src/runtime/io/file.s
+
+# target to generate assembly for a file
+src/runtime/io/file.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.s
+.PHONY : src/runtime/io/file.cpp.s
+
+src/runtime/io/print.o: src/runtime/io/print.cpp.o
+.PHONY : src/runtime/io/print.o
+
+# target to build an object file
+src/runtime/io/print.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.o
+.PHONY : src/runtime/io/print.cpp.o
+
+src/runtime/io/print.i: src/runtime/io/print.cpp.i
+.PHONY : src/runtime/io/print.i
+
+# target to preprocess a source file
+src/runtime/io/print.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.i
+.PHONY : src/runtime/io/print.cpp.i
+
+src/runtime/io/print.s: src/runtime/io/print.cpp.s
+.PHONY : src/runtime/io/print.s
+
+# target to generate assembly for a file
+src/runtime/io/print.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.s
+.PHONY : src/runtime/io/print.cpp.s
+
 src/runtime/io_linux.o: src/runtime/io_linux.cpp.o
 .PHONY : src/runtime/io_linux.o
 
@@ -800,6 +848,12 @@ help:
 	@echo "... src/runtime/gc/nursery.o"
 	@echo "... src/runtime/gc/nursery.i"
 	@echo "... src/runtime/gc/nursery.s"
+	@echo "... src/runtime/io/file.o"
+	@echo "... src/runtime/io/file.i"
+	@echo "... src/runtime/io/file.s"
+	@echo "... src/runtime/io/print.o"
+	@echo "... src/runtime/io/print.i"
+	@echo "... src/runtime/io/print.s"
 	@echo "... src/runtime/io_linux.o"
 	@echo "... src/runtime/io_linux.i"
 	@echo "... src/runtime/io_linux.s"
