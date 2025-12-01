@@ -55,7 +55,31 @@ public:
                stateStack.push(STATE_INTERPOLATION);
                return {TOKEN_INTERP_START, "&{", line, col};
            }
-           //... consume string content...
+
+           // Consume string content between interpolations
+           // This handles escape sequences and regular characters
+           std::string content;
+           while (c != '`' && c != '&' && c != 0) {
+               if (c == '\\') {
+                   // Escape Sequence Handling
+                   advance();
+                   char next = peek();
+                   if (next == 'n') content += '\n';
+                   else if (next == 't') content += '\t';
+                   else if (next == '\\') content += '\\';
+                   else if (next == '`') content += '`';
+                   else content += next; // Unknown escape, preserve as-is
+                   advance();
+               } else {
+                   content += c;
+                   advance();
+               }
+               c = peek();
+           }
+
+           if (!content.empty()) {
+               return {TOKEN_STRING_CONTENT, content, line, col};
+           }
        }
       
        // Symbol Sanitization: Directive Validation
