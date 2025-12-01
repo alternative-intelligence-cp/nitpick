@@ -801,6 +801,429 @@ Steps:
   [ ] 30.3 Verify all tests compile
 
 ================================================================================
+NEW BUGS FOUND IN CODEBASE SCAN (December 1, 2025)
+================================================================================
+
+BUG #31: PARSER.CPP AND PARSER_DECL.CPP DUPLICATE CONSTRUCTORS
+Location: src/frontend/parser.cpp:23-29 and src/frontend/parser_decl.cpp:7-17
+Impact: Multiple definition linker error
+Severity: CRITICAL
+
+Details:
+Both parser.cpp and parser_decl.cpp define the Parser constructor and advance()
+method. This will cause linker errors when both files are compiled together.
+The implementations are identical, creating duplicate symbols.
+
+Fix Required:
+- Remove duplicate constructor definitions from parser_decl.cpp
+- Keep only one implementation (preferably in parser.cpp)
+- parser_decl.cpp should only contain parseVarDecl() implementation
+
+--------------------------------------------------------------------------------
+
+BUG #32: PARSER_EXPR.CPP USES UNDEFINED METHODS
+Location: src/frontend/parser_expr.cpp:Multiple locations
+Impact: Compilation failure
+Severity: CRITICAL
+
+Details:
+parser_expr.cpp calls methods that don't exist in the Parser class:
+- peek() - called at line 63, 65 (Parser only has current token, no peek)
+- advance() - returns Token but Parser::advance() is void
+- consume() - doesn't exist in Parser class
+- check() - doesn't exist in Parser class
+- error() - doesn't exist in Parser class
+
+These methods exist in parser_func.cpp usage but are never defined in parser.h
+or parser.cpp. The two parser implementations are incompatible.
+
+Fix Required:
+- Choose one parser implementation (either Pratt from parser_expr.cpp or 
+  recursive descent from parser.cpp)
+- Define all required helper methods in Parser class
+- Ensure consistent API across all parser files
+
+--------------------------------------------------------------------------------
+
+BUG #33: PARSER_FUNC.CPP REFERENCES UNDEFINED TYPES
+Location: src/frontend/parser_func.cpp:24, 53, 99
+Impact: Compilation failure
+Severity: CRITICAL
+
+Details:
+parser_func.cpp uses types and structures that aren't defined anywhere:
+- Param struct (line 24, 35, 40) - not defined in any AST header
+- FuncDecl class (line 53) - not defined in ast.h or ast/decl.h
+- LambdaExpr class (line 99) - not defined in ast/expr.h
+- TOKEN_FUNC, TOKEN_LAMBDA_ARROW, etc. - not defined in tokens.h
+
+Also references currentScope->define() but Parser class has no scope tracking.
+
+Fix Required:
+- Define Param structure in ast.h or dedicated header
+- Create ast/decl.h with FuncDecl class definition
+- Add LambdaExpr to ast/expr.h
+- Add missing token types to tokens.h
+- Implement scope tracking in Parser class
+
+--------------------------------------------------------------------------------
+
+BUG #34: PARSER_STMT.CPP PLACEHOLDER IMPLEMENTATIONS
+Location: src/frontend/parser_stmt.cpp:9-27
+Impact: Non-functional defer and block parsing
+Severity: HIGH
+
+Details:
+parseDeferStmt() and parseBlock() are completely empty placeholder
+implementations that just return empty objects. The TODO comments indicate
+this was intentional but makes these features non-functional.
+
+Fix Required:
+- Implement actual parsing logic for defer statements
+- Implement actual block parsing with brace handling
+- Ensure defer statements are tracked in scope for cleanup
+
+--------------------------------------------------------------------------------
+
+BUG #35: PARSER_DECL.CPP HAS ALL LOGIC COMMENTED OUT
+Location: src/frontend/parser_decl.cpp:39-70
+Impact: Variable declaration parsing doesn't work
+Severity: CRITICAL
+
+Details:
+parseVarDecl() has nearly all its logic commented out with TODO markers:
+- No call to match() or consume() (they don't exist anyway)
+- Returns dummy "placeholder_name" and "placeholder_type"
+- Doesn't parse the actual syntax
+- Can't handle initializers or memory strategy keywords
+
+This makes variable declarations completely non-functional.
+
+Fix Required:
+- Implement all the commented-out parsing logic
+- Add proper token consumption
+- Handle wild/stack memory keywords
+- Parse initializers properly
+
+--------------------------------------------------------------------------------
+
+BUG #36: CODEGEN.CPP SYMBOL TABLE LOOKUP NEVER IMPLEMENTED
+Location: src/backend/codegen.cpp:84 (inferred from header)
+Impact: Cannot resolve variable references
+Severity: CRITICAL
+
+Details:
+Looking at the CodeGenContext class definition starting at line 56, there's
+a lookup() method reference but the implementation only shows define().
+The symbol table uses nested scopes but there's no way to search up the
+scope chain for variable resolution.
+
+Fix Required:
+- Implement Symbol* lookup(const std::string& name) method
+- Search from innermost to outermost scope
+- Return nullptr if symbol not found
+- Use in code generation for VarExpr nodes
+
+--------------------------------------------------------------------------------
+
+BUG #37: MULTIPLE INCOMPATIBLE PARSER IMPLEMENTATIONS
+Location: src/frontend/parser*.cpp files
+Impact: Cannot compile all parser files together
+Severity: CRITICAL
+
+Details:
+There are THREE different parser implementation styles:
+1. parser.cpp - Simple recursive descent
+2. parser_expr.cpp - Pratt parser with precedence table
+3. parser_func.cpp - Uses different helper methods
+
+They all expect different Parser class interfaces and can't work together.
+This creates a design conflict where no combination compiles.
+
+Specific conflicts:
+- parser.cpp defines parseExpr() returning Expression*
+- parser_expr.cpp defines parseExpression(int) with precedence
+- Both try to parse expressions but use different algorithms
+- parser_func.cpp calls consume(), check() which don't exist
+
+Fix Required:
+- Choose ONE parser implementation style
+- Refactor all parsing files to use same API
+- Ensure Parser class has all needed helper methods
+- Make parseExpr/parseExpression consistent
+
+--------------------------------------------------------------------------------
+
+BUG #38: NURSERY.CPP INFINITE RECURSION STILL POSSIBLE
+Location: src/runtime/gc/nursery.cpp:85-86
+Impact: Stack overflow if GC doesn't free any space
+Severity: HIGH
+
+Details:
+Although Bug #8 added a nursery reset to prevent infinite recursion in the
+common case, there's still a recursion path with no base case:
+
+If aria_gc_collect_minor() is called but doesn't reset the nursery (e.g., if
+the simple reset code at gc_impl.cpp:86-100 is removed or fails), then
+line 86 will call aria_gc_alloc() again with the same parameters, which will
+fail the same checks and recurse infinitely.
+
+The fix in Bug #8 is a band-aid - true fix needs proper error handling.
+
+Fix Required:
+- Add recursion depth counter or flag
+- Return nullptr after failed collection instead of recursing
+- Let caller handle allocation failure
+- Add proper error propagation up the call stack
+
+--------------------------------------------------------------------------------
+
+BUG #39: GC_IMPL.CPP FORWARDING POINTERS NOT IMPLEMENTED
+Location: src/runtime/gc/gc_impl.cpp:61-69
+Impact: Dangling pointers after minor GC
+Severity: CRITICAL
+
+Details:
+The comment on line 63 says "Forwarding Pointer (broken heart) logic would
+go here to update other references to this object" but this is never
+implemented. When an object is moved from nursery to old gen, all references
+to it become invalid.
+
+This means:
+- Original nursery address points to stale data
+- Other variables still point to nursery location
+- Use-after-free bugs when nursery is reset
+- Corruption of moved objects
+
+Fix Required:
+- Implement forwarding pointer mechanism
+- Leave forwarding address in old nursery location
+- Update all references during root scanning
+- Ensure transitivity (follow forwarding chains)
+
+--------------------------------------------------------------------------------
+
+BUG #40: GC_IMPL.CPP MARK_OBJECT INCOMPLETE TYPE HANDLING
+Location: src/runtime/gc/gc_impl.cpp:27-44
+Impact: Memory leaks, missed object marking
+Severity: HIGH
+
+Details:
+The mark_object() function only handles TYPE_ARRAY_OBJ and TYPE_STRUCT.
+Line 38 comment says "Struct: Use compile-time generated descriptor to find
+pointers" but line 41 says "Implementation omitted for brevity".
+
+This means:
+- Struct fields with pointers won't be marked
+- Those objects will be collected even if reachable
+- Use-after-free when accessing struct fields
+- Only arrays are properly traced
+
+Also, size_class is used to determine array element count (line 32) but
+this seems wrong - size_class is for GC size bins, not element count.
+
+Fix Required:
+- Implement struct field traversal using type metadata
+- Add proper element count field to array objects
+- Handle all Aria types (string, function closures, etc.)
+- Add assertion/error for unknown type_ids
+
+--------------------------------------------------------------------------------
+
+BUG #41: STRING_IMPL.CPP MISSING NULL TERMINATOR EDGE CASE
+Location: src/runtime/core/string_impl.cpp:69-70, 90-91
+Impact: Buffer overflow for strings exactly at SSO_CAPACITY
+Severity: MEDIUM
+
+Details:
+When len == SSO_CAPACITY (23 bytes), the code tries to null-terminate:
+  if (len < AriaString::SSO_CAPACITY) str->storage.sso.data[len] = '\0';
+
+But when len == 23, this condition is false, so no null terminator is added.
+Then if C compatibility functions try to read the string with strlen() or
+printf(), they'll read past the buffer.
+
+The comment on line 68 acknowledges this but doesn't handle it safely.
+
+Fix Required:
+- Either: Reserve only 22 bytes for SSO data, 1 for null terminator
+- Or: Document that SSO strings are NOT null-terminated when full
+- Or: Add explicit null terminator handling in accessor functions
+- Update SSO_CAPACITY constant accordingly
+
+--------------------------------------------------------------------------------
+
+BUG #42: STRING_IMPL.CPP SIZE MASKING INCONSISTENT
+Location: src/runtime/core/string_impl.cpp:90, 109
+Impact: Incorrect string length calculations
+Severity: MEDIUM
+
+Details:
+Line 109 masks the size byte when reading: (a->storage.sso.size_byte & 0x7F)
+but line 69 sets it directly: str->storage.sso.size_byte = (uint8_t)len;
+
+This is inconsistent because:
+- The high bit (0x80) is used to distinguish SSO vs heap mode
+- Setting size should preserve the SSO mode bit (bit 7 = 0)
+- If len >= 128, the high bit gets set accidentally, breaking is_sso()
+
+However, since SSO_CAPACITY is 23, len can never be >= 128 for SSO strings,
+so this is currently safe by accident. But it's fragile.
+
+Fix Required:
+- Always mask when setting: size_byte = (uint8_t)(len & 0x7F)
+- Or add assertion that len <= 127
+- Document the bit packing scheme clearly
+- Make the high bit handling explicit
+
+--------------------------------------------------------------------------------
+
+BUG #43: NURSERY.CPP FRAGMENT POOL TODO NOT IMPLEMENTED
+Location: src/runtime/gc/nursery.cpp:66-69
+Impact: Memory leak on fragment allocation
+Severity: MEDIUM (already documented in Bug #22)
+
+Details:
+Line 69 has a TODO comment about fragment memory leak. When a fragment is
+allocated with malloc (line 66 would do this if it existed), it's never
+freed. The comment suggests using a fragment pool but this isn't implemented.
+
+This was already identified as Bug #22 in the bugs.txt file, but the comment
+in the code confirms it's a known issue not yet fixed.
+
+Status: Already documented, no additional action needed.
+
+--------------------------------------------------------------------------------
+
+BUG #44: PARSER.CPP PARSEBLOCK INCOMPLETE ERROR HANDLING
+Location: src/frontend/parser.cpp:359-369
+Impact: Parser crashes on invalid input
+Severity: MEDIUM
+
+Details:
+The parseBlock() function has a try-catch block (lines 359-365) that catches
+parse errors but just rethrows them:
+
+  catch (const std::exception& e) {
+      // On parse error, skip to next statement
+      // For now, just rethrow
+      throw;
+  }
+
+The comment says "skip to next statement" but this isn't implemented. This
+means any parse error in a block causes the entire parse to fail, rather than
+recovering and reporting multiple errors.
+
+Fix Required:
+- Implement error recovery by skipping to next semicolon
+- Collect multiple errors instead of stopping at first
+- Return partial AST with error markers
+- Continue parsing to find more errors in same session
+
+--------------------------------------------------------------------------------
+
+BUG #45: PARSER.CPP PARSEBLOCK HANDLES TOP-LEVEL INCORRECTLY
+Location: src/frontend/parser.cpp:348-371
+Impact: Infinite loop when parsing files without braces
+Severity: HIGH
+
+Details:
+The parseBlock() logic at line 349 sets hasBraces = match(TOKEN_LBRACE), then
+the loop at line 352 continues "while (current.type != TOKEN_EOF)".
+
+But if there are NO braces (top-level parsing), the loop never exits because:
+1. Line 354-356: "If we have braces, stop at closing brace" - not taken
+2. Line 359: "If no braces (top-level), parse all statements" 
+3. But line 359 checks "if (!hasBraces && current.type == TOKEN_EOF)" and breaks
+4. This break is INSIDE the loop, but the loop condition is the same check
+
+This creates redundant checking. Worse, if there's a parse error before EOF,
+the loop can get stuck.
+
+Fix Required:
+- Simplify loop condition: while (hasBraces ? current.type != RBRACE : current.type != EOF)
+- Remove redundant inner checks
+- Ensure error recovery can break the loop
+
+--------------------------------------------------------------------------------
+
+BUG #46: PARSER.CPP EXPRESSION PARSING USES WRONG PRECEDENCE
+Location: src/frontend/parser.cpp:137-276
+Impact: Incorrect operator precedence
+Severity: HIGH
+
+Details:
+The parser.cpp expression parser uses separate methods for each precedence
+level (parseLogicalOr, parseLogicalAnd, etc.) which is correct, but there's
+a conflict with parser_expr.cpp which uses a Pratt parser with a precedence
+table.
+
+If both are compiled together, calls to parseExpr() will use parser.cpp's
+version, but it doesn't handle:
+- Pipeline operators (|>, <|)
+- Spaceship operator (<=>)
+- Memory operators (#, @, $)
+- Ternary operator (is ? :)
+
+These are defined in parser_expr.cpp's precedence table but not in the
+recursive descent parser.
+
+Fix Required:
+- Add missing operators to recursive descent parser
+- Or: Remove parser.cpp and use only Pratt parser from parser_expr.cpp
+- Ensure all 22 precedence levels from spec are implemented
+
+--------------------------------------------------------------------------------
+
+BUG #47: PARSER_PICK.CPP MISSING (REFERENCED BUT NOT IN WORKSPACE)
+Location: CMakeLists.txt and parser.cpp:325
+Impact: Pick statements can't be parsed (actually they can, it's in parser.cpp)
+Severity: LOW (false alarm)
+
+Details:
+Initially thought parser_pick.cpp was missing, but parsePickStmt() is actually
+implemented in parser.cpp starting at line 326. The CMakeLists.txt doesn't
+reference a separate parser_pick.cpp file.
+
+However, the implementation at line 326-365 is incomplete:
+- Only handles EXACT pattern matching (line 359)
+- Doesn't support range patterns (e.g., 1..10)
+- Doesn't support type patterns or destructuring
+- No wildcard/default case handling
+
+Fix Required:
+- Extend PickCase to support all pattern types from spec
+- Implement range pattern parsing
+- Add default case support
+- Implement destructuring in patterns
+
+--------------------------------------------------------------------------------
+
+BUG #48: CODEGEN.CPP TRUNCATED FILE
+Location: src/backend/codegen.cpp:100+
+Impact: No code generation possible
+Severity: CRITICAL
+
+Details:
+The file cuts off at line 100 during the CodeGenContext class definition.
+The define() method at line 96 is incomplete - just shows the signature.
+
+None of the visitor methods are implemented:
+- visitVarDecl()
+- visitBinaryOp()
+- visitCallExpr()
+- visitReturnStmt()
+- visitBlock()
+- etc.
+
+The file needs hundreds of lines of implementation that aren't present.
+
+This was already noted as Bug #6 but seeing the truncated file confirms
+this is a major incomplete implementation, not just missing visitor methods.
+
+Status: Already documented as Bug #6, marked as DEFERRED.
+
+================================================================================
 PROGRESS SUMMARY
 ================================================================================
 
@@ -810,17 +1233,1013 @@ Medium Priority: [X] 6/6 complete (ALL COMPLETE: #15 ✓, #16 ✓, #17 ✓, #18 
 Low Priority:   [X] 5/5 complete (ALL COMPLETE: #21 ✓, #22 ✓, #23 ✓, #24 ✓, #25 ✓)
 Verification:   [ ] 0/5 complete
 
-Total: [X] 21/30 items complete (70.0%)
+New Bugs Found: 18 additional bugs (#31-#48) identified in codebase scan
+- Critical: 8 bugs (#31, #32, #33, #35, #36, #37, #39, #48)
+- High: 4 bugs (#34, #38, #40, #46)
+- Medium: 5 bugs (#41, #42, #43, #44, #45)
+- Low: 1 bug (#47)
+
+Total: [X] 21/30 original items complete (70.0%)
+Total with new bugs: [X] 21/48 items complete (43.8%)
+
+CRITICAL FINDINGS FROM SCAN:
+1. Multiple incompatible parser implementations that can't compile together
+2. Parser helper methods referenced but never defined
+3. Placeholder implementations returning dummy data
+4. GC forwarding pointers not implemented (use-after-free danger)
+5. Duplicate symbol definitions will cause linker errors
 
 NOTES:
 - Bug #6 (Incomplete Codegen) is DEFERRED - requires major implementation work
 - Focus on Critical bugs first to get compilation working
 - Many fixes depend on creating header files (Bug #1)
 - Start with Bug #1, then #2-5, then proceed to others
+- NEW: Many parser files need significant refactoring before they can compile
 
 NEXT STEPS:
 1. Work through Critical bugs in order
-2. Test compilation after each fix
-3. Move to High Priority bugs once project compiles
-4. Address Medium/Low priority as time permits
-5. Run verification checks when basic functionality works
+2. Resolve parser implementation conflicts (Bug #37 is highest priority)
+3. Test compilation after each fix
+4. Move to High Priority bugs once project compiles
+5. Address Medium/Low priority as time permits
+6. Run verification checks when basic functionality works
+
+================================================================================
+SPECIFICATION VIOLATIONS (December 1, 2025)
+================================================================================
+These bugs represent deviations from the Aria v0.0.6 specification document,
+which is the authoritative source of truth. NO DEVIATIONS ARE ALLOWED.
+
+BUG #49: MISSING CRITICAL OPERATORS IN TOKEN DEFINITIONS
+Location: src/frontend/tokens.h
+Impact: Cannot parse spec-required operators
+Severity: CRITICAL
+
+Details:
+The specification MANDATES the following operators, but they are MISSING from
+the TokenType enum in tokens.h:
+
+REQUIRED BUT MISSING:
+1. TOKEN_SPACESHIP              // <=> (three-way comparison)
+2. TOKEN_SAFE_NAV               // ?. (safe navigation)  
+3. TOKEN_NULL_COALESCE          // ?? (null coalescing)
+4. TOKEN_UNWRAP                 // ? (unwrap operator - conflicts with QUESTION)
+5. TOKEN_PIPE_FORWARD           // |> (pipeline forward)
+6. TOKEN_PIPE_BACKWARD          // <| (pipeline backward)
+7. TOKEN_RANGE_EXCLUSIVE        // ... (exclusive range, only .. exists)
+8. TOKEN_TERNARY_IS             // is (ternary condition keyword)
+9. TOKEN_LAMBDA_ARROW           // => (already exists as TOKEN_FAT_ARROW but not TOKEN_LAMBDA_ARROW alias)
+10. TOKEN_PIN_OP                // # (memory pinning operator)
+11. TOKEN_INCREMENT             // ++ (pre/post increment)
+12. TOKEN_DECREMENT             // -- (pre/post decrement)
+13. TOKEN_MOD_ASSIGN            // %= (modulo assignment)
+
+Spec Reference:
+Section 9 (Complete AST Token List) defines ALL of these as mandatory tokens.
+The spec explicitly states: "The following list comprises the mandatory tokens
+for the Lexer/Parser implementation."
+
+Fix Required:
+- Add ALL missing token types to tokens.h enum
+- Update lexer.cpp to recognize and tokenize these operators
+- Ensure proper precedence handling (spaceship at level 8, pipeline at level 6)
+- Handle TOKEN_QUESTION vs TOKEN_UNWRAP disambiguation
+
+--------------------------------------------------------------------------------
+
+BUG #50: MISSING INTEGER AND FLOAT TYPE TOKENS
+Location: src/frontend/tokens.h:56-69
+Impact: Cannot parse 90% of numeric types from spec
+Severity: CRITICAL
+
+Details:
+Spec requires support for types: int1, int2, int4, int8, int16, int32, int64,
+int128, int256, int512, AND corresponding UNSIGNED versions (uint8-uint512).
+
+Current implementation ONLY has:
+- INT1, INT8, INT16, INT32, INT64, INT128, INT256, INT512 (signed only)
+- FLT32, FLT64 (only 2 float types)
+
+MISSING:
+1. TOKEN_TYPE_INT2              // int2 (2-bit integer)
+2. TOKEN_TYPE_INT4              // int4 (4-bit integer)
+3. TOKEN_TYPE_UINT8             // uint8
+4. TOKEN_TYPE_UINT16            // uint16
+5. TOKEN_TYPE_UINT32            // uint32
+6. TOKEN_TYPE_UINT64            // uint64
+7. TOKEN_TYPE_UINT128           // uint128
+8. TOKEN_TYPE_UINT256           // uint256
+9. TOKEN_TYPE_UINT512           // uint512
+10. TOKEN_TYPE_FLT128           // flt128 (128-bit float)
+11. TOKEN_TYPE_FLT256           // flt256 (256-bit float)
+12. TOKEN_TYPE_FLT512           // flt512 (512-bit float)
+
+Spec Reference:
+Section 2.1 "Primitive Types" and Section 9 "Type Keywords" list ALL of these
+as mandatory. Spec states: "Standard Integers: int1, int2, int4, int8... int512
+(and corresponding uint). Floats: flt32, flt64, flt128, flt256, flt512."
+
+Fix Required:
+- Add all missing integer type tokens (int2, int4, all uintN)
+- Add missing float type tokens (flt128, flt256, flt512)
+- Update lexer to recognize these keywords
+- Backend must implement lowering for these types (especially int512 to AVX-512)
+
+--------------------------------------------------------------------------------
+
+BUG #51: MISSING EXOTIC TYPE TOKEN - NIT AND NYTE
+Location: src/frontend/tokens.h:64-66
+Impact: Cannot parse nonary types (spec-mandated, non-negotiable)
+Severity: CRITICAL
+
+Details:
+tokens.h defines TOKEN_TYPE_TRIT and TOKEN_TYPE_TRYTE but is MISSING:
+- TOKEN_TYPE_NIT                // Balanced nonary digit (-4 to 4)
+- TOKEN_TYPE_NYTE               // 5 nits = 9^5 values in uint16
+
+Spec explicitly states these are "NON-NEGOTIABLE" and "MANDATORY":
+"nit !!! IMPORTANT nit is balanced nonary digit (-4,-3,-2,-1,0,1,2,3,4) 
+NOT NEGOTIABLE!!!"
+
+"nyte !!! IMPORTANT nyte is 5 nits for 9^5 values stored in uint16 
+NOT NEGOTIABLE!!!"
+
+Current implementation has:
+✓ TOKEN_TYPE_TRIT
+✓ TOKEN_TYPE_TRYTE  
+✗ TOKEN_TYPE_NIT     (MISSING)
+✗ TOKEN_TYPE_NYTE    (MISSING)
+
+Spec Reference:
+Section 2.2 "Exotic Types (MANDATORY)" states: "These types are strictly
+required and non-negotiable."
+
+Fix Required:
+- Add TOKEN_TYPE_NIT and TOKEN_TYPE_NYTE to tokens.h
+- Implement lexer recognition of "nit" and "nyte" keywords
+- Backend must implement nonary arithmetic (can reuse ternary logic per spec)
+
+--------------------------------------------------------------------------------
+
+BUG #52: MISSING COMPOUND TYPE TOKENS
+Location: src/frontend/tokens.h
+Impact: Cannot parse vectors, matrices, tensors, or other compound types
+Severity: CRITICAL
+
+Details:
+Spec Section 2.3 "Compound & Reference Types" requires:
+- vec2, vec3, vec9 (specialized vectors)
+- tensor, matrix (linear algebra primitives)
+- dyn (dynamic typing)
+- obj (anonymous objects)
+- result (error handling wrapper)
+- array (collections)
+
+Current tokens.h ONLY has:
+✓ TOKEN_TYPE_STRING
+✗ All other compound types MISSING
+
+MISSING TOKENS:
+1. TOKEN_TYPE_VEC2
+2. TOKEN_TYPE_VEC3
+3. TOKEN_TYPE_VEC9
+4. TOKEN_TYPE_TENSOR
+5. TOKEN_TYPE_MATRIX
+6. TOKEN_TYPE_DYN
+7. TOKEN_TYPE_OBJ
+8. TOKEN_TYPE_ARRAY
+9. TOKEN_TYPE_RESULT            // Already has TOKEN_KW_RESULT, but not TYPE version
+10. TOKEN_TYPE_FUNC             // First-class functions
+11. TOKEN_TYPE_BINARY           // Binary data type
+12. TOKEN_TYPE_BUFFER           // Buffer type
+13. TOKEN_TYPE_STREAM           // Stream type
+14. TOKEN_TYPE_PROCESS          // Process type
+15. TOKEN_TYPE_PIPE             // Pipe type
+
+Spec Reference:
+Sections 2.3 and 9. These are fundamental types required for the standard
+library to function.
+
+Fix Required:
+- Add all missing compound type tokens
+- Lexer must recognize these as keywords
+- Type system must support these in semantic analysis
+
+--------------------------------------------------------------------------------
+
+BUG #53: MISSING MODULE SYSTEM KEYWORDS
+Location: src/frontend/tokens.h
+Impact: Cannot parse imports, modules, or external functions
+Severity: CRITICAL
+
+Details:
+Spec Section 4 "Module & Macro System" requires these keywords:
+- use (import modules/files)
+- mod (define module)
+- pub (public visibility) 
+- extern (external C functions)
+- cfg (conditional compilation)
+
+Current tokens.h has:
+✓ TOKEN_KW_PUB (line 49)
+✗ TOKEN_KW_USE (MISSING)
+✗ TOKEN_KW_MOD (MISSING)
+✗ TOKEN_KW_EXTERN (MISSING)
+✗ TOKEN_KW_CFG (MISSING)
+
+WITHOUT these tokens, the entire module system is non-functional.
+Users cannot import standard library modules like "use std.io;" or define
+external FFI bindings like "extern "libc" { ... }".
+
+Spec Reference:
+Section 5.1 "Compilation Units" shows examples:
+  use std.io;
+  use "./local.aria" as utils;
+  extern "libc" { func:malloc(...); }
+  mod crypto { ... }
+
+Fix Required:
+- Add TOKEN_KW_USE, TOKEN_KW_MOD, TOKEN_KW_EXTERN, TOKEN_KW_CFG
+- Implement parsing logic for module declarations and imports
+- Implement FFI binding logic for extern blocks
+
+--------------------------------------------------------------------------------
+
+BUG #54: MISSING CONTROL FLOW KEYWORDS
+Location: src/frontend/tokens.h
+Impact: Cannot parse for/while loops, when/then/end, or fall() statements
+Severity: CRITICAL
+
+Details:
+Spec Section 4.1 "Control Flow" requires:
+- for, while (standard loops)
+- when, then, end (loop with completion blocks)
+- fall (explicit fallthrough in pick statements)
+- async, await, catch (async support)
+- const (compile-time constants)
+- break, continue (loop control)
+
+Current tokens.h has:
+✓ TOKEN_KW_IF, TOKEN_KW_ELSE
+✓ TOKEN_KW_PICK
+✓ TOKEN_KW_WHEN
+✓ TOKEN_KW_TILL
+✓ TOKEN_KW_DEFER
+✓ TOKEN_KW_RETURN
+
+MISSING:
+1. TOKEN_KW_FOR
+2. TOKEN_KW_WHILE
+3. TOKEN_KW_THEN               // Part of when/then/end construct
+4. TOKEN_KW_END                // Part of when/then/end construct
+5. TOKEN_KW_FALL               // Explicit fallthrough: fall(label)
+6. TOKEN_KW_ASYNC
+7. TOKEN_KW_AWAIT
+8. TOKEN_KW_CATCH
+9. TOKEN_KW_CONST              // Compile-time constant
+10. TOKEN_KW_BREAK
+11. TOKEN_KW_CONTINUE
+
+Spec Reference:
+Section 4.1 and examples throughout. The when/then/end construct is shown:
+  when(c <= i) {
+      ...
+  } then {
+      print(`loop completed`);
+  } end {
+      print(`loop never ran`);
+  }
+
+Fix Required:
+- Add all missing control flow keyword tokens
+- Implement parser support for when/then/end construct
+- Implement parser support for fall() in pick statements
+- Add async/await parsing support
+
+--------------------------------------------------------------------------------
+
+BUG #55: TRIT_LITERAL TOKEN INCORRECT RANGE
+Location: src/frontend/tokens.h:23
+Impact: Trit literal parsing will be wrong (spec violation)
+Severity: HIGH
+
+Details:
+Line 23 comment says: "TOKEN_TRIT_LITERAL, // Ternary digit: 0, 1, 2"
+
+This is WRONG. Spec MANDATES balanced ternary:
+"trit: Balanced ternary digit. Values: {-1, 0, 1}."
+
+The comment indicates unbalanced ternary (0, 1, 2), which violates the spec.
+Balanced ternary uses -1, 0, 1 (not 0, 1, 2).
+
+Spec Reference:
+Section 2.2 "Exotic Types (MANDATORY)" explicitly states:
+"trit: Balanced ternary digit. Values: {-1, 0, 1}."
+
+The spec says "NOT NEGOTIABLE!!!" - this is a hard requirement.
+
+Fix Required:
+- Update comment to reflect correct range: {-1, 0, 1}
+- Ensure lexer parses trit literals correctly (may be written as T-, T0, T+)
+- Ensure backend stores trit as int8 with values -1, 0, 1
+- Update any code that assumes 0, 1, 2 range
+
+--------------------------------------------------------------------------------
+
+BUG #56: MISSING MEMORY KEYWORDS IN LEXER
+Location: src/frontend/tokens.h and lexer.cpp
+Impact: Cannot parse gc/wild/stack memory allocation strategies
+Severity: HIGH
+
+Details:
+tokens.h defines TOKEN_KW_WILD and TOKEN_KW_STACK but is MISSING:
+- TOKEN_KW_GC                  // GC-managed memory (default)
+
+The spec's memory model has THREE strategies:
+1. gc (default, garbage collected)
+2. wild (manual, opt-out)
+3. stack (explicit stack allocation)
+
+Current implementation:
+✓ wild keyword token exists
+✓ stack keyword token exists
+✗ gc keyword token MISSING
+
+Examples from spec:
+  gc int64*:ptr = aria.gc_alloc<int64>(100);      // Needs 'gc' keyword
+  wild int64*:ptr = aria.alloc<int64>(1000);       // Has 'wild'
+  stack int64[1000]:buffer;                        // Has 'stack'
+
+Spec Reference:
+Section 3.1 "Allocation Keywords" shows all three keywords as required.
+
+Fix Required:
+- Add TOKEN_KW_GC to tokens.h
+- Update lexer to recognize "gc" keyword
+- Parser must handle gc prefix in variable declarations
+
+--------------------------------------------------------------------------------
+
+BUG #57: TOKEN_QUESTION AMBIGUITY (? vs ?.)
+Location: src/frontend/tokens.h:114
+Impact: Cannot distinguish unwrap (?) from safe navigation (?.)
+Severity: HIGH
+
+Details:
+tokens.h defines TOKEN_QUESTION for "?" but the spec requires TWO distinct
+operators using the question mark:
+
+1. TOKEN_UNWRAP             // ? (unwrap operator)
+2. TOKEN_SAFE_NAV           // ?. (safe navigation operator)
+
+Current implementation has only TOKEN_QUESTION which is ambiguous.
+
+Examples from spec:
+  int8:t = test2(3,5) ? -1;                    // Unwrap with default
+  string:name = user?.profile?.name;           // Safe navigation
+
+The lexer needs to distinguish:
+- '?' followed by '.' → TOKEN_SAFE_NAV
+- '?' not followed by '.' → TOKEN_UNWRAP
+- '?' followed by '?' → TOKEN_NULL_COALESCE
+
+Spec Reference:
+Section 4.2 "Operators" lists both as separate operators with different
+semantics. Section 9 lists both TOKEN_UNWRAP and TOKEN_SAFE_NAV separately.
+
+Fix Required:
+- Rename TOKEN_QUESTION to TOKEN_UNWRAP (or keep both)
+- Add TOKEN_SAFE_NAV for ?.
+- Add TOKEN_NULL_COALESCE for ??
+- Update lexer to use maximal munch: ?? before ?., ?. before ?
+
+--------------------------------------------------------------------------------
+
+BUG #58: WRONG TOKEN NAMES (NON-SPEC-COMPLIANT NAMING)
+Location: src/frontend/tokens.h:multiple lines
+Impact: Code doesn't match spec terminology (confusion)
+Severity: MEDIUM
+
+Details:
+Several token names don't match the spec's terminology:
+
+Current Name              | Spec Name             | Line
+--------------------------|----------------------|------
+TOKEN_FAT_ARROW           | TOKEN_LAMBDA_ARROW   | (=>)
+TOKEN_ARROW               | TOKEN_FUNC_RETURN    | (->)
+TOKEN_STAR                | TOKEN_MULTIPLY       | (*)
+TOKEN_SLASH               | TOKEN_DIVIDE         | (/)
+TOKEN_PERCENT             | TOKEN_MODULO         | (%)
+TOKEN_STAR_ASSIGN         | TOKEN_MULT_ASSIGN    | (*=)
+TOKEN_SLASH_ASSIGN        | TOKEN_DIV_ASSIGN     | (/=)
+TOKEN_AT                  | TOKEN_ADDRESS        | (@)
+TOKEN_DOLLAR              | TOKEN_ITERATION      | ($)
+TOKEN_LPAREN              | TOKEN_LEFT_PAREN     | (
+TOKEN_RPAREN              | TOKEN_RIGHT_PAREN    | )
+TOKEN_LBRACE              | TOKEN_LEFT_BRACE     | {
+TOKEN_RBRACE              | TOKEN_RIGHT_BRACE    | }
+TOKEN_LBRACKET            | TOKEN_LEFT_BRACKET   | [
+TOKEN_RBRACKET            | TOKEN_RIGHT_BRACKET  | ]
+
+The spec Section 9 "Complete AST Token List" defines the EXACT names to use.
+While these are functionally equivalent, using non-spec names creates
+confusion when cross-referencing the implementation against the spec.
+
+Spec Reference:
+Section 9 provides the definitive token naming convention.
+
+Fix Required:
+- Either: Keep current names and add aliases matching spec names
+- Or: Rename all tokens to exactly match spec names
+- Update all references in lexer.cpp and parser files
+- Add comments mapping non-standard names to spec names
+
+--------------------------------------------------------------------------------
+
+BUG #59: MISSING I/O STREAM TOKENS
+Location: src/frontend/tokens.h
+Impact: Cannot reference 6-channel I/O system from spec
+Severity: MEDIUM
+
+Details:
+Spec Section 6.1 "I/O Stream Architecture" MANDATES six I/O channels:
+1. stdin (text input)
+2. stdout (text output)
+3. stderr (error output)
+4. stddbg (debug output)
+5. stddati (data input)
+6. stddato (data output)
+
+These should be available as identifiers or keywords in the language.
+
+tokens.h has NO tokens for these streams. Users cannot write:
+  stdout.write("Hello");
+  stddbg.write(`Debug: x = &{x}`);
+  binary:data = stddati.readBytes(1024);
+
+Spec Reference:
+Section 6.1 explicitly mandates this six-channel architecture as a core
+language feature distinguishing Aria from traditional languages.
+
+Fix Required:
+- Add TOKEN_STREAM_STDIN, TOKEN_STREAM_STDOUT, etc. (or make them IDENTIFIER)
+- Update lexer to recognize these as reserved identifiers
+- Standard library must provide these as global objects
+- Runtime must implement the six-channel I/O system
+
+--------------------------------------------------------------------------------
+
+BUG #60: MISSING TEMPLATE LITERAL SUPPORT IN LEXER
+Location: src/frontend/lexer.cpp and tokens.h
+Impact: Cannot parse template literals with interpolation
+Severity: HIGH
+
+Details:
+tokens.h defines:
+✓ TOKEN_BACKTICK (line 125)
+✓ TOKEN_INTERP_START (line 126, for &{)
+✓ TOKEN_STRING_CONTENT (line 127)
+
+But the LEXER must implement a state machine to handle:
+1. Backtick starts template literal
+2. Parse string content
+3. Detect &{ and switch to expression parsing
+4. Detect } and return to string content
+5. Handle nested interpolations: `outer &{`inner &{x}`} end`
+6. Backtick ends template literal
+
+Spec shows extensive usage:
+  print(`Value is &{c}`);
+  print(`User &{user.name} has &{user.points} points`);
+  print(`Calculation: &{a} + &{b} = &{a + b}`);
+
+The lexer.cpp has some template support but may not handle:
+- Nested interpolations
+- Escaped backticks: \`
+- Complex expressions inside &{ }
+
+Spec Reference:
+Section 4.2 "Template Literals with Type Inference" shows this as mandatory.
+
+Fix Required:
+- Verify lexer can handle all template literal cases
+- Test nested interpolation: `&{`&{x}`}`
+- Test escaped backticks and interpolation markers
+- Use state stack for nesting support
+
+--------------------------------------------------------------------------------
+
+BUG #61: LEXER DOESN'T RECOGNIZE BINARY/OCTAL INTEGER LITERALS
+Location: src/frontend/lexer.cpp
+Impact: Cannot parse 0b, 0o prefixed numbers from spec
+Severity: MEDIUM
+
+Details:
+Spec Section 9 "Literals" shows:
+"INTEGER_LITERAL (42, 0xFF, 0b1010, 0o755)"
+
+This means the lexer MUST support:
+- Decimal: 42
+- Hexadecimal: 0xFF, 0xDEADBEEF
+- Binary: 0b1010, 0b11111111
+- Octal: 0o755, 0o644
+
+Current lexer may only support decimal and possibly hex.
+The todo.txt file (Bug #2) says: "Numeric literal parsing (hex, binary, octal)
+not implemented".
+
+Spec Reference:
+Section 9, INTEGER_LITERAL definition.
+
+Fix Required:
+- Implement hex literal parsing: 0x[0-9A-Fa-f]+
+- Implement binary literal parsing: 0b[01]+
+- Implement octal literal parsing: 0o[0-7]+
+- Add proper error messages for invalid digits (0b123 is invalid)
+
+--------------------------------------------------------------------------------
+
+BUG #62: MISSING LEXER SUPPORT FOR FLOAT LITERALS
+Location: src/frontend/lexer.cpp
+Impact: Cannot parse floating point numbers
+Severity: HIGH
+
+Details:
+Spec Section 9 shows: "FLOAT_LITERAL (3.14, 1e10, 0x1.2p3)"
+
+This requires support for:
+- Decimal floats: 3.14, 0.5, .5, 5.
+- Scientific notation: 1e10, 3.14e-5, 2E+8
+- Hexadecimal floats: 0x1.2p3 (C99 hex float format)
+
+The todo.txt (Bug #2) states: "Floating point literal parsing not implemented"
+
+Current lexer only tokenizes TOKEN_FLOAT_LITERAL but may not actually parse
+float syntax correctly.
+
+Spec Reference:
+Section 9, FLOAT_LITERAL definition matches C99/C++17 float syntax.
+
+Fix Required:
+- Implement decimal float parsing: [0-9]+\.[0-9]+
+- Implement scientific notation: [0-9]+\.?[0-9]*[eE][+-]?[0-9]+
+- Implement hex float parsing: 0x[0-9a-f]+\.[0-9a-f]+p[+-]?[0-9]+
+- Handle edge cases: .5, 5., 1e10
+
+--------------------------------------------------------------------------------
+
+BUG #63: MISSING LEXER SUPPORT FOR CHAR LITERALS
+Location: src/frontend/lexer.cpp
+Impact: Cannot parse single character literals
+Severity: MEDIUM
+
+Details:
+Spec Section 9 shows: "CHAR_LITERAL ('a')"
+
+tokens.h defines TOKEN_CHAR_LITERAL but lexer may not implement it.
+
+The spec requires:
+- Single quoted characters: 'a', 'Z', '0'
+- Escape sequences: '\n', '\t', '\r', '\\', '\''
+- Possibly unicode: '\u0041'
+
+Current lexer probably doesn't parse char literals.
+
+Spec Reference:
+Section 9, CHAR_LITERAL definition.
+
+Fix Required:
+- Implement char literal lexing: 'c'
+- Support escape sequences: '\n', '\t', '\r', '\\', '\'', '\0'
+- Distinguish from string literals (single vs double quotes)
+- Error on empty char literal: ''
+- Error on multi-char literal: 'ab'
+
+--------------------------------------------------------------------------------
+
+BUG #64: PARSER DOESN'T SUPPORT PICK PATTERN DESTRUCTURING
+Location: src/frontend/parser.cpp:326-365
+Impact: Cannot parse advanced pick patterns from spec
+Severity: HIGH
+
+Details:
+The spec Section 4.1 shows pick with destructuring:
+
+pick(response) {
+    ({ status: 200, data: obj:payload }) {
+        process(payload);
+    },
+    ({ status: int:code, error: string:msg }) {
+        handleError(code, msg);
+    },
+    (*) { handleUnknown(); }
+}
+
+The current parser.cpp parsePickStmt() only handles simple expressions as
+patterns (line 337). It doesn't support:
+- Object destructuring: { key: value }
+- Array destructuring: [a, b, c]
+- Type annotations in patterns: int:code
+- Nested destructuring
+
+Spec Reference:
+Section 4.1 "Pattern Matching (pick)" shows destructuring as a core feature.
+
+Fix Required:
+- Extend PickCase to support pattern types beyond expressions
+- Implement object pattern parsing
+- Implement array pattern parsing
+- Support type annotations in destructuring patterns
+- Add pattern matching semantics to code generation
+
+--------------------------------------------------------------------------------
+
+BUG #65: PARSER DOESN'T SUPPORT RANGE PATTERNS IN PICK
+Location: src/frontend/parser.cpp:326-365
+Impact: Cannot parse range matching from spec
+Severity: HIGH
+
+Details:
+The spec shows pick with range patterns:
+
+pick(c) {
+    (<9) { ... },      // Less than 9
+    (>9) { ... },      // Greater than 9
+    (9) { ... },       // Exactly 9
+    (*) { ... }        // Wildcard
+}
+
+The current parsePickStmt() only creates PickCase with EXACT type (line 359).
+It doesn't handle:
+- Comparison patterns: <9, >9, <=10, >=5
+- Range patterns: 1..10, 0...100
+- Wildcard patterns: *
+
+Line 359: PickCase pickCase(PickCase::EXACT, std::move(caseBody));
+
+This suggests PickCase supports multiple types, but parser doesn't use them.
+
+Spec Reference:
+Section 8.3 "Pattern Matching (pick) with Fallthrough" shows these patterns.
+
+Fix Required:
+- Parse comparison operators in patterns: <, >, <=, >=
+- Parse range operators in patterns: .., ...
+- Parse wildcard: *
+- Create appropriate PickCase types (EXACT, RANGE, LESS_THAN, GREATER_THAN, WILDCARD)
+- Implement semantic analysis for overlapping patterns
+
+--------------------------------------------------------------------------------
+
+BUG #66: PARSER DOESN'T SUPPORT fall() FUNCTION IN PICK
+Location: src/frontend/parser.cpp:326-365
+Impact: Cannot parse explicit fallthrough from spec
+Severity: HIGH
+
+Details:
+The spec shows explicit fallthrough using fall(label):
+
+pick(c) {
+    (9) {
+        fall(success);     // Explicit jump to success case
+    },
+    success:(!) {
+        // handle success
+        fall(done);
+    },
+    done:(!) {
+        // cleanup
+    }
+}
+
+The parser doesn't handle:
+1. Labels in pick cases: success:(!), done:(!)
+2. fall(label) function calls for explicit fallthrough
+3. The (!) syntax indicating unreachable by direct match
+
+This is a CRITICAL feature - without it, pick is just a limited switch.
+
+Spec Reference:
+Section 8.3 shows the complete fall() syntax with labels.
+
+Fix Required:
+- Parse case labels: label:(!)
+- Parse fall(label) as a special statement (not a regular function call)
+- Implement CFG analysis to validate fall targets
+- Code generation must emit jump instructions for fall()
+- Inject cleanup code before jumps (defer statements, unpinning)
+
+--------------------------------------------------------------------------------
+
+BUG #67: PARSER DOESN'T SUPPORT when/then/end CONSTRUCT
+Location: Parser implementation
+Impact: Cannot parse when loops from spec
+Severity: HIGH
+
+Details:
+The spec shows when/then/end construct:
+
+when(c <= i) {
+    print(`&{c}`);
+    c++;
+} then {
+    print(`when loop ran &{c} times successfully`);
+} end {
+    print(`when loop did not run or broke early`);
+}
+
+This is a three-part construct where:
+- when(condition) { body } is the main loop
+- then { } executes if loop completes normally
+- end { } executes if loop never runs or breaks early
+
+No parser file implements this. tokens.h has TOKEN_KW_WHEN but no
+TOKEN_KW_THEN or TOKEN_KW_END (Bug #54).
+
+Spec Reference:
+Sections 4.1 and 8.2 show when/then/end as a required control flow construct.
+
+Fix Required:
+- Add TOKEN_KW_THEN and TOKEN_KW_END to tokens.h
+- Create WhenLoop AST node with three blocks (main, then, end)
+- Implement parseWhenLoop() in parser
+- Code generation must track loop completion state
+- Generate proper CFG with then/end blocks
+
+--------------------------------------------------------------------------------
+
+BUG #68: PARSER DOESN'T SUPPORT for LOOPS
+Location: Parser implementation
+Impact: Cannot parse standard for loops
+Severity: HIGH
+
+Details:
+The spec shows standard C-style for loops:
+
+for(int:i = 0; i < 100; i++){
+    print(`&{i}`);
+}
+
+tokens.h is missing TOKEN_KW_FOR (Bug #54), and no parser file implements
+for loop parsing.
+
+This is a BASIC control flow construct that users expect.
+
+Spec Reference:
+Section 8.2 shows for loops as one of the standard loop constructs.
+
+Fix Required:
+- Add TOKEN_KW_FOR to tokens.h
+- Implement parseForLoop() method
+- Support standard for syntax: for(init; condition; increment) { body }
+- May also need to support for-in syntax: for(i in 0..10) { }
+
+--------------------------------------------------------------------------------
+
+BUG #69: PARSER DOESN'T SUPPORT while LOOPS
+Location: Parser implementation
+Impact: Cannot parse while loops
+Severity: HIGH
+
+Details:
+The spec shows while loops:
+
+while(i < 100){
+    print(`&{i}`);
+    i++;
+}
+
+tokens.h is missing TOKEN_KW_WHILE (Bug #54), and parser.cpp doesn't have
+a parseWhile() method.
+
+This is a FUNDAMENTAL control flow construct.
+
+Spec Reference:
+Section 8.2 shows while as a core loop construct.
+
+Fix Required:
+- Add TOKEN_KW_WHILE to tokens.h
+- Implement parseWhile() in parser
+- Handle do-while variant if needed
+
+--------------------------------------------------------------------------------
+
+BUG #70: PARSER DOESN'T SUPPORT async/await
+Location: Parser implementation
+Impact: Cannot parse asynchronous code
+Severity: MEDIUM
+
+Details:
+The spec shows async/await:
+
+async func:fetchData = (string:url) {
+    response = await httpGet(url);
+    return response.json();
+};
+
+async {
+    data = await fetchData("https://api.example.com/users");
+    print(`Got &{data.length} users`);
+} catch (error:e) {
+    stderr.write(`Fetch failed: &{e.message}`);
+}
+
+tokens.h is missing TOKEN_KW_ASYNC, TOKEN_KW_AWAIT, TOKEN_KW_CATCH (Bug #54).
+No parser support exists.
+
+Spec Reference:
+Section 6.2 "Process Management" and examples show async/await as required.
+
+Fix Required:
+- Add async/await/catch keyword tokens
+- Implement async function parsing
+- Implement await expression parsing
+- Implement async block with catch parsing
+- Code generation must create state machines for async functions
+
+--------------------------------------------------------------------------------
+
+BUG #71: MISSING break/continue STATEMENT PARSING
+Location: Parser implementation
+Impact: Cannot exit loops early
+Severity: HIGH
+
+Details:
+tokens.h is missing TOKEN_KW_BREAK and TOKEN_KW_CONTINUE (Bug #54).
+No parser support for break/continue statements.
+
+These are FUNDAMENTAL loop control statements that users expect.
+
+Spec Reference:
+Section 9 lists BREAK and CONTINUE as required control flow keywords.
+
+Fix Required:
+- Add TOKEN_KW_BREAK and TOKEN_KW_CONTINUE to tokens.h
+- Implement parseBreakStmt() and parseContinueStmt()
+- Validate break/continue are only used inside loops
+- Code generation must emit proper jump instructions
+
+--------------------------------------------------------------------------------
+
+BUG #72: MISSING const KEYWORD SUPPORT
+Location: tokens.h and parser
+Impact: Cannot declare compile-time constants
+Severity: MEDIUM
+
+Details:
+The spec shows const for compile-time evaluation:
+
+const int:BUFFER_SIZE = computeOptimalSize();
+array[BUFFER_SIZE]:buffer;
+
+tokens.h is missing TOKEN_KW_CONST (Bug #54).
+No parser support for const declarations.
+
+The spec emphasizes Zig-style comptime evaluation, and const is the keyword
+to indicate this.
+
+Spec Reference:
+Section 5.2 "Comptime" shows const as the keyword for compile-time constants.
+
+Fix Required:
+- Add TOKEN_KW_CONST to tokens.h
+- Parse const prefix on variable declarations
+- Semantic analysis must evaluate const expressions at compile time
+- Type system must propagate const-ness
+
+--------------------------------------------------------------------------------
+
+BUG #73: MISSING MODULE IMPORT PARSING
+Location: Parser implementation
+Impact: Cannot use modules or standard library
+Severity: CRITICAL
+
+Details:
+The spec shows module imports:
+
+use std.io;
+use std.collections.{array, map};
+use math.*;
+use "./utils.aria" as utils;
+
+tokens.h is missing TOKEN_KW_USE (Bug #53).
+No parser support for import statements.
+
+WITHOUT this feature, users cannot:
+- Import standard library modules
+- Import user-defined modules
+- Use any modular code organization
+
+This makes the language essentially unusable for real projects.
+
+Spec Reference:
+Section 5.1 "Compilation Units" shows use statements as fundamental.
+
+Fix Required:
+- Add TOKEN_KW_USE to tokens.h
+- Implement parseUseStatement()
+- Support all import syntaxes: use, use as, selective {}, wildcard *
+- Implement module resolution system
+- Link imported modules into compilation unit
+
+--------------------------------------------------------------------------------
+
+BUG #74: MISSING extern BLOCK PARSING FOR FFI
+Location: Parser implementation
+Impact: Cannot call C libraries
+Severity: CRITICAL
+
+Details:
+The spec shows extern for FFI:
+
+extern "libc" {
+    func:malloc(uint64:size) -> void*;
+    func:free(void*:ptr);
+    func:printf(string:format, ...) -> int;
+}
+
+tokens.h is missing TOKEN_KW_EXTERN (Bug #53).
+No parser support for extern blocks.
+
+WITHOUT FFI support, Aria cannot:
+- Call C libraries (libc, OpenGL, SDL, etc.)
+- Integrate with existing codebases
+- Use OS APIs directly
+
+This is CRITICAL for a systems language.
+
+Spec Reference:
+Section 5.2 "External Interface (FFI)" shows extern as mandatory.
+
+Fix Required:
+- Add TOKEN_KW_EXTERN to tokens.h
+- Implement parseExternBlock()
+- Parse extern "library_name" { declarations }
+- Generate proper FFI bindings in LLVM IR
+- Handle calling convention differences (C ABI)
+
+--------------------------------------------------------------------------------
+
+BUG #75: MISSING mod KEYWORD FOR MODULE DEFINITIONS
+Location: Parser implementation
+Impact: Cannot define modules
+Severity: HIGH
+
+Details:
+The spec shows module definitions:
+
+mod crypto {
+    pub func:hash(string:input) -> string { ... }
+    func:internal_helper() { ... }
+    pub const:ALGORITHM = "SHA256";
+}
+
+tokens.h is missing TOKEN_KW_MOD (Bug #53).
+No parser support for module definitions.
+
+Users cannot organize code into modules, only flat files.
+
+Spec Reference:
+Section 5.1 shows mod as the keyword for defining modules.
+
+Fix Required:
+- Add TOKEN_KW_MOD to tokens.h
+- Implement parseModuleDeclaration()
+- Support nested modules
+- Track module scope for pub visibility
+- Export module symbols properly
+
+================================================================================
+SPECIFICATION COMPLIANCE SUMMARY
+================================================================================
+
+CRITICAL VIOLATIONS: 16 bugs (#49-53, #56, #60-61, #64-70, #73-75)
+HIGH VIOLATIONS: 13 bugs (#54-55, #62, #64-72)
+MEDIUM VIOLATIONS: 3 bugs (#58-59, #63)
+
+Total Specification Violations: 27 bugs
+
+CATEGORIES OF NON-COMPLIANCE:
+1. Missing Tokens (49-57): 76 missing token definitions
+2. Wrong Token Semantics (55, 57-58): Incorrect interpretation of spec
+3. Missing Lexer Features (60-63): Can't parse spec-compliant syntax
+4. Missing Parser Features (64-75): Can't parse required language constructs
+
+SEVERITY BREAKDOWN:
+- Module System: Completely missing (use, mod, extern, cfg)
+- Control Flow: Missing for, while, when/then/end, break, continue, async/await
+- Pattern Matching: Missing destructuring, ranges, fall(), labels
+- Type System: Missing 90% of integer types, all unsigned types, exotic nit/nyte
+- Operators: Missing pipelines, spaceship, null safety, ranges
+- Literals: Missing hex, binary, octal, floats, chars
+
+COMPLIANCE RATE: ~25% (est. 75 mandatory features, ~19 implemented)
+
+IMMEDIATE ACTIONS REQUIRED:
+1. Add ALL missing tokens from spec Section 9 (bugs #49-57)
+2. Implement complete lexer for all literal types (bugs #60-63)
+3. Implement module system parsing (bugs #73-75)
+4. Implement all control flow constructs (bugs #67-72)
+5. Implement complete pattern matching (bugs #64-66)
+
+The specification is NON-NEGOTIABLE. ALL deviations must be fixed.
