@@ -16,7 +16,14 @@ struct Nursery {
    uint8_t* end_addr;
    uint8_t* bump_ptr;       // Current allocation head
    FreeFragment* fragments; // Linked list of free regions (if fragmented)
-   
+
+   // TODO: Add fragment pool to avoid malloc/free overhead and prevent memory leaks
+   // When removing exhausted fragments (line 56), the FreeFragment nodes should be
+   // recycled to a pool rather than leaked. Proposed implementation:
+   //   FreeFragment fragment_pool[64];
+   //   int fragment_pool_used = 0;
+   // This will be needed when aria_gc_collect_minor() is fully implemented.
+
    // Config
    size_t size;
 };
@@ -50,10 +57,16 @@ extern "C" void* aria_gc_alloc(Nursery* nursery, size_t size) {
                
                // Update fragment
                curr->start += size;
-               // If fragment is exhausted, remove it
+               // If fragment is exhausted, remove it from list
                if (curr->start == curr->end) {
+                   FreeFragment* exhausted = curr;
                    if (prev) prev->next = curr->next;
                    else nursery->fragments = curr->next;
+
+                   // TODO (Memory Leak): Free or recycle 'exhausted' fragment node
+                   // Current implementation leaks the FreeFragment struct.
+                   // When fragment pool is implemented, return to pool here instead:
+                   //   fragment_pool[fragment_pool_used++] = exhausted;
                }
                
                return ptr;
