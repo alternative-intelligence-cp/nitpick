@@ -86,6 +86,8 @@ add_library(aria_runtime STATIC
  src/runtime/gc/nursery.cpp            # Fragmented Nursery Implementation
  src/runtime/io_windows.cpp            # lpReserved2 implementation
  src/runtime/io_linux.cpp              # Linux fork/dup2 implementation
+ src/runtime/io/print.cpp              # Print functions (print, println)
+ src/runtime/io/file.cpp               # File I/O (readFile, writeFile)
  src/runtime/concurrency/scheduler.cpp # Work-stealing logic
  src/runtime/concurrency/ramp.cpp      # [New] RAMP Logic
  src/stdlib/io/fast_read.cpp
