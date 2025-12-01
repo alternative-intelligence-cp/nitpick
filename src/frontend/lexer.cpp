@@ -63,17 +63,23 @@ public:
            advance();
            // Check if what follows is an identifier (directive) or just the operator
            if (isalpha(peek())) {
-               size_t reset_pos = pos;
+               // Save all position state before lookahead
+               size_t saved_pos = pos;
+               size_t saved_line = line;
+               size_t saved_col = col;
+
                std::string directive = parseIdentifier();
-               
+
                // Explicitly ban unauthorized symbols
-               if (directive.find("tesla")!= std::string::npos) 
+               if (directive.find("tesla")!= std::string::npos)
                    return {TOKEN_INVALID, "ILLEGAL_SYMBOL", line, col};
 
-               // If it's just @varname, it's valid, but we need to verify 
+               // If it's just @varname, it's valid, but we need to verify
                // in parser phase. For lexer, we just emit TOKEN_AT.
-               // We reset pos to let the parser consume the identifier next.
-               pos = reset_pos;
+               // We reset all position state to let the parser consume the identifier next.
+               pos = saved_pos;
+               line = saved_line;
+               col = saved_col;
            }
            return {TOKEN_AT, "@", line, col};
        }
