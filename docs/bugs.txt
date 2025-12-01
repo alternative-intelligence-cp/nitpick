@@ -110,29 +110,32 @@ Step-by-step fix:
 BUG #3: CMakeLists.txt REFERENCES NON-EXISTENT FILE
 Location: CMakeLists.txt:52
 Impact: CMake configuration will fail
-Status: [ ] NOT STARTED
+Status: [X] COMPLETED
 
 Step-by-step fix:
-  [ ] 3.1 Open CMakeLists.txt
+  [X] 3.1 Open CMakeLists.txt
 
-  [ ] 3.2 Locate line 52: src/frontend/ast/control_flow.cpp
+  [X] 3.2 Locate line 52: src/frontend/ast/control_flow.cpp
 
-  [ ] 3.3 Decide on approach:
+  [X] 3.3 Decide on approach:
       Option A: Remove the line (file not needed yet)
       Option B: Create empty stub file
-      Decision: [ ] A or [ ] B
+      Decision: [X] A - Commented out the line
 
-  [ ] 3.4 If Option A: Comment out or remove line 52
+  [X] 3.4 If Option A: Comment out or remove line 52
+      - Commented out with TODO note
 
   [ ] 3.5 If Option B: Create src/frontend/ast/control_flow.cpp with:
       - Include control_flow.h
       - Empty implementations of methods declared in header
+      - (Not needed - chose Option A)
 
-  [ ] 3.6 Verify CMake runs:
+  [X] 3.6 Verify CMake runs:
       - cd build && cmake ..
-      - Check for errors
+      - Verified: control_flow.cpp error is gone, CMake progresses past this point
 
-  [ ] 3.7 Commit fix
+  [X] 3.7 Commit fix
+      - Committed as: 8850493
 
 --------------------------------------------------------------------------------
 
@@ -792,13 +795,13 @@ Steps:
 PROGRESS SUMMARY
 ================================================================================
 
-Critical Bugs:  [X] 1/8 complete (Bug #2 ✓)
+Critical Bugs:  [X] 2/8 complete (Bugs #2 ✓, #3 ✓)
 High Priority:  [ ] 0/6 complete
 Medium Priority: [ ] 0/6 complete
 Low Priority:   [ ] 0/5 complete
 Verification:   [ ] 0/5 complete
 
-Total: [X] 1/30 items complete (3.3%)
+Total: [X] 2/30 items complete (6.7%)
 
 NOTES:
 - Bug #6 (Incomplete Codegen) is DEFERRED - requires major implementation work
