@@ -1,32 +1,12 @@
 // Implementation of the Fragmented Nursery Allocator
 #include <cstdint>
 #include <cstddef>
+#include <cstdlib>
 #include "gc_impl.h"
+#include "header.h"
 
-// Represents a free contiguous region in the Nursery
-struct FreeFragment {
-   uint8_t* start;
-   uint8_t* end;
-   FreeFragment* next;
-};
-
-// Thread-Local Nursery Context
-struct Nursery {
-   uint8_t* start_addr;
-   uint8_t* end_addr;
-   uint8_t* bump_ptr;       // Current allocation head
-   FreeFragment* fragments; // Linked list of free regions (if fragmented)
-
-   // TODO: Add fragment pool to avoid malloc/free overhead and prevent memory leaks
-   // When removing exhausted fragments (line 56), the FreeFragment nodes should be
-   // recycled to a pool rather than leaked. Proposed implementation:
-   //   FreeFragment fragment_pool[64];
-   //   int fragment_pool_used = 0;
-   // This will be needed when aria_gc_collect_minor() is fully implemented.
-
-   // Config
-   size_t size;
-};
+// Note: Nursery struct is defined in header.h
+// Note: Fragment struct (free region list) is defined in header.h
 
 // Global config
 const size_t NURSERY_SIZE = 4 * 1024 * 1024; // 4MB
@@ -44,7 +24,7 @@ extern "C" void* aria_gc_alloc(Nursery* nursery, size_t size) {
    size_t aligned_size = ALIGN_UP(size, ALLOCATION_ALIGNMENT);
 
    // Check if we fit in the current fragment or main buffer
-   uint8_t* new_bump = nursery->bump_ptr + aligned_size;
+   char* new_bump = nursery->bump_ptr + aligned_size;
    // Check against the end of the current active region (fragment or main)
    if (new_bump <= nursery->end_addr) {
        void* ptr = nursery->bump_ptr;
@@ -55,25 +35,26 @@ extern "C" void* aria_gc_alloc(Nursery* nursery, size_t size) {
    // 2. Slow Path: Fragment Search or Collection Trigger
    // If we are in fragmented mode (fragments list is not null), try next fragment
    if (nursery->fragments) {
-       FreeFragment* prev = nullptr;
-       FreeFragment* curr = nursery->fragments;
+       Fragment* prev = nullptr;
+       Fragment* curr = nursery->fragments;
 
        while (curr) {
-           size_t frag_size = curr->end - curr->start;
-           if (frag_size >= aligned_size) {
+           if (curr->size >= aligned_size) {
                // Found a fit!
                void* ptr = curr->start;
 
                // Update fragment (use aligned_size to maintain alignment)
                curr->start += aligned_size;
+               curr->size -= aligned_size;
+               
                // If fragment is exhausted, remove it from list
-               if (curr->start == curr->end) {
-                   FreeFragment* exhausted = curr;
+               if (curr->size == 0) {
+                   Fragment* exhausted = curr;
                    if (prev) prev->next = curr->next;
                    else nursery->fragments = curr->next;
 
                    // TODO (Memory Leak): Free or recycle 'exhausted' fragment node
-                   // Current implementation leaks the FreeFragment struct.
+                   // Current implementation leaks the Fragment struct.
                    // When fragment pool is implemented, return to pool here instead:
                    //   fragment_pool[fragment_pool_used++] = exhausted;
                }
@@ -94,4 +75,41 @@ extern "C" void* aria_gc_alloc(Nursery* nursery, size_t size) {
    aria_gc_collect_minor(nursery);
    // Retry allocation after collection
    return aria_gc_alloc(nursery, size);
+}
+
+// ==============================================================================
+// Thread-Local Nursery Management
+// ==============================================================================
+
+// Thread-local storage for each thread's nursery
+static thread_local Nursery* current_thread_nursery = nullptr;
+
+// Get the current thread's nursery (lazy initialization)
+extern "C" Nursery* get_current_thread_nursery() {
+   if (!current_thread_nursery) {
+       // Lazy initialization on first use
+       current_thread_nursery = (Nursery*)malloc(sizeof(Nursery));
+       
+       // Allocate the nursery memory region (char* to match header.h definition)
+       current_thread_nursery->start_addr = (char*)malloc(NURSERY_SIZE);
+       current_thread_nursery->end_addr = current_thread_nursery->start_addr + NURSERY_SIZE;
+       current_thread_nursery->bump_ptr = current_thread_nursery->start_addr;
+       current_thread_nursery->fragments = nullptr;
+   }
+   return current_thread_nursery;
+}
+
+// Initialize a nursery for the current thread (optional explicit init)
+extern "C" void aria_init_thread_nursery() {
+   // Force initialization by calling get function
+   get_current_thread_nursery();
+}
+
+// Cleanup nursery on thread exit (should be called by thread cleanup handler)
+extern "C" void aria_cleanup_thread_nursery() {
+   if (current_thread_nursery) {
+       free(current_thread_nursery->start_addr);
+       free(current_thread_nursery);
+       current_thread_nursery = nullptr;
+   }
 }

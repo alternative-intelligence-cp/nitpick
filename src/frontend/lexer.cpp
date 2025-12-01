@@ -46,6 +46,56 @@ Token AriaLexer::nextToken() {
        char c = peek();
        if (c == 0) return {TOKEN_EOF, "", line, col};
 
+       // Skip Whitespace
+       while (isspace(c)) {
+           advance();
+           c = peek();
+           if (c == 0) return {TOKEN_EOF, "", line, col};
+       }
+
+       // Handle Comments
+       // Line comments: // text until newline
+       // Block comments: /* text */ (can span multiple lines)
+       if (c == '/') {
+           char next = peekNext();
+           
+           // Line comment: // ...
+           if (next == '/') {
+               advance(); // Skip first /
+               advance(); // Skip second /
+               // Consume until newline or EOF
+               while (peek() != '\n' && peek() != 0) {
+                   advance();
+               }
+               // Recursively get next token (after the comment)
+               return nextToken();
+           }
+           
+           // Block comment: /* ... */
+           if (next == '*') {
+               advance(); // Skip /
+               advance(); // Skip *
+               
+               // Consume until we find */
+               while (true) {
+                   c = peek();
+                   if (c == 0) {
+                       // Unterminated block comment
+                       return {TOKEN_INVALID, "UNTERMINATED_BLOCK_COMMENT", line, col};
+                   }
+                   if (c == '*' && peekNext() == '/') {
+                       advance(); // Skip *
+                       advance(); // Skip /
+                       break;
+                   }
+                   advance();
+               }
+               // Recursively get next token (after the comment)
+               return nextToken();
+           }
+           // If it's not a comment, fall through to handle / as division operator
+       }
+
        // Recursive String Template Logic
        if (stateStack.top() == STATE_STRING_TEMPLATE) {
            if (c == '`') {
@@ -118,6 +168,81 @@ Token AriaLexer::nextToken() {
                col = saved_col;
            }
            return {TOKEN_AT, "@", line, col};
+       }
+
+       // Identifiers and Keywords
+       if (isalpha(c) || c == '_') {
+           size_t start_line = line, start_col = col;
+           std::string identifier = parseIdentifier();
+           
+           // Keyword lookup table
+           static const std::map<std::string, TokenType> keywords = {
+               // Control flow
+               {"func", TOKEN_KW_FUNC},
+               {"return", TOKEN_KW_RETURN},
+               {"if", TOKEN_KW_IF},
+               {"else", TOKEN_KW_ELSE},
+               {"pick", TOKEN_KW_PICK},
+               {"when", TOKEN_KW_WHEN},
+               {"till", TOKEN_KW_TILL},
+               {"defer", TOKEN_KW_DEFER},
+               
+               // Memory management
+               {"wild", TOKEN_KW_WILD},
+               {"stack", TOKEN_KW_STACK},
+               {"pin", TOKEN_KW_PIN},
+               {"unpin", TOKEN_KW_UNPIN},
+               
+               // Type system
+               {"Result", TOKEN_KW_RESULT},
+               {"struct", TOKEN_KW_STRUCT},
+               {"enum", TOKEN_KW_ENUM},
+               {"type", TOKEN_KW_TYPE},
+               {"mut", TOKEN_KW_MUT},
+               {"pub", TOKEN_KW_PUB},
+               
+               // Module system
+               {"import", TOKEN_KW_IMPORT},
+               {"export", TOKEN_KW_EXPORT},
+               
+               // Primitive types
+               {"void", TOKEN_TYPE_VOID},
+               {"bool", TOKEN_TYPE_BOOL},
+               {"int1", TOKEN_TYPE_INT1},
+               {"int8", TOKEN_TYPE_INT8},
+               {"int16", TOKEN_TYPE_INT16},
+               {"int32", TOKEN_TYPE_INT32},
+               {"int64", TOKEN_TYPE_INT64},
+               {"int128", TOKEN_TYPE_INT128},
+               {"int256", TOKEN_TYPE_INT256},
+               {"int512", TOKEN_TYPE_INT512},
+               {"trit", TOKEN_TYPE_TRIT},
+               {"tryte", TOKEN_TYPE_TRYTE},
+               {"byte", TOKEN_TYPE_BYTE},
+               {"flt32", TOKEN_TYPE_FLT32},
+               {"flt64", TOKEN_TYPE_FLT64},
+               {"string", TOKEN_TYPE_STRING}
+           };
+           
+           // Check if identifier is a keyword
+           auto it = keywords.find(identifier);
+           if (it != keywords.end()) {
+               return {it->second, identifier, start_line, start_col};
+           }
+           
+           // Not a keyword, return as identifier
+           return {TOKEN_IDENTIFIER, identifier, start_line, start_col};
+       }
+
+       // Numbers (basic integer literal parsing)
+       if (isdigit(c)) {
+           size_t start_line = line, start_col = col;
+           std::string number;
+           while (isdigit(peek())) {
+               number += peek();
+               advance();
+           }
+           return {TOKEN_INT_LITERAL, number, start_line, start_col};
        }
 
        //... Standard tokenization logic...
