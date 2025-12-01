@@ -186,12 +186,24 @@ Token AriaLexer::nextToken() {
                {"when", TOKEN_KW_WHEN},
                {"till", TOKEN_KW_TILL},
                {"defer", TOKEN_KW_DEFER},
+               {"for", TOKEN_KW_FOR},
+               {"while", TOKEN_KW_WHILE},
+               {"then", TOKEN_KW_THEN},
+               {"end", TOKEN_KW_END},
+               {"fall", TOKEN_KW_FALL},
+               {"break", TOKEN_KW_BREAK},
+               {"continue", TOKEN_KW_CONTINUE},
+               {"async", TOKEN_KW_ASYNC},
+               {"await", TOKEN_KW_AWAIT},
+               {"catch", TOKEN_KW_CATCH},
                
                // Memory management
                {"wild", TOKEN_KW_WILD},
                {"stack", TOKEN_KW_STACK},
+               {"gc", TOKEN_KW_GC},
                {"pin", TOKEN_KW_PIN},
                {"unpin", TOKEN_KW_UNPIN},
+               {"const", TOKEN_KW_CONST},
                
                // Type system
                {"Result", TOKEN_KW_RESULT},
@@ -204,15 +216,26 @@ Token AriaLexer::nextToken() {
                // Boolean literals
                {"true", TOKEN_KW_TRUE},
                {"false", TOKEN_KW_FALSE},
+               
+               // Ternary operator
+               {"is", TOKEN_KW_IS},
 
                // Module system
+               {"use", TOKEN_KW_USE},
+               {"mod", TOKEN_KW_MOD},
+               {"extern", TOKEN_KW_EXTERN},
+               {"cfg", TOKEN_KW_CFG},
                {"import", TOKEN_KW_IMPORT},
                {"export", TOKEN_KW_EXPORT},
                
-               // Primitive types
+               // Primitive types - Void and Bool
                {"void", TOKEN_TYPE_VOID},
                {"bool", TOKEN_TYPE_BOOL},
+               
+               // Integer types (signed)
                {"int1", TOKEN_TYPE_INT1},
+               {"int2", TOKEN_TYPE_INT2},
+               {"int4", TOKEN_TYPE_INT4},
                {"int8", TOKEN_TYPE_INT8},
                {"int16", TOKEN_TYPE_INT16},
                {"int32", TOKEN_TYPE_INT32},
@@ -220,12 +243,51 @@ Token AriaLexer::nextToken() {
                {"int128", TOKEN_TYPE_INT128},
                {"int256", TOKEN_TYPE_INT256},
                {"int512", TOKEN_TYPE_INT512},
+               
+               // Integer types (unsigned)
+               {"uint8", TOKEN_TYPE_UINT8},
+               {"uint16", TOKEN_TYPE_UINT16},
+               {"uint32", TOKEN_TYPE_UINT32},
+               {"uint64", TOKEN_TYPE_UINT64},
+               {"uint128", TOKEN_TYPE_UINT128},
+               {"uint256", TOKEN_TYPE_UINT256},
+               {"uint512", TOKEN_TYPE_UINT512},
+               
+               // Exotic types (NON-NEGOTIABLE per spec)
                {"trit", TOKEN_TYPE_TRIT},
                {"tryte", TOKEN_TYPE_TRYTE},
-               {"byte", TOKEN_TYPE_BYTE},
+               {"nit", TOKEN_TYPE_NIT},
+               {"nyte", TOKEN_TYPE_NYTE},
+               
+               // Float types
                {"flt32", TOKEN_TYPE_FLT32},
                {"flt64", TOKEN_TYPE_FLT64},
-               {"string", TOKEN_TYPE_STRING}
+               {"flt128", TOKEN_TYPE_FLT128},
+               {"flt256", TOKEN_TYPE_FLT256},
+               {"flt512", TOKEN_TYPE_FLT512},
+               
+               // Vector types
+               {"vec2", TOKEN_TYPE_VEC2},
+               {"vec3", TOKEN_TYPE_VEC3},
+               {"vec9", TOKEN_TYPE_VEC9},
+               
+               // Compound types
+               {"byte", TOKEN_TYPE_BYTE},
+               {"string", TOKEN_TYPE_STRING},
+               {"dyn", TOKEN_TYPE_DYN},
+               {"obj", TOKEN_TYPE_OBJ},
+               {"array", TOKEN_TYPE_ARRAY},
+               {"tensor", TOKEN_TYPE_TENSOR},
+               {"matrix", TOKEN_TYPE_MATRIX},
+               {"func", TOKEN_TYPE_FUNC},
+               {"result", TOKEN_TYPE_RESULT},
+               
+               // System types
+               {"binary", TOKEN_TYPE_BINARY},
+               {"buffer", TOKEN_TYPE_BUFFER},
+               {"stream", TOKEN_TYPE_STREAM},
+               {"process", TOKEN_TYPE_PROCESS},
+               {"pipe", TOKEN_TYPE_PIPE}
            };
            
            // Check if identifier is a keyword
@@ -362,6 +424,47 @@ Token AriaLexer::nextToken() {
            return {TOKEN_INT_LITERAL, number, start_line, start_col};
        }
 
+       // Character literals (single-quoted)
+       if (c == '\'') {
+           size_t start_line = line, start_col = col;
+           advance(); // Skip opening '
+           
+           if (peek() == '\'') {
+               // Empty char literal - error
+               return {TOKEN_INVALID, "EMPTY_CHAR_LITERAL", start_line, start_col};
+           }
+           
+           std::string ch;
+           if (peek() == '\\') {
+               // Escape sequence
+               advance();
+               char next = peek();
+               if (next == 'n') ch += '\n';
+               else if (next == 't') ch += '\t';
+               else if (next == 'r') ch += '\r';
+               else if (next == '\\') ch += '\\';
+               else if (next == '\'') ch += '\'';
+               else if (next == '0') ch += '\0';
+               else ch += next;
+               advance();
+           } else {
+               // Regular character
+               ch += peek();
+               advance();
+           }
+           
+           if (peek() != '\'') {
+               // Check for multi-char or unterminated
+               if (peek() == 0) {
+                   return {TOKEN_INVALID, "UNTERMINATED_CHAR_LITERAL", start_line, start_col};
+               }
+               return {TOKEN_INVALID, "MULTI_CHAR_LITERAL", start_line, start_col};
+           }
+           
+           advance(); // Skip closing '
+           return {TOKEN_CHAR_LITERAL, ch, start_line, start_col};
+       }
+
        // String literals (double-quoted strings)
        if (c == '"') {
            size_t start_line = line, start_col = col;
@@ -413,17 +516,21 @@ Token AriaLexer::nextToken() {
            return {TOKEN_SLASH, "/", op_line, op_col};
        }
 
-       // Plus and plus-assign (+, +=)
+       // Plus, plus-assign, and increment (+, +=, ++)
        if (c == '+') {
            advance();
            if (peek() == '=') {
                advance();
                return {TOKEN_PLUS_ASSIGN, "+=", op_line, op_col};
            }
+           if (peek() == '+') {
+               advance();
+               return {TOKEN_INCREMENT, "++", op_line, op_col};
+           }
            return {TOKEN_PLUS, "+", op_line, op_col};
        }
 
-       // Minus, minus-assign, and arrow (-, -=, ->)
+       // Minus, minus-assign, arrow, and decrement (-, -=, ->, --)
        if (c == '-') {
            advance();
            if (peek() == '=') {
@@ -433,6 +540,10 @@ Token AriaLexer::nextToken() {
            if (peek() == '>') {
                advance();
                return {TOKEN_ARROW, "->", op_line, op_col};
+           }
+           if (peek() == '-') {
+               advance();
+               return {TOKEN_DECREMENT, "--", op_line, op_col};
            }
            return {TOKEN_MINUS, "-", op_line, op_col};
        }
@@ -447,9 +558,13 @@ Token AriaLexer::nextToken() {
            return {TOKEN_STAR, "*", op_line, op_col};
        }
 
-       // Percent (%)
+       // Percent and mod-assign (%, %=)
        if (c == '%') {
            advance();
+           if (peek() == '=') {
+               advance();
+               return {TOKEN_MOD_ASSIGN, "%=", op_line, op_col};
+           }
            return {TOKEN_PERCENT, "%", op_line, op_col};
        }
 
@@ -464,12 +579,16 @@ Token AriaLexer::nextToken() {
            return {TOKEN_AMPERSAND, "&", op_line, op_col};
        }
 
-       // Pipe and logical-or (|, ||)
+       // Pipe, logical-or, and pipeline operators (|, ||, |>, <|)
        if (c == '|') {
            advance();
            if (peek() == '|') {
                advance();
                return {TOKEN_LOGICAL_OR, "||", op_line, op_col};
+           }
+           if (peek() == '>') {
+               advance();
+               return {TOKEN_PIPE_FORWARD, "|>", op_line, op_col};
            }
            return {TOKEN_PIPE, "|", op_line, op_col};
        }
@@ -482,20 +601,25 @@ Token AriaLexer::nextToken() {
 
        // Tilde (~)
        if (c == '~') {
-           advance();
-           return {TOKEN_TILDE, "~", op_line, op_col};
-       }
-
-       // Less-than, less-or-equal, left-shift (<, <=, <<)
+       // Less-than, less-or-equal, left-shift, spaceship, and pipeline backward (<, <=, <<, <=>, <|)
        if (c == '<') {
            advance();
            if (peek() == '=') {
                advance();
+               // Check for spaceship operator <=>
+               if (peek() == '>') {
+                   advance();
+                   return {TOKEN_SPACESHIP, "<=>", op_line, op_col};
+               }
                return {TOKEN_LE, "<=", op_line, op_col};
            }
            if (peek() == '<') {
                advance();
                return {TOKEN_LSHIFT, "<<", op_line, op_col};
+           }
+           if (peek() == '|') {
+               advance();
+               return {TOKEN_PIPE_BACKWARD, "<|", op_line, op_col};
            }
            return {TOKEN_LT, "<", op_line, op_col};
        }
@@ -509,6 +633,10 @@ Token AriaLexer::nextToken() {
            }
            if (peek() == '>') {
                advance();
+               return {TOKEN_RSHIFT, ">>", op_line, op_col};
+           }
+           return {TOKEN_GT, ">", op_line, op_col};
+       }       advance();
                return {TOKEN_RSHIFT, ">>", op_line, op_col};
            }
            return {TOKEN_GT, ">", op_line, op_col};
@@ -535,27 +663,48 @@ Token AriaLexer::nextToken() {
                advance();
                return {TOKEN_NE, "!=", op_line, op_col};
            }
-           return {TOKEN_LOGICAL_NOT, "!", op_line, op_col};
-       }
-
-       // Colon and double-colon (:, ::)
-       if (c == ':') {
-           advance();
-           if (peek() == ':') {
-               advance();
-               return {TOKEN_DOUBLE_COLON, "::", op_line, op_col};
-           }
-           return {TOKEN_COLON, ":", op_line, op_col};
-       }
-
-       // Dot and range (.., .)
+       // Dot, range inclusive, and range exclusive (., .., ...)
+       // Maximal munch: ... before ..
        if (c == '.') {
            advance();
            if (peek() == '.') {
                advance();
+               // Check for exclusive range ...
+               if (peek() == '.') {
+                   advance();
+                   return {TOKEN_RANGE_EXCLUSIVE, "...", op_line, op_col};
+               }
                return {TOKEN_RANGE, "..", op_line, op_col};
            }
            return {TOKEN_DOT, ".", op_line, op_col};
+       }
+
+       // Hash/Pin operator (#)
+       if (c == '#') {
+           advance();
+           return {TOKEN_HASH, "#", op_line, op_col};
+       }
+
+       // Dollar ($)
+       if (c == '$') {
+           advance();
+           return {TOKEN_DOLLAR, "$", op_line, op_col};
+       }
+
+       // Question, unwrap, safe nav, null coalesce (?, ?., ??)
+       // Maximal munch: ?? before ?. before ?
+       if (c == '?') {
+           advance();
+           if (peek() == '?') {
+               advance();
+               return {TOKEN_NULL_COALESCE, "??", op_line, op_col};
+           }
+           if (peek() == '.') {
+               advance();
+               return {TOKEN_SAFE_NAV, "?.", op_line, op_col};
+           }
+           return {TOKEN_UNWRAP, "?", op_line, op_col};
+       }   return {TOKEN_DOT, ".", op_line, op_col};
        }
 
        // Dollar ($)
