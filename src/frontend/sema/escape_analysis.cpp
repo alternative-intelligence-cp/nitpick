@@ -224,7 +224,11 @@ public:
         node->stmt->accept(*this);
     }
 
-    // Stubs for expressions that don't alter graph topology
+    // Visitor methods for expressions that don't create escape edges
+    // These are intentionally simple because they don't affect escape analysis:
+    // - VarExpr: Just reads a variable (edges created by assignments)
+    // - IntLiteral: Integer values don't involve pointers
+    // - UnaryOp: Most unary ops just transform values, recurse to find actual escapes
     void visit(VarExpr* node) override {}
     void visit(IntLiteral* node) override {}
     void visit(UnaryOp* node) override { node->operand->accept(*this); }
