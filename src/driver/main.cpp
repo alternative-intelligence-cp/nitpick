@@ -167,28 +167,30 @@ int main(int argc, char** argv) {
 
     // 7. Backend: Code Generation
     // Lowers AST to LLVM IR, handling exotic types (int512, trit)
-    // See src/backend/codegen.cpp 
+    // See src/backend/codegen.cpp
     if (Verbose) outs() << "[Phase 4] Generating Code...\n";
-    
-    std::string outPath = OutputFilename.empty()? "output.ll" : OutputFilename;
-    
-    // Determine output format
-    if (EmitLLVM) {
-        // Emit IR directly
-        aria::backend::generate_code(astRoot.get(), outPath);
+
+    // Determine output path with clear priority
+    std::string outPath;
+    if (!OutputFilename.empty()) {
+        // User specified output file
+        outPath = OutputFilename;
+    } else if (EmitLLVM) {
+        // Default for --emit-llvm flag
+        outPath = "output.ll";
     } else {
-        // In a full driver, this would invoke the LLVM PassManager to emit.o
-        // and then call the system linker (lld or ld). 
-        // For this implementation, we interface with the codegen module.
-        // If the user did not specify a name, default to a.out.ll
-        if (OutputFilename.empty()) outPath = "a.out.ll";
-        aria::backend::generate_code(astRoot.get(), outPath);
-        
-        if (Verbose) {
-            outs() << "Note: Object emission requires linking phase.\n"; 
-            outs() << "Generated LLVM IR at: " << outPath << "\n";
-            outs() << "Run 'clang " << outPath << " -o a.out' to link.\n";
-        }
+        // Default for object/executable output
+        outPath = "a.out";
+    }
+
+    if (Verbose) outs() << "Output file: " << outPath << "\n";
+
+    // Generate code
+    aria::backend::generate_code(astRoot.get(), outPath);
+
+    if (Verbose && !EmitLLVM) {
+        outs() << "Note: Object emission requires linking phase.\n";
+        outs() << "Run 'clang " << outPath << " -o a.out' to link.\n";
     }
 
     if (Verbose) outs() << "Build Complete.\n";
