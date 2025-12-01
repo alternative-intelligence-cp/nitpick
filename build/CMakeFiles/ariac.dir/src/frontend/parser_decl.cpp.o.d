@@ -207,6 +207,10 @@ CMakeFiles/ariac.dir/src/frontend/parser_decl.cpp.o: \
  /usr/include/c++/13/stack /usr/include/c++/13/deque \
  /usr/include/c++/13/bits/stl_deque.h /usr/include/c++/13/bits/deque.tcc \
  /usr/include/c++/13/bits/stl_stack.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/stmt.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/expr.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/../ast.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/expr.h
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/stmt.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/expr.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/control_flow.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/stmt.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/defer.h

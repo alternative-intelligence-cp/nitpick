@@ -4,6 +4,10 @@
 #include "tokens.h"
 #include "ast.h"
 #include "lexer.h"
+#include "ast/expr.h"
+#include "ast/stmt.h"
+#include "ast/control_flow.h"
+#include "ast/defer.h"
 #include <memory>
 #include <vector>
 
@@ -28,6 +32,20 @@ private:
     void advance();
     bool match(TokenType type);
     Token expect(TokenType type);
+
+    // Expression parsing (precedence climbing)
+    std::unique_ptr<Expression> parsePrimary();
+    std::unique_ptr<Expression> parseUnary();
+    std::unique_ptr<Expression> parseMultiplicative();
+    std::unique_ptr<Expression> parseAdditive();
+    std::unique_ptr<Expression> parseShift();
+    std::unique_ptr<Expression> parseRelational();
+    std::unique_ptr<Expression> parseEquality();
+    std::unique_ptr<Expression> parseBitwiseAnd();
+    std::unique_ptr<Expression> parseBitwiseXor();
+    std::unique_ptr<Expression> parseBitwiseOr();
+    std::unique_ptr<Expression> parseLogicalAnd();
+    std::unique_ptr<Expression> parseLogicalOr();
 
 public:
     Parser(AriaLexer& lex);

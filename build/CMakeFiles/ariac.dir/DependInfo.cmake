@@ -12,9 +12,7 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/randy/._____RANDY_____/REPOS/aria/src/backend/lowering_ternary.cpp" "CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o" "gcc" "CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/driver/main.cpp" "CMakeFiles/ariac.dir/src/driver/main.cpp.o" "gcc" "CMakeFiles/ariac.dir/src/driver/main.cpp.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/frontend/lexer.cpp" "CMakeFiles/ariac.dir/src/frontend/lexer.cpp.o" "gcc" "CMakeFiles/ariac.dir/src/frontend/lexer.cpp.o.d"
-  "/home/randy/._____RANDY_____/REPOS/aria/src/frontend/parser_decl.cpp" "CMakeFiles/ariac.dir/src/frontend/parser_decl.cpp.o" "gcc" "CMakeFiles/ariac.dir/src/frontend/parser_decl.cpp.o.d"
-  "/home/randy/._____RANDY_____/REPOS/aria/src/frontend/parser_pick.cpp" "CMakeFiles/ariac.dir/src/frontend/parser_pick.cpp.o" "gcc" "CMakeFiles/ariac.dir/src/frontend/parser_pick.cpp.o.d"
-  "/home/randy/._____RANDY_____/REPOS/aria/src/frontend/parser_stmt.cpp" "CMakeFiles/ariac.dir/src/frontend/parser_stmt.cpp.o" "gcc" "CMakeFiles/ariac.dir/src/frontend/parser_stmt.cpp.o.d"
+  "/home/randy/._____RANDY_____/REPOS/aria/src/frontend/parser.cpp" "CMakeFiles/ariac.dir/src/frontend/parser.cpp.o" "gcc" "CMakeFiles/ariac.dir/src/frontend/parser.cpp.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/borrow_checker.cpp" "CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o" "gcc" "CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/escape_analysis.cpp" "CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o" "gcc" "CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o.d"
   )

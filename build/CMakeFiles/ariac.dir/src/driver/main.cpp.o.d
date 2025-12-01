@@ -315,6 +315,13 @@ CMakeFiles/ariac.dir/src/driver/main.cpp.o: \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/parser.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/ast.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/lexer.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/ast/expr.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/ast/../ast.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/ast/stmt.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/ast/expr.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/ast/control_flow.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/ast/stmt.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/ast/defer.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/borrow_checker.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/escape_analysis.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/../ast.h \

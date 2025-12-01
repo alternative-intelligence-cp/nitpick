@@ -449,77 +449,29 @@ src/frontend/lexer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer.cpp.s
 .PHONY : src/frontend/lexer.cpp.s
 
-src/frontend/parser_decl.o: src/frontend/parser_decl.cpp.o
-.PHONY : src/frontend/parser_decl.o
+src/frontend/parser.o: src/frontend/parser.cpp.o
+.PHONY : src/frontend/parser.o
 
 # target to build an object file
-src/frontend/parser_decl.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_decl.cpp.o
-.PHONY : src/frontend/parser_decl.cpp.o
+src/frontend/parser.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser.cpp.o
+.PHONY : src/frontend/parser.cpp.o
 
-src/frontend/parser_decl.i: src/frontend/parser_decl.cpp.i
-.PHONY : src/frontend/parser_decl.i
-
-# target to preprocess a source file
-src/frontend/parser_decl.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_decl.cpp.i
-.PHONY : src/frontend/parser_decl.cpp.i
-
-src/frontend/parser_decl.s: src/frontend/parser_decl.cpp.s
-.PHONY : src/frontend/parser_decl.s
-
-# target to generate assembly for a file
-src/frontend/parser_decl.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_decl.cpp.s
-.PHONY : src/frontend/parser_decl.cpp.s
-
-src/frontend/parser_pick.o: src/frontend/parser_pick.cpp.o
-.PHONY : src/frontend/parser_pick.o
-
-# target to build an object file
-src/frontend/parser_pick.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_pick.cpp.o
-.PHONY : src/frontend/parser_pick.cpp.o
-
-src/frontend/parser_pick.i: src/frontend/parser_pick.cpp.i
-.PHONY : src/frontend/parser_pick.i
+src/frontend/parser.i: src/frontend/parser.cpp.i
+.PHONY : src/frontend/parser.i
 
 # target to preprocess a source file
-src/frontend/parser_pick.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_pick.cpp.i
-.PHONY : src/frontend/parser_pick.cpp.i
+src/frontend/parser.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser.cpp.i
+.PHONY : src/frontend/parser.cpp.i
 
-src/frontend/parser_pick.s: src/frontend/parser_pick.cpp.s
-.PHONY : src/frontend/parser_pick.s
-
-# target to generate assembly for a file
-src/frontend/parser_pick.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_pick.cpp.s
-.PHONY : src/frontend/parser_pick.cpp.s
-
-src/frontend/parser_stmt.o: src/frontend/parser_stmt.cpp.o
-.PHONY : src/frontend/parser_stmt.o
-
-# target to build an object file
-src/frontend/parser_stmt.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_stmt.cpp.o
-.PHONY : src/frontend/parser_stmt.cpp.o
-
-src/frontend/parser_stmt.i: src/frontend/parser_stmt.cpp.i
-.PHONY : src/frontend/parser_stmt.i
-
-# target to preprocess a source file
-src/frontend/parser_stmt.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_stmt.cpp.i
-.PHONY : src/frontend/parser_stmt.cpp.i
-
-src/frontend/parser_stmt.s: src/frontend/parser_stmt.cpp.s
-.PHONY : src/frontend/parser_stmt.s
+src/frontend/parser.s: src/frontend/parser.cpp.s
+.PHONY : src/frontend/parser.s
 
 # target to generate assembly for a file
-src/frontend/parser_stmt.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_stmt.cpp.s
-.PHONY : src/frontend/parser_stmt.cpp.s
+src/frontend/parser.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser.cpp.s
+.PHONY : src/frontend/parser.cpp.s
 
 src/frontend/sema/borrow_checker.o: src/frontend/sema/borrow_checker.cpp.o
 .PHONY : src/frontend/sema/borrow_checker.o
@@ -824,15 +776,9 @@ help:
 	@echo "... src/frontend/lexer.o"
 	@echo "... src/frontend/lexer.i"
 	@echo "... src/frontend/lexer.s"
-	@echo "... src/frontend/parser_decl.o"
-	@echo "... src/frontend/parser_decl.i"
-	@echo "... src/frontend/parser_decl.s"
-	@echo "... src/frontend/parser_pick.o"
-	@echo "... src/frontend/parser_pick.i"
-	@echo "... src/frontend/parser_pick.s"
-	@echo "... src/frontend/parser_stmt.o"
-	@echo "... src/frontend/parser_stmt.i"
-	@echo "... src/frontend/parser_stmt.s"
+	@echo "... src/frontend/parser.o"
+	@echo "... src/frontend/parser.i"
+	@echo "... src/frontend/parser.s"
 	@echo "... src/frontend/sema/borrow_checker.o"
 	@echo "... src/frontend/sema/borrow_checker.i"
 	@echo "... src/frontend/sema/borrow_checker.s"

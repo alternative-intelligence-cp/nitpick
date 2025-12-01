@@ -56,9 +56,10 @@ include_directories(src)
 add_executable(ariac
  src/driver/main.cpp               # Compiler Driver Entry Point
  src/frontend/lexer.cpp
- src/frontend/parser_decl.cpp      # Implementation of Variable Declaration Parsing
- src/frontend/parser_pick.cpp      # Pick Parser
- src/frontend/parser_stmt.cpp      # [New] Defer and Stmt Parser
+ src/frontend/parser.cpp           # Core Parser Implementation (all-in-one)
+ # src/frontend/parser_decl.cpp    # Merged into parser.cpp
+ # src/frontend/parser_pick.cpp    # Merged into parser.cpp
+ # src/frontend/parser_stmt.cpp    # Merged into parser.cpp
  src/frontend/sema/borrow_checker.cpp  # Borrow Checker Implementation
  src/frontend/sema/escape_analysis.cpp # Escape Analysis Implementation
  # src/frontend/ast/control_flow.cpp  # TODO: Create when implementing control flow AST nodes
