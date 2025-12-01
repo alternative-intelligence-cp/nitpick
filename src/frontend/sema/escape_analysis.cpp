@@ -38,11 +38,12 @@ namespace sema {
 // Escape State Definitions
 // =============================================================================
 
+// Escape status with explicit priority ordering (higher value = higher priority)
 enum EscapeStatus {
-    NO_ESCAPE,          // Variable stays strictly within scope
-    ESCAPE_ARG,         // Passed as argument (might escape downwards)
-    ESCAPE_GLOBAL,      // Stored in global/static memory
-    ESCAPE_RETURN       // Returned from function (escapes upwards)
+    NO_ESCAPE = 0,      // Variable stays strictly within scope (lowest priority)
+    ESCAPE_ARG = 1,     // Passed as argument (might escape downwards)
+    ESCAPE_GLOBAL = 2,  // Stored in global/static memory
+    ESCAPE_RETURN = 3   // Returned from function (escapes upwards - HIGHEST priority)
 };
 
 // Represents a node in the Connection Graph
@@ -284,9 +285,7 @@ public:
 
     // The Propagation Algorithm (Fix-Point Iteration)
     void markEscape(EscapeNode* node, EscapeStatus reason) {
-        if (!node |
-
-| node->status >= reason) return; // Already marked with equal/higher priority
+        if (!node || node->status >= reason) return; // Already marked with equal/higher priority
 
         node->status = reason;
 
