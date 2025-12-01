@@ -34,6 +34,7 @@
 #include "../frontend/lexer.h"
 #include "../frontend/parser.h"
 #include "../frontend/sema/borrow_checker.h"
+#include "../frontend/sema/escape_analysis.h"
 #include "../backend/codegen.h"
 
 using namespace llvm;
@@ -142,13 +143,25 @@ int main(int argc, char** argv) {
 
     // 6. Semantic Analysis: Borrow Checker
     // Enforces the "Appendage Theory" rules (pinning, wild pointers)
-    // See src/frontend/sema/borrow_checker.cpp 
+    // See src/frontend/sema/borrow_checker.cpp
     if (Verbose) outs() << "[Phase 3] Semantic Analysis (Borrow Check)...\n";
     bool safe = aria::sema::check_borrow_rules(astRoot.get());
-    
+
     if (!safe) {
         errs() << "Compilation Failed: Memory Safety Violations Detected.\n";
         // In Aria, safety violations are fatal errors, not warnings.
+        return 1;
+    }
+
+    // 6.5 Semantic Analysis: Escape Analysis
+    // Prevents stack pointers from escaping function scope (dangling references)
+    // See src/frontend/sema/escape_analysis.cpp
+    if (Verbose) outs() << "[Phase 3b] Escape Analysis...\n";
+    bool escapesSafe = aria::sema::run_escape_analysis(astRoot.get());
+
+    if (!escapesSafe) {
+        errs() << "Compilation Failed: Escape Analysis Violations Detected.\n";
+        errs() << "Wild pointers cannot escape their scope - this would create dangling references.\n";
         return 1;
     }
 
