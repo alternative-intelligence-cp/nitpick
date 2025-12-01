@@ -200,7 +200,11 @@ Token AriaLexer::nextToken() {
                {"type", TOKEN_KW_TYPE},
                {"mut", TOKEN_KW_MUT},
                {"pub", TOKEN_KW_PUB},
-               
+
+               // Boolean literals
+               {"true", TOKEN_KW_TRUE},
+               {"false", TOKEN_KW_FALSE},
+
                // Module system
                {"import", TOKEN_KW_IMPORT},
                {"export", TOKEN_KW_EXPORT},

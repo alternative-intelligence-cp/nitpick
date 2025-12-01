@@ -18,6 +18,7 @@ class VarDecl;
 class FuncDecl;
 class VarExpr;
 class IntLiteral;
+class BoolLiteral;
 class FloatLiteral;
 class StringLiteral;
 class BinaryOp;
@@ -48,6 +49,7 @@ public:
     // Expressions
     virtual void visit(VarExpr* node) = 0;
     virtual void visit(IntLiteral* node) = 0;
+    virtual void visit(BoolLiteral* node) = 0;
     virtual void visit(BinaryOp* node) = 0;
     virtual void visit(UnaryOp* node) = 0;
     virtual void visit(CallExpr* node) = 0;

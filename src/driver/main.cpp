@@ -41,6 +41,7 @@
 #include "../frontend/parser.h"
 #include "../frontend/sema/borrow_checker.h"
 #include "../frontend/sema/escape_analysis.h"
+#include "../frontend/sema/type_checker.h"
 #include "../backend/codegen.h"
 
 using namespace llvm;
@@ -175,6 +176,20 @@ int main(int argc, char** argv) {
         errs() << "Compilation Failed: Escape Analysis Violations Detected.\n";
         errs() << "Wild pointers cannot escape their scope - this would create dangling references.\n";
         errs() << "Found " << escapeResult.escaped_count << " escaped pointer(s).\n";
+        return 1;
+    }
+
+    // 6.6 Semantic Analysis: Type Checking
+    // Verifies that all operations use compatible types
+    // See src/frontend/sema/type_checker.cpp
+    if (Verbose) outs() << "[Phase 3c] Type Checking...\n";
+    aria::sema::TypeCheckResult typeResult = aria::sema::checkTypes(astRoot.get());
+
+    if (!typeResult.success) {
+        errs() << "Compilation Failed: Type Errors Detected.\n";
+        for (const auto& error : typeResult.errors) {
+            errs() << "  Error: " << error << "\n";
+        }
         return 1;
     }
 

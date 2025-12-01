@@ -197,10 +197,8 @@ public:
         return nullptr;
     }
 
-    // Enter a new scope
-    std::unique_ptr<SymbolTable> enterScope() {
-        return std::make_unique<SymbolTable>(std::make_unique<SymbolTable>(*this));
-    }
+    // Note: Scope management is handled manually in type checker
+    // Each new block creates a new SymbolTable with this as parent
 
     // Get current scope level
     int getScopeLevel() const {

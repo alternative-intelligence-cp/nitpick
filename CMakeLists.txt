@@ -62,6 +62,7 @@ add_executable(ariac
  # src/frontend/parser_stmt.cpp    # Merged into parser.cpp
  src/frontend/sema/borrow_checker.cpp  # Borrow Checker Implementation
  src/frontend/sema/escape_analysis.cpp # Escape Analysis Implementation
+ src/frontend/sema/type_checker.cpp    # Type Checking Implementation
  # src/frontend/ast/control_flow.cpp  # TODO: Create when implementing control flow AST nodes
  src/backend/codegen.cpp
  src/backend/lowering_ternary.cpp  # AVX-512 Lowering Logic
