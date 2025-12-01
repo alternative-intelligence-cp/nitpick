@@ -14,7 +14,7 @@ private:
    std::stack<LexerState> stateStack;
 
    char peek() { return pos < source.length()? source[pos] : 0; }
-   char peekNext() { return pos + 1 < source.length()? source[pos + 1] : 0; }
+   char peekNext() { return (pos < source.length() && pos + 1 < source.length())? source[pos + 1] : 0; }
    
    void advance() { 
        if (peek() == '\n') { line++; col=1; } else { col++; } 
