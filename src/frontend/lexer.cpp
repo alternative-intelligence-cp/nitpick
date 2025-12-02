@@ -457,16 +457,62 @@ Token AriaLexer::nextToken() {
            std::string ch;
            if (peek() == '\\') {
                // Escape sequence
-               advance();
+               advance(); // Skip backslash
                char next = peek();
-               if (next == 'n') ch += '\n';
-               else if (next == 't') ch += '\t';
-               else if (next == 'r') ch += '\r';
-               else if (next == '\\') ch += '\\';
-               else if (next == '\'') ch += '\'';
-               else if (next == '0') ch += '\0';
-               else ch += next;
-               advance();
+               
+               if (next == 'n') {
+                   ch += '\n';
+                   advance();
+               }
+               else if (next == 't') {
+                   ch += '\t';
+                   advance();
+               }
+               else if (next == 'r') {
+                   ch += '\r';
+                   advance();
+               }
+               else if (next == '\\') {
+                   ch += '\\';
+                   advance();
+               }
+               else if (next == '\'') {
+                   ch += '\'';
+                   advance();
+               }
+               else if (next == '0') {
+                   ch += '\0';
+                   advance();
+               }
+               else if (next == 'x') {
+                   // Hex escape: \xHH
+                   advance(); // Skip 'x'
+                   std::string hex;
+                   
+                   // Collect up to 2 hex digits
+                   if (isxdigit(peek())) {
+                       hex += peek();
+                       advance();
+                   }
+                   if (isxdigit(peek())) {
+                       hex += peek();
+                       advance();
+                   }
+                   
+                   if (hex.empty()) {
+                       return {TOKEN_INVALID, "INVALID_HEX_ESCAPE", start_line, start_col};
+                   }
+                   
+                   // Convert hex string to character
+                   int hex_value = std::stoi(hex, nullptr, 16);
+                   ch += static_cast<char>(hex_value);
+                   // Already advanced past hex digits
+               }
+               else {
+                   // Unknown escape - just include the character
+                   ch += next;
+                   advance();
+               }
            } else {
                // Regular character
                ch += peek();
@@ -578,14 +624,78 @@ Token AriaLexer::nextToken() {
            return {TOKEN_STAR, "*", op_line, op_col};
        }
 
-       // Percent and mod-assign (%, %=)
+       // Percent: either preprocessor directive or modulo operator
        if (c == '%') {
-           advance();
+           size_t start_line = line, start_col = col;
+           advance(); // consume '%'
+           
+           // Check for %=  (modulo-assign)
            if (peek() == '=') {
                advance();
-               return {TOKEN_MOD_ASSIGN, "%=", op_line, op_col};
+               return {TOKEN_MOD_ASSIGN, "%=", start_line, start_col};
            }
-           return {TOKEN_PERCENT, "%", op_line, op_col};
+           
+           // Check for preprocessor directives:
+           // - %$label (context-local)
+           // - %1, %2, ... (macro parameters)
+           // - %macro, %define, etc.
+           
+           // Context-local label: %$identifier
+           if (peek() == '$') {
+               advance(); // consume '$'
+               std::string label;
+               while (isalnum(peek()) || peek() == '_') {
+                   label += peek();
+                   advance();
+               }
+               if (label.empty()) {
+                   return {TOKEN_INVALID, "INVALID_CONTEXT_LOCAL", start_line, start_col};
+               }
+               return {TOKEN_PREPROC_LOCAL, "%$" + label, start_line, start_col};
+           }
+           
+           // Macro parameter: %1, %2, ...
+           if (isdigit(peek())) {
+               std::string param;
+               while (isdigit(peek())) {
+                   param += peek();
+                   advance();
+               }
+               return {TOKEN_PREPROC_PARAM, "%" + param, start_line, start_col};
+           }
+           
+           // Preprocessor directive: %macro, %define, etc.
+           if (isalpha(peek()) || peek() == '_') {
+               std::string directive;
+               while (isalnum(peek()) || peek() == '_') {
+                   directive += peek();
+                   advance();
+               }
+               
+               // Map directive name to token type
+               if (directive == "macro") return {TOKEN_PREPROC_MACRO, "%macro", start_line, start_col};
+               if (directive == "endmacro") return {TOKEN_PREPROC_ENDMACRO, "%endmacro", start_line, start_col};
+               if (directive == "push") return {TOKEN_PREPROC_PUSH, "%push", start_line, start_col};
+               if (directive == "pop") return {TOKEN_PREPROC_POP, "%pop", start_line, start_col};
+               if (directive == "context") return {TOKEN_PREPROC_CONTEXT, "%context", start_line, start_col};
+               if (directive == "define") return {TOKEN_PREPROC_DEFINE, "%define", start_line, start_col};
+               if (directive == "undef") return {TOKEN_PREPROC_UNDEF, "%undef", start_line, start_col};
+               if (directive == "ifdef") return {TOKEN_PREPROC_IFDEF, "%ifdef", start_line, start_col};
+               if (directive == "ifndef") return {TOKEN_PREPROC_IFNDEF, "%ifndef", start_line, start_col};
+               if (directive == "if") return {TOKEN_PREPROC_IF, "%if", start_line, start_col};
+               if (directive == "elif") return {TOKEN_PREPROC_ELIF, "%elif", start_line, start_col};
+               if (directive == "else") return {TOKEN_PREPROC_ELSE, "%else", start_line, start_col};
+               if (directive == "endif") return {TOKEN_PREPROC_ENDIF, "%endif", start_line, start_col};
+               if (directive == "include") return {TOKEN_PREPROC_INCLUDE, "%include", start_line, start_col};
+               if (directive == "rep") return {TOKEN_PREPROC_REP, "%rep", start_line, start_col};
+               if (directive == "endrep") return {TOKEN_PREPROC_ENDREP, "%endrep", start_line, start_col};
+               
+               // Unknown directive (could be a valid identifier extension in future)
+               return {TOKEN_INVALID, "UNKNOWN_DIRECTIVE_%" + directive, start_line, start_col};
+           }
+           
+           // Plain modulo operator: %
+           return {TOKEN_PERCENT, "%", start_line, start_col};
        }
 
        // Ampersand and logical-and (&, &&)

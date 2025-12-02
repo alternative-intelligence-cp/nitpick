@@ -28,6 +28,7 @@ enum class TypeKind {
     TRIT, TRYTE,  // Ternary types
     NIT, NYTE,     // Nonary types
     STRING,
+    DYN,           // Dynamic type (GC-allocated catch-all)
     POINTER,       // Wild or pinned pointer
     ARRAY,
     FUNCTION,
@@ -98,6 +99,7 @@ public:
             case TypeKind::FLT32: return "flt32";
             case TypeKind::FLT64: return "flt64";
             case TypeKind::STRING: return "string";
+            case TypeKind::DYN: return "dyn";
             case TypeKind::TRIT: return "trit";
             case TypeKind::TRYTE: return "tryte";
             case TypeKind::POINTER:
@@ -235,6 +237,10 @@ inline std::shared_ptr<Type> makeFloatType(int bits) {
 
 inline std::shared_ptr<Type> makeStringType() {
     return std::make_shared<Type>(TypeKind::STRING, "string");
+}
+
+inline std::shared_ptr<Type> makeDynType() {
+    return std::make_shared<Type>(TypeKind::DYN, "dyn");
 }
 
 inline std::shared_ptr<Type> makeErrorType() {

@@ -128,6 +128,26 @@ enum TokenType {
     TOKEN_TYPE_ARRAY,       // Array type
     TOKEN_TYPE_STRING,      // String type
     
+    // Preprocessor Directives (NASM-style - Section 5.2)
+    TOKEN_PREPROC_MACRO,        // %macro
+    TOKEN_PREPROC_ENDMACRO,     // %endmacro
+    TOKEN_PREPROC_PUSH,         // %push
+    TOKEN_PREPROC_POP,          // %pop
+    TOKEN_PREPROC_CONTEXT,      // %context
+    TOKEN_PREPROC_DEFINE,       // %define
+    TOKEN_PREPROC_UNDEF,        // %undef
+    TOKEN_PREPROC_IFDEF,        // %ifdef
+    TOKEN_PREPROC_IFNDEF,       // %ifndef
+    TOKEN_PREPROC_IF,           // %if
+    TOKEN_PREPROC_ELIF,         // %elif
+    TOKEN_PREPROC_ELSE,         // %else
+    TOKEN_PREPROC_ENDIF,        // %endif
+    TOKEN_PREPROC_INCLUDE,      // %include
+    TOKEN_PREPROC_REP,          // %rep
+    TOKEN_PREPROC_ENDREP,       // %endrep
+    TOKEN_PREPROC_PARAM,        // %1, %2, ... (macro parameter reference)
+    TOKEN_PREPROC_LOCAL,        // %$label (context-local symbol)
+    
     // Operators - Arithmetic
     TOKEN_PLUS,             // +
     TOKEN_MINUS,            // -

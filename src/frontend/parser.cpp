@@ -514,10 +514,86 @@ std::unique_ptr<Statement> Parser::parseStmt() {
     }
 
     // Variable declaration: [const|wild|stack] type:name = expr;
+    // BUT: type( is a lambda expression, not a variable declaration!
     if (current.type == TOKEN_KW_CONST || current.type == TOKEN_KW_WILD || 
-        current.type == TOKEN_KW_STACK || 
-        (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING)) {
+        current.type == TOKEN_KW_STACK) {
         return parseVarDecl();
+    }
+    
+    // Check if this is a type token - could be var decl OR lambda
+    if (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING) {
+        // Lookahead: if next token is '(', this is a lambda expression statement
+        // Save current position
+        Token saved = current;
+        advance();
+        
+        if (current.type == TOKEN_LPAREN) {
+            // This is a lambda! Backtrack and parse as expression statement
+            // Put the type token back (simple backtrack)
+            // Actually we can't backtrack easily, so just handle it differently
+            // Let's NOT advance - check the NEXT token without advancing
+            // We already advanced, so current is now the token AFTER the type
+            // We need to go back - but parser doesn't support backtracking
+            // So let's change approach: just check without consuming
+            // 
+            // Problem: we already called advance()! 
+            // Solution: Create a temp parser state or handle both cases
+            // For now, let's just parse the lambda manually here
+            
+            // We've consumed the type token and seen LPAREN
+            // current is now LPAREN
+            // saved has the type token
+            
+            // Parse as lambda expression statement
+            std::string return_type = saved.value;
+            auto params = parseParams();  // This will consume the ( and params and )
+            auto body = parseBlock();
+            
+            auto lambda = std::make_unique<LambdaExpr>(return_type, std::move(params), std::move(body));
+            
+            // Check for immediate invocation
+            if (current.type == TOKEN_LPAREN) {
+                lambda->is_immediately_invoked = true;
+                advance();  // consume (
+                
+                while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
+                    lambda->call_arguments.push_back(parseExpr());
+                    if (!match(TOKEN_COMMA)) break;
+                }
+                
+                expect(TOKEN_RPAREN);
+            }
+            
+            expect(TOKEN_SEMICOLON);
+            return std::make_unique<ExpressionStmt>(std::move(lambda));
+        } else {
+            // Not a lambda - it's a variable declaration
+            // We've advanced past the type token, current is NOT '('
+            // We need to handle this as a variable declaration
+            // But parseVarDecl expects to START at the type token
+            // So we can't call it directly
+            
+            // Check if current is ':'
+            if (current.type == TOKEN_COLON) {
+                // Variable declaration: we already consumed the type
+                advance();  // consume :
+                
+                Token name_tok = expect(TOKEN_IDENTIFIER);
+                
+                std::unique_ptr<Expression> init = nullptr;
+                if (match(TOKEN_ASSIGN)) {
+                    init = parseExpr();
+                }
+                
+                expect(TOKEN_SEMICOLON);
+                
+                return std::make_unique<VarDecl>(saved.value, name_tok.value, std::move(init));
+            } else {
+                std::stringstream ss;
+                ss << "Expected ':' or '(' after type token at line " << current.line;
+                throw std::runtime_error(ss.str());
+            }
+        }
     }
 
     // Defer statement

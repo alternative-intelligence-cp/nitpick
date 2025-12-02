@@ -1,24 +1,32 @@
 ; ModuleID = 'aria_module'
 source_filename = "aria_module"
 
-@0 = private unnamed_addr constant [27 x i8] c"Testing math operations...\00", align 1
-@1 = private unnamed_addr constant [26 x i8] c"Math operations complete!\00", align 1
+@0 = private unnamed_addr constant [24 x i8] c"Creating GC variable...\00", align 1
+@1 = private unnamed_addr constant [40 x i8] c"GC variable with lambda result created!\00", align 1
 
 declare void @puts(ptr)
 
 declare void @print(ptr)
 
-define void @main() {
+define internal void @__aria_module_init() {
 entry:
   call void @puts(ptr @0)
-  %calltmp = call i8 @add(i64 10, i64 5)
-  %calltmp1 = call i8 @sub(i64 10, i64 5)
-  %calltmp2 = call i8 @mul(i64 10, i64 5)
+  %0 = call ptr @get_current_thread_nursery()
+  %1 = call ptr @aria_gc_alloc(ptr %0, i64 1)
+  %result = alloca ptr, align 8
+  store ptr %1, ptr %result, align 8
+  %lambda_result = call i8 @lambda_0(i64 10, i64 20)
+  %2 = load ptr, ptr %result, align 8
+  store i8 %lambda_result, ptr %2, align 1
   call void @puts(ptr @1)
   ret void
 }
 
-define i8 @add(i8 %a, i8 %b) {
+declare ptr @get_current_thread_nursery()
+
+declare ptr @aria_gc_alloc(ptr, i64)
+
+define internal i8 @lambda_0(i8 %a, i8 %b) {
 entry:
   %a1 = alloca i8, align 1
   store i8 %a, ptr %a1, align 1
@@ -30,26 +38,8 @@ entry:
   ret i8 %addtmp
 }
 
-define i8 @sub(i8 %a, i8 %b) {
+define i64 @main() {
 entry:
-  %a1 = alloca i8, align 1
-  store i8 %a, ptr %a1, align 1
-  %b2 = alloca i8, align 1
-  store i8 %b, ptr %b2, align 1
-  %0 = load i8, ptr %a1, align 1
-  %1 = load i8, ptr %b2, align 1
-  %subtmp = sub i8 %0, %1
-  ret i8 %subtmp
-}
-
-define i8 @mul(i8 %a, i8 %b) {
-entry:
-  %a1 = alloca i8, align 1
-  store i8 %a, ptr %a1, align 1
-  %b2 = alloca i8, align 1
-  store i8 %b, ptr %b2, align 1
-  %0 = load i8, ptr %a1, align 1
-  %1 = load i8, ptr %b2, align 1
-  %multmp = mul i8 %0, %1
-  ret i8 %multmp
+  call void @__aria_module_init()
+  ret i64 0
 }

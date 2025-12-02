@@ -144,6 +144,9 @@ public:
         
         if (ariaType == "void") return Type::getVoidTy(llvmContext);
         
+        // Dynamic type (GC-allocated catch-all)
+        if (ariaType == "dyn") return PointerType::getUnqual(llvmContext);
+        
         // Pointers (opaque in LLVM 18)
         // We return ptr for strings, arrays, objects
         return PointerType::getUnqual(llvmContext);
@@ -262,6 +265,9 @@ public:
             node->name,
             ctx.module.get()
         );
+        
+        // Register function in symbol table so it can be found later
+        ctx.define(node->name, func, false);  // false = not a reference/pointer
         
         // 3. Set parameter names
         unsigned idx = 0;
@@ -966,12 +972,23 @@ public:
             ctx.builder->SetInsertPoint(entry);
             
             // 6. Create allocas for parameters
+            // Save and create new scope for lambda parameters
+            std::vector<std::pair<std::string, CodeGenContext::Symbol*>> savedSymbols;
+            
             idx = 0;
             for (auto& arg : func->args()) {
                 Type* argType = arg.getType();
                 AllocaInst* alloca = ctx.builder->CreateAlloca(argType, nullptr, arg.getName());
                 ctx.builder->CreateStore(&arg, alloca);
-                ctx.define(std::string(arg.getName()), alloca, true);
+                
+                // Save any existing symbol with this name
+                std::string argName = std::string(arg.getName());
+                auto* existingSym = ctx.lookup(argName);
+                if (existingSym) {
+                    savedSymbols.push_back({argName, existingSym});
+                }
+                
+                ctx.define(argName, alloca, true);
             }
             
             // 7. Generate lambda body
@@ -988,18 +1005,27 @@ public:
                 }
             }
             
-            // 9. Restore previous function context
+            // 9. Restore previous symbols
+            for (auto& pair : savedSymbols) {
+                ctx.define(pair.first, pair.second->val, pair.second->is_ref);
+            }
+            
+            // 10. Restore previous function context
             ctx.currentFunction = prevFunc;
             if (prevBlock) {
                 ctx.builder->SetInsertPoint(prevBlock);
             }
             
-            // 10. If immediately invoked, call the lambda
+            // 11. If immediately invoked, call the lambda
             if (lambda->is_immediately_invoked) {
                 // Evaluate arguments
                 std::vector<Value*> args;
                 for (auto& arg : lambda->call_arguments) {
-                    args.push_back(visitExpr(arg.get()));
+                    Value* argVal = visitExpr(arg.get());
+                    if (!argVal) {
+                        throw std::runtime_error("Failed to evaluate lambda argument");
+                    }
+                    args.push_back(argVal);
                 }
                 
                 // Call the lambda and return its result
@@ -1102,22 +1128,65 @@ void generate_code(aria::frontend::Block* root, const std::string& filename) {
     // Create alias for Aria 'print' function
     Function::Create(printType, Function::ExternalLinkage, "print", ctx.module.get());
 
-    // Create 'main' function wrapper
-    FunctionType* ft = FunctionType::get(Type::getVoidTy(ctx.llvmContext), false);
-    Function* mainFunc = Function::Create(ft, Function::ExternalLinkage, "main", ctx.module.get());
-    BasicBlock* entry = BasicBlock::Create(ctx.llvmContext, "entry", mainFunc);
+    // JavaScript-style module execution:
+    // Module-level code runs in a global initializer function
+    // This allows lambdas, variable initializers, and statements at module scope
+    FunctionType* moduleInitType = FunctionType::get(Type::getVoidTy(ctx.llvmContext), false);
+    Function* moduleInit = Function::Create(
+        moduleInitType, 
+        Function::InternalLinkage, 
+        "__aria_module_init", 
+        ctx.module.get()
+    );
+    BasicBlock* moduleEntry = BasicBlock::Create(ctx.llvmContext, "entry", moduleInit);
+    
+    // Set insertion point for module-level code
+    ctx.builder->SetInsertPoint(moduleEntry);
+    ctx.currentFunction = moduleInit;
 
-    // IMPORTANT: Always call SetInsertPoint before using the builder!
-    // Without this, CreateAlloca and other builder calls will fail.
-    ctx.builder->SetInsertPoint(entry);
-    ctx.currentFunction = mainFunc;
-
-    // Generate IR
+    // Generate IR for module-level code (functions, variables, statements)
     root->accept(visitor);
     
     ctx.builder->CreateRetVoid();
+    
+    // Verify module init function
+    verifyFunction(*moduleInit);
 
-    // Verify
+    // Now create the actual main() that calls module init and user's main (if exists)
+    // First check if user defined a main function
+    Function* userMainFunc = ctx.module->getFunction("main");
+    
+    if (userMainFunc) {
+        // User defined main() - rename it to __user_main and create wrapper
+        userMainFunc->setName("__user_main");
+    }
+    
+    // Create the C main() entry point
+    FunctionType* mainType = FunctionType::get(Type::getInt64Ty(ctx.llvmContext), false);
+    Function* mainFunc = Function::Create(mainType, Function::ExternalLinkage, "main", ctx.module.get());
+    BasicBlock* mainEntry = BasicBlock::Create(ctx.llvmContext, "entry", mainFunc);
+    
+    ctx.builder->SetInsertPoint(mainEntry);
+    
+    // Call module initializer
+    ctx.builder->CreateCall(moduleInit);
+    
+    if (userMainFunc) {
+        // Call user's main and return its result
+        Value* result = ctx.builder->CreateCall(userMainFunc);
+        // Convert to int64 for C main convention
+        if (result->getType()->isIntegerTy()) {
+            Value* extended = ctx.builder->CreateSExt(result, Type::getInt64Ty(ctx.llvmContext));
+            ctx.builder->CreateRet(extended);
+        } else {
+            ctx.builder->CreateRet(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));
+        }
+    } else {
+        // No user main - just return 0
+        ctx.builder->CreateRet(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));
+    }
+    
+    // Verify main function
     verifyFunction(*mainFunc);
     
     // Emit to File (LLVM IR)

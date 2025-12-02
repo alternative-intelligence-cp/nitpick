@@ -30,6 +30,7 @@ std::shared_ptr<Type> parseType(const std::string& type_str) {
     if (type_str == "flt32") return makeFloatType(32);
     if (type_str == "flt64") return makeFloatType(64);
     if (type_str == "string") return makeStringType();
+    if (type_str == "dyn") return makeDynType();
 
     // Default to int64 for unknown types (for now)
     return makeIntType(64);
@@ -219,15 +220,40 @@ void TypeChecker::visit(frontend::CallExpr* node) {
     current_expr_type = makeIntType(64);
 }
 
+// Visit LambdaExpr
+void TypeChecker::visit(frontend::LambdaExpr* node) {
+    // Lambda expressions evaluate to their return type
+    current_expr_type = parseType(node->return_type);
+    
+    if (!current_expr_type) {
+        addError("Unknown return type '" + node->return_type + "' in lambda expression");
+        current_expr_type = makeErrorType();
+        return;
+    }
+    
+    // TODO: Type check lambda body in a new scope
+    // TODO: If immediately invoked, check argument types match parameters
+}
+
 // Visit VarDecl
 void TypeChecker::visit(frontend::VarDecl* node) {
     // Parse the declared type
     auto declared_type = parseType(node->type);
+    
+    if (!declared_type) {
+        addError("Unknown type '" + node->type + "' in variable declaration for '" + node->name + "'");
+        return;
+    }
 
     // If there's an initializer, check its type
     if (node->initializer) {
         node->initializer->accept(*this);
         auto init_type = current_expr_type;
+        
+        if (!init_type) {
+            addError("Could not determine type of initializer for '" + node->name + "'");
+            return;
+        }
 
         if (!checkTypeCompatibility(*declared_type, *init_type)) {
             addError("Type mismatch in variable declaration for '" + node->name +
