@@ -208,6 +208,40 @@ public:
     }
 };
 
+// Object Literal Expression (for Result and anonymous objects)
+// Example: { err: NULL, val: 42 }
+class ObjectLiteral : public Expression {
+public:
+    struct Field {
+        std::string name;
+        std::unique_ptr<Expression> value;
+    };
+    
+    std::vector<Field> fields;
+
+    ObjectLiteral() = default;
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
+// Member Access Expression
+// Example: obj.field, result.err, result.val
+class MemberAccess : public Expression {
+public:
+    std::unique_ptr<Expression> object;
+    std::string member_name;
+    bool is_safe;  // true for ?. operator
+
+    MemberAccess(std::unique_ptr<Expression> obj, const std::string& member, bool safe = false)
+        : object(std::move(obj)), member_name(member), is_safe(safe) {}
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
 // Array Literal Expression
 // Example: [1, 2, 3, 4, 5]
 class ArrayLiteral : public Expression {
@@ -215,6 +249,31 @@ public:
     std::vector<std::unique_ptr<Expression>> elements;
 
     ArrayLiteral() = default;
+
+    void accept(AstVisitor& visitor) override {
+        // visitor.visit(this);
+    }
+};
+
+// Forward declaration for lambda
+struct FuncParam;
+class Block;
+
+// Lambda Expression (Anonymous Function)
+// Example: int8(int8:a, int8:b) { return { err: NULL, val: a + b }; }
+// Example with immediate execution: int8(int8:a){...}(10)
+class LambdaExpr : public Expression {
+public:
+    std::string return_type;
+    std::vector<FuncParam> parameters;
+    std::unique_ptr<Block> body;
+    
+    // Optional immediate call arguments
+    bool is_immediately_invoked = false;
+    std::vector<std::unique_ptr<Expression>> call_arguments;
+
+    LambdaExpr(const std::string& ret_type, std::vector<FuncParam> params, std::unique_ptr<Block> b)
+        : return_type(ret_type), parameters(std::move(params)), body(std::move(b)) {}
 
     void accept(AstVisitor& visitor) override {
         // visitor.visit(this);

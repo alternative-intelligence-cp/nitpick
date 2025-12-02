@@ -144,6 +144,34 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
             consume(TOKEN_RIGHT_PAREN, "Expected ')' after expression");
             return expr;
         }
+        
+        // --- Object Literal (for Result type) ---
+        // Example: { err: NULL, val: 42 }
+        case TOKEN_LEFT_BRACE: {
+            auto obj = std::make_unique<ObjectLiteral>();
+            
+            // Parse field: value pairs
+            if (!check(TOKEN_RIGHT_BRACE)) {
+                do {
+                    // Parse field name
+                    Token fieldName = consume(TOKEN_IDENTIFIER, "Expected field name in object literal");
+                    consume(TOKEN_COLON, "Expected ':' after field name");
+                    
+                    // Parse field value
+                    auto value = parseExpression();
+                    
+                    // Add field to object
+                    ObjectLiteral::Field field;
+                    field.name = fieldName.lexeme;
+                    field.value = std::move(value);
+                    obj->fields.push_back(std::move(field));
+                    
+                } while (match(TOKEN_COMMA));
+            }
+            
+            consume(TOKEN_RIGHT_BRACE, "Expected '}' after object literal");
+            return obj;
+        }
 
         // --- Unary Operators ---
         // Includes Memory operators: # (Pin), @ (Addr), $ (SafeRef) 

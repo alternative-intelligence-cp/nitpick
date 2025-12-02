@@ -37,7 +37,7 @@ public:
         : iterator_name(iter), iterable(std::move(itbl)), body(std::move(b)) {}
 
     void accept(AstVisitor& visitor) override {
-        // visitor.visit(this);
+        visitor.visit(this);
     }
 };
 
@@ -52,7 +52,7 @@ public:
         : condition(std::move(cond)), body(std::move(b)) {}
 
     void accept(AstVisitor& visitor) override {
-        // visitor.visit(this);
+        visitor.visit(this);
     }
 };
 
@@ -65,7 +65,7 @@ public:
     BreakStmt(const std::string& lbl = "") : label(lbl) {}
 
     void accept(AstVisitor& visitor) override {
-        // visitor.visit(this);
+        visitor.visit(this);
     }
 };
 
@@ -78,7 +78,7 @@ public:
     ContinueStmt(const std::string& lbl = "") : label(lbl) {}
 
     void accept(AstVisitor& visitor) override {
-        // visitor.visit(this);
+        visitor.visit(this);
     }
 };
 

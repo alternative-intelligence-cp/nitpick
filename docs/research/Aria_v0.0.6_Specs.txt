@@ -135,6 +135,8 @@ Math.round(), createLogger(), computeOptimalSize()
 
 8. Reference Code Examples
 This section provides concrete examples of valid Aria syntax to guide the implementation of the parser and runtime.
+
+//NO SHORTCUTS ALLOWED!!! EVERYTHING IS EXPLICIT IN ARIA LANG TO AVOID AMBIGUITY, IF PEOPLE ARE TOO LAZY TO TYPE A FEW EXTRA CHARACTERS THEY CAN USE A DIFFERENT LANGUAGE !!! NO SKIPPING BRACKETS, BRACES, or SEMICOLONS, COMPILER SHOULD FAIL IF THIS IS ATTEMPTED!! SYNTAX MUST BE FOLLOWED NO MATTER WHAT!!!!
 8.1 Variable Declarations
 int8:i = 9;
 string:str = "whats up";
@@ -209,8 +211,13 @@ pick(c) {
 8.4 Functions and Closures
 int8:closureTest = 2;
 
+
 // Function definition
-func:test = (int8:a, int8:b) {
+/All functions return Result object. NO BYPASSING THIS!!! NO REGULAR VALUE RETURNS ALLOWED!!!!
+func:funcName = returnType(varType:varName,varType:varName2){
+   //MUST RETURN A RESULT OBJECT
+};
+func:test = int8(int8:a, int8:b) {
    return {
        err: NULL,
        val: a * b * closureTest; // Captures 'closureTest'
@@ -218,13 +225,22 @@ func:test = (int8:a, int8:b) {
 };
 
 // Function taking a function as argument
-func:test2 = (func:tt, int:a, int:b) {
+func:test2 = int8(func:tt, int:a, int:b){
    return tt(a, b);
 };
 
 result:r = test(3, 4);
 // Use 'is' ternary operator to check result
 int8:t = is r.err == NULL : r.val : -1; 
+
+//Lamda function
+result:r = uint16(uint16:a, uint16:b){ return { err:NULL,val:a*b};}(23,34);
+result:r = test2(
+   uint8(uint8:a, uint8:b){ 
+      return { err:NULL,val:a*b};
+   },
+   23,245
+);
 
 8.5 Memory Management Patterns
 The core "Hybrid" model in action.
