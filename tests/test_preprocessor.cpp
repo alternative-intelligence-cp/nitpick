@@ -207,6 +207,96 @@ void test_context_local_labels() {
     std::cout << "✓ Context-local labels work" << std::endl;
 }
 
+void test_rep_endrep() {
+    std::cout << "\n=== Test %rep/%endrep ===" << std::endl;
+    
+    Preprocessor pp;
+    
+    // Test 1: Simple repeat
+    std::string source1 = R"(
+%rep 3
+print("hello")
+%endrep
+)";
+    
+    std::string result1 = pp.process(source1, "test.aria");
+    std::cout << "Result:" << std::endl << result1 << std::endl;
+    
+    // Should have 3 print statements
+    size_t count = 0;
+    size_t pos = 0;
+    while ((pos = result1.find("print(\"hello\")", pos)) != std::string::npos) {
+        count++;
+        pos++;
+    }
+    assert(count == 3);
+    std::cout << "✓ Simple %rep works (3 repetitions)" << std::endl;
+    
+    // Test 2: Repeat with constant
+    Preprocessor pp2;
+    pp2.defineConstant("COUNT", "5");
+    std::string source2 = R"(
+%rep COUNT
+x = x + 1;
+%endrep
+)";
+    
+    std::string result2 = pp2.process(source2, "test.aria");
+    std::cout << "Result:" << std::endl << result2 << std::endl;
+    
+    // Should have 5 increment statements
+    count = 0;
+    pos = 0;
+    while ((pos = result2.find("x = x + 1;", pos)) != std::string::npos) {
+        count++;
+        pos++;
+    }
+    assert(count == 5);
+    std::cout << "✓ %rep with constant works (5 repetitions)" << std::endl;
+    
+    // Test 3: Nested %rep
+    Preprocessor pp3;
+    std::string source3 = R"(
+%rep 2
+outer
+    %rep 3
+    inner
+    %endrep
+%endrep
+)";
+    
+    std::string result3 = pp3.process(source3, "test.aria");
+    std::cout << "Result:" << std::endl << result3 << std::endl;
+    
+    // Should have 2 * 3 = 6 "inner" and 2 "outer"
+    count = 0;
+    pos = 0;
+    while ((pos = result3.find("inner", pos)) != std::string::npos) {
+        count++;
+        pos++;
+    }
+    assert(count == 6);
+    std::cout << "✓ Nested %rep works (2x3 = 6 inner repetitions)" << std::endl;
+    
+    // Test 4: Zero repetitions
+    Preprocessor pp4;
+    std::string source4 = R"(
+before
+%rep 0
+this should not appear
+%endrep
+after
+)";
+    
+    std::string result4 = pp4.process(source4, "test.aria");
+    std::cout << "Result:" << std::endl << result4 << std::endl;
+    
+    assert(result4.find("before") != std::string::npos);
+    assert(result4.find("after") != std::string::npos);
+    assert(result4.find("this should not appear") == std::string::npos);
+    std::cout << "✓ %rep 0 works (zero repetitions)" << std::endl;
+}
+
 int main() {
     std::cout << "=== Preprocessor Tests ===" << std::endl;
     
@@ -219,6 +309,7 @@ int main() {
         test_context_local_labels();
         test_context_stack();
         test_error_detection();
+        test_rep_endrep();
         
         std::cout << "\n=== All Preprocessor Tests Passed! ===" << std::endl;
     } catch (const std::exception& e) {

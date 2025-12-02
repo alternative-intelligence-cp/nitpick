@@ -93,8 +93,8 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
     while (peek() != 0) {
         char c = peek();
         
-        // Handle preprocessor directives (lines starting with % followed by alpha)
-        if (c == '%' && (col == 1 || source[pos-1] == '\n')) {
+        // Handle preprocessor directives (% followed by alpha, can be indented)
+        if (c == '%') {
             // Peek ahead to see if it's a directive or a context-local label
             if (peekNext() == '$') {
                 // It's a context-local label definition (%$label:), not a directive
@@ -134,7 +134,11 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
                 handleContext();
             } else if (directive == "rep") {
                 handleRep();
-                } else {
+                // Don't skip to end of line - handleRep already positioned us correctly
+                continue;
+            } else if (directive == "endrep") {
+                error("%endrep without matching %rep");
+            } else {
                     error("Unknown preprocessor directive: %" + directive);
                 }
                 
@@ -586,20 +590,134 @@ void Preprocessor::handleRep() {
         error("%rep requires a count");
     }
     
+    // Evaluate count - could be a constant or number
     int count = 0;
-    try {
-        count = std::stoi(count_str);
-    } catch (...) {
-        error("%rep count must be a number");
+    
+    // Check if it's a constant first
+    auto const_it = constants.find(count_str);
+    if (const_it != constants.end()) {
+        try {
+            count = std::stoi(const_it->second);
+        } catch (...) {
+            error("%rep count must be a number, got constant: " + const_it->second);
+        }
+    } else {
+        // Try to parse as number
+        try {
+            count = std::stoi(count_str);
+        } catch (...) {
+            error("%rep count must be a number or defined constant, got: " + count_str);
+        }
     }
     
     if (count < 0) {
         error("%rep count must be non-negative");
     }
     
-    // Read block until %endrep
-    // TODO: Implement repeat block expansion
-    error("%rep not yet implemented");
+    // Skip to end of %rep line
+    while (peek() != '\n' && peek() != 0) advance();
+    if (peek() == '\n') advance();
+    
+    // Read block until %endrep (handle nesting)
+    std::string block;
+    int nesting = 1;  // We're inside one %rep already
+    
+    while (nesting > 0 && peek() != 0) {
+        // Check if this is a preprocessor directive (% followed by alpha)
+        if (peek() == '%') {
+            size_t saved_pos = pos;
+            int saved_line = line;
+            int saved_col = col;
+            
+            advance();  // Skip %
+            
+            // Check if it's a directive
+            if (isalpha(peek())) {
+                std::string directive = readWord();
+                
+                if (directive == "rep") {
+                    // Nested %rep
+                    nesting++;
+                    block += '%';
+                    block += directive;
+                    // Add rest of line
+                    while (peek() != '\n' && peek() != 0) {
+                        block += peek();
+                        advance();
+                    }
+                    if (peek() == '\n') {
+                        block += '\n';
+                        advance();
+                    }
+                } else if (directive == "endrep") {
+                    nesting--;
+                    if (nesting > 0) {
+                        // Still inside nested block
+                        block += '%';
+                        block += directive;
+                        // Skip rest of line
+                        while (peek() != '\n' && peek() != 0) {
+                            block += peek();
+                            advance();
+                        }
+                        if (peek() == '\n') {
+                            block += '\n';
+                            advance();
+                        }
+                    } else {
+                        // Found matching %endrep - skip rest of line and break
+                        while (peek() != '\n' && peek() != 0) advance();
+                        if (peek() == '\n') advance();
+                        break;
+                    }
+                } else {
+                    // Other directive, add to block
+                    block += '%';
+                    block += directive;
+                    while (peek() != '\n' && peek() != 0) {
+                        block += peek();
+                        advance();
+                    }
+                    if (peek() == '\n') {
+                        block += '\n';
+                        advance();
+                    }
+                }
+            } else {
+                // % not followed by alpha, restore and treat as regular char
+                pos = saved_pos;
+                line = saved_line;
+                col = saved_col;
+                block += peek();
+                advance();
+            }
+        } else {
+            // Regular character
+            block += peek();
+            advance();
+        }
+    }
+    
+    if (nesting > 0) {
+        error("Unclosed %rep block (missing %endrep)");
+    }
+    
+    // Expand the block 'count' times
+    std::string expanded;
+    for (int i = 0; i < count; i++) {
+        expanded += block;
+    }
+    
+    // Insert expanded text at current position and rewind to process it
+    // This allows nested %rep blocks to be processed
+    size_t insert_pos = pos;
+    int insert_line = line;
+    source.insert(pos, expanded);
+    
+    // Rewind to start of inserted text so the main loop will process it
+    pos = insert_pos;
+    line = insert_line;
+    col = 1;
 }
 
 bool Preprocessor::evaluateCondition(const std::string& expr) {
