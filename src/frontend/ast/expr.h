@@ -87,6 +87,65 @@ public:
     }
 };
 
+// String Literal Expression
+// Example: "hello world", "whats up"
+class StringLiteral : public Expression {
+public:
+    std::string value;
+
+    StringLiteral(const std::string& v) : value(v) {}
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
+// Template String Part (for interpolation)
+struct TemplatePart {
+    enum Type { STRING, EXPR } type;
+    std::string string_value;                    // If type == STRING
+    std::unique_ptr<Expression> expr_value;      // If type == EXPR
+    
+    TemplatePart(const std::string& s) 
+        : type(STRING), string_value(s) {}
+    
+    TemplatePart(std::unique_ptr<Expression> e) 
+        : type(EXPR), expr_value(std::move(e)) {}
+};
+
+// Template String Expression
+// Example: `Value is &{val}`, `Result: &{x + y}`
+class TemplateString : public Expression {
+public:
+    std::vector<TemplatePart> parts;
+
+    TemplateString() = default;
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
+// Ternary Expression (is operator)
+// Example: is x > 0 : positive : negative
+class TernaryExpr : public Expression {
+public:
+    std::unique_ptr<Expression> condition;
+    std::unique_ptr<Expression> true_expr;
+    std::unique_ptr<Expression> false_expr;
+
+    TernaryExpr(std::unique_ptr<Expression> cond, 
+                std::unique_ptr<Expression> true_val,
+                std::unique_ptr<Expression> false_val)
+        : condition(std::move(cond)), 
+          true_expr(std::move(true_val)), 
+          false_expr(std::move(false_val)) {}
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
 // Binary Operation Expression
 // Example: a + b, x * y
 class BinaryOp : public Expression {
@@ -96,7 +155,8 @@ public:
         EQ, NE, LT, GT, LE, GE,
         LOGICAL_AND, LOGICAL_OR,
         BITWISE_AND, BITWISE_OR, BITWISE_XOR,
-        LSHIFT, RSHIFT
+        LSHIFT, RSHIFT,
+        ASSIGN, PLUS_ASSIGN, MINUS_ASSIGN, STAR_ASSIGN, SLASH_ASSIGN, MOD_ASSIGN
     };
 
     OpType op;
@@ -112,13 +172,15 @@ public:
 };
 
 // Unary Operation Expression
-// Example: -x, !flag, ~bits
+// Example: -x, !flag, ~bits, x++, x--
 class UnaryOp : public Expression {
 public:
     enum OpType {
         NEG,            // -
         LOGICAL_NOT,    // !
-        BITWISE_NOT     // ~
+        BITWISE_NOT,    // ~
+        POST_INC,       // x++
+        POST_DEC        // x--
     };
 
     OpType op;
@@ -143,6 +205,19 @@ public:
 
     void accept(AstVisitor& visitor) override {
         visitor.visit(this);
+    }
+};
+
+// Array Literal Expression
+// Example: [1, 2, 3, 4, 5]
+class ArrayLiteral : public Expression {
+public:
+    std::vector<std::unique_ptr<Expression>> elements;
+
+    ArrayLiteral() = default;
+
+    void accept(AstVisitor& visitor) override {
+        // visitor.visit(this);
     }
 };
 

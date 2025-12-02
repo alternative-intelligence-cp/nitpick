@@ -51,6 +51,9 @@ public:
     void visit(frontend::VarExpr* node) override;
     void visit(frontend::IntLiteral* node) override;
     void visit(frontend::BoolLiteral* node) override;
+    void visit(frontend::StringLiteral* node) override;
+    void visit(frontend::TemplateString* node) override;
+    void visit(frontend::TernaryExpr* node) override;
     void visit(frontend::BinaryOp* node) override;
     void visit(frontend::UnaryOp* node) override;
     void visit(frontend::CallExpr* node) override;
@@ -64,7 +67,16 @@ public:
     // Control flow
     void visit(frontend::PickStmt* node) override;
     void visit(frontend::TillLoop* node) override;
+    void visit(frontend::WhenLoop* node) override;
     void visit(frontend::DeferStmt* node) override;
+    void visit(frontend::ForLoop* node) override;
+    void visit(frontend::WhileLoop* node) override;
+    void visit(frontend::BreakStmt* node) override;
+    void visit(frontend::ContinueStmt* node) override;
+    
+    // New expression types
+    void visit(frontend::WhenExpr* node) override;
+    void visit(frontend::AwaitExpr* node) override;
 
 private:
     void addError(const std::string& msg) {

@@ -16,21 +16,32 @@ class Statement;
 class Block;
 class VarDecl;
 class FuncDecl;
+class AsyncBlock;
 class VarExpr;
 class IntLiteral;
 class BoolLiteral;
 class FloatLiteral;
 class StringLiteral;
+class TemplateString;
+class TernaryExpr;
 class BinaryOp;
 class UnaryOp;
 class CallExpr;
 class ReturnStmt;
+class ExpressionStmt;
 class IfStmt;
 class PickStmt;
 class PickCase;
+class FallStmt;
 class WhenLoop;
 class TillLoop;
 class DeferStmt;
+class ForLoop;
+class WhileLoop;
+class BreakStmt;
+class ContinueStmt;
+class WhenExpr;
+class AwaitExpr;
 
 // Base AST Node
 // All AST nodes inherit from this class
@@ -50,6 +61,9 @@ public:
     virtual void visit(VarExpr* node) = 0;
     virtual void visit(IntLiteral* node) = 0;
     virtual void visit(BoolLiteral* node) = 0;
+    virtual void visit(StringLiteral* node) = 0;
+    virtual void visit(TemplateString* node) = 0;
+    virtual void visit(TernaryExpr* node) = 0;
     virtual void visit(BinaryOp* node) = 0;
     virtual void visit(UnaryOp* node) = 0;
     virtual void visit(CallExpr* node) = 0;
@@ -57,13 +71,26 @@ public:
     // Statements
     virtual void visit(VarDecl* node) = 0;
     virtual void visit(ReturnStmt* node) = 0;
+    virtual void visit(ExpressionStmt* node) { /* default: visit expression */ }
     virtual void visit(IfStmt* node) = 0;
     virtual void visit(Block* node) = 0;
 
     // Control Flow
     virtual void visit(PickStmt* node) = 0;
+    virtual void visit(FallStmt* node) { /* default: do nothing */ }
     virtual void visit(TillLoop* node) = 0;
+    virtual void visit(WhenLoop* node) = 0;
     virtual void visit(DeferStmt* node) = 0;
+    
+    // New loop types (Bugs #67-68)
+    virtual void visit(ForLoop* node) { /* default: do nothing */ }
+    virtual void visit(WhileLoop* node) { /* default: do nothing */ }
+    virtual void visit(BreakStmt* node) { /* default: do nothing */ }
+    virtual void visit(ContinueStmt* node) { /* default: do nothing */ }
+    
+    // New expression types (Bugs #69-70)
+    virtual void visit(WhenExpr* node) { /* default: do nothing */ }
+    virtual void visit(AwaitExpr* node) { /* default: do nothing */ }
 };
 
 // Block Statement

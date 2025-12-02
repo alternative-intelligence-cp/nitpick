@@ -1,0 +1,143 @@
+// Aria v0.0.6 Spec Compliance Test
+// This file contains EXACT examples from Aria_v0.0.6_Specs.txt Section 8
+// ZERO deviation allowed - syntax must match spec 100%
+
+// ============================================================================
+// 8.1 Variable Declarations
+// ============================================================================
+int8:i = 9;
+string:str = "whats up";
+int8:c = 0;
+int8[]:arr; // empty array (cannot use without initializing)
+int8[256]:arr2; // empty int8 array with 256 elements allocated
+int8[]:arr3 = [100, 300, 550]; // 3 element int8 array with values
+
+dyn:d = "bob";
+d = 4;     // Dynamic typing allowed
+d = true;
+
+// ============================================================================
+// 8.2 Loops and Control Flow
+// ============================================================================
+
+// Standard while loop
+while(i < 100) {
+   print(`&{i}`);
+   i++;
+}
+
+// When/Then/End Loop (Loop with completion blocks)
+when(c <= i) {
+   print(`&{c}`);
+   c++;
+} then {
+   print(`when loop ran &{c} times successfully`);
+} end {
+   print(`when loop did not run or broke early`);
+}
+
+// Till Loop (Automatic iteration variable '$')
+till(100, 1) {
+   // counts up from 0 to 100 by 1
+   print(`iteration: &{$}`); 
+}
+till(100, -1) {
+   // counts down from 100 to 0 by 1
+   print(`iteration: &{$}`);
+}
+
+// ============================================================================
+// 8.3 Pattern Matching (pick) with Fallthrough
+// ============================================================================
+pick(c) {
+   (<9) {
+       fall(fail);
+   },
+   (>9) {
+       fall(fail);
+   },
+   (9) {
+       fall(success);
+   },
+   (*) { // Wildcard match
+       fall(err);
+   },
+   fail:(!) { // Label for fallthrough
+       // handle failure
+       fall(done);
+   },
+   success:(!) {
+       // handle success
+       fall(done);
+   },
+   err:(!) {
+       // handle error
+       fall(done);
+   },
+   done:(!) {
+       // cleanup
+   }
+}
+
+// ============================================================================
+// 8.4 Functions and Closures
+// ============================================================================
+int8:closureTest = 2;
+
+// Function definition
+func:test = (int8:a, int8:b) {
+   return {
+       err: NULL,
+       val: a * b * closureTest; // Captures 'closureTest'
+   }
+};
+
+// Function taking a function as argument
+func:test2 = (func:tt, int:a, int:b) {
+   return tt(a, b);
+};
+
+result:r = test(3, 4);
+// Use 'is' ternary operator to check result
+int8:t = is r.err == NULL : r.val : -1; 
+
+// ============================================================================
+// 8.5 Memory Management Patterns
+// ============================================================================
+
+// 1. Wild (Manual) Memory
+wild int64:s = 100000;
+wild int64@:t = @s;      // '@' Address/Pointer operator
+
+// 2. Pinning & Safe References
+// '#' Pinning operator: locks GC memory in place
+wild string:critical_data = "must not move";
+wild int8:u = #critical_data; 
+
+// '$' Safe Reference: bridge between managed and wild
+string$:safe_ref = #critical_data; 
+
+// 3. RAII with Defer
+wild int64*:ptr = aria.alloc<int64>(1000);
+defer aria.free(ptr);
+
+// ============================================================================
+// 8.6 Process & I/O
+// ============================================================================
+
+// Forking
+result:fork_result = fork();
+if (fork_result.success) {
+   if (fork_result.is_child) {
+       exec("./child_program", ["arg1"]);
+   } else {
+       print(`Forked child with PID: &{fork_result.child_pid}`);
+       wait(fork_result.child_pid);
+   }
+}
+
+// Piping
+pipe:comm = createPipe();
+process:worker = spawn("./processor", [], { stdin: comm.write });
+comm.write_end.write("process this data");
+comm.write_end.close();

@@ -36,49 +36,63 @@ Token Parser::expect(TokenType type) {
     return tok;
 }
 
-// Parses: [wild|stack] Type:Identifier [= Expression];
+// Parses: [const] [wild|stack|gc] Type:Identifier [= Expression];
 // Grammar:
-//   VarDecl -> ( "wild" | "stack" )? TypeIdentifier ":" Identifier ( "=" Expression )? ";"
+//   VarDecl -> "const"? ( "wild" | "stack" | "gc" )? TypeIdentifier ":" Identifier ( "=" Expression )? ";"
 std::unique_ptr<VarDecl> Parser::parseVarDecl() {
+   bool is_const = false;
    bool is_wild = false;
    bool is_stack = false;
 
-   // 1. Check for Memory Strategy Keywords
-   // TODO: Implement match() method in Parser class
-   // if (match(TOKEN_WILD)) {
-   //     is_wild = true;
-   // } else if (match(TOKEN_STACK)) {
-   //     is_stack = true;
-   // }
+   // 1. Check for const keyword (Bug #72)
+   if (match(TOKEN_KW_CONST)) {
+       is_const = true;
+   }
 
-   // 2-4. TODO: Implement consume() method in Parser class to parse:
-   // - Type token (TOKEN_TYPE_IDENTIFIER)
-   // - Colon (TOKEN_COLON) 
-   // - Variable name (TOKEN_IDENTIFIER)
+   // 2. Check for Memory Strategy Keywords
+   if (match(TOKEN_KW_WILD) || match(TOKEN_WILD)) {
+       is_wild = true;
+   } else if (match(TOKEN_KW_STACK) || match(TOKEN_STACK)) {
+       is_stack = true;
+   } else if (match(TOKEN_KW_GC) || match(TOKEN_GC)) {
+       // Explicitly gc (default anyway)
+   }
+
+   // 3. Parse Type
+   Token type_tok = expect(TOKEN_IDENTIFIER);
+   std::string type_name = type_tok.value;
    
-   // 5. Create AST Node (placeholder with dummy values for now)
-   auto decl = std::make_unique<VarDecl>("placeholder_name", "placeholder_type");
+   // 4. Expect colon
+   expect(TOKEN_COLON);
+   
+   // 5. Parse variable name
+   Token name_tok = expect(TOKEN_IDENTIFIER);
+   std::string var_name = name_tok.value;
+   
+   // 6. Create AST Node
+   std::unique_ptr<Expression> initializer = nullptr;
+   
+   // 7. Handle Optional Assignment
+   if (match(TOKEN_ASSIGN)) {
+       initializer = parseExpr();
+   } else {
+       // Validation: Wild pointers MUST be initialized
+       if (is_wild && context.strictMode) {
+            throw std::runtime_error("Wild variables must be initialized immediately.");
+       }
+       // Const variables MUST be initialized
+       if (is_const) {
+            throw std::runtime_error("Const variables must be initialized.");
+       }
+   }
+
+   auto decl = std::make_unique<VarDecl>(type_name, var_name, std::move(initializer));
    decl->is_wild = is_wild;
    decl->is_stack = is_stack;
+   decl->is_const = is_const;
 
-   // 6. Handle Optional Assignment
-   // TODO: Implement match() and parseExpression() methods in Parser class
-   // if (match(TOKEN_ASSIGN)) {
-   //     decl->initializer = parseExpression();
-   // } else {
-   //     // Validation: Wild pointers MUST be initialized or immediately unsafe.
-   //     if (is_wild && context.strictMode) {
-   //          error("Wild variables must be initialized immediately.");
-   //     }
-   // }
-
-   // 7. Terminator
-   // TODO: Implement consume() method
-   // consume(TOKEN_SEMICOLON, "Expected ';' after variable declaration");
-
-   // 8. Register with Symbol Table for Scope Analysis
-   // TODO: Implement symbol table/scope tracking
-   // currentScope->define(decl->name, decl->type);
+   // 8. Terminator
+   match(TOKEN_SEMICOLON);  // Optional semicolon
 
    return decl;
 }

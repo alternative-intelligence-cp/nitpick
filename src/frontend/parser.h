@@ -37,6 +37,7 @@ private:
 
     // Expression parsing (precedence climbing)
     std::unique_ptr<Expression> parsePrimary();
+    std::unique_ptr<Expression> parsePostfix();
     std::unique_ptr<Expression> parseUnary();
     std::unique_ptr<Expression> parseMultiplicative();
     std::unique_ptr<Expression> parseAdditive();
@@ -48,6 +49,8 @@ private:
     std::unique_ptr<Expression> parseBitwiseOr();
     std::unique_ptr<Expression> parseLogicalAnd();
     std::unique_ptr<Expression> parseLogicalOr();
+    std::unique_ptr<Expression> parseTernary();
+    std::unique_ptr<Expression> parseAssignment();
 
 public:
     Parser(AriaLexer& lex);
@@ -55,16 +58,21 @@ public:
 
     std::unique_ptr<Block> parseBlock();
     std::unique_ptr<Expression> parseExpr();
+    std::unique_ptr<Expression> parseTemplateString();
     std::unique_ptr<Statement> parseStmt();
     std::unique_ptr<VarDecl> parseVarDecl();
+    std::unique_ptr<FuncDecl> parseFuncDecl();  // Bug #70: async functions
+    std::unique_ptr<Statement> parseAsyncBlock();  // Bug #70: async blocks
     std::unique_ptr<PickStmt> parsePickStmt();
+    std::unique_ptr<DestructurePattern> parseDestructurePattern();  // Bug #64
     std::unique_ptr<Statement> parseDeferStmt();
     std::unique_ptr<Statement> parseFallStmt();  // Bug #66
     
     // Control flow (Bug #67-71)
     std::unique_ptr<Statement> parseForLoop();
     std::unique_ptr<Statement> parseWhileLoop();
-    std::unique_ptr<Expression> parseWhenExpr();
+    std::unique_ptr<Statement> parseTillLoop();
+    std::unique_ptr<Statement> parseWhenLoop();  // Changed: when is a loop, not expression
     std::unique_ptr<Statement> parseBreak();
     std::unique_ptr<Statement> parseContinue();
     

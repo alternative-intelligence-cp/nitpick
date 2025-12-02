@@ -1,0 +1,119 @@
+// Aria v0.0.6 - Comprehensive Feature Test
+// Tests all implemented parser and codegen features
+
+// Test 1: Variable declarations with different memory strategies
+int64:x = 42;
+stack int32:y = 100;
+wild int64:ptr = 0xDEADBEEF;
+const int64:MAX_SIZE = 1024;
+
+// Test 2: Arithmetic and comparison operations
+int64:sum = x + y;
+int64:diff = x - 10;
+int64:product = x * 2;
+int64:quotient = y / 2;
+bool:is_equal = (x == 42);
+bool:is_greater = (y > x);
+
+// Test 3: Control flow - If statements
+if (x > 0) {
+    int64:positive = x;
+} else {
+    int64:negative = 0;
+}
+
+// Test 4: While loop
+int64:counter = 0;
+while (counter < 10) {
+    counter = counter + 1;
+}
+
+// Test 5: For loop
+for item in [1, 2, 3, 4, 5] {
+    int64:val = item;
+}
+
+// Test 6: Pick statement with patterns
+pick (x) {
+    (0) { int64:zero = 0; }
+    (<10) { int64:small = x; }
+    (10..100) { int64:medium = x; }
+    (>100) { int64:large = x; }
+    (*) { int64:default = -1; }
+}
+
+// Test 7: When expression
+int64:result = when {
+    x == 0 then 100;
+    x < 10 then 200;
+    x >= 10 then 300;
+    else 400;
+end;
+
+// Test 8: Exotic types
+trit:balanced_ternary = 1;
+tryte:ternary_byte = 100;
+nit:balanced_nonary = 4;
+nyte:nonary_byte = 1000;
+
+// Test 9: Module definition
+mod math {
+    int64:PI = 314;
+    
+    func:add = (int64:a, int64:b) -> int64 {
+        return a + b;
+    }
+}
+
+// Test 10: Async function
+async func:fetchData = (string:url) -> int64 {
+    int64:data = 42;
+    return data;
+}
+
+// Test 11: Async block
+async {
+    int64:value = 100;
+} catch (error:e) {
+    int64:error_code = -1;
+}
+
+// Test 12: Break and continue
+int64:i = 0;
+while (i < 100) {
+    if (i == 50) {
+        break;
+    }
+    i = i + 1;
+    if (i % 2 == 0) {
+        continue;
+    }
+}
+
+// Test 13: Destructuring in pick
+pick ([1, 2, 3]) {
+    ([a, b, c]) { int64:first = a; }
+    (*) { int64:other = 0; }
+}
+
+// Test 14: Const keyword validation
+const int64:CONSTANT = 999;
+
+// Test 15: Boolean logic
+bool:and_result = true && false;
+bool:or_result = true || false;
+bool:not_result = !true;
+
+// Test 16: Bitwise operations
+int64:bitwise_and = 0xFF & 0x0F;
+int64:bitwise_or = 0xF0 | 0x0F;
+int64:bitwise_xor = 0xFF ^ 0x0F;
+int64:left_shift = 1 << 4;
+int64:right_shift = 16 >> 2;
+
+// Test 17: Unary operations
+int64:negation = -x;
+bool:logical_not = !is_equal;
+int64:bitwise_not = ~0xFF;
+
+return 0;

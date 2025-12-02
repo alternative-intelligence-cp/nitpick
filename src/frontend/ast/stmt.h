@@ -75,7 +75,53 @@ public:
         : expression(std::move(expr)) {}
 
     void accept(AstVisitor& visitor) override {
-        // For now, just accept (visitor pattern not fully implemented)
+        visitor.visit(this);
+    }
+};
+
+// Function Parameter
+struct FuncParam {
+    std::string type;
+    std::string name;
+    std::unique_ptr<Expression> default_value;  // Optional default
+    
+    FuncParam(const std::string& t, const std::string& n, std::unique_ptr<Expression> def = nullptr)
+        : type(t), name(n), default_value(std::move(def)) {}
+};
+
+// Function Declaration (Bug #70: async support)
+// Example: func:add = (int:a, int:b) -> int { return a + b; }
+// Example: async func:fetch = (string:url) -> result { ... }
+class FuncDecl : public Statement {
+public:
+    std::string name;
+    std::vector<FuncParam> parameters;
+    std::string return_type;
+    std::unique_ptr<Block> body;
+    bool is_async = false;  // Bug #70: async function support
+    bool is_pub = false;    // public visibility
+    
+    FuncDecl(const std::string& n, std::vector<FuncParam> params, const std::string& ret_type, std::unique_ptr<Block> b)
+        : name(n), parameters(std::move(params)), return_type(ret_type), body(std::move(b)) {}
+    
+    void accept(AstVisitor& visitor) override {
+        // visitor.visit(this);
+    }
+};
+
+// Async Block Statement (Bug #70: async blocks with catch)
+// Example: async { ... } catch (err:e) { ... }
+class AsyncBlock : public Statement {
+public:
+    std::unique_ptr<Block> body;
+    std::unique_ptr<Block> catch_block;  // May be nullptr
+    std::string error_var;               // Variable name for caught error
+    
+    AsyncBlock(std::unique_ptr<Block> b, std::unique_ptr<Block> catch_b = nullptr, const std::string& err_var = "")
+        : body(std::move(b)), catch_block(std::move(catch_b)), error_var(err_var) {}
+    
+    void accept(AstVisitor& visitor) override {
+        // visitor.visit(this);
     }
 };
 

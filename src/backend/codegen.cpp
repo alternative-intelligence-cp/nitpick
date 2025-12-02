@@ -53,9 +53,12 @@ namespace backend {
 using aria::frontend::AstVisitor;
 using aria::frontend::Block;
 using aria::frontend::VarDecl;
+using aria::frontend::ExpressionStmt;
 using aria::frontend::PickStmt;
 using aria::frontend::PickCase;
+using aria::frontend::FallStmt;
 using aria::frontend::TillLoop;
+using aria::frontend::WhenLoop;
 using aria::frontend::IfStmt;
 using aria::frontend::DeferStmt;
 using aria::frontend::Expression;
@@ -88,6 +91,10 @@ public:
     Function* currentFunction = nullptr;
     BasicBlock* returnBlock = nullptr;
     Value* returnValue = nullptr; // Pointer to return value storage
+    
+    // Pick statement context (for fall() statements)
+    std::map<std::string, BasicBlock*>* pickLabelBlocks = nullptr;
+    BasicBlock* pickDoneBlock = nullptr;
 
     CodeGenContext(std::string moduleName) {
         module = std::make_unique<Module>(moduleName, llvmContext);
@@ -228,6 +235,11 @@ public:
         }
     }
 
+    void visit(ExpressionStmt* node) override {
+        // Execute expression for side effects (e.g., function call)
+        visitExpr(node->expression.get());
+    }
+
     // -------------------------------------------------------------------------
     // 2. Control Flow: Pick & Loops
     // -------------------------------------------------------------------------
@@ -237,57 +249,185 @@ public:
         Function* func = ctx.builder->GetInsertBlock()->getParent();
         BasicBlock* doneBB = BasicBlock::Create(ctx.llvmContext, "pick_done");
         
-        // Aria's 'pick' can be complex (ranges, wildcards). 
-        // We implement it as a chain of if-else blocks (Lowering to branches).
-        // Optimizers will convert this to a jump table if possible.
-
+        // Build label map for fall() targets
+        std::map<std::string, BasicBlock*> labelBlocks;
+        
+        // First pass: create labeled blocks
+        for (size_t i = 0; i < node->cases.size(); ++i) {
+            auto& pcase = node->cases[i];
+            if (!pcase.label.empty()) {
+                BasicBlock* labelBB = BasicBlock::Create(ctx.llvmContext, "pick_label_" + pcase.label, func);
+                labelBlocks[pcase.label] = labelBB;
+            }
+        }
+        
+        // Store label blocks in context for fall statements
+        ctx.pickLabelBlocks = &labelBlocks;
+        ctx.pickDoneBlock = doneBB;
+        
         BasicBlock* nextCaseBB = nullptr;
-
+        
+        // Second pass: generate case logic
         for (size_t i = 0; i < node->cases.size(); ++i) {
             auto& pcase = node->cases[i];
             
-            BasicBlock* caseBodyBB = BasicBlock::Create(ctx.llvmContext, "case_body_" + std::to_string(i), func);
-            
-            // Logic Check
-            Value* match = nullptr;
-            if (pcase.type == PickCase::WILDCARD) {
-                match = ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 1);
-            } else {
-                // Range or Exact
-                // Note: Simplified. Full impl needs range checking (<9) handling
-                Value* val = visitExpr(pcase.value_start.get());
-                match = ctx.builder->CreateICmpEQ(selector, val, "pick_eq");
+            // For labeled cases, jump directly to their block
+            if (!pcase.label.empty()) {
+                // Create unconditional branch to labeled block
+                if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                    ctx.builder->CreateBr(labelBlocks[pcase.label]);
+                }
+                
+                // Set insert point to the labeled block
+                ctx.builder->SetInsertPoint(labelBlocks[pcase.label]);
+                
+                // Generate body
+                {
+                    ScopeGuard guard(ctx);
+                    pcase.body->accept(*this);
+                }
+                
+                // Auto-break if no terminator
+                if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                    ctx.builder->CreateBr(doneBB);
+                }
+                
+                // Create a new block for next case
+                nextCaseBB = BasicBlock::Create(ctx.llvmContext, "case_next_" + std::to_string(i), func);
+                ctx.builder->SetInsertPoint(nextCaseBB);
+                continue;
             }
-
+            
+            // Regular case (not labeled)
+            BasicBlock* caseBodyBB = BasicBlock::Create(ctx.llvmContext, "case_body_" + std::to_string(i), func);
             nextCaseBB = BasicBlock::Create(ctx.llvmContext, "case_next_" + std::to_string(i));
             
+            // Generate condition based on case type
+            Value* match = nullptr;
+            
+            switch (pcase.type) {
+                case PickCase::WILDCARD:
+                    // (*) - always matches
+                    match = ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 1);
+                    break;
+                    
+                case PickCase::EXACT: {
+                    // (value) - exact match
+                    Value* val = visitExpr(pcase.value_start.get());
+                    match = ctx.builder->CreateICmpEQ(selector, val, "pick_eq");
+                    break;
+                }
+                
+                case PickCase::LESS_THAN: {
+                    // (<value) - less than
+                    Value* val = visitExpr(pcase.value_start.get());
+                    match = ctx.builder->CreateICmpSLT(selector, val, "pick_lt");
+                    break;
+                }
+                
+                case PickCase::GREATER_THAN: {
+                    // (>value) - greater than
+                    Value* val = visitExpr(pcase.value_start.get());
+                    match = ctx.builder->CreateICmpSGT(selector, val, "pick_gt");
+                    break;
+                }
+                
+                case PickCase::LESS_EQUAL: {
+                    // (<=value) - less or equal
+                    Value* val = visitExpr(pcase.value_start.get());
+                    match = ctx.builder->CreateICmpSLE(selector, val, "pick_le");
+                    break;
+                }
+                
+                case PickCase::GREATER_EQUAL: {
+                    // (>=value) - greater or equal
+                    Value* val = visitExpr(pcase.value_start.get());
+                    match = ctx.builder->CreateICmpSGE(selector, val, "pick_ge");
+                    break;
+                }
+                
+                case PickCase::RANGE: {
+                    // (start..end) or (start...end) - range match
+                    Value* start = visitExpr(pcase.value_start.get());
+                    Value* end = visitExpr(pcase.value_end.get());
+                    
+                    // selector >= start
+                    Value* ge_start = ctx.builder->CreateICmpSGE(selector, start, "range_ge");
+                    
+                    // selector <= end (inclusive) or selector < end (exclusive)
+                    Value* le_end;
+                    if (pcase.is_range_exclusive) {
+                        le_end = ctx.builder->CreateICmpSLT(selector, end, "range_lt");
+                    } else {
+                        le_end = ctx.builder->CreateICmpSLE(selector, end, "range_le");
+                    }
+                    
+                    // Combined: ge_start && le_end
+                    match = ctx.builder->CreateAnd(ge_start, le_end, "range_match");
+                    break;
+                }
+                
+                case PickCase::UNREACHABLE:
+                    // Labeled case - already handled above
+                    continue;
+                    
+                default:
+                    match = ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 0);
+                    break;
+            }
+            
+            // Create conditional branch
             ctx.builder->CreateCondBr(match, caseBodyBB, nextCaseBB);
             
-            // Body Generation
+            // Generate case body
             ctx.builder->SetInsertPoint(caseBodyBB);
             {
                 ScopeGuard guard(ctx);
                 pcase.body->accept(*this);
             }
-
-            // Auto-break (unless fallthrough logic is added here via labels)
+            
+            // Auto-break (unless fallthrough via fall())
             if (!ctx.builder->GetInsertBlock()->getTerminator()) {
                 ctx.builder->CreateBr(doneBB);
             }
-
-            // Move to next
+            
+            // Move to next case check
             func->insert(func->end(), nextCaseBB);
             ctx.builder->SetInsertPoint(nextCaseBB);
         }
-
-        // Final fallthrough to done
-        ctx.builder->CreateBr(doneBB);
+        
+        // Final fallthrough to done if no case matched
+        if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+            ctx.builder->CreateBr(doneBB);
+        }
+        
         func->insert(func->end(), doneBB);
         ctx.builder->SetInsertPoint(doneBB);
+        
+        // Clear pick context
+        ctx.pickLabelBlocks = nullptr;
+        ctx.pickDoneBlock = nullptr;
+    }
+    
+    void visit(FallStmt* node) override {
+        // fall(label) - explicit fallthrough to labeled case in pick
+        if (!ctx.pickLabelBlocks) {
+            throw std::runtime_error("fall() statement outside of pick statement");
+        }
+        
+        auto it = ctx.pickLabelBlocks->find(node->target_label);
+        if (it == ctx.pickLabelBlocks->end()) {
+            throw std::runtime_error("fall() target label not found: " + node->target_label);
+        }
+        
+        // Create branch to target label
+        ctx.builder->CreateBr(it->second);
     }
 
     void visit(TillLoop* node) override {
         // Till(limit, step) with '$' iterator
+        // Positive step: counts from 0 to limit
+        // Negative step: counts from limit to 0
         Value* limit = visitExpr(node->limit.get());
         Value* step = visitExpr(node->step.get());
 
@@ -296,13 +436,17 @@ public:
         BasicBlock* loopBB = BasicBlock::Create(ctx.llvmContext, "loop_body", func);
         BasicBlock* exitBB = BasicBlock::Create(ctx.llvmContext, "loop_exit", func);
 
+        // Determine start value based on step sign
+        // For positive step: start = 0, for negative step: start = limit
+        Value* stepIsNegative = ctx.builder->CreateICmpSLT(step, ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));
+        Value* startVal = ctx.builder->CreateSelect(stepIsNegative, limit, ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));
+
         ctx.builder->CreateBr(loopBB);
         ctx.builder->SetInsertPoint(loopBB);
 
         // PHI Node for '$'
-        // It starts at 0 (implicit start for till)
         PHINode* iterVar = ctx.builder->CreatePHI(Type::getInt64Ty(ctx.llvmContext), 2, "$");
-        iterVar->addIncoming(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0), preheader);
+        iterVar->addIncoming(startVal, preheader);
 
         // Define '$' in scope and generate body
         {
@@ -311,14 +455,75 @@ public:
             node->body->accept(*this);
         }
 
-        // Increment
+        // Increment (or decrement for negative step)
         Value* nextVal = ctx.builder->CreateAdd(iterVar, step, "next_val");
         iterVar->addIncoming(nextVal, ctx.builder->GetInsertBlock());
 
-        // Condition
-        Value* cond = ctx.builder->CreateICmpSLT(nextVal, limit, "loop_cond");
+        // Condition: for positive step: nextVal < limit, for negative step: nextVal >= 0
+        Value* condPos = ctx.builder->CreateICmpSLT(nextVal, limit, "cond_pos");
+        Value* condNeg = ctx.builder->CreateICmpSGE(nextVal, ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0), "cond_neg");
+        Value* cond = ctx.builder->CreateSelect(stepIsNegative, condNeg, condPos, "loop_cond");
+        
         ctx.builder->CreateCondBr(cond, loopBB, exitBB);
 
+        ctx.builder->SetInsertPoint(exitBB);
+    }
+    
+    void visit(WhenLoop* node) override {
+        // When loop: when(condition) { body } then { success } end { failure }
+        Function* func = ctx.builder->GetInsertBlock()->getParent();
+        BasicBlock* loopCondBB = BasicBlock::Create(ctx.llvmContext, "when_cond", func);
+        BasicBlock* loopBodyBB = BasicBlock::Create(ctx.llvmContext, "when_body", func);
+        BasicBlock* thenBB = node->then_block ? BasicBlock::Create(ctx.llvmContext, "when_then") : nullptr;
+        BasicBlock* endBB = node->end_block ? BasicBlock::Create(ctx.llvmContext, "when_end") : nullptr;
+        BasicBlock* exitBB = BasicBlock::Create(ctx.llvmContext, "when_exit");
+        
+        // Jump to condition check
+        ctx.builder->CreateBr(loopCondBB);
+        ctx.builder->SetInsertPoint(loopCondBB);
+        
+        // Evaluate condition
+        Value* cond = visitExpr(node->condition.get());
+        ctx.builder->CreateCondBr(cond, loopBodyBB, thenBB ? thenBB : (endBB ? endBB : exitBB));
+        
+        // Loop body
+        ctx.builder->SetInsertPoint(loopBodyBB);
+        if (node->body) {
+            ScopeGuard guard(ctx);
+            node->body->accept(*this);
+        }
+        if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+            ctx.builder->CreateBr(loopCondBB);  // Back to condition
+        }
+        
+        // Then block (successful completion)
+        if (thenBB) {
+            func->insert(func->end(), thenBB);
+            ctx.builder->SetInsertPoint(thenBB);
+            if (node->then_block) {
+                ScopeGuard guard(ctx);
+                node->then_block->accept(*this);
+            }
+            if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                ctx.builder->CreateBr(exitBB);
+            }
+        }
+        
+        // End block (early exit or no execution)
+        if (endBB) {
+            func->insert(func->end(), endBB);
+            ctx.builder->SetInsertPoint(endBB);
+            if (node->end_block) {
+                ScopeGuard guard(ctx);
+                node->end_block->accept(*this);
+            }
+            if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                ctx.builder->CreateBr(exitBB);
+            }
+        }
+        
+        // Exit
+        func->insert(func->end(), exitBB);
         ctx.builder->SetInsertPoint(exitBB);
     }
 
@@ -334,6 +539,41 @@ public:
         if (auto* blit = dynamic_cast<aria::frontend::BoolLiteral*>(node)) {
             return ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), blit->value ? 1 : 0);
         }
+        if (auto* slit = dynamic_cast<aria::frontend::StringLiteral*>(node)) {
+            // Create global string constant
+            return ctx.builder->CreateGlobalStringPtr(slit->value);
+        }
+        if (auto* tstr = dynamic_cast<aria::frontend::TemplateString*>(node)) {
+            // Build template string by concatenating parts
+            // For now, simplified: just concatenate string representations
+            // TODO: Proper string concatenation with LLVM runtime
+            std::string result;
+            for (auto& part : tstr->parts) {
+                if (part.type == aria::frontend::TemplatePart::STRING) {
+                    result += part.string_value;
+                } else {
+                    // For now, just append placeholder
+                    // TODO: Convert expression value to string
+                    result += "<expr>";
+                }
+            }
+            return ctx.builder->CreateGlobalStringPtr(result);
+        }
+        if (auto* ternary = dynamic_cast<aria::frontend::TernaryExpr*>(node)) {
+            // Generate LLVM select: select i1 %cond, type %true_val, type %false_val
+            Value* cond = visitExpr(ternary->condition.get());
+            Value* true_val = visitExpr(ternary->true_expr.get());
+            Value* false_val = visitExpr(ternary->false_expr.get());
+            
+            if (!cond || !true_val || !false_val) return nullptr;
+            
+            // LLVM select requires i1 condition
+            if (cond->getType()->isIntegerTy() && cond->getType()->getIntegerBitWidth() != 1) {
+                cond = ctx.builder->CreateICmpNE(cond, ConstantInt::get(cond->getType(), 0));
+            }
+            
+            return ctx.builder->CreateSelect(cond, true_val, false_val);
+        }
         if (auto* var = dynamic_cast<aria::frontend::VarExpr*>(node)) {
             auto* sym = ctx.lookup(var->name);
             if (!sym) return nullptr;
@@ -342,6 +582,40 @@ public:
                 return ctx.builder->CreateLoad(ctx.getLLVMType("int64"), sym->val); // Type inference simplified
             }
             return sym->val; // PHI or direct value
+        }
+        if (auto* unary = dynamic_cast<aria::frontend::UnaryOp*>(node)) {
+            Value* operand = visitExpr(unary->operand.get());
+            if (!operand) return nullptr;
+            
+            switch (unary->op) {
+                case aria::frontend::UnaryOp::NEG:
+                    return ctx.builder->CreateNeg(operand);
+                case aria::frontend::UnaryOp::LOGICAL_NOT:
+                    return ctx.builder->CreateNot(operand);
+                case aria::frontend::UnaryOp::BITWISE_NOT:
+                    return ctx.builder->CreateNot(operand);
+                case aria::frontend::UnaryOp::POST_INC:
+                case aria::frontend::UnaryOp::POST_DEC: {
+                    // For x++ or x--, we need to:
+                    // 1. Load current value
+                    // 2. Increment/decrement
+                    // 3. Store back
+                    // 4. Return original value (for x++) or new value (simplified: return new)
+                    if (auto* varExpr = dynamic_cast<aria::frontend::VarExpr*>(unary->operand.get())) {
+                        auto* sym = ctx.lookup(varExpr->name);
+                        if (!sym || !sym->is_ref) return nullptr;
+                        
+                        Value* currentVal = ctx.builder->CreateLoad(ctx.getLLVMType("int64"), sym->val);
+                        Value* one = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 1);
+                        Value* newVal = (unary->op == aria::frontend::UnaryOp::POST_INC) 
+                            ? ctx.builder->CreateAdd(currentVal, one)
+                            : ctx.builder->CreateSub(currentVal, one);
+                        ctx.builder->CreateStore(newVal, sym->val);
+                        return newVal;  // Simplified: return new value
+                    }
+                    return nullptr;
+                }
+            }
         }
         //... Handle other ops...
         return nullptr;
@@ -353,8 +627,27 @@ public:
     void visit(DeferStmt* node) override {}
     void visit(IntLiteral* node) override {} // Handled by visitExpr()
     void visit(BoolLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::StringLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::TemplateString* node) override {} // Handled by visitExpr()
+    void visit(frontend::TernaryExpr* node) override {} // Handled by visitExpr()
     void visit(VarExpr* node) override {}
-    void visit(CallExpr* node) override {}
+    void visit(CallExpr* node) override {
+        // Look up function in module
+        Function* callee = ctx.module->getFunction(node->function_name);
+        
+        if (!callee) {
+            throw std::runtime_error("Unknown function: " + node->function_name);
+        }
+        
+        // Evaluate arguments
+        std::vector<Value*> args;
+        for (auto& arg : node->arguments) {
+            args.push_back(visitExpr(arg.get()));
+        }
+        
+        // Create call instruction
+        ctx.builder->CreateCall(callee, args, "calltmp");
+    }
     void visit(BinaryOp* node) override {} // Omitted for brevity
     void visit(UnaryOp* node) override {} // Omitted for brevity
     void visit(ReturnStmt* node) override {} // Omitted for brevity
@@ -388,6 +681,19 @@ private:
 void generate_code(aria::frontend::Block* root, const std::string& filename) {
     CodeGenContext ctx("aria_module");
     CodeGenVisitor visitor(ctx);
+
+    // Declare built-in print function (uses C puts)
+    // print(string) -> void
+    std::vector<Type*> printParams = {PointerType::get(Type::getInt8Ty(ctx.llvmContext), 0)};
+    FunctionType* printType = FunctionType::get(
+        Type::getVoidTy(ctx.llvmContext),
+        printParams,
+        false  // not vararg
+    );
+    Function::Create(printType, Function::ExternalLinkage, "puts", ctx.module.get());
+    
+    // Create alias for Aria 'print' function
+    Function::Create(printType, Function::ExternalLinkage, "print", ctx.module.get());
 
     // Create 'main' function wrapper
     FunctionType* ft = FunctionType::get(Type::getVoidTy(ctx.llvmContext), false);

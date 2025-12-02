@@ -3,68 +3,295 @@ source_filename = "aria_module"
 
 define void @main() {
 entry:
+  %stack_val = alloca i64, align 8
   %0 = call ptr @get_current_thread_nursery()
   %1 = call ptr @aria_gc_alloc(ptr %0, i64 8)
   %x = alloca ptr, align 8
   store ptr %1, ptr %x, align 8
   %2 = load ptr, ptr %x, align 8
   store i64 42, ptr %2, align 4
-  %3 = call ptr @get_current_thread_nursery.1()
-  %4 = call ptr @aria_gc_alloc.2(ptr %3, i64 8)
-  %y = alloca ptr, align 8
-  store ptr %4, ptr %y, align 8
-  %5 = load ptr, ptr %y, align 8
-  store i64 100, ptr %5, align 4
-  %6 = call ptr @get_current_thread_nursery.3()
-  %7 = call ptr @aria_gc_alloc.4(ptr %6, i64 8)
+  %3 = call ptr @aria_alloc(i64 8)
+  %heap_val = alloca ptr, align 8
+  store ptr %3, ptr %heap_val, align 8
+  %4 = load ptr, ptr %heap_val, align 8
+  store i64 100, ptr %4, align 4
+  store i64 200, ptr %stack_val, align 4
+  %5 = call ptr @get_current_thread_nursery.1()
+  %6 = call ptr @aria_gc_alloc.2(ptr %5, i64 8)
+  %constant = alloca ptr, align 8
+  store ptr %6, ptr %constant, align 8
+  %7 = load ptr, ptr %constant, align 8
+  store i64 999, ptr %7, align 4
+  %8 = call ptr @get_current_thread_nursery.3()
+  %9 = call ptr @aria_gc_alloc.4(ptr %8, i64 8)
+  %a = alloca ptr, align 8
+  store ptr %9, ptr %a, align 8
+  %10 = load ptr, ptr %a, align 8
+  store i64 10, ptr %10, align 4
+  %11 = call ptr @get_current_thread_nursery.5()
+  %12 = call ptr @aria_gc_alloc.6(ptr %11, i64 8)
+  %b = alloca ptr, align 8
+  store ptr %12, ptr %b, align 8
+  %13 = load ptr, ptr %b, align 8
+  store i64 5, ptr %13, align 4
+  %14 = call ptr @get_current_thread_nursery.7()
+  %15 = call ptr @aria_gc_alloc.8(ptr %14, i64 8)
   %sum = alloca ptr, align 8
-  store ptr %7, ptr %sum, align 8
-  %8 = call ptr @get_current_thread_nursery.5()
-  %9 = call ptr @aria_gc_alloc.6(ptr %8, i64 8)
-  %diff = alloca ptr, align 8
-  store ptr %9, ptr %diff, align 8
-  %10 = call ptr @get_current_thread_nursery.7()
-  %11 = call ptr @aria_gc_alloc.8(ptr %10, i64 8)
-  %prod = alloca ptr, align 8
-  store ptr %11, ptr %prod, align 8
-  %12 = call ptr @get_current_thread_nursery.9()
-  %13 = call ptr @aria_gc_alloc.10(ptr %12, i64 8)
+  store ptr %15, ptr %sum, align 8
+  %16 = load i64, ptr %a, align 4
+  %17 = load i64, ptr %b, align 4
+  %addtmp = add i64 %16, %17
+  %18 = load ptr, ptr %sum, align 8
+  store i64 %addtmp, ptr %18, align 4
+  %19 = call ptr @get_current_thread_nursery.9()
+  %20 = call ptr @aria_gc_alloc.10(ptr %19, i64 8)
+  %difference = alloca ptr, align 8
+  store ptr %20, ptr %difference, align 8
+  %21 = load i64, ptr %a, align 4
+  %22 = load i64, ptr %b, align 4
+  %subtmp = sub i64 %21, %22
+  %23 = load ptr, ptr %difference, align 8
+  store i64 %subtmp, ptr %23, align 4
+  %24 = call ptr @get_current_thread_nursery.11()
+  %25 = call ptr @aria_gc_alloc.12(ptr %24, i64 8)
+  %product = alloca ptr, align 8
+  store ptr %25, ptr %product, align 8
+  %26 = load i64, ptr %a, align 4
+  %27 = load i64, ptr %b, align 4
+  %multmp = mul i64 %26, %27
+  %28 = load ptr, ptr %product, align 8
+  store i64 %multmp, ptr %28, align 4
+  %29 = call ptr @get_current_thread_nursery.13()
+  %30 = call ptr @aria_gc_alloc.14(ptr %29, i64 8)
+  %quotient = alloca ptr, align 8
+  store ptr %30, ptr %quotient, align 8
+  %31 = load i64, ptr %a, align 4
+  %32 = load i64, ptr %b, align 4
+  %divtmp = sdiv i64 %31, %32
+  %33 = load ptr, ptr %quotient, align 8
+  store i64 %divtmp, ptr %33, align 4
+  %34 = call ptr @get_current_thread_nursery.15()
+  %35 = call ptr @aria_gc_alloc.16(ptr %34, i64 8)
+  %remainder = alloca ptr, align 8
+  store ptr %35, ptr %remainder, align 8
+  %36 = load i64, ptr %a, align 4
+  %37 = load i64, ptr %b, align 4
+  %modtmp = srem i64 %36, %37
+  %38 = load ptr, ptr %remainder, align 8
+  store i64 %modtmp, ptr %38, align 4
+  %39 = call ptr @get_current_thread_nursery.17()
+  %40 = call ptr @aria_gc_alloc.18(ptr %39, i64 8)
+  %equal = alloca ptr, align 8
+  store ptr %40, ptr %equal, align 8
+  %41 = load i64, ptr %a, align 4
+  %42 = load i64, ptr %b, align 4
+  %eqtmp = icmp eq i64 %41, %42
+  %43 = load ptr, ptr %equal, align 8
+  store i1 %eqtmp, ptr %43, align 1
+  %44 = call ptr @get_current_thread_nursery.19()
+  %45 = call ptr @aria_gc_alloc.20(ptr %44, i64 8)
+  %not_equal = alloca ptr, align 8
+  store ptr %45, ptr %not_equal, align 8
+  %46 = load i64, ptr %a, align 4
+  %47 = load i64, ptr %b, align 4
+  %netmp = icmp ne i64 %46, %47
+  %48 = load ptr, ptr %not_equal, align 8
+  store i1 %netmp, ptr %48, align 1
+  %49 = call ptr @get_current_thread_nursery.21()
+  %50 = call ptr @aria_gc_alloc.22(ptr %49, i64 8)
+  %less = alloca ptr, align 8
+  store ptr %50, ptr %less, align 8
+  %51 = load i64, ptr %a, align 4
+  %52 = load i64, ptr %b, align 4
+  %lttmp = icmp slt i64 %51, %52
+  %53 = load ptr, ptr %less, align 8
+  store i1 %lttmp, ptr %53, align 1
+  %54 = call ptr @get_current_thread_nursery.23()
+  %55 = call ptr @aria_gc_alloc.24(ptr %54, i64 8)
+  %greater = alloca ptr, align 8
+  store ptr %55, ptr %greater, align 8
+  %56 = load i64, ptr %a, align 4
+  %57 = load i64, ptr %b, align 4
+  %gttmp = icmp sgt i64 %56, %57
+  %58 = load ptr, ptr %greater, align 8
+  store i1 %gttmp, ptr %58, align 1
+  %59 = call ptr @get_current_thread_nursery.25()
+  %60 = call ptr @aria_gc_alloc.26(ptr %59, i64 8)
+  %less_equal = alloca ptr, align 8
+  store ptr %60, ptr %less_equal, align 8
+  %61 = load i64, ptr %a, align 4
+  %62 = load i64, ptr %b, align 4
+  %letmp = icmp sle i64 %61, %62
+  %63 = load ptr, ptr %less_equal, align 8
+  store i1 %letmp, ptr %63, align 1
+  %64 = call ptr @get_current_thread_nursery.27()
+  %65 = call ptr @aria_gc_alloc.28(ptr %64, i64 8)
+  %greater_equal = alloca ptr, align 8
+  store ptr %65, ptr %greater_equal, align 8
+  %66 = load i64, ptr %a, align 4
+  %67 = load i64, ptr %b, align 4
+  %getmp = icmp sge i64 %66, %67
+  %68 = load ptr, ptr %greater_equal, align 8
+  store i1 %getmp, ptr %68, align 1
+  %69 = call ptr @get_current_thread_nursery.29()
+  %70 = call ptr @aria_gc_alloc.30(ptr %69, i64 8)
   %flag1 = alloca ptr, align 8
-  store ptr %13, ptr %flag1, align 8
-  %14 = load ptr, ptr %flag1, align 8
-  store i1 true, ptr %14, align 1
-  %15 = call ptr @get_current_thread_nursery.11()
-  %16 = call ptr @aria_gc_alloc.12(ptr %15, i64 8)
+  store ptr %70, ptr %flag1, align 8
+  %71 = load ptr, ptr %flag1, align 8
+  store i1 true, ptr %71, align 1
+  %72 = call ptr @get_current_thread_nursery.31()
+  %73 = call ptr @aria_gc_alloc.32(ptr %72, i64 8)
   %flag2 = alloca ptr, align 8
-  store ptr %16, ptr %flag2, align 8
-  %17 = load ptr, ptr %flag2, align 8
-  store i1 false, ptr %17, align 1
-  %18 = call ptr @get_current_thread_nursery.13()
-  %19 = call ptr @aria_gc_alloc.14(ptr %18, i64 8)
-  %cmp1 = alloca ptr, align 8
-  store ptr %19, ptr %cmp1, align 8
-  %20 = call ptr @get_current_thread_nursery.15()
-  %21 = call ptr @aria_gc_alloc.16(ptr %20, i64 8)
-  %cmp2 = alloca ptr, align 8
-  store ptr %21, ptr %cmp2, align 8
-  %22 = call ptr @get_current_thread_nursery.17()
-  %23 = call ptr @aria_gc_alloc.18(ptr %22, i64 8)
-  %cmp3 = alloca ptr, align 8
-  store ptr %23, ptr %cmp3, align 8
-  %24 = call ptr @get_current_thread_nursery.19()
-  %25 = call ptr @aria_gc_alloc.20(ptr %24, i64 8)
+  store ptr %73, ptr %flag2, align 8
+  %74 = load ptr, ptr %flag2, align 8
+  store i1 false, ptr %74, align 1
+  %75 = call ptr @get_current_thread_nursery.33()
+  %76 = call ptr @aria_gc_alloc.34(ptr %75, i64 8)
   %and_result = alloca ptr, align 8
-  store ptr %25, ptr %and_result, align 8
-  %26 = call ptr @get_current_thread_nursery.21()
-  %27 = call ptr @aria_gc_alloc.22(ptr %26, i64 8)
+  store ptr %76, ptr %and_result, align 8
+  %77 = load i64, ptr %flag1, align 4
+  %78 = load i64, ptr %flag2, align 4
+  %andtmp = and i64 %77, %78
+  %79 = load ptr, ptr %and_result, align 8
+  store i64 %andtmp, ptr %79, align 4
+  %80 = call ptr @get_current_thread_nursery.35()
+  %81 = call ptr @aria_gc_alloc.36(ptr %80, i64 8)
   %or_result = alloca ptr, align 8
-  store ptr %27, ptr %or_result, align 8
+  store ptr %81, ptr %or_result, align 8
+  %82 = load i64, ptr %flag1, align 4
+  %83 = load i64, ptr %flag2, align 4
+  %ortmp = or i64 %82, %83
+  %84 = load ptr, ptr %or_result, align 8
+  store i64 %ortmp, ptr %84, align 4
+  %85 = call ptr @get_current_thread_nursery.37()
+  %86 = call ptr @aria_gc_alloc.38(ptr %85, i64 8)
+  %not_result = alloca ptr, align 8
+  store ptr %86, ptr %not_result, align 8
+  %87 = load i64, ptr %flag1, align 4
+  %nottmp = xor i64 %87, -1
+  %88 = load ptr, ptr %not_result, align 8
+  store i64 %nottmp, ptr %88, align 4
+  %89 = load i64, ptr %x, align 4
+  %gttmp1 = icmp sgt i64 %89, 50
+  br i1 %gttmp1, label %if_then, label %if_else
+
+if_then:                                          ; preds = %entry
+  %90 = call ptr @get_current_thread_nursery.39()
+  %91 = call ptr @aria_gc_alloc.40(ptr %90, i64 8)
+  %positive = alloca ptr, align 8
+  store ptr %91, ptr %positive, align 8
+  %92 = load ptr, ptr %positive, align 8
+  store i64 1, ptr %92, align 4
+  br label %if_merge
+
+if_else:                                          ; preds = %entry
+  %93 = call ptr @get_current_thread_nursery.41()
+  %94 = call ptr @aria_gc_alloc.42(ptr %93, i64 8)
+  %negative = alloca ptr, align 8
+  store ptr %94, ptr %negative, align 8
+  %95 = load ptr, ptr %negative, align 8
+  store i64 0, ptr %95, align 4
+  br label %if_merge
+
+if_merge:                                         ; preds = %if_else, %if_then
+  %96 = call ptr @get_current_thread_nursery.43()
+  %97 = call ptr @aria_gc_alloc.44(ptr %96, i64 8)
+  %counter = alloca ptr, align 8
+  store ptr %97, ptr %counter, align 8
+  %98 = load ptr, ptr %counter, align 8
+  store i64 0, ptr %98, align 4
+  %99 = call ptr @get_current_thread_nursery.45()
+  %100 = call ptr @aria_gc_alloc.46(ptr %99, i64 8)
+  %result = alloca ptr, align 8
+  store ptr %100, ptr %result, align 8
+  %101 = call ptr @get_current_thread_nursery.47()
+  %102 = call ptr @aria_gc_alloc.48(ptr %101, i64 8)
+  %var = alloca ptr, align 8
+  store ptr %102, ptr %var, align 8
+  %103 = load ptr, ptr %var, align 8
+  store i64 100, ptr %103, align 4
+  %104 = call ptr @get_current_thread_nursery.49()
+  %105 = call ptr @aria_gc_alloc.50(ptr %104, i64 8)
+  %complex = alloca ptr, align 8
+  store ptr %105, ptr %complex, align 8
+  %106 = load i64, ptr %a, align 4
+  %107 = load i64, ptr %b, align 4
+  %addtmp2 = add i64 %106, %107
+  %108 = load i64, ptr %a, align 4
+  %109 = load i64, ptr %b, align 4
+  %subtmp3 = sub i64 %108, %109
+  %multmp4 = mul i64 %addtmp2, %subtmp3
+  %divtmp5 = sdiv i64 %multmp4, 2
+  %110 = load ptr, ptr %complex, align 8
+  store i64 %divtmp5, ptr %110, align 4
+  %111 = call ptr @get_current_thread_nursery.51()
+  %112 = call ptr @aria_gc_alloc.52(ptr %111, i64 1)
+  %balanced_ternary = alloca ptr, align 8
+  store ptr %112, ptr %balanced_ternary, align 8
+  %113 = load ptr, ptr %balanced_ternary, align 8
+  store i64 1, ptr %113, align 4
+  %114 = call ptr @get_current_thread_nursery.53()
+  %115 = call ptr @aria_gc_alloc.54(ptr %114, i64 2)
+  %ternary_byte = alloca ptr, align 8
+  store ptr %115, ptr %ternary_byte, align 8
+  %116 = load ptr, ptr %ternary_byte, align 8
+  store i64 100, ptr %116, align 4
+  %117 = call ptr @get_current_thread_nursery.55()
+  %118 = call ptr @aria_gc_alloc.56(ptr %117, i64 1)
+  %nonary_digit = alloca ptr, align 8
+  store ptr %118, ptr %nonary_digit, align 8
+  %119 = load ptr, ptr %nonary_digit, align 8
+  store i64 4, ptr %119, align 4
+  %120 = call ptr @get_current_thread_nursery.57()
+  %121 = call ptr @aria_gc_alloc.58(ptr %120, i64 2)
+  %nonary_byte = alloca ptr, align 8
+  store ptr %121, ptr %nonary_byte, align 8
+  %122 = load ptr, ptr %nonary_byte, align 8
+  store i64 255, ptr %122, align 4
+  %123 = call ptr @get_current_thread_nursery.59()
+  %124 = call ptr @aria_gc_alloc.60(ptr %123, i64 1)
+  %tiny = alloca ptr, align 8
+  store ptr %124, ptr %tiny, align 8
+  %125 = load ptr, ptr %tiny, align 8
+  store i64 127, ptr %125, align 4
+  %126 = call ptr @get_current_thread_nursery.61()
+  %127 = call ptr @aria_gc_alloc.62(ptr %126, i64 2)
+  %small = alloca ptr, align 8
+  store ptr %127, ptr %small, align 8
+  %128 = load ptr, ptr %small, align 8
+  store i64 32000, ptr %128, align 4
+  %129 = call ptr @get_current_thread_nursery.63()
+  %130 = call ptr @aria_gc_alloc.64(ptr %129, i64 4)
+  %medium = alloca ptr, align 8
+  store ptr %130, ptr %medium, align 8
+  %131 = load ptr, ptr %medium, align 8
+  store i64 2000000, ptr %131, align 4
+  %132 = call ptr @get_current_thread_nursery.65()
+  %133 = call ptr @aria_gc_alloc.66(ptr %132, i64 8)
+  %large = alloca ptr, align 8
+  store ptr %133, ptr %large, align 8
+  %134 = load ptr, ptr %large, align 8
+  store i64 9000000000, ptr %134, align 4
+  %135 = call ptr @get_current_thread_nursery.67()
+  %136 = call ptr @aria_gc_alloc.68(ptr %135, i64 8)
+  %byte_val = alloca ptr, align 8
+  store ptr %136, ptr %byte_val, align 8
+  %137 = load ptr, ptr %byte_val, align 8
+  store i64 255, ptr %137, align 4
+  %138 = call ptr @get_current_thread_nursery.69()
+  %139 = call ptr @aria_gc_alloc.70(ptr %138, i64 8)
+  %unsigned_val = alloca ptr, align 8
+  store ptr %139, ptr %unsigned_val, align 8
+  %140 = load ptr, ptr %unsigned_val, align 8
+  store i64 4000000000, ptr %140, align 4
   ret void
 }
 
 declare ptr @get_current_thread_nursery()
 
 declare ptr @aria_gc_alloc(ptr, i64)
+
+declare ptr @aria_alloc(i64)
 
 declare ptr @get_current_thread_nursery.1()
 
@@ -109,3 +336,99 @@ declare ptr @aria_gc_alloc.20(ptr, i64)
 declare ptr @get_current_thread_nursery.21()
 
 declare ptr @aria_gc_alloc.22(ptr, i64)
+
+declare ptr @get_current_thread_nursery.23()
+
+declare ptr @aria_gc_alloc.24(ptr, i64)
+
+declare ptr @get_current_thread_nursery.25()
+
+declare ptr @aria_gc_alloc.26(ptr, i64)
+
+declare ptr @get_current_thread_nursery.27()
+
+declare ptr @aria_gc_alloc.28(ptr, i64)
+
+declare ptr @get_current_thread_nursery.29()
+
+declare ptr @aria_gc_alloc.30(ptr, i64)
+
+declare ptr @get_current_thread_nursery.31()
+
+declare ptr @aria_gc_alloc.32(ptr, i64)
+
+declare ptr @get_current_thread_nursery.33()
+
+declare ptr @aria_gc_alloc.34(ptr, i64)
+
+declare ptr @get_current_thread_nursery.35()
+
+declare ptr @aria_gc_alloc.36(ptr, i64)
+
+declare ptr @get_current_thread_nursery.37()
+
+declare ptr @aria_gc_alloc.38(ptr, i64)
+
+declare ptr @get_current_thread_nursery.39()
+
+declare ptr @aria_gc_alloc.40(ptr, i64)
+
+declare ptr @get_current_thread_nursery.41()
+
+declare ptr @aria_gc_alloc.42(ptr, i64)
+
+declare ptr @get_current_thread_nursery.43()
+
+declare ptr @aria_gc_alloc.44(ptr, i64)
+
+declare ptr @get_current_thread_nursery.45()
+
+declare ptr @aria_gc_alloc.46(ptr, i64)
+
+declare ptr @get_current_thread_nursery.47()
+
+declare ptr @aria_gc_alloc.48(ptr, i64)
+
+declare ptr @get_current_thread_nursery.49()
+
+declare ptr @aria_gc_alloc.50(ptr, i64)
+
+declare ptr @get_current_thread_nursery.51()
+
+declare ptr @aria_gc_alloc.52(ptr, i64)
+
+declare ptr @get_current_thread_nursery.53()
+
+declare ptr @aria_gc_alloc.54(ptr, i64)
+
+declare ptr @get_current_thread_nursery.55()
+
+declare ptr @aria_gc_alloc.56(ptr, i64)
+
+declare ptr @get_current_thread_nursery.57()
+
+declare ptr @aria_gc_alloc.58(ptr, i64)
+
+declare ptr @get_current_thread_nursery.59()
+
+declare ptr @aria_gc_alloc.60(ptr, i64)
+
+declare ptr @get_current_thread_nursery.61()
+
+declare ptr @aria_gc_alloc.62(ptr, i64)
+
+declare ptr @get_current_thread_nursery.63()
+
+declare ptr @aria_gc_alloc.64(ptr, i64)
+
+declare ptr @get_current_thread_nursery.65()
+
+declare ptr @aria_gc_alloc.66(ptr, i64)
+
+declare ptr @get_current_thread_nursery.67()
+
+declare ptr @aria_gc_alloc.68(ptr, i64)
+
+declare ptr @get_current_thread_nursery.69()
+
+declare ptr @aria_gc_alloc.70(ptr, i64)
