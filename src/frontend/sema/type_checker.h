@@ -57,6 +57,7 @@ public:
     void visit(frontend::BinaryOp* node) override;
     void visit(frontend::UnaryOp* node) override;
     void visit(frontend::CallExpr* node) override;
+    void visit(frontend::LambdaExpr* node) override;
 
     // Visitor methods for statements
     void visit(frontend::VarDecl* node) override;

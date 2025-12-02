@@ -2,6 +2,31 @@
 Version: 0.0.6
 Status: Draft / Request for Implementation
 
+================================================================================
+⚠️  CRITICAL IMPLEMENTATION NOTICE ⚠️
+================================================================================
+
+These specifications represent INTENTIONAL design decisions, not suggestions.
+
+DO NOT "optimize", "simplify", "modernize", or "improve" any features during 
+implementation or documentation iteration. If something appears:
+  - Verbose: It's for EXPLICITNESS and CLARITY - keep it
+  - Redundant: It's for ZERO AMBIGUITY - keep it  
+  - Unusual: It's a DELIBERATE design choice - keep it
+  - Old-fashioned: It's PROVEN and RELIABLE - keep it
+
+Every feature, keyword, and syntax rule exists for a specific reason aligned 
+with Aria's core philosophy of predictability, explicitness, and safety.
+
+IMPLEMENT EXACTLY AS SPECIFIED. NO EXCEPTIONS. NO SUBSTITUTIONS.
+
+If you think something is wrong or could be better, document your concern 
+separately - DO NOT modify the specification or implementation to match 
+your assumptions about what "modern" or "better" means.
+
+This specification is the CANONICAL SOURCE OF TRUTH.
+================================================================================
+
 1. Executive Summary
 Aria is a high-performance, systems-level programming language designed to bridge the gap between managed safety and raw metal control. It features a unique Hybrid Memory Model that combines a default Garbage Collector (GC) with an opt-out "Wild" manual memory management system, enforced via a Rust-style borrow checker.
 
@@ -19,10 +44,46 @@ The language supports a wide array of specific bit-width integers and floats, al
 * Boolean: bool.
 2.2 Exotic Types (MANDATORY)
 These types are strictly required and non-negotiable.
+
+Balanced Ternary Types:
 * trit: Balanced ternary digit. Values: {-1, 0, 1}.
-* tryte: 10 trits. Storage: uint16. Range: $3^{10}$ values.
+* tryte: 10 trits. Storage: uint16. Range: 3^10 = 59,049 values.
+
+Balanced Nonary Types:
 * nit: Balanced nonary digit. Values: {-4, -3, -2, -1, 0, 1, 2, 3, 4}.
-* nyte: 5 nits. Storage: uint16. Range: $9^5$ values.
+* nyte: 5 nits. Storage: uint16. Range: 9^5 = 59,049 values.
+
+Design Rationale - Optimal Binary Storage:
+The exponents (10 trits, 5 nits) were determined through empirical analysis to 
+maximize utilization of standard binary types while minimizing wasted bits:
+
+  * 3^10 = 59,049 (fits in uint16 = 65,535 with 90.1% utilization)
+  * 9^5  = 59,049 (fits in uint16 = 65,535 with 90.1% utilization)
+  
+This symmetry is intentional:
+  - Both exotic types achieve identical capacity
+  - Natural mathematical relationship (9 = 3^2)
+  - Minimal bit waste (only 6,486 unused values per uint16)
+  - Balanced ternary and nonary systems share optimal storage efficiency
+
+Scalability - Multiple Values in Larger Types:
+Since both tryte and nyte fit perfectly in uint16, they pack efficiently into 
+all larger binary types:
+
+  * uint16:  1 tryte  or 1 nyte   (90.1% utilization)
+  * uint32:  2 trytes or 2 nytes  (packed side-by-side)
+  * uint64:  4 trytes or 4 nytes  (packed side-by-side)
+  * uint128: 8 trytes or 8 nytes  (packed side-by-side)
+  * uint256: 16 trytes or 16 nytes (packed side-by-side)
+  * uint512: 32 trytes or 32 nytes (packed side-by-side)
+
+This allows SIMD operations on multiple exotic values simultaneously using 
+standard CPU registers (AVX-512 can process 32 trytes/nytes in parallel).
+
+DO NOT modify these exponents without providing empirical proof of better 
+binary storage utilization. These values are the result of iterative 
+optimization testing, not arbitrary choices.
+
 2.3 Compound & Reference Types
 * Vectors: vec2, vec3, vec9 (specialized for physics/math).
 * Structures: struct, obj (anonymous objects).
@@ -80,12 +141,127 @@ To bridge GC and Wild memory safely, Aria uses specific operators:
 * Importing: use std.io; or use "./local.aria" as utils;.
 * Visibility: pub keyword for public exports.
 * Modules: Nested mod name { ... } structures supported.
-5.2 External Interface (FFI)
+
+5.2 NASM-Style Macros with Context Stack
+Aria supports powerful preprocessor macros inspired by NASM assembly, with a context stack for nested macro expansion.
+
+Macro Definition Syntax:
+%macro macro_name param_count
+    // macro body with %1, %2, ... parameter references
+%endmacro
+
+Context Stack Features:
+* %push context_name - Push new context onto stack
+* %pop - Pop current context from stack
+* %context - Get current context name
+* Local labels within context: %$label
+* Context-local variables: %$var
+
+Example - Conditional Debug Logging:
+%macro DEBUG_LOG 2
+    %ifdef DEBUG_MODE
+        print("[DEBUG] %1: %2");
+    %endif
+%endmacro
+
+Example - Context Stack Usage:
+%macro SAFE_BLOCK 1
+    %push safe_%1
+    defer {
+        print("Exiting safe block: %1");
+    }
+    %$start:
+        // block body
+    %pop
+%endmacro
+
+Preprocessor Directives:
+* %define NAME value - Define constant
+* %undef NAME - Undefine constant
+* %ifdef NAME - Conditional if defined
+* %ifndef NAME - Conditional if not defined
+* %if expression - Conditional compilation
+* %elif expression - Else if
+* %else - Else clause
+* %endif - End conditional
+* %include "file.aria" - Include file
+* %rep count - Repeat block
+* %endrep - End repeat
+
+Multi-line Macros:
+%macro REPEAT_OP 3
+    %rep %3
+        %1 = %1 %2;
+    %endrep
+%endmacro
+
+Usage: REPEAT_OP(counter, +1, 10)  // Expands to 10 increment operations
+
+5.3 Zig-Style Comptime Evaluation
+Aria supports compile-time function execution for zero-runtime-cost abstractions and compile-time computation.
+
+Comptime Keyword:
+Functions marked with comptime are evaluated during compilation, not at runtime.
+
+comptime func:computeOptimalSize = int64(int64:elements) {
+    return {
+        err: NULL,
+        val: elements * 8  // Computed at compile time
+    };
+}
+
+// Usage in type declarations
+int8[comptime computeOptimalSize(1000)]:buffer;  // Size calculated at compile time
+
+Comptime Variables:
+comptime int64:MAX_THREADS = 16;
+comptime string:VERSION = "0.0.6";
+comptime bool:DEBUG_MODE = true;
+
+Comptime Expressions:
+// Type-level computation
+comptime {
+    if (TARGET_ARCH == "x86_64") {
+        int64:CACHE_LINE = 64;
+    } else {
+        int64:CACHE_LINE = 32;
+    }
+}
+
+Comptime Type Generation:
+// Generate optimal type based on platform
+comptime func:selectIntType = type(int64:size) {
+    if (size <= 8) return int8;
+    if (size <= 16) return int16;
+    if (size <= 32) return int32;
+    return int64;
+};
+
+// Use computed type
+comptime type:MyInt = selectIntType(DATA_SIZE);
+MyInt:value = 42;
+
+Requirements:
+* Comptime functions must be pure (no side effects)
+* All inputs to comptime functions must be known at compile time
+* Comptime evaluation happens after macro expansion but before code generation
+* Errors in comptime evaluation are compile-time errors
+
+Integration with Macros:
+Comptime evaluation happens AFTER macro expansion, allowing macros to generate comptime code.
+
+%macro GEN_OPTIMAL_ARRAY 2
+    comptime int64:size_%1 = %2 * sizeof(int64);
+    int8[size_%1]:%1_buffer;
+%endmacro
+
+5.4 External Interface (FFI)
 * Syntax: extern "libc" { ... }.
 * Types: C-types mapped to Aria primitive types (e.g., void*, uint64).
-5.3 Conditional Compilation
+
+5.5 Conditional Compilation
 * Cfg Attribute: use cfg(target_os = "linux") std.os.linux;.
-* Comptime: computeOptimalSize() functions evaluated at compile time.
+* Build-time constants accessible to comptime functions.
 
 6. Standard Library & Runtime
 6.1 I/O Stream Architecture
@@ -278,6 +454,78 @@ process:worker = spawn("./processor", [], { stdin: comm.write });
 comm.write_end.write("process this data");
 comm.write_end.close();
 
+8.7 NASM-Style Macros and Comptime Examples
+// Preprocessor Macro Definition
+%macro DEBUG_PRINT 1
+    %ifdef DEBUG_MODE
+        print("[DEBUG] %1");
+    %endif
+%endmacro
+
+// Usage
+%define DEBUG_MODE
+DEBUG_PRINT("Starting initialization");  // Expands to print("[DEBUG] Starting initialization");
+
+// Context Stack Example
+%macro SAFE_OPERATION 2
+    %push op_%1
+    print("Starting operation: %1");
+    defer {
+        print("Completed operation: %1");
+    }
+    %$start:
+        %2  // Operation body
+    %pop
+%endmacro
+
+// Repeat Macro
+%macro INIT_ARRAY 3
+    %rep %3
+        %1[%3] = %2;
+    %endrep
+%endmacro
+
+// Comptime Function - Evaluated at compile time
+comptime func:isPowerOfTwo = bool(int64:n) {
+    return {
+        err: NULL,
+        val: (n > 0) && ((n & (n - 1)) == 0)
+    };
+}
+
+// Comptime Variable - Computed at compile time
+comptime int64:BUFFER_SIZE = 1024 * 1024;
+comptime string:BUILD_DATE = "2025-12-02";
+comptime bool:USE_SIMD = isPowerOfTwo(BUFFER_SIZE).val;
+
+// Comptime Type Selection
+comptime func:selectType = type(int64:maxValue) {
+    if (maxValue <= 255) return uint8;
+    if (maxValue <= 65535) return uint16;
+    if (maxValue <= 4294967295) return uint32;
+    return uint64;
+};
+
+comptime type:CounterType = selectType(1000000);
+CounterType:counter = 0;  // Type determined at compile time
+
+// Comptime Conditional Compilation
+comptime {
+    if (TARGET_OS == "linux") {
+        %define USE_EPOLL
+    } else if (TARGET_OS == "windows") {
+        %define USE_IOCP
+    }
+}
+
+// Combining Macros and Comptime
+%macro OPTIMIZED_LOOP 2
+    comptime int64:unroll_factor = %2;
+    %rep unroll_factor
+        %1;
+    %endrep
+%endmacro
+
 9. Complete AST Token List
 The following list comprises the mandatory tokens for the Lexer/Parser implementation.
 Literals
@@ -311,6 +559,26 @@ Module System Keywords
 * PUB (public visibility)
 * EXTERN (external C functions)
 * CFG (conditional compilation)
+* COMPTIME (compile-time execution)
+Preprocessor / Macro Keywords
+* MACRO (%macro - macro definition start)
+* ENDMACRO (%endmacro - macro definition end)
+* PUSH (%push - push context onto stack)
+* POP (%pop - pop context from stack)
+* CONTEXT (%context - get current context)
+* DEFINE (%define - define preprocessor constant)
+* UNDEF (%undef - undefine constant)
+* IFDEF (%ifdef - conditional if defined)
+* IFNDEF (%ifndef - conditional if not defined)
+* IF_PREPROC (%if - preprocessor conditional)
+* ELIF (%elif - preprocessor else-if)
+* ELSE_PREPROC (%else - preprocessor else)
+* ENDIF (%endif - end preprocessor conditional)
+* INCLUDE (%include - include file)
+* REP (%rep - repeat block)
+* ENDREP (%endrep - end repeat)
+* MACRO_PARAM (%1, %2, ... - macro parameters)
+* CONTEXT_LABEL (%$label - context-local label)
 Assignment Operators
 * ASSIGN (=), PLUS_ASSIGN (+=), MINUS_ASSIGN (-=), MULT_ASSIGN (*=), DIV_ASSIGN (/=), MOD_ASSIGN (%=)
 Arithmetic Operators

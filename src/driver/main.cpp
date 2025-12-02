@@ -184,7 +184,7 @@ int main(int argc, char** argv) {
     // See src/frontend/sema/type_checker.cpp
     if (Verbose) outs() << "[Phase 3c] Type Checking...\n";
     aria::sema::TypeCheckResult typeResult = aria::sema::checkTypes(astRoot.get());
-
+    
     if (!typeResult.success) {
         errs() << "Compilation Failed: Type Errors Detected.\n";
         for (const auto& error : typeResult.errors) {

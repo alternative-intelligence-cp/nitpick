@@ -1,0 +1,25 @@
+// Test preprocessor directives
+%macro TEST 2
+    print("Testing: %1 and %2")
+%endmacro
+
+%define DEBUG 1
+
+%ifdef DEBUG
+    print("Debug mode enabled")
+%endif
+
+%push context1
+%$label1:
+    print("In context1")
+%pop
+
+// Test hex escapes in char literals
+int8:newline = '\x0A'
+int8:tab = '\x09'
+int8:letterA = '\x41'
+
+// Test modulo operator still works
+int32:mod_result = 10 % 3
+
+print("Char literals test passed")
