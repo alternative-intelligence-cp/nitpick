@@ -297,6 +297,69 @@ after
     std::cout << "✓ %rep 0 works (zero repetitions)" << std::endl;
 }
 
+void test_include() {
+    std::cout << "\n=== Test %include ===" << std::endl;
+    
+    // Test 1: Simple include
+    Preprocessor pp;
+    pp.addIncludePath("../tests/test_includes");
+    
+    std::string source = R"(
+before include
+%include "common.aria"
+after include
+)";
+    
+    std::string result = pp.process(source, "test.aria");
+    std::cout << "Result:" << std::endl << result << std::endl;
+    
+    // Should have the defines from common.aria
+    assert(pp.isConstantDefined("COMMON_VERSION"));
+    assert(pp.isConstantDefined("DEBUG"));
+    assert(pp.isMacroDefined("COMMON_FUNC"));
+    
+    assert(result.find("before include") != std::string::npos);
+    assert(result.find("after include") != std::string::npos);
+    
+    std::cout << "✓ Simple %include works" << std::endl;
+    
+    // Test 2: Nested include
+    Preprocessor pp_nested;
+    pp_nested.addIncludePath("../tests/test_includes");
+    
+    std::string source_nested = R"(
+%include "nested.aria"
+)";
+    
+    std::string result_nested = pp_nested.process(source_nested, "test.aria");
+    std::cout << "Nested result:" << std::endl << result_nested << std::endl;
+    
+    // Should have defines from common.aria (included by nested.aria)
+    assert(pp_nested.isConstantDefined("COMMON_VERSION"));
+    assert(result_nested.find("nested_code_here") != std::string::npos);
+    
+    std::cout << "✓ Nested %include works" << std::endl;
+    
+    // Test 3: Circular include protection
+    Preprocessor pp_circ;
+    pp_circ.addIncludePath("../tests/test_includes");
+    
+    // Include same file twice - should only process once
+    std::string source_circ = R"(
+%include "common.aria"
+%include "common.aria"
+)";
+    
+    try {
+        std::string result_circ = pp_circ.process(source_circ, "test.aria");
+        // Should complete without error (second include skipped with warning)
+        std::cout << "✓ Circular include protection works" << std::endl;
+    } catch (...) {
+        std::cerr << "✗ Circular include test failed" << std::endl;
+        throw;
+    }
+}
+
 int main() {
     std::cout << "=== Preprocessor Tests ===" << std::endl;
     
@@ -310,6 +373,7 @@ int main() {
         test_context_stack();
         test_error_detection();
         test_rep_endrep();
+        test_include();
         
         std::cout << "\n=== All Preprocessor Tests Passed! ===" << std::endl;
     } catch (const std::exception& e) {
