@@ -49,6 +49,7 @@ private:
     // Include guard - prevent circular includes
     std::set<std::string> included_files;
     std::string current_file;
+    std::vector<std::string> include_paths;  // Search paths for includes
     
     // Conditional compilation state
     struct ConditionalState {
@@ -72,6 +73,7 @@ private:
     std::string readLine();
     std::string readWord();
     std::string readUntilNewline();
+    std::string resolveIncludePath(const std::string& filename, bool is_system);
     
     // Directive handlers
     void handleMacroDefinition();

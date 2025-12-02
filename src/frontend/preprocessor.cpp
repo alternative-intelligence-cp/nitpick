@@ -4,6 +4,7 @@
 #include <iostream>
 #include <algorithm>
 #include <cctype>
+#include <sys/stat.h>
 
 namespace aria {
 namespace frontend {
@@ -126,6 +127,8 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
                 handleEndif();
             } else if (directive == "include") {
                 handleInclude();
+                // Don't skip to end of line - handleInclude already positioned us correctly
+                continue;
             } else if (directive == "push") {
                 handlePush();
             } else if (directive == "pop") {
@@ -506,13 +509,18 @@ void Preprocessor::handleEndif() {
 }
 
 void Preprocessor::handleInclude() {
+    // Save start position of the include directive (right after %)
+    size_t directive_start = pos;
+    
     skipWhitespace();
     
     // Read filename (can be "file" or <file>)
     std::string filename;
+    bool is_system_include = false;
     char quote = peek();
     
     if (quote == '"' || quote == '<') {
+        is_system_include = (quote == '<');
         advance();
         char end_quote = (quote == '"') ? '"' : '>';
         
@@ -533,15 +541,65 @@ void Preprocessor::handleInclude() {
         error("%include requires a filename");
     }
     
-    // Check for circular include
-    if (included_files.find(filename) != included_files.end()) {
+    // Skip to end of line
+    skipWhitespace();
+    if (peek() == '\n') advance();
+    
+    // Now pos is right after the %include line
+    size_t after_directive = pos;
+    
+    // Resolve file path
+    std::string resolved_path = resolveIncludePath(filename, is_system_include);
+    
+    if (resolved_path.empty()) {
+        error("Cannot find include file: " + filename);
+    }
+    
+    // Check for circular include using resolved path
+    if (included_files.find(resolved_path) != included_files.end()) {
         warning("Circular include detected: " + filename + " (skipping)");
         return;
     }
     
-    // TODO: Actually read and process the file
-    // For now, just mark as included
-    included_files.insert(filename);
+    // Read the file
+    std::ifstream file(resolved_path);
+    if (!file.is_open()) {
+        error("Cannot open include file: " + resolved_path);
+    }
+    
+    std::string file_contents((std::istreambuf_iterator<char>(file)),
+                               std::istreambuf_iterator<char>());
+    file.close();
+    
+    // Mark as included
+    included_files.insert(resolved_path);
+    
+    // Save current state (source, position, file)
+    std::string saved_source = source;
+    size_t saved_pos = pos;
+    int saved_line = line;
+    int saved_col = col;
+    std::string saved_file = current_file;
+    
+    // Process the included file recursively
+    std::string processed_content = process(file_contents, resolved_path);
+    
+    // Restore state
+    source = saved_source;
+    pos = saved_pos;
+    line = saved_line;
+    col = saved_col;
+    current_file = saved_file;
+    
+    // Insert the processed content after the %include directive
+    source.insert(after_directive, processed_content);
+    
+    // Don't advance pos - let the main loop output the inserted content
+    // pos is still at the position it was when we started (after reading the filename)
+    // But we need it to be at after_directive so we skip the %include line itself
+    // Actually, we want to position right at after_directive so the next iteration
+    // starts reading the inserted content
+    pos = after_directive;
 }
 
 void Preprocessor::handlePush() {
@@ -844,9 +902,49 @@ std::string Preprocessor::expandMacroParam(int param_index, const std::vector<st
     return current_args[param_index - 1];
 }
 
-// Configuration methods
+std::string Preprocessor::resolveIncludePath(const std::string& filename, bool is_system) {
+    // Helper to check if file exists
+    auto file_exists = [](const std::string& path) {
+        struct stat buffer;
+        return (stat(path.c_str(), &buffer) == 0);
+    };
+    
+    // For quoted includes ("file"), try relative to current file first
+    if (!is_system && !current_file.empty()) {
+        // Get directory of current file
+        size_t last_slash = current_file.find_last_of("/\\");
+        if (last_slash != std::string::npos) {
+            std::string dir = current_file.substr(0, last_slash + 1);
+            std::string candidate = dir + filename;
+            if (file_exists(candidate)) {
+                return candidate;
+            }
+        }
+    }
+    
+    // Try include paths
+    for (const auto& include_path : include_paths) {
+        std::string candidate = include_path;
+        if (!candidate.empty() && candidate.back() != '/' && candidate.back() != '\\') {
+            candidate += '/';
+        }
+        candidate += filename;
+        
+        if (file_exists(candidate)) {
+            return candidate;
+        }
+    }
+    
+    // Try as-is (absolute or relative to working directory)
+    if (file_exists(filename)) {
+        return filename;
+    }
+    
+    return "";  // Not found
+}
+
 void Preprocessor::addIncludePath(const std::string& path) {
-    // TODO: Store include paths for file resolution
+    include_paths.push_back(path);
 }
 
 void Preprocessor::defineConstant(const std::string& name, const std::string& value) {
