@@ -1,21 +1,55 @@
 ; ModuleID = 'aria_module'
 source_filename = "aria_module"
 
+@0 = private unnamed_addr constant [27 x i8] c"Testing math operations...\00", align 1
+@1 = private unnamed_addr constant [26 x i8] c"Math operations complete!\00", align 1
+
 declare void @puts(ptr)
 
 declare void @print(ptr)
 
 define void @main() {
 entry:
-  %0 = call ptr @get_current_thread_nursery()
-  %1 = call ptr @aria_gc_alloc(ptr %0, i64 1)
-  %x = alloca ptr, align 8
-  store ptr %1, ptr %x, align 8
-  %2 = load ptr, ptr %x, align 8
-  store i64 42, ptr %2, align 4
+  call void @puts(ptr @0)
+  %calltmp = call i8 @add(i64 10, i64 5)
+  %calltmp1 = call i8 @sub(i64 10, i64 5)
+  %calltmp2 = call i8 @mul(i64 10, i64 5)
+  call void @puts(ptr @1)
   ret void
 }
 
-declare ptr @get_current_thread_nursery()
+define i8 @add(i8 %a, i8 %b) {
+entry:
+  %a1 = alloca i8, align 1
+  store i8 %a, ptr %a1, align 1
+  %b2 = alloca i8, align 1
+  store i8 %b, ptr %b2, align 1
+  %0 = load i8, ptr %a1, align 1
+  %1 = load i8, ptr %b2, align 1
+  %addtmp = add i8 %0, %1
+  ret i8 %addtmp
+}
 
-declare ptr @aria_gc_alloc(ptr, i64)
+define i8 @sub(i8 %a, i8 %b) {
+entry:
+  %a1 = alloca i8, align 1
+  store i8 %a, ptr %a1, align 1
+  %b2 = alloca i8, align 1
+  store i8 %b, ptr %b2, align 1
+  %0 = load i8, ptr %a1, align 1
+  %1 = load i8, ptr %b2, align 1
+  %subtmp = sub i8 %0, %1
+  ret i8 %subtmp
+}
+
+define i8 @mul(i8 %a, i8 %b) {
+entry:
+  %a1 = alloca i8, align 1
+  store i8 %a, ptr %a1, align 1
+  %b2 = alloca i8, align 1
+  store i8 %b, ptr %b2, align 1
+  %0 = load i8, ptr %a1, align 1
+  %1 = load i8, ptr %b2, align 1
+  %multmp = mul i8 %0, %1
+  ret i8 %multmp
+}

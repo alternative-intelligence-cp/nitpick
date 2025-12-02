@@ -105,7 +105,7 @@ public:
         : name(n), parameters(std::move(params)), return_type(ret_type), body(std::move(b)) {}
     
     void accept(AstVisitor& visitor) override {
-        // visitor.visit(this);
+        visitor.visit(this);
     }
 };
 

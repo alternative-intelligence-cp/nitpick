@@ -42,6 +42,9 @@ class BreakStmt;
 class ContinueStmt;
 class WhenExpr;
 class AwaitExpr;
+class ObjectLiteral;
+class MemberAccess;
+class LambdaExpr;
 
 // Base AST Node
 // All AST nodes inherit from this class
@@ -67,9 +70,13 @@ public:
     virtual void visit(BinaryOp* node) = 0;
     virtual void visit(UnaryOp* node) = 0;
     virtual void visit(CallExpr* node) = 0;
+    virtual void visit(ObjectLiteral* node) { /* default: do nothing */ }
+    virtual void visit(MemberAccess* node) { /* default: do nothing */ }
+    virtual void visit(LambdaExpr* node) { /* default: do nothing */ }
 
     // Statements
     virtual void visit(VarDecl* node) = 0;
+    virtual void visit(FuncDecl* node) { /* default: do nothing */ }
     virtual void visit(ReturnStmt* node) = 0;
     virtual void visit(ExpressionStmt* node) { /* default: visit expression */ }
     virtual void visit(IfStmt* node) = 0;

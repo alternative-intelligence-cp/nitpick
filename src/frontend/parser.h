@@ -34,6 +34,10 @@ private:
     void advance();
     bool match(TokenType type);
     Token expect(TokenType type);
+    Token consume(TokenType type, const std::string& message);  // Alias for expect with custom error
+    bool check(TokenType type);  // Lookahead without consuming
+    bool isTypeToken(TokenType type);  // Helper to check if token is a valid type
+    std::vector<FuncParam> parseParams();  // Parse function parameters
 
     // Expression parsing (precedence climbing)
     std::unique_ptr<Expression> parsePrimary();

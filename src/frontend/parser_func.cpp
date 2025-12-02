@@ -24,16 +24,31 @@
 #include <memory>
 #include <string>
 
+// Helper: Check if current token is a valid type token
+bool Parser::isTypeToken(TokenType type) {
+    return type == TOKEN_TYPE_IDENTIFIER ||
+           type == TOKEN_TYPE_INT8 || type == TOKEN_TYPE_INT16 || 
+           type == TOKEN_TYPE_INT32 || type == TOKEN_TYPE_INT64 ||
+           type == TOKEN_TYPE_UINT8 || type == TOKEN_TYPE_UINT16 ||
+           type == TOKEN_TYPE_UINT32 || type == TOKEN_TYPE_UINT64 ||
+           type == TOKEN_TYPE_BOOL || type == TOKEN_TYPE_VOID ||
+           type == TOKEN_TYPE_STRING || type == TOKEN_TYPE_RESULT ||
+           type == TOKEN_TYPE_FUNC;
+}
+
 // Helper: Parse Parameter List: (type:name, type:name)
 std::vector<Param> Parser::parseParams() {
     std::vector<Param> params;
-    consume(TOKEN_LEFT_PAREN, "Expected '(' to begin parameter list");
+    consume(TOKEN_LPAREN, "Expected '(' to begin parameter list");
     
-    if (!check(TOKEN_RIGHT_PAREN)) {
+    if (!check(TOKEN_RPAREN)) {
         do {
             // Parse Type
             // Note: In Aria, type comes first in params: "int:x", unlike "x int" in Go.
-            Token typeTok = consume(TOKEN_TYPE_IDENTIFIER, "Expected parameter type");
+            Token typeTok = advance();
+            if (!isTypeToken(typeTok.type)) {
+                error("Expected parameter type, got: " + typeTok.lexeme);
+            }
             consume(TOKEN_COLON, "Expected ':' after type");
             Token nameTok = consume(TOKEN_IDENTIFIER, "Expected parameter name");
             
@@ -41,13 +56,13 @@ std::vector<Param> Parser::parseParams() {
         } while (match(TOKEN_COMMA));
     }
     
-    consume(TOKEN_RIGHT_PAREN, "Expected ')' to end parameter list");
+    consume(TOKEN_RPAREN, "Expected ')' to end parameter list");
     return params;
 }
 
 // Parses: func<T>:name = (args) -> ret {... }
 std::unique_ptr<FuncDecl> Parser::parseFuncDecl() {
-    consume(TOKEN_FUNC, "Expected 'func' keyword");
+    consume(TOKEN_KW_FUNC, "Expected 'func' keyword");
 
     // 1. Generics (Optional)
     // Supports: func<T, U>:name
@@ -76,15 +91,24 @@ std::unique_ptr<FuncDecl> Parser::parseFuncDecl() {
         return std::make_unique<FuncDecl>(nameToken.lexeme, generics, std::vector<Param>(), "", nullptr);
     }
 
-    // 4. Parameters
-    std::vector<Param> params = parseParams();
-
-    // 5. Return Type (Optional, default void)
+    // 4. Return Type (comes BEFORE parameters in new syntax)
+    // New syntax: func:test = int8(int8:a, int8:b) { ... }
     std::string returnType = "void";
-    if (match(TOKEN_ARROW)) { // '->'
-        Token retTok = consume(TOKEN_TYPE_IDENTIFIER, "Expected return type");
-        returnType = retTok.lexeme;
+    if (current.type == TOKEN_TYPE_INT8 || current.type == TOKEN_TYPE_INT16 || 
+        current.type == TOKEN_TYPE_INT32 || current.type == TOKEN_TYPE_INT64 ||
+        current.type == TOKEN_TYPE_UINT8 || current.type == TOKEN_TYPE_UINT16 ||
+        current.type == TOKEN_TYPE_UINT32 || current.type == TOKEN_TYPE_UINT64 ||
+        current.type == TOKEN_TYPE_BOOL || current.type == TOKEN_TYPE_VOID ||
+        current.type == TOKEN_IDENTIFIER || current.type == TOKEN_TYPE_STRING ||
+        current.type == TOKEN_TYPE_RESULT) {
+        returnType = current.lexeme;
+        advance();  // Consume the return type token
+    } else {
+        error("Expected return type before parameter list");
     }
+
+    // 5. Parameters
+    std::vector<Param> params = parseParams();
 
     // 6. Body
     std::unique_ptr<Block> body = parseBlock();

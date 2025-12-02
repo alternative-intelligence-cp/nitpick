@@ -55,6 +55,24 @@ Token Parser::expect(TokenType type) {
     return tok;
 }
 
+// Consume token with custom error message
+Token Parser::consume(TokenType type, const std::string& message) {
+    if (current.type != type) {
+        std::stringstream ss;
+        ss << message << " (expected token type " << type << " but got " << current.type
+           << ") at line " << current.line << ", col " << current.col;
+        throw std::runtime_error(ss.str());
+    }
+    Token tok = current;
+    advance();
+    return tok;
+}
+
+// Check if current token matches type without consuming
+bool Parser::check(TokenType type) {
+    return current.type == type;
+}
+
 // =============================================================================
 // Expression Parsing (Recursive Descent with Precedence Climbing)
 // =============================================================================
@@ -140,6 +158,81 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         
         expect(TOKEN_RBRACKET);
         return array_lit;
+    }
+    
+    // Object literal: { field: value, field: value, ... }
+    if (match(TOKEN_LBRACE)) {
+        auto obj_lit = std::make_unique<ObjectLiteral>();
+        
+        // Parse comma-separated field:value pairs until }
+        while (current.type != TOKEN_RBRACE && current.type != TOKEN_EOF) {
+            // Parse field name
+            Token field_name = expect(TOKEN_IDENTIFIER);
+            
+            // Expect colon
+            expect(TOKEN_COLON);
+            
+            // Parse field value
+            auto field_value = parseExpr();
+            
+            obj_lit->fields.push_back({field_name.value, std::move(field_value)});
+            
+            if (!match(TOKEN_COMMA)) {
+                break;
+            }
+        }
+        
+        expect(TOKEN_RBRACE);
+        return obj_lit;
+    }
+    
+    // Lambda Expression: returnType(params) { body } or returnType(params){body}(args)
+    // Check if current token is a type followed by (
+    if (isTypeToken(current.type)) {
+        // Lookahead to see if this is a lambda (type followed by LPAREN)
+        // We need to be careful not to consume the token yet
+        Token type_token = current;
+        
+        // Try to parse as lambda
+        // Save current position in case we need to backtrack
+        std::string return_type = current.value;
+        advance();  // consume type token
+        
+        if (current.type == TOKEN_LPAREN) {
+            // This is a lambda! Parse it
+            auto params = parseParams();
+            
+            // Parse lambda body
+            auto body = parseBlock();
+            
+            auto lambda = std::make_unique<LambdaExpr>(return_type, std::move(params), std::move(body));
+            
+            // Check for immediate invocation: lambda(args)
+            if (current.type == TOKEN_LPAREN) {
+                lambda->is_immediately_invoked = true;
+                advance();  // consume (
+                
+                // Parse arguments
+                while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
+                    lambda->call_arguments.push_back(parseExpr());
+                    
+                    if (!match(TOKEN_COMMA)) {
+                        break;
+                    }
+                }
+                
+                expect(TOKEN_RPAREN);
+            }
+            
+            return lambda;
+        } else {
+            // Not a lambda, this was a mistake - we need to handle this case
+            // This shouldn't happen in valid Aria code, but let's throw an error
+            std::stringstream ss;
+            ss << "Unexpected token after type identifier: " << current.value
+               << " at line " << current.line << " (expected '(' for lambda or variable declaration)";
+            throw std::runtime_error(ss.str());
+        }
     }
     
     // Await expression (Bug #70)
@@ -506,6 +599,13 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         auto stmt = parseFallStmt();
         expect(TOKEN_SEMICOLON);
         return stmt;
+    }
+    
+    // Function declaration (Bug #70)
+    if (current.type == TOKEN_KW_FUNC || 
+        current.type == TOKEN_KW_ASYNC ||
+        current.type == TOKEN_KW_PUB) {
+        return parseFuncDecl();
     }
 
     // Expression statement (e.g., function call)
@@ -949,8 +1049,47 @@ std::unique_ptr<Statement> Parser::parseModDef() {
 // Async Function Parsing (Bug #70)
 // =============================================================================
 
-// Parse function declaration with optional async keyword
-// Syntax: [async] [pub] func:name = (params) -> return_type { body }
+// Helper: check if token is a valid type token
+bool Parser::isTypeToken(TokenType type) {
+    return type == TOKEN_TYPE_INT8  || type == TOKEN_TYPE_INT16  ||
+           type == TOKEN_TYPE_INT32 || type == TOKEN_TYPE_INT64  ||
+           type == TOKEN_TYPE_FLT32 || type == TOKEN_TYPE_FLT64 ||
+           type == TOKEN_TYPE_BOOL  || type == TOKEN_TYPE_STRING ||
+           type == TOKEN_TYPE_VOID  || type == TOKEN_IDENTIFIER;
+}
+
+// Parse function parameters: (type:name, type:name, ...)
+std::vector<FuncParam> Parser::parseParams() {
+    std::vector<FuncParam> params;
+    
+    expect(TOKEN_LPAREN);
+    
+    while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
+        // Parse param_type:param_name
+        if (!isTypeToken(current.type)) {
+            throw std::runtime_error("Expected type token in parameter list");
+        }
+        
+        std::string param_type = current.value;
+        advance();
+        
+        expect(TOKEN_COLON);
+        
+        Token param_name = expect(TOKEN_IDENTIFIER);
+        params.push_back(FuncParam(param_type, param_name.value));
+        
+        if (!match(TOKEN_COMMA)) {
+            break;
+        }
+    }
+    
+    expect(TOKEN_RPAREN);
+    return params;
+}
+
+// Parse function declaration
+// NEW SYNTAX (v0.0.6): func:name = returnType(params) { body }
+// Example: func:add = int8(int8:a, int8:b) { return { err: NULL, val: a + b }; }
 std::unique_ptr<FuncDecl> Parser::parseFuncDecl() {
     bool is_async = false;
     bool is_pub = false;
@@ -965,55 +1104,37 @@ std::unique_ptr<FuncDecl> Parser::parseFuncDecl() {
         is_pub = true;
     }
     
-    // Expect func keyword
-    expect(TOKEN_KW_FUNC);
-    expect(TOKEN_COLON);
+    // Consume 'func' keyword
+    consume(TOKEN_KW_FUNC, "Expected 'func' keyword");
+    
+    // Consume ':'
+    consume(TOKEN_COLON, "Expected ':' after 'func'");
     
     // Parse function name
-    Token name_tok = expect(TOKEN_IDENTIFIER);
-    std::string func_name = name_tok.value;
+    Token name_tok = consume(TOKEN_IDENTIFIER, "Expected function name");
+    std::string name = name_tok.value;
     
-    // Expect assignment
-    expect(TOKEN_ASSIGN);
+    // Consume '='
+    consume(TOKEN_ASSIGN, "Expected '=' after function name");
     
-    // Parse parameter list
-    expect(TOKEN_LPAREN);
-    std::vector<FuncParam> parameters;
-    
-    while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
-        // Parse parameter type
-        Token param_type = expect(TOKEN_IDENTIFIER);
-        expect(TOKEN_COLON);
-        
-        // Parse parameter name
-        Token param_name = expect(TOKEN_IDENTIFIER);
-        
-        // Check for default value
-        std::unique_ptr<Expression> default_val = nullptr;
-        if (match(TOKEN_ASSIGN)) {
-            default_val = parseExpr();
-        }
-        
-        parameters.emplace_back(param_type.value, param_name.value, std::move(default_val));
-        
-        if (!match(TOKEN_COMMA)) {
-            break;
-        }
+    // Parse return type (must be a type token)
+    if (!isTypeToken(current.type)) {
+        std::stringstream ss;
+        ss << "Expected return type after '=' at line " << current.line << ", col " << current.col;
+        throw std::runtime_error(ss.str());
     }
     
-    expect(TOKEN_RPAREN);
+    std::string return_type = current.value;
+    advance();  // consume the return type token
     
-    // Parse return type
-    std::string return_type = "void";
-    if (match(TOKEN_ARROW)) {
-        Token ret_tok = expect(TOKEN_IDENTIFIER);
-        return_type = ret_tok.value;
-    }
+    // Parse parameters: (type:name, type:name, ...)
+    auto params = parseParams();
     
-    // Parse function body
+    // Parse body block
     auto body = parseBlock();
     
-    auto func_decl = std::make_unique<FuncDecl>(func_name, std::move(parameters), return_type, std::move(body));
+    // Create FuncDecl node
+    auto func_decl = std::make_unique<FuncDecl>(name, std::move(params), return_type, std::move(body));
     func_decl->is_async = is_async;
     func_decl->is_pub = is_pub;
     
@@ -1177,6 +1298,10 @@ std::unique_ptr<Expression> Parser::parseTemplateString() {
     expect(TOKEN_BACKTICK);
     return templateStr;
 }
+
+// =============================================================================
+// Function Declaration Parsing
+// =============================================================================
 
 } // namespace frontend
 } // namespace aria
