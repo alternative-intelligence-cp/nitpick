@@ -22,15 +22,20 @@ std::unique_ptr<Statement> Parser::parseDeferStmt() {
 }
 
 std::unique_ptr<Block> Parser::parseBlock() {
-    // TODO: Implement block parsing
-    // This requires:
-    // - consume(TOKEN_LBRACE) to start block
-    // - Loop parsing statements until TOKEN_RBRACE
-    // - consume(TOKEN_RBRACE) to end block
-    // - Handle defer statement registration
+    expect(TOKEN_LBRACE);
     
-    // Placeholder implementation
-    return std::make_unique<Block>();
+    auto block = std::make_unique<Block>();
+    
+    // Parse statements until we hit }
+    while (current.type != TOKEN_RBRACE && current.type != TOKEN_EOF) {
+        auto stmt = parseStmt();
+        if (stmt) {
+            block->statements.push_back(std::move(stmt));
+        }
+    }
+    
+    expect(TOKEN_RBRACE);
+    return block;
 }
 
 } // namespace frontend

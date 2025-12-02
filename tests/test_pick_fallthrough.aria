@@ -1,0 +1,23 @@
+// Test pick with fall() explicit fallthrough
+// Aria v0.0.6 Spec Section 8.3
+
+int8:c = 5;
+int8:result = 0;
+
+pick(c) {
+   (<9) {
+       result = 1;
+       fall(done);
+   },
+   (>9) {
+       result = 2;
+       fall(done);
+   },
+   (9) {
+       result = 3;
+       fall(done);
+   },
+   done:(!) {
+       result = 99;
+   }
+}

@@ -96,7 +96,7 @@ Token AriaLexer::nextToken() {
            // If it's not a comment, fall through to handle / as division operator
        }
 
-       // Recursive String Template Logic
+       // Recursive String Template Logic with Nesting Support (Bug #60)
        if (stateStack.top() == STATE_STRING_TEMPLATE) {
            if (c == '`') {
                advance();
@@ -109,6 +109,27 @@ Token AriaLexer::nextToken() {
                stateStack.push(STATE_INTERPOLATION);
                return {TOKEN_INTERP_START, "&{", line, col};
            }
+       }
+       
+       // Handle closing brace in interpolation to support nesting
+       // This allows: `outer &{`inner &{x}`} end` to work correctly
+       if (stateStack.size() > 1 && stateStack.top() == STATE_INTERPOLATION) {
+           if (c == '}') {
+               advance();
+               stateStack.pop();  // Pop interpolation state, return to template
+               return {TOKEN_RBRACE, "}", line, col};
+           }
+           // Inside interpolation, can have nested backticks
+           if (c == '`') {
+               advance();
+               stateStack.push(STATE_STRING_TEMPLATE);
+               return {TOKEN_BACKTICK, "`", line, col};
+           }
+           // Otherwise, fall through to normal token parsing
+       }
+       
+       // Continue with template literal content parsing
+       if (stateStack.top() == STATE_STRING_TEMPLATE) {
 
            // Consume string content between interpolations
            // This handles escape sequences and regular characters
@@ -188,6 +209,7 @@ Token AriaLexer::nextToken() {
                {"defer", TOKEN_KW_DEFER},
                {"for", TOKEN_KW_FOR},
                {"while", TOKEN_KW_WHILE},
+               {"in", TOKEN_KW_IN},
                {"then", TOKEN_KW_THEN},
                {"end", TOKEN_KW_END},
                {"fall", TOKEN_KW_FALL},
@@ -279,8 +301,6 @@ Token AriaLexer::nextToken() {
                {"array", TOKEN_TYPE_ARRAY},
                {"tensor", TOKEN_TYPE_TENSOR},
                {"matrix", TOKEN_TYPE_MATRIX},
-               {"func", TOKEN_TYPE_FUNC},
-               {"result", TOKEN_TYPE_RESULT},
                
                // System types
                {"binary", TOKEN_TYPE_BINARY},
@@ -741,6 +761,15 @@ Token AriaLexer::nextToken() {
        if (c == ';') {
            advance();
            return {TOKEN_SEMICOLON, ";", op_line, op_col};
+       }
+       if (c == ':') {
+           advance();
+           // Check for double-colon ::
+           if (peek() == ':') {
+               advance();
+               return {TOKEN_DOUBLE_COLON, "::", op_line, op_col};
+           }
+           return {TOKEN_COLON, ":", op_line, op_col};
        }
 
        // Unknown character
