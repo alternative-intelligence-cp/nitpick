@@ -93,10 +93,16 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
     while (peek() != 0) {
         char c = peek();
         
-        // Handle preprocessor directives (lines starting with %)
+        // Handle preprocessor directives (lines starting with % followed by alpha)
         if (c == '%' && (col == 1 || source[pos-1] == '\n')) {
-            advance(); // Skip %
-            std::string directive = readWord();
+            // Peek ahead to see if it's a directive or a context-local label
+            if (peekNext() == '$') {
+                // It's a context-local label definition (%$label:), not a directive
+                // Let it fall through to normal code processing
+            } else if (isalpha(peekNext())) {
+                // It's a directive
+                advance(); // Skip %
+                std::string directive = readWord();
             
             if (directive == "macro") {
                 handleMacroDefinition();
@@ -128,14 +134,17 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
                 handleContext();
             } else if (directive == "rep") {
                 handleRep();
+                } else {
+                    error("Unknown preprocessor directive: %" + directive);
+                }
+                
+                // Skip to end of line
+                while (peek() != '\n' && peek() != 0) advance();
+                if (peek() == '\n') advance();
+                continue;
             } else {
-                error("Unknown preprocessor directive: %" + directive);
+                // Not a directive, fall through to normal code processing
             }
-            
-            // Skip to end of line
-            while (peek() != '\n' && peek() != 0) advance();
-            if (peek() == '\n') advance();
-            continue;
         }
         
         // Check if we're in an inactive conditional block
@@ -147,10 +156,142 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
         }
         
         // Handle macro expansion in code
-        // TODO: Implement macro call recognition and expansion
+        // Check if we're at the start of an identifier (potential macro call)
+        if (isalpha(c) || c == '_') {
+            size_t save_pos = pos;
+            int save_line = line;
+            int save_col = col;
+            
+            std::string identifier = readWord();
+            
+            // Check if it's a macro
+            if (macros.find(identifier) != macros.end()) {
+                // It's a macro call - expand it
+                std::vector<std::string> args;
+                skipWhitespace();
+                
+                // Read macro arguments (if any)
+                const Macro& macro = macros[identifier];
+                if (macro.param_count > 0) {
+                    // Check for opening parenthesis
+                    if (peek() == '(') {
+                        advance(); // Skip (
+                        
+                        for (int i = 0; i < macro.param_count; i++) {
+                            skipWhitespace();
+                            
+                            // Read argument
+                            std::string arg;
+                            int paren_depth = 0;
+                            bool in_quotes = false;
+                            
+                            while (peek() != 0) {
+                                char ch = peek();
+                                
+                                // Handle quoted strings
+                                if (ch == '"' && (arg.empty() || arg.back() != '\\')) {
+                                    in_quotes = !in_quotes;
+                                    arg += ch;
+                                    advance();
+                                    continue;
+                                }
+                                
+                                // Track parentheses depth
+                                if (!in_quotes) {
+                                    if (ch == '(') paren_depth++;
+                                    if (ch == ')') {
+                                        if (paren_depth == 0) break; // End of argument list
+                                        paren_depth--;
+                                    }
+                                    
+                                    // Comma separates arguments (at depth 0)
+                                    if (ch == ',' && paren_depth == 0) {
+                                        advance(); // Skip comma
+                                        break;
+                                    }
+                                }
+                                
+                                arg += ch;
+                                advance();
+                            }
+                            
+                            // Trim whitespace from argument
+                            while (!arg.empty() && (arg.front() == ' ' || arg.front() == '\t')) {
+                                arg.erase(0, 1);
+                            }
+                            while (!arg.empty() && (arg.back() == ' ' || arg.back() == '\t')) {
+                                arg.pop_back();
+                            }
+                            
+                            args.push_back(arg);
+                        }
+                        
+                        // Expect closing parenthesis
+                        if (peek() == ')') {
+                            advance();
+                        } else {
+                            error("Expected ')' after macro arguments");
+                        }
+                    } else {
+                        // Space-separated arguments (NASM style)
+                        for (int i = 0; i < macro.param_count; i++) {
+                            skipWhitespace();
+                            
+                            // Read argument until whitespace, comma, or newline
+                            std::string arg;
+                            bool in_quotes = false;
+                            
+                            while (peek() != 0 && peek() != '\n') {
+                                if (peek() == '"') in_quotes = !in_quotes;
+                                
+                                if (!in_quotes && (peek() == ' ' || peek() == '\t' || peek() == ',')) {
+                                    if (!arg.empty()) break;
+                                    advance();
+                                    continue;
+                                }
+                                
+                                arg += peek();
+                                advance();
+                            }
+                            
+                            args.push_back(arg);
+                        }
+                    }
+                }
+                
+                // Expand the macro
+                std::string expanded = expandMacro(identifier, args);
+                output << expanded;
+                continue;
+            }
+            
+            // Check if it's a constant
+            if (constants.find(identifier) != constants.end()) {
+                // Substitute constant value
+                output << constants[identifier];
+                continue;
+            }
+            
+            // Not a macro or constant - restore position and output identifier
+            pos = save_pos;
+            line = save_line;
+            col = save_col;
+            
+            output << c;
+            advance();
+            continue;
+        }
         
-        // Handle constant expansion
-        // TODO: Implement constant substitution
+        // Handle %$label (context-local labels) in code
+        if (c == '%' && peekNext() == '$') {
+            advance(); // Skip %
+            advance(); // Skip $
+            
+            std::string label = readWord();
+            std::string expanded = expandContextLocal(label);
+            output << expanded;
+            continue;
+        }
         
         // Regular code - pass through
         output << c;
@@ -491,6 +632,98 @@ bool Preprocessor::evaluateCondition(const std::string& expr) {
         // Not a number, treat as false
         return false;
     }
+}
+
+// Macro expansion implementation
+std::string Preprocessor::expandMacro(const std::string& macro_name, const std::vector<std::string>& args) {
+    auto it = macros.find(macro_name);
+    if (it == macros.end()) {
+        error("Macro not defined: " + macro_name);
+    }
+    
+    const Macro& macro = it->second;
+    
+    // Check argument count
+    if (args.size() != static_cast<size_t>(macro.param_count)) {
+        error("Macro " + macro_name + " expects " + std::to_string(macro.param_count) + 
+              " arguments, got " + std::to_string(args.size()));
+    }
+    
+    // Expand macro body, substituting parameters
+    std::string result;
+    std::string body = macro.body;
+    
+    for (size_t i = 0; i < body.length(); i++) {
+        // Check for %N parameter references
+        if (body[i] == '%' && i + 1 < body.length() && isdigit(body[i + 1])) {
+            i++; // Skip %
+            
+            // Read parameter number
+            std::string param_num;
+            while (i < body.length() && isdigit(body[i])) {
+                param_num += body[i];
+                i++;
+            }
+            i--; // Back up one since loop will increment
+            
+            int param_index = std::stoi(param_num);
+            
+            // Substitute parameter (1-indexed)
+            if (param_index >= 1 && param_index <= static_cast<int>(args.size())) {
+                result += args[param_index - 1];
+            } else {
+                error("Macro parameter %" + param_num + " out of range");
+            }
+        }
+        // Check for %$label context-local references
+        else if (body[i] == '%' && i + 1 < body.length() && body[i + 1] == '$') {
+            i += 2; // Skip %$
+            
+            // Read label name
+            std::string label;
+            while (i < body.length() && (isalnum(body[i]) || body[i] == '_')) {
+                label += body[i];
+                i++;
+            }
+            i--; // Back up one
+            
+            result += expandContextLocal(label);
+        }
+        else {
+            result += body[i];
+        }
+    }
+    
+    return result;
+}
+
+std::string Preprocessor::expandContextLocal(const std::string& label) {
+    if (context_stack.empty()) {
+        error("Context-local label %" + label + " used outside of context");
+    }
+    
+    MacroContext& ctx = context_stack.top();
+    
+    // Check if we've already generated a unique name for this label
+    auto it = ctx.local_labels.find(label);
+    if (it != ctx.local_labels.end()) {
+        return it->second;
+    }
+    
+    // Generate unique label: context_name_depth_label
+    std::string unique_label = ctx.name + "_" + std::to_string(ctx.depth) + "_" + label;
+    ctx.local_labels[label] = unique_label;
+    
+    return unique_label;
+}
+
+std::string Preprocessor::expandMacroParam(int param_index, const std::vector<std::string>& current_args) {
+    // 1-indexed parameters
+    if (param_index < 1 || param_index > static_cast<int>(current_args.size())) {
+        error("Macro parameter %" + std::to_string(param_index) + " out of range");
+    }
+    
+    return current_args[param_index - 1];
 }
 
 // Configuration methods
