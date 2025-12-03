@@ -483,7 +483,7 @@ std::unique_ptr<Expression> Parser::parseTernary() {
     auto expr = parseLogicalOr();
     
     // Check for unwrap operator: expr ? default
-    if (match(TOKEN_QUESTION)) {
+    if (match(TOKEN_UNWRAP)) {
         auto default_value = parseLogicalOr();
         return std::make_unique<UnwrapExpr>(std::move(expr), std::move(default_value));
     }
