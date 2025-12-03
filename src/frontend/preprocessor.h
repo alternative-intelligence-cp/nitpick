@@ -99,6 +99,14 @@ private:
     
     // Expression evaluation for %if
     bool evaluateCondition(const std::string& expr);
+    int parseLogicalOr(const std::string& expr, size_t& pos);
+    int parseLogicalAnd(const std::string& expr, size_t& pos);
+    int parseComparison(const std::string& expr, size_t& pos);
+    int parseAddSub(const std::string& expr, size_t& pos);
+    int parseMulDiv(const std::string& expr, size_t& pos);
+    int parseUnary(const std::string& expr, size_t& pos);
+    int parsePrimary(const std::string& expr, size_t& pos);
+    void skipExprWhitespace(const std::string& expr, size_t& pos);
     
     // Error reporting
     void error(const std::string& message);

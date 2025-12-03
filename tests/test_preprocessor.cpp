@@ -360,6 +360,117 @@ after include
     }
 }
 
+void test_if_expressions() {
+    std::cout << "\n=== Test %if expressions ===" << std::endl;
+    
+    Preprocessor pp;
+    
+    // Test 1: Arithmetic expressions
+    pp.defineConstant("VAL1", "10");
+    pp.defineConstant("VAL2", "20");
+    
+    std::string source1 = R"(
+%if VAL1 + VAL2 == 30
+correct_sum
+%endif
+)";
+    
+    std::string result1 = pp.process(source1, "test.aria");
+    assert(result1.find("correct_sum") != std::string::npos);
+    std::cout << "✓ Arithmetic expression (10 + 20 == 30) works" << std::endl;
+    
+    // Test 2: Comparison operators
+    Preprocessor pp2;
+    pp2.defineConstant("SIZE", "100");
+    
+    std::string source2 = R"(
+%if SIZE > 50
+large
+%endif
+%if SIZE < 200
+not_huge
+%endif
+)";
+    
+    std::string result2 = pp2.process(source2, "test.aria");
+    assert(result2.find("large") != std::string::npos);
+    assert(result2.find("not_huge") != std::string::npos);
+    std::cout << "✓ Comparison operators (>, <) work" << std::endl;
+    
+    // Test 3: Logical operators
+    Preprocessor pp3;
+    pp3.defineConstant("DEBUG", "1");
+    pp3.defineConstant("VERBOSE", "1");
+    
+    std::string source3 = R"(
+%if DEBUG && VERBOSE
+debug_verbose_mode
+%endif
+%if DEBUG || 0
+has_debug
+%endif
+)";
+    
+    std::string result3 = pp3.process(source3, "test.aria");
+    assert(result3.find("debug_verbose_mode") != std::string::npos);
+    assert(result3.find("has_debug") != std::string::npos);
+    std::cout << "✓ Logical operators (&&, ||) work" << std::endl;
+    
+    // Test 4: Complex expression with parentheses
+    Preprocessor pp4;
+    pp4.defineConstant("A", "5");
+    pp4.defineConstant("B", "3");
+    
+    std::string source4 = R"(
+%if (A + B) * 2 == 16
+correct_calc
+%endif
+%if A * 2 + B == 13
+order_of_ops
+%endif
+)";
+    
+    std::string result4 = pp4.process(source4, "test.aria");
+    assert(result4.find("correct_calc") != std::string::npos);
+    assert(result4.find("order_of_ops") != std::string::npos);
+    std::cout << "✓ Parentheses and order of operations work" << std::endl;
+    
+    // Test 5: Unary operators
+    Preprocessor pp5;
+    pp5.defineConstant("ENABLED", "0");
+    
+    std::string source5 = R"(
+%if !ENABLED
+disabled
+%endif
+%if -5 + 10 == 5
+negative_works
+%endif
+)";
+    
+    std::string result5 = pp5.process(source5, "test.aria");
+    assert(result5.find("disabled") != std::string::npos);
+    assert(result5.find("negative_works") != std::string::npos);
+    std::cout << "✓ Unary operators (!, -) work" << std::endl;
+    
+    // Test 6: Division and modulo
+    Preprocessor pp6;
+    
+    std::string source6 = R"(
+%if 20 / 4 == 5
+division_works
+%endif
+%if 17 % 5 == 2
+modulo_works
+%endif
+)";
+    
+    std::string result6 = pp6.process(source6, "test.aria");
+    assert(result6.find("division_works") != std::string::npos);
+    assert(result6.find("modulo_works") != std::string::npos);
+    std::cout << "✓ Division and modulo (/, %) work" << std::endl;
+}
+
 int main() {
     std::cout << "=== Preprocessor Tests ===" << std::endl;
     
@@ -374,6 +485,7 @@ int main() {
         test_error_detection();
         test_rep_endrep();
         test_include();
+        test_if_expressions();
         
         std::cout << "\n=== All Preprocessor Tests Passed! ===" << std::endl;
     } catch (const std::exception& e) {
