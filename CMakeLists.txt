@@ -58,6 +58,7 @@ add_executable(ariac
  src/frontend/preprocessor.cpp    # Preprocessor (Macros, Includes, Conditionals)
  src/frontend/lexer.cpp
  src/frontend/parser.cpp           # Core Parser Implementation (all methods consolidated)
+ # src/frontend/parser_expr.cpp      # [Experimental] Pratt parser - not used
  # src/frontend/parser_stmt.cpp    # Merged into parser.cpp
  # src/frontend/parser_decl.cpp    # Merged into parser.cpp
  # src/frontend/parser_pick.cpp    # Merged into parser.cpp

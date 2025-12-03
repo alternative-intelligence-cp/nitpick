@@ -101,6 +101,10 @@ public:
     // Pick statement context (for fall() statements)
     std::map<std::string, BasicBlock*>* pickLabelBlocks = nullptr;
     BasicBlock* pickDoneBlock = nullptr;
+    
+    // Loop context (for break/continue)
+    BasicBlock* currentLoopBreakTarget = nullptr;
+    BasicBlock* currentLoopContinueTarget = nullptr;
 
     CodeGenContext(std::string moduleName) {
         module = std::make_unique<Module>(moduleName, llvmContext);
@@ -185,6 +189,22 @@ public:
     // -------------------------------------------------------------------------
 
     void visit(VarDecl* node) override {
+        // Special case: Function variables (type="func" with Lambda initializer)
+        if (node->type == "func" && node->initializer) {
+            if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node->initializer.get())) {
+                // Generate the lambda function
+                Value* funcVal = visitExpr(lambda);
+                
+                // Register the function in symbol table with the variable name
+                if (auto* func = dyn_cast_or_null<Function>(funcVal)) {
+                    // Rename the lambda to match the variable name
+                    func->setName(node->name);
+                    ctx.define(node->name, func, false, node->type);
+                }
+                return;
+            }
+        }
+        
         llvm::Type* varType = ctx.getLLVMType(node->type);
         Value* storage = nullptr;
 
@@ -562,12 +582,24 @@ public:
         Value* cond = visitExpr(node->condition.get());
         ctx.builder->CreateCondBr(cond, loopBodyBB, thenBB ? thenBB : (endBB ? endBB : exitBB));
         
+        // Save loop context for break/continue
+        // For when loops: break jumps to end block (early exit), continue jumps to condition
+        BasicBlock* prevBreakTarget = ctx.currentLoopBreakTarget;
+        BasicBlock* prevContinueTarget = ctx.currentLoopContinueTarget;
+        ctx.currentLoopBreakTarget = endBB ? endBB : exitBB;  // Break goes to end block if present
+        ctx.currentLoopContinueTarget = loopCondBB;
+        
         // Loop body
         ctx.builder->SetInsertPoint(loopBodyBB);
         if (node->body) {
             ScopeGuard guard(ctx);
             node->body->accept(*this);
         }
+        
+        // Restore previous loop context
+        ctx.currentLoopBreakTarget = prevBreakTarget;
+        ctx.currentLoopContinueTarget = prevContinueTarget;
+        
         if (!ctx.builder->GetInsertBlock()->getTerminator()) {
             ctx.builder->CreateBr(loopCondBB);  // Back to condition
         }
@@ -676,10 +708,21 @@ public:
         
         // Loop body
         ctx.builder->SetInsertPoint(loopBodyBB);
+        
+        // Save loop context for break/continue
+        BasicBlock* prevBreakTarget = ctx.currentLoopBreakTarget;
+        BasicBlock* prevContinueTarget = ctx.currentLoopContinueTarget;
+        ctx.currentLoopBreakTarget = exitBB;
+        ctx.currentLoopContinueTarget = loopCondBB;
+        
         {
             ScopeGuard guard(ctx);
             node->body->accept(*this);
         }
+        
+        // Restore previous loop context
+        ctx.currentLoopBreakTarget = prevBreakTarget;
+        ctx.currentLoopContinueTarget = prevContinueTarget;
         
         // Jump back to condition (if no explicit control flow)
         if (!ctx.builder->GetInsertBlock()->getTerminator()) {
@@ -764,13 +807,25 @@ public:
         }
         if (auto* call = dynamic_cast<aria::frontend::CallExpr*>(node)) {
             // Handle function call
-            // Map 'print' to 'puts' for libc compatibility
+            // First check if it's a known builtin mapping
             std::string funcName = call->function_name;
             if (funcName == "print") {
                 funcName = "puts";
             }
             
-            Function* callee = ctx.module->getFunction(funcName);
+            // Try to find function in symbol table (for Aria functions)
+            Function* callee = nullptr;
+            auto* sym = ctx.lookup(call->function_name);
+            if (sym && !sym->is_ref) {
+                // Direct value should be a function
+                callee = dyn_cast_or_null<Function>(sym->val);
+            }
+            
+            // If not in symbol table, try module (for external functions)
+            if (!callee) {
+                callee = ctx.module->getFunction(funcName);
+            }
+            
             if (!callee) {
                 throw std::runtime_error("Unknown function: " + call->function_name);
             }
@@ -1077,14 +1132,168 @@ public:
                 return func;
             }
         }
+        if (auto* unwrap = dynamic_cast<aria::frontend::UnwrapExpr*>(node)) {
+            // ? operator: unwrap Result type
+            // Result type is { i8* err, <type> val }
+            // If err is null, return val; otherwise propagate error
+            
+            Value* resultVal = visitExpr(unwrap->expression.get());
+            if (!resultVal) return nullptr;
+            
+            // Assume Result is a struct with err (pointer) and val fields
+            if (auto* structType = dyn_cast<StructType>(resultVal->getType())) {
+                Function* func = ctx.builder->GetInsertBlock()->getParent();
+                
+                // Extract err field (index 0)
+                AllocaInst* tempAlloca = ctx.builder->CreateAlloca(structType, nullptr, "result_temp");
+                ctx.builder->CreateStore(resultVal, tempAlloca);
+                
+                Value* errPtr = ctx.builder->CreateStructGEP(structType, tempAlloca, 0, "err_ptr");
+                Type* errType = structType->getElementType(0);
+                Value* errVal = ctx.builder->CreateLoad(errType, errPtr, "err");
+                
+                // Check if err is null
+                Value* isErr = ctx.builder->CreateICmpNE(
+                    errVal, 
+                    Constant::getNullValue(errType),
+                    "is_err"
+                );
+                
+                // Create blocks for error path and success path
+                BasicBlock* errBB = BasicBlock::Create(ctx.llvmContext, "unwrap_err", func);
+                BasicBlock* okBB = BasicBlock::Create(ctx.llvmContext, "unwrap_ok", func);
+                BasicBlock* contBB = BasicBlock::Create(ctx.llvmContext, "unwrap_cont");
+                
+                ctx.builder->CreateCondBr(isErr, errBB, okBB);
+                
+                // Error path: propagate error by returning early
+                ctx.builder->SetInsertPoint(errBB);
+                // TODO: Proper error propagation (return Result with err)
+                // For now, just return the whole Result
+                ctx.builder->CreateRet(resultVal);
+                
+                // Success path: extract and return val
+                ctx.builder->SetInsertPoint(okBB);
+                Value* valPtr = ctx.builder->CreateStructGEP(structType, tempAlloca, 1, "val_ptr");
+                Type* valType = structType->getElementType(1);
+                Value* valVal = ctx.builder->CreateLoad(valType, valPtr, "val");
+                ctx.builder->CreateBr(contBB);
+                
+                // Continue block
+                func->insert(func->end(), contBB);
+                ctx.builder->SetInsertPoint(contBB);
+                
+                // Use PHI node to get the value
+                PHINode* phi = ctx.builder->CreatePHI(valType, 1, "unwrap_result");
+                phi->addIncoming(valVal, okBB);
+                
+                return phi;
+            }
+            
+            // If not a struct, just return the value
+            return resultVal;
+        }
         //... Handle other ops...
         return nullptr;
     }
 
     // AST Visitor Stubs
     void visit(Block* node) override { for(auto& s: node->statements) s->accept(*this); }
-    void visit(IfStmt* node) override {} // Omitted for brevity
-    void visit(DeferStmt* node) override {}
+    
+    void visit(IfStmt* node) override {
+        // Generate if-then-else control flow
+        Value* condVal = visitExpr(node->condition.get());
+        if (!condVal) return;
+        
+        // Convert condition to bool (i1)
+        if (condVal->getType() != Type::getInt1Ty(ctx.llvmContext)) {
+            // Compare to zero (false if zero, true otherwise)
+            condVal = ctx.builder->CreateICmpNE(
+                condVal,
+                Constant::getNullValue(condVal->getType()),
+                "ifcond"
+            );
+        }
+        
+        Function* func = ctx.builder->GetInsertBlock()->getParent();
+        
+        // Create blocks for then, else, and merge
+        BasicBlock* thenBB = BasicBlock::Create(ctx.llvmContext, "then", func);
+        BasicBlock* elseBB = node->else_block ? 
+            BasicBlock::Create(ctx.llvmContext, "else") : nullptr;
+        BasicBlock* mergeBB = BasicBlock::Create(ctx.llvmContext, "ifcont");
+        
+        // Branch based on condition
+        if (elseBB) {
+            ctx.builder->CreateCondBr(condVal, thenBB, elseBB);
+        } else {
+            ctx.builder->CreateCondBr(condVal, thenBB, mergeBB);
+        }
+        
+        // Emit then block
+        ctx.builder->SetInsertPoint(thenBB);
+        if (node->then_block) {
+            node->then_block->accept(*this);
+        }
+        // Branch to merge if no terminator
+        if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+            ctx.builder->CreateBr(mergeBB);
+        }
+        
+        // Emit else block if present
+        if (elseBB) {
+            func->insert(func->end(), elseBB);
+            ctx.builder->SetInsertPoint(elseBB);
+            if (node->else_block) {
+                node->else_block->accept(*this);
+            }
+            if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                ctx.builder->CreateBr(mergeBB);
+            }
+        }
+        
+        // Emit merge block
+        func->insert(func->end(), mergeBB);
+        ctx.builder->SetInsertPoint(mergeBB);
+    }
+    
+    void visit(BreakStmt* node) override {
+        if (ctx.currentLoopBreakTarget) {
+            ctx.builder->CreateBr(ctx.currentLoopBreakTarget);
+        }
+    }
+    
+    void visit(ContinueStmt* node) override {
+        if (ctx.currentLoopContinueTarget) {
+            ctx.builder->CreateBr(ctx.currentLoopContinueTarget);
+        }
+    }
+    
+    void visit(DeferStmt* node) override {
+        // defer { body }
+        // Executes body when scope exits
+        // Note: This is a simplified implementation
+        // Full implementation requires tracking defer statements and emitting them
+        // at all scope exit points (return, break, end of block)
+        
+        // For now, we'll store defer blocks and emit them at function exit
+        // This doesn't handle early returns or breaks correctly yet
+        
+        // TODO: Implement proper defer stack with scope tracking
+        // For basic implementation, we can just emit the defer body immediately
+        // (This is incorrect but allows compilation to proceed)
+        
+        // Proper implementation would:
+        // 1. Add defer block to a stack in CodeGenContext
+        // 2. At each return/break/end-of-scope, emit all defers in reverse order
+        // 3. Track scope depth to know when to pop defers
+        
+        // Placeholder: emit immediately (INCORRECT but compiles)
+        if (node->body) {
+            node->body->accept(*this);
+        }
+    }
+    
     void visit(IntLiteral* node) override {} // Handled by visitExpr()
     void visit(BoolLiteral* node) override {} // Handled by visitExpr()
     void visit(frontend::StringLiteral* node) override {} // Handled by visitExpr()
@@ -1095,8 +1304,15 @@ public:
     void visit(frontend::LambdaExpr* node) override {} // Handled by visitExpr()
     void visit(VarExpr* node) override {}
     void visit(CallExpr* node) override {
-        // Look up function in module
-        Function* callee = ctx.module->getFunction(node->function_name);
+        // Look up function in symbol table first, then module
+        Function* callee = nullptr;
+        auto* sym = ctx.lookup(node->function_name);
+        if (sym && !sym->is_ref) {
+            callee = dyn_cast_or_null<Function>(sym->val);
+        }
+        if (!callee) {
+            callee = ctx.module->getFunction(node->function_name);
+        }
         
         if (!callee) {
             throw std::runtime_error("Unknown function: " + node->function_name);

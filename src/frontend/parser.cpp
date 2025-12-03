@@ -136,6 +136,13 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         return std::make_unique<VarExpr>(name);
     }
 
+    // Dollar variable ($) - used in till loops as iterator
+    // Example: till(100, 1) { sum = sum + $; }
+    if (current.type == TOKEN_DOLLAR || current.type == TOKEN_ITERATION) {
+        advance();
+        return std::make_unique<VarExpr>("$");
+    }
+
     // Parenthesized expression
     if (match(TOKEN_LPAREN)) {
         auto expr = parseExpr();
@@ -272,6 +279,15 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
         // Handle postfix decrement
         if (match(TOKEN_DECREMENT)) {
             expr = std::make_unique<UnaryOp>(UnaryOp::POST_DEC, std::move(expr));
+            continue;
+        }
+        
+        // Handle unwrap operator (?): result ? default_value
+        // Example: test2(3,5) ? -1  // If test2 returns error, use -1 as default
+        if (current.type == TOKEN_UNWRAP || current.type == TOKEN_QUESTION) {
+            advance();  // consume ?
+            auto default_value = parseUnary();  // Parse the default value
+            expr = std::make_unique<UnwrapExpr>(std::move(expr), std::move(default_value));
             continue;
         }
         
@@ -920,7 +936,7 @@ std::unique_ptr<Statement> Parser::parseWhenLoop() {
         end_block = parseBlock();
     }
     
-    return std::make_unique<WhenLoop>(std::move(condition), std::move(body), 
+    return std::make_unique<WhenLoop>(std::move(condition), std::move(body),
                                        std::move(then_block), std::move(end_block));
 }
 
@@ -1041,19 +1057,18 @@ std::unique_ptr<PickStmt> Parser::parsePickStmt() {
             value_start = parseExpr();
             
             // Check for range: (start..end) or (start...end)
-            if (current.type == TOKEN_DOT) {
+            if (current.type == TOKEN_RANGE) {
+                // Inclusive range: start..end
                 advance();
-                if (match(TOKEN_DOT)) {
-                    // Inclusive range: start..end
-                    if (match(TOKEN_DOT)) {
-                        // Exclusive range: start...end
-                        is_range_exclusive = true;
-                    }
-                    case_type = PickCase::RANGE;
-                    value_end = parseExpr();
-                } else {
-                    throw std::runtime_error("Invalid range syntax in pick case");
-                }
+                case_type = PickCase::RANGE;
+                is_range_exclusive = false;
+                value_end = parseExpr();
+            } else if (current.type == TOKEN_RANGE_EXCLUSIVE) {
+                // Exclusive range: start...end
+                advance();
+                case_type = PickCase::RANGE;
+                is_range_exclusive = true;
+                value_end = parseExpr();
             } else {
                 // Exact match
                 case_type = PickCase::EXACT;
