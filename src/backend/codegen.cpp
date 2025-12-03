@@ -935,7 +935,24 @@ public:
                         currentVal = ctx.builder->CreateLoad(loadType, lhsAddr);
                     }
                     
-                    // Perform operation
+                    // Type promotion: ensure both operands have same type
+                    if (currentVal->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
+                        Type* currentType = currentVal->getType();
+                        Type* rType = R->getType();
+                        unsigned currentBits = currentType->getIntegerBitWidth();
+                        unsigned rBits = rType->getIntegerBitWidth();
+                        
+                        if (currentBits != rBits) {
+                            // Promote to larger type
+                            if (currentBits < rBits) {
+                                currentVal = ctx.builder->CreateSExtOrTrunc(currentVal, rType);
+                            } else {
+                                R = ctx.builder->CreateSExtOrTrunc(R, currentType);
+                            }
+                        }
+                    }
+                    
+                    // Perform operation with type-matched operands
                     switch (binop->op) {
                         case aria::frontend::BinaryOp::PLUS_ASSIGN:
                             result = ctx.builder->CreateAdd(currentVal, R, "addtmp");

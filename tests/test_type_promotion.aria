@@ -1,0 +1,29 @@
+// Regression test for type promotion in compound assignments
+// Bug: Compound assignments (+=, -=, etc.) were mixing i8 and i64 types
+// Example of invalid IR: addtmp = add i8, i64 (mixing types)
+// Expected: Type promotion to match operand types before arithmetic
+
+module TypePromotion
+
+fn main() -> i64:
+    // Test with small literals (would be i8 without promotion)
+    let x = 10
+    x += 5    // Should generate: add i64, i64 (not i8, i64)
+    x -= 3    // Should generate: sub i64, i64
+    x *= 2    // Should generate: mul i64, i64
+    
+    // Test with larger values
+    let y = 100
+    y += 50   // Should use consistent i64 types
+    y /= 2    // Should use consistent i64 types
+    
+    // Test modulo
+    let z = 1000
+    z += 500  // Should use consistent i64 types
+    z %= 7    // Should use consistent i64 types
+    
+    // All operations should produce type-consistent LLVM IR
+    // No mixing of i8/i16/i32 with i64 in binary operations
+    
+    return 0
+end

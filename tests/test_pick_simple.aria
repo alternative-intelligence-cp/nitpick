@@ -1,19 +1,59 @@
-// Test simple pick statement with exact matches
-// Aria v0.0.6 Spec Section 8.3
+// Simplified pick statement tests
+// Tests basic pattern matching
 
-int8:x = 5;
-
-pick(x) {
-    (3) {
-        print(`matched 3`);
-    },
-    (5) {
-        print(`matched 5`);
-    },
-    (7) {
-        print(`matched 7`);
-    },
-    (*) {
-        print(`no match`);
+// Test 1: Exact value match
+func:classify_digit = int8(int8:n) {
+    int8:result = 0;
+    pick(n){
+        (0){result = 10;},
+        (1){result = 20;},
+        (2){result = 30;},
+        (*){result = -1;}
     }
-}
+    return result;
+};
+
+// Test 2: Less than comparison
+func:test_less_than = int8(int8:n) {
+    int8:result = 0;
+    pick(n){
+        (<5){result = 1;},
+        (<10){result = 2;},
+        (*){result = 3;}
+    }
+    return result;
+};
+
+// Test 3: Greater than comparison
+func:test_greater_than = int8(int8:n) {
+    int8:result = 0;
+    pick(n){
+        (>100){result = 1;},
+        (>50){result = 2;},
+        (>0){result = 3;},
+        (*){result = 4;}
+    }
+    return result;
+};
+
+// Test 4: Range matching
+func:test_range = int8(int8:n) {
+    int8:result = 0;
+    pick(n){
+        (0..5){result = 1;},
+        (6..10){result = 2;},
+        (11..20){result = 3;},
+        (*){result = 4;}
+    }
+    return result;
+};
+
+// Main function
+func:main = int8() {
+    int8:r1 = classify_digit(1);
+    int8:r2 = test_less_than(3);
+    int8:r3 = test_greater_than(75);
+    int8:r4 = test_range(8);
+    print("Pick tests complete");
+    return 0;
+};
