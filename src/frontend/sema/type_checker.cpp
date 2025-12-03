@@ -425,11 +425,11 @@ void TypeChecker::visit(frontend::ForLoop* node) {
 
 // Visit WhileLoop
 void TypeChecker::visit(frontend::WhileLoop* node) {
-    // Check condition is boolean
+    // Check condition is boolean or numeric (numeric values are implicitly boolean)
     if (node->condition) {
         node->condition->accept(*this);
-        if (current_expr_type->kind != TypeKind::BOOL) {
-            addError("While condition must be boolean, got " + current_expr_type->toString());
+        if (current_expr_type->kind != TypeKind::BOOL && !current_expr_type->isNumeric()) {
+            addError("While condition must be boolean or numeric, got " + current_expr_type->toString());
         }
     }
     
