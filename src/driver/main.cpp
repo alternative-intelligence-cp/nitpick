@@ -7,10 +7,11 @@
  * Entry point for the Aria Compiler. Orchestrates the compilation pipeline:
  * 1. Command Line Parsing (LLVM cl)
  * 2. Source File Reading
- * 3. Lexical Analysis (AriaLexer)
- * 4. Syntactic Analysis (Parser)
- * 5. Semantic Analysis (Borrow Checker)
- * 6. Code Generation (LLVM IR / Object Emission)
+ * 3. Preprocessing (Macros, Includes, Conditionals)
+ * 4. Lexical Analysis (AriaLexer)
+ * 5. Syntactic Analysis (Parser)
+ * 6. Semantic Analysis (Borrow Checker, Escape Analysis, Type Checker)
+ * 7. Code Generation (LLVM IR / Object Emission)
  *
  * ERROR HANDLING STRATEGY:
  * - I/O errors (file read): exit(1) immediately (unrecoverable)
@@ -37,6 +38,7 @@
 
 // Aria Includes
 // Note: These headers are implied by the snippets provided in the research material
+#include "../frontend/preprocessor.h"
 #include "../frontend/lexer.h"
 #include "../frontend/parser.h"
 #include "../frontend/sema/borrow_checker.h"
@@ -83,6 +85,26 @@ static cl::opt<bool> StrictMode(
     cl::cat(AriaCategory)
 );
 
+static cl::list<std::string> IncludePaths(
+    "I",
+    cl::desc("Add directory to include search path"),
+    cl::value_desc("directory"),
+    cl::cat(AriaCategory)
+);
+
+static cl::list<std::string> Defines(
+    "D",
+    cl::desc("Define preprocessor constant (e.g., -DDEBUG=1)"),
+    cl::value_desc("name=value"),
+    cl::cat(AriaCategory)
+);
+
+static cl::opt<bool> PreprocessOnly(
+    "E",
+    cl::desc("Run preprocessor only, output to stdout"),
+    cl::cat(AriaCategory)
+);
+
 // Helper to extract source content
 std::string readFile(const std::string& path) {
     auto result = MemoryBuffer::getFile(path);
@@ -115,15 +137,67 @@ int main(int argc, char** argv) {
     // 3. Read Source Code
     std::string sourceCode = readFile(InputFilename);
 
-    // 4. Frontend: Lexical Analysis
-    // The Lexer handles sanitization (e.g., banning @tesla symbols )
-    if (Verbose) outs() << "[Phase 1] Lexing...\n";
-    std::unique_ptr<aria::frontend::AriaLexer> lexer = std::make_unique<aria::frontend::AriaLexer>(sourceCode);
+    // 4. Frontend: Preprocessing
+    // Handle macros, includes, conditional compilation, and repetition
+    // The preprocessor expands all directives and produces clean source
+    if (Verbose) outs() << "[Phase 1] Preprocessing...\n";
+    
+    aria::frontend::Preprocessor preprocessor;
+    
+    // Add include paths from command line
+    for (const auto& path : IncludePaths) {
+        preprocessor.addIncludePath(path);
+        if (Verbose) outs() << "  Include path: " << path << "\n";
+    }
+    
+    // Add default include paths
+    preprocessor.addIncludePath(".");  // Current directory
+    preprocessor.addIncludePath("./include");  // Local include directory
+    
+    // Define constants from command line (-D flags)
+    for (const auto& define : Defines) {
+        size_t eq_pos = define.find('=');
+        if (eq_pos != std::string::npos) {
+            std::string name = define.substr(0, eq_pos);
+            std::string value = define.substr(eq_pos + 1);
+            preprocessor.defineConstant(name, value);
+            if (Verbose) outs() << "  Defined: " << name << " = " << value << "\n";
+        } else {
+            // No value, define as 1 (like gcc -DFLAG)
+            preprocessor.defineConstant(define, "1");
+            if (Verbose) outs() << "  Defined: " << define << " = 1\n";
+        }
+    }
+    
+    std::string preprocessedCode;
+    try {
+        preprocessedCode = preprocessor.process(sourceCode, InputFilename);
+    } catch (const std::exception& e) {
+        errs() << "Preprocessor Error: " << e.what() << "\n";
+        return 1;
+    }
+    
+    if (Verbose) {
+        outs() << "Preprocessing complete. Source size: " 
+               << sourceCode.length() << " -> " 
+               << preprocessedCode.length() << " bytes\n";
+    }
+    
+    // If -E flag is set, just output preprocessed code and exit
+    if (PreprocessOnly) {
+        outs() << preprocessedCode;
+        return 0;
+    }
 
-    // 5. Frontend: Parsing
+    // 5. Frontend: Lexical Analysis
+    // The Lexer handles sanitization (e.g., banning @tesla symbols)
+    if (Verbose) outs() << "[Phase 2] Lexing...\n";
+    std::unique_ptr<aria::frontend::AriaLexer> lexer = std::make_unique<aria::frontend::AriaLexer>(preprocessedCode);
+
+    // 6. Frontend: Parsing
     // Builds the AST (Abstract Syntax Tree)
     // Context holds compilation settings like strict mode
-    if (Verbose) outs() << "[Phase 2] Parsing...\n";
+    if (Verbose) outs() << "[Phase 3] Parsing...\n";
     aria::frontend::ParserContext parserCtx;
     parserCtx.strictMode = StrictMode;
 
@@ -157,7 +231,7 @@ int main(int argc, char** argv) {
     // 6. Semantic Analysis: Borrow Checker
     // Enforces the "Appendage Theory" rules (pinning, wild pointers)
     // See src/frontend/sema/borrow_checker.cpp
-    if (Verbose) outs() << "[Phase 3] Semantic Analysis (Borrow Check)...\n";
+    if (Verbose) outs() << "[Phase 4] Semantic Analysis (Borrow Check)...\n";
     bool safe = aria::sema::check_borrow_rules(astRoot.get());
 
     if (!safe) {
@@ -169,7 +243,7 @@ int main(int argc, char** argv) {
     // 6.5 Semantic Analysis: Escape Analysis
     // Prevents stack pointers from escaping function scope (dangling references)
     // See src/frontend/sema/escape_analysis.cpp
-    if (Verbose) outs() << "[Phase 3b] Escape Analysis...\n";
+    if (Verbose) outs() << "[Phase 4b] Escape Analysis...\n";
     aria::sema::EscapeAnalysisResult escapeResult = aria::sema::run_escape_analysis(astRoot.get());
 
     if (escapeResult.has_escapes) {
@@ -182,7 +256,7 @@ int main(int argc, char** argv) {
     // 6.6 Semantic Analysis: Type Checking
     // Verifies that all operations use compatible types
     // See src/frontend/sema/type_checker.cpp
-    if (Verbose) outs() << "[Phase 3c] Type Checking...\n";
+    if (Verbose) outs() << "[Phase 4c] Type Checking...\n";
     aria::sema::TypeCheckResult typeResult = aria::sema::checkTypes(astRoot.get());
     
     if (!typeResult.success) {
@@ -196,7 +270,7 @@ int main(int argc, char** argv) {
     // 7. Backend: Code Generation
     // Lowers AST to LLVM IR, handling exotic types (int512, trit)
     // See src/backend/codegen.cpp
-    if (Verbose) outs() << "[Phase 4] Generating Code...\n";
+    if (Verbose) outs() << "[Phase 5] Generating Code...\n";
 
     // Determine output path with clear priority
     std::string outPath;

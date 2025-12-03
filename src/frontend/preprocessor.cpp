@@ -90,9 +90,18 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
     
     std::stringstream output;
     std::vector<std::string> current_macro_args;  // For tracking macro expansion context
+    bool in_quotes = false;  // Track whether we're inside a string literal
     
     while (peek() != 0) {
         char c = peek();
+        
+        // Track string literals to avoid macro expansion inside them
+        if (c == '"' && (pos == 0 || source[pos - 1] != '\\')) {
+            in_quotes = !in_quotes;
+            output << c;
+            advance();
+            continue;
+        }
         
         // Handle preprocessor directives (% followed by alpha, can be indented)
         if (c == '%') {
@@ -162,9 +171,9 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
             continue;
         }
         
-        // Handle macro expansion in code
+        // Handle macro expansion in code (but NOT inside string literals)
         // Check if we're at the start of an identifier (potential macro call)
-        if (isalpha(c) || c == '_') {
+        if (!in_quotes && (isalpha(c) || c == '_')) {
             size_t save_pos = pos;
             int save_line = line;
             int save_col = col;
@@ -276,6 +285,10 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
                 int saved_line = line;
                 int saved_col = col;
                 std::string saved_file = current_file;
+                std::stack<ConditionalState> saved_conditional_stack = conditional_stack;
+                
+                // Clear conditional stack for macro expansion (macros are isolated contexts)
+                while (!conditional_stack.empty()) conditional_stack.pop();
                 
                 // Process expanded macro body
                 std::string processed_expansion = process(expanded, current_file + ":" + identifier);
@@ -286,6 +299,7 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
                 line = saved_line;
                 col = saved_col;
                 current_file = saved_file;
+                conditional_stack = saved_conditional_stack;
                 
                 // Clean up macro expansion tracking AFTER recursive processing
                 // This ensures recursion detection works for indirect recursion
