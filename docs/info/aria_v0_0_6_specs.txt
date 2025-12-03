@@ -485,13 +485,26 @@ async {
 }
 
 // LAMBDA/FUNCTION SYNTAX RULES
+// Complete anonymous declaration syntax:
+//   returnType(type:arg, type:arg) { /* function body */ }(/* optional immediate execution args */);
+//
 // Named function (assigned to func-type variable):
-//   func:name = returnType(params) { body };
-// Anonymous/immediate execution (assigned to result variable):
-//   result:r = returnType(params) { body }();  // () executes immediately
+//   func:name = returnType(type:arg, type:arg) { body };
+//
+// Anonymous with immediate execution (assigned to result-type variable):
+//   resultType:r = resultType(type:arg, type:arg) { body }(arg, arg);
+//   // Immediate execution () is REQUIRED when assigning to non-func variable
+//   // Otherwise you'd assign the function itself (type mismatch)
+//
+// Examples:
+//   func:add = int8(int8:a, int8:b) { return a + b; };          // Named function
+//   int8:sum = int8(int8:a, int8:b) { return a + b; }(3, 4);    // Anonymous + immediate = 7
+//   func:f = int8(int8:a, int8:b) { return a + b; };            // Store function
+//   int8:result = f(3, 4);                                       // Call stored function = 7
+//
 // Arrow operator (->) is ONLY for member access (C-style pointer dereference):
 //   ptr->member  // Access member of pointer
-//   obj.member   // Access member of object
+//   obj.member   // Access member of object (dot notation)
 
 // COMPILE-TIME COMPUTATION (performance critical)
 const int:BUFFER_SIZE = computeOptimalSize(); // Computed at compile time
