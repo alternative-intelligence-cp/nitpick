@@ -9,6 +9,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/ariac.dir/src/frontend/lexer.cpp.o.d"
   "CMakeFiles/ariac.dir/src/frontend/parser.cpp.o"
   "CMakeFiles/ariac.dir/src/frontend/parser.cpp.o.d"
+  "CMakeFiles/ariac.dir/src/frontend/preprocessor.cpp.o"
+  "CMakeFiles/ariac.dir/src/frontend/preprocessor.cpp.o.d"
   "CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o"
   "CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o.d"
   "CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o"

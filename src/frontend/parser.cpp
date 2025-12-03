@@ -547,6 +547,18 @@ std::unique_ptr<Block> Parser::parseProgram() {
             continue;
         }
         
+        // Global variable declarations: [const|wild|stack] type:name = value;
+        if (current.type == TOKEN_KW_CONST || current.type == TOKEN_KW_WILD || current.type == TOKEN_KW_STACK) {
+            block->statements.push_back(parseVarDecl());
+            continue;
+        }
+        
+        // Type token - could be a global variable declaration
+        if (isTypeToken(current.type)) {
+            block->statements.push_back(parseVarDecl());
+            continue;
+        }
+        
         // TODO: struct, type, const, use, mod, extern declarations
         // For now, treat unrecognized top-level as error
         std::stringstream ss;

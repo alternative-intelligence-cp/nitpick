@@ -473,6 +473,30 @@ src/frontend/parser.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser.cpp.s
 .PHONY : src/frontend/parser.cpp.s
 
+src/frontend/preprocessor.o: src/frontend/preprocessor.cpp.o
+.PHONY : src/frontend/preprocessor.o
+
+# target to build an object file
+src/frontend/preprocessor.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/preprocessor.cpp.o
+.PHONY : src/frontend/preprocessor.cpp.o
+
+src/frontend/preprocessor.i: src/frontend/preprocessor.cpp.i
+.PHONY : src/frontend/preprocessor.i
+
+# target to preprocess a source file
+src/frontend/preprocessor.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/preprocessor.cpp.i
+.PHONY : src/frontend/preprocessor.cpp.i
+
+src/frontend/preprocessor.s: src/frontend/preprocessor.cpp.s
+.PHONY : src/frontend/preprocessor.s
+
+# target to generate assembly for a file
+src/frontend/preprocessor.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/preprocessor.cpp.s
+.PHONY : src/frontend/preprocessor.cpp.s
+
 src/frontend/sema/borrow_checker.o: src/frontend/sema/borrow_checker.cpp.o
 .PHONY : src/frontend/sema/borrow_checker.o
 
@@ -851,6 +875,9 @@ help:
 	@echo "... src/frontend/parser.o"
 	@echo "... src/frontend/parser.i"
 	@echo "... src/frontend/parser.s"
+	@echo "... src/frontend/preprocessor.o"
+	@echo "... src/frontend/preprocessor.i"
+	@echo "... src/frontend/preprocessor.s"
 	@echo "... src/frontend/sema/borrow_checker.o"
 	@echo "... src/frontend/sema/borrow_checker.i"
 	@echo "... src/frontend/sema/borrow_checker.s"
