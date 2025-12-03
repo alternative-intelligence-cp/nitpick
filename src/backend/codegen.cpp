@@ -871,8 +871,21 @@ public:
             }
             
             std::vector<Value*> args;
-            for (auto& arg : call->arguments) {
-                args.push_back(visitExpr(arg.get()));
+            for (size_t i = 0; i < call->arguments.size(); i++) {
+                Value* argVal = visitExpr(call->arguments[i].get());
+                
+                // Cast argument to match parameter type if needed
+                if (i < callee->arg_size()) {
+                    Type* expectedType = callee->getFunctionType()->getParamType(i);
+                    if (argVal->getType() != expectedType) {
+                        // If both are integers, perform cast
+                        if (argVal->getType()->isIntegerTy() && expectedType->isIntegerTy()) {
+                            argVal = ctx.builder->CreateIntCast(argVal, expectedType, true);
+                        }
+                    }
+                }
+                
+                args.push_back(argVal);
             }
             
             // Void functions shouldn't have result names
