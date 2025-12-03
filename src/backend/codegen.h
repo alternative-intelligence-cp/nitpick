@@ -9,7 +9,8 @@ namespace backend {
 
 // Generate LLVM IR Code from AST
 // Outputs to the specified filename
-void generate_code(frontend::Block* root, const std::string& filename);
+// Returns true if successful, false if verification fails
+bool generate_code(frontend::Block* root, const std::string& filename, bool verify = true);
 
 } // namespace backend
 } // namespace aria
