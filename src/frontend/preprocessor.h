@@ -51,6 +51,11 @@ private:
     std::string current_file;
     std::vector<std::string> include_paths;  // Search paths for includes
     
+    // Macro expansion recursion tracking
+    int macro_expansion_depth;
+    static const int MAX_MACRO_EXPANSION_DEPTH = 1000;
+    std::set<std::string> expanding_macros;  // Track currently expanding macros for recursion detection
+    
     // Conditional compilation state
     struct ConditionalState {
         bool is_active;      // Is this branch active?
