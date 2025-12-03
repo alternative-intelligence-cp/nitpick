@@ -199,4 +199,21 @@ CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o: \
  /usr/include/c++/13/pstl/execution_defs.h /usr/include/c++/13/vector \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
- /usr/include/c++/13/bits/vector.tcc
+ /usr/include/c++/13/bits/vector.tcc \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/stmt.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/../ast.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/expr.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/expr.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/control_flow.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/stmt.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/defer.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/loops.h \
+ /usr/include/c++/13/unordered_set \
+ /usr/include/c++/13/bits/unordered_set.h \
+ /usr/include/c++/13/bits/hashtable.h \
+ /usr/include/c++/13/bits/hashtable_policy.h \
+ /usr/include/c++/13/bits/enable_special_members.h \
+ /usr/include/c++/13/bits/node_handle.h \
+ /usr/include/c++/13/bits/erase_if.h /usr/include/c++/13/unordered_map \
+ /usr/include/c++/13/bits/unordered_map.h /usr/include/c++/13/iostream \
+ /usr/include/c++/13/istream /usr/include/c++/13/bits/istream.tcc

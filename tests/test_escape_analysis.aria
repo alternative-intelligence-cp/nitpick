@@ -1,0 +1,27 @@
+// Test Escape Analysis
+// Expected: Errors for stack variables escaping
+
+// Test 1: Returning stack variable - should ERROR
+func:bad_stack_return = int64() {
+    stack int64:local = 100;
+    return local;
+};
+
+// Test 2: Returning heap variable - should be OK
+func:good_heap_return = int64() {
+    int64:heap = 200;
+    return heap;
+};
+
+// Test 3: Returning wild variable - should be OK (transferred ownership)
+func:good_wild_return = int64() {
+    wild int64:wild_var = 300;
+    return wild_var;
+};
+
+func:main = int8() {
+    bad_stack_return();
+    good_heap_return();
+    good_wild_return();
+    return 0;
+};

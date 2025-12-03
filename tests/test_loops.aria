@@ -1,0 +1,170 @@
+// Test file for Aria loop constructs
+// Tests: WhileLoop, TillLoop, ForLoop, WhenLoop
+
+// Test 1: While loop - basic counting
+func:test_while = int8() {
+    int8:count = 0;
+    while (count < 5) {
+        count = count + 1;
+    }
+    return count;  // Should be 5
+};
+
+// Test 2: While loop with break
+func:test_while_break = int8() {
+    int8:count = 0;
+    while (count < 10) {
+        count = count + 1;
+        if(count == 5){
+            break;
+        }
+    }
+    return count;  // Should be 5
+};
+
+// Test 3: While loop with continue
+func:test_while_continue = int8() {
+    int8:sum = 0;
+    int8:i = 0;
+    while (i < 10) {
+        i = i + 1;
+        if(i == 5){
+            continue;
+        }
+        sum = sum + i;
+    }
+    return sum;  // Should be 50 (1+2+3+4+6+7+8+9+10 = 50)
+};
+
+// Test 4: Till loop - basic iteration with $ variable
+func:test_till_basic = int8() {
+    int8:sum = 0;
+    till(5, 1) {
+        sum = sum + $;
+    }
+    return sum;  // Should be 10 (0+1+2+3+4)
+};
+
+// Test 5: Till loop - with step of 2
+func:test_till_step = int8() {
+    int8:sum = 0;
+    till(10, 2) {
+        sum = sum + $;
+    }
+    return sum;  // Should be 20 (0+2+4+6+8)
+};
+
+// Test 6: Till loop - negative step (countdown)
+func:test_till_negative = int8() {
+    int8:sum = 0;
+    till(10, -1) {
+        sum = sum + $;
+    }
+    return sum;  // Should be 55 (10+9+8+7+6+5+4+3+2+1+0)
+};
+
+// Test 7: WhenLoop - successful completion (then block)
+func:test_when_then = int8() {
+    int8:count = 0;
+    int8:result = 0;
+    when(count < 3) {
+        count = count + 1;
+    } then {
+        result = 100;  // This should execute
+    } end {
+        result = -1;   // This should NOT execute
+    }
+    return result;  // Should be 100
+};
+
+// Test 8: WhenLoop - break early (end block)
+func:test_when_end = int8() {
+    int8:count = 0;
+    int8:result = 0;
+    when(count < 10) {
+        count = count + 1;
+        if(count == 3){
+            break;
+        }
+    } then {
+        result = 100;  // This should NOT execute
+    } end {
+        result = -1;   // This should execute
+    }
+    return result;  // Should be -1
+};
+
+// Test 9: WhenLoop - only then block
+func:test_when_then_only = int8() {
+    int8:count = 0;
+    int8:result = 0;
+    when(count < 2) {
+        count = count + 1;
+    } then {
+        result = 42;
+    }
+    return result;  // Should be 42
+};
+
+// Test 10: WhenLoop - only end block
+func:test_when_end_only = int8() {
+    int8:count = 0;
+    int8:result = 0;
+    when(count < 5) {
+        count = count + 1;
+        if(count == 2){
+            break;
+        }
+    } end {
+        result = 77;
+    }
+    return result;  // Should be 77
+};
+
+// Test 11: Nested loops
+func:test_nested_loops = int8() {
+    int8:sum = 0;
+    int8:outer = 0;
+    while (outer < 3) {
+        int8:inner = 0;
+        while (inner < 3) {
+            sum = sum + 1;
+            inner = inner + 1;
+        }
+        outer = outer + 1;
+    }
+    return sum;  // Should be 9 (3x3)
+};
+
+// Test 12: Till loop with break
+func:test_till_break = int8() {
+    int8:sum = 0;
+    till(10, 1) {
+        if($ == 5){
+            break;
+        }
+        sum = sum + $;
+    }
+    return sum;  // Should be 10 (0+1+2+3+4)
+};
+
+// Test 13: Till loop with continue
+func:test_till_continue = int8() {
+    int8:sum = 0;
+    till(10, 1) {
+        if($ == 5){
+            continue;
+        }
+        sum = sum + $;
+    }
+    return sum;  // Should be 40 (0+1+2+3+4+6+7+8+9 = 40)
+};
+
+// Module-level test execution
+func:main = int8() {
+    print("Testing while loop...");
+    print("Testing till loop...");
+    print("Testing when loop...");
+    print("All loop tests complete!");
+    return 0;
+};

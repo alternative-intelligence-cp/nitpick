@@ -1,0 +1,48 @@
+// Simplified loop tests for Aria
+// Tests basic functionality of while loops
+
+// Test 1: Basic while loop
+func:test_while = int8() {
+    int8:count = 0;
+    while(count < 5){
+        count = count + 1;
+    }
+    return count;
+};
+
+// Test 2: While with nested logic
+func:test_while_nested = int8() {
+    int8:sum = 0;
+    int8:i = 0;
+    while(i < 10){
+        i = i + 1;
+        if(i < 5){
+            sum = sum + i;
+        }
+    }
+    return sum;
+};
+
+// Test 3: Nested while loops
+func:test_nested = int8() {
+    int8:total = 0;
+    int8:outer = 0;
+    while(outer < 3){
+        int8:inner = 0;
+        while(inner < 3){
+            total = total + 1;
+            inner = inner + 1;
+        }
+        outer = outer + 1;
+    }
+    return total;
+};
+
+// Main function
+func:main = int8() {
+    int8:r1 = test_while();
+    int8:r2 = test_while_nested();
+    int8:r3 = test_nested();
+    print("Loop tests complete");
+    return 0;
+};

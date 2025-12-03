@@ -76,6 +76,7 @@ static Precedence getPrecedence(TokenType type) {
         case TOKEN_DOT:
         case TOKEN_SAFE_NAV:        return PREC_CALL; // Member access
         case TOKEN_LEFT_BRACKET:    return PREC_CALL; // Index
+        case TOKEN_UNWRAP:          return PREC_CALL; // Unwrap operator (?)
         default:                    return PREC_NONE;
     }
 }
@@ -138,6 +139,12 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
         case TOKEN_IDENTIFIER:
             return std::make_unique<VarExpr>(token.lexeme);
         
+        // --- Special Variable ($) ---
+        // $ is a special iterator variable in till loops: till(100, 1) { $ }
+        case TOKEN_DOLLAR:
+        case TOKEN_ITERATION:  // TOKEN_ITERATION is an alias for TOKEN_DOLLAR
+            return std::make_unique<VarExpr>("$");
+        
         // --- Grouping ---
         case TOKEN_LEFT_PAREN: {
             auto expr = parseExpression();
@@ -174,13 +181,13 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
         }
 
         // --- Unary Operators ---
-        // Includes Memory operators: # (Pin), @ (Addr), $ (SafeRef) 
+        // Includes Memory operators: # (Pin), @ (Addr)
+        // Note: $ (TOKEN_ITERATION) is NOT a unary operator - it's a variable in till loops
         case TOKEN_MINUS:
         case TOKEN_LOGICAL_NOT:
         case TOKEN_BITWISE_NOT:
         case TOKEN_PIN:       // #
         case TOKEN_ADDRESS:   // @
-        case TOKEN_ITERATION: // $
         {
             // Recursive call with UNARY precedence to bind tight
             auto operand = parseExpression(PREC_UNARY);
@@ -267,11 +274,18 @@ std::unique_ptr<Expression> Parser::parseInfix(std::unique_ptr<Expression> left,
             return std::make_unique<MemberAccess>(std::move(left), name.lexeme, isSafe);
         }
 
-        // --- Index Access (arr) ---
+        // --- Index Access (arr[i]) ---
         case TOKEN_LEFT_BRACKET: {
             auto index = parseExpression();
             consume(TOKEN_RIGHT_BRACKET, "Expected ']' after index");
             return std::make_unique<IndexExpr>(std::move(left), std::move(index));
+        }
+
+        // --- Unwrap Operator (result ? default) ---
+        // Example: test2(3,5) ? -1  // If test2 returns error, use -1 as default
+        case TOKEN_UNWRAP: {
+            auto default_value = parseExpression(PREC_CALL + 1);
+            return std::make_unique<UnwrapExpr>(std::move(left), std::move(default_value));
         }
 
         default:

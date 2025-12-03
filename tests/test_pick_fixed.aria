@@ -1,0 +1,176 @@
+// Test file for Aria Pick statement (pattern matching)
+// Tests: exact match, comparisons, ranges, wildcard
+// Test 1: Pick with exact match
+func:test_pick_exact = int8(int8:value) {
+    int8:ret = 0;
+    pick (value) {
+        (0) { ret = 10; },
+        (1) { ret = 20; },
+        (2) { ret = 30; },
+        (*) { ret = -1; }
+    }
+    return ret;
+};
+// Test 2: Pick with less than
+func:test_pick_less_than = int8(int8:value) {
+    int8:ret = 0;
+    pick (value) {
+        (<5) { ret = 1; }
+        (<10) { ret = 2; }
+        (*) { ret = 3; }
+    }
+    return ret;
+};
+// Test 3: Pick with greater than
+func:test_pick_greater_than = int8(int8:value) {
+    int8:ret = 0;
+    pick (value) {
+        (>100) { ret = 1; }
+        (>50) { ret = 2; }
+        (>10) { ret = 3; }
+        (*) { ret = 4; }
+    }
+    return ret;
+};
+// Test 4: Pick with less than or equal
+func:test_pick_less_equal = int8(int8:value) {
+    int8:ret = 0;
+    pick (value) {
+        (<=5) { ret = 10; }
+        (<=10) { ret = 20; }
+        (*) { ret = 30; }
+    }
+    return ret;
+};
+// Test 5: Pick with greater than or equal
+func:test_pick_greater_equal = int8(int8:value) {
+    int8:ret = 0;
+    pick (value) {
+        (>=100) { ret = 100; }
+        (>=50) { ret = 50; }
+        (>=0) { ret = 0; }
+        (*) { ret = -1; }
+    }
+    return ret;
+};
+// Test 6: Pick with inclusive range
+func:test_pick_range_inclusive = int8(int8:value) {
+    int8:ret = 0;
+    pick (value) {
+        (0..5) { ret = 1; }   // 0, 1, 2, 3, 4, 5
+        (6..10) { ret = 2; }  // 6, 7, 8, 9, 10
+        (11..20) { ret = 3; } // 11-20
+        (*) { ret = 4; }
+    }
+    return ret;
+};
+// Test 7: Pick with exclusive range
+func:test_pick_range_exclusive = int8(int8:value) {
+    int8:ret = 0;
+    pick (value) {
+        (0...5) { ret = 1; }   // 0, 1, 2, 3, 4 (not 5)
+        (5...10) { ret = 2; }  // 5, 6, 7, 8, 9 (not 10)
+        (*) { ret = 3; }
+    }
+    return ret;
+};
+// Test 8: Pick with wildcard default
+func:test_pick_wildcard = int8(int8:value) {
+    int8:ret = 0;
+    pick (value) {
+        (0) { ret = 10; }
+        (1) { ret = 20; }
+        (*) { ret = 999; }  // Default case
+    }
+    return ret;
+};
+// Test 9: Pick with multiple exact values
+func:test_pick_multi = int8(int8:value) {
+    int8:ret = 0;
+    pick (value) {
+        (0) { ret = 1; }
+        (1) { ret = 1; }
+        (2) { ret = 1; }
+        (3) { ret = 2; }
+        (4) { ret = 2; }
+        (5) { ret = 2; }
+        (*) { ret = 3; }
+    }
+    return ret;
+};
+// Test 10: Pick without wildcard (testing non-match)
+func:test_pick_no_wildcard = int8(int8:value) {
+    int8:ret = -1;  // Default before pick
+    pick (value) {
+        (0) { ret = 0; }
+        (1) { ret = 1; }
+        (2) { ret = 2; }
+    }
+    return ret;  // Will be -1 if no match
+};
+// Test 11: Pick with nested logic
+func:test_pick_nested = int8(int8:outer) {
+    int8:ret = 0;
+    pick (outer) {
+        (0) {
+            int8:inner = 5;
+            pick (inner) {
+                (5) { ret = 100; }
+                (*) { ret = -1; }
+            }
+        }
+        (1) {
+            int8:inner = 10;
+            pick (inner) {
+                (10) { ret = 200; }
+                (*) { ret = -1; }
+            }
+        }
+        (*) { ret = 0; }
+    }
+    return ret;
+};
+// Test 12: Pick with complex ranges
+func:test_pick_complex = int8(int8:value) {
+    int8:ret = 0;
+    pick (value) {
+        (0..9) { ret = 1; }      // Single digit
+        (10..99) { ret = 2; }    // Double digit
+        (100..127) { ret = 3; }  // Triple digit (int8 max is 127)
+        (*) { ret = 4; }
+    }
+    return ret;
+};
+// Test 13: Pick determining sign
+func:test_pick_sign = int8(int8:value) {
+    int8:ret = 0;
+    pick (value) {
+        (<0) { ret = -1; }  // Negative
+        (0) { ret = 0; }    // Zero
+        (>0) { ret = 1; }   // Positive
+    }
+    return ret;
+};
+// Module-level test execution
+func:main = int8() {
+    // Test exact matches
+    int8:r1 = test_pick_exact(0);   // Should be 10
+    int8:r2 = test_pick_exact(1);   // Should be 20
+    int8:r3 = test_pick_exact(99);  // Should be -1 (wildcard)
+    
+    // Test comparisons
+    int8:r4 = test_pick_less_than(3);    // Should be 1
+    int8:r5 = test_pick_greater_than(60); // Should be 2
+    
+    // Test ranges
+    int8:r6 = test_pick_range_inclusive(3);  // Should be 1
+    int8:r7 = test_pick_range_exclusive(5);  // Should be 2
+    
+    // Test sign
+    int8:r8 = test_pick_sign(-5);  // Should be -1
+    int8:r9 = test_pick_sign(0);   // Should be 0
+    int8:r10 = test_pick_sign(10); // Should be 1
+    
+    print("All pick tests complete!");
+    return 0;
+};

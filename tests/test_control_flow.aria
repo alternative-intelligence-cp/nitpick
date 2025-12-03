@@ -1,0 +1,47 @@
+// Comprehensive Control Flow Test
+// Tests: while loops, returns, function calls
+
+// Test 1: Simple while loop with counter
+func:count_to_five = int8() {
+    int8:counter = 0;
+    while(counter < 5){
+        counter = counter + 1;
+    }
+    return counter;
+};
+
+// Test 2: Early return with condition
+func:check_value = int8(int8:x) {
+    while(x > 0){
+        x = x - 1;
+        return x;
+    }
+    return 0;
+};
+
+// Test 3: Nested function calls
+func:double_value = int8(int8:x) {
+    return x + x;
+};
+
+func:quad_value = int8(int8:x) {
+    int8:doubled = double_value(x);
+    return double_value(doubled);
+};
+
+// Test 4: Multiple returns
+func:min_value = int8(int8:a, int8:b) {
+    while(a < b){
+        return a;
+    }
+    return b;
+};
+
+// Main function
+func:main = int8() {
+    int8:a = count_to_five();
+    int8:b = check_value(10);
+    int8:c = quad_value(3);
+    int8:d = min_value(a, b);
+    return a + b + c + d;
+};

@@ -1,0 +1,57 @@
+// Comprehensive Semantic Analysis Test
+// This file exercises all semantic analysis phases together
+
+// Test 1: Function with wild allocation and stack variable
+func:memory_test = int8() {
+    wild int64:wild_ptr = 1000;      // Borrow check: should warn (not freed)
+    stack int64:stack_val = 2000;    // Escape analysis: OK if not returned
+    int64:heap_val = 3000;           // Normal GC: no warnings
+    
+    // Use the variables
+    int64:sum = wild_ptr + stack_val + heap_val;
+    
+    return 0;
+};
+
+// Test 2: Dangerous return of stack variable
+func:dangerous_return = int64() {
+    stack int64:local = 42;
+    return local;                    // Escape analysis: ERROR - stack escapes!
+};
+
+// Test 3: Safe return of heap variable
+func:safe_return = int64() {
+    int64:heap = 100;
+    return heap;                     // Escape analysis: OK
+};
+
+// Test 4: Nested functions with wild allocations
+func:outer_func = int8() {
+    wild int64:outer_wild = 500;     // Borrow check: should warn
+    
+    func:inner_func = int8() {
+        wild int64:inner_wild = 600; // Borrow check: should warn (nested)
+        return 0;
+    };
+    
+    inner_func();
+    return 0;
+};
+
+// Test 5: Multiple wild allocations
+func:multi_wild = int8() {
+    wild int64:ptr1 = 10;            // Borrow check: should warn
+    wild int64:ptr2 = 20;            // Borrow check: should warn
+    wild int64:ptr3 = 30;            // Borrow check: should warn
+    return 0;
+};
+
+// Main function
+func:main = int8() {
+    memory_test();
+    dangerous_return();
+    safe_return();
+    outer_func();
+    multi_wild();
+    return 0;
+};

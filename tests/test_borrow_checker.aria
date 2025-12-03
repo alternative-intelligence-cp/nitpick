@@ -1,0 +1,46 @@
+// Test Borrow Checker
+// Expected: Warnings for unfreed wild allocations
+
+// Test 1: Wild allocation without free - should warn
+func:test_leak = int8() {
+    wild int64:leaked = 100;
+    return 0;
+};
+
+// Test 2: Multiple wild allocations - should warn for both
+func:test_multi_leak = int8() {
+    wild int64:ptr1 = 10;
+    wild int64:ptr2 = 20;
+    return 0;
+};
+
+// Test 3: Stack allocation - should NOT warn (auto-freed)
+func:test_stack = int8() {
+    stack int64:local = 200;
+    return 0;
+};
+
+// Test 4: Normal heap allocation - should NOT warn (GC managed)
+func:test_heap = int8() {
+    int64:normal = 300;
+    return 0;
+};
+
+// Test 5: Wild allocation in nested function
+func:outer = int8() {
+    func:inner = int8() {
+        wild int64:nested = 400;
+        return 0;
+    };
+    inner();
+    return 0;
+};
+
+func:main = int8() {
+    test_leak();
+    test_multi_leak();
+    test_stack();
+    test_heap();
+    outer();
+    return 0;
+};
