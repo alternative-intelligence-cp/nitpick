@@ -105,6 +105,12 @@ static cl::opt<bool> PreprocessOnly(
     cl::cat(AriaCategory)
 );
 
+static cl::opt<bool> NoVerify(
+    "no-verify",
+    cl::desc("Skip LLVM IR verification (not recommended)"),
+    cl::cat(AriaCategory)
+);
+
 // Helper to extract source content
 std::string readFile(const std::string& path) {
     auto result = MemoryBuffer::getFile(path);
@@ -288,7 +294,14 @@ int main(int argc, char** argv) {
     if (Verbose) outs() << "Output file: " << outPath << "\n";
 
     // Generate code
-    aria::backend::generate_code(astRoot.get(), outPath);
+    bool verifyIR = !NoVerify;  // Verify by default, skip if --no-verify
+    bool codegenSuccess = aria::backend::generate_code(astRoot.get(), outPath, verifyIR);
+    
+    if (!codegenSuccess) {
+        errs() << "\nCode generation failed due to IR verification errors.\n";
+        errs() << "Use --no-verify to generate IR anyway (not recommended).\n";
+        return 1;
+    }
 
     if (Verbose && !EmitLLVM) {
         outs() << "Note: Object emission requires linking phase.\n";

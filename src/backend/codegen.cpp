@@ -1498,7 +1498,7 @@ private:
 // Main Entry Point for Code Generation
 // =============================================================================
 
-void generate_code(aria::frontend::Block* root, const std::string& filename) {
+bool generate_code(aria::frontend::Block* root, const std::string& filename, bool enableVerify) {
     CodeGenContext ctx("aria_module");
     CodeGenVisitor visitor(ctx);
 
@@ -1576,15 +1576,36 @@ void generate_code(aria::frontend::Block* root, const std::string& filename) {
     // Verify main function
     verifyFunction(*mainFunc);
     
-    // Emit to File (LLVM IR)
+    bool verificationPassed = true;
+    
+    // Verify entire module for correctness (if enabled)
+    if (enableVerify) {
+        std::string verifyErrors;
+        raw_string_ostream errorStream(verifyErrors);
+        if (verifyModule(*ctx.module, &errorStream)) {
+            verificationPassed = false;
+            errs() << "\n========================================\n";
+            errs() << "LLVM IR VERIFICATION FAILED\n";
+            errs() << "========================================\n";
+            errs() << errorStream.str() << "\n";
+            errs() << "========================================\n";
+            errs() << "Generated IR contains errors.\n";
+            errs() << "Use --no-verify to output anyway (not recommended).\n";
+            errs() << "========================================\n\n";
+        }
+    }
+    
+    // Emit to File (LLVM IR) even if verification failed (for debugging)
     std::error_code EC;
     raw_fd_ostream dest(filename, EC, sys::fs::OF_None);
     if (EC) {
         errs() << "Could not open file: " << EC.message();
-        return;
+        return false;
     }
     ctx.module->print(dest, nullptr);
     dest.flush();
+    
+    return verificationPassed;
 }
 
 } // namespace backend
