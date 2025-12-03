@@ -447,6 +447,12 @@ public:
                 case PickCase::EXACT: {
                     // (value) - exact match
                     Value* val = visitExpr(pcase.value_start.get());
+                    // Cast val to match selector type for comparison
+                    if (val->getType() != selector->getType()) {
+                        if (val->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            val = ctx.builder->CreateIntCast(val, selector->getType(), true);
+                        }
+                    }
                     match = ctx.builder->CreateICmpEQ(selector, val, "pick_eq");
                     break;
                 }
@@ -454,6 +460,12 @@ public:
                 case PickCase::LESS_THAN: {
                     // (<value) - less than
                     Value* val = visitExpr(pcase.value_start.get());
+                    // Cast val to match selector type for comparison
+                    if (val->getType() != selector->getType()) {
+                        if (val->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            val = ctx.builder->CreateIntCast(val, selector->getType(), true);
+                        }
+                    }
                     match = ctx.builder->CreateICmpSLT(selector, val, "pick_lt");
                     break;
                 }
@@ -461,6 +473,12 @@ public:
                 case PickCase::GREATER_THAN: {
                     // (>value) - greater than
                     Value* val = visitExpr(pcase.value_start.get());
+                    // Cast val to match selector type for comparison
+                    if (val->getType() != selector->getType()) {
+                        if (val->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            val = ctx.builder->CreateIntCast(val, selector->getType(), true);
+                        }
+                    }
                     match = ctx.builder->CreateICmpSGT(selector, val, "pick_gt");
                     break;
                 }
@@ -468,6 +486,12 @@ public:
                 case PickCase::LESS_EQUAL: {
                     // (<=value) - less or equal
                     Value* val = visitExpr(pcase.value_start.get());
+                    // Cast val to match selector type for comparison
+                    if (val->getType() != selector->getType()) {
+                        if (val->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            val = ctx.builder->CreateIntCast(val, selector->getType(), true);
+                        }
+                    }
                     match = ctx.builder->CreateICmpSLE(selector, val, "pick_le");
                     break;
                 }
@@ -475,6 +499,12 @@ public:
                 case PickCase::GREATER_EQUAL: {
                     // (>=value) - greater or equal
                     Value* val = visitExpr(pcase.value_start.get());
+                    // Cast val to match selector type for comparison
+                    if (val->getType() != selector->getType()) {
+                        if (val->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            val = ctx.builder->CreateIntCast(val, selector->getType(), true);
+                        }
+                    }
                     match = ctx.builder->CreateICmpSGE(selector, val, "pick_ge");
                     break;
                 }
@@ -483,6 +513,18 @@ public:
                     // (start..end) or (start...end) - range match
                     Value* start = visitExpr(pcase.value_start.get());
                     Value* end = visitExpr(pcase.value_end.get());
+                    
+                    // Cast to match selector type for comparison
+                    if (start->getType() != selector->getType()) {
+                        if (start->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            start = ctx.builder->CreateIntCast(start, selector->getType(), true);
+                        }
+                    }
+                    if (end->getType() != selector->getType()) {
+                        if (end->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            end = ctx.builder->CreateIntCast(end, selector->getType(), true);
+                        }
+                    }
                     
                     // selector >= start
                     Value* ge_start = ctx.builder->CreateICmpSGE(selector, start, "range_ge");
