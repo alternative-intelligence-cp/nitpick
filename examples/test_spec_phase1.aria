@@ -7,23 +7,30 @@ int8:i = 9;
 int32:value = 42;
 
 // SPEC SYNTAX: Functions are lambdas assigned to func-type variables
-// func:name = (params) { body }
-func:add = (int32:a, int32:b) {
-    return a + b;
+// func:name = returnType(params) { return { err:NULL, val:value }; };
+func:add = int32(int32:a, int32:b) {
+    return {
+        err:NULL,
+        val:a + b
+    };
 };
 
-func:calculate = (int32:x) {
+func:calculate = int32(int32:x) {
     int32:doubled = x + x;
-    int32:result = doubled + 10;
-    return result;
+    int32:res = doubled + 10;
+    return {
+        err:NULL,
+        val:res
+    };
 };
 
-func:main = () {
+func:main = int32() {
     int32:num1 = 42;
     int32:num2 = 10;
-    int32:sum = add(num1, num2);
-    int32:calc = calculate(sum);
-    return calc;
+    return {
+        err:NULL,
+        val:num1 + num2
+    };
 };
 
 /* FEATURES NOT YET IMPLEMENTED - COMMENTED OUT FOR FUTURE PHASES:

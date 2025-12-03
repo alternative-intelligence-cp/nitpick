@@ -136,103 +136,11 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         return std::make_unique<VarExpr>(name);
     }
 
-    // Parenthesized expression OR lambda without return type
+    // Parenthesized expression
     if (match(TOKEN_LPAREN)) {
-        // Check if this is a lambda: (params) { body }
-        // or a parenthesized expression: (expr)
-        // 
-        // Lambda if: after ) we see {
-        // Parenthesized expr if: after ) we see anything else
-        
-        // Try to parse parameters
-        // If we see type:name pattern, it's a lambda
-        // Otherwise it's a parenthesized expression
-        
-        // Lookahead: check if first token after ( is a type
-        if (isTypeToken(current.type)) {
-            // Could be lambda with parameters or parenthesized expression with type cast
-            // Parse as parameters and see if we get { after )
-            std::vector<FuncParam> params;
-            
-            // Parse first parameter
-            std::string param_type = current.value;
-            advance();
-            
-            if (current.type == TOKEN_COLON) {
-                // Definitely a lambda! Parse all parameters
-                advance();  // consume :
-                Token param_name = expect(TOKEN_IDENTIFIER);
-                params.push_back(FuncParam(param_type, param_name.value));
-                
-                // Parse remaining parameters
-                while (match(TOKEN_COMMA)) {
-                    if (!isTypeToken(current.type)) {
-                        throw std::runtime_error("Expected type in lambda parameter list");
-                    }
-                    param_type = current.value;
-                    advance();
-                    expect(TOKEN_COLON);
-                    param_name = expect(TOKEN_IDENTIFIER);
-                    params.push_back(FuncParam(param_type, param_name.value));
-                }
-                
-                expect(TOKEN_RPAREN);
-                
-                // Must have { for lambda body
-                auto body = parseBlock();
-                
-                // Lambda with inferred return type (void default)
-                auto lambda = std::make_unique<LambdaExpr>("void", std::move(params), std::move(body));
-                
-                // Check for immediate invocation
-                if (current.type == TOKEN_LPAREN) {
-                    lambda->is_immediately_invoked = true;
-                    advance();
-                    while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
-                        lambda->call_arguments.push_back(parseExpr());
-                        if (!match(TOKEN_COMMA)) break;
-                    }
-                    expect(TOKEN_RPAREN);
-                }
-                
-                return lambda;
-            } else {
-                // Not a lambda parameter - must be parenthesized expression
-                // We consumed a type token, need to handle it as an expression
-                // This is tricky - for now just error
-                throw std::runtime_error("Expected ':' after type in lambda or invalid parenthesized expression");
-            }
-        } else if (current.type == TOKEN_RPAREN) {
-            // Empty parameter list: () { body }
-            advance();  // consume )
-            if (current.type == TOKEN_LBRACE) {
-                // Lambda with no parameters
-                std::vector<FuncParam> params;
-                auto body = parseBlock();
-                auto lambda = std::make_unique<LambdaExpr>("void", std::move(params), std::move(body));
-                
-                // Check for immediate invocation
-                if (current.type == TOKEN_LPAREN) {
-                    lambda->is_immediately_invoked = true;
-                    advance();
-                    while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
-                        lambda->call_arguments.push_back(parseExpr());
-                        if (!match(TOKEN_COMMA)) break;
-                    }
-                    expect(TOKEN_RPAREN);
-                }
-                
-                return lambda;
-            } else {
-                // Empty parentheses but no lambda body - error
-                throw std::runtime_error("Unexpected '()' - expected expression or lambda");
-            }
-        } else {
-            // Regular parenthesized expression
-            auto expr = parseExpr();
-            expect(TOKEN_RPAREN);
-            return expr;
-        }
+        auto expr = parseExpr();
+        expect(TOKEN_RPAREN);
+        return expr;
     }
     
     // Array literal: [1, 2, 3]
@@ -279,14 +187,13 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
     }
     
     // Lambda Expression: returnType(params) { body } or returnType(params){body}(args)
+    // SPEC: func:name = returnType(params) { return { err:NULL, val:value }; };
     // Check if current token is a type followed by (
     if (isTypeToken(current.type)) {
         // Lookahead to see if this is a lambda (type followed by LPAREN)
-        // We need to be careful not to consume the token yet
         Token type_token = current;
         
         // Try to parse as lambda
-        // Save current position in case we need to backtrack
         std::string return_type = current.value;
         advance();  // consume type token
         

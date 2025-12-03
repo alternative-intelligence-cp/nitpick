@@ -227,7 +227,6 @@ Token AriaLexer::nextToken() {
                {"const", TOKEN_KW_CONST},
                
                // Type system
-               {"Result", TOKEN_KW_RESULT},
                {"struct", TOKEN_KW_STRUCT},
                {"enum", TOKEN_KW_ENUM},
                {"type", TOKEN_KW_TYPE},
@@ -296,6 +295,7 @@ Token AriaLexer::nextToken() {
                {"byte", TOKEN_TYPE_BYTE},
                {"string", TOKEN_TYPE_STRING},
                {"func", TOKEN_TYPE_FUNC},
+               {"result", TOKEN_TYPE_RESULT},
                {"dyn", TOKEN_TYPE_DYN},
                {"obj", TOKEN_TYPE_OBJ},
                {"array", TOKEN_TYPE_ARRAY},
