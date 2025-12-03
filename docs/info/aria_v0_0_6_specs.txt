@@ -502,6 +502,27 @@ async {
 //   func:f = int8(int8:a, int8:b) { return a + b; };            // Store function
 //   int8:result = f(3, 4);                                       // Call stored function = 7
 //
+// LAMBDAS AS ARGUMENTS (JS-style callbacks):
+//   // Function that takes a func parameter
+//   func:processValues = int8(func:operation, int8:a, int8:b) {
+//       return operation(a, b);
+//   };
+//   // Call with inline anonymous lambda
+//   int8:result = processValues(
+//       int8(int8:x, int8:y) { return x * y; },  // Lambda passed as argument
+//       4, 5
+//   );  // result = 20
+//
+// LAMBDA + IMMEDIATE EXECUTION + UNWRAP (composable features):
+//   // Lambda returns result type, executed immediately, unwrapped with ?
+//   func:test = result(int8:a, int8:b) { return {err:NULL, val:a+b}; };
+//   test(
+//       result(int8:x, int8:y) { return {err:NULL, val:x*y}; }(4, 5)?,  // Execute & unwrap = 20
+//       12
+//   );  // Passes unwrapped value 20 and 12 to test()
+//   // Without ?: would pass full {err:NULL, val:20} result object
+//   // With ?: passes just the unwrapped value 20 (or default if error)
+//
 // Arrow operator (->) is ONLY for member access (C-style pointer dereference):
 //   ptr->member  // Access member of pointer
 //   obj.member   // Access member of object (dot notation)
