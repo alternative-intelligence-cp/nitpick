@@ -55,6 +55,7 @@ include_directories(src)
 
 add_executable(ariac
  src/driver/main.cpp               # Compiler Driver Entry Point
+ src/frontend/preprocessor.cpp    # Preprocessor (Macros, Includes, Conditionals)
  src/frontend/lexer.cpp
  src/frontend/parser.cpp           # Core Parser Implementation (all-in-one)
  # src/frontend/parser_decl.cpp    # Merged into parser.cpp

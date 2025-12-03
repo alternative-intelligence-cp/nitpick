@@ -1,0 +1,26 @@
+// Test Aria file with preprocessor directives
+// This demonstrates the preprocessor working with the compiler
+
+%define VERSION "0.0.6"
+%define DEBUG 1
+
+%macro PRINT_MSG 1
+print("Message: %1")
+%endmacro
+
+%ifdef DEBUG
+print("Debug mode enabled")
+print("Version: VERSION")
+%endif
+
+PRINT_MSG("Hello from Aria!")
+
+%rep 3
+print("Repeated line")
+%endrep
+
+// Simple function to test parsing after preprocessing
+fn main() {
+    let x: int = 42;
+    return x;
+}
