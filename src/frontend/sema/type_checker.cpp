@@ -210,6 +210,32 @@ void TypeChecker::visit(frontend::UnaryOp* node) {
                 return;
             }
             break;
+
+        case frontend::UnaryOp::POST_INC:
+        case frontend::UnaryOp::POST_DEC:
+            // Post-increment/decrement require numeric lvalue
+            if (!operand_type->isNumeric()) {
+                addError("Post-increment/decrement requires numeric type");
+                current_expr_type = makeErrorType();
+                return;
+            }
+            // Result type is same as operand
+            // TODO: Verify operand is an lvalue (variable)
+            break;
+
+        case frontend::UnaryOp::ADDRESS_OF:
+            // @ operator: takes any type and returns a pointer type
+            // For now, we represent pointers as int64 (address)
+            // In full implementation, would create a pointer type
+            current_expr_type = makeIntType(64);
+            break;
+
+        case frontend::UnaryOp::PIN:
+            // # operator: pins dynamic value to specific type
+            // Takes dyn type and returns the pinned type
+            // For now, return the operand type (simplified)
+            // In full implementation, would track pinned type from context
+            break;
     }
 }
 
@@ -469,6 +495,59 @@ void TypeChecker::visit(frontend::AwaitExpr* node) {
         // Result type is the inner type of the awaitable
     }
     // For now, preserve the expression's type
+}
+
+// Visit ObjectLiteral
+void TypeChecker::visit(frontend::ObjectLiteral* node) {
+    // Type check all field values
+    for (auto& field : node->fields) {
+        if (field.value) {
+            field.value->accept(*this);
+            // Could build struct type from field types
+        }
+    }
+    // For now, object literals have dyn type (catch-all)
+    // In full implementation, would create anonymous struct type
+    current_expr_type = makeDynType();
+}
+
+// Visit MemberAccess
+void TypeChecker::visit(frontend::MemberAccess* node) {
+    // Type check the object being accessed
+    if (node->object) {
+        node->object->accept(*this);
+        auto obj_type = current_expr_type;
+        
+        // In full implementation, would:
+        // 1. Verify obj_type is a struct/object type
+        // 2. Look up field in struct definition
+        // 3. Return field's type
+        
+        // For now, assume member access returns int64 (simplified)
+        current_expr_type = makeIntType(64);
+    }
+}
+
+// Visit UnwrapExpr
+void TypeChecker::visit(frontend::UnwrapExpr* node) {
+    // Check the expression being unwrapped
+    if (node->expression) {
+        node->expression->accept(*this);
+        auto expr_type = current_expr_type;
+        
+        // Unwrap operator (?) is used with Result types
+        // In full implementation, would:
+        // 1. Verify expr_type is a Result<T> type
+        // 2. Return the inner type T
+        
+        // For now, preserve the expression type
+    }
+    
+    // Check the default value if present
+    if (node->default_value) {
+        node->default_value->accept(*this);
+        // In full implementation, verify default type matches unwrapped type
+    }
 }
 
 // Helper: Check type compatibility

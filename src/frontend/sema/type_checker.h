@@ -78,6 +78,9 @@ public:
     // New expression types
     void visit(frontend::WhenExpr* node) override;
     void visit(frontend::AwaitExpr* node) override;
+    void visit(frontend::ObjectLiteral* node) override;
+    void visit(frontend::MemberAccess* node) override;
+    void visit(frontend::UnwrapExpr* node) override;
 
 private:
     void addError(const std::string& msg) {

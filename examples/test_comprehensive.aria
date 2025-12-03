@@ -1,0 +1,43 @@
+// Comprehensive test of parser features from canonical spec
+
+func:main = int8(){
+    // Basic types
+    int8:i = 9;
+    string:str = "whats up";
+    
+    // Arrays (spec lines 8-10)
+    int8[]:arr1;
+    int8[256]:arr2;
+    int8[]:arr3 = [100, 300, 550];
+    
+    // Increment/decrement (spec lines 14, 21, 27)
+    i++;
+    i--;
+    
+    // Dyn type (spec lines 91-94)
+    dyn:d = "bob";
+    d = 4;
+    d = true;
+    d = -2;
+    
+    // Wild qualifier (spec line 96)
+    wild int64:s = 100000;
+    
+    // Address-of operator @ (spec line 97)
+    int64:addr = @s;
+    
+    // Pin operator # (spec line 98)
+    int8:pinned = #d;
+    
+    // Pointer type (spec line 97)
+    wild int64@:ptr = @s;
+    
+    // Obj type with object literal (spec lines 100-104)
+    obj:config = {
+        version: "0.0.5",
+        name: "Aria",
+        highTime: 420
+    };
+    
+    return 0;
+};

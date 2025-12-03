@@ -146,6 +146,21 @@ public:
     }
 };
 
+// Unwrap Expression (? operator)
+// Example: test2(3,5) ? -1  // If test2 returns error, use -1 as default
+class UnwrapExpr : public Expression {
+public:
+    std::unique_ptr<Expression> expression;   // Expression that might fail
+    std::unique_ptr<Expression> default_value;  // Default if error
+
+    UnwrapExpr(std::unique_ptr<Expression> expr, std::unique_ptr<Expression> def)
+        : expression(std::move(expr)), default_value(std::move(def)) {}
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
 // Binary Operation Expression
 // Example: a + b, x * y
 class BinaryOp : public Expression {
@@ -180,7 +195,9 @@ public:
         LOGICAL_NOT,    // !
         BITWISE_NOT,    // ~
         POST_INC,       // x++
-        POST_DEC        // x--
+        POST_DEC,       // x--
+        ADDRESS_OF,     // @ (address/pointer operator)
+        PIN             // # (memory pinning operator)
     };
 
     OpType op;
