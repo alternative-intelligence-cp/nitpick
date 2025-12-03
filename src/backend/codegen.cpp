@@ -86,10 +86,12 @@ public:
     std::unique_ptr<IRBuilder<>> builder;
     
     // Symbol Table: Maps variable names to LLVM Allocas or Values
+    enum class AllocStrategy { STACK, WILD, GC, VALUE };
     struct Symbol {
         Value* val;
         bool is_ref; // Is this a pointer to the value (alloca) or the value itself?
         std::string ariaType; // Store the Aria type for proper loading
+        AllocStrategy strategy; // How was this allocated?
     };
     std::vector<std::map<std::string, Symbol>> scopeStack;
 
@@ -115,8 +117,8 @@ public:
     void pushScope() { scopeStack.emplace_back(); }
     void popScope() { scopeStack.pop_back(); }
 
-    void define(const std::string& name, Value* val, bool is_ref = true, const std::string& ariaType = "") {
-        scopeStack.back()[name] = {val, is_ref, ariaType};
+    void define(const std::string& name, Value* val, bool is_ref = true, const std::string& ariaType = "", AllocStrategy strategy = AllocStrategy::VALUE) {
+        scopeStack.back()[name] = {val, is_ref, ariaType, strategy};
     }
 
     Symbol* lookup(const std::string& name) {
@@ -187,6 +189,31 @@ public:
     // -------------------------------------------------------------------------
     // 1. Variable Declarations
     // -------------------------------------------------------------------------
+    
+    // Helper: Determine if a type should be stack-allocated by default
+    bool shouldStackAllocate(const std::string& type, llvm::Type* llvmType) {
+        // Primitives that fit in registers should be stack-allocated
+        if (type == "int8" || type == "int16" || type == "int32" || type == "int64" ||
+            type == "uint8" || type == "uint16" || type == "uint32" || type == "uint64" ||
+            type == "bool" || type == "trit" || type == "char") {
+            return true;
+        }
+        
+        // Floating point primitives
+        if (type == "float" || type == "double" || type == "float32" || type == "float64") {
+            return true;
+        }
+        
+        // Small aggregate types (< 128 bytes) can be stack-allocated
+        if (llvmType->isSized()) {
+            uint64_t size = ctx.module->getDataLayout().getTypeAllocSize(llvmType);
+            if (size > 0 && size <= 128) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
 
     void visit(VarDecl* node) override {
         // Special case: Function variables (type="func" with Lambda initializer)
@@ -207,14 +234,21 @@ public:
         
         llvm::Type* varType = ctx.getLLVMType(node->type);
         Value* storage = nullptr;
+        bool is_ref = true; // Whether we need to load from storage
 
-        if (node->is_stack) {
-            // Stack: Simple Alloca
+        // Determine allocation strategy
+        bool use_stack = node->is_stack || (!node->is_wild && shouldStackAllocate(node->type, varType));
+
+        CodeGenContext::AllocStrategy strategy;
+        
+        if (use_stack) {
+            // Stack: Simple Alloca (for explicit `stack` keyword or auto-promoted primitives)
             // Insert at entry block for efficiency
             BasicBlock* currentBB = ctx.builder->GetInsertBlock();
             Function* func = currentBB->getParent();
             IRBuilder<> tmpBuilder(&func->getEntryBlock(), func->getEntryBlock().begin());
             storage = tmpBuilder.CreateAlloca(varType, nullptr, node->name);
+            strategy = CodeGenContext::AllocStrategy::STACK;
         } 
         else if (node->is_wild) {
             // Wild: aria_alloc
@@ -227,9 +261,10 @@ public:
             // We need a stack slot to hold the pointer itself (lvalue)
             storage = ctx.builder->CreateAlloca(PointerType::getUnqual(ctx.llvmContext), nullptr, node->name);
             ctx.builder->CreateStore(rawPtr, storage);
+            strategy = CodeGenContext::AllocStrategy::WILD;
         }
         else {
-            // GC: aria_gc_alloc
+            // GC: aria_gc_alloc (for non-primitives or explicitly marked gc)
             // 1. Get Nursery
             Function* getNursery = getOrInsertGetNursery();
             Value* nursery = ctx.builder->CreateCall(getNursery, {});
@@ -244,16 +279,18 @@ public:
             // Store pointer
             storage = ctx.builder->CreateAlloca(PointerType::getUnqual(ctx.llvmContext), nullptr, node->name);
             ctx.builder->CreateStore(gcPtr, storage);
+            strategy = CodeGenContext::AllocStrategy::GC;
         }
 
-        ctx.define(node->name, storage, true, node->type);
+        ctx.define(node->name, storage, is_ref, node->type, strategy);
 
         // Initializer
         if (node->initializer) {
             Value* initVal = visitExpr(node->initializer.get());
             if (!initVal) return;
 
-            if (node->is_stack) {
+            if (use_stack) {
+                // Direct store for stack-allocated variables
                 ctx.builder->CreateStore(initVal, storage);
             } else {
                 // For heap vars, 'storage' is `ptr*`, we load the `ptr` then store to it
@@ -786,18 +823,21 @@ public:
             if (!sym) return nullptr;
             
             if (sym->is_ref) {
-                // For stack/heap allocations, use the stored Aria type to determine load type
+                // Use allocation strategy to determine loading pattern
                 if (!sym->ariaType.empty()) {
                     Type* loadType = ctx.getLLVMType(sym->ariaType);
                     
-                    // For heap allocations (wild/gc), load pointer first
-                    if (sym->val->getName().contains("_heap") || isa<CallInst>(sym->val)) {
+                    // For heap allocations (wild/gc), load pointer first, then value
+                    if (sym->strategy == CodeGenContext::AllocStrategy::WILD || 
+                        sym->strategy == CodeGenContext::AllocStrategy::GC) {
                         Value* heapPtr = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), sym->val);
                         return ctx.builder->CreateLoad(loadType, heapPtr);
                     }
                     
-                    // For stack allocations, direct load
-                    return ctx.builder->CreateLoad(loadType, sym->val);
+                    // For stack allocations, direct load from alloca
+                    if (sym->strategy == CodeGenContext::AllocStrategy::STACK) {
+                        return ctx.builder->CreateLoad(loadType, sym->val);
+                    }
                 }
                 
                 // Fallback (shouldn't happen with proper type tracking)
