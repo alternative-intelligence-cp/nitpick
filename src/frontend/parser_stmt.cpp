@@ -5,9 +5,68 @@
 #include "ast/stmt.h"
 #include "ast/defer.h"
 #include <memory>
+#include <sstream>
+#include <stdexcept>
 
 namespace aria {
 namespace frontend {
+
+// Parse top-level program (file contents without { } wrapper)
+std::unique_ptr<Block> Parser::parseProgram() {
+    auto block = std::make_unique<Block>();
+    
+    // Parse top-level declarations until EOF
+    while (current.type != TOKEN_EOF) {
+        // Skip any stray semicolons
+        if (match(TOKEN_SEMICOLON)) {
+            continue;
+        }
+        
+        // Check for function declaration (fn keyword)
+        if (current.type == TOKEN_KW_FUNC) {
+            auto func = parseFuncDecl();
+            if (func) {
+                block->statements.push_back(std::move(func));
+            }
+            continue;
+        }
+        
+        // Check for public function
+        if (current.type == TOKEN_KW_PUB) {
+            advance();
+            if (current.type == TOKEN_KW_FUNC) {
+                auto func = parseFuncDecl();
+                if (func) {
+                    func->is_pub = true;
+                    block->statements.push_back(std::move(func));
+                }
+            }
+            continue;
+        }
+        
+        // Check for async function
+        if (current.type == TOKEN_KW_ASYNC) {
+            advance();
+            if (current.type == TOKEN_KW_FUNC) {
+                auto func = parseFuncDecl();
+                if (func) {
+                    func->is_async = true;
+                    block->statements.push_back(std::move(func));
+                }
+            }
+            continue;
+        }
+        
+        // TODO: struct, type, const, use, mod, extern declarations
+        // For now, treat unrecognized top-level as error
+        std::stringstream ss;
+        ss << "Unexpected token at top level: " << current.value
+           << " (type " << current.type << ") at line " << current.line;
+        throw std::runtime_error(ss.str());
+    }
+    
+    return block;
+}
 
 std::unique_ptr<Statement> Parser::parseDeferStmt() {
     // TODO: Implement defer statement parsing
@@ -49,8 +108,44 @@ std::unique_ptr<Block> Parser::parseBlock() {
     return block;
 }
 
+// Parse variable declaration: type:name = value;
+std::unique_ptr<VarDecl> Parser::parseVarDecl() {
+    // Current token should be a type
+    if (!isTypeToken(current.type)) {
+        std::stringstream ss;
+        ss << "Expected type token for variable declaration at line " << current.line;
+        throw std::runtime_error(ss.str());
+    }
+    
+    std::string type = current.value;
+    advance();
+    
+    // Expect colon
+    expect(TOKEN_COLON);
+    
+    // Expect identifier
+    Token name_token = expect(TOKEN_IDENTIFIER);
+    std::string name = name_token.value;
+    
+    // Optional initializer
+    std::unique_ptr<Expression> initializer = nullptr;
+    if (match(TOKEN_ASSIGN)) {
+        initializer = parseExpr();
+    }
+    
+    // Optional semicolon
+    match(TOKEN_SEMICOLON);
+    
+    return std::make_unique<VarDecl>(type, name, std::move(initializer));
+}
+
 std::unique_ptr<Statement> Parser::parseStmt() {
     // Handle various statement types
+    
+    // Variable declaration: type:name = value;
+    if (isTypeToken(current.type)) {
+        return parseVarDecl();
+    }
     
     // Return statement
     if (match(TOKEN_KW_RETURN)) {

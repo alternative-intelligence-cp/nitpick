@@ -212,12 +212,12 @@ int main(int argc, char** argv) {
     // Instantiate Parser with the lexer
     aria::frontend::Parser parser(*lexer, parserCtx);
     
-    // We expect the top level to be a block of statements (module level)
-    // In the v0.0.6 spec, the file is treated as an implicit main block.
-    // The parseBlock() function is defined in.
+    // Parse top-level program (file contains function declarations, etc.)
+    // In the v0.0.6 spec, files contain top-level declarations without { } wrapper.
+    // The parseProgram() function handles this.
     std::unique_ptr<aria::frontend::Block> astRoot;
     try {
-        astRoot = parser.parseBlock(); 
+        astRoot = parser.parseProgram(); 
     } catch (const std::exception& e) {
         errs() << "Parse Error: " << e.what() << "\n";
         return 1;

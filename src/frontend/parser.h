@@ -60,11 +60,12 @@ public:
     Parser(AriaLexer& lex);
     Parser(AriaLexer& lex, ParserContext ctx);
 
+    std::unique_ptr<Block> parseProgram();  // Parse top-level declarations
     std::unique_ptr<Block> parseBlock();
     std::unique_ptr<Expression> parseExpr();
     std::unique_ptr<Expression> parseTemplateString();
     std::unique_ptr<Statement> parseStmt();
-    std::unique_ptr<VarDecl> parseVarDecl();
+    std::unique_ptr<VarDecl> parseVarDecl();  // Parse variable declaration statement
     std::unique_ptr<FuncDecl> parseFuncDecl();  // Bug #70: async functions
     std::unique_ptr<Statement> parseAsyncBlock();  // Bug #70: async blocks
     std::unique_ptr<PickStmt> parsePickStmt();
