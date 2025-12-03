@@ -471,6 +471,100 @@ modulo_works
     std::cout << "✓ Division and modulo (/, %) work" << std::endl;
 }
 
+void test_nested_macros() {
+    std::cout << "\n=== Test nested macro expansion ===" << std::endl;
+    
+    // Test 1: Macro calling another macro
+    Preprocessor pp;
+    
+    std::string source1 = R"(
+%macro INNER 1
+inner_result(%1)
+%endmacro
+
+%macro OUTER 1
+INNER(%1)
+%endmacro
+
+OUTER(test_value)
+)";
+    
+    std::string result1 = pp.process(source1, "test.aria");
+    assert(result1.find("inner_result(test_value)") != std::string::npos);
+    std::cout << "✓ Macro calling another macro works" << std::endl;
+    
+    // Test 2: Multiple levels of nesting
+    Preprocessor pp2;
+    
+    std::string source2 = R"(
+%macro LEVEL1 1
+level1(%1)
+%endmacro
+
+%macro LEVEL2 1
+LEVEL1(%1)
+%endmacro
+
+%macro LEVEL3 1
+LEVEL2(%1)
+%endmacro
+
+LEVEL3(deep)
+)";
+    
+    std::string result2 = pp2.process(source2, "test.aria");
+    assert(result2.find("level1(deep)") != std::string::npos);
+    std::cout << "✓ Multi-level nested macros work" << std::endl;
+    
+    // Test 3: Macro with multiple arguments calling nested macros
+    Preprocessor pp3;
+    
+    std::string source3 = R"(
+%macro ADD 2
+(%1 + %2)
+%endmacro
+
+%macro MUL 2
+(%1 * %2)
+%endmacro
+
+%macro CALC 3
+ADD(MUL(%1, %2), %3)
+%endmacro
+
+result = CALC(5, 3, 10)
+)";
+    
+    std::string result3 = pp3.process(source3, "test.aria");
+    // Result may have whitespace, but should contain the key parts
+    assert(result3.find("result =") != std::string::npos);
+    assert(result3.find("5 * 3") != std::string::npos);
+    assert(result3.find("+ 10") != std::string::npos);
+    std::cout << "✓ Nested macros with multiple arguments work" << std::endl;
+    
+    // Test 4: Macro calling itself should error
+    Preprocessor pp4;
+    
+    std::string source4 = R"(
+%macro RECURSIVE 1
+RECURSIVE(%1)
+%endmacro
+
+RECURSIVE(test)
+)";
+    
+    try {
+        pp4.process(source4, "test.aria");
+        std::cerr << "✗ Recursion detection failed - should have thrown error" << std::endl;
+        assert(false);
+    } catch (const std::exception& e) {
+        std::string error_msg = e.what();
+        assert(error_msg.find("Recursive") != std::string::npos || 
+               error_msg.find("recursion") != std::string::npos);
+        std::cout << "✓ Direct recursion detected and prevented" << std::endl;
+    }
+}
+
 int main() {
     std::cout << "=== Preprocessor Tests ===" << std::endl;
     
@@ -486,6 +580,7 @@ int main() {
         test_rep_endrep();
         test_include();
         test_if_expressions();
+        test_nested_macros();
         
         std::cout << "\n=== All Preprocessor Tests Passed! ===" << std::endl;
     } catch (const std::exception& e) {

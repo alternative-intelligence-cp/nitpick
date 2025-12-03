@@ -10,7 +10,7 @@ namespace aria {
 namespace frontend {
 
 Preprocessor::Preprocessor() 
-    : pos(0), line(1), col(1), context_counter(0) {
+    : pos(0), line(1), col(1), context_counter(0), macro_expansion_depth(0) {
     // Initialize with empty context stack
 }
 
@@ -268,7 +268,32 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
                 
                 // Expand the macro
                 std::string expanded = expandMacro(identifier, args);
-                output << expanded;
+                
+                // Recursively process the expanded text to handle nested macro calls
+                // Save current state
+                std::string saved_source = source;
+                size_t saved_pos = pos;
+                int saved_line = line;
+                int saved_col = col;
+                std::string saved_file = current_file;
+                
+                // Process expanded macro body
+                std::string processed_expansion = process(expanded, current_file + ":" + identifier);
+                
+                // Restore state
+                source = saved_source;
+                pos = saved_pos;
+                line = saved_line;
+                col = saved_col;
+                current_file = saved_file;
+                
+                // Clean up macro expansion tracking AFTER recursive processing
+                // This ensures recursion detection works for indirect recursion
+                expanding_macros.erase(identifier);
+                macro_expansion_depth--;
+                
+                // Output the fully processed expansion
+                output << processed_expansion;
                 continue;
             }
             
@@ -1005,6 +1030,16 @@ std::string Preprocessor::expandMacro(const std::string& macro_name, const std::
         error("Macro not defined: " + macro_name);
     }
     
+    // Check for direct recursion (macro calling itself)
+    if (expanding_macros.find(macro_name) != expanding_macros.end()) {
+        error("Recursive macro expansion detected: " + macro_name);
+    }
+    
+    // Check maximum expansion depth
+    if (macro_expansion_depth >= MAX_MACRO_EXPANSION_DEPTH) {
+        error("Maximum macro expansion depth exceeded (possible infinite recursion)");
+    }
+    
     const Macro& macro = it->second;
     
     // Check argument count
@@ -1012,6 +1047,10 @@ std::string Preprocessor::expandMacro(const std::string& macro_name, const std::
         error("Macro " + macro_name + " expects " + std::to_string(macro.param_count) + 
               " arguments, got " + std::to_string(args.size()));
     }
+    
+    // Mark macro as being expanded (for recursion detection)
+    expanding_macros.insert(macro_name);
+    macro_expansion_depth++;
     
     // Expand macro body, substituting parameters
     std::string result;
@@ -1057,6 +1096,9 @@ std::string Preprocessor::expandMacro(const std::string& macro_name, const std::
             result += body[i];
         }
     }
+    
+    // Note: expanding_macros cleanup moved to caller (after recursive processing)
+    // This enables indirect recursion detection
     
     return result;
 }
