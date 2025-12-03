@@ -899,6 +899,78 @@ public:
             }
         }
         if (auto* binop = dynamic_cast<aria::frontend::BinaryOp*>(node)) {
+            // Handle assignment operators specially - need LHS address, not value
+            if (binop->op == aria::frontend::BinaryOp::ASSIGN ||
+                binop->op == aria::frontend::BinaryOp::PLUS_ASSIGN ||
+                binop->op == aria::frontend::BinaryOp::MINUS_ASSIGN ||
+                binop->op == aria::frontend::BinaryOp::STAR_ASSIGN ||
+                binop->op == aria::frontend::BinaryOp::SLASH_ASSIGN ||
+                binop->op == aria::frontend::BinaryOp::MOD_ASSIGN) {
+                
+                // Get LHS variable address
+                auto* varExpr = dynamic_cast<aria::frontend::VarExpr*>(binop->left.get());
+                if (!varExpr) return nullptr;
+                
+                auto* sym = ctx.lookup(varExpr->name);
+                if (!sym || !sym->is_ref) return nullptr;
+                
+                Value* lhsAddr = sym->val;  // This is the address/alloca
+                
+                // For compound assignments, load current value first
+                Value* R = visitExpr(binop->right.get());
+                if (!R) return nullptr;
+                
+                Value* result = R;
+                if (binop->op != aria::frontend::BinaryOp::ASSIGN) {
+                    // Load current value for compound assignment
+                    Type* loadType = ctx.getLLVMType(sym->ariaType);
+                    Value* currentVal;
+                    
+                    // For heap allocations, load pointer first
+                    if (sym->val->getName().contains("_heap") || isa<CallInst>(sym->val)) {
+                        Value* heapPtr = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), lhsAddr);
+                        currentVal = ctx.builder->CreateLoad(loadType, heapPtr);
+                    } else {
+                        // For stack allocations, direct load
+                        currentVal = ctx.builder->CreateLoad(loadType, lhsAddr);
+                    }
+                    
+                    // Perform operation
+                    switch (binop->op) {
+                        case aria::frontend::BinaryOp::PLUS_ASSIGN:
+                            result = ctx.builder->CreateAdd(currentVal, R, "addtmp");
+                            break;
+                        case aria::frontend::BinaryOp::MINUS_ASSIGN:
+                            result = ctx.builder->CreateSub(currentVal, R, "subtmp");
+                            break;
+                        case aria::frontend::BinaryOp::STAR_ASSIGN:
+                            result = ctx.builder->CreateMul(currentVal, R, "multmp");
+                            break;
+                        case aria::frontend::BinaryOp::SLASH_ASSIGN:
+                            result = ctx.builder->CreateSDiv(currentVal, R, "divtmp");
+                            break;
+                        case aria::frontend::BinaryOp::MOD_ASSIGN:
+                            result = ctx.builder->CreateSRem(currentVal, R, "modtmp");
+                            break;
+                        default:
+                            break;
+                    }
+                }
+                
+                // Store result back to LHS
+                // For heap allocations, get the heap pointer first
+                if (sym->val->getName().contains("_heap") || isa<CallInst>(sym->val)) {
+                    Value* heapPtr = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), lhsAddr);
+                    ctx.builder->CreateStore(result, heapPtr);
+                } else {
+                    // For stack allocations, direct store
+                    ctx.builder->CreateStore(result, lhsAddr);
+                }
+                
+                return result;  // Return the assigned value
+            }
+            
+            // Regular binary operations (not assignments)
             Value* L = visitExpr(binop->left.get());
             Value* R = visitExpr(binop->right.get());
             
