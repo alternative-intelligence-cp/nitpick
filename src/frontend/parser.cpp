@@ -498,6 +498,67 @@ std::unique_ptr<Expression> Parser::parseExpr() {
 }
 
 // =============================================================================
+// Program and Block Parsing
+// =============================================================================
+
+// Parse top-level program (file contents without { } wrapper)
+std::unique_ptr<Block> Parser::parseProgram() {
+    auto block = std::make_unique<Block>();
+    
+    // Parse top-level declarations until EOF
+    while (current.type != TOKEN_EOF) {
+        // Skip any stray semicolons
+        if (match(TOKEN_SEMICOLON)) {
+            continue;
+        }
+        
+        // Check for function declaration (fn keyword)
+        if (current.type == TOKEN_KW_FUNC) {
+            auto func = parseFuncDecl();
+            if (func) {
+                block->statements.push_back(std::move(func));
+            }
+            continue;
+        }
+        
+        // Check for public function
+        if (current.type == TOKEN_KW_PUB) {
+            advance();
+            if (current.type == TOKEN_KW_FUNC) {
+                auto func = parseFuncDecl();
+                if (func) {
+                    func->is_pub = true;
+                    block->statements.push_back(std::move(func));
+                }
+            }
+            continue;
+        }
+        
+        // Check for async function
+        if (current.type == TOKEN_KW_ASYNC) {
+            advance();
+            if (current.type == TOKEN_KW_FUNC) {
+                auto func = parseFuncDecl();
+                if (func) {
+                    func->is_async = true;
+                    block->statements.push_back(std::move(func));
+                }
+            }
+            continue;
+        }
+        
+        // TODO: struct, type, const, use, mod, extern declarations
+        // For now, treat unrecognized top-level as error
+        std::stringstream ss;
+        ss << "Unexpected token at top level: " << current.value
+           << " (type " << current.type << ") at line " << current.line;
+        throw std::runtime_error(ss.str());
+    }
+    
+    return block;
+}
+
+// =============================================================================
 // Statement Parsing
 // =============================================================================
 
@@ -1164,47 +1225,36 @@ std::vector<FuncParam> Parser::parseParams() {
 }
 
 // Parse function declaration
-// NEW SYNTAX (v0.0.6): func:name = returnType(params) { body }
-// Example: func:add = int8(int8:a, int8:b) { return { err: NULL, val: a + b }; }
+// ARIA SYNTAX (v0.0.6): fn name(params) -> type { body }
+// Example: fn add(int:a, int:b) -> int { return a + b; }
 std::unique_ptr<FuncDecl> Parser::parseFuncDecl() {
     bool is_async = false;
     bool is_pub = false;
     
-    // Check for async keyword
-    if (match(TOKEN_KW_ASYNC)) {
-        is_async = true;
-    }
+    // Check for async keyword (already consumed by parseProgram if present)
+    // Check for pub keyword (already consumed by parseProgram if present)
     
-    // Check for pub keyword
-    if (match(TOKEN_KW_PUB)) {
-        is_pub = true;
-    }
-    
-    // Consume 'func' keyword
-    consume(TOKEN_KW_FUNC, "Expected 'func' keyword");
-    
-    // Consume ':'
-    consume(TOKEN_COLON, "Expected ':' after 'func'");
+    // Consume 'fn' keyword
+    consume(TOKEN_KW_FUNC, "Expected 'fn' keyword");
     
     // Parse function name
     Token name_tok = consume(TOKEN_IDENTIFIER, "Expected function name");
     std::string name = name_tok.value;
     
-    // Consume '='
-    consume(TOKEN_ASSIGN, "Expected '=' after function name");
-    
-    // Parse return type (must be a type token)
-    if (!isTypeToken(current.type)) {
-        std::stringstream ss;
-        ss << "Expected return type after '=' at line " << current.line << ", col " << current.col;
-        throw std::runtime_error(ss.str());
-    }
-    
-    std::string return_type = current.value;
-    advance();  // consume the return type token
-    
     // Parse parameters: (type:name, type:name, ...)
     auto params = parseParams();
+    
+    // Parse return type: -> type
+    std::string return_type = "void";  // Default
+    if (match(TOKEN_ARROW)) {
+        if (!isTypeToken(current.type)) {
+            std::stringstream ss;
+            ss << "Expected return type after '->' at line " << current.line << ", col " << current.col;
+            throw std::runtime_error(ss.str());
+        }
+        return_type = current.value;
+        advance();  // consume the return type token
+    }
     
     // Parse body block
     auto body = parseBlock();

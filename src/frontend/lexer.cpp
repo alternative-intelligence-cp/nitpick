@@ -199,7 +199,8 @@ Token AriaLexer::nextToken() {
            // Keyword lookup table
            static const std::map<std::string, TokenType> keywords = {
                // Control flow
-               {"func", TOKEN_KW_FUNC},
+               {"fn", TOKEN_KW_FUNC},      // Modern function syntax
+               {"func", TOKEN_KW_FUNC},   // Legacy alias
                {"return", TOKEN_KW_RETURN},
                {"if", TOKEN_KW_IF},
                {"else", TOKEN_KW_ELSE},

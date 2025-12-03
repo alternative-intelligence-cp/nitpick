@@ -57,10 +57,10 @@ add_executable(ariac
  src/driver/main.cpp               # Compiler Driver Entry Point
  src/frontend/preprocessor.cpp    # Preprocessor (Macros, Includes, Conditionals)
  src/frontend/lexer.cpp
- src/frontend/parser.cpp           # Core Parser Implementation (all-in-one)
+ src/frontend/parser.cpp           # Core Parser Implementation (all parsing methods)
+ # src/frontend/parser_stmt.cpp    # Merged into parser.cpp
  # src/frontend/parser_decl.cpp    # Merged into parser.cpp
  # src/frontend/parser_pick.cpp    # Merged into parser.cpp
- # src/frontend/parser_stmt.cpp    # Merged into parser.cpp
  src/frontend/sema/borrow_checker.cpp  # Borrow Checker Implementation
  src/frontend/sema/escape_analysis.cpp # Escape Analysis Implementation
  src/frontend/sema/type_checker.cpp    # Type Checking Implementation
