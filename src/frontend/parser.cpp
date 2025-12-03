@@ -136,11 +136,103 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         return std::make_unique<VarExpr>(name);
     }
 
-    // Parenthesized expression
+    // Parenthesized expression OR lambda without return type
     if (match(TOKEN_LPAREN)) {
-        auto expr = parseExpr();
-        expect(TOKEN_RPAREN);
-        return expr;
+        // Check if this is a lambda: (params) { body }
+        // or a parenthesized expression: (expr)
+        // 
+        // Lambda if: after ) we see {
+        // Parenthesized expr if: after ) we see anything else
+        
+        // Try to parse parameters
+        // If we see type:name pattern, it's a lambda
+        // Otherwise it's a parenthesized expression
+        
+        // Lookahead: check if first token after ( is a type
+        if (isTypeToken(current.type)) {
+            // Could be lambda with parameters or parenthesized expression with type cast
+            // Parse as parameters and see if we get { after )
+            std::vector<FuncParam> params;
+            
+            // Parse first parameter
+            std::string param_type = current.value;
+            advance();
+            
+            if (current.type == TOKEN_COLON) {
+                // Definitely a lambda! Parse all parameters
+                advance();  // consume :
+                Token param_name = expect(TOKEN_IDENTIFIER);
+                params.push_back(FuncParam(param_type, param_name.value));
+                
+                // Parse remaining parameters
+                while (match(TOKEN_COMMA)) {
+                    if (!isTypeToken(current.type)) {
+                        throw std::runtime_error("Expected type in lambda parameter list");
+                    }
+                    param_type = current.value;
+                    advance();
+                    expect(TOKEN_COLON);
+                    param_name = expect(TOKEN_IDENTIFIER);
+                    params.push_back(FuncParam(param_type, param_name.value));
+                }
+                
+                expect(TOKEN_RPAREN);
+                
+                // Must have { for lambda body
+                auto body = parseBlock();
+                
+                // Lambda with inferred return type (void default)
+                auto lambda = std::make_unique<LambdaExpr>("void", std::move(params), std::move(body));
+                
+                // Check for immediate invocation
+                if (current.type == TOKEN_LPAREN) {
+                    lambda->is_immediately_invoked = true;
+                    advance();
+                    while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
+                        lambda->call_arguments.push_back(parseExpr());
+                        if (!match(TOKEN_COMMA)) break;
+                    }
+                    expect(TOKEN_RPAREN);
+                }
+                
+                return lambda;
+            } else {
+                // Not a lambda parameter - must be parenthesized expression
+                // We consumed a type token, need to handle it as an expression
+                // This is tricky - for now just error
+                throw std::runtime_error("Expected ':' after type in lambda or invalid parenthesized expression");
+            }
+        } else if (current.type == TOKEN_RPAREN) {
+            // Empty parameter list: () { body }
+            advance();  // consume )
+            if (current.type == TOKEN_LBRACE) {
+                // Lambda with no parameters
+                std::vector<FuncParam> params;
+                auto body = parseBlock();
+                auto lambda = std::make_unique<LambdaExpr>("void", std::move(params), std::move(body));
+                
+                // Check for immediate invocation
+                if (current.type == TOKEN_LPAREN) {
+                    lambda->is_immediately_invoked = true;
+                    advance();
+                    while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
+                        lambda->call_arguments.push_back(parseExpr());
+                        if (!match(TOKEN_COMMA)) break;
+                    }
+                    expect(TOKEN_RPAREN);
+                }
+                
+                return lambda;
+            } else {
+                // Empty parentheses but no lambda body - error
+                throw std::runtime_error("Unexpected '()' - expected expression or lambda");
+            }
+        } else {
+            // Regular parenthesized expression
+            auto expr = parseExpr();
+            expect(TOKEN_RPAREN);
+            return expr;
+        }
     }
     
     // Array literal: [1, 2, 3]
@@ -502,6 +594,8 @@ std::unique_ptr<Expression> Parser::parseExpr() {
 // =============================================================================
 
 // Parse top-level program (file contents without { } wrapper)
+// SPEC: All functions are lambdas assigned to func-type variables
+// Example: func:add = (int32:a, int32:b) { return a + b };
 std::unique_ptr<Block> Parser::parseProgram() {
     auto block = std::make_unique<Block>();
     
@@ -512,48 +606,14 @@ std::unique_ptr<Block> Parser::parseProgram() {
             continue;
         }
         
-        // Check for function declaration (fn keyword)
-        if (current.type == TOKEN_KW_FUNC) {
-            auto func = parseFuncDecl();
-            if (func) {
-                block->statements.push_back(std::move(func));
-            }
-            continue;
-        }
-        
-        // Check for public function
-        if (current.type == TOKEN_KW_PUB) {
-            advance();
-            if (current.type == TOKEN_KW_FUNC) {
-                auto func = parseFuncDecl();
-                if (func) {
-                    func->is_pub = true;
-                    block->statements.push_back(std::move(func));
-                }
-            }
-            continue;
-        }
-        
-        // Check for async function
-        if (current.type == TOKEN_KW_ASYNC) {
-            advance();
-            if (current.type == TOKEN_KW_FUNC) {
-                auto func = parseFuncDecl();
-                if (func) {
-                    func->is_async = true;
-                    block->statements.push_back(std::move(func));
-                }
-            }
-            continue;
-        }
-        
         // Global variable declarations: [const|wild|stack] type:name = value;
+        // This includes func:name = (params) { body }; (lambdas)
         if (current.type == TOKEN_KW_CONST || current.type == TOKEN_KW_WILD || current.type == TOKEN_KW_STACK) {
             block->statements.push_back(parseVarDecl());
             continue;
         }
         
-        // Type token - could be a global variable declaration
+        // Type token - variable declaration (including func-type for lambdas)
         if (isTypeToken(current.type)) {
             block->statements.push_back(parseVarDecl());
             continue;
@@ -750,12 +810,8 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         return stmt;
     }
     
-    // Function declaration (Bug #70)
-    if (current.type == TOKEN_KW_FUNC || 
-        current.type == TOKEN_KW_ASYNC ||
-        current.type == TOKEN_KW_PUB) {
-        return parseFuncDecl();
-    }
+    // Note: Functions are lambdas (func:name = (params) { body };)
+    // No special function declaration syntax needed
 
     // Expression statement (e.g., function call)
     auto expr = parseExpr();
@@ -1200,11 +1256,10 @@ std::unique_ptr<Statement> Parser::parseModDef() {
 
 // Helper: check if token is a valid type token
 bool Parser::isTypeToken(TokenType type) {
-    return type == TOKEN_TYPE_INT8  || type == TOKEN_TYPE_INT16  ||
-           type == TOKEN_TYPE_INT32 || type == TOKEN_TYPE_INT64  ||
-           type == TOKEN_TYPE_FLT32 || type == TOKEN_TYPE_FLT64 ||
-           type == TOKEN_TYPE_BOOL  || type == TOKEN_TYPE_STRING ||
-           type == TOKEN_TYPE_VOID  || type == TOKEN_IDENTIFIER;
+    // Check if token is a primitive or compound type
+    // Types are in the range TOKEN_TYPE_VOID to TOKEN_TYPE_STRING
+    return (type >= TOKEN_TYPE_VOID && type <= TOKEN_TYPE_STRING) || 
+           type == TOKEN_IDENTIFIER;  // user-defined types
 }
 
 // Parse function parameters: (type:name, type:name, ...)

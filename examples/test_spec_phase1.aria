@@ -1,31 +1,30 @@
 /* TEST OF SYNTAX FROM ORIGINAL SPECS - PHASE 1 ONLY */
 // Testing only features that should work with current parser implementation
-// Phase 1: Basic variables, functions, arithmetic, return statements
+// Phase 1: Basic variables, functions as lambdas, arithmetic, return statements
 
 // Simple variable declarations with initialization
 int8:i = 9;
 int32:value = 42;
 
-// Function with parameters and return type
-fn add(int32:a, int32:b) -> int32 {
+// SPEC SYNTAX: Functions are lambdas assigned to func-type variables
+// func:name = (params) { body }
+func:add = (int32:a, int32:b) {
     return a + b;
-}
+};
 
-// Function with local variables
-fn calculate(int32:x) -> int32 {
+func:calculate = (int32:x) {
     int32:doubled = x + x;
     int32:result = doubled + 10;
     return result;
-}
+};
 
-// Main function
-fn main() -> int32 {
+func:main = () {
     int32:num1 = 42;
     int32:num2 = 10;
     int32:sum = add(num1, num2);
     int32:calc = calculate(sum);
     return calc;
-}
+};
 
 /* FEATURES NOT YET IMPLEMENTED - COMMENTED OUT FOR FUTURE PHASES:
 
