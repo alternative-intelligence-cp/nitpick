@@ -89,6 +89,7 @@ public:
     struct Symbol {
         Value* val;
         bool is_ref; // Is this a pointer to the value (alloca) or the value itself?
+        std::string ariaType; // Store the Aria type for proper loading
     };
     std::vector<std::map<std::string, Symbol>> scopeStack;
 
@@ -110,8 +111,8 @@ public:
     void pushScope() { scopeStack.emplace_back(); }
     void popScope() { scopeStack.pop_back(); }
 
-    void define(const std::string& name, Value* val, bool is_ref = true) {
-        scopeStack.back()[name] = {val, is_ref};
+    void define(const std::string& name, Value* val, bool is_ref = true, const std::string& ariaType = "") {
+        scopeStack.back()[name] = {val, is_ref, ariaType};
     }
 
     Symbol* lookup(const std::string& name) {
@@ -225,7 +226,7 @@ public:
             ctx.builder->CreateStore(gcPtr, storage);
         }
 
-        ctx.define(node->name, storage, true);
+        ctx.define(node->name, storage, true, node->type);
 
         // Initializer
         if (node->initializer) {
@@ -740,22 +741,23 @@ public:
         if (auto* var = dynamic_cast<aria::frontend::VarExpr*>(node)) {
             auto* sym = ctx.lookup(var->name);
             if (!sym) return nullptr;
+            
             if (sym->is_ref) {
-                // Load from stack slot - get the type from the alloca
-                Type* allocaType = sym->val->getType();
-                if (auto* ptrType = dyn_cast<PointerType>(allocaType)) {
-                    // For heap allocations, we need to load the pointer first, then load from it
+                // For stack/heap allocations, use the stored Aria type to determine load type
+                if (!sym->ariaType.empty()) {
+                    Type* loadType = ctx.getLLVMType(sym->ariaType);
+                    
+                    // For heap allocations (wild/gc), load pointer first
                     if (sym->val->getName().contains("_heap") || isa<CallInst>(sym->val)) {
                         Value* heapPtr = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), sym->val);
-                        return ctx.builder->CreateLoad(Type::getInt64Ty(ctx.llvmContext), heapPtr);
+                        return ctx.builder->CreateLoad(loadType, heapPtr);
                     }
-                    // For stack allocations (parameters), get the allocated type
-                    if (auto* allocaInst = dyn_cast<AllocaInst>(sym->val)) {
-                        Type* elementType = allocaInst->getAllocatedType();
-                        return ctx.builder->CreateLoad(elementType, sym->val);
-                    }
+                    
+                    // For stack allocations, direct load
+                    return ctx.builder->CreateLoad(loadType, sym->val);
                 }
-                // Fallback to int64
+                
+                // Fallback (shouldn't happen with proper type tracking)
                 return ctx.builder->CreateLoad(Type::getInt64Ty(ctx.llvmContext), sym->val);
             }
             return sym->val; // PHI or direct value
@@ -816,6 +818,29 @@ public:
                     }
                     return nullptr;
                 }
+                case aria::frontend::UnaryOp::ADDRESS_OF: {
+                    // @ operator: get address of a variable (like C's &)
+                    // For now, return the pointer itself (for stack variables, this is the alloca)
+                    // For the operand to be valid, it must be a variable reference
+                    if (auto* varExpr = dynamic_cast<aria::frontend::VarExpr*>(unary->operand.get())) {
+                        auto* sym = ctx.lookup(varExpr->name);
+                        if (!sym || !sym->is_ref) return nullptr;
+                        
+                        // Return the pointer (alloca address) as an integer
+                        // PtrToInt converts pointer to integer representation
+                        return ctx.builder->CreatePtrToInt(sym->val, Type::getInt64Ty(ctx.llvmContext));
+                    }
+                    return nullptr;
+                }
+                case aria::frontend::UnaryOp::PIN: {
+                    // # operator: pin dynamic value to specific type
+                    // For now, simplified: just return the operand
+                    // In full implementation, would:
+                    // 1. Check operand is dyn type
+                    // 2. Perform runtime type check
+                    // 3. Extract/cast to specific type
+                    return operand;
+                }
             }
         }
         if (auto* binop = dynamic_cast<aria::frontend::BinaryOp*>(node)) {
@@ -823,6 +848,23 @@ public:
             Value* R = visitExpr(binop->right.get());
             
             if (!L || !R) return nullptr;
+            
+            // Type promotion: if operands have different integer types, promote to larger type
+            if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
+                Type* LType = L->getType();
+                Type* RType = R->getType();
+                unsigned LBits = LType->getIntegerBitWidth();
+                unsigned RBits = RType->getIntegerBitWidth();
+                
+                if (LBits != RBits) {
+                    // Promote smaller type to larger type
+                    if (LBits < RBits) {
+                        L = ctx.builder->CreateSExtOrTrunc(L, RType);
+                    } else {
+                        R = ctx.builder->CreateSExtOrTrunc(R, LType);
+                    }
+                }
+            }
             
             switch (binop->op) {
                 case aria::frontend::BinaryOp::ADD:

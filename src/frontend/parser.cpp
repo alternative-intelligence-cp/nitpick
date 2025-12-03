@@ -251,14 +251,32 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
 std::unique_ptr<Expression> Parser::parsePostfix() {
     auto expr = parsePrimary();
     
-    // Handle postfix increment
-    if (match(TOKEN_INCREMENT)) {
-        return std::make_unique<UnaryOp>(UnaryOp::POST_INC, std::move(expr));
-    }
-    
-    // Handle postfix decrement
-    if (match(TOKEN_DECREMENT)) {
-        return std::make_unique<UnaryOp>(UnaryOp::POST_DEC, std::move(expr));
+    // Loop to handle chained postfix operations: obj.field, obj.field++, array[index].field, etc.
+    while (true) {
+        // Handle member access: obj.field or obj?.field (safe navigation)
+        if (current.type == TOKEN_DOT || current.type == TOKEN_SAFE_NAV) {
+            bool is_safe = (current.type == TOKEN_SAFE_NAV);
+            advance();  // consume . or ?.
+            
+            Token member_name = expect(TOKEN_IDENTIFIER);
+            expr = std::make_unique<MemberAccess>(std::move(expr), member_name.value, is_safe);
+            continue;
+        }
+        
+        // Handle postfix increment
+        if (match(TOKEN_INCREMENT)) {
+            expr = std::make_unique<UnaryOp>(UnaryOp::POST_INC, std::move(expr));
+            continue;
+        }
+        
+        // Handle postfix decrement
+        if (match(TOKEN_DECREMENT)) {
+            expr = std::make_unique<UnaryOp>(UnaryOp::POST_DEC, std::move(expr));
+            continue;
+        }
+        
+        // No more postfix operations
+        break;
     }
     
     return expr;
@@ -282,6 +300,18 @@ std::unique_ptr<Expression> Parser::parseUnary() {
     if (match(TOKEN_TILDE)) {
         auto operand = parseUnary();
         return std::make_unique<UnaryOp>(UnaryOp::BITWISE_NOT, std::move(operand));
+    }
+
+    // Address-of operator (@)
+    if (match(TOKEN_AT)) {
+        auto operand = parseUnary();
+        return std::make_unique<UnaryOp>(UnaryOp::ADDRESS_OF, std::move(operand));
+    }
+
+    // Pin operator (#)
+    if (match(TOKEN_HASH)) {
+        auto operand = parseUnary();
+        return std::make_unique<UnaryOp>(UnaryOp::PIN, std::move(operand));
     }
 
     return parsePostfix();
@@ -449,7 +479,16 @@ std::unique_ptr<Expression> Parser::parseTernary() {
         return std::make_unique<TernaryExpr>(std::move(condition), std::move(true_expr), std::move(false_expr));
     }
     
-    return parseLogicalOr();
+    // Parse base expression
+    auto expr = parseLogicalOr();
+    
+    // Check for unwrap operator: expr ? default
+    if (match(TOKEN_QUESTION)) {
+        auto default_value = parseLogicalOr();
+        return std::make_unique<UnwrapExpr>(std::move(expr), std::move(default_value));
+    }
+    
+    return expr;
 }
 
 // Parse assignment expressions (lowest precedence, right-associative)
@@ -613,6 +652,9 @@ std::unique_ptr<Statement> Parser::parseStmt() {
             // But parseVarDecl expects to START at the type token
             // So we can't call it directly
             
+            // Parse array/pointer suffixes
+            std::string fullType = parseTypeSuffixes(saved.value);
+            
             // Check if current is ':'
             if (current.type == TOKEN_COLON) {
                 // Variable declaration: we already consumed the type
@@ -627,7 +669,7 @@ std::unique_ptr<Statement> Parser::parseStmt() {
                 
                 expect(TOKEN_SEMICOLON);
                 
-                return std::make_unique<VarDecl>(saved.value, name_tok.value, std::move(init));
+                return std::make_unique<VarDecl>(fullType, name_tok.value, std::move(init));
             } else {
                 std::stringstream ss;
                 ss << "Expected ':' or '(' after type token at line " << current.line;
@@ -744,11 +786,12 @@ std::unique_ptr<VarDecl> Parser::parseVarDecl() {
         advance();
     }
     
-    // Type
+    // Type (with optional array/pointer suffix)
     Token typeToken = current;
     advance();
+    std::string fullType = parseTypeSuffixes(typeToken.value);
 
-    // Colon (Aria syntax: type:name)
+    // Colon (Aria syntax: type:name or type[]:name or type@:name)
     expect(TOKEN_COLON);
 
     // Name
@@ -762,7 +805,7 @@ std::unique_ptr<VarDecl> Parser::parseVarDecl() {
 
     expect(TOKEN_SEMICOLON);
 
-    auto varDecl = std::make_unique<VarDecl>(typeToken.value, nameToken.value, std::move(init));
+    auto varDecl = std::make_unique<VarDecl>(fullType, nameToken.value, std::move(init));
     varDecl->is_const = is_const;
     varDecl->is_wild = is_wild;
     varDecl->is_stack = is_stack;
@@ -1169,6 +1212,35 @@ bool Parser::isTypeToken(TokenType type) {
            type == TOKEN_IDENTIFIER;  // user-defined types
 }
 
+// Helper: parse array/pointer type modifiers ([], [256], @)
+std::string Parser::parseTypeSuffixes(const std::string& baseType) {
+    std::string fullType = baseType;
+    
+    // Check for array or pointer type modifiers
+    // Array syntax: int8[], int8[256]
+    // Pointer syntax: int64@
+    while (current.type == TOKEN_LBRACKET || current.type == TOKEN_AT) {
+        if (current.type == TOKEN_LBRACKET) {
+            fullType += "[";
+            advance();
+            
+            // Check for array size: [256] or empty []
+            if (current.type == TOKEN_INT_LITERAL) {
+                fullType += current.value;
+                advance();
+            }
+            
+            expect(TOKEN_RBRACKET);
+            fullType += "]";
+        } else if (current.type == TOKEN_AT) {
+            fullType += "@";
+            advance();
+        }
+    }
+    
+    return fullType;
+}
+
 // Parse function parameters: (type:name, type:name, ...)
 std::vector<FuncParam> Parser::parseParams() {
     std::vector<FuncParam> params;
@@ -1176,13 +1248,14 @@ std::vector<FuncParam> Parser::parseParams() {
     expect(TOKEN_LPAREN);
     
     while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
-        // Parse param_type:param_name
+        // Parse param_type:param_name (with optional array/pointer suffixes)
         if (!isTypeToken(current.type)) {
             throw std::runtime_error("Expected type token in parameter list");
         }
         
         std::string param_type = current.value;
         advance();
+        param_type = parseTypeSuffixes(param_type);
         
         expect(TOKEN_COLON);
         
