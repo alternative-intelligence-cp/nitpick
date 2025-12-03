@@ -1,36 +1,26 @@
 ; ModuleID = 'aria_module'
 source_filename = "aria_module"
 
+@0 = private unnamed_addr constant [15 x i8] c"Infinite loop!\00", align 1
+
 declare void @puts(ptr)
 
 declare void @print(ptr)
 
 define internal void @__aria_module_init() {
 entry:
-  %0 = call ptr @get_current_thread_nursery()
-  %1 = call ptr @aria_gc_alloc(ptr %0, i64 8)
-  %main = alloca ptr, align 8
-  store ptr %1, ptr %main, align 8
-  %2 = load ptr, ptr %main, align 8
-  store ptr @lambda_0, ptr %2, align 8
+  br label %while_cond
+
+while_cond:                                       ; preds = %while_body, %entry
+  br i1 true, label %while_body, label %while_exit
+
+while_body:                                       ; preds = %while_cond
+  call void @puts(ptr @0)
+  br label %while_cond
+
+while_exit:                                       ; preds = %while_cond
   ret void
 }
-
-declare ptr @get_current_thread_nursery()
-
-declare ptr @aria_gc_alloc(ptr, i64)
-
-define internal i8 @lambda_0() {
-entry:
-  %0 = call ptr @aria_alloc(i64 8)
-  %raw = alloca ptr, align 8
-  store ptr %0, ptr %raw, align 8
-  %1 = load ptr, ptr %raw, align 8
-  store i64 100, ptr %1, align 4
-  ret i64 0
-}
-
-declare ptr @aria_alloc(i64)
 
 define i64 @main() {
 entry:
