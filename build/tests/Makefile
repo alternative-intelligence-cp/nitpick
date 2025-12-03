@@ -200,6 +200,20 @@ test_gc_header/fast:
 .PHONY : test_gc_header/fast
 
 # Convenience name for target.
+tests/CMakeFiles/test_parser.dir/rule:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/test_parser.dir/rule
+.PHONY : tests/CMakeFiles/test_parser.dir/rule
+
+# Convenience name for target.
+test_parser: tests/CMakeFiles/test_parser.dir/rule
+.PHONY : test_parser
+
+# fast build rule for target.
+test_parser/fast:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/build
+.PHONY : test_parser/fast
+
+# Convenience name for target.
 tests/CMakeFiles/run_tests.dir/rule:
 	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/run_tests.dir/rule
 .PHONY : tests/CMakeFiles/run_tests.dir/rule
@@ -212,6 +226,78 @@ run_tests: tests/CMakeFiles/run_tests.dir/rule
 run_tests/fast:
 	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/run_tests.dir/build.make tests/CMakeFiles/run_tests.dir/build
 .PHONY : run_tests/fast
+
+__/src/frontend/lexer.o: __/src/frontend/lexer.cpp.o
+.PHONY : __/src/frontend/lexer.o
+
+# target to build an object file
+__/src/frontend/lexer.cpp.o:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/__/src/frontend/lexer.cpp.o
+.PHONY : __/src/frontend/lexer.cpp.o
+
+__/src/frontend/lexer.i: __/src/frontend/lexer.cpp.i
+.PHONY : __/src/frontend/lexer.i
+
+# target to preprocess a source file
+__/src/frontend/lexer.cpp.i:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/__/src/frontend/lexer.cpp.i
+.PHONY : __/src/frontend/lexer.cpp.i
+
+__/src/frontend/lexer.s: __/src/frontend/lexer.cpp.s
+.PHONY : __/src/frontend/lexer.s
+
+# target to generate assembly for a file
+__/src/frontend/lexer.cpp.s:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/__/src/frontend/lexer.cpp.s
+.PHONY : __/src/frontend/lexer.cpp.s
+
+__/src/frontend/parser.o: __/src/frontend/parser.cpp.o
+.PHONY : __/src/frontend/parser.o
+
+# target to build an object file
+__/src/frontend/parser.cpp.o:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/__/src/frontend/parser.cpp.o
+.PHONY : __/src/frontend/parser.cpp.o
+
+__/src/frontend/parser.i: __/src/frontend/parser.cpp.i
+.PHONY : __/src/frontend/parser.i
+
+# target to preprocess a source file
+__/src/frontend/parser.cpp.i:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/__/src/frontend/parser.cpp.i
+.PHONY : __/src/frontend/parser.cpp.i
+
+__/src/frontend/parser.s: __/src/frontend/parser.cpp.s
+.PHONY : __/src/frontend/parser.s
+
+# target to generate assembly for a file
+__/src/frontend/parser.cpp.s:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/__/src/frontend/parser.cpp.s
+.PHONY : __/src/frontend/parser.cpp.s
+
+__/src/frontend/preprocessor.o: __/src/frontend/preprocessor.cpp.o
+.PHONY : __/src/frontend/preprocessor.o
+
+# target to build an object file
+__/src/frontend/preprocessor.cpp.o:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/__/src/frontend/preprocessor.cpp.o
+.PHONY : __/src/frontend/preprocessor.cpp.o
+
+__/src/frontend/preprocessor.i: __/src/frontend/preprocessor.cpp.i
+.PHONY : __/src/frontend/preprocessor.i
+
+# target to preprocess a source file
+__/src/frontend/preprocessor.cpp.i:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/__/src/frontend/preprocessor.cpp.i
+.PHONY : __/src/frontend/preprocessor.cpp.i
+
+__/src/frontend/preprocessor.s: __/src/frontend/preprocessor.cpp.s
+.PHONY : __/src/frontend/preprocessor.s
+
+# target to generate assembly for a file
+__/src/frontend/preprocessor.cpp.s:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/__/src/frontend/preprocessor.cpp.s
+.PHONY : __/src/frontend/preprocessor.cpp.s
 
 __/src/runtime/memory/allocator.o: __/src/runtime/memory/allocator.c.o
 .PHONY : __/src/runtime/memory/allocator.o
@@ -285,6 +371,30 @@ test_gc_header.cpp.s:
 	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_gc_header.dir/build.make tests/CMakeFiles/test_gc_header.dir/test_gc_header.cpp.s
 .PHONY : test_gc_header.cpp.s
 
+test_parser.o: test_parser.cpp.o
+.PHONY : test_parser.o
+
+# target to build an object file
+test_parser.cpp.o:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/test_parser.cpp.o
+.PHONY : test_parser.cpp.o
+
+test_parser.i: test_parser.cpp.i
+.PHONY : test_parser.i
+
+# target to preprocess a source file
+test_parser.cpp.i:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/test_parser.cpp.i
+.PHONY : test_parser.cpp.i
+
+test_parser.s: test_parser.cpp.s
+.PHONY : test_parser.s
+
+# target to generate assembly for a file
+test_parser.cpp.s:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/test_parser.cpp.s
+.PHONY : test_parser.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -301,6 +411,16 @@ help:
 	@echo "... run_tests"
 	@echo "... test_allocator"
 	@echo "... test_gc_header"
+	@echo "... test_parser"
+	@echo "... __/src/frontend/lexer.o"
+	@echo "... __/src/frontend/lexer.i"
+	@echo "... __/src/frontend/lexer.s"
+	@echo "... __/src/frontend/parser.o"
+	@echo "... __/src/frontend/parser.i"
+	@echo "... __/src/frontend/parser.s"
+	@echo "... __/src/frontend/preprocessor.o"
+	@echo "... __/src/frontend/preprocessor.i"
+	@echo "... __/src/frontend/preprocessor.s"
 	@echo "... __/src/runtime/memory/allocator.o"
 	@echo "... __/src/runtime/memory/allocator.i"
 	@echo "... __/src/runtime/memory/allocator.s"
@@ -310,6 +430,9 @@ help:
 	@echo "... test_gc_header.o"
 	@echo "... test_gc_header.i"
 	@echo "... test_gc_header.s"
+	@echo "... test_parser.o"
+	@echo "... test_parser.i"
+	@echo "... test_parser.s"
 .PHONY : help
 
 

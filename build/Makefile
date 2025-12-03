@@ -341,6 +341,19 @@ test_gc_header/fast:
 .PHONY : test_gc_header/fast
 
 #=============================================================================
+# Target rules for targets named test_parser
+
+# Build rule for target.
+test_parser: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_parser
+.PHONY : test_parser
+
+# fast build rule for target.
+test_parser/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/build
+.PHONY : test_parser/fast
+
+#=============================================================================
 # Target rules for targets named run_tests
 
 # Build rule for target.
@@ -860,6 +873,7 @@ help:
 	@echo "... mimalloc-static"
 	@echo "... test_allocator"
 	@echo "... test_gc_header"
+	@echo "... test_parser"
 	@echo "... src/backend/codegen.o"
 	@echo "... src/backend/codegen.i"
 	@echo "... src/backend/codegen.s"

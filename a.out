@@ -1,11 +1,6 @@
 ; ModuleID = 'aria_module'
 source_filename = "aria_module"
 
-%Result = type { ptr }
-
-@0 = private unnamed_addr constant [9 x i8] c"whats up\00", align 1
-@1 = private unnamed_addr constant [4 x i8] c"bob\00", align 1
-
 declare void @puts(ptr)
 
 declare void @print(ptr)
@@ -14,10 +9,16 @@ define internal void @__aria_module_init() {
 entry:
   %0 = call ptr @get_current_thread_nursery()
   %1 = call ptr @aria_gc_alloc(ptr %0, i64 8)
-  %main = alloca ptr, align 8
-  store ptr %1, ptr %main, align 8
-  %2 = load ptr, ptr %main, align 8
+  %getValue = alloca ptr, align 8
+  store ptr %1, ptr %getValue, align 8
+  %2 = load ptr, ptr %getValue, align 8
   store ptr @lambda_0, ptr %2, align 8
+  %3 = call ptr @get_current_thread_nursery.1()
+  %4 = call ptr @aria_gc_alloc.2(ptr %3, i64 8)
+  %main = alloca ptr, align 8
+  store ptr %4, ptr %main, align 8
+  %5 = load ptr, ptr %main, align 8
+  store ptr @lambda_1, ptr %5, align 8
   ret void
 }
 
@@ -27,124 +28,26 @@ declare ptr @aria_gc_alloc(ptr, i64)
 
 define internal i8 @lambda_0() {
 entry:
-  %0 = call ptr @get_current_thread_nursery.1()
-  %1 = call ptr @aria_gc_alloc.2(ptr %0, i64 1)
-  %i = alloca ptr, align 8
-  store ptr %1, ptr %i, align 8
-  %2 = load ptr, ptr %i, align 8
-  store i64 9, ptr %2, align 4
-  %3 = call ptr @get_current_thread_nursery.3()
-  %4 = call ptr @aria_gc_alloc.4(ptr %3, i64 8)
-  %str = alloca ptr, align 8
-  store ptr %4, ptr %str, align 8
-  %5 = load ptr, ptr %str, align 8
-  store ptr @0, ptr %5, align 8
-  %6 = call ptr @get_current_thread_nursery.5()
-  %7 = call ptr @aria_gc_alloc.6(ptr %6, i64 8)
-  %arr1 = alloca ptr, align 8
-  store ptr %7, ptr %arr1, align 8
-  %8 = call ptr @get_current_thread_nursery.7()
-  %9 = call ptr @aria_gc_alloc.8(ptr %8, i64 8)
-  %arr2 = alloca ptr, align 8
-  store ptr %9, ptr %arr2, align 8
-  %10 = call ptr @get_current_thread_nursery.9()
-  %11 = call ptr @aria_gc_alloc.10(ptr %10, i64 8)
-  %arr3 = alloca ptr, align 8
-  store ptr %11, ptr %arr3, align 8
-  %12 = load i8, ptr %i, align 1
-  %13 = load i64, ptr %i, align 4
-  %14 = add i64 %13, 1
-  store i64 %14, ptr %i, align 4
-  %15 = load i8, ptr %i, align 1
-  %16 = load i64, ptr %i, align 4
-  %17 = sub i64 %16, 1
-  store i64 %17, ptr %i, align 4
-  %18 = call ptr @get_current_thread_nursery.11()
-  %19 = call ptr @aria_gc_alloc.12(ptr %18, i64 8)
-  %d = alloca ptr, align 8
-  store ptr %19, ptr %d, align 8
-  %20 = load ptr, ptr %d, align 8
-  store ptr @1, ptr %20, align 8
-  %21 = load ptr, ptr %d, align 8
-  %22 = load ptr, ptr %d, align 8
-  %23 = load ptr, ptr %d, align 8
-  %24 = call ptr @aria_alloc(i64 8)
-  %s = alloca ptr, align 8
-  store ptr %24, ptr %s, align 8
-  %25 = load ptr, ptr %s, align 8
-  store i64 100000, ptr %25, align 4
-  %26 = call ptr @get_current_thread_nursery.13()
-  %27 = call ptr @aria_gc_alloc.14(ptr %26, i64 8)
-  %addr = alloca ptr, align 8
-  store ptr %27, ptr %addr, align 8
-  %28 = load i64, ptr %s, align 4
-  %29 = ptrtoint ptr %s to i64
-  %30 = load ptr, ptr %addr, align 8
-  store i64 %29, ptr %30, align 4
-  %31 = call ptr @get_current_thread_nursery.15()
-  %32 = call ptr @aria_gc_alloc.16(ptr %31, i64 1)
-  %pinned = alloca ptr, align 8
-  store ptr %32, ptr %pinned, align 8
-  %33 = load ptr, ptr %d, align 8
-  %34 = load ptr, ptr %pinned, align 8
-  store ptr %33, ptr %34, align 8
-  %35 = call ptr @aria_alloc.17(i64 8)
-  %ptr = alloca ptr, align 8
-  store ptr %35, ptr %ptr, align 8
-  %36 = load i64, ptr %s, align 4
-  %37 = ptrtoint ptr %s to i64
-  %38 = load ptr, ptr %ptr, align 8
-  store i64 %37, ptr %38, align 4
-  %39 = call ptr @get_current_thread_nursery.18()
-  %40 = call ptr @aria_gc_alloc.19(ptr %39, i64 8)
-  %config = alloca ptr, align 8
-  store ptr %40, ptr %config, align 8
-  %result = alloca %Result, align 8
-  %result_val = load %Result, ptr %result, align 8
-  %41 = load ptr, ptr %config, align 8
-  store %Result %result_val, ptr %41, align 8
-  ret i64 0
+  ret i64 42
 }
 
 declare ptr @get_current_thread_nursery.1()
 
 declare ptr @aria_gc_alloc.2(ptr, i64)
 
+define internal i8 @lambda_1() {
+entry:
+  %0 = call ptr @get_current_thread_nursery.3()
+  %1 = call ptr @aria_gc_alloc.4(ptr %0, i64 1)
+  %res = alloca ptr, align 8
+  store ptr %1, ptr %res, align 8
+  %2 = load i8, ptr %res, align 1
+  ret i8 %2
+}
+
 declare ptr @get_current_thread_nursery.3()
 
 declare ptr @aria_gc_alloc.4(ptr, i64)
-
-declare ptr @get_current_thread_nursery.5()
-
-declare ptr @aria_gc_alloc.6(ptr, i64)
-
-declare ptr @get_current_thread_nursery.7()
-
-declare ptr @aria_gc_alloc.8(ptr, i64)
-
-declare ptr @get_current_thread_nursery.9()
-
-declare ptr @aria_gc_alloc.10(ptr, i64)
-
-declare ptr @get_current_thread_nursery.11()
-
-declare ptr @aria_gc_alloc.12(ptr, i64)
-
-declare ptr @aria_alloc(i64)
-
-declare ptr @get_current_thread_nursery.13()
-
-declare ptr @aria_gc_alloc.14(ptr, i64)
-
-declare ptr @get_current_thread_nursery.15()
-
-declare ptr @aria_gc_alloc.16(ptr, i64)
-
-declare ptr @aria_alloc.17(i64)
-
-declare ptr @get_current_thread_nursery.18()
-
-declare ptr @aria_gc_alloc.19(ptr, i64)
 
 define i64 @main() {
 entry:
