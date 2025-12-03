@@ -47,12 +47,28 @@ target_include_directories(test_gc_header PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME GCHeaderTests COMMAND test_gc_header)
 
 # ==============================================================================
+# Test 3: Parser Tests
+# ==============================================================================
+add_executable(test_parser test_parser.cpp
+    ../src/frontend/preprocessor.cpp
+    ../src/frontend/lexer.cpp
+    ../src/frontend/parser.cpp
+)
+
+target_include_directories(test_parser PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# Link against LLVM (parser uses some LLVM utilities)
+target_link_libraries(test_parser PRIVATE ${llvm_libs})
+
+add_test(NAME ParserTests COMMAND test_parser)
+
+# ==============================================================================
 # Custom Test Target
 # ==============================================================================
 # Add a custom target to run all tests
 add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS test_allocator test_gc_header
+    DEPENDS test_allocator test_gc_header test_parser
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Running all Aria unit tests..."
 )
@@ -63,4 +79,5 @@ add_custom_target(run_tests
 message(STATUS "Aria Unit Tests Configured:")
 message(STATUS "  - test_allocator: Memory allocation tests")
 message(STATUS "  - test_gc_header: GC header bitfield tests")
+message(STATUS "  - test_parser: Parser comprehensive tests (16 test functions)")
 message(STATUS "Run 'make test' or 'ninja test' to execute all tests")
