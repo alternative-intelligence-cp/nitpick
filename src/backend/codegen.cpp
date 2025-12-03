@@ -783,6 +783,17 @@ public:
         
         // Evaluate condition
         Value* cond = visitExpr(node->condition.get());
+        
+        // Convert condition to bool (i1) if needed
+        if (cond && cond->getType() != Type::getInt1Ty(ctx.llvmContext)) {
+            // Compare to zero (false if zero, true otherwise)
+            cond = ctx.builder->CreateICmpNE(
+                cond,
+                Constant::getNullValue(cond->getType()),
+                "whilecond"
+            );
+        }
+        
         ctx.builder->CreateCondBr(cond, loopBodyBB, exitBB);
         
         // Loop body
