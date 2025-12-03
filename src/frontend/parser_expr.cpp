@@ -19,7 +19,7 @@
 #include <functional>
 #include <string>
 
-using namespace aria;
+using namespace aria::frontend;
 
 // =============================================================================
 // 1. Precedence Table Definition (Aria Spec v0.0.6)
