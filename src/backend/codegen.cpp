@@ -1464,6 +1464,18 @@ public:
             // Return with value
             Value* retVal = visitExpr(node->value.get());
             if (retVal) {
+                // Cast/truncate return value to match function return type
+                Type* expectedReturnType = ctx.currentFunction->getReturnType();
+                
+                // If types don't match and both are integers, perform cast
+                if (retVal->getType() != expectedReturnType) {
+                    if (retVal->getType()->isIntegerTy() && expectedReturnType->isIntegerTy()) {
+                        // Use CreateIntCast for safe integer type conversion (extends or truncates as needed)
+                        retVal = ctx.builder->CreateIntCast(retVal, expectedReturnType, true);
+                    }
+                    // TODO: Handle other type mismatches (floats, pointers, etc.)
+                }
+                
                 ctx.builder->CreateRet(retVal);
             }
         } else {
