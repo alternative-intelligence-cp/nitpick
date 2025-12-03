@@ -127,7 +127,7 @@ func:main = int8() {
     int64:diff = a - b;
     int64:prod = a * b;
     int64:quot = a / b;
-    int64:mod = a % b;
+    int64:remainder = a % b;
     
     bool:eq = a == b;
     bool:ne = a != b;
@@ -272,7 +272,7 @@ func:add = int64(int64:a, int64:b) {
 };
 
 func:main = int8() {
-    int64:result = add(10, 20);
+    int64:res = add(10, 20);
     return 0;
 };
 )";
@@ -316,8 +316,8 @@ void test_nested_expressions() {
     
     std::string source = R"(
 func:main = int8() {
-    int64:result = ((10 + 20) * 30) - (40 / 5);
-    bool:complex = (result > 100) && (result < 1000) || (result == 0);
+    int64:res = ((10 + 20) * 30) - (40 / 5);
+    bool:complex = (res > 100) && (res < 1000) || (res == 0);
     return 0;
 };
 )";
@@ -357,7 +357,7 @@ void test_complex_parameters() {
     std::cout << "\n=== Test 15: Complex Function Parameters ===" << std::endl;
     
     std::string source = R"(
-func:process = void(int8[]:arr, int64@:ptr, dyn:d) {
+func:processData = void(int8[]:arr, int64@:ptr, dyn:d) {
     return;
 };
 
