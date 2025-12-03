@@ -104,7 +104,7 @@ public:
           then_block(std::move(then_b)), end_block(std::move(end_b)) {}
 
     void accept(AstVisitor& visitor) override {
-        // Note: visit method needs to be added to AstVisitor if used
+        visitor.visit(this);
     }
 };
 
