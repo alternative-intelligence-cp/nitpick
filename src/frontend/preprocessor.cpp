@@ -779,34 +779,222 @@ void Preprocessor::handleRep() {
 }
 
 bool Preprocessor::evaluateCondition(const std::string& expr) {
-    // Simple expression evaluator
-    // For now, just check if it's a defined constant with non-zero value
+    // Expression evaluator with support for:
+    // - Arithmetic: +, -, *, /, %
+    // - Comparison: ==, !=, <, >, <=, >=
+    // - Logical: &&, ||, !
+    // - Parentheses for grouping
+    // - Constants and numeric literals
     
     std::string trimmed = expr;
-    // Trim whitespace
     trimmed.erase(0, trimmed.find_first_not_of(" \t"));
     trimmed.erase(trimmed.find_last_not_of(" \t") + 1);
     
-    // Check if it's a constant
-    auto it = constants.find(trimmed);
-    if (it != constants.end()) {
-        // Check if value is non-zero
-        try {
-            int val = std::stoi(it->second);
-            return val != 0;
-        } catch (...) {
-            // Non-numeric constant, treat as true if non-empty
-            return !it->second.empty();
+    if (trimmed.empty()) return false;
+    
+    // Use a simple recursive descent parser
+    size_t pos = 0;
+    return parseLogicalOr(trimmed, pos) != 0;
+}
+
+// Parse logical OR (lowest precedence)
+int Preprocessor::parseLogicalOr(const std::string& expr, size_t& pos) {
+    int left = parseLogicalAnd(expr, pos);
+    
+    while (pos < expr.length()) {
+        skipExprWhitespace(expr, pos);
+        if (pos + 1 < expr.length() && expr[pos] == '|' && expr[pos + 1] == '|') {
+            pos += 2;
+            int right = parseLogicalAnd(expr, pos);
+            left = (left || right);
+        } else {
+            break;
         }
     }
     
-    // Try to evaluate as numeric literal
-    try {
-        int val = std::stoi(trimmed);
-        return val != 0;
-    } catch (...) {
-        // Not a number, treat as false
-        return false;
+    return left;
+}
+
+// Parse logical AND
+int Preprocessor::parseLogicalAnd(const std::string& expr, size_t& pos) {
+    int left = parseComparison(expr, pos);
+    
+    while (pos < expr.length()) {
+        skipExprWhitespace(expr, pos);
+        if (pos + 1 < expr.length() && expr[pos] == '&' && expr[pos + 1] == '&') {
+            pos += 2;
+            int right = parseComparison(expr, pos);
+            left = (left && right);
+        } else {
+            break;
+        }
+    }
+    
+    return left;
+}
+
+// Parse comparison operators
+int Preprocessor::parseComparison(const std::string& expr, size_t& pos) {
+    int left = parseAddSub(expr, pos);
+    
+    skipExprWhitespace(expr, pos);
+    if (pos < expr.length()) {
+        if (pos + 1 < expr.length() && expr[pos] == '=' && expr[pos + 1] == '=') {
+            pos += 2;
+            int right = parseAddSub(expr, pos);
+            return left == right;
+        } else if (pos + 1 < expr.length() && expr[pos] == '!' && expr[pos + 1] == '=') {
+            pos += 2;
+            int right = parseAddSub(expr, pos);
+            return left != right;
+        } else if (pos + 1 < expr.length() && expr[pos] == '<' && expr[pos + 1] == '=') {
+            pos += 2;
+            int right = parseAddSub(expr, pos);
+            return left <= right;
+        } else if (pos + 1 < expr.length() && expr[pos] == '>' && expr[pos + 1] == '=') {
+            pos += 2;
+            int right = parseAddSub(expr, pos);
+            return left >= right;
+        } else if (expr[pos] == '<') {
+            pos++;
+            int right = parseAddSub(expr, pos);
+            return left < right;
+        } else if (expr[pos] == '>') {
+            pos++;
+            int right = parseAddSub(expr, pos);
+            return left > right;
+        }
+    }
+    
+    return left;
+}
+
+// Parse addition and subtraction
+int Preprocessor::parseAddSub(const std::string& expr, size_t& pos) {
+    int left = parseMulDiv(expr, pos);
+    
+    while (pos < expr.length()) {
+        skipExprWhitespace(expr, pos);
+        if (pos < expr.length() && expr[pos] == '+') {
+            pos++;
+            int right = parseMulDiv(expr, pos);
+            left = left + right;
+        } else if (pos < expr.length() && expr[pos] == '-') {
+            pos++;
+            int right = parseMulDiv(expr, pos);
+            left = left - right;
+        } else {
+            break;
+        }
+    }
+    
+    return left;
+}
+
+// Parse multiplication, division, modulo
+int Preprocessor::parseMulDiv(const std::string& expr, size_t& pos) {
+    int left = parseUnary(expr, pos);
+    
+    while (pos < expr.length()) {
+        skipExprWhitespace(expr, pos);
+        if (pos < expr.length() && expr[pos] == '*') {
+            pos++;
+            int right = parseUnary(expr, pos);
+            left = left * right;
+        } else if (pos < expr.length() && expr[pos] == '/') {
+            pos++;
+            int right = parseUnary(expr, pos);
+            if (right == 0) error("Division by zero in expression");
+            left = left / right;
+        } else if (pos < expr.length() && expr[pos] == '%') {
+            pos++;
+            int right = parseUnary(expr, pos);
+            if (right == 0) error("Modulo by zero in expression");
+            left = left % right;
+        } else {
+            break;
+        }
+    }
+    
+    return left;
+}
+
+// Parse unary operators (-, !)
+int Preprocessor::parseUnary(const std::string& expr, size_t& pos) {
+    skipExprWhitespace(expr, pos);
+    
+    if (pos < expr.length() && expr[pos] == '-') {
+        pos++;
+        return -parseUnary(expr, pos);
+    } else if (pos < expr.length() && expr[pos] == '!') {
+        pos++;
+        return !parseUnary(expr, pos);
+    }
+    
+    return parsePrimary(expr, pos);
+}
+
+// Parse primary expressions (numbers, constants, parentheses)
+int Preprocessor::parsePrimary(const std::string& expr, size_t& pos) {
+    skipExprWhitespace(expr, pos);
+    
+    if (pos >= expr.length()) {
+        error("Unexpected end of expression");
+    }
+    
+    // Parentheses
+    if (expr[pos] == '(') {
+        pos++;
+        int result = parseLogicalOr(expr, pos);
+        skipExprWhitespace(expr, pos);
+        if (pos >= expr.length() || expr[pos] != ')') {
+            error("Missing closing parenthesis in expression");
+        }
+        pos++;
+        return result;
+    }
+    
+    // Number literal
+    if (isdigit(expr[pos])) {
+        int value = 0;
+        while (pos < expr.length() && isdigit(expr[pos])) {
+            value = value * 10 + (expr[pos] - '0');
+            pos++;
+        }
+        return value;
+    }
+    
+    // Identifier (constant name)
+    if (isalpha(expr[pos]) || expr[pos] == '_') {
+        std::string name;
+        while (pos < expr.length() && (isalnum(expr[pos]) || expr[pos] == '_')) {
+            name += expr[pos];
+            pos++;
+        }
+        
+        // Look up constant
+        auto it = constants.find(name);
+        if (it != constants.end()) {
+            // Try to parse as integer
+            try {
+                return std::stoi(it->second);
+            } catch (...) {
+                // Non-numeric constant treated as 0
+                return 0;
+            }
+        }
+        
+        // Undefined constant is 0 (like NASM)
+        return 0;
+    }
+    
+    error("Invalid expression syntax");
+    return 0;
+}
+
+void Preprocessor::skipExprWhitespace(const std::string& expr, size_t& pos) {
+    while (pos < expr.length() && (expr[pos] == ' ' || expr[pos] == '\t')) {
+        pos++;
     }
 }
 
