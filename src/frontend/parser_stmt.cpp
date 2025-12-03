@@ -172,6 +172,36 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         return std::make_unique<IfStmt>(std::move(condition), std::move(then_block), std::move(else_block));
     }
     
+    // Loop statements
+    if (current.type == TOKEN_KW_WHILE) {
+        return parseWhileLoop();
+    }
+    if (current.type == TOKEN_KW_FOR) {
+        return parseForLoop();
+    }
+    if (current.type == TOKEN_KW_TILL) {
+        return parseTillLoop();
+    }
+    if (current.type == TOKEN_KW_WHEN) {
+        return parseWhenLoop();
+    }
+    if (current.type == TOKEN_KW_BREAK) {
+        return parseBreak();
+    }
+    if (current.type == TOKEN_KW_CONTINUE) {
+        return parseContinue();
+    }
+    
+    // Pick statement (pattern matching)
+    if (current.type == TOKEN_KW_PICK) {
+        return parsePickStmt();
+    }
+    
+    // Defer statement
+    if (current.type == TOKEN_KW_DEFER) {
+        return parseDeferStmt();
+    }
+    
     // Variable declaration or expression statement
     // Try to parse as expression first
     auto expr = parseExpr();

@@ -57,7 +57,7 @@ add_executable(ariac
  src/driver/main.cpp               # Compiler Driver Entry Point
  src/frontend/preprocessor.cpp    # Preprocessor (Macros, Includes, Conditionals)
  src/frontend/lexer.cpp
- src/frontend/parser.cpp           # Core Parser Implementation (all parsing methods)
+ src/frontend/parser.cpp           # Core Parser Implementation (all methods consolidated)
  # src/frontend/parser_stmt.cpp    # Merged into parser.cpp
  # src/frontend/parser_decl.cpp    # Merged into parser.cpp
  # src/frontend/parser_pick.cpp    # Merged into parser.cpp
