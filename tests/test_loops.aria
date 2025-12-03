@@ -66,59 +66,59 @@ func:test_till_negative = int8() {
 // Test 7: WhenLoop - successful completion (then block)
 func:test_when_then = int8() {
     int8:count = 0;
-    int8:result = 0;
+    int8:output = 0;
     when(count < 3) {
         count = count + 1;
     } then {
-        result = 100;  // This should execute
+        output = 100;  // This should execute
     } end {
-        result = -1;   // This should NOT execute
+        output = -1;   // This should NOT execute
     }
-    return result;  // Should be 100
+    return output;  // Should be 100
 };
 
 // Test 8: WhenLoop - break early (end block)
 func:test_when_end = int8() {
     int8:count = 0;
-    int8:result = 0;
+    int8:output = 0;
     when(count < 10) {
         count = count + 1;
         if(count == 3){
             break;
         }
     } then {
-        result = 100;  // This should NOT execute
+        output = 100;  // This should NOT execute
     } end {
-        result = -1;   // This should execute
+        output = -1;   // This should execute
     }
-    return result;  // Should be -1
+    return output;  // Should be -1
 };
 
 // Test 9: WhenLoop - only then block
 func:test_when_then_only = int8() {
     int8:count = 0;
-    int8:result = 0;
+    int8:output = 0;
     when(count < 2) {
         count = count + 1;
     } then {
-        result = 42;
+        output = 42;
     }
-    return result;  // Should be 42
+    return output;  // Should be 42
 };
 
 // Test 10: WhenLoop - only end block
 func:test_when_end_only = int8() {
     int8:count = 0;
-    int8:result = 0;
+    int8:output = 0;
     when(count < 5) {
         count = count + 1;
         if(count == 2){
             break;
         }
     } end {
-        result = 77;
+        output = 77;
     }
-    return result;  // Should be 77
+    return output;  // Should be 77
 };
 
 // Test 11: Nested loops
