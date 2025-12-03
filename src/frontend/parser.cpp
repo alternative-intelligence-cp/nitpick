@@ -561,6 +561,29 @@ std::unique_ptr<Expression> Parser::parseExpr() {
 std::unique_ptr<Block> Parser::parseProgram() {
     auto block = std::make_unique<Block>();
     
+    // Handle module-level code block wrapper: { ... }
+    // Many tests wrap code in top-level braces for module initialization
+    if (current.type == TOKEN_LBRACE) {
+        advance();  // consume {
+        
+        // Parse all statements inside the block
+        while (current.type != TOKEN_RBRACE && current.type != TOKEN_EOF) {
+            // Skip semicolons
+            if (match(TOKEN_SEMICOLON)) {
+                continue;
+            }
+            
+            // Parse statement and add to block
+            auto stmt = parseStmt();
+            if (stmt) {
+                block->statements.push_back(std::move(stmt));
+            }
+        }
+        
+        expect(TOKEN_RBRACE);  // consume }
+        return block;
+    }
+    
     // Parse top-level declarations until EOF
     while (current.type != TOKEN_EOF) {
         // Skip any stray semicolons
@@ -579,6 +602,18 @@ std::unique_ptr<Block> Parser::parseProgram() {
         if (isTypeToken(current.type)) {
             block->statements.push_back(parseVarDecl());
             continue;
+        }
+        
+        // Allow module-level statements (for initialization code)
+        // This enables tests with top-level pick, print, assignments, etc.
+        try {
+            auto stmt = parseStmt();
+            if (stmt) {
+                block->statements.push_back(std::move(stmt));
+                continue;
+            }
+        } catch (...) {
+            // If parseStmt fails, fall through to error
         }
         
         // TODO: struct, type, const, use, mod, extern declarations
