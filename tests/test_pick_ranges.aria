@@ -1,5 +1,5 @@
 // Test pick with ranges and comparisons
-func:classify_number = int8(int8:x) {
+func:classify_number = *int8(int8:x) {
     pick(x) {
         (0..5) {
             return 1;  // Low range (0 to 5 inclusive)
@@ -17,14 +17,14 @@ func:classify_number = int8(int8:x) {
     return 0;
 };
 
-func:test_ranges = int8() {
-    int8:r1 = classify_number(3);   // Should be 1 (in 0..5)
-    int8:r2 = classify_number(7);   // Should be 2 (in 6...10)
-    int8:r3 = classify_number(15);  // Should be 3 (>=10)
-    int8:r4 = classify_number(-5);  // Should be -1 (<0)
+func:test_ranges = *int8() {
+    int8:r1 = classify_number(3) ? -1;   // Should be 1 (in 0..5)
+    int8:r2 = classify_number(7) ? -1;   // Should be 2 (in 6...10)
+    int8:r3 = classify_number(15) ? -1;  // Should be 3 (>=10)
+    int8:r4 = classify_number(-5) ? -1;  // Should be -1 (<0)
     return r1 + r2 + r3 + r4;  // 1+2+3+(-1) = 5
 };
 
-func:main = int8() {
-    return test_ranges();  // Should be 5
+func:main = *int8() {
+    return test_ranges() ? -1;  // Unwrap the result
 };

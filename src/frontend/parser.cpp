@@ -195,6 +195,14 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
     
     // Lambda Expression: returnType(params) { body } or returnType(params){body}(args)
     // SPEC: func:name = returnType(params) { return { err:NULL, val:value }; };
+    // SPEC with auto-wrap: func:name = *returnType(params) { return value; };
+    // Check for * prefix (auto-wrap marker)
+    bool auto_wrap = false;
+    if (current.type == TOKEN_STAR) {
+        auto_wrap = true;
+        advance();  // consume *
+    }
+    
     // Check if current token is a type followed by (
     if (isTypeToken(current.type)) {
         // Lookahead to see if this is a lambda (type followed by LPAREN)
@@ -212,6 +220,7 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
             auto body = parseBlock();
             
             auto lambda = std::make_unique<LambdaExpr>(return_type, std::move(params), std::move(body));
+            lambda->auto_wrap = auto_wrap;
             
             // Check for immediate invocation: lambda(args)
             if (current.type == TOKEN_LPAREN) {
@@ -645,9 +654,17 @@ std::unique_ptr<Statement> Parser::parseStmt() {
 
     // Variable declaration: [const|wild|stack] type:name = expr;
     // BUT: type( is a lambda expression, not a variable declaration!
+    // AND: *type( is an auto-wrap lambda!
     if (current.type == TOKEN_KW_CONST || current.type == TOKEN_KW_WILD || 
         current.type == TOKEN_KW_STACK) {
         return parseVarDecl();
+    }
+    
+    // Check for * prefix (auto-wrap lambda)
+    bool auto_wrap = false;
+    if (current.type == TOKEN_STAR) {
+        auto_wrap = true;
+        advance();  // consume *
     }
     
     // Check if this is a type token - could be var decl OR lambda
@@ -680,6 +697,7 @@ std::unique_ptr<Statement> Parser::parseStmt() {
             auto body = parseBlock();
             
             auto lambda = std::make_unique<LambdaExpr>(return_type, std::move(params), std::move(body));
+            lambda->auto_wrap = auto_wrap;
             
             // Check for immediate invocation
             if (current.type == TOKEN_LPAREN) {
@@ -1019,48 +1037,52 @@ std::unique_ptr<PickStmt> Parser::parsePickStmt() {
     
     // Parse cases until closing brace
     while (current.type != TOKEN_RBRACE && current.type != TOKEN_EOF) {
-        // Check for labeled case: label:(!)
+        // Check for optional label: label=>(pattern) or label=>(!)
         std::string label;
         if (current.type == TOKEN_IDENTIFIER) {
-            // Look ahead for label syntax
-            Token maybe_label = current;
+            // Save the identifier in case it's a label
+            std::string potential_label = current.value;
             advance();
             
-            if (current.type == TOKEN_COLON) {
-                // It's a label
-                label = maybe_label.value;
-                advance();  // consume colon
-                
-                // Expect (!) for labeled unreachable case
-                expect(TOKEN_LPAREN);
-                expect(TOKEN_LOGICAL_NOT);
-                expect(TOKEN_RPAREN);
-                
-                // Parse body
-                auto body = parseBlock();
-                
-                PickCase pcase(PickCase::UNREACHABLE, std::move(body));
-                pcase.label = label;
-                pick->cases.push_back(std::move(pcase));
-                
-                // Optional comma
-                match(TOKEN_COMMA);
-                continue;
+            if (current.type == TOKEN_FAT_ARROW) {
+                // It's a label! (using => operator)
+                label = potential_label;
+                advance();  // consume =>
             } else {
-                // Not a label, we need to reparse this as a case
-                // Put the token back and reparse properly
-                // For simplicity, error for now - labels must be explicit
-                throw std::runtime_error("Expected ':' after identifier in pick statement");
+                // Not a label - error, identifiers not allowed here
+                throw std::runtime_error(
+                    "Unexpected identifier '" + potential_label + 
+                    "' in pick statement at line " + std::to_string(current.line) +
+                    ". Expected '=>' for label or '(' for case pattern."
+                );
             }
         }
         
-        // Parse regular case: (pattern) { body }
+        // Parse pattern: (pattern) or (!)
         expect(TOKEN_LPAREN);
         
         PickCase::CaseType case_type;
         std::unique_ptr<Expression> value_start;
         std::unique_ptr<Expression> value_end;
         bool is_range_exclusive = false;
+        
+        // Check for unreachable pattern (!)
+        if (match(TOKEN_LOGICAL_NOT)) {
+            // Unreachable/fallthrough-only case
+            case_type = PickCase::UNREACHABLE;
+            expect(TOKEN_RPAREN);
+            
+            // Parse body
+            auto body = parseBlock();
+            
+            PickCase pcase(case_type, std::move(body));
+            pcase.label = label;
+            pick->cases.push_back(std::move(pcase));
+            
+            // Optional comma
+            match(TOKEN_COMMA);
+            continue;
+        }
         
         // Check for comparison operators
         if (match(TOKEN_LT)) {
@@ -1117,6 +1139,7 @@ std::unique_ptr<PickStmt> Parser::parsePickStmt() {
         
         // Create case
         PickCase pcase(case_type, std::move(body));
+        pcase.label = label;
         pcase.value_start = std::move(value_start);
         pcase.value_end = std::move(value_end);
         pcase.is_range_exclusive = is_range_exclusive;

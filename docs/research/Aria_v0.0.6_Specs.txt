@@ -354,6 +354,7 @@ till(100, -1) {
 
 8.3 Pattern Matching (pick) with Fallthrough
 The pick construct replaces switch. It supports explicit fallthrough via fall(label).
+Labels are assigned using the => operator: label=>(pattern) or label=>(!)
 pick(c) {
    (<9) {
        fall(fail);
@@ -367,19 +368,19 @@ pick(c) {
    (*) { // Wildcard match
        fall(err);
    },
-   fail:(!) { // Label for fallthrough
+   fail=>(!) { // Labeled unreachable case for fallthrough
        // handle failure
        fall(done);
    },
-   success:(!) {
+   success=>(!) {
        // handle success
        fall(done);
    },
-   err:(!) {
+   err=>(!) {
        // handle error
        fall(done);
    },
-   done:(!) {
+   done=>(!) {
        // cleanup
    }
 }
