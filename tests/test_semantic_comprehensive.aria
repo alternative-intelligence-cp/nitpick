@@ -2,7 +2,7 @@
 // This file exercises all semantic analysis phases together
 
 // Test 1: Function with wild allocation and stack variable
-func:memory_test = int8() {
+func:memory_test = *int8() {
     wild int64:wild_ptr = 1000;      // Borrow check: should warn (not freed)
     stack int64:stack_val = 2000;    // Escape analysis: OK if not returned
     int64:heap_val = 3000;           // Normal GC: no warnings
@@ -14,32 +14,32 @@ func:memory_test = int8() {
 };
 
 // Test 2: Dangerous return of stack variable
-func:dangerous_return = int64() {
+func:dangerous_return = *int64() {
     stack int64:local = 42;
     return local;                    // Escape analysis: ERROR - stack escapes!
 };
 
 // Test 3: Safe return of heap variable
-func:safe_return = int64() {
+func:safe_return = *int64() {
     int64:heap = 100;
     return heap;                     // Escape analysis: OK
 };
 
 // Test 4: Nested functions with wild allocations
-func:outer_func = int8() {
+func:outer_func = *int8() {
     wild int64:outer_wild = 500;     // Borrow check: should warn
     
-    func:inner_func = int8() {
+    func:inner_func = *int8() {
         wild int64:inner_wild = 600; // Borrow check: should warn (nested)
         return 0;
     };
     
-    inner_func();
+    inner_func() ? -1;
     return 0;
 };
 
 // Test 5: Multiple wild allocations
-func:multi_wild = int8() {
+func:multi_wild = *int8() {
     wild int64:ptr1 = 10;            // Borrow check: should warn
     wild int64:ptr2 = 20;            // Borrow check: should warn
     wild int64:ptr3 = 30;            // Borrow check: should warn
@@ -47,11 +47,11 @@ func:multi_wild = int8() {
 };
 
 // Main function
-func:main = int8() {
-    memory_test();
-    dangerous_return();
-    safe_return();
-    outer_func();
-    multi_wild();
+func:main = *int8() {
+    memory_test() ? -1;
+    dangerous_return() ? -1;
+    safe_return() ? -1;
+    outer_func() ? -1;
+    multi_wild() ? -1;
     return 0;
 };

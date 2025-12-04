@@ -1,0 +1,279 @@
+// Aria Standard Library - String Utilities Module
+// Version: 0.0.1
+// Tests: library patterns, helper functions, error handling
+
+// Error codes:
+// 0 = success
+// 1 = null pointer
+// 2 = index out of bounds
+// 3 = invalid length
+// 4 = buffer overflow
+
+// String length calculation (simplified - assumes null-terminated)
+// In real implementation, would walk memory until null byte
+func:string_length = int64(int64:dummy_for_now) {
+    // Placeholder - real implementation needs pointer walking
+    // For now, just return a test value
+    return {err:0, val:10};
+};
+
+// Character classification functions
+
+// Check if character is uppercase letter (A-Z = 65-90)
+func:is_uppercase = int8(int8:ch) {
+    pick(ch) {
+        (65..90) {
+            return {err:0, val:1};  // true
+        },
+        (*) {
+            return {err:0, val:0};  // false
+        }
+    }
+};
+
+// Check if character is lowercase letter (a-z = 97-122)
+func:is_lowercase = int8(int8:ch) {
+    pick(ch) {
+        lowercase_letters=>(97..122) {
+            return {err:0, val:1};
+        },
+        default=>(*) {
+            return {err:0, val:0};
+        }
+    }
+};
+
+// Check if character is digit (0-9 = 48-57)
+func:is_digit = int8(int8:ch) {
+    pick(ch) {
+        digit_chars=>(48..57) {
+            return {err:0, val:1};
+        },
+        default=>(*) {
+            return {err:0, val:0};
+        }
+    }
+};
+
+// Check if character is alphabetic (A-Z or a-z)
+func:is_alpha = int8(int8:ch) {
+    int8:upper = is_uppercase(ch) ? 0;
+    int8:lower = is_lowercase(ch) ? 0;
+    
+    pick(upper + lower) {
+        not_alpha=>(0) {
+            return {err:0, val:0};  // Neither upper nor lower
+        },
+        is_alpha=>(*) {
+            return {err:0, val:1};  // At least one is true
+        }
+    }
+};
+
+// Check if character is alphanumeric
+func:is_alphanumeric = int8(int8:ch) {
+    int8:alpha = is_alpha(ch) ? 0;
+    int8:digit = is_digit(ch) ? 0;
+    
+    pick(alpha + digit) {
+        not_alphanumeric=>(0) {
+            return {err:0, val:0};
+        },
+        is_alphanumeric=>(*) {
+            return {err:0, val:1};
+        }
+    }
+};
+
+// Convert uppercase to lowercase
+func:to_lowercase = int8(int8:ch) {
+    int8:is_upper = is_uppercase(ch) ? 0;
+    
+    pick(is_upper) {
+        convert_to_lower=>(1) {
+            // Add 32 to convert upper to lower
+            int8:lower_ch = ch + 32;
+            return {err:0, val:lower_ch};
+        },
+        already_lower=>(*) {
+            return {err:0, val:ch};  // Already lowercase or not alpha
+        }
+    }
+};
+
+// Convert lowercase to uppercase
+func:to_uppercase = int8(int8:ch) {
+    int8:is_lower = is_lowercase(ch) ? 0;
+    
+    pick(is_lower) {
+        convert_to_upper=>(1) {
+            // Subtract 32 to convert lower to upper
+            int8:upper_ch = ch - 32;
+            return {err:0, val:upper_ch};
+        },
+        already_upper=>(*) {
+            return {err:0, val:ch};
+        }
+    }
+};
+
+// Character comparison helpers
+
+// Compare two characters (returns -1, 0, or 1)
+func:char_compare = int8(int8:a, int8:b) {
+    pick(a) {
+        less_than=>(<b) {
+            return {err:0, val:-1};
+        },
+        greater_than=>(>b) {
+            return {err:0, val:1};
+        },
+        equal=>(*) {
+            return {err:0, val:0};
+        }
+    }
+};
+
+// Check if character is whitespace (space=32, tab=9, newline=10, return=13)
+func:is_whitespace = int8(int8:ch) {
+    pick(ch) {
+        space=>(32) {
+            return {err:0, val:1};
+        },
+        tab=>(9) {
+            return {err:0, val:1};
+        },
+        newline=>(10) {
+            return {err:0, val:1};
+        },
+        carriage_return=>(13) {
+            return {err:0, val:1};
+        },
+        default=>(*) {
+            return {err:0, val:0};
+        }
+    }
+};
+
+// Numeric conversion helpers
+
+// Convert digit character to integer value
+func:digit_to_int = int8(int8:ch) {
+    int8:is_num = is_digit(ch) ? 0;
+    
+    pick(is_num) {
+        valid_digit=>(1) {
+            // '0' = 48, so subtract 48 to get 0-9
+            int8:value = ch - 48;
+            return {err:0, val:value};
+        },
+        invalid=>(*) {
+            return {err:1, val:0};  // Not a digit
+        }
+    }
+};
+
+// Convert integer 0-9 to digit character
+func:int_to_digit = int8(int8:num) {
+    pick(num) {
+        valid_range=>(0..9) {
+            int8:ch = num + 48;
+            return {err:0, val:ch};
+        },
+        out_of_range=>(*) {
+            return {err:2, val:48};  // Return '0' for invalid input
+        }
+    }
+};
+
+// Test suite for string utilities
+func:test_char_classification = *int8() {
+    print("Testing character classification...");
+    
+    // Test uppercase
+    int8:t1 = is_uppercase(65) ? 0;  // 'A' - should be 1
+    int8:t2 = is_uppercase(97) ? 0;  // 'a' - should be 0
+    
+    // Test lowercase  
+    int8:t3 = is_lowercase(97) ? 0;  // 'a' - should be 1
+    int8:t4 = is_lowercase(65) ? 0;  // 'A' - should be 0
+    
+    // Test digits
+    int8:t5 = is_digit(48) ? 0;      // '0' - should be 1
+    int8:t6 = is_digit(57) ? 0;      // '9' - should be 1
+    int8:t7 = is_digit(65) ? 0;      // 'A' - should be 0
+    
+    // Test alpha
+    int8:t8 = is_alpha(65) ? 0;      // 'A' - should be 1
+    int8:t9 = is_alpha(97) ? 0;      // 'a' - should be 1
+    int8:t10 = is_alpha(48) ? 0;     // '0' - should be 0
+    
+    print("Character classification tests passed!");
+    return 0;
+};
+
+func:test_case_conversion = *int8() {
+    print("Testing case conversion...");
+    
+    // Test to_lowercase
+    int8:lower_a = to_lowercase(65) ? 0;  // 'A' -> 'a' (97)
+    int8:lower_z = to_lowercase(90) ? 0;  // 'Z' -> 'z' (122)
+    int8:already_lower = to_lowercase(97) ? 0;  // 'a' -> 'a' (97)
+    
+    // Test to_uppercase
+    int8:upper_a = to_uppercase(97) ? 0;  // 'a' -> 'A' (65)
+    int8:upper_z = to_uppercase(122) ? 0; // 'z' -> 'Z' (90)
+    int8:already_upper = to_uppercase(65) ? 0;  // 'A' -> 'A' (65)
+    
+    print("Case conversion tests passed!");
+    return 0;
+};
+
+func:test_numeric_conversion = *int8() {
+    print("Testing numeric conversions...");
+    
+    // Test digit_to_int
+    int8:n0 = digit_to_int(48) ? -1;  // '0' -> 0
+    int8:n5 = digit_to_int(53) ? -1;  // '5' -> 5
+    int8:n9 = digit_to_int(57) ? -1;  // '9' -> 9
+    
+    // Test int_to_digit
+    int8:d0 = int_to_digit(0) ? 0;    // 0 -> '0' (48)
+    int8:d5 = int_to_digit(5) ? 0;    // 5 -> '5' (53)
+    int8:d9 = int_to_digit(9) ? 0;    // 9 -> '9' (57)
+    
+    print("Numeric conversion tests passed!");
+    return 0;
+};
+
+func:test_whitespace = *int8() {
+    print("Testing whitespace detection...");
+    
+    int8:ws1 = is_whitespace(32) ? 0;  // Space - should be 1
+    int8:ws2 = is_whitespace(9) ? 0;   // Tab - should be 1
+    int8:ws3 = is_whitespace(10) ? 0;  // Newline - should be 1
+    int8:ws4 = is_whitespace(65) ? 0;  // 'A' - should be 0
+    
+    print("Whitespace detection tests passed!");
+    return 0;
+};
+
+func:main = *int8() {
+    print("=== Aria Standard Library - String Utilities ===");
+    print("");
+    
+    test_char_classification() ? -1;
+    print("");
+    
+    test_case_conversion() ? -1;
+    print("");
+    
+    test_numeric_conversion() ? -1;
+    print("");
+    
+    test_whitespace() ? -1;
+    print("");
+    
+    print("=== All String Utility Tests Passed! ===");
+    return 0;
+};

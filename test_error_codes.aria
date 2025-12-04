@@ -1,0 +1,24 @@
+// Test i8 error codes with explicit error handling
+
+// Simple function with explicit error code
+func:safe_divide = int8(int8:a, int8:b) {
+    return {err:0, val:a/b};  // Always returns success for now
+};
+
+// Function with error code 1
+func:always_error = int8(int8:a) {
+    return {err:1, val:0};  // Always returns error code 1
+};
+
+// Test success case (err:0)
+int8:result1 = safe_divide(10, 2) ? -1;
+
+// Test error case (err:1)
+int8:result2 = always_error(5) ? -1;
+
+// Auto-wrap function (always succeeds with err:0)
+func:multiply = *int8(int8:a, int8:b) {
+    return a * b;
+};
+
+int8:result4 = multiply(5, 3) ? -1;

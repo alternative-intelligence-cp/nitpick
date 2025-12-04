@@ -90,8 +90,8 @@ struct FuncParam {
 };
 
 // Function Declaration (Bug #70: async support)
-// Example: func:add = (int:a, int:b) -> int { return a + b; }
-// Example: async func:fetch = (string:url) -> result { ... }
+// Example: func:add = int8(int8:a, int8:b) { return {err:NULL, val:a+b}; }
+// Example with auto-wrap: func:add = *int8(int8:a, int8:b) { return a+b; }
 class FuncDecl : public Statement {
 public:
     std::string name;
@@ -100,6 +100,7 @@ public:
     std::unique_ptr<Block> body;
     bool is_async = false;  // Bug #70: async function support
     bool is_pub = false;    // public visibility
+    bool auto_wrap = false; // Auto-wrap returns in {err:NULL, val:...}
     
     FuncDecl(const std::string& n, std::vector<FuncParam> params, const std::string& ret_type, std::unique_ptr<Block> b)
         : name(n), parameters(std::move(params)), return_type(ret_type), body(std::move(b)) {}

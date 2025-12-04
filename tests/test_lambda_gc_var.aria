@@ -4,10 +4,10 @@ print("Creating GC variable...");
 
 // ARIA RULE: All variables need explicit types
 // Variable type MUST match the expression type
-// int8 lambda returns int8, so variable must be int8
-int8:out_val = int8(int8:a, int8:b){
+// Lambda returns result<int8>, unwrap with ? to get int8
+int8:out_val = *int8(int8:a, int8:b){
     return a + b;
-}(10, 20);
+}(10, 20) ? -1;
 
 print("GC variable with lambda output created!");
 }

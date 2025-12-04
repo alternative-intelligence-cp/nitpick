@@ -13,17 +13,17 @@ print("Testing lambdas at module scope...");
 
 // Immediately invoked lambda with explicit return type
 // All variables require explicit types - no exceptions!
-// Note: Variable type must match lambda return type
-int8:out_val = int8(int8:a, int8:b) {
+// Note: Variable type must match lambda return type (after unwrap)
+int8:out_val = *int8(int8:a, int8:b) {
     return a + b;
-}(10, 20);
+}(10, 20) ? -1;
 
 print("Lambda executed! Result = 10 + 20 = 30");
 
 print("Lambda test complete!");
 
 // Optional: define a main function that will be called after module init
-func:main = int8() {
+func:main = *int8() {
     print("Main function called after module initialization!");
     return 0;
 };

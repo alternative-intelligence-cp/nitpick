@@ -1,21 +1,18 @@
-// Test ? unwrap operator with Result types
-func:safe_divide = result(int8:a, int8:b) {
+// Test ? unwrap operator with new uint8 error code Result types
+func:safe_divide = int8(int8:a, int8:b) {
     if(b == 0) {
-        return {err: "division by zero", val: 0};
+        return {err:1, val:0};  // Error code 1 = division by zero
     }
-    return {err: null, val: a / b};
+    return {err:0, val:a / b};  // Error code 0 = success
 };
 
-func:test_unwrap_with_default = int8() {
-    result:r1 = safe_divide(10, 2);  // Should succeed
-    result:r2 = safe_divide(10, 0);  // Should fail
-    
-    int8:v1 = r1?.val ? -1;  // Get value or default to -1
-    int8:v2 = r2?.val ? -1;  // Should default to -1 (error case)
+func:test_unwrap_with_default = *int8() {
+    int8:v1 = safe_divide(10, 2) ? -1;  // Should get 5
+    int8:v2 = safe_divide(10, 0) ? -1;  // Should get -1 (error)
     
     return v1 + v2;  // Should be 5 + (-1) = 4
 };
 
-func:main = int8() {
-    return test_unwrap_with_default();
+func:main = *int8() {
+    return test_unwrap_with_default() ? -1;
 };

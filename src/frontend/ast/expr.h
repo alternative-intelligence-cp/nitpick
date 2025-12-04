@@ -279,6 +279,7 @@ class Block;
 // Lambda Expression (Anonymous Function)
 // Example: int8(int8:a, int8:b) { return { err: NULL, val: a + b }; }
 // Example with immediate execution: int8(int8:a){...}(10)
+// Example with auto-wrap: *int8(int8:a){ return a; }  // Compiler wraps to {err:NULL, val:a}
 class LambdaExpr : public Expression {
 public:
     std::string return_type;
@@ -288,6 +289,10 @@ public:
     // Optional immediate call arguments
     bool is_immediately_invoked = false;
     std::vector<std::unique_ptr<Expression>> call_arguments;
+    
+    // Auto-wrap flag: if true, compiler wraps return values in {err:NULL, val:...}
+    // Set when return type is prefixed with * (e.g., *int8)
+    bool auto_wrap = false;
 
     LambdaExpr(const std::string& ret_type, std::vector<FuncParam> params, std::unique_ptr<Block> b)
         : return_type(ret_type), parameters(std::move(params)), body(std::move(b)) {}

@@ -2,7 +2,7 @@
 // Before: All primitives heap-allocated with GC
 // After: Primitives stack-allocated for 10-100x performance
 
-func:stack_primitives = int64() {
+func:stack_primitives = *int64() {
     // All these should be stack-allocated (no GC calls)
     int8:a = 1;
     int16:b = 2;
@@ -17,7 +17,7 @@ func:stack_primitives = int64() {
     return sum;
 };
 
-func:explicit_heap = int64() {
+func:explicit_heap = *int64() {
     // This should still use GC (complex type or explicitly marked)
     // For now, testing that stack primitives work
     int64:x = 100;
@@ -26,9 +26,9 @@ func:explicit_heap = int64() {
     return x + y;
 };
 
-func:main = int64() {
-    int64:result1 = stack_primitives();
-    int64:result2 = explicit_heap();
+func:main = *int64() {
+    int64:result1 = stack_primitives() ? -1;
+    int64:result2 = explicit_heap() ? -1;
     
     return result1 + result2;
 };

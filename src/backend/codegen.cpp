@@ -100,6 +100,10 @@ public:
     BasicBlock* returnBlock = nullptr;
     Value* returnValue = nullptr; // Pointer to return value storage
     
+    // Function return type tracking (for result type validation)
+    std::string currentFunctionReturnType = "";  // The VAL type (e.g., "int8")
+    bool currentFunctionAutoWrap = false;         // Whether function uses * auto-wrap
+    
     // Pick statement context (for fall() statements)
     std::map<std::string, BasicBlock*>* pickLabelBlocks = nullptr;
     BasicBlock* pickDoneBlock = nullptr;
@@ -154,24 +158,40 @@ public:
         // Dynamic type (GC-allocated catch-all)
         if (ariaType == "dyn") return PointerType::getUnqual(llvmContext);
         
-        // Result type: struct with err (ptr) and val (int64) fields
-        // For now, hardcode val as int64. TODO: Make parametric
+        // Result type: struct with err (ptr) and val (T) fields
+        // Generic result type without val type specified - use default i64
         if (ariaType == "result" || ariaType == "Result") {
-            // Try to get existing type first
-            if (auto* existing = StructType::getTypeByName(llvmContext, "result")) {
-                return existing;
-            }
-            
-            // Create new named struct
-            std::vector<Type*> fields;
-            fields.push_back(PointerType::getUnqual(llvmContext));  // err field
-            fields.push_back(Type::getInt64Ty(llvmContext));         // val field (TODO: parametric)
-            return StructType::create(llvmContext, fields, "result");
+            return getResultType("int64");
         }
         
         // Pointers (opaque in LLVM 18)
         // We return ptr for strings, arrays, objects
         return PointerType::getUnqual(llvmContext);
+    }
+    
+    // Get or create parametric result type: result<valType>
+    // Creates a struct { i8 err, T val } where T is the val type
+    // err: uint8 semantics - 0 = success, 1-255 = error codes (C-style)
+    // Note: LLVM uses i8 for both signed/unsigned - semantics determined by operations
+    // Each unique val type gets its own struct: result_int8, result_int32, etc.
+    Type* getResultType(const std::string& valTypeName) {
+        // Generate unique name for this result variant
+        std::string structName = "result_" + valTypeName;
+        
+        // Try to get existing type first (avoid duplicates)
+        if (auto* existing = StructType::getTypeByName(llvmContext, structName)) {
+            return existing;
+        }
+        
+        // Get the LLVM type for the val field
+        Type* valType = getLLVMType(valTypeName);
+        
+        // Create new named struct: { i8 err, T val }
+        std::vector<Type*> fields;
+        fields.push_back(Type::getInt8Ty(llvmContext));  // err field (always i8, 0=success)
+        fields.push_back(valType);                        // val field (type-specific)
+        
+        return StructType::create(llvmContext, fields, structName);
     }
 };
 
@@ -251,7 +271,70 @@ public:
         Value* storage = nullptr;
         bool is_ref = true; // Whether we need to load from storage
 
-        // Determine allocation strategy
+        // Check if this is a module-level (global) variable
+        bool isModuleScope = (ctx.currentFunction && 
+                             ctx.currentFunction->getName() == "__aria_module_init");
+
+        // Module-level variables must be GlobalVariables for closure capture
+        if (isModuleScope && !node->is_wild && !node->is_stack) {
+            // Create a GlobalVariable instead of alloca
+            Constant* initializer = nullptr;
+            if (node->initializer) {
+                // Evaluate constant initializer if possible
+                Value* initVal = visitExpr(node->initializer.get());
+                if (auto* constVal = dyn_cast<Constant>(initVal)) {
+                    // Convert constant to correct type if needed
+                    if (constVal->getType() != varType) {
+                        // Try to convert via truncation/extension
+                        if (constVal->getType()->isIntegerTy() && varType->isIntegerTy()) {
+                            if (auto* constInt = dyn_cast<ConstantInt>(constVal)) {
+                                initializer = ConstantInt::get(varType, constInt->getZExtValue());
+                            } else {
+                                initializer = Constant::getNullValue(varType);
+                            }
+                        } else {
+                            initializer = Constant::getNullValue(varType);
+                        }
+                    } else {
+                        initializer = constVal;
+                    }
+                } else {
+                    // Non-constant initializer - use zero init then assign
+                    initializer = Constant::getNullValue(varType);
+                }
+            } else {
+                initializer = Constant::getNullValue(varType);
+            }
+            
+            GlobalVariable* global = new GlobalVariable(
+                *ctx.module,
+                varType,
+                false, // not constant
+                GlobalValue::InternalLinkage,
+                initializer,
+                node->name
+            );
+            
+            storage = global;
+            ctx.define(node->name, storage, is_ref, node->type, CodeGenContext::AllocStrategy::VALUE);
+            
+            // If initializer was non-constant, store it now
+            if (node->initializer) {
+                Value* initVal = visitExpr(node->initializer.get());
+                if (!isa<Constant>(initVal)) {
+                    // Convert type if needed
+                    if (initVal->getType() != varType) {
+                        if (initVal->getType()->isIntegerTy() && varType->isIntegerTy()) {
+                            initVal = ctx.builder->CreateTrunc(initVal, varType);
+                        }
+                    }
+                    ctx.builder->CreateStore(initVal, global);
+                }
+            }
+            return;
+        }
+
+        // Determine allocation strategy for local variables
         bool use_stack = node->is_stack || (!node->is_wild && shouldStackAllocate(node->type, varType));
 
         CodeGenContext::AllocStrategy strategy;
@@ -1174,51 +1257,84 @@ public:
             }
         }
         if (auto* obj = dynamic_cast<aria::frontend::ObjectLiteral*>(node)) {
-            // Create Result struct: { ptr err, i64 val }
-            // Use the predefined result type from getLLVMType
-            Type* resultTypeLLVM = ctx.getLLVMType("result");
-            StructType* resultType = dyn_cast<StructType>(resultTypeLLVM);
-            
-            if (!resultType) {
-                throw std::runtime_error("result type is not a struct");
-            }
-            
-            // Determine val field and err field values
+            // Check if this is a result object (has err and val fields)
+            bool isResultObject = false;
             Value* valField = nullptr;
             Value* errField = nullptr;
             
             for (auto& field : obj->fields) {
                 if (field.name == "err") {
+                    isResultObject = true;
                     errField = visitExpr(field.value.get());
                 } else if (field.name == "val") {
                     valField = visitExpr(field.value.get());
                 }
             }
             
-            // Allocate struct on stack
-            AllocaInst* resultAlloca = ctx.builder->CreateAlloca(resultType, nullptr, "result");
-            
-            // Store err field (index 0)
-            if (errField) {
-                Value* errPtr = ctx.builder->CreateStructGEP(resultType, resultAlloca, 0, "err_ptr");
-                ctx.builder->CreateStore(errField, errPtr);
-            }
-            
-            // Store val field (index 1)
-            if (valField) {
-                // Cast valField to int64 if needed (since output type hardcodes int64 val)
-                if (valField->getType() != Type::getInt64Ty(ctx.llvmContext)) {
-                    if (valField->getType()->isIntegerTy()) {
-                        valField = ctx.builder->CreateIntCast(valField, Type::getInt64Ty(ctx.llvmContext), true);
+            if (isResultObject) {
+                // This is a result object - create result<T> based on current function's return type
+                if (ctx.currentFunctionReturnType.empty()) {
+                    throw std::runtime_error("Result object used outside of function context");
+                }
+                
+                // Get the correct result type for this function
+                Type* resultTypeLLVM = ctx.getResultType(ctx.currentFunctionReturnType);
+                StructType* resultType = dyn_cast<StructType>(resultTypeLLVM);
+                
+                if (!resultType) {
+                    throw std::runtime_error("Failed to create result type for: " + ctx.currentFunctionReturnType);
+                }
+                
+                // Get expected val field type
+                Type* expectedValType = resultType->getElementType(1);  // val is field index 1
+                
+                // Allocate struct on stack
+                AllocaInst* resultAlloca = ctx.builder->CreateAlloca(resultType, nullptr, "result");
+                
+                // Store err field (index 0) - default to 0 (success) if not provided
+                Value* errValue = errField ? errField : ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0);
+                
+                // Type check err field - must be i8
+                if (errValue->getType() != Type::getInt8Ty(ctx.llvmContext)) {
+                    if (errValue->getType()->isIntegerTy()) {
+                        errValue = ctx.builder->CreateIntCast(errValue, Type::getInt8Ty(ctx.llvmContext), true, "err_cast");
+                    } else {
+                        throw std::runtime_error("err field must be int8 (error code: 0=success, 1-255=error)");
                     }
                 }
                 
-                Value* valPtr = ctx.builder->CreateStructGEP(resultType, resultAlloca, 1, "val_ptr");
-                ctx.builder->CreateStore(valField, valPtr);
+                Value* errPtr = ctx.builder->CreateStructGEP(resultType, resultAlloca, 0, "err_ptr");
+                ctx.builder->CreateStore(errValue, errPtr);
+                
+                // Store val field (index 1) with type checking
+                if (valField) {
+                    // TYPE VALIDATION: Check if val type matches declared return type
+                    if (valField->getType() != expectedValType) {
+                        // Allow integer type conversions
+                        if (valField->getType()->isIntegerTy() && expectedValType->isIntegerTy()) {
+                            valField = ctx.builder->CreateIntCast(valField, expectedValType, true, "val_cast");
+                        } else {
+                            throw std::runtime_error(
+                                "Type mismatch in result object: function declared return type '" + 
+                                ctx.currentFunctionReturnType + "' but val field has different type"
+                            );
+                        }
+                    }
+                    
+                    Value* valPtr = ctx.builder->CreateStructGEP(resultType, resultAlloca, 1, "val_ptr");
+                    ctx.builder->CreateStore(valField, valPtr);
+                } else {
+                    // Val field is required in result objects
+                    throw std::runtime_error("Result object missing 'val' field");
+                }
+                
+                // Load and return the struct
+                return ctx.builder->CreateLoad(resultType, resultAlloca, "result_val");
+            } else {
+                // Generic object literal (not a result type)
+                // TODO: Implement generic object literal support
+                throw std::runtime_error("Generic object literals not yet implemented");
             }
-            
-            // Load and return the struct
-            return ctx.builder->CreateLoad(resultType, resultAlloca, "result_val");
         }
         if (auto* member = dynamic_cast<aria::frontend::MemberAccess*>(node)) {
             // Access struct member: obj.field
@@ -1259,7 +1375,9 @@ public:
                 paramTypes.push_back(ctx.getLLVMType(param.type));
             }
             
-            Type* returnType = ctx.getLLVMType(lambda->return_type);
+            // Functions ALWAYS return result<T> where T is the declared return type
+            // The return type in lambda->return_type is the VAL type, not the full result type
+            Type* returnType = ctx.getResultType(lambda->return_type);
             FunctionType* funcType = FunctionType::get(returnType, paramTypes, false);
             
             // 2. Create function
@@ -1282,7 +1400,12 @@ public:
             // 5. Save previous state and set new function context
             Function* prevFunc = ctx.currentFunction;
             BasicBlock* prevBlock = ctx.builder->GetInsertBlock();
+            std::string prevReturnType = ctx.currentFunctionReturnType;
+            bool prevAutoWrap = ctx.currentFunctionAutoWrap;
+            
             ctx.currentFunction = func;
+            ctx.currentFunctionReturnType = lambda->return_type;  // Store VAL type for validation
+            ctx.currentFunctionAutoWrap = lambda->auto_wrap;       // Store auto-wrap flag
             ctx.builder->SetInsertPoint(entry);
             
             // 6. Create allocas for parameters
@@ -1326,6 +1449,8 @@ public:
             
             // 10. Restore previous function context
             ctx.currentFunction = prevFunc;
+            ctx.currentFunctionReturnType = prevReturnType;
+            ctx.currentFunctionAutoWrap = prevAutoWrap;
             if (prevBlock) {
                 ctx.builder->SetInsertPoint(prevBlock);
             }
@@ -1364,8 +1489,8 @@ public:
         if (auto* unwrap = dynamic_cast<aria::frontend::UnwrapExpr*>(node)) {
             // ? operator: unwrap Result/output type
             // Syntax: result ? default
-            // If result.err is NULL, return result.val
-            // If result.err is not NULL, return default value
+            // If result.err is 0 (success), return result.val
+            // If result.err is not 0 (error), return default value
             
             Value* resultVal = visitExpr(unwrap->expression.get());
             if (!resultVal) return nullptr;
@@ -1373,7 +1498,7 @@ public:
             Value* defaultVal = visitExpr(unwrap->default_value.get());
             if (!defaultVal) return nullptr;
             
-            // Assume Result/output is a struct with err (pointer) and val fields
+            // Assume Result/output is a struct with err (i8) and val fields
             if (auto* structType = dyn_cast<StructType>(resultVal->getType())) {
                 Function* func = ctx.builder->GetInsertBlock()->getParent();
                 
@@ -1385,11 +1510,11 @@ public:
                 Type* errType = structType->getElementType(0);
                 Value* errVal = ctx.builder->CreateLoad(errType, errPtr, "err");
                 
-                // Check if err is null
-                Value* isNull = ctx.builder->CreateICmpEQ(
+                // Check if err is 0 (success)
+                Value* isSuccess = ctx.builder->CreateICmpEQ(
                     errVal, 
-                    Constant::getNullValue(errType),
-                    "is_null"
+                    ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0),
+                    "is_success"
                 );
                 
                 // Extract val field (index 1)
@@ -1404,8 +1529,8 @@ public:
                     }
                 }
                 
-                // Use select: if err == NULL, return val, else return default
-                return ctx.builder->CreateSelect(isNull, valVal, defaultVal, "unwrap_result");
+                // Use select: if err == 0, return val, else return default
+                return ctx.builder->CreateSelect(isSuccess, valVal, defaultVal, "unwrap_result");
             }
             
             // If not a struct, just return the value
@@ -1553,19 +1678,59 @@ public:
             // Return with value
             Value* retVal = visitExpr(node->value.get());
             if (retVal) {
-                // Cast/truncate return value to match function return type
                 Type* expectedReturnType = ctx.currentFunction->getReturnType();
                 
-                // If types don't match and both are integers, perform cast
-                if (retVal->getType() != expectedReturnType) {
-                    if (retVal->getType()->isIntegerTy() && expectedReturnType->isIntegerTy()) {
-                        // Use CreateIntCast for safe integer type conversion (extends or truncates as needed)
-                        retVal = ctx.builder->CreateIntCast(retVal, expectedReturnType, true);
+                // Check if this function uses auto-wrap (*)
+                if (ctx.currentFunctionAutoWrap) {
+                    // AUTO-WRAP: Wrap raw value in {err:NULL, val:retVal}
+                    // Expected return type is result<T>, need to create the struct
+                    
+                    StructType* resultType = dyn_cast<StructType>(expectedReturnType);
+                    if (!resultType) {
+                        throw std::runtime_error("Auto-wrap function must return result type");
                     }
-                    // TODO: Handle other type mismatches (floats, pointers, etc.)
+                    
+                    // Get expected val field type
+                    Type* expectedValType = resultType->getElementType(1);
+                    
+                    // Type check and cast if needed
+                    if (retVal->getType() != expectedValType) {
+                        if (retVal->getType()->isIntegerTy() && expectedValType->isIntegerTy()) {
+                            retVal = ctx.builder->CreateIntCast(retVal, expectedValType, true, "auto_wrap_cast");
+                        } else {
+                            throw std::runtime_error(
+                                "Auto-wrap type mismatch: function declared return type '" + 
+                                ctx.currentFunctionReturnType + "' but return value has different type"
+                            );
+                        }
+                    }
+                    
+                    // Create result struct: {err:0, val:retVal}
+                    AllocaInst* resultAlloca = ctx.builder->CreateAlloca(resultType, nullptr, "auto_wrap_result");
+                    
+                    // Set err = 0 (success)
+                    Value* errPtr = ctx.builder->CreateStructGEP(resultType, resultAlloca, 0, "err_ptr");
+                    ctx.builder->CreateStore(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), errPtr);
+                    
+                    // Set val = retVal
+                    Value* valPtr = ctx.builder->CreateStructGEP(resultType, resultAlloca, 1, "val_ptr");
+                    ctx.builder->CreateStore(retVal, valPtr);
+                    
+                    // Load and return the struct
+                    Value* resultVal = ctx.builder->CreateLoad(resultType, resultAlloca, "result_val");
+                    ctx.builder->CreateRet(resultVal);
+                } else {
+                    // NO AUTO-WRAP: Return value must already be a result struct
+                    // Cast/truncate return value to match function return type if needed
+                    if (retVal->getType() != expectedReturnType) {
+                        if (retVal->getType()->isIntegerTy() && expectedReturnType->isIntegerTy()) {
+                            retVal = ctx.builder->CreateIntCast(retVal, expectedReturnType, true);
+                        }
+                        // If types still don't match, it's an error (should be caught by type checker)
+                    }
+                    
+                    ctx.builder->CreateRet(retVal);
                 }
-                
-                ctx.builder->CreateRet(retVal);
             }
         } else {
             // Return void
