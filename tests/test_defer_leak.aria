@@ -1,0 +1,14 @@
+// Test to verify defers don't leak between functions
+
+func:first = int8() {
+    int8:x = 1;
+    defer {
+        x = x + 100;
+    }
+    return x;  // Should return 101
+};
+
+func:second = int8() {
+    int8:y = 2;  // NO DEFER
+    return y;  // Should return just 2, NOT access x
+};

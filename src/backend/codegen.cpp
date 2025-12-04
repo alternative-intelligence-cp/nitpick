@@ -80,6 +80,9 @@ using aria::frontend::ReturnStmt;
 // Code Generation Context
 // =============================================================================
 
+// Forward declaration
+class CodeGenVisitor;
+
 class CodeGenContext {
 public:
     LLVMContext llvmContext;
@@ -112,6 +115,9 @@ public:
     // Loop context (for break/continue)
     BasicBlock* currentLoopBreakTarget = nullptr;
     BasicBlock* currentLoopContinueTarget = nullptr;
+    
+    // Defer statement stack (LIFO execution on scope exit)
+    std::vector<std::vector<Block*>> deferStacks;  // Stack of defer blocks per scope
 
     CodeGenContext(std::string moduleName) {
         module = std::make_unique<Module>(moduleName, llvmContext);
@@ -119,8 +125,27 @@ public:
         pushScope(); // Global scope
     }
 
-    void pushScope() { scopeStack.emplace_back(); }
-    void popScope() { scopeStack.pop_back(); }
+    void pushScope() { 
+        scopeStack.emplace_back(); 
+        deferStacks.emplace_back();  // New defer stack for this scope
+    }
+    
+    void popScope() { 
+        scopeStack.pop_back(); 
+        if (!deferStacks.empty()) {
+            deferStacks.pop_back();  // Remove defer stack for this scope
+        }
+    }
+    
+    // Add a defer block to the current scope
+    void pushDefer(Block* deferBlock) {
+        if (!deferStacks.empty()) {
+            deferStacks.back().push_back(deferBlock);
+        }
+    }
+    
+    // Execute all defers for the current scope in LIFO order
+    void executeScopeDefers(CodeGenVisitor* visitor);  // Forward declare
 
     void define(const std::string& name, Value* val, bool is_ref = true, const std::string& ariaType = "", AllocStrategy strategy = AllocStrategy::VALUE) {
         scopeStack.back()[name] = {val, is_ref, ariaType, strategy};
@@ -462,6 +487,10 @@ public:
         
         ctx.currentFunction = func;
         ctx.builder->SetInsertPoint(entry);
+        
+        // Clear defer stacks for new function (defers don't persist across functions)
+        ctx.deferStacks = std::vector<std::vector<Block*>>();
+        ctx.deferStacks.emplace_back();  // Start with one scope for the function
         
         // SPEC REQUIREMENT: ALL functions return Result objects - enable auto-wrap by default
         // "NO BYPASSING THIS!!! NO REGULAR VALUE RETURNS ALLOWED!!!!" - Section 8.4
@@ -1506,6 +1535,10 @@ public:
             ctx.currentFunctionAutoWrap = lambda->auto_wrap;       // Store auto-wrap flag
             ctx.builder->SetInsertPoint(entry);
             
+            // CRITICAL: Clear defer stacks for new function (defers don't persist across functions)
+            ctx.deferStacks = std::vector<std::vector<Block*>>();
+            ctx.deferStacks.emplace_back();  // Start with one scope for the function
+            
             // 6. Create allocas for parameters
             // Save and create new scope for lambda parameters
             std::vector<std::pair<std::string, CodeGenContext::Symbol*>> savedSymbols;
@@ -1640,7 +1673,9 @@ public:
 
     // AST Visitor Stubs
     void visit(Block* node) override { 
-        for(auto& s: node->statements) s->accept(*this); 
+        for(auto& s: node->statements) {
+            s->accept(*this);
+        }
     }
     
     void visit(IfStmt* node) override {
@@ -1714,26 +1749,9 @@ public:
     
     void visit(DeferStmt* node) override {
         // defer { body }
-        // Executes body when scope exits
-        // Note: This is a simplified implementation
-        // Full implementation requires tracking defer statements and emitting them
-        // at all scope exit points (return, break, end of block)
-        
-        // For now, we'll store defer blocks and emit them at function exit
-        // This doesn't handle early returns or breaks correctly yet
-        
-        // TODO: Implement proper defer stack with scope tracking
-        // For basic implementation, we can just emit the defer body immediately
-        // (This is incorrect but allows compilation to proceed)
-        
-        // Proper implementation would:
-        // 1. Add defer block to a stack in CodeGenContext
-        // 2. At each return/break/end-of-scope, emit all defers in reverse order
-        // 3. Track scope depth to know when to pop defers
-        
-        // Placeholder: emit immediately (INCORRECT but compiles)
+        // Add the defer block to the stack - it will execute at scope exit
         if (node->body) {
-            node->body->accept(*this);
+            ctx.pushDefer(node->body.get());
         }
     }
     
@@ -1774,6 +1792,15 @@ public:
     void visit(UnaryOp* node) override {} // Handled by visitExpr()
     
     void visit(ReturnStmt* node) override {
+        // Execute all defers from the current function only (first scope in deferStacks after clear)
+        // We only execute defers from deferStacks[0] since we clear at function entry
+        if (!ctx.deferStacks.empty() && !ctx.deferStacks[0].empty()) {
+            // Execute in LIFO order
+            for (auto it = ctx.deferStacks[0].rbegin(); it != ctx.deferStacks[0].rend(); ++it) {
+                (*it)->accept(*this);
+            }
+        }
+        
         if (node->value) {
             // Return with value
             Value* retVal = visitExpr(node->value.get());
@@ -1866,6 +1893,17 @@ private:
             Function::ExternalLinkage, "get_current_thread_nursery", ctx.module.get());
     }
 };
+
+// Implementation of executeScopeDefers
+void CodeGenContext::executeScopeDefers(CodeGenVisitor* visitor) {
+    if (deferStacks.empty()) return;
+    
+    auto& currentDefers = deferStacks.back();
+    // Execute in LIFO order (reverse)
+    for (auto it = currentDefers.rbegin(); it != currentDefers.rend(); ++it) {
+        (*it)->accept(*visitor);
+    }
+}
 
 // =============================================================================
 // Main Entry Point for Code Generation

@@ -1,0 +1,31 @@
+// Test defer statement
+
+func:test_defer = int8() {
+    int8:x = 1;
+    
+    defer {
+        x = x + 10;  // Should execute before return
+    }
+    
+    x = x + 2;  // x = 3
+    
+    return x;  // Should return 13 (1 + 2 + 10)
+};
+
+func:test_multiple_defers = int8() {
+    int8:sum = 0;
+    
+    defer {
+        sum = sum + 1;  // Executes third (LIFO)
+    }
+    
+    defer {
+        sum = sum + 10;  // Executes second
+    }
+    
+    defer {
+        sum = sum + 100;  // Executes first
+    }
+    
+    return sum;  // Should return 111 (100 + 10 + 1)
+};

@@ -69,15 +69,13 @@ std::unique_ptr<Block> Parser::parseProgram() {
 }
 
 std::unique_ptr<Statement> Parser::parseDeferStmt() {
-    // TODO: Implement defer statement parsing
-    // This requires:
-    // - consume(TOKEN_DEFER)
-    // - parseStatement() or parseBlock() for the deferred statement
-    // - Tracking defers in current block scope
+    // defer { ... }
+    expect(TOKEN_KW_DEFER);
     
-    // Placeholder implementation
-    auto placeholder_body = std::make_unique<Block>();
-    return std::make_unique<DeferStmt>(std::move(placeholder_body));
+    // Parse the defer body as a block
+    auto body = parseBlock();
+    
+    return std::make_unique<DeferStmt>(std::move(body));
 }
 
 std::unique_ptr<Block> Parser::parseBlock() {
