@@ -1,5 +1,5 @@
 // Test ? unwrap operator with Result types
-func:safe_divide = output(int8:a, int8:b) {
+func:safe_divide = result(int8:a, int8:b) {
     if(b == 0) {
         return {err: "division by zero", val: 0};
     }
@@ -7,8 +7,8 @@ func:safe_divide = output(int8:a, int8:b) {
 };
 
 func:test_unwrap_with_default = int8() {
-    output:r1 = safe_divide(10, 2);  // Should succeed
-    output:r2 = safe_divide(10, 0);  // Should fail
+    result:r1 = safe_divide(10, 2);  // Should succeed
+    result:r2 = safe_divide(10, 0);  // Should fail
     
     int8:v1 = r1?.val ? -1;  // Get value or default to -1
     int8:v2 = r2?.val ? -1;  // Should default to -1 (error case)

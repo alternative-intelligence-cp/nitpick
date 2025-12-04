@@ -1,6 +1,10 @@
 ; ModuleID = 'aria_module'
 source_filename = "aria_module"
 
+%result = type { ptr, i64 }
+
+@0 = private unnamed_addr constant [27 x i8] c"All unwrap tests complete!\00", align 1
+
 declare void @puts(ptr)
 
 declare void @print(ptr)
@@ -10,24 +14,538 @@ entry:
   ret void
 }
 
-define internal i64 @test_local() {
+define internal %result @make_success(i8 %value) {
 entry:
-  %0 = call ptr @get_current_thread_nursery()
-  %1 = call ptr @aria_gc_alloc(ptr %0, i64 8)
-  %x = alloca ptr, align 8
-  store ptr %1, ptr %x, align 8
-  %2 = load ptr, ptr %x, align 8
-  store i64 42, ptr %2, align 4
-  %3 = load i64, ptr %x, align 4
-  ret i64 %3
+  %value1 = alloca i8, align 1
+  store i8 %value, ptr %value1, align 1
+  %0 = load i64, ptr %value1, align 4
+  %result = alloca %result, align 8
+  %val_ptr = getelementptr inbounds %result, ptr %result, i32 0, i32 1
+  store i64 %0, ptr %val_ptr, align 4
+  %result_val = load %result, ptr %result, align 8
+  ret %result %result_val
 }
 
-declare ptr @get_current_thread_nursery()
+define internal %result @make_error(i8 %code) {
+entry:
+  %code1 = alloca i8, align 1
+  store i8 %code, ptr %code1, align 1
+  %0 = load i64, ptr %code1, align 4
+  %1 = ptrtoint ptr %code1 to i64
+  %result = alloca %result, align 8
+  %err_ptr = getelementptr inbounds %result, ptr %result, i32 0, i32 0
+  store i64 %1, ptr %err_ptr, align 4
+  %val_ptr = getelementptr inbounds %result, ptr %result, i32 0, i32 1
+  store i64 0, ptr %val_ptr, align 4
+  %result_val = load %result, ptr %result, align 8
+  ret %result %result_val
+}
 
-declare ptr @aria_gc_alloc(ptr, i64)
+define internal i8 @test_unwrap_success() {
+entry:
+  %value = alloca i8, align 1
+  %r = alloca %result, align 8
+  %calltmp = call %result @make_success(i8 42)
+  store %result %calltmp, ptr %r, align 8
+  %0 = load %result, ptr %r, align 8
+  %result_temp = alloca %result, align 8
+  store %result %0, ptr %result_temp, align 8
+  %err_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 0
+  %err = load ptr, ptr %err_ptr, align 8
+  %is_null = icmp eq ptr %err, null
+  %val_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 1
+  %val = load i64, ptr %val_ptr, align 4
+  %unwrap_result = select i1 %is_null, i64 %val, i64 -1
+  store i64 %unwrap_result, ptr %value, align 4
+  %1 = load i8, ptr %value, align 1
+  ret i8 %1
+}
+
+define internal i8 @test_unwrap_error() {
+entry:
+  %value = alloca i8, align 1
+  %r = alloca %result, align 8
+  %calltmp = call %result @make_error(i8 1)
+  store %result %calltmp, ptr %r, align 8
+  %0 = load %result, ptr %r, align 8
+  %result_temp = alloca %result, align 8
+  store %result %0, ptr %result_temp, align 8
+  %err_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 0
+  %err = load ptr, ptr %err_ptr, align 8
+  %is_null = icmp eq ptr %err, null
+  %val_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 1
+  %val = load i64, ptr %val_ptr, align 4
+  %unwrap_result = select i1 %is_null, i64 %val, i64 -1
+  store i64 %unwrap_result, ptr %value, align 4
+  %1 = load i8, ptr %value, align 1
+  ret i8 %1
+}
+
+define internal i8 @test_unwrap_chain() {
+entry:
+  %sum = alloca i8, align 1
+  %r3 = alloca %result, align 8
+  %r2 = alloca %result, align 8
+  %r1 = alloca %result, align 8
+  %calltmp = call %result @make_success(i8 10)
+  store %result %calltmp, ptr %r1, align 8
+  %calltmp1 = call %result @make_success(i8 20)
+  store %result %calltmp1, ptr %r2, align 8
+  %calltmp2 = call %result @make_success(i8 30)
+  store %result %calltmp2, ptr %r3, align 8
+  %0 = load %result, ptr %r1, align 8
+  %result_temp = alloca %result, align 8
+  store %result %0, ptr %result_temp, align 8
+  %err_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 0
+  %err = load ptr, ptr %err_ptr, align 8
+  %is_null = icmp eq ptr %err, null
+  %val_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 1
+  %val = load i64, ptr %val_ptr, align 4
+  %unwrap_result = select i1 %is_null, i64 %val, i64 0
+  %1 = load %result, ptr %r2, align 8
+  %result_temp3 = alloca %result, align 8
+  store %result %1, ptr %result_temp3, align 8
+  %err_ptr4 = getelementptr inbounds %result, ptr %result_temp3, i32 0, i32 0
+  %err5 = load ptr, ptr %err_ptr4, align 8
+  %is_null6 = icmp eq ptr %err5, null
+  %val_ptr7 = getelementptr inbounds %result, ptr %result_temp3, i32 0, i32 1
+  %val8 = load i64, ptr %val_ptr7, align 4
+  %unwrap_result9 = select i1 %is_null6, i64 %val8, i64 0
+  %addtmp = add i64 %unwrap_result, %unwrap_result9
+  %2 = load %result, ptr %r3, align 8
+  %result_temp10 = alloca %result, align 8
+  store %result %2, ptr %result_temp10, align 8
+  %err_ptr11 = getelementptr inbounds %result, ptr %result_temp10, i32 0, i32 0
+  %err12 = load ptr, ptr %err_ptr11, align 8
+  %is_null13 = icmp eq ptr %err12, null
+  %val_ptr14 = getelementptr inbounds %result, ptr %result_temp10, i32 0, i32 1
+  %val15 = load i64, ptr %val_ptr14, align 4
+  %unwrap_result16 = select i1 %is_null13, i64 %val15, i64 0
+  %addtmp17 = add i64 %addtmp, %unwrap_result16
+  store i64 %addtmp17, ptr %sum, align 4
+  %3 = load i8, ptr %sum, align 1
+  ret i8 %3
+}
+
+define internal i8 @test_unwrap_expr() {
+entry:
+  %doubled = alloca i8, align 1
+  %res = alloca %result, align 8
+  %calltmp = call %result @make_success(i8 5)
+  store %result %calltmp, ptr %res, align 8
+  %0 = load %result, ptr %res, align 8
+  %result_temp = alloca %result, align 8
+  store %result %0, ptr %result_temp, align 8
+  %err_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 0
+  %err = load ptr, ptr %err_ptr, align 8
+  %is_null = icmp eq ptr %err, null
+  %val_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 1
+  %val = load i64, ptr %val_ptr, align 4
+  %unwrap_result = select i1 %is_null, i64 %val, i64 0
+  %multmp = mul i64 %unwrap_result, 2
+  store i64 %multmp, ptr %doubled, align 4
+  %1 = load i8, ptr %doubled, align 1
+  ret i8 %1
+}
+
+define internal i8 @test_unwrap_defaults() {
+entry:
+  %v2 = alloca i8, align 1
+  %v1 = alloca i8, align 1
+  %r2 = alloca %result, align 8
+  %r1 = alloca %result, align 8
+  %calltmp = call %result @make_error(i8 1)
+  store %result %calltmp, ptr %r1, align 8
+  %calltmp1 = call %result @make_error(i8 2)
+  store %result %calltmp1, ptr %r2, align 8
+  %0 = load %result, ptr %r1, align 8
+  %result_temp = alloca %result, align 8
+  store %result %0, ptr %result_temp, align 8
+  %err_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 0
+  %err = load ptr, ptr %err_ptr, align 8
+  %is_null = icmp eq ptr %err, null
+  %val_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 1
+  %val = load i64, ptr %val_ptr, align 4
+  %unwrap_result = select i1 %is_null, i64 %val, i64 100
+  store i64 %unwrap_result, ptr %v1, align 4
+  %1 = load %result, ptr %r2, align 8
+  %result_temp2 = alloca %result, align 8
+  store %result %1, ptr %result_temp2, align 8
+  %err_ptr3 = getelementptr inbounds %result, ptr %result_temp2, i32 0, i32 0
+  %err4 = load ptr, ptr %err_ptr3, align 8
+  %is_null5 = icmp eq ptr %err4, null
+  %val_ptr6 = getelementptr inbounds %result, ptr %result_temp2, i32 0, i32 1
+  %val7 = load i64, ptr %val_ptr6, align 4
+  %unwrap_result8 = select i1 %is_null5, i64 %val7, i64 200
+  store i64 %unwrap_result8, ptr %v2, align 4
+  %2 = load i8, ptr %v1, align 1
+  %3 = load i8, ptr %v2, align 1
+  %addtmp = add i8 %2, %3
+  ret i8 %addtmp
+}
+
+define internal i8 @test_unwrap_condition() {
+entry:
+  %result_val = alloca i8, align 1
+  %value = alloca i8, align 1
+  %res = alloca %result, align 8
+  %calltmp = call %result @make_success(i8 5)
+  store %result %calltmp, ptr %res, align 8
+  %0 = load %result, ptr %res, align 8
+  %result_temp = alloca %result, align 8
+  store %result %0, ptr %result_temp, align 8
+  %err_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 0
+  %err = load ptr, ptr %err_ptr, align 8
+  %is_null = icmp eq ptr %err, null
+  %val_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 1
+  %val = load i64, ptr %val_ptr, align 4
+  %unwrap_result = select i1 %is_null, i64 %val, i64 -1
+  store i64 %unwrap_result, ptr %value, align 4
+  %1 = load i8, ptr %value, align 1
+  %2 = sext i8 %1 to i64
+  %gttmp = icmp sgt i64 %2, 0
+  %3 = select i1 %gttmp, i64 1, i64 -1
+  store i64 %3, ptr %result_val, align 4
+  %4 = load i8, ptr %result_val, align 1
+  ret i8 %4
+}
+
+define internal i8 @test_unwrap_nested() {
+entry:
+  %inn = alloca %result, align 8
+  %result_val = alloca i8, align 1
+  %outer_val = alloca i8, align 1
+  %out = alloca %result, align 8
+  %calltmp = call %result @make_success(i8 10)
+  store %result %calltmp, ptr %out, align 8
+  %0 = load %result, ptr %out, align 8
+  %result_temp = alloca %result, align 8
+  store %result %0, ptr %result_temp, align 8
+  %err_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 0
+  %err = load ptr, ptr %err_ptr, align 8
+  %is_null = icmp eq ptr %err, null
+  %val_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 1
+  %val = load i64, ptr %val_ptr, align 4
+  %unwrap_result = select i1 %is_null, i64 %val, i64 0
+  store i64 %unwrap_result, ptr %outer_val, align 4
+  store i64 0, ptr %result_val, align 4
+  %1 = load i8, ptr %outer_val, align 1
+  %2 = sext i8 %1 to i64
+  %gttmp = icmp sgt i64 %2, 5
+  br i1 %gttmp, label %then, label %else
+
+then:                                             ; preds = %entry
+  %calltmp1 = call %result @make_success(i8 20)
+  store %result %calltmp1, ptr %inn, align 8
+  %3 = load %result, ptr %inn, align 8
+  %result_temp2 = alloca %result, align 8
+  store %result %3, ptr %result_temp2, align 8
+  %err_ptr3 = getelementptr inbounds %result, ptr %result_temp2, i32 0, i32 0
+  %err4 = load ptr, ptr %err_ptr3, align 8
+  %is_null5 = icmp eq ptr %err4, null
+  %val_ptr6 = getelementptr inbounds %result, ptr %result_temp2, i32 0, i32 1
+  %val7 = load i64, ptr %val_ptr6, align 4
+  %unwrap_result8 = select i1 %is_null5, i64 %val7, i64 0
+  store i64 %unwrap_result8, ptr %result_val, align 4
+  br label %ifcont
+
+else:                                             ; preds = %entry
+  store i64 0, ptr %result_val, align 4
+  br label %ifcont
+
+ifcont:                                           ; preds = %else, %then
+  %4 = load i8, ptr %result_val, align 1
+  ret i8 %4
+}
+
+define internal i8 @test_unwrap_member() {
+entry:
+  %unwrapped = alloca i8, align 1
+  %direct = alloca i8, align 1
+  %res = alloca %result, align 8
+  %calltmp = call %result @make_success(i8 42)
+  store %result %calltmp, ptr %res, align 8
+  %0 = load %result, ptr %res, align 8
+  %temp = alloca %result, align 8
+  store %result %0, ptr %temp, align 8
+  %val_ptr = getelementptr inbounds %result, ptr %temp, i32 0, i32 1
+  %val = load i64, ptr %val_ptr, align 4
+  store i64 %val, ptr %direct, align 4
+  %1 = load %result, ptr %res, align 8
+  %result_temp = alloca %result, align 8
+  store %result %1, ptr %result_temp, align 8
+  %err_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 0
+  %err = load ptr, ptr %err_ptr, align 8
+  %is_null = icmp eq ptr %err, null
+  %val_ptr1 = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 1
+  %val2 = load i64, ptr %val_ptr1, align 4
+  %unwrap_result = select i1 %is_null, i64 %val2, i64 0
+  store i64 %unwrap_result, ptr %unwrapped, align 4
+  %2 = load i8, ptr %direct, align 1
+  %3 = load i8, ptr %unwrapped, align 1
+  %addtmp = add i8 %2, %3
+  ret i8 %addtmp
+}
+
+define internal %result @divide(i8 %a, i8 %b) {
+entry:
+  %a1 = alloca i8, align 1
+  store i8 %a, ptr %a1, align 1
+  %b2 = alloca i8, align 1
+  store i8 %b, ptr %b2, align 1
+  %0 = load i64, ptr %b2, align 4
+  %eqtmp = icmp eq i64 %0, 0
+  br i1 %eqtmp, label %then, label %else
+
+then:                                             ; preds = %entry
+  %result = alloca %result, align 8
+  %val_ptr = getelementptr inbounds %result, ptr %result, i32 0, i32 1
+  store i64 0, ptr %val_ptr, align 4
+  %result_val = load %result, ptr %result, align 8
+  ret %result %result_val
+
+else:                                             ; preds = %entry
+  %1 = load i64, ptr %a1, align 4
+  %2 = load i64, ptr %b2, align 4
+  %divtmp = sdiv i64 %1, %2
+  %result3 = alloca %result, align 8
+  %val_ptr4 = getelementptr inbounds %result, ptr %result3, i32 0, i32 1
+  store i64 %divtmp, ptr %val_ptr4, align 4
+  %result_val5 = load %result, ptr %result3, align 8
+  ret %result %result_val5
+
+ifcont:                                           ; No predecessors!
+  ret %result zeroinitializer
+}
+
+define internal i8 @test_unwrap_function() {
+entry:
+  %result2 = alloca i8, align 1
+  %result1 = alloca i8, align 1
+  %calltmp = call %result @divide(i8 10, i8 2)
+  %result_temp = alloca %result, align 8
+  store %result %calltmp, ptr %result_temp, align 8
+  %err_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 0
+  %err = load ptr, ptr %err_ptr, align 8
+  %is_null = icmp eq ptr %err, null
+  %val_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 1
+  %val = load i64, ptr %val_ptr, align 4
+  %unwrap_result = select i1 %is_null, i64 %val, i64 -1
+  store i64 %unwrap_result, ptr %result1, align 4
+  %calltmp1 = call %result @divide(i8 10, i8 0)
+  %result_temp2 = alloca %result, align 8
+  store %result %calltmp1, ptr %result_temp2, align 8
+  %err_ptr3 = getelementptr inbounds %result, ptr %result_temp2, i32 0, i32 0
+  %err4 = load ptr, ptr %err_ptr3, align 8
+  %is_null5 = icmp eq ptr %err4, null
+  %val_ptr6 = getelementptr inbounds %result, ptr %result_temp2, i32 0, i32 1
+  %val7 = load i64, ptr %val_ptr6, align 4
+  %unwrap_result8 = select i1 %is_null5, i64 %val7, i64 -1
+  store i64 %unwrap_result8, ptr %result2, align 4
+  %0 = load i8, ptr %result1, align 1
+  %1 = load i8, ptr %result2, align 1
+  %addtmp = add i8 %0, %1
+  ret i8 %addtmp
+}
+
+define internal i8 @test_unwrap_mixed() {
+entry:
+  %v4 = alloca i8, align 1
+  %v3 = alloca i8, align 1
+  %v2 = alloca i8, align 1
+  %v1 = alloca i8, align 1
+  %error = alloca %result, align 8
+  %success = alloca %result, align 8
+  %calltmp = call %result @make_success(i8 10)
+  store %result %calltmp, ptr %success, align 8
+  %calltmp1 = call %result @make_error(i8 1)
+  store %result %calltmp1, ptr %error, align 8
+  %0 = load %result, ptr %success, align 8
+  %result_temp = alloca %result, align 8
+  store %result %0, ptr %result_temp, align 8
+  %err_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 0
+  %err = load ptr, ptr %err_ptr, align 8
+  %is_null = icmp eq ptr %err, null
+  %val_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 1
+  %val = load i64, ptr %val_ptr, align 4
+  %unwrap_result = select i1 %is_null, i64 %val, i64 0
+  store i64 %unwrap_result, ptr %v1, align 4
+  %1 = load %result, ptr %error, align 8
+  %result_temp2 = alloca %result, align 8
+  store %result %1, ptr %result_temp2, align 8
+  %err_ptr3 = getelementptr inbounds %result, ptr %result_temp2, i32 0, i32 0
+  %err4 = load ptr, ptr %err_ptr3, align 8
+  %is_null5 = icmp eq ptr %err4, null
+  %val_ptr6 = getelementptr inbounds %result, ptr %result_temp2, i32 0, i32 1
+  %val7 = load i64, ptr %val_ptr6, align 4
+  %unwrap_result8 = select i1 %is_null5, i64 %val7, i64 0
+  store i64 %unwrap_result8, ptr %v2, align 4
+  %2 = load %result, ptr %success, align 8
+  %result_temp9 = alloca %result, align 8
+  store %result %2, ptr %result_temp9, align 8
+  %err_ptr10 = getelementptr inbounds %result, ptr %result_temp9, i32 0, i32 0
+  %err11 = load ptr, ptr %err_ptr10, align 8
+  %is_null12 = icmp eq ptr %err11, null
+  %val_ptr13 = getelementptr inbounds %result, ptr %result_temp9, i32 0, i32 1
+  %val14 = load i64, ptr %val_ptr13, align 4
+  %unwrap_result15 = select i1 %is_null12, i64 %val14, i64 5
+  store i64 %unwrap_result15, ptr %v3, align 4
+  %3 = load %result, ptr %error, align 8
+  %result_temp16 = alloca %result, align 8
+  store %result %3, ptr %result_temp16, align 8
+  %err_ptr17 = getelementptr inbounds %result, ptr %result_temp16, i32 0, i32 0
+  %err18 = load ptr, ptr %err_ptr17, align 8
+  %is_null19 = icmp eq ptr %err18, null
+  %val_ptr20 = getelementptr inbounds %result, ptr %result_temp16, i32 0, i32 1
+  %val21 = load i64, ptr %val_ptr20, align 4
+  %unwrap_result22 = select i1 %is_null19, i64 %val21, i64 5
+  store i64 %unwrap_result22, ptr %v4, align 4
+  %4 = load i8, ptr %v1, align 1
+  %5 = load i8, ptr %v2, align 1
+  %addtmp = add i8 %4, %5
+  %6 = load i8, ptr %v3, align 1
+  %addtmp23 = add i8 %addtmp, %6
+  %7 = load i8, ptr %v4, align 1
+  %addtmp24 = add i8 %addtmp23, %7
+  ret i8 %addtmp24
+}
+
+define internal i8 @test_unwrap_loop() {
+entry:
+  %res = alloca %result, align 8
+  %i = alloca i8, align 1
+  %sum = alloca i8, align 1
+  store i64 0, ptr %sum, align 4
+  store i64 0, ptr %i, align 4
+  br label %while_cond
+
+while_cond:                                       ; preds = %while_body, %entry
+  %0 = load i8, ptr %i, align 1
+  %1 = sext i8 %0 to i64
+  %lttmp = icmp slt i64 %1, 5
+  br i1 %lttmp, label %while_body, label %while_exit
+
+while_body:                                       ; preds = %while_cond
+  %2 = load i8, ptr %i, align 1
+  %calltmp = call %result @make_success(i8 %2)
+  store %result %calltmp, ptr %res, align 8
+  %3 = load i8, ptr %sum, align 1
+  %4 = load %result, ptr %res, align 8
+  %result_temp = alloca %result, align 8
+  store %result %4, ptr %result_temp, align 8
+  %err_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 0
+  %err = load ptr, ptr %err_ptr, align 8
+  %is_null = icmp eq ptr %err, null
+  %val_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 1
+  %val = load i64, ptr %val_ptr, align 4
+  %unwrap_result = select i1 %is_null, i64 %val, i64 0
+  %5 = sext i8 %3 to i64
+  %addtmp = add i64 %5, %unwrap_result
+  store i64 %addtmp, ptr %sum, align 4
+  %6 = load i8, ptr %i, align 1
+  %7 = sext i8 %6 to i64
+  %addtmp1 = add i64 %7, 1
+  store i64 %addtmp1, ptr %i, align 4
+  br label %while_cond
+
+while_exit:                                       ; preds = %while_cond
+  %8 = load i8, ptr %sum, align 1
+  ret i8 %8
+}
+
+define internal i8 @test_unwrap_pick() {
+entry:
+  %pick_result = alloca i8, align 1
+  %value = alloca i8, align 1
+  %res = alloca %result, align 8
+  %calltmp = call %result @make_success(i8 3)
+  store %result %calltmp, ptr %res, align 8
+  %0 = load %result, ptr %res, align 8
+  %result_temp = alloca %result, align 8
+  store %result %0, ptr %result_temp, align 8
+  %err_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 0
+  %err = load ptr, ptr %err_ptr, align 8
+  %is_null = icmp eq ptr %err, null
+  %val_ptr = getelementptr inbounds %result, ptr %result_temp, i32 0, i32 1
+  %val = load i64, ptr %val_ptr, align 4
+  %unwrap_result = select i1 %is_null, i64 %val, i64 0
+  store i64 %unwrap_result, ptr %value, align 4
+  store i64 0, ptr %pick_result, align 4
+  %1 = load i8, ptr %value, align 1
+  %pick_eq = icmp eq i8 %1, 0
+  br i1 %pick_eq, label %case_body_0, label %case_next_0
+
+case_body_0:                                      ; preds = %entry
+  store i64 10, ptr %pick_result, align 4
+  br label %pick_done
+
+case_next_0:                                      ; preds = %entry
+  %pick_eq1 = icmp eq i8 %1, 1
+  br i1 %pick_eq1, label %case_body_1, label %case_next_1
+
+case_body_1:                                      ; preds = %case_next_0
+  store i64 20, ptr %pick_result, align 4
+  br label %pick_done
+
+case_next_1:                                      ; preds = %case_next_0
+  %pick_eq2 = icmp eq i8 %1, 2
+  br i1 %pick_eq2, label %case_body_2, label %case_next_2
+
+case_body_2:                                      ; preds = %case_next_1
+  store i64 30, ptr %pick_result, align 4
+  br label %pick_done
+
+case_next_2:                                      ; preds = %case_next_1
+  %pick_eq3 = icmp eq i8 %1, 3
+  br i1 %pick_eq3, label %case_body_3, label %case_next_3
+
+case_body_3:                                      ; preds = %case_next_2
+  store i64 40, ptr %pick_result, align 4
+  br label %pick_done
+
+case_next_3:                                      ; preds = %case_next_2
+  br i1 true, label %case_body_4, label %case_next_4
+
+case_body_4:                                      ; preds = %case_next_3
+  store i64 50, ptr %pick_result, align 4
+  br label %pick_done
+
+case_next_4:                                      ; preds = %case_next_3
+  br label %pick_done
+
+pick_done:                                        ; preds = %case_next_4, %case_body_4, %case_body_3, %case_body_2, %case_body_1, %case_body_0
+  %2 = load i8, ptr %pick_result, align 1
+  ret i8 %2
+}
+
+define internal i8 @__user_main() {
+entry:
+  %r6 = alloca i8, align 1
+  %r5 = alloca i8, align 1
+  %r4 = alloca i8, align 1
+  %r3 = alloca i8, align 1
+  %r2 = alloca i8, align 1
+  %r1 = alloca i8, align 1
+  %calltmp = call i8 @test_unwrap_success()
+  store i8 %calltmp, ptr %r1, align 1
+  %calltmp1 = call i8 @test_unwrap_error()
+  store i8 %calltmp1, ptr %r2, align 1
+  %calltmp2 = call i8 @test_unwrap_chain()
+  store i8 %calltmp2, ptr %r3, align 1
+  %calltmp3 = call i8 @test_unwrap_expr()
+  store i8 %calltmp3, ptr %r4, align 1
+  %calltmp4 = call i8 @test_unwrap_function()
+  store i8 %calltmp4, ptr %r5, align 1
+  %calltmp5 = call i8 @test_unwrap_mixed()
+  store i8 %calltmp5, ptr %r6, align 1
+  call void @puts(ptr @0)
+  ret i8 0
+}
 
 define i64 @main() {
 entry:
   call void @__aria_module_init()
-  ret i64 0
+  %0 = call i8 @__user_main()
+  %1 = sext i8 %0 to i64
+  ret i64 %1
 }

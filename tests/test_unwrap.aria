@@ -1,35 +1,35 @@
 // Test file for Aria UnwrapExpr (? operator)
-// Tests output type unwrapping and error propagation
+// Tests result type unwrapping and error propagation
 
-// Helper function that returns a successful output
-func:make_success = output(int8:value) {
+// Helper function that returns a successful result
+func:make_success = result(int8:value) {
     return { err: NULL, val: value };
 };
 
-// Helper function that returns an error output
-func:make_error = output(int8:code) {
+// Helper function that returns an error result
+func:make_error = result(int8:code) {
     return { err: @code, val: 0 };
 };
 
-// Test 1: Unwrap successful output
+// Test 1: Unwrap successful result
 func:test_unwrap_success = int8() {
-    output:r = make_success(42);
+    result:r = make_success(42);
     int8:value = r ? -1;  // Should get 42, not -1
     return value;
 };
 
-// Test 2: Unwrap error output (should use default)
+// Test 2: Unwrap error result (should use default)
 func:test_unwrap_error = int8() {
-    output:r = make_error(1);
+    result:r = make_error(1);
     int8:value = r ? -1;  // Should get -1 (default)
     return value;
 };
 
 // Test 3: Chain unwrap operations
 func:test_unwrap_chain = int8() {
-    output:r1 = make_success(10);
-    output:r2 = make_success(20);
-    output:r3 = make_success(30);
+    result:r1 = make_success(10);
+    result:r2 = make_success(20);
+    result:r3 = make_success(30);
     
     int8:sum = (r1 ? 0) + (r2 ? 0) + (r3 ? 0);
     return sum;  // Should be 60
@@ -37,15 +37,15 @@ func:test_unwrap_chain = int8() {
 
 // Test 4: Unwrap in expression
 func:test_unwrap_expr = int8() {
-    output:output = make_success(5);
-    int8:doubled = (output ? 0) * 2;
+    result:res = make_success(5);
+    int8:doubled = (res ? 0) * 2;
     return doubled;  // Should be 10
 };
 
 // Test 5: Unwrap with different default values
 func:test_unwrap_defaults = int8() {
-    output:r1 = make_error(1);
-    output:r2 = make_error(2);
+    result:r1 = make_error(1);
+    result:r2 = make_error(2);
     
     int8:v1 = r1 ? 100;
     int8:v2 = r2 ? 200;
@@ -55,47 +55,48 @@ func:test_unwrap_defaults = int8() {
 
 // Test 6: Unwrap in conditional
 func:test_unwrap_condition = int8() {
-    output:output = make_success(5);
-    int8:value = output ? -1;
+    result:res = make_success(5);
+    int8:value = res ? -1;
     
-    int8:output = 0;
-    is value > 0 : output = 1 : output = -1;
-    return output;  // Should be 1
+    int8:result_val = is value > 0 : 1 : -1;
+    return result_val;  // Should be 1
 };
 
 // Test 7: Nested unwrap
 func:test_unwrap_nested = int8() {
-    output:outer = make_success(10);
-    int8:outer_val = outer ? 0;
+    result:out = make_success(10);
+    int8:outer_val = out ? 0;
     
-    is outer_val > 5 : {
-        output:inner = make_success(20);
-        return inner ? 0;  // Should be 20
-    } : {
-        return 0;
-    };
+    int8:result_val = 0;
+    if (outer_val > 5) {
+        result:inn = make_success(20);
+        result_val = inn ? 0;  // Should be 20
+    } else {
+        result_val = 0;
+    }
+    return result_val;
 };
 
 // Test 8: Unwrap with member access
 func:test_unwrap_member = int8() {
-    output:output = make_success(42);
+    result:res = make_success(42);
     
     // Access val directly
-    int8:direct = output.val;
+    int8:direct = res.val;
     
     // Access with unwrap
-    int8:unwrapped = output ? 0;
+    int8:unwrapped = res ? 0;
     
     return direct + unwrapped;  // Should be 84 (42 + 42)
 };
 
-// Test 9: Function returning Result, unwrapped
-func:divide = Result(int8:a, int8:b) {
-    is b == 0 : {
+// Test 9: Function returning result, unwrapped
+func:divide = result(int8:a, int8:b) {
+    if (b == 0) {
         return { err: @1, val: 0 };  // Error: division by zero
-    } : {
+    } else {
         return { err: NULL, val: a / b };
-    };
+    }
 };
 
 func:test_unwrap_function = int8() {
@@ -107,8 +108,8 @@ func:test_unwrap_function = int8() {
 
 // Test 10: Multiple unwraps with different results
 func:test_unwrap_mixed = int8() {
-    output:success = make_success(10);
-    output:error = make_error(1);
+    result:success = make_success(10);
+    result:error = make_error(1);
     
     int8:v1 = success ? 0;  // 10
     int8:v2 = error ? 0;    // 0
@@ -124,8 +125,8 @@ func:test_unwrap_loop = int8() {
     int8:i = 0;
     
     while (i < 5) {
-        output:output = make_success(i);
-        sum = sum + (output ? 0);
+        result:res = make_success(i);
+        sum = sum + (res ? 0);
         i = i + 1;
     }
     
@@ -134,19 +135,19 @@ func:test_unwrap_loop = int8() {
 
 // Test 12: Unwrap with pick
 func:test_unwrap_pick = int8() {
-    output:output = make_success(3);
-    int8:value = output ? 0;
+    result:res = make_success(3);
+    int8:value = res ? 0;
     
-    int8:output = 0;
+    int8:pick_result = 0;
     pick (value) {
-        (0) { output = 10; }
-        (1) { output = 20; }
-        (2) { output = 30; }
-        (3) { output = 40; }
-        (*) { output = 50; }
+        (0) { pick_result = 10; }
+        (1) { pick_result = 20; }
+        (2) { pick_result = 30; }
+        (3) { pick_result = 40; }
+        (*) { pick_result = 50; }
     }
     
-    return output;  // Should be 40
+    return pick_result;  // Should be 40
 };
 
 // Module-level test execution
