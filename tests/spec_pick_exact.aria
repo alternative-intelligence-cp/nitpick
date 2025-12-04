@@ -3,9 +3,9 @@
 // Pattern matching with fallthrough labels
 
 int8:c = 9;
-int8:result = 0;
+int8:res = 0;
 
-pick c {
+pick(c) {
    (<9) {
        fall(fail);
    },
@@ -19,19 +19,19 @@ pick c {
        fall(err);
    },
    fail:(!) {
-       result = 1;
+       res = 1;
        fall(done);
    },
    success:(!) {
-       result = 2;
+       res = 2;
        fall(done);
    },
    err:(!) {
-       result = 3;
+       res = 3;
        fall(done);
    },
    done:(!) {
-       result = result + 10;
+       res = res + 10;
    }
 }
 }
