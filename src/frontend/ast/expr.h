@@ -272,6 +272,21 @@ public:
     }
 };
 
+// Array Index Expression
+// Example: arr[i], matrix[x][y]
+class IndexExpr : public Expression {
+public:
+    std::unique_ptr<Expression> array;
+    std::unique_ptr<Expression> index;
+
+    IndexExpr(std::unique_ptr<Expression> arr, std::unique_ptr<Expression> idx)
+        : array(std::move(arr)), index(std::move(idx)) {}
+
+    void accept(AstVisitor& visitor) override {
+        // visitor.visit(this);
+    }
+};
+
 // Forward declaration for lambda
 struct FuncParam;
 class Block;

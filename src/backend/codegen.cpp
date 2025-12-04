@@ -136,6 +136,25 @@ public:
 
     // Helper: Map Aria Types to LLVM Types
     llvm::Type* getLLVMType(const std::string& ariaType) {
+        // Check for array types: int8[256] or int8[]
+        size_t bracketPos = ariaType.find('[');
+        if (bracketPos != std::string::npos) {
+            std::string elemType = ariaType.substr(0, bracketPos);
+            std::string sizeStr = ariaType.substr(bracketPos + 1);
+            sizeStr = sizeStr.substr(0, sizeStr.find(']'));
+            
+            Type* elementType = getLLVMType(elemType);
+            
+            if (sizeStr.empty()) {
+                // Dynamic array: int8[] - represented as pointer
+                return PointerType::getUnqual(llvmContext);
+            } else {
+                // Fixed-size array: int8[256] - represented as [256 x i8]
+                uint64_t arraySize = std::stoull(sizeStr);
+                return ArrayType::get(elementType, arraySize);
+            }
+        }
+        
         if (ariaType == "int1") return Type::getInt1Ty(llvmContext);
         if (ariaType == "int8" || ariaType == "byte" || ariaType == "trit") 
             return Type::getInt8Ty(llvmContext);
@@ -1347,6 +1366,73 @@ public:
                 // TODO: Implement generic object literal support
                 throw std::runtime_error("Generic object literals not yet implemented");
             }
+        }
+        if (auto* arr = dynamic_cast<aria::frontend::ArrayLiteral*>(node)) {
+            // Array literal: [1, 2, 3, 4, 5]
+            if (arr->elements.empty()) {
+                throw std::runtime_error("Empty array literals not yet supported");
+            }
+            
+            // Evaluate all elements
+            std::vector<Value*> values;
+            Type* elemType = nullptr;
+            for (auto& elem : arr->elements) {
+                Value* val = visitExpr(elem.get());
+                values.push_back(val);
+                if (!elemType) {
+                    elemType = val->getType();
+                } else if (val->getType() != elemType) {
+                    throw std::runtime_error("Array literal elements must have same type");
+                }
+            }
+            
+            // Create array type
+            uint64_t arraySize = values.size();
+            ArrayType* arrayType = ArrayType::get(elemType, arraySize);
+            
+            // Allocate array on stack
+            AllocaInst* arrayAlloca = ctx.builder->CreateAlloca(arrayType, nullptr, "array_lit");
+            
+            // Store each element
+            for (uint64_t i = 0; i < arraySize; i++) {
+                Value* indices[] = {
+                    ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0),
+                    ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), i)
+                };
+                Value* elemPtr = ctx.builder->CreateGEP(arrayType, arrayAlloca, indices, "elem_ptr");
+                ctx.builder->CreateStore(values[i], elemPtr);
+            }
+            
+            // Return pointer to array (decays to pointer)
+            Value* indices[] = {
+                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0),
+                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0)
+            };
+            return ctx.builder->CreateGEP(arrayType, arrayAlloca, indices, "array_ptr");
+        }
+        if (auto* idx = dynamic_cast<aria::frontend::IndexExpr*>(node)) {
+            // Array indexing: arr[i]
+            Value* array = visitExpr(idx->array.get());
+            Value* index = visitExpr(idx->index.get());
+            
+            if (!array || !index) return nullptr;
+            
+            Type* arrayType = array->getType();
+            
+            // Handle pointer to array (from array literals or variable)
+            if (auto* ptrType = dyn_cast<PointerType>(arrayType)) {
+                // Get element pointer
+                Value* elemPtr = ctx.builder->CreateGEP(
+                    Type::getInt8Ty(ctx.llvmContext), // Element type - TODO: infer from context
+                    array,
+                    index,
+                    "elem_ptr"
+                );
+                // Load element
+                return ctx.builder->CreateLoad(Type::getInt8Ty(ctx.llvmContext), elemPtr, "elem");
+            }
+            
+            throw std::runtime_error("Array indexing requires pointer or array type");
         }
         if (auto* member = dynamic_cast<aria::frontend::MemberAccess*>(node)) {
             // Access struct member: obj.field
