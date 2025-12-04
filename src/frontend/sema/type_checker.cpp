@@ -32,6 +32,7 @@ std::shared_ptr<Type> parseType(const std::string& type_str) {
     if (type_str == "string") return makeStringType();
     if (type_str == "dyn") return makeDynType();
     if (type_str == "func") return makeFuncType();
+    if (type_str == "result" || type_str == "Result") return std::make_shared<Type>(TypeKind::STRUCT, "result");
 
     // Default to int64 for unknown types (for now)
     return makeIntType(64);

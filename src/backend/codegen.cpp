@@ -154,6 +154,21 @@ public:
         // Dynamic type (GC-allocated catch-all)
         if (ariaType == "dyn") return PointerType::getUnqual(llvmContext);
         
+        // Result type: struct with err (ptr) and val (int64) fields
+        // For now, hardcode val as int64. TODO: Make parametric
+        if (ariaType == "result" || ariaType == "Result") {
+            // Try to get existing type first
+            if (auto* existing = StructType::getTypeByName(llvmContext, "result")) {
+                return existing;
+            }
+            
+            // Create new named struct
+            std::vector<Type*> fields;
+            fields.push_back(PointerType::getUnqual(llvmContext));  // err field
+            fields.push_back(Type::getInt64Ty(llvmContext));         // val field (TODO: parametric)
+            return StructType::create(llvmContext, fields, "result");
+        }
+        
         // Pointers (opaque in LLVM 18)
         // We return ptr for strings, arrays, objects
         return PointerType::getUnqual(llvmContext);
@@ -1159,12 +1174,16 @@ public:
             }
         }
         if (auto* obj = dynamic_cast<aria::frontend::ObjectLiteral*>(node)) {
-            // Create Result struct: { i8* err, <type> val }
-            // For now, we'll create a simple struct with two fields
-            std::vector<Type*> fieldTypes;
-            fieldTypes.push_back(PointerType::getUnqual(ctx.llvmContext)); // err field (pointer)
+            // Create Result struct: { ptr err, i64 val }
+            // Use the predefined result type from getLLVMType
+            Type* resultTypeLLVM = ctx.getLLVMType("result");
+            StructType* resultType = dyn_cast<StructType>(resultTypeLLVM);
             
-            // Determine val field type from the actual value
+            if (!resultType) {
+                throw std::runtime_error("result type is not a struct");
+            }
+            
+            // Determine val field and err field values
             Value* valField = nullptr;
             Value* errField = nullptr;
             
@@ -1173,14 +1192,10 @@ public:
                     errField = visitExpr(field.value.get());
                 } else if (field.name == "val") {
                     valField = visitExpr(field.value.get());
-                    if (valField) {
-                        fieldTypes.push_back(valField->getType());
-                    }
                 }
             }
             
-            // Create struct type and allocate on stack
-            StructType* resultType = StructType::create(ctx.llvmContext, fieldTypes, "Result");
+            // Allocate struct on stack
             AllocaInst* resultAlloca = ctx.builder->CreateAlloca(resultType, nullptr, "result");
             
             // Store err field (index 0)
@@ -1191,6 +1206,13 @@ public:
             
             // Store val field (index 1)
             if (valField) {
+                // Cast valField to int64 if needed (since output type hardcodes int64 val)
+                if (valField->getType() != Type::getInt64Ty(ctx.llvmContext)) {
+                    if (valField->getType()->isIntegerTy()) {
+                        valField = ctx.builder->CreateIntCast(valField, Type::getInt64Ty(ctx.llvmContext), true);
+                    }
+                }
+                
                 Value* valPtr = ctx.builder->CreateStructGEP(resultType, resultAlloca, 1, "val_ptr");
                 ctx.builder->CreateStore(valField, valPtr);
             }
@@ -1340,14 +1362,18 @@ public:
             }
         }
         if (auto* unwrap = dynamic_cast<aria::frontend::UnwrapExpr*>(node)) {
-            // ? operator: unwrap Result type
-            // Result type is { i8* err, <type> val }
-            // If err is null, return val; otherwise propagate error
+            // ? operator: unwrap Result/output type
+            // Syntax: result ? default
+            // If result.err is NULL, return result.val
+            // If result.err is not NULL, return default value
             
             Value* resultVal = visitExpr(unwrap->expression.get());
             if (!resultVal) return nullptr;
             
-            // Assume Result is a struct with err (pointer) and val fields
+            Value* defaultVal = visitExpr(unwrap->default_value.get());
+            if (!defaultVal) return nullptr;
+            
+            // Assume Result/output is a struct with err (pointer) and val fields
             if (auto* structType = dyn_cast<StructType>(resultVal->getType())) {
                 Function* func = ctx.builder->GetInsertBlock()->getParent();
                 
@@ -1360,41 +1386,26 @@ public:
                 Value* errVal = ctx.builder->CreateLoad(errType, errPtr, "err");
                 
                 // Check if err is null
-                Value* isErr = ctx.builder->CreateICmpNE(
+                Value* isNull = ctx.builder->CreateICmpEQ(
                     errVal, 
                     Constant::getNullValue(errType),
-                    "is_err"
+                    "is_null"
                 );
                 
-                // Create blocks for error path and success path
-                BasicBlock* errBB = BasicBlock::Create(ctx.llvmContext, "unwrap_err", func);
-                BasicBlock* okBB = BasicBlock::Create(ctx.llvmContext, "unwrap_ok", func);
-                BasicBlock* contBB = BasicBlock::Create(ctx.llvmContext, "unwrap_cont");
-                
-                ctx.builder->CreateCondBr(isErr, errBB, okBB);
-                
-                // Error path: propagate error by returning early
-                ctx.builder->SetInsertPoint(errBB);
-                // TODO: Proper error propagation (return Result with err)
-                // For now, just return the whole Result
-                ctx.builder->CreateRet(resultVal);
-                
-                // Success path: extract and return val
-                ctx.builder->SetInsertPoint(okBB);
+                // Extract val field (index 1)
                 Value* valPtr = ctx.builder->CreateStructGEP(structType, tempAlloca, 1, "val_ptr");
                 Type* valType = structType->getElementType(1);
                 Value* valVal = ctx.builder->CreateLoad(valType, valPtr, "val");
-                ctx.builder->CreateBr(contBB);
                 
-                // Continue block
-                func->insert(func->end(), contBB);
-                ctx.builder->SetInsertPoint(contBB);
+                // If val and default have different types, cast default to match val type
+                if (defaultVal->getType() != valType) {
+                    if (defaultVal->getType()->isIntegerTy() && valType->isIntegerTy()) {
+                        defaultVal = ctx.builder->CreateIntCast(defaultVal, valType, true);
+                    }
+                }
                 
-                // Use PHI node to get the value
-                PHINode* phi = ctx.builder->CreatePHI(valType, 1, "unwrap_result");
-                phi->addIncoming(valVal, okBB);
-                
-                return phi;
+                // Use select: if err == NULL, return val, else return default
+                return ctx.builder->CreateSelect(isNull, valVal, defaultVal, "unwrap_result");
             }
             
             // If not a struct, just return the value
