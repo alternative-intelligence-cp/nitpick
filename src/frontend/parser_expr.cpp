@@ -180,6 +180,23 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
             return obj;
         }
 
+        // --- Array Literal ---
+        // Example: [1, 2, 3, 4, 5]
+        case TOKEN_LEFT_BRACKET: {
+            auto arr = std::make_unique<ArrayLiteral>();
+            
+            // Parse elements
+            if (!check(TOKEN_RIGHT_BRACKET)) {
+                do {
+                    auto element = parseExpression();
+                    arr->elements.push_back(std::move(element));
+                } while (match(TOKEN_COMMA));
+            }
+            
+            consume(TOKEN_RIGHT_BRACKET, "Expected ']' after array literal");
+            return arr;
+        }
+
         // --- Unary Operators ---
         // Includes Memory operators: # (Pin), @ (Addr)
         // Note: $ (TOKEN_ITERATION) is NOT a unary operator - it's a variable in till loops

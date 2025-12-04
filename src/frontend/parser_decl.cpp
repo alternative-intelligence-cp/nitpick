@@ -62,6 +62,21 @@ std::unique_ptr<VarDecl> Parser::parseVarDecl() {
    Token type_tok = expect(TOKEN_IDENTIFIER);
    std::string type_name = type_tok.value;
    
+   // Handle array types: int8[256] or int8[]
+   if (check(TOKEN_LEFT_BRACKET)) {
+       advance(); // consume [
+       type_name += "[";
+       
+       // Check for array size
+       if (!check(TOKEN_RIGHT_BRACKET)) {
+           Token size_tok = expect(TOKEN_INTEGER_LITERAL);
+           type_name += size_tok.value;
+       }
+       
+       expect(TOKEN_RIGHT_BRACKET);
+       type_name += "]";
+   }
+   
    // 4. Expect colon
    expect(TOKEN_COLON);
    

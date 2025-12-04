@@ -44,6 +44,8 @@ class WhenExpr;
 class AwaitExpr;
 class UnwrapExpr;
 class ObjectLiteral;
+class ArrayLiteral;
+class IndexExpr;
 class MemberAccess;
 class LambdaExpr;
 

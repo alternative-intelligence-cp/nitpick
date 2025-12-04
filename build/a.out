@@ -12,128 +12,19 @@ entry:
   ret void
 }
 
-define internal %result_int8 @count_to_five() {
+define internal %result_int8 @test_array_literal() {
 entry:
-  %counter = alloca i8, align 1
-  store i64 0, ptr %counter, align 4
-  br label %while_cond
-
-while_cond:                                       ; preds = %while_body, %entry
-  %0 = load i8, ptr %counter, align 1
-  %1 = sext i8 %0 to i64
-  %lttmp = icmp slt i64 %1, 5
-  br i1 %lttmp, label %while_body, label %while_exit
-
-while_body:                                       ; preds = %while_cond
-  %2 = load i8, ptr %counter, align 1
-  %3 = sext i8 %2 to i64
-  %addtmp = add i64 %3, 1
-  store i64 %addtmp, ptr %counter, align 4
-  br label %while_cond
-
-while_exit:                                       ; preds = %while_cond
-  %4 = load i8, ptr %counter, align 1
-  ret i8 %4
-}
-
-define internal %result_int8 @check_value(i8 %x) {
-entry:
-  %x1 = alloca i8, align 1
-  store i8 %x, ptr %x1, align 1
-  br label %while_cond
-
-while_cond:                                       ; preds = %entry
-  %0 = load i64, ptr %x1, align 4
-  %gttmp = icmp sgt i64 %0, 0
-  br i1 %gttmp, label %while_body, label %while_exit
-
-while_body:                                       ; preds = %while_cond
-  %1 = load i64, ptr %x1, align 4
-  %subtmp = sub i64 %1, 1
-  store i64 %subtmp, ptr %x1, align 4
-  %2 = load i64, ptr %x1, align 4
-  ret i64 %2
-
-while_exit:                                       ; preds = %while_cond
-  ret i64 0
-}
-
-define internal %result_int8 @double_value(i8 %x) {
-entry:
-  %x1 = alloca i8, align 1
-  store i8 %x, ptr %x1, align 1
-  %0 = load i64, ptr %x1, align 4
-  %1 = load i64, ptr %x1, align 4
-  %addtmp = add i64 %0, %1
-  ret i64 %addtmp
-}
-
-define internal %result_int8 @quad_value(i8 %x) {
-entry:
-  %doubled = alloca i8, align 1
-  %x1 = alloca i8, align 1
-  store i8 %x, ptr %x1, align 1
-  %0 = load i64, ptr %x1, align 4
-  %1 = trunc i64 %0 to i8
-  %calltmp = call %result_int8 @double_value(i8 %1)
-  store %result_int8 %calltmp, ptr %doubled, align 1
-  %2 = load i8, ptr %doubled, align 1
-  %calltmp2 = call %result_int8 @double_value(i8 %2)
-  ret %result_int8 %calltmp2
-}
-
-define internal %result_int8 @min_value(i8 %a, i8 %b) {
-entry:
-  %a1 = alloca i8, align 1
-  store i8 %a, ptr %a1, align 1
-  %b2 = alloca i8, align 1
-  store i8 %b, ptr %b2, align 1
-  br label %while_cond
-
-while_cond:                                       ; preds = %entry
-  %0 = load i64, ptr %a1, align 4
-  %1 = load i64, ptr %b2, align 4
-  %lttmp = icmp slt i64 %0, %1
-  br i1 %lttmp, label %while_body, label %while_exit
-
-while_body:                                       ; preds = %while_cond
-  %2 = load i64, ptr %a1, align 4
-  ret i64 %2
-
-while_exit:                                       ; preds = %while_cond
-  %3 = load i64, ptr %b2, align 4
-  ret i64 %3
-}
-
-define internal %result_int8 @__user_main() {
-entry:
-  %d = alloca i8, align 1
-  %c = alloca i8, align 1
-  %b = alloca i8, align 1
-  %a = alloca i8, align 1
-  %calltmp = call %result_int8 @count_to_five()
-  store %result_int8 %calltmp, ptr %a, align 1
-  %calltmp1 = call %result_int8 @check_value(i8 10)
-  store %result_int8 %calltmp1, ptr %b, align 1
-  %calltmp2 = call %result_int8 @quad_value(i8 3)
-  store %result_int8 %calltmp2, ptr %c, align 1
-  %0 = load i8, ptr %a, align 1
-  %1 = load i8, ptr %b, align 1
-  %calltmp3 = call %result_int8 @min_value(i8 %0, i8 %1)
-  store %result_int8 %calltmp3, ptr %d, align 1
-  %2 = load i8, ptr %a, align 1
-  %3 = load i8, ptr %b, align 1
-  %addtmp = add i8 %2, %3
-  %4 = load i8, ptr %c, align 1
-  %addtmp4 = add i8 %addtmp, %4
-  %5 = load i8, ptr %d, align 1
-  %addtmp5 = add i8 %addtmp4, %5
-  ret i8 %addtmp5
+  %auto_wrap_result = alloca %result_int8, align 8
+  %err_ptr = getelementptr inbounds %result_int8, ptr %auto_wrap_result, i32 0, i32 0
+  store i8 0, ptr %err_ptr, align 1
+  %val_ptr = getelementptr inbounds %result_int8, ptr %auto_wrap_result, i32 0, i32 1
+  store i8 42, ptr %val_ptr, align 1
+  %result_val = load %result_int8, ptr %auto_wrap_result, align 1
+  ret %result_int8 %result_val
 }
 
 define i64 @main() {
 entry:
   call void @__aria_module_init()
-  %0 = call %result_int8 @__user_main()
   ret i64 0
 }
