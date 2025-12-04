@@ -37,7 +37,13 @@ pick_label_err:                                   ; preds = %case_next_5
   br label %pick_done
 
 pick_label_done:                                  ; preds = %case_next_6
-  ret i64 1
+  %auto_wrap_result = alloca %result_int8, align 8
+  %err_ptr = getelementptr inbounds %result_int8, ptr %auto_wrap_result, i32 0, i32 0
+  store i8 0, ptr %err_ptr, align 1
+  %val_ptr = getelementptr inbounds %result_int8, ptr %auto_wrap_result, i32 0, i32 1
+  store i8 1, ptr %val_ptr, align 1
+  %result_val = load %result_int8, ptr %auto_wrap_result, align 1
+  ret %result_int8 %result_val
 
 case_body_0:                                      ; preds = %entry
   br label %pick_done
@@ -92,7 +98,14 @@ entry:
   %multmp = mul i64 %0, %1
   %2 = load i64, ptr @closureTest, align 4
   %multmp3 = mul i64 %multmp, %2
-  ret i64 %multmp3
+  %auto_wrap_cast = trunc i64 %multmp3 to i8
+  %auto_wrap_result = alloca %result_int8, align 8
+  %err_ptr = getelementptr inbounds %result_int8, ptr %auto_wrap_result, i32 0, i32 0
+  store i8 0, ptr %err_ptr, align 1
+  %val_ptr = getelementptr inbounds %result_int8, ptr %auto_wrap_result, i32 0, i32 1
+  store i8 %auto_wrap_cast, ptr %val_ptr, align 1
+  %result_val = load %result_int8, ptr %auto_wrap_result, align 1
+  ret %result_int8 %result_val
 }
 
 define i64 @main() {

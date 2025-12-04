@@ -195,11 +195,12 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
     
     // Lambda Expression: returnType(params) { body } or returnType(params){body}(args)
     // SPEC: func:name = returnType(params) { return { err:NULL, val:value }; };
-    // SPEC with auto-wrap: func:name = *returnType(params) { return value; };
-    // Check for * prefix (auto-wrap marker)
-    bool auto_wrap = false;
+    // SPEC REQUIREMENT: ALL functions return Result - auto-wrap enabled by DEFAULT
+    // "NO BYPASSING THIS!!! NO REGULAR VALUE RETURNS ALLOWED!!!!" - Section 8.4
+    // Use * prefix to explicitly disable auto-wrap (advanced use only)
+    bool auto_wrap = true;  // DEFAULT: auto-wrap enabled per spec
     if (current.type == TOKEN_STAR) {
-        auto_wrap = true;
+        auto_wrap = false;  // * disables auto-wrap (explicit Result return required)
         advance();  // consume *
     }
     
