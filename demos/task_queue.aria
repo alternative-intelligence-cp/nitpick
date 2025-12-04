@@ -1,0 +1,216 @@
+// Task Queue Manager - A practical demonstration of Aria v0.0.6
+// Shows: Result handling, arrays, pattern matching, loops, functions
+
+// Task structure using object literal (if supported) or separate arrays
+string[]:task_names = [];
+int8[]:task_priorities = [];  // 1=low, 2=medium, 3=high
+int8:task_count = 0;
+
+// Add a task to the queue
+*func:addTask = int8(string:name, int8:priority) {
+    // Validate priority
+    pick(priority) {
+        (<1) {
+            return 1;  // Error: priority too low
+        },
+        (>3) {
+            return 2;  // Error: priority too high
+        },
+        (*) {
+            // Valid priority, continue
+        }
+    }
+    
+    // Add task (simplified - assumes arrays can grow)
+    task_names[task_count] = name;
+    task_priorities[task_count] = priority;
+    task_count++;
+    
+    return 0;  // Success (auto-wrapped to Result by *)
+}
+
+// Get highest priority task
+*func:getNextTask = string() {
+    int8:highest_priority = 0;
+    int8:highest_index = -1;
+    
+    // Find highest priority task
+    till(task_count, 1) {
+        pick(task_priorities[$]) {
+            (>highest_priority) {
+                highest_priority = task_priorities[$];
+                highest_index = $;
+            },
+            (*) {
+                // Lower or equal priority, skip
+            }
+        }
+    }
+    
+    // Check if we found a task
+    pick(highest_index) {
+        (<0) {
+            return "";  // No tasks
+        },
+        (*) {
+            return task_names[highest_index];
+        }
+    }
+}
+
+// Display all tasks
+*func:displayTasks = int8() {
+    pick(task_count) {
+        (0) {
+            print("No tasks in queue.");
+            return 0;
+        },
+        (*) {
+            print(`Total tasks: &{task_count}`);
+            
+            till(task_count, 1) {
+                string:priority_label = "unknown";
+                
+                pick(task_priorities[$]) {
+                    (1) {
+                        priority_label = "LOW";
+                    },
+                    (2) {
+                        priority_label = "MEDIUM";
+                    },
+                    (3) {
+                        priority_label = "HIGH";
+                    },
+                    (*) {
+                        priority_label = "INVALID";
+                    }
+                }
+                
+                print(`  [&{priority_label}] &{task_names[$]}`);
+            }
+            
+            return 0;
+        }
+    }
+}
+
+// Remove a task by index
+*func:removeTask = int8(int8:index) {
+    pick(index) {
+        (<0) {
+            return 1;  // Error: negative index
+        },
+        (>=task_count) {
+            return 2;  // Error: index out of bounds
+        },
+        (*) {
+            // Shift all tasks after this one down
+            int8:i = index;
+            while(i < task_count - 1) {
+                task_names[i] = task_names[i + 1];
+                task_priorities[i] = task_priorities[i + 1];
+                i++;
+            }
+            
+            task_count--;
+            return 0;
+        }
+    }
+}
+
+// Main execution
+*func:main = int8() {
+    print("=== Task Queue Manager ===");
+    print("");
+    
+    // Add some tasks
+    result:r1 = addTask("Fix compiler bug", 3);
+    result:r2 = addTask("Write documentation", 2);
+    result:r3 = addTask("Code review", 2);
+    result:r4 = addTask("Update README", 1);
+    result:r5 = addTask("Deploy to production", 3);
+    
+    // Check for errors using 'is' ternary
+    int8:all_good = is r1.err == 0 : 1 : 0;
+    all_good = is r2.err == 0 : all_good : 0;
+    all_good = is r3.err == 0 : all_good : 0;
+    all_good = is r4.err == 0 : all_good : 0;
+    all_good = is r5.err == 0 : all_good : 0;
+    
+    pick(all_good) {
+        (0) {
+            print("Error adding tasks!");
+            return 1;
+        },
+        (*) {
+            print("All tasks added successfully.");
+            print("");
+        }
+    }
+    
+    // Display all tasks
+    displayTasks();
+    print("");
+    
+    // Get and process highest priority tasks
+    print("Processing high-priority tasks:");
+    
+    when(task_count > 0) {
+        result:next = getNextTask();
+        
+        pick(next.err) {
+            (0) {
+                string:task_name = next.val;
+                print(`  Processing: &{task_name}`);
+                
+                // Find and remove this task
+                int8:found_index = -1;
+                till(task_count, 1) {
+                    // Simple string comparison (assuming it works)
+                    pick($) {
+                        (*) {
+                            // Would need string comparison here
+                            // For now, just remove first task
+                            found_index = 0;
+                        }
+                    }
+                }
+                
+                pick(found_index) {
+                    (>=0) {
+                        removeTask(found_index);
+                    },
+                    (*) {
+                        // Task not found
+                    }
+                }
+            },
+            (*) {
+                print("  No more tasks.");
+            }
+        }
+        
+        // Only process top 3 tasks
+        pick(task_count) {
+            (<=2) {
+                // Exit loop when 2 or fewer tasks remain
+                break;
+            },
+            (*) {
+                // Continue
+            }
+        }
+    } then {
+        print("");
+        print("Task processing completed successfully.");
+    } end {
+        print("");
+        print("Task processing ended early.");
+    }
+    
+    print("");
+    print("Remaining tasks:");
+    displayTasks();
+    
+    return 0;
+}
