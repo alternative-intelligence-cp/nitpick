@@ -26,6 +26,7 @@
 #include "../frontend/ast/loops.h"
 #include "../frontend/ast/defer.h"
 #include "../frontend/tokens.h"
+#include <iostream>
 
 // LLVM Includes
 #include <llvm/IR/LLVMContext.h>
@@ -437,8 +438,16 @@ public:
         // 5. Save previous state and set new function context
         Function* prevFunc = ctx.currentFunction;
         BasicBlock* prevBlock = ctx.builder->GetInsertBlock();
+        bool prevAutoWrap = ctx.currentFunctionAutoWrap;
+        std::string prevReturnType = ctx.currentFunctionReturnType;
+        
         ctx.currentFunction = func;
         ctx.builder->SetInsertPoint(entry);
+        
+        // SPEC REQUIREMENT: ALL functions return Result objects - enable auto-wrap by default
+        // "NO BYPASSING THIS!!! NO REGULAR VALUE RETURNS ALLOWED!!!!" - Section 8.4
+        ctx.currentFunctionAutoWrap = true;
+        ctx.currentFunctionReturnType = node->return_type;
         
         // 6. Create allocas for parameters (to allow taking addresses)
         idx = 0;
@@ -466,6 +475,8 @@ public:
         
         // 9. Restore previous function context and insertion point
         ctx.currentFunction = prevFunc;
+        ctx.currentFunctionAutoWrap = prevAutoWrap;
+        ctx.currentFunctionReturnType = prevReturnType;
         if (prevBlock) {
             ctx.builder->SetInsertPoint(prevBlock);
         }
@@ -1541,7 +1552,9 @@ public:
     }
 
     // AST Visitor Stubs
-    void visit(Block* node) override { for(auto& s: node->statements) s->accept(*this); }
+    void visit(Block* node) override { 
+        for(auto& s: node->statements) s->accept(*this); 
+    }
     
     void visit(IfStmt* node) override {
         // Generate if-then-else control flow
