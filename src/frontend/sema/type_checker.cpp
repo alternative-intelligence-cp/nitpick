@@ -31,6 +31,7 @@ std::shared_ptr<Type> parseType(const std::string& type_str) {
     if (type_str == "flt64") return makeFloatType(64);
     if (type_str == "string") return makeStringType();
     if (type_str == "dyn") return makeDynType();
+    if (type_str == "func") return makeFuncType();
 
     // Default to int64 for unknown types (for now)
     return makeIntType(64);
@@ -559,6 +560,14 @@ bool TypeChecker::checkTypeCompatibility(const Type& expected, const Type& actua
 
     // Allow numeric conversions (simplified)
     if (expected.isNumeric() && actual.isNumeric()) {
+        return true;
+    }
+
+    // func type can accept any function type (including lambdas with any return type)
+    // This allows: func:greet = void(){...} or func:add = int8(){...}
+    if (expected.kind == TypeKind::FUNCTION) {
+        // Accept any type for func (lambdas evaluate to their return type)
+        // In full implementation, would check function signature
         return true;
     }
 
