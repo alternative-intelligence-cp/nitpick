@@ -114,6 +114,7 @@ public:
                            (array_size >= 0 ? std::to_string(array_size) : "") + "]";
                 }
                 return "array";
+            case TypeKind::FUNCTION: return "func";
             case TypeKind::UNKNOWN: return "unknown";
             case TypeKind::ERROR: return "<error>";
             default: return "<type>";
@@ -245,6 +246,11 @@ inline std::shared_ptr<Type> makeDynType() {
 
 inline std::shared_ptr<Type> makeErrorType() {
     return std::make_shared<Type>(TypeKind::ERROR, "<error>");
+}
+
+inline std::shared_ptr<Type> makeFuncType() {
+    // Generic function type - can hold any function signature
+    return std::make_shared<Type>(TypeKind::FUNCTION, "func");
 }
 
 // Parse type from string (e.g., "int64", "string", "wild int32*")

@@ -1312,11 +1312,23 @@ public:
             if (lambda->is_immediately_invoked) {
                 // Evaluate arguments
                 std::vector<Value*> args;
-                for (auto& arg : lambda->call_arguments) {
-                    Value* argVal = visitExpr(arg.get());
+                for (size_t i = 0; i < lambda->call_arguments.size(); i++) {
+                    Value* argVal = visitExpr(lambda->call_arguments[i].get());
                     if (!argVal) {
                         throw std::runtime_error("Failed to evaluate lambda argument");
                     }
+                    
+                    // Cast argument to match parameter type if needed
+                    if (i < func->arg_size()) {
+                        Type* expectedType = func->getFunctionType()->getParamType(i);
+                        if (argVal->getType() != expectedType) {
+                            // If both are integers, perform cast
+                            if (argVal->getType()->isIntegerTy() && expectedType->isIntegerTy()) {
+                                argVal = ctx.builder->CreateIntCast(argVal, expectedType, true);
+                            }
+                        }
+                    }
+                    
                     args.push_back(argVal);
                 }
                 
