@@ -2,14 +2,18 @@
 // Note: Full array variable declarations need more type system work
 // For now, testing array literals and immediate indexing
 
-func:test_array_literal = int8() {
-    // Create array literal and index it immediately
-    // TODO: Once array variables work, can do: int8[]:arr = [1,2,3];
-    return 42;  // Placeholder until array variables implemented
+func:test_array_literal = *int8() {
+    // Create array literal with values per spec line 322
+    int8[]:arr = [1, 2, 3];
+    return 0;
 };
 
-func:test_fixed_array_decl = int8() {
+func:test_fixed_array_decl = *int8() {
     // Fixed-size array declarations work
-    int8[10]:buffer;
+    int8[10]:arr_buffer;
     return 0;
+};
+
+func:main = *int8() {
+    return test_array_literal();
 };

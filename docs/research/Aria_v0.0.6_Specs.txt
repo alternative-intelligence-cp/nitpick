@@ -205,7 +205,7 @@ Functions marked with comptime are evaluated during compilation, not at runtime.
 
 comptime func:computeOptimalSize = int64(int64:elements) {
     return {
-        err: NULL,
+        err: 0,
         val: elements * 8  // Computed at compile time
     };
 }
@@ -390,13 +390,17 @@ int8:closureTest = 2;
 
 
 // Function definition
-/All functions return Result object. NO BYPASSING THIS!!! NO REGULAR VALUE RETURNS ALLOWED!!!!
+//All functions return Result object. NO BYPASSING THIS!!! NO REGULAR VALUE RETURNS ALLOWED!!!!
+//Result object has two members: 
+// err: uint8, return code, anything non zero is error
+// val: the return value of the function, type must match the returnType in the function declaration
+// * (auto wrap) and ? (unwrap) operators are provided to make working with the return system less verbose but leave the option for verbose explicitness and control where required. 
 func:funcName = returnType(varType:varName,varType:varName2){
    //MUST RETURN A RESULT OBJECT
 };
 func:test = int8(int8:a, int8:b) {
    return {
-       err: NULL,
+       err: 0,
        val: a * b * closureTest; // Captures 'closureTest'
    }
 };
@@ -408,13 +412,13 @@ func:test2 = int8(func:tt, int:a, int:b){
 
 result:r = test(3, 4);
 // Use 'is' ternary operator to check result
-int8:t = is r.err == NULL : r.val : -1; 
+int8:t = is r.err == 0 : r.val : -1; 
 
 //Lamda function
-result:r = uint16(uint16:a, uint16:b){ return { err:NULL,val:a*b};}(23,34);
+result:r = uint16(uint16:a, uint16:b){ return { err:0,val:a*b};}(23,34);
 result:r = test2(
    uint8(uint8:a, uint8:b){ 
-      return { err:NULL,val:a*b};
+      return { err:0,val:a*b};
    },
    23,245
 );
@@ -489,7 +493,7 @@ DEBUG_PRINT("Starting initialization");  // Expands to print("[DEBUG] Starting i
 // Comptime Function - Evaluated at compile time
 comptime func:isPowerOfTwo = bool(int64:n) {
     return {
-        err: NULL,
+        err: 0,
         val: (n > 0) && ((n & (n - 1)) == 0)
     };
 }

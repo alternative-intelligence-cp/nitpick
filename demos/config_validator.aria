@@ -1,0 +1,246 @@
+// Configuration Validator - A practical demonstration of Aria v0.0.6
+// Validates configuration values and provides meaningful feedback
+// Shows: Result handling, pattern matching, loops, string interpolation, functions
+
+// Validate port number
+func:validatePort = *int8(int64:port) {
+    pick(port) {
+        (<0) {
+            print("ERROR: Port cannot be negative");
+            return 1;
+        },
+        (<1024) {
+            print("WARNING: Port is in reserved range (0-1023)");
+            return 2;  // Warning, not fatal
+        },
+        (>65535) {
+            print("ERROR: Port exceeds maximum (65535)");
+            return 1;
+        },
+        (*) {
+            print(`  Port &{port} is valid`);
+            return 0;
+        }
+    }
+};
+
+// Validate timeout value
+func:validateTimeout = *int8(int64:timeout_ms) {
+    pick(timeout_ms) {
+        (<0) {
+            print("ERROR: Timeout cannot be negative");
+            return 1;
+        },
+        (<100) {
+            print("WARNING: Timeout is very short (<100ms)");
+            return 2;
+        },
+        (>60000) {
+            print("WARNING: Timeout is very long (>60s)");
+            return 2;
+        },
+        (*) {
+            print(`  Timeout &{timeout_ms}ms is valid`);
+            return 0;
+        }
+    }
+};
+
+// Validate retry count
+func:validateRetries = *int8(int8:retries) {
+    pick(retries) {
+        (<0) {
+            print("ERROR: Retry count cannot be negative");
+            return 1;
+        },
+        (0) {
+            print("WARNING: No retries configured (retries=0)");
+            return 2;
+        },
+        (>10) {
+            print("WARNING: High retry count may cause long delays");
+            return 2;
+        },
+        (*) {
+            print(`  Retry count &{retries} is valid`);
+            return 0;
+        }
+    }
+};
+
+// Validate log level
+func:validateLogLevel = *int8(int8:level) {
+    string:level_name = "UNKNOWN";
+    int8:is_valid = 0;
+    
+    pick(level) {
+        (0) {
+            level_name = "DEBUG";
+            is_valid = 1;
+        },
+        (1) {
+            level_name = "INFO";
+            is_valid = 1;
+        },
+        (2) {
+            level_name = "WARN";
+            is_valid = 1;
+        },
+        (3) {
+            level_name = "ERROR";
+            is_valid = 1;
+        },
+        (*) {
+            print(`ERROR: Invalid log level &{level}`);
+            return 1;
+        }
+    }
+    
+    pick(is_valid) {
+        (1) {
+            print(`  Log level &{level_name} is valid`);
+            return 0;
+        },
+        (*) {
+            return 1;
+        }
+    }
+};
+
+// Comprehensive configuration validation
+func:validateConfig = *int8() {
+    int8:error_count = 0;
+    int8:warning_count = 0;
+    
+    print("=== Configuration Validation ===");
+    print("");
+    
+    // Test various port configurations
+    print("Checking server port:");
+    result:r1 = validatePort(8080);
+    pick(r1.err) {
+        (1) { error_count++; },
+        (2) { warning_count++; },
+        (*) { }
+    }
+    print("");
+    
+    print("Checking invalid port (negative):");
+    result:r2 = validatePort(-1);
+    pick(r2.err) {
+        (1) { error_count++; },
+        (2) { warning_count++; },
+        (*) { }
+    }
+    print("");
+    
+    print("Checking privileged port:");
+    result:r3 = validatePort(80);
+    pick(r3.err) {
+        (1) { error_count++; },
+        (2) { warning_count++; },
+        (*) { }
+    }
+    print("");
+    
+    print("Checking invalid port (too large):");
+    result:r4 = validatePort(99999);
+    pick(r4.err) {
+        (1) { error_count++; },
+        (2) { warning_count++; },
+        (*) { }
+    }
+    print("");
+    
+    // Test timeout configurations
+    print("Checking connection timeout:");
+    result:r5 = validateTimeout(5000);
+    pick(r5.err) {
+        (1) { error_count++; },
+        (2) { warning_count++; },
+        (*) { }
+    }
+    print("");
+    
+    print("Checking very short timeout:");
+    result:r6 = validateTimeout(50);
+    pick(r6.err) {
+        (1) { error_count++; },
+        (2) { warning_count++; },
+        (*) { }
+    }
+    print("");
+    
+    // Test retry configurations
+    print("Checking retry count:");
+    result:r7 = validateRetries(3);
+    pick(r7.err) {
+        (1) { error_count++; },
+        (2) { warning_count++; },
+        (*) { }
+    }
+    print("");
+    
+    print("Checking zero retries:");
+    result:r8 = validateRetries(0);
+    pick(r8.err) {
+        (1) { error_count++; },
+        (2) { warning_count++; },
+        (*) { }
+    }
+    print("");
+    
+    // Test log level configurations
+    print("Checking log level (INFO):");
+    result:r9 = validateLogLevel(1);
+    pick(r9.err) {
+        (1) { error_count++; },
+        (2) { warning_count++; },
+        (*) { }
+    }
+    print("");
+    
+    print("Checking invalid log level:");
+    result:r10 = validateLogLevel(99);
+    pick(r10.err) {
+        (1) { error_count++; },
+        (2) { warning_count++; },
+        (*) { }
+    }
+    print("");
+    
+    // Summary
+    print("=== Validation Summary ===");
+    print(`Errors: &{error_count}`);
+    print(`Warnings: &{warning_count}`);
+    print("");
+    
+    pick(error_count) {
+        (0) {
+            print("✓ Configuration validation passed!");
+            return 0;
+        },
+        (*) {
+            print(`✗ Configuration validation failed with &{error_count} error(s)`);
+            return 1;
+        }
+    }
+};
+
+// Main entry point
+func:main = *int8() {
+    result:validation = validateConfig();
+    
+    pick(validation.err) {
+        (0) {
+            print("");
+            print("All validations complete. System ready.");
+        },
+        (*) {
+            print("");
+            print("Configuration errors detected. Please fix before proceeding.");
+        }
+    }
+    
+    return validation.err;
+};
