@@ -63,12 +63,12 @@ define internal %result_int8 @test(i8 %a, i8 %b) {
 ### Section 8.2 - Loops and Control Flow
 - ✅ **While loops:** Basic while loop implementation
 - ✅ **If/else:** Conditional statements work
+- ✅ **Till loops:** Full implementation with `$` iteration variable
+- ✅ **When/Then/End loops:** Completion blocks implemented
 - ⏸️ **For loops:** Not yet tested comprehensively
-- ⏸️ **Till loops:** Partially implemented, `$` variable needs work
-- ⏸️ **When/Then/End loops:** Not yet implemented
 - ⏸️ **Break/Continue:** Not yet tested
 
-**Status:** 40% - Basic loops work, advanced loop types pending
+**Status:** 65% - Basic loops complete, for/break/continue need testing
 
 **Test Code:**
 ```aria
@@ -188,14 +188,14 @@ func:test_while = int8() {
 | Core Types | 3/5 | 60% |
 | Pattern Matching | 6/6 | 100% |
 | Functions & Closures | 5/6 | 85% |
-| Loops | 2/5 | 40% |
+| Loops | 4/6 | 65% |
 | Operators | 12/24 | 50% |
 | Memory Management | 0/6 | 0% |
 | Macros | 0/10 | 0% |
 | Comptime | 0/5 | 0% |
 | Standard Library | 1/20 | 5% |
 
-**Total Spec Compliance: ~42%** (up from 35%!)
+**Total Spec Compliance: ~47%** (up from 42%!)
 
 ---
 

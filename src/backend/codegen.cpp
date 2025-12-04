@@ -1268,7 +1268,7 @@ public:
             }
         }
         if (auto* obj = dynamic_cast<aria::frontend::ObjectLiteral*>(node)) {
-            // Check if this is a result object (has err and val fields)
+            // Check if this is a result object (has err and/or val fields)
             bool isResultObject = false;
             Value* valField = nullptr;
             Value* errField = nullptr;
@@ -1278,6 +1278,7 @@ public:
                     isResultObject = true;
                     errField = visitExpr(field.value.get());
                 } else if (field.name == "val") {
+                    isResultObject = true;  // Recognize {val:x} as Result object
                     valField = visitExpr(field.value.get());
                 }
             }
@@ -1701,6 +1702,13 @@ public:
                     StructType* resultType = dyn_cast<StructType>(expectedReturnType);
                     if (!resultType) {
                         throw std::runtime_error("Auto-wrap function must return result type");
+                    }
+                    
+                    // Check if return value is already a Result struct (from explicit {err:x, val:y})
+                    if (retVal->getType() == expectedReturnType) {
+                        // Already a Result - user provided explicit {err:x, val:y}, don't wrap again
+                        ctx.builder->CreateRet(retVal);
+                        return;
                     }
                     
                     // Get expected val field type
