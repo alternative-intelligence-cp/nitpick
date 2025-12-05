@@ -1261,7 +1261,18 @@ public:
             }
             
             if (!callee) {
-                throw std::runtime_error("Unknown function: " + call->function_name);
+                std::string errorMsg = "Undefined function '" + call->function_name + "'";
+                
+                // Check if it's a common typo or forgotten function
+                if (call->function_name == "println") {
+                    errorMsg += "\n\nDid you mean 'print'?";
+                } else if (call->function_name == "malloc" || call->function_name == "free") {
+                    errorMsg += "\n\nAria uses 'aria.alloc' and 'aria.free' instead of malloc/free";
+                } else {
+                    errorMsg += "\n\nMake sure the function is declared before it's called.";
+                }
+                
+                throw std::runtime_error(errorMsg);
             }
             
             std::vector<Value*> args;
@@ -1960,7 +1971,9 @@ public:
         }
         
         if (!callee) {
-            throw std::runtime_error("Unknown function: " + node->function_name);
+            std::string errorMsg = "Undefined function '" + node->function_name + "'";
+            errorMsg += "\n\nMake sure the function is declared before it's called.";
+            throw std::runtime_error(errorMsg);
         }
         
         // Evaluate arguments
@@ -2094,40 +2107,41 @@ void CodeGenContext::executeScopeDefers(CodeGenVisitor* visitor) {
 // =============================================================================
 
 bool generate_code(aria::frontend::Block* root, const std::string& filename, bool enableVerify) {
-    CodeGenContext ctx("aria_module");
-    CodeGenVisitor visitor(ctx);
+    try {
+        CodeGenContext ctx("aria_module");
+        CodeGenVisitor visitor(ctx);
 
-    // Declare built-in print function (uses C puts)
-    // print(string) -> void
-    std::vector<Type*> printParams = {PointerType::get(Type::getInt8Ty(ctx.llvmContext), 0)};
-    FunctionType* printType = FunctionType::get(
-        Type::getVoidTy(ctx.llvmContext),
-        printParams,
-        false  // not vararg
-    );
-    Function::Create(printType, Function::ExternalLinkage, "puts", ctx.module.get());
-    
-    // Create alias for Aria 'print' function
-    Function::Create(printType, Function::ExternalLinkage, "print", ctx.module.get());
+        // Declare built-in print function (uses C puts)
+        // print(string) -> void
+        std::vector<Type*> printParams = {PointerType::get(Type::getInt8Ty(ctx.llvmContext), 0)};
+        FunctionType* printType = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            printParams,
+            false  // not vararg
+        );
+        Function::Create(printType, Function::ExternalLinkage, "puts", ctx.module.get());
+        
+        // Create alias for Aria 'print' function
+        Function::Create(printType, Function::ExternalLinkage, "print", ctx.module.get());
 
-    // JavaScript-style module execution:
-    // Module-level code runs in a global initializer function
-    // This allows lambdas, variable initializers, and statements at module scope
-    FunctionType* moduleInitType = FunctionType::get(Type::getVoidTy(ctx.llvmContext), false);
-    Function* moduleInit = Function::Create(
-        moduleInitType, 
-        Function::InternalLinkage, 
-        "__aria_module_init", 
-        ctx.module.get()
-    );
-    BasicBlock* moduleEntry = BasicBlock::Create(ctx.llvmContext, "entry", moduleInit);
-    
-    // Set insertion point for module-level code
-    ctx.builder->SetInsertPoint(moduleEntry);
-    ctx.currentFunction = moduleInit;
+        // JavaScript-style module execution:
+        // Module-level code runs in a global initializer function
+        // This allows lambdas, variable initializers, and statements at module scope
+        FunctionType* moduleInitType = FunctionType::get(Type::getVoidTy(ctx.llvmContext), false);
+        Function* moduleInit = Function::Create(
+            moduleInitType, 
+            Function::InternalLinkage, 
+            "__aria_module_init", 
+            ctx.module.get()
+        );
+        BasicBlock* moduleEntry = BasicBlock::Create(ctx.llvmContext, "entry", moduleInit);
+        
+        // Set insertion point for module-level code
+        ctx.builder->SetInsertPoint(moduleEntry);
+        ctx.currentFunction = moduleInit;
 
-    // Generate IR for module-level code (functions, variables, statements)
-    root->accept(visitor);
+        // Generate IR for module-level code (functions, variables, statements)
+        root->accept(visitor);
     
     ctx.builder->CreateRetVoid();
     
@@ -2201,7 +2215,33 @@ bool generate_code(aria::frontend::Block* root, const std::string& filename, boo
     dest.flush();
     
     return verificationPassed;
+    
+    } catch (const std::runtime_error& e) {
+        // Catch codegen errors and provide friendly error message
+        std::cerr << "\n";
+        std::cerr << "╔═══════════════════════════════════════════════════════════╗\n";
+        std::cerr << "║  ARIA COMPILATION ERROR                                   ║\n";
+        std::cerr << "╚═══════════════════════════════════════════════════════════╝\n";
+        std::cerr << "\n";
+        std::cerr << "Error: " << e.what() << "\n";
+        std::cerr << "\n";
+        std::cerr << "Compilation failed. Please fix the error and try again.\n";
+        std::cerr << "\n";
+        return false;
+    } catch (const std::exception& e) {
+        // Catch any other exceptions
+        std::cerr << "\n";
+        std::cerr << "╔═══════════════════════════════════════════════════════════╗\n";
+        std::cerr << "║  ARIA INTERNAL ERROR                                      ║\n";
+        std::cerr << "╚═══════════════════════════════════════════════════════════╝\n";
+        std::cerr << "\n";
+        std::cerr << "Internal compiler error: " << e.what() << "\n";
+        std::cerr << "\n";
+        std::cerr << "This is likely a compiler bug. Please report it at:\n";
+        std::cerr << "https://github.com/alternative-intelligence-cp/aria/issues\n";
+        std::cerr << "\n";
+        return false;
+    }
 }
-
 } // namespace backend
 } // namespace aria
