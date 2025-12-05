@@ -1,8 +1,8 @@
 # Aria Training Samples
 
-**10 production-quality Aria programs for training Nikola AGI**
+**13 production-quality Aria programs for training Nikola AGI**
 
-All samples compile cleanly with `ariac` v0.0.6.
+All samples compile cleanly with `ariac` v0.0.6 and execute successfully with `lli`.
 
 ## Samples
 
@@ -16,6 +16,9 @@ All samples compile cleanly with `ariac` v0.0.6.
 8. **08_closures.aria** - Module-scope globals and closures
 9. **09_error_handling.aria** - Result type error handling
 10. **10_composition.aria** - Nested function calls and composition
+11. **11_recursive_fib.aria** - Recursive Fibonacci (classic recursion)
+12. **12_recursive_factorial.aria** - Recursive factorial
+13. **13_ackermann.aria** - Ackermann function (deeply recursive)
 
 ## Testing
 
@@ -31,6 +34,7 @@ echo "All samples compile successfully!"
 ## Features Demonstrated
 
 - ✅ Function declarations with Result type auto-wrapping
+- ✅ **Recursive function calls** (self-calls work correctly)
 - ✅ Pattern matching (pick/fall with labeled cases)
 - ✅ While loops
 - ✅ If/else conditionals
@@ -51,15 +55,16 @@ echo "All samples compile successfully!"
   int64:x;
   x = 5;
   ```
-- Recursive calls to the same function not yet supported
+- ✅ **Recursive calls NOW WORK** (fixed December 5, 2025)
 - Structs and pointers not yet implemented
 
 ## Generated for Nikola
 
 These samples serve as training data for the Nikola AGI, demonstrating:
 - Real-world algorithms implemented in Aria
+- Recursive and iterative solutions
 - Proper error handling patterns
 - Idiomatic Aria code style
 - All working v0.0.6 language features
 
-**Status:** ✅ All 10 samples compile cleanly (December 5, 2025)
+**Status:** ✅ All 13 samples compile and execute successfully (December 5, 2025)

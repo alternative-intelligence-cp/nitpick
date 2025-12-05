@@ -270,6 +270,81 @@ public:
     // 1. Variable Declarations
     // -------------------------------------------------------------------------
     
+    // Helper: Generate lambda function body (for recursive function support)
+    void generateLambdaBody(aria::frontend::LambdaExpr* lambda, Function* func) {
+        // Set parameter names
+        unsigned idx = 0;
+        for (auto& arg : func->args()) {
+            if (idx < lambda->parameters.size()) {
+                arg.setName(lambda->parameters[idx++].name);
+            }
+        }
+        
+        // Create entry basic block
+        BasicBlock* entry = BasicBlock::Create(ctx.llvmContext, "entry", func);
+        
+        // Save previous state
+        Function* prevFunc = ctx.currentFunction;
+        BasicBlock* prevBlock = ctx.builder->GetInsertBlock();
+        std::string prevReturnType = ctx.currentFunctionReturnType;
+        bool prevAutoWrap = ctx.currentFunctionAutoWrap;
+        
+        ctx.currentFunction = func;
+        ctx.currentFunctionReturnType = lambda->return_type;
+        ctx.currentFunctionAutoWrap = lambda->auto_wrap;
+        ctx.builder->SetInsertPoint(entry);
+        
+        // Clear defer stacks for new function
+        ctx.deferStacks = std::vector<std::vector<Block*>>();
+        ctx.deferStacks.emplace_back();
+        
+        // Create allocas for parameters
+        std::vector<std::pair<std::string, CodeGenContext::Symbol*>> savedSymbols;
+        
+        idx = 0;
+        for (auto& arg : func->args()) {
+            Type* argType = arg.getType();
+            AllocaInst* alloca = ctx.builder->CreateAlloca(argType, nullptr, arg.getName());
+            ctx.builder->CreateStore(&arg, alloca);
+            
+            std::string argName = std::string(arg.getName());
+            auto* existingSym = ctx.lookup(argName);
+            if (existingSym) {
+                savedSymbols.push_back({argName, existingSym});
+            }
+            
+            ctx.define(argName, alloca, true);
+        }
+        
+        // Generate lambda body
+        if (lambda->body) {
+            lambda->body->accept(*this);
+        }
+        
+        // Add return if missing
+        if (ctx.builder->GetInsertBlock()->getTerminator() == nullptr) {
+            Type* returnType = func->getReturnType();
+            if (returnType->isVoidTy()) {
+                ctx.builder->CreateRetVoid();
+            } else {
+                ctx.builder->CreateRet(Constant::getNullValue(returnType));
+            }
+        }
+        
+        // Restore previous symbols
+        for (auto& pair : savedSymbols) {
+            ctx.define(pair.first, pair.second->val, pair.second->is_ref);
+        }
+        
+        // Restore previous function context
+        ctx.currentFunction = prevFunc;
+        ctx.currentFunctionReturnType = prevReturnType;
+        ctx.currentFunctionAutoWrap = prevAutoWrap;
+        if (prevBlock) {
+            ctx.builder->SetInsertPoint(prevBlock);
+        }
+    }
+    
     // Helper: Determine if a type should be stack-allocated by default
     bool shouldStackAllocate(const std::string& type, llvm::Type* llvmType) {
         // Primitives that fit in registers should be stack-allocated
@@ -299,15 +374,32 @@ public:
         // Special case: Function variables (type="func" with Lambda initializer)
         if (node->type == "func" && node->initializer) {
             if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node->initializer.get())) {
-                // Generate the lambda function
-                Value* funcVal = visitExpr(lambda);
+                // IMPORTANT: We need to pre-declare the function in the symbol table
+                // BEFORE generating the lambda body, so recursive calls can find it.
                 
-                // Register the function in symbol table with the variable name
-                if (auto* func = dyn_cast_or_null<Function>(funcVal)) {
-                    // Rename the lambda to match the variable name
-                    func->setName(node->name);
-                    ctx.define(node->name, func, false, node->type);
+                // Create function type
+                std::vector<Type*> paramTypes;
+                for (auto& param : lambda->parameters) {
+                    paramTypes.push_back(ctx.getLLVMType(param.type));
                 }
+                Type* returnType = ctx.getResultType(lambda->return_type);
+                FunctionType* funcType = FunctionType::get(returnType, paramTypes, false);
+                
+                // Create function with the FINAL name (not lambda_N)
+                Function* func = Function::Create(
+                    funcType,
+                    Function::InternalLinkage,
+                    node->name,  // Use variable name directly
+                    ctx.module.get()
+                );
+                
+                // Register IMMEDIATELY so recursive calls can find it
+                ctx.define(node->name, func, false, node->type);
+                
+                // Now generate the lambda body (visitExpr will fill in the function)
+                // We pass the pre-created function to be filled
+                generateLambdaBody(lambda, func);
+                
                 return;
             }
         }

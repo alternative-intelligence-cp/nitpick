@@ -1,0 +1,22 @@
+// Sample 13: Ackermann function (deeply recursive)
+
+func:ackermann = *int64(int64:m, int64:n) {
+    if (m == 0) {
+        return n + 1;
+    }
+    
+    if (n == 0) {
+        result:r = ackermann(m - 1, 1);
+        return r.val;
+    }
+    
+    result:r1 = ackermann(m, n - 1);
+    result:r2 = ackermann(m - 1, r1.val);
+    return r2.val;
+};
+
+func:main = *int8() {
+    result:r1 = ackermann(2, 3);  // 9
+    result:r2 = ackermann(3, 2);  // 29
+    return 0;
+};
