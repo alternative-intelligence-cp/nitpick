@@ -1,0 +1,58 @@
+// Training Sample: Sieve of Eratosthenes
+// Demonstrates: algorithm optimization, array manipulation
+
+use aria.stdlib.memory;
+
+func:sieveOfEratosthenes = *int64(int64:n) {
+    if (n < 2) {
+        return { err: 0, val: 0 };
+    }
+    
+    // Create boolean array
+    wild bool*:isPrime = aria.alloc<bool>(n + 1);
+    defer aria.free(isPrime);
+    
+    // Initialize all as true
+    int64:i = 0;
+    while (i <= n) {
+        isPrime[i] = true;
+        i = i + 1;
+    }
+    
+    isPrime[0] = false;
+    isPrime[1] = false;
+    
+    // Sieve algorithm
+    int64:p = 2;
+    while (p * p <= n) {
+        if (isPrime[p]) {
+            // Mark multiples as not prime
+            int64:multiple = p * p;
+            while (multiple <= n) {
+                isPrime[multiple] = false;
+                multiple = multiple + p;
+            }
+        }
+        p = p + 1;
+    }
+    
+    // Count primes
+    int64:count = 0;
+    i = 2;
+    while (i <= n) {
+        if (isPrime[i]) {
+            count = count + 1;
+        }
+        i = i + 1;
+    }
+    
+    return { err: 0, val: count };
+};
+
+func:main = *int8() {
+    // Find count of primes up to 100
+    result:r = sieveOfEratosthenes(100);
+    int64:primeCount = r.val; // 25 primes
+    
+    return { err: 0, val: 0 };
+};

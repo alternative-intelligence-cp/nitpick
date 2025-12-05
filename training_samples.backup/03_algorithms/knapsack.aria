@@ -1,0 +1,64 @@
+// Training Sample: Knapsack problem (0/1)
+// Demonstrates: dynamic programming, optimization problems
+
+use aria.stdlib.math;
+
+func:knapsack = *int64(int64[]:weights, int64[]:values, int64:n, int64:capacity) {
+    // Create DP table
+    wild int64*:dp = aria.alloc<int64>((n + 1) * (capacity + 1));
+    defer aria.free(dp);
+    
+    // Initialize
+    int64:i = 0;
+    while (i <= n) {
+        int64:w = 0;
+        while (w <= capacity) {
+            dp[i * (capacity + 1) + w] = 0;
+            w = w + 1;
+        }
+        i = i + 1;
+    }
+    
+    // Fill DP table
+    i = 1;
+    while (i <= n) {
+        int64:w = 1;
+        while (w <= capacity) {
+            if (weights[i - 1] <= w) {
+                // Item can fit - choose max of including or excluding
+                int64:include = values[i - 1] + dp[(i - 1) * (capacity + 1) + (w - weights[i - 1])];
+                int64:exclude = dp[(i - 1) * (capacity + 1) + w];
+                
+                result:maxResult = math.max(include, exclude);
+                dp[i * (capacity + 1) + w] = maxResult.val;
+            } else {
+                // Item too heavy - exclude
+                dp[i * (capacity + 1) + w] = dp[(i - 1) * (capacity + 1) + w];
+            }
+            w = w + 1;
+        }
+        i = i + 1;
+    }
+    
+    int64:maxValue = dp[n * (capacity + 1) + capacity];
+    return { err: 0, val: maxValue };
+};
+
+func:main = *int8() {
+    int64[4]:values;
+    values[0] = 60;
+    values[1] = 100;
+    values[2] = 120;
+    values[3] = 80;
+    
+    int64[4]:weights;
+    weights[0] = 10;
+    weights[1] = 20;
+    weights[2] = 30;
+    weights[3] = 15;
+    
+    result:r = knapsack(weights, values, 4, 50);
+    int64:maxValue = r.val; // 220 (items 1 and 2)
+    
+    return { err: 0, val: 0 };
+};

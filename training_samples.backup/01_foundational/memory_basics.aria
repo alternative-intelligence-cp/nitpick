@@ -1,0 +1,30 @@
+// Training Sample: Memory management basics
+// Demonstrates: wild memory, defer, error handling
+
+use aria.stdlib.memory;
+
+func:processData = *int8(int64:size) {
+    // Allocate wild memory
+    result:allocResult = memory.allocSafe(size);
+    
+    if (allocResult.err != 0) {
+        return { err: 1, val: 0 }; // Allocation failed
+    }
+    
+    wild int64*:data = allocResult.val;
+    defer aria.free(data);
+    
+    // Zero-initialize
+    memory.zeroInit(data, size);
+    
+    // Fill with values
+    memory.fill(data, size, 42);
+    
+    // Process complete
+    return { err: 0, val: 1 };
+};
+
+func:main = *int8() {
+    result:r = processData(100);
+    return { err: 0, val: 0 };
+};

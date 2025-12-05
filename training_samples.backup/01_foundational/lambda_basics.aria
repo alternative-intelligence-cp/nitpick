@@ -1,0 +1,33 @@
+// Training Sample: Lambda expressions
+// Demonstrates: lambdas, closures, higher-order functions
+
+func:applyOperation = *int64(int64:a, int64:b, func:op) {
+    result:r = op(a, b);
+    return r;
+};
+
+func:main = *int8() {
+    // Inline lambda - addition
+    result:addResult = applyOperation(10, 20, 
+        uint64(uint64:x, uint64:y) {
+            return { err: 0, val: x + y };
+        }
+    );
+    
+    // Inline lambda - multiplication
+    result:mulResult = applyOperation(5, 6,
+        uint64(uint64:x, uint64:y) {
+            return { err: 0, val: x * y };
+        }
+    );
+    
+    // Lambda with closure
+    int64:multiplier = 3;
+    result:r = uint64(uint64:val) {
+        return { err: 0, val: val * multiplier };
+    }(10);
+    
+    int64:result = r.val; // 30
+    
+    return { err: 0, val: 0 };
+};

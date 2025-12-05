@@ -1,0 +1,72 @@
+// Training Sample: Matrix operations
+// Demonstrates: 2D arrays, matrix math, nested loops
+
+func:matrixMultiply = *int8(int64[10][10]:a, int64[10][10]:b, int64[10][10]:result, int64:n) {
+    int64:i = 0;
+    while (i < n) {
+        int64:j = 0;
+        while (j < n) {
+            result[i][j] = 0;
+            int64:k = 0;
+            while (k < n) {
+                result[i][j] = result[i][j] + (a[i][k] * b[k][j]);
+                k = k + 1;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return { err: 0, val: 1 };
+};
+
+func:matrixTranspose = *int8(int64[10][10]:matrix, int64[10][10]:result, int64:n) {
+    int64:i = 0;
+    while (i < n) {
+        int64:j = 0;
+        while (j < n) {
+            result[j][i] = matrix[i][j];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return { err: 0, val: 1 };
+};
+
+func:matrixAdd = *int8(int64[10][10]:a, int64[10][10]:b, int64[10][10]:result, int64:n) {
+    int64:i = 0;
+    while (i < n) {
+        int64:j = 0;
+        while (j < n) {
+            result[i][j] = a[i][j] + b[i][j];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return { err: 0, val: 1 };
+};
+
+func:main = *int8() {
+    int64[10][10]:matrixA;
+    int64[10][10]:matrixB;
+    int64[10][10]:result;
+    
+    // Initialize 3x3 matrices
+    matrixA[0][0] = 1; matrixA[0][1] = 2; matrixA[0][2] = 3;
+    matrixA[1][0] = 4; matrixA[1][1] = 5; matrixA[1][2] = 6;
+    matrixA[2][0] = 7; matrixA[2][1] = 8; matrixA[2][2] = 9;
+    
+    matrixB[0][0] = 9; matrixB[0][1] = 8; matrixB[0][2] = 7;
+    matrixB[1][0] = 6; matrixB[1][1] = 5; matrixB[1][2] = 4;
+    matrixB[2][0] = 3; matrixB[2][1] = 2; matrixB[2][2] = 1;
+    
+    // Matrix multiplication
+    matrixMultiply(matrixA, matrixB, result, 3);
+    
+    // Matrix addition
+    matrixAdd(matrixA, matrixB, result, 3);
+    
+    // Matrix transpose
+    matrixTranspose(matrixA, result, 3);
+    
+    return { err: 0, val: 0 };
+};

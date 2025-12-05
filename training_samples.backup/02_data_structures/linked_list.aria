@@ -1,0 +1,53 @@
+// Training Sample: Linked list implementation
+// Demonstrates: structs, pointers, data structure basics
+
+use aria.stdlib.memory;
+
+struct Node {
+    int64:value;
+    wild Node*:next;
+};
+
+func:createNode = *wild Node*(int64:val) {
+    wild Node*:node = aria.alloc<Node>(1);
+    node->value = val;
+    node->next = NULL;
+    return { err: 0, val: node };
+};
+
+func:append = *int8(wild Node*:head, int64:val) {
+    result:newNodeResult = createNode(val);
+    wild Node*:newNode = newNodeResult.val;
+    
+    wild Node*:current = head;
+    while (current->next != NULL) {
+        current = current->next;
+    }
+    
+    current->next = newNode;
+    return { err: 0, val: 1 };
+};
+
+func:freeList = *int8(wild Node*:head) {
+    wild Node*:current = head;
+    
+    while (current != NULL) {
+        wild Node*:next = current->next;
+        aria.free(current);
+        current = next;
+    }
+    
+    return { err: 0, val: 1 };
+};
+
+func:main = *int8() {
+    result:headResult = createNode(1);
+    wild Node*:head = headResult.val;
+    defer freeList(head);
+    
+    append(head, 2);
+    append(head, 3);
+    append(head, 4);
+    
+    return { err: 0, val: 0 };
+};

@@ -1,0 +1,35 @@
+// Training Sample: Result type handling
+// Demonstrates: result types, unwrap, error checking
+
+use aria.stdlib.result;
+use aria.stdlib.math;
+
+func:divide = *int64(int64:a, int64:b) {
+    if (b == 0) {
+        return { err: 1, val: 0 }; // Division by zero
+    }
+    return { err: 0, val: a / b };
+};
+
+func:main = *int8() {
+    // Safe division
+    result:r1 = divide(10, 2);
+    
+    if (r1.err == 0) {
+        int64:value = r1.val; // Result is 5
+    }
+    
+    // Division by zero
+    result:r2 = divide(10, 0);
+    
+    if (r2.err != 0) {
+        // Handle error
+        int64:defaultValue = 0;
+    }
+    
+    // Use unwrapOr for default value
+    result:r3 = divide(20, 0);
+    int64:safe = result.unwrapOr(r3, -1);
+    
+    return { err: 0, val: 0 };
+};

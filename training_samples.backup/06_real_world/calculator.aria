@@ -1,0 +1,76 @@
+// Training Sample: Simple calculator
+// Demonstrates: real-world application, error handling, pick statements
+
+use aria.stdlib.math;
+
+func:add = *int64(int64:a, int64:b) {
+    return { err: 0, val: a + b };
+};
+
+func:subtract = *int64(int64:a, int64:b) {
+    return { err: 0, val: a - b };
+};
+
+func:multiply = *int64(int64:a, int64:b) {
+    return { err: 0, val: a * b };
+};
+
+func:divide = *int64(int64:a, int64:b) {
+    if (b == 0) {
+        return { err: 1, val: 0 }; // Division by zero
+    }
+    return { err: 0, val: a / b };
+};
+
+func:calculate = *int64(int8:operation, int64:a, int64:b) {
+    pick(operation) {
+        (1) {
+            fall(do_add);
+        },
+        (2) {
+            fall(do_subtract);
+        },
+        (3) {
+            fall(do_multiply);
+        },
+        (4) {
+            fall(do_divide);
+        },
+        (*) {
+            fall(invalid);
+        },
+        do_add=>(!) {
+            return add(a, b);
+        },
+        do_subtract=>(!) {
+            return subtract(a, b);
+        },
+        do_multiply=>(!) {
+            return multiply(a, b);
+        },
+        do_divide=>(!) {
+            return divide(a, b);
+        },
+        invalid=>(!) {
+            return { err: 2, val: 0 }; // Invalid operation
+        }
+    }
+    
+    return { err: 0, val: 0 };
+};
+
+func:main = *int8() {
+    // Test operations
+    result:r1 = calculate(1, 10, 5); // 15
+    result:r2 = calculate(2, 10, 5); // 5
+    result:r3 = calculate(3, 10, 5); // 50
+    result:r4 = calculate(4, 10, 5); // 2
+    
+    // Test division by zero
+    result:r5 = calculate(4, 10, 0);
+    if (r5.err != 0) {
+        // Handle error
+    }
+    
+    return { err: 0, val: 0 };
+};

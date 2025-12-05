@@ -1,0 +1,50 @@
+// Aria Standard Library - Result Type Utilities
+// Helpers for working with result types
+
+mod result {
+    // Check if result is success (err == 0)
+    pub func:isOk = *bool(result:r) {
+        return { err: 0, val: r.err == 0 };
+    };
+
+    // Check if result is error (err != 0)
+    pub func:isErr = *bool(result:r) {
+        return { err: 0, val: r.err != 0 };
+    };
+
+    // Get value or default if error
+    pub func:unwrapOr = *int8(result:r, int8:defaultVal) {
+        if (r.err == 0) {
+            return { err: 0, val: r.val };
+        } else {
+            return { err: 0, val: defaultVal };
+        }
+    };
+
+    // Chain result operations - if first succeeds, call function with value
+    pub func:andThen = *result(result:r, func:f) {
+        if (r.err == 0) {
+            return f(r.val);
+        } else {
+            return r;
+        }
+    };
+
+    // Map result value through function if success
+    pub func:map = *result(result:r, func:f) {
+        if (r.err == 0) {
+            return f(r.val);
+        } else {
+            return { err: r.err, val: 0 };
+        }
+    };
+
+    // Return first success, or last error
+    pub func:orElse = *result(result:r1, result:r2) {
+        if (r1.err == 0) {
+            return r1;
+        } else {
+            return r2;
+        }
+    };
+}

@@ -1,0 +1,44 @@
+// Training Sample: Fibonacci sequence
+// Demonstrates: recursion, memoization, algorithm optimization
+
+// Recursive fibonacci (inefficient)
+func:fibRecursive = *int64(int64:n) {
+    if (n <= 1) {
+        return { err: 0, val: n };
+    }
+    
+    result:r1 = fibRecursive(n - 1);
+    result:r2 = fibRecursive(n - 2);
+    
+    return { err: 0, val: r1.val + r2.val };
+};
+
+// Iterative fibonacci (efficient)
+func:fibIterative = *int64(int64:n) {
+    if (n <= 1) {
+        return { err: 0, val: n };
+    }
+    
+    int64:prev = 0;
+    int64:curr = 1;
+    int64:i = 2;
+    
+    while (i <= n) {
+        int64:next = prev + curr;
+        prev = curr;
+        curr = next;
+        i = i + 1;
+    }
+    
+    return { err: 0, val: curr };
+};
+
+func:main = *int8() {
+    // Calculate 10th fibonacci number
+    result:r1 = fibRecursive(10); // Slow but works
+    result:r2 = fibIterative(10); // Fast
+    
+    // Both should equal 55
+    
+    return { err: 0, val: 0 };
+};

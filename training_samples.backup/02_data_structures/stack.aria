@@ -1,0 +1,64 @@
+// Training Sample: Stack implementation
+// Demonstrates: LIFO data structure, array-based stack
+
+struct Stack {
+    int64[100]:data;
+    int64:top;
+    int64:capacity;
+};
+
+func:initStack = *Stack() {
+    Stack:s;
+    s.top = -1;
+    s.capacity = 100;
+    return { err: 0, val: s };
+};
+
+func:push = *int8(Stack:s, int64:value) {
+    if (s.top >= s.capacity - 1) {
+        return { err: 1, val: 0 }; // Stack overflow
+    }
+    
+    s.top = s.top + 1;
+    s.data[s.top] = value;
+    return { err: 0, val: 1 };
+};
+
+func:pop = *int64(Stack:s) {
+    if (s.top < 0) {
+        return { err: 1, val: 0 }; // Stack underflow
+    }
+    
+    int64:value = s.data[s.top];
+    s.top = s.top - 1;
+    return { err: 0, val: value };
+};
+
+func:peek = *int64(Stack:s) {
+    if (s.top < 0) {
+        return { err: 1, val: 0 }; // Stack empty
+    }
+    
+    return { err: 0, val: s.data[s.top] };
+};
+
+func:isEmpty = *bool(Stack:s) {
+    return { err: 0, val: s.top < 0 };
+};
+
+func:main = *int8() {
+    result:stackResult = initStack();
+    Stack:myStack = stackResult.val;
+    
+    push(myStack, 10);
+    push(myStack, 20);
+    push(myStack, 30);
+    
+    result:topResult = peek(myStack);
+    int64:topValue = topResult.val; // 30
+    
+    result:popResult = pop(myStack);
+    int64:poppedValue = popResult.val; // 30
+    
+    return { err: 0, val: 0 };
+};

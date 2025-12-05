@@ -1,0 +1,103 @@
+// Training Sample: Hash table (simple implementation)
+// Demonstrates: hashing, collision handling, dynamic structures
+
+struct HashEntry {
+    int64:key;
+    int64:value;
+    bool:occupied;
+};
+
+struct HashTable {
+    HashEntry[100]:entries;
+    int64:size;
+    int64:capacity;
+};
+
+func:hash = *int64(int64:key, int64:capacity) {
+    int64:h = key % capacity;
+    if (h < 0) {
+        h = h + capacity;
+    }
+    return { err: 0, val: h };
+};
+
+func:initHashTable = *HashTable() {
+    HashTable:table;
+    table.size = 0;
+    table.capacity = 100;
+    
+    int64:i = 0;
+    while (i < 100) {
+        table.entries[i].occupied = false;
+        i = i + 1;
+    }
+    
+    return { err: 0, val: table };
+};
+
+func:put = *int8(HashTable:table, int64:key, int64:value) {
+    result:hashResult = hash(key, table.capacity);
+    int64:index = hashResult.val;
+    int64:originalIndex = index;
+    
+    // Linear probing for collision resolution
+    while (table.entries[index].occupied) {
+        if (table.entries[index].key == key) {
+            // Update existing key
+            table.entries[index].value = value;
+            return { err: 0, val: 1 };
+        }
+        
+        index = (index + 1) % table.capacity;
+        
+        if (index == originalIndex) {
+            return { err: 1, val: 0 }; // Table full
+        }
+    }
+    
+    table.entries[index].key = key;
+    table.entries[index].value = value;
+    table.entries[index].occupied = true;
+    table.size = table.size + 1;
+    
+    return { err: 0, val: 1 };
+};
+
+func:get = *int64(HashTable:table, int64:key) {
+    result:hashResult = hash(key, table.capacity);
+    int64:index = hashResult.val;
+    int64:originalIndex = index;
+    
+    while (table.entries[index].occupied) {
+        if (table.entries[index].key == key) {
+            return { err: 0, val: table.entries[index].value };
+        }
+        
+        index = (index + 1) % table.capacity;
+        
+        if (index == originalIndex) {
+            break;
+        }
+    }
+    
+    return { err: 1, val: 0 }; // Key not found
+};
+
+func:main = *int8() {
+    result:tableResult = initHashTable();
+    HashTable:myTable = tableResult.val;
+    
+    put(myTable, 42, 100);
+    put(myTable, 17, 200);
+    put(myTable, 99, 300);
+    
+    result:val1 = get(myTable, 42);
+    int64:value = val1.val; // 100
+    
+    result:val2 = get(myTable, 999);
+    if (val2.err != 0) {
+        // Key not found
+    }
+    
+    return { err: 0, val: 0 };
+};

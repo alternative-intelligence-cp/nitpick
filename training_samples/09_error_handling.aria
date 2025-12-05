@@ -1,0 +1,24 @@
+// Sample 9: Error handling with Result type
+
+func:divide = *int64(int64:a, int64:b) {
+    if (b == 0) {
+        return 0;
+    }
+    return a / b;
+};
+
+func:safeDivide = *int8(int64:a, int64:b) {
+    result:r = divide(a, b);
+    
+    if (r.err != 0) {
+        return -1;
+    }
+    
+    return 1;
+};
+
+func:main = *int8() {
+    safeDivide(10, 2);   // OK
+    safeDivide(10, 0);   // ERROR
+    return 0;
+};

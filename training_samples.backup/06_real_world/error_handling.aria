@@ -1,0 +1,103 @@
+// Training Sample: Error handling patterns
+// Demonstrates: comprehensive error handling, result chaining
+
+use aria.stdlib.result;
+use aria.stdlib.math;
+
+func:divide = *int64(int64:a, int64:b) {
+    if (b == 0) {
+        return { err: 1, val: 0 };
+    }
+    return { err: 0, val: a / b };
+};
+
+func:squareRoot = *int64(int64:n) {
+    if (n < 0) {
+        return { err: 2, val: 0 };
+    }
+    
+    // Simple integer square root
+    int64:guess = n / 2;
+    int64:i = 0;
+    
+    while (i < 10) {
+        guess = (guess + n / guess) / 2;
+        i = i + 1;
+    }
+    
+    return { err: 0, val: guess };
+};
+
+func:complexCalculation = *int64(int64:a, int64:b, int64:c) {
+    // Divide a by b, then square root the result
+    result:divResult = divide(a, b);
+    
+    if (divResult.err != 0) {
+        return { err: 3, val: 0 }; // Division failed
+    }
+    
+    result:sqrtResult = squareRoot(divResult.val);
+    
+    if (sqrtResult.err != 0) {
+        return { err: 4, val: 0 }; // Square root failed
+    }
+    
+    return { err: 0, val: sqrtResult.val };
+};
+
+func:handleError = *int8(int8:errorCode) {
+    pick(errorCode) {
+        (0) { fall(success); },
+        (1) { fall(div_by_zero); },
+        (2) { fall(negative_sqrt); },
+        (3) { fall(div_failed); },
+        (4) { fall(sqrt_failed); },
+        (*) { fall(unknown); },
+        
+        success=>(!) {
+            // No error
+            fall(done);
+        },
+        div_by_zero=>(!) {
+            // Handle division by zero
+            fall(done);
+        },
+        negative_sqrt=>(!) {
+            // Handle negative square root
+            fall(done);
+        },
+        div_failed=>(!) {
+            // Handle division failure
+            fall(done);
+        },
+        sqrt_failed=>(!) {
+            // Handle sqrt failure
+            fall(done);
+        },
+        unknown=>(!) {
+            // Unknown error
+            fall(done);
+        },
+        done=>(!) {
+            // Cleanup
+        }
+    }
+    
+    return { err: 0, val: 1 };
+};
+
+func:main = *int8() {
+    // Success case
+    result:r1 = complexCalculation(100, 4, 0);
+    handleError(r1.err);
+    
+    // Division by zero
+    result:r2 = complexCalculation(100, 0, 0);
+    handleError(r2.err);
+    
+    // Negative result leading to sqrt error
+    result:r3 = complexCalculation(-100, 2, 0);
+    handleError(r3.err);
+    
+    return { err: 0, val: 0 };
+};

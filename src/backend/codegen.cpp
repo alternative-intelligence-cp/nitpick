@@ -998,20 +998,112 @@ public:
             return ctx.builder->CreateGlobalStringPtr(slit->value);
         }
         if (auto* tstr = dynamic_cast<aria::frontend::TemplateString*>(node)) {
-            // Build template string by concatenating parts
-            // For now, simplified: just concatenate string representations
-            // TODO: Proper string concatenation with LLVM runtime
-            std::string result;
+            // Build template string by concatenating parts at runtime
+            // Strategy: Build string dynamically by concatenating each part
+            
+            // Helper: Declare sprintf if not already present
+            Function* sprintfFunc = ctx.module->getFunction("sprintf");
+            if (!sprintfFunc) {
+                std::vector<Type*> sprintfParams = {
+                    PointerType::getUnqual(ctx.llvmContext),  // char* buffer
+                    PointerType::getUnqual(ctx.llvmContext)   // const char* format
+                };
+                FunctionType* sprintfType = FunctionType::get(
+                    Type::getInt32Ty(ctx.llvmContext),
+                    sprintfParams,
+                    true  // vararg
+                );
+                sprintfFunc = Function::Create(sprintfType, Function::ExternalLinkage, "sprintf", ctx.module.get());
+            }
+            
+            // Allocate buffer for result string (1024 bytes should be enough for most cases)
+            Value* buffer = ctx.builder->CreateAlloca(
+                Type::getInt8Ty(ctx.llvmContext),
+                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 1024),
+                "str_buffer"
+            );
+            
+            // Track current position in buffer
+            Value* bufferPos = buffer;
+            
             for (auto& part : tstr->parts) {
                 if (part.type == aria::frontend::TemplatePart::STRING) {
-                    result += part.string_value;
+                    // Static string part - use sprintf with "%s"
+                    Value* formatStr = ctx.builder->CreateGlobalStringPtr("%s");
+                    Value* strVal = ctx.builder->CreateGlobalStringPtr(part.string_value);
+                    
+                    std::vector<Value*> sprintfArgs = {bufferPos, formatStr, strVal};
+                    Value* written = ctx.builder->CreateCall(sprintfFunc, sprintfArgs);
+                    
+                    // Advance buffer position by number of characters written
+                    bufferPos = ctx.builder->CreateGEP(
+                        Type::getInt8Ty(ctx.llvmContext),
+                        bufferPos,
+                        written,
+                        "next_pos"
+                    );
                 } else {
-                    // For now, just append placeholder
-                    // TODO: Convert expression value to string
-                    result += "<expr>";
+                    // Expression part - evaluate and convert to string
+                    Value* exprVal = visitExpr(part.expr_value.get());
+                    
+                    if (exprVal) {
+                        // Determine format string based on type
+                        Value* formatStr = nullptr;
+                        std::vector<Value*> sprintfArgs = {bufferPos};
+                        
+                        if (exprVal->getType()->isIntegerTy()) {
+                            // Integer types - use appropriate format
+                            if (exprVal->getType()->getIntegerBitWidth() == 1) {
+                                // Boolean - convert to "true"/"false"
+                                formatStr = ctx.builder->CreateGlobalStringPtr("%s");
+                                Value* trueStr = ctx.builder->CreateGlobalStringPtr("true");
+                                Value* falseStr = ctx.builder->CreateGlobalStringPtr("false");
+                                Value* boolStr = ctx.builder->CreateSelect(exprVal, trueStr, falseStr);
+                                sprintfArgs.push_back(formatStr);
+                                sprintfArgs.push_back(boolStr);
+                            } else {
+                                // Extend/truncate to i64 for sprintf %ld
+                                Value* i64Val = ctx.builder->CreateIntCast(
+                                    exprVal,
+                                    Type::getInt64Ty(ctx.llvmContext),
+                                    true,  // sign extend
+                                    "to_i64"
+                                );
+                                formatStr = ctx.builder->CreateGlobalStringPtr("%ld");
+                                sprintfArgs.push_back(formatStr);
+                                sprintfArgs.push_back(i64Val);
+                            }
+                        } else if (exprVal->getType()->isFloatingPointTy()) {
+                            // Float/double - use %f
+                            formatStr = ctx.builder->CreateGlobalStringPtr("%f");
+                            sprintfArgs.push_back(formatStr);
+                            sprintfArgs.push_back(exprVal);
+                        } else if (exprVal->getType()->isPointerTy()) {
+                            // Assume it's a string pointer
+                            formatStr = ctx.builder->CreateGlobalStringPtr("%s");
+                            sprintfArgs.push_back(formatStr);
+                            sprintfArgs.push_back(exprVal);
+                        } else {
+                            // Unknown type - just print address
+                            formatStr = ctx.builder->CreateGlobalStringPtr("<unknown>");
+                            sprintfArgs.push_back(formatStr);
+                        }
+                        
+                        Value* written = ctx.builder->CreateCall(sprintfFunc, sprintfArgs);
+                        
+                        // Advance buffer position
+                        bufferPos = ctx.builder->CreateGEP(
+                            Type::getInt8Ty(ctx.llvmContext),
+                            bufferPos,
+                            written,
+                            "next_pos"
+                        );
+                    }
                 }
             }
-            return ctx.builder->CreateGlobalStringPtr(result);
+            
+            // Return pointer to the complete string
+            return buffer;
         }
         if (auto* ternary = dynamic_cast<aria::frontend::TernaryExpr*>(node)) {
             // Generate LLVM select: select i1 %cond, type %true_val, type %false_val
