@@ -1,0 +1,20 @@
+// Sample 10: Nested function calls
+
+func:double = *int64(int64:x) {
+    return x * 2;
+};
+
+func:square = *int64(int64:x) {
+    return x * x;
+};
+
+func:combine = *int64(int64:x) {
+    result:r1 = double(x);
+    result:r2 = square(r1.val);
+    return r2.val;
+};
+
+func:main = *int8() {
+    result:r = combine(5);  // double(5) = 10, square(10) = 100
+    return 0;
+};

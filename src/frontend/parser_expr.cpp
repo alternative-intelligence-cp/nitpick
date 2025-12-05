@@ -132,6 +132,12 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
             return std::make_unique<FloatLiteral>(std::stod(token.lexeme));
         case TOKEN_STRING_LITERAL:
             return std::make_unique<StringLiteral>(token.lexeme);
+        case TOKEN_BACKTICK:
+            // Template string with interpolation: `text &{expr} more`
+            // Note: TOKEN_BACKTICK is already consumed by parsePrefix's advance()
+            // but we need to put it back for parseTemplateString to handle properly
+            // For now, handle inline
+            return parseTemplateString();
         case TOKEN_BOOLEAN_LITERAL:
             return std::make_unique<BoolLiteral>(token.lexeme == "true");
         case TOKEN_NULL_LITERAL:
@@ -304,6 +310,42 @@ std::unique_ptr<Expression> Parser::parseInfix(std::unique_ptr<Expression> left,
             auto default_value = parseExpression(PREC_CALL + 1);
             return std::make_unique<UnwrapExpr>(std::move(left), std::move(default_value));
         }
+
+        default:
+            throw std::runtime_error("Unsupported infix operator: " + std::to_string(op.type));
+    }
+}
+
+// =============================================================================
+// 5. Template String Parser
+// =============================================================================
+
+// Parse template string: `text &{expr} more &{expr2}`
+// The opening backtick has already been consumed by parsePrefix
+std::unique_ptr<Expression> Parser::parseTemplateString() {
+    auto templ = std::make_unique<TemplateString>();
+    
+    // Parse parts until we hit the closing backtick
+    while (!check(TOKEN_BACKTICK) && !check(TOKEN_EOF)) {
+        if (check(TOKEN_STRING_CONTENT)) {
+            // Static string part
+            Token content_token = advance();
+            templ->parts.emplace_back(content_token.lexeme);
+        }
+        else if (match(TOKEN_INTERP_START)) {
+            // Interpolated expression: &{expr}
+            auto expr = parseExpression();
+            templ->parts.emplace_back(std::move(expr));
+            consume(TOKEN_RIGHT_BRACE, "Expected '}' after interpolation expression");
+        }
+        else {
+            throw std::runtime_error("Unexpected token in template string");
+        }
+    }
+    
+    consume(TOKEN_BACKTICK, "Expected closing '`' for template string");
+    return templ;
+}
 
         default:
             error("Unknown infix operator");

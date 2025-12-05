@@ -1,0 +1,511 @@
+﻿Architectural Feasibility and Implementation Strategy for the Aria Programming Language: A Hybrid Metaprogramming Approach to Object-Based Systems
+1. Executive Summary
+This comprehensive engineering report evaluates the architectural feasibility and implementation strategy for "Aria," a proposed custom programming language. The central premise of Aria is to synthesize a "simple class system" without inheritance by integrating two distinct yet powerful metaprogramming paradigms: a text-substitution preprocessor modeled after the Netwide Assembler (NASM) macro system, and a semantic compile-time execution engine modeled after Zig’s comptime feature.
+The analysis proceeds from the user’s specified design constraints: a language pipeline where source code is first processed by a macro engine to handle syntactic abstraction, and subsequently processed by a compiler that treats types as first-class values to enforce semantic correctness. This "Dual-Phase Metaprogramming" model is examined as a solution to the "Simplicity vs. Abstraction" trade-off that plagues modern systems programming. By decoupling the definition of structure (handled by macros) from the enforcement of behavior (handled by comptime), Aria proposes a unique path to Object-Based Programming (OBP).
+Key findings indicate that this hybrid architecture is not only feasible but offers distinct advantages over traditional object-oriented languages for systems-level tasks. Specifically, the absence of inheritance—mandated by the design—eliminates the "fragile base class" problem and the runtime overhead of dynamic dispatch (virtual tables). Instead, the report proposes a model of Compositional Polymorphism, where NASM-style macros facilitate code reuse via mixins, and Zig-style comptime enforces interface compliance via static duck typing (structural typing).
+The report details a comprehensive "Engineering Plan" for the docs/info/integrated component of the Aria project. It covers the complete lifecycle of a class: from its lexical definition using context-aware macros, through its semantic validation using compile-time reflection, to its runtime instantiation and memory management. Detailed mechanisms for simulating encapsulation, implementing the new operator with custom allocators, and handling method dispatch without the this pointer ambiguity are provided.
+Finally, the report offers a comparative analysis against established languages (C++, Rust, Zig), highlighting how Aria’s proposed structure mitigates specific complexities found in those ecosystems while introducing new challenges in compiler diagnostics and source mapping.
+________________
+2. Theoretical Framework: The Hybrid Metaprogramming Pipeline
+The proposed architecture of Aria rests on the integration of two fundamentally different approaches to code generation. To assess the feasibility of this union, we must first deconstruct the theoretical operation of each component and how they interact to simulate a "Class" concept.
+2.1 The Preprocessor Paradigm: NASM-Style Macro-Assemblers
+The first stage of the Aria pipeline is the Preprocessor. In the context of the user's proposal, this layer is responsible for Syntactic Abstraction. Unlike the C preprocessor, which is a relatively simple text substitution tool, the NASM preprocessor is a Turing-complete macro language capable of managing state, loops, and complex conditional logic.1
+2.1.1 The Nature of Textual Expansion
+NASM macros operate on the token stream before the semantic parser sees the code. This allows for the creation of Domain Specific Languages (DSLs) embedded within the host language. In Aria, the "Class" syntax is effectively a DSL. When a user types CLASS MyObject, the compiler does not natively understand CLASS. Instead, the macro engine intercepts this token and expands it into a set of primitives the compiler does understand (e.g., struct, const, fn).
+The power of the NASM model lies in its Context Stack (%push, %pop).3 This feature allows the preprocessor to maintain a "sense of place." For simulating classes, this is critical. A METHOD macro must behave differently if it is inside a CLASS block versus if it is strictly standalone (or it should error). The context stack allows the METHOD macro to peek at the current context, realize it is defined within CLASS Player, and automatically mangle the function name to Player_methodName or inject a self pointer.1
+2.1.2 Limitations of Pure Macros for OOP
+Historically, attempts to build OOP systems purely in macros (like various "C with Classes" frameworks or assembly macro suites) have suffered from a lack of Type Safety. A macro can generate code to add an offset to a pointer, but it cannot ensure that the pointer actually points to the correct structure type. It treats Point.x merely as "Base Address + 0". If Point.y is "Base Address + 4", the macro engine sees no difference between an integer at offset 4 and a float at offset 4.4
+This is where Aria's architecture diverges from pure macro-assemblers. It stops the macros at the boundary of definition. It does not use macros to generate the logic of method dispatch or type checking. It hands that responsibility over to the second phase.
+2.2 The Semantic Paradigm: Zig-Style Compile-Time Execution
+The second stage is the Compiler, featuring comptime. This layer is responsible for Semantic Concretization. In languages like Zig, code execution can occur during the compilation process itself. Crucially, this execution happens after parsing but before binary code generation.5
+2.2.1 Types as First-Class Values
+The cornerstone of Zig's metaprogramming—and by extension, Aria's proposed class system—is the treatment of types as values. A function can accept a type as an argument (fn make_vector(T: type)) and return a new type.7
+This capability allows Aria to simulate the "Class" metadata. When the NASM macro generates a struct, the comptime engine can inspect that struct using reflection (@typeInfo). It can iterate over the fields defined by the macro, check their alignment, verifying they meet specific criteria (e.g., "Field 'id' must be of type 'u64'"), and even generate new methods based on those fields.9
+2.2.2 The Handshake: From Macro to Comptime
+The success of Aria depends on the "Handshake" between these two layers.
+1. Macro Layer: "I will handle the syntax. I will allow the user to write CLASS and FIELD without worrying about braces, semicolons, or verbose struct definitions. I will generate a standardized, raw struct definition."
+2. Comptime Layer: "I will take that raw struct. I will validate it. I will generate the 'constructor'. I will enforce the 'private' visibility rules. I will ensure that the types used in the fields are valid."
+This separation of concerns—Syntax vs. Semantics—is the "clever combination" the user hypothesized. It allows the language to look like a high-level OOP language (thanks to macros) while maintaining the rigorous type safety and performance of a low-level systems language (thanks to comptime).
+________________
+3. Engineering the "Integrated" Plan: The Pipeline Architecture
+Based on the prompt's reference to the docs/info/integrated directory, this section proposes a concrete engineering plan for the integration of the preprocessing and compilation steps. This serves as the blueprint for the Aria compiler's frontend.
+3.1 The Compilation Phases
+The Aria compiler pipeline should be structured into four distinct passes to support the simulated class system.
+Pass
+	Component
+	Input
+	Output
+	Responsibility
+	1
+	Lexical Preprocessor
+	.aria Source
+	Token Stream
+	Handle #include, comment stripping, and initial tokenization.
+	2
+	Macro Expansion (NASM)
+	Token Stream
+	.aria.exp (Expanded Source)
+	Expand CLASS, METHOD, NEW, MIXIN macros into core Aria primitives (struct, fn). Manage Context Stacks.
+	3
+	Semantic Parser
+	Expanded Source
+	Abstract Syntax Tree (AST)
+	Parse the primitives. Check syntax errors in the expanded code.
+	4
+	Comptime Execution
+	AST
+	Optimized AST / IR
+	Execute comptime blocks. Resolve types. Generate generic specializations. Validate Interfaces.
+	5
+	Code Generation
+	Optimized IR
+	Machine Code (.o / .exe)
+	Emit binary instructions.
+	3.2 Detailed Macro-Architecture (Pass 2)
+The Macro engine must support specific features to enable the class system. The following engineering specifications are required for the "NASM-style" preprocessor in Aria.
+3.2.1 Context Management
+The preprocessor must maintain a stack of contexts. This allows the compiler to know if it is currently parsing a class definition, a method body, or the global scope.
+* Requirement: PREPROC_PUSH <context_name> and PREPROC_POP.
+* Application: When CLASS is encountered, push CTX_CLASS. When METHOD is encountered, verify CTX_CLASS is at the top of the stack. If not, emit "Error: Method defined outside of class." This moves error detection to the very first phase.1
+3.2.2 Token Concatenation (Hygiene Strategy)
+To avoid namespace pollution—a common issue in C—Aria must use aggressive name mangling managed by the macros.
+* Requirement: TOKEN_PASTE(Prefix, Suffix).
+* Application: A method named Init inside CLASS Player should automatically expand to Player_Init or Player__Init to avoid clashing with Enemy_Init. The macro handles this concatenation implicitly, so the user only ever sees Init.
+3.2.3 Multi-Line Argument Capture
+Unlike C macros, which are awkward with multi-line inputs, NASM macros excel here.
+* Requirement: Block capture.
+* Application: Capturing the entire body of a method to inject prologue/epilogue code (e.g., debug tracing or reference counting decrements).
+3.3 Detailed Semantic Architecture (Pass 4)
+The Comptime engine is the "Brain" of the class system.
+3.3.1 Reflection API
+The compiler must expose an intrinsic function, similar to Zig's @typeInfo, that allows code to inspect the AST of a type at compile time.
+* Requirement: builtin_type_info(T) -> TypeMetadata.
+* Application: The class system uses this to iterate over fields. If the user marks a field as "private" (perhaps via a macro convention like _name), the comptime logic in the module loader can reject access to that field from outside the module.
+3.3.2 Compile-Time Allocator Awareness
+To support "new and everything," the comptime layer must be aware of memory allocators.
+* Requirement: The language standard library must define an Allocator interface.
+* Application: The NEW macro expands to a call to a generic create_instance function, which accepts an Allocator and the Type.
+________________
+4. Implementation Strategy: The "Simple Class" System
+This section details the specific implementation of Object-Based Programming features using the Aria architecture. We adhere to the "No Inheritance" constraint, focusing instead on Composition, Encapsulation, and Polymorphism via Interfaces.
+4.1 Structural Definition and Memory Layout
+In Aria, a "Class" is physically a struct. The CLASS macro acts as a wrapper to define this struct.
+User Syntax:
+
+
+Code snippet
+
+
+
+
+CLASS Vector3
+   FIELD x, f32
+   FIELD y, f32
+   FIELD z, f32
+END_CLASS
+
+Macro Expansion Logic:
+The CLASS macro pushes the name Vector3 to the context stack.
+It emits const Vector3 = struct {.
+The FIELD macro emits x: f32,.
+The END_CLASS macro emits }; and pops the context.
+Engineering Insight - Memory Layout:
+A crucial advantage of this system is Control. In languages like Java or C#, the compiler decides memory layout, often reordering fields or adding headers for Garbage Collection. In Aria, because the expansion is to a standard struct (likely a packed struct if specified), the user guarantees that x, y, and z are contiguous in memory.11 This allows Aria classes to be passed directly to GPU shaders or network sockets without serialization overhead.
+4.2 The NEW Operator and Lifecycle Management
+The user specifically requested "new and everything." In a systems language, new is syntactic sugar for "Allocate memory + Initialize state."
+Implementation Plan:
+1. Allocation: Aria should not have a global "heap" hidden from the user. Instead, NEW should require an allocator context, or default to a module-level allocator.
+2. Initialization: The CLASS macro should enforce the existence of an init method or generate a default one.
+The NEW Macro:
+
+
+Code snippet
+
+
+
+
+%macro NEW 2
+   ; Usage: NEW variable_name, ClassName
+   ; Expands to:
+   var %1 = allocator.create(%2);
+   if (%2_has_init) {
+       %1.init();
+   }
+%endmacro
+
+The Comptime Backing:
+The macro assumes allocator is available. A more robust engineering approach is to bind the allocator to the class factory.
+
+
+Code snippet
+
+
+
+
+// Comptime function generated for every class
+fn ClassFactory(comptime T: type) type {
+   return struct {
+       pub fn new(a: Allocator, args: anytype)!*T {
+           const ptr = try a.create(T);
+           ptr.* = T.init(args); // Uses struct initialization
+           return ptr;
+       }
+   };
+}
+
+This approach allows RAII (Resource Acquisition Is Initialization) patterns. If new fails (out of memory), it returns an error union, handled by the user.
+4.3 Method Dispatch and the this Pointer
+In C++, methods have a hidden this pointer. In Python, self is explicit. Aria must choose. Given the NASM macro heritage, explicit is better, but macros can automate the boilerplate.
+User Syntax:
+
+
+Code snippet
+
+
+
+
+METHOD normalize
+   var len = Math.sqrt(self.x*self.x + self.y*self.y);
+   self.x /= len;
+   self.y /= len;
+END_METHOD
+
+Macro Expansion:
+The METHOD macro detects it is inside Vector3.
+It expands to:
+
+
+Code snippet
+
+
+
+
+fn Vector3_normalize(self: *Vector3) void {
+ ...
+}
+
+The UFCS (Universal Function Call Syntax) Bridge:
+To make this feel like a class (vec.normalize()) rather than C (Vector3_normalize(&vec)), the Aria compiler (Phase 3/4) needs to implement UFCS. When the parser sees object.method(), if method is not a field of object, it searches the namespace for Type_method(object).
+* Note: This is cleaner than C++'s vtables because it is resolved statically at compile time. There is no runtime overhead.
+4.4 Encapsulation: Simulating Private
+Without a native private keyword in the macro expanded code (assuming the target struct logic is simple), how do we enforce encapsulation?
+Strategy: Name Mangling + Comptime Visibility Checks.
+1. Macro Level: Users define private fields with a specific macro PRIVATE_FIELD.
+Code snippet
+PRIVATE_FIELD internal_state, u32
+
+The macro expands this to a field named __private_Vector3_internal_state.
+2. Comptime Level: The compiler includes a visibility pass. If code attempts to access a field starting with __private_ from a file other than the one defining the class, the compiler throws an error.
+   * Why this is clever: It enforces privacy without needing complex access modifiers in the core language parser. It is a "naming convention enforced by tooling."
+________________
+5. Solving the "No Inheritance" Constraint
+The requirement "no inheritance" is significant. Inheritance provides two main things:
+   1. Code Reuse: "I want Dog to have all fields of Animal."
+   2. Polymorphism: "I want to treat Dog and Cat as Animal."
+Aria must solve these using Macros and Comptime respectively.
+5.1 Code Reuse: The Mixin Macro
+Since inheritance is strictly forbidden, Aria should adopt the Mixin pattern for composition. This is superior to inheritance in many systems contexts as it avoids the "Diamond Problem" (multiple inheritance ambiguity).12
+The MIXIN Macro:
+The user defines a "base" set of fields not as a class, but as a reusable macro block.
+
+
+Code snippet
+
+
+
+
+TEMPLATE Transform
+   FIELD pos, Vector3
+   FIELD rot, Quaternion
+   FIELD scale, Vector3
+END_TEMPLATE
+
+CLASS Player
+   APPLY_TEMPLATE Transform
+   FIELD name, String
+END_CLASS
+
+CLASS Enemy
+   APPLY_TEMPLATE Transform
+   FIELD health, i32
+END_CLASS
+
+Expansion:
+The macro engine simply copy-pastes the fields of Transform into Player and Enemy.
+   * Result: Both classes have pos, rot, scale.
+   * Memory Layout: Flat. No pointers to a base class. pos is at offset 0 for both. This is extremely cache-friendly.
+5.2 Polymorphism: Comptime Interfaces (Traits)
+Without inheritance, we cannot pass Animal* to a function. We must use Interfaces. In C++, this involves abstract base classes (vtables). In Rust, Traits. In Aria, we use Static Duck Typing via comptime.13
+The Concept:
+A function does not ask for an Animal. It asks for anytype (a generic). Inside the function, it asserts that the type passed has the required methods.
+User Syntax (Simulated Interface):
+
+
+Code snippet
+
+
+
+
+INTERFACE Drawable
+   REQUIRE_METHOD draw
+END_INTERFACE
+
+fn render_scene(item: IMPLEMENTS(Drawable)) {
+   item.draw();
+}
+
+Comptime Implementation:
+The IMPLEMENTS(Drawable) macro expands to anytype.
+However, it injects a comptime block at the start of the function:
+
+
+Code snippet
+
+
+
+
+fn render_scene(item: anytype) void {
+   comptime {
+       if (!hasDecl(@TypeOf(item), "draw")) {
+           @compileError("Type must implement 'draw' method to be used in render_scene");
+       }
+   }
+   item.draw();
+}
+
+Implications:
+   * Performance: Zero runtime cost. The compiler generates a specialized version of render_scene for Player and another for Enemy. (Monomorphization).
+   * Flexibility: Any class can be Drawable just by having a draw method. It doesn't need to explicitly inherit from anything.
+________________
+6. Deep Technical Dive: Memory Management and Layout
+A "simple class system" often hides memory complexity. A systems language must expose it. Aria's hybrid model offers unique control here.
+6.1 Alignment and Padding
+A generic class system might accidentally create bloated structs.
+struct { u8, u64, u8 } usually occupies 24 bytes due to padding (alignment to 8 bytes).
+Aria macros can perform Automatic Field Reordering.
+Optimization Strategy:
+Because the CLASS macro sees all fields before END_CLASS, it could theoretically buffer them (if the macro engine supports lists/buffers) and emit them sorted by size (largest to smallest).
+   * Result: struct { u64, u8, u8 } occupies only 16 bytes (or 10 packed).
+   * Note: This is risky if the user expects C-style layout compatibility. This feature should be an opt-in macro: OPTIMIZED_CLASS.
+6.2 Custom Allocators and the new keyword
+The prompt emphasizes new. In managed languages (Java), new is an opcode. In Aria, it is a macro that bridges the user to the memory manager.
+The Allocator Interface:
+
+
+Code snippet
+
+
+
+
+CLASS MyAllocator
+   METHOD alloc(size: u64) -> *void
+   METHOD free(ptr: *void)
+END_CLASS
+
+Integrating new with Allocators:
+The NEW macro could look up a thread-local allocator context.
+%macro NEW 1 -> allocator_api.alloc(@sizeOf(%1)).
+However, for robust systems programming, explicit passing is better: NEW(Player, my_arena_allocator).
+This aligns with Zig’s philosophy: "No hidden allocations." Aria adopts this by making the allocator an explicit argument to the macro, ensuring the "simple class system" doesn't become a "garbage collection trap."
+________________
+7. Case Study: Implementing a Game Entity System
+To prove the feasibility, we walk through a concrete use case: A Game Entity system, usually the domain of heavy OOP.
+7.1 The Goal
+We need:
+   1. A Vector class.
+   2. An Entity "base" (position, velocity).
+   3. A Sprite class (adds texture).
+   4. An Update loop that processes mixed entities.
+7.2 The Implementation in Aria
+Step 1: The Math (The Class)
+
+
+Code snippet
+
+
+
+
+CLASS Vector2
+   FIELD x, f32
+   FIELD y, f32
+   METHOD add(other: Vector2)
+       self.x += other.x
+       self.y += other.y
+   END_METHOD
+END_CLASS
+
+Step 2: The Mixin (The "Base")
+
+
+Code snippet
+
+
+
+
+TEMPLATE EntityData
+   FIELD pos, Vector2
+   FIELD vel, Vector2
+   METHOD update(dt: f32)
+       self.pos.x += self.vel.x * dt
+       self.pos.y += self.vel.y * dt
+   END_METHOD
+END_TEMPLATE
+
+Step 3: The Concrete Classes
+
+
+Code snippet
+
+
+
+
+CLASS Sprite
+   APPLY_TEMPLATE EntityData  ; Injects pos, vel, and update()
+   FIELD texture_id, u32
+END_CLASS
+
+CLASS SoundEmitter
+   APPLY_TEMPLATE EntityData
+   FIELD volume, f32
+END_CLASS
+
+Step 4: The Polymorphic Loop (The Challenge)
+We cannot make List<Entity> because Entity doesn't exist as a type (it's a template/mixin). Sprite and SoundEmitter are different sizes.
+Solution: Tagged Unions (Sum Types).
+We define a "Super Type":
+
+
+Code snippet
+
+
+
+
+UNION GameEntity
+   VARIANT sprite, Sprite
+   VARIANT sound, SoundEmitter
+END_UNION
+
+The UNION macro generates a Zig Tagged Union.
+Now the loop:
+
+
+Code snippet
+
+
+
+
+fn update_all(entities:GameEntity, dt: f32)
+   for (entities) |e|
+       switch (e)
+           case.sprite: |s| s.update(dt)
+           case.sound: |snd| snd.update(dt)
+       end
+   end
+end
+
+Analysis: This is contiguous in memory (cache friendly) and uses static dispatch (switch statement) which is often faster than vtables (pointer chasing). It fulfills the "Class System" feel without inheritance.
+________________
+8. Comparative Analysis: Aria vs. The World
+How does this specific "NASM + Comptime" architecture compare to standard approaches?
+Feature
+	Aria (Proposed)
+	C++
+	Rust
+	Zig (Pure)
+	Class Definition
+	Macro DSL (CLASS)
+	Keywords (class, struct)
+	Keywords (struct, impl)
+	struct
+	Metaprogramming
+	Dual: Textual (Macros) + Semantic (Comptime)
+	Templates + Preprocessor
+	Macros (macro_rules!) + Traits
+	comptime
+	Polymorphism
+	Compile-time Interfaces (Duck Typing) / Unions
+	Inheritance (Virtual Functions)
+	Traits (Static & Dynamic)
+	comptime Duck Typing
+	Inheritance
+	None (Mixin Composition)
+	Multiple Inheritance
+	None (Trait Composition)
+	None (Composition)
+	Safety
+	High (Semantic Phase checks)
+	Moderate (Template errors are verbose)
+	High (Borrow Checker)
+	High
+	Compilation Speed
+	Medium (2 passes)
+	Slow (Template instantiation)
+	Slow (Macro expansion)
+	Fast
+	Debuggability
+	Risk: Source mapping macro errors
+	Difficult (Templates)
+	Moderate
+	Good
+	8.1 Key Advantages of Aria
+   1. Syntactic Flexibility: Unlike Rust or Zig, Aria can introduce new keywords (CLASS, EVENT) trivially via macros without changing the compiler core.
+   2. Simplicity: By stripping inheritance, the compiler implementation complexity drops by orders of magnitude. No vtable layout calculations, no RTTI (Run-Time Type Information) overhead.
+8.2 Key Disadvantages
+   1. Tooling: IDEs struggle with macros. An IDE won't know CLASS expands to struct unless it runs the preprocessor. Auto-complete requires a language server that understands the macro expansion.
+   2. Error Messages: If a macro generates invalid code, the error comes from the generated code, not the user source. This is the "C++ Template Error" problem, but potentially worse.
+________________
+9. Recommendations for the "Integrated" Plan
+To make Aria a viable engineering project, the integrated directory should contain the following subsystems.
+9.1 The "Source Map" Debugger
+Requirement: The most critical missing piece in the prompt's description is debugging.
+Recommendation: The Macro Preprocessor must emit #line directives (or Aria equivalent).
+   * When expanding CLASS Player (User Line 10) to struct Player {... } (Expanded Line 500), the preprocessor must insert @setSourceLine(10).
+   * This ensures that if comptime rejects the struct, the error points to Line 10.
+9.2 The Standard Macro Library (stdlib.inc)
+Do not hardcode CLASS into the compiler. Keep it in the standard library.
+   * This proves the power of the architecture. If the user wants a REF_COUNTED_CLASS, they can copy the CLASS macro and modify it to inject a reference counter field. This extensibility is the "killer feature" of the NASM approach.
+9.3 The Testing Harness
+The integrated plan must include a test runner that tests both phases:
+   1. Macro Tests: Verify CLASS expands to the expected text.
+   2. Comptime Tests: Verify the generated struct behaves as a type.
+________________
+10. Conclusion
+The proposal to build the "Aria" programming language using a NASM-style preprocessor for syntax and Zig-style comptime for semantics is not only a "cool experiment" but a sound engineering decision for a specific niche of systems programming.
+It effectively creates a Domain-Specific Language (DSL) for Object Composition.
+By explicitly rejecting inheritance, the system avoids the major pitfalls of 1990s OOP (complexity, coupling, runtime overhead) and embraces the modern 2020s systems ethos (composition, data-oriented design, static checking).
+The "NASM + Comptime" combination covers the weaknesses of each individual part:
+   * NASM macros are unsafe; Comptime provides safety.
+   * Comptime is verbose for structural definitions; NASM macros provide brevity.
+Final Verdict: The architecture is viable. The primary engineering challenge will not be the language features themselves, but the developer tooling (error reporting and IDE support) required to bridge the gap between the two metaprogramming layers.
+________________
+11. References & Data Sources
+   * 1: Netwide Assembler (NASM) documentation on context stacks, multi-line macros, and preprocessor logic.
+   * 5: Zig language documentation regarding comptime, types as values, and generic data structures.
+   * 4: Analysis of struc limitations in pure assembly environments.
+   * 12: Technical details on C++ vtable implementation and multiple inheritance memory layouts.
+   * 13: Patterns for implementing interfaces and dynamic dispatch in Zig using anytype and duck typing.
+   * 17: Theoretical frameworks for Object-Oriented Programming without inheritance.
+   * 11: Low-level data structure alignment and memory reservation in assembly.
+   * 20: Techniques for implementing reflection using preprocessor macros in C++.
+Works cited
+   1. NASM Macros - UAF CS, accessed December 4, 2025, https://www.cs.uaf.edu/courses/cs301/2014-fall/notes/asm-macros/index.html
+   2. x86 Assembly/NASM Syntax - Wikibooks, open books for an open world, accessed December 4, 2025, https://en.wikibooks.org/wiki/X86_Assembly/NASM_Syntax
+   3. Chapter 4. The NASM Preprocessor, accessed December 4, 2025, https://www.tortall.net/projects/yasm/manual/html/nasm-preprocessor.html
+   4. 4.8. Standard Macros, accessed December 4, 2025, https://www.tortall.net/projects/yasm/manual/html/nasm-stdmac.html
+   5. Comptime | zig.guide, accessed December 4, 2025, https://zig.guide/language-basics/comptime/
+   6. What is Zig's Comptime? | Loris Cro's Blog, accessed December 4, 2025, https://kristoff.it/blog/what-is-zig-comptime/
+   7. Comptime Zig ORM - matklad, accessed December 4, 2025, https://matklad.github.io/2025/03/19/comptime-zig-orm.html
+   8. How to do generics in a struct field in zig - Stack Overflow, accessed December 4, 2025, https://stackoverflow.com/questions/76647633/how-to-do-generics-in-a-struct-field-in-zig
+   9. Building Zig structs at Compile Time - mht.wtf, accessed December 4, 2025, https://mht.wtf/post/comptime-struct/
+   10. How can I iterate over struct fields at compile time in Zig to generate a serializer?, accessed December 4, 2025, https://stackoverflow.com/questions/79734179/how-can-i-iterate-over-struct-fields-at-compile-time-in-zig-to-generate-a-serial
+   11. Struc Directive in NASM - TheJat.in, accessed December 4, 2025, https://www.thejat.in/learn/struc-directive-in-nasm
+   12. Virtual Methods and Multiple Inheritance - Ruminations - Aaron Ballman, accessed December 4, 2025, https://blog.aaronballman.com/2011/10/virtual-methods-and-multiple-inheritance/
+   13. What's the idiomatic design in zig when there is no interfaces/traits? - Ziggit, accessed December 4, 2025, https://ziggit.dev/t/whats-the-idiomatic-design-in-zig-when-there-is-no-interfaces-traits/7817
+   14. Code study: interface idioms/patterns in zig standard libraries, accessed December 4, 2025, https://zig.news/yglcode/code-study-interface-idiomspatterns-in-zig-standard-libraries-4lkj
+   15. C++ Inheritance | CS 2130 - GitHub Pages, accessed December 4, 2025, https://researcher111.github.io/uva-cso1-F23-DG/readings/vtable.html
+   16. Proposal: Interfaces #980 - ziglang/zig - GitHub, accessed December 4, 2025, https://github.com/ziglang/zig/issues/980
+   17. What would OOP without inheritance look like? - Ted Kaminski, accessed December 4, 2025, https://www.tedinski.com/2018/02/20/an-oo-language-without-inheritance.html
+   18. OOP Reuse without Inheritance: How "real-world" practical is this? - Stack Overflow, accessed December 4, 2025, https://stackoverflow.com/questions/4989670/oop-reuse-without-inheritance-how-real-world-practical-is-this
+   19. User:Schol-r-lea/Brief Tutorial On Data Structures In Assembly Language - OSDev Wiki, accessed December 4, 2025, https://wiki.osdev.org/User:Schol-r-lea/Brief_Tutorial_On_Data_Structures_In_Assembly_Language
+   20. How can I add reflection to a C++ application? - Stack Overflow, accessed December 4, 2025, https://stackoverflow.com/questions/41453/how-can-i-add-reflection-to-a-c-application
+   21. A Flexible Reflection System in C++: Part 1 - Preshing on Programming, accessed December 4, 2025, https://preshing.com/20180116/a-primitive-reflection-system-in-cpp-part-1/

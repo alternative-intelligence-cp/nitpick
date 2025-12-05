@@ -1,0 +1,61 @@
+// Training Sample: Queue implementation
+// Demonstrates: FIFO data structure, circular buffer
+
+struct Queue {
+    int64[100]:data;
+    int64:front;
+    int64:rear;
+    int64:size;
+    int64:capacity;
+};
+
+func:initQueue = *Queue() {
+    Queue:q;
+    q.front = 0;
+    q.rear = -1;
+    q.size = 0;
+    q.capacity = 100;
+    return { err: 0, val: q };
+};
+
+func:enqueue = *int8(Queue:q, int64:value) {
+    if (q.size >= q.capacity) {
+        return { err: 1, val: 0 }; // Queue full
+    }
+    
+    q.rear = (q.rear + 1) % q.capacity;
+    q.data[q.rear] = value;
+    q.size = q.size + 1;
+    
+    return { err: 0, val: 1 };
+};
+
+func:dequeue = *int64(Queue:q) {
+    if (q.size == 0) {
+        return { err: 1, val: 0 }; // Queue empty
+    }
+    
+    int64:value = q.data[q.front];
+    q.front = (q.front + 1) % q.capacity;
+    q.size = q.size - 1;
+    
+    return { err: 0, val: value };
+};
+
+func:queueIsEmpty = *bool(Queue:q) {
+    return { err: 0, val: q.size == 0 };
+};
+
+func:main = *int8() {
+    result:queueResult = initQueue();
+    Queue:myQueue = queueResult.val;
+    
+    enqueue(myQueue, 10);
+    enqueue(myQueue, 20);
+    enqueue(myQueue, 30);
+    
+    result:deqResult = dequeue(myQueue);
+    int64:first = deqResult.val; // 10
+    
+    return { err: 0, val: 0 };
+};

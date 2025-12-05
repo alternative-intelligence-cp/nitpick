@@ -1,0 +1,79 @@
+// Training Sample: Depth-First Search (DFS)
+// Demonstrates: graph algorithms, recursion, adjacency matrix
+
+struct Graph {
+    int64[10][10]:adjMatrix;
+    int64:numVertices;
+};
+
+func:initGraph = *Graph(int64:vertices) {
+    Graph:g;
+    g.numVertices = vertices;
+    
+    int64:i = 0;
+    while (i < vertices) {
+        int64:j = 0;
+        while (j < vertices) {
+            g.adjMatrix[i][j] = 0;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    
+    return { err: 0, val: g };
+};
+
+func:addEdge = *int8(Graph:g, int64:src, int64:dest) {
+    if (src >= g.numVertices) {
+        return { err: 1, val: 0 };
+    }
+    if (dest >= g.numVertices) {
+        return { err: 1, val: 0 };
+    }
+    
+    g.adjMatrix[src][dest] = 1;
+    g.adjMatrix[dest][src] = 1; // Undirected graph
+    
+    return { err: 0, val: 1 };
+};
+
+func:dfsHelper = *int8(Graph:g, int64:vertex, bool[]:visited) {
+    visited[vertex] = true;
+    
+    int64:i = 0;
+    while (i < g.numVertices) {
+        if (g.adjMatrix[vertex][i] == 1) {
+            if (visited[i] == false) {
+                dfsHelper(g, i, visited);
+            }
+        }
+        i = i + 1;
+    }
+    
+    return { err: 0, val: 1 };
+};
+
+func:dfs = *int8(Graph:g, int64:startVertex) {
+    bool[10]:visited;
+    int64:i = 0;
+    while (i < g.numVertices) {
+        visited[i] = false;
+        i = i + 1;
+    }
+    
+    return dfsHelper(g, startVertex, visited);
+};
+
+func:main = *int8() {
+    result:graphResult = initGraph(5);
+    Graph:g = graphResult.val;
+    
+    addEdge(g, 0, 1);
+    addEdge(g, 0, 2);
+    addEdge(g, 1, 3);
+    addEdge(g, 2, 4);
+    
+    dfs(g, 0);
+    
+    return { err: 0, val: 0 };
+};

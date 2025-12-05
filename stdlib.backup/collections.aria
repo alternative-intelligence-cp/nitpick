@@ -1,0 +1,174 @@
+// Aria Standard Library - Collection Utilities
+// Functions for working with arrays and collections
+
+mod collections {
+    // Find element in array, return index or -1
+    pub func:find = *int64(int64[]:arr, int64:size, int64:target) {
+        int64:i = 0;
+        while (i < size) {
+            if (arr[i] == target) {
+                return { err: 0, val: i };
+            }
+            i = i + 1;
+        }
+        return { err: 0, val: -1 }; // Not found
+    };
+
+    // Check if array contains element
+    pub func:contains = *bool(int64[]:arr, int64:size, int64:target) {
+        result:findResult = find(arr, size, target);
+        return { err: 0, val: findResult.val != -1 };
+    };
+
+    // Reverse array in-place
+    pub func:reverse = *int8(int64[]:arr, int64:size) {
+        int64:left = 0;
+        int64:right = size - 1;
+        
+        while (left < right) {
+            int64:temp = arr[left];
+            arr[left] = arr[right];
+            arr[right] = temp;
+            
+            left = left + 1;
+            right = right - 1;
+        }
+        
+        return { err: 0, val: 1 };
+    };
+
+    // Swap two elements in array
+    pub func:swap = *int8(int64[]:arr, int64:i, int64:j) {
+        int64:temp = arr[i];
+        arr[i] = arr[j];
+        arr[j] = temp;
+        return { err: 0, val: 1 };
+    };
+
+    // Partition array for quicksort
+    func:partition = *int64(int64[]:arr, int64:low, int64:high) {
+        int64:pivot = arr[high];
+        int64:i = low - 1;
+        int64:j = low;
+        
+        while (j < high) {
+            if (arr[j] < pivot) {
+                i = i + 1;
+                swap(arr, i, j);
+            }
+            j = j + 1;
+        }
+        
+        swap(arr, i + 1, high);
+        return { err: 0, val: i + 1 };
+    };
+
+    // Quicksort helper (recursive)
+    func:quicksortHelper = *int8(int64[]:arr, int64:low, int64:high) {
+        if (low < high) {
+            result:pivotResult = partition(arr, low, high);
+            int64:pivot = pivotResult.val;
+            
+            quicksortHelper(arr, low, pivot - 1);
+            quicksortHelper(arr, pivot + 1, high);
+        }
+        return { err: 0, val: 1 };
+    };
+
+    // Quicksort array
+    pub func:quicksort = *int8(int64[]:arr, int64:size) {
+        if (size <= 1) {
+            return { err: 0, val: 1 };
+        }
+        return quicksortHelper(arr, 0, size - 1);
+    };
+
+    // Bubble sort (simple sorting algorithm)
+    pub func:bubbleSort = *int8(int64[]:arr, int64:size) {
+        int64:i = 0;
+        while (i < size - 1) {
+            int64:j = 0;
+            while (j < size - i - 1) {
+                if (arr[j] > arr[j + 1]) {
+                    swap(arr, j, j + 1);
+                }
+                j = j + 1;
+            }
+            i = i + 1;
+        }
+        return { err: 0, val: 1 };
+    };
+
+    // Binary search (array must be sorted)
+    pub func:binarySearch = *int64(int64[]:arr, int64:size, int64:target) {
+        int64:left = 0;
+        int64:right = size - 1;
+        
+        while (left <= right) {
+            int64:mid = left + (right - left) / 2;
+            
+            if (arr[mid] == target) {
+                return { err: 0, val: mid };
+            }
+            
+            if (arr[mid] < target) {
+                left = mid + 1;
+            } else {
+                right = mid - 1;
+            }
+        }
+        
+        return { err: 0, val: -1 }; // Not found
+    };
+
+    // Find minimum element in array
+    pub func:min = *int64(int64[]:arr, int64:size) {
+        if (size == 0) {
+            return { err: 1, val: 0 };
+        }
+        
+        int64:minVal = arr[0];
+        int64:i = 1;
+        
+        while (i < size) {
+            if (arr[i] < minVal) {
+                minVal = arr[i];
+            }
+            i = i + 1;
+        }
+        
+        return { err: 0, val: minVal };
+    };
+
+    // Find maximum element in array
+    pub func:max = *int64(int64[]:arr, int64:size) {
+        if (size == 0) {
+            return { err: 1, val: 0 };
+        }
+        
+        int64:maxVal = arr[0];
+        int64:i = 1;
+        
+        while (i < size) {
+            if (arr[i] > maxVal) {
+                maxVal = arr[i];
+            }
+            i = i + 1;
+        }
+        
+        return { err: 0, val: maxVal };
+    };
+
+    // Sum all elements in array
+    pub func:sum = *int64(int64[]:arr, int64:size) {
+        int64:total = 0;
+        int64:i = 0;
+        
+        while (i < size) {
+            total = total + arr[i];
+            i = i + 1;
+        }
+        
+        return { err: 0, val: total };
+    };
+}

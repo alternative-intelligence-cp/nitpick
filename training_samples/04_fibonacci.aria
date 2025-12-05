@@ -1,0 +1,30 @@
+// Sample 4: Fibonacci iterative
+
+int64:prev;
+int64:curr;
+int64:next;
+int64:i;
+
+func:fib = *int64(int64:n) {
+    if (n <= 1) {
+        return n;
+    }
+    
+    prev = 0;
+    curr = 1;
+    i = 2;
+    
+    while (i <= n) {
+        next = prev + curr;
+        prev = curr;
+        curr = next;
+        i = i + 1;
+    }
+    
+    return curr;
+};
+
+func:main = *int8() {
+    result:r = fib(10);
+    return 0;
+};

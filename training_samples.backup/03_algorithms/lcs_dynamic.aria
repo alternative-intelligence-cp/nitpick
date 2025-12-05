@@ -1,0 +1,67 @@
+// Training Sample: Dynamic programming - Longest Common Subsequence
+// Demonstrates: DP, memoization, optimal substructure
+
+use aria.stdlib.math;
+
+func:lcs = *int64(int64[]:seq1, int64:len1, int64[]:seq2, int64:len2) {
+    // Create DP table
+    wild int64*:dp = aria.alloc<int64>((len1 + 1) * (len2 + 1));
+    defer aria.free(dp);
+    
+    // Initialize table to 0
+    int64:i = 0;
+    while (i <= len1) {
+        int64:j = 0;
+        while (j <= len2) {
+            dp[i * (len2 + 1) + j] = 0;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    
+    // Fill DP table
+    i = 1;
+    while (i <= len1) {
+        int64:j = 1;
+        while (j <= len2) {
+            if (seq1[i - 1] == seq2[j - 1]) {
+                // Characters match
+                dp[i * (len2 + 1) + j] = dp[(i - 1) * (len2 + 1) + (j - 1)] + 1;
+            } else {
+                // Take max of excluding one character
+                result:r1 = math.max(
+                    dp[(i - 1) * (len2 + 1) + j],
+                    dp[i * (len2 + 1) + (j - 1)]
+                );
+                dp[i * (len2 + 1) + j] = r1.val;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    
+    int64:result = dp[len1 * (len2 + 1) + len2];
+    return { err: 0, val: result };
+};
+
+func:main = *int8() {
+    int64[6]:seq1;
+    seq1[0] = 1;
+    seq1[1] = 2;
+    seq1[2] = 3;
+    seq1[3] = 4;
+    seq1[4] = 5;
+    seq1[5] = 6;
+    
+    int64[5]:seq2;
+    seq2[0] = 2;
+    seq2[1] = 4;
+    seq2[2] = 5;
+    seq2[3] = 7;
+    seq2[4] = 8;
+    
+    result:lcsResult = lcs(seq1, 6, seq2, 5);
+    int64:length = lcsResult.val; // 3 (subsequence: 2, 4, 5)
+    
+    return { err: 0, val: 0 };
+};

@@ -1,0 +1,31 @@
+// Sample 2: Pick/fall pattern matching
+
+func:classify = *int8(int64:n) {
+    pick(n) {
+        (0) { fall(zero); },
+        (<0) { fall(negative); },
+        (>0) { fall(positive); },
+        (*) { fall(done); },
+        
+        zero=>(!) {
+            fall(done);
+        },
+        negative=>(!) {
+            fall(done);
+        },
+        positive=>(!) {
+            fall(done);
+        },
+        done=>(!) {
+        }
+    }
+    
+    return 1;
+};
+
+func:main = *int8() {
+    classify(42);
+    classify(-10);
+    classify(0);
+    return 0;
+};

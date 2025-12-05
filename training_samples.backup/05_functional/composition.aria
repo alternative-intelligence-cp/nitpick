@@ -1,0 +1,45 @@
+// Training Sample: Function composition
+// Demonstrates: composing functions, pipelines
+
+use aria.stdlib.math;
+
+// Compose two functions: (f . g)(x) = f(g(x))
+func:compose = *func(func:f, func:g) {
+    // Returns lambda that applies g then f
+    return { 
+        err: 0, 
+        val: uint64(uint64:x) {
+            result:r1 = g(x);
+            result:r2 = f(r1.val);
+            return r2;
+        }
+    };
+};
+
+func:double = *int64(int64:x) {
+    return { err: 0, val: x * 2 };
+};
+
+func:increment = *int64(int64:x) {
+    return { err: 0, val: x + 1 };
+};
+
+func:square = *int64(int64:x) {
+    return { err: 0, val: x * x };
+};
+
+func:main = *int8() {
+    // Compose: double then increment
+    result:composed1 = compose(increment, double);
+    func:doubleAndInc = composed1.val;
+    
+    result:r1 = doubleAndInc(5); // (5 * 2) + 1 = 11
+    
+    // Compose: increment then square
+    result:composed2 = compose(square, increment);
+    func:incAndSquare = composed2.val;
+    
+    result:r2 = incAndSquare(5); // (5 + 1)^2 = 36
+    
+    return { err: 0, val: 0 };
+};

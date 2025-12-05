@@ -1,0 +1,94 @@
+// Training Sample: Binary tree implementation
+// Demonstrates: recursive data structures, tree traversal
+
+struct TreeNode {
+    int64:value;
+    wild TreeNode*:left;
+    wild TreeNode*:right;
+};
+
+func:createNode = *wild TreeNode*(int64:val) {
+    wild TreeNode*:node = aria.alloc<TreeNode>(1);
+    node->value = val;
+    node->left = NULL;
+    node->right = NULL;
+    return { err: 0, val: node };
+};
+
+func:insert = *wild TreeNode*(wild TreeNode*:root, int64:val) {
+    if (root == NULL) {
+        result:newNode = createNode(val);
+        return newNode;
+    }
+    
+    if (val < root->value) {
+        result:leftResult = insert(root->left, val);
+        root->left = leftResult.val;
+    } else {
+        result:rightResult = insert(root->right, val);
+        root->right = rightResult.val;
+    }
+    
+    return { err: 0, val: root };
+};
+
+func:search = *bool(wild TreeNode*:root, int64:val) {
+    if (root == NULL) {
+        return { err: 0, val: false };
+    }
+    
+    if (root->value == val) {
+        return { err: 0, val: true };
+    }
+    
+    if (val < root->value) {
+        return search(root->left, val);
+    } else {
+        return search(root->right, val);
+    }
+};
+
+func:inorderTraversal = *int8(wild TreeNode*:root, int64[]:output, int64*:index) {
+    if (root == NULL) {
+        return { err: 0, val: 1 };
+    }
+    
+    inorderTraversal(root->left, output, index);
+    output[*index] = root->value;
+    *index = *index + 1;
+    inorderTraversal(root->right, output, index);
+    
+    return { err: 0, val: 1 };
+};
+
+func:freeTree = *int8(wild TreeNode*:root) {
+    if (root == NULL) {
+        return { err: 0, val: 1 };
+    }
+    
+    freeTree(root->left);
+    freeTree(root->right);
+    aria.free(root);
+    
+    return { err: 0, val: 1 };
+};
+
+func:main = *int8() {
+    wild TreeNode*:root = NULL;
+    defer freeTree(root);
+    
+    result:r1 = insert(root, 50);
+    root = r1.val;
+    
+    insert(root, 30);
+    insert(root, 70);
+    insert(root, 20);
+    insert(root, 40);
+    insert(root, 60);
+    insert(root, 80);
+    
+    result:found = search(root, 40);
+    bool:exists = found.val; // true
+    
+    return { err: 0, val: 0 };
+};

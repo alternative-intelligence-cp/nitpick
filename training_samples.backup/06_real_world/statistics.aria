@@ -1,0 +1,82 @@
+// Training Sample: Statistical calculations
+// Demonstrates: real-world math, array processing
+
+use aria.stdlib.collections;
+use aria.stdlib.math;
+
+// Calculate mean (average)
+func:mean = *flt64(int64[]:data, int64:size) {
+    if (size == 0) {
+        return { err: 1, val: 0.0 };
+    }
+    
+    result:sumResult = collections.sum(data, size);
+    int64:total = sumResult.val;
+    
+    flt64:average = total / size;
+    return { err: 0, val: average };
+};
+
+// Calculate median
+func:median = *flt64(int64[]:data, int64:size) {
+    if (size == 0) {
+        return { err: 1, val: 0.0 };
+    }
+    
+    // Sort data first
+    collections.quicksort(data, size);
+    
+    if (size % 2 == 1) {
+        // Odd size: return middle element
+        int64:mid = size / 2;
+        return { err: 0, val: data[mid] };
+    } else {
+        // Even size: return average of two middle elements
+        int64:mid1 = size / 2 - 1;
+        int64:mid2 = size / 2;
+        flt64:medianVal = (data[mid1] + data[mid2]) / 2.0;
+        return { err: 0, val: medianVal };
+    }
+};
+
+// Calculate variance
+func:variance = *flt64(int64[]:data, int64:size) {
+    if (size == 0) {
+        return { err: 1, val: 0.0 };
+    }
+    
+    result:meanResult = mean(data, size);
+    flt64:avg = meanResult.val;
+    
+    flt64:sumSquaredDiff = 0.0;
+    int64:i = 0;
+    
+    while (i < size) {
+        flt64:diff = data[i] - avg;
+        sumSquaredDiff = sumSquaredDiff + (diff * diff);
+        i = i + 1;
+    }
+    
+    flt64:varianceVal = sumSquaredDiff / size;
+    return { err: 0, val: varianceVal };
+};
+
+func:main = *int8() {
+    int64[10]:data;
+    data[0] = 2;
+    data[1] = 4;
+    data[2] = 4;
+    data[3] = 4;
+    data[4] = 5;
+    data[5] = 5;
+    data[6] = 7;
+    data[7] = 9;
+    data[8] = 10;
+    data[9] = 12;
+    
+    result:meanResult = mean(data, 10);
+    result:medianResult = median(data, 10);
+    result:varianceResult = variance(data, 10);
+    
+    return { err: 0, val: 0 };
+};

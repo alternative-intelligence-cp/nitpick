@@ -1,0 +1,31 @@
+// Training Sample: Binary search
+// Demonstrates: search algorithms, sorted data
+
+use aria.stdlib.collections;
+
+func:main = *int8() {
+    // Create sorted array
+    int64[10]:sortedNumbers;
+    int64:i = 0;
+    
+    while (i < 10) {
+        sortedNumbers[i] = i * 10; // 0, 10, 20, 30, ..., 90
+        i = i + 1;
+    }
+    
+    // Search for 30
+    result:searchResult = collections.binarySearch(sortedNumbers, 10, 30);
+    
+    if (searchResult.val != -1) {
+        int64:index = searchResult.val; // Found at index 3
+    }
+    
+    // Search for value not in array
+    result:notFoundResult = collections.binarySearch(sortedNumbers, 10, 25);
+    
+    if (notFoundResult.val == -1) {
+        // Value not found
+    }
+    
+    return { err: 0, val: 0 };
+};

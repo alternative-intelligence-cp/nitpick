@@ -1,0 +1,94 @@
+// Aria Standard Library - Memory Management Utilities
+// Helpers for working with gc and wild memory
+
+mod memory {
+    // Safe allocation with size checking
+    pub func:allocSafe = *wild int64*(int64:size) {
+        if (size <= 0) {
+            return { err: 1, val: NULL };
+        }
+        
+        wild int64*:ptr = aria.alloc<int64>(size);
+        return { err: 0, val: ptr };
+    };
+
+    // GC allocation with size checking
+    pub func:gcAllocSafe = *gc int64*(int64:size) {
+        if (size <= 0) {
+            return { err: 1, val: NULL };
+        }
+        
+        gc int64*:ptr = aria.gc_alloc<int64>(size);
+        return { err: 0, val: ptr };
+    };
+
+    // Zero-initialize memory block
+    pub func:zeroInit = *int8(wild int64*:ptr, int64:size) {
+        if (ptr == NULL) {
+            return { err: 1, val: 0 };
+        }
+        
+        int64:i = 0;
+        while (i < size) {
+            ptr[i] = 0;
+            i = i + 1;
+        }
+        
+        return { err: 0, val: 1 };
+    };
+
+    // Copy memory from source to destination
+    pub func:copy = *int8(wild int64*:dest, wild int64*:src, int64:size) {
+        if (dest == NULL) {
+            return { err: 1, val: 0 };
+        }
+        
+        if (src == NULL) {
+            return { err: 2, val: 0 };
+        }
+        
+        int64:i = 0;
+        while (i < size) {
+            dest[i] = src[i];
+            i = i + 1;
+        }
+        
+        return { err: 0, val: 1 };
+    };
+
+    // Fill memory with specific value
+    pub func:fill = *int8(wild int64*:ptr, int64:size, int64:value) {
+        if (ptr == NULL) {
+            return { err: 1, val: 0 };
+        }
+        
+        int64:i = 0;
+        while (i < size) {
+            ptr[i] = value;
+            i = i + 1;
+        }
+        
+        return { err: 0, val: 1 };
+    };
+
+    // Compare two memory blocks
+    pub func:compare = *int8(wild int64*:ptr1, wild int64*:ptr2, int64:size) {
+        if (ptr1 == NULL) {
+            return { err: 1, val: 0 };
+        }
+        
+        if (ptr2 == NULL) {
+            return { err: 2, val: 0 };
+        }
+        
+        int64:i = 0;
+        while (i < size) {
+            if (ptr1[i] != ptr2[i]) {
+                return { err: 0, val: 0 }; // Not equal
+            }
+            i = i + 1;
+        }
+        
+        return { err: 0, val: 1 }; // Equal
+    };
+}

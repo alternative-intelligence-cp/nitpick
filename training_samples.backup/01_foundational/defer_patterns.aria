@@ -1,0 +1,36 @@
+// Training Sample: Defer statement patterns
+// Demonstrates: defer, RAII cleanup, resource management
+
+func:openAndProcess = *int8() {
+    wild int64*:buffer = aria.alloc<int64>(100);
+    defer aria.free(buffer);
+    
+    // Use buffer - will be freed automatically
+    int64:i = 0;
+    while (i < 100) {
+        buffer[i] = i * 2;
+        i = i + 1;
+    }
+    
+    return { err: 0, val: 0 };
+};
+
+func:multipleDefers = *int8() {
+    wild int64*:ptr1 = aria.alloc<int64>(50);
+    defer aria.free(ptr1);
+    
+    wild int64*:ptr2 = aria.alloc<int64>(50);
+    defer aria.free(ptr2);
+    
+    // Both freed in reverse order (LIFO)
+    ptr1[0] = 10;
+    ptr2[0] = 20;
+    
+    return { err: 0, val: 0 };
+};
+
+func:main = *int8() {
+    openAndProcess();
+    multipleDefers();
+    return { err: 0, val: 0 };
+};

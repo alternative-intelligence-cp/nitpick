@@ -882,6 +882,41 @@ Token AriaLexer::nextToken() {
            return {TOKEN_COLON, ":", op_line, op_col};
        }
 
+       // Template string literal start (backtick)
+       if (c == '`') {
+           size_t start_line = line, start_col = col;
+           advance(); // consume opening backtick
+           stateStack.push(STATE_STRING_TEMPLATE);
+           return {TOKEN_BACKTICK, "`", start_line, start_col};
+       }
+
+       // Regular string literal (double quote)
+       if (c == '"') {
+           size_t start_line = line, start_col = col;
+           advance(); // consume opening quote
+           std::string content;
+           while (peek() != '"' && peek() != 0) {
+               if (peek() == '\\') {
+                   advance();
+                   char next = peek();
+                   if (next == 'n') content += '\n';
+                   else if (next == 't') content += '\t';
+                   else if (next == 'r') content += '\r';
+                   else if (next == '\\') content += '\\';
+                   else if (next == '"') content += '"';
+                   else if (next == '0') content += '\0';
+                   else content += next; // Unknown escape
+                   advance();
+               } else {
+                   content += peek();
+                   advance();
+               }
+           }
+           if (peek() == '"') advance(); // consume closing quote
+           else return {TOKEN_INVALID, "UNTERMINATED_STRING", start_line, start_col};
+           return {TOKEN_STRING_LITERAL, content, start_line, start_col};
+       }
+
        // Unknown character
        return {TOKEN_INVALID, std::string(1, c), line, col};
 }

@@ -1,0 +1,50 @@
+// Training Sample: Pick statement (pattern matching)
+// Demonstrates: pick, fall, labeled cases, ranges
+
+func:classifyNumber = *int8(int64:n) {
+    pick(n) {
+        (<0) {
+            fall(negative);
+        },
+        (0) {
+            fall(zero);
+        },
+        (>0) {
+            fall(positive);
+        },
+        (*) {
+            fall(unknown);
+        },
+        negative=>(!) {
+            // Handle negative
+            int64:result = -1;
+            fall(done);
+        },
+        zero=>(!) {
+            // Handle zero
+            int64:result = 0;
+            fall(done);
+        },
+        positive=>(!) {
+            // Handle positive
+            int64:result = 1;
+            fall(done);
+        },
+        unknown=>(!) {
+            // Should never reach
+            fall(done);
+        },
+        done=>(!) {
+            // Cleanup
+        }
+    }
+    
+    return { err: 0, val: 0 };
+};
+
+func:main = *int8() {
+    classifyNumber(-5);
+    classifyNumber(0);
+    classifyNumber(42);
+    return { err: 0, val: 0 };
+};

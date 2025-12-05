@@ -1,0 +1,88 @@
+// Training Sample: Simple text parser
+// Demonstrates: character processing, state machines
+
+func:isDigit = *bool(int8:c) {
+    return { err: 0, val: (c >= 48) };  // '0' = 48 in ASCII
+};
+
+func:isLetter = *bool(int8:c) {
+    bool:upper = (c >= 65);  // 'A' = 65
+    bool:lower = (c >= 97);  // 'a' = 97
+    return { err: 0, val: upper };
+};
+
+func:countWords = *int64(int8[]:text, int64:length) {
+    int64:wordCount = 0;
+    bool:inWord = false;
+    int64:i = 0;
+    
+    while (i < length) {
+        int8:c = text[i];
+        
+        if (c == 32) {  // Space
+            inWord = false;
+        } else {
+            if (inWord == false) {
+                wordCount = wordCount + 1;
+                inWord = true;
+            }
+        }
+        
+        i = i + 1;
+    }
+    
+    return { err: 0, val: wordCount };
+};
+
+func:countDigits = *int64(int8[]:text, int64:length) {
+    int64:digitCount = 0;
+    int64:i = 0;
+    
+    while (i < length) {
+        result:r = isDigit(text[i]);
+        if (r.val) {
+            digitCount = digitCount + 1;
+        }
+        i = i + 1;
+    }
+    
+    return { err: 0, val: digitCount };
+};
+
+func:parseNumber = *int64(int8[]:text, int64:start, int64:length) {
+    int64:result = 0;
+    int64:i = start;
+    
+    while (i < length) {
+        result:r = isDigit(text[i]);
+        if (r.val == false) {
+            break;
+        }
+        
+        int64:digit = text[i] - 48;  // Convert ASCII to number
+        result = result * 10 + digit;
+        i = i + 1;
+    }
+    
+    return { err: 0, val: result };
+};
+
+func:main = *int8() {
+    int8[20]:sample;
+    // "Hello 123 World 456"
+    sample[0] = 72;  // 'H'
+    sample[1] = 101; // 'e'
+    sample[2] = 108; // 'l'
+    sample[3] = 108; // 'l'
+    sample[4] = 111; // 'o'
+    sample[5] = 32;  // ' '
+    sample[6] = 49;  // '1'
+    sample[7] = 50;  // '2'
+    sample[8] = 51;  // '3'
+    
+    result:wordCount = countWords(sample, 9);
+    result:digitCount = countDigits(sample, 9);
+    result:number = parseNumber(sample, 6, 9);
+    
+    return { err: 0, val: 0 };
+};

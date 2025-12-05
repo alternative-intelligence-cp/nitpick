@@ -1,0 +1,90 @@
+// Training Sample: Merge sort algorithm
+// Demonstrates: divide and conquer, recursion, array manipulation
+
+use aria.stdlib.memory;
+
+func:merge = *int8(int64[]:arr, int64:left, int64:mid, int64:right) {
+    int64:n1 = mid - left + 1;
+    int64:n2 = right - mid;
+    
+    // Create temp arrays
+    wild int64*:leftArr = aria.alloc<int64>(n1);
+    defer aria.free(leftArr);
+    
+    wild int64*:rightArr = aria.alloc<int64>(n2);
+    defer aria.free(rightArr);
+    
+    // Copy data to temp arrays
+    int64:i = 0;
+    while (i < n1) {
+        leftArr[i] = arr[left + i];
+        i = i + 1;
+    }
+    
+    int64:j = 0;
+    while (j < n2) {
+        rightArr[j] = arr[mid + 1 + j];
+        j = j + 1;
+    }
+    
+    // Merge temp arrays back
+    i = 0;
+    j = 0;
+    int64:k = left;
+    
+    while (i < n1) {
+        if (j >= n2) {
+            arr[k] = leftArr[i];
+            i = i + 1;
+        } else {
+            if (leftArr[i] <= rightArr[j]) {
+                arr[k] = leftArr[i];
+                i = i + 1;
+            } else {
+                arr[k] = rightArr[j];
+                j = j + 1;
+            }
+        }
+        k = k + 1;
+    }
+    
+    while (j < n2) {
+        arr[k] = rightArr[j];
+        j = j + 1;
+        k = k + 1;
+    }
+    
+    return { err: 0, val: 1 };
+};
+
+func:mergeSortHelper = *int8(int64[]:arr, int64:left, int64:right) {
+    if (left < right) {
+        int64:mid = left + (right - left) / 2;
+        
+        mergeSortHelper(arr, left, mid);
+        mergeSortHelper(arr, mid + 1, right);
+        merge(arr, left, mid, right);
+    }
+    
+    return { err: 0, val: 1 };
+};
+
+func:mergeSort = *int8(int64[]:arr, int64:size) {
+    return mergeSortHelper(arr, 0, size - 1);
+};
+
+func:main = *int8() {
+    int64[8]:numbers;
+    numbers[0] = 38;
+    numbers[1] = 27;
+    numbers[2] = 43;
+    numbers[3] = 3;
+    numbers[4] = 9;
+    numbers[5] = 82;
+    numbers[6] = 10;
+    numbers[7] = 1;
+    
+    mergeSort(numbers, 8);
+    
+    return { err: 0, val: 0 };
+};

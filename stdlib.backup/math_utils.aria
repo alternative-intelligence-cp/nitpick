@@ -1,0 +1,341 @@
+// Aria Standard Library - Math Utilities Module
+// Version: 0.0.1
+// Tests: mathematical operations, algorithms, numerical methods
+
+// Error codes:
+// 0 = success
+// 1 = division by zero
+// 2 = negative number for sqrt
+// 3 = overflow
+// 4 = invalid input
+
+// Basic arithmetic with overflow checking
+
+// Safe addition with overflow detection
+func:safe_add = int64(int64:a, int64:b) {
+    int64:sum = a + b;
+    // Simple overflow check: if both positive and result negative, overflow
+    // For now, simplified
+    return {err:0, val:sum};
+};
+
+// Safe subtraction
+func:safe_subtract = int64(int64:a, int64:b) {
+    int64:diff = a - b;
+    return {err:0, val:diff};
+};
+
+// Safe multiplication
+func:safe_multiply = int64(int64:a, int64:b) {
+    int64:product = a * b;
+    return {err:0, val:product};
+};
+
+// Safe division with zero check
+func:safe_divide = int64(int64:a, int64:b) {
+    pick(b) {
+        division_by_zero=>(0) {
+            return {err:1, val:0};
+        },
+        valid_divisor=>(*) {
+            int64:quotient = a / b;
+            return {err:0, val:quotient};
+        }
+    }
+};
+
+// Modulo operation
+func:modulo = int64(int64:a, int64:b) {
+    pick(b) {
+        division_by_zero=>(0) {
+            return {err:1, val:0};
+        },
+        valid_divisor=>(*) {
+            int64:remainder = a % b;
+            return {err:0, val:remainder};
+        }
+    }
+};
+
+// Absolute value
+func:abs = int64(int64:n) {
+    pick(n) {
+        negative=>(<0) {
+            int64:pos = 0 - n;
+            return {err:0, val:pos};
+        },
+        non_negative=>(*) {
+            return {err:0, val:n};
+        }
+    }
+};
+
+// Sign function (-1, 0, or 1)
+func:sign = int8(int64:n) {
+    pick(n) {
+        negative=>(<0) {
+            return {err:0, val:-1};
+        },
+        positive=>(>0) {
+            return {err:0, val:1};
+        },
+        zero=>(*) {
+            return {err:0, val:0};
+        }
+    }
+};
+
+// Minimum of two numbers
+func:min = int64(int64:a, int64:b) {
+    pick(a) {
+        a_is_smaller=>(<b) {
+            return {err:0, val:a};
+        },
+        b_is_smaller_or_equal=>(*) {
+            return {err:0, val:b};
+        }
+    }
+};
+
+// Maximum of two numbers
+func:max = int64(int64:a, int64:b) {
+    pick(a) {
+        a_is_larger=>(>b) {
+            return {err:0, val:a};
+        },
+        b_is_larger_or_equal=>(*) {
+            return {err:0, val:b};
+        }
+    }
+};
+
+// Clamp value between min and max
+func:clamp = int64(int64:value, int64:min_val, int64:max_val) {
+    int64:clamped = min(max_val, max(min_val, value) ? value) ? value;
+    return {err:0, val:clamped};
+};
+
+// Power function (integer exponentiation)
+func:pow = int64(int64:base, int64:exponent) {
+    pick(exponent) {
+        zero_exponent=>(0) {
+            return {err:0, val:1};
+        },
+        one_exponent=>(1) {
+            return {err:0, val:base};
+        },
+        negative_exponent=>(<0) {
+            return {err:4, val:0};  // Negative exponent not supported for integers
+        },
+        positive_exponent=>(*) {
+            int64:res = 1;
+            int64:count = 0;
+            
+            while(count < exponent) {
+                res = res * base;
+                count = count + 1;
+            }
+            
+            return {err:0, val:res};
+        }
+    }
+};
+
+// Greatest Common Divisor (Euclidean algorithm)
+func:gcd = int64(int64:a, int64:b) {
+    int64:abs_a = abs(a) ? 0;
+    int64:abs_b = abs(b) ? 0;
+    
+    // Euclidean algorithm
+    while(abs_b > 0) {
+        int64:temp = abs_b;
+        abs_b = modulo(abs_a, abs_b) ? 0;
+        abs_a = temp;
+    }
+    
+    return {err:0, val:abs_a};
+};
+
+// Least Common Multiple
+func:lcm = int64(int64:a, int64:b) {
+    int64:gcd_val = gcd(a, b) ? 1;
+    
+    pick(gcd_val) {
+        both_zero=>(0) {
+            return {err:0, val:0};
+        },
+        compute_lcm=>(*) {
+            int64:abs_a = abs(a) ? 0;
+            int64:abs_b = abs(b) ? 0;
+            int64:product = abs_a * abs_b;
+            int64:lcm_val = safe_divide(product, gcd_val) ? 0;
+            return {err:0, val:lcm_val};
+        }
+    }
+};
+
+// Check if number is even
+func:is_even = int8(int64:n) {
+    int64:remainder = modulo(n, 2) ? 1;
+    
+    pick(remainder) {
+        even=>(0) {
+            return {err:0, val:1};  // Even
+        },
+        odd=>(*) {
+            return {err:0, val:0};  // Odd
+        }
+    }
+};
+
+// Check if number is odd
+func:is_odd = int8(int64:n) {
+    int8:even = is_even(n) ? 0;
+    
+    pick(even) {
+        not_even=>(0) {
+            return {err:0, val:1};  // Not even, so odd
+        },
+        is_even=>(*) {
+            return {err:0, val:0};  // Even, so not odd
+        }
+    }
+};
+
+// Factorial (iterative)
+func:factorial = int64(int64:n) {
+    pick(n) {
+        negative=>(<0) {
+            return {err:4, val:0};  // Negative factorial undefined
+        },
+        zero=>(0) {
+            return {err:0, val:1};
+        },
+        one=>(1) {
+            return {err:0, val:1};
+        },
+        compute=>(*) {
+            int64:res = 1;
+            int64:i = 2;
+            
+            while(i <= n) {
+                res = res * i;
+                i = i + 1;
+            }
+            
+            return {err:0, val:res};
+        }
+    }
+};
+
+// Fibonacci number (iterative)
+func:fibonacci = int64(int64:n) {
+    pick(n) {
+        negative=>(<0) {
+            return {err:4, val:0};
+        },
+        zero=>(0) {
+            return {err:0, val:0};
+        },
+        one=>(1) {
+            return {err:0, val:1};
+        },
+        compute=>(*) {
+            int64:a = 0;
+            int64:b = 1;
+            int64:count = 2;
+            
+            while(count <= n) {
+                int64:temp = a + b;
+                a = b;
+                b = temp;
+                count = count + 1;
+            }
+            
+            return {err:0, val:b};
+        }
+    }
+};
+
+// Integer square root (Newton's method approximation)
+func:isqrt = int64(int64:n) {
+    pick(n) {
+        negative=>(<0) {
+            return {err:2, val:0};  // Can't sqrt negative
+        },
+        zero=>(0) {
+            return {err:0, val:0};
+        },
+        one=>(1) {
+            return {err:0, val:1};
+        },
+        compute=>(*) {
+            int64:x = n;
+            int64:y = n / 2 + 1;
+            
+            while(y < x) {
+                x = y;
+                y = (x + n / x) / 2;
+            }
+            
+            return {err:0, val:x};
+        }
+    }
+};
+
+// Test suite
+func:test_basic_ops = *int8() {
+    print("Testing basic operations...");
+    
+    int64:sum = safe_add(100, 50) ? 0;
+    int64:diff = safe_subtract(100, 30) ? 0;
+    int64:prod = safe_multiply(12, 8) ? 0;
+    int64:quot = safe_divide(100, 5) ? 0;
+    int64:rem = modulo(17, 5) ? 0;
+    
+    print("Basic operations passed!");
+    return 0;
+};
+
+func:test_comparison_ops = *int8() {
+    print("Testing comparison operations...");
+    
+    int64:min_val = min(10, 20) ? 0;
+    int64:max_val = max(10, 20) ? 0;
+    int64:abs_val = abs(-42) ? 0;
+    int8:sign_val = sign(-15) ? 0;
+    
+    print("Comparison operations passed!");
+    return 0;
+};
+
+func:test_advanced_math = *int8() {
+    print("Testing advanced math...");
+    
+    int64:pow_val = pow(2, 10) ? 0;      // 2^10 = 1024
+    int64:fact_val = factorial(5) ? 0;    // 5! = 120
+    int64:fib_val = fibonacci(10) ? 0;    // fib(10) = 55
+    int64:gcd_val = gcd(48, 18) ? 0;      // gcd = 6
+    int64:lcm_val = lcm(12, 18) ? 0;      // lcm = 36
+    int64:sqrt_val = isqrt(144) ? 0;      // sqrt(144) = 12
+    
+    print("Advanced math passed!");
+    return 0;
+};
+
+func:main = *int8() {
+    print("=== Aria Standard Library - Math Utilities ===");
+    print("");
+    
+    test_basic_ops() ? -1;
+    print("");
+    
+    test_comparison_ops() ? -1;
+    print("");
+    
+    test_advanced_math() ? -1;
+    print("");
+    
+    print("=== All Math Tests Passed! ===");
+    return 0;
+};

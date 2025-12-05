@@ -1,0 +1,36 @@
+// Training Sample: All loop types
+// Demonstrates: while, for, till, when loops
+
+func:main = *int8() {
+    // While loop - condition checked before each iteration
+    int64:count = 0;
+    while (count < 5) {
+        count = count + 1;
+    }
+    
+    // For loop - C-style iteration
+    int64:sum = 0;
+    for (int64:i = 0; i < 10; i = i + 1) {
+        sum = sum + i;
+    }
+    
+    // Till loop - automatic iterator variable $
+    int64:total = 0;
+    till(100, 1) {
+        total = total + $;
+    }
+    
+    // When loop with then/end blocks
+    int64:n = 0;
+    when(n < 10) {
+        n = n + 1;
+    } then {
+        // Executed when loop completes naturally
+        int64:completed = 1;
+    } end {
+        // Executed if loop didn't run or broke early
+        int64:notCompleted = 1;
+    }
+    
+    return { err: 0, val: 0 };
+};

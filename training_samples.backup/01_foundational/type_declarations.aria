@@ -1,0 +1,34 @@
+// Training Sample: Variable and type declarations
+// Demonstrates: typed vars, inference, arrays, gc vs wild
+
+func:main = *int8() {
+    // Basic type declarations
+    int8:smallInt = 42;
+    int64:largeInt = 1000000;
+    bool:flag = true;
+    
+    // Array declarations
+    int64[10]:fixedArray;
+    int64[]:dynamicArray = [1, 2, 3, 4, 5];
+    
+    // GC memory (default)
+    gc int64*:gcPtr = aria.gc_alloc<int64>(100);
+    
+    // Wild memory (manual)
+    wild int64*:wildPtr = aria.alloc<int64>(100);
+    defer aria.free(wildPtr);
+    
+    // Result types
+    result:r = { err: 0, val: 42 };
+    
+    // Member access
+    int8:errorCode = r.err;
+    int64:value = r.val;
+    
+    // Dynamic typing
+    dyn:d = "string";
+    d = 123;
+    d = true;
+    
+    return { err: 0, val: 0 };
+};

@@ -1,0 +1,75 @@
+// Training Sample: Functional programming patterns
+// Demonstrates: map, filter, reduce with lambdas
+
+// Map: apply function to each element
+func:map = *int8(int64[]:arr, int64:size, func:f) {
+    int64:i = 0;
+    while (i < size) {
+        result:r = f(arr[i]);
+        arr[i] = r.val;
+        i = i + 1;
+    }
+    return { err: 0, val: 1 };
+};
+
+// Filter: keep elements matching predicate
+func:filter = *int64(int64[]:arr, int64:size, int64[]:result, func:predicate) {
+    int64:resultSize = 0;
+    int64:i = 0;
+    
+    while (i < size) {
+        result:r = predicate(arr[i]);
+        if (r.val == 1) {
+            result[resultSize] = arr[i];
+            resultSize = resultSize + 1;
+        }
+        i = i + 1;
+    }
+    
+    return { err: 0, val: resultSize };
+};
+
+// Reduce: combine elements into single value
+func:reduce = *int64(int64[]:arr, int64:size, int64:initial, func:combiner) {
+    int64:accumulator = initial;
+    int64:i = 0;
+    
+    while (i < size) {
+        result:r = combiner(accumulator, arr[i]);
+        accumulator = r.val;
+        i = i + 1;
+    }
+    
+    return { err: 0, val: accumulator };
+};
+
+func:main = *int8() {
+    int64[5]:numbers;
+    numbers[0] = 1;
+    numbers[1] = 2;
+    numbers[2] = 3;
+    numbers[3] = 4;
+    numbers[4] = 5;
+    
+    // Map: double each number
+    map(numbers, 5, uint64(uint64:x) {
+        return { err: 0, val: x * 2 };
+    });
+    
+    // Filter: keep even numbers
+    int64[5]:filtered;
+    result:filterResult = filter(numbers, 5, filtered, 
+        uint64(uint64:x) {
+            return { err: 0, val: (x % 2 == 0) };
+        }
+    );
+    
+    // Reduce: sum all numbers
+    result:sum = reduce(numbers, 5, 0,
+        uint64(uint64:acc, uint64:x) {
+            return { err: 0, val: acc + x };
+        }
+    );
+    
+    return { err: 0, val: 0 };
+};
