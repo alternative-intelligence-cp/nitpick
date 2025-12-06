@@ -1,0 +1,34 @@
+// test_wildx_array_index.aria
+// Test writing to wildx buffer using array indexing
+// This will generate x86-64 machine code byte by byte
+
+func:main = int8() {
+    print("=== Wildx Array Indexing Test ===");
+    print("");
+    
+    // Allocate wildx buffer (will be at least 4KB - one page)
+    wildx uint8:code = 0;
+    
+    print("Step 1: Allocated wildx buffer");
+    
+    // Write x86-64 opcodes using array indexing
+    // We'll generate a simple function: MOV RAX, 42; RET
+    code[0] = 0x48;  // REX.W prefix (64-bit operand)
+    code[1] = 0xC7;  // MOV opcode (immediate to register)
+    code[2] = 0xC0;  // ModR/M byte (specifies RAX)
+    code[3] = 0x2A;  // Immediate value: 42 (low byte)
+    code[4] = 0x00;  // Immediate value (byte 2)
+    code[5] = 0x00;  // Immediate value (byte 3)
+    code[6] = 0x00;  // Immediate value (high byte)
+    code[7] = 0xC3;  // RET instruction
+    
+    print("Step 2: Wrote machine code to buffer:");
+    print("        MOV RAX, 42");
+    print("        RET");
+    print("");
+    
+    print("✓ Array indexing works for wildx!");
+    print("  Ready for JIT compilation");
+    
+    *0;
+};

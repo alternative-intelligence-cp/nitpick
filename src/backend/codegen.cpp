@@ -194,13 +194,13 @@ public:
         }
         
         if (ariaType == "int1") return Type::getInt1Ty(llvmContext);
-        if (ariaType == "int8" || ariaType == "byte" || ariaType == "trit") 
+        if (ariaType == "int8" || ariaType == "uint8" || ariaType == "byte" || ariaType == "trit") 
             return Type::getInt8Ty(llvmContext);
-        if (ariaType == "int16" || ariaType == "tryte") 
+        if (ariaType == "int16" || ariaType == "uint16" || ariaType == "tryte") 
             return Type::getInt16Ty(llvmContext);
-        if (ariaType == "int32") return Type::getInt32Ty(llvmContext);
-        if (ariaType == "int64") return Type::getInt64Ty(llvmContext);
-        if (ariaType == "int128") return Type::getInt128Ty(llvmContext);
+        if (ariaType == "int32" || ariaType == "uint32") return Type::getInt32Ty(llvmContext);
+        if (ariaType == "int64" || ariaType == "uint64") return Type::getInt64Ty(llvmContext);
+        if (ariaType == "int128" || ariaType == "uint128") return Type::getInt128Ty(llvmContext);
         
         // Exotic Type: int512
         // Lowered to standard LLVM i512. LLVM backend handles splitting for x86.
@@ -1470,7 +1470,74 @@ public:
                 binop->op == aria::frontend::BinaryOp::SLASH_ASSIGN ||
                 binop->op == aria::frontend::BinaryOp::MOD_ASSIGN) {
                 
-                // Get LHS variable address
+                // Check if LHS is array indexing
+                if (auto* indexExpr = dynamic_cast<aria::frontend::IndexExpr*>(binop->left.get())) {
+                    // Assignment to array element: arr[i] = value
+                    
+                    // For array indexing assignment, we need the POINTER not the loaded value
+                    // Get the array variable directly from symbol table
+                    Value* arrayPtr = nullptr;
+                    Type* elementType = nullptr;
+                    
+                    if (auto* varRef = dynamic_cast<aria::frontend::VarExpr*>(indexExpr->array.get())) {
+                        // Look up the variable to get its alloca (which holds a pointer)
+                        auto* sym = ctx.lookup(varRef->name);
+                        if (!sym) {
+                            throw std::runtime_error("Undefined variable: " + varRef->name);
+                        }
+                        
+                        // Load the pointer from the alloca
+                        arrayPtr = ctx.builder->CreateLoad(
+                            PointerType::getUnqual(ctx.llvmContext),
+                            sym->val,
+                            varRef->name + "_ptr"
+                        );
+                        
+                        // Get element type from Aria type string
+                        std::string ariaType = sym->ariaType;
+                        size_t bracketPos = ariaType.find('[');
+                        if (bracketPos != std::string::npos) {
+                            std::string elemTypeName = ariaType.substr(0, bracketPos);
+                            elementType = ctx.getLLVMType(elemTypeName);
+                        } else {
+                            // Not an array type? Default to i8
+                            elementType = Type::getInt8Ty(ctx.llvmContext);
+                        }
+                    } else {
+                        throw std::runtime_error("Array assignment requires variable reference");
+                    }
+                    
+                    if (!arrayPtr || !elementType) {
+                        throw std::runtime_error("Failed to resolve array pointer or element type");
+                    }
+                    
+                    // Get index and RHS value
+                    Value* index = visitExpr(indexExpr->index.get());
+                    Value* rhs = visitExpr(binop->right.get());
+                    
+                    if (!index || !rhs) return nullptr;
+                    
+                    // Cast RHS to element type if needed
+                    if (rhs->getType() != elementType) {
+                        if (rhs->getType()->isIntegerTy() && elementType->isIntegerTy()) {
+                            rhs = ctx.builder->CreateIntCast(rhs, elementType, false, "cast");
+                        }
+                    }
+                    
+                    // Generate GEP to element
+                    Value* elemPtr = ctx.builder->CreateGEP(
+                        elementType,
+                        arrayPtr,
+                        index,
+                        "elem_ptr"
+                    );
+                    
+                    // Store value to element
+                    ctx.builder->CreateStore(rhs, elemPtr);
+                    return rhs;  // Return the assigned value
+                }
+                
+                // Get LHS variable address (simple variable assignment)
                 auto* varExpr = dynamic_cast<aria::frontend::VarExpr*>(binop->left.get());
                 if (!varExpr) return nullptr;
                 
