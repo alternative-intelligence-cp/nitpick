@@ -194,9 +194,10 @@ public:
         }
         
         // Integer types (all bit widths, signed and unsigned)
-        if (ariaType == "int1") return Type::getInt1Ty(llvmContext);
-        if (ariaType == "int2") return Type::getIntNTy(llvmContext, 2);
-        if (ariaType == "int4" || ariaType == "nit") return Type::getIntNTy(llvmContext, 4);
+        // Note: uint1, uint2, uint4 alias to int1, int2, int4 (not in spec, but user-friendly)
+        if (ariaType == "int1" || ariaType == "uint1") return Type::getInt1Ty(llvmContext);
+        if (ariaType == "int2" || ariaType == "uint2") return Type::getIntNTy(llvmContext, 2);
+        if (ariaType == "int4" || ariaType == "uint4" || ariaType == "nit") return Type::getIntNTy(llvmContext, 4);
         if (ariaType == "int8" || ariaType == "uint8" || ariaType == "byte" || ariaType == "trit") 
             return Type::getInt8Ty(llvmContext);
         if (ariaType == "int16" || ariaType == "uint16" || ariaType == "tryte" || ariaType == "nyte") 
