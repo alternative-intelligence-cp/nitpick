@@ -266,6 +266,9 @@ Token AriaLexer::nextToken() {
                {"int512", TOKEN_TYPE_INT512},
                
                // Integer types (unsigned)
+               {"uint1", TOKEN_TYPE_UINT1},
+               {"uint2", TOKEN_TYPE_UINT2},
+               {"uint4", TOKEN_TYPE_UINT4},
                {"uint8", TOKEN_TYPE_UINT8},
                {"uint16", TOKEN_TYPE_UINT16},
                {"uint32", TOKEN_TYPE_UINT32},

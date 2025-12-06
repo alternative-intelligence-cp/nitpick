@@ -19,26 +19,12 @@ __user_main:                            # @__user_main
 	.cfi_def_cfa_offset 16
 	leaq	.L__unnamed_1(%rip), %rdi
 	callq	puts@PLT
-	movl	$1, %edi
-	callq	aria_alloc_exec@PLT
-	movq	%rax, (%rsp)
-	movq	$0, (%rax)
-	movq	(%rsp), %rax
-	movb	$72, (%rax)
-	movq	(%rsp), %rax
-	movb	$-57, 1(%rax)
-	movq	(%rsp), %rax
-	movb	$-64, 2(%rax)
-	movq	(%rsp), %rax
-	movb	$42, 3(%rax)
-	movq	(%rsp), %rax
-	movb	$0, 4(%rax)
-	movq	(%rsp), %rax
-	movb	$0, 5(%rax)
-	movq	(%rsp), %rax
-	movb	$0, 6(%rax)
-	movq	(%rsp), %rax
-	movb	$-61, 7(%rax)
+	movq	$1, 2(%rsp)
+	movq	$3, 3(%rsp)
+	movq	$15, 4(%rsp)
+	movq	$1, 5(%rsp)
+	movq	$3, 6(%rsp)
+	movq	$15, 7(%rsp)
 	leaq	.L__unnamed_2(%rip), %rdi
 	callq	puts@PLT
 	leaq	.L__unnamed_3(%rip), %rdi
@@ -73,17 +59,17 @@ main:                                   # @main
 	.type	.L__unnamed_1,@object           # @0
 	.section	.rodata.str1.1,"aMS",@progbits,1
 .L__unnamed_1:
-	.asciz	"=== Wildx Array Indexing Test (Decimal) ==="
-	.size	.L__unnamed_1, 44
+	.asciz	"=== Testing uint1/2/4 Aliases ==="
+	.size	.L__unnamed_1, 34
 
 	.type	.L__unnamed_2,@object           # @1
 .L__unnamed_2:
-	.asciz	"\342\234\223 Wrote machine code to wildx buffer"
-	.size	.L__unnamed_2, 39
+	.asciz	"\342\234\223 uint1, uint2, uint4 aliases work correctly"
+	.size	.L__unnamed_2, 47
 
 	.type	.L__unnamed_3,@object           # @2
 .L__unnamed_3:
-	.asciz	"  Using decimal values for verification"
-	.size	.L__unnamed_3, 40
+	.asciz	"\342\234\223 No confusion for users coming from other languages"
+	.size	.L__unnamed_3, 55
 
 	.section	".note.GNU-stack","",@progbits

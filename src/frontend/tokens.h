@@ -88,6 +88,9 @@ enum TokenType {
     TOKEN_TYPE_INT512,
     
     // Integer Types (Unsigned)
+    TOKEN_TYPE_UINT1,       // Alias to int1 (not in spec, but user-friendly)
+    TOKEN_TYPE_UINT2,       // Alias to int2 (not in spec, but user-friendly)
+    TOKEN_TYPE_UINT4,       // Alias to int4 (not in spec, but user-friendly)
     TOKEN_TYPE_UINT8,
     TOKEN_TYPE_UINT16,
     TOKEN_TYPE_UINT32,
