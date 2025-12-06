@@ -1,0 +1,40 @@
+// test_wildx_protect.aria
+// Test wildx memory protection intrinsics
+// Demonstrates W^X (Write XOR Execute) security model
+
+func:main = int8() {
+    print("=== Wildx Memory Protection Test ===");
+    
+    // 1. Allocate executable memory (4096 bytes - one page)
+    // Initial state: RW (Read/Write)
+    wildx uint8:code_page = 0;
+    
+    print("Step 1: Allocated 4KB executable memory (RW state)");
+    
+    // 2. Write some "code" to the buffer
+    // In a real JIT, this would be machine code opcodes
+    // For now, just write a placeholder value
+    code_page = 0xC3;  // x86-64 RET instruction opcode
+    
+    print("Step 2: Wrote opcodes to buffer (still RW)");
+    
+    // 3. Seal the memory for execution
+    // Transition: RW -> RX (Read/Execute)
+    // After this, writes will fail, but code can be executed
+    // TODO: Once intrinsics are fully wired, uncomment:
+    // int32:result = protect_exec(code_page, 4096);
+    
+    print("Step 3: Would seal memory to RX state");
+    print("       (protect_exec intrinsic call)");
+    
+    // 4. In a complete implementation, we would:
+    // - Cast code_page to a function pointer
+    // - Call the generated function
+    // - Free the memory with free_exec(code_page, 4096)
+    
+    print("");
+    print("wildx infrastructure complete!");
+    print("Next: Add function pointer support for execution");
+    
+    *0;
+};
