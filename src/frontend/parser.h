@@ -66,8 +66,9 @@ public:
     std::unique_ptr<Expression> parseExpr();
     std::unique_ptr<Expression> parseTemplateString();
     std::unique_ptr<Statement> parseStmt();
-    std::unique_ptr<VarDecl> parseVarDecl();  // Parse variable declaration statement
+    std::unique_ptr<Statement> parseVarDecl();  // Parse variable OR struct declaration (detects which)
     std::unique_ptr<FuncDecl> parseFuncDecl();  // Bug #70: async functions
+    std::unique_ptr<StructDecl> parseStructDecl();  // Parse struct declaration
     std::unique_ptr<Statement> parseAsyncBlock();  // Bug #70: async blocks
     std::unique_ptr<PickStmt> parsePickStmt();
     std::unique_ptr<DestructurePattern> parseDestructurePattern();  // Bug #64

@@ -108,10 +108,38 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         return std::make_unique<BoolLiteral>(false);
     }
 
-    // Identifier (variable reference or function call)
+    // Identifier (variable reference, function call, or struct constructor)
     if (current.type == TOKEN_IDENTIFIER) {
         std::string name = current.value;
         advance();
+        
+        // Check for struct constructor: StructName{field1: value1, field2: value2}
+        if (current.type == TOKEN_LEFT_BRACE || current.type == TOKEN_LBRACE) {
+            advance(); // consume {
+            
+            auto obj = std::make_unique<ObjectLiteral>();
+            
+            // Parse field initializers
+            while (current.type != TOKEN_RIGHT_BRACE && current.type != TOKEN_RBRACE && current.type != TOKEN_EOF) {
+                Token field_name = expect(TOKEN_IDENTIFIER);
+                expect(TOKEN_COLON);
+                auto field_value = parseExpr();
+                
+                ObjectLiteral::Field field;
+                field.name = field_name.value;
+                field.value = std::move(field_value);
+                obj->fields.push_back(std::move(field));
+                
+                if (!match(TOKEN_COMMA)) {
+                    break;
+                }
+            }
+            
+            expect(TOKEN_RIGHT_BRACE);
+            // Store the struct type name for codegen
+            obj->type_name = name;
+            return obj;
+        }
         
         // Check for function call: identifier(args)
         if (current.type == TOKEN_LPAREN) {
@@ -141,6 +169,25 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
     if (current.type == TOKEN_DOLLAR || current.type == TOKEN_ITERATION) {
         advance();
         return std::make_unique<VarExpr>("$");
+    }
+
+    // Array literal: [1, 2, 3, 4]
+    if (current.type == TOKEN_LEFT_BRACKET || current.type == TOKEN_LBRACKET) {
+        advance(); // consume [
+        
+        auto array = std::make_unique<ArrayLiteral>();
+        
+        // Parse elements
+        while (current.type != TOKEN_RIGHT_BRACKET && current.type != TOKEN_RBRACKET && current.type != TOKEN_EOF) {
+            array->elements.push_back(parseExpr());
+            
+            if (!match(TOKEN_COMMA)) {
+                break;
+            }
+        }
+        
+        expect(TOKEN_RIGHT_BRACKET);
+        return array;
     }
 
     // Parenthesized expression
@@ -270,6 +317,15 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
     
     // Loop to handle chained postfix operations: obj.field, obj.field++, array[index].field, etc.
     while (true) {
+        // Handle array indexing: arr[index]
+        if (current.type == TOKEN_LEFT_BRACKET || current.type == TOKEN_LBRACKET) {
+            advance(); // consume [
+            auto index = parseExpr();
+            expect(TOKEN_RIGHT_BRACKET);
+            expr = std::make_unique<IndexExpr>(std::move(expr), std::move(index));
+            continue;
+        }
+        
         // Handle member access: obj.field or obj?.field (safe navigation)
         if (current.type == TOKEN_DOT || current.type == TOKEN_SAFE_NAV) {
             bool is_safe = (current.type == TOKEN_SAFE_NAV);
@@ -604,6 +660,20 @@ std::unique_ptr<Block> Parser::parseProgram() {
         // Global variable declarations: [const|wild|stack] type:name = value;
         // This includes func:name = (params) { body }; (lambdas)
         if (current.type == TOKEN_KW_CONST || current.type == TOKEN_KW_WILD || current.type == TOKEN_KW_STACK) {
+            // Check if this might be a struct declaration
+            // Struct pattern: const StructName = struct { ... };
+            // VarDecl pattern: const type:name = value;
+            //
+            // Peek ahead: const -> identifier -> = -> struct means struct decl
+            //             const -> type -> : means var decl
+            //
+            // Since both start with const (or wild/stack), we need lookahead
+            // But our parser doesn't support true backtracking
+            //
+            // SOLUTION: Make parseVarDecl smart enough to detect and delegate to parseStructDecl
+            //           OR make a parseDecl() that chooses
+            //
+            // For now, let's just always call parseVarDecl and make it handle structs
             block->statements.push_back(parseVarDecl());
             continue;
         }
@@ -651,6 +721,18 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         }
         expect(TOKEN_SEMICOLON);
         return std::make_unique<ReturnStmt>(std::move(expr));
+    }
+
+    // Break statement
+    if (match(TOKEN_KW_BREAK)) {
+        expect(TOKEN_SEMICOLON);
+        return std::make_unique<BreakStmt>();
+    }
+
+    // Continue statement
+    if (match(TOKEN_KW_CONTINUE)) {
+        expect(TOKEN_SEMICOLON);
+        return std::make_unique<ContinueStmt>();
     }
 
     // Variable declaration: [const|wild|stack] type:name = expr;
@@ -839,7 +921,8 @@ std::unique_ptr<Statement> Parser::parseStmt() {
 }
 
 // Parse variable declaration: [const|wild|stack] type:name = value;
-std::unique_ptr<VarDecl> Parser::parseVarDecl() {
+// OR struct declaration: const StructName = struct { ... };
+std::unique_ptr<Statement> Parser::parseVarDecl() {
     // Optional const/wild/stack prefix
     bool is_const = false;
     bool is_wild = false;
@@ -856,10 +939,73 @@ std::unique_ptr<VarDecl> Parser::parseVarDecl() {
         advance();
     }
     
-    // Type (with optional array/pointer suffix)
-    Token typeToken = current;
+    // Now check what follows:
+    // - If it's: identifier = struct { ... }, it's a struct declaration
+    // - If it's: type:name = value, it's a variable declaration
+    //
+    // Key insight: Struct pattern has = after identifier (no colon)
+    //              VarDecl pattern has : after type
+    
+    // Save current token (could be type or struct name)
+    Token first_token = current;
     advance();
-    std::string fullType = parseTypeSuffixes(typeToken.value);
+    
+    // Check next token:
+    // If it's TOKEN_ASSIGN, this is a struct declaration (const StructName = struct {...})
+    // If it's TOKEN_COLON, this is a variable declaration (const type:name = value)
+    if (current.type == TOKEN_ASSIGN) {
+        // This is a struct declaration!
+        // We've consumed const and the struct name
+        // Current is now TOKEN_ASSIGN
+        // parseStructDecl expects to start at const, so we need to "backtrack"
+        
+        // Actually, let's just parse the struct here directly
+        advance(); // consume =
+        expect(TOKEN_KW_STRUCT);
+        expect(TOKEN_LEFT_BRACE);
+        
+        std::vector<StructField> fields;
+        while (!check(TOKEN_RIGHT_BRACE)) {
+            Token field_name = expect(TOKEN_IDENTIFIER);
+            expect(TOKEN_COLON);
+            
+            // Accept type tokens or identifiers
+            if (current.type < TOKEN_TYPE_VOID || current.type > TOKEN_TYPE_STRING) {
+                if (current.type != TOKEN_IDENTIFIER) {
+                    throw std::runtime_error("Expected type for struct field");
+                }
+            }
+            Token field_type = current;
+            advance();
+            
+            // Handle arrays: field: int8[256]
+            std::string type_name = field_type.value;
+            if (check(TOKEN_LEFT_BRACKET)) {
+                advance();
+                type_name += "[";
+                if (!check(TOKEN_RIGHT_BRACKET)) {
+                    Token size_tok = expect(TOKEN_INT_LITERAL);
+                    type_name += size_tok.value;
+                }
+                expect(TOKEN_RIGHT_BRACKET);
+                type_name += "]";
+            }
+            
+            fields.emplace_back(type_name, field_name.value);
+            expect(TOKEN_COMMA);
+        }
+        
+        expect(TOKEN_RIGHT_BRACE);
+        expect(TOKEN_SEMICOLON);
+        
+        auto decl = std::make_unique<StructDecl>(first_token.value, fields);
+        decl->is_const = is_const;
+        return decl;
+    }
+    
+    // Not a struct - it's a normal variable declaration
+    // We've already consumed the type token (first_token) and current is at the colon
+    std::string fullType = parseTypeSuffixes(first_token.value);
 
     // Colon (Aria syntax: type:name or type[]:name or type@:name)
     expect(TOKEN_COLON);

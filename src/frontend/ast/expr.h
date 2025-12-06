@@ -227,6 +227,7 @@ public:
 
 // Object Literal Expression (for Result and anonymous objects)
 // Example: { err: NULL, val: 42 }
+// Also used for struct constructors: Point{ x: 10, y: 20 }
 class ObjectLiteral : public Expression {
 public:
     struct Field {
@@ -235,6 +236,7 @@ public:
     };
     
     std::vector<Field> fields;
+    std::string type_name;  // For struct constructors, stores the struct type name
 
     ObjectLiteral() = default;
 
@@ -268,7 +270,7 @@ public:
     ArrayLiteral() = default;
 
     void accept(AstVisitor& visitor) override {
-        // visitor.visit(this);
+        visitor.visit(this);
     }
 };
 
@@ -283,7 +285,7 @@ public:
         : array(std::move(arr)), index(std::move(idx)) {}
 
     void accept(AstVisitor& visitor) override {
-        // visitor.visit(this);
+        visitor.visit(this);
     }
 };
 

@@ -54,6 +54,7 @@ namespace backend {
 using aria::frontend::AstVisitor;
 using aria::frontend::Block;
 using aria::frontend::VarDecl;
+using aria::frontend::StructDecl;
 using aria::frontend::FuncDecl;
 using aria::frontend::ExpressionStmt;
 using aria::frontend::PickStmt;
@@ -72,6 +73,8 @@ using aria::frontend::IntLiteral;
 using aria::frontend::BoolLiteral;
 using aria::frontend::VarExpr;
 using aria::frontend::CallExpr;
+using aria::frontend::ArrayLiteral;
+using aria::frontend::IndexExpr;
 using aria::frontend::BinaryOp;
 using aria::frontend::UnaryOp;
 using aria::frontend::ReturnStmt;
@@ -98,6 +101,9 @@ public:
         AllocStrategy strategy; // How was this allocated?
     };
     std::vector<std::map<std::string, Symbol>> scopeStack;
+    
+    // Struct metadata: Maps struct name to field name->index mapping
+    std::map<std::string, std::map<std::string, unsigned>> structFieldMaps;
 
     // Current compilation state
     Function* currentFunction = nullptr;
@@ -534,6 +540,37 @@ public:
                 ctx.builder->CreateStore(initVal, heapPtr);
             }
         }
+    }
+
+    void visit(StructDecl* node) override {
+        // Register struct type in LLVM
+        // In Aria, structs are value types defined with: const StructName = struct { fields... };
+        // We create an LLVM StructType and register it for later use
+        
+        // Check if type already exists (avoid duplicates)
+        if (StructType::getTypeByName(ctx.llvmContext, node->name)) {
+            throw std::runtime_error("Struct type '" + node->name + "' already defined");
+        }
+        
+        // Create field types and store field name mappings
+        std::vector<Type*> fieldTypes;
+        std::map<std::string, unsigned> fieldMap;
+        unsigned fieldIndex = 0;
+        
+        for (const auto& field : node->fields) {
+            Type* fieldType = ctx.getLLVMType(field.type);
+            fieldTypes.push_back(fieldType);
+            fieldMap[field.name] = fieldIndex++;
+        }
+        
+        // Create named struct type
+        StructType::create(ctx.llvmContext, fieldTypes, node->name);
+        
+        // Store field mapping for later use in member access
+        ctx.structFieldMaps[node->name] = fieldMap;
+        
+        // Note: We don't need to add to symbol table - struct types are looked up by name
+        // The type system will resolve "Point" to the LLVM StructType when needed
     }
 
     void visit(ExpressionStmt* node) override {
@@ -1511,7 +1548,51 @@ public:
             }
         }
         if (auto* obj = dynamic_cast<aria::frontend::ObjectLiteral*>(node)) {
-            // Check if this is a result object (has err and/or val fields)
+            // Check if this is a struct constructor (has type_name) or a result object
+            if (!obj->type_name.empty()) {
+                // This is a struct constructor: Point{x: 10, y: 20}
+                std::string structName = obj->type_name;
+                
+                // Get the struct type from LLVM
+                StructType* structType = StructType::getTypeByName(ctx.llvmContext, structName);
+                if (!structType) {
+                    throw std::runtime_error("Unknown struct type: " + structName);
+                }
+                
+                // Allocate struct on stack
+                AllocaInst* structAlloca = ctx.builder->CreateAlloca(structType, nullptr, structName + "_instance");
+                
+                // Initialize fields by name
+                // TODO: For now, assume fields are in order. Later, match by name.
+                unsigned fieldIdx = 0;
+                for (auto& field : obj->fields) {
+                    Value* fieldValue = visitExpr(field.value.get());
+                    if (!fieldValue) {
+                        throw std::runtime_error("Failed to evaluate field initializer for: " + field.name);
+                    }
+                    
+                    // Get pointer to field
+                    Value* fieldPtr = ctx.builder->CreateStructGEP(structType, structAlloca, fieldIdx, field.name + "_ptr");
+                    
+                    // Store value
+                    Type* fieldType = structType->getElementType(fieldIdx);
+                    if (fieldValue->getType() != fieldType) {
+                        // Try to cast integers
+                        if (fieldValue->getType()->isIntegerTy() && fieldType->isIntegerTy()) {
+                            fieldValue = ctx.builder->CreateIntCast(fieldValue, fieldType, true);
+                        } else {
+                            throw std::runtime_error("Type mismatch for field: " + field.name);
+                        }
+                    }
+                    ctx.builder->CreateStore(fieldValue, fieldPtr);
+                    fieldIdx++;
+                }
+                
+                // Load and return the struct value
+                return ctx.builder->CreateLoad(structType, structAlloca, structName + "_value");
+            }
+            
+            // Otherwise, check if this is a result object (has err and/or val fields)
             bool isResultObject = false;
             Value* valField = nullptr;
             Value* errField = nullptr;
@@ -1636,24 +1717,60 @@ public:
         }
         if (auto* idx = dynamic_cast<aria::frontend::IndexExpr*>(node)) {
             // Array indexing: arr[i]
-            Value* array = visitExpr(idx->array.get());
+            Value* arrayPtr = visitExpr(idx->array.get());
             Value* index = visitExpr(idx->index.get());
             
-            if (!array || !index) return nullptr;
+            if (!arrayPtr || !index) return nullptr;
             
-            Type* arrayType = array->getType();
+            Type* ptrType = arrayPtr->getType();
             
-            // Handle pointer to array (from array literals or variable)
-            if (auto* ptrType = dyn_cast<PointerType>(arrayType)) {
+            // We need to determine the element type
+            // First, try to get it from the identifier's Aria type
+            Type* elementType = nullptr;
+            std::string ariaElementType = "";
+            
+            // Try to find the array variable in symbol table to get its Aria type
+            if (auto* varRef = dynamic_cast<aria::frontend::Identifier*>(idx->array.get())) {
+                for (auto it = ctx.scopeStack.rbegin(); it != ctx.scopeStack.rend(); ++it) {
+                    auto found = it->find(varRef->name);
+                    if (found != it->end()) {
+                        // Found the variable, parse its Aria type to get element type
+                        std::string ariaType = found->second.ariaType;
+                        
+                        // Parse array type: "int64[5]" -> element type is "int64"
+                        size_t bracketPos = ariaType.find('[');
+                        if (bracketPos != std::string::npos) {
+                            ariaElementType = ariaType.substr(0, bracketPos);
+                            elementType = ctx.getLLVMType(ariaElementType);
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            // If we still don't have element type, try to infer from pointer type
+            if (!elementType && ptrType->isPointerTy()) {
+                // For array literals, the pointer points to the first element already
+                // We need to look at what the pointer points to
+                // This is a fallback - prefer the symbol table approach above
+                elementType = Type::getInt64Ty(ctx.llvmContext); // Default fallback
+            }
+            
+            if (!elementType) {
+                throw std::runtime_error("Array indexing requires pointer or array type");
+            }
+            
+            // Handle pointer to array element
+            if (ptrType->isPointerTy()) {
                 // Get element pointer
                 Value* elemPtr = ctx.builder->CreateGEP(
-                    Type::getInt8Ty(ctx.llvmContext), // Element type - TODO: infer from context
-                    array,
+                    elementType,
+                    arrayPtr,
                     index,
                     "elem_ptr"
                 );
                 // Load element
-                return ctx.builder->CreateLoad(Type::getInt8Ty(ctx.llvmContext), elemPtr, "elem");
+                return ctx.builder->CreateLoad(elementType, elemPtr, "elem");
             }
             
             throw std::runtime_error("Array indexing requires pointer or array type");
@@ -1663,28 +1780,60 @@ public:
             Value* obj = visitExpr(member->object.get());
             if (!obj) return nullptr;
             
-            // For Result type, we have two fields: err (index 0) and val (index 1)
+            // Handle both direct struct values and pointers to structs
             Type* objType = obj->getType();
-            if (auto* structType = dyn_cast<StructType>(objType)) {
-                // Allocate temporary to hold the struct
-                AllocaInst* tempAlloca = ctx.builder->CreateAlloca(structType, nullptr, "temp");
-                ctx.builder->CreateStore(obj, tempAlloca);
-                
-                // Get field index
-                unsigned fieldIndex = 0;
-                if (member->member_name == "val") {
-                    fieldIndex = 1;
-                } else if (member->member_name == "err") {
-                    fieldIndex = 0;
+            StructType* structType = nullptr;
+            Value* structPtr = nullptr;
+            std::string structName;
+            
+            if (auto* st = dyn_cast<StructType>(objType)) {
+                // Direct struct value - allocate temp and store
+                structType = st;
+                structName = structType->getName().str();
+                structPtr = ctx.builder->CreateAlloca(structType, nullptr, "temp");
+                ctx.builder->CreateStore(obj, structPtr);
+            } else if (objType->isPointerTy()) {
+                // Could be a pointer to a struct - load it
+                Value* loaded = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), obj);
+                if (auto* st = dyn_cast<StructType>(loaded->getType())) {
+                    structType = st;
+                    structName = structType->getName().str();
+                    structPtr = ctx.builder->CreateAlloca(structType, nullptr, "temp");
+                    ctx.builder->CreateStore(loaded, structPtr);
                 }
-                
-                // Extract field
-                Value* fieldPtr = ctx.builder->CreateStructGEP(structType, tempAlloca, fieldIndex, member->member_name + "_ptr");
-                Type* fieldType = structType->getElementType(fieldIndex);
-                return ctx.builder->CreateLoad(fieldType, fieldPtr, member->member_name);
             }
             
-            return nullptr;
+            if (!structType || !structPtr) {
+                throw std::runtime_error("Member access on non-struct type");
+            }
+            
+            // Get field index by name
+            unsigned fieldIndex = 0;
+            
+            // Check if this is a result type (special handling for err/val)
+            if (member->member_name == "err") {
+                fieldIndex = 0;
+            } else if (member->member_name == "val") {
+                fieldIndex = 1;
+            } else {
+                // User-defined struct - look up field in metadata
+                auto structIt = ctx.structFieldMaps.find(structName);
+                if (structIt == ctx.structFieldMaps.end()) {
+                    throw std::runtime_error("No field metadata found for struct: " + structName);
+                }
+                
+                auto fieldIt = structIt->second.find(member->member_name);
+                if (fieldIt == structIt->second.end()) {
+                    throw std::runtime_error("Unknown field '" + member->member_name + "' in struct " + structName);
+                }
+                
+                fieldIndex = fieldIt->second;
+            }
+            
+            // Extract field
+            Value* fieldPtr = ctx.builder->CreateStructGEP(structType, structPtr, fieldIndex, member->member_name + "_ptr");
+            Type* fieldType = structType->getElementType(fieldIndex);
+            return ctx.builder->CreateLoad(fieldType, fieldPtr, member->member_name);
         }
         if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node)) {
             // Generate anonymous function for lambda
@@ -1957,6 +2106,8 @@ public:
     void visit(frontend::TernaryExpr* node) override {} // Handled by visitExpr()
     void visit(frontend::ObjectLiteral* node) override {} // Handled by visitExpr()
     void visit(frontend::MemberAccess* node) override {} // Handled by visitExpr()
+    void visit(frontend::ArrayLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::IndexExpr* node) override {} // Handled by visitExpr()
     void visit(frontend::LambdaExpr* node) override {} // Handled by visitExpr()
     void visit(VarExpr* node) override {}
     void visit(CallExpr* node) override {

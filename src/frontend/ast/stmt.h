@@ -89,6 +89,31 @@ struct FuncParam {
         : type(t), name(n), default_value(std::move(def)) {}
 };
 
+// Struct Field
+struct StructField {
+    std::string type;
+    std::string name;
+    
+    StructField(const std::string& t, const std::string& n)
+        : type(t), name(n) {}
+};
+
+// Struct Declaration
+// Example: const Point = struct { x: int64, y: int64, };
+class StructDecl : public Statement {
+public:
+    std::string name;
+    std::vector<StructField> fields;
+    bool is_const = true;  // Structs are typically const type definitions
+    
+    StructDecl(const std::string& n, std::vector<StructField> f)
+        : name(n), fields(std::move(f)) {}
+    
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
 // Function Declaration (Bug #70: async support)
 // Example: func:add = int8(int8:a, int8:b) { return {err:NULL, val:a+b}; }
 // Example with auto-wrap: func:add = *int8(int8:a, int8:b) { return a+b; }
