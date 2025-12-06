@@ -45,9 +45,11 @@ enum TokenType {
     TOKEN_KW_CATCH,         // Catch clause
     TOKEN_KW_DEFER,
     TOKEN_KW_WILD,          // Wild heap allocation
+    TOKEN_KW_WILDX,         // Wild executable memory (JIT compilation)
     TOKEN_KW_STACK,         // Stack allocation
     TOKEN_KW_GC,            // GC-managed allocation (default)
     TOKEN_WILD = TOKEN_KW_WILD,    // Alias for parser compatibility
+    TOKEN_WILDX = TOKEN_KW_WILDX,  // Alias for parser compatibility
     TOKEN_STACK = TOKEN_KW_STACK,  // Alias for parser compatibility
     TOKEN_GC = TOKEN_KW_GC,        // Alias for parser compatibility
     TOKEN_KW_PIN,           // Pin to nursery

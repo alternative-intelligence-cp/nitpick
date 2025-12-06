@@ -36,12 +36,13 @@ Token Parser::expect(TokenType type) {
     return tok;
 }
 
-// Parses: [const] [wild|stack|gc] Type:Identifier [= Expression];
+// Parses: [const] [wild|wildx|stack|gc] Type:Identifier [= Expression];
 // Grammar:
-//   VarDecl -> "const"? ( "wild" | "stack" | "gc" )? TypeIdentifier ":" Identifier ( "=" Expression )? ";"
+//   VarDecl -> "const"? ( "wild" | "wildx" | "stack" | "gc" )? TypeIdentifier ":" Identifier ( "=" Expression )? ";"
 std::unique_ptr<VarDecl> Parser::parseVarDecl() {
    bool is_const = false;
    bool is_wild = false;
+   bool is_wildx = false;
    bool is_stack = false;
 
    // 1. Check for const keyword (Bug #72)
@@ -52,6 +53,8 @@ std::unique_ptr<VarDecl> Parser::parseVarDecl() {
    // 2. Check for Memory Strategy Keywords
    if (match(TOKEN_KW_WILD) || match(TOKEN_WILD)) {
        is_wild = true;
+   } else if (match(TOKEN_KW_WILDX) || match(TOKEN_WILDX)) {
+       is_wildx = true;
    } else if (match(TOKEN_KW_STACK) || match(TOKEN_STACK)) {
        is_stack = true;
    } else if (match(TOKEN_KW_GC) || match(TOKEN_GC)) {
@@ -103,6 +106,7 @@ std::unique_ptr<VarDecl> Parser::parseVarDecl() {
 
    auto decl = std::make_unique<VarDecl>(type_name, var_name, std::move(initializer));
    decl->is_wild = is_wild;
+   decl->is_wildx = is_wildx;
    decl->is_stack = is_stack;
    decl->is_const = is_const;
 

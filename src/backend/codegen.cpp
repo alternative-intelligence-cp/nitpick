@@ -495,7 +495,7 @@ public:
         }
 
         // Determine allocation strategy for local variables
-        bool use_stack = node->is_stack || (!node->is_wild && shouldStackAllocate(node->type, varType));
+        bool use_stack = node->is_stack || (!node->is_wild && !node->is_wildx && shouldStackAllocate(node->type, varType));
 
         CodeGenContext::AllocStrategy strategy;
         
@@ -509,7 +509,7 @@ public:
             strategy = CodeGenContext::AllocStrategy::STACK;
         } 
         else if (node->is_wild) {
-            // Wild: aria_alloc
+            // Wild: aria_alloc (standard heap allocation via mimalloc)
             uint64_t size = ctx.module->getDataLayout().getTypeAllocSize(varType);
             Value* sizeVal = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), size);
             
@@ -520,6 +520,20 @@ public:
             storage = ctx.builder->CreateAlloca(PointerType::getUnqual(ctx.llvmContext), nullptr, node->name);
             ctx.builder->CreateStore(rawPtr, storage);
             strategy = CodeGenContext::AllocStrategy::WILD;
+        }
+        else if (node->is_wildx) {
+            // Wildx: aria_alloc_exec (executable memory via mmap)
+            // Allocates RW memory that can be transitioned to RX for JIT compilation
+            uint64_t size = ctx.module->getDataLayout().getTypeAllocSize(varType);
+            Value* sizeVal = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), size);
+            
+            Function* allocator = getOrInsertAriaAllocExec();
+            Value* rawPtr = ctx.builder->CreateCall(allocator, sizeVal);
+            
+            // We need a stack slot to hold the pointer itself (lvalue)
+            storage = ctx.builder->CreateAlloca(PointerType::getUnqual(ctx.llvmContext), nullptr, node->name);
+            ctx.builder->CreateStore(rawPtr, storage);
+            strategy = CodeGenContext::AllocStrategy::WILD; // Use WILD strategy for now
         }
         else {
             // GC: aria_gc_alloc (for non-primitives or explicitly marked gc)
@@ -2262,6 +2276,12 @@ private:
         return Function::Create(
             FunctionType::get(PointerType::getUnqual(ctx.llvmContext), args, false),
             Function::ExternalLinkage, "aria_gc_alloc", ctx.module.get());
+    }
+    
+    Function* getOrInsertAriaAllocExec() {
+        return Function::Create(
+            FunctionType::get(PointerType::getUnqual(ctx.llvmContext), {Type::getInt64Ty(ctx.llvmContext)}, false),
+            Function::ExternalLinkage, "aria_alloc_exec", ctx.module.get());
     }
     
     Function* getOrInsertGetNursery() {

@@ -86,6 +86,7 @@ target_link_libraries(ariac
 # It contains the GC, the Scheduler, and the bridge to Mimalloc.
 add_library(aria_runtime STATIC
  src/runtime/memory/allocator.c        # The bridge (aria.alloc -> mi_malloc)
+ src/runtime/memory/wildx_allocator.c  # Wildx allocator (executable memory for JIT)
  src/runtime/gc/gc_impl.cpp            # Major/Minor GC Logic
  src/runtime/gc/nursery.cpp            # Fragmented Nursery Implementation
  src/runtime/io_windows.cpp            # lpReserved2 implementation

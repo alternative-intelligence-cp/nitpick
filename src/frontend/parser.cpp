@@ -739,7 +739,7 @@ std::unique_ptr<Statement> Parser::parseStmt() {
     // BUT: type( is a lambda expression, not a variable declaration!
     // AND: *type( is an auto-wrap lambda!
     if (current.type == TOKEN_KW_CONST || current.type == TOKEN_KW_WILD || 
-        current.type == TOKEN_KW_STACK) {
+        current.type == TOKEN_KW_WILDX || current.type == TOKEN_KW_STACK) {
         return parseVarDecl();
     }
     
@@ -920,12 +920,13 @@ std::unique_ptr<Statement> Parser::parseStmt() {
     return std::make_unique<ExpressionStmt>(std::move(expr));
 }
 
-// Parse variable declaration: [const|wild|stack] type:name = value;
+// Parse variable declaration: [const|wild|wildx|stack] type:name = value;
 // OR struct declaration: const StructName = struct { ... };
 std::unique_ptr<Statement> Parser::parseVarDecl() {
-    // Optional const/wild/stack prefix
+    // Optional const/wild/wildx/stack prefix
     bool is_const = false;
     bool is_wild = false;
+    bool is_wildx = false;
     bool is_stack = false;
     
     if (current.type == TOKEN_KW_CONST) {
@@ -933,6 +934,9 @@ std::unique_ptr<Statement> Parser::parseVarDecl() {
         advance();
     } else if (current.type == TOKEN_KW_WILD) {
         is_wild = true;
+        advance();
+    } else if (current.type == TOKEN_KW_WILDX) {
+        is_wildx = true;
         advance();
     } else if (current.type == TOKEN_KW_STACK) {
         is_stack = true;
@@ -1024,6 +1028,7 @@ std::unique_ptr<Statement> Parser::parseVarDecl() {
     auto varDecl = std::make_unique<VarDecl>(fullType, nameToken.value, std::move(init));
     varDecl->is_const = is_const;
     varDecl->is_wild = is_wild;
+    varDecl->is_wildx = is_wildx;
     varDecl->is_stack = is_stack;
     
     return varDecl;
