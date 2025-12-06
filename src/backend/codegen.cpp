@@ -1327,6 +1327,20 @@ public:
                 funcName = "puts";
             }
             
+            // Check for wildx memory protection intrinsics
+            // These map to the runtime functions directly
+            bool is_wildx_intrinsic = false;
+            if (funcName == "aria.mem.protect_exec" || funcName == "protect_exec") {
+                funcName = "aria_mem_protect_exec";
+                is_wildx_intrinsic = true;
+            } else if (funcName == "aria.mem.protect_write" || funcName == "protect_write") {
+                funcName = "aria_mem_protect_write";
+                is_wildx_intrinsic = true;
+            } else if (funcName == "aria.mem.free_exec" || funcName == "free_exec") {
+                funcName = "aria_free_exec";
+                is_wildx_intrinsic = true;
+            }
+            
             // Try to find function in symbol table (for Aria functions)
             Function* callee = nullptr;
             auto* sym = ctx.lookup(call->function_name);
@@ -2282,6 +2296,36 @@ private:
         return Function::Create(
             FunctionType::get(PointerType::getUnqual(ctx.llvmContext), {Type::getInt64Ty(ctx.llvmContext)}, false),
             Function::ExternalLinkage, "aria_alloc_exec", ctx.module.get());
+    }
+    
+    Function* getOrInsertAriaMemProtectExec() {
+        std::vector<Type*> args = {
+            PointerType::getUnqual(ctx.llvmContext),  // ptr
+            Type::getInt64Ty(ctx.llvmContext)          // size
+        };
+        return Function::Create(
+            FunctionType::get(Type::getInt32Ty(ctx.llvmContext), args, false),
+            Function::ExternalLinkage, "aria_mem_protect_exec", ctx.module.get());
+    }
+    
+    Function* getOrInsertAriaMemProtectWrite() {
+        std::vector<Type*> args = {
+            PointerType::getUnqual(ctx.llvmContext),  // ptr
+            Type::getInt64Ty(ctx.llvmContext)          // size
+        };
+        return Function::Create(
+            FunctionType::get(Type::getInt32Ty(ctx.llvmContext), args, false),
+            Function::ExternalLinkage, "aria_mem_protect_write", ctx.module.get());
+    }
+    
+    Function* getOrInsertAriaFreeExec() {
+        std::vector<Type*> args = {
+            PointerType::getUnqual(ctx.llvmContext),  // ptr
+            Type::getInt64Ty(ctx.llvmContext)          // size
+        };
+        return Function::Create(
+            FunctionType::get(Type::getVoidTy(ctx.llvmContext), args, false),
+            Function::ExternalLinkage, "aria_free_exec", ctx.module.get());
     }
     
     Function* getOrInsertGetNursery() {
