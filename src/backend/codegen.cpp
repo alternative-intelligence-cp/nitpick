@@ -193,23 +193,28 @@ public:
             }
         }
         
+        // Integer types (all bit widths, signed and unsigned)
         if (ariaType == "int1") return Type::getInt1Ty(llvmContext);
+        if (ariaType == "int2") return Type::getIntNTy(llvmContext, 2);
+        if (ariaType == "int4" || ariaType == "nit") return Type::getIntNTy(llvmContext, 4);
         if (ariaType == "int8" || ariaType == "uint8" || ariaType == "byte" || ariaType == "trit") 
             return Type::getInt8Ty(llvmContext);
-        if (ariaType == "int16" || ariaType == "uint16" || ariaType == "tryte") 
+        if (ariaType == "int16" || ariaType == "uint16" || ariaType == "tryte" || ariaType == "nyte") 
             return Type::getInt16Ty(llvmContext);
         if (ariaType == "int32" || ariaType == "uint32") return Type::getInt32Ty(llvmContext);
         if (ariaType == "int64" || ariaType == "uint64") return Type::getInt64Ty(llvmContext);
         if (ariaType == "int128" || ariaType == "uint128") return Type::getInt128Ty(llvmContext);
+        if (ariaType == "int256" || ariaType == "uint256") return Type::getIntNTy(llvmContext, 256);
+        if (ariaType == "int512" || ariaType == "uint512") return Type::getIntNTy(llvmContext, 512);
         
-        // Exotic Type: int512
-        // Lowered to standard LLVM i512. LLVM backend handles splitting for x86.
-        if (ariaType == "int512") return Type::getIntNTy(llvmContext, 512);
-        
+        // Float types (all bit widths)
         if (ariaType == "float" || ariaType == "flt32") 
             return Type::getFloatTy(llvmContext);
         if (ariaType == "double" || ariaType == "flt64") 
             return Type::getDoubleTy(llvmContext);
+        if (ariaType == "flt128") return Type::getFP128Ty(llvmContext);
+        if (ariaType == "flt256") return Type::getFP128Ty(llvmContext);  // LLVM max is fp128, use for now
+        if (ariaType == "flt512") return Type::getFP128Ty(llvmContext);  // LLVM max is fp128, use for now
         
         if (ariaType == "void") return Type::getVoidTy(llvmContext);
         
