@@ -1354,6 +1354,17 @@ public:
                 callee = ctx.module->getFunction(funcName);
             }
             
+            // If wildx intrinsic and not found, declare it now
+            if (!callee && is_wildx_intrinsic) {
+                if (funcName == "aria_mem_protect_exec") {
+                    callee = getOrInsertAriaMemProtectExec();
+                } else if (funcName == "aria_mem_protect_write") {
+                    callee = getOrInsertAriaMemProtectWrite();
+                } else if (funcName == "aria_free_exec") {
+                    callee = getOrInsertAriaFreeExec();
+                }
+            }
+            
             if (!callee) {
                 std::string errorMsg = "Undefined function '" + call->function_name + "'";
                 
@@ -2067,6 +2078,49 @@ public:
             
             // If not a struct, just return the value
             return resultVal;
+        }
+        if (auto* cast = dynamic_cast<aria::frontend::CastExpr*>(node)) {
+            // Cast expression: (Type)expr
+            // For wildx → func pointer casts, we need special handling
+            
+            Value* sourceValue = visitExpr(cast->expression.get());
+            if (!sourceValue) return nullptr;
+            
+            // Check if this is a function pointer cast (wildx → func)
+            // Target type will be something like "BinaryFunc" or "func"
+            if (cast->target_type.find("Func") != std::string::npos || cast->target_type == "func") {
+                // This is a function pointer cast
+                // The source should be a wildx pointer (ptr type)
+                
+                // For now, we'll use bitcast to convert the wildx pointer to a function pointer
+                // In a full implementation, we'd:
+                // 1. Verify source is from wildx allocation
+                // 2. Look up the function signature for the target type
+                // 3. Create appropriate function pointer type
+                
+                // Simple approach: treat as opaque pointer that can be called
+                // The actual function signature will be resolved at call site
+                return sourceValue;  // Pointer is already correct type
+            }
+            
+            // Handle integer casts
+            Type* targetType = ctx.getLLVMType(cast->target_type);
+            if (sourceValue->getType()->isIntegerTy() && targetType->isIntegerTy()) {
+                return ctx.builder->CreateIntCast(sourceValue, targetType, true, "cast");
+            }
+            
+            // Handle pointer casts
+            if (sourceValue->getType()->isPointerTy() && targetType->isPointerTy()) {
+                return ctx.builder->CreateBitCast(sourceValue, targetType, "ptrcast");
+            }
+            
+            // If types match, no cast needed
+            if (sourceValue->getType() == targetType) {
+                return sourceValue;
+            }
+            
+            // For other cases, try bitcast as fallback
+            return ctx.builder->CreateBitCast(sourceValue, targetType, "cast");
         }
         //... Handle other ops...
         return nullptr;

@@ -49,6 +49,7 @@ class ArrayLiteral;
 class IndexExpr;
 class MemberAccess;
 class LambdaExpr;
+class CastExpr;
 class UseStmt;
 class ModDef;
 class ExternBlock;
@@ -83,6 +84,7 @@ public:
     virtual void visit(IndexExpr* node) { /* default: do nothing */ }
     virtual void visit(UnwrapExpr* node) { /* default: do nothing */ }
     virtual void visit(LambdaExpr* node) { /* default: do nothing */ }
+    virtual void visit(CastExpr* node) { /* default: do nothing */ }
 
     // Statements
     virtual void visit(VarDecl* node) = 0;

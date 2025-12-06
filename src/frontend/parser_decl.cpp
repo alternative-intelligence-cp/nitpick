@@ -36,6 +36,80 @@ Token Parser::expect(TokenType type) {
     return tok;
 }
 
+Token Parser::consume(TokenType type, const std::string& message) {
+    if (current.type != type) {
+        throw std::runtime_error(message);
+    }
+    Token tok = current;
+    advance();
+    return tok;
+}
+
+bool Parser::check(TokenType type) {
+    return current.type == type;
+}
+
+Token Parser::peek() {
+    return current;
+}
+
+bool Parser::isType(const Token& token) {
+    // Check if token could be a type name
+    // This includes built-in types and user-defined types (identifiers)
+    switch (token.type) {
+        case TOKEN_TYPE_INT8:
+        case TOKEN_TYPE_INT16:
+        case TOKEN_TYPE_INT32:
+        case TOKEN_TYPE_INT64:
+        case TOKEN_TYPE_INT128:
+        case TOKEN_TYPE_INT256:
+        case TOKEN_TYPE_INT512:
+        case TOKEN_TYPE_UINT8:
+        case TOKEN_TYPE_UINT16:
+        case TOKEN_TYPE_UINT32:
+        case TOKEN_TYPE_UINT64:
+        case TOKEN_TYPE_UINT128:
+        case TOKEN_TYPE_UINT256:
+        case TOKEN_TYPE_UINT512:
+        case TOKEN_TYPE_FLT32:
+        case TOKEN_TYPE_FLT64:
+        case TOKEN_TYPE_STRING:
+        case TOKEN_TYPE_BOOL:
+        case TOKEN_TYPE_FUNC:
+        case TOKEN_TYPE_RESULT:
+        case TOKEN_TYPE_DYN:
+        case TOKEN_IDENTIFIER:  // User-defined types (structs, type aliases, function types)
+            return true;
+        default:
+            return false;
+    }
+}
+
+std::string Parser::parseTypeName() {
+    // Parse a complete type name, including function types like "BinaryFunc"
+    // For now, just parse identifier (could extend to handle complex types)
+    Token typeTok = consume(TOKEN_IDENTIFIER, "Expected type name");
+    std::string typeName = typeTok.value;
+    
+    // Handle pointer suffix (@)
+    while (match(TOKEN_AT)) {
+        typeName += "@";
+    }
+    
+    // Handle array suffix ([size] or [])
+    if (match(TOKEN_LEFT_BRACKET)) {
+        typeName += "[";
+        if (!check(TOKEN_RIGHT_BRACKET)) {
+            Token sizeTok = expect(TOKEN_INTEGER_LITERAL);
+            typeName += sizeTok.value;
+        }
+        expect(TOKEN_RIGHT_BRACKET);
+        typeName += "]";
+    }
+    
+    return typeName;
+}
+
 // Parses: [const] [wild|wildx|stack|gc] Type:Identifier [= Expression];
 // Grammar:
 //   VarDecl -> "const"? ( "wild" | "wildx" | "stack" | "gc" )? TypeIdentifier ":" Identifier ( "=" Expression )? ";"

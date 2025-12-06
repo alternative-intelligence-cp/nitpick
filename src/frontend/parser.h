@@ -36,6 +36,9 @@ private:
     Token expect(TokenType type);
     Token consume(TokenType type, const std::string& message);  // Alias for expect with custom error
     bool check(TokenType type);  // Lookahead without consuming
+    Token peek();  // Peek at current token without consuming
+    bool isType(const Token& token);  // Check if token starts a type name
+    std::string parseTypeName();  // Parse a full type name (including func types)
     bool isTypeToken(TokenType type);  // Helper to check if token is a valid type
     std::string parseTypeSuffixes(const std::string& baseType);  // Parse array/pointer suffixes
     std::vector<FuncParam> parseParams();  // Parse function parameters
