@@ -208,6 +208,7 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/stmt.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/loops.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/defer.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/module.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/tokens.h \
  /usr/include/c++/13/iostream /usr/include/c++/13/istream \
  /usr/include/c++/13/bits/istream.tcc \

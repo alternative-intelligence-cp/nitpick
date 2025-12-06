@@ -1,0 +1,36 @@
+// Test defer with early return and resource cleanup pattern
+func:test_early_return = int64(bool:should_error) {
+    print("Function start");
+    
+    defer {
+        print("Cleanup 1: Always executes");
+    }
+    
+    int64:x = 42;
+    
+    defer {
+        print("Cleanup 2: Always executes");
+    }
+    
+    // Early return test
+    if (should_error) {
+        print("Early return path");
+        *-1;  // Defers should execute before this return!
+    }
+    
+    print("Normal path");
+    *x;
+};
+
+func:main = int8() {
+    print("=== Test 1: Normal execution ===");
+    bool:test1 = false;
+    int64:result1 = test_early_return(test1);
+    
+    print("");
+    print("=== Test 2: Early return ===");
+    bool:test2 = true;
+    int64:result2 = test_early_return(test2);
+    
+    *0;
+};

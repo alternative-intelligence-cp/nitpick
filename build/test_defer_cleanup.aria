@@ -1,0 +1,19 @@
+// Simple defer resource cleanup test
+func:main = int8() {
+    print("Allocating resource 1");
+    defer {
+        print("Freeing resource 1");
+    }
+    
+    print("Allocating resource 2");
+    defer {
+        print("Freeing resource 2");
+    }
+    
+    print("Using resources");
+    
+    print("Function ending");
+    // Defers execute here in LIFO: resource 2, then resource 1
+    
+    *0;
+};

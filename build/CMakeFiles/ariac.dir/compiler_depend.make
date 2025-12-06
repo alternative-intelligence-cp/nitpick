@@ -8,6 +8,7 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: /home/randy/._____RANDY_____/REP
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/defer.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/expr.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/loops.h \
+  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/module.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/stmt.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/tokens.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen.h \
@@ -2874,10 +2875,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/x86_64-linux-gnu/bits/sched.h:
 
-/usr/include/x86_64-linux-gnu/bits/floatn-common.h:
-
-/usr/include/c++/13/bits/requires_hosted.h:
-
 /usr/include/x86_64-linux-gnu/bits/cpu-set.h:
 
 /usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h:
@@ -2957,10 +2954,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/c++/13/iomanip:
 
 /usr/include/c++/13/exception:
-
-/home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/module.h:
-
-/usr/include/c++/13/list:
 
 /usr/include/c++/13/ext/alloc_traits.h:
 
@@ -3060,6 +3053,10 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/c++/13/bits/cpp_type_traits.h:
 
+/usr/include/c++/13/optional:
+
+/usr/lib/llvm-19/include/llvm/IR/Operator.h:
+
 /usr/lib/llvm-19/include/llvm/MC/MCFixup.h:
 
 /usr/include/c++/13/bits/locale_classes.tcc:
@@ -3134,10 +3131,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/c++/13/bits/streambuf_iterator.h:
 
-/usr/include/x86_64-linux-gnu/bits/stdio_lim.h:
-
-/usr/include/c++/13/bits/locale_conv.h:
-
 /usr/include/x86_64-linux-gnu/bits/endian.h:
 
 /usr/include/c++/13/bits/hashtable_policy.h:
@@ -3192,28 +3185,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/c++/13/atomic:
 
-/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vpopcntdqintrin.h:
-
-/usr/include/c++/13/bits/codecvt.h:
-
-/usr/lib/llvm-19/include/llvm/Support/NativeFormatting.h:
-
-/usr/include/c++/13/bits/stl_tempbuf.h:
-
-/home/randy/._____RANDY_____/REPOS/aria/src/frontend/preprocessor.h:
-
-/usr/include/x86_64-linux-gnu/bits/getopt_core.h:
-
-/usr/include/c++/13/bits/stl_vector.h:
-
-/usr/include/assert.h:
-
-/usr/lib/llvm-19/include/llvm/IR/DebugProgramInstruction.h:
-
-/usr/lib/llvm-19/include/llvm/Support/PointerLikeTypeTraits.h:
-
-/usr/include/c++/13/backward/auto_ptr.h:
-
 /usr/include/c++/13/bits/ranges_util.h:
 
 /usr/include/x86_64-linux-gnu/c++/13/bits/ctype_base.h:
@@ -3238,9 +3209,13 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/c++/13/bits/refwrap.h:
 
-/usr/include/c++/13/optional:
+/usr/lib/llvm-19/include/llvm/Support/PointerLikeTypeTraits.h:
 
-/usr/lib/llvm-19/include/llvm/IR/Operator.h:
+/usr/include/c++/13/backward/auto_ptr.h:
+
+/usr/include/assert.h:
+
+/usr/lib/llvm-19/include/llvm/IR/DebugProgramInstruction.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_statx.h:
 
@@ -3248,17 +3223,13 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/x86_64-linux-gnu/bits/types/__locale_t.h:
 
-/usr/include/c++/13/ext/type_traits.h:
+/usr/include/x86_64-linux-gnu/bits/stdio_lim.h:
 
-/usr/include/x86_64-linux-gnu/bits/time64.h:
+/usr/include/c++/13/bits/locale_conv.h:
 
 /usr/include/c++/13/bits/basic_ios.h:
 
 /usr/lib/llvm-19/include/llvm/IR/DataLayout.h:
-
-/usr/lib/llvm-19/include/llvm/Support/ReverseIteration.h:
-
-/usr/include/c++/13/bits/exception_defines.h:
 
 /usr/include/x86_64-linux-gnu/bits/stat.h:
 
@@ -3269,6 +3240,18 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/x86_64-linux-gnu/bits/local_lim.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512bwintrin.h:
+
+/usr/include/x86_64-linux-gnu/bits/floatn-common.h:
+
+/usr/include/c++/13/bits/requires_hosted.h:
+
+/usr/include/c++/13/list:
+
+/home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/module.h:
+
+/home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/control_flow.h:
+
+/usr/include/x86_64-linux-gnu/sys/single_threaded.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h:
 
@@ -3290,13 +3273,27 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/lib/llvm-19/include/llvm/ADT/APInt.h:
 
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vpopcntdqintrin.h:
+
+/usr/include/c++/13/bits/codecvt.h:
+
+/usr/lib/llvm-19/include/llvm/Support/NativeFormatting.h:
+
+/usr/include/c++/13/bits/stl_tempbuf.h:
+
+/home/randy/._____RANDY_____/REPOS/aria/src/frontend/preprocessor.h:
+
+/usr/include/x86_64-linux-gnu/bits/getopt_core.h:
+
+/usr/include/c++/13/bits/stl_vector.h:
+
+/usr/include/c++/13/bits/exception_defines.h:
+
+/usr/lib/llvm-19/include/llvm/Support/ReverseIteration.h:
+
 /usr/include/c++/13/bits/stream_iterator.h:
 
 /usr/include/c++/13/bits/basic_string.h:
-
-/home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/control_flow.h:
-
-/usr/include/x86_64-linux-gnu/sys/single_threaded.h:
 
 /usr/include/c++/13/bits/iterator_concepts.h:
 
@@ -3545,6 +3542,10 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/c++/13/bits/atomic_base.h:
 
 /usr/include/c++/13/bits/uses_allocator_args.h:
+
+/usr/include/c++/13/ext/type_traits.h:
+
+/usr/include/x86_64-linux-gnu/bits/time64.h:
 
 /usr/include/x86_64-linux-gnu/bits/types.h:
 
@@ -3984,6 +3985,12 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vnniintrin.h:
 
+/usr/lib/gcc/x86_64-linux-gnu/13/include/mwaitintrin.h:
+
+/usr/include/c++/13/bits/vector.tcc:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vnnivlintrin.h:
+
 /home/randy/._____RANDY_____/REPOS/aria/src/driver/main.cpp:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vp2intersectintrin.h:
@@ -4003,12 +4010,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/c++/13/bits/memoryfwd.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/f16cintrin.h:
-
-/usr/include/c++/13/bits/vector.tcc:
-
-/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vnnivlintrin.h:
-
-/usr/lib/gcc/x86_64-linux-gnu/13/include/mwaitintrin.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/fxsrintrin.h:
 

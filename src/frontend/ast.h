@@ -49,6 +49,9 @@ class ArrayLiteral;
 class IndexExpr;
 class MemberAccess;
 class LambdaExpr;
+class UseStmt;
+class ModDef;
+class ExternBlock;
 
 // Base AST Node
 // All AST nodes inherit from this class
@@ -106,6 +109,11 @@ public:
     // New expression types (Bugs #69-70)
     virtual void visit(WhenExpr* node) { /* default: do nothing */ }
     virtual void visit(AwaitExpr* node) { /* default: do nothing */ }
+    
+    // Module system (Bugs #73-75)
+    virtual void visit(UseStmt* node) { /* default: do nothing */ }
+    virtual void visit(ModDef* node) { /* default: do nothing */ }
+    virtual void visit(ExternBlock* node) { /* default: do nothing */ }
 };
 
 // Block Statement

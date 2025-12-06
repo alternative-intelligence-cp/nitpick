@@ -1,0 +1,332 @@
+﻿Architectural Specification and Implementation Strategy for wildx: Native Executable Memory Semantics in Aria
+1. Executive Summary
+The Aria programming language is designed around a philosophy of "explicit but precise" control, offering a hybrid memory model that bridges the gap between managed safety and systems-level manual management. The existing architecture successfully partitions memory into garbage-collected (managed) and raw read/write (wild) domains. However, a critical functional gap exists: the inability to natively allocate and manage memory with execution privileges. This limitation forces developers implementing dynamic compilation systems—such as Just-In-Time (JIT) compilers, emulators, or dynamic binary translators—to exit the language's safety boundaries and rely on external system calls or inline assembly.
+This report provides a comprehensive architectural analysis and implementation roadmap for introducing the wildx keyword into the Aria language specification. The wildx primitive is proposed not merely as a pointer modifier, but as a distinct memory allocation class that interfaces directly with Operating System (OS) page protection mechanisms. This feature will enable the allocation of memory regions capable of transitioning between Write (W) and Execute (X) states, thereby satisfying modern W^X (Write XOR Execute) security policies while adhering to Aria’s explicit syntactic style.
+The analysis explores the theoretical underpinnings of executable memory, including the interaction with hardware Instruction Caches (I-Cache) and Translation Lookaside Buffers (TLB). We detail the necessary modifications to the Aria runtime environment to support wildx, specifically the integration with POSIX mmap and Windows VirtualAlloc primitives. Furthermore, we examine the implications for the Aria type system, particularly how wildx memory interacts with the existing borrow checker, pinning operator (#), and safe reference operator ($) described in specification v0.0.6. The report concludes that wildx is a necessary and architecturally consistent evolution of Aria, completing the memory model triad (Read-Only, Read-Write, Read-Execute) required for self-hosted systems programming.
+2. Introduction: The Triad of Memory Semantics
+The fundamental premise of the Aria programming language is to strip away "fluff features" in favor of explicitness and precision. This philosophy is most evident in its hybrid memory model. Most modern languages occupy one of two extremes: fully managed memory (Java, Python, Go) where the runtime completely abstracts the heap, or fully manual memory (C, C++, Zig) where the developer manages every byte. Aria occupies a unique middle ground, allowing seamless transitions between these states via the wild keyword and the safe reference system.
+2.1 The Current State of Aria’s Memory Model
+As defined in the v0.0.6 specification, Aria currently provides two primary memory states :
+1. Managed Memory (GC Default):
+   * Semantics: Implicit allocation, automatic reclamation via Garbage Collection (GC).
+   * Permissions: Read/Write (RW).
+   * Use Case: General application logic, strings, objects, and persistent data structures.
+   * Mechanism: Objects like obj, string, and array are allocated on a managed heap. The runtime tracks reachability.
+   * Interoperability: Can be "pinned" (#) to prevent relocation by the GC, allowing safe temporary access by manual pointers.
+2. Unmanaged Memory (wild):
+   * Semantics: Explicit allocation (aria.alloc), manual reclamation (aria.free), explicit lifetime management via defer.
+   * Permissions: Read/Write (RW).
+   * Use Case: High-performance buffers, interoperability with C libraries (extern "libc"), and custom allocators.
+   * Mechanism: The wild keyword signals to the compiler that the associated variable holds a raw address (wild int64*) rather than a managed reference. It bypasses the GC write barriers and object headers.
+2.2 The Missing Component: Execution
+The user query highlights a critical architectural omission: "I can get two of three types of memory right from the language. read only and read/write. But for certain things like building a JIT access to write/execute memory is a must".
+In the context of the von Neumann architecture, code and data are theoretically interchangeable—both are bits residing in memory. However, modern computing systems operate closer to a Harvard architecture at the protection level. To prevent malicious exploitation (such as stack smashing or heap spraying), modern processors and Operating Systems enforce strict separation between memory that can be written to and memory that can be executed as instructions.
+Currently, if an Aria developer wishes to generate machine code at runtime (a JIT compiler), they must:
+1. Allocate a wild buffer (Read/Write).
+2. Write machine opcodes into the buffer.
+3. Attempt to execute the buffer.
+Without specific language support, step 3 fails. The OS marks standard heap allocations (used by aria.alloc) with a No-Execute (NX/XN) bit. The CPU will trigger a generic protection fault (Segmentation Fault) if the instruction pointer (IP) is directed to this memory.
+The proposed wildx keyword serves as the linguistic bridge to this hardware capability. It allows the developer to explicitly request memory that violates the standard data protection policies, flagging it as "intended for execution." This report argues that wildx should not just be a permission bit, but a distinct allocation strategy that encapsulates the complexity of cache coherency and security state transitions.
+3. Theoretical Foundation: Executable Memory Architecture
+To implement wildx effectively, we must first analyze the underlying hardware and operating system mechanisms that the Aria runtime must abstract. The "language handling this like the rest of the memory" requires a sophisticated interface to the kernel's virtual memory manager.
+3.1 The Von Neumann vs. Harvard Divergence
+While Aria source code treats functions and data distinctly, the JIT compilation process blurs these lines. A JIT compiler treats code as data during the generation phase and as instructions during the execution phase.
+Phase
+	Usage Semantics
+	Required Permissions
+	CPU Cache Involvement
+	Code Generation
+	Array of Bytes (uint8)
+	**Read
+	Write**
+	Execution
+	Function (func)
+	**Read
+	Execute**
+	The transition between these two phases is non-trivial. It involves not just flipping a permission bit in the Page Table Entry (PTE), but also synchronizing the CPU's split caches.
+3.2 The Challenge of Cache Coherency
+Modern processors typically employ a split L1 cache architecture: one cache for data (D-Cache) and one for instructions (I-Cache). When Aria writes opcodes into a wildx buffer, those writes go into the D-Cache. If the runtime simply jumps to that address, the CPU's instruction fetch unit looks in the I-Cache.
+If the I-Cache contains stale data (or random garbage) at that address, the program will crash or execute undefined behavior, even if the main memory has been updated. This is because the D-Cache and I-Cache are not always coherent by default on all architectures.
+* x86/x64: Generally maintains coherency, but relies on serializing instructions.
+* ARM/AArch64: Weakly ordered. Explicit cache maintenance instructions (DC CVAU - Data Cache Clean by VA to PoU, and IC IVAU - Instruction Cache Invalidate by VA to PoU) are mandatory.
+Therefore, the wildx implementation in Aria cannot simply be a wrapper around malloc. It must include a lifecycle management system that handles synchronization.
+3.3 Operating System Memory Protection (W^X)
+Security best practices enforce a policy known as W^X (Write XOR Execute). This states that a memory page can be writable or executable, but never both simultaneously.
+* RW (Read/Write): Used for data.
+* RX (Read/Execute): Used for code.
+* RWX (Read/Write/Execute): Danger zone. Allows exploit payloads to be written and run immediately.
+While some systems (Linux) allow RWX pages, others (OpenBSD, macOS on Apple Silicon) strictly forbid them or make them extremely difficult to obtain (e.g., requiring special entitlements or MAP_JIT flags).
+Aria's wildx design must respect this. If Aria defaults to RWX, it becomes a "security-weak" language. If it enforces W^X, it becomes "precise." Given Aria's design philosophy of "explicit but precise" , the wildx implementation must guide the user toward the secure W^X pattern.
+4. Specification of the wildx Keyword
+Based on the requirements and the Aria specification v0.0.6 , we define wildx as a storage class modifier that dictates both the allocation backend and the type compatibility rules.
+4.1 Syntax and Semantics
+The wild keyword in Aria is used to declare unmanaged variables: wild int64:s = 10000;. The wildx keyword will follow this syntactic pattern but implies a stricter set of constraints.
+4.1.1 Declaration
+wildx is valid primarily for pointers, arrays, and buffers, as these are the structures used to hold machine code.
+
+
+Code snippet
+
+
+
+
+// Allocating a buffer for machine code
+wildx uint8:jit_buffer = aria.alloc_exec(4096);
+
+// Declaring a pointer to executable memory
+wildx void*:code_ptr = jit_buffer;
+
+4.1.2 Type Compatibility
+A wildx variable is distinct from a wild variable.
+* wild uint8*: Pointer to raw data.
+* wildx uint8*: Pointer to raw data that resides in a page capable of execution.
+This distinction allows the compiler to prevent accidental execution of standard data (which would crash) and accidental writing to executable code (which would fault).
+4.2 The wildx Lifecycle
+To handle the W^X security requirement, wildx memory must possess a state.
+1. State 1: Mutable Generation (RW)
+Upon allocation, wildx memory behaves exactly like wild memory. It is Read/Write. The JIT compiler writes opcodes into it.
+Code snippet
+// Write 0xC3 (RET) to the buffer
+jit_buffer = 0xC3; 
+
+2. State 2: Sealed Execution (RX)
+The user must explicitly "seal" the memory to make it executable. This is the "precise" part of Aria.
+Code snippet
+aria.mem.protect(jit_buffer, PROT_RX);
+
+3. State 3: Execution
+Once sealed, the memory can be cast to a function type and invoked. Writes to the buffer in this state will trigger a runtime error (Access Violation), protecting the code integrity.
+4.3 Integration with the Borrow Checker
+Aria's borrow checker uses # for pinning and $ for safe references. How does wildx interact with this?
+   * Pinning (#): wildx memory is inherently pinned. It is allocated via OS page allocators, not the GC heap. Therefore, applying # to a wildx variable is redundant but harmless.
+   * Safe References ($): A developer might want to inspect the generated code safely.
+Code snippet
+wildx uint8:code =...;
+// Create a read-only safe slice of the executable memory
+uint8$:inspector = $code; 
+
+The borrow checker must ensure that aria.free(code) is not called while inspector is alive. This utilizes the existing logic defined for wild memory in spec v0.0.6.
+5. Implementation Strategy: Runtime Environment
+The core of the wildx implementation lies in the runtime library (libaria). The existing allocators (aria.alloc) are likely built on top of malloc or a custom heap implementation. wildx requires a separate path.
+5.1 The Page Allocator Interface
+Standard allocators optimize for small objects and pack them tightly to reduce fragmentation. Executable memory, however, must be page-aligned (usually 4KB on x86/ARM).
+We introduce a new allocator function in the runtime, explicitly for wildx.
+Table 1: Allocator Comparison
+Feature
+	aria.alloc (wild)
+	aria.alloc_exec (wildx)
+	Backend
+	malloc / HeapAlloc
+	mmap / VirtualAlloc
+	Granularity
+	Byte-level
+	Page-level (4096 bytes)
+	Permissions
+	RW (Data)
+	RW (Data) $\to$ RX (Code)
+	Metadata
+	Header (Size)
+	Header + Permission State
+	Deallocation
+	aria.free
+	aria.free (handles unmapping)
+	5.2 OS-Specific Implementation Details
+The runtime must abstract the divergent APIs of major operating systems.
+5.2.1 Linux / POSIX (BSD, Android)
+On POSIX systems, mmap is the primitive.
+      * Allocation: mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
+      * Sealing: mprotect(addr, size, PROT_READ | PROT_EXEC)
+The critical insight here is that mprotect usually requires the address to be aligned to the page boundary. The Aria runtime must enforce this alignment transparently.
+5.2.2 Windows
+Windows uses the Virtual Memory API.
+      * Allocation: VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
+      * Sealing: VirtualProtect(addr, size, PAGE_EXECUTE_READ, &old_protect)
+5.2.3 macOS (Apple Silicon)
+This is the edge case that justifies wildx as a distinct keyword. Apple Silicon enforces strict W^X and requires a specific flag MAP_JIT.
+      * Allocation: mmap(..., PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT,...)
+      * Toggling: Unlike Linux where mprotect is a syscall, Apple allows fast user-space toggling via pthread_jit_write_protect_np(0) (enable write) and pthread_jit_write_protect_np(1) (enable exec).
+Integration Note: The Aria runtime on macOS would inline these calls into the aria.mem.protect function, or potentially expose a fast-path intrinsic aria.jit_flip() to avoid the overhead of full system calls during heavy JIT compilation loops.
+5.3 Instruction Cache Flushing
+As noted in the theoretical analysis, writing code is insufficient; the CPU must know it has changed. The runtime must implement a flush_cache(ptr, size) function.
+         * GCC/Clang Builtin: __builtin___clear_cache(char *begin, char *end)
+         * Windows: FlushInstructionCache(GetCurrentProcess(), ptr, size)
+This function should be called automatically by the runtime whenever wildx memory transitions from Write to Execute. This ensures the "precise" nature of Aria—the user defines the state change, and the runtime handles the hardware housekeeping.
+6. Implementation Strategy: Compiler and Type System
+The Aria compiler must be updated to recognize wildx and enforce its usage rules.
+6.1 AST Extensions
+The Abstract Syntax Tree (AST) definitions must include a new flag for memory allocation nodes.
+         * Current: NodeType: ALLOC_WILD
+         * New: NodeType: ALLOC_WILDX
+When the parser encounters wildx, it generates an ALLOC_WILDX node. During the semantic analysis phase, the type checker verifies that wildx is only applied to types that can logically represent code (pointers, arrays, buffers, or generic dyn).
+6.2 Casting Rules
+The most dangerous operation in a JIT is casting data to a function. Aria must make this explicit.
+
+
+Code snippet
+
+
+
+
+// Hypothetical Type Definition
+type BinaryFunc = func:int64(int64:a, int64:b);
+
+wildx void*:raw_mem =...;
+
+// ILLEGAL: Implicit cast
+BinaryFunc:f = raw_mem; 
+
+// LEGAL: Explicit cast with wildx source
+BinaryFunc:f = (BinaryFunc)raw_mem;
+
+The compiler should only allow casting to func types if the source pointer is derived from a wildx allocation. Casting a standard wild pointer (from malloc) to a func should be a compile-time error (or at least a warning), as it will certainly segfault at runtime on modern systems.
+6.3 Intrinsic Functions
+To support wildx, the standard library std or a new module aria.system needs to expose the control primitives.
+
+
+Code snippet
+
+
+
+
+// Proposed additions to Aria Standard Library
+
+mod aria {
+   mod mem {
+       // Allocates executable-capable memory
+       pub func:alloc_exec = wildx void*(uint64:size);
+       
+       // Transitions memory to Read/Execute (Sealing)
+       pub func:protect_exec = result(wildx void*:ptr, uint64:size);
+       
+       // Transitions memory to Read/Write (Patching)
+       pub func:protect_write = result(wildx void*:ptr, uint64:size);
+   }
+}
+
+7. Practical Application: Building a JIT in Aria
+To demonstrate how the wildx keyword satisfies the user's requirement, we present a complete architectural example. This code implements a simple JIT compiler that generates a function to add two numbers, following the x86-64 System V ABI.
+7.1 The JIT Assembler Example
+This example utilizes wildx for allocation, standard arrays for code generation, and the pick construct for error handling.
+
+
+Code snippet
+
+
+
+
+use std.io;
+use aria.mem; // The new module enabling wildx support
+
+// Define the signature of the function we will generate
+// System V ABI: first arg in RDI, second in RSI, return in RAX
+type AddFunc = func:int64(int64:a, int64:b);
+
+func:main = int8() {
+   print("Starting JIT Engine...");
+   
+   // 1. ALLOCATION
+   // Use wildx to request page-aligned, execute-capable memory.
+   // Initial state is Read/Write.
+   wildx uint8*:code_page = aria.mem.alloc_exec(4096);
+   
+   // Check for allocation failure using Aria's ternary
+   is code_page == NULL? {
+       stderr.write("Failed to allocate executable page");
+       return -1;
+   } : 0;
+
+   // 2. CODE GENERATION (x86-64 Machine Code)
+   // We are writing directly to the wildx memory.
+   // Instruction: LEA RAX,
+   // Opcode: 48 8d 04 37
+   code_page = 0x48; // REX.W prefix (64-bit operand)
+   code_page = 0x8D; // LEA opcode
+   code_page = 0x04; // SIB Byte follows
+   code_page = 0x37; // SIB: base=RDI, index=RSI, scale=1
+   
+   // Instruction: RET
+   // Opcode: C3
+   code_page = 0xC3;
+
+   print("Code generated. Sealing memory...");
+
+   // 3. SEALING (W^X Enforcement)
+   // Transition memory from RW to RX.
+   // This call flushes the instruction cache and updates page tables.
+   result:protect_res = aria.mem.protect_exec(code_page, 4096);
+   
+   // Handle protection errors
+   if (protect_res.err!= NULL) {
+       stderr.write(`Protection failed: &{protect_res.err}`);
+       aria.free(code_page);
+       return -1;
+   }
+
+   // 4. BINDING
+   // Cast the raw executable pointer to a strong function type.
+   // The compiler allows this because code_page is wildx.
+   wildx AddFunc:jit_add = (AddFunc)code_page;
+
+   // 5. EXECUTION
+   // Call the generated function naturally.
+   int64:sum = jit_add(10, 20);
+   
+   print(`JIT Execution Result: 10 + 20 = &{sum}`);
+   
+   // 6. CLEANUP
+   // Manual memory management is still required for wild/wildx.
+   aria.free(code_page);
+   
+   return 0;
+};
+
+7.2 Analysis of the Example
+         * Explicit Control: The user allocates, writes, protects, and frees. Nothing is hidden.
+         * Safety integration: The result type checks on protect_exec ensure that if the OS refuses to mark the page executable (e.g., due to SELinux policies), the program handles it gracefully rather than crashing.
+         * Syntactic Consistency: The code looks like standard Aria. The wildx keyword acts as a marker for "special behavior" without introducing entirely new syntax paradigms.
+8. Advanced Considerations
+8.1 JIT Hardening and Security
+The primary argument against easy access to executable memory is security. By enabling wildx, Aria enables JIT Spraying attacks if not carefully managed.
+To mitigate this, the Aria runtime should implement Randomization. When aria.mem.alloc_exec is called, the underlying implementation should utilize Address Space Layout Randomization (ASLR). On mmap calls, this is often the default behavior (passing NULL as the hint address). The runtime should explicitly avoid requesting fixed addresses unless strictly necessary.
+8.2 Hot Patching and Re-JITing
+Some JITs need to update code on the fly (e.g., inline caching or de-optimization).
+With the proposed model, wildx memory becomes Read-Only (Executable) after sealing. To modify it, the user must:
+         1. Call aria.mem.protect_write(ptr, size).
+         2. Perform the write (patch the jump target).
+         3. Call aria.mem.protect_exec(ptr, size) immediately.
+This "Unlock -> Patch -> Lock" pattern minimizes the window where memory is writable, reducing the attack surface compared to leaving memory as RWX permanently.
+8.3 FFI and External Libraries
+If Aria interacts with C libraries that manage their own JIT (like LuaJIT or V8 embedded), wildx might not be needed for those specific interactions as they handle their own memory. However, if Aria is used to implement the bindings for such a library, wildx provides the necessary type safety to represent the function pointers returned by those external libraries.
+For example, if an external C function returns a void* that points to a JIT-compiled function, the Aria developer can cast it to wildx func to verify at the type level that "I intend to execute this."
+9. Conclusion
+The introduction of wildx into the Aria programming language represents a necessary evolution of its hybrid memory model. It fills the void between "passive data" (Read/Write) and "static logic" (Read-Execute), enabling the creation of "dynamic logic" (Write $\to$ Execute).
+By implementing wildx as a distinct allocation class backed by OS page primitives, Aria preserves its core philosophy of explicitness. It forces the developer to acknowledge the unique nature of executable memory—its page alignment requirements, its cache coherency implications, and its security state transitions—while providing the high-level syntax to manipulate it safely.
+This feature enables Aria to be fully self-hosting and capable of implementing high-performance systems software like JIT compilers, fulfilling the user's vision of a language where all types of memory are first-class citizens.
+________________
+Appendix: Detailed Language Specification Updates
+A.1 Keyword Definitions
+         * wildx: Storage modifier. Indicates that the memory is unmanaged and resides in a virtual memory region capable of acquiring execution privileges.
+A.2 Standard Library Extensions (aria.mem)
+The following function signatures are recommended for inclusion in the standard library to support wildx.
+Table 2: Proposed aria.mem API
+Function
+	Signature
+	Description
+	alloc_exec
+	func(uint64:size) -> wildx void*
+	Allocates size bytes of page-aligned memory. Initial protection is RW. Returns NULL on failure.
+	protect_exec
+	func(wildx void*:ptr, uint64:size) -> result
+	Changes protection to RX. Flushes I-Cache. Returns {err, val}.
+	protect_write
+	func(wildx void*:ptr, uint64:size) -> result
+	Changes protection to RW. Used for patching. Returns {err, val}.
+	free_exec
+	func(wildx void*:ptr, uint64:size) -> void
+	Deallocates memory. Requires size because munmap requires it (unlike free).
+	A.3 Compiler Error Codes
+To aid developers, the compiler should emit specific errors related to wildx.
+         * E401: Invalid Cast to Function: Attempting to cast a standard wild or managed pointer to a func. Suggest using wildx.
+         * E402: Write to Executable: Detecting a static write to a wildx variable that is known to be in the sealed state (if static analysis allows).
+         * E403: Wildx Alignment: wildx applied to a type with unsupported alignment requirements.
+By adhering to this specification, Aria can robustly support dynamic code generation while maintaining the rigorous precision that defines the language.
