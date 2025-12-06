@@ -1,5 +1,5 @@
 # Aria Programming Language
-
+![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Commercial License Available](https://img.shields.io/badge/Commercial-License_Available-green.svg)](LICENSE.md)
 
