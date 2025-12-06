@@ -17,7 +17,7 @@ As defined in the v0.0.6 specification, Aria currently provides two primary memo
    * Semantics: Explicit allocation (aria.alloc), manual reclamation (aria.free), explicit lifetime management via defer.
    * Permissions: Read/Write (RW).
    * Use Case: High-performance buffers, interoperability with C libraries (extern "libc"), and custom allocators.
-   * Mechanism: The wild keyword signals to the compiler that the associated variable holds a raw address (wild int64*) rather than a managed reference. It bypasses the GC write barriers and object headers.
+   * Mechanism: The wild keyword signals to the compiler that the associated variable holds a raw address (wild int64@) rather than a managed reference. It bypasses the GC write barriers and object headers.
 2.2 The Missing Component: Execution
 The user query highlights a critical architectural omission: "I can get two of three types of memory right from the language. read only and read/write. But for certain things like building a JIT access to write/execute memory is a must".
 In the context of the von Neumann architecture, code and data are theoretically interchangeable—both are bits residing in memory. However, modern computing systems operate closer to a Harvard architecture at the protection level. To prevent malicious exploitation (such as stack smashing or heap spraying), modern processors and Operating Systems enforce strict separation between memory that can be written to and memory that can be executed as instructions.
@@ -74,12 +74,12 @@ Code snippet
 wildx uint8:jit_buffer = aria.alloc_exec(4096);
 
 // Declaring a pointer to executable memory
-wildx void*:code_ptr = jit_buffer;
+wildx void@:code_ptr = jit_buffer;
 
 4.1.2 Type Compatibility
 A wildx variable is distinct from a wild variable.
-* wild uint8*: Pointer to raw data.
-* wildx uint8*: Pointer to raw data that resides in a page capable of execution.
+* wild uint8@: Pointer to raw data.
+* wildx uint8@: Pointer to raw data that resides in a page capable of execution.
 This distinction allows the compiler to prevent accidental execution of standard data (which would crash) and accidental writing to executable code (which would fault).
 4.2 The wildx Lifecycle
 To handle the W^X security requirement, wildx memory must possess a state.
@@ -170,7 +170,7 @@ Code snippet
 // Hypothetical Type Definition
 type BinaryFunc = func:int64(int64:a, int64:b);
 
-wildx void*:raw_mem =...;
+wildx void@:raw_mem =...;
 
 // ILLEGAL: Implicit cast
 BinaryFunc:f = raw_mem; 
@@ -193,13 +193,13 @@ Code snippet
 mod aria {
    mod mem {
        // Allocates executable-capable memory
-       pub func:alloc_exec = wildx void*(uint64:size);
+       pub func:alloc_exec = wildx void@(uint64:size);
        
        // Transitions memory to Read/Execute (Sealing)
-       pub func:protect_exec = result(wildx void*:ptr, uint64:size);
+       pub func:protect_exec = result(wildx void@:ptr, uint64:size);
        
        // Transitions memory to Read/Write (Patching)
-       pub func:protect_write = result(wildx void*:ptr, uint64:size);
+       pub func:protect_write = result(wildx void@:ptr, uint64:size);
    }
 }
 
@@ -227,7 +227,7 @@ func:main = int8() {
    // 1. ALLOCATION
    // Use wildx to request page-aligned, execute-capable memory.
    // Initial state is Read/Write.
-   wildx uint8*:code_page = aria.mem.alloc_exec(4096);
+   wildx uint8@:code_page = aria.mem.alloc_exec(4096);
    
    // Check for allocation failure using Aria's ternary
    is code_page == NULL? {
@@ -313,16 +313,16 @@ Function
 	Signature
 	Description
 	alloc_exec
-	func(uint64:size) -> wildx void*
+	func(uint64:size) -> wildx void@
 	Allocates size bytes of page-aligned memory. Initial protection is RW. Returns NULL on failure.
 	protect_exec
-	func(wildx void*:ptr, uint64:size) -> result
+	func(wildx void@:ptr, uint64:size) -> result
 	Changes protection to RX. Flushes I-Cache. Returns {err, val}.
 	protect_write
-	func(wildx void*:ptr, uint64:size) -> result
+	func(wildx void@:ptr, uint64:size) -> result
 	Changes protection to RW. Used for patching. Returns {err, val}.
 	free_exec
-	func(wildx void*:ptr, uint64:size) -> void
+	func(wildx void@:ptr, uint64:size) -> void
 	Deallocates memory. Requires size because munmap requires it (unlike free).
 	A.3 Compiler Error Codes
 To aid developers, the compiler should emit specific errors related to wildx.
