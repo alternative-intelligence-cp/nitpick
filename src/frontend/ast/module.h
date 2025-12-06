@@ -21,7 +21,7 @@ public:
         : module_path(path), imports(imps) {}
 
     void accept(AstVisitor& visitor) override {
-        // visitor.visit(this);
+        visitor.visit(this);
     }
 };
 
@@ -34,7 +34,7 @@ public:
     ExternBlock() = default;
 
     void accept(AstVisitor& visitor) override {
-        // visitor.visit(this);
+        visitor.visit(this);
     }
 };
 
@@ -49,7 +49,7 @@ public:
         : name(n), body(std::move(b)) {}
 
     void accept(AstVisitor& visitor) override {
-        // visitor.visit(this);
+        visitor.visit(this);
     }
 };
 

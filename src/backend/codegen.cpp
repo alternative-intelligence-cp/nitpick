@@ -25,6 +25,7 @@
 #include "../frontend/ast/control_flow.h"
 #include "../frontend/ast/loops.h"
 #include "../frontend/ast/defer.h"
+#include "../frontend/ast/module.h"
 #include "../frontend/tokens.h"
 #include <iostream>
 
@@ -78,6 +79,9 @@ using aria::frontend::IndexExpr;
 using aria::frontend::BinaryOp;
 using aria::frontend::UnaryOp;
 using aria::frontend::ReturnStmt;
+using aria::frontend::UseStmt;
+using aria::frontend::ModDef;
+using aria::frontend::ExternBlock;
 
 // =============================================================================
 // Code Generation Context
@@ -124,6 +128,9 @@ public:
     
     // Defer statement stack (LIFO execution on scope exit)
     std::vector<std::vector<Block*>> deferStacks;  // Stack of defer blocks per scope
+    
+    // Module system
+    std::string currentModulePrefix = "";  // Current module namespace prefix (e.g., "math.")
 
     CodeGenContext(std::string moduleName) {
         module = std::make_unique<Module>(moduleName, llvmContext);
@@ -329,6 +336,13 @@ public:
         
         // Add return if missing
         if (ctx.builder->GetInsertBlock()->getTerminator() == nullptr) {
+            // Execute all defers before implicit return (LIFO order)
+            if (!ctx.deferStacks.empty() && !ctx.deferStacks[0].empty()) {
+                for (auto it = ctx.deferStacks[0].rbegin(); it != ctx.deferStacks[0].rend(); ++it) {
+                    (*it)->accept(*this);
+                }
+            }
+            
             Type* returnType = func->getReturnType();
             if (returnType->isVoidTy()) {
                 ctx.builder->CreateRetVoid();
@@ -391,11 +405,14 @@ public:
                 Type* returnType = ctx.getResultType(lambda->return_type);
                 FunctionType* funcType = FunctionType::get(returnType, paramTypes, false);
                 
+                // Create function with module prefix if in a module
+                std::string funcName = ctx.currentModulePrefix + node->name;
+                
                 // Create function with the FINAL name (not lambda_N)
                 Function* func = Function::Create(
                     funcType,
                     Function::InternalLinkage,
-                    node->name,  // Use variable name directly
+                    funcName,
                     ctx.module.get()
                 );
                 
@@ -588,11 +605,13 @@ public:
         Type* returnType = ctx.getLLVMType(node->return_type);
         FunctionType* funcType = FunctionType::get(returnType, paramTypes, false);
         
-        // 2. Create function
+        // 2. Create function with module prefix
+        std::string funcName = ctx.currentModulePrefix + node->name;
+        
         Function* func = Function::Create(
             funcType,
             Function::ExternalLinkage,
-            node->name,
+            funcName,
             ctx.module.get()
         );
         
@@ -1258,6 +1277,16 @@ public:
                 if (!sym->ariaType.empty()) {
                     Type* loadType = ctx.getLLVMType(sym->ariaType);
                     
+                    // For array types, return pointer to first element instead of loading the array
+                    if (loadType->isArrayTy()) {
+                        // Return GEP to first element (array decay)
+                        Value* indices[] = {
+                            ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0),
+                            ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0)
+                        };
+                        return ctx.builder->CreateGEP(loadType, sym->val, indices, var->name + "_ptr");
+                    }
+                    
                     // For heap allocations (wild/gc), load pointer first, then value
                     if (sym->strategy == CodeGenContext::AllocStrategy::WILD || 
                         sym->strategy == CodeGenContext::AllocStrategy::GC) {
@@ -1722,7 +1751,7 @@ public:
             
             if (!arrayPtr || !index) return nullptr;
             
-            Type* ptrType = arrayPtr->getType();
+            Type* arrayPtrType = arrayPtr->getType();
             
             // We need to determine the element type
             // First, try to get it from the identifier's Aria type
@@ -1730,7 +1759,7 @@ public:
             std::string ariaElementType = "";
             
             // Try to find the array variable in symbol table to get its Aria type
-            if (auto* varRef = dynamic_cast<aria::frontend::Identifier*>(idx->array.get())) {
+            if (auto* varRef = dynamic_cast<aria::frontend::VarExpr*>(idx->array.get())) {
                 for (auto it = ctx.scopeStack.rbegin(); it != ctx.scopeStack.rend(); ++it) {
                     auto found = it->find(varRef->name);
                     if (found != it->end()) {
@@ -1749,7 +1778,7 @@ public:
             }
             
             // If we still don't have element type, try to infer from pointer type
-            if (!elementType && ptrType->isPointerTy()) {
+            if (!elementType && arrayPtrType->isPointerTy()) {
                 // For array literals, the pointer points to the first element already
                 // We need to look at what the pointer points to
                 // This is a fallback - prefer the symbol table approach above
@@ -1761,7 +1790,7 @@ public:
             }
             
             // Handle pointer to array element
-            if (ptrType->isPointerTy()) {
+            if (arrayPtrType->isPointerTy()) {
                 // Get element pointer
                 Value* elemPtr = ctx.builder->CreateGEP(
                     elementType,
@@ -2239,6 +2268,47 @@ private:
         return Function::Create(
             FunctionType::get(PointerType::getUnqual(ctx.llvmContext), {}, false),
             Function::ExternalLinkage, "get_current_thread_nursery", ctx.module.get());
+    }
+    
+    // =============================================================================
+    // Module System Visitors
+    // =============================================================================
+    
+    void visit(frontend::UseStmt* node) override {
+        // For now, use statements are no-ops in codegen
+        // They will be handled by a linker/module loader in the future
+        // The symbol resolution happens at link time
+    }
+    
+    void visit(frontend::ModDef* node) override {
+        // Module definition creates a namespace
+        // For LLVM IR, we prefix all symbols with the module name
+        
+        // Save current module prefix
+        std::string previousPrefix = ctx.currentModulePrefix;
+        
+        // Set new prefix: mod_name.
+        if (previousPrefix.empty()) {
+            ctx.currentModulePrefix = node->name + ".";
+        } else {
+            ctx.currentModulePrefix = previousPrefix + node->name + ".";
+        }
+        
+        // Visit module body
+        if (node->body) {
+            node->body->accept(*this);
+        }
+        
+        // Restore previous prefix
+        ctx.currentModulePrefix = previousPrefix;
+    }
+    
+    void visit(frontend::ExternBlock* node) override {
+        // Extern blocks declare C functions without generating definitions
+        // Just process the declarations (they should be function declarations)
+        for (auto& decl : node->declarations) {
+            decl->accept(*this);
+        }
     }
 };
 
