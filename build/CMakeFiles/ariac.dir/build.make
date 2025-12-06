@@ -125,10 +125,24 @@ CMakeFiles/ariac.dir/src/frontend/parser.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ariac.dir/src/frontend/parser.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/frontend/parser.cpp -o CMakeFiles/ariac.dir/src/frontend/parser.cpp.s
 
+CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.o: CMakeFiles/ariac.dir/flags.make
+CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/frontend/parser_struct.cpp
+CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.o -MF CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.o.d -o CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/frontend/parser_struct.cpp
+
+CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/randy/._____RANDY_____/REPOS/aria/src/frontend/parser_struct.cpp > CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.i
+
+CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/frontend/parser_struct.cpp -o CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.s
+
 CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o: CMakeFiles/ariac.dir/flags.make
 CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/borrow_checker.cpp
 CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o -MF CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o.d -o CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/borrow_checker.cpp
 
 CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.i: cmake_force
@@ -142,7 +156,7 @@ CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.s: cmake_force
 CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o: CMakeFiles/ariac.dir/flags.make
 CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/escape_analysis.cpp
 CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o -MF CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o.d -o CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/escape_analysis.cpp
 
 CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.i: cmake_force
@@ -156,7 +170,7 @@ CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.s: cmake_force
 CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: CMakeFiles/ariac.dir/flags.make
 CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/type_checker.cpp
 CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o -MF CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o.d -o CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/type_checker.cpp
 
 CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.i: cmake_force
@@ -170,7 +184,7 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.s: cmake_force
 CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: CMakeFiles/ariac.dir/flags.make
 CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen.cpp
 CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/ariac.dir/src/backend/codegen.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/ariac.dir/src/backend/codegen.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/codegen.cpp.o -MF CMakeFiles/ariac.dir/src/backend/codegen.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/codegen.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen.cpp
 
 CMakeFiles/ariac.dir/src/backend/codegen.cpp.i: cmake_force
@@ -184,7 +198,7 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.s: cmake_force
 CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o: CMakeFiles/ariac.dir/flags.make
 CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/lowering_ternary.cpp
 CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o -MF CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/lowering_ternary.cpp
 
 CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.i: cmake_force
@@ -201,6 +215,7 @@ ariac_OBJECTS = \
 "CMakeFiles/ariac.dir/src/frontend/preprocessor.cpp.o" \
 "CMakeFiles/ariac.dir/src/frontend/lexer.cpp.o" \
 "CMakeFiles/ariac.dir/src/frontend/parser.cpp.o" \
+"CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.o" \
 "CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o" \
 "CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o" \
 "CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o" \
@@ -214,6 +229,7 @@ ariac: CMakeFiles/ariac.dir/src/driver/main.cpp.o
 ariac: CMakeFiles/ariac.dir/src/frontend/preprocessor.cpp.o
 ariac: CMakeFiles/ariac.dir/src/frontend/lexer.cpp.o
 ariac: CMakeFiles/ariac.dir/src/frontend/parser.cpp.o
+ariac: CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.o
 ariac: CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o
 ariac: CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o
 ariac: CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o
@@ -293,7 +309,7 @@ ariac: /usr/lib/llvm-19/lib/libLLVMDemangle.a
 ariac: /usr/lib/x86_64-linux-gnu/libz.so
 ariac: /usr/lib/x86_64-linux-gnu/libzstd.so
 ariac: CMakeFiles/ariac.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Linking CXX executable ariac"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Linking CXX executable ariac"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/ariac.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

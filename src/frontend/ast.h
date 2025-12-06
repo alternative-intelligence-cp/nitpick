@@ -16,6 +16,7 @@ class Statement;
 class Block;
 class VarDecl;
 class FuncDecl;
+class StructDecl;
 class AsyncBlock;
 class VarExpr;
 class IntLiteral;
@@ -75,12 +76,15 @@ public:
     virtual void visit(CallExpr* node) = 0;
     virtual void visit(ObjectLiteral* node) { /* default: do nothing */ }
     virtual void visit(MemberAccess* node) { /* default: do nothing */ }
+    virtual void visit(ArrayLiteral* node) { /* default: do nothing */ }
+    virtual void visit(IndexExpr* node) { /* default: do nothing */ }
     virtual void visit(UnwrapExpr* node) { /* default: do nothing */ }
     virtual void visit(LambdaExpr* node) { /* default: do nothing */ }
 
     // Statements
     virtual void visit(VarDecl* node) = 0;
     virtual void visit(FuncDecl* node) { /* default: do nothing */ }
+    virtual void visit(StructDecl* node) { /* default: do nothing */ }
     virtual void visit(ReturnStmt* node) = 0;
     virtual void visit(ExpressionStmt* node) { /* default: visit expression */ }
     virtual void visit(IfStmt* node) = 0;

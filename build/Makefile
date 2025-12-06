@@ -486,6 +486,30 @@ src/frontend/parser.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser.cpp.s
 .PHONY : src/frontend/parser.cpp.s
 
+src/frontend/parser_struct.o: src/frontend/parser_struct.cpp.o
+.PHONY : src/frontend/parser_struct.o
+
+# target to build an object file
+src/frontend/parser_struct.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.o
+.PHONY : src/frontend/parser_struct.cpp.o
+
+src/frontend/parser_struct.i: src/frontend/parser_struct.cpp.i
+.PHONY : src/frontend/parser_struct.i
+
+# target to preprocess a source file
+src/frontend/parser_struct.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.i
+.PHONY : src/frontend/parser_struct.cpp.i
+
+src/frontend/parser_struct.s: src/frontend/parser_struct.cpp.s
+.PHONY : src/frontend/parser_struct.s
+
+# target to generate assembly for a file
+src/frontend/parser_struct.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.s
+.PHONY : src/frontend/parser_struct.cpp.s
+
 src/frontend/preprocessor.o: src/frontend/preprocessor.cpp.o
 .PHONY : src/frontend/preprocessor.o
 
@@ -889,6 +913,9 @@ help:
 	@echo "... src/frontend/parser.o"
 	@echo "... src/frontend/parser.i"
 	@echo "... src/frontend/parser.s"
+	@echo "... src/frontend/parser_struct.o"
+	@echo "... src/frontend/parser_struct.i"
+	@echo "... src/frontend/parser_struct.s"
 	@echo "... src/frontend/preprocessor.o"
 	@echo "... src/frontend/preprocessor.i"
 	@echo "... src/frontend/preprocessor.s"
