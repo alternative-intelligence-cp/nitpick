@@ -151,11 +151,22 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
         case TOKEN_ITERATION:  // TOKEN_ITERATION is an alias for TOKEN_DOLLAR
             return std::make_unique<VarExpr>("$");
         
-        // --- Grouping ---
+        // --- Grouping or Cast ---
         case TOKEN_LEFT_PAREN: {
-            auto expr = parseExpression();
-            consume(TOKEN_RIGHT_PAREN, "Expected ')' after expression");
-            return expr;
+            // Lookahead to distinguish between (expr) and (Type)expr
+            // Check if next token could start a type name
+            if (isType(peek())) {
+                // This looks like a cast: (TypeName)expr
+                std::string targetType = parseTypeName();
+                consume(TOKEN_RIGHT_PAREN, "Expected ')' after cast type");
+                auto expr = parsePrefix();  // Parse the expression being cast
+                return std::make_unique<CastExpr>(targetType, std::move(expr));
+            } else {
+                // Regular grouping: (expr)
+                auto expr = parseExpression();
+                consume(TOKEN_RIGHT_PAREN, "Expected ')' after expression");
+                return expr;
+            }
         }
         
         // --- Object Literal (for Result type) ---

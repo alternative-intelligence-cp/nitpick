@@ -289,6 +289,21 @@ public:
     }
 };
 
+// Cast Expression
+// Example: (int64)x, (BinaryFunc)wildx_buffer
+class CastExpr : public Expression {
+public:
+    std::string target_type;  // Type to cast to
+    std::unique_ptr<Expression> expression;  // Expression being cast
+
+    CastExpr(const std::string& type, std::unique_ptr<Expression> expr)
+        : target_type(type), expression(std::move(expr)) {}
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
 // Forward declaration for lambda
 struct FuncParam;
 class Block;
