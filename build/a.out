@@ -3,13 +3,6 @@ source_filename = "aria_module"
 
 %result_int8 = type { i8, i8 }
 
-@0 = private unnamed_addr constant [22 x i8] c"Allocating resource 1\00", align 1
-@1 = private unnamed_addr constant [22 x i8] c"Allocating resource 2\00", align 1
-@2 = private unnamed_addr constant [16 x i8] c"Using resources\00", align 1
-@3 = private unnamed_addr constant [16 x i8] c"Function ending\00", align 1
-@4 = private unnamed_addr constant [19 x i8] c"Freeing resource 2\00", align 1
-@5 = private unnamed_addr constant [19 x i8] c"Freeing resource 1\00", align 1
-
 declare void @puts(ptr)
 
 declare void @print(ptr)
@@ -21,14 +14,15 @@ entry:
 
 define internal %result_int8 @__user_main() {
 entry:
-  call void @puts(ptr @0)
-  call void @puts(ptr @1)
-  call void @puts(ptr @2)
-  call void @puts(ptr @3)
-  call void @puts(ptr @4)
-  call void @puts(ptr @5)
+  %0 = call ptr @aria_alloc_exec(i64 8)
+  %buf = alloca ptr, align 8
+  store ptr %0, ptr %buf, align 8
+  %1 = load ptr, ptr %buf, align 8
+  store i64 42, ptr %1, align 4
   ret %result_int8 zeroinitializer
 }
+
+declare ptr @aria_alloc_exec(i64)
 
 define i64 @main() {
 entry:

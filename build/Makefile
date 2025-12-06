@@ -846,6 +846,30 @@ src/runtime/memory/allocator.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/memory/allocator.c.s
 .PHONY : src/runtime/memory/allocator.c.s
 
+src/runtime/memory/wildx_allocator.o: src/runtime/memory/wildx_allocator.c.o
+.PHONY : src/runtime/memory/wildx_allocator.o
+
+# target to build an object file
+src/runtime/memory/wildx_allocator.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o
+.PHONY : src/runtime/memory/wildx_allocator.c.o
+
+src/runtime/memory/wildx_allocator.i: src/runtime/memory/wildx_allocator.c.i
+.PHONY : src/runtime/memory/wildx_allocator.i
+
+# target to preprocess a source file
+src/runtime/memory/wildx_allocator.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.i
+.PHONY : src/runtime/memory/wildx_allocator.c.i
+
+src/runtime/memory/wildx_allocator.s: src/runtime/memory/wildx_allocator.c.s
+.PHONY : src/runtime/memory/wildx_allocator.s
+
+# target to generate assembly for a file
+src/runtime/memory/wildx_allocator.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.s
+.PHONY : src/runtime/memory/wildx_allocator.c.s
+
 src/stdlib/io/fast_read.o: src/stdlib/io/fast_read.cpp.o
 .PHONY : src/stdlib/io/fast_read.o
 
@@ -958,6 +982,9 @@ help:
 	@echo "... src/runtime/memory/allocator.o"
 	@echo "... src/runtime/memory/allocator.i"
 	@echo "... src/runtime/memory/allocator.s"
+	@echo "... src/runtime/memory/wildx_allocator.o"
+	@echo "... src/runtime/memory/wildx_allocator.i"
+	@echo "... src/runtime/memory/wildx_allocator.s"
 	@echo "... src/stdlib/io/fast_read.o"
 	@echo "... src/stdlib/io/fast_read.i"
 	@echo "... src/stdlib/io/fast_read.s"

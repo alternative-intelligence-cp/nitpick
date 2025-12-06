@@ -220,6 +220,7 @@ Token AriaLexer::nextToken() {
                
                // Memory management
                {"wild", TOKEN_KW_WILD},
+               {"wildx", TOKEN_KW_WILDX},
                {"stack", TOKEN_KW_STACK},
                {"gc", TOKEN_KW_GC},
                {"pin", TOKEN_KW_PIN},

@@ -83,10 +83,24 @@ CMakeFiles/aria_runtime.dir/src/runtime/memory/allocator.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/aria_runtime.dir/src/runtime/memory/allocator.c.s"
 	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/runtime/memory/allocator.c -o CMakeFiles/aria_runtime.dir/src/runtime/memory/allocator.c.s
 
+CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o: CMakeFiles/aria_runtime.dir/flags.make
+CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o: /home/randy/._____RANDY_____/REPOS/aria/src/runtime/memory/wildx_allocator.c
+CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o: CMakeFiles/aria_runtime.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building C object CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o -MF CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o.d -o CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o -c /home/randy/._____RANDY_____/REPOS/aria/src/runtime/memory/wildx_allocator.c
+
+CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.i"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /home/randy/._____RANDY_____/REPOS/aria/src/runtime/memory/wildx_allocator.c > CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.i
+
+CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.s"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/runtime/memory/wildx_allocator.c -o CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.s
+
 CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o: CMakeFiles/aria_runtime.dir/flags.make
 CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/runtime/gc/gc_impl.cpp
 CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o: CMakeFiles/aria_runtime.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o -MF CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o.d -o CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/runtime/gc/gc_impl.cpp
 
 CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.i: cmake_force
@@ -100,7 +114,7 @@ CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.s: cmake_force
 CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o: CMakeFiles/aria_runtime.dir/flags.make
 CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/runtime/gc/nursery.cpp
 CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o: CMakeFiles/aria_runtime.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o -MF CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o.d -o CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/runtime/gc/nursery.cpp
 
 CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.i: cmake_force
@@ -114,7 +128,7 @@ CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.s: cmake_force
 CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.o: CMakeFiles/aria_runtime.dir/flags.make
 CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/runtime/io_windows.cpp
 CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.o: CMakeFiles/aria_runtime.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.o -MF CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.o.d -o CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/runtime/io_windows.cpp
 
 CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.i: cmake_force
@@ -128,7 +142,7 @@ CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.s: cmake_force
 CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.o: CMakeFiles/aria_runtime.dir/flags.make
 CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/runtime/io_linux.cpp
 CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.o: CMakeFiles/aria_runtime.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.o -MF CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.o.d -o CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/runtime/io_linux.cpp
 
 CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.i: cmake_force
@@ -142,7 +156,7 @@ CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.s: cmake_force
 CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.o: CMakeFiles/aria_runtime.dir/flags.make
 CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/runtime/io/print.cpp
 CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.o: CMakeFiles/aria_runtime.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.o -MF CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.o.d -o CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/runtime/io/print.cpp
 
 CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.i: cmake_force
@@ -156,7 +170,7 @@ CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.s: cmake_force
 CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.o: CMakeFiles/aria_runtime.dir/flags.make
 CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/runtime/io/file.cpp
 CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.o: CMakeFiles/aria_runtime.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.o -MF CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.o.d -o CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/runtime/io/file.cpp
 
 CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.i: cmake_force
@@ -170,7 +184,7 @@ CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.s: cmake_force
 CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o: CMakeFiles/aria_runtime.dir/flags.make
 CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/runtime/concurrency/scheduler.cpp
 CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o: CMakeFiles/aria_runtime.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o -MF CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o.d -o CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/runtime/concurrency/scheduler.cpp
 
 CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.i: cmake_force
@@ -184,7 +198,7 @@ CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.s: cmake_force
 CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o: CMakeFiles/aria_runtime.dir/flags.make
 CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/runtime/concurrency/ramp.cpp
 CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o: CMakeFiles/aria_runtime.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o -MF CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o.d -o CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/runtime/concurrency/ramp.cpp
 
 CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.i: cmake_force
@@ -198,7 +212,7 @@ CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.s: cmake_force
 CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: CMakeFiles/aria_runtime.dir/flags.make
 CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/stdlib/io/fast_read.cpp
 CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: CMakeFiles/aria_runtime.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o -MF CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o.d -o CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/stdlib/io/fast_read.cpp
 
 CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.i: cmake_force
@@ -212,7 +226,7 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.s: cmake_force
 CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o: CMakeFiles/aria_runtime.dir/flags.make
 CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/runtime/core/string_impl.cpp
 CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o: CMakeFiles/aria_runtime.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Building CXX object CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o -MF CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o.d -o CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/runtime/core/string_impl.cpp
 
 CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.i: cmake_force
@@ -226,6 +240,7 @@ CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.s: cmake_force
 # Object files for target aria_runtime
 aria_runtime_OBJECTS = \
 "CMakeFiles/aria_runtime.dir/src/runtime/memory/allocator.c.o" \
+"CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o" \
 "CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o" \
 "CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o" \
 "CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.o" \
@@ -241,6 +256,7 @@ aria_runtime_OBJECTS = \
 aria_runtime_EXTERNAL_OBJECTS =
 
 libaria_runtime.a: CMakeFiles/aria_runtime.dir/src/runtime/memory/allocator.c.o
+libaria_runtime.a: CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o
 libaria_runtime.a: CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o
 libaria_runtime.a: CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o
 libaria_runtime.a: CMakeFiles/aria_runtime.dir/src/runtime/io_windows.cpp.o
@@ -253,7 +269,7 @@ libaria_runtime.a: CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o
 libaria_runtime.a: CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o
 libaria_runtime.a: CMakeFiles/aria_runtime.dir/build.make
 libaria_runtime.a: CMakeFiles/aria_runtime.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Linking CXX static library libaria_runtime.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Linking CXX static library libaria_runtime.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/aria_runtime.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/aria_runtime.dir/link.txt --verbose=$(VERBOSE)
 
