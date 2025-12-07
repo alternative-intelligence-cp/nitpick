@@ -1,0 +1,30 @@
+// ============================================================================
+// Aria Standard Library - String Manipulation Functions
+// ============================================================================
+// String operations: length, concat, substring, search, transform, etc.
+// Builds on character classification functions from string.aria
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// STRING LENGTH
+// ----------------------------------------------------------------------------
+
+// Get length of null-terminated string
+// Returns number of characters before null terminator
+func:strlen = int32(wild int8@:str) {
+    if (str == 0) {
+        pass(0);
+    }
+    
+    int32:len = 0;
+    wild int8@:ptr = str;
+    
+    till (ptr[0] == 0) {
+        len = len + 1;
+        ptr = ptr + 1;
+    }
+    
+    pass(len);
+};
+
+// ----------------------------------------------------------------------------

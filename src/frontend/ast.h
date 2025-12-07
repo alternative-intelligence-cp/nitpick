@@ -72,6 +72,7 @@ public:
     // Expressions
     virtual void visit(VarExpr* node) = 0;
     virtual void visit(IntLiteral* node) = 0;
+    virtual void visit(FloatLiteral* node) = 0;
     virtual void visit(BoolLiteral* node) = 0;
     virtual void visit(NullLiteral* node) = 0;
     virtual void visit(StringLiteral* node) = 0;

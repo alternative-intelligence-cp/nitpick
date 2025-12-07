@@ -1,0 +1,203 @@
+// Advanced Math Standard Library
+// Trigonometric, exponential, logarithmic, and special math functions
+// Supports flt32 and flt64 types
+
+// ============================================================================
+// TRIGONOMETRIC FUNCTIONS
+// ============================================================================
+
+// Sine
+func:sin_f32 = *flt32(flt32:x) {
+    return llvm_sin_f32(x);
+};
+
+func:sin_f64 = *flt64(flt64:x) {
+    return llvm_sin_f64(x);
+};
+
+// Cosine
+func:cos_f32 = *flt32(flt32:x) {
+    return llvm_cos_f32(x);
+};
+
+func:cos_f64 = *flt64(flt64:x) {
+    return llvm_cos_f64(x);
+};
+
+// Tangent (implemented as sin/cos)
+func:tan_f32 = *flt32(flt32:x) {
+    flt32:s = llvm_sin_f32(x);
+    flt32:c = llvm_cos_f32(x);
+    return s / c;
+};
+
+func:tan_f64 = *flt64(flt64:x) {
+    flt64:s = llvm_sin_f64(x);
+    flt64:c = llvm_cos_f64(x);
+    return s / c;
+};
+
+// ============================================================================
+// EXPONENTIAL AND LOGARITHMIC FUNCTIONS
+// ============================================================================
+
+// Natural exponential (e^x)
+func:exp_f32 = *flt32(flt32:x) {
+    return llvm_exp_f32(x);
+};
+
+func:exp_f64 = *flt64(flt64:x) {
+    return llvm_exp_f64(x);
+};
+
+// Base-2 exponential (2^x)
+func:exp2_f32 = *flt32(flt32:x) {
+    return llvm_exp2_f32(x);
+};
+
+func:exp2_f64 = *flt64(flt64:x) {
+    return llvm_exp2_f64(x);
+};
+
+// Natural logarithm
+func:log_f32 = *flt32(flt32:x) {
+    return llvm_log_f32(x);
+};
+
+func:log_f64 = *flt64(flt64:x) {
+    return llvm_log_f64(x);
+};
+
+// Base-2 logarithm
+func:log2_f32 = *flt32(flt32:x) {
+    return llvm_log2_f32(x);
+};
+
+func:log2_f64 = *flt64(flt64:x) {
+    return llvm_log2_f64(x);
+};
+
+// Base-10 logarithm
+func:log10_f32 = *flt32(flt32:x) {
+    return llvm_log10_f32(x);
+};
+
+func:log10_f64 = *flt64(flt64:x) {
+    return llvm_log10_f64(x);
+};
+
+// ============================================================================
+// POWER AND ROOT FUNCTIONS
+// ============================================================================
+
+// Power function (x^y)
+func:pow_f32 = *flt32(flt32:x, flt32:y) {
+    return llvm_pow_f32(x, y);
+};
+
+func:pow_f64 = *flt64(flt64:x, flt64:y) {
+    return llvm_pow_f64(x, y);
+};
+
+// Square root
+func:sqrt_f32 = *flt32(flt32:x) {
+    return llvm_sqrt_f32(x);
+};
+
+func:sqrt_f64 = *flt64(flt64:x) {
+    return llvm_sqrt_f64(x);
+};
+
+// ============================================================================
+// ROUNDING AND MANIPULATION FUNCTIONS
+// ============================================================================
+
+// Ceiling (round up)
+func:ceil_f32 = *flt32(flt32:x) {
+    return llvm_ceil_f32(x);
+};
+
+func:ceil_f64 = *flt64(flt64:x) {
+    return llvm_ceil_f64(x);
+};
+
+// Floor (round down)
+func:floor_f32 = *flt32(flt32:x) {
+    return llvm_floor_f32(x);
+};
+
+func:floor_f64 = *flt64(flt64:x) {
+    return llvm_floor_f64(x);
+};
+
+// Round to nearest integer
+func:round_f32 = *flt32(flt32:x) {
+    return llvm_round_f32(x);
+};
+
+func:round_f64 = *flt64(flt64:x) {
+    return llvm_round_f64(x);
+};
+
+// Truncate (round toward zero)
+func:trunc_f32 = *flt32(flt32:x) {
+    return llvm_trunc_f32(x);
+};
+
+func:trunc_f64 = *flt64(flt64:x) {
+    return llvm_trunc_f64(x);
+};
+
+// Absolute value
+func:fabs_f32 = *flt32(flt32:x) {
+    return llvm_fabs_f32(x);
+};
+
+func:fabs_f64 = *flt64(flt64:x) {
+    return llvm_fabs_f64(x);
+};
+
+// ============================================================================
+// SPECIAL FUNCTIONS
+// ============================================================================
+
+// Fused multiply-add (x * y + z)
+func:fma_f32 = *flt32(flt32:x, flt32:y, flt32:z) {
+    return llvm_fma_f32(x, y, z);
+};
+
+func:fma_f64 = *flt64(flt64:x, flt64:y, flt64:z) {
+    return llvm_fma_f64(x, y, z);
+};
+
+// Minimum
+func:minnum_f32 = *flt32(flt32:x, flt32:y) {
+    return llvm_minnum_f32(x, y);
+};
+
+func:minnum_f64 = *flt64(flt64:x, flt64:y) {
+    return llvm_minnum_f64(x, y);
+};
+
+// Maximum
+func:maxnum_f32 = *flt32(flt32:x, flt32:y) {
+    return llvm_maxnum_f32(x, y);
+};
+
+func:maxnum_f64 = *flt64(flt64:x, flt64:y) {
+    return llvm_maxnum_f64(x, y);
+};
+
+// Copy sign (magnitude of x, sign of y)
+func:copysign_f32 = *flt32(flt32:x, flt32:y) {
+    return llvm_copysign_f32(x, y);
+};
+
+func:copysign_f64 = *flt64(flt64:x, flt64:y) {
+    return llvm_copysign_f64(x, y);
+};
+
+func:main = *int8() {
+    puts("Advanced Math Library: 32 functions compiled!");
+    return 0;
+};

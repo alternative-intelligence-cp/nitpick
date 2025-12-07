@@ -223,6 +223,9 @@ std::unique_ptr<VarDecl> Parser::parseVarDecl() {
     std::string type = current.value;
     advance();
     
+    // Parse type suffixes (arrays [], pointers @)
+    type = parseTypeSuffixes(type);
+    
     // Expect colon
     expect(TOKEN_COLON);
     

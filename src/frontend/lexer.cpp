@@ -238,6 +238,7 @@ Token AriaLexer::nextToken() {
         {"true", TOKEN_KW_TRUE},
         {"false", TOKEN_KW_FALSE},
         {"NULL", TOKEN_KW_NULL},        // Null pointer literal
+        {"ERR", TOKEN_KW_ERR},          // TBB error sentinel
         
         // Result helpers (syntactic sugar)
         {"fail", TOKEN_KW_FAIL},
@@ -285,6 +286,12 @@ Token AriaLexer::nextToken() {
                {"tryte", TOKEN_TYPE_TRYTE},
                {"nit", TOKEN_TYPE_NIT},
                {"nyte", TOKEN_TYPE_NYTE},
+               
+               // Twisted Balanced Binary types (symmetric with error sentinel)
+               {"tbb8", TOKEN_TYPE_TBB8},
+               {"tbb16", TOKEN_TYPE_TBB16},
+               {"tbb32", TOKEN_TYPE_TBB32},
+               {"tbb64", TOKEN_TYPE_TBB64},
                
                // Float types
                {"flt32", TOKEN_TYPE_FLT32},
@@ -839,6 +846,12 @@ Token AriaLexer::nextToken() {
                return {TOKEN_RANGE, "..", op_line, op_col};
            }
            return {TOKEN_DOT, ".", op_line, op_col};
+       }
+
+       // At sign / Address-of operator (@)
+       if (c == '@') {
+           advance();
+           return {TOKEN_AT, "@", op_line, op_col};
        }
 
        // Hash/Pin operator (#)

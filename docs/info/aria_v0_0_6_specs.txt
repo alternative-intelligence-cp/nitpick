@@ -16,10 +16,10 @@ uint64,
 uint128,
 uint256,
 uint512,
-tbb8, !!! TODO - see "/home/randy/._____RANDY_____/REPOS/aria/docs/research/Custom Twisted Binary Type Implementation.txt"
-tbb16, !!! TODO - see "/home/randy/._____RANDY_____/REPOS/aria/docs/research/Custom Twisted Binary Type Implementation.txt"
-tbb32, !!! TODO - see "/home/randy/._____RANDY_____/REPOS/aria/docs/research/Custom Twisted Binary Type Implementation.txt"
-tbb64 !!! TODO - see "/home/randy/._____RANDY_____/REPOS/aria/docs/research/Custom Twisted Binary Type Implementation.txt"
+tbb8,  !!! IMPORTANT tbb8 is Twisted Balanced Binary 8-bit: symmetric range [-127, +127], -128 (0x80) is ERR sentinel NOT NEGOTIABLE!!!
+tbb16, !!! IMPORTANT tbb16 is Twisted Balanced Binary 16-bit: symmetric range [-32767, +32767], -32768 (0x8000) is ERR sentinel NOT NEGOTIABLE!!!
+tbb32, !!! IMPORTANT tbb32 is Twisted Balanced Binary 32-bit: symmetric range [-2147483647, +2147483647], min value is ERR sentinel NOT NEGOTIABLE!!!
+tbb64, !!! IMPORTANT tbb64 is Twisted Balanced Binary 64-bit: symmetric range, min value is ERR sentinel, sticky error propagation NOT NEGOTIABLE!!!
 flt32,
 flt64,
 flt128,
@@ -53,6 +53,10 @@ use,        // import modules/files
 mod,        // define module
 pub,        // public visibility
 extern,     // external C functions
+ERR,        // TBB error sentinel literal (context-dependent based on type)
+stack,      // explicit stack allocation
+gc,         // explicit GC allocation
+wildx,      // executable memory allocation (for JIT)
 */
 
 /* constructs
@@ -185,6 +189,39 @@ mod network {
 use cfg(target_os = "linux") std.os.linux;
 use cfg(target_os = "windows") std.os.windows;
 use cfg(feature = "networking") std.net;
+
+// TWISTED BALANCED BINARY (TBB) TYPES - SYMMETRIC INTEGERS WITH ERROR SENTINELS
+// TBB types provide perfectly symmetric ranges by using the minimum two's complement value as ERR
+// This eliminates asymmetry bugs (abs(-128), neg(-128)) and provides built-in error propagation
+tbb8:safe_byte = 100;         // Valid range: [-127, +127]
+tbb8:max_pos = 127;            // Maximum positive value
+tbb8:max_neg = -127;           // Maximum negative value (symmetric!)
+tbb8:error = ERR;              // Error sentinel (stored as -128/0x80)
+
+// TBB ARITHMETIC - STICKY ERROR PROPAGATION
+// Any operation with ERR input or overflow produces ERR
+tbb8:a = 100;
+tbb8:b = 50;
+tbb8:res = a + b;           // 150 exceeds 127 → res = ERR
+tbb8:chained = res + 10;    // ERR + 10 → ERR (sticky)
+
+// TBB SAFETY - NO ASYMMETRY BUGS
+tbb8:val = -127;
+tbb8:negated = -val;           // 127 (works perfectly, symmetric range!)
+tbb8:absolute = abs(val) ? ERR;      // 127 (always safe, no overflow)
+// Compare to standard int8: abs(-128) would fail/wrap
+
+// TBB USE CASES
+// 1. Financial arithmetic - overflow detection without exceptions
+// 2. Safe pointer arithmetic - invalid offsets become ERR
+// 3. Audio/video processing - sample overflow → corruption detection
+// 4. State machines - invalid state transitions → ERR
+// 5. Branchless pipelines - check error once at end, not every operation
+
+// TBB TYPES BY WIDTH
+tbb16:medium = 30000;          // Range: [-32767, +32767], ERR = -32768
+tbb32:large = 2000000000;      // Range: [-2147483647, +2147483647]
+tbb64:huge = 9000000000000;    // 64-bit symmetric range
 
 int8:i = 9;
 string:str = "whats up";

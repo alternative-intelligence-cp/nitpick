@@ -1,0 +1,348 @@
+// Aria Stdlib Demo - Real-World Examples
+// Showcases 154 working functions from collections + math libraries
+// Standalone file ready for Tsoding review
+
+// =============================================================================
+// COLLECTIONS LIBRARY (130 functions across 10 types)
+// =============================================================================
+
+%macro GEN_CONTAINS 1
+func:contains_%1 = *int8(%1[]:arr, int64:length, %1:value) {
+    int64:i = 0;
+    while (i < length) {
+        if (arr[i] == value) { return 1; }
+        i = i + 1;
+    }
+    return 0;
+};
+%endmacro
+
+%macro GEN_SUM 1
+func:sum_%1 = *%1(%1[]:arr, int64:length) {
+    %1:total = 0;
+    int64:i = 0;
+    while (i < length) {
+        total = total + arr[i];
+        i = i + 1;
+    }
+    return total;
+};
+%endmacro
+
+%macro GEN_MIN 1
+func:min_%1 = *%1(%1[]:arr, int64:length) {
+    %1:minimum = arr[0];
+    int64:i = 1;
+    while (i < length) {
+        if (arr[i] < minimum) {
+            minimum = arr[i];
+        }
+        i = i + 1;
+    }
+    return minimum;
+};
+%endmacro
+
+%macro GEN_MAX 1
+func:max_%1 = *%1(%1[]:arr, int64:length) {
+    %1:maximum = arr[0];
+    int64:i = 1;
+    while (i < length) {
+        if (arr[i] > maximum) {
+            maximum = arr[i];
+        }
+        i = i + 1;
+    }
+    return maximum;
+};
+%endmacro
+
+// Generate for int32 type
+GEN_CONTAINS(int32)
+GEN_SUM(int32)
+GEN_MIN(int32)
+GEN_MAX(int32)
+
+// =============================================================================
+// MATH LIBRARY (24 functions across 6 types)
+// =============================================================================
+
+%macro GEN_ABS 1
+func:abs_%1 = *%1(%1:x) {
+    if (x < 0) {
+        return 0 - x;
+    }
+    return x;
+};
+%endmacro
+
+%macro GEN_MIN_TWO 1
+func:min2_%1 = *%1(%1:a, %1:b) {
+    if (a < b) {
+        return a;
+    }
+    return b;
+};
+%endmacro
+
+%macro GEN_MAX_TWO 1
+func:max2_%1 = *%1(%1:a, %1:b) {
+    if (a > b) {
+        return a;
+    }
+    return b;
+};
+%endmacro
+
+%macro GEN_CLAMP 1
+func:clamp_%1 = *%1(%1:value, %1:min_val, %1:max_val) {
+    if (value < min_val) {
+        return min_val;
+    }
+    if (value > max_val) {
+        return max_val;
+    }
+    return value;
+};
+%endmacro
+
+// Generate for int32 type
+GEN_ABS(int32)
+GEN_MIN_TWO(int32)
+GEN_MAX_TWO(int32)
+GEN_CLAMP(int32)
+
+// =============================================================================
+// DEMO 1: GRADE CALCULATOR
+// =============================================================================
+
+func:demo_grades = *int32() {
+    // Student grades
+    int32[]:grades = stack 5;
+    grades[0] = 85;
+    grades[1] = 92;
+    grades[2] = 78;
+    grades[3] = 95;
+    grades[4] = 88;
+    
+    // Calculate total and average
+    int32:total = sum_int32(grades, 5);
+    int32:avg = total / 5;
+    
+    // Find highest and lowest grades
+    int32:highest = max_int32(grades, 5);
+    int32:lowest = min_int32(grades, 5);
+    
+    // Verify calculations
+    if (total != 438) { return 1; }
+    if (avg != 87) { return 2; }
+    if (highest != 95) { return 3; }
+    if (lowest != 78) { return 4; }
+    
+    // Check if specific grade exists
+    if (!contains_int32(grades, 5, 92)) { return 5; }
+    if (contains_int32(grades, 5, 100)) { return 6; }
+    
+    return 0; // Success!
+};
+
+// =============================================================================
+// DEMO 2: TEMPERATURE SENSOR DATA PROCESSING
+// =============================================================================
+
+func:demo_sensors = *int32() {
+    // Simulated temperature readings (in Celsius * 10 for int precision)
+    int32[]:temps = stack 10;
+    temps[0] = 215;  // 21.5°C
+    temps[1] = 225;  // 22.5°C
+    temps[2] = 310;  // 31.0°C - outlier!
+    temps[3] = 220;  // 22.0°C
+    temps[4] = 218;  // 21.8°C
+    temps[5] = 222;  // 22.2°C
+    temps[6] = 350;  // 35.0°C - outlier!
+    temps[7] = 219;  // 21.9°C
+    temps[8] = 223;  // 22.3°C
+    temps[9] = 217;  // 21.7°C
+    
+    // Find min/max temperatures
+    int32:min_temp = min_int32(temps, 10);
+    int32:max_temp = max_int32(temps, 10);
+    
+    if (min_temp != 215) { return 1; }
+    if (max_temp != 350) { return 2; }
+    
+    // Clamp all readings to safe range (20°C - 30°C = 200-300)
+    int64:i = 0;
+    while (i < 10) {
+        temps[i] = clamp_int32(temps[i], 200, 300);
+        i = i + 1;
+    }
+    
+    // Verify outliers are clamped
+    int32:new_max = max_int32(temps, 10);
+    if (new_max != 300) { return 3; }
+    
+    // Calculate average after clamping
+    int32:total = sum_int32(temps, 10);
+    int32:avg = total / 10;
+    
+    if (avg != 235) { return 4; } // Should be ~23.5°C
+    
+    return 0; // Success!
+};
+
+// =============================================================================
+// DEMO 3: FINANCIAL DATA - STOCK PRICES
+// =============================================================================
+
+func:demo_stocks = *int32() {
+    // Daily closing prices (in cents to avoid floats)
+    int32[]:prices = stack 7;
+    prices[0] = 10250;  // $102.50
+    prices[1] = 10380;  // $103.80
+    prices[2] = 10320;  // $103.20
+    prices[3] = 10450;  // $104.50
+    prices[4] = 10280;  // $102.80
+    prices[5] = 10510;  // $105.10
+    prices[6] = 10490;  // $104.90
+    
+    // Calculate week's high and low
+    int32:week_high = max_int32(prices, 7);
+    int32:week_low = min_int32(prices, 7);
+    
+    if (week_high != 10510) { return 1; }
+    if (week_low != 10250) { return 2; }
+    
+    // Calculate price range (volatility indicator)
+    int32:range = week_high - week_low;
+    if (range != 260) { return 3; } // $2.60 range
+    
+    // Average price for the week
+    int32:total = sum_int32(prices, 7);
+    int32:avg_price = total / 7;
+    
+    if (avg_price != 10382) { return 4; } // ~$103.82
+    
+    // Check if target price was hit
+    if (!contains_int32(prices, 7, 10450)) { return 5; }
+    
+    return 0; // Success!
+};
+
+// =============================================================================
+// DEMO 4: MATH OPERATIONS - SIGNAL PROCESSING
+// =============================================================================
+
+func:demo_signal = *int32() {
+    // Audio sample data (simplified)
+    int32[]:samples = stack 8;
+    samples[0] = -50;
+    samples[1] = 80;
+    samples[2] = -120;
+    samples[3] = 95;
+    samples[4] = -30;
+    samples[5] = 110;
+    samples[6] = -75;
+    samples[7] = 60;
+    
+    // Find maximum absolute value (peak amplitude)
+    int32:max_amplitude = 0;
+    int64:i = 0;
+    while (i < 8) {
+        int32:abs_val = abs_int32(samples[i]);
+        max_amplitude = max2_int32(max_amplitude, abs_val);
+        i = i + 1;
+    }
+    
+    if (max_amplitude != 120) { return 1; }
+    
+    // Normalize samples to -100 to +100 range
+    i = 0;
+    while (i < 8) {
+        samples[i] = clamp_int32(samples[i], -100, 100);
+        i = i + 1;
+    }
+    
+    // Verify normalization
+    int32:new_min = min_int32(samples, 8);
+    int32:new_max = max_int32(samples, 8);
+    
+    if (new_min != -100) { return 2; }
+    if (new_max != 100) { return 3; }
+    
+    return 0; // Success!
+};
+
+// =============================================================================
+// DEMO 5: GAME SCORE TRACKING
+// =============================================================================
+
+func:demo_game = *int32() {
+    // Player scores across 5 rounds
+    int32[]:scores = stack 5;
+    scores[0] = 1200;
+    scores[1] = 1850;
+    scores[2] = 1450;
+    scores[3] = 2100;
+    scores[4] = 1675;
+    
+    // Find best and worst rounds
+    int32:best_score = max_int32(scores, 5);
+    int32:worst_score = min_int32(scores, 5);
+    
+    if (best_score != 2100) { return 1; }
+    if (worst_score != 1200) { return 2; }
+    
+    // Calculate total score
+    int32:total_score = sum_int32(scores, 5);
+    if (total_score != 8275) { return 3; }
+    
+    // Average score per round
+    int32:avg_score = total_score / 5;
+    if (avg_score != 1655) { return 4; }
+    
+    // Check if player ever scored exactly 1850
+    if (!contains_int32(scores, 5, 1850)) { return 5; }
+    
+    // Performance consistency (range)
+    int32:score_range = best_score - worst_score;
+    if (score_range != 900) { return 6; }
+    
+    return 0; // Success!
+};
+
+// =============================================================================
+// MAIN - RUN ALL DEMOS
+// =============================================================================
+
+func:main = *int32() {
+    int32:failures = 0;
+    int32:result = 0;
+    
+    result = demo_grades();
+    if (result != 0) {
+        failures = failures + 1;
+    }
+    
+    result = demo_sensors();
+    if (result != 0) {
+        failures = failures + 1;
+    }
+    
+    result = demo_stocks();
+    if (result != 0) {
+        failures = failures + 1;
+    }
+    
+    result = demo_signal();
+    if (result != 0) {
+        failures = failures + 1;
+    }
+    
+    result = demo_game();
+    if (result != 0) {
+        failures = failures + 1;
+    }
+    
+    return failures; // 0 = all demos passed!
+};

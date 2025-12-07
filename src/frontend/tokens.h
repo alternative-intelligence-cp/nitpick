@@ -72,6 +72,7 @@ enum TokenType {
     TOKEN_KW_TRUE,
     TOKEN_KW_FALSE,
     TOKEN_KW_NULL,          // Null pointer literal
+    TOKEN_KW_ERR,           // TBB error sentinel
     TOKEN_KW_FAIL,          // Syntactic sugar: return {err:code, val:0}
     TOKEN_KW_PASS,          // Syntactic sugar: return {err:0, val:value}
     // Primitive Types
@@ -115,6 +116,12 @@ enum TokenType {
     TOKEN_TYPE_NIT,         // Nonary digit (0-8)
     TOKEN_TYPE_NYTE,        // Nonary byte
     TOKEN_TYPE_BYTE,        // Standard byte (uint8 alias)
+    
+    // Twisted Balanced Binary Types (Symmetric with Error Sentinel)
+    TOKEN_TYPE_TBB8,        // Twisted balanced 8-bit: [-127, +127], -128=ERR
+    TOKEN_TYPE_TBB16,       // Twisted balanced 16-bit: [-32767, +32767], -32768=ERR
+    TOKEN_TYPE_TBB32,       // Twisted balanced 32-bit
+    TOKEN_TYPE_TBB64,       // Twisted balanced 64-bit
     
     // Vector Types
     TOKEN_TYPE_VEC2,        // 2D vector

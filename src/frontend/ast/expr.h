@@ -74,6 +74,19 @@ public:
     }
 };
 
+// Float Literal Expression
+// Example: 3.14, 1.5e10, 1e-5
+class FloatLiteral : public Expression {
+public:
+    double value;
+
+    FloatLiteral(double v) : value(v) {}
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
 // Boolean Literal Expression
 // Example: true, false
 class BoolLiteral : public Expression {
