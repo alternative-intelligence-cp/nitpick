@@ -21,6 +21,7 @@ class AsyncBlock;
 class VarExpr;
 class IntLiteral;
 class BoolLiteral;
+class NullLiteral;
 class FloatLiteral;
 class StringLiteral;
 class TemplateString;
@@ -72,6 +73,7 @@ public:
     virtual void visit(VarExpr* node) = 0;
     virtual void visit(IntLiteral* node) = 0;
     virtual void visit(BoolLiteral* node) = 0;
+    virtual void visit(NullLiteral* node) = 0;
     virtual void visit(StringLiteral* node) = 0;
     virtual void visit(TemplateString* node) = 0;
     virtual void visit(TernaryExpr* node) = 0;

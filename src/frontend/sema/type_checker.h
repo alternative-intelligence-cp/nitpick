@@ -51,6 +51,7 @@ public:
     void visit(frontend::VarExpr* node) override;
     void visit(frontend::IntLiteral* node) override;
     void visit(frontend::BoolLiteral* node) override;
+    void visit(frontend::NullLiteral* node) override;
     void visit(frontend::StringLiteral* node) override;
     void visit(frontend::TemplateString* node) override;
     void visit(frontend::TernaryExpr* node) override;

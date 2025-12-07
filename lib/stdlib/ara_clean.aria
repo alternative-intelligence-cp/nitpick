@@ -1,0 +1,220 @@
+// Aria Runtime Assembler (ARA) - Clean Implementation
+// x86-64 machine code generation with struct-based API
+
+// ============================================================================
+// Operand Type Constants
+// ============================================================================
+int8:REG = 1;
+int8:IMM = 2;
+int8:MEM = 3;
+
+// ============================================================================
+// Register Encoding Constants
+// ============================================================================
+int8:RAX = 0;
+int8:RCX = 1;
+int8:RDX = 2;
+int8:RBX = 3;
+int8:RSP = 4;
+int8:RBP = 5;
+int8:RSI = 6;
+int8:RDI = 7;
+int8:R8  = 8;
+int8:R9  = 9;
+int8:R10 = 10;
+int8:R11 = 11;
+int8:R12 = 12;
+int8:R13 = 13;
+int8:R14 = 14;
+int8:R15 = 15;
+
+// ============================================================================
+// Operand Structure
+// ============================================================================
+const Operand = struct {
+    optype: int8,    // REG, IMM, or MEM
+    reg: int8,       // Register number (0-15)
+    base: int8,      // Base register for memory operands
+    index: int8,     // Index register for memory operands
+    scale: int8,     // Scale factor (1, 2, 4, 8)
+    disp: int32,     // Displacement for memory operands
+    imm: int64,      // Immediate value
+};
+
+// ============================================================================
+// Helper: Create register operand
+// ============================================================================
+func:reg = Operand(int8:r) {
+    // Note: Can't use member access yet, but construction works
+    return Operand{optype: REG, reg: r, base: 0, index: 0, scale: 0, disp: 0, imm: 0};
+};
+
+// ============================================================================
+// Helper: Create immediate operand  
+// ============================================================================
+func:imm = Operand(int64:value) {
+    return Operand{optype: IMM, reg: 0, base: 0, index: 0, scale: 0, disp: 0, imm: value};
+};
+
+// ============================================================================
+// REX Prefix Calculation
+// ============================================================================
+func:calc_rex = uint8(int8:w, int8:r, int8:x, int8:b) {
+    uint8:rex = 0x40;  // REX prefix base
+    
+    if (w != 0) {
+        rex |= 0x08;   // REX.W (64-bit operand)
+    }
+    if (r != 0) {
+        rex |= 0x04;   // REX.R (extension of ModRM reg)
+    }
+    if (x != 0) {
+        rex |= 0x02;   // REX.X (extension of SIB index)
+    }
+    if (b != 0) {
+        rex |= 0x01;   // REX.B (extension of ModRM r/m or SIB base)
+    }
+    
+    return rex;
+};
+
+// ============================================================================
+// ModR/M Byte Calculation
+// ============================================================================
+func:calc_modrm = uint8(int8:mod, int8:reg, int8:rm) {
+    uint8:output = 0;
+    
+    uint8:modval = (uint8)mod;
+    uint8:regval = (uint8)reg;
+    uint8:rmval = (uint8)rm;
+    
+    output = (modval & 0x03) << 6;
+    output |= (regval & 0x07) << 3;
+    output |= (rmval & 0x07);
+    
+    return output;
+};
+
+// ============================================================================
+// Emit MOV instruction
+// ============================================================================
+func:emit_mov = *int8(wildx[1024]:buffer, int64:offset, int8:dst, int8:src) {
+    // MOV dst, src (register to register)
+    // Encoding: REX.W + 89 /r
+    
+    int8:w = 1;  // 64-bit operand
+    int8:r_ext = (src >> 3) & 1;
+    int8:b_ext = (dst >> 3) & 1;
+    
+    uint8:rex = calc_rex(w, r_ext, 0, b_ext);
+    uint8:modrm = calc_modrm(3, src & 7, dst & 7);  // mod=3 (register-direct)
+    
+    buffer[offset] = (int8)rex;
+    buffer[offset + 1] = (int8)0x89;
+    buffer[offset + 2] = (int8)modrm;
+    
+    return offset + 3;
+};
+
+// ============================================================================
+// Emit ADD with immediate
+// ============================================================================
+func:emit_add_imm = *int8(wildx[1024]:buffer, int64:offset, int8:dst, int8:imm8) {
+    // ADD dst, imm8
+    // Encoding: REX.W + 83 /0 ib
+    
+    int8:w = 1;
+    int8:b_ext = (dst >> 3) & 1;
+    
+    uint8:rex = calc_rex(w, 0, 0, b_ext);
+    uint8:modrm = calc_modrm(3, 0, dst & 7);  // reg field = 0 for ADD
+    
+    buffer[offset] = (int8)rex;
+    buffer[offset + 1] = (int8)0x83;
+    buffer[offset + 2] = (int8)modrm;
+    buffer[offset + 3] = imm8;
+    
+    return offset + 4;
+};
+
+// ============================================================================
+// Emit SUB with immediate
+// ============================================================================
+func:emit_sub_imm = *int8(wildx[1024]:buffer, int64:offset, int8:dst, int8:imm8) {
+    // SUB dst, imm8
+    // Encoding: REX.W + 83 /5 ib
+    
+    int8:w = 1;
+    int8:b_ext = (dst >> 3) & 1;
+    
+    uint8:rex = calc_rex(w, 0, 0, b_ext);
+    uint8:modrm = calc_modrm(3, 5, dst & 7);  // reg field = 5 for SUB
+    
+    buffer[offset] = (int8)rex;
+    buffer[offset + 1] = (int8)0x83;
+    buffer[offset + 2] = (int8)modrm;
+    buffer[offset + 3] = imm8;
+    
+    return offset + 4;
+};
+
+// ============================================================================
+// Emit RET instruction
+// ============================================================================
+func:emit_ret = *int8(wildx[1024]:buffer, int64:offset) {
+    // RET
+    // Encoding: C3
+    
+    buffer[offset] = (int8)0xC3;
+    
+    return offset + 1;
+};
+
+// ============================================================================
+// Print hex byte
+// ============================================================================
+func:print_hex = *int8(uint8:value) {
+    // Simple hex printer (will need proper implementation)
+    // For now just placeholder
+    return 0;
+};
+
+// ============================================================================
+// Demo: Generate simple function
+// ============================================================================
+func:main = *int8() {
+    print("========================================");
+    print("  Aria Runtime Assembler - Struct API  ");
+    print("========================================");
+    print("");
+    
+    // Allocate executable memory
+    wildx[1024]:code;
+    int64:pos = 0;
+    
+    // Generate function: int64 add10sub5(int64 arg) {
+    //     return (arg + 10) - 5;
+    // }
+    // x86-64 calling convention: first arg in RDI, return in RAX
+    
+    print("Generating: mov rax, rdi");
+    pos = emit_mov(code, pos, RAX, RDI);
+    
+    print("Generating: add rax, 10");
+    pos = emit_add_imm(code, pos, RAX, 10);
+    
+    print("Generating: sub rax, 5");
+    pos = emit_sub_imm(code, pos, RAX, 5);
+    
+    print("Generating: ret");
+    pos = emit_ret(code, pos);
+    
+    print("");
+    print("Code generation complete!");
+    print("Total bytes generated: ");
+    // TODO: print pos value when we have proper int->string conversion
+    
+    print("========================================");
+    
+    return 0;
+};

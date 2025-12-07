@@ -71,6 +71,9 @@ enum TokenType {
     TOKEN_KW_IN,            // For-in iterator
     TOKEN_KW_TRUE,
     TOKEN_KW_FALSE,
+    TOKEN_KW_NULL,          // Null pointer literal
+    TOKEN_KW_FAIL,          // Syntactic sugar: return {err:code, val:0}
+    TOKEN_KW_PASS,          // Syntactic sugar: return {err:0, val:value}
     // Primitive Types
     TOKEN_TYPE_VOID,
     TOKEN_TYPE_BOOL,
@@ -191,6 +194,11 @@ enum TokenType {
     TOKEN_STAR_ASSIGN,      // *= (also TOKEN_MULT_ASSIGN per spec)
     TOKEN_SLASH_ASSIGN,     // /= (also TOKEN_DIV_ASSIGN per spec)
     TOKEN_MOD_ASSIGN,       // %=
+    TOKEN_AND_ASSIGN,       // &=
+    TOKEN_OR_ASSIGN,        // |=
+    TOKEN_XOR_ASSIGN,       // ^=
+    TOKEN_LSHIFT_ASSIGN,    // <<=
+    TOKEN_RSHIFT_ASSIGN,    // >>=
     
     // Operators - Special
     TOKEN_ARROW,            // -> (also TOKEN_FUNC_RETURN per spec)

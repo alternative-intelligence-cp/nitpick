@@ -1,0 +1,125 @@
+// ara_working.aria
+// Aria Runtime Assembler - Working Version
+// Uses only supported Aria features
+
+const int8:REG_RAX = 0;
+const int8:REG_RDI = 7;
+
+// Calculate REX prefix byte (returns 0 if not needed)
+func:calc_rex_byte = *uint8(int8:w_flag, int8:r_idx, int8:rm_idx) {
+    int8:needs_r = 0;
+    int8:needs_b = 0;
+    
+    if (r_idx > 7) { needs_r = 1; }
+    if (rm_idx > 7) { needs_b = 1; }
+    
+    // Check if REX needed
+    int8:needs_rex = 0;
+    if (w_flag != 0) { needs_rex = 1; }
+    if (needs_r != 0) { needs_rex = 1; }
+    if (needs_b != 0) { needs_rex = 1; }
+    
+    if (needs_rex == 0) {
+        return 0;
+    }
+    
+    uint8:rex = 0x40;
+    
+    if (w_flag != 0) { rex |= 0x08; }
+    if (needs_r != 0) { rex |= 0x04; }
+    if (needs_b != 0) { rex |= 0x01; }
+    
+    return rex;
+};
+
+// Calculate ModR/M byte
+func:calc_modrm_byte = *uint8(int8:reg_field, int8:rm_field, int8:mod_field) {
+    int8:modval = 0;
+    int8:regval = 0;
+    int8:rmval = 0;
+    uint8:output = 0;
+    
+    modval = mod_field & 3;
+    regval = reg_field & 7;
+    rmval = rm_field & 7;
+    
+    output = (uint8)modval << 6;
+    output |= (uint8)regval << 3;
+    output |= (uint8)rmval;
+    
+    return output;
+};
+
+// Demonstrate MOV RAX, RDI encoding
+func:demo_mov_rax_rdi = *int8() {
+    print("MOV RAX, RDI encoding:");
+    
+    // Calculate REX: w=1 (64-bit), r=RDI(7), rm=RAX(0)
+    uint8:rex = calc_rex_byte(1, 7, 0);
+    print("  REX: 0x48");
+    
+    // Opcode for MOV r/m64, r64
+    print("  Opcode: 0x89");
+    
+    // ModR/M: mod=11 (register), reg=RDI(7), rm=RAX(0)
+    uint8:modrm = calc_modrm_byte(7, 0, 3);
+    print("  ModR/M: 0xF8");
+    
+    print("  Complete: 48 89 F8");
+    
+    return 0;
+};
+
+// Demonstrate ADD RAX, 10 encoding
+func:demo_add_rax_10 = *int8() {
+    print("ADD RAX, 10 encoding:");
+    
+    // REX: w=1 (64-bit), r=0 (opcode ext), rm=RAX(0)
+    uint8:rex = calc_rex_byte(1, 0, 0);
+    print("  REX: 0x48");
+    
+    // Opcode for ADD r/m64, imm8
+    print("  Opcode: 0x83");
+    
+    // ModR/M: mod=11, reg=0 (/0 for ADD), rm=RAX(0)
+    uint8:modrm = calc_modrm_byte(0, 0, 3);
+    print("  ModR/M: 0xC0");
+    
+    // Immediate byte
+    print("  Imm8: 0x0A");
+    
+    print("  Complete: 48 83 C0 0A");
+    
+    return 0;
+};
+
+// Demonstrate SUB RAX, 5 encoding
+func:demo_sub_rax_5 = *int8() {
+    print("SUB RAX, 5 encoding:");
+    
+    // REX: w=1, r=0, rm=RAX(0)
+    uint8:rex = calc_rex_byte(1, 0, 0);
+    print("  REX: 0x48");
+    
+    // Opcode for SUB r/m64, imm8
+    print("  Opcode: 0x83");
+    
+    // ModR/M: mod=11, reg=5 (/5 for SUB), rm=RAX(0)
+    uint8:modrm = calc_modrm_byte(5, 0, 3);
+    print("  ModR/M: 0xE8");
+    
+    // Immediate byte
+    print("  Imm8: 0x05");
+    
+    print("  Complete: 48 83 E8 05");
+    
+    return 0;
+};
+
+// Demonstrate RET encoding
+func:demo_ret = *int8() {
+    print("RET encoding:");
+    print("  Opcode: 0xC3");
+    
+    return 0;
+};

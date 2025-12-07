@@ -87,6 +87,17 @@ public:
     }
 };
 
+// Null Literal Expression
+// Example: NULL
+class NullLiteral : public Expression {
+public:
+    NullLiteral() {}
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
 // String Literal Expression
 // Example: "hello world", "whats up"
 class StringLiteral : public Expression {
@@ -171,7 +182,8 @@ public:
         LOGICAL_AND, LOGICAL_OR,
         BITWISE_AND, BITWISE_OR, BITWISE_XOR,
         LSHIFT, RSHIFT,
-        ASSIGN, PLUS_ASSIGN, MINUS_ASSIGN, STAR_ASSIGN, SLASH_ASSIGN, MOD_ASSIGN
+        ASSIGN, PLUS_ASSIGN, MINUS_ASSIGN, STAR_ASSIGN, SLASH_ASSIGN, MOD_ASSIGN,
+        AND_ASSIGN, OR_ASSIGN, XOR_ASSIGN, LSHIFT_ASSIGN, RSHIFT_ASSIGN
     };
 
     OpType op;

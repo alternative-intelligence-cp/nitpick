@@ -1,0 +1,89 @@
+// ara_v1.aria
+// Aria Runtime Assembler V1
+// Works with current Aria features (no struct, no bool, no wildx globals)
+
+// ============================================================================
+// Register Constants
+// ============================================================================
+
+const int8:REG_RAX = 0;   const int8:REG_RCX = 1;   const int8:REG_RDX = 2;
+const int8:REG_RBX = 3;   const int8:REG_RSP = 4;   const int8:REG_RBP = 5;
+const int8:REG_RSI = 6;   const int8:REG_RDI = 7;   const int8:REG_R8  = 8;
+const int8:REG_R9  = 9;   const int8:REG_R10 = 10;  const int8:REG_R11 = 11;
+const int8:REG_R12 = 12;  const int8:REG_R13 = 13;  const int8:REG_R14 = 14;
+const int8:REG_R15 = 15;
+
+// ============================================================================
+// REX Prefix Calculation
+// ============================================================================
+
+func:calc_rex = *uint8(int8:w, int8:r_idx, int8:rm_idx) {
+    int8:r = 0;
+    int8:b = 0;
+    
+    if (r_idx > 7) { r = 1; }
+    if (rm_idx > 7) { b = 1; }
+    
+    if ((w != 0) | (r != 0) | (b != 0)) {
+        uint8:rex = 0x40;
+        if (w != 0) { rex = rex | 0x08; }
+        if (r != 0) { rex = rex | 0x04; }
+        if (b != 0) { rex = rex | 0x01; }
+        return rex;
+    }
+    
+    return 0;
+};
+
+// ============================================================================
+// ModR/M Byte Calculation
+// ============================================================================
+
+func:calc_modrm = *uint8(int8:reg, int8:rm, int8:mod) {
+    uint8:byte = ((uint8)(mod & 3) << 6) | ((uint8)(reg & 7) << 3) | (uint8)(rm & 7);
+    return byte;
+};
+
+// ============================================================================
+// Instruction Demonstrations (Show encoding)
+// ============================================================================
+
+func:show_encoding_mov_r64_r64 = *void(int8:dst, int8:src) {
+    print("MOV r64, r64 encoding:");
+    uint8:rex = calc_rex(1, src, dst);
+    if (rex != 0) {
+        print("  REX: 0x48");
+    }
+    print("  Opcode: 0x89");
+    uint8:modrm = calc_modrm(src, dst, 3);
+    print("  ModR/M: (calculated)");
+};
+
+func:show_encoding_add_r64_imm8 = *void(int8:dst, int8:imm) {
+    print("ADD r64, imm8 encoding:");
+    uint8:rex = calc_rex(1, 0, dst);
+    if (rex != 0) {
+        print("  REX: 0x48");
+    }
+    print("  Opcode: 0x83");
+    uint8:modrm = calc_modrm(0, dst, 3);
+    print("  ModR/M: (calculated)");
+    print("  Imm8: (value)");
+};
+
+func:show_encoding_sub_r64_imm8 = *void(int8:dst, int8:imm) {
+    print("SUB r64, imm8 encoding:");
+    uint8:rex = calc_rex(1, 0, dst);
+    if (rex != 0) {
+        print("  REX: 0x48");
+    }
+    print("  Opcode: 0x83");
+    uint8:modrm = calc_modrm(5, dst, 3);
+    print("  ModR/M: (calculated)");
+    print("  Imm8: (value)");
+};
+
+func:show_encoding_ret = *void() {
+    print("RET encoding:");
+    print("  Opcode: 0xC3");
+};

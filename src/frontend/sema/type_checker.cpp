@@ -61,6 +61,12 @@ void TypeChecker::visit(frontend::BoolLiteral* node) {
     current_expr_type = makeBoolType();
 }
 
+// Visit NullLiteral
+void TypeChecker::visit(frontend::NullLiteral* node) {
+    // NULL is a generic pointer type (wild)
+    current_expr_type = makeErrorType(); // TODO: Need pointer type system
+}
+
 // Visit StringLiteral
 void TypeChecker::visit(frontend::StringLiteral* node) {
     current_expr_type = makeStringType();

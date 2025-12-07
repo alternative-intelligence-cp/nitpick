@@ -1,0 +1,192 @@
+// ============================================================================
+// Aria Standard Library - String and Character Functions (Working)
+// ============================================================================
+// Character classification and conversion functions
+// Uses result types with pass/fail
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// Character Classification - Return 1 for true, 0 for false
+// ----------------------------------------------------------------------------
+
+func:is_uppercase = int8(int8:ch) {
+    if (ch >= 65) {
+        if (ch <= 90) {
+            pass(1);
+        }
+    }
+    pass(0);
+};
+
+func:is_lowercase = int8(int8:ch) {
+    if (ch >= 97) {
+        if (ch <= 122) {
+            pass(1);
+        }
+    }
+    pass(0);
+};
+
+func:is_alpha = int8(int8:ch) {
+    result:upper = is_uppercase(ch);
+    if (upper.val == 1) {
+        pass(1);
+    }
+    result:lower = is_lowercase(ch);
+    pass(lower.val);
+};
+
+func:is_digit = int8(int8:ch) {
+    if (ch >= 48) {
+        if (ch <= 57) {
+            pass(1);
+        }
+    }
+    pass(0);
+};
+
+func:is_alnum = int8(int8:ch) {
+    result:alpha = is_alpha(ch);
+    if (alpha.val == 1) {
+        pass(1);
+    }
+    result:digit = is_digit(ch);
+    pass(digit.val);
+};
+
+func:is_whitespace = int8(int8:ch) {
+    if (ch == 32) {
+        pass(1);
+    }
+    if (ch == 9) {
+        pass(1);
+    }
+    if (ch == 10) {
+        pass(1);
+    }
+    if (ch == 13) {
+        pass(1);
+    }
+    pass(0);
+};
+
+func:is_printable = int8(int8:ch) {
+    if (ch >= 32) {
+        if (ch <= 126) {
+            pass(1);
+        }
+    }
+    pass(0);
+};
+
+func:is_control = int8(int8:ch) {
+    if (ch < 32) {
+        pass(1);
+    }
+    if (ch == 127) {
+        pass(1);
+    }
+    pass(0);
+};
+
+func:is_hexdigit = int8(int8:ch) {
+    if (ch >= 48) {
+        if (ch <= 57) {
+            pass(1);
+        }
+    }
+    if (ch >= 65) {
+        if (ch <= 70) {
+            pass(1);
+        }
+    }
+    if (ch >= 97) {
+        if (ch <= 102) {
+            pass(1);
+        }
+    }
+    pass(0);
+};
+
+// ----------------------------------------------------------------------------
+// Character Conversion
+// ----------------------------------------------------------------------------
+
+func:to_uppercase = int8(int8:ch) {
+    result:lower = is_lowercase(ch);
+    if (lower.val == 1) {
+        int8:upper = ch - 32;
+        pass(upper);
+    }
+    pass(ch);
+};
+
+func:to_lowercase = int8(int8:ch) {
+    result:upper = is_uppercase(ch);
+    if (upper.val == 1) {
+        int8:lower = ch + 32;
+        pass(lower);
+    }
+    pass(ch);
+};
+
+// ----------------------------------------------------------------------------
+// Digit Conversion
+// ----------------------------------------------------------------------------
+
+func:char_to_digit = int8(int8:ch) {
+    result:is_dig = is_digit(ch);
+    if (is_dig.val == 1) {
+        int8:digit = ch - 48;
+        pass(digit);
+    }
+    fail(1);
+};
+
+func:digit_to_char = int8(int8:digit) {
+    if (digit < 0) {
+        fail(1);
+    }
+    if (digit > 9) {
+        fail(1);
+    }
+    int8:ch = digit + 48;
+    pass(ch);
+};
+
+func:hex_to_digit = int8(int8:ch) {
+    if (ch >= 48) {
+        if (ch <= 57) {
+            int8:digit = ch - 48;
+            pass(digit);
+        }
+    }
+    if (ch >= 65) {
+        if (ch <= 70) {
+            int8:digit = ch - 55;
+            pass(digit);
+        }
+    }
+    if (ch >= 97) {
+        if (ch <= 102) {
+            int8:digit = ch - 87;
+            pass(digit);
+        }
+    }
+    fail(1);
+};
+
+func:digit_to_hex = int8(int8:digit) {
+    if (digit < 0) {
+        fail(1);
+    }
+    if (digit > 15) {
+        fail(1);
+    }
+    if (digit < 10) {
+        int8:ch = digit + 48;
+        pass(ch);
+    }
+    int8:ch = digit + 55;
+    pass(ch);
+};

@@ -234,14 +234,17 @@ Token AriaLexer::nextToken() {
                {"mut", TOKEN_KW_MUT},
                {"pub", TOKEN_KW_PUB},
 
-               // Boolean literals
-               {"true", TOKEN_KW_TRUE},
-               {"false", TOKEN_KW_FALSE},
-               
-               // Ternary operator
-               {"is", TOKEN_KW_IS},
+        // Boolean literals
+        {"true", TOKEN_KW_TRUE},
+        {"false", TOKEN_KW_FALSE},
+        {"NULL", TOKEN_KW_NULL},        // Null pointer literal
+        
+        // Result helpers (syntactic sugar)
+        {"fail", TOKEN_KW_FAIL},
+        {"pass", TOKEN_KW_PASS},
 
-               // Module system
+        // Ternary operator
+        {"is", TOKEN_KW_IS},               // Module system
                {"use", TOKEN_KW_USE},
                {"mod", TOKEN_KW_MOD},
                {"extern", TOKEN_KW_EXTERN},
@@ -702,7 +705,7 @@ Token AriaLexer::nextToken() {
            return {TOKEN_PERCENT, "%", start_line, start_col};
        }
 
-       // Ampersand and logical-and (&, &&)
+       // Ampersand and logical-and (&, &&, &=)
        // Note: &{ for template interpolation is handled in STATE_STRING_TEMPLATE
        if (c == '&') {
            advance();
@@ -710,10 +713,14 @@ Token AriaLexer::nextToken() {
                advance();
                return {TOKEN_LOGICAL_AND, "&&", op_line, op_col};
            }
+           if (peek() == '=') {
+               advance();
+               return {TOKEN_AND_ASSIGN, "&=", op_line, op_col};
+           }
            return {TOKEN_AMPERSAND, "&", op_line, op_col};
        }
 
-       // Pipe, logical-or, and pipeline operators (|, ||, |>, <|)
+       // Pipe, logical-or, and pipeline operators (|, ||, |>, |=)
        if (c == '|') {
            advance();
            if (peek() == '|') {
@@ -724,12 +731,20 @@ Token AriaLexer::nextToken() {
                advance();
                return {TOKEN_PIPE_FORWARD, "|>", op_line, op_col};
            }
+           if (peek() == '=') {
+               advance();
+               return {TOKEN_OR_ASSIGN, "|=", op_line, op_col};
+           }
            return {TOKEN_PIPE, "|", op_line, op_col};
        }
 
-       // Caret (^)
+       // Caret (^, ^=)
        if (c == '^') {
            advance();
+           if (peek() == '=') {
+               advance();
+               return {TOKEN_XOR_ASSIGN, "^=", op_line, op_col};
+           }
            return {TOKEN_CARET, "^", op_line, op_col};
        }
 
@@ -739,7 +754,7 @@ Token AriaLexer::nextToken() {
            return {TOKEN_TILDE, "~", op_line, op_col};
        }
        
-       // Less-than, less-or-equal, left-shift, spaceship, and pipeline backward (<, <=, <<, <=>, <|)
+       // Less-than, less-or-equal, left-shift, spaceship, and pipeline backward (<, <=, <<, <<=, <=>, <|)
        if (c == '<') {
            advance();
            if (peek() == '=') {
@@ -753,6 +768,11 @@ Token AriaLexer::nextToken() {
            }
            if (peek() == '<') {
                advance();
+               // Check for <<= (left shift assign)
+               if (peek() == '=') {
+                   advance();
+                   return {TOKEN_LSHIFT_ASSIGN, "<<=", op_line, op_col};
+               }
                return {TOKEN_LSHIFT, "<<", op_line, op_col};
            }
            if (peek() == '|') {
@@ -762,7 +782,7 @@ Token AriaLexer::nextToken() {
            return {TOKEN_LT, "<", op_line, op_col};
        }
 
-       // Greater-than, greater-or-equal, right-shift (>, >=, >>)
+       // Greater-than, greater-or-equal, right-shift (>, >=, >>, >>=)
        if (c == '>') {
            advance();
            if (peek() == '=') {
@@ -771,6 +791,11 @@ Token AriaLexer::nextToken() {
            }
            if (peek() == '>') {
                advance();
+               // Check for >>= (right shift assign)
+               if (peek() == '=') {
+                   advance();
+                   return {TOKEN_RSHIFT_ASSIGN, ">>=", op_line, op_col};
+               }
                return {TOKEN_RSHIFT, ">>", op_line, op_col};
            }
            return {TOKEN_GT, ">", op_line, op_col};
