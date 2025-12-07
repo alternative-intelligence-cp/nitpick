@@ -720,6 +720,13 @@ public:
         }
         
         Type* returnType = ctx.getLLVMType(node->return_type);
+        
+        // ASYNC FUNCTION SUPPORT (Bug #70)
+        // Async functions return a coroutine handle (i8*) instead of their declared type
+        if (node->is_async) {
+            returnType = PointerType::getUnqual(ctx.llvmContext);  // i8* for coroutine handle
+        }
+        
         FunctionType* funcType = FunctionType::get(returnType, paramTypes, false);
         
         // 2. Create function with module prefix
@@ -762,6 +769,30 @@ public:
         ctx.currentFunctionAutoWrap = true;
         ctx.currentFunctionReturnType = node->return_type;
         
+        // ASYNC FUNCTION COROUTINE SETUP
+        if (node->is_async) {
+            // Emit coroutine intrinsics
+            Function* coroId = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_id);
+            Value* id = ctx.builder->CreateCall(coroId, {
+                ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0),
+                ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)),
+                ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)),
+                ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))
+            }, \"coro_id\");
+            
+            Function* coroBegin = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_begin);
+            Value* hdl = ctx.builder->CreateCall(coroBegin, {
+                id,
+                ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))
+            }, \"coro_hdl\");
+            
+            // Store handle for use in return statements
+            // (Async functions must return the coroutine handle)
+            ctx.builder->CreateAlloca(PointerType::getUnqual(ctx.llvmContext), nullptr, \"__coro_handle\")->setInitializer(
+                ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))
+            );
+        }
+        
         // 6. Create allocas for parameters (to allow taking addresses)
         idx = 0;
         for (auto& arg : func->args()) {
@@ -778,7 +809,35 @@ public:
         
         // 8. Add return if missing (for void functions)
         if (ctx.builder->GetInsertBlock()->getTerminator() == nullptr) {
-            if (returnType->isVoidTy()) {
+            if (node->is_async) {
+                // Async functions: emit final suspend and return handle
+                Function* coroSuspend = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_suspend);
+                Value* suspendResult = ctx.builder->CreateCall(coroSuspend, {
+                    ConstantTokenNone::get(ctx.llvmContext),
+                    ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 1)  // Final suspend
+                }, \"final_suspend\");
+                
+                // Create suspend switch
+                BasicBlock* suspendBB = BasicBlock::Create(ctx.llvmContext, \"suspend\", func);
+                BasicBlock* destroyBB = BasicBlock::Create(ctx.llvmContext, \"destroy\", func);
+                SwitchInst* suspendSwitch = ctx.builder->CreateSwitch(suspendResult, suspendBB, 2);
+                suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), destroyBB);
+                
+                // Destroy path
+                ctx.builder->SetInsertPoint(destroyBB);
+                Function* coroEnd = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_end);
+                Value* hdl = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext),
+                    func->getEntryBlock().getTerminator()->getPrevNode(), \"coro_hdl\");
+                ctx.builder->CreateCall(coroEnd, {
+                    hdl,
+                    ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 0)
+                });
+                ctx.builder->CreateRet(hdl);
+                
+                // Suspend path (unreachable)
+                ctx.builder->SetInsertPoint(suspendBB);
+                ctx.builder->CreateUnreachable();
+            } else if (returnType->isVoidTy()) {
                 ctx.builder->CreateRetVoid();
             } else {
                 // Return default value (0 or nullptr)
@@ -2639,6 +2698,139 @@ public:
         if (node->body) {
             ctx.pushDefer(node->body.get());
         }
+    }
+    
+    void visit(frontend::AsyncBlock* node) override {
+        // async { body } catch (err:e) { catch_body }
+        // Implements LLVM coroutine lowering for async/await support
+        
+        // 1. Create async function wrapper
+        std::string asyncName = "__async_" + std::to_string(reinterpret_cast<uintptr_t>(node));
+        
+        // Async functions return an i8* handle (the coroutine handle)
+        FunctionType* asyncFuncType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),  // Returns i8* handle
+            {},  // No parameters (TODO: capture variables from outer scope)
+            false
+        );
+        
+        Function* asyncFn = Function::Create(
+            asyncFuncType,
+            Function::InternalLinkage,
+            asyncName,
+            ctx.module.get()
+        );
+        
+        // 2. Save current context
+        BasicBlock* callerBlock = ctx.builder->GetInsertBlock();
+        Function* prevFunc = ctx.currentFunction;
+        
+        // 3. Setup async function entry block
+        BasicBlock* entry = BasicBlock::Create(ctx.llvmContext, "entry", asyncFn);
+        ctx.builder->SetInsertPoint(entry);
+        ctx.currentFunction = asyncFn;
+        
+        // 4. Emit LLVM coroutine intrinsics
+        // llvm.coro.id - Identifies this function as a coroutine
+        Function* coroId = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_id);
+        Value* id = ctx.builder->CreateCall(coroId, {
+            ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0),  // Alignment
+            ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)),  // Promise
+            ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)),  // Corofn
+            ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))   // Data
+        }, "id");
+        
+        // llvm.coro.begin - Allocate coroutine frame
+        Function* coroBegin = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_begin);
+        Value* hdl = ctx.builder->CreateCall(coroBegin, {
+            id,
+            ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))  // Allocfn result
+        }, "hdl");
+        
+        // 5. Generate async body
+        if (node->body) {
+            node->body->accept(*this);
+        }
+        
+        // 6. Final suspend point
+        // llvm.coro.suspend - Suspend execution
+        Function* coroSuspend = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_suspend);
+        Value* suspendResult = ctx.builder->CreateCall(coroSuspend, {
+            ConstantTokenNone::get(ctx.llvmContext),  // Token
+            ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 1)  // Final suspend = true
+        }, "suspend");
+        
+        // Create switch on suspend result
+        // 0 = resume, 1 = destroy, -1 = suspend
+        SwitchInst* suspendSwitch = ctx.builder->CreateSwitch(suspendResult, 
+            BasicBlock::Create(ctx.llvmContext, "suspend_unreachable", asyncFn), 2);
+        
+        // Case 0: Resume (should not happen for final suspend)
+        BasicBlock* resumeBB = BasicBlock::Create(ctx.llvmContext, "resume", asyncFn);
+        suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), resumeBB);
+        ctx.builder->SetInsertPoint(resumeBB);
+        ctx.builder->CreateUnreachable();
+        
+        // Case 1: Destroy
+        BasicBlock* destroyBB = BasicBlock::Create(ctx.llvmContext, "destroy", asyncFn);
+        suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), destroyBB);
+        ctx.builder->SetInsertPoint(destroyBB);
+        
+        // llvm.coro.end - Finalize coroutine
+        Function* coroEnd = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_end);
+        ctx.builder->CreateCall(coroEnd, {
+            hdl,
+            ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 0)  // Unwind = false
+        });
+        ctx.builder->CreateRet(hdl);
+        
+        // Unreachable block for -1 case
+        ctx.builder->SetInsertPoint(suspendSwitch->getDefaultDest());
+        ctx.builder->CreateUnreachable();
+        
+        // 7. Restore context and call async function from caller
+        ctx.builder->SetInsertPoint(callerBlock);
+        ctx.currentFunction = prevFunc;
+        
+        // Call the async function (returns coroutine handle)
+        Value* coroHandle = ctx.builder->CreateCall(asyncFn, {}, "async_handle");
+        
+        // TODO: Store handle for later resumption
+        // For now, async blocks execute but don't integrate with a scheduler
+        
+        // 8. Handle catch block if present
+        if (node->catch_block) {
+            // TODO: Implement error handling for async exceptions
+            // This requires wrapping the async body in try/catch logic
+            // For v0.0.7, we'll leave this as a placeholder
+        }
+    }
+    
+    void visit(frontend::AwaitExpr* node) override {
+        // await <expression>
+        // Suspends current coroutine until the awaited expression completes
+        
+        // For v0.0.7: Basic implementation
+        // Evaluate the expression (should return a coroutine handle)
+        // In a full implementation, this would:
+        // 1. Call llvm.coro.save to save the coroutine state
+        // 2. Call llvm.coro.suspend to suspend
+        // 3. Resume when the awaited coroutine completes
+        
+        // For now, just evaluate the expression and continue
+        // TODO: Full coroutine suspension/resumption logic
+        if (node->expression) {
+            visitExpr(node->expression.get());
+        }
+    }
+    
+    void visit(frontend::WhenExpr* node) override {
+        // when { case1 then result1; case2 then result2; end }
+        // Pattern matching expression - returns a value
+        
+        // TODO: Implement when expression lowering
+        // This is similar to pick but returns a value instead of jumping
+        // For v0.0.7, this is a placeholder
     }
     
     void visit(IntLiteral* node) override {} // Handled by visitExpr()

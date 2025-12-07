@@ -148,7 +148,7 @@ public:
         : body(std::move(b)), catch_block(std::move(catch_b)), error_var(err_var) {}
     
     void accept(AstVisitor& visitor) override {
-        // visitor.visit(this);
+        visitor.visit(this);
     }
 };
 
