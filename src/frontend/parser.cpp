@@ -168,6 +168,13 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         return std::make_unique<IntLiteral>(value);
     }
 
+    // Float literal
+    if (current.type == TOKEN_FLOAT_LITERAL) {
+        double value = std::stod(current.value);
+        advance();
+        return std::make_unique<FloatLiteral>(value);
+    }
+
     // String literal
     if (current.type == TOKEN_STRING_LITERAL) {
         std::string value = current.value;
@@ -934,16 +941,23 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         Token saved = current;
         advance();
         
-        if (current.type == TOKEN_COLON) {
+        // Parse type suffixes (arrays [], pointers @) before checking for colon
+        // We need to check if current is @ or [ BEFORE checking for :
+        bool has_type_suffix = (current.type == TOKEN_LBRACKET || current.type == TOKEN_AT);
+        bool is_var_decl = has_type_suffix;
+        
+        // Also check for direct colon (no suffix case)
+        if (!has_type_suffix && current.type == TOKEN_COLON) {
+            is_var_decl = true;
+        }
+        
+        if (is_var_decl) {
             // This is a variable declaration with type:name pattern
-            // Backtrack by manually reconstructing state
-            // We consumed the type, now at colon
-            // parseVarDecl expects to start at the type token
-
-            // So we need to parse it here directly
-            
+            // Build the full type with suffixes
             std::string type_name = saved.value;
-            advance();  // consume :
+            type_name = parseTypeSuffixes(type_name);
+            
+            expect(TOKEN_COLON);
             
             Token name_tok = expect(TOKEN_IDENTIFIER);
             
@@ -1547,28 +1561,41 @@ std::unique_ptr<Statement> Parser::parseWhenLoop() {
                                        std::move(then_block), std::move(end_block));
 }
 
-// Parse till loop: till(max, step) { body }
-// Spec Section 8.2: Automatic iterator with $ variable
-// Positive step: counts from 0 to max
-// Negative step: counts from max to 0
+// Parse till loop: till(max, step) { body } OR till(condition) { body }
+// Spec Section 8.2: Automatic iterator with $ variable OR condition loop
+// Two forms:
+// 1. till(limit, step) - iterator form with $ variable
+// 2. till(condition) - condition form (synonym for while)
 std::unique_ptr<Statement> Parser::parseTillLoop() {
     expect(TOKEN_KW_TILL);
     expect(TOKEN_LPAREN);
     
-    // Parse limit expression
-    auto limit = parseExpr();
+    // Parse first expression (could be limit or condition)
+    auto first_expr = parseExpr();
     
-    expect(TOKEN_COMMA);
-    
-    // Parse step expression
-    auto step = parseExpr();
-    
-    expect(TOKEN_RPAREN);
-    
-    // Parse loop body
-    auto body = parseBlock();
-    
-    return std::make_unique<TillLoop>(std::move(limit), std::move(step), std::move(body));
+    // Check if there's a comma (iterator form) or closing paren (condition form)
+    if (match(TOKEN_COMMA)) {
+        // Iterator form: till(limit, step)
+        auto limit = std::move(first_expr);
+        
+        // Parse step expression
+        auto step = parseExpr();
+        
+        expect(TOKEN_RPAREN);
+        
+        // Parse loop body
+        auto body = parseBlock();
+        
+        return std::make_unique<TillLoop>(std::move(limit), std::move(step), std::move(body));
+    } else {
+        // Condition form: till(condition) - create WhileLoop
+        expect(TOKEN_RPAREN);
+        
+        // Parse loop body
+        auto body = parseBlock();
+        
+        return std::make_unique<WhileLoop>(std::move(first_expr), std::move(body));
+    }
 }
 
 // =============================================================================
@@ -1875,12 +1902,26 @@ std::vector<FuncParam> Parser::parseParams() {
     expect(TOKEN_LPAREN);
     
     while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
-        // Parse param_type:param_name (with optional array/pointer suffixes)
+        // Parse param_type:param_name (with optional memory qualifiers and array/pointer suffixes)
+        // Can have optional wild/wildx qualifier: "wild int8@:ptr"
+        
+        std::string param_type = "";
+        
+        // Check for memory qualifier (wild, wildx)
+        if (current.type == TOKEN_KW_WILD) {
+            param_type = "wild ";
+            advance();
+        } else if (current.type == TOKEN_KW_WILDX) {
+            param_type = "wildx ";
+            advance();
+        }
+        
+        // Now parse the base type
         if (!isTypeToken(current.type)) {
             throw std::runtime_error("Expected type token in parameter list");
         }
         
-        std::string param_type = current.value;
+        param_type += current.value;
         advance();
         param_type = parseTypeSuffixes(param_type);
         

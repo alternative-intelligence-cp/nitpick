@@ -43,16 +43,28 @@ std::vector<Param> Parser::parseParams() {
     
     if (!check(TOKEN_RPAREN)) {
         do {
-            // Parse Type
+            // Parse Type (including memory qualifiers and pointer/array suffixes)
             // Note: In Aria, type comes first in params: "int:x", unlike "x int" in Go.
-            Token typeTok = advance();
-            if (!isTypeToken(typeTok.type)) {
-                error("Expected parameter type, got: " + typeTok.lexeme);
+            // Can have optional wild/wildx qualifier: "wild int8@:ptr"
+            
+            std::string paramType = "";
+            
+            // Check for memory qualifier (wild, wildx)
+            if (current.type == TOKEN_KW_WILD) {
+                paramType = "wild ";
+                advance();
+            } else if (current.type == TOKEN_KW_WILDX) {
+                paramType = "wildx ";
+                advance();
             }
+            
+            // Now parse the rest of the type (base type + suffixes)
+            paramType += parseTypeName();  // Handles base type and suffixes
+            
             consume(TOKEN_COLON, "Expected ':' after type");
             Token nameTok = consume(TOKEN_IDENTIFIER, "Expected parameter name");
             
-            params.push_back({typeTok.lexeme, nameTok.lexeme});
+            params.push_back({paramType, nameTok.lexeme});
         } while (match(TOKEN_COMMA));
     }
     
