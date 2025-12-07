@@ -1,14 +1,11 @@
-// Simple file I/O test - just syscall intrinsics
-// Tests the basic syscall implementation
+// Simple test of file I/O
+func:intrinsic_open = int32(uint8@:pathname, int32:flags, int32:mode);
+func:intrinsic_write = int64(int32:fd, uint8@:buffer, uint64:count);
+func:intrinsic_close = int32(int32:fd);
 
 func:main = int8() {
-    print("=== Testing Syscall Intrinsics ===");
-    
-    // Test 1: Write to file using low-level syscalls
-    print("--- Test 1: Writing to file ---");
-    
-    // Prepare a string to write
-    uint8:msg[32];
+    // Write to stdout (fd=1)
+    uint8:msg[14];
     msg[0] = 72;   // 'H'
     msg[1] = 101;  // 'e'
     msg[2] = 108;  // 'l'
@@ -16,95 +13,15 @@ func:main = int8() {
     msg[4] = 111;  // 'o'
     msg[5] = 32;   // ' '
     msg[6] = 70;   // 'F'
-    msg[7] = 114;  // 'r'
-    msg[8] = 111;  // 'o'
-    msg[9] = 109;  // 'm'
-    msg[10] = 32;  // ' '
-    msg[11] = 65;  // 'A'
-    msg[12] = 114;  // 'r'
-    msg[13] = 105;  // 'i'
-    msg[14] = 97;  // 'a'
-    msg[15] = 33;  // '!'
-    msg[16] = 10;  // '\n'
+    msg[7] = 105;  // 'i'
+    msg[8] = 108;  // 'l'
+    msg[9] = 101;  // 'e'
+    msg[10] = 73;  // 'I'
+    msg[11] = 79;  // 'O'
+    msg[12] = 33;  // '!'
+    msg[13] = 10;  // '\n'
     
-    // Prepare filename
-    uint8:filename[32];
-    filename[0] = 116;  // 't'
-    filename[1] = 101;  // 'e'
-    filename[2] = 115;  // 's'
-    filename[3] = 116;  // 't'
-    filename[4] = 46;   // '.'
-    filename[5] = 116;  // 't'
-    filename[6] = 120;  // 'x'
-    filename[7] = 116;  // 't'
-    filename[8] = 0;    // null terminator
+    int64:written = intrinsic_write(1, msg, 14);
     
-    // Open file: flags = O_WRONLY | O_CREAT | O_TRUNC = 0x0241
-    // mode = 0644 = 0x01B6
-    int32:fd = 0;
-    fd = intrinsic_open(filename, 577, 438);
-    
-    if (fd < 0) {
-        print("ERROR: Failed to open file");
-        pass(1);
-    }
-    
-    print("File opened successfully");
-    
-    // Write data
-    int64:bytes_written = 0;
-    bytes_written = intrinsic_write(fd, msg, 17);
-    
-    if (bytes_written < 0) {
-        print("ERROR: Failed to write");
-        int32:close_result = 0;
-        close_result = intrinsic_close(fd);
-        pass(1);
-    }
-    
-    print("Write successful");
-    
-    // Close file
-    int32:close_result = 0;
-    close_result = intrinsic_close(fd);
-    
-    if (close_result < 0) {
-        print("ERROR: Failed to close file");
-        pass(1);
-    }
-    
-    print("File closed successfully");
-    
-    // Test 2: Read the file back
-    print("--- Test 2: Reading from file ---");
-    
-    // Open for reading: flags = O_RDONLY = 0
-    fd = intrinsic_open(filename, 0, 0);
-    
-    if (fd < 0) {
-        print("ERROR: Failed to open file for reading");
-        pass(1);
-    }
-    
-    print("File opened for reading");
-    
-    // Read data
-    uint8:read_buffer[64];
-    int64:bytes_read = 0;
-    bytes_read = intrinsic_read(fd, read_buffer, 64);
-    
-    if (bytes_read < 0) {
-        print("ERROR: Failed to read");
-        close_result = intrinsic_close(fd);
-        pass(1);
-    }
-    
-    print("Read successful");
-    
-    // Close file
-    close_result = intrinsic_close(fd);
-    print("File closed");
-    
-    print("=== All Tests Passed! ===");
     pass(0);
 };

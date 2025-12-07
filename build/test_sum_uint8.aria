@@ -1,0 +1,31 @@
+// Minimal collections test with uint8
+func:sum_uint8 = *uint8(uint8[]:arr, int64:length) {
+    uint8:total = 0;
+    int64:i = 0;
+    while (i < length) {
+        total = total + arr[i];
+        i = i + 1;
+    }
+    return total;
+};
+
+func:main = int8() {
+    puts("Testing sum with uint8 array...");
+    
+    uint8:data[5];
+    data[0] = 10;
+    data[1] = 20;
+    data[2] = 30;
+    data[3] = 40;
+    data[4] = 50;
+    
+    uint8:result = sum_uint8(data, 5) ? 0;
+    
+    if (result == 150) {
+        puts("SUCCESS: sum = 150");
+        return 0;
+    }
+    
+    puts("FAIL");
+    return 1;
+};

@@ -1,0 +1,202 @@
+func:floor_flt32 = *flt32(flt32:value) {
+    // LLVM intrinsic: llvm.floor.f32/f64
+    flt32:result_val = @llvm_floor_flt32(value);
+    return result_val;
+};
+
+
+func:ceil_flt32 = *flt32(flt32:value) {
+    // LLVM intrinsic: llvm.ceil.f32/f64
+    flt32:result_val = @llvm_ceil_flt32(value);
+    return result_val;
+};
+
+
+func:round_flt32 = *flt32(flt32:value) {
+    // LLVM intrinsic: llvm.round.f32/f64
+    flt32:result_val = @llvm_round_flt32(value);
+    return result_val;
+};
+
+
+func:trunc_flt32 = *flt32(flt32:value) {
+    // LLVM intrinsic: llvm.trunc.f32/f64
+    flt32:result_val = @llvm_trunc_flt32(value);
+    return result_val;
+};
+
+
+func:pow_flt32 = *flt32(flt32:base, flt32:exponent) {
+    // LLVM intrinsic: llvm.pow.f32/f64
+    flt32:result_val = @llvm_pow_flt32(base, exponent);
+    return result_val;
+};
+
+
+
+func:sqrt_flt64 = *flt64(flt64:value) {
+    if (value < 0.0) {
+        fail(1);  // Error: negative input
+    }
+    // LLVM intrinsic: llvm.sqrt.f32/f64
+    flt64:result_val = @llvm_sqrt_flt64(value);
+    return result_val;
+};
+
+
+func:floor_flt64 = *flt64(flt64:value) {
+    // LLVM intrinsic: llvm.floor.f32/f64
+    flt64:result_val = @llvm_floor_flt64(value);
+    return result_val;
+};
+
+
+func:ceil_flt64 = *flt64(flt64:value) {
+    // LLVM intrinsic: llvm.ceil.f32/f64
+    flt64:result_val = @llvm_ceil_flt64(value);
+    return result_val;
+};
+
+
+func:round_flt64 = *flt64(flt64:value) {
+    // LLVM intrinsic: llvm.round.f32/f64
+    flt64:result_val = @llvm_round_flt64(value);
+    return result_val;
+};
+
+
+func:trunc_flt64 = *flt64(flt64:value) {
+    // LLVM intrinsic: llvm.trunc.f32/f64
+    flt64:result_val = @llvm_trunc_flt64(value);
+    return result_val;
+};
+
+
+func:pow_flt64 = *flt64(flt64:base, flt64:exponent) {
+    // LLVM intrinsic: llvm.pow.f32/f64
+    flt64:result_val = @llvm_pow_flt64(base, exponent);
+    return result_val;
+};
+
+
+// ----------------------------------------------------------------------------
+// Integer Power Function (for int types without floating point)
+// ----------------------------------------------------------------------------
+
+
+// Generate integer power functions
+
+func:pow_int8 = *int8(int8:base, int8:exponent) {
+    if (exponent < 0) {
+        fail(1);  // Error: negative exponent for integer power
+    }
+    if (exponent == 0) {
+        return 1;  // x^0 = 1
+    }
+    int8:result_val = 1;
+    int8:i = 0;
+    while (i < exponent) {
+        result_val = result_val * base;
+        i = i + 1;
+    }
+    return result_val;
+};
+
+
+func:pow_int16 = *int16(int16:base, int16:exponent) {
+    if (exponent < 0) {
+        fail(1);  // Error: negative exponent for integer power
+    }
+    if (exponent == 0) {
+        return 1;  // x^0 = 1
+    }
+    int16:result_val = 1;
+    int16:i = 0;
+    while (i < exponent) {
+        result_val = result_val * base;
+        i = i + 1;
+    }
+    return result_val;
+};
+
+
+func:pow_int32 = *int32(int32:base, int32:exponent) {
+    if (exponent < 0) {
+        fail(1);  // Error: negative exponent for integer power
+    }
+    if (exponent == 0) {
+        return 1;  // x^0 = 1
+    }
+    int32:result_val = 1;
+    int32:i = 0;
+    while (i < exponent) {
+        result_val = result_val * base;
+        i = i + 1;
+    }
+    return result_val;
+};
+
+
+func:pow_int64 = *int64(int64:base, int64:exponent) {
+    if (exponent < 0) {
+        fail(1);  // Error: negative exponent for integer power
+    }
+    if (exponent == 0) {
+        return 1;  // x^0 = 1
+    }
+    int64:result_val = 1;
+    int64:i = 0;
+    while (i < exponent) {
+        result_val = result_val * base;
+        i = i + 1;
+    }
+    return result_val;
+};
+
+
+func:pow_uint8 = *uint8(uint8:base, uint8:exponent) {
+    if (exponent < 0) {
+        fail(1);  // Error: negative exponent for integer power
+    }
+    if (exponent == 0) {
+        return 1;  // x^0 = 1
+    }
+    uint8:result_val = 1;
+    uint8:i = 0;
+    while (i < exponent) {
+        result_val = result_val * base;
+        i = i + 1;
+    }
+    return result_val;
+};
+
+
+func:pow_uint16 = *uint16(uint16:base, uint16:exponent) {
+    if (exponent < 0) {
+        fail(1);  // Error: negative exponent for integer power
+    }
+    if (exponent == 0) {
+        return 1;  // x^0 = 1
+    }
+    uint16:result_val = 1;
+    uint16:i = 0;
+    while (i < exponent) {
+        result_val = result_val * base;
+        i = i + 1;
+    }
+    return result_val;
+};
+
+
+func:pow_uint32 = *uint32(uint32:base, uint32:exponent) {
+    if (exponent < 0) {
+        fail(1);  // Error: negative exponent for integer power
+    }
+    if (exponent == 0) {
+        return 1;  // x^0 = 1
+    }
+    uint32:result_val = 1;
+    uint32:i = 0;
+    while (i < exponent) {
+
+func:main = *int8() { return 0; };

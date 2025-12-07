@@ -1,0 +1,13 @@
+%macro TEST_MACRO 1
+func:test_%1 = *%1(%1:val) {
+    return val;
+};
+%endmacro
+
+TEST_MACRO(int8)
+TEST_MACRO(int16)
+
+func:main = *int8() {
+    int8:x = test_int8(5);
+    return 0;
+};

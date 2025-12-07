@@ -1,0 +1,13 @@
+// Test macro parameter as type in function parameter
+%macro MAKE_IDENTITY 1
+    func:id_%1 = %1(%1:x) {
+        pass(x);
+    };
+%endmacro
+
+MAKE_IDENTITY(int8)
+MAKE_IDENTITY(int16)
+
+func:main = int32() {
+    pass(0);
+};

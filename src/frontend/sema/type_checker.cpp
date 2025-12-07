@@ -56,6 +56,12 @@ void TypeChecker::visit(frontend::IntLiteral* node) {
     current_expr_type = makeIntType(64);
 }
 
+// Visit FloatLiteral
+void TypeChecker::visit(frontend::FloatLiteral* node) {
+    // Float literals default to flt64 (double precision)
+    current_expr_type = makeFloatType(64);
+}
+
 // Visit BoolLiteral
 void TypeChecker::visit(frontend::BoolLiteral* node) {
     current_expr_type = makeBoolType();

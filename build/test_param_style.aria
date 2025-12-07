@@ -1,0 +1,17 @@
+%macro GEN_TEST 2
+func:test_%1 = *int32(%1:x, %2:limit) {
+    int32:i = 0;
+    while (i < limit) {
+        i = i + 1;
+    }
+    return i;
+};
+%endmacro
+
+GEN_TEST(int8, int32)
+GEN_TEST(int16, int32)
+
+func:main = *int8() {
+    int32:result = test_int8(5, 10);
+    return 0;
+};

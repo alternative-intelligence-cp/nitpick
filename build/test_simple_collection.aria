@@ -1,0 +1,31 @@
+// Simple collections test - no macros
+func:sum_int32 = *int32(int32[]:arr, int64:length) {
+    int32:total = 0;
+    int64:i = 0;
+    while (i < length) {
+        total = total + arr[i];
+        i = i + 1;
+    }
+    return total;
+};
+
+func:main = int32() {
+    puts("Testing sum function...");
+    
+    int32:nums[5];
+    nums[0] = 10;
+    nums[1] = 20;
+    nums[2] = 30;
+    nums[3] = 40;
+    nums[4] = 50;
+    
+    int32:result = sum_int32(nums, 5) ? 0;
+    
+    if (result == 150) {
+        puts("SUCCESS: sum = 150");
+        return 0;
+    }
+    
+    puts("FAIL: wrong sum");
+    return 1;
+};

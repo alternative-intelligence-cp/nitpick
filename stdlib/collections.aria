@@ -1,0 +1,333 @@
+// Collections Library - All 13 Functions × 10 Types = 130 Functions
+// Fixed: Use 'last' instead of 'end' (reserved or conflicting name)
+
+// 1. Contains
+%macro GEN_CONTAINS 1
+func:contains_%1 = *int8(%1[]:arr, int64:length, %1:value) {
+    int64:i = 0;
+    while (i < length) {
+        if (arr[i] == value) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+};
+%endmacro
+
+// 2. IndexOf
+%macro GEN_INDEXOF 1
+func:indexOf_%1 = *int64(%1[]:arr, int64:length, %1:value) {
+    int64:i = 0;
+    while (i < length) {
+        if (arr[i] == value) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+};
+%endmacro
+
+// 3. Count
+%macro GEN_COUNT 1
+func:count_%1 = *int64(%1[]:arr, int64:length, %1:value) {
+    int64:count = 0;
+    int64:i = 0;
+    while (i < length) {
+        if (arr[i] == value) {
+            count = count + 1;
+        }
+        i = i + 1;
+    }
+    return count;
+};
+%endmacro
+
+// 4. Reverse - FIXED: renamed 'end' to 'last'
+%macro GEN_REVERSE 1
+func:reverse_%1 = *int8(%1[]:arr, int64:length) {
+    int64:start = 0;
+    int64:last = 0;
+    int64:one = 1;
+    last = length;
+    last = last - one;
+    while (start < last) {
+        %1:tmp = arr[start];
+        arr[start] = arr[last];
+        arr[last] = tmp;
+        start = start + one;
+        last = last - one;
+    }
+    return 0;
+};
+%endmacro
+
+// 5. Fill
+%macro GEN_FILL 1
+func:fill_%1 = *int8(%1[]:arr, int64:length, %1:value) {
+    int64:i = 0;
+    while (i < length) {
+        arr[i] = value;
+        i = i + 1;
+    }
+    return 0;
+};
+%endmacro
+
+// 6. Copy
+%macro GEN_COPY 1
+func:copy_%1 = *int8(%1[]:dest, %1[]:src, int64:length) {
+    int64:i = 0;
+    while (i < length) {
+        dest[i] = src[i];
+        i = i + 1;
+    }
+    return 0;
+};
+%endmacro
+
+// 7. Min
+%macro GEN_MIN 1
+func:min_%1 = *%1(%1[]:arr, int64:length) {
+    %1:minVal = arr[0];
+    int64:i = 1;
+    while (i < length) {
+        if (arr[i] < minVal) {
+            minVal = arr[i];
+        }
+        i = i + 1;
+    }
+    return minVal;
+};
+%endmacro
+
+// 8. Max
+%macro GEN_MAX 1
+func:max_%1 = *%1(%1[]:arr, int64:length) {
+    %1:maxVal = arr[0];
+    int64:i = 1;
+    while (i < length) {
+        if (arr[i] > maxVal) {
+            maxVal = arr[i];
+        }
+        i = i + 1;
+    }
+    return maxVal;
+};
+%endmacro
+
+// 9. Sum
+%macro GEN_SUM 1
+func:sum_%1 = *%1(%1[]:arr, int64:length) {
+    %1:total = arr[0];
+    int64:i = 1;
+    while (i < length) {
+        total = total + arr[i];
+        i = i + 1;
+    }
+    return total;
+};
+%endmacro
+
+// 10. AllEqual
+%macro GEN_ALLEQUAL 1
+func:allEqual_%1 = *int8(%1[]:arr, int64:length, %1:value) {
+    int64:i = 0;
+    while (i < length) {
+        if (arr[i] != value) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+};
+%endmacro
+
+// 11. AnyEqual
+%macro GEN_ANYEQUAL 1
+func:anyEqual_%1 = *int8(%1[]:arr, int64:length, %1:value) {
+    int64:i = 0;
+    while (i < length) {
+        if (arr[i] == value) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+};
+%endmacro
+
+// 12. CountIfGt
+%macro GEN_COUNTIF_GT 1
+func:countIfGt_%1 = *int64(%1[]:arr, int64:length, %1:threshold) {
+    int64:count = 0;
+    int64:i = 0;
+    while (i < length) {
+        if (arr[i] > threshold) {
+            count = count + 1;
+        }
+        i = i + 1;
+    }
+    return count;
+};
+%endmacro
+
+// 13. Swap
+%macro GEN_SWAP 1
+func:swap_%1 = *int8(%1[]:arr, int64:i, int64:j) {
+    %1:tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+    return 0;
+};
+%endmacro
+
+// Generate all 130 functions (13 functions × 10 types)
+GEN_CONTAINS(int8)
+GEN_CONTAINS(int16)
+GEN_CONTAINS(int32)
+GEN_CONTAINS(int64)
+GEN_CONTAINS(uint8)
+GEN_CONTAINS(uint16)
+GEN_CONTAINS(uint32)
+GEN_CONTAINS(uint64)
+GEN_CONTAINS(flt32)
+GEN_CONTAINS(flt64)
+
+GEN_INDEXOF(int8)
+GEN_INDEXOF(int16)
+GEN_INDEXOF(int32)
+GEN_INDEXOF(int64)
+GEN_INDEXOF(uint8)
+GEN_INDEXOF(uint16)
+GEN_INDEXOF(uint32)
+GEN_INDEXOF(uint64)
+GEN_INDEXOF(flt32)
+GEN_INDEXOF(flt64)
+
+GEN_COUNT(int8)
+GEN_COUNT(int16)
+GEN_COUNT(int32)
+GEN_COUNT(int64)
+GEN_COUNT(uint8)
+GEN_COUNT(uint16)
+GEN_COUNT(uint32)
+GEN_COUNT(uint64)
+GEN_COUNT(flt32)
+GEN_COUNT(flt64)
+
+GEN_REVERSE(int8)
+GEN_REVERSE(int16)
+GEN_REVERSE(int32)
+GEN_REVERSE(int64)
+GEN_REVERSE(uint8)
+GEN_REVERSE(uint16)
+GEN_REVERSE(uint32)
+GEN_REVERSE(uint64)
+GEN_REVERSE(flt32)
+GEN_REVERSE(flt64)
+
+GEN_FILL(int8)
+GEN_FILL(int16)
+GEN_FILL(int32)
+GEN_FILL(int64)
+GEN_FILL(uint8)
+GEN_FILL(uint16)
+GEN_FILL(uint32)
+GEN_FILL(uint64)
+GEN_FILL(flt32)
+GEN_FILL(flt64)
+
+GEN_COPY(int8)
+GEN_COPY(int16)
+GEN_COPY(int32)
+GEN_COPY(int64)
+GEN_COPY(uint8)
+GEN_COPY(uint16)
+GEN_COPY(uint32)
+GEN_COPY(uint64)
+GEN_COPY(flt32)
+GEN_COPY(flt64)
+
+GEN_MIN(int8)
+GEN_MIN(int16)
+GEN_MIN(int32)
+GEN_MIN(int64)
+GEN_MIN(uint8)
+GEN_MIN(uint16)
+GEN_MIN(uint32)
+GEN_MIN(uint64)
+GEN_MIN(flt32)
+GEN_MIN(flt64)
+
+GEN_MAX(int8)
+GEN_MAX(int16)
+GEN_MAX(int32)
+GEN_MAX(int64)
+GEN_MAX(uint8)
+GEN_MAX(uint16)
+GEN_MAX(uint32)
+GEN_MAX(uint64)
+GEN_MAX(flt32)
+GEN_MAX(flt64)
+
+GEN_SUM(int8)
+GEN_SUM(int16)
+GEN_SUM(int32)
+GEN_SUM(int64)
+GEN_SUM(uint8)
+GEN_SUM(uint16)
+GEN_SUM(uint32)
+GEN_SUM(uint64)
+GEN_SUM(flt32)
+GEN_SUM(flt64)
+
+GEN_ALLEQUAL(int8)
+GEN_ALLEQUAL(int16)
+GEN_ALLEQUAL(int32)
+GEN_ALLEQUAL(int64)
+GEN_ALLEQUAL(uint8)
+GEN_ALLEQUAL(uint16)
+GEN_ALLEQUAL(uint32)
+GEN_ALLEQUAL(uint64)
+GEN_ALLEQUAL(flt32)
+GEN_ALLEQUAL(flt64)
+
+GEN_ANYEQUAL(int8)
+GEN_ANYEQUAL(int16)
+GEN_ANYEQUAL(int32)
+GEN_ANYEQUAL(int64)
+GEN_ANYEQUAL(uint8)
+GEN_ANYEQUAL(uint16)
+GEN_ANYEQUAL(uint32)
+GEN_ANYEQUAL(uint64)
+GEN_ANYEQUAL(flt32)
+GEN_ANYEQUAL(flt64)
+
+GEN_COUNTIF_GT(int8)
+GEN_COUNTIF_GT(int16)
+GEN_COUNTIF_GT(int32)
+GEN_COUNTIF_GT(int64)
+GEN_COUNTIF_GT(uint8)
+GEN_COUNTIF_GT(uint16)
+GEN_COUNTIF_GT(uint32)
+GEN_COUNTIF_GT(uint64)
+GEN_COUNTIF_GT(flt32)
+GEN_COUNTIF_GT(flt64)
+
+GEN_SWAP(int8)
+GEN_SWAP(int16)
+GEN_SWAP(int32)
+GEN_SWAP(int64)
+GEN_SWAP(uint8)
+GEN_SWAP(uint16)
+GEN_SWAP(uint32)
+GEN_SWAP(uint64)
+GEN_SWAP(flt32)
+GEN_SWAP(flt64)
+
+func:main = *int8() {
+    puts("🎉 Collections Library: 130 functions compiled successfully!");
+    return 0;
+};

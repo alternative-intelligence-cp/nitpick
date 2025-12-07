@@ -1,7 +1,7 @@
 ; ModuleID = 'aria_module'
 source_filename = "aria_module"
 
-%result_int8 = type { i8, i8 }
+%result_int32 = type { i8, i32 }
 
 declare void @puts(ptr)
 
@@ -12,67 +12,36 @@ entry:
   ret void
 }
 
-define internal %result_int8 @__user_main() {
+define internal %result_int32 @test(i32 %x) {
 entry:
-  %count = alloca i64, align 8
-  %sum = alloca i64, align 8
-  store i64 0, ptr %sum, align 4
-  br label %loop_body
-
-loop_body:                                        ; preds = %ifcont, %entry
-  %"$" = phi i64 [ 0, %entry ], [ %next_val, %ifcont ]
-  %modtmp = srem i64 %"$", 2
-  %eqtmp = icmp eq i64 %modtmp, 0
+  %x1 = alloca i32, align 4
+  store i32 %x, ptr %x1, align 4
+  %0 = load i32, ptr %x1, align 4
+  %1 = sext i32 %0 to i64
+  %eqtmp = icmp eq i64 %1, 0
   br i1 %eqtmp, label %then, label %ifcont
 
-loop_exit:                                        ; preds = %ifcont
-  store i64 0, ptr %count, align 4
-  br label %loop_body1
-
-then:                                             ; preds = %loop_body
-  br label %ifcont
-
-ifcont:                                           ; preds = %then, %loop_body
-  %0 = load i64, ptr %sum, align 4
-  %addtmp = add i64 %0, %"$"
-  store i64 %addtmp, ptr %sum, align 4
-  %next_val = add i64 %"$", 1
-  %cond_pos = icmp slt i64 %next_val, 10
-  %cond_neg = icmp sge i64 %next_val, 0
-  %loop_cond = select i1 false, i1 %cond_neg, i1 %cond_pos
-  br i1 %loop_cond, label %loop_body, label %loop_exit
-
-loop_body1:                                       ; preds = %ifcont5, %loop_exit
-  %"$3" = phi i64 [ 0, %loop_exit ], [ %next_val7, %ifcont5 ]
-  %getmp = icmp sge i64 %"$3", 5
-  br i1 %getmp, label %then4, label %ifcont5
-
-loop_exit2:                                       ; preds = %ifcont5
-  %auto_wrap_result = alloca %result_int8, align 8
-  %err_ptr = getelementptr inbounds %result_int8, ptr %auto_wrap_result, i32 0, i32 0
+then:                                             ; preds = %entry
+  %result = alloca %result_int32, align 8
+  %err_ptr = getelementptr inbounds %result_int32, ptr %result, i32 0, i32 0
   store i8 0, ptr %err_ptr, align 1
-  %val_ptr = getelementptr inbounds %result_int8, ptr %auto_wrap_result, i32 0, i32 1
-  store i8 0, ptr %val_ptr, align 1
-  %result_val = load %result_int8, ptr %auto_wrap_result, align 1
-  ret %result_int8 %result_val
+  %val_ptr = getelementptr inbounds %result_int32, ptr %result, i32 0, i32 1
+  store i32 1, ptr %val_ptr, align 4
+  %result_val = load %result_int32, ptr %result, align 4
+  ret %result_int32 %result_val
 
-then4:                                            ; preds = %loop_body1
-  br label %ifcont5
-
-ifcont5:                                          ; preds = %then4, %loop_body1
-  %1 = load i64, ptr %count, align 4
-  %addtmp6 = add i64 %1, 1
-  store i64 %addtmp6, ptr %count, align 4
-  %next_val7 = add i64 %"$3", 1
-  %cond_pos8 = icmp slt i64 %next_val7, 100
-  %cond_neg9 = icmp sge i64 %next_val7, 0
-  %loop_cond10 = select i1 false, i1 %cond_neg9, i1 %cond_pos8
-  br i1 %loop_cond10, label %loop_body1, label %loop_exit2
+ifcont:                                           ; preds = %entry
+  %result2 = alloca %result_int32, align 8
+  %err_ptr3 = getelementptr inbounds %result_int32, ptr %result2, i32 0, i32 0
+  store i8 0, ptr %err_ptr3, align 1
+  %val_ptr4 = getelementptr inbounds %result_int32, ptr %result2, i32 0, i32 1
+  store i32 2, ptr %val_ptr4, align 4
+  %result_val5 = load %result_int32, ptr %result2, align 4
+  ret %result_int32 %result_val5
 }
 
 define i64 @main() {
 entry:
   call void @__aria_module_init()
-  %0 = call %result_int8 @__user_main()
   ret i64 0
 }

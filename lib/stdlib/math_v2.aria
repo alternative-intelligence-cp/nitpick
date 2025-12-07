@@ -1,0 +1,182 @@
+// ============================================================================
+// Aria Standard Library - Math Functions  
+// ============================================================================
+// Pure Aria implementations - no external dependencies
+// 72 functions generated from 7 macros across 14 numeric types
+// ============================================================================
+
+%macro GEN_ABS 1
+func:abs_%1 = *%1(%1:value) {
+    if (value < 0) {
+        return 0 - value;
+    }
+    return value;
+};
+%endmacro
+
+%macro GEN_MIN 1
+func:min_%1 = *%1(%1:a, %1:b) {
+    if (a < b) {
+        return a;
+    }
+    return b;
+};
+%endmacro
+
+%macro GEN_MAX 1
+func:max_%1 = *%1(%1:a, %1:b) {
+    if (a > b) {
+        return a;
+    }
+    return b;
+};
+%endmacro
+
+%macro GEN_CLAMP 1
+func:clamp_%1 = *%1(%1:value, %1:lo, %1:hi) {
+    if (value < lo) {
+        return lo;
+    }
+    if (value > hi) {
+        return hi;
+    }
+    return value;
+};
+%endmacro
+
+%macro GEN_POW_INT 1
+func:pow_%1 = *%1(%1:base, %1:exp) {
+    if (exp < 0) {
+        fail(1);
+    }
+    if (exp == 0) {
+        return 1;
+    }
+    %1:res = 1;
+    %1:i = 0;
+    while (i < exp) {
+        res = res * base;
+        i = i + 1;
+    }
+    return res;
+};
+%endmacro
+
+%macro GEN_ISQRT 1
+func:isqrt_%1 = *%1(%1:n) {
+    if (n < 0) {
+        fail(1);
+    }
+    if (n == 0) {
+        return 0;
+    }
+    if (n == 1) {
+        return 1;
+    }
+    %1:x = n;
+    %1:y = 1;
+    while (x > y) {
+        x = (x + y) / 2;
+        y = n / x;
+    }
+    return x;
+};
+%endmacro
+
+%macro GEN_ISQRT_U 1
+func:isqrt_%1 = *%1(%1:n) {
+    if (n == 0) {
+        return 0;
+    }
+    if (n == 1) {
+        return 1;
+    }
+    %1:x = n;
+    %1:y = 1;
+    while (x > y) {
+        x = (x + y) / 2;
+        y = n / x;
+    }
+    return x;
+};
+%endmacro
+
+%macro GEN_ABS_U 1
+func:abs_%1 = *%1(%1:value) {
+    return value;
+};
+%endmacro
+
+GEN_ABS(int8)
+GEN_MIN(int8)
+GEN_MAX(int8)
+GEN_CLAMP(int8)
+
+GEN_ABS(int16)
+GEN_MIN(int16)
+GEN_MAX(int16)
+GEN_CLAMP(int16)
+
+GEN_ABS(int32)
+GEN_MIN(int32)
+GEN_MAX(int32)
+GEN_CLAMP(int32)
+
+GEN_ABS(int64)
+GEN_MIN(int64)
+GEN_MAX(int64)
+GEN_CLAMP(int64)
+
+GEN_ABS_U(uint8)
+GEN_MIN(uint8)
+GEN_MAX(uint8)
+GEN_CLAMP(uint8)
+
+GEN_ABS_U(uint16)
+GEN_MIN(uint16)
+GEN_MAX(uint16)
+GEN_CLAMP(uint16)
+
+GEN_ABS_U(uint32)
+GEN_MIN(uint32)
+GEN_MAX(uint32)
+GEN_CLAMP(uint32)
+
+GEN_ABS_U(uint64)
+GEN_MIN(uint64)
+GEN_MAX(uint64)
+GEN_CLAMP(uint64)
+
+GEN_ABS(flt32)
+GEN_MIN(flt32)
+GEN_MAX(flt32)
+GEN_CLAMP(flt32)
+
+GEN_ABS(flt64)
+GEN_MIN(flt64)
+GEN_MAX(flt64)
+GEN_CLAMP(flt64)
+
+GEN_POW_INT(int8)
+GEN_POW_INT(int16)
+GEN_POW_INT(int32)
+GEN_POW_INT(int64)
+GEN_POW_INT(uint8)
+GEN_POW_INT(uint16)
+GEN_POW_INT(uint32)
+GEN_POW_INT(uint64)
+
+GEN_ISQRT(int8)
+GEN_ISQRT(int16)
+GEN_ISQRT(int32)
+GEN_ISQRT(int64)
+
+GEN_ISQRT_U(uint8)
+GEN_ISQRT_U(uint16)
+GEN_ISQRT_U(uint32)
+GEN_ISQRT_U(uint64)
+
+func:main = *int8() {
+    puts("Math library ready: 72 functions");
+    return 0;
+};

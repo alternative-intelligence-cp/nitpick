@@ -1,0 +1,523 @@
+// ============================================================================
+// Aria Standard Library - Bit Manipulation Functions (Simplified)
+// ============================================================================
+
+
+// Generate for all integer types
+
+    // Count number of set bits (population count / Hamming weight)
+    func:popcount_int8 = *int32(int8:x) {
+        int32:count = 0;
+        int8:val = x;
+        int32:i = 0;
+        
+        while (i < 8) {
+            if ((val & 1) != 0) {
+                count = count + 1;
+            }
+            val = val >> 1;
+            i = i + 1;
+        }
+        
+        return count;
+    };
+    
+    // Count leading zeros (CLZ)
+    func:clz_int8 = *int32(int8:x) {
+        if (x == 0) {
+            return 8;
+        }
+        
+        int32:count = 0;
+        int8:mask = 1 << (8 - 1);
+        
+        while ((x & mask) == 0) {
+            count = count + 1;
+            mask = mask >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Count trailing zeros (CTZ)
+    func:ctz_int8 = *int32(int8:x) {
+        if (x == 0) {
+            return 8;
+        }
+        
+        int32:count = 0;
+        int8:val = x;
+        
+        while ((val & 1) == 0) {
+            count = count + 1;
+            val = val >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Rotate left
+    func:rotl_int8 = *int8(int8:x, int32:n) {
+        int32:shift = n % 8;
+        if (shift == 0) {
+            return x;
+        }
+        
+        int8:left = x << shift;
+        int8:right = x >> (8 - shift);
+        return left | right;
+    };
+
+
+    // Count number of set bits (population count / Hamming weight)
+    func:popcount_int16 = *int32(int16:x) {
+        int32:count = 0;
+        int16:val = x;
+        int32:i = 0;
+        
+        while (i < 16) {
+            if ((val & 1) != 0) {
+                count = count + 1;
+            }
+            val = val >> 1;
+            i = i + 1;
+        }
+        
+        return count;
+    };
+    
+    // Count leading zeros (CLZ)
+    func:clz_int16 = *int32(int16:x) {
+        if (x == 0) {
+            return 16;
+        }
+        
+        int32:count = 0;
+        int16:mask = 1 << (16 - 1);
+        
+        while ((x & mask) == 0) {
+            count = count + 1;
+            mask = mask >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Count trailing zeros (CTZ)
+    func:ctz_int16 = *int32(int16:x) {
+        if (x == 0) {
+            return 16;
+        }
+        
+        int32:count = 0;
+        int16:val = x;
+        
+        while ((val & 1) == 0) {
+            count = count + 1;
+            val = val >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Rotate left
+    func:rotl_int16 = *int16(int16:x, int32:n) {
+        int32:shift = n % 16;
+        if (shift == 0) {
+            return x;
+        }
+        
+        int16:left = x << shift;
+        int16:right = x >> (16 - shift);
+        return left | right;
+    };
+
+
+    // Count number of set bits (population count / Hamming weight)
+    func:popcount_int32 = *int32(int32:x) {
+        int32:count = 0;
+        int32:val = x;
+        int32:i = 0;
+        
+        while (i < 32) {
+            if ((val & 1) != 0) {
+                count = count + 1;
+            }
+            val = val >> 1;
+            i = i + 1;
+        }
+        
+        return count;
+    };
+    
+    // Count leading zeros (CLZ)
+    func:clz_int32 = *int32(int32:x) {
+        if (x == 0) {
+            return 32;
+        }
+        
+        int32:count = 0;
+        int32:mask = 1 << (32 - 1);
+        
+        while ((x & mask) == 0) {
+            count = count + 1;
+            mask = mask >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Count trailing zeros (CTZ)
+    func:ctz_int32 = *int32(int32:x) {
+        if (x == 0) {
+            return 32;
+        }
+        
+        int32:count = 0;
+        int32:val = x;
+        
+        while ((val & 1) == 0) {
+            count = count + 1;
+            val = val >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Rotate left
+    func:rotl_int32 = *int32(int32:x, int32:n) {
+        int32:shift = n % 32;
+        if (shift == 0) {
+            return x;
+        }
+        
+        int32:left = x << shift;
+        int32:right = x >> (32 - shift);
+        return left | right;
+    };
+
+
+    // Count number of set bits (population count / Hamming weight)
+    func:popcount_int64 = *int32(int64:x) {
+        int32:count = 0;
+        int64:val = x;
+        int32:i = 0;
+        
+        while (i < 64) {
+            if ((val & 1) != 0) {
+                count = count + 1;
+            }
+            val = val >> 1;
+            i = i + 1;
+        }
+        
+        return count;
+    };
+    
+    // Count leading zeros (CLZ)
+    func:clz_int64 = *int32(int64:x) {
+        if (x == 0) {
+            return 64;
+        }
+        
+        int32:count = 0;
+        int64:mask = 1 << (64 - 1);
+        
+        while ((x & mask) == 0) {
+            count = count + 1;
+            mask = mask >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Count trailing zeros (CTZ)
+    func:ctz_int64 = *int32(int64:x) {
+        if (x == 0) {
+            return 64;
+        }
+        
+        int32:count = 0;
+        int64:val = x;
+        
+        while ((val & 1) == 0) {
+            count = count + 1;
+            val = val >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Rotate left
+    func:rotl_int64 = *int64(int64:x, int32:n) {
+        int32:shift = n % 64;
+        if (shift == 0) {
+            return x;
+        }
+        
+        int64:left = x << shift;
+        int64:right = x >> (64 - shift);
+        return left | right;
+    };
+
+
+    // Count number of set bits (population count / Hamming weight)
+    func:popcount_uint8 = *int32(uint8:x) {
+        int32:count = 0;
+        uint8:val = x;
+        int32:i = 0;
+        
+        while (i < 8) {
+            if ((val & 1) != 0) {
+                count = count + 1;
+            }
+            val = val >> 1;
+            i = i + 1;
+        }
+        
+        return count;
+    };
+    
+    // Count leading zeros (CLZ)
+    func:clz_uint8 = *int32(uint8:x) {
+        if (x == 0) {
+            return 8;
+        }
+        
+        int32:count = 0;
+        uint8:mask = 1 << (8 - 1);
+        
+        while ((x & mask) == 0) {
+            count = count + 1;
+            mask = mask >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Count trailing zeros (CTZ)
+    func:ctz_uint8 = *int32(uint8:x) {
+        if (x == 0) {
+            return 8;
+        }
+        
+        int32:count = 0;
+        uint8:val = x;
+        
+        while ((val & 1) == 0) {
+            count = count + 1;
+            val = val >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Rotate left
+    func:rotl_uint8 = *uint8(uint8:x, int32:n) {
+        int32:shift = n % 8;
+        if (shift == 0) {
+            return x;
+        }
+        
+        uint8:left = x << shift;
+        uint8:right = x >> (8 - shift);
+        return left | right;
+    };
+
+
+    // Count number of set bits (population count / Hamming weight)
+    func:popcount_uint16 = *int32(uint16:x) {
+        int32:count = 0;
+        uint16:val = x;
+        int32:i = 0;
+        
+        while (i < 16) {
+            if ((val & 1) != 0) {
+                count = count + 1;
+            }
+            val = val >> 1;
+            i = i + 1;
+        }
+        
+        return count;
+    };
+    
+    // Count leading zeros (CLZ)
+    func:clz_uint16 = *int32(uint16:x) {
+        if (x == 0) {
+            return 16;
+        }
+        
+        int32:count = 0;
+        uint16:mask = 1 << (16 - 1);
+        
+        while ((x & mask) == 0) {
+            count = count + 1;
+            mask = mask >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Count trailing zeros (CTZ)
+    func:ctz_uint16 = *int32(uint16:x) {
+        if (x == 0) {
+            return 16;
+        }
+        
+        int32:count = 0;
+        uint16:val = x;
+        
+        while ((val & 1) == 0) {
+            count = count + 1;
+            val = val >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Rotate left
+    func:rotl_uint16 = *uint16(uint16:x, int32:n) {
+        int32:shift = n % 16;
+        if (shift == 0) {
+            return x;
+        }
+        
+        uint16:left = x << shift;
+        uint16:right = x >> (16 - shift);
+        return left | right;
+    };
+
+
+    // Count number of set bits (population count / Hamming weight)
+    func:popcount_uint32 = *int32(uint32:x) {
+        int32:count = 0;
+        uint32:val = x;
+        int32:i = 0;
+        
+        while (i < 32) {
+            if ((val & 1) != 0) {
+                count = count + 1;
+            }
+            val = val >> 1;
+            i = i + 1;
+        }
+        
+        return count;
+    };
+    
+    // Count leading zeros (CLZ)
+    func:clz_uint32 = *int32(uint32:x) {
+        if (x == 0) {
+            return 32;
+        }
+        
+        int32:count = 0;
+        uint32:mask = 1 << (32 - 1);
+        
+        while ((x & mask) == 0) {
+            count = count + 1;
+            mask = mask >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Count trailing zeros (CTZ)
+    func:ctz_uint32 = *int32(uint32:x) {
+        if (x == 0) {
+            return 32;
+        }
+        
+        int32:count = 0;
+        uint32:val = x;
+        
+        while ((val & 1) == 0) {
+            count = count + 1;
+            val = val >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Rotate left
+    func:rotl_uint32 = *uint32(uint32:x, int32:n) {
+        int32:shift = n % 32;
+        if (shift == 0) {
+            return x;
+        }
+        
+        uint32:left = x << shift;
+        uint32:right = x >> (32 - shift);
+        return left | right;
+    };
+
+
+    // Count number of set bits (population count / Hamming weight)
+    func:popcount_uint64 = *int32(uint64:x) {
+        int32:count = 0;
+        uint64:val = x;
+        int32:i = 0;
+        
+        while (i < 64) {
+            if ((val & 1) != 0) {
+                count = count + 1;
+            }
+            val = val >> 1;
+            i = i + 1;
+        }
+        
+        return count;
+    };
+    
+    // Count leading zeros (CLZ)
+    func:clz_uint64 = *int32(uint64:x) {
+        if (x == 0) {
+            return 64;
+        }
+        
+        int32:count = 0;
+        uint64:mask = 1 << (64 - 1);
+        
+        while ((x & mask) == 0) {
+            count = count + 1;
+            mask = mask >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Count trailing zeros (CTZ)
+    func:ctz_uint64 = *int32(uint64:x) {
+        if (x == 0) {
+            return 64;
+        }
+        
+        int32:count = 0;
+        uint64:val = x;
+        
+        while ((val & 1) == 0) {
+            count = count + 1;
+            val = val >> 1;
+        }
+        
+        return count;
+    };
+    
+    // Rotate left
+    func:rotl_uint64 = *uint64(uint64:x, int32:n) {
+        int32:shift = n % 64;
+        if (shift == 0) {
+            return x;
+        }
+        
+        uint64:left = x << shift;
+        uint64:right = x >> (64 - shift);
+        return left | right;
+    };
+
+
+func:main = *int8() {
+    puts("Bit Operations Library: 32 functions compiled successfully!");
+    return 0;
+};

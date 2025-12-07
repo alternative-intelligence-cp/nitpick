@@ -1,0 +1,18 @@
+func:strcpy_unsafe = int32(wild int8@:dest, wild int8@:src) {
+    if (dest == 0) {
+        pass(0);
+    }
+    if (src == 0) {
+        dest[0] = 0;
+        pass(1);
+    }
+    
+    int32:i = 0;
+    till (src[i] == 0) {
+        dest[i] = src[i];
+        i = i + 1;
+    }
+    dest[i] = 0;  // Null terminator
+    
+    pass(i + 1);
+};

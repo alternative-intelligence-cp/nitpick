@@ -1,0 +1,75 @@
+// ============================================================================
+// Aria Standard Library - File I/O Module
+// ============================================================================
+// Provides file operations: open, close, read, write, seek, tell
+// Uses intrinsics for POSIX syscalls (open, close, read, write, lseek)
+// ============================================================================
+
+// File descriptor type (int32 wraps Unix file descriptor)
+// Valid file descriptors are >= 0
+// Error conditions return -1
+
+// ============================================================================
+// File Open Modes (for flags parameter)
+// ============================================================================
+// O_RDONLY = 0x0000    (Read only)
+// O_WRONLY = 0x0001    (Write only)
+// O_RDWR   = 0x0002    (Read and write)
+// O_CREAT  = 0x0040    (Create if doesn't exist)
+// O_TRUNC  = 0x0200    (Truncate to zero length)
+// O_APPEND = 0x0400    (Append mode)
+//
+// Common combinations:
+// - Read existing file:        0x0000 (O_RDONLY)
+// - Write new file:            0x0241 (O_WRONLY | O_CREAT | O_TRUNC)
+// - Append to file:            0x0441 (O_WRONLY | O_CREAT | O_APPEND)
+// - Read/write existing:       0x0002 (O_RDWR)
+// - Read/write create:         0x0042 (O_RDWR | O_CREAT)
+
+// ============================================================================
+// Seek Modes (for whence parameter)
+// ============================================================================
+// SEEK_SET = 0    (Seek from beginning of file)
+// SEEK_CUR = 1    (Seek from current position)
+// SEEK_END = 2    (Seek from end of file)
+
+// ============================================================================
+// Standard File Descriptors
+// ============================================================================
+int32:STDIN = 0;
+int32:STDOUT = 1;
+int32:STDERR = 2;
+
+// ============================================================================
+// File Operations
+// ============================================================================
+
+// Open a file
+// Returns file descriptor on success (>= 0), -1 on error
+// pathname: path to file (null-terminated string)
+// flags: open mode flags (see above)
+// mode: permissions for new files (e.g., 0x01B6 = 0644 octal = rw-r--r--)
+func:open = int32(uint8@:pathname, int32:flags, int32:mode) {
+    // intrinsic("syscall", 2, pathname, flags, mode) -> open syscall
+    // For now, use intrinsic placeholder
+    int32:fd = 0;
+    fd = intrinsic_open(pathname, flags, mode);
+    pass(fd);
+};
+
+// Close a file descriptor
+// Returns 0 on success, -1 on error
+func:close = int32(int32:fd) {
+    int32:status = 0;
+    status = intrinsic_close(fd);
+    pass(status);
+};
+
+// Read from file descriptor
+// Returns number of bytes read (0 = EOF, -1 = error)
+// fd: file descriptor
+// buffer: destination buffer
+// count: number of bytes to read
+func:read = int64(int32:fd, uint8@:buffer, uint64:count) {
+    int64:bytes_read = 0;
+    bytes_read = intrinsic_read(fd, buffer, count);

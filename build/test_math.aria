@@ -1,0 +1,33 @@
+// Test Advanced Math Functions
+func:sin_f32 = *flt32(flt32:x) {
+    return llvm_sin_f32(x);
+};
+
+func:cos_f32 = *flt32(flt32:x) {
+    return llvm_cos_f32(x);
+};
+
+func:sqrt_f32 = *flt32(flt32:x) {
+    return llvm_sqrt_f32(x);
+};
+
+func:pow_f32 = *flt32(flt32:x, flt32:y) {
+    return llvm_pow_f32(x, y);
+};
+
+func:main = *int8() {
+    // Test basic trig
+    flt32:pi = 3.14159;
+    flt32:s = sin_f32(pi);
+    flt32:c = cos_f32(pi);
+    
+    // Test sqrt
+    flt32:four = 4.0;
+    flt32:two = sqrt_f32(four);
+    
+    // Test pow
+    flt32:eight = pow_f32(two, 3.0);
+    
+    puts("Math tests passed!");
+    return 0;
+};

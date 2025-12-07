@@ -1,0 +1,245 @@
+// ============================================================================
+// Aria Standard Library - Bit Manipulation Functions
+// ============================================================================
+// Using proven collections.aria pattern: separate macro per function
+// ============================================================================
+
+// POPCOUNT - Count set bits
+%macro GEN_POPCOUNT_8 1
+func:popcount_%1 = *int32(%1:x) {
+    int32:count = 0;
+    %1:val = x;
+    int32:i = 0;
+    while (i < 8) {
+        if ((val & 1) != 0) {
+            count = count + 1;
+        }
+        val = val >> 1;
+        i = i + 1;
+    }
+    return count;
+};
+%endmacro
+
+%macro GEN_POPCOUNT_16 1
+func:popcount_%1 = *int32(%1:x) {
+    int32:count = 0;
+    %1:val = x;
+    int32:i = 0;
+    while (i < 16) {
+        if ((val & 1) != 0) {
+            count = count + 1;
+        }
+        val = val >> 1;
+        i = i + 1;
+    }
+    return count;
+};
+%endmacro
+
+%macro GEN_POPCOUNT_32 1
+func:popcount_%1 = *int32(%1:x) {
+    int32:count = 0;
+    %1:val = x;
+    int32:i = 0;
+    while (i < 32) {
+        if ((val & 1) != 0) {
+            count = count + 1;
+        }
+        val = val >> 1;
+        i = i + 1;
+    }
+    return count;
+};
+%endmacro
+
+%macro GEN_POPCOUNT_64 1
+func:popcount_%1 = *int32(%1:x) {
+    int32:count = 0;
+    %1:val = x;
+    int32:i = 0;
+    while (i < 64) {
+        if ((val & 1) != 0) {
+            count = count + 1;
+        }
+        val = val >> 1;
+        i = i + 1;
+    }
+    return count;
+};
+%endmacro
+
+// CLZ - Count leading zeros
+%macro GEN_CLZ_8 1
+func:clz_%1 = *int32(%1:x) {
+    if (x == 0) {
+        return 8;
+    }
+    int32:count = 0;
+    %1:mask = 1 << 7;
+    while ((x & mask) == 0) {
+        count = count + 1;
+        mask = mask >> 1;
+    }
+    return count;
+};
+%endmacro
+
+%macro GEN_CLZ_16 1
+func:clz_%1 = *int32(%1:x) {
+    if (x == 0) {
+        return 16;
+    }
+    int32:count = 0;
+    %1:mask = 1 << 15;
+    while ((x & mask) == 0) {
+        count = count + 1;
+        mask = mask >> 1;
+    }
+    return count;
+};
+%endmacro
+
+%macro GEN_CLZ_32 1
+func:clz_%1 = *int32(%1:x) {
+    if (x == 0) {
+        return 32;
+    }
+    int32:count = 0;
+    %1:mask = 1 << 31;
+    while ((x & mask) == 0) {
+        count = count + 1;
+        mask = mask >> 1;
+    }
+    return count;
+};
+%endmacro
+
+%macro GEN_CLZ_64 1
+func:clz_%1 = *int32(%1:x) {
+    if (x == 0) {
+        return 64;
+    }
+    int32:count = 0;
+    %1:mask = 1 << 63;
+    while ((x & mask) == 0) {
+        count = count + 1;
+        mask = mask >> 1;
+    }
+    return count;
+};
+%endmacro
+
+// CTZ - Count trailing zeros (same logic for all bit widths)
+%macro GEN_CTZ 1
+func:ctz_%1 = *int32(%1:x) {
+    if (x == 0) {
+        return 0;
+    }
+    int32:count = 0;
+    %1:val = x;
+    while ((val & 1) == 0) {
+        count = count + 1;
+        val = val >> 1;
+    }
+    return count;
+};
+%endmacro
+
+// ROTL - Rotate left
+%macro GEN_ROTL_8 1
+func:rotl_%1 = *%1(%1:x, int32:n) {
+    int32:shift = n % 8;
+    if (shift == 0) {
+        return x;
+    }
+    %1:left = x << shift;
+    %1:right = x >> (8 - shift);
+    return left | right;
+};
+%endmacro
+
+%macro GEN_ROTL_16 1
+func:rotl_%1 = *%1(%1:x, int32:n) {
+    int32:shift = n % 16;
+    if (shift == 0) {
+        return x;
+    }
+    %1:left = x << shift;
+    %1:right = x >> (16 - shift);
+    return left | right;
+};
+%endmacro
+
+%macro GEN_ROTL_32 1
+func:rotl_%1 = *%1(%1:x, int32:n) {
+    int32:shift = n % 32;
+    if (shift == 0) {
+        return x;
+    }
+    %1:left = x << shift;
+    %1:right = x >> (32 - shift);
+    return left | right;
+};
+%endmacro
+
+%macro GEN_ROTL_64 1
+func:rotl_%1 = *%1(%1:x, int32:n) {
+    int32:shift = n % 64;
+    if (shift == 0) {
+        return x;
+    }
+    %1:left = x << shift;
+    %1:right = x >> (64 - shift);
+    return left | right;
+};
+%endmacro
+
+// Generate for 8-bit types
+GEN_POPCOUNT_8(int8)
+GEN_CLZ_8(int8)
+GEN_CTZ(int8)
+GEN_ROTL_8(int8)
+
+GEN_POPCOUNT_8(uint8)
+GEN_CLZ_8(uint8)
+GEN_CTZ(uint8)
+GEN_ROTL_8(uint8)
+
+// Generate for 16-bit types
+GEN_POPCOUNT_16(int16)
+GEN_CLZ_16(int16)
+GEN_CTZ(int16)
+GEN_ROTL_16(int16)
+
+GEN_POPCOUNT_16(uint16)
+GEN_CLZ_16(uint16)
+GEN_CTZ(uint16)
+GEN_ROTL_16(uint16)
+
+// Generate for 32-bit types
+GEN_POPCOUNT_32(int32)
+GEN_CLZ_32(int32)
+GEN_CTZ(int32)
+GEN_ROTL_32(int32)
+
+GEN_POPCOUNT_32(uint32)
+GEN_CLZ_32(uint32)
+GEN_CTZ(uint32)
+GEN_ROTL_32(uint32)
+
+// Generate for 64-bit types
+GEN_POPCOUNT_64(int64)
+GEN_CLZ_64(int64)
+GEN_CTZ(int64)
+GEN_ROTL_64(int64)
+
+GEN_POPCOUNT_64(uint64)
+GEN_CLZ_64(uint64)
+GEN_CTZ(uint64)
+GEN_ROTL_64(uint64)
+
+func:main = *int8() {
+    puts("Bit Operations Library: 32 functions compiled successfully!");
+    return 0;
+};

@@ -1,0 +1,15 @@
+// Test macro parameter as type in variable declaration
+%macro MAKE_DOUBLER 1
+    func:double_%1 = %1(%1:x) {
+        %1:val = x;
+        %1:result = val + val;
+        pass(result);
+    };
+%endmacro
+
+MAKE_DOUBLER(int8)
+MAKE_DOUBLER(int16)
+
+func:main = int32() {
+    pass(0);
+};

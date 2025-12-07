@@ -1,0 +1,138 @@
+// ============================================================================
+// Aria Standard Library - String Manipulation Functions
+// ============================================================================
+// String operations: length, concat, substring, search, transform, etc.
+// Builds on character classification functions from string.aria
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// STRING LENGTH
+// ----------------------------------------------------------------------------
+
+// Get length of null-terminated string
+// Returns number of characters before null terminator
+func:strlen = int32(wild int8@:str) {
+    if (str == 0) {
+        pass(0);
+    }
+    
+    int32:len = 0;
+    wild int8@:ptr = str;
+    
+    till (ptr[0] == 0) {
+        len = len + 1;
+        ptr = ptr + 1;
+    }
+    
+    pass(len);
+};
+
+// ----------------------------------------------------------------------------
+// STRING COMPARISON
+// ----------------------------------------------------------------------------
+
+// Compare two strings
+// Returns: 0 if equal, <0 if str1 < str2, >0 if str1 > str2
+func:strcmp = int32(wild int8@:str1, wild int8@:str2) {
+    if (str1 == 0) {
+        if (str2 == 0) {
+            pass(0);
+        }
+        pass(-1);
+    }
+    if (str2 == 0) {
+        pass(1);
+    }
+    
+    int32:i = 0;
+    till (str1[i] == 0) {
+        if (str2[i] == 0) {
+            pass(str1[i]);  // str1 has more chars
+        }
+        if (str1[i] != str2[i]) {
+            pass(str1[i] - str2[i]);
+        }
+        i = i + 1;
+    }
+    
+    // str1 ended, check if str2 also ended
+    if (str2[i] == 0) {
+        pass(0);  // Equal
+    }
+    pass(-str2[i]);  // str2 has more chars
+};
+
+// Check if two strings are equal
+func:str_equals = int8(wild int8@:str1, wild int8@:str2) {
+    int32:cmp = strcmp(str1, str2);
+    if (cmp == 0) {
+        pass(1);
+    }
+    pass(0);
+};
+
+// ----------------------------------------------------------------------------
+// PREFIX/SUFFIX CHECKING
+// ----------------------------------------------------------------------------
+
+// Check if string starts with prefix
+func:starts_with = int8(wild int8@:str, wild int8@:prefix) {
+    if (str == 0) {
+        pass(0);
+    }
+    if (prefix == 0) {
+        pass(1);  // Empty prefix matches
+    }
+    
+    int32:i = 0;
+    till (prefix[i] == 0) {
+        if (str[i] == 0) {
+            pass(0);  // str ended before prefix
+        }
+        if (str[i] != prefix[i]) {
+            pass(0);
+        }
+        i = i + 1;
+    }
+    
+    pass(1);  // Matched entire prefix
+};
+
+// Check if string ends with suffix
+func:ends_with = int8(wild int8@:str, wild int8@:suffix) {
+    if (str == 0) {
+        pass(0);
+    }
+    if (suffix == 0) {
+        pass(1);  // Empty suffix matches
+    }
+    
+    int32:str_len = strlen(str);
+    int32:suf_len = strlen(suffix);
+    
+    if (suf_len > str_len) {
+        pass(0);
+    }
+    
+    // Compare from end backwards
+    int32:str_pos = str_len - 1;
+    int32:suf_pos = suf_len - 1;
+    
+    till (suf_pos < 0) {
+        if (str[str_pos] != suffix[suf_pos]) {
+            pass(0);
+        }
+        str_pos = str_pos - 1;
+        suf_pos = suf_pos - 1;
+    }
+    
+    pass(1);
+};
+
+// ----------------------------------------------------------------------------
+// SUBSTRING SEARCH
+// ----------------------------------------------------------------------------
+
+// Find first occurrence of character in string
+// Returns index or -1 if not found
+func:strchr = int32(wild int8@:str, int8:ch) {

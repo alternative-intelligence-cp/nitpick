@@ -1,0 +1,13 @@
+// Test macro generating function
+%macro MAKE_ADDER 1
+    func:add_%1 = int32(int32:x) {
+        pass(x + %1);
+    };
+%endmacro
+
+MAKE_ADDER(5)
+MAKE_ADDER(10)
+
+func:main = int32() {
+    pass(0);
+};

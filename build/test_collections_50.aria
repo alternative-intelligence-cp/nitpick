@@ -1,0 +1,133 @@
+// Collections Library - First 5 functions
+
+// 1. Contains
+%macro GEN_CONTAINS 1
+func:contains_%1 = *int8(%1[]:arr, int64:length, %1:value) {
+    int64:i = 0;
+    while (i < length) {
+        if (arr[i] == value) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+};
+%endmacro
+
+// 2. IndexOf
+%macro GEN_INDEXOF 1
+func:indexOf_%1 = *int64(%1[]:arr, int64:length, %1:value) {
+    int64:i = 0;
+    while (i < length) {
+        if (arr[i] == value) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+};
+%endmacro
+
+// 3. Count
+%macro GEN_COUNT 1
+func:count_%1 = *int64(%1[]:arr, int64:length, %1:value) {
+    int64:count = 0;
+    int64:i = 0;
+    while (i < length) {
+        if (arr[i] == value) {
+            count = count + 1;
+        }
+        i = i + 1;
+    }
+    return count;
+};
+%endmacro
+
+// 4. Reverse
+%macro GEN_REVERSE 1
+func:reverse_%1 = *int8(%1[]:arr, int64:length) {
+    int64:start = 0;
+    int64:end = length - 1;
+    while (start < end) {
+        %1:tmp = arr[start];
+        arr[start] = arr[end];
+        arr[end] = tmp;
+        start = start + 1;
+        end = end - 1;
+    }
+    return 0;
+};
+%endmacro
+
+// 5. Fill
+%macro GEN_FILL 1
+func:fill_%1 = *int8(%1[]:arr, int64:length, %1:value) {
+    int64:i = 0;
+    while (i < length) {
+        arr[i] = value;
+        i = i + 1;
+    }
+    return 0;
+};
+%endmacro
+
+// Generate for all 10 types
+GEN_CONTAINS(int8)
+GEN_CONTAINS(int16)
+GEN_CONTAINS(int32)
+GEN_CONTAINS(int64)
+GEN_CONTAINS(uint8)
+GEN_CONTAINS(uint16)
+GEN_CONTAINS(uint32)
+GEN_CONTAINS(uint64)
+GEN_CONTAINS(flt32)
+GEN_CONTAINS(flt64)
+
+GEN_INDEXOF(int8)
+GEN_INDEXOF(int16)
+GEN_INDEXOF(int32)
+GEN_INDEXOF(int64)
+GEN_INDEXOF(uint8)
+GEN_INDEXOF(uint16)
+GEN_INDEXOF(uint32)
+GEN_INDEXOF(uint64)
+GEN_INDEXOF(flt32)
+GEN_INDEXOF(flt64)
+
+GEN_COUNT(int8)
+GEN_COUNT(int16)
+GEN_COUNT(int32)
+GEN_COUNT(int64)
+GEN_COUNT(uint8)
+GEN_COUNT(uint16)
+GEN_COUNT(uint32)
+GEN_COUNT(uint64)
+GEN_COUNT(flt32)
+GEN_COUNT(flt64)
+
+GEN_REVERSE(int8)
+GEN_REVERSE(int16)
+GEN_REVERSE(int32)
+GEN_REVERSE(int64)
+GEN_REVERSE(uint8)
+GEN_REVERSE(uint16)
+GEN_REVERSE(uint32)
+GEN_REVERSE(uint64)
+GEN_REVERSE(flt32)
+GEN_REVERSE(flt64)
+
+GEN_FILL(int8)
+GEN_FILL(int16)
+GEN_FILL(int32)
+GEN_FILL(int64)
+GEN_FILL(uint8)
+GEN_FILL(uint16)
+GEN_FILL(uint32)
+GEN_FILL(uint64)
+GEN_FILL(flt32)
+GEN_FILL(flt64)
+
+func:main = *int8() {
+    puts("50 functions compiled!");
+    return 0;
+};

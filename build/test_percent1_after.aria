@@ -1,0 +1,15 @@
+%macro TEST 1
+func:test_%1 = *int32(%1:x) {
+    // Use %1 again after it was used in parameter
+    %1:temp = x;
+    // And again
+    %1:result = temp;
+    return result;
+};
+%endmacro
+
+TEST(int8)
+
+func:main = *int8() {
+    return 0;
+};

@@ -1,0 +1,553 @@
+// ============================================================================
+// Aria Standard Library - String Manipulation Functions
+// ============================================================================
+// String operations: length, concat, substring, search, transform, etc.
+// Builds on character classification functions from string.aria
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// STRING LENGTH
+// ----------------------------------------------------------------------------
+
+// Get length of null-terminated string
+// Returns number of characters before null terminator
+func:strlen = int32(wild int8:str) {
+    if (str == NULL) {
+        return 0;
+    }
+    
+    int32:len = 0;
+    wild int8:ptr = str;
+    
+    till (ptr[0] == 0) {
+        len = len + 1;
+        ptr = ptr + 1;
+    }
+    
+    return len;
+};
+
+// ----------------------------------------------------------------------------
+// STRING COMPARISON
+// ----------------------------------------------------------------------------
+
+// Compare two strings
+// Returns: 0 if equal, <0 if str1 < str2, >0 if str1 > str2
+func:strcmp = int32(wild int8:str1, wild int8:str2) {
+    if (str1 == NULL) {
+        if (str2 == NULL) {
+            return 0;
+        }
+        return -1;
+    }
+    if (str2 == NULL) {
+        return 1;
+    }
+    
+    int32:i = 0;
+    till (str1[i] == 0) {
+        if (str2[i] == 0) {
+            return str1[i];  // str1 has more chars
+        }
+        if (str1[i] != str2[i]) {
+            return str1[i] - str2[i];
+        }
+        i = i + 1;
+    }
+    
+    // str1 ended, check if str2 also ended
+    if (str2[i] == 0) {
+        return 0;  // Equal
+    }
+    return -str2[i];  // str2 has more chars
+};
+
+// Check if two strings are equal
+func:str_equals = int8(wild int8:str1, wild int8:str2) {
+    int32:cmp = strcmp(str1, str2);
+    if (cmp == 0) {
+        return 1;
+    }
+    return 0;
+};
+
+// ----------------------------------------------------------------------------
+// PREFIX/SUFFIX CHECKING
+// ----------------------------------------------------------------------------
+
+// Check if string starts with prefix
+func:starts_with = int8(wild int8:str, wild int8:prefix) {
+    if (str == NULL) {
+        return 0;
+    }
+    if (prefix == NULL) {
+        return 1;  // Empty prefix matches
+    }
+    
+    int32:i = 0;
+    till (prefix[i] == 0) {
+        if (str[i] == 0) {
+            return 0;  // str ended before prefix
+        }
+        if (str[i] != prefix[i]) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    
+    return 1;  // Matched entire prefix
+};
+
+// Check if string ends with suffix
+func:ends_with = int8(wild int8:str, wild int8:suffix) {
+    if (str == NULL) {
+        return 0;
+    }
+    if (suffix == NULL) {
+        return 1;  // Empty suffix matches
+    }
+    
+    int32:str_len = strlen(str);
+    int32:suf_len = strlen(suffix);
+    
+    if (suf_len > str_len) {
+        return 0;
+    }
+    
+    // Compare from end backwards
+    int32:str_pos = str_len - 1;
+    int32:suf_pos = suf_len - 1;
+    
+    till (suf_pos < 0) {
+        if (str[str_pos] != suffix[suf_pos]) {
+            return 0;
+        }
+        str_pos = str_pos - 1;
+        suf_pos = suf_pos - 1;
+    }
+    
+    return 1;
+};
+
+// ----------------------------------------------------------------------------
+// SUBSTRING SEARCH
+// ----------------------------------------------------------------------------
+
+// Find first occurrence of character in string
+// Returns index or -1 if not found
+func:strchr = int32(wild int8:str, int8:ch) {
+    if (str == NULL) {
+        return -1;
+    }
+    
+    int32:i = 0;
+    till (str[i] == 0) {
+        if (str[i] == ch) {
+            return i;
+        }
+        i = i + 1;
+    }
+    
+    return -1;
+};
+
+// Find last occurrence of character in string
+func:strrchr = int32(wild int8:str, int8:ch) {
+    if (str == NULL) {
+        return -1;
+    }
+    
+    int32:last = -1;
+    int32:i = 0;
+    
+    till (str[i] == 0) {
+        if (str[i] == ch) {
+            last = i;
+        }
+        i = i + 1;
+    }
+    
+    return last;
+};
+
+// Find first occurrence of substring
+// Returns starting index or -1 if not found
+func:indexOf = int32(wild int8:str, wild int8:substr) {
+    if (str == NULL) {
+        return -1;
+    }
+    if (substr == NULL) {
+        return 0;  // Empty substring matches at start
+    }
+    if (substr[0] == 0) {
+        return 0;  // Empty substring matches at start
+    }
+    
+    int32:str_len = strlen(str);
+    int32:sub_len = strlen(substr);
+    
+    if (sub_len > str_len) {
+        return -1;
+    }
+    
+    int32:max_start = str_len - sub_len;
+    int32:i = 0;
+    
+    till (i > max_start) {
+        // Check if substring matches at position i
+        int32:j = 0;
+        int8:match = 1;
+        
+        till (j >= sub_len) {
+            if (str[i + j] != substr[j]) {
+                match = 0;
+                j = sub_len;  // Break inner loop
+            }
+            j = j + 1;
+        }
+        
+        if (match == 1) {
+            return i;
+        }
+        
+        i = i + 1;
+    }
+    
+    return -1;
+};
+
+// Count occurrences of substring
+func:count_substr = int32(wild int8:str, wild int8:substr) {
+    if (str == NULL) {
+        return 0;
+    }
+    if (substr == NULL) {
+        return 0;
+    }
+    
+    int32:sub_len = strlen(substr);
+    if (sub_len == 0) {
+        return 0;
+    }
+    
+    int32:count = 0;
+    int32:pos = 0;
+    int32:found = indexOf(str, substr);
+    
+    till (found == -1) {
+        count = count + 1;
+        // Move past this occurrence
+        pos = pos + found + sub_len;
+        found = indexOf(str + pos, substr);
+    }
+    
+    return count;
+};
+
+// ----------------------------------------------------------------------------
+// CHARACTER COUNTING
+// ----------------------------------------------------------------------------
+
+// Count specific character in string
+func:count_char = int32(wild int8:str, int8:ch) {
+    if (str == NULL) {
+        return 0;
+    }
+    
+    int32:count = 0;
+    int32:i = 0;
+    
+    till (str[i] == 0) {
+        if (str[i] == ch) {
+            count = count + 1;
+        }
+        i = i + 1;
+    }
+    
+    return count;
+};
+
+// Count whitespace characters in string
+func:count_whitespace = int32(wild int8:str) {
+    if (str == NULL) {
+        return 0;
+    }
+    
+    int32:count = 0;
+    int32:i = 0;
+    
+    till (str[i] == 0) {
+        int8:ch = str[i];
+        // Check for space, tab, newline, carriage return
+        if (ch == 32) {
+            count = count + 1;
+        }
+        if (ch == 9) {
+            count = count + 1;
+        }
+        if (ch == 10) {
+            count = count + 1;
+        }
+        if (ch == 13) {
+            count = count + 1;
+        }
+        i = i + 1;
+    }
+    
+    return count;
+};
+
+// Count alphabetic characters
+func:count_alpha = int32(wild int8:str) {
+    if (str == NULL) {
+        return 0;
+    }
+    
+    int32:count = 0;
+    int32:i = 0;
+    
+    till (str[i] == 0) {
+        int8:ch = str[i];
+        // Check if A-Z or a-z
+        int8:is_upper = 0;
+        int8:is_lower = 0;
+        
+        if (ch >= 65) {
+            if (ch <= 90) {
+                is_upper = 1;
+            }
+        }
+        if (ch >= 97) {
+            if (ch <= 122) {
+                is_lower = 1;
+            }
+        }
+        
+        if (is_upper == 1) {
+            count = count + 1;
+        }
+        if (is_lower == 1) {
+            count = count + 1;
+        }
+        
+        i = i + 1;
+    }
+    
+    return count;
+};
+
+// Count digit characters (0-9)
+func:count_digits = int32(wild int8:str) {
+    if (str == NULL) {
+        return 0;
+    }
+    
+    int32:count = 0;
+    int32:i = 0;
+    
+    till (str[i] == 0) {
+        int8:ch = str[i];
+        if (ch >= 48) {
+            if (ch <= 57) {
+                count = count + 1;
+            }
+        }
+        i = i + 1;
+    }
+    
+    return count;
+};
+
+// ----------------------------------------------------------------------------
+// STRING VALIDATION
+// ----------------------------------------------------------------------------
+
+// Check if string contains only digits
+func:is_numeric = int8(wild int8:str) {
+    if (str == NULL) {
+        return 0;
+    }
+    if (str[0] == 0) {
+        return 0;  // Empty string is not numeric
+    }
+    
+    int32:i = 0;
+    till (str[i] == 0) {
+        int8:ch = str[i];
+        if (ch < 48) {
+            return 0;
+        }
+        if (ch > 57) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    
+    return 1;
+};
+
+// Check if string contains only alphabetic characters
+func:is_alphabetic = int8(wild int8:str) {
+    if (str == NULL) {
+        return 0;
+    }
+    if (str[0] == 0) {
+        return 0;  // Empty string
+    }
+    
+    int32:i = 0;
+    till (str[i] == 0) {
+        int8:ch = str[i];
+        int8:is_upper = 0;
+        int8:is_lower = 0;
+        
+        if (ch >= 65) {
+            if (ch <= 90) {
+                is_upper = 1;
+            }
+        }
+        if (ch >= 97) {
+            if (ch <= 122) {
+                is_lower = 1;
+            }
+        }
+        
+        if (is_upper == 0) {
+            if (is_lower == 0) {
+                return 0;
+            }
+        }
+        
+        i = i + 1;
+    }
+    
+    return 1;
+};
+
+// Check if string contains only alphanumeric characters
+func:is_alphanumeric = int8(wild int8:str) {
+    if (str == NULL) {
+        return 0;
+    }
+    if (str[0] == 0) {
+        return 0;  // Empty string
+    }
+    
+    int32:i = 0;
+    till (str[i] == 0) {
+        int8:ch = str[i];
+        int8:is_valid = 0;
+        
+        // Check digit (0-9)
+        if (ch >= 48) {
+            if (ch <= 57) {
+                is_valid = 1;
+            }
+        }
+        // Check uppercase (A-Z)
+        if (ch >= 65) {
+            if (ch <= 90) {
+                is_valid = 1;
+            }
+        }
+        // Check lowercase (a-z)
+        if (ch >= 97) {
+            if (ch <= 122) {
+                is_valid = 1;
+            }
+        }
+        
+        if (is_valid == 0) {
+            return 0;
+        }
+        
+        i = i + 1;
+    }
+    
+    return 1;
+};
+
+// Check if string contains only whitespace
+func:is_whitespace_str = int8(wild int8:str) {
+    if (str == NULL) {
+        return 0;
+    }
+    if (str[0] == 0) {
+        return 1;  // Empty string is all whitespace
+    }
+    
+    int32:i = 0;
+    till (str[i] == 0) {
+        int8:ch = str[i];
+        int8:is_ws = 0;
+        
+        if (ch == 32) { is_ws = 1; }  // space
+        if (ch == 9) { is_ws = 1; }   // tab
+        if (ch == 10) { is_ws = 1; }  // newline
+        if (ch == 13) { is_ws = 1; }  // carriage return
+        
+        if (is_ws == 0) {
+            return 0;
+        }
+        
+        i = i + 1;
+    }
+    
+    return 1;
+};
+
+// ----------------------------------------------------------------------------
+// STRING COPYING (helper for in-place operations)
+// ----------------------------------------------------------------------------
+
+// Copy string from src to dest (unsafe - no bounds checking)
+// Returns number of characters copied (including null terminator)
+func:strcpy_unsafe = int32(wild int8:dest, wild int8:src) {
+    if (dest == NULL) {
+        return 0;
+    }
+    if (src == NULL) {
+        dest[0] = 0;
+        return 1;
+    }
+    
+    int32:i = 0;
+    till (src[i] == 0) {
+        dest[i] = src[i];
+        i = i + 1;
+    }
+    dest[i] = 0;  // Null terminator
+    
+    return i + 1;
+};
+
+// Copy up to n characters from src to dest
+func:strncpy_unsafe = int32(wild int8:dest, wild int8:src, int32:n) {
+    if (dest == NULL) {
+        return 0;
+    }
+    if (n <= 0) {
+        return 0;
+    }
+    if (src == NULL) {
+        dest[0] = 0;
+        return 1;
+    }
+    
+    int32:i = 0;
+    till (i >= n) {
+        if (src[i] == 0) {
+            dest[i] = 0;
+            return i + 1;
+        }
+        dest[i] = src[i];
+        i = i + 1;
+    }
+    
+    // Ensure null termination
+    if (i < n) {
+        dest[i] = 0;
+    }
+    
+    return i;
+};

@@ -1,0 +1,17 @@
+// Simple string function to trigger LLVM bug
+
+func:strlen = int32(int8@:str) {
+    if (str == 0) {
+        return 0;
+    }
+    
+    int32:len = 0;
+    int8@:ptr = str;
+    
+    till (ptr[0] == 0) {
+        len = len + 1;
+        ptr = ptr + 1;
+    }
+    
+    return len;
+};

@@ -1,0 +1,16 @@
+%macro GEN_TEST 1
+func:test_%1 = *int8(%1[]:arr, int64:length) {
+    int64:i = 0;
+    while (i < length) {
+        i = i + 1;
+    }
+    return 0;
+};
+%endmacro
+
+GEN_TEST(int8)
+GEN_TEST(int32)
+
+func:main = *int8() {
+    return 0;
+};

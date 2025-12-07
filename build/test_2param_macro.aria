@@ -1,0 +1,13 @@
+%macro TEST_MACRO 2
+func:test_%1 = *int32(%1:x) {
+    int32:bits = %2;
+    return bits;
+};
+%endmacro
+
+TEST_MACRO(int8, 8)
+TEST_MACRO(int32, 32)
+
+func:main = *int8() {
+    return 0;
+};

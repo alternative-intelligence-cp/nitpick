@@ -1,0 +1,18 @@
+// Test COPY function
+%macro GEN_COPY 1
+func:copy_%1 = *int8(%1[]:dest, %1[]:src, int64:length) {
+    int64:i = 0;
+    while (i < length) {
+        dest[i] = src[i];
+        i = i + 1;
+    }
+    return 0;
+};
+%endmacro
+
+GEN_COPY(int32)
+
+func:main = *int8() {
+    puts("COPY compiled!");
+    return 0;
+};

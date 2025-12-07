@@ -1,0 +1,17 @@
+// Test single macro expansion
+%macro GEN_TEST 1
+func:test_%1 = *int8(%1[]:arr, int64:length, %1:value) {
+    int64:i = 0;
+    if (arr[i] == value) {
+        return 1;
+    }
+    return 0;
+};
+%endmacro
+
+GEN_TEST(int32)
+
+func:main = *int8() {
+    puts("Compiled!");
+    return 0;
+};

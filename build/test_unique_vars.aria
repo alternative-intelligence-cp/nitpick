@@ -1,0 +1,24 @@
+%macro GEN_POP1 1
+func:popcount_%1 = *int32(%1:x) {
+    int32:count1 = 0;
+    %1:value1 = x;
+    return count1;
+};
+%endmacro
+
+%macro GEN_POP2 1
+func:clz_%1 = *int32(%1:x) {
+    int32:count2 = 0;
+    %1:value2 = x;
+    return count2;
+};
+%endmacro
+
+GEN_POP1(int8)
+GEN_POP2(int8)
+GEN_POP1(uint8)
+GEN_POP2(uint8)
+
+func:main = *int8() {
+    return 0;
+};

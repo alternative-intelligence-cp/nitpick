@@ -1,0 +1,41 @@
+; ModuleID = 'aria_module'
+source_filename = "aria_module"
+
+@z = internal global double 0.000000e+00
+@s = internal global double 0.000000e+00
+@c = internal global double 0.000000e+00
+
+declare void @puts(ptr)
+
+declare void @print(ptr)
+
+define internal void @__aria_module_init() {
+entry:
+  %calltmp = call double @llvm.pow.f64(double 2.000000e+00, double 8.000000e+00)
+  %calltmp1 = call double @llvm.pow.f64(double 2.000000e+00, double 8.000000e+00)
+  store double %calltmp1, ptr @z, align 8
+  %calltmp2 = call double @llvm.sqrt.f64(double 1.600000e+01)
+  %calltmp3 = call double @llvm.sqrt.f64(double 1.600000e+01)
+  store double %calltmp3, ptr @s, align 8
+  %calltmp4 = call double @llvm.cos.f64(double 0.000000e+00)
+  %calltmp5 = call double @llvm.cos.f64(double 0.000000e+00)
+  store double %calltmp5, ptr @c, align 8
+  ret void
+}
+
+; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare double @llvm.pow.f64(double, double) #0
+
+; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare double @llvm.sqrt.f64(double) #0
+
+; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare double @llvm.cos.f64(double) #0
+
+define i64 @main() {
+entry:
+  call void @__aria_module_init()
+  ret i64 0
+}
+
+attributes #0 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }

@@ -1,95 +1,28 @@
-// Aria Runtime Assembler (ARA) - Working Implementation
-// x86-64 machine code generation (simplified without struct returns)
-
-// Register constants
-int8:RAX = 0;
-int8:RCX = 1;
-int8:RDX = 2;
-int8:RBX = 3;
-int8:RSP = 4;
-int8:RBP = 5;
-int8:RSI = 6;
-int8:RDI = 7;
-int8:R8  = 8;
-int8:R9  = 9;
-int8:R10 = 10;
-int8:R11 = 11;
-int8:R12 = 12;
-int8:R13 = 13;
-int8:R14 = 14;
-int8:R15 = 15;
-
 // ============================================================================
-// REX Prefix Calculation  
+// Aria Standard Library - Bit Manipulation Functions
 // ============================================================================
-func:calc_rex = uint8(int8:w, int8:r, int8:x, int8:b) {
-    uint8:rex = 0x40;
-    
-    if (w != 0) {
-        rex |= 0x08;
-    }
-    if (r != 0) {
-        rex |= 0x04;
-    }
-    if (x != 0) {
-        rex |= 0x02;
-    }
-    if (b != 0) {
-        rex |= 0x01;
-    }
-    
-    pass(rex);
-};
-
+// Bitwise operations, bit counting, rotation, and manipulation
+// Generated for all integer types using macros
 // ============================================================================
-// ModR/M Byte Calculation
-// ============================================================================
-func:calc_modrm = uint8(int8:modval, int8:regval, int8:rmval) {
-    uint8:output = 0;
-    
-    uint8:mod_u8 = (uint8)modval;
-    uint8:reg_u8 = (uint8)regval;
-    uint8:rm_u8 = (uint8)rmval;
-    
-    // Split complex expressions to avoid parser issues with parentheses + shift
-    uint8:mod_bits = mod_u8 & 0x03;
-    output = mod_bits << 6;
-    
-    uint8:reg_bits = reg_u8 & 0x07;
-    uint8:reg_shifted = reg_bits << 3;
-    output |= reg_shifted;
-    
-    uint8:rm_bits = rm_u8 & 0x07;
-    output |= rm_bits;
-    
-    pass(output);
-};
-
-// ============================================================================
-// Emit MOV instruction (register to register)
-// ============================================================================
-func:emit_mov = int64(uint8@ :buffer, int64:offset, int8:dst, int8:src) {
-    // MOV dst, src
-    // Encoding: REX.W + 89 /r
-    
-    int8:w = 1;
-    int8:r_ext = (src >> 3) & 1;
-    int8:b_ext = (dst >> 3) & 1;
-    
-    result:rex_result = calc_rex(w, r_ext, 0, b_ext);
-    uint8:rex = (uint8)rex_result.val;
-    result:modrm_result = calc_modrm(3, src & 7, dst & 7);
-    uint8:modrm = (uint8)modrm_result.val;
-    
-    buffer[offset] = (int8)rex;
-    buffer[offset + 1] = (int8)0x89;
-    buffer[offset + 2] = (int8)modrm;
-    
-    pass(offset + 3);
-};
 
 
-func:main = int8() {
-    uint8@ :code = 0;
-    pass(0);
-};
+// Generate for all integer types
+
+    // Count number of set bits (population count / Hamming weight)
+    func:popcount_int8 = *int32(int8:x) {
+        int32:count = 0;
+        int8:val = x;
+        int32:i = 0;
+        
+        while (i < 8) {
+            if ((val & 1) != 0) {
+                count = count + 1;
+            }
+            val = val >> 1;
+            i = i + 1;
+        }
+        
+        return count;
+    };
+    
+func:main = *int8() { return 0; };

@@ -1,0 +1,19 @@
+%macro GEN_TEST 2
+func:test_%1 = *int32(%1:x) {
+    int32:limit = %2 - 1;
+    return limit;
+};
+%endmacro
+
+GEN_TEST(int8, 8)
+GEN_TEST(int16, 16)
+GEN_TEST(int32, 32)
+GEN_TEST(int64, 64)
+GEN_TEST(uint8, 8)
+GEN_TEST(uint16, 16)
+GEN_TEST(uint32, 32)
+GEN_TEST(uint64, 64)
+
+func:main = *int8() {
+    return 0;
+};

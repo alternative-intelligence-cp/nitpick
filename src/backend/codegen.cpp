@@ -37,6 +37,7 @@
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/InlineAsm.h>
+#include <llvm/IR/Intrinsics.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
@@ -210,6 +211,18 @@ public:
         if (ariaType == "int256" || ariaType == "uint256") return Type::getIntNTy(llvmContext, 256);
         if (ariaType == "int512" || ariaType == "uint512") return Type::getIntNTy(llvmContext, 512);
         
+        // Twisted Balanced Binary (TBB) types - symmetric range with error sentinel
+        // tbb8: [-127, +127] with -128 (0x80) as ERR
+        // tbb16: [-32767, +32767] with -32768 (0x8000) as ERR
+        // tbb32: [-2147483647, +2147483647] with -2147483648 (0x80000000) as ERR
+        // tbb64: [-9223372036854775807, +9223372036854775807] with min as ERR
+        // NOTE: Storage representation is identical to standard int types (two's complement)
+        // Semantic difference is in arithmetic operations and range validation
+        if (ariaType == "tbb8") return Type::getInt8Ty(llvmContext);
+        if (ariaType == "tbb16") return Type::getInt16Ty(llvmContext);
+        if (ariaType == "tbb32") return Type::getInt32Ty(llvmContext);
+        if (ariaType == "tbb64") return Type::getInt64Ty(llvmContext);
+        
         // Float types (all bit widths)
         if (ariaType == "float" || ariaType == "flt32") 
             return Type::getFloatTy(llvmContext);
@@ -381,7 +394,10 @@ public:
                 savedSymbols.push_back({argName, existingSym});
             }
             
-            ctx.define(argName, alloca, true);
+            // Store parameter with its Aria type from the lambda parameter list
+            std::string paramAriaType = lambda->parameters[idx].type;
+            ctx.define(argName, alloca, true, paramAriaType);
+            idx++; // Increment for next parameter
         }
         
         // Generate lambda body
@@ -1234,6 +1250,9 @@ public:
         if (auto* lit = dynamic_cast<aria::frontend::IntLiteral*>(node)) {
             return ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), lit->value);
         }
+        if (auto* flit = dynamic_cast<aria::frontend::FloatLiteral*>(node)) {
+            return ConstantFP::get(Type::getDoubleTy(ctx.llvmContext), flit->value);
+        }
         if (auto* blit = dynamic_cast<aria::frontend::BoolLiteral*>(node)) {
             return ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), blit->value ? 1 : 0);
         }
@@ -1377,8 +1396,16 @@ public:
                 if (!sym->ariaType.empty()) {
                     Type* loadType = ctx.getLLVMType(sym->ariaType);
                     
+                    // For dynamic array parameters (uint8[], int64[], etc.), load the pointer value
+                    // These are represented as pointers in LLVM, not array types
+                    // Check this FIRST before isArrayTy() to handle parameter arrays correctly
+                    size_t bracketPos = sym->ariaType.find("[]");
+                    if (bracketPos != std::string::npos) {
+                        // This is a dynamic array parameter - load the pointer
+                        return ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), sym->val, var->name + "_ptr");
+                    } 
                     // For array types, return pointer to first element instead of loading the array
-                    if (loadType->isArrayTy()) {
+                    else if (loadType->isArrayTy()) {
                         // For heap allocations, we need to load the heap pointer first
                         // sym->val is a stack location holding a pointer to the heap data
                         if (sym->strategy == CodeGenContext::AllocStrategy::WILD || 
@@ -1418,9 +1445,13 @@ public:
                     if (sym->strategy == CodeGenContext::AllocStrategy::STACK) {
                         return ctx.builder->CreateLoad(loadType, sym->val);
                     }
+                    
+                    // Fallback: use loadType from ariaType if available
+                    // This handles parameters and other allocations
+                    return ctx.builder->CreateLoad(loadType, sym->val);
                 }
                 
-                // Fallback (shouldn't happen with proper type tracking)
+                // Ultimate fallback if no ariaType is set (shouldn't happen)
                 return ctx.builder->CreateLoad(Type::getInt64Ty(ctx.llvmContext), sym->val);
             }
             return sym->val; // PHI or direct value
@@ -1522,6 +1553,11 @@ public:
                 } else if (funcName == "aria_free_exec") {
                     callee = getOrInsertAriaFreeExec();
                 }
+            }
+            
+            // If LLVM intrinsic (llvm_*), declare it now
+            if (!callee && funcName.substr(0, 5) == "llvm_") {
+                callee = declareLLVMIntrinsic(funcName);
             }
             
             if (!callee && !calleePtr) {
@@ -1669,13 +1705,6 @@ public:
                             throw std::runtime_error("Undefined variable: " + varRef->name);
                         }
                         
-                        // Load the pointer from the alloca
-                        arrayPtr = ctx.builder->CreateLoad(
-                            PointerType::getUnqual(ctx.llvmContext),
-                            sym->val,
-                            varRef->name + "_ptr"
-                        );
-                        
                         // Get element type from Aria type string
                         std::string ariaType = sym->ariaType;
                         size_t bracketPos = ariaType.find('[');
@@ -1685,6 +1714,34 @@ public:
                         } else {
                             // Not an array type? Default to i8
                             elementType = Type::getInt8Ty(ctx.llvmContext);
+                        }
+                        
+                        // Get array pointer - strategy determines how
+                        // Check for dynamic array parameters (T[]) first
+                        if (ariaType.find("[]") != std::string::npos) {
+                            // Dynamic array parameter: sym->val is alloca holding pointer
+                            // Load the pointer value
+                            arrayPtr = ctx.builder->CreateLoad(
+                                PointerType::getUnqual(ctx.llvmContext),
+                                sym->val,
+                                varRef->name + "_ptr"
+                            );
+                        } else if (sym->strategy == CodeGenContext::AllocStrategy::WILD || 
+                            sym->strategy == CodeGenContext::AllocStrategy::GC) {
+                            // Heap allocated: sym->val is ptr to ptr, need to load heap pointer
+                            arrayPtr = ctx.builder->CreateLoad(
+                                PointerType::getUnqual(ctx.llvmContext),
+                                sym->val,
+                                varRef->name + "_ptr"
+                            );
+                        } else {
+                            // Stack allocated: sym->val is ptr to array, use directly
+                            Type* arrayType = ctx.getLLVMType(ariaType);
+                            Value* indices[] = {
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0),
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0)
+                            };
+                            arrayPtr = ctx.builder->CreateGEP(arrayType, sym->val, indices, varRef->name + "_ptr");
                         }
                     } else {
                         throw std::runtime_error("Array assignment requires variable reference");
@@ -1848,26 +1905,59 @@ public:
             
             switch (binop->op) {
                 case aria::frontend::BinaryOp::ADD:
+                    if (L->getType()->isFloatingPointTy()) {
+                        return ctx.builder->CreateFAdd(L, R, "addtmp");
+                    }
                     return ctx.builder->CreateAdd(L, R, "addtmp");
                 case aria::frontend::BinaryOp::SUB:
+                    if (L->getType()->isFloatingPointTy()) {
+                        return ctx.builder->CreateFSub(L, R, "subtmp");
+                    }
                     return ctx.builder->CreateSub(L, R, "subtmp");
                 case aria::frontend::BinaryOp::MUL:
+                    if (L->getType()->isFloatingPointTy()) {
+                        return ctx.builder->CreateFMul(L, R, "multmp");
+                    }
                     return ctx.builder->CreateMul(L, R, "multmp");
                 case aria::frontend::BinaryOp::DIV:
+                    if (L->getType()->isFloatingPointTy()) {
+                        return ctx.builder->CreateFDiv(L, R, "divtmp");
+                    }
                     return ctx.builder->CreateSDiv(L, R, "divtmp");
                 case aria::frontend::BinaryOp::MOD:
+                    if (L->getType()->isFloatingPointTy()) {
+                        return ctx.builder->CreateFRem(L, R, "modtmp");
+                    }
                     return ctx.builder->CreateSRem(L, R, "modtmp");
                 case aria::frontend::BinaryOp::EQ:
+                    if (L->getType()->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOEQ(L, R, "eqtmp");
+                    }
                     return ctx.builder->CreateICmpEQ(L, R, "eqtmp");
                 case aria::frontend::BinaryOp::NE:
+                    if (L->getType()->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpONE(L, R, "netmp");
+                    }
                     return ctx.builder->CreateICmpNE(L, R, "netmp");
                 case aria::frontend::BinaryOp::LT:
+                    if (L->getType()->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOLT(L, R, "lttmp");
+                    }
                     return ctx.builder->CreateICmpSLT(L, R, "lttmp");
                 case aria::frontend::BinaryOp::GT:
+                    if (L->getType()->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOGT(L, R, "gttmp");
+                    }
                     return ctx.builder->CreateICmpSGT(L, R, "gttmp");
                 case aria::frontend::BinaryOp::LE:
+                    if (L->getType()->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOLE(L, R, "letmp");
+                    }
                     return ctx.builder->CreateICmpSLE(L, R, "letmp");
                 case aria::frontend::BinaryOp::GE:
+                    if (L->getType()->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOGE(L, R, "getmp");
+                    }
                     return ctx.builder->CreateICmpSGE(L, R, "getmp");
                 case aria::frontend::BinaryOp::LOGICAL_AND:
                     return ctx.builder->CreateAnd(L, R, "andtmp");
@@ -2072,19 +2162,16 @@ public:
             
             // Try to find the array variable in symbol table to get its Aria type
             if (auto* varRef = dynamic_cast<aria::frontend::VarExpr*>(idx->array.get())) {
-                for (auto it = ctx.scopeStack.rbegin(); it != ctx.scopeStack.rend(); ++it) {
-                    auto found = it->find(varRef->name);
-                    if (found != it->end()) {
-                        // Found the variable, parse its Aria type to get element type
-                        std::string ariaType = found->second.ariaType;
-                        
-                        // Parse array type: "int64[5]" -> element type is "int64"
-                        size_t bracketPos = ariaType.find('[');
-                        if (bracketPos != std::string::npos) {
-                            ariaElementType = ariaType.substr(0, bracketPos);
-                            elementType = ctx.getLLVMType(ariaElementType);
-                        }
-                        break;
+                auto* sym = ctx.lookup(varRef->name);
+                if (sym && !sym->ariaType.empty()) {
+                    // Found the variable, parse its Aria type to get element type
+                    std::string ariaType = sym->ariaType;
+                    
+                    // Parse array type: "int64[5]" or "int64[]" -> element type is "int64"
+                    size_t bracketPos = ariaType.find('[');
+                    if (bracketPos != std::string::npos) {
+                        ariaElementType = ariaType.substr(0, bracketPos);
+                        elementType = ctx.getLLVMType(ariaElementType);
                     }
                 }
             }
@@ -2241,7 +2328,10 @@ public:
                     savedSymbols.push_back({argName, existingSym});
                 }
                 
-                ctx.define(argName, alloca, true);
+                // Store parameter with its Aria type from the lambda parameter list
+                std::string paramAriaType = lambda->parameters[idx].type;
+                ctx.define(argName, alloca, true, paramAriaType);
+                idx++; // Increment for next parameter
             }
             
             // 7. Generate lambda body
@@ -2484,6 +2574,7 @@ public:
     }
     
     void visit(IntLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::FloatLiteral* node) override {} // Handled by visitExpr()
     void visit(BoolLiteral* node) override {} // Handled by visitExpr()
     void visit(NullLiteral* node) override {} // Handled by visitExpr()
     void visit(frontend::StringLiteral* node) override {} // Handled by visitExpr()
@@ -2639,6 +2730,55 @@ private:
         return Function::Create(
             FunctionType::get(PointerType::getUnqual(ctx.llvmContext), args, false),
             Function::ExternalLinkage, "aria_gc_alloc", ctx.module.get());
+    }
+    
+    // Helper: Declare LLVM intrinsic functions
+    Function* declareLLVMIntrinsic(const std::string& name) {
+        // Map function names to LLVM intrinsics
+        // Format: llvm_<intrinsic>_<type>
+        
+        // Extract intrinsic name and type
+        std::string intrName;
+        Type* argType = nullptr;
+        
+        if (name.find("_f32") != std::string::npos) {
+            argType = Type::getFloatTy(ctx.llvmContext);
+            intrName = name.substr(5, name.length() - 9); // Remove "llvm_" and "_f32"
+        } else if (name.find("_f64") != std::string::npos) {
+            argType = Type::getDoubleTy(ctx.llvmContext);
+            intrName = name.substr(5, name.length() - 9); // Remove "llvm_" and "_f64"
+        } else {
+            return nullptr;
+        }
+        
+        // Map intrinsic names to LLVM Intrinsic IDs
+        Intrinsic::ID intrID = Intrinsic::not_intrinsic;
+        int numArgs = 1;  // Most math intrinsics take 1 argument
+        
+        if (intrName == "sin") intrID = Intrinsic::sin;
+        else if (intrName == "cos") intrID = Intrinsic::cos;
+        else if (intrName == "exp") intrID = Intrinsic::exp;
+        else if (intrName == "exp2") intrID = Intrinsic::exp2;
+        else if (intrName == "log") intrID = Intrinsic::log;
+        else if (intrName == "log2") intrID = Intrinsic::log2;
+        else if (intrName == "log10") intrID = Intrinsic::log10;
+        else if (intrName == "sqrt") intrID = Intrinsic::sqrt;
+        else if (intrName == "ceil") intrID = Intrinsic::ceil;
+        else if (intrName == "floor") intrID = Intrinsic::floor;
+        else if (intrName == "round") intrID = Intrinsic::round;
+        else if (intrName == "trunc") intrID = Intrinsic::trunc;
+        else if (intrName == "fabs") intrID = Intrinsic::fabs;
+        else if (intrName == "minnum") { intrID = Intrinsic::minnum; numArgs = 2; }
+        else if (intrName == "maxnum") { intrID = Intrinsic::maxnum; numArgs = 2; }
+        else if (intrName == "copysign") { intrID = Intrinsic::copysign; numArgs = 2; }
+        else if (intrName == "pow") { intrID = Intrinsic::pow; numArgs = 2; }
+        else if (intrName == "fma") { intrID = Intrinsic::fma; numArgs = 3; }
+        else {
+            return nullptr;  // Unknown intrinsic
+        }
+        
+        // Declare the intrinsic with appropriate overload type
+        return Intrinsic::getDeclaration(ctx.module.get(), intrID, {argType});
     }
     
     Function* getOrInsertAriaAllocExec() {

@@ -1,0 +1,20 @@
+%macro GEN_MULTI 1
+func:test_a_%1 = *int32(%1:x) {
+    return x + 1;
+};
+
+func:test_b_%1 = *int32(%1:x) {
+    return x + 2;
+};
+
+func:test_c_%1 = *int32(%1:x) {
+    return x + 3;
+};
+%endmacro
+
+GEN_MULTI(int8)
+GEN_MULTI(int32)
+
+func:main = *int8() {
+    return 0;
+};

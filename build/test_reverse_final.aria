@@ -1,0 +1,25 @@
+// Just test reverse
+%macro GEN_REVERSE 1
+func:reverse_%1 = *int8(%1[]:arr, int64:length) {
+    int64:start = 0;
+    int64:end = 0;
+    int64:one = 1;
+    end = length;
+    end = end - one;
+    while (start < end) {
+        %1:tmp = arr[start];
+        arr[start] = arr[end];
+        arr[end] = tmp;
+        start = start + one;
+        end = end - one;
+    }
+    return 0;
+};
+%endmacro
+
+GEN_REVERSE(int32)
+
+func:main = *int8() {
+    puts("Reverse works!");
+    return 0;
+};

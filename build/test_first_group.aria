@@ -1,0 +1,71 @@
+%macro GEN_POPCOUNT_8 1
+func:popcount_%1 = *int32(%1:x) {
+    int32:count = 0;
+    %1:val = x;
+    int32:i = 0;
+    while (i < 8) {
+        if ((val & 1) != 0) {
+            count = count + 1;
+        }
+        val = val >> 1;
+        i = i + 1;
+    }
+    return count;
+};
+%endmacro
+
+%macro GEN_CLZ_8 1
+func:clz_%1 = *int32(%1:x) {
+    if (x == 0) {
+        return 8;
+    }
+    int32:count = 0;
+    %1:mask = 1 << 7;
+    while ((x & mask) == 0) {
+        count = count + 1;
+        mask = mask >> 1;
+    }
+    return count;
+};
+%endmacro
+
+%macro GEN_CTZ 1
+func:ctz_%1 = *int32(%1:x) {
+    if (x == 0) {
+        return 0;
+    }
+    int32:count = 0;
+    %1:val = x;
+    while ((val & 1) == 0) {
+        count = count + 1;
+        val = val >> 1;
+    }
+    return count;
+};
+%endmacro
+
+%macro GEN_ROTL_8 1
+func:rotl_%1 = *%1(%1:x, int32:n) {
+    int32:shift = n % 8;
+    if (shift == 0) {
+        return x;
+    }
+    %1:left = x << shift;
+    %1:right = x >> (8 - shift);
+    return left | right;
+};
+%endmacro
+
+GEN_POPCOUNT_8(int8)
+GEN_CLZ_8(int8)
+GEN_CTZ(int8)
+GEN_ROTL_8(int8)
+
+GEN_POPCOUNT_8(uint8)
+GEN_CLZ_8(uint8)
+GEN_CTZ(uint8)
+GEN_ROTL_8(uint8)
+
+func:main = *int8() {
+    return 0;
+};
