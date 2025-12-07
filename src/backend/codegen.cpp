@@ -19,6 +19,7 @@
  */
 
 #include "codegen.h"
+#include "codegen_tbb.h"
 #include "../frontend/ast.h"
 #include "../frontend/ast/stmt.h"
 #include "../frontend/ast/expr.h"
@@ -108,6 +109,10 @@ public:
         AllocStrategy strategy; // How was this allocated?
     };
     std::vector<std::map<std::string, Symbol>> scopeStack;
+    
+    // Expression type tracking: Maps LLVM Value* to its Aria type
+    // This is critical for TBB safety - we need to know if a value is TBB to apply sticky error propagation
+    std::map<Value*, std::string> exprTypeMap;
     
     // Struct metadata: Maps struct name to field name->index mapping
     std::map<std::string, std::map<std::string, unsigned>> structFieldMaps;
@@ -1443,12 +1448,22 @@ public:
                     
                     // For stack allocations, direct load from alloca
                     if (sym->strategy == CodeGenContext::AllocStrategy::STACK) {
-                        return ctx.builder->CreateLoad(loadType, sym->val);
+                        Value* loaded = ctx.builder->CreateLoad(loadType, sym->val);
+                        // Track the type for TBB safety
+                        if (!sym->ariaType.empty()) {
+                            ctx.exprTypeMap[loaded] = sym->ariaType;
+                        }
+                        return loaded;
                     }
                     
                     // Fallback: use loadType from ariaType if available
                     // This handles parameters and other allocations
-                    return ctx.builder->CreateLoad(loadType, sym->val);
+                    Value* loaded = ctx.builder->CreateLoad(loadType, sym->val);
+                    // Track the type for TBB safety
+                    if (!sym->ariaType.empty()) {
+                        ctx.exprTypeMap[loaded] = sym->ariaType;
+                    }
+                    return loaded;
                 }
                 
                 // Ultimate fallback if no ariaType is set (shouldn't happen)
@@ -1886,6 +1901,20 @@ public:
             
             if (!L || !R) return nullptr;
             
+            // Determine if we're working with TBB types
+            // Check the expression type map first, then fall back to introspection
+            std::string leftType = "";
+            std::string rightType = "";
+            
+            if (ctx.exprTypeMap.count(L)) {
+                leftType = ctx.exprTypeMap[L];
+            }
+            if (ctx.exprTypeMap.count(R)) {
+                rightType = ctx.exprTypeMap[R];
+            }
+            
+            bool isTBBOperation = TBBLowerer::isTBBType(leftType) || TBBLowerer::isTBBType(rightType);
+            
             // Type promotion: if operands have different integer types, promote to larger type
             if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
                 Type* LType = L->getType();
@@ -1897,12 +1926,51 @@ public:
                     // Promote smaller type to larger type
                     if (LBits < RBits) {
                         L = ctx.builder->CreateSExtOrTrunc(L, RType);
+                        leftType = rightType;  // Update type after promotion
                     } else {
                         R = ctx.builder->CreateSExtOrTrunc(R, LType);
+                        rightType = leftType;  // Update type after promotion
                     }
                 }
             }
             
+            // TBB-aware arithmetic operations
+            // If either operand is a TBB type, use TBBLowerer for sticky error propagation
+            if (isTBBOperation && L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
+                TBBLowerer tbbLowerer(ctx);
+                Value* result = nullptr;
+                
+                switch (binop->op) {
+                    case aria::frontend::BinaryOp::ADD:
+                        result = tbbLowerer.createAdd(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::SUB:
+                        result = tbbLowerer.createSub(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::MUL:
+                        result = tbbLowerer.createMul(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::DIV:
+                        result = tbbLowerer.createDiv(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::MOD:
+                        result = tbbLowerer.createMod(L, R);
+                        break;
+                    default:
+                        // For non-arithmetic operations (comparisons, bitwise, etc.),
+                        // fall through to standard handling below
+                        isTBBOperation = false;  // Not an arithmetic op
+                        break;
+                }
+                
+                if (result) {
+                    // Track the result type
+                    ctx.exprTypeMap[result] = leftType.empty() ? rightType : leftType;
+                    return result;
+                }
+            }
+            
+            // Standard operations (non-TBB or comparison/logical operations)
             switch (binop->op) {
                 case aria::frontend::BinaryOp::ADD:
                     if (L->getType()->isFloatingPointTy()) {

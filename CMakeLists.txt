@@ -68,6 +68,7 @@ add_executable(ariac
  src/frontend/sema/type_checker.cpp    # Type Checking Implementation
  # src/frontend/ast/control_flow.cpp  # TODO: Create when implementing control flow AST nodes
  src/backend/codegen.cpp
+ src/backend/codegen_tbb.cpp           # TBB Sticky Error Propagation (v0.0.7 Critical Fix)
  src/backend/lowering_ternary.cpp  # AVX-512 Lowering Logic
 )
 
