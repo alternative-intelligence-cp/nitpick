@@ -115,6 +115,9 @@ public:
     virtual void visit(WhenExpr* node) { /* default: do nothing */ }
     virtual void visit(AwaitExpr* node) { /* default: do nothing */ }
     
+    // Async/await support (Bug #70)
+    virtual void visit(AsyncBlock* node) { /* default: do nothing */ }
+    
     // Module system (Bugs #73-75)
     virtual void visit(UseStmt* node) { /* default: do nothing */ }
     virtual void visit(ModDef* node) { /* default: do nothing */ }
