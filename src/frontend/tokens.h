@@ -214,6 +214,7 @@ enum TokenType {
     TOKEN_AT,               // @ (also TOKEN_ADDRESS per spec)
     TOKEN_HASH,             // # (also TOKEN_PIN per spec)
     TOKEN_DOLLAR,           // $ (also TOKEN_ITERATION per spec)
+    TOKEN_DIRECTIVE,        // @directive (compiler directive like @inline)
     TOKEN_QUESTION,         // ? (base question mark)
     TOKEN_UNWRAP,           // ? (unwrap operator - context dependent)
     TOKEN_SAFE_NAV,         // ?. (safe navigation)

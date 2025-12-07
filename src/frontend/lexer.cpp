@@ -173,17 +173,62 @@ Token AriaLexer::nextToken() {
 
                std::string directive = parseIdentifier();
 
-               // TODO: Implement proper directive whitelist
-               // Currently blocks 'tesla' as placeholder (per spec: reject @tesla_sync)
-               // Should be replaced with comprehensive directive validation:
-               // - Known directives: inline, noinline, pack, align, etc.
-               // - Everything else: check in parser if it's a valid @ address-of
-               if (directive.find("tesla") != std::string::npos)
-                   return {TOKEN_INVALID, "ILLEGAL_SYMBOL", line, col};
+               // DIRECTIVE WHITELIST (v0.0.7 Security Fix)
+               // Comprehensive list of valid compiler directives
+               // If a directive is not in this whitelist, we treat @ as address-of operator
+               static const std::set<std::string> valid_directives = {
+                   // Function attributes
+                   "inline",           // Force inline expansion
+                   "noinline",         // Prevent inlining
+                   "pure",             // Function has no side effects
+                   "const",            // Function result depends only on arguments
+                   "volatile",         // Access volatile memory
+                   
+                   // Memory and alignment
+                   "pack",             // Pack struct fields tightly
+                   "align",            // Specify alignment
+                   "section",          // Place symbol in specific section
+                   
+                   // Visibility and linkage
+                   "export",           // Export symbol for dynamic linking
+                   "import",           // Import external symbol
+                   "external",         // External linkage
+                   "internal",         // Internal linkage
+                   
+                   // Optimization hints
+                   "optimize",         // Optimization level hints
+                   "target",           // Target-specific code generation
+                   "frame_pointer",    // Control frame pointer generation
+                   "hot",              // Frequently executed code
+                   "cold",             // Rarely executed code
+                   "likely",           // Branch prediction hint
+                   "unlikely",         // Branch prediction hint
+                   
+                   // Safety and analysis
+                   "unsafe",           // Mark unsafe operations
+                   "trusted",          // Trusted code (skip some checks)
+                   "deprecated",       // Deprecated API
+                   
+                   // Platform-specific
+                   "x86",              // x86-specific code
+                   "arm",              // ARM-specific code
+                   "riscv",            // RISC-V specific code
+               };
 
-               // If it's just @varname, it's valid but we need to verify
-               // in parser phase. For lexer, we just emit TOKEN_AT.
-               // We reset all position state to let the parser consume the identifier next.
+               if (valid_directives.find(directive) != valid_directives.end()) {
+                   // It is a valid directive - return as TOKEN_DIRECTIVE
+                   return {TOKEN_DIRECTIVE, "@" + directive, saved_line, saved_col};
+               }
+
+               // Check for reserved/illegal directives (security)
+               // Reject directives containing "tesla" or starting with "internal_"
+               if (directive.find("tesla") != std::string::npos ||
+                   directive.find("internal_") == 0) {
+                   return {TOKEN_INVALID, "ILLEGAL_DIRECTIVE: @" + directive, saved_line, saved_col};
+               }
+
+               // If not a valid directive, treat @ as address-of operator
+               // Backtrack to allow parser to handle @ as operator and identifier as operand
                pos = saved_pos;
                line = saved_line;
                col = saved_col;
