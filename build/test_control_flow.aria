@@ -1,0 +1,196 @@
+// ============================================================================
+// Test Suite: Control Flow Metaprogramming Macros
+// ============================================================================
+// Tests all control flow patterns from lib/meta/control_flow.aria
+// ============================================================================
+
+%include "../lib/meta/control_flow.aria"
+
+// ----------------------------------------------------------------------------
+// Test 1: Simple IF/ELSE/END_IF
+// ----------------------------------------------------------------------------
+func:test_if_else(x int32) -> int32 {
+    int32:result = 0
+    
+    %IF x > 10
+        result = 100
+    %ELSE
+        result = 50
+    %END_IF
+    
+    return result
+}
+
+
+// ----------------------------------------------------------------------------
+// Test 2: IF/ELIF/ELSE/END_IF Chain
+// ----------------------------------------------------------------------------
+func:test_elif(x int32) -> int32 {
+    int32:result = 0
+    
+    %IF x == 1
+        result = 10
+    %ELIF x == 2
+        result = 20
+    %ELIF x == 3
+        result = 30
+    %ELSE
+        result = 99
+    %END_IF
+    
+    return result
+}
+
+
+// ----------------------------------------------------------------------------
+// Test 3: WHILE Loop
+// ----------------------------------------------------------------------------
+func:test_while() -> int32 {
+    int32:counter = 0
+    int32:sum = 0
+    
+    %WHILE counter < 5
+        sum = sum + counter
+        counter = counter + 1
+    %END_WHILE
+    
+    return sum  // Should be 0+1+2+3+4 = 10
+}
+
+
+// ----------------------------------------------------------------------------
+// Test 4: FOR Loop (Ascending)
+// ----------------------------------------------------------------------------
+func:test_for() -> int32 {
+    int32:sum = 0
+    int32:i
+    
+    %FOR i 0 5
+        sum = sum + i
+    %END_FOR i
+    
+    return sum  // Should be 0+1+2+3+4 = 10
+}
+
+
+// ----------------------------------------------------------------------------
+// Test 5: FOR_STEP Loop
+// ----------------------------------------------------------------------------
+func:test_for_step() -> int32 {
+    int32:sum = 0
+    int32:i
+    
+    %FOR_STEP i 0 10 2
+        sum = sum + i
+    %END_FOR_STEP i 2
+    
+    return sum  // Should be 0+2+4+6+8 = 20
+}
+
+
+// ----------------------------------------------------------------------------
+// Test 6: FOR_DOWN Loop (Descending)
+// ----------------------------------------------------------------------------
+func:test_for_down() -> int32 {
+    int32:sum = 0
+    int32:i
+    
+    %FOR_DOWN i 5 0
+        sum = sum + i
+    %END_FOR_DOWN i
+    
+    return sum  // Should be 5+4+3+2+1 = 15
+}
+
+
+// ----------------------------------------------------------------------------
+// Test 7: Nested Control Flow
+// ----------------------------------------------------------------------------
+func:test_nested() -> int32 {
+    int32:total = 0
+    int32:i
+    int32:j
+    
+    %FOR i 0 3
+        %FOR j 0 3
+            %IF i == j
+                total = total + 1
+            %END_IF
+        %END_FOR j
+    %END_FOR i
+    
+    return total  // Should be 3 (diagonal matches)
+}
+
+
+// ----------------------------------------------------------------------------
+// Main: Run All Tests
+// ----------------------------------------------------------------------------
+func:main() -> int32 {
+    // Test 1: IF/ELSE
+    int32:result1 = func:test_if_else(15)
+    %IF result1 == 100
+        func:print_str("✓ Test 1 (IF/ELSE with x>10): PASSED\n")
+    %ELSE
+        func:print_str("✗ Test 1 (IF/ELSE): FAILED\n")
+    %END_IF
+    
+    int32:result1b = func:test_if_else(5)
+    %IF result1b == 50
+        func:print_str("✓ Test 1b (IF/ELSE with x<10): PASSED\n")
+    %ELSE
+        func:print_str("✗ Test 1b (IF/ELSE): FAILED\n")
+    %END_IF
+    
+    // Test 2: ELIF
+    int32:result2 = func:test_elif(2)
+    %IF result2 == 20
+        func:print_str("✓ Test 2 (ELIF): PASSED\n")
+    %ELSE
+        func:print_str("✗ Test 2 (ELIF): FAILED\n")
+    %END_IF
+    
+    // Test 3: WHILE
+    int32:result3 = func:test_while()
+    %IF result3 == 10
+        func:print_str("✓ Test 3 (WHILE): PASSED\n")
+    %ELSE
+        func:print_str("✗ Test 3 (WHILE): FAILED\n")
+    %END_IF
+    
+    // Test 4: FOR
+    int32:result4 = func:test_for()
+    %IF result4 == 10
+        func:print_str("✓ Test 4 (FOR): PASSED\n")
+    %ELSE
+        func:print_str("✗ Test 4 (FOR): FAILED\n")
+    %END_IF
+    
+    // Test 5: FOR_STEP
+    int32:result5 = func:test_for_step()
+    %IF result5 == 20
+        func:print_str("✓ Test 5 (FOR_STEP): PASSED\n")
+    %ELSE
+        func:print_str("✗ Test 5 (FOR_STEP): FAILED\n")
+    %END_IF
+    
+    // Test 6: FOR_DOWN
+    int32:result6 = func:test_for_down()
+    %IF result6 == 15
+        func:print_str("✓ Test 6 (FOR_DOWN): PASSED\n")
+    %ELSE
+        func:print_str("✗ Test 6 (FOR_DOWN): FAILED\n")
+    %END_IF
+    
+    // Test 7: Nested
+    int32:result7 = func:test_nested()
+    %IF result7 == 3
+        func:print_str("✓ Test 7 (NESTED): PASSED\n")
+    %ELSE
+        func:print_str("✗ Test 7 (NESTED): FAILED\n")
+    %END_IF
+    
+    func:print_str("\n🎉 All control flow macro tests complete!\n")
+    
+    return 0
+}

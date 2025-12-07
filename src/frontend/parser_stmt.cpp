@@ -1,9 +1,10 @@
 // Implementation of Statement Parsing
-// Handles: defer statements and block parsing
+// Handles: defer statements, block parsing, and loop statements
 #include "parser.h"
 #include "ast.h"
 #include "ast/stmt.h"
 #include "ast/defer.h"
+#include "ast/loops.h"
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -78,6 +79,94 @@ std::unique_ptr<Statement> Parser::parseDeferStmt() {
     return std::make_unique<DeferStmt>(std::move(body));
 }
 
+// Parse while loop: while (condition) { ... }
+std::unique_ptr<Statement> Parser::parseWhileLoop() {
+    expect(TOKEN_KW_WHILE);
+    expect(TOKEN_LPAREN);
+    auto condition = parseExpr();
+    expect(TOKEN_RPAREN);
+    auto body = parseBlockOrStatement();
+    
+    return std::make_unique<WhileLoop>(std::move(condition), std::move(body));
+}
+
+// Parse for loop: for x in collection { ... }
+std::unique_ptr<Statement> Parser::parseForLoop() {
+    expect(TOKEN_KW_FOR);
+    
+    Token iter_token = expect(TOKEN_IDENTIFIER);
+    std::string iterator_name = iter_token.value;
+    
+    expect(TOKEN_KW_IN);
+    auto iterable = parseExpr();
+    
+    auto body = parseBlockOrStatement();
+    
+    return std::make_unique<ForLoop>(iterator_name, std::move(iterable), std::move(body));
+}
+
+// Parse till loop: till(limit, step) { ... }
+std::unique_ptr<Statement> Parser::parseTillLoop() {
+    expect(TOKEN_KW_TILL);
+    expect(TOKEN_LPAREN);
+    
+    auto limit = parseExpr();
+    
+    // Step is optional, defaults to 1
+    std::unique_ptr<Expression> step = std::make_unique<IntLiteral>(1);
+    if (match(TOKEN_COMMA)) {
+        step = parseExpr();
+    }
+    
+    expect(TOKEN_RPAREN);
+    auto body = parseBlockOrStatement();
+    
+    return std::make_unique<TillLoop>(std::move(limit), std::move(step), std::move(body));
+}
+
+// Parse when loop: when(condition) { ... }
+// Note: when is a conditional loop that keeps iterating while condition is true
+std::unique_ptr<Statement> Parser::parseWhenLoop() {
+    expect(TOKEN_KW_WHEN);
+    expect(TOKEN_LPAREN);
+    auto condition = parseExpr();
+    expect(TOKEN_RPAREN);
+    auto body = parseBlockOrStatement();
+    
+    // For now, treat when loop as while loop (they're semantically similar)
+    return std::make_unique<WhileLoop>(std::move(condition), std::move(body));
+}
+
+// Parse break statement: break; or break(label);
+std::unique_ptr<Statement> Parser::parseBreak() {
+    expect(TOKEN_KW_BREAK);
+    
+    std::string label = "";
+    if (match(TOKEN_LPAREN)) {
+        Token label_token = expect(TOKEN_IDENTIFIER);
+        label = label_token.value;
+        expect(TOKEN_RPAREN);
+    }
+    
+    match(TOKEN_SEMICOLON);  // Optional semicolon
+    return std::make_unique<BreakStmt>(label);
+}
+
+// Parse continue statement: continue; or continue(label);
+std::unique_ptr<Statement> Parser::parseContinue() {
+    expect(TOKEN_KW_CONTINUE);
+    
+    std::string label = "";
+    if (match(TOKEN_LPAREN)) {
+        Token label_token = expect(TOKEN_IDENTIFIER);
+        label = label_token.value;
+        expect(TOKEN_RPAREN);
+    }
+    
+    match(TOKEN_SEMICOLON);  // Optional semicolon
+    return std::make_unique<ContinueStmt>(label);
+}
+
 std::unique_ptr<Block> Parser::parseBlock() {
     expect(TOKEN_LBRACE);
     
@@ -104,6 +193,22 @@ std::unique_ptr<Block> Parser::parseBlock() {
     
     expect(TOKEN_RBRACE);
     return block;
+}
+
+// Parse either a block {...} or a single statement
+// Used for if/else/while/for bodies to allow one-liner syntax
+std::unique_ptr<Block> Parser::parseBlockOrStatement() {
+    if (current.type == TOKEN_LBRACE) {
+        return parseBlock();
+    } else {
+        // Single statement - wrap it in a block
+        auto block = std::make_unique<Block>();
+        auto stmt = parseStmt();
+        if (stmt) {
+            block->statements.push_back(std::move(stmt));
+        }
+        return block;
+    }
 }
 
 // Parse variable declaration: type:name = value;
@@ -155,16 +260,62 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         return std::make_unique<ReturnStmt>(std::move(retVal));
     }
     
+    // fail(errorCode) - Syntactic sugar for return {err:errorCode, val:0}
+    if (match(TOKEN_KW_FAIL)) {
+        expect(TOKEN_LPAREN);
+        auto errorCode = parseExpr();
+        expect(TOKEN_RPAREN);
+        match(TOKEN_SEMICOLON);  // Optional semicolon
+        
+        // Create: {err: errorCode, val: 0}
+        auto obj = std::make_unique<ObjectLiteral>();
+        
+        ObjectLiteral::Field errField;
+        errField.name = "err";
+        errField.value = std::move(errorCode);
+        obj->fields.push_back(std::move(errField));
+        
+        ObjectLiteral::Field valField;
+        valField.name = "val";
+        valField.value = std::make_unique<IntLiteral>(0);
+        obj->fields.push_back(std::move(valField));
+        
+        return std::make_unique<ReturnStmt>(std::move(obj));
+    }
+    
+    // pass(value) - Syntactic sugar for return {err:0, val:value}
+    if (match(TOKEN_KW_PASS)) {
+        expect(TOKEN_LPAREN);
+        auto value = parseExpr();
+        expect(TOKEN_RPAREN);
+        match(TOKEN_SEMICOLON);  // Optional semicolon
+        
+        // Create: {err: 0, val: value}
+        auto obj = std::make_unique<ObjectLiteral>();
+        
+        ObjectLiteral::Field errField;
+        errField.name = "err";
+        errField.value = std::make_unique<IntLiteral>(0);
+        obj->fields.push_back(std::move(errField));
+        
+        ObjectLiteral::Field valField;
+        valField.name = "val";
+        valField.value = std::move(value);
+        obj->fields.push_back(std::move(valField));
+        
+        return std::make_unique<ReturnStmt>(std::move(obj));
+    }
+    
     // If statement
     if (match(TOKEN_KW_IF)) {
         expect(TOKEN_LPAREN);
         auto condition = parseExpr();
         expect(TOKEN_RPAREN);
-        auto then_block = parseBlock();
+        auto then_block = parseBlockOrStatement();
         
         std::unique_ptr<Block> else_block = nullptr;
         if (match(TOKEN_KW_ELSE)) {
-            else_block = parseBlock();
+            else_block = parseBlockOrStatement();
         }
         
         return std::make_unique<IfStmt>(std::move(condition), std::move(then_block), std::move(else_block));

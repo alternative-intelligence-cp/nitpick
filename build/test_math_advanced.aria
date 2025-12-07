@@ -1,0 +1,55 @@
+// Test advanced math functions with while loops
+
+// Test integer power
+func:test_pow = *int8() {
+    int32:result = pow_int32(2, 10) ? 0;  // 2^10 = 1024
+    if (result != 1024) {
+        return 1;
+    }
+    
+    int32:result2 = pow_int32(5, 3) ? 0;  // 5^3 = 125
+    if (result2 != 125) {
+        return 2;
+    }
+    
+    int32:result3 = pow_int32(10, 0) ? 0;  // 10^0 = 1
+    if (result3 != 1) {
+        return 3;
+    }
+    
+    return 0;
+};
+
+// Test integer square root
+func:test_isqrt = *int8() {
+    int32:result = isqrt_int32(144) ? 0;  // sqrt(144) = 12
+    if (result != 12) {
+        return 1;
+    }
+    
+    int32:result2 = isqrt_int32(100) ? 0;  // sqrt(100) = 10
+    if (result2 != 10) {
+        return 2;
+    }
+    
+    int32:result3 = isqrt_int32(1) ? 0;  // sqrt(1) = 1
+    if (result3 != 1) {
+        return 3;
+    }
+    
+    return 0;
+};
+
+func:main = *int8() {
+    int8:r1 = test_pow() ? 0;
+    if (r1 != 0) {
+        return r1;
+    }
+    
+    int8:r2 = test_isqrt() ? 0;
+    if (r2 != 0) {
+        return r2 + 10;
+    }
+    
+    return 0;  // All tests passed!
+};

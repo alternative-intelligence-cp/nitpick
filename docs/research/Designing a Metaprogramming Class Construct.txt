@@ -1,0 +1,526 @@
+﻿Architectural Specification and Implementation Strategy for the Aria Object-Oriented Macro System
+1. Executive Summary
+The evolution of systems programming languages is characterized by a continuous tension between the requirement for granular hardware control—typified by assembly languages—and the necessity for high-level abstractions that manage software complexity, such as Object-Oriented Programming (OOP). The Aria programming language, defined by its version 0.0.6 specifications, occupies a unique position in this landscape.1 It offers a "batteries-included" standard library, advanced concurrency primitives like spawn and fork, and a hybrid memory model supporting both garbage collection and manual "wild" memory management. However, Aria currently lacks a native, high-level syntactic construct for defining complex data types and their associated behaviors, effectively forcing developers to rely on manual structure definitions and procedural function calls.
+This research report presents a comprehensive architectural design for a robust, class-based metaprogramming library within the Aria ecosystem. The proposed system, designated as the Aria Object Model (AOM), leverages the Turing-complete capabilities of the NASM-style preprocessor—specifically its context stack, token rotation, and conditional expansion mechanisms—to implement a fully functional class system.1 This system parses a JSON-like syntax (%CLASS ({... })) specified by the user and compiles it into zero-overhead, ABI-compliant assembly code.
+The analysis demonstrates that by treating the preprocessor not merely as a text substitution engine but as a single-pass, recursive-descent compiler, it is possible to bridge the gap between Aria’s low-level "wild" roots and the high-level expressivity requested by the developer.3 The report details the implementation of encapsulation (private/public), lifecycle management (constructors/destructors), and polymorphism, while paying special attention to Aria’s exotic features, such as balanced ternary logic (trit, tryte) and hybrid memory safety.1 The resulting architecture provides a blueprint for elevating Aria from a macro-assembler dialect to a structured systems language capable of supporting large-scale software engineering.
+2. Theoretical Foundations of Preprocessor Metaprogramming
+The implementation of a high-level class construct within an assembly preprocessor requires a fundamental shift in how macro systems are conceptualized. Traditionally, macros are viewed as static templates: a fixed input produces a fixed output. However, the user's request for a syntax like %CLASS ({ name: typeName,... }) necessitates a dynamic parsing approach, where the input is treated as a stream of tokens that determines the state of the parser.
+2.1 The Preprocessor as a Virtual Machine
+To implement the AOM, the NASM preprocessor must be utilized as a rudimentary Virtual Machine (VM). This VM maintains the state of the class definition process, tracks variable scopes, and manages the nesting of code blocks. The core components of this preprocessor-VM are:
+* The Context Stack (%push, %pop): This serves as the primary mechanism for state management. When the parser enters a class definition, it pushes a ctx_class context. When it enters a method, it pushes a ctx_method context. This allows the macro engine to know effectively "where" it is in the parsing process and to define labels that are local to that specific context.1
+* Token Consumption and Rotation (%rotate): The user's input is provided as a variable-length list of tokens. The preprocessor cannot access these tokens by random access (e.g., argv). Instead, it must iterate through them sequentially. The %rotate 1 directive shifts the argument list, moving the second token to the first position (%1). This allows the macro to "consume" the input stream token by token, akin to a tape in a Turing machine.5
+* Conditional Logic (%if, %ifidni): These directives act as the control flow for the parser, allowing it to branch based on the current token (e.g., "Is the current token public? If so, switch state to PUBLIC_SECTION").
+2.2 Syntactic Analysis and JSON Parsing
+The user's requested syntax mimics JSON, using braces {} for block delimitation and colons : for key-value association. Parsing this in a line-oriented assembler preprocessor presents specific challenges.
+* The Comma Constraint: NASM macros typically separate arguments with commas. A syntax like { name: typeName } might be interpreted as a single string argument if enclosed in braces, or as a sequence of tokens if passed openly. To support the most natural syntax, the implementation will utilize a "Token Muncher" pattern. The user passes a stream of tokens, and the macro iteratively identifies syntactic markers ({, }, :) to structure the parsing.2
+* Recursive Descent: Since classes can contain methods, and methods can contain code blocks (and potentially nested classes or anonymous structs), the parser must be recursive. The implementation will utilize %rmacro (recursive macro) capabilities or simulate recursion via the context stack to handle arbitrary nesting depths.7
+2.3 Integration with the Aria Type System
+Aria’s type system is heterogeneous, supporting standard binary types and exotic ternary types. The AOM must handle these natively during the structure definition phase.
+Aria Type Category
+	Examples
+	Storage Implications
+	Macro Responsibility
+	Binary Integer
+	int8, int64, uint32
+	Standard alignment (1, 4, 8 bytes).
+	Use resb, resd, resq.
+	Floating Point
+	flt32, flt64
+	Standard IEEE-754 alignment.
+	Use resd, resq with SSE alignment.
+	Balanced Ternary
+	trit, tryte
+	Non-standard storage. 1 trit $\approx$ 1.58 bits.
+	Must implement Bit-Packing to store multiple trits in a single container.
+	Nonary
+	nit, nyte
+	Base-9 logic.
+	Similar to ternary; requires specialized accessor generation.
+	Pointers
+	wild int*, gc obj
+	64-bit address space.
+	Differentiate between raw pointers and GC-roots for scanning.
+	The following sections detail the step-by-step architecture required to build this system, moving from the low-level parsing engine to the high-level semantic constructs.
+3. The Lexer and Parser Engine
+The core of the proposed solution is the macro engine capable of ingesting the user's JSON-like syntax. This engine transforms the linear sequence of tokens into semantic actions (defining a struct, creating a label, emitting instructions).
+3.1 The "Token Muncher" Pattern
+The entry point is the %CLASS macro. This macro does not immediately generate code; instead, it initializes the parser state and begins iterating through the input.
+Architectural Insight: To handle the JSON syntax { name: typeName }, we effectively ignore the structural characters ({, }, ,, :) during the raw consumption phase, treating them as state transition triggers rather than data. The presence of a colon : signals that the preceding token was a key and the succeeding token is a value.
+Reference Implementation Logic (Parser Loop)
+The following pseudo-code describes the logic required within the NASM preprocessor to implement the token loop.5
+
+
+Code snippet
+
+
+
+
+%macro _CLASS_PARSER_LOOP 0
+   %rep %0
+       ; %1 is the current token at the head of the stream
+       
+       ; 1. Check for State Transitions
+       %ifidni %1, {
+           ; Enter block scope
+           %push block_context
+       %elifidni %1, }
+           ; Exit block scope
+           %pop
+       
+       ; 2. Check for Keywords (Keys)
+       %elifidni %1, name
+           %define %$expecting_name 1
+       %elifidni %1, private
+           %assign %$visibility 0
+       %elifidni %1, public
+           %assign %$visibility 1
+       %elifidni %1, constructor
+           ; Signal that we are starting constructor definition
+           _BEGIN_CONSTRUCTOR
+           
+       ; 3. Handle Values based on Expectation Flags
+       %elifdef %$expecting_name
+           %define %$CLASS_NAME %1
+           %undef %$expecting_name
+           STRUC %$CLASS_NAME  ; Begin NASM Structure Definition
+           
+       ; 4. Default: Assume it is a member definition or method body
+       %else
+           _PROCESS_MEMBER_OR_BODY %1
+       %endif
+       
+       ; Rotate to next token
+       %rotate 1
+   %endrep
+%endmacro
+
+3.2 Handling Key-Value Pairs and Nested Blocks
+The requirement for key: value syntax introduces a complexity: the colon. In some assemblers, a colon attached to a word makes it a label. In the preprocessor, we must ensure the user separates tokens with spaces (name : type) or we must use %define hacks to split strings.
+Recommendation for Robustness: The parser should treat : as a "connector" token.
+* Input: name : Player
+* Process:
+   1. Token name: Recognized as keyword. Set flag expect_colon.
+   2. Token :. Check expect_colon. If true, set flag expect_value.
+   3. Token Player: Check expect_value. Store Player as the class name.
+For nested blocks like private: {... }, the parser detects the private keyword, sets the visibility state to PRIVATE, and then detects the {. All subsequent variable declarations are tagged with this visibility until the matching } is found. This requires the context stack to track brace depth, ensuring that a closing brace closes the private section and not the entire class.3
+4. The Virtual Object Model (VOM)
+The parser describes what the user wrote; the Virtual Object Model describes how it maps to Aria's memory and type system. This is the blueprint for the generated assembly.
+4.1 Memory Layout and Alignment
+Aria is a systems language, so memory layout must be deterministic. The %CLASS macro generates a NASM STRUC.
+Member Organization:
+To maintain the distinction between private and public at the source level without runtime overhead, all members are laid out sequentially in memory regardless of visibility. The protection is enforced solely by name mangling.
+The Mangling Scheme:
+* Public Members: ClassName.MemberName (e.g., Player.score).
+* Private Members: ClassName.__priv_MemberName_UID (e.g., Player.__priv_health_1234).
+This ensures that while the memory is contiguous, a developer writing assembly outside the class macro cannot easily "guess" the name of a private member, providing a strong form of "soft" encapsulation appropriate for assembly.2
+4.2 Handling Heterogeneous Types
+The VOM must calculate the size of each member to determine offsets. This requires a "Type Database" macro that returns the size of standard Aria types.
+Table 4.1: Aria Type Size Definitions
+Aria Type
+	Byte Size
+	NASM Directive
+	Alignment Requirement
+	int8, uint8, bool
+	1
+	resb 1
+	1 byte
+	int16, uint16
+	2
+	resw 1
+	2 bytes
+	int32, flt32
+	4
+	resd 1
+	4 bytes
+	int64, flt64, ptr
+	8
+	resq 1
+	8 bytes
+	vec3 (3 floats)
+	12
+	resd 3
+	16 bytes (simd preferred)
+	tryte (10 trits)
+	2
+	resw 1
+	2 bytes
+	Insight: The Ternary Packing Challenge
+The Aria specification highlights trit (ternary digit) and tryte (10 trits stored in uint16).1 If a user declares:
+trit: flag1
+trit: flag2
+The naive implementation would allocate 1 byte (or word) for each, wasting significant space. A robust VOM implements Automatic Trit Packing.
+1. The macro tracks a current_trit_offset within the current word.
+2. If flag1 is defined, it is assigned tryte_container.
+3. If flag2 is defined, it is assigned tryte_container.
+4. Only when the container is full (10 trits) or a non-trit type is declared does the macro emit the resw 1 instruction to reserve the physical storage.
+4.3 Memory Models: Wild vs. GC
+Aria supports opt-out garbage collection via the wild keyword.1 The Class macro must support both allocation strategies.
+* Managed Classes (Default): The generated new method calls aria.gc_alloc. The object header may need to include a GC mark bit or type tag, which the macro inserts automatically as a hidden 8-byte header (.gc_header).
+* Wild Classes: If the user tags the class as wild (e.g., %CLASS { type: wild,... }), the generated new method calls aria.alloc. The macro also enforces the generation of a free method (destructor) and issues a warning if defer is not used during instantiation.
+5. Implementation of Functional Abstractions
+The class structure defines the data; the methods define the behavior. Implementing methods via macros requires generating function labels, handling the this pointer, and managing stack frames compliant with the System V AMD64 ABI.
+5.1 The this Pointer Convention
+In Object-Oriented Assembly, the this pointer (reference to the current instance) must be passed explicitly. The AOM adopts the standard calling convention where the first integer argument is passed in the RDI register.
+Protocol:
+* Input: RDI holds the address of the struct instance (this).
+* Preservation: Since RDI is caller-saved and often overwritten, the method prologue generated by the macro immediately moves RDI to a preserved location (e.g., RBX or a stack slot) or defines a local alias %define this rdi.
+User Experience:
+Inside a method body, the user can write:
+
+
+Code snippet
+
+
+
+
+mov eax, [this +.health]
+
+The macro resolves .health to the correct offset and this to the register holding the instance pointer.
+5.2 Constructor Implementation
+The constructor is complex because it involves allocation and initialization. The logic flow generated by the constructor block is:
+1. Prologue: push rbp, mov rbp, rsp.
+2. Allocation:
+   * Call aria.gc_alloc with the size of the structure (calculated by the STRUC definition).
+   * Result (pointer) returns in RAX.
+3. This-Binding: Move RAX to RBX (preserved register) to act as this.
+4. User Body: Execute the instructions provided in the body: {... } block of the macro.
+   * The macro lexer replaces references to member names with [rbx + ClassName.Member].
+5. Epilogue: Move RBX back to RAX (return value), pop rbx, leave, ret.
+5.3 Function Overloading and Mangling
+Aria allows function overloading. In assembly, labels must be unique. The AOM solves this through Name Mangling.
+The macro inspects the argument types defined in the constructor or method signature.
+* Signature: constructor(int32, int32)
+* Mangled Label: ClassName_new_i32_i32
+This allows multiple constructors to coexist. The "Virtual Object Model" relies on the caller using the correct specific label or a higher-level INVOKE macro that resolves overloads based on argument types (if types are known at compile time).
+6. Advanced Features: Inheritance and Polymorphism
+To truly fulfill the user's request for a "robust" library, we must go beyond simple structs and implement inheritance and dynamic dispatch.
+6.1 Single Inheritance via Struct Composition
+Inheritance is modeled as inclusion. If Child inherits Parent:
+
+
+JavaScript
+
+
+
+
+%CLASS ({
+   name: Child,
+   extends: Parent,
+  ...
+})
+
+The macro generates:
+
+
+Code snippet
+
+
+
+
+STRUC Child
+  .parent: resb Parent_size  ; Embed Parent struct at offset 0
+  .child_member: resd 1
+ENDSTRUC
+
+Implication: A pointer to Child is also a valid pointer to Parent (since Parent is at offset 0). This allows for "Upcasting" simply by treating the pointer as the base type, fulfilling the Liskov Substitution Principle at the assembly level.
+6.2 Polymorphism via Virtual Tables (v-tables)
+To support virtual methods (dynamic dispatch), the AOM constructs v-tables.
+1. V-Table Generation: For every class with virtual methods, the macro generates a read-only data section (.rodata) containing a list of function pointers.
+Code snippet
+section.rodata
+ClassName_vtable:
+   dq ClassName_method1
+   dq ClassName_method2
+
+2. V-Ptr Injection: The macro adds a hidden member .vptr at offset 0 of the class struct.
+3. Initialization: The constructor automatically emits code to load the address of ClassName_vtable into [this +.vptr].
+4. Dispatch: A method call macro (e.g., CALL_VIRT instance, method_index) emits:
+Code snippet
+mov rax, [instance]        ; Load vptr
+call [rax + method_index*8] ; Indirect call
+
+7. Integration with Aria Semantics
+Aria is not just C; it has specific semantics for concurrency, error handling, and modules that the macro library must respect.
+7.1 Module System Integration (mod)
+Aria uses mod to namespace code. The %CLASS macro must be aware of the current module context.
+   * Mechanism: The user's mod myModule {... } block should push a context ctx_module_myModule.
+   * Effect: The %CLASS macro prefixes all generated labels with the module name: myModule.ClassName.Method. This prevents symbol collisions between net.Connection and db.Connection.1
+7.2 Concurrency Safety (spawn, async)
+Aria's spawn keyword creates a new process/thread.
+   * Wild Pointers: If a wild object is passed to a thread, the macro-generated code is safe (standard heap memory).
+   * GC Objects: Passing a GC object requires "pinning" (# operator) to prevent the collector from moving it while the thread accesses it. The class macro can generate a helper method ClassName.pin() which calls the runtime's aria.gc.pin(this).1
+7.3 Result Types and Error Handling
+Aria functions implicitly return a result type {err, val}.
+   * Macro Support: The method generation macro should reserve two registers for return values (e.g., RAX for val, RDX for err) or stack space for a result struct.
+   * Automatic Wrapping: The macro can offer a syntax return value which it expands to mov rax, value / mov rdx, 0 (NULL error), simplifying the boilerplate of error returning.
+8. Detailed Implementation Logic
+The following sections provide the specific algorithms and NASM macro code required to implement the architecture described above.
+8.1 Phase 1: The Recursive Parser
+This macro consumes the token stream. It uses a "Look-Ahead" strategy where flags are set based on the previous token to interpret the current token.
+
+
+Code snippet
+
+
+
+
+; ==============================================================================
+; AOM PARSER CORE
+; ==============================================================================
+
+%macro %CLASS 1-*
+   %push ctx_class_def
+   
+   ; Define state flags
+   %assign %$state_root 1
+   %assign %$state_private 0
+   %assign %$state_public 0
+   %assign %$state_constructor 0
+   
+   ; Iterate through tokens
+   %rep %0
+       %rotate 1
+       
+       ; --- State: ROOT ---
+       %if %$state_root
+           %ifidni %1, name
+               %define %$expect_name 1
+           %elifdef %$expect_name
+               %define %$class_name %1
+               %undef %$expect_name
+               STRUC %$class_name ; Start NASM Struct
+               
+           %elifidni %1, private
+               %assign %$state_root 0
+               %assign %$state_private 1
+           %elifidni %1, public
+               %assign %$state_root 0
+               %assign %$state_public 1
+           %endif
+           
+       ; --- State: PRIVATE SECTION ---
+       %elif %$state_private
+           %ifidni %1, }
+               %assign %$state_private 0
+               %assign %$state_root 1
+           %else
+               ; Assume member decl: Type Name
+               _PARSE_MEMBER private, %1
+           %endif
+           
+       ; --- State: PUBLIC SECTION ---
+       %elif %$state_public
+           ; Similar logic to private
+           
+       %endif
+   %endrep
+   
+   ENDSTRUC
+   %pop
+%endmacro
+
+8.2 Phase 2: Member Definition and Type Resolution
+The _PARSE_MEMBER macro handles the "Type Name" syntax. It must handle the colon separator if present and resolve sizes.
+
+
+Code snippet
+
+
+
+
+%macro _PARSE_MEMBER 2
+   ; %1 = visibility, %2 = potential type or name
+   
+   ; Logic to handle "int32: value" vs "int32 value"
+   ; We check if the token ends in a colon or if the next token is a colon.
+   ; For this simplified example, we assume "Type Name" (no colon token for simplicity)
+   
+   ; Size Lookup
+   %define %%size 1
+   %ifidni %2, int32
+       %define %%size 4
+       %define %%res resd
+   %elifidni %2, int64
+       %define %%size 8
+       %define %%res resq
+   %elifidni %2, trit
+       ; Special handling for trits would go here (bit packing logic)
+       %define %%size 2 ; Fallback to tryte storage
+       %define %%res resw
+   %endif
+   
+   ; Generate the Label
+   ; We need to capture the NEXT token as the name. 
+   ; This requires the parser loop to set a "pending type" flag.
+%endmacro
+
+Correction on Parsing Strategy: The macro above illustrates a difficulty: _PARSE_MEMBER cannot see the next token. Therefore, the main loop must handle the pair.
+   * Main Loop Modification: If %$pending_type is defined, the current token is the Name. Emit the res instruction and undefine %$pending_type. If %$pending_type is NOT defined, the current token is the Type. Define %$pending_type.
+8.3 Phase 3: The Constructor and Destructor Generator
+The constructor macro automates the function prologue and memory allocation.
+
+
+Code snippet
+
+
+
+
+%macro _BEGIN_CONSTRUCTOR 0
+   ; End the struct definition temporarily to define code
+   
+   section.text
+   global %$class_name.new
+   %$class_name.new:
+       push rbp
+       mov rbp, rsp
+       push rbx                ; Save callee-saved register
+       
+       ; Allocation Strategy
+       ; Check if 'wild' flag was set for class
+       %ifdef %$is_wild
+           mov rdi, %$class_name_size
+           call aria.alloc
+       %else
+           mov rdi, %$class_name_size
+           call aria.gc_alloc
+       %endif
+       
+       ; Setup 'this'
+       mov rbx, rax            ; RBX = this
+       
+       ; The user's body code follows this macro expansion
+%endmacro
+
+%macro _END_CONSTRUCTOR 0
+       ; Epilogue
+       mov rax, rbx            ; Return 'this'
+       pop rbx
+       pop rbp
+       ret
+%endmacro
+
+9. Performance Analysis and Optimization
+The proposed system introduces zero runtime overhead for method dispatch (static) and field access. The overhead is entirely at compile-time (preprocessing).
+9.1 Compile-Time Complexity
+Parsing nested token streams with %rotate is $O(N)$ where $N$ is the number of tokens. However, deep nesting and extensive recursion can strain the NASM preprocessor buffer.
+   * Mitigation: The implementation breaks large macros into smaller helper macros (_PARSE_BODY, _PARSE_MEMBER) to keep the expansion buffer manageable.
+9.2 Runtime Performance
+   * Allocation: The wrapper adds a few instructions (mov, call) around the allocator. This is negligible compared to the cost of the allocation itself (kernel syscalls or heap manager logic).
+   * Field Access: Accessing [rbx + offset] is a single CPU instruction, identical to hand-written assembly.
+   * Trit Access: Accessing packed trits requires bitwise operations (AND, SHR). While slower than byte access, this trades CPU cycles for memory density, aligning with Aria's design goals for specific domains (e.g., embedded or neural weights using trits).1
+10. Conclusion
+The specification provided in this report outlines a comprehensive, robust, and idiomatic implementation of Classes for the Aria programming language. By creatively exploiting the NASM context stack and implementing a token-based state machine parser, we can satisfy the user's requirement for a high-level syntax ({ name:... }) while generating optimal, bare-metal assembly.
+This system bridges the semantic gap between Aria's "wild" pointers and its "managed" aspirations. It provides the structural safety of encapsulation and the architectural benefits of OOP without imposing the heavy runtime of a virtual machine or interpreter. This "Class Macro" library is not just a syntactic sugar; it is a foundational layer that enables the construction of complex, maintainable systems in Aria.
+11. Appendix: Complete Code Listings
+A. The Core Class Macro (class.inc)
+
+
+Code snippet
+
+
+
+
+; Context-based State Machine Definitions
+%assign STATE_ROOT 0
+%assign STATE_PRIVATE 1
+%assign STATE_PUBLIC 2
+%assign STATE_CONST 3
+
+; -----------------------------------------------------------------------------
+; Master Macro: %CLASS
+; Usage: %CLASS { name: MyClass,... }
+; -----------------------------------------------------------------------------
+%macro %CLASS 1-*
+   %push ctx_class
+   %assign %$state STATE_ROOT
+   
+   ; Loop through all tokens passed to the macro
+   %rep %0
+       %rotate 1
+       _DISPATCH_TOKEN %1
+   %endrep
+   
+   ; Finalize struct
+   ENDSTRUC
+   %pop
+%endmacro
+
+; -----------------------------------------------------------------------------
+; Token Dispatcher: The Heart of the Parser
+; -----------------------------------------------------------------------------
+%macro _DISPATCH_TOKEN 1
+   ; 1. Block Delimiters
+   %ifidni %1, {
+       ; Enter block (Logic depends on current state)
+   %elifidni %1, }
+       ; Exit block - Revert to ROOT state if closing a section
+       %if %$state == STATE_PRIVATE |
+
+| %$state == STATE_PUBLIC
+           %assign %$state STATE_ROOT
+       %endif
+
+   ; 2. Root State Handlers
+   %elif %$state == STATE_ROOT
+       %ifidni %1, name
+           %define %$expect_name 1
+       %elifdef %$expect_name
+           %define %$classname %1
+           STRUC %1            ; Begin NASM Structure
+           %undef %$expect_name
+       %elifidni %1, private
+           %assign %$state STATE_PRIVATE
+       %elifidni %1, public
+           %assign %$state STATE_PUBLIC
+       %elifidni %1, constructor
+           _BEGIN_CONSTRUCTOR
+       %endif
+
+   ; 3. Section State Handlers (Private/Public)
+   %elif %$state == STATE_PRIVATE |
+
+| %$state == STATE_PUBLIC
+       ; Parsing "Type: Name" pairs
+       ; Note: We ignore ':' tokens if they appear as standalone tokens
+       %ifidni %1, :
+           ; Do nothing, connector
+       %elifdef %$pending_type
+           ; This token is the NAME
+           _EMIT_MEMBER %$pending_type, %1
+           %undef %$pending_type
+       %else
+           ; This token is the TYPE
+           %define %$pending_type %1
+       %endif
+   %endif
+%endmacro
+
+; -----------------------------------------------------------------------------
+; Member Emitter
+; -----------------------------------------------------------------------------
+%macro _EMIT_MEMBER 2
+   ; %1 = Type, %2 = Name
+   %ifidni %1, int32
+      .%2: resd 1
+   %elifidni %1, int64
+      .%2: resq 1
+   %elifidni %1, vec3
+      .%2: resd 3
+   %elifidni %1, wild
+       ; Handle 'wild type' - Wait for next token in real impl
+      .%2: resq 1 ; Assume wild pointer
+   %endif
+%endmacro
+
+This code provides the skeletal implementation. The full system would extend _EMIT_MEMBER to cover the full Aria type spectrum and implement the _BEGIN_CONSTRUCTOR logic as detailed in Section 8.3.
+Citations included inline:.1
+Works cited
+   1. aria_v0_0_6_specs.txt
+   2. Chapter 5: The NASM Preprocessor - NASM - The Netwide Assembler, accessed December 6, 2025, https://www.nasm.us/doc/nasm05.html
+   3. Recursive Descent Parser and Nested Parentheses - Stack Overflow, accessed December 6, 2025, https://stackoverflow.com/questions/11404482/recursive-descent-parser-and-nested-parentheses
+   4. Re-parsing $var:expr (or tt) in recursive macros - Rust Users Forum, accessed December 6, 2025, https://users.rust-lang.org/t/re-parsing-var-expr-or-tt-in-recursive-macros/106537
+   5. 3.3. Multi-Line Macros, accessed December 6, 2025, http://www.tortall.net/projects/yasm/manual/ru/html/nasm-multi-line-macros.html
+   6. Nasm preprocessor - Address parameter via variable - Stack Overflow, accessed December 6, 2025, https://stackoverflow.com/questions/47755659/nasm-preprocessor-address-parameter-via-variable
+   7. NASM - Official Recursive Macro Support! - OSDev.org, accessed December 6, 2025, https://f.osdev.org/viewtopic.php?p=183470
+   8. recursive macros supported? - NASM Forum, accessed December 6, 2025, https://forum.nasm.us/index.php?topic=851.0
+   9. NASM - The Netwide Assembler - Damn Small BSD, accessed December 6, 2025, https://damnsmallbsd.org/docs/sharedocs/nasm/html/nasmdoc4.html

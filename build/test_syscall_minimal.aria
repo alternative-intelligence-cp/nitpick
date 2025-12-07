@@ -1,0 +1,27 @@
+// Minimal syscall test
+func:main = int8() {
+    print("Testing syscalls");
+    
+    // Create filename "test.txt"
+    uint8:filename[16];
+    filename[0] = 116;  // 't'
+    filename[1] = 101;  // 'e'
+    filename[2] = 115;  // 's'
+    filename[3] = 116;  // 't'
+    filename[4] = 46;   // '.'
+    filename[5] = 116;  // 't'
+    filename[6] = 120;  // 'x'
+    filename[7] = 116;  // 't'
+    filename[8] = 0;    // null
+    
+    // Open file for writing
+    int32:fd = intrinsic_open(filename, 577, 438);
+    
+    print("File opened");
+    
+    // Close
+    int32:result = intrinsic_close(fd);
+    
+    print("Done");
+    pass(0);
+};

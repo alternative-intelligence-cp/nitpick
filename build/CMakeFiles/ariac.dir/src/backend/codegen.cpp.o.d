@@ -354,6 +354,7 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/lib/llvm-19/include/llvm/Support/TypeName.h \
  /usr/include/c++/13/list /usr/include/c++/13/bits/stl_list.h \
  /usr/include/c++/13/bits/list.tcc \
+ /usr/lib/llvm-19/include/llvm/IR/InlineAsm.h \
  /usr/lib/llvm-19/include/llvm/Target/TargetMachine.h \
  /usr/lib/llvm-19/include/llvm/Support/Allocator.h \
  /usr/lib/llvm-19/include/llvm/Support/Error.h \

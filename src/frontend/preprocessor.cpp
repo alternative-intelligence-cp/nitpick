@@ -95,6 +95,38 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
     while (peek() != 0) {
         char c = peek();
         
+        // Handle line comments (// ...) - skip to end of line
+        if (c == '/' && peekNext() == '/') {
+            while (peek() != '\n' && peek() != 0) {
+                output << peek();
+                advance();
+            }
+            if (peek() == '\n') {
+                output << '\n';
+                advance();
+            }
+            continue;
+        }
+        
+        // Handle block comments (/* ... */) - skip to */
+        if (c == '/' && peekNext() == '*') {
+            output << "/*";
+            advance(); // Skip /
+            advance(); // Skip *
+            
+            while (peek() != 0) {
+                if (peek() == '*' && peekNext() == '/') {
+                    output << "*/";
+                    advance(); // Skip *
+                    advance(); // Skip /
+                    break;
+                }
+                output << peek();
+                advance();
+            }
+            continue;
+        }
+        
         // Track string literals to avoid macro expansion inside them
         if (c == '"' && (pos == 0 || source[pos - 1] != '\\')) {
             in_quotes = !in_quotes;
@@ -104,15 +136,30 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
         }
         
         // Handle preprocessor directives (% followed by alpha, can be indented)
-        if (c == '%') {
+        if (c == '%' && !in_quotes) {
             // Peek ahead to see if it's a directive or a context-local label
             if (peekNext() == '$') {
                 // It's a context-local label definition (%$label:), not a directive
                 // Let it fall through to normal code processing
             } else if (isalpha(peekNext())) {
-                // It's a directive
+                // Could be a directive OR a constant substitution
+                // Save position in case it's a constant
+                size_t save_pos = pos;
+                int save_line = line;
+                int save_col = col;
+                
                 advance(); // Skip %
-                std::string directive = readWord();
+                std::string word = readWord();
+                
+                // Check if it's a constant first (for %identifier substitution)
+                if (constants.find(word) != constants.end()) {
+                    // It's a constant - substitute its value
+                    output << constants[word];
+                    continue;
+                }
+                
+                // Not a constant - treat as directive
+                std::string directive = word;
             
             if (directive == "macro") {
                 handleMacroDefinition();
@@ -147,6 +194,12 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
             } else if (directive == "rep") {
                 handleRep();
                 // Don't skip to end of line - handleRep already positioned us correctly
+                continue;
+            } else if (directive == "assign") {
+                handleAssign();
+                // Skip to end of line
+                while (peek() != '\n' && peek() != 0) advance();
+                if (peek() == '\n') advance();
                 continue;
             } else if (directive == "endrep") {
                 error("%endrep without matching %rep");
@@ -677,6 +730,67 @@ void Preprocessor::handleContext() {
     }
     
     context_stack.top().name = context_name;
+}
+
+void Preprocessor::handleAssign() {
+    // %assign var_name expression
+    // Evaluates expression and stores result as a constant
+    skipWhitespace();
+    std::string var_name = readWord();
+    
+    if (var_name.empty()) {
+        error("%assign requires a variable name");
+    }
+    
+    skipWhitespace();
+    std::string expr = readUntilNewline();
+    
+    if (expr.empty()) {
+        error("%assign requires an expression");
+    }
+    
+    // Substitute any existing constants in the expression first
+    std::string substituted_expr;
+    size_t i = 0;
+    while (i < expr.length()) {
+        if (isalpha(expr[i]) || expr[i] == '_') {
+            // Read identifier
+            std::string ident;
+            while (i < expr.length() && (isalnum(expr[i]) || expr[i] == '_')) {
+                ident += expr[i];
+                i++;
+            }
+            
+            // Check if it's a constant
+            if (constants.find(ident) != constants.end()) {
+                substituted_expr += constants[ident];
+            } else {
+                substituted_expr += ident;
+            }
+        } else {
+            substituted_expr += expr[i];
+            i++;
+        }
+    }
+    
+    // Evaluate the expression
+    try {
+        int result = 0;
+        if (evaluateCondition(substituted_expr)) {
+            // evaluateCondition returns bool, but we need int value
+            // Use parseLogicalOr directly for numeric result
+            size_t pos = 0;
+            result = parseLogicalOr(substituted_expr, pos);
+        } else {
+            size_t pos = 0;
+            result = parseLogicalOr(substituted_expr, pos);
+        }
+        
+        // Store result as a constant
+        constants[var_name] = std::to_string(result);
+    } catch (...) {
+        error("Invalid expression in %assign: " + expr);
+    }
 }
 
 void Preprocessor::handleRep() {

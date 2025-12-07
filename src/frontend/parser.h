@@ -66,6 +66,7 @@ public:
 
     std::unique_ptr<Block> parseProgram();  // Parse top-level declarations
     std::unique_ptr<Block> parseBlock();
+    std::unique_ptr<Block> parseBlockOrStatement();  // Parse block or single statement (for one-liner if/while/etc)
     std::unique_ptr<Expression> parseExpr();
     std::unique_ptr<Expression> parseTemplateString();
     std::unique_ptr<Statement> parseStmt();

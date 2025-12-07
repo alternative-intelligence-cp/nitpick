@@ -1,0 +1,36 @@
+// Test control flow macros (WITHOUT % prefix for calls)
+
+%macro IF 3
+if (%1 %2 %3) {
+%endmacro
+
+%macro ELSE 0
+} else {
+%endmacro
+
+%macro END_IF 0
+}
+%endmacro
+
+func:check = int32(int32:x) {
+    int32:result = 0;
+    
+    IF(x, >, 10)
+        result = 100;
+    ELSE()
+        result = 50;
+    END_IF()
+    
+    *result;
+};
+
+func:main = int8() {
+    int32:val = check(15);
+    IF(val, ==, 100)
+        print("✓ PASSED");
+    ELSE()
+        print("✗ FAILED");
+    END_IF()
+    
+    *0;
+};

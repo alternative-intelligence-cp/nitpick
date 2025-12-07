@@ -1,0 +1,24 @@
+// Test full calc_rex from ara_v2
+func:calc_rex = uint8(int8:w, int8:r, int8:x, int8:b) {
+    uint8:rex = 0x40;
+    
+    if (w != 0) {
+        rex |= 0x08;
+    }
+    if (r != 0) {
+        rex |= 0x04;
+    }
+    if (x != 0) {
+        rex |= 0x02;
+    }
+    if (b != 0) {
+        rex |= 0x01;
+    }
+    
+    pass(rex);
+};
+
+func:main = int8() {
+    result:r = calc_rex(1, 0, 0, 1);
+    pass(0);
+};

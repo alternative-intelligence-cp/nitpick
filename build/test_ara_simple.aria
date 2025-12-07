@@ -1,0 +1,45 @@
+// test_ara_simple.aria
+// Test simplified ARA without struct dependency
+// Generates: f(x) = (x + 10) - 5
+
+%include "../lib/stdlib/ara_simple.aria"
+
+func:main = int8() {
+    print("=== ARA Simplified Test ===");
+    
+    // Initialize assembler with 1KB buffer
+    asm_init(1024);
+    print("Step 1: Assembler initialized");
+    
+    // Generate code for f(x) = (x + 10) - 5
+    // In System V ABI: arg1 in RDI, return in RAX
+    
+    mov_r64_r64(REG_RAX, REG_RDI);   // mov rax, rdi
+    print("  - MOV RAX, RDI");
+    
+    add_r64_imm8(REG_RAX, 10);       // add rax, 10
+    print("  - ADD RAX, 10");
+    
+    sub_r64_imm8(REG_RAX, 5);        // sub rax, 5
+    print("  - SUB RAX, 5");
+    
+    ret();                            // ret
+    print("  - RET");
+    
+    uint64:bytes_generated = asm_get_cursor();
+    print("Step 2: Code generated");
+    print("  Total bytes:");
+    
+    // Expected encoding breakdown:
+    // MOV RAX, RDI:  48 89 F8           (3 bytes)
+    // ADD RAX, 10:   48 83 C0 0A        (4 bytes)
+    // SUB RAX, 5:    48 83 E8 05        (4 bytes)
+    // RET:           C3                 (1 byte)
+    // Total: 12 bytes
+    
+    print("");
+    print("✓ ARA test complete!");
+    print("  (Execution requires wildx + mem intrinsics)");
+    
+    return 0;
+};

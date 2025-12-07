@@ -86,10 +86,19 @@ bool Parser::isType(const Token& token) {
 }
 
 std::string Parser::parseTypeName() {
-    // Parse a complete type name, including function types like "BinaryFunc"
-    // For now, just parse identifier (could extend to handle complex types)
-    Token typeTok = consume(TOKEN_IDENTIFIER, "Expected type name");
-    std::string typeName = typeTok.value;
+    // Parse a complete type name, including built-in types and identifiers
+    std::string typeName;
+    
+    // Check if it's a built-in type keyword (func, result, int8, etc.)
+    if (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING) {
+        typeName = current.value;
+        advance();
+    } else if (current.type == TOKEN_IDENTIFIER) {
+        typeName = current.value;
+        advance();
+    } else {
+        throw std::runtime_error("Expected type name");
+    }
     
     // Handle pointer suffix (@)
     while (match(TOKEN_AT)) {
@@ -100,7 +109,7 @@ std::string Parser::parseTypeName() {
     if (match(TOKEN_LEFT_BRACKET)) {
         typeName += "[";
         if (!check(TOKEN_RIGHT_BRACKET)) {
-            Token sizeTok = expect(TOKEN_INTEGER_LITERAL);
+            Token sizeTok = expect(TOKEN_INT_LITERAL);
             typeName += sizeTok.value;
         }
         expect(TOKEN_RIGHT_BRACKET);
@@ -113,7 +122,7 @@ std::string Parser::parseTypeName() {
 // Parses: [const] [wild|wildx|stack|gc] Type:Identifier [= Expression];
 // Grammar:
 //   VarDecl -> "const"? ( "wild" | "wildx" | "stack" | "gc" )? TypeIdentifier ":" Identifier ( "=" Expression )? ";"
-std::unique_ptr<VarDecl> Parser::parseVarDecl() {
+std::unique_ptr<Statement> Parser::parseVarDecl() {
    bool is_const = false;
    bool is_wild = false;
    bool is_wildx = false;
@@ -136,8 +145,13 @@ std::unique_ptr<VarDecl> Parser::parseVarDecl() {
    }
 
    // 3. Parse Type
-   Token type_tok = expect(TOKEN_IDENTIFIER);
-   std::string type_name = type_tok.value;
+   std::string type_name;
+   if (isTypeToken(current.type)) {
+       type_name = current.value;
+       advance();
+   } else {
+       throw std::runtime_error("Expected type in variable declaration");
+   }
    
    // Handle array types: int8[256] or int8[]
    if (check(TOKEN_LEFT_BRACKET)) {
@@ -146,7 +160,7 @@ std::unique_ptr<VarDecl> Parser::parseVarDecl() {
        
        // Check for array size
        if (!check(TOKEN_RIGHT_BRACKET)) {
-           Token size_tok = expect(TOKEN_INTEGER_LITERAL);
+           Token size_tok = expect(TOKEN_INT_LITERAL);
            type_name += size_tok.value;
        }
        

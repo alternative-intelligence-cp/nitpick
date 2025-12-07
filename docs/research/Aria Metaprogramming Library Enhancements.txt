@@ -1,0 +1,414 @@
+﻿Comprehensive Architectural Specification for Advanced Metaprogramming in the Aria Language Ecosystem
+Executive Summary
+The Aria programming language 1 represents a significant evolution in systems programming, attempting to reconcile the disparate worlds of high-level functional expressiveness and low-level bare-metal control. By synthesizing a hybrid memory model—characterized by the interplay of garbage collection (gc) and manual management (wild)—with an exotic type system rooted in balanced ternary logic (trit, tryte), Aria occupies a unique architectural niche. The existing proposals for a "Struct-Based Template System" 1, "High-Level Control Flow" macros 1, and an "Object-Oriented Class System" 1 provide a foundational layer, bridging the gap between the language's assembly-like core and its aspirational high-level syntax. However, to transition Aria from an experimental dialect into a production-grade ecosystem capable of supporting complex applications such as blockchain nodes, neural network training, or high-throughput networking, the metaprogramming library must expand its scope significantly.
+This research report presents a comprehensive architectural specification for six additional metaprogramming domains that are critical for Aria’s evolution: Automated Verification Frameworks (encompassing Unit and Property-Based Testing), Static Reflection & Serialization, Zero-Cost Functional Pipeline Primitives, Actor-Model Concurrency Fabrics, Coroutine State Machines, and Balanced Ternary Emulation.
+The analysis proceeds by deconstructing the specific constraints and capabilities of the Aria environment—specifically its reliance on NASM-style preprocessor mechanisms (%push, %rotate, %assign) and its heterogeneous memory safety guarantees.1 For each proposed domain, we define the theoretical necessity, the architectural implementation strategy within the preprocessor, and the resulting interface for the Aria developer. A recurring theme throughout this report is the utilization of the preprocessor not merely as a text substitution engine, but as a rudimentary compiler frontend capable of performing type analysis, scope management, and code generation at compile time. This report demonstrates that by leveraging these advanced macro architectures, Aria can achieve "zero-overhead abstractions" where high-level conveniences like reflection-based JSON serialization or safe actor message passing incur no runtime penalty, compiling down to optimized, hand-tuned assembly instructions.
+________________
+1. The Verification Imperative: Automated and Property-Based Testing Architectures
+The reliability of a systems programming language is predicated on the stability of its standard library and user applications. In established ecosystems like C++ or Rust, testing frameworks are integral, often relying on complex runtime reflection or compiler plugins.2 For Aria, which explicitly targets "batteries included" functionality for complex domains like blockchain and ML 1, the absence of a native testing harness is a critical deficiency. Manual registration of test functions is error-prone and scales poorly. Therefore, we propose a macro-based Automated Unit Testing Framework and a Property-Based Testing (PBT) extension.
+1.1 The Section-Based Auto-Registration Pattern
+The primary architectural challenge in assembly-level testing is test discovery. Unlike managed languages where reflection allows a runner to scan for @Test annotations, Aria must rely on link-time composition.4 The proposed solution leverages the NASM section directive to aggregate function pointers across disparate translation units.
+1.1.1 The TEST_CASE Macro Mechanism
+The core of this system is the TEST_CASE macro. Unlike a standard function definition, this macro performs two distinct operations: code generation and registration. It defines the actual test function in the standard .text section while simultaneously appending a pointer to this function, along with metadata (name, file, line), into a specialized, custom linker section, typically named .test_registry. This leverages the behavior of linkers, which concatenate data from the same section across multiple object files into a contiguous block.5
+Table 1: Memory Layout of the .test_registry Section
+Offset (Bytes)
+	Field Description
+	Data Type
+	Usage
+	0x00
+	Function Pointer
+	func*
+	Address of the generated test body code.
+	0x08
+	Name Pointer
+	char*
+	Address of the string literal containing the test name.
+	0x10
+	File Name Pointer
+	char*
+	Address of __FILE__ string for debugging.
+	0x18
+	Line Number
+	uint64
+	__LINE__ constant for error reporting.
+	0x20
+	Attributes
+	uint64
+	Bitmask for test properties (e.g., SHOULD_FAIL, SLOW).
+	Macro Implementation Strategy:
+The TEST_CASE macro utilizes section switching to ensure the user experience remains seamless. The user simply writes TEST_CASE("Math_Addition") {... }, and the preprocessor handles the complex memory layout.
+
+
+Code snippet
+
+
+
+
+%macro TEST_CASE 1
+   ; %1 = Test Name (e.g., "Math_Addition")
+   
+   ; 1. Switch to the Test Registry Section
+   section.test_registry
+   
+   ; 2. Emit Metadata Pointers
+   dq %1_impl              ; Pointer to the test code
+   dq %1_name_str          ; Pointer to the name string
+   dq %1_file_str          ; Pointer to file name
+   dq __LINE__             ; Line number constant
+   dq 0                    ; Attributes (Default)
+
+   ; 3. Switch back to Data Section for Strings
+   section.rodata
+   %1_name_str db `%1`, 0
+   %1_file_str db __FILE__, 0
+   
+   ; 4. Switch to Text Section for the Code Body
+   section.text
+   global %1_impl
+   %1_impl:
+       ; Standard Prologue
+       push rbp
+       mov rbp, rsp
+       ; (User body follows here)
+%endmacro
+
+The test runner, part of aria.std.test, treats the .test_registry section as an iterable array. Linker scripts must define __start_test_registry and __stop_test_registry symbols to bound this array.6 This mechanism allows tests to be decentralized across the codebase yet centrally executed, fulfilling the "ease of use" requirement.
+1.2 Property-Based Testing (PBT) Macros
+While unit tests check specific examples, Property-Based Testing (PBT) checks logical statements against a range of generated inputs (e.g., "for all integers x, x + 0 == x").7 Given Aria's complex type system involving trit and nit, PBT is essential for verifying arithmetic correctness where edge cases like "balanced ternary overflow" might occur.
+We propose a FOR_ALL macro that generates a loop structure, invoking a user-defined property function with randomized inputs derived from the type signature.
+Usage Pattern:
+
+
+Code snippet
+
+
+
+
+FOR_ALL(int8:x, int8:y) {
+   ASSERT_EQ(add(x, y), add(y, x));
+}
+
+Macro Expansion Logic:
+1. Generator Resolution: The macro parses the types (int8). It maps int8 to aria.test.gen_int8().
+2. Loop Generation: It creates a loop that runs N times (e.g., 100 iterations).
+3. Invariant Check: Inside the loop, it calls the generator, passes the values to the block, and checks the result.
+4. Shrinking (Advanced): Ideally, if a failure is found, the macro would invoke a "shrinker" function to find the minimal counter-example.7 In the initial assembly macro version, a simple counter-example reporting is sufficient.
+This feature is particularly vital for the user's blockchain library 1, where cryptographic properties must hold for all inputs, not just a few hardcoded vectors.
+1.3 Assertions for Hybrid Memory and Ternary Types
+Aria’s type system 1 requires a polymorphic assertion library. A simple equality check is insufficient when comparing a trit (ternary digit) with an int8, or a wild pointer with a gc reference.
+Ternary-Aware Assertions:
+For trit and tryte types, equality is not a simple bitwise comparison of the underlying storage. A trit represented in 2 bits might have an "illegal" state (e.g., 10 binary, where 00=0, 01=1, 11=-1).9 The assertion macro must implicitly validate that the ternary value is well-formed before comparing.
+
+
+Code snippet
+
+
+
+
+%macro ASSERT_EQ_TRIT 2
+   ; %1, %2 are registers holding 2-bit encoded trits
+   ; Mask to relevant bits
+   and %1, 0x03
+   and %2, 0x03
+   
+   ; Validate Representation (10 is illegal)
+   cmp %1, 0x02
+   je.fail_invalid_trit
+   cmp %2, 0x02
+   je.fail_invalid_trit
+   
+   ; Compare
+   cmp %1, %2
+   jne.fail_inequal
+%endmacro
+
+This ensures that the testing framework serves as a first line of defense against corrupted ternary states, a common issue when emulating non-binary logic on binary hardware. Furthermore, for wild pointers, the assertion macros must implement safety checks (e.g., checking for NULL or unmapped memory via system calls if possible) to prevent the test runner itself from crashing due to a segfault in the code under test.
+________________
+2. Static Reflection and Serialization Architectures
+The user's query emphasizes a "batteries included" philosophy, specifically mentioning networking and blockchain libraries.1 These domains heavily rely on serialization—converting complex in-memory objects into byte streams (JSON, CSV, Binary) for transmission or storage. In languages like C++, the lack of native reflection often forces developers to write boilerplate toJSON() methods for every struct, which is tedious and error-prone.11 We propose a Static Reflection System implemented purely in macros, allowing for automatic, type-safe serialization of Aria structs.
+2.1 The "X-Macro" Pattern for Metadata Generation
+To enable reflection in a preprocessor-only environment, we must invert the standard struct definition pattern. Instead of defining the struct and then trying to inspect it (which is impossible in NASM as it discards symbol types), we define the structure of the struct in a metaprogramming format that generates both the NASM STRUC definition and the metadata tables simultaneously.13
+The REFLECTABLE Macro:
+The user defines a struct using a high-level list format that mimics Aria's object syntax:
+
+
+Code snippet
+
+
+
+
+// User Syntax
+REFLECTABLE(User, 
+   FIELD(int64, id),
+   FIELD(string, username),
+   FIELD(tryte, balance),
+   FIELD(wild buffer*, payload, ATTR_UNSAFE)
+)
+
+Macro Expansion Logic:
+The REFLECTABLE macro iterates over the argument list twice using %rep and %rotate directives.14
+Pass 1: Struct Definition
+It generates the standard NASM layout, calculating offsets and reserving space.
+
+
+Code snippet
+
+
+
+
+STRUC User
+  .id: resq 1
+  .username: resq 1      ; string is a pointer/struct
+  .balance: resw 1       ; tryte fits in uint16
+  .payload: resq 1       ; pointer
+  .size:
+ENDSTRUC
+
+Pass 2: Metadata Generation
+It generates a read-only "Descriptor" in the .rodata section. This descriptor mimics a runtime Type Info object, essential for generic algorithms.
+Table 2: Structure of Generated Reflection Metadata
+Field
+	Size
+	Description
+	Class Name
+	Variable
+	Null-terminated string ("User").
+	Field Count
+	4 bytes
+	Number of fields in the struct.
+	Field 1 Name
+	Variable
+	Null-terminated string ("id").
+	Field 1 Type
+	1 byte
+	Enum value (TYPE_INT64, TYPE_STRING, etc.).
+	Field 1 Offset
+	8 bytes
+	Offset of the field from the struct base address.
+	Field 1 Attrs
+	4 bytes
+	Bitmask for attributes (e.g., UNSAFE, PRIVATE).
+	...
+	...
+	(Repeated for all fields)
+	2.2 Auto-Generated Serialization
+With the metadata table available at runtime, a generic aria.json.serialize(obj_ptr, descriptor_ptr) function can be implemented in the standard library. This function iterates over the descriptor's fields, reads the type (e.g., TYPE_TRYTE), reads the value from the object at the specified offset, and formats it into the JSON string.
+Impact on Aria's Ecosystem:
+* Networking: An HTTP library can automatically bind JSON request bodies to Aria structs, similar to Go's encoding/json or Rust's Serde.15
+* Database: An ORM can map struct fields to SQL columns automatically using the offsets and names.
+* Blockchain: Serialization of transactions for hashing can be canonicalized automatically, reducing consensus bugs.
+2.3 Handling wild and gc Pointers in Serialization
+A unique challenge in Aria is the hybrid memory model.
+* gc Pointers: Serialization is straightforward; the runtime ensures validity and likely tracks array lengths.
+* wild Pointers: A wild int64* represents a raw memory address. It might point to invalid memory, a cyclic graph, or a buffer of unknown length.
+The REFLECTABLE macro must accept attributes to guide serialization safety policy.
+* FIELD(wild int8*, data, ATTR_UNSAFE): The generated metadata includes a flag FLAG_UNSAFE. The serializer can be configured to either skip unsafe fields, attempt to follow them (if a length field is also annotated), or panic if encountered.
+* This enforces a safety policy at the type definition level, ensuring that network code does not accidentally attempt to serialize a raw, unmanaged pointer which could lead to segfaults or information leaks.
+________________
+3. Zero-Cost Functional Primitives: Assembly-Level Loop Fusion
+Aria's specification includes pipeline operators |> and <| and functions like filter, transform (map), and reduce.1 In high-level languages (JavaScript, Python), these are typically implemented using function pointers or closures, which incur significant overhead due to indirect calls, lack of inlining, and cache misses.16 In Aria, we can leverage the preprocessor to implement Compile-Time Loop Fusion, making functional chains faster than their generic C equivalents by generating specialized assembly inline.
+3.1 The ITER_OP Macro Suite
+We propose a suite of macros (MAP, FILTER, REDUCE) that do not call runtime functions but instead generate code blocks that are injected into a master loop macro. This mimics the "Stream fusion" optimizations found in Haskell or Rust's iterators, but executed manually via preprocessor expansion.
+Scenario:
+data |> filter(is_positive) |> map(square) |> reduce(sum)
+Macro Implementation:
+Instead of generating three separate loops (one for filter, one for map, one for reduce) which would require intermediate memory buffers, the macros effectively "unroll" the logic into a single pass.
+The CHAIN Macro:
+The user defines a chain of operations. The macro context stack keeps track of the current register state.
+1. Load: The macro emits code to load a value into a generic register RAX from the source array.
+2. Filter Expansion: It expands the is_positive macro logic. If the condition fails, it emits a jump to the next_iter label.
+3. Map Expansion: It expands the square macro on RAX, transforming the value in place.
+4. Reduce Expansion: It expands the sum macro, adding RAX to an accumulator register.
+5. Loop: It handles the increment and conditional jump back to the start.
+This results in assembly code that is indistinguishable from a hand-optimized loop:
+
+
+Code snippet
+
+
+
+
+.loop_start:
+   mov rax, [rsi]      ; Load
+   cmp rax, 0          ; Filter Logic (is_positive)
+   jle.next_iter      ; Skip if filter fails
+   imul rax, rax       ; Map Logic (square)
+   add rbx, rax        ; Reduce Logic (sum into accumulator)
+.next_iter:
+   add rsi, 8          ; Advance pointer
+   dec rcx             ; Decrement counter
+   jnz.loop_start
+
+3.2 Polymorphism and SIMD Vectorization
+Aria’s diverse type system (int, float, trit) requires the functional macros to be polymorphic.
+* Type Inspection: The MAP macro uses the metadata from the REFLECTABLE definition to determine the element type.
+* SIMD Generation: If the type is int32 or float32, the macro can automatically emit AVX2 (vpmulld, vaddps) instructions to process 8 elements per iteration.18
+* Ternary Optimization: If the type is trit (packed 2 bits), the macro emits bitwise logic sequences to perform parallel operations on 32 trits in a single 64-bit register (see Section 5).
+This allows the developer to write high-level functional chains (nums |> map(inc)) while the macro library ensures they get SIMD-optimized or bitwise-optimized assembly tailored to the specific data type. This fulfills the "functional" requirement of the prompt without sacrificing the "bare metal" performance of the language.
+________________
+4. Concurrency Fabrics: Actor-Model and Coroutine Abstractions
+Aria supports spawn and pipe, providing the primitives for concurrency.1 This suggests an architectural alignment with the Actor Model (Erlang, Akka).19 However, implementing Actors in raw assembly involves verbose message parsing loops and manual state management. We propose a macro-based Domain Specific Language (DSL) for defining Actors and Coroutines.
+4.1 The Actor Definition System
+We require a syntax to define an actor's state and its message handling logic declaratively.
+Proposed Syntax:
+
+
+Code snippet
+
+
+
+
+DEF_ACTOR(Calculator)
+   STATE(int64, current_sum)
+   STATE(int64, op_count)
+   
+   ON_MSG(MSG_ADD, int64:value) {
+       state.current_sum += value;
+       state.op_count++;
+   }
+   
+   ON_MSG(MSG_GET, pid:sender) {
+       send(sender, state.current_sum);
+   }
+END_ACTOR
+
+Macro Implementation Details:
+1. Struct Generation: The DEF_ACTOR macro generates a struct Calculator_State holding the declared variables.
+2. Mailbox Loop: It generates the main loop for the spawned process. This loop calls aria.os.msg_wait() (blocking read on the input pipe).
+3. Dispatcher: It generates a jump table (switch statement) based on the Message ID read from the pipe header.
+4. Payload Deserialization: The ON_MSG macro knows the type of the expected payload (int64:value). It generates code to read the correct number of bytes from the pipe into a local variable value before executing the user's logic block.
+Concurrency Safety with wild Pointers:
+Passing wild pointers between actors introduces race conditions (Use-After-Free). The ON_MSG macro can enforce Linear Type Semantics via code generation. If a message contains a wild pointer, the macro injects code to:
+1. Verify the pointer is not pinned (#) by the sender.
+2. Nullify the sender's copy of the pointer after transmission, ensuring purely transfer of ownership.
+4.2 Coroutine State Machines
+For tasks that require cooperative multitasking without the overhead of OS threads (e.g., parsing streaming data, game logic), Coroutines are superior.20
+The COROUTINE Macro:
+This macro implements the "Duff's Device" technique or a hidden state switch to allow a function to YIELD and resume.
+
+
+Code snippet
+
+
+
+
+COROUTINE(Generator) {
+   static int i;
+   for (i = 0; i < 10; i++) {
+       YIELD(i);
+   }
+}
+
+Implementation:
+The COROUTINE macro wraps the body in a switch(ctx->state). The YIELD macro defines a new case label (case __LINE__:) and saves the line number into ctx->state before returning. Upon the next call, the switch jumps directly to the saved label. This provides a lightweight, stackless coroutine mechanism suitable for high-performance state machines in Aria's networking stack.
+________________
+5. The Ternary Computation Layer: Emulation and Logic
+Aria's commitment to trit (-1, 0, 1) and tryte (10 trits) types 1 is its most distinguishing feature. However, general-purpose CPUs are binary. Software emulation of ternary arithmetic is notoriously slow if done via naive integer arrays (e.g., using one byte per trit). We propose a library of Bitwise Ternary Macros to optimize this for binary hardware.
+5.1 The 2-Bit Encoding Strategy
+To maximize density and performance, we assume a 2-bit encoding per trit 9:
+* 00 = 0
+* 01 = 1
+* 10 = -1 (or 11 depending on specific logic optimization preferences)
+* 11 = Illegal/Unknown (or 10)
+This allows packing 32 trits into a standard 64-bit register (int64).
+5.2 Parallel Trit Arithmetic Macros
+Arithmetic operations on packed trits must be performed in parallel, similar to bitwise operations on integers. We propose macros like TRIT_ADD, TRIT_MUL, TRIT_NOT.
+The TRIT_ADD Optimization:
+A ternary half-adder logic table can be implemented using binary bitwise operations (AND, OR, XOR, NOT).
+Let register A hold the lower bits of 32 trits, and B hold the upper bits.
+The TRIT_ADD macro emits a sequence of ~8-12 bitwise instructions that calculate the Sum and Carry for all 32 trits simultaneously. This "software circuit" approach is orders of magnitude faster than unpacking each trit, adding them as integers, and repacking.22
+SIMD Integration:
+The macro can detect if the compilation target supports AVX-512. If so, it can utilize the vpternlogd (Vector Packed Ternary Logic) instruction.18 This instruction allows implementing arbitrary boolean logic functions of three inputs. By mapping the ternary logic table to vpternlogd immediate values, Aria can process 256 trits (in a 512-bit ZMM register) in a single cycle. This feature alone would make Aria a premier language for ternary emulation research.
+5.3 The TRYTE Literal Macro
+Writing a tryte value like 10201 (base 3) or trying to calculate the binary representation of "++-0+" is difficult for humans.
+We propose a literal macro: TRYTE(+, -, 0, +, +, -, 0)
+This macro calculates the integer value at compile time using the preprocessor's %assign and %rep capabilities and emits a single dw (define word) instruction with the correct binary value. This bridges the gap between the developer's mental model (balanced ternary) and the machine's storage (binary).
+________________
+6. Advanced Memory Management: Scoped Arenas
+Aria's wild memory model requires manual management. A common pattern in high-performance C is the Arena (or Region) allocator, which frees all objects in a region at once.23
+6.1 The ARENA_SCOPE Macro
+This macro combines Aria's defer keyword with memory allocation to create a safe zone for wild pointers, effectively simulating RAII (Resource Acquisition Is Initialization).
+
+
+Code snippet
+
+
+
+
+ARENA_SCOPE(my_arena, 4096) {
+   // 'my_arena' is created here.
+   wild int64* x = ARENA_ALLOC(my_arena, int64);
+   wild string* s = ARENA_ALLOC(my_arena, string, "test");
+   // Work with x and s...
+} 
+// End of scope: 'my_arena' is destroyed. x and s are invalidated/freed automatically.
+
+Implementation Strategy:
+1. Preamble: Calls aria.mem.arena_create(size) and stores the handle.
+2. Allocation: ARENA_ALLOC expands to a fast pointer bump within the arena's pre-allocated block. This is much faster than malloc or aria.alloc.
+3. Epilogue: The macro defines a local label for the scope end and injects a defer aria.mem.arena_destroy(handle) statement.
+This brings Rust-like lifetime ergonomics to Aria's manual memory management, mitigating one of the biggest pain points (memory leaks) of "wild" pointers while maintaining the performance benefits of contiguous allocation.
+________________
+7. Finite State Machine (FSM) Generators
+For the "batteries included" protocols like HTTP, TLS, or Blockchain consensus, Finite State Machines are essential. Implementing efficient FSMs in assembly (computed gotos) is performant but unreadable.
+We propose a FSM_DEF macro DSL.
+7.1 Syntax and Semantics
+
+
+Code snippet
+
+
+
+
+FSM(HttpParser) {
+   STATE(START) {
+       ON('G', GOTO(METHOD_G));
+       ON('P', GOTO(METHOD_P));
+       DEFAULT(ERROR);
+   },
+   STATE(METHOD_G) {
+       ON('E', GOTO(METHOD_GE));
+       DEFAULT(ERROR);
+   },
+  ...
+}
+
+7.2 Compilation to Jump Tables
+The FSM macro parses this structure and generates a read-only Jump Table (array of code labels) for each state. The transition logic is compiled into a direct jmp [table + eax*8] instruction, which is significantly faster than a series of if/else comparisons or a switch statement.
+Ternary State Compression:
+If the input alphabet is ternary (trits) rather than bytes, the FSM table size is drastically reduced ($3^N$ states). The macro can optimize the lookup table layout specifically for ternary inputs, packing transitions more densely than for byte-based ASCII inputs. This allows Aria to implement ultra-compact control logic for embedded systems or ternary signal processing applications.25
+________________
+Conclusion
+The expansion of Aria's metaprogramming capabilities through these proposed libraries transforms the language from a "macro-assembler with quirks" into a sophisticated, production-ready systems language.
+1. Verification: The Unit Testing and Property-Based Testing macros provide a built-in safety net, critical for verifying the correctness of Aria's unique ternary math.
+2. Ergonomics: Reflection and Serialization macros remove the drudgery of I/O code, enabling rapid development of networked applications.
+3. Performance: Functional Loop Fusion and Ternary Bitwise Macros ensure that high-level abstractions compile down to optimal assembly, respecting the "zero-overhead" principle.
+4. Concurrency: Actor and Coroutine macros abstract away the complexity of raw pipes and threads, providing safe concurrency models suited for modern distributed systems.
+5. Safety: Arena Scopes tame the "wild" memory model, offering a middle ground between GC and manual management.
+Collectively, these features leverage the unique, context-aware power of the NASM preprocessor to generate safety and abstraction at compile time. They address the user's request for "functionality" and "ease of use" by automating boilerplate, enforcing type safety, and optimizing performance transparently. This architectural blueprint provides the roadmap for Aria to mature into a systems language that effectively balances the raw power of assembly with the expressive elegance of modern functional programming.
+Works cited
+1. aria_v0_0_6_specs.txt
+2. Unit Test Framework Package - Microsoft Open Source, accessed December 6, 2025, https://microsoft.github.io/mu/dyn/mu_basecore/UnitTestFrameworkPkg/ReadMe/
+3. Implementing a Macro-free Unit Testing Framework from Scratch in C++20 - Kris Jusiak, accessed December 6, 2025, https://www.youtube.com/watch?v=-qAXShy1xiE
+4. How do C and C++ unit test frameworks find all the test functions in a program?, accessed December 6, 2025, http://nckrlf.com/notes/finding-unit-tests/
+5. How to make a macro that defines a function, and puts that function into a function pointer array? : r/cprogramming - Reddit, accessed December 6, 2025, https://www.reddit.com/r/cprogramming/comments/149di65/how_to_make_a_macro_that_defines_a_function_and/
+6. Automically Register Unit Tests in C - Stack Overflow, accessed December 6, 2025, https://stackoverflow.com/questions/39379540/automically-register-unit-tests-in-c
+7. emil-e/rapidcheck: QuickCheck clone for C++ with the goal of being simple to use with as little boilerplate as possible. - GitHub, accessed December 6, 2025, https://github.com/emil-e/rapidcheck
+8. Introduction to Property Based Testing | by Nicolas Dubien | Criteo Tech Blog | Medium, accessed December 6, 2025, https://medium.com/criteo-engineering/introduction-to-property-based-testing-f5236229d237
+9. A storage place for my ternary experiments, including an emulator for a theoretical 27-trit CPU. - GitHub, accessed December 6, 2025, https://github.com/tedkotz/ternary
+10. aiunderstand/tt03-balanced-ternary-calculator: Submission template for Tiny Tapeout 03, accessed December 6, 2025, https://github.com/aiunderstand/tt03-balanced-ternary-calculator
+11. A Faster Serialization Library Based on Compile-time Reflection and C++ 20 - Yu Qi - CppCon 2022 - YouTube, accessed December 6, 2025, https://www.youtube.com/watch?v=myhB8ZlwOlE
+12. Compile-time reflection implemented in C++ 17 : r/cpp - Reddit, accessed December 6, 2025, https://www.reddit.com/r/cpp/comments/bytedx/compiletime_reflection_implemented_in_c_17/
+13. How to get reflection-like functionality in C, without x-macros - Stack Overflow, accessed December 6, 2025, https://stackoverflow.com/questions/45693380/how-to-get-reflection-like-functionality-in-c-without-x-macros
+14. Nasm preprocessor - Address parameter via variable - Stack Overflow, accessed December 6, 2025, https://stackoverflow.com/questions/47755659/nasm-preprocessor-address-parameter-via-variable
+15. This isn't the way to speed up Rust compile times - Xe Iaso, accessed December 6, 2025, https://xeiaso.net/blog/serde-precompiled-stupid/
+16. Swift: Map, Reduce, Filter function. Making own custom implementation for map? - Medium, accessed December 6, 2025, https://medium.com/@mohitchaudhary_43770/swift-map-reduce-filter-function-making-own-custom-implementation-for-map-c12a851ce587
+17. How to Use map(), filter(), and reduce() in JavaScript - freeCodeCamp, accessed December 6, 2025, https://www.freecodecamp.org/news/map-filter-reduce-in-javascript/
+18. AVX Bitwise ternary logic instruction busted!, accessed December 6, 2025, https://arnaud-carre.github.io/2024-10-06-vpternlogd/
+19. Actor model - Wikipedia, accessed December 6, 2025, https://en.wikipedia.org/wiki/Actor_model
+20. Coroutines in C - Chiark.greenend.org.uk, accessed December 6, 2025, https://www.chiark.greenend.org.uk/~sgtatham/coroutines.html
+21. Hacking Coroutines into C - misc, accessed December 6, 2025, https://wiomoc.de/misc/posts/hacking_coroutines_into_c.html
+22. Toward Efficient Implementation of Basic Balanced Ternary Arithmetic Operations in CNFET Technology | Request PDF - ResearchGate, accessed December 6, 2025, https://www.researchgate.net/publication/333939941_Toward_Efficient_Implementation_of_Basic_Balanced_Ternary_Arithmetic_Operations_in_CNFET_Technology
+23. ccgargantua/arena-allocator: Super small, simple, and (almost) completely C89-compliant single-header arena "allocator". - GitHub, accessed December 6, 2025, https://github.com/ccgargantua/arena-allocator
+24. Arena allocator tips and tricks, accessed December 6, 2025, https://nullprogram.com/blog/2023/09/27/
+25. Creating a Ternary Computer Simulator: Part 1 | by Edward Speer | Medium, accessed December 6, 2025, https://medium.com/@edstar221/creating-a-ternary-computer-simulator-part-1-aa5a0cdd9376

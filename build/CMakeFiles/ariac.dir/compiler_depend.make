@@ -402,6 +402,7 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: /home/randy/._____RANDY_____/REP
   /usr/lib/llvm-19/include/llvm/IR/GlobalVariable.h \
   /usr/lib/llvm-19/include/llvm/IR/IRBuilder.h \
   /usr/lib/llvm-19/include/llvm/IR/IRBuilderFolder.h \
+  /usr/lib/llvm-19/include/llvm/IR/InlineAsm.h \
   /usr/lib/llvm-19/include/llvm/IR/InstrTypes.h \
   /usr/lib/llvm-19/include/llvm/IR/Instruction.def \
   /usr/lib/llvm-19/include/llvm/IR/Instruction.h \
@@ -2914,6 +2915,8 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/time.h:
 
 /usr/lib/llvm-19/include/llvm/ADT/simple_ilist.h:
+
+/usr/lib/llvm-19/include/llvm/IR/InlineAsm.h:
 
 /usr/include/ctype.h:
 

@@ -1,0 +1,10 @@
+// Test fail() and pass() syntactic sugar - simple version
+func:divide = int64(int64:a, int64:b) {
+    if (b == 0) return fail(1);  // Desugars to: return {err:1, val:0}
+    return pass(a / b);           // Desugars to: return {err:0, val:a/b}
+};
+
+func:main = int64() {
+    int64:result = divide(10, 2);
+    return 0;
+};

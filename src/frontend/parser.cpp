@@ -73,6 +73,87 @@ bool Parser::check(TokenType type) {
     return current.type == type;
 }
 
+// Parse a complete type name, including built-in types, identifiers, and suffixes
+std::string Parser::parseTypeName() {
+    std::string typeName;
+    
+    // Check if it's a built-in type keyword (func, result, int8, etc.)
+    if (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING) {
+        typeName = current.value;
+        advance();
+    } else if (current.type == TOKEN_IDENTIFIER) {
+        typeName = current.value;
+        advance();
+    } else {
+        throw std::runtime_error("Expected type name");
+    }
+    
+    // Handle function signature: func<returnType(paramTypes)>
+    if (typeName == "func" && current.type == TOKEN_LT) {
+        typeName += "<";
+        advance(); // consume <
+        
+        // Parse return type
+        std::string returnType = parseTypeName();
+        typeName += returnType;
+        
+        // Expect (
+        if (current.type != TOKEN_LPAREN) {
+            throw std::runtime_error("Expected '(' after return type in function signature");
+        }
+        typeName += "(";
+        advance(); // consume (
+        
+        // Parse parameter types
+        bool first = true;
+        while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
+            if (!first) {
+                if (current.type != TOKEN_COMMA) {
+                    throw std::runtime_error("Expected ',' between parameter types");
+                }
+                typeName += ",";
+                advance(); // consume ,
+            }
+            first = false;
+            
+            std::string paramType = parseTypeName();
+            typeName += paramType;
+        }
+        
+        // Expect )
+        if (current.type != TOKEN_RPAREN) {
+            throw std::runtime_error("Expected ')' after parameter types");
+        }
+        typeName += ")";
+        advance(); // consume )
+        
+        // Expect >
+        if (current.type != TOKEN_GT) {
+            throw std::runtime_error("Expected '>' after function signature");
+        }
+        typeName += ">";
+        advance(); // consume >
+    }
+    
+    // Handle pointer suffix (@)
+    while (match(TOKEN_AT)) {
+        typeName += "@";
+    }
+    
+    // Handle array suffix ([size] or [])
+    if (match(TOKEN_LEFT_BRACKET)) {
+        typeName += "[";
+        if (!check(TOKEN_RIGHT_BRACKET)) {
+            Token sizeTok = expect(TOKEN_INT_LITERAL);
+            typeName += sizeTok.value;
+        }
+        expect(TOKEN_RIGHT_BRACKET);
+        typeName += "]";
+    }
+    
+    return typeName;
+}
+
 // =============================================================================
 // Expression Parsing (Recursive Descent with Precedence Climbing)
 // =============================================================================
@@ -81,7 +162,8 @@ bool Parser::check(TokenType type) {
 std::unique_ptr<Expression> Parser::parsePrimary() {
     // Integer literal
     if (current.type == TOKEN_INT_LITERAL) {
-        int64_t value = std::stoll(current.value);
+        // Use base 0 to auto-detect: decimal, hex (0x), octal (0), binary (0b)
+        int64_t value = std::stoll(current.value, nullptr, 0);
         advance();
         return std::make_unique<IntLiteral>(value);
     }
@@ -106,6 +188,12 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
     if (current.type == TOKEN_KW_FALSE) {
         advance();
         return std::make_unique<BoolLiteral>(false);
+    }
+    
+    // NULL literal
+    if (current.type == TOKEN_KW_NULL) {
+        advance();
+        return std::make_unique<NullLiteral>();
     }
 
     // Identifier (variable reference, function call, or struct constructor)
@@ -190,11 +278,36 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         return array;
     }
 
-    // Parenthesized expression
+    // Parenthesized expression OR cast: (expr) OR (Type)expr
     if (match(TOKEN_LPAREN)) {
-        auto expr = parseExpr();
-        expect(TOKEN_RPAREN);
-        return expr;
+        // Lookahead to see if this is a cast (Type) or just a grouped expression
+        // Cast pattern: ( TypeName ) Expression
+        // We need to check if the token after LPAREN is a type
+        
+        if (isTypeToken(current.type)) {
+            // Could be a cast! Try to parse it
+            std::string type_name = parseTypeName();  // This handles @ and [] suffixes too
+            
+            if (current.type == TOKEN_RPAREN) {
+                // Definitely a cast: (Type)
+                advance();  // consume )
+                
+                // Parse the expression to cast
+                auto expr = parseUnary();  // Use parseUnary to get the next value
+                
+                // Create cast expression
+                return std::make_unique<CastExpr>(type_name, std::move(expr));
+            } else {
+                // Not a cast - it's something else
+                // This shouldn't happen in well-formed code
+                throw std::runtime_error("Unexpected token after type in parentheses");
+            }
+        } else {
+            // Not a type, so it's a normal grouped expression
+            auto expr = parseExpr();
+            expect(TOKEN_RPAREN);
+            return expr;
+        }
     }
     
     // Array literal: [1, 2, 3]
@@ -252,14 +365,15 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
     }
     
     // Check if current token is a type followed by (
+    // IMPORTANT: Identifiers can be types OR variables, so we need to be careful
+    // Only treat as lambda if it's definitely "Type(" pattern
     if (isTypeToken(current.type)) {
-        // Lookahead to see if this is a lambda (type followed by LPAREN)
-        Token type_token = current;
-        
-        // Try to parse as lambda
+        // Save the token in case it's actually a variable name, not a lambda type
+        Token saved_token = current;
         std::string return_type = current.value;
-        advance();  // consume type token
+        advance();  // consume type/identifier token
         
+        // NOW check if we have LPAREN (lambda) or something else (variable/expression)
         if (current.type == TOKEN_LPAREN) {
             // This is a lambda! Parse it
             auto params = parseParams();
@@ -289,12 +403,10 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
             
             return lambda;
         } else {
-            // Not a lambda, this was a mistake - we need to handle this case
-            // This shouldn't happen in valid Aria code, but let's throw an error
-            std::stringstream ss;
-            ss << "Unexpected token after type identifier: " << current.value
-               << " at line " << current.line << " (expected '(' for lambda or variable declaration)";
-            throw std::runtime_error(ss.str());
+            // Not a lambda - it's actually a variable reference
+            // The "type" token was actually just an identifier (variable name)
+            // We've already consumed it, so return it as VarExpr
+            return std::make_unique<VarExpr>(saved_token.value);
         }
     }
     
@@ -609,6 +721,31 @@ std::unique_ptr<Expression> Parser::parseAssignment() {
         return std::make_unique<BinaryOp>(BinaryOp::MOD_ASSIGN, std::move(left), std::move(right));
     }
     
+    if (match(TOKEN_AND_ASSIGN)) {
+        auto right = parseAssignment();
+        return std::make_unique<BinaryOp>(BinaryOp::AND_ASSIGN, std::move(left), std::move(right));
+    }
+    
+    if (match(TOKEN_OR_ASSIGN)) {
+        auto right = parseAssignment();
+        return std::make_unique<BinaryOp>(BinaryOp::OR_ASSIGN, std::move(left), std::move(right));
+    }
+    
+    if (match(TOKEN_XOR_ASSIGN)) {
+        auto right = parseAssignment();
+        return std::make_unique<BinaryOp>(BinaryOp::XOR_ASSIGN, std::move(left), std::move(right));
+    }
+    
+    if (match(TOKEN_LSHIFT_ASSIGN)) {
+        auto right = parseAssignment();
+        return std::make_unique<BinaryOp>(BinaryOp::LSHIFT_ASSIGN, std::move(left), std::move(right));
+    }
+    
+    if (match(TOKEN_RSHIFT_ASSIGN)) {
+        auto right = parseAssignment();
+        return std::make_unique<BinaryOp>(BinaryOp::RSHIFT_ASSIGN, std::move(left), std::move(right));
+    }
+    
     return left;
 }
 
@@ -722,6 +859,52 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         expect(TOKEN_SEMICOLON);
         return std::make_unique<ReturnStmt>(std::move(expr));
     }
+    
+    // fail(errorCode) - Syntactic sugar for return {err:errorCode, val:0}
+    if (match(TOKEN_KW_FAIL)) {
+        expect(TOKEN_LPAREN);
+        auto errorCode = parseExpr();
+        expect(TOKEN_RPAREN);
+        expect(TOKEN_SEMICOLON);
+        
+        // Create: {err: errorCode, val: 0}
+        auto obj = std::make_unique<ObjectLiteral>();
+        
+        ObjectLiteral::Field errField;
+        errField.name = "err";
+        errField.value = std::move(errorCode);
+        obj->fields.push_back(std::move(errField));
+        
+        ObjectLiteral::Field valField;
+        valField.name = "val";
+        valField.value = std::make_unique<IntLiteral>(0);
+        obj->fields.push_back(std::move(valField));
+        
+        return std::make_unique<ReturnStmt>(std::move(obj));
+    }
+    
+    // pass(value) - Syntactic sugar for return {err:0, val:value}
+    if (match(TOKEN_KW_PASS)) {
+        expect(TOKEN_LPAREN);
+        auto value = parseExpr();
+        expect(TOKEN_RPAREN);
+        expect(TOKEN_SEMICOLON);
+        
+        // Create: {err: 0, val: value}
+        auto obj = std::make_unique<ObjectLiteral>();
+        
+        ObjectLiteral::Field errField;
+        errField.name = "err";
+        errField.value = std::make_unique<IntLiteral>(0);
+        obj->fields.push_back(std::move(errField));
+        
+        ObjectLiteral::Field valField;
+        valField.name = "val";
+        valField.value = std::move(value);
+        obj->fields.push_back(std::move(valField));
+        
+        return std::make_unique<ReturnStmt>(std::move(obj));
+    }
 
     // Break statement
     if (match(TOKEN_KW_BREAK)) {
@@ -743,6 +926,139 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         return parseVarDecl();
     }
     
+    // Check for type:name variable declaration
+    // This includes both user-defined types (identifier) and built-in types (uint8, int64, etc.)
+    if (current.type == TOKEN_IDENTIFIER || 
+        (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING)) {
+        // Lookahead to distinguish variable declaration from expression statement
+        Token saved = current;
+        advance();
+        
+        if (current.type == TOKEN_COLON) {
+            // This is a variable declaration with type:name pattern
+            // Backtrack by manually reconstructing state
+            // We consumed the type, now at colon
+            // parseVarDecl expects to start at the type token
+
+            // So we need to parse it here directly
+            
+            std::string type_name = saved.value;
+            advance();  // consume :
+            
+            Token name_tok = expect(TOKEN_IDENTIFIER);
+            
+            // Check for array size syntax: name[size]
+            if (current.type == TOKEN_LBRACKET) {
+                advance();  // consume [
+                // Parse array size
+                auto size_expr = parseExpr();
+                expect(TOKEN_RBRACKET);
+                
+                // Extract size if it's an integer literal
+                if (auto* lit = dynamic_cast<IntLiteral*>(size_expr.get())) {
+                    // Append array size to type: "uint8" -> "uint8[10]"
+                    type_name += "[" + std::to_string(lit->value) + "]";
+                } else {
+                    throw std::runtime_error("Array size must be a constant integer");
+                }
+            }
+            
+            std::unique_ptr<Expression> init = nullptr;
+            if (match(TOKEN_ASSIGN)) {
+                init = parseExpr();
+            }
+            
+            expect(TOKEN_SEMICOLON);
+            
+            return std::make_unique<VarDecl>(type_name, name_tok.value, std::move(init));
+        } else {
+            // Not a type:name pattern - this is an expression statement
+            // We've consumed the identifier (saved) and are now at the next token
+            // We need to parse this as a complete expression, which may include:
+            // - Assignment: x = value
+            // - Compound assignment: x += value  
+            // - Function call: func()
+            // - Member access: obj.field
+            // - Array indexing: arr[i]
+            // etc.
+            
+            // Problem: We've already consumed the identifier, but parseExpr() 
+            // expects to start from the current token. We need to reconstruct
+            // the expression starting from the identifier we already consumed.
+            
+            // Solution: Create the base expression (VarExpr) and then manually
+            // continue parsing postfix operations and assignments
+            
+            std::unique_ptr<Expression> expr = std::make_unique<VarExpr>(saved.value);
+            
+            // Handle postfix operations (function calls, member access, array indexing)
+            while (true) {
+                if (current.type == TOKEN_LPAREN) {
+                    // Function call
+                    advance();
+                    auto call = std::make_unique<CallExpr>(saved.value);
+                    while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
+                        call->arguments.push_back(parseExpr());
+                        if (!match(TOKEN_COMMA)) break;
+                    }
+                    expect(TOKEN_RPAREN);
+                    expr = std::move(call);
+                } else if (current.type == TOKEN_DOT || current.type == TOKEN_SAFE_NAV) {
+                    // Member access
+                    bool is_safe = (current.type == TOKEN_SAFE_NAV);
+                    advance();
+                    Token member_tok = expect(TOKEN_IDENTIFIER);
+                    auto member_access = std::make_unique<MemberAccess>(std::move(expr), member_tok.value, is_safe);
+                    expr = std::move(member_access);
+                } else if (current.type == TOKEN_LBRACKET) {
+                    // Array indexing
+                    advance();
+                    auto index = parseExpr();
+                    expect(TOKEN_RBRACKET);
+                    expr = std::make_unique<IndexExpr>(std::move(expr), std::move(index));
+                } else {
+                    // No more postfix operators
+                    break;
+                }
+            }
+            
+            // Handle assignment operators
+            if (current.type == TOKEN_ASSIGN || 
+                current.type == TOKEN_PLUS_ASSIGN ||
+                current.type == TOKEN_MINUS_ASSIGN ||
+                current.type == TOKEN_STAR_ASSIGN ||
+                current.type == TOKEN_SLASH_ASSIGN ||
+                current.type == TOKEN_MOD_ASSIGN ||
+                current.type == TOKEN_AND_ASSIGN ||
+                current.type == TOKEN_OR_ASSIGN ||
+                current.type == TOKEN_XOR_ASSIGN) {
+                
+                // Convert token type to BinaryOp::OpType
+                BinaryOp::OpType op;
+                switch (current.type) {
+                    case TOKEN_ASSIGN: op = BinaryOp::ASSIGN; break;
+                    case TOKEN_PLUS_ASSIGN: op = BinaryOp::PLUS_ASSIGN; break;
+                    case TOKEN_MINUS_ASSIGN: op = BinaryOp::MINUS_ASSIGN; break;
+                    case TOKEN_STAR_ASSIGN: op = BinaryOp::STAR_ASSIGN; break;
+                    case TOKEN_SLASH_ASSIGN: op = BinaryOp::SLASH_ASSIGN; break;
+                    case TOKEN_MOD_ASSIGN: op = BinaryOp::MOD_ASSIGN; break;
+                    case TOKEN_AND_ASSIGN: op = BinaryOp::AND_ASSIGN; break;
+                    case TOKEN_OR_ASSIGN: op = BinaryOp::OR_ASSIGN; break;
+                    case TOKEN_XOR_ASSIGN: op = BinaryOp::XOR_ASSIGN; break;
+                    default: 
+                        throw std::runtime_error("Unexpected assignment operator");
+                }
+                
+                advance();
+                auto rhs = parseExpr();
+                expr = std::make_unique<BinaryOp>(op, std::move(expr), std::move(rhs));
+            }
+            
+            expect(TOKEN_SEMICOLON);
+            return std::make_unique<ExpressionStmt>(std::move(expr));
+        }
+    }
+    
     // Check for * prefix (auto-wrap lambda)
     bool auto_wrap = false;
     if (current.type == TOKEN_STAR) {
@@ -753,28 +1069,83 @@ std::unique_ptr<Statement> Parser::parseStmt() {
     // Check if this is a type token - could be var decl OR lambda
     if (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING) {
         // Lookahead: if next token is '(', this is a lambda expression statement
-        // Save current position
+        // BUT: for func<...> signatures, we need to parse the full type first
+        
         Token saved = current;
         advance();
         
-        if (current.type == TOKEN_LPAREN) {
-            // This is a lambda! Backtrack and parse as expression statement
-            // Put the type token back (simple backtrack)
-            // Actually we can't backtrack easily, so just handle it differently
-            // Let's NOT advance - check the NEXT token without advancing
-            // We already advanced, so current is now the token AFTER the type
-            // We need to go back - but parser doesn't support backtracking
-            // So let's change approach: just check without consuming
-            // 
-            // Problem: we already called advance()! 
-            // Solution: Create a temp parser state or handle both cases
-            // For now, let's just parse the lambda manually here
+        // Check for function signature: func<...>
+        if (saved.value == "func" && current.type == TOKEN_LT) {
+            // This is a func signature variable declaration, not a lambda
+            // Put token back (we need to re-parse the full type)
+            // Problem: can't backtrack easily
+            // Solution: Parse the signature here, then continue
             
+            // We're at '<' after 'func'
+            // Build the full type string by manually parsing the signature
+            std::string fullType = "func<";
+            advance(); // consume <
+            
+            // Parse return type (might be complex, so need recursive parsing)
+            // For simplicity, assume return type is simple for now
+            // TODO: Make this properly recursive
+            if (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING) {
+                fullType += current.value;
+                advance();
+            } else if (current.type == TOKEN_IDENTIFIER) {
+                fullType += current.value;
+                advance();
+            } else {
+                throw std::runtime_error("Expected return type in function signature");
+            }
+            
+            // Parse parameter list
+            expect(TOKEN_LPAREN);
+            fullType += "(";
+            
+            bool first = true;
+            while (current.type != TOKEN_RPAREN) {
+                if (!first) {
+                    expect(TOKEN_COMMA);
+                    fullType += ",";
+                }
+                first = false;
+                
+                // Parse parameter type
+                if (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING) {
+                    fullType += current.value;
+                    advance();
+                } else if (current.type == TOKEN_IDENTIFIER) {
+                    fullType += current.value;
+                    advance();
+                } else {
+                    throw std::runtime_error("Expected parameter type in function signature");
+                }
+            }
+            
+            expect(TOKEN_RPAREN);
+            fullType += ")";
+            expect(TOKEN_GT);
+            fullType += ">";
+            
+            // Now expect ':' for variable declaration
+            expect(TOKEN_COLON);
+            Token name_tok = expect(TOKEN_IDENTIFIER);
+            
+            std::unique_ptr<Expression> init = nullptr;
+            if (match(TOKEN_ASSIGN)) {
+                init = parseExpr();
+            }
+            
+            expect(TOKEN_SEMICOLON);
+            return std::make_unique<VarDecl>(fullType, name_tok.value, std::move(init));
+        }
+        
+        if (current.type == TOKEN_LPAREN) {
+            // This is a lambda! Parse it here
             // We've consumed the type token and seen LPAREN
-            // current is now LPAREN
             // saved has the type token
             
-            // Parse as lambda expression statement
             std::string return_type = saved.value;
             auto params = parseParams();  // This will consume the ( and params and )
             auto body = parseBlock();
@@ -840,10 +1211,10 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         expect(TOKEN_LPAREN);
         auto condition = parseExpr();
         expect(TOKEN_RPAREN);
-        auto thenBranch = parseBlock();
+        auto thenBranch = parseBlockOrStatement();
         std::unique_ptr<Block> elseBranch = nullptr;
         if (match(TOKEN_KW_ELSE)) {
-            elseBranch = parseBlock();
+            elseBranch = parseBlockOrStatement();
         }
         return std::make_unique<IfStmt>(std::move(condition), std::move(thenBranch), std::move(elseBranch));
     }
@@ -920,6 +1291,34 @@ std::unique_ptr<Statement> Parser::parseStmt() {
     return std::make_unique<ExpressionStmt>(std::move(expr));
 }
 
+// Parse either a block {...} or a single statement
+// Used for if/else/while/for bodies to allow one-liner syntax
+std::unique_ptr<Block> Parser::parseBlockOrStatement() {
+    if (current.type == TOKEN_LBRACE) {
+        // It's a block - need to parse it manually since parseBlock doesn't exist in parser.cpp
+        expect(TOKEN_LBRACE);
+        auto block = std::make_unique<Block>();
+        
+        while (current.type != TOKEN_RBRACE && current.type != TOKEN_EOF) {
+            auto stmt = parseStmt();
+            if (stmt) {
+                block->statements.push_back(std::move(stmt));
+            }
+        }
+        
+        expect(TOKEN_RBRACE);
+        return block;
+    } else {
+        // Single statement - wrap it in a block
+        auto block = std::make_unique<Block>();
+        auto stmt = parseStmt();
+        if (stmt) {
+            block->statements.push_back(std::move(stmt));
+        }
+        return block;
+    }
+}
+
 // Parse variable declaration: [const|wild|wildx|stack] type:name = value;
 // OR struct declaration: const StructName = struct { ... };
 std::unique_ptr<Statement> Parser::parseVarDecl() {
@@ -943,75 +1342,75 @@ std::unique_ptr<Statement> Parser::parseVarDecl() {
         advance();
     }
     
-    // Now check what follows:
-    // - If it's: identifier = struct { ... }, it's a struct declaration
-    // - If it's: type:name = value, it's a variable declaration
-    //
-    // Key insight: Struct pattern has = after identifier (no colon)
-    //              VarDecl pattern has : after type
+    // Now we need to distinguish between:
+    // - Struct declaration: identifier = struct { ... }
+    // - Variable declaration: type:name = value
     
-    // Save current token (could be type or struct name)
-    Token first_token = current;
-    advance();
-    
-    // Check next token:
-    // If it's TOKEN_ASSIGN, this is a struct declaration (const StructName = struct {...})
-    // If it's TOKEN_COLON, this is a variable declaration (const type:name = value)
-    if (current.type == TOKEN_ASSIGN) {
-        // This is a struct declaration!
-        // We've consumed const and the struct name
-        // Current is now TOKEN_ASSIGN
-        // parseStructDecl expects to start at const, so we need to "backtrack"
+    // Check for struct pattern: IDENTIFIER = struct (struct name, not type)
+    // Important: Type tokens like TOKEN_TYPE_FUNC won't match this pattern
+    if (current.type == TOKEN_IDENTIFIER) {
+        Token maybe_struct_name = current;
+        advance();
         
-        // Actually, let's just parse the struct here directly
-        advance(); // consume =
-        expect(TOKEN_KW_STRUCT);
-        expect(TOKEN_LEFT_BRACE);
-        
-        std::vector<StructField> fields;
-        while (!check(TOKEN_RIGHT_BRACE)) {
-            Token field_name = expect(TOKEN_IDENTIFIER);
-            expect(TOKEN_COLON);
+        if (current.type == TOKEN_ASSIGN) {
+            // This is a struct declaration!
+            advance(); // consume =
+            expect(TOKEN_KW_STRUCT);
+            expect(TOKEN_LEFT_BRACE);
             
-            // Accept type tokens or identifiers
-            if (current.type < TOKEN_TYPE_VOID || current.type > TOKEN_TYPE_STRING) {
-                if (current.type != TOKEN_IDENTIFIER) {
-                    throw std::runtime_error("Expected type for struct field");
-                }
-            }
-            Token field_type = current;
-            advance();
-            
-            // Handle arrays: field: int8[256]
-            std::string type_name = field_type.value;
-            if (check(TOKEN_LEFT_BRACKET)) {
-                advance();
-                type_name += "[";
-                if (!check(TOKEN_RIGHT_BRACKET)) {
-                    Token size_tok = expect(TOKEN_INT_LITERAL);
-                    type_name += size_tok.value;
-                }
-                expect(TOKEN_RIGHT_BRACKET);
-                type_name += "]";
+            std::vector<StructField> fields;
+            while (!check(TOKEN_RIGHT_BRACE)) {
+                Token field_name = expect(TOKEN_IDENTIFIER);
+                expect(TOKEN_COLON);
+                
+                // Parse field type using parseTypeName for complex types
+                std::string type_name = parseTypeName();
+                
+                fields.emplace_back(type_name, field_name.value);
+                expect(TOKEN_COMMA);
             }
             
-            fields.emplace_back(type_name, field_name.value);
-            expect(TOKEN_COMMA);
+            expect(TOKEN_RIGHT_BRACE);
+            expect(TOKEN_SEMICOLON);
+            
+            auto decl = std::make_unique<StructDecl>(maybe_struct_name.value, fields);
+            decl->is_const = is_const;
+            return decl;
         }
         
-        expect(TOKEN_RIGHT_BRACE);
+        // Not a struct - it's a variable with simple type
+        // We already consumed the type identifier and advanced
+        // Handle suffixes (@ for pointer, [] for array)
+        std::string fullType = parseTypeSuffixes(maybe_struct_name.value);
+        
+        // Current should now be at colon
+        expect(TOKEN_COLON);
+        
+        // Name
+        Token nameToken = expect(TOKEN_IDENTIFIER);
+        
+        // Initializer
+        std::unique_ptr<Expression> init = nullptr;
+        if (match(TOKEN_ASSIGN)) {
+            init = parseExpr();
+        }
+        
         expect(TOKEN_SEMICOLON);
         
-        auto decl = std::make_unique<StructDecl>(first_token.value, fields);
-        decl->is_const = is_const;
-        return decl;
+        auto varDecl = std::make_unique<VarDecl>(fullType, nameToken.value, std::move(init));
+        varDecl->is_const = is_const;
+        varDecl->is_wild = is_wild;
+        varDecl->is_wildx = is_wildx;
+        varDecl->is_stack = is_stack;
+        
+        return varDecl;
     }
     
-    // Not a struct - it's a normal variable declaration
-    // We've already consumed the type token (first_token) and current is at the colon
-    std::string fullType = parseTypeSuffixes(first_token.value);
+    // Not a simple identifier - must be a built-in type or complex type like func<...>
+    // Use parseTypeName to handle it (it will handle func<...> signatures)
+    std::string fullType = parseTypeName();
 
-    // Colon (Aria syntax: type:name or type[]:name or type@:name)
+    // Colon (Aria syntax: type:name)
     expect(TOKEN_COLON);
 
     // Name
@@ -1102,12 +1501,15 @@ std::unique_ptr<Statement> Parser::parseForLoop() {
     return std::make_unique<ForLoop>(iterator_name, std::move(iterable), std::move(body));
 }
 
-// Parse while loop: while condition { ... }
+// Parse while loop: while (condition) { ... }
 std::unique_ptr<Statement> Parser::parseWhileLoop() {
     expect(TOKEN_KW_WHILE);
+    expect(TOKEN_LPAREN);
     
     // Parse condition expression
     auto condition = parseExpr();
+    
+    expect(TOKEN_RPAREN);
     
     // Parse body block
     auto body = parseBlock();

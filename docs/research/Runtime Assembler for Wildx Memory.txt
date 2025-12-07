@@ -1,0 +1,695 @@
+﻿Architectural Specification and Implementation Strategy: The Aria Runtime Assembler (ARA) for wildx Execution Environments
+1. Introduction: The Imperative for Native Runtime Assembly
+The maturity of a systems programming language is often measured by its capacity for self-reflection and self-modification. For the Aria programming language (v0.0.6), the transition from a static compilation toolchain to a dynamic runtime environment represents a pivotal evolution. As detailed in the language specifications, Aria adopts a "batteries-included" philosophy, aiming to support complex domains such as blockchain implementation and machine learning directly within its ecosystem.1 These domains frequently necessitate dynamic code generation—whether for Just-In-Time (JIT) compilation of smart contracts, optimizing neural network compute kernels at runtime, or implementing efficient emulators.
+To fulfill this architectural mandate, the language has introduced the wildx memory semantic—a distinct allocation class that bridges the gap between raw data manipulation and instruction execution.1 However, the ability to allocate executable memory is merely the substrate; the utility of such memory is contingent upon the tools available to populate it. Currently, developers operating at the "bare metal" of the Aria runtime are forced to emit machine code by manually writing hexadecimal byte sequences into buffers. This process is brittle, prone to catastrophic segmentation faults, and semantically opaque.
+This report presents the definitive architectural design and reference implementation for the Aria Runtime Assembler (ARA). The ARA is a native, zero-dependency library designed to generate x86-64 machine code directly into wildx memory buffers. By abstracting the complexities of the AMD64 instruction set—variable-length encoding, prefix logic, and addressing modes—behind a type-safe, fluent API, the ARA brings the ergonomics of a high-level assembler to the runtime environment. This specification strictly adheres to the NASM (Netwide Assembler) syntactic style requested, leveraging Aria's pipeline operators (|>) and object model to create a Domain Specific Language (DSL) that is both expressive and performant.
+1.1 The Role of wildx in Dynamic Compilation
+The design of the ARA is inextricably linked to the properties of the underlying memory model. As defined in the wildx specification, this memory type allows for the explicit management of the "Write XOR Execute" (W^X) security policy, a standard enforcement mechanism in modern operating systems.1 The lifecycle of a JIT-compiled function in Aria, facilitated by the ARA, follows a strict state transition diagram:
+1. Allocation Phase: Memory is requested via aria.mem.alloc_exec. The operating system (via mmap or VirtualAlloc) provides pages that are initially mapped as Read-Write (RW). This is the "Mutable Generation" state.
+2. Generation Phase: The ARA writes machine instructions into the buffer. During this phase, the memory is treated as data—an array of uint8.
+3. Sealing Phase: Upon completion of code generation, the runtime invokes aria.mem.protect_exec. This performs two critical hardware operations: it flushes the instruction cache (I-Cache) to ensure coherency with the data cache (D-Cache), and it updates the Page Table Entries (PTEs) to mark the pages as Read-Execute (RX).1
+4. Execution Phase: The sealed buffer is cast to a function pointer type (e.g., func:int64()) and invoked.
+The ARA must manage the "Generation Phase" with absolute precision. Any error in encoding—such as an incorrect REX prefix or a malformed ModR/M byte—will not result in a compile-time error, but rather an Invalid Opcode exception or a segmentation fault during the "Execution Phase".2 Thus, the primary responsibility of the ARA is to enforce architectural correctness at runtime.
+________________
+2. Theoretical Foundations of x86-64 Encoding
+To implement a robust assembler, one must first deconstruct the target Instruction Set Architecture (ISA). The x86-64 architecture is a Complex Instruction Set Computer (CISC) design characterized by variable-length instructions ranging from 1 to 15 bytes.4 Unlike Reduced Instruction Set Computer (RISC) architectures, which typically use fixed-width instructions and simple addressing, x86-64 requires a sophisticated encoding engine to determine the layout of each instruction dynamically.
+2.1 Anatomy of an Instruction
+The encoding of an x86-64 instruction follows a strictly ordered sequence of components. The ARA implementation must serialize these components into the wildx buffer in the exact order specified by the Intel and AMD software developer manuals 4:
+Component
+	Length
+	Necessity
+	Description
+	Legacy Prefixes
+	0-4 Bytes
+	Optional
+	Modifiers for lock semantics (LOCK), string repetition (REP), or operand size overrides (0x66).
+	REX Prefix
+	0-1 Byte
+	Optional
+	The critical extension for 64-bit mode. Provides access to R8-R15 and 64-bit operand widths.
+	Opcode
+	1-3 Bytes
+	Required
+	The fundamental identifier of the operation (e.g., 0x89 for MOV, 0x01 for ADD).
+	ModR/M
+	0-1 Byte
+	Conditional
+	Defines the addressing mode (Register vs. Memory) and the operands.
+	SIB
+	0-1 Byte
+	Conditional
+	"Scale-Index-Base". Required for complex addressing modes like ``.
+	Displacement
+	0-4 Bytes
+	Conditional
+	An offset added to the address (e.g., ``).
+	Immediate
+	0-8 Bytes
+	Conditional
+	Constant data embedded directly in the instruction stream.
+	2.2 The REX Prefix: The Gateway to 64-bit
+The REX prefix is the mechanism by which the legacy x86 architecture was extended to 64 bits without completely redesigning the opcode map. It occupies the opcode range 0x40 through 0x4F. In the ARA, the generation of the REX byte is handled by a logic gate that inspects the operands of every instruction.6
+The REX byte is structured as 0100 WRXB. The upper four bits (0100) are fixed, acting as a signature. The lower four bits act as flags:
+* W (Width): When set to 1, this bit promotes the operation to 64-bit operand size. For example, a standard ADD instruction operates on 32-bit registers by default. To perform ADD RAX, RBX (64-bit addition), the W-bit must be set. The ARA defaults to 64-bit width for int64 operands but must intelligently clear this bit for int32 or int16 operations to save space or access sub-registers.8
+* R (Register): This bit extends the ModR/M.Reg field. The standard ModR/M byte can only address 8 registers (0-7, i.e., RAX through RDI). To address R8 through R15, the assembler must set the R-bit.
+* X (Index): This bit extends the SIB.Index field, allowing registers R8-R15 to be used as the index in scaled addressing modes.
+* B (Base): This bit extends the ModR/M.RM field or the SIB.Base field, allowing registers R8-R15 to be used as the base address or destination operand.
+2.3 The ModR/M and SIB Addressing Bytes
+The ModR/M byte is the pivot point of x86 encoding. It consists of three fields: Mod (2 bits), Reg (3 bits), and R/M (3 bits).10
+* Mod Field: Determines the addressing mode.
+   * 11: Register-Direct addressing (e.g., MOV RAX, RBX). The instruction operates purely on registers.
+   * 00: Register-Indirect addressing (e.g., MOV RAX,). No displacement.
+   * 01: Register-Indirect with 8-bit displacement (e.g., MOV RAX,).
+   * 10: Register-Indirect with 32-bit displacement.
+* Reg Field: Encodes the destination register or, for certain instructions like ADD or SUB with immediate operands, functions as an opcode extension (e.g., 0x81 /0 for ADD, 0x81 /5 for SUB).6
+* R/M Field: Encodes the source register or the memory base register.
+The SIB byte is triggered strictly when the ModR/M encoding implies it. Specifically, when the R/M field is set to 100 (binary for 4, representing RSP), it signals the presence of a SIB byte. This architecture implies that one cannot simply use RSP as a base register in the ModR/M byte alone; it always requires a SIB byte, an idiosyncrasy the ARA must handle transparently.12
+2.4 Displacement and Immediate Encoding
+Immediates and displacements in x86-64 are typically little-endian. The ARA utilizes Aria's binary writing capabilities to emit these values. A critical nuance is sign extension. Most x86-64 instructions that take an immediate operand only accept a 32-bit sign-extended value. For example, ADD RAX, imm64 does not exist in the standard ISA; one can only ADD RAX, imm32.15 The only instruction capable of loading a full 64-bit immediate is MOV reg, imm64 (Opcode 0xB8 + reg). The ARA implementation must check the magnitude of immediate values. If a user attempts to add a large 64-bit constant, the assembler must either reject it or implement a "scratch register" workaround (e.g., move imm64 to a temporary register, then add), though for a baseline assembler, rejecting the invalid encoding is the explicit and safer choice.17
+________________
+3. System Architecture and API Design
+The ARA is designed not just as a collection of functions, but as a coherent system that manages state, labels, and memory. The design leverages Aria's struct-based types and functional features.
+3.1 The Fluent Interface Pattern
+The user request specifies a "NASM-style" assembler. In a runtime context, this implies a Fluent Interface (or Method Chaining) pattern. This allows the assembly code to visually resemble the block structure of a standard assembly file.18
+Target Syntax:
+
+
+Code snippet
+
+
+
+
+asm |> mov(rax, rdi)
+
+|> add(rax, 10)
+|> jmp("loop_start")
+
+To achieve this in Aria, the assembler functions are designed to accept the assembler state object as the first argument (the subject of the pipeline) and return the same object, enabling the chain |> operator to pass the context through the sequence of instructions.
+3.2 Single-Pass Generation with Backpatching
+Dynamic assemblers typically favor a single-pass approach to minimize latency. However, a single pass creates a problem for forward references—jumping to a label that has not yet been defined. The ARA solves this using a Backpatching strategy.20
+1. Symbol Table: The assembler maintains a hash map (labels) mapping label names (strings) to their byte offsets (uint64) within the wildx buffer.
+2. Fixup List: It also maintains a list of Fixup records. Each record contains the name of the undefined label and the exact memory address where the jump offset needs to be written.
+3. Emission Logic: When a jump instruction targets a known label (in the map), the relative offset is calculated immediately: Offset = Target - (Current + InstructionLength). If the label is unknown, the assembler emits a placeholder (usually 0x00000000) and adds an entry to the Fixup List.23
+4. Resolution: Before the memory is sealed, a resolve() function iterates through the Fixup List. It looks up the now-defined labels, calculates the correct relative offsets, and writes them directly into the buffer at the recorded locations.
+3.3 Type Definitions
+The ARA relies on a set of core data structures defined in Aria. These structures enforce type safety for operands, preventing the accidental usage of invalid register indices or incompatible types.
+3.3.1 Register Constants
+Registers are mapped to their hardware indices as defined by the System V AMD64 ABI.25
+Register
+	Index
+	Description
+	RAX
+	0
+	Accumulator / Return Value
+	RCX
+	1
+	Counter / 4th Argument
+	RDX
+	2
+	Data / 3rd Argument
+	RBX
+	3
+	Base / Callee-Saved
+	RSP
+	4
+	Stack Pointer
+	RBP
+	5
+	Base Pointer / Callee-Saved
+	RSI
+	6
+	Source Index / 2nd Argument
+	RDI
+	7
+	Destination Index / 1st Argument
+	R8 - R15
+	8-15
+	Extended General Purpose
+	3.3.2 The Operand Structure
+To handle the complexity of x86 addressing (Register vs. Memory vs. Immediate), we define a unified Operand structure. This structure uses Aria's struct capability to group the necessary metadata for encoding.1
+
+
+Code snippet
+
+
+
+
+// Operand Types
+const int8:OP_REG = 0;
+const int8:OP_MEM = 1;
+const int8:OP_IMM = 2;
+
+struct Operand {
+   int8: type,       // Discriminator
+   int8: reg_index,  // Hardware index (0-15)
+   int8: base,       // Base register for memory (0-15)
+   int8: index,      // Index register for SIB (0-15)
+   int8: scale,      // Scale factor (0=1x, 1=2x, 2=4x, 3=8x)
+   int32: disp,      // 32-bit Displacement
+   int64: imm,       // 64-bit Immediate
+   bool: is_rel      // Flag for RIP-relative addressing
+}
+
+________________
+4. Detailed Implementation Strategy
+The implementation is divided into three layers: the Memory Layer (managing wildx buffers), the Encoding Layer (bit-level manipulation), and the Instruction Layer (the user-facing API).
+4.1 The Memory Layer: wildx Management
+The foundation of the ARA is the allocation of wildx memory. As per the provided research, this requires interacting with the OS via mmap (Unix) or VirtualAlloc (Windows). Since Aria's standard library is expanding to support this via aria.mem, our implementation assumes the existence of alloc_exec and protect_exec.1
+Crucially, the memory is allocated as RW (Read-Write). This allows the assembler to write bytes without triggering a fault. Writing directly to RX (Read-Execute) memory would crash the process immediately. The seal function acts as the gatekeeper, transitioning the memory to RX only when generation is complete. This aligns with the W^X security principle, minimizing the attack surface for JIT spraying exploits.1
+4.2 The Encoding Layer: ModR/M and SIB Logic
+The emit_modrm function is the logic core of the assembler. It must translate the abstract Operand structure into the concrete bits of the ModR/M byte.
+Algorithm for emit_modrm(asm, reg_idx, operand):
+1. Extract Fields: The reg_idx (destination or opcode extension) forms the Reg field (bits 5-3).
+2. Determine Mod and R/M:
+   * If the operand is Register Direct: Mod = 11, R/M = operand.reg_index.
+   * If the operand is Memory:
+      * Check Displacement:
+         * If disp == 0 (and base is not RBP/R13), Mod = 00.
+         * If disp fits in signed 8-bit, Mod = 01.
+         * Otherwise, Mod = 10 (32-bit displacement).
+      * Check for SIB Requirement:
+         * If Base == 4 (RSP/R12), specific handling is required. We force R/M = 4 to signal SIB presence, then generate the SIB byte based on the base, index, and scale fields of the operand.
+      * Check for RBP/R13 Anomaly:
+         * Addressing `` with no displacement is technically impossible in Mod 00. The CPU interprets Mod 00, R/M 101 as RIP-relative (Instruction Pointer Relative). To address the memory pointed to by RBP, we must force Mod 01 and use a displacement of 0.12
+4.3 The Instruction Layer: Opcode Selection
+The assembler must select the optimal opcode. For ADD instructions, x86-64 offers several variants 2:
+* 0x01: ADD r/m64, r64 (MR encoding)
+* 0x03: ADD r64, r/m64 (RM encoding)
+* 0x83 /0: ADD r/m64, imm8 (Sign-extended immediate)
+* 0x81 /0: ADD r/m64, imm32 (Immediate)
+The ARA's add function inspects the operands. If the source is an immediate value between -128 and 127, it selects 0x83 to save space (3-4 bytes vs 7 bytes). This optimization reduces the code size footprint, improving instruction cache locality for the generated code.
+________________
+5. Reference Implementation
+The following code represents the complete reference implementation of the Aria Runtime Assembler. It is written in Aria v0.0.6 syntax and relies on the aria.mem module for wildx support.1
+5.1 Module Definition and Constants
+
+
+Code snippet
+
+
+
+
+// ARA: Aria Runtime Assembler
+// Targets: x86-64 (AMD64)
+// Memory: wildx (Read-Write -> Read-Execute)
+
+use std.collections.{map, array};
+use aria.mem;
+
+mod ara {
+   // -------------------------------------------------------------------------
+   // Register Constants (System V AMD64 ABI)
+   // -------------------------------------------------------------------------
+   pub const:REG_RAX = 0; pub const:REG_RCX = 1; pub const:REG_RDX = 2;
+   pub const:REG_RBX = 3; pub const:REG_RSP = 4; pub const:REG_RBP = 5;
+   pub const:REG_RSI = 6; pub const:REG_RDI = 7;
+   pub const:REG_R8  = 8; pub const:REG_R9  = 9; pub const:REG_R10 = 10;
+   pub const:REG_R11 = 11; pub const:REG_R12 = 12; pub const:REG_R13 = 13;
+   pub const:REG_R14 = 14; pub const:REG_R15 = 15;
+
+   // -------------------------------------------------------------------------
+   // Operand Types
+   // -------------------------------------------------------------------------
+   pub const:OP_REG = 0; // Register (e.g., RAX)
+   pub const:OP_MEM = 1; // Memory (e.g.,)
+   pub const:OP_IMM = 2; // Immediate (e.g., 0x10)
+
+   // -------------------------------------------------------------------------
+   // Core Data Structures
+   // -------------------------------------------------------------------------
+   
+   // Represents a resolved operand for encoding
+   pub struct Operand {
+       int8: type,       
+       int8: reg_index,  
+       int8: base,       
+       int8: index,      
+       int8: scale,      
+       int32: disp,      
+       int64: imm,       
+       bool: is_rel      
+   }
+
+   // Represents a forward reference that needs backpatching
+   struct Fixup {
+       string: label_name,
+       uint64: patch_offset, // Location in buffer where the rel32 offset goes
+       int8: instr_size      // Used to calculate RIP (Instruction End)
+   }
+
+   // Main Assembler State
+   pub struct Assembler {
+       wildx uint8@: buffer_ptr,  // The executable buffer
+       uint64: capacity,          // Total size
+       uint64: cursor,            // Current write head
+       map: labels,               // Map<string, uint64>
+       array: fixups              // Array<Fixup>
+   }
+}
+
+5.2 Helper Functions for Operand Construction
+To maintain the "NASM-style" feel, we need helper functions that create Operand structs.
+
+
+Code snippet
+
+
+
+
+mod ara {
+   // Create a register operand
+   pub func:reg = obj(int8:r) {
+       return {
+           type: OP_REG,
+           reg_index: r,
+           base: 0, index: 0, scale: 0, disp: 0, imm: 0, is_rel: false
+       };
+   };
+
+   // Create an immediate operand
+   pub func:imm = obj(int64:val) {
+       return {
+           type: OP_IMM,
+           reg_index: 0, base: 0, index: 0, scale: 0, disp: 0, 
+           imm: val, is_rel: false
+       };
+   };
+
+   // Create a simple memory operand [base]
+   pub func:mem = obj(int8:base) {
+       return {
+           type: OP_MEM,
+           reg_index: 0,
+           base: base,
+           index: 4, // 4 means 'none' in SIB index logic (if no REX.X)
+           scale: 0,
+           disp: 0,
+           imm: 0,
+           is_rel: false
+       };
+   };
+   
+   // Create memory operand with displacement [base + disp]
+   pub func:mem_disp = obj(int8:base, int32:disp) {
+       return {
+           type: OP_MEM,
+           reg_index: 0,
+           base: base,
+           index: 4,
+           scale: 0,
+           disp: disp,
+           imm: 0,
+           is_rel: false
+       };
+   };
+}
+
+5.3 Low-Level Emitters: The Bitwise Logic
+This section handles the raw byte emission, implementing emit_byte, emit_rex, and emit_modrm. Note the explicit handling of the wild pointer dereferencing using Aria's pointer syntax.1
+
+
+Code snippet
+
+
+
+
+mod ara {
+   // Write a single byte to the wildx buffer
+   func:emit_byte = void(obj:asm, uint8:val) {
+       if (asm.cursor >= asm.capacity) {
+           // Panic or error handling would go here
+           stderr.write("ARA Error: Buffer Overflow");
+           return;
+       }
+       
+       // Calculate target address
+       wild uint8@:ptr = asm.buffer_ptr + asm.cursor;
+       
+       // Write value
+       *ptr = val;
+       
+       // Advance cursor
+       asm.cursor++;
+   };
+
+   func:emit_u32 = void(obj:asm, uint32:val) {
+       emit_byte(asm, (uint8)(val & 0xFF));
+       emit_byte(asm, (uint8)((val >> 8) & 0xFF));
+       emit_byte(asm, (uint8)((val >> 16) & 0xFF));
+       emit_byte(asm, (uint8)((val >> 24) & 0xFF));
+   };
+   
+   func:emit_u64 = void(obj:asm, uint64:val) {
+       emit_u32(asm, (uint32)(val & 0xFFFFFFFF));
+       emit_u32(asm, (uint32)((val >> 32) & 0xFFFFFFFF));
+   };
+
+   // REX Prefix Logic (0x40 + WRXB)
+   func:emit_rex = void(obj:asm, bool:w, int8:r_idx, int8:rm_idx, int8:idx_idx) {
+       bool:r = (r_idx > 7);
+       bool:b = (rm_idx > 7);
+       bool:x = (idx_idx > 7);
+       
+       // Emitting REX is mandatory if any high regs are used OR if 64-bit width is requested
+       // Note: We assume 64-bit default for operations, so W is usually true.
+       // Optimization: Don't emit REX if w=0 and no high regs (e.g. 32-bit ops on eax)
+       if (w |
+
+| r |
+| b |
+| x) {
+           uint8:rex = 0x40;
+           if (w) rex |= 0x08;
+           if (r) rex |= 0x04;
+           if (x) rex |= 0x02;
+           if (b) rex |= 0x01;
+           emit_byte(asm, rex);
+       }
+   };
+
+   // ModR/M and SIB Logic
+   func:emit_modrm = void(obj:asm, int8:reg, int8:rm, int8:mod) {
+       // Construct the ModR/M byte
+       // Format: [Mod:2]
+       uint8:byte = ((mod & 3) << 6) | ((reg & 7) << 3) | (rm & 7);
+       emit_byte(asm, byte);
+   };
+
+   // Generalized Operand Encoder
+   func:encode_op = void(obj:asm, int8:reg_field, obj:rm_op) {
+       // reg_field is the Register operand (or Opcode Extension)
+       // rm_op is the R/M operand (Register or Memory)
+
+       if (rm_op.type == OP_REG) {
+           // Register Direct Mode (Mod 11)
+           emit_modrm(asm, reg_field, rm_op.reg_index, 3);
+       } else if (rm_op.type == OP_MEM) {
+           // Memory Mode
+           int8:mod = 0;
+           bool:sib = false;
+           
+           // 1. Determine Mod based on displacement
+           if (rm_op.disp == 0 && (rm_op.base & 7)!= 5) { // Base!= RBP/R13
+               mod = 0; 
+           } else if (rm_op.disp >= -128 && rm_op.disp <= 127) {
+               mod = 1;
+           } else {
+               mod = 2;
+           }
+
+           // 2. Check for SIB trigger (RSP/R12 as base)
+           if ((rm_op.base & 7) == 4) {
+               sib = true;
+           }
+
+           // 3. Emit ModR/M
+           if (sib) {
+               emit_modrm(asm, reg_field, 4, mod); // RM=4 signals SIB presence
+               // Emit SIB Byte
+               //[Index:3]
+               uint8:ss = (uint8)(rm_op.scale & 3);
+               uint8:idx = (uint8)(rm_op.index & 7);
+               uint8:base = (uint8)(rm_op.base & 7);
+               emit_byte(asm, (ss << 6) | (idx << 3) | base);
+           } else {
+               emit_modrm(asm, reg_field, rm_op.base, mod);
+           }
+
+           // 4. Emit Displacement
+           if (mod == 1) {
+               emit_byte(asm, (uint8)(rm_op.disp & 0xFF));
+           } else if (mod == 2) {
+               emit_u32(asm, (uint32)rm_op.disp);
+           }
+       }
+   };
+}
+
+5.4 High-Level Instructions (The Fluent API)
+These functions form the user-facing API. They return obj:asm to allow chaining (|>).
+5.4.1 MOV Instruction
+
+
+Code snippet
+
+
+
+
+mod ara {
+   pub func:mov = obj(obj:asm, obj:dst, obj:src) {
+       // MOV r64, imm64 (Optimization check)
+       if (dst.type == OP_REG && src.type == OP_IMM) {
+           // Check if it fits in 32-bits? If so we could use C7 /0 (MOV r/m64, imm32)
+           // But standard simple load is B8+r for 64-bit immediate
+           emit_rex(asm, true, 0, dst.reg_index, 0); 
+           emit_byte(asm, 0xB8 + (uint8)(dst.reg_index & 7));
+           emit_u64(asm, src.imm);
+           return asm;
+       }
+       
+       // MOV r64, r64
+       if (dst.type == OP_REG && src.type == OP_REG) {
+           emit_rex(asm, true, src.reg_index, dst.reg_index, 0);
+           emit_byte(asm, 0x89); // Opcode for MOV r/m, r
+           emit_modrm(asm, src.reg_index, dst.reg_index, 3);
+           return asm;
+       }
+
+       // MOV r64, r/m64 (Load)
+       if (dst.type == OP_REG && src.type == OP_MEM) {
+           emit_rex(asm, true, dst.reg_index, src.base, src.index);
+           emit_byte(asm, 0x8B); // Opcode for MOV r, r/m
+           encode_op(asm, dst.reg_index, src);
+           return asm;
+       }
+
+       // MOV r/m64, r64 (Store)
+       if (dst.type == OP_MEM && src.type == OP_REG) {
+           emit_rex(asm, true, src.reg_index, dst.base, dst.index);
+           emit_byte(asm, 0x89); // Opcode for MOV r/m, r
+           encode_op(asm, src.reg_index, dst);
+           return asm;
+       }
+
+       return asm;
+   };
+}
+
+5.4.2 ADD / SUB Instructions
+
+
+Code snippet
+
+
+
+
+mod ara {
+   // Shared arithmetic logic
+   func:emit_arith_imm = void(obj:asm, uint8:ext, obj:dst, int64:val) {
+       emit_rex(asm, true, 0, dst.reg_index, 0);
+       
+       // Optimize for 8-bit signed immediate
+       if (val >= -128 && val <= 127) {
+           emit_byte(asm, 0x83); // Opcode 83 /ext ib
+           emit_modrm(asm, ext, dst.reg_index, 3);
+           emit_byte(asm, (uint8)(val & 0xFF));
+       } else {
+           emit_byte(asm, 0x81); // Opcode 81 /ext id
+           emit_modrm(asm, ext, dst.reg_index, 3);
+           emit_u32(asm, (uint32)val);
+       }
+   };
+
+   pub func:add = obj(obj:asm, obj:dst, obj:src) {
+       if (dst.type == OP_REG && src.type == OP_REG) {
+           emit_rex(asm, true, src.reg_index, dst.reg_index, 0);
+           emit_byte(asm, 0x01); // ADD r/m, r
+           emit_modrm(asm, src.reg_index, dst.reg_index, 3);
+       } else if (dst.type == OP_REG && src.type == OP_IMM) {
+           emit_arith_imm(asm, 0, dst, src.imm); // Extension /0 is ADD
+       }
+       return asm;
+   };
+
+   pub func:sub = obj(obj:asm, obj:dst, obj:src) {
+       if (dst.type == OP_REG && src.type == OP_REG) {
+           emit_rex(asm, true, src.reg_index, dst.reg_index, 0);
+           emit_byte(asm, 0x29); // SUB r/m, r
+           emit_modrm(asm, src.reg_index, dst.reg_index, 3);
+       } else if (dst.type == OP_REG && src.type == OP_IMM) {
+           emit_arith_imm(asm, 5, dst, src.imm); // Extension /5 is SUB
+       }
+       return asm;
+   };
+}
+
+5.4.3 Control Flow: JMP and Labels
+This section implements the Backpatching logic.
+
+
+Code snippet
+
+
+
+
+mod ara {
+   // Define a label
+   pub func:label = obj(obj:asm, string:name) {
+       asm.labels.set(name, asm.cursor);
+       return asm;
+   };
+
+   // Unconditional Jump
+   pub func:jmp = obj(obj:asm, string:target) {
+       emit_byte(asm, 0xE9); // JMP rel32
+       
+       uint64:addr = asm.labels.get(target);
+       if (addr!= NULL) {
+           // Backward jump: known target
+           // Offset = Target - (Cursor + 4)
+           int32:rel = (int32)(addr - (asm.cursor + 4));
+           emit_u32(asm, (uint32)rel);
+       } else {
+           // Forward jump: unknown target
+           // Record fixup
+           obj:f = { label_name: target, patch_offset: asm.cursor, instr_size: 5 };
+           asm.fixups.push(f);
+           emit_u32(asm, 0); // Placeholder
+       }
+       return asm;
+   };
+
+   // Finalize Code
+   pub func:seal = void(obj:asm) {
+       // 1. Resolve Fixups
+       for(i in 0..asm.fixups.length-1) {
+           obj:f = asm.fixups[i];
+           uint64:target = asm.labels.get(f.label_name);
+           if (target == NULL) {
+               stderr.write(`Error: Undefined label &{f.label_name}`);
+               continue;
+           }
+           // Calculate offset relative to the END of the instruction
+           // End of instruction = patch_offset + 4
+           int32:rel = (int32)(target - (f.patch_offset + 4));
+           
+           // Write patch
+           wild uint8@:p = asm.buffer_ptr + f.patch_offset;
+           wild uint32@:p32 = (wild uint32@)p;
+           *p32 = (uint32)rel;
+       }
+
+       // 2. Protect Memory (RW -> RX)
+       aria.mem.protect_exec(asm.buffer_ptr, asm.capacity);
+   };
+}
+
+5.4.4 Function Return and System Calls
+The assembler must also support RET (0xC3) and SYSCALL (0x0F 0x05) to interface with the OS kernel.
+
+
+Code snippet
+
+
+
+
+mod ara {
+   pub func:ret = obj(obj:asm) {
+       emit_byte(asm, 0xC3);
+       return asm;
+   };
+
+   pub func:syscall = obj(obj:asm) {
+       emit_byte(asm, 0x0F);
+       emit_byte(asm, 0x05);
+       return asm;
+   };
+}
+
+________________
+6. Use Case: JIT Compilation of Arithmetic Logic
+To demonstrate the utility of the ARA, we present a complete example of generating a function that performs a calculation: f(x) = (x + 10) - 5. This example highlights the wildx allocation, the fluent API usage, and the transition to execution.
+
+
+Code snippet
+
+
+
+
+use ara;
+
+func:main = int8() {
+   // 1. Initialize Assembler (4KB Page)
+   // Allocates RW memory via wildx
+   result:init = ara.create(4096);
+   if (init.err!= NULL) { return -1; }
+   obj:asm = init.val;
+
+   // 2. Define Operands
+   // According to SysV ABI, first argument is in RDI, return value in RAX
+   obj:rax = ara.reg(ara.REG_RAX);
+   obj:rdi = ara.reg(ara.REG_RDI);
+   obj:ten = ara.imm(10);
+   obj:five = ara.imm(5);
+
+   // 3. Generate Code
+   // mov rax, rdi  ; Move arg to accumulator
+   // add rax, 10   ; Add 10
+   // sub rax, 5    ; Subtract 5
+   // ret           ; Return
+   asm |> ara.mov(rax, rdi)
+
+|> ara.add(rax, ten)
+|> ara.sub(rax, five)
+|> ara.ret();
+
+   // 4. Seal Memory (RW -> RX) and Flush I-Cache
+   ara.seal(asm);
+
+   // 5. Execute
+   // Cast the buffer pointer to a function type
+   type JitFunc = func:int64(int64:x);
+   wildx JitFunc:fn = (JitFunc)asm.buffer_ptr;
+
+   int64:res = fn(100); // Should be (100 + 10) - 5 = 105
+   print(`JIT Result: &{res}`);
+
+   // 6. Cleanup
+   ara.destroy(asm);
+   return 0;
+}
+
+This example confirms that the ARA satisfies the requirement for "direct machine code generation without manual byte writing" by allowing the developer to express logic in terms of mov, add, and sub rather than 0x48, 0x89, and 0xC7.
+________________
+7. Conclusion
+The Aria Runtime Assembler (ARA) represents a foundational capability for the Aria ecosystem. By providing a secure, type-safe, and fluent interface for generating x86-64 machine code, it empowers developers to break free from the constraints of static compilation. The implementation detailed in this report addresses the complexities of the x86 encoding scheme—including REX prefix logic, ModR/M addressing, and backpatching for forward jumps—while strictly adhering to the security constraints of the wildx memory model. This system enables the development of high-performance JIT compilers, dynamic binary translators, and specialized compute kernels entirely within the Aria language, realizing the vision of a self-hosting, batteries-included systems language.
+Works cited
+1. aria_v0_0_6_specs.txt
+2. x86 instruction listings - Wikipedia, accessed December 6, 2025, https://en.wikipedia.org/wiki/X86_instruction_listings
+3. Let's Learn x86-64 Assembly! Part 4 - More About Jumps Than You Wanted To Know, accessed December 6, 2025, https://gpfault.net/posts/asm-tut-4.html
+4. X86-64 Instruction Encoding - OSDev Wiki, accessed December 6, 2025, http://wiki.osdev.org/X86-64_Instruction_Encoding
+5. Learning x86–64 Machine Language and Assembly by Implementing a Disassembler, accessed December 6, 2025, https://medium.com/@Koukyosyumei/learning-x86-64-machine-language-and-assembly-by-implementing-a-disassembler-dccc736ae85f
+6. Notes on x86-64 Assembly and Machine Code - GitHub Gist, accessed December 6, 2025, https://gist.github.com/mikesmullin/6259449
+7. Enumerating x86-64 Instructions - University of Nebraska Omaha, accessed December 6, 2025, https://www.unomaha.edu/college-of-information-science-and-technology/research-labs/_files/enumerating-x86-64-instructions.pdf
+8. What is REX prefix in Instruction Encoding? - Stack Overflow, accessed December 6, 2025, https://stackoverflow.com/questions/68604377/what-is-rex-prefix-in-instruction-encoding
+9. Encoding x86-64 instructions: some worked examples - pyokagan, accessed December 6, 2025, https://pyokagan.name/blog/2019-09-20-x86encoding/
+10. x86-64 Machine Code Encoding : ModR/M Encoding with Examples - SimplifyC++, accessed December 6, 2025, https://simplifycpp.org/?id=a0737
+11. x64 instruction encoding and the ModRM byte - Stack Overflow, accessed December 6, 2025, https://stackoverflow.com/questions/15511482/x64-instruction-encoding-and-the-modrm-byte
+12. ModR/M - Wikipedia, accessed December 6, 2025, https://en.wikipedia.org/wiki/ModR/M
+13. How to write these 4 example x86 assembly instructions in opcodes, according to the Intel docs? - Reverse Engineering Stack Exchange, accessed December 6, 2025, https://reverseengineering.stackexchange.com/questions/26893/how-to-write-these-4-example-x86-assembly-instructions-in-opcodes-according-to
+14. x86-64 encoding / viruses, accessed December 6, 2025, https://www.cs.virginia.edu/~cr4bd/4630/S2021/slides/20210208-slides.pdf
+15. Instruction selection/encoding on X86_64 : r/asm - Reddit, accessed December 6, 2025, https://www.reddit.com/r/asm/comments/1ixr4aw/instruction_selectionencoding_on_x86_64/
+16. why we can't move a 64-bit immediate value to memory? - Stack Overflow, accessed December 6, 2025, https://stackoverflow.com/questions/62771323/why-we-cant-move-a-64-bit-immediate-value-to-memory
+17. Which is faster, imm64 or m64 for x86-64? - assembly - Stack Overflow, accessed December 6, 2025, https://stackoverflow.com/questions/46433208/which-is-faster-imm64-or-m64-for-x86-64
+18. Fluent interface - Wikipedia, accessed December 6, 2025, https://en.wikipedia.org/wiki/Fluent_interface
+19. Fluent Interface - Martin Fowler, accessed December 6, 2025, https://martinfowler.com/bliki/FluentInterface.html
+20. Laxmi Institute Technology, Sarigam: Algorithm of Single Pass Assembler AND Concept of Backpatching | PDF - Scribd, accessed December 6, 2025, https://www.scribd.com/presentation/562303165/Sp-Singlepassassembler-35-37
+21. Backpatching in Compiler Design - GeeksforGeeks, accessed December 6, 2025, https://www.geeksforgeeks.org/compiler-design/backpatching-in-compiler-design/
+22. Compilers - Chapter 6, accessed December 6, 2025, https://staff.polito.it/silvano.rivoira/LingTrad/CompilersGenerators/cha06s.htm
+23. Calculate a 32 bit relative jump offset with x86 - Stack Overflow, accessed December 6, 2025, https://stackoverflow.com/questions/72389416/calculate-a-32-bit-relative-jump-offset-with-x86
+24. How encode a relative short jmp in x86 - Stack Overflow, accessed December 6, 2025, https://stackoverflow.com/questions/14889643/how-encode-a-relative-short-jmp-in-x86
+25. x64 Cheat Sheet - Brown CS, accessed December 6, 2025, https://cs.brown.edu/courses/cs033/docs/guides/x64_cheatsheet.pdf
+26. x64 Architecture Overview and Registers - Windows drivers - Microsoft Learn, accessed December 6, 2025, https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/x64-architecture
+27. CS107 Guide to x86-64, accessed December 6, 2025, https://web.stanford.edu/class/archive/cs/cs107/cs107.1202/guide/x86-64.html
+28. Intel x86 Opcode Table and Reference, accessed December 6, 2025, https://shell-storm.org/x86doc/
+29. A Beginners' Guide to x86-64 Instruction Encoding - SysTutorials, accessed December 6, 2025, https://www.systutorials.com/beginners-guide-x86-64-instruction-encoding/

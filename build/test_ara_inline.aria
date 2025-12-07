@@ -1,0 +1,36 @@
+// test_ara_inline.aria
+// Test ARA encoding logic without wildx
+
+%include "../lib/stdlib/ara_inline.aria"
+
+func:main = *int8() {
+    print("=== ARA Encoding Test (Display Only) ===");
+    print("");
+    
+    // Show encoding for f(x) = (x + 10) - 5
+    print("Function: f(x) = (x + 10) - 5");
+    print("Encoding sequence:");
+    print("");
+    
+    show_mov_r64_r64(REG_RAX, REG_RDI);
+    print("");
+    
+    show_add_r64_imm8(REG_RAX, 10);
+    print("");
+    
+    show_sub_r64_imm8(REG_RAX, 5);
+    print("");
+    
+    show_ret();
+    print("");
+    
+    print("Expected machine code:");
+    print("  48 89 F8        - MOV RAX, RDI");
+    print("  48 83 C0 0A     - ADD RAX, 10");
+    print("  48 83 E8 05     - SUB RAX, 5");
+    print("  C3              - RET");
+    print("");
+    print("Total: 12 bytes");
+    
+    return 0;
+};

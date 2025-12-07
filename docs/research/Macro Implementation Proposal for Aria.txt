@@ -1,0 +1,477 @@
+﻿Proposal for the Implementation of High-Level Control Structures and Functional Abstractions in the Aria Preprocessor
+1. Executive Summary
+The evolution of systems programming is characterized by a perpetual tension between the need for granular hardware control and the desire for expressive, high-level abstractions. The Aria programming language, as detailed in its version 0.0.6 specifications 1, represents a modern synthesis of these competing needs, offering unique features such as a hybrid memory model (Garbage Collected vs. Wild), exotic numerical systems (balanced ternary trit and tryte), and sophisticated concurrency primitives. However, the transition for developers moving from high-level languages to Aria’s low-level assembly interface remains a source of friction. The cognitive load required to manually manage register allocation, stack alignment, and conditional jump logic often obscures the algorithmic intent of the software.
+This research report presents a comprehensive architectural proposal for implementing a suite of high-level control flow macros—IF, ELIF, ELSE, WHILE, FOR, BREAK, CONTINUE, and EXIT—along with a robust functional abstraction layer (FUNCTION and INVOKE) within the Aria preprocessor. Leveraging the Turing-complete capabilities of the NASM-style macro engine, specifically the context stack mechanism (%push, %pop, %repl, %ifctx) 2, this proposal demonstrates that it is possible to synthesize a structured programming environment that compiles directly to optimized Aria assembly without requiring modifications to the compiler binary.
+The analysis proceeds through a rigorous examination of the theoretical capabilities of the preprocessor, effectively treating it as a single-pass compiler frontend. It addresses the specific challenges posed by Aria’s architecture, including the implementation of polymorphic comparison logic that handles both binary and ternary (trit) types, the integration of automatic register preservation compliant with the System V AMD64 ABI, and the seamless interoperability with Aria’s result type error handling and memory management models. By abstracting the boilerplate of assembly programming, this proposal aims to elevate the developer experience, ensuring that Aria’s powerful features are accessible through intuitive, C-style interfaces while maintaining the "wild" performance characteristics of bare-metal code.
+________________
+2. The Metaprogramming Landscape of Aria
+To understand the necessity and implementation strategy for the proposed macros, one must first analyze the current state of metaprogramming within the Aria ecosystem and the specific gaps that this proposal intends to fill.
+2.1 The Current State of Control Flow in Aria
+Aria currently provides a set of modern control flow constructs designed to support its specific features. These include pick for pattern matching, till for iteration, and when for conditional execution.1
+* The pick Construct: This is Aria’s answer to the switch statement but with significantly more power, capable of handling value ranges and pattern destructuring. However, for simple boolean logic (e.g., "if x > 5"), pick introduces unnecessary verbosity.
+* The till Loop: While efficient for simple counting, till abstracts away the iteration variable (accessed via $), which can be limiting for algorithms requiring complex loop invariants or step functions that do not align with a simple increment/decrement.1
+* The Gap: There is a distinct absence of the traditional C-style if/else and for loops in the low-level assembly syntax. While the high-level Aria language has if/else, the assembly view (where the user is operating via NASM macros) forces the developer to revert to manual cmp and jcc (conditional jump) instructions. This dissonance creates a barrier to entry and increases the likelihood of "spaghetti code" errors where jump targets are mismatched.
+2.2 The Macro Imperative
+The user’s request highlights a critical need: the ability to write assembly code that reads like high-level logic. The "Struct-Based Template System" proposed in parallel documentation 1 addresses data structures and function signatures but does not solve the control flow problem. This proposal complements that system by providing the algorithmic skeleton—the control structures—that will house the template-generated bodies.
+By implementing these macros, we effectively create a Domain Specific Language (DSL) within the Aria preprocessor. This DSL preserves the performance of hand-tuned assembly (as macros expand to the exact instructions a human would write) while enforcing structural correctness (preventing errors like jumping into the middle of a loop or failing to restore the stack frame).
+________________
+3. Theoretical Mechanics of the Context Stack
+The feasibility of this proposal rests entirely on the advanced features of the NASM preprocessor, specifically the context stack. This mechanism allows the preprocessor to maintain state across multiple lines of code, effectively acting as a rudimentary virtual machine during the expansion phase.
+3.1 The Context Stack as a Scope Manager
+In standard assembly, labels are global. If a developer uses a label loop_start: in two different functions, the assembler will throw a symbol collision error. NASM solves this partially with local labels (.label), which are scoped to the last non-local label. However, this is insufficient for nested control structures where an IF block inside a WHILE loop needs its own independent scope.
+The context stack (%push, %pop) introduces a dynamic scoping mechanism.3
+* Context Pushing: When the preprocessor encounters a macro like %macro IF, it executes %push ctx_if. This places a new context named ctx_if on top of the stack.
+* Context-Local Labels: Labels defined with the %$ prefix (e.g., %$end_label) are bound to the current context. Internally, NASM mangles these names with a unique context ID (e.g., ..@ctx_if_145.end_label). This ensures that the %$end_label of an inner loop is distinct from the %$end_label of an outer loop.
+* Stack Traversal: Crucially, macros can inspect the stack. The %ifctx directive checks if the top of the stack matches a specific name.4 This allows an ELSE macro to verify that it is being called inside an active IF context, preventing syntax errors before assembly even begins.
+3.2 State Transitions and Reentrancy
+A robust implementation must manage state transitions. For example, an IF block can transition to an ELSE block, but an ELSE block cannot transition to an ELIF.
+* The %repl Directive: This directive replaces the top context with a new one.5 We use this to transition ctx_if to ctx_else. This mechanism is vital for enforcing the grammar of control structures. If a user tries to place ELIF after ELSE, the macro checks the context, sees ctx_else, and issues a compilation error.
+* Reentrancy: Because the context stack is a stack, nesting is handled automatically.3 A WHILE loop inside an IF pushes ctx_while on top of ctx_if. The BREAK macro, intended to exit the loop, must be able to "see" through the stack to find the nearest loop context, ignoring any intervening IF contexts.
+3.3 Limitations and Workarounds
+While powerful, the NASM preprocessor is not a full compiler. It lacks a symbol table for variable types.
+* Implication: The macros cannot inherently know if a register RAX contains a signed 64-bit integer, a pointer, or a tryte.
+* Solution: We must design the macros to be polymorphic where possible, or accept type hints as arguments (e.g., IF(RAX, >, 0, TYPE=INT)). For Aria, specifically, explicit handling of its exotic types will be a key design requirement discussed in Section 4.
+________________
+4. The Challenge of Heterogeneous Types in Aria
+Aria distinguishes itself with a type system that includes not just standard binary integers and floating-point numbers, but also balanced ternary types (trit, tryte) and nonary types (nit, nyte).1 Implementing a generic IF or WHILE macro requires resolving how conditional logic applies to these varied data representations.
+4.1 Comparison Logic for Binary Types
+For standard types (int8...int512, uint, float), the logic is straightforward mapping to x86-64 instructions.
+* Integer Comparison: Uses CMP followed by JE, JNE, JG, JL, etc.
+* Floating Point: Uses UCOMISS or UCOMISD (for Scalar Single/Double) followed by checks on the Parity Flag (PF), Zero Flag (ZF), and Carry Flag (CF).
+* Macro Strategy: The IF macro must detect if the operands are floating-point registers (XMM0-XMM15). If so, it emits the appropriate SSE/AVX comparison instructions. If they are general-purpose registers (RAX, RBX), it defaults to integer CMP.
+4.2 The "Trit" Paradox: Ternary Control Flow
+Aria's trit represents three states: -1, 0, 1.1 Standard control flow is binary (True/False). Bridging this gap is critical.
+* The Problem: What does IF(trit_val) mean? Does it execute on 1? On non-zero?
+* Proposed Semantics: We align with the is operator mentioned in the Aria spec.1
+   * IF(trit_val, IS, 1): Executes if trit is positive.
+   * IF(trit_val, IS, -1): Executes if trit is negative.
+   * IF(trit_val): Implicitly treats 0 as False and {-1, 1} as True (Non-zero).
+* Implementation Detail: Trytes (10 trits stored in uint16) require specialized decoding. A simple CMP won't work if the hardware doesn't support native ternary logic. The macro must emit a sequence of bitwise operations (masking and shifting) to isolate the specific trit being tested, or call an intrinsic function provided by the Aria runtime (e.g., aria.core.tryte_cmp).
+4.3 Memory Pointers and "Wild" Types
+In wild memory contexts, pointers are raw addresses.
+* Comparison: IF(ptr1, ==, ptr2) translates to a direct address comparison.
+* Null Checks: A common pattern is IF(ptr). In Aria, NULL is likely 0. The macro should support unary conditions: IF(RAX) expands to TEST RAX, RAX; JNZ....
+* Safety: When dealing with gc (garbage collected) references, the macro must ensure that comparisons do not accidentally trigger read barriers or write barriers unless intended. For pure control flow, this is usually safe, but side-effects in the condition (e.g., IF(function_call())) must be handled carefully to preserve the GC state.
+________________
+5. Control Flow Implementation Strategy
+This section details the architectural logic for the control flow macros. Each macro is designed to be robust, reentrant, and syntactically aligned with the user's request.
+5.1 The IF, ELIF, ELSE State Machine
+The conditional construct is the backbone of logic. We utilize a state machine approach to ensure grammatical correctness.
+5.1.1 The IF Macro
+Usage: IF(val1, operator, val2)
+Logic:
+1. Push Context: %push ctx_if.
+2. Generate Label: Create a unique label for the next branch (e.g., %$next_branch).
+3. Emit Comparison: Call a helper _GEN_CMP to generate the correct assembly ( handling CMP vs UCOMISD).
+4. Emit Conditional Jump:
+   * Crucial Insight: We must jump over the body if the condition is false.
+   * If user writes IF(A, ==, B), we emit JNE %$next_branch.
+   * If user writes IF(A, >, B), we emit JLE %$next_branch.
+5. Fallthrough: If the jump isn't taken, execution falls through to the user's code block.
+5.1.2 The ELIF Macro
+Usage: ELIF(val1, operator, val2)
+Logic:
+1. Verify Context: Check %ifctx ctx_if. If false, %error "ELIF without IF".
+2. Close Previous Block:
+   * Emit JMP %$end_if to skip the rest of the chain if the previous block executed.
+   * Define the label %$next_branch (the target of the previous failure).
+3. Generate New Label: Define a new %$next_branch for this ELIF's failure case. Note: Since NASM context labels are constant per context, we must use a counter suffix (e.g., %$next_branch_1, %$next_branch_2) maintained via %assign.
+4. Emit Comparison/Jump: Similar to IF.
+5.1.3 The ELSE Macro
+Usage: ELSE
+Logic:
+1. Verify Context: Check %ifctx ctx_if.
+2. Transition State: %repl ctx_else. This prevents subsequent ELIFs.
+3. Close Previous Block: Emit JMP %$end_if.
+4. Define Entry Label: Define the current %$next_branch (where previous checks fail to).
+5. Fallthrough: Execution enters the ELSE body.
+5.1.4 The END_IF Macro
+Usage: END_IF
+Logic:
+1. Verify Context: Check %ifctx ctx_if OR %ifctx ctx_else.
+2. Define Labels:
+   * If coming from ctx_if (no ELSE), define the final %$next_branch.
+   * Define %$end_if (the convergence point).
+3. Pop Context: %pop.
+5.2 The WHILE Loop and Stack Traversal
+Loops introduce the complexity of BREAK and CONTINUE.
+5.2.1 The WHILE Macro
+Usage: WHILE(val1, operator, val2)
+Logic:
+1. Push Context: %push ctx_while.
+2. Define Start Label: %$loop_start.
+3. Emit Comparison: Check condition.
+4. Emit Exit Jump: If condition false, JMP %$loop_end.
+5.2.2 The BREAK and CONTINUE Macros
+These macros must be context-aware. A BREAK inside an IF inside a WHILE must break the WHILE.
+Logic:
+* NASM does not allow iterating the stack directly in a loop. However, we can use a recursive macro or conditional checks on the current context.
+* Strategy: We define specific context-local variables like %$is_loop.
+   * When WHILE pushes ctx_while, it defines %define %$is_loop 1.
+   * BREAK checks %ifdef %$is_loop. If present, it jumps to %$loop_end.
+   * If NOT present (e.g., inside ctx_if), BREAK issues a command to "unwind" (this is hard in pure NASM) or, more simply, we rely on the user to understand that BREAK targets the current context stack top.
+   * Better Strategy: BREAK macro checks context name.
+Code snippet
+%ifctx ctx_while
+   jmp %$loop_end
+%elifctx ctx_for
+   jmp %$loop_end
+%elifctx ctx_if
+    ; This is the tricky part. Pure NASM doesn't let us "peek" down 1 level easily without popping.
+    ; However, we can use the %$$label syntax if we know the depth.
+    ; Practical Solution: BREAK implies "break nearest loop". In single-pass macros, accurate nesting resolution often requires specific "ID" passing.
+    ; For this proposal, we assume the user invokes BREAK only at the top level of the loop logic or we implement a shadow stack using %assign to track the current loop ID globally.
+
+5.3 The FOR Loop
+Usage: FOR(init, condition, step)
+Logic:
+   1. Push Context: %push ctx_for.
+   2. Initialization: Emit the init instructions (e.g., MOV RCX, 0).
+   3. Define Start Label: %$loop_start.
+   4. Condition: Emit comparison. Jump to %$loop_end if false.
+   5. Save Step: We capture the step argument (e.g., INC RCX) into a %define to be emitted later.
+   6. Body Fallthrough.
+Macro: END_FOR
+   1. Emit Step: Expand the saved step code.
+   2. Jump Back: JMP %$loop_start.
+   3. Define End: %$loop_end.
+   4. Pop Context.
+________________
+6. The Functional Abstraction Layer
+The user’s request for a FUNCTION macro is the most complex component, as it bridges the gap between the Aria language specification and the raw Application Binary Interface (ABI).
+6.1 ABI Compliance: System V AMD64
+Assuming Aria runs on Linux/Unix-like systems (given the extern "libc" reference 1), it likely follows the System V AMD64 ABI.
+   * Integer Arguments: Passed in RDI, RSI, RDX, RCX, R8, R9.
+   * Floating Point Arguments: Passed in XMM0 - XMM7.
+   * Stack Alignment: The stack pointer (RSP) must be 16-byte aligned before a CALL.
+   * Preserved Registers: RBX, RBP, R12, R13, R14, R15 must be saved by the callee.
+6.2 The FUNCTION Definition Macro
+This macro automates the "prologue" and register preservation.
+Usage: FUNCTION(name, arg_list)
+Detailed Logic:
+   1. Global Symbol: global %1 / %1:.
+   2. Push Context: %push ctx_func.
+   3. Prologue:
+Code snippet
+push rbp
+mov rbp, rsp
+
+   4. Register Preservation: The macro iterates through a list of registers to save.
+      * Optimization: Ideally, the user specifies which registers they use, or the macro blindly saves all callee-saved registers (push rbx, push r12...) to be safe. Given the user's request "saved all the registers that need to be saved," the "save-all" approach is safest, albeit slower.
+      5. Shadow Space/Locals: sub rsp, LOCAL_SIZE.
+      6. Argument Binding:
+      * The macro maps the input names (e.g., a, b) to their register locations.
+      * %define a rdi
+      * %define b rsi
+      * This allows the user to use mov rax, a inside the function body.
+6.3 The END_FUNCTION and RETURN Macros
+Usage: END_FUNCTION
+Logic:
+      1. Epilogue:
+      * Restore registers in reverse order (pop r15... pop rbx).
+      * mov rsp, rbp
+      * pop rbp
+      * ret
+      2. Context Pop: %pop.
+Usage: RETURN(val_err, val_data) (Implementing Aria's {err, val} result type)
+Logic:
+      1. Result Placement:
+      * val_err goes to RAX (primary return).
+      * val_data goes to RDX (secondary return for large structs or 128-bit values).
+      2. Jump to Epilogue: Instead of emitting ret directly, it jumps to a label %$function_exit defined by FUNCTION, ensuring registers are restored before returning.
+6.4 The INVOKE (Function Call) Macro
+The user mentioned placing arguments in correct registers and calling.
+Usage: INVOKE(func_name, arg1, arg2,...)
+Logic:
+      1. Argument Shuffling:
+      * The macro must move arguments into RDI, RSI, etc.
+      * Hazard: INVOKE(foo, rsi, rdi). If we implement naively as mov rdi, rsi then mov rsi, rdi, we corrupt the data because rdi was overwritten before it was read.
+      * Solution: The macro requires a complex dependency graph resolution or utilizes the stack/temporary registers (RAX, R10, R11) to swap values safely.
+      2. Stack Alignment: Check if stack is aligned. If not, sub rsp, 8.
+      3. Call: call %1.
+      4. Cleanup: Restore stack if aligned.
+________________
+7. Integration with Aria's Memory and Concurrency Models
+Aria is not just C; it has specific behaviors regarding memory and concurrency that the macros must respect.
+7.1 Wild vs. Managed Memory in Functions
+When a FUNCTION is defined in a wild context, it behaves as standard assembly. However, in a Managed context:
+      * Stack Scanning: The Garbage Collector may need to scan the stack for roots.
+      * Macro Adaptation: The FUNCTION macro should accept a flag ATTR=MANAGED. If set, it emits a call to aria.gc.register_frame(rbp) in the prologue and aria.gc.unregister_frame() in the epilogue.
+      * Defer: Aria's defer keyword schedules cleanup. The EXIT or RETURN macros in a managed function must execute the chain of deferred calls before the actual ret. We can implement this by maintaining a macro-level list of defer handlers pushed to a stack, which RETURN unrolls.
+7.2 Concurrency and the EXIT Macro
+The EXIT macro controls termination.
+      * Program Exit: EXIT(code) -> mov rdi, code; mov rax, 60; syscall.
+      * Thread/Process Exit: Aria uses spawn and fork.
+      * If running in a spawned thread, EXIT shouldn't kill the whole process (syscall 60). It should call pthread_exit or Aria's thread_terminate.
+      * Proposal: EXIT should expand to a call to the Aria runtime aria.os.exit, which handles the distinction between main-thread exit and worker-thread exit internally, rather than raw syscalls.
+7.3 Interfacing with Struct-Based Macros
+The user's template system 1 uses template:mul = {...}.
+      * Integration: The body of the template is where our control flow macros shine.
+Code snippet
+template:factorial = {
+   args: [val],
+   body: `
+       IF(val, <=, 1)
+           RETURN(0, 1)
+       ELSE
+           ; recursive logic
+       END_IF
+   `
+}
+
+      * This seamless integration transforms the text inside the template definition from raw, unreadable assembly into structured, logic-driven code.
+________________
+8. Performance, Safety, and Debugging
+8.1 Performance Implications
+Using macros instead of raw instructions incurs zero runtime overhead. The processor sees the same instructions.
+         * Code Size: The FUNCTION macro with aggressive register saving (pushing all 6 registers) bloats code size. This can affect instruction cache (I-Cache) performance.
+         * Mitigation: We propose an optimized mode FUNCTION_OPT where the user explicitly lists clobbered registers, and the macro only saves those.
+8.2 Safety Mechanisms
+         * Orphaned Jumps: The state machine strictly prevents "dangling ELSEs".
+         * Stack Balance: The FUNCTION macro guarantees push/pop symmetry, preventing stack smashing attacks or unintentional segfaults upon return.
+         * Type Safety: While NASM is typeless, we can use macro naming conventions (IF_INT, IF_FLOAT, IF_TRIT) to force the developer to be explicit about intent, reducing logical errors.
+8.3 Debugging Macro-Expanded Code
+A major downside of macros is that debuggers (GDB/LLDB) see the expanded assembly, which doesn't match the source line count.
+         * Solution: The macros should emit %line directives 5 (if supported by the specific NASM version) or nop instructions serving as "anchors" for breakpoints.
+         * Diagnostic Output: We can add a %define DEBUG 1 flag. When set, the macros emit print calls (using Aria's stdout) at the entry of every block, tracing execution flow automatically.
+________________
+9. Implementation Roadmap
+To deliver this system, we propose the following phased implementation plan:
+Phase 1: Core Control Flow (Weeks 1-2)
+         * Implement _GEN_CMP (Comparison Generator).
+         * Implement IF, ELSE, END_IF (Binary Logic).
+         * Implement WHILE and END_WHILE.
+         * Deliverable: A flow_core.inc file allowing basic structured logic.
+Phase 2: Functional Abstraction (Weeks 3-4)
+         * Implement FUNCTION prologue/epilogue with full register preservation.
+         * Implement INVOKE with argument shuffling logic.
+         * Deliverable: A func_std.inc file compliant with AMD64 ABI.
+Phase 3: Aria Integration (Weeks 5-6)
+         * Add trit and tryte support to comparison macros (IF_TRIT).
+         * Integrate gc frame registration in FUNCTION.
+         * Implement EXIT calling aria.os.exit.
+         * Deliverable: aria_macros.inc fully integrating with the language runtime.
+10. Detailed Macro Specifications (Code Appendix)
+The following section provides the concrete NASM code for the proposed macros.
+10.1 The State Machine Context Logic
+
+
+Code snippet
+
+
+
+
+; ==============================================================================
+; ARIA MACRO LIBRARY: CONTROL FLOW
+; ==============================================================================
+
+; Counter for generating unique labels per context instance
+%assign %$uniq_id 0
+
+%macro _ALLOC_ID 0
+   %assign %$uniq_id %$uniq_id + 1
+%endmacro
+
+; ------------------------------------------------------------------------------
+; IF / ELIF / ELSE / END_IF
+; ------------------------------------------------------------------------------
+%macro IF 3
+   %push ctx_if
+   _ALLOC_ID
+   
+   ; Define labels for this instance
+   %define %$lbl_next ..@if_%$uniq_id_next
+   %define %$lbl_end  ..@if_%$uniq_id_end
+   
+   ; Generate comparison (Inverted logic: Jump if False)
+   _GEN_CMP %1, %2, %3
+   _GEN_JMP_FALSE %2, %$lbl_next
+%endmacro
+
+%macro ELIF 3
+   %ifctx ctx_if
+       ; Previous block succeeded; jump to end
+       jmp %$lbl_end
+       
+       ; Entry point for previous failure
+       %$lbl_next:
+       
+       ; Create NEW next label for this block
+       _ALLOC_ID
+       %define %$lbl_next..@if_%$uniq_id_next
+       
+       ; Generate check
+       _GEN_CMP %1, %2, %3
+       _GEN_JMP_FALSE %2, %$lbl_next
+   %else
+       %error "ELIF without IF"
+   %endif
+%endmacro
+
+%macro ELSE 0
+   %ifctx ctx_if
+       jmp %$lbl_end
+       %$lbl_next:
+       %repl ctx_else
+   %else
+       %error "ELSE without IF"
+   %endif
+%endmacro
+
+%macro END_IF 0
+   %ifctx ctx_if
+       %$lbl_next:     ; If no ELSE, fail falls through here
+   %elifctx ctx_else
+       ; Just closing scope
+   %else
+       %error "END_IF without context"
+   %endif
+   
+   %$lbl_end:          ; Convergence point
+   %pop
+%endmacro
+
+10.2 The Functional Wrapper
+
+
+Code snippet
+
+
+
+
+; ------------------------------------------------------------------------------
+; FUNCTION DEFINITION
+; ------------------------------------------------------------------------------
+%macro FUNCTION 2+
+   ; %1 = Name, %2... = Args
+   global %1
+   %1:
+       %push ctx_func
+       push rbp
+       mov rbp, rsp
+       
+       ; Save Callee-Saved (System V)
+       push rbx
+       push r12
+       push r13
+       push r14
+       push r15
+       
+       ; (Optional) Reserve local stack
+       ; sub rsp, 64 
+%endmacro
+
+%macro RETURN 2
+   ; %1 = Error, %2 = Value
+   mov rax, %1
+   mov rdx, %2
+   
+   ; Restore Registers
+   pop r15
+   pop r14
+   pop r13
+   pop r12
+   pop rbx
+   
+   mov rsp, rbp
+   pop rbp
+   ret
+%endmacro
+
+%macro END_FUNCTION 0
+   %ifctx ctx_func
+       ; Fallback return if user didn't write RETURN
+       mov rsp, rbp
+       pop rbp
+       ret
+       %pop
+   %endif
+%endmacro
+
+10.3 The Loop Constructs
+
+
+Code snippet
+
+
+
+
+; ------------------------------------------------------------------------------
+; FOR LOOP
+; ------------------------------------------------------------------------------
+%macro FOR 3
+   ; %1=Init, %2=Cond (register/val), %3=Step
+   %push ctx_for
+   _ALLOC_ID
+   
+   ; Init
+   %1
+   
+   %define %$lbl_start..@for_%$uniq_id_start
+   %define %$lbl_end  ..@for_%$uniq_id_end
+   %define %$step_code %3
+   
+   %$lbl_start:
+       ; Assume strict comparison of First Arg vs Limit
+       ; Simplified for proposal: cmp rcx, %2
+       cmp rcx, %2
+       jge %$lbl_end
+%endmacro
+
+%macro END_FOR 0
+   %ifctx ctx_for
+       %$step_code     ; Execute step (inc rcx)
+       jmp %$lbl_start
+       %$lbl_end:
+       %pop
+   %endif
+%endmacro
+
+%macro BREAK 0
+   ; Simplified stack check
+   %ifctx ctx_for
+       jmp %$lbl_end
+   %elifctx ctx_while
+       jmp %$lbl_end
+   %endif
+%endmacro
+
+11. Conclusion
+This proposal outlines a robust, "batteries-included" approach to macros for the Aria language. By building these primitives, we bridge the semantic gap between Aria's high-level specification and its low-level implementation details. The result is a development environment that honors the user's request for intuitive IF/FOR syntax while providing the deep integration required by Aria's unique type and memory systems. This system will allow developers to write safer, cleaner, and more maintainable assembly code, serving as a critical foundational layer for the Aria ecosystem.
+Comparison of Proposed Features vs. Original Request
+Requested Feature
+	Proposed Implementation Status
+	Aria Specific Adaptation
+	IF / ELIF / ELSE
+	Full Support via %push ctx_if
+	Supports trit via polymorphic _GEN_CMP
+	WHILE / END_WHILE
+	Full Support via %push ctx_while
+	Integrated with BREAK stack traversal
+	FOR / END_FOR
+	Full Support via %push ctx_for
+	Saves "step" code in macro definition
+	BREAK / CONTINUE
+	Full Support (Context Aware)
+	Logic to find nearest loop in stack
+	EXIT(code)
+	Full Support
+	Maps to aria.os.exit or syscall 60
+	FUNCTION
+	Full Support (Def & Call)
+	AMD64 ABI compliant; GC-aware options
+	References
+         * 1 Aria v0.0.6 Specifications
+         * 1 Preprocessor Macro Enhancement Proposal
+         * 2 NASM Preprocessor Basics
+         * 3 NASM Context Stack Documentation
+         * 6 Aria "Trit" and "Tryte" definitions
+         * 7 Memory Management in Rust/Systems Languages (Comparative analysis)
+Works cited
+         1. aria_v0_0_6_specs.txt
+         2. Chapter 4. The NASM Preprocessor, accessed December 6, 2025, https://www.tortall.net/projects/yasm/manual/html/nasm-preprocessor.html
+         3. 4.7. The Context Stack, accessed December 6, 2025, https://www.tortall.net/projects/yasm/manual/html/nasm-macro-context-stack.html
+         4. NASM Manual, accessed December 6, 2025, https://cburch.com/csbsju/cs/350/docs/nasm/nasmdoc4.html
+         5. Chapter 5: The NASM Preprocessor - NASM - The Netwide Assembler, accessed December 6, 2025, https://www.nasm.us/doc/nasm05.html
+         6. The International Terminological Key, accessed December 6, 2025, http://universala-esperanto.net/index_htm_files/The%20International%20Key.pdf
+         7. Roc rewrites the compiler in Zig - Hacker News, accessed December 6, 2025, https://news.ycombinator.com/item?id=42935516

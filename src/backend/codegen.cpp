@@ -36,6 +36,7 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/InlineAsm.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
@@ -72,6 +73,7 @@ using aria::frontend::DeferStmt;
 using aria::frontend::Expression;
 using aria::frontend::IntLiteral;
 using aria::frontend::BoolLiteral;
+using aria::frontend::NullLiteral;
 using aria::frontend::VarExpr;
 using aria::frontend::CallExpr;
 using aria::frontend::ArrayLiteral;
@@ -97,7 +99,7 @@ public:
     std::unique_ptr<IRBuilder<>> builder;
     
     // Symbol Table: Maps variable names to LLVM Allocas or Values
-    enum class AllocStrategy { STACK, WILD, GC, VALUE };
+    enum class AllocStrategy { STACK, WILD, WILDX, GC, VALUE };
     struct Symbol {
         Value* val;
         bool is_ref; // Is this a pointer to the value (alloca) or the value itself?
@@ -257,6 +259,53 @@ public:
         
         return StructType::create(llvmContext, fields, structName);
     }
+    
+    // Parse function signature from type string
+    // Format: "func<returnType(param1Type,param2Type,...)>"
+    // Returns FunctionType, or nullptr if not a function signature
+    FunctionType* parseFunctionSignature(const std::string& typeStr) {
+        // Check if it's a function signature
+        if (typeStr.find("func<") != 0) {
+            return nullptr;  // Not a function signature
+        }
+        
+        // Find the return type (between < and ()
+        size_t ltPos = typeStr.find('<');
+        size_t parenPos = typeStr.find('(');
+        if (ltPos == std::string::npos || parenPos == std::string::npos) {
+            return nullptr;
+        }
+        
+        std::string returnTypeStr = typeStr.substr(ltPos + 1, parenPos - ltPos - 1);
+        Type* returnType = getLLVMType(returnTypeStr);
+        
+        // Parse parameter types (between ( and ))
+        size_t endParenPos = typeStr.find(')');
+        if (endParenPos == std::string::npos) {
+            return nullptr;
+        }
+        
+        std::string paramsStr = typeStr.substr(parenPos + 1, endParenPos - parenPos - 1);
+        std::vector<Type*> paramTypes;
+        
+        if (!paramsStr.empty()) {
+            // Split by comma
+            size_t start = 0;
+            while (start < paramsStr.length()) {
+                size_t comma = paramsStr.find(',', start);
+                if (comma == std::string::npos) {
+                    comma = paramsStr.length();
+                }
+                
+                std::string paramTypeStr = paramsStr.substr(start, comma - start);
+                paramTypes.push_back(getLLVMType(paramTypeStr));
+                
+                start = comma + 1;
+            }
+        }
+        
+        return FunctionType::get(returnType, paramTypes, false);
+    }
 };
 
 // =============================================================================
@@ -397,8 +446,8 @@ public:
     }
 
     void visit(VarDecl* node) override {
-        // Special case: Function variables (type="func" with Lambda initializer)
-        if (node->type == "func" && node->initializer) {
+        // Special case: Function variables (type="func" or "func<signature>" with Lambda initializer)
+        if ((node->type == "func" || node->type.find("func<") == 0) && node->initializer) {
             if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node->initializer.get())) {
                 // IMPORTANT: We need to pre-declare the function in the symbol table
                 // BEFORE generating the lambda body, so recursive calls can find it.
@@ -429,6 +478,17 @@ public:
                 // We pass the pre-created function to be filled
                 generateLambdaBody(lambda, func);
                 
+                return;
+            }
+        }
+        
+        // Early return if initializer is a function (for func pointer variables)
+        // This avoids allocating storage when we just want to store the Function* directly
+        if ((node->type == "func" || node->type.find("func<") == 0) && node->initializer) {
+            Value* initVal = visitExpr(node->initializer.get());
+            if (initVal && isa<Function>(initVal)) {
+                // Store function directly in symbol table (no memory allocation)
+                ctx.define(node->name, initVal, false, node->type, CodeGenContext::AllocStrategy::VALUE);
                 return;
             }
         }
@@ -539,7 +599,7 @@ public:
             // We need a stack slot to hold the pointer itself (lvalue)
             storage = ctx.builder->CreateAlloca(PointerType::getUnqual(ctx.llvmContext), nullptr, node->name);
             ctx.builder->CreateStore(rawPtr, storage);
-            strategy = CodeGenContext::AllocStrategy::WILD; // Use WILD strategy for now
+            strategy = CodeGenContext::AllocStrategy::WILDX; // WILDX strategy for executable memory
         }
         else {
             // GC: aria_gc_alloc (for non-primitives or explicitly marked gc)
@@ -566,6 +626,22 @@ public:
         if (node->initializer) {
             Value* initVal = visitExpr(node->initializer.get());
             if (!initVal) return;
+
+            // Special case: func type variables store Function* directly, not in memory
+            // This includes both "func" and "func<signature>" types
+            if ((node->type == "func" || node->type.find("func<") == 0) && isa<Function>(initVal)) {
+                // Update symbol table to store function directly (not as a reference)
+                ctx.define(node->name, initVal, false, node->type, CodeGenContext::AllocStrategy::VALUE);
+                return;  // Don't store to memory
+            }
+
+            // Convert initVal to match variable type if needed
+            if (initVal->getType() != varType) {
+                if (initVal->getType()->isIntegerTy() && varType->isIntegerTy()) {
+                    // Truncate or extend to match variable type
+                    initVal = ctx.builder->CreateIntCast(initVal, varType, true);
+                }
+            }
 
             if (use_stack) {
                 // Direct store for stack-allocated variables
@@ -1161,6 +1237,10 @@ public:
         if (auto* blit = dynamic_cast<aria::frontend::BoolLiteral*>(node)) {
             return ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), blit->value ? 1 : 0);
         }
+        if (auto* nlit = dynamic_cast<aria::frontend::NullLiteral*>(node)) {
+            // NULL is represented as a null pointer constant
+            return ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext));
+        }
         if (auto* slit = dynamic_cast<aria::frontend::StringLiteral*>(node)) {
             // Create global string constant
             return ctx.builder->CreateGlobalStringPtr(slit->value);
@@ -1299,12 +1379,25 @@ public:
                     
                     // For array types, return pointer to first element instead of loading the array
                     if (loadType->isArrayTy()) {
-                        // Return GEP to first element (array decay)
-                        Value* indices[] = {
-                            ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0),
-                            ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0)
-                        };
-                        return ctx.builder->CreateGEP(loadType, sym->val, indices, var->name + "_ptr");
+                        // For heap allocations, we need to load the heap pointer first
+                        // sym->val is a stack location holding a pointer to the heap data
+                        if (sym->strategy == CodeGenContext::AllocStrategy::WILD || 
+                            sym->strategy == CodeGenContext::AllocStrategy::GC) {
+                            // Load the heap pointer from the stack slot
+                            Value* heapPtr = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), sym->val, var->name + "_heap");
+                            // Now get pointer to first element of the heap-allocated array
+                            Value* indices[] = {
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0)
+                            };
+                            return ctx.builder->CreateGEP(loadType, heapPtr, indices, var->name + "_ptr");
+                        } else {
+                            // For stack allocations, GEP directly on the alloca
+                            Value* indices[] = {
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0),
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0)
+                            };
+                            return ctx.builder->CreateGEP(loadType, sym->val, indices, var->name + "_ptr");
+                        }
                     }
                     
                     // For heap allocations (wild/gc), load pointer first, then value
@@ -1312,6 +1405,13 @@ public:
                         sym->strategy == CodeGenContext::AllocStrategy::GC) {
                         Value* heapPtr = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), sym->val);
                         return ctx.builder->CreateLoad(loadType, heapPtr);
+                    }
+                    
+                    // For wildx allocations (executable memory), return the pointer itself
+                    // Wildx pointers are used directly for memory operations (protect_exec, etc.)
+                    if (sym->strategy == CodeGenContext::AllocStrategy::WILDX) {
+                        // Return the pointer value (don't dereference)
+                        return ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), sym->val);
                     }
                     
                     // For stack allocations, direct load from alloca
@@ -1333,6 +1433,45 @@ public:
                 funcName = "puts";
             }
             
+            // Check for syscall intrinsics (file I/O operations)
+            // These generate direct syscalls via inline assembly on Linux
+            if (funcName == "intrinsic_open") {
+                // open syscall - syscall number 2 on x86-64 Linux
+                std::vector<Value*> args;
+                for (auto& arg : call->arguments) {
+                    args.push_back(visitExpr(arg.get()));
+                }
+                return createSyscall(2, args, Type::getInt32Ty(ctx.llvmContext));
+            } else if (funcName == "intrinsic_close") {
+                // close syscall - syscall number 3
+                std::vector<Value*> args;
+                for (auto& arg : call->arguments) {
+                    args.push_back(visitExpr(arg.get()));
+                }
+                return createSyscall(3, args, Type::getInt32Ty(ctx.llvmContext));
+            } else if (funcName == "intrinsic_read") {
+                // read syscall - syscall number 0
+                std::vector<Value*> args;
+                for (auto& arg : call->arguments) {
+                    args.push_back(visitExpr(arg.get()));
+                }
+                return createSyscall(0, args, Type::getInt64Ty(ctx.llvmContext));
+            } else if (funcName == "intrinsic_write") {
+                // write syscall - syscall number 1
+                std::vector<Value*> args;
+                for (auto& arg : call->arguments) {
+                    args.push_back(visitExpr(arg.get()));
+                }
+                return createSyscall(1, args, Type::getInt64Ty(ctx.llvmContext));
+            } else if (funcName == "intrinsic_lseek") {
+                // lseek syscall - syscall number 8
+                std::vector<Value*> args;
+                for (auto& arg : call->arguments) {
+                    args.push_back(visitExpr(arg.get()));
+                }
+                return createSyscall(8, args, Type::getInt64Ty(ctx.llvmContext));
+            }
+            
             // Check for wildx memory protection intrinsics
             // These map to the runtime functions directly
             bool is_wildx_intrinsic = false;
@@ -1349,14 +1488,28 @@ public:
             
             // Try to find function in symbol table (for Aria functions)
             Function* callee = nullptr;
+            Value* calleePtr = nullptr;  // For indirect calls through func variables
+            FunctionType* funcType = nullptr;  // For indirect calls with signature
+            
             auto* sym = ctx.lookup(call->function_name);
             if (sym && !sym->is_ref) {
-                // Direct value should be a function
+                // Direct function value (registered from FuncDecl or Lambda)
                 callee = dyn_cast_or_null<Function>(sym->val);
+                
+                // If not a Function*, check if it's a func variable with signature
+                if (!callee && sym->ariaType.find("func<") == 0) {
+                    // This is a func variable with a signature - indirect call
+                    calleePtr = sym->val;
+                    funcType = ctx.parseFunctionSignature(sym->ariaType);
+                    
+                    if (!funcType) {
+                        throw std::runtime_error("Invalid function signature for '" + call->function_name + "'");
+                    }
+                }
             }
             
             // If not in symbol table, try module (for external functions)
-            if (!callee) {
+            if (!callee && !calleePtr) {
                 callee = ctx.module->getFunction(funcName);
             }
             
@@ -1371,7 +1524,7 @@ public:
                 }
             }
             
-            if (!callee) {
+            if (!callee && !calleePtr) {
                 std::string errorMsg = "Undefined function '" + call->function_name + "'";
                 
                 // Check if it's a common typo or forgotten function
@@ -1386,13 +1539,23 @@ public:
                 throw std::runtime_error(errorMsg);
             }
             
+            // Build argument list
             std::vector<Value*> args;
+            
+            // Get the function type for parameter type checking
+            FunctionType* callFuncType = nullptr;
+            if (callee) {
+                callFuncType = callee->getFunctionType();
+            } else if (funcType) {
+                callFuncType = funcType;
+            }
+            
             for (size_t i = 0; i < call->arguments.size(); i++) {
                 Value* argVal = visitExpr(call->arguments[i].get());
                 
                 // Cast argument to match parameter type if needed
-                if (i < callee->arg_size()) {
-                    Type* expectedType = callee->getFunctionType()->getParamType(i);
+                if (callFuncType && i < callFuncType->getNumParams()) {
+                    Type* expectedType = callFuncType->getParamType(i);
                     if (argVal->getType() != expectedType) {
                         // If both are integers, perform cast
                         if (argVal->getType()->isIntegerTy() && expectedType->isIntegerTy()) {
@@ -1404,11 +1567,25 @@ public:
                 args.push_back(argVal);
             }
             
-            // Void functions shouldn't have result names
-            if (callee->getReturnType()->isVoidTy()) {
-                return ctx.builder->CreateCall(callee, args);
+            // Generate the call
+            if (calleePtr) {
+                // Indirect call through function pointer
+                // Cast the pointer to the correct function type
+                Value* funcPtr = ctx.builder->CreateBitCast(calleePtr, PointerType::getUnqual(funcType));
+                
+                // Void functions shouldn't have result names
+                if (funcType->getReturnType()->isVoidTy()) {
+                    return ctx.builder->CreateCall(funcType, funcPtr, args);
+                }
+                return ctx.builder->CreateCall(funcType, funcPtr, args, "calltmp");
+            } else {
+                // Direct call
+                // Void functions shouldn't have result names
+                if (callee->getReturnType()->isVoidTy()) {
+                    return ctx.builder->CreateCall(callee, args);
+                }
+                return ctx.builder->CreateCall(callee, args, "calltmp");
             }
-            return ctx.builder->CreateCall(callee, args, "calltmp");
         }
         if (auto* unary = dynamic_cast<aria::frontend::UnaryOp*>(node)) {
             Value* operand = visitExpr(unary->operand.get());
@@ -1605,8 +1782,31 @@ public:
                         case aria::frontend::BinaryOp::MOD_ASSIGN:
                             result = ctx.builder->CreateSRem(currentVal, R, "modtmp");
                             break;
+                        case aria::frontend::BinaryOp::AND_ASSIGN:
+                            result = ctx.builder->CreateAnd(currentVal, R, "andassigntmp");
+                            break;
+                        case aria::frontend::BinaryOp::OR_ASSIGN:
+                            result = ctx.builder->CreateOr(currentVal, R, "orassigntmp");
+                            break;
+                        case aria::frontend::BinaryOp::XOR_ASSIGN:
+                            result = ctx.builder->CreateXor(currentVal, R, "xorassigntmp");
+                            break;
+                        case aria::frontend::BinaryOp::LSHIFT_ASSIGN:
+                            result = ctx.builder->CreateShl(currentVal, R, "lshiftassigntmp");
+                            break;
+                        case aria::frontend::BinaryOp::RSHIFT_ASSIGN:
+                            result = ctx.builder->CreateAShr(currentVal, R, "rshiftassigntmp");
+                            break;
                         default:
                             break;
+                    }
+                }
+                
+                // Convert result to match variable type before storing
+                Type* varType = ctx.getLLVMType(sym->ariaType);
+                if (result->getType() != varType) {
+                    if (result->getType()->isIntegerTy() && varType->isIntegerTy()) {
+                        result = ctx.builder->CreateIntCast(result, varType, true);
                     }
                 }
                 
@@ -2285,6 +2485,7 @@ public:
     
     void visit(IntLiteral* node) override {} // Handled by visitExpr()
     void visit(BoolLiteral* node) override {} // Handled by visitExpr()
+    void visit(NullLiteral* node) override {} // Handled by visitExpr()
     void visit(frontend::StringLiteral* node) override {} // Handled by visitExpr()
     void visit(frontend::TemplateString* node) override {} // Handled by visitExpr()
     void visit(frontend::TernaryExpr* node) override {} // Handled by visitExpr()
@@ -2387,15 +2588,36 @@ public:
                     ctx.builder->CreateRet(resultVal);
                 } else {
                     // NO AUTO-WRAP: Return value must already be a result struct
-                    // Cast/truncate return value to match function return type if needed
-                    if (retVal->getType() != expectedReturnType) {
-                        if (retVal->getType()->isIntegerTy() && expectedReturnType->isIntegerTy()) {
-                            retVal = ctx.builder->CreateIntCast(retVal, expectedReturnType, true);
-                        }
-                        // If types still don't match, it's an error (should be caught by type checker)
-                    }
+                    // OR function must return a non-result type (void, int, etc.)
                     
-                    ctx.builder->CreateRet(retVal);
+                    // Check if expected return type is a result struct
+                    StructType* resultType = dyn_cast<StructType>(expectedReturnType);
+                    bool expectingResult = resultType && resultType->getName().starts_with("result_");
+                    
+                    if (expectingResult) {
+                        // Function returns result<T> - return value MUST be a result struct
+                        if (retVal->getType() != expectedReturnType) {
+                            throw std::runtime_error(
+                                "Type error: Function '" + std::string(ctx.currentFunction->getName()) + 
+                                "' returns result<" + ctx.currentFunctionReturnType + 
+                                "> but 'return' statement provides a plain value.\n" +
+                                "Use 'pass(value)' for success or 'fail(errorCode)' for errors.\n" +
+                                "Example: pass(42) or fail(1)"
+                            );
+                        }
+                        // Correct - returning a result struct
+                        ctx.builder->CreateRet(retVal);
+                    } else {
+                        // Function returns plain type (void, int, etc.) - allow plain return
+                        // Cast/truncate return value to match function return type if needed
+                        if (retVal->getType() != expectedReturnType) {
+                            if (retVal->getType()->isIntegerTy() && expectedReturnType->isIntegerTy()) {
+                                retVal = ctx.builder->CreateIntCast(retVal, expectedReturnType, true);
+                            }
+                            // If types still don't match, it's an error (should be caught by type checker)
+                        }
+                        ctx.builder->CreateRet(retVal);
+                    }
                 }
             }
         } else {
@@ -2453,6 +2675,114 @@ private:
         return Function::Create(
             FunctionType::get(Type::getVoidTy(ctx.llvmContext), args, false),
             Function::ExternalLinkage, "aria_free_exec", ctx.module.get());
+    }
+    
+    // Helper: Create a syscall via inline assembly
+    // This generates a direct syscall instruction for Linux x86-64
+    Value* createSyscall(int syscallNum, const std::vector<Value*>& args, Type* returnType) {
+        // x86-64 Linux syscall convention:
+        // syscall number in RAX
+        // arguments in RDI, RSI, RDX, R10, R8, R9
+        // return value in RAX
+        
+        // Inline assembly template:
+        // "mov $<syscall_num>, %rax; syscall"
+        // Input constraints: register-mapped arguments
+        // Output: return value in RAX
+        
+        std::string asmStr = "syscall";
+        std::string constraints;
+        std::vector<Value*> asmArgs;
+        
+        // Build inline assembly based on argument count
+        if (args.empty()) {
+            // No arguments, just syscall number
+            constraints = "={rax},{rax}";  // output in rax, input syscall number
+            asmArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), syscallNum));
+        } else if (args.size() == 1) {
+            // 1 argument: RDI
+            constraints = "={rax},{rax},{rdi}";
+            asmArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), syscallNum));
+            // Cast all arguments to i64
+            if (args[0]->getType()->isPointerTy()) {
+                asmArgs.push_back(ctx.builder->CreatePtrToInt(args[0], Type::getInt64Ty(ctx.llvmContext)));
+            } else if (args[0]->getType()->isIntegerTy()) {
+                asmArgs.push_back(ctx.builder->CreateIntCast(args[0], Type::getInt64Ty(ctx.llvmContext), true));
+            } else {
+                asmArgs.push_back(args[0]);
+            }
+        } else if (args.size() == 2) {
+            // 2 arguments: RDI, RSI
+            constraints = "={rax},{rax},{rdi},{rsi}";
+            asmArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), syscallNum));
+            for (size_t i = 0; i < 2; i++) {
+                if (args[i]->getType()->isPointerTy()) {
+                    asmArgs.push_back(ctx.builder->CreatePtrToInt(args[i], Type::getInt64Ty(ctx.llvmContext)));
+                } else if (args[i]->getType()->isIntegerTy()) {
+                    asmArgs.push_back(ctx.builder->CreateIntCast(args[i], Type::getInt64Ty(ctx.llvmContext), true));
+                } else {
+                    asmArgs.push_back(args[i]);
+                }
+            }
+        } else if (args.size() == 3) {
+            // 3 arguments: RDI, RSI, RDX
+            constraints = "={rax},{rax},{rdi},{rsi},{rdx}";
+            asmArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), syscallNum));
+            for (size_t i = 0; i < 3; i++) {
+                if (args[i]->getType()->isPointerTy()) {
+                    asmArgs.push_back(ctx.builder->CreatePtrToInt(args[i], Type::getInt64Ty(ctx.llvmContext)));
+                } else if (args[i]->getType()->isIntegerTy()) {
+                    asmArgs.push_back(ctx.builder->CreateIntCast(args[i], Type::getInt64Ty(ctx.llvmContext), true));
+                } else {
+                    asmArgs.push_back(args[i]);
+                }
+            }
+        } else if (args.size() == 4) {
+            // 4 arguments: RDI, RSI, RDX, R10
+            constraints = "={rax},{rax},{rdi},{rsi},{rdx},{r10}";
+            asmArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), syscallNum));
+            for (size_t i = 0; i < 4; i++) {
+                if (args[i]->getType()->isPointerTy()) {
+                    asmArgs.push_back(ctx.builder->CreatePtrToInt(args[i], Type::getInt64Ty(ctx.llvmContext)));
+                } else if (args[i]->getType()->isIntegerTy()) {
+                    asmArgs.push_back(ctx.builder->CreateIntCast(args[i], Type::getInt64Ty(ctx.llvmContext), true));
+                } else {
+                    asmArgs.push_back(args[i]);
+                }
+            }
+        } else {
+            throw std::runtime_error("Syscalls with more than 4 arguments not yet supported");
+        }
+        
+        // Create inline assembly function type
+        std::vector<Type*> asmParamTypes;
+        for (auto* arg : asmArgs) {
+            asmParamTypes.push_back(arg->getType());
+        }
+        
+        FunctionType* asmFuncType = FunctionType::get(
+            Type::getInt64Ty(ctx.llvmContext),  // Always return i64 from syscall
+            asmParamTypes,
+            false
+        );
+        
+        // Create the inline assembly call
+        InlineAsm* inlineAsm = InlineAsm::get(
+            asmFuncType,
+            asmStr,
+            constraints,
+            true,  // has side effects
+            false  // not stack aligned
+        );
+        
+        Value* result = ctx.builder->CreateCall(inlineAsm, asmArgs, "syscall_result");
+        
+        // Cast result to expected return type if needed
+        if (returnType->isIntegerTy() && returnType != Type::getInt64Ty(ctx.llvmContext)) {
+            result = ctx.builder->CreateIntCast(result, returnType, true, "syscall_cast");
+        }
+        
+        return result;
     }
     
     Function* getOrInsertGetNursery() {

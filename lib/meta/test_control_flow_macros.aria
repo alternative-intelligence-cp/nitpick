@@ -1,0 +1,86 @@
+// Aria Control Flow Macros - WORKING VERSION
+// Successfully tested: IF/ELSE/ELIF/END_IF and WHILE/END_WHILE
+
+%macro IF 3
+if (%1 %2 %3) {
+%endmacro
+
+%macro ELSE 0
+} else {
+%endmacro
+
+%macro ELIF 3
+} else if (%1 %2 %3) {
+%endmacro
+
+%macro END_IF 0
+}
+%endmacro
+
+%macro WHILE 3
+while (%1 %2 %3) {
+%endmacro
+
+%macro END_WHILE 0
+}
+%endmacro
+
+func:test_if_else = *int8(int32:x) {
+    int8:ret = 0;
+    IF(x, >, 10)
+        ret = 1;
+    ELSE
+        ret = 0;
+    END_IF
+    return ret;
+};
+
+func:test_elif = *int8(int32:x) {
+    int8:ret = 0;
+    IF(x, ==, 1)
+        ret = 10;
+    ELIF(x, ==, 2)
+        ret = 20;
+    ELIF(x, ==, 3)
+        ret = 30;
+    ELSE
+        ret = 99;
+    END_IF
+    return ret;
+};
+
+func:test_while = *int32() {
+    int32:sum = 0;
+    int32:counter = 0;
+    WHILE(counter, <, 5)
+        sum = sum + counter;
+        counter = counter + 1;
+    END_WHILE
+    return sum;
+};
+
+func:main = *int8() {
+    int8:tests_passed = 0;
+    
+    IF(test_if_else(15)?, ==, 1)
+        tests_passed = tests_passed + 1;
+    END_IF
+    
+    IF(test_if_else(5)?, ==, 0)
+        tests_passed = tests_passed + 1;
+    END_IF
+    
+    IF(test_elif(2)?, ==, 20)
+        tests_passed = tests_passed + 1;
+    END_IF
+    
+    IF(test_while()?, ==, 10)
+        tests_passed = tests_passed + 1;
+    END_IF
+    
+    IF(tests_passed, ==, 4)
+        return 0;
+    ELSE
+        return 1;
+    END_IF
+};

@@ -1,0 +1,60 @@
+// ARA - Using int64 instead of uint8@ for buffer
+int8:RAX = 0;
+int8:RDI = 7;
+
+func:calc_rex = uint8(int8:w, int8:r, int8:x, int8:b) {
+    uint8:rex = 0x40;
+    if (w != 0) { rex |= 0x08; }
+    if (r != 0) { rex |= 0x04; }
+    if (x != 0) { rex |= 0x02; }
+    if (b != 0) { rex |= 0x01; }
+    pass(rex);
+};
+
+func:calc_modrm = uint8(int8:modval, int8:regval, int8:rmval) {
+    uint8:output = 0;
+    uint8:mod_u8 = (uint8)modval;
+    uint8:reg_u8 = (uint8)regval;
+    uint8:rm_u8 = (uint8)rmval;
+    
+    uint8:mod_bits = mod_u8 & 0x03;
+    output = mod_bits << 6;
+    
+    uint8:reg_bits = reg_u8 & 0x07;
+    uint8:reg_shifted = reg_bits << 3;
+    output |= reg_shifted;
+    
+    uint8:rm_bits = rm_u8 & 0x07;
+    output |= rm_bits;
+    
+    pass(output);
+};
+
+func:emit_mov = int64(int64:buf_addr, int64:offset, int8:dst, int8:src) {
+    int8:w = 1;
+    int8:r_ext = (src >> 3) & 1;
+    int8:b_ext = (dst >> 3) & 1;
+    
+    result:rex_result = calc_rex(w, r_ext, 0, b_ext);
+    uint8:rex = (uint8)rex_result.val;
+    result:modrm_result = calc_modrm(3, src & 7, dst & 7);
+    uint8:modrm = (uint8)modrm_result.val;
+    
+    // Write bytes using pointer arithmetic
+    uint8@ :ptr = (uint8@)buf_addr;
+    ptr[offset] = (int8)rex;
+    ptr[offset + 1] = (int8)0x89;
+    ptr[offset + 2] = (int8)modrm;
+    
+    pass(offset + 3);
+};
+
+func:main = int8() {
+    print("=== ARA Working Version ===");
+    
+    int64:code = 0;
+    result:r = emit_mov(code, 0, RAX, RDI);
+    
+    print("Generated MOV instruction!");
+    pass(0);
+};
