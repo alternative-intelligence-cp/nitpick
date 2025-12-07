@@ -200,57 +200,38 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc \
- /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/stmt.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/../ast.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/expr.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/expr.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/control_flow.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/stmt.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/loops.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/defer.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/module.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/tokens.h \
- /usr/include/c++/13/iostream /usr/include/c++/13/istream \
- /usr/include/c++/13/bits/istream.tcc \
- /usr/lib/llvm-19/include/llvm/IR/LLVMContext.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_tbb.h \
+ /usr/lib/llvm-19/include/llvm/IR/Value.h \
  /usr/lib/llvm-19/include/llvm-c/Types.h \
  /usr/lib/llvm-19/include/llvm-c/DataTypes.h /usr/include/inttypes.h \
  /usr/lib/llvm-19/include/llvm-c/ExternC.h \
- /usr/lib/llvm-19/include/llvm/IR/DiagnosticHandler.h \
- /usr/lib/llvm-19/include/llvm/ADT/StringRef.h \
- /usr/lib/llvm-19/include/llvm/ADT/DenseMapInfo.h \
- /usr/include/c++/13/cassert /usr/include/assert.h \
- /usr/include/c++/13/utility /usr/include/c++/13/bits/stl_relops.h \
- /usr/lib/llvm-19/include/llvm/ADT/STLFunctionalExtras.h \
+ /usr/lib/llvm-19/include/llvm/ADT/STLExtras.h \
+ /usr/lib/llvm-19/include/llvm/ADT/ADL.h /usr/include/c++/13/iterator \
+ /usr/include/c++/13/bits/stream_iterator.h /usr/include/c++/13/utility \
+ /usr/include/c++/13/bits/stl_relops.h \
+ /usr/lib/llvm-19/include/llvm/ADT/Hashing.h \
+ /usr/lib/llvm-19/include/llvm/Config/abi-breaking.h \
+ /usr/lib/llvm-19/include/llvm/Support/DataTypes.h \
+ /usr/lib/llvm-19/include/llvm/Support/ErrorHandling.h \
+ /usr/lib/llvm-19/include/llvm/Support/Compiler.h \
+ /usr/lib/llvm-19/include/llvm/Config/llvm-config.h \
+ /usr/lib/llvm-19/include/llvm/Support/SwapByteOrder.h \
  /usr/lib/llvm-19/include/llvm/ADT/STLForwardCompat.h \
  /usr/include/c++/13/optional \
  /usr/include/c++/13/bits/enable_special_members.h \
- /usr/lib/llvm-19/include/llvm/ADT/iterator_range.h \
- /usr/lib/llvm-19/include/llvm/ADT/ADL.h /usr/include/c++/13/iterator \
- /usr/include/c++/13/bits/stream_iterator.h \
- /usr/lib/llvm-19/include/llvm/Support/Compiler.h \
- /usr/lib/llvm-19/include/llvm/Config/llvm-config.h \
+ /usr/lib/llvm-19/include/llvm/ADT/bit.h /usr/include/c++/13/limits \
+ /usr/lib/llvm-19/include/llvm/Support/type_traits.h \
  /usr/include/c++/13/algorithm /usr/include/c++/13/bits/stl_algo.h \
  /usr/include/c++/13/bits/algorithmfwd.h \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h \
  /usr/include/c++/13/bits/ranges_algo.h \
  /usr/include/c++/13/pstl/glue_algorithm_defs.h \
+ /usr/include/c++/13/cassert /usr/include/assert.h \
  /usr/include/c++/13/cstring /usr/include/string.h /usr/include/strings.h \
- /usr/include/c++/13/limits \
- /usr/lib/llvm-19/include/llvm/Support/CBindingWrapping.h \
- /usr/lib/llvm-19/include/llvm/Support/Casting.h \
- /usr/lib/llvm-19/include/llvm/Support/type_traits.h \
- /usr/lib/llvm-19/include/llvm/IR/FixedMetadataKinds.def \
- /usr/lib/llvm-19/include/llvm/IR/Module.h \
- /usr/lib/llvm-19/include/llvm/ADT/STLExtras.h \
- /usr/lib/llvm-19/include/llvm/ADT/Hashing.h \
- /usr/lib/llvm-19/include/llvm/Config/abi-breaking.h \
- /usr/lib/llvm-19/include/llvm/Support/DataTypes.h \
- /usr/lib/llvm-19/include/llvm/Support/ErrorHandling.h \
- /usr/lib/llvm-19/include/llvm/Support/SwapByteOrder.h \
- /usr/lib/llvm-19/include/llvm/ADT/bit.h \
+ /usr/lib/llvm-19/include/llvm/ADT/STLFunctionalExtras.h \
  /usr/lib/llvm-19/include/llvm/ADT/iterator.h \
+ /usr/lib/llvm-19/include/llvm/ADT/iterator_range.h \
  /usr/include/c++/13/functional /usr/include/c++/13/bits/std_function.h \
  /usr/include/c++/13/unordered_map \
  /usr/include/c++/13/bits/unordered_map.h \
@@ -258,21 +239,33 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/include/c++/13/bits/hashtable_policy.h \
  /usr/include/c++/13/bits/node_handle.h \
  /usr/include/c++/13/bits/erase_if.h /usr/include/c++/13/array \
+ /usr/lib/llvm-19/include/llvm/ADT/StringRef.h \
+ /usr/lib/llvm-19/include/llvm/ADT/DenseMapInfo.h \
+ /usr/lib/llvm-19/include/llvm/IR/Use.h \
+ /usr/lib/llvm-19/include/llvm/Support/CBindingWrapping.h \
+ /usr/lib/llvm-19/include/llvm/Support/Casting.h \
+ /usr/lib/llvm-19/include/llvm/Support/Alignment.h \
+ /usr/lib/llvm-19/include/llvm/Support/MathExtras.h \
+ /usr/lib/llvm-19/include/llvm/IR/Value.def \
+ /usr/lib/llvm-19/include/llvm/IR/Type.h \
+ /usr/lib/llvm-19/include/llvm/ADT/ArrayRef.h \
+ /usr/lib/llvm-19/include/llvm/ADT/SmallVector.h \
+ /usr/lib/llvm-19/include/llvm/Support/TypeSize.h \
+ /usr/lib/llvm-19/include/llvm/Support/raw_ostream.h \
+ /usr/lib/llvm-19/include/llvm/IR/LLVMContext.h \
+ /usr/lib/llvm-19/include/llvm/IR/DiagnosticHandler.h \
+ /usr/lib/llvm-19/include/llvm/IR/FixedMetadataKinds.def \
+ /usr/lib/llvm-19/include/llvm/IR/Module.h \
  /usr/lib/llvm-19/include/llvm/ADT/StringMap.h \
  /usr/lib/llvm-19/include/llvm/ADT/StringMapEntry.h \
  /usr/lib/llvm-19/include/llvm/Support/AllocatorBase.h \
  /usr/lib/llvm-19/include/llvm/Support/MemAlloc.h \
  /usr/lib/llvm-19/include/llvm/Support/PointerLikeTypeTraits.h \
  /usr/lib/llvm-19/include/llvm/IR/Attributes.h \
- /usr/lib/llvm-19/include/llvm/ADT/ArrayRef.h \
- /usr/lib/llvm-19/include/llvm/ADT/SmallVector.h \
  /usr/lib/llvm-19/include/llvm/ADT/BitmaskEnum.h \
- /usr/lib/llvm-19/include/llvm/Support/MathExtras.h \
- /usr/lib/llvm-19/include/llvm/Support/Alignment.h \
  /usr/lib/llvm-19/include/llvm/Support/CodeGen.h \
  /usr/lib/llvm-19/include/llvm/Support/ModRef.h \
  /usr/lib/llvm-19/include/llvm/ADT/Sequence.h \
- /usr/lib/llvm-19/include/llvm/Support/raw_ostream.h \
  /usr/lib/llvm-19/include/llvm/IR/Attributes.inc \
  /usr/lib/llvm-19/include/llvm/IR/Comdat.h \
  /usr/lib/llvm-19/include/llvm/ADT/SmallPtrSet.h \
@@ -282,8 +275,6 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/lib/llvm-19/include/llvm/ADT/APInt.h \
  /usr/lib/llvm-19/include/llvm/Support/float128.h \
  /usr/lib/llvm-19/include/llvm/IR/DerivedTypes.h \
- /usr/lib/llvm-19/include/llvm/IR/Type.h \
- /usr/lib/llvm-19/include/llvm/Support/TypeSize.h \
  /usr/lib/llvm-19/include/llvm/Support/TrailingObjects.h \
  /usr/lib/llvm-19/include/llvm/Support/AlignOf.h \
  /usr/lib/llvm-19/include/llvm/IR/Function.h \
@@ -295,9 +286,6 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/lib/llvm-19/include/llvm/ADT/PointerIntPair.h \
  /usr/lib/llvm-19/include/llvm/ADT/ilist_node_options.h \
  /usr/lib/llvm-19/include/llvm/IR/Argument.h \
- /usr/lib/llvm-19/include/llvm/IR/Value.h \
- /usr/lib/llvm-19/include/llvm/IR/Use.h \
- /usr/lib/llvm-19/include/llvm/IR/Value.def \
  /usr/lib/llvm-19/include/llvm/IR/BasicBlock.h \
  /usr/lib/llvm-19/include/llvm/ADT/ilist.h \
  /usr/lib/llvm-19/include/llvm/ADT/simple_ilist.h \
@@ -346,6 +334,18 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/lib/llvm-19/include/llvm/IR/CFG.h \
  /usr/lib/llvm-19/include/llvm/ADT/GraphTraits.h \
  /usr/lib/llvm-19/include/llvm/IR/ValueHandle.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/stmt.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/../ast.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/expr.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/expr.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/control_flow.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/stmt.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/loops.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/defer.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/module.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/tokens.h \
+ /usr/include/c++/13/iostream /usr/include/c++/13/istream \
+ /usr/include/c++/13/bits/istream.tcc \
  /usr/lib/llvm-19/include/llvm/IR/Verifier.h \
  /usr/lib/llvm-19/include/llvm/IR/PassManager.h \
  /usr/lib/llvm-19/include/llvm/ADT/TinyPtrVector.h \

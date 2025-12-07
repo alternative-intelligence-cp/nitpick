@@ -1,0 +1,775 @@
+/* types
+int1,
+int2,
+int4,
+int8,
+int16,
+int32,
+int64,
+int128,
+int256,
+int512,
+uint8,
+uint16,
+uint32,
+uint64,
+uint128,
+uint256,
+uint512,
+tbb8,  !!! IMPORTANT tbb8 is Twisted Balanced Binary 8-bit: symmetric range [-127, +127], -128 (0x80) is ERR sentinel NOT NEGOTIABLE!!!
+tbb16, !!! IMPORTANT tbb16 is Twisted Balanced Binary 16-bit: symmetric range [-32767, +32767], -32768 (0x8000) is ERR sentinel NOT NEGOTIABLE!!!
+tbb32, !!! IMPORTANT tbb32 is Twisted Balanced Binary 32-bit: symmetric range [-2147483647, +2147483647], min value is ERR sentinel NOT NEGOTIABLE!!!
+tbb64, !!! IMPORTANT tbb64 is Twisted Balanced Binary 64-bit: symmetric range, min value is ERR sentinel, sticky error propagation NOT NEGOTIABLE!!!
+flt32,
+flt64,
+flt128,
+flt256,
+flt512,
+bool,
+vec2,
+vec3,
+vec9,
+dyn,
+obj,
+struct,
+string,
+result,
+func,
+array,
+trit !!! IMPORTANT trit is balanced ternary digit (-1,0,1) NOT NEGOTIABLE!!!,
+tryte !!! IMPORTANT tryte is 10 trits for 3^10 values stored in uint16 NOT NEGOTIABLE!!!,
+nit !!! IMPORTANT nit is balanced nonary digit (-4,-3,-2,-1,0,1,2,3,4) NOT NEGOTIABLE!!!,
+nyte !!! IMPORTANT nyte is 5 nits for 9^5 values stored in uint16 NOT NEGOTIABLE!!!,
+tensor,
+matrix
+*/
+
+/* keywords
+wild,
+defer,
+async,
+const,
+use,        // import modules/files
+mod,        // define module
+pub,        // public visibility
+extern,     // external C functions
+ERR,        // TBB error sentinel literal (context-dependent based on type)
+stack,      // explicit stack allocation
+gc,         // explicit GC allocation
+wildx,      // executable memory allocation (for JIT)
+*/
+
+/* constructs
+if/else if/else
+while,
+for,
+till,
+when/then/end,
+pick
+*/
+
+/* operators
+=,
+==,
++=,
+-=,
+*=,
+%=,
+/=,
+++,
+--,
+||,
+&&,
+!,
+@,         // address/pointer operator
+$,         // iteration variable in till loops, safe reference
+#,         // memory pinning operator
+&,         // bitwise and, string interpolation prefix
+``,        // template literal delimiters
+<=>,       // spaceship operator (three-way comparison)
+?.,        // safe navigation operator
+??,        // null coalescing operator
+?,         // unwrap operator
+|>,        // pipeline operator (forward)
+<|,        // pipeline operator (backward)
+..,        // inclusive range operator
+...,       // exclusive range operator
+:,         // type annotation
+fall(),    // explicit fallthrough in pick
+is,        // ternary condition keyword
+
+NOTE: => is NOT a lambda operator. Lambda syntax is just: returnType(params) { body }
+      -> is NOT for function return types. It's ONLY for pointer member access: ptr->member
+      All functions return result type implicitly with {err, val} fields
+*/
+
+/* std library
+aria.alloc(),      // wild memory allocation
+aria.free(),       // wild memory deallocation
+aria.gc_alloc(),   // explicit GC allocation
+aria.alloc_buffer(), // buffer allocation
+aria.alloc_string(), // string allocation
+aria.alloc_array(),  // array allocation
+print(),           // stdout text output
+readFile(),        // file reading with result
+writeFile(),       // file writing with result
+readJSON(),        // JSON file parsing
+readCSV(),         // CSV file parsing
+openFile(),        // stream file opening
+spawn(),           // process creation
+fork(),            // process forking
+exec(),            // process execution
+createPipe(),      // inter-process communication
+wait(),            // process waiting
+httpGet(),         // HTTP client
+getUser(),         // example user function
+filter(),          // functional programming
+transform(),       // functional programming
+reduce(),          // functional programming
+sort(),            // array sorting
+reverse(),         // array reversal
+unique(),          // array deduplication
+Math.round(),      // mathematical functions
+getMemoryUsage(),  // system diagnostics
+getActiveConnections(), // system diagnostics
+createPipe(),      // IPC
+createLogger(),    // structured logging
+computeOptimalSize(), // compile-time computation
+stdout,            // text output stream
+stderr,            // error output stream
+stddbg,            // debug output stream
+stdin,             // text input stream
+stddati,           // data input stream
+stddato,           // data output stream
+
+*/
+
+
+// MODULE SYSTEM EXAMPLES
+use std.io;                    // Standard I/O module
+use std.collections.{array, map}; // Selective imports
+use math.*;                    // Wildcard import
+use "./utils.aria" as utils;   // Local file with alias
+use "../shared/crypto.aria";   // Relative path
+use "/usr/lib/aria/graphics"; // Absolute path
+
+// EXTERNAL C LIBRARY INTEGRATION
+extern "libc" {
+    func:malloc = void*(uint64:size);
+    func:free = void(void*:ptr);
+    func:printf = int(string:format, ...);
+}
+
+// MODULE DEFINITION (typically in separate .aria files)
+mod crypto {
+    pub func:hash = string(string:input) {
+        // public function
+    }
+    
+    func:internal_helper = void() {
+        // private function
+    }
+    
+    pub const:ALGORITHM = "SHA256";
+}
+
+// NESTED MODULES
+mod network {
+    mod http {
+        pub func:get = obj(string:url);
+        pub func:post = obj(string:url, obj:data);
+    }
+    
+    mod tcp {
+        pub func:connect = obj(string:host, int:port);
+    }
+}
+
+// CONDITIONAL COMPILATION (platform-specific modules)
+use cfg(target_os = "linux") std.os.linux;
+use cfg(target_os = "windows") std.os.windows;
+use cfg(feature = "networking") std.net;
+
+// TWISTED BALANCED BINARY (TBB) TYPES - SYMMETRIC INTEGERS WITH ERROR SENTINELS
+// TBB types provide perfectly symmetric ranges by using the minimum two's complement value as ERR
+// This eliminates asymmetry bugs (abs(-128), neg(-128)) and provides built-in error propagation
+tbb8:safe_byte = 100;         // Valid range: [-127, +127]
+tbb8:max_pos = 127;            // Maximum positive value
+tbb8:max_neg = -127;           // Maximum negative value (symmetric!)
+tbb8:error = ERR;              // Error sentinel (stored as -128/0x80)
+
+// TBB ARITHMETIC - STICKY ERROR PROPAGATION
+// Any operation with ERR input or overflow produces ERR
+tbb8:a = 100;
+tbb8:b = 50;
+tbb8:res = a + b;           // 150 exceeds 127 → res = ERR
+tbb8:chained = res + 10;    // ERR + 10 → ERR (sticky)
+
+// TBB SAFETY - NO ASYMMETRY BUGS
+tbb8:val = -127;
+tbb8:negated = -val;           // 127 (works perfectly, symmetric range!)
+tbb8:absolute = abs(val) ? ERR;      // 127 (always safe, no overflow)
+// Compare to standard int8: abs(-128) would fail/wrap
+
+// TBB USE CASES
+// 1. Financial arithmetic - overflow detection without exceptions
+// 2. Safe pointer arithmetic - invalid offsets become ERR
+// 3. Audio/video processing - sample overflow → corruption detection
+// 4. State machines - invalid state transitions → ERR
+// 5. Branchless pipelines - check error once at end, not every operation
+
+// TBB TYPES BY WIDTH
+tbb16:medium = 30000;          // Range: [-32767, +32767], ERR = -32768
+tbb32:large = 2000000000;      // Range: [-2147483647, +2147483647]
+tbb64:huge = 9000000000000;    // 64-bit symmetric range
+
+int8:i = 9;
+string:str = "whats up";
+int8:c = 0;
+int8[]arr; //empty array, cannot use without initializing properly
+int8[256]arr2; //empty int8 array with 256 elements
+int8[]:arr3=[100,300,550]; //3 element int8 array with values
+
+//standard while loop
+while(i < 100){
+    print(`&{i}`);
+    i++;
+}
+
+when(c <= i){
+    print(`&{c}`);
+    c++;
+}then{
+    print(`when loop ran c times`);
+}end{
+    print(`when loop did not run`);
+}
+
+//normal for for familiarity and ease transitioing to till or more advanced uses
+for(int:i = 0; i < 100; i ++){
+    print(`&{i}`); 
+}
+
+//automatically tracks iteration via $ variable
+till(100,1){
+    //print(`iteration: &{$}`)
+    //should count up from 0 to 100 by 1
+}
+till(100,-1){
+    //print(`iteration: &{$}`)
+    //should count down from 100 to 0 by 1
+}
+
+//*matches any condition, ! means unreachable by match, labels optional but required for explicit fallthrough via fall(label), sorry, they dont get a normal switch this time. i was nice with the while lol. 
+pick(c){
+    (<9){
+        fall(fail);
+    },
+    (>9){
+        fall(fail);
+    },
+    (9){
+        fall(success);
+    },
+    (*){
+        fall(err);
+    },
+    fail:(!){
+        //do fail stuff here
+        fall(done);
+    },
+    success:(!){
+        //do success stuff here
+        fall(done);
+    },
+    err(!){
+        //do error stuff here
+        fall(done);
+    },
+    done:(!){
+        //cleanup or whatever
+    }
+}
+
+result:r;
+int8:t;
+int8:closureTest = 2;
+func:test = int8(int8:a,int8:b){
+    return {
+        err:NULL,
+        val:a*b*closureTest
+    };
+};
+r=test(3,4);
+t = is r.err == NULL : r.val : -1; //t should be 24 if closure worked
+func:test2 = int8(func:tt,int8:a,int8:b){
+    result:res = tt(a,b);
+    return res; //should return { err:NULL,val:24} with input of 3,4
+};
+r=test2(test,3,4);
+t = is r.err == NULL :r.val : -1; //t should be 24 if closure worked
+t = test2(test,3,5) ? -1; //use unwrap operator to avoid above
+
+dyn:d = "bob";
+d = 4; 
+d = true;
+d= -2;
+
+wild int64:s=100000;
+wild int64@:t = @s; //@ address or pointer operator
+wild int8:u = #d; //# memory pinning operator
+
+obj:config = {
+    version:"0.0.5",
+    name:"Aria",
+    highTime:420
+}
+
+// NULL COALESCING AND SAFE NAVIGATION (must work or pipeline operators break)
+user:current_user = getUser();
+string:name = current_user?.profile?.name ?? "Guest";
+int:age = current_user?.age ?? 18;
+
+// PIPELINE OPERATORS (core to functional programming style)
+result = data |> filter(isValid) |> transform(normalize) |> reduce(sum);
+data <| reverse <| sort <| unique;
+
+// SPACESHIP OPERATOR (critical for sorting/comparison)
+int:cmp = a <=> b; // returns -1, 0, or 1
+array:sorted = items.sort((a,b) => a.priority <=> b.priority);
+
+// RANGE OPERATORS (essential for loops and slicing)
+for(i in 0..10) { print(`&{i}`); }        // 0 to 10 inclusive
+for(i in 0...10) { print(`&{i}`); }       // 0 to 9 exclusive
+array:slice = items[2..5];                // slice from index 2 to 5
+
+// PATTERN DESTRUCTURING (advanced pick features)
+pick(response) {
+    ({ status: 200, data: obj:payload }) {
+        process(payload);
+    },
+    ({ status: int:code, error: string:msg }) {
+        handleError(code, msg);
+    },
+    (*) { handleUnknown(); }
+}
+
+// TEMPLATE LITERALS WITH TYPE INFERENCE (must work for debugging)
+print(`The value is &{c}`);
+print(`User &{user.name} has &{user.points} points`);
+print(`Calculation: &{a} + &{b} = &{a + b}`);
+print(`Escaped backtick: \` and variable: &{value}`);
+
+// ADVANCED STRING INTERPOLATION (test complex expressions)
+print(`Status: &{response.success ? "OK" : "FAIL"} - &{response.data?.length ?? 0} items`);
+print(`Progress: &{Math.round((current / total) * 100)}%`);
+
+// MULTILINE TEMPLATES (essential for code generation)
+string:html = `
+    <div class="user">
+        <h1>&{user.name}</h1>
+        <p>Age: &{user.age}</p>
+        <p>Status: &{user.active ? "Active" : "Inactive"}</p>
+    </div>
+`;
+
+// FILE I/O WITH ERROR HANDLING (critical for real applications)
+result:file_result = readFile("config.txt");
+string:content = is file_result.err == NULL : file_result.val : "";
+if (file_result.err != NULL) {
+    print(`Error reading file: &{file_result.err}`);
+}
+
+// MODERN I/O WITH UNWRAP OPERATOR
+string:config = readFile("app.config") ? "default config";
+obj:settings = readJSON("settings.json") ? { theme: "dark" };
+array:data = readCSV("data.csv") ? [];
+
+// STREAMING I/O (for large files)
+stream:input = openFile("large_file.txt", "r");
+while(string:line = input.readLine() ?? NULL) {
+    if (line != NULL) {
+        processLine(line);
+    } else {
+        break;
+    }
+}
+input.close();
+
+// WRITE OPERATIONS WITH ERROR CHECKING
+result:write_result = writeFile("output.txt", content);
+if (write_result.err != NULL) {
+    stderr.write(`Failed to write file: &{write_result.err}`);
+}
+
+// PROCESS MANAGEMENT WITH ERROR HANDLING (system integration critical)
+result:child = spawn("./worker", ["--input", "data.txt"]);
+if (child.err == NULL) {
+    process:proc = child.val;
+    int:exit_code = proc.wait();
+    print(`Worker finished with code: &{exit_code}`);
+} else {
+    stderr.write(`Failed to spawn worker: &{child.err}`);
+}
+
+// ASYNC PROCESS MANAGEMENT
+result:background = spawn("./server", ["--port", "8080"]);
+if (background.err == NULL) {
+    process:proc = background.val;
+    print(`Server PID: &{proc.pid}`);
+    // Don't wait, let it run
+}
+
+// FORK WITH ERROR CHECKING
+result:fork_result = fork();
+if (fork_result.err == NULL) {
+    obj:fork_info = fork_result.val;
+    if (fork_info.is_child) {
+        // Child process
+        exec("./child_program", ["arg1"]);
+    } else {
+        // Parent process
+        print(`Forked child with PID: &{fork_info.child_pid}`);
+        wait(fork_info.child_pid);
+    }
+} else {
+    stderr.write(`Fork failed: &{fork_result.err}`);
+}
+
+// PIPE COMMUNICATION
+pipe:comm = createPipe();
+process:worker = spawn("./processor", [], { stdin: comm.write });
+comm.write_end.write("process this data");
+comm.write_end.close();
+string:result = worker.stdout.readAll();
+worker.wait();
+
+//would like to update stdio for modern use, no more mixing text and binary, dedicated debug channel
+//stdin -- text in
+//stdout -- text out
+//stderr -- error out
+//stddbg -- debug out
+//stddati -- data in
+//stddato -- data out
+
+// MODERN STDIO USAGE (separation of concerns critical)
+// Text I/O
+stdout.write("Normal program output");
+stderr.write("Error message for user");
+stddbg.write("Debug: variable x = &{x}");
+string:user_input = stdin.readLine();
+
+// Binary Data I/O
+binary:image_data = stddati.readBytes(1024);
+stddato.writeBytes(processed_data);
+
+// STRUCTURED DEBUG OUTPUT
+debug:session = stddbg.createSession("user_auth");
+session.log("info", "User login attempt for &{username}");
+session.log("warn", "Invalid password for &{username}");
+session.log("error", "Account locked for &{username}");
+
+// CONDITIONAL DEBUG (only output if debug enabled)
+if (DEBUG_ENABLED) {
+    stddbg.write(`Memory usage: &{getMemoryUsage()}MB`);
+    stddbg.write(`Active connections: &{getActiveConnections()}`);
+}
+
+// STRUCTURED LOGGING WITH LEVELS
+log:logger = createLogger("app");
+logger.info("Application started");
+logger.warn("Low disk space: &{diskSpace}MB remaining");
+logger.error("Database connection failed: &{dbError}");
+logger.debug("Processing item &{i} of &{total}");
+
+// MEMORY MODEL TESTING (critical for performance and safety)
+// Default GC-managed
+string:managed = "automatically managed";
+
+// Wild opt-out of GC with Aria allocator
+wild int64*:raw_ptr = aria.alloc<int64>(1000); // Aria's wild allocator
+defer aria.free(raw_ptr); // RAII-style cleanup
+
+// Alternative wild allocation patterns
+wild buffer:raw_buffer = aria.alloc_buffer(4096);
+wild string:unmanaged_str = aria.alloc_string(256);
+
+//# Pinning for borrow checker bridge, $ for safe reference
+wild string:critical_data = "must not move";
+string$:safe_ref = #critical_data; // Pin and create safe reference
+// After pinning, critical_data cannot be moved by GC
+
+// GC-managed allocation (default, but explicit)
+gc int64*:managed_ptr = aria.gc_alloc<int64>(100);
+gc array:managed_array = aria.gc_alloc_array<int>(size);
+
+// Stack allocation for performance-critical code
+stack int64[1000]:stack_buffer; // Fixed-size stack allocation
+stack string[256]:temp_string;   // Stack string buffer
+
+// ADVANCED ERROR HANDLING (result type with err/val pattern)
+result:calculation = divide(10, 0);
+if (calculation.err == NULL) {
+    print(`Result: &{calculation.val}`);
+} else {
+    stderr.write(`Error: &{calculation.err}`);
+    return -1;
+}
+
+// ASYNC/AWAIT PATTERNS (essential for modern apps)
+async func:fetchData = obj(string:url) {
+    result:response = await httpGet(url);
+    if (response.err == NULL) {
+        return response.val.json();
+    } else {
+        return { err: response.err, val: NULL };
+    }
+};
+
+async {
+    result:data = await fetchData("https://api.example.com/users");
+    if (data.err == NULL) {
+        print(`Got &{data.val.length} users`);
+    } else {
+        stderr.write(`Fetch failed: &{data.err}`);
+    }
+}
+
+// LAMBDA/FUNCTION SYNTAX RULES
+// Complete anonymous declaration syntax:
+//   returnType(type:arg, type:arg) { /* function body */ }(/* optional immediate execution args */);
+//
+// Named function (assigned to func-type variable):
+//   func:name = returnType(type:arg, type:arg) { body };
+//
+// Anonymous with immediate execution (assigned to result-type variable):
+//   resultType:r = resultType(type:arg, type:arg) { body }(arg, arg);
+//   // Immediate execution () is REQUIRED when assigning to non-func variable
+//   // Otherwise you'd assign the function itself (type mismatch)
+//
+// Examples:
+//   func:add = int8(int8:a, int8:b) { return a + b; };          // Named function
+//   int8:sum = int8(int8:a, int8:b) { return a + b; }(3, 4);    // Anonymous + immediate = 7
+//   func:f = int8(int8:a, int8:b) { return a + b; };            // Store function
+//   int8:result = f(3, 4);                                       // Call stored function = 7
+//
+// LAMBDAS AS ARGUMENTS (JS-style callbacks):
+//   // Function that takes a func parameter
+//   func:processValues = int8(func:operation, int8:a, int8:b) {
+//       return operation(a, b);
+//   };
+//   // Call with inline anonymous lambda
+//   int8:result = processValues(
+//       int8(int8:x, int8:y) { return x * y; },  // Lambda passed as argument
+//       4, 5
+//   );  // result = 20
+//
+// LAMBDA + IMMEDIATE EXECUTION + UNWRAP (composable features):
+//   // Lambda returns result type, executed immediately, unwrapped with ?
+//   func:test = result(int8:a, int8:b) { return {err:NULL, val:a+b}; };
+//   test(
+//       result(int8:x, int8:y) { return {err:NULL, val:x*y}; }(4, 5)?,  // Execute & unwrap = 20
+//       12
+//   );  // Passes unwrapped value 20 and 12 to test()
+//   // Without ?: would pass full {err:NULL, val:20} result object
+//   // With ?: passes just the unwrapped value 20 (or default if error)
+//
+// IMPORTANT: Arrow operator (->) is ONLY for pointer member dereference (C-style):
+//   ptr->member  // Access member through pointer (dereference + member access)
+//   obj.member   // Access member of object (dot notation)
+//
+// NO SPECIAL OPERATORS FOR FUNCTIONS:
+//   Functions use: func:name = returnType(params) { body };
+//   NO -> for return types
+//   NO => for lambdas (that's just inline function syntax)
+//   ALL functions return result type implicitly with {err, val} fields
+
+// COMPILE-TIME COMPUTATION (performance critical)
+const int:BUFFER_SIZE = computeOptimalSize(); // Computed at compile time
+array[BUFFER_SIZE]:buffer;
+
+// GENERICS/TEMPLATES (type safety without performance cost)
+func<T>:identity = T(T:value) {
+    return { err: NULL, val: value };
+};
+result:a = identity<int>(42);
+int:a_val = a ? 0;
+result:s = identity<string>("hello");
+string:s_val = s ? "";
+
+// CLOSURES WITH CAPTURE SEMANTICS
+func:createCounter = func() {
+    wild int:count = 0; // Captured by reference
+    return { err: NULL, val: func() { 
+        count++;
+        return { err: NULL, val: count };
+    }};
+};
+result:counter1_res = createCounter();
+func:counter1 = counter1_res ? NULL;
+result:counter2_res = createCounter();
+func:counter2 = counter2_res ? NULL;
+result:c1 = counter1();
+result:c2 = counter1();
+result:c3 = counter2();
+print(`&{c1 ? 0} &{c2 ? 0} &{c3 ? 0}`); // Should print "1 2 1" 
+
+/* COMPLETE TOKEN LIST for AST
+
+// LITERALS
+INTEGER_LITERAL,     // 42, 0xFF, 0b1010, 0o755
+FLOAT_LITERAL,       // 3.14, 1e10, 0x1.2p3
+STRING_LITERAL,      // "hello", 'world'
+TEMPLATE_LITERAL,    // `template with &{var}`
+BOOLEAN_LITERAL,     // true, false
+NULL_LITERAL,        // NULL
+CHAR_LITERAL,        // 'a'
+
+// IDENTIFIERS
+IDENTIFIER,          // variable names, function names
+TYPE_IDENTIFIER,     // int8, string, obj, etc.
+
+// TYPE KEYWORDS
+INT1, INT2, INT4, INT8, INT16, INT32, INT64, INT128, INT256, INT512,
+UINT8, UINT16, UINT32, UINT64, UINT128, UINT256, UINT512,
+FLT32, FLT64, FLT128, FLT256, FLT512,TBB8, TBB16, TBB32, TBB64,
+BOOL, VEC2, VEC3, VEC9, DYN, OBJ, STRUCT, STRING, RESULT, FUNC, ARRAY,
+TRIT, TRYTE, NIT, NYTE, BINARY, BUFFER, STREAM, PROCESS, PIPE, DEBUG, LOG,
+
+// MEMORY KEYWORDS
+WILD,                // opt-out of GC
+DEFER,               // RAII cleanup
+
+// CONTROL FLOW KEYWORDS
+IF, ELSE, WHILE, FOR, TILL, WHEN, THEN, END, PICK, FALL,
+BREAK, CONTINUE, RETURN,
+ASYNC, AWAIT, CATCH,
+
+// MEMORY MANAGEMENT KEYWORDS
+CONST,               // compile-time constant
+
+// MODULE SYSTEM KEYWORDS
+USE,                 // import modules/files
+MOD,                 // define module
+PUB,                 // public visibility
+EXTERN,              // external C functions
+CFG,                 // conditional compilation
+
+// OPERATORS - ASSIGNMENT
+ASSIGN,              // =
+PLUS_ASSIGN,         // +=
+MINUS_ASSIGN,        // -=
+MULT_ASSIGN,         // *=
+DIV_ASSIGN,          // /=
+MOD_ASSIGN,          // %=
+
+// OPERATORS - ARITHMETIC
+PLUS,                // +
+MINUS,               // -
+MULTIPLY,            // *
+DIVIDE,              // /
+MODULO,              // %
+INCREMENT,           // ++
+DECREMENT,           // --
+
+// OPERATORS - COMPARISON
+EQUAL,               // ==
+NOT_EQUAL,           // !=
+LESS_THAN,           // <
+GREATER_THAN,        // >
+LESS_EQUAL,          // <=
+GREATER_EQUAL,       // >=
+SPACESHIP,           // <=> (three-way comparison)
+
+// OPERATORS - LOGICAL
+LOGICAL_AND,         // &&
+LOGICAL_OR,          // ||
+LOGICAL_NOT,         // !
+
+// OPERATORS - BITWISE
+BITWISE_AND,         // &
+BITWISE_OR,          // |
+BITWISE_XOR,         // ^
+BITWISE_NOT,         // ~
+LEFT_SHIFT,          // <<
+RIGHT_SHIFT,         // >>
+
+// OPERATORS - SPECIAL
+ADDRESS,             // @ (address/pointer)
+PIN,                 // # (memory pinning)
+ITERATION,           // $ (iteration variable, safe reference)
+SAFE_NAV,            // ?. (safe navigation)
+NULL_COALESCE,       // ?? (null coalescing)
+UNWRAP,              // ? (unwrap operator)
+PIPE_FORWARD,        // |> (pipeline forward)
+PIPE_BACKWARD,       // <| (pipeline backward)
+RANGE_INCLUSIVE,     // .. (inclusive range)
+RANGE_EXCLUSIVE,     // ... (exclusive range)
+TERNARY_IS,          // is (ternary condition)
+LAMBDA,              // => (lambda/closure)
+FUNC_RETURN,         // -> (function return type)
+TEMPLATE_INTERP,     // &{ } (template interpolation)
+
+// PUNCTUATION
+LEFT_PAREN,          // (
+RIGHT_PAREN,         // )
+LEFT_BRACE,          // {
+RIGHT_BRACE,         // }
+LEFT_BRACKET,        // [
+RIGHT_BRACKET,       // ]
+SEMICOLON,           // ;
+COMMA,               // ,
+DOT,                 // .
+COLON,               // :
+QUESTION,            // ?
+BACKTICK,            // `
+
+// WHITESPACE AND COMMENTS
+WHITESPACE,          // spaces, tabs
+NEWLINE,             // \n, \r\n
+COMMENT_LINE,        // //
+COMMENT_BLOCK_START, // /*
+COMMENT_BLOCK_END,   // */
+
+// SPECIAL TOKENS
+EOF,                 // end of file
+INVALID,             // invalid character
+
+// STDLIB FUNCTIONS (may be keywords or identifiers)
+PRINT, READ_FILE, WRITE_FILE, READ_JSON, READ_CSV, OPEN_FILE,
+SPAWN, FORK, EXEC, CREATE_PIPE, WAIT,
+HTTP_GET, FILTER, TRANSFORM, REDUCE, SORT, REVERSE, UNIQUE,
+GET_MEMORY_USAGE, GET_ACTIVE_CONNECTIONS, CREATE_LOGGER,
+COMPUTE_OPTIMAL_SIZE,
+
+// STREAM IDENTIFIERS
+STDOUT, STDERR, STDDBG, STDIN, STDDATI, STDDATO,
+
+// ARIA ALLOCATOR FUNCTIONS
+ARIA_ALLOC, ARIA_FREE, ARIA_GC_ALLOC, ARIA_ALLOC_BUFFER,
+ARIA_ALLOC_STRING, ARIA_ALLOC_ARRAY,
+
+*/
+
+//rust style borrow checker combined with OPT-OUT garbage collecting via wild keyword and safe ($) and pinning (#) operators
+//go style coroutines
+//advanced threading built in
+//NASM style macros with context stack
+//zig style comptime
+//advanced high efficiency heap allocator to work with borrow checker and gc
+//robust FFI
+//atomics library
+//timer/clock library
+//c level memory control for wild (unmanaged) memory via address/pointer operator (@), dereference operator (*), and dereferencing member access operator (->)
+// memeber access operator (.)
+// lambda functions ie ()=>{}
+// docker dev environment based on ubuntu 24.04
+// final goal to self host (compiler compiles itself) and distribute via appImage
+
+// vvv batteries included, but only if you want, must have way to opt in vvv
+// HTML5/CSS/JS GUI included but not forced
+// blockchain library, reference implementation of proof of work and proof of stake chains
+// ML library, must be linked in, reference implementation of transformer, mamba,jamba, trainer, and embedder
+
+
+

@@ -390,6 +390,30 @@ src/backend/codegen.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen.cpp.s
 .PHONY : src/backend/codegen.cpp.s
 
+src/backend/codegen_tbb.o: src/backend/codegen_tbb.cpp.o
+.PHONY : src/backend/codegen_tbb.o
+
+# target to build an object file
+src/backend/codegen_tbb.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.o
+.PHONY : src/backend/codegen_tbb.cpp.o
+
+src/backend/codegen_tbb.i: src/backend/codegen_tbb.cpp.i
+.PHONY : src/backend/codegen_tbb.i
+
+# target to preprocess a source file
+src/backend/codegen_tbb.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.i
+.PHONY : src/backend/codegen_tbb.cpp.i
+
+src/backend/codegen_tbb.s: src/backend/codegen_tbb.cpp.s
+.PHONY : src/backend/codegen_tbb.s
+
+# target to generate assembly for a file
+src/backend/codegen_tbb.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.s
+.PHONY : src/backend/codegen_tbb.cpp.s
+
 src/backend/lowering_ternary.o: src/backend/lowering_ternary.cpp.o
 .PHONY : src/backend/lowering_ternary.o
 
@@ -925,6 +949,9 @@ help:
 	@echo "... src/backend/codegen.o"
 	@echo "... src/backend/codegen.i"
 	@echo "... src/backend/codegen.s"
+	@echo "... src/backend/codegen_tbb.o"
+	@echo "... src/backend/codegen_tbb.i"
+	@echo "... src/backend/codegen_tbb.s"
 	@echo "... src/backend/lowering_ternary.o"
 	@echo "... src/backend/lowering_ternary.i"
 	@echo "... src/backend/lowering_ternary.s"
