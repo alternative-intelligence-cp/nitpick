@@ -341,7 +341,10 @@ void checkStatement(frontend::Statement* stmt, BorrowContext& ctx) {
     if (auto* ret = dynamic_cast<frontend::ReturnStmt*>(stmt)) {
         if (ret->value) {
             checkExpression(ret->value.get(), ctx);
-            
+        }
+        return;
+    }
+    
     // If statements - scope management for block-local variables
     if (auto* if_stmt = dynamic_cast<frontend::IfStmt*>(stmt)) {
         checkExpression(if_stmt->condition.get(), ctx);
@@ -374,15 +377,6 @@ void checkStatement(frontend::Statement* stmt, BorrowContext& ctx) {
                 checkStatement(dynamic_cast<frontend::Statement*>(s.get()), ctx);
             }
             ctx.exitScope();  // Exit loop body scope
-        }
-        return;
-    }/ While loops
-    if (auto* while_loop = dynamic_cast<frontend::WhileLoop*>(stmt)) {
-        checkExpression(while_loop->condition.get(), ctx);
-        if (while_loop->body) {
-            for (auto& s : while_loop->body->statements) {
-                checkStatement(dynamic_cast<frontend::Statement*>(s.get()), ctx);
-            }
         }
         return;
     }

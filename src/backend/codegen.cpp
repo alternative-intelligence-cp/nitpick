@@ -353,6 +353,202 @@ public:
     CodeGenVisitor(CodeGenContext& context) : ctx(context) {}
 
     // -------------------------------------------------------------------------
+    // Helper: Runtime Function Declarations (Allocators, Syscalls)
+    // -------------------------------------------------------------------------
+    
+    // createSyscall - Generate x86-64 Linux syscall using inline assembly
+    // Register mapping per x86-64 ABI:
+    //   rax = syscall number
+    //   rdi, rsi, rdx, r10 (NOT rcx!), r8, r9 = args 1-6
+    //   Clobbers: rcx (replaced by r10), r11 (used by kernel)
+    Value* createSyscall(uint64_t syscallNum, const std::vector<Value*>& args) {
+        // Syscall arguments (max 6)
+        if (args.size() > 6) {
+            throw std::runtime_error("Syscalls support max 6 arguments");
+        }
+        
+        // Register constraints for inline assembly
+        // Input constraints: rdi, rsi, rdx, r10 (arg4 uses r10 NOT rcx!), r8, r9
+        static const char* registerConstraints[] = {"{rdi}", "{rsi}", "{rdx}", "{r10}", "{r8}", "{r9}"};
+        
+        // Build inline asm operand type list
+        std::vector<Type*> asmArgTypes;
+        for (auto* arg : args) {
+            asmArgTypes.push_back(arg->getType());
+        }
+        
+        // Function type: (syscall_args...) -> i64
+        FunctionType* asmFuncType = FunctionType::get(
+            Type::getInt64Ty(ctx.llvmContext),
+            asmArgTypes,
+            false
+        );
+        
+        // Build constraint string: "={rax},0,1,2,3,4,5,~{rcx},~{r11},~{memory}"
+        std::string constraints = "={rax}";  // Output: rax (syscall return value)
+        for (size_t i = 0; i < args.size(); ++i) {
+            constraints += ",";
+            constraints += registerConstraints[i];
+        }
+        // Clobbers: rcx, r11 (kernel uses these), memory (syscalls can modify memory)
+        constraints += ",~{rcx},~{r11},~{memory}";
+        
+        // Assembly template: load syscall number into rax, then syscall instruction
+        std::string asmTemplate = "movq $" + std::to_string(syscallNum) + ", %rax\\n\\tsyscall";
+        
+        // Create inline assembly
+        InlineAsm* inlineAsm = InlineAsm::get(
+            asmFuncType,
+            asmTemplate,
+            constraints,
+            true,  // hasSideEffects
+            false, // isAlignStack
+            InlineAsm::AD_ATT  // AT&T syntax
+        );
+        
+        // Call inline assembly with arguments
+        return ctx.builder->CreateCall(inlineAsm, args, "syscall_result");
+    }
+    
+    // emitAllocExec - Allocate executable memory using mmap syscall
+    // Syscall: mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
+    // Returns i8* to RW memory (caller transitions to RX later via emitProtectExec)
+    Value* emitAllocExec(Value* size) {
+        // mmap syscall number on x86-64 Linux
+        const uint64_t SYS_mmap = 9;
+        
+        // mmap constants
+        const uint64_t PROT_READ = 1;
+        const uint64_t PROT_WRITE = 2;
+        const uint64_t MAP_PRIVATE = 0x02;
+        const uint64_t MAP_ANONYMOUS = 0x20;
+        
+        // Build syscall arguments
+        std::vector<Value*> mmapArgs;
+        mmapArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));  // addr = NULL
+        mmapArgs.push_back(size);  // length = size
+        mmapArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), PROT_READ | PROT_WRITE));
+        mmapArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), MAP_PRIVATE | MAP_ANONYMOUS));
+        mmapArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), (uint64_t)-1));  // fd = -1
+        mmapArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));  // offset = 0
+        
+        // Invoke mmap syscall
+        Value* result = createSyscall(SYS_mmap, mmapArgs);
+        
+        // mmap returns i64, convert to i8* (opaque pointer in LLVM 18)
+        return ctx.builder->CreateIntToPtr(result, PointerType::getUnqual(ctx.llvmContext), "alloc_exec_ptr");
+    }
+    
+    // emitProtectExec - Transition memory from RW to RX using mprotect syscall
+    // Syscall: mprotect(addr, size, PROT_READ|PROT_EXEC)
+    // Used to finalize wildx memory after JIT compilation
+    void emitProtectExec(Value* addr, Value* size) {
+        // mprotect syscall number on x86-64 Linux
+        const uint64_t SYS_mprotect = 10;
+        
+        // mprotect constants
+        const uint64_t PROT_READ = 1;
+        const uint64_t PROT_EXEC = 4;
+        
+        // Convert pointer to i64 for syscall
+        Value* addrInt = ctx.builder->CreatePtrToInt(addr, Type::getInt64Ty(ctx.llvmContext));
+        
+        // Build syscall arguments
+        std::vector<Value*> mprotectArgs;
+        mprotectArgs.push_back(addrInt);  // addr
+        mprotectArgs.push_back(size);     // length
+        mprotectArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), PROT_READ | PROT_EXEC));
+        
+        // Invoke mprotect syscall (return value ignored - would be 0 on success, -1 on error)
+        createSyscall(SYS_mprotect, mprotectArgs);
+    }
+    
+    // getOrInsertAriaAlloc - Declare aria.alloc (standard heap via mimalloc)
+    Function* getOrInsertAriaAlloc() {
+        if (Function* existing = ctx.module->getFunction("aria.alloc")) {
+            return existing;
+        }
+        
+        FunctionType* allocType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),  // returns ptr
+            {Type::getInt64Ty(ctx.llvmContext)},       // size argument
+            false
+        );
+        
+        return Function::Create(allocType, Function::ExternalLinkage, "aria.alloc", ctx.module.get());
+    }
+    
+    // getOrInsertAriaAllocExec - Declare aria.alloc_exec (executable heap for wildx)
+    // NOW IMPLEMENTED: Uses mmap syscall to allocate RW memory
+    Function* getOrInsertAriaAllocExec() {
+        if (Function* existing = ctx.module->getFunction("aria.alloc_exec")) {
+            return existing;
+        }
+        
+        // Create function signature: i8* aria.alloc_exec(i64 size)
+        FunctionType* allocExecType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),
+            {Type::getInt64Ty(ctx.llvmContext)},
+            false
+        );
+        
+        Function* func = Function::Create(
+            allocExecType,
+            Function::InternalLinkage,  // Internal - we define it here
+            "aria.alloc_exec",
+            ctx.module.get()
+        );
+        
+        // Generate function body using emitAllocExec
+        BasicBlock* entry = BasicBlock::Create(ctx.llvmContext, "entry", func);
+        IRBuilder<> tmpBuilder(entry);
+        
+        // Get size parameter
+        Value* size = func->getArg(0);
+        
+        // Call emitAllocExec (uses mmap syscall)
+        // Temporarily set builder to tmpBuilder for syscall generation
+        IRBuilder<>* oldBuilder = ctx.builder;
+        ctx.builder = &tmpBuilder;
+        Value* ptr = emitAllocExec(size);
+        ctx.builder = oldBuilder;
+        
+        tmpBuilder.CreateRet(ptr);
+        
+        return func;
+    }
+    
+    // getOrInsertGetNursery - Declare aria.get_nursery (GC arena)
+    Function* getOrInsertGetNursery() {
+        if (Function* existing = ctx.module->getFunction("aria.get_nursery")) {
+            return existing;
+        }
+        
+        FunctionType* nurseryType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),
+            {},
+            false
+        );
+        
+        return Function::Create(nurseryType, Function::ExternalLinkage, "aria.get_nursery", ctx.module.get());
+    }
+    
+    // getOrInsertGCAlloc - Declare aria.gc_alloc (GC allocation)
+    Function* getOrInsertGCAlloc() {
+        if (Function* existing = ctx.module->getFunction("aria.gc_alloc")) {
+            return existing;
+        }
+        
+        FunctionType* gcAllocType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),
+            {PointerType::getUnqual(ctx.llvmContext), Type::getInt64Ty(ctx.llvmContext)},
+            false
+        );
+        
+        return Function::Create(gcAllocType, Function::ExternalLinkage, "aria.gc_alloc", ctx.module.get());
+    }
+
+    // -------------------------------------------------------------------------
     // 1. Variable Declarations
     // -------------------------------------------------------------------------
     
@@ -771,26 +967,47 @@ public:
         
         // ASYNC FUNCTION COROUTINE SETUP
         if (node->is_async) {
-            // Emit coroutine intrinsics
+            // Step 1: Generate coroutine ID
             Function* coroId = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_id);
             Value* id = ctx.builder->CreateCall(coroId, {
                 ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0),
                 ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)),
                 ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)),
                 ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))
-            }, \"coro_id\");
+            }, "coro_id");
+            
+            // Step 2: Get coroutine frame size
+            Function* coroSize = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_size, {Type::getInt64Ty(ctx.llvmContext)});
+            Value* frameSize = ctx.builder->CreateCall(coroSize, {}, "coro_size");
+            
+            // Step 3: Check if heap allocation is needed (coro.alloc intrinsic)
+            Function* coroAlloc = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_alloc);
+            Value* needAlloc = ctx.builder->CreateCall(coroAlloc, {id}, "coro_need_alloc");
+            
+            // Step 4: Conditionally allocate frame memory via aria.alloc
+            BasicBlock* allocBB = BasicBlock::Create(ctx.llvmContext, "coro_alloc", func);
+            BasicBlock* beginBB = BasicBlock::Create(ctx.llvmContext, "coro_begin", func);
+            ctx.builder->CreateCondBr(needAlloc, allocBB, beginBB);
+            
+            // Allocation branch
+            ctx.builder->SetInsertPoint(allocBB);
+            Function* ariaAlloc = getOrInsertAriaAlloc();
+            Value* allocMem = ctx.builder->CreateCall(ariaAlloc, {frameSize}, "coro_alloc_mem");
+            ctx.builder->CreateBr(beginBB);
+            
+            // Begin coroutine with allocated frame (or NULL if elided)
+            ctx.builder->SetInsertPoint(beginBB);
+            PHINode* framePhi = ctx.builder->CreatePHI(PointerType::getUnqual(ctx.llvmContext), 2, "coro_frame");
+            framePhi->addIncoming(allocMem, allocBB);
+            framePhi->addIncoming(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), entry);
             
             Function* coroBegin = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_begin);
-            Value* hdl = ctx.builder->CreateCall(coroBegin, {
-                id,
-                ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))
-            }, \"coro_hdl\");
+            Value* hdl = ctx.builder->CreateCall(coroBegin, {id, framePhi}, "coro_hdl");
             
             // Store handle for use in return statements
-            // (Async functions must return the coroutine handle)
-            ctx.builder->CreateAlloca(PointerType::getUnqual(ctx.llvmContext), nullptr, \"__coro_handle\")->setInitializer(
-                ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))
-            );
+            AllocaInst* coroHandleAlloca = ctx.builder->CreateAlloca(
+                PointerType::getUnqual(ctx.llvmContext), nullptr, "__coro_handle");
+            ctx.builder->CreateStore(hdl, coroHandleAlloca);
         }
         
         // 6. Create allocas for parameters (to allow taking addresses)
@@ -815,11 +1032,11 @@ public:
                 Value* suspendResult = ctx.builder->CreateCall(coroSuspend, {
                     ConstantTokenNone::get(ctx.llvmContext),
                     ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 1)  // Final suspend
-                }, \"final_suspend\");
+                }, "final_suspend");
                 
                 // Create suspend switch
-                BasicBlock* suspendBB = BasicBlock::Create(ctx.llvmContext, \"suspend\", func);
-                BasicBlock* destroyBB = BasicBlock::Create(ctx.llvmContext, \"destroy\", func);
+                BasicBlock* suspendBB = BasicBlock::Create(ctx.llvmContext, "suspend", func);
+                BasicBlock* destroyBB = BasicBlock::Create(ctx.llvmContext, "destroy", func);
                 SwitchInst* suspendSwitch = ctx.builder->CreateSwitch(suspendResult, suspendBB, 2);
                 suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), destroyBB);
                 
@@ -827,7 +1044,7 @@ public:
                 ctx.builder->SetInsertPoint(destroyBB);
                 Function* coroEnd = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_end);
                 Value* hdl = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext),
-                    func->getEntryBlock().getTerminator()->getPrevNode(), \"coro_hdl\");
+                    func->getEntryBlock().getTerminator()->getPrevNode(), "coro_hdl");
                 ctx.builder->CreateCall(coroEnd, {
                     hdl,
                     ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 0)
@@ -1023,6 +1240,155 @@ public:
                     break;
                 }
                 
+                case PickCase::DESTRUCTURE_OBJ: {
+                    // Object destructuring: pick point { { x, y } => ... }
+                    // Match is implicitly true if types align (type checker validated)
+                    if (!selector->getType()->isStructTy() && !selector->getType()->isPointerTy()) {
+                        throw std::runtime_error("Cannot destructure non-struct type in pick pattern");
+                    }
+                    
+                    match = ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 1);
+                    
+                    // Create conditional branch to the body
+                    ctx.builder->CreateCondBr(match, caseBodyBB, nextCaseBB);
+                    
+                    // Generate Case Body with Variable Bindings
+                    ctx.builder->SetInsertPoint(caseBodyBB);
+                    {
+                        ScopeGuard guard(ctx); // New scope for the bindings
+                        
+                        // Get struct type from selector
+                        // Note: Semantic analyzer ensures selector is struct or pointer-to-struct
+                        StructType* structType = nullptr;
+                        Value* structPtr = selector;
+                        
+                        if (selector->getType()->isStructTy()) {
+                            // Value type - need to create a temporary and get pointer
+                            structType = cast<StructType>(selector->getType());
+                            AllocaInst* tempAlloca = ctx.builder->CreateAlloca(structType, nullptr, "destruct_temp");
+                            ctx.builder->CreateStore(selector, tempAlloca);
+                            structPtr = tempAlloca;
+                        } else if (selector->getType()->isPointerTy()) {
+                            // Already a pointer - assume it points to a struct (validated by sema)
+                            // With LLVM 18 opaque pointers, we need type info from AST
+                            // For now, we'll need to get struct type from context/symbol table
+                            // TODO: Pass struct type through from semantic analysis
+                            throw std::runtime_error("Destructuring pointer-to-struct requires type metadata (LLVM 18 opaque pointers)");
+                        }
+                        
+                        if (!structType) {
+                            throw std::runtime_error("Failed to extract struct type for destructuring");
+                        }
+                        
+                        // Get struct name for field mapping
+                        std::string structName = structType->hasName() ? structType->getName().str() : "";
+                        
+                        // Process destructuring pattern bindings
+                        // Note: The pattern should be stored in pcase - this assumes parser provides it
+                        // For now, implement basic field extraction by index
+                        // TODO: Match by field name using ctx.structFieldMaps
+                        
+                        // Extract fields sequentially (simplified version)
+                        // In full implementation, would match pattern field names to struct fields
+                        for (unsigned idx = 0; idx < structType->getNumElements(); ++idx) {
+                            // Generate binding name (e.g., field_0, field_1)
+                            std::string bindName = "field_" + std::to_string(idx);
+                            
+                            // Extract field value
+                            Value* fieldPtr = ctx.builder->CreateStructGEP(structType, structPtr, idx, bindName + "_ptr");
+                            Type* fieldType = structType->getElementType(idx);
+                            Value* fieldVal = ctx.builder->CreateLoad(fieldType, fieldPtr, bindName);
+                            
+                            // Register in local scope (simplified - real version uses pattern names)
+                            // ctx.define(bindName, fieldVal, false);
+                        }
+                        
+                        // Generate the actual body code
+                        pcase.body->accept(*this);
+                    }
+                    
+                    // Handle fallthrough/break
+                    if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                        ctx.builder->CreateBr(doneBB);
+                    }
+                    
+                    // Setup for next case
+                    func->insert(func->end(), nextCaseBB);
+                    ctx.builder->SetInsertPoint(nextCaseBB);
+                    continue; // Skip the normal flow below
+                }
+                
+                case PickCase::DESTRUCTURE_ARR: {
+                    // Array destructuring: pick arr { [a, b, c] => ... }
+                    if (!selector->getType()->isArrayTy() && !selector->getType()->isPointerTy()) {
+                        throw std::runtime_error("Cannot destructure non-array type in pick pattern");
+                    }
+                    
+                    match = ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 1);
+                    
+                    // Create conditional branch to the body
+                    ctx.builder->CreateCondBr(match, caseBodyBB, nextCaseBB);
+                    
+                    // Generate Case Body with Variable Bindings  
+                    ctx.builder->SetInsertPoint(caseBodyBB);
+                    {
+                        ScopeGuard guard(ctx); // New scope for the bindings
+                        
+                        // Get array type from selector
+                        // Note: Semantic analyzer ensures selector is array or pointer-to-array
+                        ArrayType* arrayType = nullptr;
+                        Value* arrayPtr = selector;
+                        
+                        if (selector->getType()->isArrayTy()) {
+                            // Value type - create temporary and get pointer
+                            arrayType = cast<ArrayType>(selector->getType());
+                            AllocaInst* tempAlloca = ctx.builder->CreateAlloca(arrayType, nullptr, "arr_destruct_temp");
+                            ctx.builder->CreateStore(selector, tempAlloca);
+                            arrayPtr = tempAlloca;
+                        } else if (selector->getType()->isPointerTy()) {
+                            // Already a pointer - assume it points to an array (validated by sema)
+                            // With LLVM 18 opaque pointers, we need type info from AST
+                            // TODO: Pass array type through from semantic analysis
+                            throw std::runtime_error("Destructuring pointer-to-array requires type metadata (LLVM 18 opaque pointers)");
+                        }
+                        
+                        if (!arrayType) {
+                            throw std::runtime_error("Failed to extract array type for destructuring");
+                        }                        Type* elemType = arrayType->getElementType();
+                        uint64_t arraySize = arrayType->getNumElements();
+                        
+                        // Extract array elements and bind to pattern variables
+                        // Simplified version: bind to elem_0, elem_1, etc.
+                        for (uint64_t idx = 0; idx < arraySize; ++idx) {
+                            std::string bindName = "elem_" + std::to_string(idx);
+                            
+                            // GEP to array element
+                            Value* indices[] = {
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0),
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), idx)
+                            };
+                            Value* elemPtr = ctx.builder->CreateGEP(arrayType, arrayPtr, indices, bindName + "_ptr");
+                            Value* elemVal = ctx.builder->CreateLoad(elemType, elemPtr, bindName);
+                            
+                            // Register in local scope
+                            // ctx.define(bindName, elemVal, false);
+                        }
+                        
+                        // Generate the actual body code
+                        pcase.body->accept(*this);
+                    }
+                    
+                    // Handle fallthrough/break
+                    if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                        ctx.builder->CreateBr(doneBB);
+                    }
+                    
+                    // Setup for next case
+                    func->insert(func->end(), nextCaseBB);
+                    ctx.builder->SetInsertPoint(nextCaseBB);
+                    continue; // Skip the normal flow below
+                }
+                
                 case PickCase::UNREACHABLE:
                     // Labeled case - already handled above
                     continue;
@@ -1074,6 +1440,17 @@ public:
         auto it = ctx.pickLabelBlocks->find(node->target_label);
         if (it == ctx.pickLabelBlocks->end()) {
             throw std::runtime_error("fall() target label not found: " + node->target_label);
+        }
+        
+        // Check if block is already terminated
+        // LLVM requires exactly one terminator per basic block
+        // If a terminator already exists, subsequent code is unreachable
+        if (ctx.builder->GetInsertBlock()->getTerminator()) {
+            // Block already terminated - create dead_code block for remaining AST
+            Function* func = ctx.builder->GetInsertBlock()->getParent();
+            BasicBlock* deadCode = BasicBlock::Create(ctx.llvmContext, "dead_code", func);
+            ctx.builder->SetInsertPoint(deadCode);
+            return;  // Don't emit branch - block was already sealed
         }
         
         // Create branch to target label
@@ -1996,7 +2373,7 @@ public:
             // TBB-aware arithmetic operations
             // If either operand is a TBB type, use TBBLowerer for sticky error propagation
             if (isTBBOperation && L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
-                TBBLowerer tbbLowerer(ctx);
+                TBBLowerer tbbLowerer(ctx.llvmContext, *ctx.builder, ctx.module.get());
                 Value* result = nullptr;
                 
                 switch (binop->op) {
@@ -2225,9 +2602,41 @@ public:
                 // Load and return the struct
                 return ctx.builder->CreateLoad(resultType, resultAlloca, "result_val");
             } else {
-                // Generic object literal (not a result type)
-                // TODO: Implement generic object literal support
-                throw std::runtime_error("Generic object literals not yet implemented");
+                // Generic object literal: { x: 10, y: 20 }
+                // Create anonymous struct type on the fly
+                
+                std::vector<Type*> fieldTypes;
+                std::vector<Value*> fieldValues;
+                std::vector<std::string> fieldNames;
+                
+                // 1. Evaluate all fields to determine types
+                for (auto& field : obj->fields) {
+                    Value* val = visitExpr(field.value.get());
+                    if (!val) {
+                        throw std::runtime_error("Invalid field value in object literal for field: " + field.name);
+                    }
+                    
+                    fieldTypes.push_back(val->getType());
+                    fieldValues.push_back(val);
+                    fieldNames.push_back(field.name);
+                }
+                
+                // 2. Create Anonymous Struct Type (not packed to allow natural alignment)
+                StructType* anonType = StructType::get(ctx.llvmContext, fieldTypes, /*isPacked=*/false);
+                
+                // 3. Allocate storage for the struct
+                AllocaInst* objAlloca = ctx.builder->CreateAlloca(anonType, nullptr, "anon_obj");
+                
+                // 4. Store each field value
+                for (size_t i = 0; i < fieldValues.size(); ++i) {
+                    // GEP to get pointer to field index i
+                    Value* fieldPtr = ctx.builder->CreateStructGEP(anonType, objAlloca, i, fieldNames[i] + "_ptr");
+                    ctx.builder->CreateStore(fieldValues[i], fieldPtr);
+                }
+                
+                // 5. Return the loaded struct value
+                // Note: In LLVM, structs are first-class values
+                return ctx.builder->CreateLoad(anonType, objAlloca, "anon_val");
             }
         }
         if (auto* arr = dynamic_cast<aria::frontend::ArrayLiteral*>(node)) {

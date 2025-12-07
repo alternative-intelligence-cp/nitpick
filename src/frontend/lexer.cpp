@@ -1,5 +1,6 @@
 #include "lexer.h"
 #include <map>
+#include <set>
 #include <vector>
 #include <cctype>
 
@@ -497,6 +498,25 @@ Token AriaLexer::nextToken() {
                }
 
                return {TOKEN_FLOAT_LITERAL, number, start_line, start_col};
+           }
+
+           // CHECK FOR TRIT SUFFIX 't' or 'T' (Balanced Ternary Literal)
+           // Trits use digits: -1, 0, 1 represented as '1', '0', '-'
+           // Examples: 1t, 0t, 10-1t (represents [1, 0, -1, 1] in balanced ternary)
+           if (peek() == 't' || peek() == 'T') {
+               advance(); // Consume 't' suffix
+               
+               // Validate: only '0', '1', or '-' allowed in balanced ternary
+               for (char digit : number) {
+                   if (digit != '0' && digit != '1' && digit != '-') {
+                       return {TOKEN_INVALID, "INVALID_TRIT_LITERAL: '" + number + 
+                               "t' - only digits 0, 1, and - (for -1) are allowed in balanced ternary", 
+                               start_line, start_col};
+                   }
+               }
+               
+               // Valid balanced ternary literal
+               return {TOKEN_TRIT_LITERAL, number, start_line, start_col};
            }
 
            // Plain decimal integer

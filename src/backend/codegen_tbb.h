@@ -3,13 +3,13 @@
 
 #include <llvm/IR/Value.h>
 #include <llvm/IR/Type.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/IRBuilder.h>
 #include <string>
 
 namespace aria {
 namespace backend {
-
-// Forward declaration
-class CodeGenContext;
 
 /**
  * TBBLowerer - Twisted Balanced Binary Type Safety Implementation
@@ -33,10 +33,13 @@ class CodeGenContext;
  * LLVM intrinsics for overflow detection and sentinel checking.
  */
 class TBBLowerer {
-    CodeGenContext& ctx;
+    llvm::LLVMContext& llvmContext;
+    llvm::IRBuilder<>& builder;
+    llvm::Module* module;
 
 public:
-    explicit TBBLowerer(CodeGenContext& c);
+    explicit TBBLowerer(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bld, llvm::Module* mod)
+        : llvmContext(ctx), builder(bld), module(mod) {}
 
     /**
      * Check if a type name represents a TBB type.
