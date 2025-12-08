@@ -102,6 +102,10 @@ public:
     // Fat pointer support (debug builds)
     uint64_t current_scope_id = 0;  // Current scope ID for fat pointer generation
     std::stack<uint64_t> scope_id_stack;  // Stack of scope IDs for proper nesting
+    
+    // Generic function monomorphization support
+    std::map<std::string, std::string> typeSubstitution;  // Map generic type params to concrete types (T -> int8)
+    std::string currentMangledName = "";  // Current mangled name for specialized function
 
     CodeGenContext(std::string moduleName) {
         module = std::make_unique<Module>(moduleName, llvmContext);
@@ -164,11 +168,17 @@ public:
 
     // Helper: Map Aria Types to LLVM Types
     llvm::Type* getLLVMType(const std::string& ariaType) {
+        // Check for generic type parameter substitution (T -> int8, etc.)
+        std::string actualType = ariaType;
+        if (typeSubstitution.count(ariaType) > 0) {
+            actualType = typeSubstitution[ariaType];
+        }
+        
         // Check for array types: int8[256] or int8[]
-        size_t bracketPos = ariaType.find('[');
+        size_t bracketPos = actualType.find('[');
         if (bracketPos != std::string::npos) {
-            std::string elemType = ariaType.substr(0, bracketPos);
-            std::string sizeStr = ariaType.substr(bracketPos + 1);
+            std::string elemType = actualType.substr(0, bracketPos);
+            std::string sizeStr = actualType.substr(bracketPos + 1);
             sizeStr = sizeStr.substr(0, sizeStr.find(']'));
             
             Type* elementType = getLLVMType(elemType);
@@ -185,18 +195,18 @@ public:
         
         // Integer types (all bit widths, signed and unsigned)
         // Note: uint1, uint2, uint4 alias to int1, int2, int4 (not in spec, but user-friendly)
-        if (ariaType == "int1" || ariaType == "uint1") return Type::getInt1Ty(llvmContext);
-        if (ariaType == "int2" || ariaType == "uint2") return Type::getIntNTy(llvmContext, 2);
-        if (ariaType == "int4" || ariaType == "uint4" || ariaType == "nit") return Type::getIntNTy(llvmContext, 4);
-        if (ariaType == "int8" || ariaType == "uint8" || ariaType == "byte" || ariaType == "trit") 
+        if (actualType == "int1" || actualType == "uint1") return Type::getInt1Ty(llvmContext);
+        if (actualType == "int2" || actualType == "uint2") return Type::getIntNTy(llvmContext, 2);
+        if (actualType == "int4" || actualType == "uint4" || actualType == "nit") return Type::getIntNTy(llvmContext, 4);
+        if (actualType == "int8" || actualType == "uint8" || actualType == "byte" || actualType == "trit") 
             return Type::getInt8Ty(llvmContext);
-        if (ariaType == "int16" || ariaType == "uint16" || ariaType == "tryte" || ariaType == "nyte") 
+        if (actualType == "int16" || actualType == "uint16" || actualType == "tryte" || actualType == "nyte") 
             return Type::getInt16Ty(llvmContext);
-        if (ariaType == "int32" || ariaType == "uint32") return Type::getInt32Ty(llvmContext);
-        if (ariaType == "int64" || ariaType == "uint64") return Type::getInt64Ty(llvmContext);
-        if (ariaType == "int128" || ariaType == "uint128") return Type::getInt128Ty(llvmContext);
-        if (ariaType == "int256" || ariaType == "uint256") return Type::getIntNTy(llvmContext, 256);
-        if (ariaType == "int512" || ariaType == "uint512") return Type::getIntNTy(llvmContext, 512);
+        if (actualType == "int32" || actualType == "uint32") return Type::getInt32Ty(llvmContext);
+        if (actualType == "int64" || actualType == "uint64") return Type::getInt64Ty(llvmContext);
+        if (actualType == "int128" || actualType == "uint128") return Type::getInt128Ty(llvmContext);
+        if (actualType == "int256" || actualType == "uint256") return Type::getIntNTy(llvmContext, 256);
+        if (actualType == "int512" || actualType == "uint512") return Type::getIntNTy(llvmContext, 512);
         
         // Twisted Balanced Binary (TBB) types - symmetric range with error sentinel
         // tbb8: [-127, +127] with -128 (0x80) as ERR
@@ -205,28 +215,47 @@ public:
         // tbb64: [-9223372036854775807, +9223372036854775807] with min as ERR
         // NOTE: Storage representation is identical to standard int types (two's complement)
         // Semantic difference is in arithmetic operations and range validation
-        if (ariaType == "tbb8") return Type::getInt8Ty(llvmContext);
-        if (ariaType == "tbb16") return Type::getInt16Ty(llvmContext);
-        if (ariaType == "tbb32") return Type::getInt32Ty(llvmContext);
-        if (ariaType == "tbb64") return Type::getInt64Ty(llvmContext);
+        if (actualType == "tbb8") return Type::getInt8Ty(llvmContext);
+        if (actualType == "tbb16") return Type::getInt16Ty(llvmContext);
+        if (actualType == "tbb32") return Type::getInt32Ty(llvmContext);
+        if (actualType == "tbb64") return Type::getInt64Ty(llvmContext);
         
         // Float types (all bit widths)
-        if (ariaType == "float" || ariaType == "flt32") 
+        if (actualType == "float" || actualType == "flt32") 
             return Type::getFloatTy(llvmContext);
-        if (ariaType == "double" || ariaType == "flt64") 
+        if (actualType == "double" || actualType == "flt64") 
             return Type::getDoubleTy(llvmContext);
-        if (ariaType == "flt128") return Type::getFP128Ty(llvmContext);
-        if (ariaType == "flt256") return Type::getFP128Ty(llvmContext);  // LLVM max is fp128, use for now
-        if (ariaType == "flt512") return Type::getFP128Ty(llvmContext);  // LLVM max is fp128, use for now
+        if (actualType == "flt128") return Type::getFP128Ty(llvmContext);
+        if (actualType == "flt256") return Type::getFP128Ty(llvmContext);  // LLVM max is fp128, use for now
+        if (actualType == "flt512") return Type::getFP128Ty(llvmContext);  // LLVM max is fp128, use for now
         
-        if (ariaType == "void") return Type::getVoidTy(llvmContext);
+        // SIMD Vector types - map to LLVM fixed vector types for hardware acceleration
+        // vec2: 2-element float vector -> <2 x float>  (SSE, NEON compatible)
+        // vec3: 3-element float vector -> <4 x float>  (padded to 4 for alignment)
+        // vec4: 4-element float vector -> <4 x float>  (SSE, NEON, AVX compatible)
+        // These enable automatic vectorization and SIMD instruction generation
+        if (actualType == "vec2") return FixedVectorType::get(Type::getFloatTy(llvmContext), 2);
+        if (actualType == "vec3") return FixedVectorType::get(Type::getFloatTy(llvmContext), 4);  // Padded to 4
+        if (actualType == "vec4") return FixedVectorType::get(Type::getFloatTy(llvmContext), 4);
+        
+        // Double-precision vector types for high-precision scientific computing
+        if (actualType == "dvec2") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 2);
+        if (actualType == "dvec3") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 4);  // Padded to 4
+        if (actualType == "dvec4") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 4);
+        
+        // Integer vector types for data processing and bit manipulation
+        if (actualType == "ivec2") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 2);
+        if (actualType == "ivec3") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 4);  // Padded to 4
+        if (actualType == "ivec4") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 4);
+        
+        if (actualType == "void") return Type::getVoidTy(llvmContext);
         
         // Dynamic type (GC-allocated catch-all)
-        if (ariaType == "dyn") return PointerType::getUnqual(llvmContext);
+        if (actualType == "dyn") return PointerType::getUnqual(llvmContext);
         
         // Result type: struct with err (ptr) and val (T) fields
         // Generic result type without val type specified - use default i64
-        if (ariaType == "result" || ariaType == "Result") {
+        if (actualType == "result" || actualType == "Result") {
             return getResultType("int64");
         }
         

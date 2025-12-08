@@ -918,6 +918,30 @@ src/runtime/memory/wildx_allocator.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.s
 .PHONY : src/runtime/memory/wildx_allocator.c.s
 
+src/runtime/platform/platform.o: src/runtime/platform/platform.c.o
+.PHONY : src/runtime/platform/platform.o
+
+# target to build an object file
+src/runtime/platform/platform.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/platform/platform.c.o
+.PHONY : src/runtime/platform/platform.c.o
+
+src/runtime/platform/platform.i: src/runtime/platform/platform.c.i
+.PHONY : src/runtime/platform/platform.i
+
+# target to preprocess a source file
+src/runtime/platform/platform.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/platform/platform.c.i
+.PHONY : src/runtime/platform/platform.c.i
+
+src/runtime/platform/platform.s: src/runtime/platform/platform.c.s
+.PHONY : src/runtime/platform/platform.s
+
+# target to generate assembly for a file
+src/runtime/platform/platform.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/platform/platform.c.s
+.PHONY : src/runtime/platform/platform.c.s
+
 src/stdlib/io/fast_read.o: src/stdlib/io/fast_read.cpp.o
 .PHONY : src/stdlib/io/fast_read.o
 
@@ -1039,6 +1063,9 @@ help:
 	@echo "... src/runtime/memory/wildx_allocator.o"
 	@echo "... src/runtime/memory/wildx_allocator.i"
 	@echo "... src/runtime/memory/wildx_allocator.s"
+	@echo "... src/runtime/platform/platform.o"
+	@echo "... src/runtime/platform/platform.i"
+	@echo "... src/runtime/platform/platform.s"
 	@echo "... src/stdlib/io/fast_read.o"
 	@echo "... src/stdlib/io/fast_read.i"
 	@echo "... src/stdlib/io/fast_read.s"

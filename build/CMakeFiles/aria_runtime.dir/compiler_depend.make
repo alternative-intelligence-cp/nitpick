@@ -262,9 +262,11 @@ CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o: /home/randy
   /usr/include/alloca.h \
   /usr/include/asm-generic/errno-base.h \
   /usr/include/asm-generic/errno.h \
+  /usr/include/c++/13/algorithm \
   /usr/include/c++/13/atomic \
   /usr/include/c++/13/backward/binders.h \
   /usr/include/c++/13/bit \
+  /usr/include/c++/13/bits/algorithmfwd.h \
   /usr/include/c++/13/bits/alloc_traits.h \
   /usr/include/c++/13/bits/allocator.h \
   /usr/include/c++/13/bits/atomic_base.h \
@@ -309,25 +311,34 @@ CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o: /home/randy
   /usr/include/c++/13/bits/postypes.h \
   /usr/include/c++/13/bits/predefined_ops.h \
   /usr/include/c++/13/bits/ptr_traits.h \
+  /usr/include/c++/13/bits/random.h \
+  /usr/include/c++/13/bits/random.tcc \
   /usr/include/c++/13/bits/range_access.h \
+  /usr/include/c++/13/bits/ranges_algo.h \
+  /usr/include/c++/13/bits/ranges_algobase.h \
   /usr/include/c++/13/bits/ranges_base.h \
   /usr/include/c++/13/bits/ranges_cmp.h \
   /usr/include/c++/13/bits/ranges_util.h \
   /usr/include/c++/13/bits/refwrap.h \
   /usr/include/c++/13/bits/requires_hosted.h \
   /usr/include/c++/13/bits/semaphore_base.h \
+  /usr/include/c++/13/bits/specfun.h \
   /usr/include/c++/13/bits/std_abs.h \
   /usr/include/c++/13/bits/std_mutex.h \
   /usr/include/c++/13/bits/std_thread.h \
+  /usr/include/c++/13/bits/stl_algo.h \
   /usr/include/c++/13/bits/stl_algobase.h \
   /usr/include/c++/13/bits/stl_bvector.h \
   /usr/include/c++/13/bits/stl_construct.h \
   /usr/include/c++/13/bits/stl_deque.h \
   /usr/include/c++/13/bits/stl_function.h \
+  /usr/include/c++/13/bits/stl_heap.h \
   /usr/include/c++/13/bits/stl_iterator.h \
   /usr/include/c++/13/bits/stl_iterator_base_funcs.h \
   /usr/include/c++/13/bits/stl_iterator_base_types.h \
+  /usr/include/c++/13/bits/stl_numeric.h \
   /usr/include/c++/13/bits/stl_pair.h \
+  /usr/include/c++/13/bits/stl_tempbuf.h \
   /usr/include/c++/13/bits/stl_uninitialized.h \
   /usr/include/c++/13/bits/stl_vector.h \
   /usr/include/c++/13/bits/streambuf.tcc \
@@ -335,6 +346,7 @@ CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o: /home/randy
   /usr/include/c++/13/bits/string_view.tcc \
   /usr/include/c++/13/bits/stringfwd.h \
   /usr/include/c++/13/bits/this_thread_sleep.h \
+  /usr/include/c++/13/bits/uniform_int_dist.h \
   /usr/include/c++/13/bits/unique_lock.h \
   /usr/include/c++/13/bits/unique_ptr.h \
   /usr/include/c++/13/bits/uses_allocator.h \
@@ -345,6 +357,7 @@ CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o: /home/randy
   /usr/include/c++/13/cerrno \
   /usr/include/c++/13/climits \
   /usr/include/c++/13/clocale \
+  /usr/include/c++/13/cmath \
   /usr/include/c++/13/compare \
   /usr/include/c++/13/concepts \
   /usr/include/c++/13/cstddef \
@@ -370,8 +383,13 @@ CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o: /home/randy
   /usr/include/c++/13/mutex \
   /usr/include/c++/13/new \
   /usr/include/c++/13/numbers \
+  /usr/include/c++/13/numeric \
   /usr/include/c++/13/ostream \
+  /usr/include/c++/13/pstl/execution_defs.h \
+  /usr/include/c++/13/pstl/glue_algorithm_defs.h \
+  /usr/include/c++/13/pstl/glue_numeric_defs.h \
   /usr/include/c++/13/pstl/pstl_config.h \
+  /usr/include/c++/13/random \
   /usr/include/c++/13/ratio \
   /usr/include/c++/13/semaphore \
   /usr/include/c++/13/stdexcept \
@@ -381,6 +399,18 @@ CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o: /home/randy
   /usr/include/c++/13/string_view \
   /usr/include/c++/13/system_error \
   /usr/include/c++/13/thread \
+  /usr/include/c++/13/tr1/bessel_function.tcc \
+  /usr/include/c++/13/tr1/beta_function.tcc \
+  /usr/include/c++/13/tr1/ell_integral.tcc \
+  /usr/include/c++/13/tr1/exp_integral.tcc \
+  /usr/include/c++/13/tr1/gamma.tcc \
+  /usr/include/c++/13/tr1/hypergeometric.tcc \
+  /usr/include/c++/13/tr1/legendre_function.tcc \
+  /usr/include/c++/13/tr1/modified_bessel_func.tcc \
+  /usr/include/c++/13/tr1/poly_hermite.tcc \
+  /usr/include/c++/13/tr1/poly_laguerre.tcc \
+  /usr/include/c++/13/tr1/riemann_zeta.tcc \
+  /usr/include/c++/13/tr1/special_function_util.h \
   /usr/include/c++/13/tuple \
   /usr/include/c++/13/type_traits \
   /usr/include/c++/13/typeinfo \
@@ -395,6 +425,7 @@ CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o: /home/randy
   /usr/include/linux/errno.h \
   /usr/include/linux/limits.h \
   /usr/include/locale.h \
+  /usr/include/math.h \
   /usr/include/pthread.h \
   /usr/include/sched.h \
   /usr/include/semaphore.h \
@@ -420,12 +451,21 @@ CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o: /home/randy
   /usr/include/x86_64-linux-gnu/bits/errno.h \
   /usr/include/x86_64-linux-gnu/bits/floatn-common.h \
   /usr/include/x86_64-linux-gnu/bits/floatn.h \
+  /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h \
+  /usr/include/x86_64-linux-gnu/bits/fp-fast.h \
+  /usr/include/x86_64-linux-gnu/bits/fp-logb.h \
   /usr/include/x86_64-linux-gnu/bits/getopt_core.h \
   /usr/include/x86_64-linux-gnu/bits/getopt_posix.h \
+  /usr/include/x86_64-linux-gnu/bits/iscanonical.h \
   /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
+  /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
   /usr/include/x86_64-linux-gnu/bits/local_lim.h \
   /usr/include/x86_64-linux-gnu/bits/locale.h \
   /usr/include/x86_64-linux-gnu/bits/long-double.h \
+  /usr/include/x86_64-linux-gnu/bits/math-vector.h \
+  /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h \
+  /usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h \
+  /usr/include/x86_64-linux-gnu/bits/mathcalls.h \
   /usr/include/x86_64-linux-gnu/bits/posix1_lim.h \
   /usr/include/x86_64-linux-gnu/bits/posix2_lim.h \
   /usr/include/x86_64-linux-gnu/bits/posix_opt.h \
@@ -494,6 +534,7 @@ CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o: /home/randy
   /usr/include/x86_64-linux-gnu/c++/13/bits/error_constants.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/gthr-default.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/gthr.h \
+  /usr/include/x86_64-linux-gnu/c++/13/bits/opt_random.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
   /usr/include/x86_64-linux-gnu/gnu/stubs-64.h \
   /usr/include/x86_64-linux-gnu/gnu/stubs.h \
@@ -1393,8 +1434,6 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 
 /usr/include/x86_64-linux-gnu/bits/sigevent-consts.h:
 
-/usr/include/x86_64-linux-gnu/bits/sigcontext.h:
-
 /usr/include/x86_64-linux-gnu/bits/sigaction.h:
 
 /home/randy/._____RANDY_____/REPOS/aria/src/runtime/io_linux.cpp:
@@ -1427,8 +1466,6 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 
 /usr/include/linux/stddef.h:
 
-/usr/include/linux/falloc.h:
-
 /usr/include/fcntl.h:
 
 /usr/include/asm-generic/posix_types.h:
@@ -1437,19 +1474,57 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 
 /home/randy/._____RANDY_____/REPOS/aria/src/runtime/io/file.cpp:
 
-/usr/include/c++/13/stack:
-
 /usr/include/c++/13/bits/stl_stack.h:
 
 /home/randy/._____RANDY_____/REPOS/aria/src/runtime/gc/header.h:
 
 /home/randy/._____RANDY_____/REPOS/aria/src/runtime/gc/gc_impl.cpp:
 
+/home/randy/._____RANDY_____/REPOS/aria/src/runtime/core/string_impl.cpp:
+
+/usr/include/c++/13/stack:
+
+/usr/include/x86_64-linux-gnu/bits/mathcalls.h:
+
+/usr/include/linux/falloc.h:
+
+/usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h:
+
+/usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h:
+
+/usr/include/x86_64-linux-gnu/bits/math-vector.h:
+
+/usr/include/x86_64-linux-gnu/bits/fp-logb.h:
+
+/usr/include/x86_64-linux-gnu/bits/fp-fast.h:
+
+/usr/include/x86_64-linux-gnu/bits/sigcontext.h:
+
+/usr/include/c++/13/tr1/special_function_util.h:
+
+/usr/include/c++/13/tr1/poly_laguerre.tcc:
+
+/usr/include/c++/13/tr1/poly_hermite.tcc:
+
+/usr/include/c++/13/tr1/legendre_function.tcc:
+
+/usr/include/c++/13/tr1/gamma.tcc:
+
+/usr/include/c++/13/tr1/exp_integral.tcc:
+
+/usr/include/c++/13/tr1/ell_integral.tcc:
+
+/usr/include/c++/13/tr1/beta_function.tcc:
+
 /usr/include/c++/13/pstl/glue_algorithm_defs.h:
 
 /usr/include/c++/13/pstl/execution_defs.h:
 
+/usr/include/c++/13/cmath:
+
 /usr/include/c++/13/bits/stl_tempbuf.h:
+
+/usr/include/c++/13/bits/stl_numeric.h:
 
 /usr/include/c++/13/bits/stl_heap.h:
 
@@ -1457,13 +1532,23 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 
 /usr/include/c++/13/bits/ranges_algobase.h:
 
-/usr/include/c++/13/algorithm:
+/usr/include/c++/13/random:
+
+/usr/include/c++/13/bits/random.tcc:
+
+/usr/include/c++/13/bits/random.h:
+
+/usr/include/c++/13/tr1/hypergeometric.tcc:
 
 /usr/include/c++/13/bits/range_access.h:
 
 /usr/include/c++/13/pstl/pstl_config.h:
 
+/usr/include/x86_64-linux-gnu/c++/13/bits/opt_random.h:
+
 /usr/include/c++/13/ostream:
+
+/usr/include/x86_64-linux-gnu/bits/flt-eval-method.h:
 
 /usr/include/c++/13/bits/streambuf_iterator.h:
 
@@ -1485,6 +1570,8 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 
 /usr/include/c++/13/cctype:
 
+/usr/include/c++/13/pstl/glue_numeric_defs.h:
+
 /usr/include/x86_64-linux-gnu/bits/posix1_lim.h:
 
 /usr/include/c++/13/debug/assertions.h:
@@ -1498,6 +1585,8 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 /usr/include/c++/13/cstdint:
 
 /usr/include/c++/13/cstdio:
+
+/usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h:
 
@@ -1544,6 +1633,8 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 /usr/include/c++/13/bits/this_thread_sleep.h:
 
 /usr/include/wchar.h:
+
+/usr/include/c++/13/bits/specfun.h:
 
 /usr/include/c++/13/bits/streambuf.tcc:
 
@@ -1607,8 +1698,6 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 
 /usr/include/x86_64-linux-gnu/bits/types.h:
 
-/home/randy/._____RANDY_____/REPOS/aria/src/runtime/core/string_impl.cpp:
-
 /usr/include/c++/13/bits/move.h:
 
 /usr/include/c++/13/bits/atomic_lockfree_defines.h:
@@ -1646,6 +1735,8 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 /usr/include/alloca.h:
 
 /usr/include/c++/13/bits/atomic_timed_wait.h:
+
+/usr/include/c++/13/tr1/bessel_function.tcc:
 
 /usr/include/c++/13/initializer_list:
 
@@ -1738,6 +1829,8 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 /usr/include/c++/13/bits/functional_hash.h:
 
 /usr/include/errno.h:
+
+/usr/include/x86_64-linux-gnu/bits/iscanonical.h:
 
 /usr/include/c++/13/string_view:
 
@@ -1863,6 +1956,8 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 
 /usr/include/x86_64-linux-gnu/sys/select.h:
 
+/usr/include/c++/13/tr1/riemann_zeta.tcc:
+
 /usr/include/x86_64-linux-gnu/asm/unistd.h:
 
 /usr/include/x86_64-linux-gnu/asm/unistd_64.h:
@@ -1935,6 +2030,8 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 
 /usr/include/x86_64-linux-gnu/c++/13/bits/cpu_defines.h:
 
+/usr/include/math.h:
+
 /usr/include/x86_64-linux-gnu/bits/types/__FILE.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_sigstack.h:
@@ -1966,6 +2063,8 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 /usr/include/x86_64-linux-gnu/bits/types/timer_t.h:
 
 /usr/include/x86_64-linux-gnu/bits/typesizes.h:
+
+/usr/include/c++/13/tr1/modified_bessel_func.tcc:
 
 /usr/include/c++/13/bits/ranges_base.h:
 
@@ -2013,6 +2112,8 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 
 /usr/include/x86_64-linux-gnu/bits/siginfo-consts.h:
 
+/usr/include/c++/13/numeric:
+
 /usr/lib/gcc/x86_64-linux-gnu/13/include/stdarg.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/clock_t.h:
@@ -2020,3 +2121,5 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 /usr/lib/gcc/x86_64-linux-gnu/13/include/syslimits.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h:
+
+/usr/include/c++/13/algorithm:

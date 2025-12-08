@@ -1,0 +1,528 @@
+record known bugs, missing features, or incomplete implementations here, along with references to any source files required to fix that particular thing. We will use this to produce mini reports via Gemini Deep Research to speed up implementation and reserve your tokens for the important stuff.
+
+================================================================================
+KNOWN ISSUES AND INCOMPLETE FEATURES - Aria Compiler v0.0.7
+Last Updated: December 7, 2025
+================================================================================
+
+CATEGORY 1: FRONTEND PARSER LIMITATIONS
+================================================================================
+
+ISSUE 1.1: Vector Type Parser Support
+STATUS: IN PROGRESS (Gemini Work Package #001)
+PRIORITY: Medium
+AFFECTED FILES:
+  - src/frontend/lexer.cpp
+  - src/frontend/parser.cpp
+  - src/frontend/parser_func.cpp (isTypeToken function)
+
+DESCRIPTION:
+Vector types (vec2, vec3, vec4, dvec2, dvec3, dvec4, ivec2, ivec3, ivec4) are
+defined in the type system and backend but the parser doesn't recognize them
+as built-in type tokens. Currently treated as TOKEN_IDENTIFIER instead of
+dedicated TOKEN_TYPE_VEC* tokens.
+
+CURRENT BEHAVIOR:
+- Global declarations work: vec4:v = <expression>
+- Function parameters fail: func:test = vec4(vec4:param) { }
+- Type checking recognizes them (parseType() in type_checker.cpp works)
+- Backend lowering works (getLLVMType() maps to FixedVectorType)
+
+WHAT'S NEEDED:
+1. Add TOKEN_TYPE_VEC2, TOKEN_TYPE_VEC3, etc. to token definitions
+2. Update lexer to recognize vec2/vec3/vec4 keywords
+3. Update isTypeToken() to include vector type tokens
+4. Update parseTypeName() to handle vector types
+5. Test vector function signatures and return types
+
+REFERENCES:
+- src/frontend/sema/types.h (TypeKind::VEC2-IVEC4 defined)
+- src/frontend/sema/type_checker.cpp (parseType handles vec types)
+- src/backend/codegen_context.h:232-250 (backend lowering implemented)
+
+--------------------------------------------------------------------------------
+
+ISSUE 1.2: Vector Literal Syntax
+STATUS: IN PROGRESS (Gemini Work Package #001)
+PRIORITY: Medium
+AFFECTED FILES:
+  - src/frontend/parser_expr.cpp
+  - src/frontend/ast.h (need VectorLiteralExpr)
+  - src/backend/codegen.cpp (need visitor)
+
+DESCRIPTION:
+No syntax exists for creating vector literals. Users cannot initialize vectors
+with constant values.
+
+PROPOSED SYNTAX:
+  vec4:v = vec4(1.0, 2.0, 3.0, 4.0);  // Constructor syntax
+  OR
+  vec4:v = {1.0, 2.0, 3.0, 4.0};      // Aggregate initialization
+
+WHAT'S NEEDED:
+1. Define VectorLiteralExpr AST node
+2. Parse vector constructor calls or aggregate initializers
+3. Type checking for element count and types
+4. Backend codegen to create LLVM vector constants
+5. Handle implicit conversions (int to float, scalar to vector)
+
+REFERENCES:
+- GLSL vector initialization for syntax inspiration
+- LLVM ConstantVector::get() for backend implementation
+
+--------------------------------------------------------------------------------
+
+ISSUE 1.3: Generic Template Parsing Incomplete
+STATUS: IN PROGRESS (Gemini Work Package #002)
+PRIORITY: High
+AFFECTED FILES:
+  - src/frontend/parser_func.cpp (parseFuncDecl)
+  - src/backend/codegen.cpp (generic instantiation missing)
+  - src/backend/codegen_context.h (typeSubstitution map exists)
+
+DESCRIPTION:
+Parser can recognize generic syntax (func<T>:name) but no monomorphization
+happens. Generic functions are not instantiated for concrete types.
+
+CURRENT STATE:
+- Generic parameters parsed and stored in FuncDecl::generics
+- typeSubstitution map in CodeGenContext (unused)
+- No instantiation pass in backend
+
+WHAT'S NEEDED:
+1. Template usage tracking (which concrete types are used)
+2. Monomorphization pass before codegen
+3. Name mangling for instantiated functions (func_int8, func_int64)
+4. Type parameter substitution in function body
+5. Generic constraint checking (future: T: Numeric, T: Comparable)
+
+EXAMPLE:
+  func<T>:max = T(T:a, T:b) { ... }
+  // Called with max(5, 10) should generate max_int64
+  // Called with max(5.0, 10.0) should generate max_flt64
+
+REFERENCES:
+- C++ template instantiation model
+- Rust monomorphization approach
+- src/backend/codegen.cpp:165-180 (monomorphization skeleton exists)
+
+--------------------------------------------------------------------------------
+
+ISSUE 1.4: Lambda Closure Capture Incomplete
+STATUS: IN PROGRESS (Gemini Work Package #002)
+PRIORITY: High
+AFFECTED FILES:
+  - src/backend/codegen.cpp:187-300 (analyzeCapturedVariables exists)
+  - src/backend/codegen.cpp (generateLambdaBody needs environment struct)
+
+DESCRIPTION:
+Closure capture analysis exists but environment struct generation is not
+fully implemented. Lambdas cannot access variables from enclosing scope.
+
+CURRENT STATE:
+- analyzeCapturedVariables() correctly identifies captured variables
+- Environment struct created in some cases
+- Missing: passing environment to lambda as hidden parameter
+- Missing: accessing environment members in lambda body
+
+WHAT'S NEEDED:
+1. Generate struct type for environment
+2. Allocate environment on heap (GC or wild)
+3. Store captured variables in environment
+4. Pass environment as first parameter to lambda
+5. Rewrite variable accesses in lambda to use environment
+
+EXAMPLE:
+  func:outer = int32() {
+      int32:x = 10;
+      func:inner = int32() { pass(x); };  // Should capture x
+      pass(inner());
+  };
+
+REFERENCES:
+- src/backend/codegen.cpp:187-300 (analysis code)
+- LLVM function pointer with context pattern
+- Task 1 implementation notes
+
+--------------------------------------------------------------------------------
+
+ISSUE 1.5: UseStmt Module Resolution Not Implemented
+STATUS: IN PROGRESS (Gemini Work Package #002)
+PRIORITY: High
+AFFECTED FILES:
+  - src/backend/codegen.cpp:3985 (visit(UseStmt) is empty)
+  - Need module resolver/linker
+
+DESCRIPTION:
+UseStmt is parsed but does nothing. No module system, no symbol resolution
+across files, no linking of .aria modules.
+
+CURRENT STATE:
+  void visit(frontend::UseStmt* node) override {
+      // For now, use statements are no-ops in codegen
+  }
+
+WHAT'S NEEDED:
+1. Module index/registry (map module names to files)
+2. Parse imported modules
+3. Symbol resolution across modules
+4. LLVM module linking (LLVMLinkModules)
+5. Handle circular dependencies
+6. Public/private visibility rules
+
+EXAMPLE:
+  use std.io;
+  use math.{sqrt, pow};
+  
+  func:main = int32() {
+      io.print("Hello");
+      pass(sqrt(16.0));
+  };
+
+REFERENCES:
+- Task 2 metadata implementation (module prefixes work)
+- LLVM Linker API documentation
+- src/backend/codegen.cpp:3985
+
+--------------------------------------------------------------------------------
+
+CATEGORY 2: BACKEND CODEGEN ISSUES
+================================================================================
+
+ISSUE 2.1: Async/Await Scheduler Not Connected
+STATUS: IN PROGRESS (Gemini Work Package #003)
+PRIORITY: High
+AFFECTED FILES:
+  - src/backend/codegen.cpp:3785-3880 (visit AwaitExpr)
+  - src/runtime/concurrency/scheduler.cpp
+
+DESCRIPTION:
+AwaitExpr generates correct LLVM coroutine suspension, but doesn't schedule
+the coroutine on the runtime scheduler. Coroutines suspend but never resume.
+
+CURRENT STATE:
+- llvm.coro.suspend emitted correctly
+- Scheduler exists and initializes
+- Missing: aria_scheduler_schedule() call with coroutine handle
+- Missing: resumption callback mechanism
+
+WHAT'S NEEDED:
+1. After coro.suspend, call aria_scheduler_schedule(handle)
+2. Scheduler needs to resume coroutines via llvm.coro.resume
+3. Handle await on non-async functions (compilation error)
+4. Implement async function result type (Task<T>)
+
+EXAMPLE:
+  async func:fetch_data = int32() { ... };
+  
+  func:main = int32() {
+      int32:result = await fetch_data();  // Should schedule and resume
+  };
+
+REFERENCES:
+- Task 5 implementation (suspension works)
+- Task 6 implementation (scheduler exists)
+- LLVM Coroutine documentation
+
+--------------------------------------------------------------------------------
+
+ISSUE 2.2: TBB Optimizer Edge Cases
+STATUS: IN PROGRESS (Gemini Work Package #005)
+PRIORITY: Low
+AFFECTED FILES:
+  - src/backend/tbb_optimizer.cpp
+
+DESCRIPTION:
+TBB optimizer handles SelectInst and PHI patterns but doesn't handle all
+control flow scenarios. Some redundant checks remain.
+
+KNOWN LIMITATIONS:
+1. Doesn't optimize across function boundaries
+2. No interprocedural range analysis
+3. Doesn't handle loops with induction variables
+4. Conservative on pointer arithmetic
+
+WHAT'S NEEDED:
+1. Loop-aware range analysis (induction variable tracking)
+2. Interprocedural analysis (function summaries)
+3. Pointer bounds analysis for array indexing
+4. Better handling of ternary expressions
+
+REFERENCES:
+- src/backend/tbb_optimizer.cpp:228-342 (optimizeTBBPhi)
+- Task 7 implementation notes
+
+--------------------------------------------------------------------------------
+
+ISSUE 2.3: SIMD Vector Operations Not Lowered
+STATUS: IN PROGRESS (Gemini Work Package #003)
+PRIORITY: Medium
+AFFECTED FILES:
+  - src/backend/codegen.cpp (visitExpr binary operations)
+  - Need vector operation lowering
+
+DESCRIPTION:
+Vector types exist and lower to LLVM FixedVectorType, but arithmetic
+operations on vectors don't generate SIMD instructions.
+
+CURRENT STATE:
+- vec4 type maps to <4 x float>
+- vec4:a + vec4:b generates scalar addition (wrong)
+- Should generate llvm.fadd.v4f32 or vector add instruction
+
+WHAT'S NEEDED:
+1. Detect when both operands are vector types
+2. Use LLVM vector operations (fadd, fmul, fsub, fdiv)
+3. Implement swizzling (.xyz, .xyzw, etc.)
+4. Implement vector intrinsics (dot, cross, length, normalize)
+5. Test SIMD code generation (verify movaps, addps, etc.)
+
+EXAMPLE:
+  vec4:a = vec4(1, 2, 3, 4);
+  vec4:b = vec4(5, 6, 7, 8);
+  vec4:c = a + b;  // Should use SIMD add, not scalar
+
+REFERENCES:
+- Task 8 implementation (type lowering done)
+- LLVM Vector Operations documentation
+- X86 intrinsics guide for testing
+
+--------------------------------------------------------------------------------
+
+ISSUE 2.4: Fat Pointer Runtime Checks Not Implemented
+STATUS: IN PROGRESS (Gemini Work Package #004)
+PRIORITY: Medium
+AFFECTED FILES:
+  - src/backend/codegen.cpp (ARIA_DEBUG guards exist)
+  - src/runtime/debug/ (need fat pointer validation)
+
+DESCRIPTION:
+Debug build generates aria_fat_ptr_create calls but runtime validation
+functions don't exist.
+
+CURRENT STATE:
+#ifdef ARIA_DEBUG
+  Value* fat_ptr = CreateCall(createFatPtr, {ptr, scope_id});
+#endif
+
+WHAT'S NEEDED:
+1. Implement aria_fat_ptr_create() runtime function
+2. Implement aria_fat_ptr_validate() for use-after-free detection
+3. Store scope_id and timestamp in fat pointer struct
+4. Validate on dereference (detect dangling pointers)
+5. Report errors with source location information
+
+REFERENCES:
+- Task 6 from original architectural review
+- AddressSanitizer approach for inspiration
+- src/backend/codegen.cpp fat pointer guards
+
+--------------------------------------------------------------------------------
+
+CATEGORY 3: RUNTIME LIBRARY GAPS
+================================================================================
+
+ISSUE 3.1: GC Nursery Not Connected to Allocator
+STATUS: IN PROGRESS (Gemini Work Package #003)
+PRIORITY: Medium
+AFFECTED FILES:
+  - src/runtime/gc/nursery.cpp
+  - src/runtime/gc/gc_impl.cpp
+  - src/runtime/memory/allocator.c
+
+DESCRIPTION:
+Fragmented nursery implementation exists but aria_gc_alloc doesn't use it.
+GC allocations go straight to mimalloc.
+
+WHAT'S NEEDED:
+1. Route gc allocations through nursery
+2. Implement minor GC (nursery evacuation)
+3. Implement major GC (full heap collection)
+4. Add write barriers for generational GC
+5. Performance testing and tuning
+
+REFERENCES:
+- src/runtime/gc/nursery.cpp (complete implementation exists)
+- Generational GC literature
+
+--------------------------------------------------------------------------------
+
+ISSUE 3.2: Platform Abstraction Missing Functions
+STATUS: Partially Implemented
+PRIORITY: Low
+AFFECTED FILES:
+  - src/runtime/platform/platform.c
+  - src/runtime/platform/platform.h
+
+DESCRIPTION:
+Platform abstraction layer exists but aria_platform_spawn_process is
+stubbed out and some functions are incomplete.
+
+WHAT'S NEEDED:
+1. Complete process spawning implementation
+2. Add signal handling abstractions
+3. Add shared memory primitives
+4. Add atomic operations wrappers
+5. Add memory barrier primitives
+
+REFERENCES:
+- src/runtime/platform/platform.c:335 (spawn_process stub)
+- src/runtime/io_windows.cpp (Windows implementation reference)
+- src/runtime/io_linux.cpp (POSIX implementation reference)
+
+--------------------------------------------------------------------------------
+
+ISSUE 3.3: Standard Library Functions Missing
+STATUS: IN PROGRESS (Gemini Work Package #004)
+PRIORITY: Medium
+AFFECTED FILES:
+  - stdlib/ directory
+
+DESCRIPTION:
+Many standard library functions are placeholders or missing entirely.
+
+MISSING/INCOMPLETE:
+1. String manipulation (split, join, replace, regex)
+2. Collection operations (filter, reduce, zip)
+3. Math functions (trigonometry mostly missing)
+4. File I/O (only basic read/write)
+5. Network I/O (completely missing)
+6. Date/time utilities (completely missing)
+7. JSON/XML parsing (completely missing)
+8. Compression utilities (completely missing)
+
+WHAT'S NEEDED:
+Research existing implementations and create comprehensive stdlib.
+
+REFERENCES:
+- stdlib/ directory structure
+- Rust std library for API inspiration
+- Python stdlib for coverage reference
+
+--------------------------------------------------------------------------------
+
+CATEGORY 4: TYPE SYSTEM LIMITATIONS
+================================================================================
+
+ISSUE 4.1: Struct Methods Not Implemented
+STATUS: IN PROGRESS (Gemini Work Package #004)
+PRIORITY: Medium
+AFFECTED FILES:
+  - src/frontend/parser_struct.cpp
+  - src/backend/codegen.cpp
+
+DESCRIPTION:
+Structs exist but have no methods. No member functions, no self parameter.
+
+PROPOSED SYNTAX:
+  struct:Point = {
+      flt32:x,
+      flt32:y,
+      
+      func:distance = flt32(self) {
+          pass(sqrt(self.x * self.x + self.y * self.y));
+      };
+  };
+
+WHAT'S NEEDED:
+1. Parse method definitions inside struct
+2. Implicit self parameter handling
+3. Method call syntax (point.distance())
+4. Name mangling (Point_distance)
+5. Method visibility (pub/private)
+
+--------------------------------------------------------------------------------
+
+ISSUE 4.2: Trait/Interface System Missing
+STATUS: IN PROGRESS (Gemini Work Package #005)
+PRIORITY: Low
+AFFECTED FILES:
+  - New files needed
+
+DESCRIPTION:
+No polymorphism mechanism. No interfaces, no traits, no vtables.
+
+WHAT'S NEEDED:
+Complete design and implementation of trait system.
+
+REFERENCES:
+- Rust trait system
+- Go interfaces
+- TypeScript interfaces
+
+--------------------------------------------------------------------------------
+
+CATEGORY 5: ERROR HANDLING AND DIAGNOSTICS
+================================================================================
+
+ISSUE 5.1: Parser Error Messages Are Cryptic
+STATUS: IN PROGRESS (Gemini Work Package #001)
+PRIORITY: High
+AFFECTED FILES:
+  - src/frontend/parser.cpp (error reporting)
+  - src/frontend/lexer.cpp (error reporting)
+
+DESCRIPTION:
+Error messages show token type numbers instead of helpful descriptions.
+
+CURRENT:
+  Parse Error: Expected token type 173 but got 181 at line 3, col 30
+
+DESIRED:
+  Parse Error: Expected type identifier but got function parameter at line 3, col 30
+  vec4(vec4:param) {
+       ^
+  Help: Did you mean 'vec4:name' for the parameter?
+
+WHAT'S NEEDED:
+1. Token type to string mapping
+2. Better error messages with context
+3. Source location highlighting
+4. Suggested fixes (did you mean...)
+5. Error recovery (don't stop at first error)
+
+--------------------------------------------------------------------------------
+
+ISSUE 5.2: Runtime Error Stack Traces Missing
+STATUS: IN PROGRESS (Gemini Work Package #004)
+PRIORITY: Medium
+AFFECTED FILES:
+  - src/runtime/debug/ (need stack unwinding)
+
+DESCRIPTION:
+Runtime errors (segfaults, divisions by zero) have no stack traces.
+
+WHAT'S NEEDED:
+1. DWARF debug info generation
+2. Stack unwinding library integration
+3. Signal handlers for crashes
+4. Pretty-printed stack traces
+5. Source line resolution
+
+REFERENCES:
+- libunwind for stack traces
+- LLVM debug metadata generation
+
+================================================================================
+END OF KNOWN ISSUES
+================================================================================
+
+PRIORITY LEGEND:
+  High   = Blocks major features or causes frequent user pain
+  Medium = Important but has workarounds
+  Low    = Nice to have, minimal impact
+
+IMPLEMENTATION STRATEGY:
+Issues should be researched via Gemini Deep Research to produce:
+1. Detailed implementation plan
+2. Code examples from similar compilers
+3. LLVM API references
+4. Testing strategy
+5. Estimated complexity and time
+
+Focus on High priority issues first, especially:
+- Generic template instantiation (1.3)
+- Lambda closures (1.4)
+- Module system (1.5)
+- Async scheduler connection (2.1)
+- Parser error messages (5.1)

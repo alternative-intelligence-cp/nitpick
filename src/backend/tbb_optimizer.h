@@ -174,6 +174,15 @@ private:
     bool optimizeTBBSelect(SelectInst* SI, Function& F);
     
     /**
+     * Analyze a PHI node to determine if it's a TBB branch-based safety pattern
+     * Pattern: phi [ sentinel, %error_bb ], [ raw_result, %normal_bb ]
+     * Created by conditional branches that check for errors
+     * 
+     * Returns true if this is a TBB pattern and optimization was applied
+     */
+    bool optimizeTBBPhi(PHINode* PN, Function& F);
+    
+    /**
      * Analyze ICmp instructions feeding into TBB error logic
      * Returns true if the comparison is provably always false (check is redundant)
      */

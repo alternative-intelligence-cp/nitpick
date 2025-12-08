@@ -39,6 +39,9 @@ using namespace llvm::PatternMatch;
 PreservedAnalyses TBBOptimizerPass::run(Function &F, FunctionAnalysisManager &AM) {
     bool changed = false;
     
+    // =========================================================================
+    // PHASE 1: Optimize SelectInst-based TBB patterns
+    // =========================================================================
     // Collect all Select instructions (potential TBB patterns)
     SmallVector<SelectInst*, 32> selects;
     for (BasicBlock &BB : F) {
@@ -52,6 +55,26 @@ PreservedAnalyses TBBOptimizerPass::run(Function &F, FunctionAnalysisManager &AM
     // Try to optimize each TBB Select pattern
     for (SelectInst* SI : selects) {
         if (optimizeTBBSelect(SI, F)) {
+            changed = true;
+        }
+    }
+    
+    // =========================================================================
+    // PHASE 2: Optimize Branch-based TBB patterns (PHI nodes)
+    // =========================================================================
+    // Collect all PHI nodes that might be TBB patterns
+    SmallVector<PHINode*, 32> phis;
+    for (BasicBlock &BB : F) {
+        for (Instruction &I : BB) {
+            if (auto* PN = dyn_cast<PHINode>(&I)) {
+                phis.push_back(PN);
+            }
+        }
+    }
+    
+    // Try to optimize each TBB PHI pattern
+    for (PHINode* PN : phis) {
+        if (optimizeTBBPhi(PN, F)) {
             changed = true;
         }
     }
@@ -197,6 +220,119 @@ bool TBBOptimizerPass::optimizeTBBSelect(SelectInst* SI, Function& F) {
 }
 
 // ============================================================================
+// TBB Branch Pattern Optimization (PHI Nodes)
+// ============================================================================
+
+bool TBBOptimizerPass::optimizeTBBPhi(PHINode* PN, Function& F) {
+    // TBB branch pattern:
+    // br i1 %error_cond, label %error_bb, label %normal_bb
+    // error_bb:
+    //   br label %merge
+    // normal_bb:
+    //   br label %merge
+    // merge:
+    //   %result = phi i8 [ SENTINEL, %error_bb ], [ %raw_result, %normal_bb ]
+    
+    if (PN->getNumIncomingValues() != 2) {
+        return false;  // TBB pattern is always binary (error or normal)
+    }
+    
+    // Extract incoming values and blocks
+    Value* val0 = PN->getIncomingValue(0);
+    Value* val1 = PN->getIncomingValue(1);
+    BasicBlock* bb0 = PN->getIncomingBlock(0);
+    BasicBlock* bb1 = PN->getIncomingBlock(1);
+    
+    // Identify which is the sentinel and which is the normal value
+    ConstantInt* sentinel = nullptr;
+    Value* normalValue = nullptr;
+    BasicBlock* errorBB = nullptr;
+    BasicBlock* normalBB = nullptr;
+    
+    if (auto* C0 = dyn_cast<ConstantInt>(val0)) {
+        unsigned bitWidth = C0->getBitWidth();
+        if (C0->getValue() == APInt::getSignedMinValue(bitWidth)) {
+            sentinel = C0;
+            normalValue = val1;
+            errorBB = bb0;
+            normalBB = bb1;
+        }
+    }
+    
+    if (!sentinel) {
+        if (auto* C1 = dyn_cast<ConstantInt>(val1)) {
+            unsigned bitWidth = C1->getBitWidth();
+            if (C1->getValue() == APInt::getSignedMinValue(bitWidth)) {
+                sentinel = C1;
+                normalValue = val0;
+                errorBB = bb1;
+                normalBB = bb0;
+            }
+        }
+    }
+    
+    if (!sentinel) {
+        return false;  // Not a TBB pattern
+    }
+    
+    // =========================================================================
+    // Analyze the branch condition that leads to error vs normal paths
+    // =========================================================================
+    
+    // Find the predecessor that branches to both error and normal BBs
+    BranchInst* branchInst = nullptr;
+    
+    // Check if errorBB and normalBB have a common predecessor
+    for (BasicBlock* pred : predecessors(errorBB)) {
+        if (std::find(pred_begin(normalBB), pred_end(normalBB), pred) != pred_end(normalBB)) {
+            // Found common predecessor
+            if (auto* BI = dyn_cast<BranchInst>(pred->getTerminator())) {
+                if (BI->isConditional()) {
+                    branchInst = BI;
+                    break;
+                }
+            }
+        }
+    }
+    
+    if (!branchInst) {
+        return false;  // Can't find the conditional branch
+    }
+    
+    // Get the branch condition
+    Value* condition = branchInst->getCondition();
+    
+    // =========================================================================
+    // Analyze the condition to eliminate redundant checks
+    // =========================================================================
+    
+    // If condition is always false (error path never taken), replace PHI with normal value
+    if (auto* cmp = dyn_cast<ICmpInst>(condition)) {
+        if (isRedundantErrorCheck(cmp, sentinel)) {
+            // Error check is always false - replace PHI with normal value
+            PN->replaceAllUsesWith(normalValue);
+            
+            // Update statistics
+            if (cmp->getName().contains("is_err")) {
+                numInputChecksElided++;
+            } else if (cmp->getName().contains("overflow")) {
+                numOverflowChecksElided++;
+            } else if (cmp->getName().contains("sentinel")) {
+                numSentinelChecksElided++;
+            }
+            
+            return true;
+        }
+    }
+    
+    // For OR chains in the condition, we could simplify them
+    // but that's handled in optimizeTBBSelect already
+    // Here we just detect the pattern - actual optimization happens at branch level
+    
+    return false;
+}
+
+// ============================================================================
 // Redundancy Analysis
 // ============================================================================
 
@@ -328,7 +464,7 @@ std::optional<TBBValueRange> TBBOptimizerPass::computeValueRange(Value* V, unsig
     // Case 4: ExtractValue from intrinsic (analyze the intrinsic)
     if (auto* EV = dyn_cast<ExtractValueInst>(V)) {
         if (auto* call = dyn_cast<CallInst>(EV->getAggregateOperand())) {
-            if (auto* callee = call->getCalledFunction()) {
+            if (call->getCalledFunction()) {
                 // For overflow intrinsics, we'd need to compute the result range
                 // This is complex, so for now return nullopt
                 return std::nullopt;

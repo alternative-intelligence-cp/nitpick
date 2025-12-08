@@ -12,6 +12,7 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: /home/randy/._____RANDY_____/REP
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/stmt.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/tokens.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen.h \
+  /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_context.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_tbb.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/backend/tbb_optimizer.h \
   /usr/include/alloca.h \
@@ -379,6 +380,7 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: /home/randy/._____RANDY_____/REP
   /usr/lib/llvm-19/include/llvm/ADT/StringMap.h \
   /usr/lib/llvm-19/include/llvm/ADT/StringMapEntry.h \
   /usr/lib/llvm-19/include/llvm/ADT/StringRef.h \
+  /usr/lib/llvm-19/include/llvm/ADT/StringSet.h \
   /usr/lib/llvm-19/include/llvm/ADT/StringSwitch.h \
   /usr/lib/llvm-19/include/llvm/ADT/TinyPtrVector.h \
   /usr/lib/llvm-19/include/llvm/ADT/Twine.h \
@@ -415,6 +417,8 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: /home/randy/._____RANDY_____/REP
   /usr/lib/llvm-19/include/llvm/Analysis/WithCache.h \
   /usr/lib/llvm-19/include/llvm/BinaryFormat/Swift.def \
   /usr/lib/llvm-19/include/llvm/BinaryFormat/Swift.h \
+  /usr/lib/llvm-19/include/llvm/Bitcode/BitcodeReader.h \
+  /usr/lib/llvm-19/include/llvm/Bitstream/BitCodeEnums.h \
   /usr/lib/llvm-19/include/llvm/CodeGen/GenVT.inc \
   /usr/lib/llvm-19/include/llvm/CodeGen/MachineBasicBlock.h \
   /usr/lib/llvm-19/include/llvm/CodeGen/MachineFunction.h \
@@ -496,6 +500,9 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: /home/randy/._____RANDY_____/REP
   /usr/lib/llvm-19/include/llvm/IR/ValueMap.h \
   /usr/lib/llvm-19/include/llvm/IR/VectorBuilder.h \
   /usr/lib/llvm-19/include/llvm/IR/Verifier.h \
+  /usr/lib/llvm-19/include/llvm/IRReader/IRReader.h \
+  /usr/lib/llvm-19/include/llvm/Linker/IRMover.h \
+  /usr/lib/llvm-19/include/llvm/Linker/Linker.h \
   /usr/lib/llvm-19/include/llvm/MC/LaneBitmask.h \
   /usr/lib/llvm-19/include/llvm/MC/MCExpr.h \
   /usr/lib/llvm-19/include/llvm/MC/MCFixup.h \
@@ -3761,8 +3768,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /home/randy/._____RANDY_____/REPOS/aria/src/backend/tbb_optimizer.cpp:
 
-/usr/lib/gcc/x86_64-linux-gnu/13/include/xsavesintrin.h:
-
 /usr/lib/gcc/x86_64-linux-gnu/13/include/xsaveintrin.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/xmmintrin.h:
@@ -3804,8 +3809,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/lib/gcc/x86_64-linux-gnu/13/include/mwaitxintrin.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/lzcntintrin.h:
-
-/usr/lib/gcc/x86_64-linux-gnu/13/include/ia32intrin.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/gfniintrin.h:
 
@@ -3953,6 +3956,14 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/lib/llvm-19/include/llvm/Support/FormatVariadicDetails.h:
 
+/usr/lib/llvm-19/include/llvm/Support/FileSystem/UniqueID.h:
+
+/usr/lib/llvm-19/include/llvm/Support/ErrorOr.h:
+
+/usr/lib/llvm-19/include/llvm/Support/ErrorHandling.h:
+
+/usr/lib/llvm-19/include/llvm/Support/Endian.h:
+
 /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512bwintrin.h:
 
 /usr/include/x86_64-linux-gnu/bits/local_lim.h:
@@ -3977,8 +3988,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/c++/13/bits/stl_iterator_base_types.h:
 
-/usr/include/stdc-predef.h:
-
 /usr/lib/gcc/x86_64-linux-gnu/13/include/xtestintrin.h:
 
 /usr/include/sched.h:
@@ -4000,6 +4009,10 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/ctype.h:
 
 /usr/include/c++/13/vector:
+
+/usr/lib/llvm-19/include/llvm/Support/FileSystem.h:
+
+/usr/include/c++/13/unordered_map:
 
 /usr/include/c++/13/bits/allocator.h:
 
@@ -4024,10 +4037,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/x86_64-linux-gnu/bits/stdint-intn.h:
 
 /usr/lib/llvm-19/include/llvm/ADT/Hashing.h:
-
-/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h:
-
-/usr/include/c++/13/span:
 
 /usr/lib/llvm-19/include/llvm/Transforms/Utils/ValueMapper.h:
 
@@ -4071,6 +4080,10 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/lib/llvm-19/include/llvm/ADT/iterator_range.h:
 
+/usr/lib/gcc/x86_64-linux-gnu/13/include/ia32intrin.h:
+
+/usr/lib/llvm-19/include/llvm/Bitcode/BitcodeReader.h:
+
 /usr/include/unistd.h:
 
 /usr/include/c++/13/ext/string_conversions.h:
@@ -4102,8 +4115,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/c++/13/bits/utility.h:
 
 /usr/include/locale.h:
-
-/usr/include/x86_64-linux-gnu/bits/errno.h:
 
 /usr/lib/llvm-19/include/llvm/Config/Disassemblers.def:
 
@@ -4164,10 +4175,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/c++/13/mutex:
 
 /usr/include/c++/13/bits/unique_lock.h:
-
-/usr/include/c++/13/bits/hashtable.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/error_t.h:
 
 /usr/include/errno.h:
 
@@ -4239,15 +4246,15 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/x86_64-linux-gnu/c++/13/bits/ctype_inline.h:
 
+/usr/include/x86_64-linux-gnu/bits/errno.h:
+
+/usr/lib/llvm-19/include/llvm/ADT/StringSet.h:
+
 /usr/lib/llvm-19/include/llvm/CodeGen/MachineMemOperand.h:
 
 /usr/include/c++/13/bits/chrono.h:
 
 /usr/include/x86_64-linux-gnu/bits/endianness.h:
-
-/usr/include/c++/13/unordered_map:
-
-/usr/lib/llvm-19/include/llvm/Support/FileSystem.h:
 
 /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/escape_analysis.cpp:
 
@@ -4264,6 +4271,12 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/x86_64-linux-gnu/bits/environments.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h:
+
+/usr/lib/llvm-19/include/llvm/Support/Error.h:
+
+/home/randy/._____RANDY_____/REPOS/aria/src/frontend/tokens.h:
+
+/usr/include/c++/13/bits/invoke.h:
 
 /usr/include/x86_64-linux-gnu/sys/stat.h:
 
@@ -4283,22 +4296,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/c++/13/bits/basic_ios.tcc:
 
-/usr/include/c++/13/stdexcept:
-
-/usr/include/c++/13/format:
-
-/usr/include/c++/13/clocale:
-
-/usr/include/x86_64-linux-gnu/sys/syscall.h:
-
-/usr/lib/llvm-19/include/llvm/IR/Dominators.h:
-
-/usr/lib/llvm-19/include/llvm/IR/Function.h:
-
-/usr/include/c++/13/bit:
-
-/usr/lib/llvm-19/include/llvm/ADT/MapVector.h:
-
 /usr/include/c++/13/bits/basic_string.h:
 
 /usr/include/c++/13/bits/basic_ios.h:
@@ -4315,6 +4312,16 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/c++/13/bits/refwrap.h:
 
+/usr/include/c++/13/bits/hashtable.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/error_t.h:
+
+/home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_context.h:
+
+/usr/include/c++/13/debug/debug.h:
+
+/usr/include/c++/13/bits/stl_list.h:
+
 /usr/lib/llvm-19/include/llvm/Support/PointerLikeTypeTraits.h:
 
 /usr/include/c++/13/backward/auto_ptr.h:
@@ -4323,35 +4330,15 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/lib/llvm-19/include/llvm/IR/DebugProgramInstruction.h:
 
-/usr/lib/llvm-19/include/llvm/Support/ReverseIteration.h:
-
-/usr/include/c++/13/bits/exception_defines.h:
-
-/usr/lib/llvm-19/include/llvm/Analysis/Utils/ImportedFunctionsInliningStatistics.h:
-
-/usr/include/c++/13/bits/stl_deque.h:
-
-/usr/include/c++/13/bits/string_view.tcc:
-
-/usr/include/x86_64-linux-gnu/bits/floatn-common.h:
-
-/usr/include/c++/13/bits/requires_hosted.h:
-
-/usr/include/c++/13/list:
-
-/home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/module.h:
-
-/home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/control_flow.h:
-
-/usr/include/x86_64-linux-gnu/sys/single_threaded.h:
-
-/usr/lib/llvm-19/include/llvm/ADT/PointerSumType.h:
-
 /usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h:
 
 /usr/lib/llvm-19/include/llvm/ADT/PointerIntPair.h:
 
 /usr/lib/llvm-19/include/llvm/ADT/PointerUnion.h:
+
+/usr/include/c++/13/bit:
+
+/usr/lib/llvm-19/include/llvm/ADT/MapVector.h:
 
 /usr/include/x86_64-linux-gnu/asm/errno.h:
 
@@ -4376,6 +4363,30 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/c++/13/bits/stl_raw_storage_iter.h:
 
 /usr/lib/llvm-19/include/llvm/ADT/APInt.h:
+
+/usr/lib/llvm-19/include/llvm/Support/ReverseIteration.h:
+
+/usr/include/c++/13/bits/exception_defines.h:
+
+/usr/lib/llvm-19/include/llvm/Analysis/Utils/ImportedFunctionsInliningStatistics.h:
+
+/usr/include/c++/13/bits/stl_deque.h:
+
+/usr/include/c++/13/bits/string_view.tcc:
+
+/usr/include/x86_64-linux-gnu/bits/floatn-common.h:
+
+/usr/include/c++/13/bits/requires_hosted.h:
+
+/usr/include/c++/13/list:
+
+/home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/module.h:
+
+/home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/control_flow.h:
+
+/usr/include/x86_64-linux-gnu/sys/single_threaded.h:
+
+/usr/lib/llvm-19/include/llvm/ADT/PointerSumType.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vpopcntdqintrin.h:
 
@@ -4421,6 +4432,10 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/c++/13/bits/ranges_cmp.h:
 
+/usr/include/stdc-predef.h:
+
+/usr/lib/llvm-19/include/llvm/Bitstream/BitCodeEnums.h:
+
 /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_tbb.cpp:
 
 /usr/lib/llvm-19/include/llvm/IR/GlobalIFunc.h:
@@ -4439,11 +4454,15 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/c++/13/bits/alloc_traits.h:
 
+/usr/include/c++/13/bits/uniform_int_dist.h:
+
 /usr/lib/llvm-19/include/llvm/MC/MCFixup.h:
 
 /usr/include/c++/13/bits/locale_classes.tcc:
 
-/usr/include/c++/13/bits/uniform_int_dist.h:
+/usr/include/c++/13/initializer_list:
+
+/usr/include/c++/13/bits/stl_stack.h:
 
 /usr/include/x86_64-linux-gnu/bits/stat.h:
 
@@ -4456,6 +4475,18 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/c++/13/bits/stl_multimap.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/__locale_t.h:
+
+/usr/include/c++/13/stdexcept:
+
+/usr/include/c++/13/format:
+
+/usr/include/c++/13/clocale:
+
+/usr/include/x86_64-linux-gnu/sys/syscall.h:
+
+/usr/lib/llvm-19/include/llvm/IR/Dominators.h:
+
+/usr/lib/llvm-19/include/llvm/IR/Function.h:
 
 /usr/include/c++/13/bits/locale_classes.h:
 
@@ -4484,10 +4515,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/lib/llvm-19/include/llvm/Config/AsmPrinters.def:
 
 /usr/lib/llvm-19/include/llvm/Support/Compression.h:
-
-/usr/include/c++/13/debug/debug.h:
-
-/usr/include/c++/13/bits/stl_list.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/f16cintrin.h:
 
@@ -4551,6 +4578,8 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/c++/13/bits/quoted_string.h:
 
+/usr/lib/llvm-19/include/llvm/Linker/Linker.h:
+
 /usr/include/c++/13/system_error:
 
 /usr/include/c++/13/bits/ostream_insert.h:
@@ -4564,12 +4593,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/lib/llvm-19/include/llvm/ADT/StringRef.h:
 
 /usr/include/c++/13/bits/shared_ptr.h:
-
-/usr/include/c++/13/initializer_list:
-
-/usr/include/c++/13/bits/stl_stack.h:
-
-/usr/lib/llvm-19/include/llvm/Support/ErrorHandling.h:
 
 /usr/include/c++/13/ciso646:
 
@@ -4681,6 +4704,10 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/c++/13/bits/max_size_type.h:
 
+/usr/include/c++/13/span:
+
+/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h:
+
 /usr/include/x86_64-linux-gnu/bits/sched.h:
 
 /usr/include/x86_64-linux-gnu/bits/time.h:
@@ -4730,8 +4757,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/x86_64-linux-gnu/bits/types.h:
 
 /usr/lib/llvm-19/include/llvm/ADT/EpochTracker.h:
-
-/usr/lib/llvm-19/include/llvm/Support/Endian.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h:
 
@@ -4789,6 +4814,10 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/include/x86_64-linux-gnu/bits/uintn-identity.h:
 
+/usr/lib/gcc/x86_64-linux-gnu/13/include/xsavesintrin.h:
+
+/usr/lib/llvm-19/include/llvm/Linker/IRMover.h:
+
 /usr/include/x86_64-linux-gnu/bits/unistd_ext.h:
 
 /usr/lib/llvm-19/include/llvm/IR/DerivedTypes.h:
@@ -4798,12 +4827,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/include/x86_64-linux-gnu/bits/stdint-least.h:
 
 /usr/lib/llvm-19/include/llvm/IR/IntrinsicEnums.inc:
-
-/home/randy/._____RANDY_____/REPOS/aria/src/frontend/tokens.h:
-
-/usr/include/c++/13/bits/invoke.h:
-
-/usr/lib/llvm-19/include/llvm/Support/Error.h:
 
 /usr/include/c++/13/charconv:
 
@@ -4938,8 +4961,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/lib/llvm-19/include/llvm/IR/FixedMetadataKinds.def:
 
 /usr/lib/llvm-19/include/llvm/ADT/SmallString.h:
-
-/usr/lib/llvm-19/include/llvm/Support/ErrorOr.h:
 
 /usr/lib/llvm-19/include/llvm/ADT/StringSwitch.h:
 
@@ -5099,6 +5120,10 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 
 /usr/lib/llvm-19/include/llvm/IR/LLVMContext.h:
 
+/usr/lib/llvm-19/include/llvm/Support/Format.h:
+
+/usr/lib/llvm-19/include/llvm/IR/OperandTraits.h:
+
 /usr/lib/llvm-19/include/llvm/IR/PseudoProbe.h:
 
 /usr/lib/llvm-19/include/llvm/Support/CFGDiff.h:
@@ -5110,6 +5135,8 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/lib/llvm-19/include/llvm/IR/TrackingMDRef.h:
 
 /usr/lib/llvm-19/include/llvm/IR/VectorBuilder.h:
+
+/usr/lib/llvm-19/include/llvm/IRReader/IRReader.h:
 
 /usr/lib/llvm-19/include/llvm/MC/LaneBitmask.h:
 
@@ -5172,9 +5199,3 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/defer.h:
 
 /usr/lib/llvm-19/include/llvm/Support/Debug.h:
-
-/usr/lib/llvm-19/include/llvm/Support/FileSystem/UniqueID.h:
-
-/usr/lib/llvm-19/include/llvm/IR/OperandTraits.h:
-
-/usr/lib/llvm-19/include/llvm/Support/Format.h:

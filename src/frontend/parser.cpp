@@ -1974,8 +1974,8 @@ std::unique_ptr<FuncDecl> Parser::parseFuncDecl() {
     // Parse body block
     auto body = parseBlock();
     
-    // Create FuncDecl node
-    auto func_decl = std::make_unique<FuncDecl>(name, std::move(params), return_type, std::move(body));
+    // Create FuncDecl node (no generics in old-style parser)
+    auto func_decl = std::make_unique<FuncDecl>(name, std::vector<std::string>(), std::move(params), return_type, std::move(body));
     func_decl->is_async = is_async;
     func_decl->is_pub = is_pub;
     

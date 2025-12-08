@@ -33,6 +33,17 @@ std::shared_ptr<Type> parseType(const std::string& type_str) {
     if (type_str == "dyn") return makeDynType();
     if (type_str == "func") return makeFuncType();
     if (type_str == "result" || type_str == "Result") return std::make_shared<Type>(TypeKind::STRUCT, "result");
+    
+    // SIMD Vector types
+    if (type_str == "vec2") return std::make_shared<Type>(TypeKind::VEC2, "vec2");
+    if (type_str == "vec3") return std::make_shared<Type>(TypeKind::VEC3, "vec3");
+    if (type_str == "vec4") return std::make_shared<Type>(TypeKind::VEC4, "vec4");
+    if (type_str == "dvec2") return std::make_shared<Type>(TypeKind::DVEC2, "dvec2");
+    if (type_str == "dvec3") return std::make_shared<Type>(TypeKind::DVEC3, "dvec3");
+    if (type_str == "dvec4") return std::make_shared<Type>(TypeKind::DVEC4, "dvec4");
+    if (type_str == "ivec2") return std::make_shared<Type>(TypeKind::IVEC2, "ivec2");
+    if (type_str == "ivec3") return std::make_shared<Type>(TypeKind::IVEC3, "ivec3");
+    if (type_str == "ivec4") return std::make_shared<Type>(TypeKind::IVEC4, "ivec4");
 
     // Default to int64 for unknown types (for now)
     return makeIntType(64);

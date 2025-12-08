@@ -10,6 +10,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/memory/allocator.c" "CMakeFiles/aria_runtime.dir/src/runtime/memory/allocator.c.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/memory/allocator.c.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/memory/wildx_allocator.c" "CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o.d"
+  "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/platform/platform.c" "CMakeFiles/aria_runtime.dir/src/runtime/platform/platform.c.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/platform/platform.c.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/concurrency/ramp.cpp" "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/concurrency/scheduler.cpp" "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/core/string_impl.cpp" "CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o.d"

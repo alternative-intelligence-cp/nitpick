@@ -89,6 +89,7 @@ target_link_libraries(ariac
 add_library(aria_runtime STATIC
  src/runtime/memory/allocator.c        # The bridge (aria.alloc -> mi_malloc)
  src/runtime/memory/wildx_allocator.c  # Wildx allocator (executable memory for JIT)
+ src/runtime/platform/platform.c       # Cross-platform abstraction layer (NEW)
  src/runtime/gc/gc_impl.cpp            # Major/Minor GC Logic
  src/runtime/gc/nursery.cpp            # Fragmented Nursery Implementation
  src/runtime/io_windows.cpp            # lpReserved2 implementation

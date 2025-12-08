@@ -366,13 +366,25 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/include/c++/13/bits/istream.tcc \
  /usr/lib/llvm-19/include/llvm/IR/Verifier.h \
  /usr/lib/llvm-19/include/llvm/IR/InlineAsm.h \
- /usr/lib/llvm-19/include/llvm/Target/TargetMachine.h \
- /usr/lib/llvm-19/include/llvm/Support/Allocator.h \
+ /usr/lib/llvm-19/include/llvm/Linker/Linker.h \
+ /usr/lib/llvm-19/include/llvm/ADT/StringSet.h \
+ /usr/lib/llvm-19/include/llvm/Linker/IRMover.h \
+ /usr/lib/llvm-19/include/llvm/ADT/FunctionExtras.h \
+ /usr/lib/llvm-19/include/llvm/IRReader/IRReader.h \
+ /usr/lib/llvm-19/include/llvm/Bitcode/BitcodeReader.h \
+ /usr/lib/llvm-19/include/llvm/Bitstream/BitCodeEnums.h \
+ /usr/lib/llvm-19/include/llvm/Support/Endian.h \
  /usr/lib/llvm-19/include/llvm/Support/Error.h \
  /usr/lib/llvm-19/include/llvm-c/Error.h \
  /usr/lib/llvm-19/include/llvm/Support/Debug.h \
  /usr/lib/llvm-19/include/llvm/Support/ErrorOr.h \
  /usr/lib/llvm-19/include/llvm/Support/Format.h \
+ /usr/lib/llvm-19/include/llvm/Support/MemoryBufferRef.h \
+ /usr/lib/llvm-19/include/llvm/Support/SourceMgr.h \
+ /usr/lib/llvm-19/include/llvm/Support/MemoryBuffer.h \
+ /usr/lib/llvm-19/include/llvm/Support/SMLoc.h \
+ /usr/lib/llvm-19/include/llvm/Target/TargetMachine.h \
+ /usr/lib/llvm-19/include/llvm/Support/Allocator.h \
  /usr/lib/llvm-19/include/llvm/Support/PGOOptions.h \
  /usr/lib/llvm-19/include/llvm/ADT/IntrusiveRefCntPtr.h \
  /usr/include/c++/13/atomic \
@@ -405,7 +417,6 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/include/c++/13/variant \
  /usr/lib/llvm-19/include/llvm/Support/FileSystem/UniqueID.h \
  /usr/lib/llvm-19/include/llvm/Support/MD5.h \
- /usr/lib/llvm-19/include/llvm/Support/Endian.h \
  /usr/lib/llvm-19/include/llvm/MC/TargetRegistry.h \
  /usr/lib/llvm-19/include/llvm-c/DisassemblerTypes.h \
  /usr/lib/llvm-19/include/llvm/MC/MCObjectFileInfo.h \
@@ -414,7 +425,6 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/lib/llvm-19/include/llvm/MC/MCSection.h \
  /usr/lib/llvm-19/include/llvm/MC/MCFragment.h \
  /usr/lib/llvm-19/include/llvm/MC/MCFixup.h \
- /usr/lib/llvm-19/include/llvm/Support/SMLoc.h \
  /usr/lib/llvm-19/include/llvm/MC/MCInst.h \
  /usr/lib/llvm-19/include/llvm/MC/SectionKind.h \
  /usr/lib/llvm-19/include/llvm/Support/FormattedStream.h \
@@ -435,7 +445,6 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/include/c++/13/bits/unique_lock.h /usr/include/c++/13/shared_mutex \
  /usr/lib/llvm-19/include/llvm/Analysis/TargetLibraryInfo.def \
  /usr/lib/llvm-19/include/llvm/CodeGen/MachinePassManager.h \
- /usr/lib/llvm-19/include/llvm/ADT/FunctionExtras.h \
  /usr/lib/llvm-19/include/llvm/CodeGen/MachineFunction.h \
  /usr/lib/llvm-19/include/llvm/CodeGen/MachineBasicBlock.h \
  /usr/lib/llvm-19/include/llvm/ADT/SparseBitVector.h \
@@ -511,9 +520,6 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/lib/llvm-19/include/llvm/IR/ValueMap.h \
  /usr/lib/llvm-19/include/llvm/Support/Mutex.h \
  /usr/lib/llvm-19/include/llvm/IR/DiagnosticInfo.h \
- /usr/lib/llvm-19/include/llvm/Support/SourceMgr.h \
- /usr/lib/llvm-19/include/llvm/Support/MemoryBuffer.h \
- /usr/lib/llvm-19/include/llvm/Support/MemoryBufferRef.h \
  /usr/lib/llvm-19/include/llvm/Analysis/TargetTransformInfo.h \
  /usr/lib/llvm-19/include/llvm/ADT/SmallBitVector.h \
  /usr/lib/llvm-19/include/llvm/Support/InstructionCost.h \
