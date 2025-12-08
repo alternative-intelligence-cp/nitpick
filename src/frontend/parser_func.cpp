@@ -33,7 +33,20 @@ bool Parser::isTypeToken(TokenType type) {
            type == TOKEN_TYPE_UINT32 || type == TOKEN_TYPE_UINT64 ||
            type == TOKEN_TYPE_BOOL || type == TOKEN_TYPE_VOID ||
            type == TOKEN_TYPE_STRING || type == TOKEN_TYPE_RESULT ||
-           type == TOKEN_TYPE_FUNC;
+           type == TOKEN_TYPE_FUNC ||
+           // Vector types
+           type == TOKEN_TYPE_VEC2 || type == TOKEN_TYPE_VEC3 || type == TOKEN_TYPE_VEC4 || type == TOKEN_TYPE_VEC9 ||
+           type == TOKEN_TYPE_DVEC2 || type == TOKEN_TYPE_DVEC3 || type == TOKEN_TYPE_DVEC4 ||
+           type == TOKEN_TYPE_IVEC2 || type == TOKEN_TYPE_IVEC3 || type == TOKEN_TYPE_IVEC4 ||
+           type == TOKEN_TYPE_UVEC2 || type == TOKEN_TYPE_UVEC3 || type == TOKEN_TYPE_UVEC4 ||
+           type == TOKEN_TYPE_BVEC2 || type == TOKEN_TYPE_BVEC3 || type == TOKEN_TYPE_BVEC4 ||
+           // Matrix types
+           type == TOKEN_TYPE_MAT2 || type == TOKEN_TYPE_MAT3 || type == TOKEN_TYPE_MAT4 ||
+           type == TOKEN_TYPE_MAT2X3 || type == TOKEN_TYPE_MAT2X4 || type == TOKEN_TYPE_MAT3X2 ||
+           type == TOKEN_TYPE_MAT3X4 || type == TOKEN_TYPE_MAT4X2 || type == TOKEN_TYPE_MAT4X3 ||
+           type == TOKEN_TYPE_DMAT2 || type == TOKEN_TYPE_DMAT3 || type == TOKEN_TYPE_DMAT4 ||
+           type == TOKEN_TYPE_DMAT2X3 || type == TOKEN_TYPE_DMAT2X4 || type == TOKEN_TYPE_DMAT3X2 ||
+           type == TOKEN_TYPE_DMAT3X4 || type == TOKEN_TYPE_DMAT4X2 || type == TOKEN_TYPE_DMAT4X3;
 }
 
 // Helper: Parse Parameter List: (type:name, type:name)
@@ -112,7 +125,20 @@ std::unique_ptr<FuncDecl> Parser::parseFuncDecl() {
         current.type == TOKEN_TYPE_UINT32 || current.type == TOKEN_TYPE_UINT64 ||
         current.type == TOKEN_TYPE_BOOL || current.type == TOKEN_TYPE_VOID ||
         current.type == TOKEN_IDENTIFIER || current.type == TOKEN_TYPE_STRING ||
-        current.type == TOKEN_TYPE_RESULT) {
+        current.type == TOKEN_TYPE_RESULT ||
+        // Vector types
+        current.type == TOKEN_TYPE_VEC2 || current.type == TOKEN_TYPE_VEC3 || current.type == TOKEN_TYPE_VEC4 || current.type == TOKEN_TYPE_VEC9 ||
+        current.type == TOKEN_TYPE_DVEC2 || current.type == TOKEN_TYPE_DVEC3 || current.type == TOKEN_TYPE_DVEC4 ||
+        current.type == TOKEN_TYPE_IVEC2 || current.type == TOKEN_TYPE_IVEC3 || current.type == TOKEN_TYPE_IVEC4 ||
+        current.type == TOKEN_TYPE_UVEC2 || current.type == TOKEN_TYPE_UVEC3 || current.type == TOKEN_TYPE_UVEC4 ||
+        current.type == TOKEN_TYPE_BVEC2 || current.type == TOKEN_TYPE_BVEC3 || current.type == TOKEN_TYPE_BVEC4 ||
+        // Matrix types
+        current.type == TOKEN_TYPE_MAT2 || current.type == TOKEN_TYPE_MAT3 || current.type == TOKEN_TYPE_MAT4 ||
+        current.type == TOKEN_TYPE_MAT2X3 || current.type == TOKEN_TYPE_MAT2X4 || current.type == TOKEN_TYPE_MAT3X2 ||
+        current.type == TOKEN_TYPE_MAT3X4 || current.type == TOKEN_TYPE_MAT4X2 || current.type == TOKEN_TYPE_MAT4X3 ||
+        current.type == TOKEN_TYPE_DMAT2 || current.type == TOKEN_TYPE_DMAT3 || current.type == TOKEN_TYPE_DMAT4 ||
+        current.type == TOKEN_TYPE_DMAT2X3 || current.type == TOKEN_TYPE_DMAT2X4 || current.type == TOKEN_TYPE_DMAT3X2 ||
+        current.type == TOKEN_TYPE_DMAT3X4 || current.type == TOKEN_TYPE_DMAT4X2 || current.type == TOKEN_TYPE_DMAT4X3) {
         returnType = current.lexeme;
         advance();  // Consume the return type token
     } else {

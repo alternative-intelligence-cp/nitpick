@@ -12,6 +12,8 @@
 #include "../ast/control_flow.h"
 #include "../ast/defer.h"
 #include "../ast/loops.h"
+#include <sstream>
+#include <iostream>
 
 namespace aria {
 namespace sema {
@@ -282,7 +284,12 @@ void TypeChecker::visit(frontend::LambdaExpr* node) {
         return;
     }
     
-    // TODO: Type check lambda body in a new scope
+    // Type check lambda body
+    if (node->body) {
+        node->body->accept(*this);
+    }
+    
+    // TODO: Check function parameters
     // TODO: If immediately invoked, check argument types match parameters
 }
 
@@ -576,6 +583,194 @@ void TypeChecker::visit(frontend::UnwrapExpr* node) {
 }
 
 // Helper: Check type compatibility
+// Visit VectorLiteral - Validate vector/matrix constructors
+void TypeChecker::visit(frontend::VectorLiteral* node) {
+    // Map vector type name to expected component count and base type
+    struct VectorTypeInfo {
+        int component_count;
+        TypeKind element_kind;
+        std::string element_type_name;
+    };
+    
+    std::map<std::string, VectorTypeInfo> vector_types = {
+        {"vec2",  {2, TypeKind::FLT32, "flt32"}},
+        {"vec3",  {3, TypeKind::FLT32, "flt32"}},
+        {"vec4",  {4, TypeKind::FLT32, "flt32"}},
+        {"vec9",  {9, TypeKind::FLT32, "flt32"}},
+        {"dvec2", {2, TypeKind::FLT64, "flt64"}},
+        {"dvec3", {3, TypeKind::FLT64, "flt64"}},
+        {"dvec4", {4, TypeKind::FLT64, "flt64"}},
+        {"ivec2", {2, TypeKind::INT32, "int32"}},
+        {"ivec3", {3, TypeKind::INT32, "int32"}},
+        {"ivec4", {4, TypeKind::INT32, "int32"}},
+        {"uvec2", {2, TypeKind::UINT32, "uint32"}},
+        {"uvec3", {3, TypeKind::UINT32, "uint32"}},
+        {"uvec4", {4, TypeKind::UINT32, "uint32"}},
+        {"bvec2", {2, TypeKind::BOOL, "bool"}},
+        {"bvec3", {3, TypeKind::BOOL, "bool"}},
+        {"bvec4", {4, TypeKind::BOOL, "bool"}},
+        // Matrices (for now, just validate component counts)
+        {"mat2",  {4, TypeKind::FLT32, "flt32"}},   // 2x2 = 4
+        {"mat3",  {9, TypeKind::FLT32, "flt32"}},   // 3x3 = 9
+        {"mat4",  {16, TypeKind::FLT32, "flt32"}},  // 4x4 = 16
+        {"mat2x3", {6, TypeKind::FLT32, "flt32"}},  // 2 cols * 3 rows
+        {"mat2x4", {8, TypeKind::FLT32, "flt32"}},
+        {"mat3x2", {6, TypeKind::FLT32, "flt32"}},
+        {"mat3x4", {12, TypeKind::FLT32, "flt32"}},
+        {"mat4x2", {8, TypeKind::FLT32, "flt32"}},
+        {"mat4x3", {12, TypeKind::FLT32, "flt32"}},
+        {"dmat2",  {4, TypeKind::FLT64, "flt64"}},
+        {"dmat3",  {9, TypeKind::FLT64, "flt64"}},
+        {"dmat4",  {16, TypeKind::FLT64, "flt64"}},
+        {"dmat2x3", {6, TypeKind::FLT64, "flt64"}},
+        {"dmat2x4", {8, TypeKind::FLT64, "flt64"}},
+        {"dmat3x2", {6, TypeKind::FLT64, "flt64"}},
+        {"dmat3x4", {12, TypeKind::FLT64, "flt64"}},
+        {"dmat4x2", {8, TypeKind::FLT64, "flt64"}},
+        {"dmat4x3", {12, TypeKind::FLT64, "flt64"}},
+    };
+    
+    // Lookup the vector type info
+    auto it = vector_types.find(node->vector_type);
+    if (it == vector_types.end()) {
+        std::ostringstream oss;
+        oss << "Unknown vector/matrix type: " << node->vector_type;
+        addError(oss.str());
+        current_expr_type = makeErrorType();
+        return;
+    }
+    
+    const VectorTypeInfo& info = it->second;
+    int expected_components = info.component_count;
+    TypeKind expected_element_kind = info.element_kind;
+    
+    // CASE 1: Empty constructor - allowed, will zero-initialize
+    if (node->elements.empty()) {
+        // Valid: vec4() creates {0, 0, 0, 0}
+        current_expr_type = parseType(node->vector_type);
+        return;
+    }
+    
+    // CASE 2: Single scalar argument - broadcasting (splat)
+    if (node->elements.size() == 1) {
+        node->elements[0]->accept(*this);
+        auto arg_type = current_expr_type;
+        
+        // Check if it's a scalar, not another vector
+        if (arg_type->kind >= TypeKind::VEC2 && arg_type->kind <= TypeKind::IVEC4) {
+            std::ostringstream oss;
+            oss << "Cannot broadcast vector to " << node->vector_type 
+                << " - single argument must be scalar for broadcasting";
+            addError(oss.str());
+            current_expr_type = makeErrorType();
+            return;
+        }
+        
+        // Check type compatibility
+        bool compatible = false;
+        if (expected_element_kind == TypeKind::BOOL) {
+            compatible = (arg_type->kind == TypeKind::BOOL);
+        } else if (expected_element_kind == TypeKind::INT32 || expected_element_kind == TypeKind::UINT32) {
+            compatible = arg_type->isInteger();
+        } else if (expected_element_kind == TypeKind::FLT32 || expected_element_kind == TypeKind::FLT64) {
+            compatible = arg_type->isNumeric();  // Allow int->float conversion
+        }
+        
+        if (!compatible) {
+            std::ostringstream oss;
+            oss << "Type mismatch in " << node->vector_type << " constructor: expected "
+                << info.element_type_name << ", got " << arg_type->toString();
+            addError(oss.str());
+        }
+        
+        // Valid broadcasting: vec4(1.0) -> {1.0, 1.0, 1.0, 1.0}
+        current_expr_type = parseType(node->vector_type);
+        return;
+    }
+    
+    // CASE 3: Multiple arguments - component-wise or composition construction
+    // Flatten arguments and count total components
+    int total_components = 0;
+    std::vector<std::shared_ptr<Type>> element_types;
+    
+    for (auto& elem : node->elements) {
+        elem->accept(*this);
+        auto elem_type = current_expr_type;
+        element_types.push_back(elem_type);
+        
+        // Check if element is a vector itself (composition)
+        int elem_components = 1;  // Default: scalar = 1 component
+        if (elem_type->kind >= TypeKind::VEC2 && elem_type->kind <= TypeKind::IVEC4) {
+            // It's a vector - count its components
+            switch (elem_type->kind) {
+                case TypeKind::VEC2:
+                case TypeKind::DVEC2:
+                case TypeKind::IVEC2:
+                    elem_components = 2; break;
+                case TypeKind::VEC3:
+                case TypeKind::DVEC3:
+                case TypeKind::IVEC3:
+                    elem_components = 3; break;
+                case TypeKind::VEC4:
+                case TypeKind::DVEC4:
+                case TypeKind::IVEC4:
+                    elem_components = 4; break;
+                default:
+                    elem_components = 1;
+            }
+        }
+        
+        total_components += elem_components;
+    }
+    
+    // Validate component count
+    if (total_components != expected_components) {
+        std::ostringstream oss;
+        oss << node->vector_type << " constructor requires " << expected_components
+            << " components, but " << total_components << " were provided";
+        addError(oss.str());
+        current_expr_type = makeErrorType();
+        return;
+    }
+    
+    // Validate element types
+    for (auto& elem_type : element_types) {
+        bool compatible = false;
+        
+        // If element is a vector, check base compatibility
+        if (elem_type->kind >= TypeKind::VEC2 && elem_type->kind <= TypeKind::IVEC4) {
+            // Composition case: vec4(vec2(...), z, w)
+            // Check that the vector's base type is compatible
+            if (expected_element_kind == TypeKind::FLT32 || expected_element_kind == TypeKind::FLT64) {
+                // Float vectors accept float vectors
+                compatible = (elem_type->kind >= TypeKind::VEC2 && elem_type->kind <= TypeKind::DVEC4);
+            } else if (expected_element_kind == TypeKind::INT32 || expected_element_kind == TypeKind::UINT32) {
+                // Integer vectors accept integer vectors
+                compatible = (elem_type->kind >= TypeKind::IVEC2 && elem_type->kind <= TypeKind::IVEC4);
+            }
+        } else {
+            // Scalar case
+            if (expected_element_kind == TypeKind::BOOL) {
+                compatible = (elem_type->kind == TypeKind::BOOL);
+            } else if (expected_element_kind == TypeKind::INT32 || expected_element_kind == TypeKind::UINT32) {
+                compatible = elem_type->isInteger();
+            } else if (expected_element_kind == TypeKind::FLT32 || expected_element_kind == TypeKind::FLT64) {
+                compatible = elem_type->isNumeric();  // Allow int->float implicit conversion
+            }
+        }
+        
+        if (!compatible) {
+            std::ostringstream oss;
+            oss << "Type mismatch in " << node->vector_type << " constructor: expected "
+                << info.element_type_name << " components, got " << elem_type->toString();
+            addError(oss.str());
+        }
+    }
+    
+    // Set result type
+    current_expr_type = parseType(node->vector_type);
+}
+
 bool TypeChecker::checkTypeCompatibility(const Type& expected, const Type& actual) {
     // Exact match
     if (expected.equals(actual)) {

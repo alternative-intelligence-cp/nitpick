@@ -184,7 +184,7 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
         case TOKEN_TYPE_DMAT4X2:
         case TOKEN_TYPE_DMAT4X3: {
             // Store the vector/matrix type name
-            std::string typeName = token.lexeme;
+            std::string typeName = token.value;
             auto vecLit = std::make_unique<VectorLiteral>(typeName);
             
             // Consume opening parenthesis

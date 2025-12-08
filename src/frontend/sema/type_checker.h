@@ -60,6 +60,7 @@ public:
     void visit(frontend::UnaryOp* node) override;
     void visit(frontend::CallExpr* node) override;
     void visit(frontend::LambdaExpr* node) override;
+    void visit(frontend::VectorLiteral* node) override;
 
     // Visitor methods for statements
     void visit(frontend::VarDecl* node) override;
