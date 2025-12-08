@@ -84,6 +84,7 @@ using aria::frontend::IfStmt;
 using aria::frontend::DeferStmt;
 using aria::frontend::Expression;
 using aria::frontend::IntLiteral;
+using aria::frontend::FloatLiteral;
 using aria::frontend::BoolLiteral;
 using aria::frontend::NullLiteral;
 using aria::frontend::VarExpr;
@@ -183,6 +184,103 @@ class CodeGenVisitor : public AstVisitor {
 
 public:
     CodeGenVisitor(CodeGenContext& context) : ctx(context) {}
+
+    // -------------------------------------------------------------------------
+    // Helper: Generic Type Inference
+    // -------------------------------------------------------------------------
+    
+    // Infer concrete types for generic parameters from call arguments
+    // Example: max(5, 10) -> infer T=int8 from both arguments
+    std::vector<std::string> inferGenericTypes(const GenericTemplate& tmpl, CallExpr* call) {
+        if (call->arguments.size() != tmpl.ast->parameters.size()) {
+            return {};  // Argument count mismatch, can't infer
+        }
+        
+        // Map: generic param name -> inferred type
+        std::map<std::string, std::string> inferredTypes;
+        
+        // Analyze each argument to infer types
+        for (size_t i = 0; i < call->arguments.size(); ++i) {
+            const auto& param = tmpl.ast->parameters[i];
+            Expression* argExpr = call->arguments[i].get();
+            
+            // Get the Aria type of the argument
+            std::string argType = inferExpressionType(argExpr);
+            if (argType.empty()) {
+                return {};  // Can't determine argument type
+            }
+            
+            // Check if parameter type is a generic type parameter
+            std::string paramType = param.type;
+            bool isGenericParam = false;
+            for (const auto& typeParam : tmpl.typeParams) {
+                if (paramType == typeParam) {
+                    isGenericParam = true;
+                    
+                    // Check for conflicting inferences
+                    if (inferredTypes.count(typeParam) > 0) {
+                        if (inferredTypes[typeParam] != argType) {
+                            throw std::runtime_error(
+                                "Type inference conflict for parameter '" + typeParam + "': " +
+                                "inferred both '" + inferredTypes[typeParam] + "' and '" + argType + "'"
+                            );
+                        }
+                    } else {
+                        inferredTypes[typeParam] = argType;
+                    }
+                    break;
+                }
+            }
+        }
+        
+        // Build result vector in the same order as typeParams
+        std::vector<std::string> result;
+        for (const auto& typeParam : tmpl.typeParams) {
+            if (inferredTypes.count(typeParam) == 0) {
+                return {};  // Couldn't infer this type parameter
+            }
+            result.push_back(inferredTypes[typeParam]);
+        }
+        
+        return result;
+    }
+    
+    // Infer the Aria type of an expression (simplified version)
+    std::string inferExpressionType(Expression* expr) {
+        // Integer literals
+        if (auto* intLit = dynamic_cast<IntLiteral*>(expr)) {
+            // Default to int32 for literals without suffix
+            return "int32";
+        }
+        
+        // Float literals
+        if (auto* floatLit = dynamic_cast<FloatLiteral*>(expr)) {
+            return "flt64";
+        }
+        
+        // Boolean literals
+        if (auto* boolLit = dynamic_cast<BoolLiteral*>(expr)) {
+            return "bool";
+        }
+        
+        // Variable references - look up in symbol table
+        if (auto* varExpr = dynamic_cast<VarExpr*>(expr)) {
+            auto* sym = ctx.lookup(varExpr->name);
+            if (sym) {
+                return sym->ariaType;
+            }
+        }
+        
+        // Binary operations - infer from operands
+        if (auto* binOp = dynamic_cast<BinaryOp*>(expr)) {
+            // For now, assume both operands have the same type
+            return inferExpressionType(binOp->left.get());
+        }
+        
+        // For other expression types, we'd need more sophisticated analysis
+        // This is a simplified implementation - full type inference would be more complex
+        return "";
+    }
 
     // -------------------------------------------------------------------------
     // Helper: Closure Capture Analysis
@@ -4034,20 +4132,70 @@ public:
     void visit(frontend::LambdaExpr* node) override {} // Handled by visitExpr()
     void visit(VarExpr* node) override {}
     void visit(CallExpr* node) override {
-        // Look up function in symbol table first, then module
-        Function* callee = nullptr;
-        auto* sym = ctx.lookup(node->function_name);
-        if (sym && !sym->is_ref) {
-            callee = dyn_cast_or_null<Function>(sym->val);
-        }
-        if (!callee) {
-            callee = ctx.module->getFunction(node->function_name);
-        }
+        // =====================================================================
+        // GENERIC FUNCTION CALL DETECTION
+        // =====================================================================
+        // Check if this is a call to a generic function template
+        auto templateIt = genericTemplates.find(node->function_name);
+        bool isGenericCall = (templateIt != genericTemplates.end());
         
-        if (!callee) {
-            std::string errorMsg = "Undefined function '" + node->function_name + "'";
-            errorMsg += "\n\nMake sure the function is declared before it's called.";
-            throw std::runtime_error(errorMsg);
+        Function* callee = nullptr;
+        
+        if (isGenericCall) {
+            // This is a generic function call - perform monomorphization
+            GenericTemplate& tmpl = templateIt->second;
+            
+            std::vector<std::string> concreteTypes;
+            
+            if (!node->type_arguments.empty()) {
+                // Explicit type arguments provided: max<int8, int8>(5, 10)
+                concreteTypes = node->type_arguments;
+            } else {
+                // Type inference: deduce T from argument types
+                // Example: max(5, 10) infers T=int8 from arguments
+                concreteTypes = inferGenericTypes(tmpl, node);
+                
+                if (concreteTypes.empty()) {
+                    throw std::runtime_error(
+                        "Cannot infer generic type arguments for function '" + 
+                        node->function_name + "'. \n" +
+                        "Provide explicit type arguments: " + node->function_name + "<type>(...)"
+                    );
+                }
+            }
+            
+            // Validate argument count matches template parameter count
+            if (concreteTypes.size() != tmpl.typeParams.size()) {
+                throw std::runtime_error(
+                    "Generic function '" + node->function_name + "' expects " +
+                    std::to_string(tmpl.typeParams.size()) + " type argument(s) but got " +
+                    std::to_string(concreteTypes.size())
+                );
+            }
+            
+            // Monomorphize: generate specialized version
+            callee = monomorphize(node->function_name, concreteTypes);
+            
+            if (!callee) {
+                throw std::runtime_error(
+                    "Failed to instantiate generic function '" + node->function_name + "'"
+                );
+            }
+        } else {
+            // Regular function call - look up function in symbol table first, then module
+            auto* sym = ctx.lookup(node->function_name);
+            if (sym && !sym->is_ref) {
+                callee = dyn_cast_or_null<Function>(sym->val);
+            }
+            if (!callee) {
+                callee = ctx.module->getFunction(node->function_name);
+            }
+            
+            if (!callee) {
+                std::string errorMsg = "Undefined function '" + node->function_name + "'";
+                errorMsg += "\n\nMake sure the function is declared before it's called.";
+                throw std::runtime_error(errorMsg);
+            }
         }
         
         // Evaluate arguments
