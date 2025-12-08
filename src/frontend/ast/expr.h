@@ -286,6 +286,22 @@ public:
     }
 };
 
+// Vector Literal Expression (GLSL-style constructors)
+// Example: vec4(1.0, 2.0, 3.0, 4.0), vec3(0.0), ivec2(1, 2)
+// Supports broadcasting: vec4(1.0) -> <1.0, 1.0, 1.0, 1.0>
+// Supports composition: vec4(vec2(1,2), 3, 4) -> <1, 2, 3, 4>
+class VectorLiteral : public Expression {
+public:
+    std::string vector_type;  // The vector type name (vec4, ivec3, etc.)
+    std::vector<std::unique_ptr<Expression>> elements;
+
+    VectorLiteral(const std::string& type) : vector_type(type) {}
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
 // Array Literal Expression
 // Example: [1, 2, 3, 4, 5]
 class ArrayLiteral : public Expression {

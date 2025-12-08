@@ -123,13 +123,60 @@ enum TokenType {
     TOKEN_TYPE_TBB32,       // Twisted balanced 32-bit
     TOKEN_TYPE_TBB64,       // Twisted balanced 64-bit
     
-    // Vector Types
-    TOKEN_TYPE_VEC2,        // 2D vector
-    TOKEN_TYPE_VEC3,        // 3D vector
-    TOKEN_TYPE_VEC9,        // 9D vector
+    // Vector Types (GLSL-compatible)
+    // Float vectors (vec2, vec3, vec4)
+    TOKEN_TYPE_VEC2,        // 2D float vector
+    TOKEN_TYPE_VEC3,        // 3D float vector
+    TOKEN_TYPE_VEC4,        // 4D float vector
+    TOKEN_TYPE_VEC9,        // 9D vector (Aria-specific for 9D-TWI)
+    
+    // Double vectors (dvec2, dvec3, dvec4)
+    TOKEN_TYPE_DVEC2,       // 2D double vector
+    TOKEN_TYPE_DVEC3,       // 3D double vector
+    TOKEN_TYPE_DVEC4,       // 4D double vector
+    
+    // Integer vectors (ivec2, ivec3, ivec4)
+    TOKEN_TYPE_IVEC2,       // 2D int32 vector
+    TOKEN_TYPE_IVEC3,       // 3D int32 vector
+    TOKEN_TYPE_IVEC4,       // 4D int32 vector
+    
+    // Unsigned integer vectors (uvec2, uvec3, uvec4)
+    TOKEN_TYPE_UVEC2,       // 2D uint32 vector
+    TOKEN_TYPE_UVEC3,       // 3D uint32 vector
+    TOKEN_TYPE_UVEC4,       // 4D uint32 vector
+    
+    // Boolean vectors (bvec2, bvec3, bvec4)
+    TOKEN_TYPE_BVEC2,       // 2D bool vector
+    TOKEN_TYPE_BVEC3,       // 3D bool vector
+    TOKEN_TYPE_BVEC4,       // 4D bool vector
+    
+    // Matrix Types (GLSL-compatible)
+    // Square matrices
+    TOKEN_TYPE_MAT2,        // 2x2 float matrix
+    TOKEN_TYPE_MAT3,        // 3x3 float matrix
+    TOKEN_TYPE_MAT4,        // 4x4 float matrix
+    
+    // Non-square matrices (matCxR where C=columns, R=rows)
+    TOKEN_TYPE_MAT2X3,      // 2 columns, 3 rows
+    TOKEN_TYPE_MAT2X4,      // 2 columns, 4 rows
+    TOKEN_TYPE_MAT3X2,      // 3 columns, 2 rows
+    TOKEN_TYPE_MAT3X4,      // 3 columns, 4 rows
+    TOKEN_TYPE_MAT4X2,      // 4 columns, 2 rows
+    TOKEN_TYPE_MAT4X3,      // 4 columns, 3 rows
+    
+    // Double precision matrices
+    TOKEN_TYPE_DMAT2,       // 2x2 double matrix
+    TOKEN_TYPE_DMAT3,       // 3x3 double matrix
+    TOKEN_TYPE_DMAT4,       // 4x4 double matrix
+    TOKEN_TYPE_DMAT2X3,     // 2x3 double matrix
+    TOKEN_TYPE_DMAT2X4,     // 2x4 double matrix
+    TOKEN_TYPE_DMAT3X2,     // 3x2 double matrix
+    TOKEN_TYPE_DMAT3X4,     // 3x4 double matrix
+    TOKEN_TYPE_DMAT4X2,     // 4x2 double matrix
+    TOKEN_TYPE_DMAT4X3,     // 4x3 double matrix
     
     // Compound Types
-    TOKEN_TYPE_MATRIX,      // Matrix type
+    TOKEN_TYPE_MATRIX,      // Generic matrix type
     TOKEN_TYPE_TENSOR,      // Tensor type
     TOKEN_TYPE_FUNC,        // Function type
     TOKEN_TYPE_RESULT,      // Result<T,E> type

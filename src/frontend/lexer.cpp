@@ -346,10 +346,57 @@ Token AriaLexer::nextToken() {
                {"flt256", TOKEN_TYPE_FLT256},
                {"flt512", TOKEN_TYPE_FLT512},
                
-               // Vector types
+               // Vector types (GLSL-compatible)
+               // Float vectors
                {"vec2", TOKEN_TYPE_VEC2},
                {"vec3", TOKEN_TYPE_VEC3},
-               {"vec9", TOKEN_TYPE_VEC9},
+               {"vec4", TOKEN_TYPE_VEC4},
+               {"vec9", TOKEN_TYPE_VEC9},    // Aria-specific for 9D-TWI
+               
+               // Double vectors
+               {"dvec2", TOKEN_TYPE_DVEC2},
+               {"dvec3", TOKEN_TYPE_DVEC3},
+               {"dvec4", TOKEN_TYPE_DVEC4},
+               
+               // Integer vectors
+               {"ivec2", TOKEN_TYPE_IVEC2},
+               {"ivec3", TOKEN_TYPE_IVEC3},
+               {"ivec4", TOKEN_TYPE_IVEC4},
+               
+               // Unsigned integer vectors
+               {"uvec2", TOKEN_TYPE_UVEC2},
+               {"uvec3", TOKEN_TYPE_UVEC3},
+               {"uvec4", TOKEN_TYPE_UVEC4},
+               
+               // Boolean vectors
+               {"bvec2", TOKEN_TYPE_BVEC2},
+               {"bvec3", TOKEN_TYPE_BVEC3},
+               {"bvec4", TOKEN_TYPE_BVEC4},
+               
+               // Matrix types (GLSL-compatible)
+               // Square matrices
+               {"mat2", TOKEN_TYPE_MAT2},
+               {"mat3", TOKEN_TYPE_MAT3},
+               {"mat4", TOKEN_TYPE_MAT4},
+               
+               // Non-square matrices
+               {"mat2x3", TOKEN_TYPE_MAT2X3},
+               {"mat2x4", TOKEN_TYPE_MAT2X4},
+               {"mat3x2", TOKEN_TYPE_MAT3X2},
+               {"mat3x4", TOKEN_TYPE_MAT3X4},
+               {"mat4x2", TOKEN_TYPE_MAT4X2},
+               {"mat4x3", TOKEN_TYPE_MAT4X3},
+               
+               // Double precision matrices
+               {"dmat2", TOKEN_TYPE_DMAT2},
+               {"dmat3", TOKEN_TYPE_DMAT3},
+               {"dmat4", TOKEN_TYPE_DMAT4},
+               {"dmat2x3", TOKEN_TYPE_DMAT2X3},
+               {"dmat2x4", TOKEN_TYPE_DMAT2X4},
+               {"dmat3x2", TOKEN_TYPE_DMAT3X2},
+               {"dmat3x4", TOKEN_TYPE_DMAT3X4},
+               {"dmat4x2", TOKEN_TYPE_DMAT4X2},
+               {"dmat4x3", TOKEN_TYPE_DMAT4X3},
                
                // Compound types
                {"byte", TOKEN_TYPE_BYTE},

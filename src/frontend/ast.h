@@ -46,6 +46,7 @@ class WhenExpr;
 class AwaitExpr;
 class UnwrapExpr;
 class ObjectLiteral;
+class VectorLiteral;
 class ArrayLiteral;
 class IndexExpr;
 class MemberAccess;
@@ -83,6 +84,7 @@ public:
     virtual void visit(CallExpr* node) = 0;
     virtual void visit(ObjectLiteral* node) { /* default: do nothing */ }
     virtual void visit(MemberAccess* node) { /* default: do nothing */ }
+    virtual void visit(VectorLiteral* node) { /* default: do nothing */ }
     virtual void visit(ArrayLiteral* node) { /* default: do nothing */ }
     virtual void visit(IndexExpr* node) { /* default: do nothing */ }
     virtual void visit(UnwrapExpr* node) { /* default: do nothing */ }
