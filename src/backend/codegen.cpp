@@ -116,7 +116,8 @@ class CodeGenVisitor : public AstVisitor {
     // Generic functions are stored as templates and instantiated on demand
     // when used with concrete type arguments
     struct GenericTemplate {
-        FuncDecl* ast;                              // Original AST node
+        VarDecl* ast;                                // Original VarDecl with lambda initializer
+        aria::frontend::LambdaExpr* lambda;          // The lambda expression
         std::vector<std::string> typeParams;         // Type parameter names (e.g., ["T", "U"])
         std::map<std::string, Function*> specializations;  // Map type args -> LLVM function
     };
@@ -146,7 +147,8 @@ class CodeGenVisitor : public AstVisitor {
         }
         
         // Generate new specialization
-        FuncDecl* original = tmpl.ast;
+        VarDecl* originalDecl = tmpl.ast;
+        aria::frontend::LambdaExpr* originalLambda = tmpl.lambda;
         
         // Create type substitution map: T -> int8, U -> float32, etc.
         std::map<std::string, std::string> typeSubstitution;
@@ -154,29 +156,48 @@ class CodeGenVisitor : public AstVisitor {
             typeSubstitution[tmpl.typeParams[i]] = concreteTypes[i];
         }
         
-        // We'll use the original AST but with modified context
+        // Create specialized function type
+        std::vector<Type*> paramTypes;
+        for (auto& param : originalLambda->parameters) {
+            // Substitute generic types in parameters
+            std::string paramType = param.type;
+            if (typeSubstitution.count(paramType) > 0) {
+                paramType = typeSubstitution[paramType];
+            }
+            paramTypes.push_back(ctx.getLLVMType(paramType));
+        }
+        
+        // Substitute generic type in return type
+        std::string returnType = originalLambda->return_type;
+        if (typeSubstitution.count(returnType) > 0) {
+            returnType = typeSubstitution[returnType];
+        }
+        Type* returnLLVMType = ctx.getResultType(returnType);
+        
+        FunctionType* funcType = FunctionType::get(returnLLVMType, paramTypes, false);
+        
+        // Create specialized function with mangled name
+        std::string mangledName = ctx.currentModulePrefix + funcName + "_" + typeKey;
+        Function* specializedFunc = Function::Create(
+            funcType,
+            Function::InternalLinkage,
+            mangledName,
+            ctx.module.get()
+        );
+        
         // Save current type substitution state
         auto prevSubstitution = ctx.typeSubstitution;
-        std::string prevMangledName = ctx.currentMangledName;
         
         // Set up substitution context
         ctx.typeSubstitution = typeSubstitution;
-        ctx.currentMangledName = funcName + "_" + typeKey;
         
-        // Temporarily clear generics to treat this as non-generic during codegen
-        auto originalGenerics = original->generics;
-        original->generics.clear();
-        
-        // Generate code (will use substituted types via ctx.typeSubstitution)
-        this->visit(original);
+        // Generate the lambda body with type substitution active
+        generateLambdaBody(originalLambda, specializedFunc);
         
         // Restore state
-        original->generics = originalGenerics;
         ctx.typeSubstitution = prevSubstitution;
-        ctx.currentMangledName = prevMangledName;
         
-        // Look up the generated function and cache it
-        auto* specializedFunc = ctx.module->getFunction(ctx.currentModulePrefix + funcName + "_" + typeKey);
+        // Cache the specialized function
         tmpl.specializations[typeKey] = specializedFunc;
         
         return specializedFunc;
@@ -192,7 +213,7 @@ public:
     // Infer concrete types for generic parameters from call arguments
     // Example: max(5, 10) -> infer T=int8 from both arguments
     std::vector<std::string> inferGenericTypes(const GenericTemplate& tmpl, CallExpr* call) {
-        if (call->arguments.size() != tmpl.ast->parameters.size()) {
+        if (call->arguments.size() != tmpl.lambda->parameters.size()) {
             return {};  // Argument count mismatch, can't infer
         }
         
@@ -201,7 +222,7 @@ public:
         
         // Analyze each argument to infer types
         for (size_t i = 0; i < call->arguments.size(); ++i) {
-            const auto& param = tmpl.ast->parameters[i];
+            const auto& param = tmpl.lambda->parameters[i];
             Expression* argExpr = call->arguments[i].get();
             
             // Get the Aria type of the argument
@@ -848,9 +869,15 @@ public:
             node->initializer) {
             
             if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node->initializer.get())) {
-                // Store the generic function template
-                // For now, just skip code generation - template will be instantiated at call sites
-                // TODO: Implement full monomorphization system with template storage
+                // Register the generic function template
+                GenericTemplate tmpl;
+                tmpl.ast = node;
+                tmpl.lambda = lambda;
+                tmpl.typeParams = node->generic_params;
+                
+                genericTemplates[node->name] = tmpl;
+                
+                // Skip code generation - will instantiate at call sites
                 return;
             }
         }
