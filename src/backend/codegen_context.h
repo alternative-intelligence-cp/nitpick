@@ -248,6 +248,42 @@ public:
         if (actualType == "ivec3") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 4);  // Padded to 4
         if (actualType == "ivec4") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 4);
         
+        // Unsigned integer vector types
+        if (actualType == "uvec2") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 2);
+        if (actualType == "uvec3") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 4);  // Padded to 4
+        if (actualType == "uvec4") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 4);
+        
+        // Boolean vector types
+        if (actualType == "bvec2") return FixedVectorType::get(Type::getInt1Ty(llvmContext), 2);
+        if (actualType == "bvec3") return FixedVectorType::get(Type::getInt1Ty(llvmContext), 4);  // Padded to 4
+        if (actualType == "bvec4") return FixedVectorType::get(Type::getInt1Ty(llvmContext), 4);
+        
+        // Matrix types (stored as vectors for SIMD efficiency)
+        // Square matrices
+        if (actualType == "mat2") return FixedVectorType::get(Type::getFloatTy(llvmContext), 4);   // 2x2 = 4 floats
+        if (actualType == "mat3") return FixedVectorType::get(Type::getFloatTy(llvmContext), 9);   // 3x3 = 9 floats
+        if (actualType == "mat4") return FixedVectorType::get(Type::getFloatTy(llvmContext), 16);  // 4x4 = 16 floats
+        
+        // Non-square matrices
+        if (actualType == "mat2x3") return FixedVectorType::get(Type::getFloatTy(llvmContext), 6);
+        if (actualType == "mat2x4") return FixedVectorType::get(Type::getFloatTy(llvmContext), 8);
+        if (actualType == "mat3x2") return FixedVectorType::get(Type::getFloatTy(llvmContext), 6);
+        if (actualType == "mat3x4") return FixedVectorType::get(Type::getFloatTy(llvmContext), 12);
+        if (actualType == "mat4x2") return FixedVectorType::get(Type::getFloatTy(llvmContext), 8);
+        if (actualType == "mat4x3") return FixedVectorType::get(Type::getFloatTy(llvmContext), 12);
+        
+        // Double-precision matrices
+        if (actualType == "dmat2") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 4);
+        if (actualType == "dmat3") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 9);
+        if (actualType == "dmat4") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 16);
+        
+        if (actualType == "dmat2x3") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 6);
+        if (actualType == "dmat2x4") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 8);
+        if (actualType == "dmat3x2") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 6);
+        if (actualType == "dmat3x4") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 12);
+        if (actualType == "dmat4x2") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 8);
+        if (actualType == "dmat4x3") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 12);
+        
         if (actualType == "void") return Type::getVoidTy(llvmContext);
         
         // Dynamic type (GC-allocated catch-all)

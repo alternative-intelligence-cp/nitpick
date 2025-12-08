@@ -360,6 +360,41 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         return obj_lit;
     }
     
+    // Vector/Matrix Literal Constructors (GLSL-style)
+    // Example: vec4(1.0, 2.0, 3.0, 4.0), ivec3(10, 20, 30), mat4(...)
+    // These take EXPRESSIONS as arguments, not parameter declarations (unlike lambdas)
+    if (current.type >= TOKEN_TYPE_VEC2 && current.type <= TOKEN_TYPE_DMAT4X3) {
+        // It's a vector or matrix type token
+        std::string typeName = current.value;
+        advance();  // consume the type token (vec4, ivec3, etc.)
+        
+        // Expect opening parenthesis
+        if (current.type != TOKEN_LPAREN) {
+            // Not a constructor - might be a variable or type name in another context
+            // Create a VarExpr for this (e.g., for variable names that happen to be vec4)
+            // Actually, this shouldn't happen since vec4/vec3 are reserved type keywords
+            // But to be safe, handle it gracefully
+            throw std::runtime_error("Expected '(' after " + typeName + " for constructor");
+        }
+        
+        advance();  // consume (
+        
+        auto vecLit = std::make_unique<VectorLiteral>(typeName);
+        
+        // Parse constructor arguments (comma-separated expressions)
+        if (current.type != TOKEN_RPAREN) {
+            do {
+                auto element = parseExpr();
+                vecLit->elements.push_back(std::move(element));
+            } while (match(TOKEN_COMMA));
+        }
+        
+        // Expect closing parenthesis
+        expect(TOKEN_RPAREN);
+        
+        return vecLit;
+    }
+    
     // Lambda Expression: returnType(params) { body } or returnType(params){body}(args)
     // SPEC: func:name = returnType(params) { return { err:NULL, val:value }; };
     // SPEC with auto-wrap: func:name = *returnType(params) { return value; };

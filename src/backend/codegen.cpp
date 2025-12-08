@@ -89,6 +89,7 @@ using aria::frontend::NullLiteral;
 using aria::frontend::VarExpr;
 using aria::frontend::CallExpr;
 using aria::frontend::ArrayLiteral;
+using aria::frontend::VectorLiteral;
 using aria::frontend::IndexExpr;
 using aria::frontend::BinaryOp;
 using aria::frontend::UnaryOp;
@@ -3543,6 +3544,131 @@ public:
             
             // For other cases, try bitcast as fallback
             return ctx.builder->CreateBitCast(sourceValue, targetType, "cast");
+        }
+        if (auto* vecLit = dynamic_cast<aria::frontend::VectorLiteral*>(node)) {
+            // ================================================================
+            // VECTOR LITERAL CODE GENERATION (GLSL-style vectors/matrices)
+            // ================================================================
+            // Supports: vec2-4, dvec2-4, ivec2-4, uvec2-4, bvec2-4, mat2-4, etc.
+            // Three construction modes:
+            // 1. Empty: vec4() → zero-initialize all components
+            // 2. Broadcasting: vec4(1.0) → replicate scalar to all components
+            // 3. Component-wise: vec4(1.0, 2.0, 3.0, 4.0) → direct assignment
+            // ================================================================
+            
+            // Get LLVM vector type from Aria type name
+            Type* vectorType = ctx.getLLVMType(vecLit->vector_type);
+            if (!vectorType || !vectorType->isVectorTy()) {
+                throw std::runtime_error("Invalid vector type: " + vecLit->vector_type);
+            }
+            
+            FixedVectorType* fixedVecType = cast<FixedVectorType>(vectorType);
+            unsigned numElements = fixedVecType->getNumElements();
+            Type* elementType = fixedVecType->getElementType();
+            
+            // ============================================================
+            // CASE 1: Empty constructor → Zero-initialization
+            // ============================================================
+            if (vecLit->elements.empty()) {
+                return Constant::getNullValue(vectorType);
+            }
+            
+            // ============================================================
+            // CASE 2: Single argument → Broadcasting
+            // ============================================================
+            if (vecLit->elements.size() == 1) {
+                Value* scalarVal = visitExpr(vecLit->elements[0].get());
+                if (!scalarVal) return nullptr;
+                
+                // Cast scalar to element type if needed
+                if (scalarVal->getType() != elementType) {
+                    if (scalarVal->getType()->isIntegerTy() && elementType->isIntegerTy()) {
+                        scalarVal = ctx.builder->CreateIntCast(scalarVal, elementType, true);
+                    } else if (scalarVal->getType()->isIntegerTy() && elementType->isFloatingPointTy()) {
+                        scalarVal = ctx.builder->CreateSIToFP(scalarVal, elementType);
+                    } else if (scalarVal->getType()->isFloatingPointTy() && elementType->isFloatingPointTy()) {
+                        scalarVal = ctx.builder->CreateFPCast(scalarVal, elementType);
+                    }
+                }
+                
+                // Create undef vector and broadcast scalar to all lanes
+                Value* result = UndefValue::get(vectorType);
+                for (unsigned i = 0; i < numElements; ++i) {
+                    result = ctx.builder->CreateInsertElement(
+                        result,
+                        scalarVal,
+                        ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), i)
+                    );
+                }
+                return result;
+            }
+            
+            // ============================================================
+            // CASE 3: Multiple arguments → Component-wise construction
+            // ============================================================
+            // Supports composition: vec4(vec2(x,y), z, w) → vec4(x, y, z, w)
+            // ============================================================
+            
+            Value* result = UndefValue::get(vectorType);
+            unsigned currentIndex = 0;
+            
+            for (auto& elem : vecLit->elements) {
+                Value* elemVal = visitExpr(elem.get());
+                if (!elemVal) return nullptr;
+                
+                // Check if element is itself a vector (composition)
+                if (elemVal->getType()->isVectorTy()) {
+                    FixedVectorType* elemVecType = cast<FixedVectorType>(elemVal->getType());
+                    unsigned elemCount = elemVecType->getNumElements();
+                    
+                    // Extract each component from the nested vector
+                    for (unsigned i = 0; i < elemCount; ++i) {
+                        Value* component = ctx.builder->CreateExtractElement(
+                            elemVal,
+                            ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), i)
+                        );
+                        
+                        // Cast to target element type if needed
+                        if (component->getType() != elementType) {
+                            if (component->getType()->isIntegerTy() && elementType->isIntegerTy()) {
+                                component = ctx.builder->CreateIntCast(component, elementType, true);
+                            } else if (component->getType()->isIntegerTy() && elementType->isFloatingPointTy()) {
+                                component = ctx.builder->CreateSIToFP(component, elementType);
+                            } else if (component->getType()->isFloatingPointTy() && elementType->isFloatingPointTy()) {
+                                component = ctx.builder->CreateFPCast(component, elementType);
+                            }
+                        }
+                        
+                        result = ctx.builder->CreateInsertElement(
+                            result,
+                            component,
+                            ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), currentIndex++)
+                        );
+                    }
+                } else {
+                    // Scalar element
+                    Value* scalarVal = elemVal;
+                    
+                    // Cast to element type if needed
+                    if (scalarVal->getType() != elementType) {
+                        if (scalarVal->getType()->isIntegerTy() && elementType->isIntegerTy()) {
+                            scalarVal = ctx.builder->CreateIntCast(scalarVal, elementType, true);
+                        } else if (scalarVal->getType()->isIntegerTy() && elementType->isFloatingPointTy()) {
+                            scalarVal = ctx.builder->CreateSIToFP(scalarVal, elementType);
+                        } else if (scalarVal->getType()->isFloatingPointTy() && elementType->isFloatingPointTy()) {
+                            scalarVal = ctx.builder->CreateFPCast(scalarVal, elementType);
+                        }
+                    }
+                    
+                    result = ctx.builder->CreateInsertElement(
+                        result,
+                        scalarVal,
+                        ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), currentIndex++)
+                    );
+                }
+            }
+            
+            return result;
         }
         //... Handle other ops...
         return nullptr;
