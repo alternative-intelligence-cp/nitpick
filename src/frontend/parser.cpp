@@ -236,8 +236,46 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
             return obj;
         }
         
-        // Check for function call: identifier(args)
-        if (current.type == TOKEN_LPAREN) {
+        // Check for function call with optional generic type arguments: identifier<T>(args) or identifier(args)
+        if (current.type == TOKEN_LT || current.type == TOKEN_LPAREN) {
+            // Parse generic type arguments if present: func<int8, int32>
+            if (current.type == TOKEN_LT) {
+                advance(); // consume <
+                
+                std::vector<std::string> typeArgs;
+                
+                // Parse type argument list
+                while (current.type != TOKEN_GT && current.type != TOKEN_EOF) {
+                    std::string typeArg = parseTypeName();
+                    typeArgs.push_back(typeArg);
+                    
+                    if (!match(TOKEN_COMMA)) {
+                        break;
+                    }
+                }
+                
+                expect(TOKEN_GT);
+                
+                // Now expect function call with arguments
+                expect(TOKEN_LPAREN);
+                
+                auto call = std::make_unique<CallExpr>(name);
+                call->type_arguments = typeArgs;
+                
+                // Parse arguments
+                while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
+                    call->arguments.push_back(parseExpr());
+                    
+                    if (!match(TOKEN_COMMA)) {
+                        break;
+                    }
+                }
+                
+                expect(TOKEN_RPAREN);
+                return call;
+            }
+            
+            // Regular function call without generic arguments
             advance(); // consume (
             
             auto call = std::make_unique<CallExpr>(name);
@@ -1042,10 +1080,35 @@ std::unique_ptr<Statement> Parser::parseStmt() {
             
             // Handle postfix operations (function calls, member access, array indexing)
             while (true) {
-                if (current.type == TOKEN_LPAREN) {
-                    // Function call
-                    advance();
+                if (current.type == TOKEN_LT || current.type == TOKEN_LPAREN) {
+                    // Function call with optional generic type arguments
+                    
+                    std::vector<std::string> typeArgs;
+                    
+                    // Parse generic type arguments if present
+                    if (current.type == TOKEN_LT) {
+                        advance(); // consume <
+                        
+                        while (current.type != TOKEN_GT && current.type != TOKEN_EOF) {
+                            std::string typeArg = parseTypeName();
+                            typeArgs.push_back(typeArg);
+                            
+                            if (!match(TOKEN_COMMA)) {
+                                break;
+                            }
+                        }
+                        
+                        expect(TOKEN_GT);
+                        expect(TOKEN_LPAREN);  // Now expect (
+                    } else {
+                        advance(); // consume (
+                    }
+                    
                     auto call = std::make_unique<CallExpr>(saved.value);
+                    if (!typeArgs.empty()) {
+                        call->type_arguments = typeArgs;
+                    }
+                    
                     while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
                         call->arguments.push_back(parseExpr());
                         if (!match(TOKEN_COMMA)) break;

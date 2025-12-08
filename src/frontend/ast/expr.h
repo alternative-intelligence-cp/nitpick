@@ -237,11 +237,12 @@ public:
 };
 
 // Function Call Expression
-// Example: foo(a, b, c)
+// Example: foo(a, b, c) or max<int8>(5, 10) for generic calls
 class CallExpr : public Expression {
 public:
     std::string function_name;
     std::vector<std::unique_ptr<Expression>> arguments;
+    std::vector<std::string> type_arguments;  // Generic type args: max<int8, int8>
 
     CallExpr(const std::string& name) : function_name(name) {}
 
