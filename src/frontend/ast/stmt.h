@@ -118,9 +118,11 @@ public:
 // Function Declaration (Bug #70: async support)
 // Example: func:add = int8(int8:a, int8:b) { return {err:NULL, val:a+b}; }
 // Example with auto-wrap: func:add = *int8(int8:a, int8:b) { return a+b; }
+// Example with generics: func<T>:identity = T(T:x) { return {err:NULL, val:x}; }
 class FuncDecl : public Statement {
 public:
     std::string name;
+    std::vector<std::string> generics;  // Generic type parameters (e.g., ["T", "U"])
     std::vector<FuncParam> parameters;
     std::string return_type;
     std::unique_ptr<Block> body;
@@ -128,8 +130,8 @@ public:
     bool is_pub = false;    // public visibility
     bool auto_wrap = false; // Auto-wrap returns in {err:NULL, val:...}
     
-    FuncDecl(const std::string& n, std::vector<FuncParam> params, const std::string& ret_type, std::unique_ptr<Block> b)
-        : name(n), parameters(std::move(params)), return_type(ret_type), body(std::move(b)) {}
+    FuncDecl(const std::string& n, std::vector<std::string> gen, std::vector<FuncParam> params, const std::string& ret_type, std::unique_ptr<Block> b)
+        : name(n), generics(std::move(gen)), parameters(std::move(params)), return_type(ret_type), body(std::move(b)) {}
     
     void accept(AstVisitor& visitor) override {
         visitor.visit(this);

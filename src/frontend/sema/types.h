@@ -33,6 +33,10 @@ enum class TypeKind {
     ARRAY,
     FUNCTION,
     STRUCT,
+    // SIMD Vector types for hardware-accelerated operations
+    VEC2, VEC3, VEC4,     // Float vectors (32-bit)
+    DVEC2, DVEC3, DVEC4,  // Double vectors (64-bit)
+    IVEC2, IVEC3, IVEC4,  // Integer vectors (32-bit)
     UNKNOWN,       // For type inference errors
     ERROR          // Type error marker
 };
@@ -102,6 +106,15 @@ public:
             case TypeKind::DYN: return "dyn";
             case TypeKind::TRIT: return "trit";
             case TypeKind::TRYTE: return "tryte";
+            case TypeKind::VEC2: return "vec2";
+            case TypeKind::VEC3: return "vec3";
+            case TypeKind::VEC4: return "vec4";
+            case TypeKind::DVEC2: return "dvec2";
+            case TypeKind::DVEC3: return "dvec3";
+            case TypeKind::DVEC4: return "dvec4";
+            case TypeKind::IVEC2: return "ivec2";
+            case TypeKind::IVEC3: return "ivec3";
+            case TypeKind::IVEC4: return "ivec4";
             case TypeKind::POINTER:
                 if (pointee) {
                     std::string prefix = is_wild ? "wild " : (is_pinned ? "pinned " : "");

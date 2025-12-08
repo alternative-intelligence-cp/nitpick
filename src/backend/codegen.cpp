@@ -41,6 +41,11 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/InlineAsm.h>
 #include <llvm/IR/Intrinsics.h>
+#include <llvm/IR/Metadata.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/Linker/Linker.h>
+#include <llvm/IRReader/IRReader.h>
+#include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
@@ -102,9 +107,227 @@ using aria::backend::ScopeGuard;
 
 class CodeGenVisitor : public AstVisitor {
     CodeGenContext& ctx;
+    
+    // -------------------------------------------------------------------------
+    // Generic Function Monomorphization Support
+    // -------------------------------------------------------------------------
+    // Generic functions are stored as templates and instantiated on demand
+    // when used with concrete type arguments
+    struct GenericTemplate {
+        FuncDecl* ast;                              // Original AST node
+        std::vector<std::string> typeParams;         // Type parameter names (e.g., ["T", "U"])
+        std::map<std::string, Function*> specializations;  // Map type args -> LLVM function
+    };
+    
+    std::map<std::string, GenericTemplate> genericTemplates;  // funcName -> template
+    
+    // Generate specialized version of generic function for concrete types
+    // Example: identity<int8> generates "identity_int8" function
+    Function* monomorphize(const std::string& funcName, const std::vector<std::string>& concreteTypes) {
+        auto it = genericTemplates.find(funcName);
+        if (it == genericTemplates.end()) {
+            return nullptr;  // Not a generic function
+        }
+        
+        GenericTemplate& tmpl = it->second;
+        
+        // Check if this specialization already exists
+        std::string typeKey = "";
+        for (const auto& t : concreteTypes) {
+            if (!typeKey.empty()) typeKey += "_";
+            typeKey += t;
+        }
+        
+        auto specIt = tmpl.specializations.find(typeKey);
+        if (specIt != tmpl.specializations.end()) {
+            return specIt->second;  // Already generated
+        }
+        
+        // Generate new specialization
+        FuncDecl* original = tmpl.ast;
+        
+        // Create type substitution map: T -> int8, U -> float32, etc.
+        std::map<std::string, std::string> typeSubstitution;
+        for (size_t i = 0; i < tmpl.typeParams.size() && i < concreteTypes.size(); ++i) {
+            typeSubstitution[tmpl.typeParams[i]] = concreteTypes[i];
+        }
+        
+        // We'll use the original AST but with modified context
+        // Save current type substitution state
+        auto prevSubstitution = ctx.typeSubstitution;
+        std::string prevMangledName = ctx.currentMangledName;
+        
+        // Set up substitution context
+        ctx.typeSubstitution = typeSubstitution;
+        ctx.currentMangledName = funcName + "_" + typeKey;
+        
+        // Temporarily clear generics to treat this as non-generic during codegen
+        auto originalGenerics = original->generics;
+        original->generics.clear();
+        
+        // Generate code (will use substituted types via ctx.typeSubstitution)
+        this->visit(original);
+        
+        // Restore state
+        original->generics = originalGenerics;
+        ctx.typeSubstitution = prevSubstitution;
+        ctx.currentMangledName = prevMangledName;
+        
+        // Look up the generated function and cache it
+        auto* specializedFunc = ctx.module->getFunction(ctx.currentModulePrefix + funcName + "_" + typeKey);
+        tmpl.specializations[typeKey] = specializedFunc;
+        
+        return specializedFunc;
+    }
 
 public:
     CodeGenVisitor(CodeGenContext& context) : ctx(context) {}
+
+    // -------------------------------------------------------------------------
+    // Helper: Closure Capture Analysis
+    // -------------------------------------------------------------------------
+    
+    // Analyze which variables from enclosing scope are captured by lambda
+    std::vector<std::string> analyzeCapturedVariables(aria::frontend::LambdaExpr* lambda) {
+        std::vector<std::string> captured;
+        std::set<std::string> visited;
+        
+        // Get parameter names (these are NOT captures)
+        std::set<std::string> paramNames;
+        for (const auto& param : lambda->parameters) {
+            paramNames.insert(param.name);
+        }
+        
+        // Recursively scan lambda body for variable references
+        analyzeBlockForCaptures(lambda->body.get(), captured, visited, paramNames);
+        
+        return captured;
+    }
+    
+    void analyzeBlockForCaptures(frontend::Block* block, std::vector<std::string>& captured,
+                                  std::set<std::string>& visited, const std::set<std::string>& localVars) {
+        if (!block) return;
+        
+        for (auto& stmt : block->statements) {
+            auto* statement = dynamic_cast<frontend::Statement*>(stmt.get());
+            if (statement) {
+                analyzeStmtForCaptures(statement, captured, visited, localVars);
+            }
+        }
+    }    void analyzeStmtForCaptures(frontend::Statement* stmt, std::vector<std::string>& captured,
+                                 std::set<std::string>& visited, const std::set<std::string>& localVars) {
+        if (!stmt) return;
+        
+        // Variable declarations add to local scope
+        if (auto* varDecl = dynamic_cast<frontend::VarDecl*>(stmt)) {
+            // Don't capture variables declared inside the lambda
+            const_cast<std::set<std::string>&>(localVars).insert(varDecl->name);
+            if (varDecl->initializer) {
+                analyzeExprForCaptures(varDecl->initializer.get(), captured, visited, localVars);
+            }
+            return;
+        }
+        
+        // Expression statements
+        if (auto* exprStmt = dynamic_cast<frontend::ExpressionStmt*>(stmt)) {
+            analyzeExprForCaptures(exprStmt->expression.get(), captured, visited, localVars);
+            return;
+        }
+        
+        // Return statements
+        if (auto* retStmt = dynamic_cast<frontend::ReturnStmt*>(stmt)) {
+            if (retStmt->value) {
+                analyzeExprForCaptures(retStmt->value.get(), captured, visited, localVars);
+            }
+            return;
+        }
+        
+        // If statements
+        if (auto* ifStmt = dynamic_cast<frontend::IfStmt*>(stmt)) {
+            analyzeExprForCaptures(ifStmt->condition.get(), captured, visited, localVars);
+            analyzeBlockForCaptures(ifStmt->then_block.get(), captured, visited, localVars);
+            if (ifStmt->else_block) {
+                analyzeBlockForCaptures(ifStmt->else_block.get(), captured, visited, localVars);
+            }
+            return;
+        }
+        
+        // Loops
+        if (auto* tillLoop = dynamic_cast<frontend::TillLoop*>(stmt)) {
+            if (tillLoop->limit) {
+                analyzeExprForCaptures(tillLoop->limit.get(), captured, visited, localVars);
+            }
+            if (tillLoop->step) {
+                analyzeExprForCaptures(tillLoop->step.get(), captured, visited, localVars);
+            }
+            analyzeBlockForCaptures(tillLoop->body.get(), captured, visited, localVars);
+            return;
+        }
+        
+        if (auto* whileLoop = dynamic_cast<frontend::WhileLoop*>(stmt)) {
+            analyzeExprForCaptures(whileLoop->condition.get(), captured, visited, localVars);
+            analyzeBlockForCaptures(whileLoop->body.get(), captured, visited, localVars);
+            return;
+        }
+    }
+    
+    void analyzeExprForCaptures(frontend::Expression* expr, std::vector<std::string>& captured,
+                                 std::set<std::string>& visited, const std::set<std::string>& localVars) {
+        if (!expr) return;
+        
+        // Variable references - the key capture point
+        if (auto* varExpr = dynamic_cast<frontend::VarExpr*>(expr)) {
+            const std::string& varName = varExpr->name;
+            
+            // Skip if it's a local variable or parameter
+            if (localVars.count(varName) > 0) return;
+            
+            // Skip if already visited
+            if (visited.count(varName) > 0) return;
+            
+            // Check if it exists in an enclosing scope
+            auto* sym = ctx.lookup(varName);
+            if (sym && sym->strategy != CodeGenContext::AllocStrategy::VALUE) {
+                // This is a capture! Add it if not already in list
+                if (std::find(captured.begin(), captured.end(), varName) == captured.end()) {
+                    captured.push_back(varName);
+                    visited.insert(varName);
+                }
+            }
+            return;
+        }
+        
+        // Binary operations
+        if (auto* binOp = dynamic_cast<frontend::BinaryOp*>(expr)) {
+            analyzeExprForCaptures(binOp->left.get(), captured, visited, localVars);
+            analyzeExprForCaptures(binOp->right.get(), captured, visited, localVars);
+            return;
+        }
+        
+        // Unary operations
+        if (auto* unOp = dynamic_cast<frontend::UnaryOp*>(expr)) {
+            analyzeExprForCaptures(unOp->operand.get(), captured, visited, localVars);
+            return;
+        }
+        
+        // Call expressions
+        if (auto* call = dynamic_cast<frontend::CallExpr*>(expr)) {
+            for (auto& arg : call->arguments) {
+                analyzeExprForCaptures(arg.get(), captured, visited, localVars);
+            }
+            return;
+        }
+        
+        // Array indexing
+        if (auto* index = dynamic_cast<frontend::IndexExpr*>(expr)) {
+            analyzeExprForCaptures(index->array.get(), captured, visited, localVars);
+            analyzeExprForCaptures(index->index.get(), captured, visited, localVars);
+            return;
+        }
+        
+        // Note: Nested lambdas would need special handling - for now we skip them
+        // as they create their own capture scope
+    }
 
     // -------------------------------------------------------------------------
     // Helper: Runtime Function Declarations (Allocators, Syscalls)
@@ -765,6 +988,21 @@ public:
     }
 
     void visit(FuncDecl* node) override {
+        // =====================================================================
+        // GENERIC FUNCTION DETECTION
+        // =====================================================================
+        // If function has generic type parameters (func<T>:name), don't generate
+        // code immediately. Instead, store as template for later monomorphization.
+        if (!node->generics.empty()) {
+            GenericTemplate tmpl;
+            tmpl.ast = node;  // Store pointer to AST
+            tmpl.typeParams = node->generics;
+            genericTemplates[node->name] = tmpl;
+            
+            // Don't generate code yet - will be instantiated when called with concrete types
+            return;
+        }
+        
         // 1. Create function type with optimized parameter passing
         std::vector<Type*> paramTypes;
         std::vector<bool> shouldScalarize;  // Track which params to scalarize
@@ -830,8 +1068,15 @@ public:
         
         FunctionType* funcType = FunctionType::get(returnType, paramTypes, false);
         
-        // 2. Create function with module prefix
-        std::string funcName = ctx.currentModulePrefix + node->name;
+        // 2. Create function with module prefix and mangled name (for generic specializations)
+        std::string funcName = ctx.currentModulePrefix;
+        if (!ctx.currentMangledName.empty()) {
+            // Generic specialization - use mangled name
+            funcName += ctx.currentMangledName;
+        } else {
+            // Regular function
+            funcName += node->name;
+        }
         
         Function* func = Function::Create(
             funcType,
@@ -841,6 +1086,7 @@ public:
         );
         
         // Register function in symbol table so it can be found later
+        // Use original name (not mangled) for lookup
         ctx.define(node->name, func, false);  // false = not a reference/pointer
         
         // 3. Set parameter names
@@ -2951,12 +3197,41 @@ public:
             return ctx.builder->CreateLoad(fieldType, fieldPtr, member->member_name);
         }
         if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node)) {
-            // Generate anonymous function for lambda
+            // Generate anonymous function for lambda with closure support
             static int lambdaCounter = 0;
             std::string lambdaName = "lambda_" + std::to_string(lambdaCounter++);
             
-            // 1. Create function type
+            // 1. Analyze which variables are captured from enclosing scope
+            std::vector<std::string> capturedVars = analyzeCapturedVariables(lambda);
+            
+            // 2. Create function type
             std::vector<Type*> paramTypes;
+            
+            // If we have captured variables, add hidden environment parameter as first arg
+            StructType* envType = nullptr;
+            if (!capturedVars.empty()) {
+                std::vector<Type*> envFields;
+                for (const auto& varName : capturedVars) {
+                    auto* sym = ctx.lookup(varName);
+                    if (sym) {
+                        // Store pointer to the captured variable
+                        Type* varType = sym->val->getType();
+                        if (!varType->isPointerTy()) {
+                            varType = PointerType::getUnqual(ctx.llvmContext);
+                        }
+                        envFields.push_back(varType);
+                    }
+                }
+                
+                // Create environment struct type
+                std::string envTypeName = lambdaName + "_env";
+                envType = StructType::create(ctx.llvmContext, envFields, envTypeName);
+                
+                // Add environment pointer as first parameter
+                paramTypes.push_back(PointerType::getUnqual(ctx.llvmContext));
+            }
+            
+            // Add regular parameters
             for (auto& param : lambda->parameters) {
                 paramTypes.push_back(ctx.getLLVMType(param.type));
             }
@@ -2976,8 +3251,23 @@ public:
             
             // 3. Set parameter names
             unsigned idx = 0;
-            for (auto& arg : func->args()) {
-                arg.setName(lambda->parameters[idx++].name);
+            
+            // If we have an environment, first parameter is the env pointer
+            Value* envParam = nullptr;
+            if (envType) {
+                auto argIt = func->arg_begin();
+                envParam = &(*argIt);
+                envParam->setName("env");
+                ++argIt;
+                // Now set names for regular parameters
+                for (unsigned i = 0; i < lambda->parameters.size(); ++i, ++argIt) {
+                    argIt->setName(lambda->parameters[i].name);
+                }
+            } else {
+                // No environment, just set parameter names normally
+                for (auto& arg : func->args()) {
+                    arg.setName(lambda->parameters[idx++].name);
+                }
             }
             
             // 4. Create entry basic block
@@ -2998,35 +3288,75 @@ public:
             ctx.deferStacks = std::vector<std::vector<Block*>>();
             ctx.deferStacks.emplace_back();  // Start with one scope for the function
             
-            // 6. Create allocas for parameters
-            // Save and create new scope for lambda parameters
+            // 6. Set up captured variables from environment
             std::vector<std::pair<std::string, CodeGenContext::Symbol*>> savedSymbols;
             
+            if (envParam && envType) {
+                // Extract captured variables from environment struct
+                for (unsigned i = 0; i < capturedVars.size(); ++i) {
+                    const std::string& varName = capturedVars[i];
+                    
+                    // Get pointer to field in environment struct
+                    Value* fieldPtr = ctx.builder->CreateStructGEP(
+                        envType, 
+                        envParam, 
+                        i, 
+                        varName + "_captured_ptr"
+                    );
+                    
+                    // Load the pointer to the captured variable
+                    Type* capturedPtrType = envType->getElementType(i);
+                    Value* capturedVarPtr = ctx.builder->CreateLoad(
+                        capturedPtrType,
+                        fieldPtr,
+                        varName + "_captured"
+                    );
+                    
+                    // Save existing symbol if any
+                    auto* existingSym = ctx.lookup(varName);
+                    if (existingSym) {
+                        savedSymbols.push_back({varName, existingSym});
+                    }
+                    
+                    // Define captured variable in lambda scope
+                    // Get the original Aria type from the symbol table
+                    auto* originalSym = ctx.lookup(varName);
+                    std::string ariaType = originalSym ? originalSym->ariaType : "";
+                    ctx.define(varName, capturedVarPtr, true, ariaType);
+                }
+            }
+            
+            // 7. Create allocas for regular parameters
             idx = 0;
-            for (auto& arg : func->args()) {
-                Type* argType = arg.getType();
-                AllocaInst* alloca = ctx.builder->CreateAlloca(argType, nullptr, arg.getName());
-                ctx.builder->CreateStore(&arg, alloca);
+            auto argIt = func->arg_begin();
+            
+            // Skip environment parameter if present
+            if (envParam) ++argIt;
+            
+            for (unsigned i = 0; i < lambda->parameters.size(); ++i, ++argIt) {
+                Value* arg = &(*argIt);
+                Type* argType = arg->getType();
+                AllocaInst* alloca = ctx.builder->CreateAlloca(argType, nullptr, arg->getName());
+                ctx.builder->CreateStore(arg, alloca);
                 
                 // Save any existing symbol with this name
-                std::string argName = std::string(arg.getName());
+                std::string argName = std::string(arg->getName());
                 auto* existingSym = ctx.lookup(argName);
                 if (existingSym) {
                     savedSymbols.push_back({argName, existingSym});
                 }
                 
                 // Store parameter with its Aria type from the lambda parameter list
-                std::string paramAriaType = lambda->parameters[idx].type;
+                std::string paramAriaType = lambda->parameters[i].type;
                 ctx.define(argName, alloca, true, paramAriaType);
-                idx++; // Increment for next parameter
             }
             
-            // 7. Generate lambda body
+            // 8. Generate lambda body
             if (lambda->body) {
                 lambda->body->accept(*this);
             }
             
-            // 8. Add return if missing
+            // 9. Add return if missing
             if (ctx.builder->GetInsertBlock()->getTerminator() == nullptr) {
                 if (returnType->isVoidTy()) {
                     ctx.builder->CreateRetVoid();
@@ -3048,10 +3378,43 @@ public:
                 ctx.builder->SetInsertPoint(prevBlock);
             }
             
-            // 11. If immediately invoked, call the lambda
+            // 11. Create environment struct if we have captures
+            Value* envStruct = nullptr;
+            if (envType && !capturedVars.empty()) {
+                // Allocate environment struct on stack
+                envStruct = ctx.builder->CreateAlloca(envType, nullptr, lambdaName + "_env_alloca");
+                
+                // Populate environment with pointers to captured variables
+                for (unsigned i = 0; i < capturedVars.size(); ++i) {
+                    const std::string& varName = capturedVars[i];
+                    auto* sym = ctx.lookup(varName);
+                    if (sym) {
+                        // Get field pointer in environment struct
+                        Value* fieldPtr = ctx.builder->CreateStructGEP(
+                            envType,
+                            envStruct,
+                            i,
+                            varName + "_env_field_ptr"
+                        );
+                        
+                        // Store pointer to captured variable
+                        ctx.builder->CreateStore(sym->val, fieldPtr);
+                    }
+                }
+            }
+            
+            // 12. If immediately invoked, call the lambda
             if (lambda->is_immediately_invoked) {
-                // Evaluate arguments
+                // Build arguments list
                 std::vector<Value*> args;
+                
+                // First argument is environment if present
+                if (envStruct) {
+                    args.push_back(envStruct);
+                }
+                
+                // Then evaluate and add regular arguments
+                unsigned paramOffset = envStruct ? 1 : 0;
                 for (size_t i = 0; i < lambda->call_arguments.size(); i++) {
                     Value* argVal = visitExpr(lambda->call_arguments[i].get());
                     if (!argVal) {
@@ -3059,8 +3422,8 @@ public:
                     }
                     
                     // Cast argument to match parameter type if needed
-                    if (i < func->arg_size()) {
-                        Type* expectedType = func->getFunctionType()->getParamType(i);
+                    if ((i + paramOffset) < func->arg_size()) {
+                        Type* expectedType = func->getFunctionType()->getParamType(i + paramOffset);
                         if (argVal->getType() != expectedType) {
                             // If both are integers, perform cast
                             if (argVal->getType()->isIntegerTy() && expectedType->isIntegerTy()) {
@@ -3075,6 +3438,15 @@ public:
                 // Call the lambda and return its result
                 return ctx.builder->CreateCall(func, args, "lambda_result");
             } else {
+                // Lambdas with captures cannot be returned as plain function pointers
+                // They need to carry their environment. For now, we don't support this.
+                if (!capturedVars.empty()) {
+                    throw std::runtime_error(
+                        "Closures with captured variables cannot be returned as function pointers. "
+                        "Use immediately-invoked lambdas or refactor to avoid captures."
+                    );
+                }
+                
                 // Return function pointer (for passing lambdas as values)
                 return func;
             }
@@ -3370,18 +3742,147 @@ public:
         // await <expression>
         // Suspends current coroutine until the awaited expression completes
         
-        // For v0.0.7: Basic implementation
-        // Evaluate the expression (should return a coroutine handle)
-        // In a full implementation, this would:
-        // 1. Call llvm.coro.save to save the coroutine state
-        // 2. Call llvm.coro.suspend to suspend
-        // 3. Resume when the awaited coroutine completes
-        
-        // For now, just evaluate the expression and continue
-        // TODO: Full coroutine suspension/resumption logic
-        if (node->expression) {
-            visitExpr(node->expression.get());
+        if (!node->expression) {
+            throw std::runtime_error("await expression requires an operand");
         }
+        
+        // Verify we're inside an async function
+        if (!ctx.currentFunction) {
+            throw std::runtime_error("await can only be used inside async functions");
+        }
+        
+        // Check if this function was marked async (has coroutine setup)
+        // Note: We detect this by checking for coro_id call in entry block
+        bool isAsync = false;
+        if (ctx.currentFunction) {
+            for (auto& BB : *ctx.currentFunction) {
+                for (auto& I : BB) {
+                    if (auto* call = dyn_cast<CallInst>(&I)) {
+                        if (call->getCalledFunction() && 
+                            call->getCalledFunction()->getName() == "llvm.coro.id") {
+                            isAsync = true;
+                            break;
+                        }
+                    }
+                }
+                if (isAsync) break;
+            }
+        }
+        
+        if (!isAsync) {
+            throw std::runtime_error("await can only be used inside async functions (use 'async func' keyword)");
+        }
+        
+        // =====================================================================
+        // COROUTINE SUSPENSION IMPLEMENTATION
+        // =====================================================================
+        // LLVM coroutines use a state machine approach:
+        // 1. Save coroutine state before suspension
+        // 2. Suspend execution (returns to caller)
+        // 3. Resume when awaited operation completes
+        
+        // Step 1: Evaluate the awaited expression (should return a coroutine handle or result)
+        Value* awaitedValue = visitExpr(node->expression.get());
+        
+        // Step 2: Save coroutine state
+        // llvm.coro.save returns a token representing the suspension point
+        Function* coroSave = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_save);
+        
+        // Get current coroutine handle (stored during async function setup)
+        // We need to retrieve the handle from the coroutine frame
+        Function* coroFrame = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_frame);
+        Value* framePtr = ctx.builder->CreateCall(coroFrame, {}, "coro_frame");
+        
+        // Save suspension point
+        Value* saveToken = ctx.builder->CreateCall(coroSave, {framePtr}, "save_point");
+        
+        // Step 3: Suspend coroutine execution
+        // llvm.coro.suspend returns:
+        //   -1: coroutine suspended (normal case)
+        //    0: resume from suspension
+        //    1: cleanup/destroy path
+        Function* coroSuspend = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_suspend);
+        Value* suspendResult = ctx.builder->CreateCall(coroSuspend, {
+            saveToken,
+            ConstantInt::getFalse(ctx.llvmContext)  // final = false (not a final suspend)
+        }, "suspend_result");
+        
+        // Step 4: Create basic blocks for the state machine
+        BasicBlock* suspendBB = BasicBlock::Create(ctx.llvmContext, "await_suspend", ctx.currentFunction);
+        BasicBlock* resumeBB = BasicBlock::Create(ctx.llvmContext, "await_resume", ctx.currentFunction);
+        BasicBlock* cleanupBB = BasicBlock::Create(ctx.llvmContext, "await_cleanup", ctx.currentFunction);
+        
+        // Switch on suspend result:
+        // case -1: goto suspend (return to caller)
+        // case  0: goto resume (continue after await)
+        // case  1: goto cleanup (coroutine destroyed)
+        SwitchInst* suspendSwitch = ctx.builder->CreateSwitch(suspendResult, suspendBB, 2);
+        suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), resumeBB);
+        suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), cleanupBB);
+        
+        // ========== SUSPEND PATH ==========
+        // Coroutine yields control back to caller
+        ctx.builder->SetInsertPoint(suspendBB);
+        
+        // Return coroutine handle to caller (allows resumption)
+        Function* coroBegin = nullptr;
+        for (auto& BB : *ctx.currentFunction) {
+            for (auto& I : BB) {
+                if (auto* call = dyn_cast<CallInst>(&I)) {
+                    if (call->getCalledFunction() && 
+                        call->getCalledFunction()->getName() == "llvm.coro.begin") {
+                        // Found the coroutine handle from coro.begin
+                        coroBegin = call->getCalledFunction();
+                        break;
+                    }
+                }
+            }
+            if (coroBegin) break;
+        }
+        
+        // Use the frame pointer as the return value (coroutine handle)
+        ctx.builder->CreateRet(framePtr);
+        
+        // ========== RESUME PATH ==========
+        // Execution continues here after coroutine is resumed
+        ctx.builder->SetInsertPoint(resumeBB);
+        
+        // The awaited value is now available (conceptually)
+        // Store it for later use if needed
+        // For now, we just continue execution
+        // (In a full implementation, we'd extract the result from the awaited coroutine)
+        
+        // ========== CLEANUP PATH ==========
+        // Coroutine is being destroyed before completion
+        ctx.builder->SetInsertPoint(cleanupBB);
+        
+        // Call coro.free to check if we need to free memory
+        Function* coroFree = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_free);
+        Function* coroId = nullptr;
+        for (auto& BB : *ctx.currentFunction) {
+            for (auto& I : BB) {
+                if (auto* call = dyn_cast<CallInst>(&I)) {
+                    if (call->getCalledFunction() && 
+                        call->getCalledFunction()->getName() == "llvm.coro.id") {
+                        coroId = call->getCalledFunction();
+                        break;
+                    }
+                }
+            }
+            if (coroId) break;
+        }
+        
+        // Placeholder: In full implementation, we'd free the coroutine frame if needed
+        // For now, just end the coroutine
+        Function* coroEnd = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_end);
+        ctx.builder->CreateCall(coroEnd, {
+            framePtr,
+            ConstantInt::getFalse(ctx.llvmContext)  // unwind = false
+        });
+        ctx.builder->CreateRetVoid();
+        
+        // Continue insertion at resume point for subsequent code
+        ctx.builder->SetInsertPoint(resumeBB);
     }
     
     void visit(frontend::WhenExpr* node) override {
@@ -3541,9 +4042,56 @@ public:
     // =============================================================================
     
     void visit(frontend::UseStmt* node) override {
-        // For now, use statements are no-ops in codegen
-        // They will be handled by a linker/module loader in the future
-        // The symbol resolution happens at link time
+        // Basic module import support - declare external symbols
+        // Full linking happens at link time with LLVM linker
+        
+        // For now, we support a simple symbol declaration mechanism
+        // The actual module loading and linking is deferred to a future linker pass
+        
+        // Create a comment in the IR for documentation
+        std::string comment = "; use " + node->module_path;
+        if (!node->imports.empty()) {
+            comment += ".{";
+            for (size_t i = 0; i < node->imports.size(); ++i) {
+                if (i > 0) comment += ", ";
+                comment += node->imports[i];
+            }
+            comment += "}";
+        }
+        
+        // Add module to a list for later linking (stored in module metadata)
+        // This allows the linker to know which modules need to be linked
+        auto* stringType = llvm::ArrayType::get(Type::getInt8Ty(ctx.llvmContext), comment.size() + 1);
+        auto* commentGlobal = new GlobalVariable(
+            *ctx.module,
+            stringType,
+            true,  // isConstant
+            GlobalValue::PrivateLinkage,
+            ConstantDataArray::getString(ctx.llvmContext, comment, true),
+            ".use.comment"
+        );
+        commentGlobal->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+        
+        // Store module dependency metadata for linker
+        // This creates a list of required modules that the linker can use
+        if (!node->module_path.empty()) {
+            NamedMDNode* moduleDepsMD = ctx.module->getOrInsertNamedMetadata("aria.module.deps");
+            Metadata* pathMD = MDString::get(ctx.llvmContext, node->module_path);
+            
+            // Create tuple with module path and optional import list
+            SmallVector<Metadata*, 2> mdValues;
+            mdValues.push_back(pathMD);
+            
+            if (!node->imports.empty()) {
+                SmallVector<Metadata*, 8> importMDs;
+                for (const auto& imp : node->imports) {
+                    importMDs.push_back(MDString::get(ctx.llvmContext, imp));
+                }
+                mdValues.push_back(MDNode::get(ctx.llvmContext, importMDs));
+            }
+            
+            moduleDepsMD->addOperand(MDNode::get(ctx.llvmContext, mdValues));
+        }
     }
     
     void visit(frontend::ModDef* node) override {
@@ -3587,6 +4135,76 @@ void CodeGenContext::executeScopeDefers(CodeGenVisitor* visitor) {
     for (auto it = currentDefers.rbegin(); it != currentDefers.rend(); ++it) {
         (*it)->accept(*visitor);
     }
+}
+
+// =============================================================================
+// Module Linking Support
+// =============================================================================
+
+// Helper: Try to locate and load a module file (.ll or .bc)
+std::unique_ptr<Module> loadModule(const std::string& modulePath, LLVMContext& context) {
+    // Try .ll first (LLVM IR text)
+    std::string llPath = modulePath + ".ll";
+    SMDiagnostic err;
+    auto mod = parseIRFile(llPath, err, context);
+    if (mod) return mod;
+    
+    // Try .bc (LLVM bitcode)
+    std::string bcPath = modulePath + ".bc";
+    mod = parseIRFile(bcPath, err, context);
+    if (mod) return mod;
+    
+    // Try .aria file path directly (would need compilation first)
+    // For now, we only support pre-compiled modules
+    return nullptr;
+}
+
+// Link imported modules into the main module
+bool linkModules(Module& mainModule) {
+    // Get module dependencies from metadata
+    NamedMDNode* depsMD = mainModule.getNamedMetadata("aria.module.deps");
+    if (!depsMD) return true; // No dependencies
+    
+    Linker linker(mainModule);
+    
+    for (unsigned i = 0; i < depsMD->getNumOperands(); ++i) {
+        MDNode* depNode = depsMD->getOperand(i);
+        if (!depNode || depNode->getNumOperands() < 1) continue;
+        
+        // First operand is the module path
+        auto* pathMD = dyn_cast<MDString>(depNode->getOperand(0));
+        if (!pathMD) continue;
+        
+        std::string modulePath = pathMD->getString().str();
+        
+        // Try to load the module
+        auto importedModule = loadModule(modulePath, mainModule.getContext());
+        if (!importedModule) {
+            errs() << "Warning: Could not load module '" << modulePath << "'\n";
+            errs() << "         Searched for: " << modulePath << ".ll, " << modulePath << ".bc\n";
+            errs() << "         Functions from this module will be external references.\n";
+            continue;
+        }
+        
+        // Rename 'main' in imported module to avoid conflicts
+        // The main module's main() is the entry point
+        if (Function* importedMain = importedModule->getFunction("main")) {
+            importedMain->setName("__module_" + modulePath + "_main");
+        }
+        
+        // Also rename __user_main if it exists
+        if (Function* userMain = importedModule->getFunction("__user_main")) {
+            userMain->setName("__module_" + modulePath + "_user_main");
+        }
+        
+        // Link the module
+        if (linker.linkInModule(std::move(importedModule))) {
+            errs() << "Error: Failed to link module '" << modulePath << "'\n";
+            return false;
+        }
+    }
+    
+    return true;
 }
 
 // =============================================================================
@@ -3651,6 +4269,28 @@ bool generate_code(aria::frontend::Block* root, const std::string& filename, boo
     
     ctx.builder->SetInsertPoint(mainEntry);
     
+    // =========================================================================
+    // Initialize async scheduler (if program uses async/await)
+    // =========================================================================
+    // Declare aria_scheduler_init function (from runtime)
+    FunctionType* schedulerInitType = FunctionType::get(
+        Type::getVoidTy(ctx.llvmContext),
+        {Type::getInt32Ty(ctx.llvmContext)},  // num_threads parameter
+        false
+    );
+    Function* schedulerInit = Function::Create(
+        schedulerInitType,
+        Function::ExternalLinkage,
+        "aria_scheduler_init",
+        ctx.module.get()
+    );
+    
+    // Initialize with hardware_concurrency threads (0 = auto-detect)
+    // In a full implementation, this would be configurable
+    ctx.builder->CreateCall(schedulerInit, {
+        ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0)  // 0 = use hardware_concurrency
+    });
+    
     // Call module initializer
     ctx.builder->CreateCall(moduleInit);
     
@@ -3702,6 +4342,15 @@ bool generate_code(aria::frontend::Block* root, const std::string& filename, boo
     
     // Run the optimization pipeline
     MPM.run(*ctx.module, MAM);
+    
+    // =========================================================================
+    // Link imported modules
+    // =========================================================================
+    
+    if (!linkModules(*ctx.module)) {
+        errs() << "Module linking failed.\n";
+        return false;
+    }
     
     // =========================================================================
     
