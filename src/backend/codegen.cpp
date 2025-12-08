@@ -116,10 +116,19 @@ class CodeGenVisitor : public AstVisitor {
     // Generic functions are stored as templates and instantiated on demand
     // when used with concrete type arguments
     struct GenericTemplate {
-        VarDecl* ast;                                // Original VarDecl with lambda initializer
-        aria::frontend::LambdaExpr* lambda;          // The lambda expression
+        // Support both FuncDecl (old syntax) and VarDecl+Lambda (new syntax)
+        FuncDecl* funcDecl = nullptr;                // For func<T>:name(T:x) { } syntax
+        VarDecl* varDecl = nullptr;                  // For func<T>:name = T(T:x) { } syntax
+        aria::frontend::LambdaExpr* lambda = nullptr; // The lambda expression (for VarDecl style)
         std::vector<std::string> typeParams;         // Type parameter names (e.g., ["T", "U"])
         std::map<std::string, Function*> specializations;  // Map type args -> LLVM function
+        
+        // Get parameters (works for both styles)
+        const std::vector<FuncParam>& getParameters() const {
+            if (funcDecl) return funcDecl->parameters;
+            if (lambda) return lambda->parameters;
+            throw std::runtime_error("Invalid GenericTemplate: no function or lambda");
+        }
     };
     
     std::map<std::string, GenericTemplate> genericTemplates;  // funcName -> template
@@ -147,8 +156,21 @@ class CodeGenVisitor : public AstVisitor {
         }
         
         // Generate new specialization
-        VarDecl* originalDecl = tmpl.ast;
-        aria::frontend::LambdaExpr* originalLambda = tmpl.lambda;
+        // Check which style of generic function we have
+        aria::frontend::LambdaExpr* originalLambda = nullptr;
+        std::vector<FuncParam> funcParams;
+        std::string funcReturnType;
+        
+        if (tmpl.funcDecl) {
+            funcParams = tmpl.funcDecl->parameters;
+            funcReturnType = tmpl.funcDecl->return_type;
+        } else if (tmpl.lambda) {
+            originalLambda = tmpl.lambda;
+            funcParams = originalLambda->parameters;
+            funcReturnType = originalLambda->return_type;
+        } else {
+            throw std::runtime_error("Invalid GenericTemplate");
+        }
         
         // Create type substitution map: T -> int8, U -> float32, etc.
         std::map<std::string, std::string> typeSubstitution;
@@ -158,7 +180,7 @@ class CodeGenVisitor : public AstVisitor {
         
         // Create specialized function type
         std::vector<Type*> paramTypes;
-        for (auto& param : originalLambda->parameters) {
+        for (auto& param : funcParams) {
             // Substitute generic types in parameters
             std::string paramType = param.type;
             if (typeSubstitution.count(paramType) > 0) {
@@ -168,7 +190,7 @@ class CodeGenVisitor : public AstVisitor {
         }
         
         // Substitute generic type in return type
-        std::string returnType = originalLambda->return_type;
+        std::string returnType = funcReturnType;
         if (typeSubstitution.count(returnType) > 0) {
             returnType = typeSubstitution[returnType];
         }
