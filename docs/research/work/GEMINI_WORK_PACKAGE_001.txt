@@ -1,0 +1,864 @@
+================================================================================
+GEMINI DEEP RESEARCH WORK PACKAGE #001
+Aria Compiler - High Priority Parser and Error Handling Improvements
+Generated: December 7, 2025
+================================================================================
+
+OBJECTIVE:
+Research and provide detailed implementation plans for three high-priority
+incomplete features in the Aria compiler. This work will be done in parallel
+with Nikola integration work.
+
+SELECTED ISSUES:
+1. Vector Literal Syntax (ISSUE 1.2 from knownProblems.txt)
+2. Parser Error Messages (ISSUE 5.1 from knownProblems.txt)
+3. Vector Type Parser Support (ISSUE 1.1 from knownProblems.txt)
+
+================================================================================
+ISSUE 1: VECTOR LITERAL SYNTAX IMPLEMENTATION
+================================================================================
+
+STATUS: Not Implemented
+PRIORITY: Medium
+COMPLEXITY: Medium
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+Vector types (vec2, vec3, vec4, dvec2, dvec3, dvec4, ivec2, ivec3, ivec4) exist
+in the type system and backend code generation, but there is no syntax for
+creating vector literals. Users cannot initialize vectors with constant values.
+
+CURRENT STATE:
+- vec4 type is recognized: vec4:v;  // This works
+- Assignment from scalar fails: vec4:v = 0;  // Type mismatch error
+- No constructor syntax exists: vec4:v = vec4(1.0, 2.0, 3.0, 4.0);  // Parse error
+
+TYPE SYSTEM REFERENCE (from types.h lines 21-40):
+    VEC2,           // 2D float vector
+    VEC3,           // 3D float vector
+    VEC4,           // 4D float vector
+    DVEC2,          // 2D double vector
+    DVEC3,          // 3D double vector
+    DVEC4,          // 4D double vector
+    IVEC2,          // 2D int32 vector
+    IVEC3,          // 3D int32 vector
+    IVEC4,          // 4D int32 vector
+
+BACKEND LOWERING (from codegen_context.h lines 232-250):
+    case TypeKind::VEC2:
+        return FixedVectorType::get(Type::getFloatTy(context), 2);
+    case TypeKind::VEC3:
+        return FixedVectorType::get(Type::getFloatTy(context), 4); // Padded
+    case TypeKind::VEC4:
+        return FixedVectorType::get(Type::getFloatTy(context), 4);
+    // Similar for DVEC* (double) and IVEC* (i32)
+
+PROPOSED SYNTAX OPTIONS:
+1. Constructor syntax (like GLSL):
+   vec4:v = vec4(1.0, 2.0, 3.0, 4.0);
+   
+2. Aggregate initialization (like C):
+   vec4:v = {1.0, 2.0, 3.0, 4.0};
+   
+3. Swizzle constructor (future enhancement):
+   vec4:v = vec4(vec2(1.0, 2.0), 3.0, 4.0);
+
+REQUIRED RESEARCH:
+-------------------------------------------------------------------------------
+1. How do other languages handle vector literal syntax?
+   - GLSL vector constructors
+   - HLSL vector initialization
+   - Rust array literals
+   - Swift vector literals
+   
+2. What AST node design is needed?
+   - Should VectorLiteralExpr be distinct from ArrayLiteral?
+   - How to represent mixed constructors (vec4 from vec2 + scalars)?
+   
+3. Type checking requirements:
+   - Element count validation (vec3 needs 3 elements)
+   - Element type checking (vec4 needs floats, ivec4 needs ints)
+   - Implicit conversions (int to float, scalar broadcast)
+   
+4. LLVM code generation:
+   - How to create LLVM ConstantVector?
+   - When to use constant vs runtime initialization?
+   - How to handle padded vectors (vec3 → <4 x float>)?
+
+IMPLEMENTATION PLAN NEEDED:
+-------------------------------------------------------------------------------
+Please provide:
+1. Recommended syntax choice with justification
+2. Complete AST node definition (C++ code)
+3. Parser implementation strategy with code examples
+4. Type checking algorithm with pseudocode
+5. LLVM codegen implementation with code examples
+6. Test cases covering edge cases
+7. Integration points in existing codebase
+8. Estimated implementation time
+
+================================================================================
+SOURCE FILE: src/frontend/ast.h (Relevant AST Definitions)
+================================================================================
+
+#ifndef ARIA_FRONTEND_AST_H
+#define ARIA_FRONTEND_AST_H
+
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace aria {
+namespace frontend {
+
+// Forward Declarations
+class AstNode;
+class AstVisitor;
+class Expression;
+class Statement;
+class Block;
+class VarDecl;
+class FuncDecl;
+class StructDecl;
+class AsyncBlock;
+class VarExpr;
+class IntLiteral;
+class BoolLiteral;
+class NullLiteral;
+class FloatLiteral;
+class StringLiteral;
+class TemplateString;
+class TernaryExpr;
+class BinaryOp;
+class UnaryOp;
+class CallExpr;
+class ReturnStmt;
+class ExpressionStmt;
+class IfStmt;
+class PickStmt;
+class PickCase;
+class FallStmt;
+class WhenLoop;
+class TillLoop;
+class DeferStmt;
+class ForLoop;
+class WhileLoop;
+class BreakStmt;
+class ContinueStmt;
+class WhenExpr;
+class AwaitExpr;
+class UnwrapExpr;
+class ObjectLiteral;
+class ArrayLiteral;
+class IndexExpr;
+class MemberAccess;
+class LambdaExpr;
+class CastExpr;
+class UseStmt;
+class ModDef;
+class ExternBlock;
+
+// NOTE: VectorLiteral does NOT exist yet - this is what needs to be added
+
+// Base AST Node
+class AstNode {
+public:
+    virtual ~AstNode() = default;
+    virtual void accept(AstVisitor& visitor) = 0;
+};
+
+// Visitor Pattern Interface
+class AstVisitor {
+public:
+    virtual ~AstVisitor() = default;
+
+    // Expressions
+    virtual void visit(VarExpr* node) = 0;
+    virtual void visit(IntLiteral* node) = 0;
+    virtual void visit(FloatLiteral* node) = 0;
+    virtual void visit(BoolLiteral* node) = 0;
+    virtual void visit(NullLiteral* node) = 0;
+    virtual void visit(StringLiteral* node) = 0;
+    virtual void visit(TemplateString* node) = 0;
+    virtual void visit(TernaryExpr* node) = 0;
+    virtual void visit(BinaryOp* node) = 0;
+    virtual void visit(UnaryOp* node) = 0;
+    virtual void visit(CallExpr* node) = 0;
+    virtual void visit(ObjectLiteral* node) { /* default: do nothing */ }
+    virtual void visit(MemberAccess* node) { /* default: do nothing */ }
+    virtual void visit(ArrayLiteral* node) { /* default: do nothing */ }
+    virtual void visit(IndexExpr* node) { /* default: do nothing */ }
+    virtual void visit(UnwrapExpr* node) { /* default: do nothing */ }
+    virtual void visit(LambdaExpr* node) { /* default: do nothing */ }
+    virtual void visit(CastExpr* node) { /* default: do nothing */ }
+    
+    // NOTE: visit(VectorLiteral* node) needs to be added here
+
+    // Statements (truncated for brevity)
+    virtual void visit(VarDecl* node) = 0;
+    virtual void visit(FuncDecl* node) { /* default: do nothing */ }
+    virtual void visit(StructDecl* node) { /* default: do nothing */ }
+    virtual void visit(ReturnStmt* node) = 0;
+    virtual void visit(ExpressionStmt* node) { /* default: visit expression */ }
+    virtual void visit(IfStmt* node) = 0;
+    virtual void visit(Block* node) = 0;
+};
+
+// Block Statement
+class Block : public AstNode {
+public:
+    std::vector<std::unique_ptr<AstNode>> statements;
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
+} // namespace frontend
+} // namespace aria
+
+#endif // ARIA_FRONTEND_AST_H
+
+================================================================================
+SOURCE FILE: src/frontend/parser_expr.cpp (Expression Parser)
+================================================================================
+
+/**
+ * src/frontend/parser_expr.cpp
+ * 
+ * Aria Compiler - Expression Parser (Pratt Implementation)
+ * Version: 0.0.6
+ * 
+ * Implements the parsing of expressions using Top-Down Operator Precedence.
+ */
+
+#include "parser.h"
+#include "ast.h"
+#include "tokens.h"
+#include <map>
+#include <functional>
+#include <string>
+
+using namespace aria::frontend;
+
+// Precedence Table (22 levels)
+enum Precedence {
+    PREC_NONE = 0,
+    PREC_COMMA,
+    PREC_ASSIGNMENT,
+    PREC_TERNARY,
+    PREC_PIPELINE,
+    PREC_LOGICAL_OR,
+    PREC_LOGICAL_AND,
+    PREC_EQUALITY,
+    PREC_RELATIONAL,
+    PREC_SPACESHIP,
+    PREC_BITWISE_OR,
+    PREC_BITWISE_XOR,
+    PREC_BITWISE_AND,
+    PREC_SHIFT,
+    PREC_ADD,
+    PREC_MULT,
+    PREC_UNARY,
+    PREC_CALL,
+    PREC_PRIMARY
+};
+
+static Precedence getPrecedence(TokenType type) {
+    switch (type) {
+        case TOKEN_COMMA:           return PREC_COMMA;
+        case TOKEN_ASSIGN:          return PREC_ASSIGNMENT;
+        case TOKEN_TERNARY_IS:      return PREC_TERNARY;
+        case TOKEN_LOGICAL_OR:      return PREC_LOGICAL_OR;
+        case TOKEN_LOGICAL_AND:     return PREC_LOGICAL_AND;
+        case TOKEN_EQUAL:
+        case TOKEN_NOT_EQUAL:       return PREC_EQUALITY;
+        case TOKEN_PLUS:
+        case TOKEN_MINUS:           return PREC_ADD;
+        case TOKEN_MULTIPLY:
+        case TOKEN_DIVIDE:
+        case TOKEN_MODULO:          return PREC_MULT;
+        case TOKEN_LEFT_PAREN:      return PREC_CALL;
+        default:                    return PREC_NONE;
+    }
+}
+
+// Core Pratt Parser Loop
+std::unique_ptr<Expression> Parser::parseExpression(int minPrec) {
+    // Parse prefix (left-hand side)
+    auto left = parsePrefix();
+
+    // Precedence climbing
+    while (true) {
+        TokenType nextType = peek().type;
+        int nextPrec = getPrecedence(nextType);
+
+        if (nextPrec <= minPrec) break;
+
+        // Consume operator and parse right-hand side
+        advance();
+        auto right = parseExpression(nextPrec);
+        
+        // Create binary expression node
+        left = std::make_unique<BinaryOp>(nextType, std::move(left), std::move(right));
+    }
+
+    return left;
+}
+
+// NOTE: This is where vector constructor parsing would need to be added
+// When we see an identifier like "vec4" followed by '(', we need to detect
+// if it's a vector constructor or a regular function call
+
+================================================================================
+SOURCE FILE: src/frontend/parser_func.cpp (Function Parser)
+================================================================================
+
+/**
+ * Contains isTypeToken() helper which needs to be extended to recognize
+ * vector types as valid type tokens
+ */
+
+// Helper: Check if current token is a valid type token
+bool Parser::isTypeToken(TokenType type) {
+    return type == TOKEN_TYPE_IDENTIFIER ||
+           type == TOKEN_TYPE_INT8 || type == TOKEN_TYPE_INT16 || 
+           type == TOKEN_TYPE_INT32 || type == TOKEN_TYPE_INT64 ||
+           type == TOKEN_TYPE_UINT8 || type == TOKEN_TYPE_UINT16 ||
+           type == TOKEN_TYPE_UINT32 || type == TOKEN_TYPE_UINT64 ||
+           type == TOKEN_TYPE_BOOL || type == TOKEN_TYPE_VOID ||
+           type == TOKEN_TYPE_STRING || type == TOKEN_TYPE_RESULT ||
+           type == TOKEN_TYPE_FUNC;
+    
+    // NOTE: Vector types (VEC2, VEC3, VEC4, DVEC*, IVEC*) are NOT included!
+    // This needs to be extended
+}
+
+================================================================================
+SOURCE FILE: src/backend/codegen.cpp (Code Generation)
+================================================================================
+
+/**
+ * Lines 500-650 show existing literal codegen patterns
+ * VectorLiteral visitor would need to be added similar to ArrayLiteral
+ */
+
+// Example pattern from existing code:
+void visit(IntLiteral* node) override {
+    lastValue = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), node->value);
+}
+
+void visit(FloatLiteral* node) override {
+    lastValue = ConstantFP::get(Type::getDoubleTy(ctx.llvmContext), node->value);
+}
+
+// Vector literal would need something like:
+void visit(VectorLiteral* node) override {
+    // Create vector of element constants
+    std::vector<Constant*> elements;
+    for (auto& elem : node->elements) {
+        elem->accept(*this);
+        elements.push_back(cast<Constant>(lastValue));
+    }
+    
+    // Create ConstantVector
+    Type* vecType = getLLVMType(node->type);
+    lastValue = ConstantVector::get(elements);
+}
+
+================================================================================
+ISSUE 2: PARSER ERROR MESSAGES IMPROVEMENT
+================================================================================
+
+STATUS: Poor Quality
+PRIORITY: High
+COMPLEXITY: Medium
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+Current parser error messages show cryptic token type numbers instead of
+helpful descriptions. This makes debugging Aria programs extremely difficult.
+
+CURRENT ERROR FORMAT:
+Parse Error: Expected token type 173 but got 181 at line 3, col 30
+
+DESIRED ERROR FORMAT:
+Parse Error: Expected type identifier but got function parameter at line 3, col 30
+vec4(vec4:param) {
+     ^
+Help: Did you mean 'vec4:name' for the parameter?
+
+EXAMPLE ERROR SCENARIOS:
+1. Missing colon in variable declaration:
+   vec4 v = 0;  // Missing ':' between type and name
+   
+2. Wrong syntax in function parameters:
+   func:test = int32(vec4 param) { }  // Missing ':'
+   
+3. Type mismatch:
+   vec4:v = 123;  // Can't assign int to vec4
+
+REQUIRED RESEARCH:
+-------------------------------------------------------------------------------
+1. How do modern compilers produce helpful error messages?
+   - Rust compiler error messages (considered best-in-class)
+   - Clang error messages with fix-it hints
+   - TypeScript error messages with suggestions
+   
+2. What infrastructure is needed?
+   - Token type to string mapping
+   - Source line caching for display
+   - Error recovery mechanisms
+   - Did-you-mean suggestion algorithms (Levenshtein distance?)
+   
+3. How to implement source highlighting?
+   - ANSI color codes for terminal output
+   - Caret (^) positioning under errors
+   - Multi-line error context
+   
+4. How to provide helpful suggestions?
+   - Common mistake patterns
+   - Similar identifier detection
+   - Fix-it hint generation
+
+IMPLEMENTATION PLAN NEEDED:
+-------------------------------------------------------------------------------
+Please provide:
+1. Token type to string mapping strategy (enum to string conversion)
+2. Error message formatting system design
+3. Source code excerpt extraction algorithm
+4. Suggestion generation algorithm
+5. Complete code examples for error reporting class
+6. Test cases for various error scenarios
+7. Integration strategy with existing parser
+8. Estimated implementation time
+
+================================================================================
+SOURCE FILE: src/frontend/tokens.h (Token Definitions)
+================================================================================
+
+#ifndef ARIA_FRONTEND_TOKENS_H
+#define ARIA_FRONTEND_TOKENS_H
+
+#include <string>
+#include <cstdint>
+
+namespace aria {
+namespace frontend {
+
+// Token Types - Based on Aria Language Specification v0.0.6
+enum TokenType {
+    // Special Tokens
+    TOKEN_EOF,
+    TOKEN_INVALID,
+    TOKEN_UNKNOWN,
+
+    // Literals
+    TOKEN_INT_LITERAL,
+    TOKEN_FLOAT_LITERAL,
+    TOKEN_STRING_LITERAL,
+    TOKEN_CHAR_LITERAL,
+    TOKEN_TRIT_LITERAL,
+    TOKEN_TEMPLATE_LITERAL,
+
+    // Identifiers and Keywords
+    TOKEN_IDENTIFIER,
+    TOKEN_TYPE_IDENTIFIER,
+    TOKEN_KW_FUNC,
+    TOKEN_KW_RETURN,
+    TOKEN_KW_IF,
+    TOKEN_KW_ELSE,
+    TOKEN_KW_PICK,
+    TOKEN_KW_WHEN,
+    TOKEN_KW_THEN,
+    TOKEN_KW_END,
+    TOKEN_KW_TILL,
+    TOKEN_KW_FOR,
+    TOKEN_KW_WHILE,
+    TOKEN_KW_BREAK,
+    TOKEN_KW_CONTINUE,
+    TOKEN_KW_FALL,
+    TOKEN_KW_ASYNC,
+    TOKEN_KW_AWAIT,
+    TOKEN_KW_DEFER,
+    TOKEN_KW_WILD,
+    TOKEN_KW_WILDX,
+    TOKEN_KW_STACK,
+    TOKEN_KW_GC,
+    TOKEN_KW_STRUCT,
+    TOKEN_KW_TYPE,
+    TOKEN_KW_USE,
+    TOKEN_KW_MOD,
+    TOKEN_KW_IS,
+    TOKEN_KW_TRUE,
+    TOKEN_KW_FALSE,
+    TOKEN_KW_NULL,
+    TOKEN_KW_PASS,
+    TOKEN_KW_FAIL,
+    
+    // Primitive Types
+    TOKEN_TYPE_VOID,
+    TOKEN_TYPE_BOOL,
+    TOKEN_TYPE_INT8,
+    TOKEN_TYPE_INT16,
+    TOKEN_TYPE_INT32,
+    TOKEN_TYPE_INT64,
+    TOKEN_TYPE_UINT8,
+    TOKEN_TYPE_UINT16,
+    TOKEN_TYPE_UINT32,
+    TOKEN_TYPE_UINT64,
+    TOKEN_TYPE_FLT32,
+    TOKEN_TYPE_FLT64,
+    TOKEN_TYPE_TBB8,
+    TOKEN_TYPE_TBB16,
+    TOKEN_TYPE_TBB32,
+    TOKEN_TYPE_TBB64,
+    
+    // Vector Types (Currently NOT recognized as keywords!)
+    TOKEN_TYPE_VEC2,
+    TOKEN_TYPE_VEC3,
+    TOKEN_TYPE_VEC4,
+    // ... more types ...
+    
+    // Operators
+    TOKEN_PLUS,
+    TOKEN_MINUS,
+    TOKEN_MULTIPLY,
+    TOKEN_DIVIDE,
+    TOKEN_MODULO,
+    TOKEN_ASSIGN,
+    TOKEN_EQUAL,
+    TOKEN_NOT_EQUAL,
+    TOKEN_LESS_THAN,
+    TOKEN_GREATER_THAN,
+    TOKEN_LOGICAL_AND,
+    TOKEN_LOGICAL_OR,
+    
+    // Delimiters
+    TOKEN_LEFT_PAREN,
+    TOKEN_RIGHT_PAREN,
+    TOKEN_LEFT_BRACE,
+    TOKEN_RIGHT_BRACE,
+    TOKEN_LEFT_BRACKET,
+    TOKEN_RIGHT_BRACKET,
+    TOKEN_COLON,
+    TOKEN_SEMICOLON,
+    TOKEN_COMMA,
+    TOKEN_DOT,
+    
+    // ... (284 total token types!)
+};
+
+// Token Structure
+struct Token {
+    TokenType type;
+    std::string lexeme;  // Original source text
+    int line;
+    int col;
+    
+    // NOTE: No toString() method exists for TokenType!
+    // This is what needs to be added for better error messages
+};
+
+} // namespace frontend
+} // namespace aria
+
+#endif
+
+// RESEARCH NEEDED: How to implement TokenType to string conversion?
+// Options:
+// 1. Static array indexed by enum value
+// 2. std::map<TokenType, std::string>
+// 3. Macro-generated switch statement
+// 4. X-macro pattern for DRY definition
+
+================================================================================
+SOURCE FILE: src/frontend/parser.cpp (Parser Infrastructure)
+================================================================================
+
+/**
+ * Current error reporting implementation
+ */
+
+namespace aria {
+namespace frontend {
+
+// Expect a token and advance, or error
+Token Parser::expect(TokenType type) {
+    if (current.type != type) {
+        std::stringstream ss;
+        ss << "Expected token type " << type << " but got " << current.type
+           << " at line " << current.line << ", col " << current.col;
+        throw std::runtime_error(ss.str());
+    }
+    Token tok = current;
+    advance();
+    return tok;
+}
+
+// PROBLEM: This prints token type numbers (e.g., "173" and "181")
+// SOLUTION NEEDED: Convert TokenType to human-readable string
+
+// Consume token with custom error message
+Token Parser::consume(TokenType type, const std::string& message) {
+    if (current.type != type) {
+        std::stringstream ss;
+        ss << message << " (expected token type " << type << " but got " << current.type
+           << ") at line " << current.line << ", col " << current.col;
+        throw std::runtime_error(ss.str());
+    }
+    Token tok = current;
+    advance();
+    return tok;
+}
+
+// RESEARCH NEEDED:
+// 1. Should we create a dedicated ErrorReporter class?
+// 2. How to cache source lines for error display?
+// 3. How to implement multi-line error context?
+// 4. How to colorize terminal output (ANSI codes)?
+
+} // namespace frontend
+} // namespace aria
+
+================================================================================
+SOURCE FILE: src/frontend/lexer.cpp (Lexer - Error Context Source)
+================================================================================
+
+/**
+ * The lexer has access to the full source text
+ * This could be used to extract error context
+ */
+
+namespace aria {
+namespace frontend {
+
+class AriaLexer {
+private:
+    std::string source;  // Full source code
+    size_t pos;
+    int line;
+    int col;
+    
+public:
+    AriaLexer(std::string src) : source(src), pos(0), line(1), col(1) {}
+    
+    // RESEARCH NEEDED:
+    // Should lexer provide getSourceLine(int lineNum) method?
+    // Should lexer provide getSourceContext(int line, int col, int contextLines)?
+    
+    Token nextToken() {
+        // ... token recognition logic ...
+        
+        // When error is detected:
+        return {TOKEN_INVALID, "UNTERMINATED_BLOCK_COMMENT", line, col};
+        
+        // PROBLEM: Error message is a string constant
+        // SOLUTION NEEDED: Rich error objects with context
+    }
+};
+
+} // namespace frontend
+} // namespace aria
+
+================================================================================
+ISSUE 3: VECTOR TYPE PARSER SUPPORT
+================================================================================
+
+STATUS: Partially Implemented
+PRIORITY: Medium
+COMPLEXITY: Low
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+Vector types (vec2, vec3, vec4, etc.) are defined in the type system and work
+in some contexts (global variable declarations), but fail in function parameters.
+
+WORKING:
+    vec4:global_vector;  // Global declaration works
+
+NOT WORKING:
+    func:test = int32(vec4:param) { }  // Parse error: unexpected identifier
+
+ROOT CAUSE:
+The parser doesn't recognize "vec2", "vec3", "vec4" etc. as type keywords.
+They are treated as TOKEN_IDENTIFIER instead of TOKEN_TYPE_VEC*.
+
+AFFECTED CODE:
+-------------------------------------------------------------------------------
+
+1. LEXER (src/frontend/lexer.cpp):
+   - Keywords map doesn't include vector types
+   - "vec4" is lexed as TOKEN_IDENTIFIER, not TOKEN_TYPE_VEC4
+   
+2. PARSER (src/frontend/parser_func.cpp):
+   - isTypeToken() doesn't include vector types
+   - parseTypeName() works (accepts identifiers) but type validation fails
+
+REQUIRED RESEARCH:
+-------------------------------------------------------------------------------
+1. Should vector types be keywords or built-in type identifiers?
+   - Keywords: Reserved, cannot be used as variable names
+   - Built-in types: Like int32, flt64 (also keywords in Aria)
+   
+2. What is the complete list of vector types to add?
+   - vec2, vec3, vec4 (float vectors)
+   - dvec2, dvec3, dvec4 (double vectors)
+   - ivec2, ivec3, ivec4 (integer vectors)
+   - Are there more? (uvec*, bvec*?)
+   
+3. How to handle matrix types?
+   - mat2, mat3, mat4 (future feature)
+   - Should these be added at the same time?
+
+IMPLEMENTATION PLAN NEEDED:
+-------------------------------------------------------------------------------
+Please provide:
+1. Complete list of vector/matrix types to add
+2. Lexer keyword map additions
+3. Parser isTypeToken() updates
+4. Test cases for all vector types in all contexts:
+   - Global variables
+   - Function parameters
+   - Function return types
+   - Struct fields
+   - Array element types
+5. Integration testing strategy
+6. Estimated implementation time
+
+================================================================================
+SOURCE FILE ADDITIONS NEEDED:
+================================================================================
+
+The lexer needs a keyword map like this (pseudo-code):
+
+std::map<std::string, TokenType> keywords = {
+    {"func", TOKEN_KW_FUNC},
+    {"if", TOKEN_KW_IF},
+    {"int8", TOKEN_TYPE_INT8},
+    {"int32", TOKEN_TYPE_INT32},
+    // ... existing keywords ...
+    
+    // ADDITIONS NEEDED:
+    {"vec2", TOKEN_TYPE_VEC2},
+    {"vec3", TOKEN_TYPE_VEC3},
+    {"vec4", TOKEN_TYPE_VEC4},
+    {"dvec2", TOKEN_TYPE_DVEC2},
+    {"dvec3", TOKEN_TYPE_DVEC3},
+    {"dvec4", TOKEN_TYPE_DVEC4},
+    {"ivec2", TOKEN_TYPE_IVEC2},
+    {"ivec3", TOKEN_TYPE_IVEC3},
+    {"ivec4", TOKEN_TYPE_IVEC4},
+};
+
+The parser's isTypeToken() needs updates:
+
+bool Parser::isTypeToken(TokenType type) {
+    return type == TOKEN_TYPE_IDENTIFIER ||
+           type == TOKEN_TYPE_INT8 || type == TOKEN_TYPE_INT32 ||
+           // ... existing types ...
+           
+           // ADDITIONS NEEDED:
+           type == TOKEN_TYPE_VEC2 || type == TOKEN_TYPE_VEC3 || 
+           type == TOKEN_TYPE_VEC4 ||
+           type == TOKEN_TYPE_DVEC2 || type == TOKEN_TYPE_DVEC3 || 
+           type == TOKEN_TYPE_DVEC4 ||
+           type == TOKEN_TYPE_IVEC2 || type == TOKEN_TYPE_IVEC3 || 
+           type == TOKEN_TYPE_IVEC4;
+}
+
+================================================================================
+DELIVERABLES EXPECTED FROM GEMINI DEEP RESEARCH:
+================================================================================
+
+For each of the three issues, please provide:
+
+1. DETAILED IMPLEMENTATION PLAN
+   - Step-by-step implementation guide
+   - Code examples for each step
+   - Integration points with existing code
+   
+2. COMPARATIVE ANALYSIS
+   - How other compilers/languages solve this problem
+   - Best practices from industry
+   - Pros and cons of different approaches
+   
+3. COMPLETE CODE SAMPLES
+   - AST node definitions
+   - Parser functions
+   - Code generation functions
+   - Test cases
+   
+4. EDGE CASES AND GOTCHAS
+   - What can go wrong?
+   - How to handle error cases?
+   - Performance considerations
+   
+5. TESTING STRATEGY
+   - Unit tests needed
+   - Integration tests needed
+   - Example Aria programs to test
+   
+6. DOCUMENTATION
+   - User-facing documentation
+   - Developer documentation
+   - Code comments
+
+7. TIME ESTIMATE
+   - Hours/days estimate for implementation
+   - Dependencies and prerequisites
+   - Risks and mitigation strategies
+
+================================================================================
+ADDITIONAL CONTEXT:
+================================================================================
+
+ARIA COMPILER ARCHITECTURE:
+- Frontend: Lexer → Parser → AST
+- Middle: Type Checker → Semantic Analysis
+- Backend: LLVM IR Generation → Optimization → Object Code
+
+LLVM VERSION: 18
+BUILD SYSTEM: CMake
+TARGET PLATFORMS: Linux, macOS, Windows
+LANGUAGE STANDARD: C++17
+
+CODING STYLE:
+- Camel case for classes (VectorLiteral)
+- Snake case for functions (parse_vector_literal)
+- No exceptions in hot paths
+- Use std::unique_ptr for AST nodes
+- Visitor pattern for AST traversal
+
+TESTING:
+- Test files in build/ directory
+- .aria source files compiled with ariac
+- Output verification via LLVM IR inspection
+
+================================================================================
+SUBMISSION FORMAT:
+================================================================================
+
+Please provide the research results in a structured document with:
+
+1. Executive Summary (1 page)
+2. Detailed Implementation Plans (one section per issue)
+3. Code Examples and Snippets
+4. Comparative Analysis with Other Languages
+5. Testing Strategy
+6. Time Estimates
+7. References and Further Reading
+
+================================================================================
+TIMELINE:
+================================================================================
+
+This research should be completed while Nikola integration work is in progress.
+Estimated time needed: 2-4 hours of deep research.
+
+Results will be used to implement these features after Nikola integration
+is complete.
+
+================================================================================
+END OF WORK PACKAGE
+================================================================================

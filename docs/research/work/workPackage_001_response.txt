@@ -1,0 +1,599 @@
+﻿Aria Compiler Architecture Enhancement: Comprehensive Implementation Report regarding Vector Syntax, Type System Integration, and Diagnostic Subsystems
+Executive Summary
+This report presents a definitive architectural analysis and implementation strategy for the Aria compiler, specifically addressing Work Package #001. The objective is to rectify three high-priority deficiencies in the frontend and backend subsystems: the absence of a dedicated Vector Literal Syntax (Issue 1.2), the lack of parser support for Vector Types (Issue 1.1), and the sub-optimal state of Parser Error Messages (Issue 5.1). These enhancements are critical for transforming Aria from a rudimentary language prototype into a robust tool capable of graphics and systems programming.
+The research indicates that while the Aria backend correctly lowers vector types to LLVM IR, the frontend lacks the necessary syntactic sugar and lexical recognition to expose these features to developers. The proposed solution involves a multi-stage refactoring of the Lexer and Parser, adopting a GLSL-style constructor syntax which analysis confirms is the industry standard for shading languages.1 This choice optimizes for familiarity among the target demographic of graphics programmers while simplifying the parsing logic compared to C-style aggregate initialization.3
+Furthermore, the report details a complete overhaul of the error reporting subsystem. Moving beyond opaque numeric error codes, the new architecture introduces a DiagnosticEngine capable of source highlighting, ANSI-colored output, and "Did-you-mean" suggestions driven by Levenshtein distance algorithms.4 This brings Aria's developer experience (DX) in line with modern standards set by Rust and Clang.6
+The implementation plan provides exhaustive C++ specifications for new AST nodes (VectorLiteral), lexical modifications using X-Macros for maintainable token stringification 7, and LLVM code generation strategies that navigate complex edge cases such as vec3 memory alignment 8 and poison value propagation.9
+________________
+1. Issue 3: Vector Type Parser Support
+1.1 Problem Analysis and Architectural Context
+The foundational issue blocking effective vector usage in Aria is the Lexer's inability to distinguish vector type names from generic identifiers. As detailed in the problem description, the compilation fails when vec4 is used in function signatures (e.g., func:test = int32(vec4:param)), despite working in global variable declarations. This inconsistency arises because vec4 is tokenized as TOKEN_IDENTIFIER rather than a distinct type token like TOKEN_TYPE_VEC4. The parser's isTypeToken() predicate, which validates type signatures, relies on a strict allowlist of token enumerations that currently excludes vector types.10
+To resolve this, the compiler must promote vector and matrix type names to first-class keywords. This change is not merely syntactic; it has profound implications for the language's grammar and backward compatibility. By reserving vec2 through vec4 (and their double/integer/boolean variants), we prevent users from declaring variables with these names, a standard restriction in languages like GLSL and HLSL.3
+1.2 Comprehensive Type System Expansion
+The research highlights a broad spectrum of vector and matrix types supported by GLSL and equivalent shading languages. To ensure Aria is future-proof, we must implement the full set of standard types immediately, rather than piecemeal.
+1.2.1 The Expanded Keyword Set
+Analysis of GLSL data types 11 and Aria's existing type system suggests the following categorization for new keywords:
+* Floating Point Vectors: vec2, vec3, vec4 (Single precision), dvec2, dvec3, dvec4 (Double precision).
+* Integer Vectors: ivec2, ivec3, ivec4 (Signed 32-bit), uvec2, uvec3, uvec4 (Unsigned 32-bit).
+* Boolean Vectors: bvec2, bvec3, bvec4 (used for comparison results).
+* Matrices: mat2, mat3, mat4 (Square float matrices).
+While the immediate requirement focuses on vec*, implementing the full set now prevents breaking changes later. The uvec* and bvec* types are particularly crucial for comparison operations (e.g., lessThan returning a bvec) as noted in GLSL documentation.13
+1.2.2 Lexer Implementation Strategy
+The src/frontend/lexer.cpp file requires modification to its keyword lookup table. The current implementation likely uses a std::map or a perfect hash function to match string literals to TokenType enums. We will extend this map.
+Code Specification: Lexer Keyword Map
+
+
+C++
+
+
+
+
+// src/frontend/lexer.cpp
+
+// Initialize the keyword map with standard Aria keywords and the new vector types.
+// This mapping ensures that when the lexer encounters "vec4", it produces 
+// TOKEN_TYPE_VEC4 instead of TOKEN_IDENTIFIER.
+
+void Lexer::initKeywords() {
+   keywords["func"] = TOKEN_KW_FUNC;
+   keywords["return"] = TOKEN_KW_RETURN;
+   //... existing keywords...
+
+   // Floating Point Vectors
+   keywords["vec2"] = TOKEN_TYPE_VEC2;
+   keywords["vec3"] = TOKEN_TYPE_VEC3;
+   keywords["vec4"] = TOKEN_TYPE_VEC4;
+   keywords["dvec2"] = TOKEN_TYPE_DVEC2;
+   keywords["dvec3"] = TOKEN_TYPE_DVEC3;
+   keywords["dvec4"] = TOKEN_TYPE_DVEC4;
+
+   // Integer Vectors
+   keywords["ivec2"] = TOKEN_TYPE_IVEC2;
+   keywords["ivec3"] = TOKEN_TYPE_IVEC3;
+   keywords["ivec4"] = TOKEN_TYPE_IVEC4;
+   keywords["uvec2"] = TOKEN_TYPE_UVEC2;
+   keywords["uvec3"] = TOKEN_TYPE_UVEC3;
+   keywords["uvec4"] = TOKEN_TYPE_UVEC4;
+
+   // Boolean Vectors
+   keywords["bvec2"] = TOKEN_TYPE_BVEC2;
+   keywords["bvec3"] = TOKEN_TYPE_BVEC3;
+   keywords["bvec4"] = TOKEN_TYPE_BVEC4;
+
+   // Matrices (Square)
+   keywords["mat2"] = TOKEN_TYPE_MAT2;
+   keywords["mat3"] = TOKEN_TYPE_MAT3;
+   keywords["mat4"] = TOKEN_TYPE_MAT4;
+}
+
+This change mandates a corresponding update to src/frontend/tokens.h to define these new enum values. As discussed in Section 3 (Parser Error Messages), these enums should be generated via X-Macros to facilitate string conversion, but for the immediate lexer logic, the enum presence is sufficient.
+1.3 Parser Type Predicate Update
+The function parser (src/frontend/parser_func.cpp) utilizes a helper method isTypeToken(TokenType type) to determine if a token signifies the start of a type declaration. This is a lookahead mechanism used in parsing function parameters (name: type) and variable declarations.
+Refactoring isTypeToken
+The current implementation checks against a hardcoded list of scalar types. We must expand this to include the vector families. Grouping these checks by category improves readability and maintainability.
+
+
+C++
+
+
+
+
+// src/frontend/parser_func.cpp
+
+bool Parser::isTypeToken(TokenType type) {
+   switch (type) {
+       // Scalar Types
+       case TOKEN_TYPE_INT8:  case TOKEN_TYPE_INT16:
+       case TOKEN_TYPE_INT32: case TOKEN_TYPE_INT64:
+       case TOKEN_TYPE_UINT8: case TOKEN_TYPE_UINT16:
+       case TOKEN_TYPE_UINT32: case TOKEN_TYPE_UINT64:
+       case TOKEN_TYPE_FLT32: case TOKEN_TYPE_FLT64:
+       case TOKEN_TYPE_BOOL:  case TOKEN_TYPE_STRING:
+       case TOKEN_TYPE_VOID:
+           return true;
+
+       // Vector Types (Float)
+       case TOKEN_TYPE_VEC2: case TOKEN_TYPE_VEC3: case TOKEN_TYPE_VEC4:
+       case TOKEN_TYPE_DVEC2: case TOKEN_TYPE_DVEC3: case TOKEN_TYPE_DVEC4:
+           return true;
+
+       // Vector Types (Integer/Unsigned/Boolean)
+       case TOKEN_TYPE_IVEC2: case TOKEN_TYPE_IVEC3: case TOKEN_TYPE_IVEC4:
+       case TOKEN_TYPE_UVEC2: case TOKEN_TYPE_UVEC3: case TOKEN_TYPE_UVEC4:
+       case TOKEN_TYPE_BVEC2: case TOKEN_TYPE_BVEC3: case TOKEN_TYPE_BVEC4:
+           return true;
+
+       // Matrix Types
+       case TOKEN_TYPE_MAT2: case TOKEN_TYPE_MAT3: case TOKEN_TYPE_MAT4:
+           return true;
+
+       // Identifier types (User-defined structs)
+       case TOKEN_TYPE_IDENTIFIER:
+           return true;
+
+       default:
+           return false;
+   }
+}
+
+1.4 Integration Risks and Verification
+Backward Compatibility Risk:
+If existing Aria source code uses variables named vec2 or mat4, this change will break compilation, raising a syntax error ("Unexpected token"). Given Aria's status as an experimental language, this breakage is acceptable and necessary to align with domain standards.
+Verification Plan:
+1. Positive Test: Declare global variables of all new types: vec4:v; mat3:m;.
+2. Positive Test: Use types in function signatures: func:update(pos: vec3, vel: vec3) -> void.
+3. Positive Test: Use types in structs: struct Particle { pos: vec3; life: flt32; }.
+4. Negative Test: Attempt to use a vector keyword as a variable name: var vec4: int32;. This must now fail.
+________________
+2. Issue 1: Vector Literal Syntax Implementation
+2.1 Comparative Syntax Analysis and Design Selection
+With vector types recognized, the compiler must support the instantiation of vector values. The choice of syntax heavily influences the complexity of the parser and the expressiveness of the language.
+2.1.1 Industry Paradigms
+1. C-Style Aggregate Initialization ({...})
+   * Examples: HLSL 3, C.
+   * Mechanism: float4 v = {1.0, 2.0, 3.0, 4.0};
+   * Pros: Concise; familiar to systems programmers.
+   * Cons: Ambiguous in expression contexts. For example, f({1,2}) requires the parser to know the expected type of f's argument to resolve {1,2} as a vector literal rather than an array or struct. This requires "top-down" type inference, which complicates the "bottom-up" Pratt parser used in Aria.
+2. Constructor-Style Initialization (type(...))
+   * Examples: GLSL 2, C++, Swift.14
+   * Mechanism: vec4 v = vec4(1.0, 2.0, 3.0, 4.0);
+   * Pros: Explicit and context-free. The token vec4 immediately informs the parser of the intent. It supports function-like semantics, such as overloading (constructors with different signatures) and broadcasting (e.g., vec4(1.0) filling all channels).
+   * Cons: More verbose.
+3. Swizzle-Based Construction
+   * Examples: GLSL 16, Swift.
+   * Mechanism: vec4(v.xy, 0.0, 1.0)
+   * Insight: This is an extension of constructor syntax, allowing vectors to be composed of other vectors.
+2.1.2 Design Decision
+Recommendation: Aria should adopt the GLSL Constructor Syntax.
+Reasoning:
+* Parser Compatibility: Aria uses a Pratt parser.10 Constructor syntax vec4(...) is syntactically identical to a function call. It can be parsed as a "Prefix" expression where the "operator" is the type name. This fits naturally into the existing parsePrimary or parsePrefix logic without requiring complex lookahead or type inference context.
+* Domain Fit: The target audience (graphics/systems) is highly conditioned to GLSL syntax.
+* Expressiveness: It naturally supports mixed-type construction (e.g., vec4(vec3, float)) which is cumbersome in aggregate syntax.
+2.2 AST Node Architecture
+We require a dedicated AST node, VectorLiteral, to represent this construct. While it resembles a CallExpr, distinct semantics for code generation (emitting constants vs. function calls) justify a separate node.
+Class Definition (src/frontend/ast.h):
+
+
+C++
+
+
+
+
+namespace aria {
+namespace frontend {
+
+// Forward declare for the visitor
+class VectorLiteral;
+
+class AstVisitor {
+public:
+   //... existing visits...
+   virtual void visit(VectorLiteral* node) = 0;
+};
+
+class VectorLiteral : public Expression {
+public:
+   // The specific vector type (e.g., TOKEN_TYPE_VEC4, TOKEN_TYPE_IVEC3)
+   TokenType vectorType;
+   
+   // Arguments passed to the constructor. 
+   // Can be scalars, other vectors, or complex expressions.
+   std::vector<std::unique_ptr<Expression>> elements;
+   
+   VectorLiteral(TokenType type, 
+                 std::vector<std::unique_ptr<Expression>> elems, 
+                 int line, int col)
+       : vectorType(type), elements(std::move(elems)) {
+       this->line = line;
+       this->col = col;
+   }
+
+   void accept(AstVisitor& visitor) override {
+       visitor.visit(this);
+   }
+};
+
+} // namespace frontend
+} // namespace aria
+
+2.3 Parser Implementation (Pratt Algorithm)
+The parsing logic must intercept the vector type tokens in the expression parsing loop. Since we have registered vec4 etc., as keywords (Issue 3), they will appear as TOKEN_TYPE_VEC* rather than TOKEN_IDENTIFIER. We must handle these tokens in the parsePrefix method, which handles atoms like literals, variables, and parenthesized expressions.
+Implementation Logic (src/frontend/parser_expr.cpp):
+The parser needs a helper parseVectorLiteral that consumes the parentheses and arguments.
+
+
+C++
+
+
+
+
+// Helper to identify if a token starts a vector literal
+bool Parser::isVectorType(TokenType type) {
+   return (type >= TOKEN_TYPE_VEC2 && type <= TOKEN_TYPE_VEC4) ||
+          (type >= TOKEN_TYPE_DVEC2 && type <= TOKEN_TYPE_DVEC4) ||
+          (type >= TOKEN_TYPE_IVEC2 && type <= TOKEN_TYPE_IVEC4) ||
+          //... include uvec, bvec...
+          false;
+}
+
+std::unique_ptr<Expression> Parser::parsePrefix() {
+   TokenType type = current.type;
+
+   //... existing handling for IntLiteral, FloatLiteral...
+
+   if (isVectorType(type)) {
+       return parseVectorLiteral();
+   }
+
+   //... existing handling for Identifiers, Grouping...
+}
+
+std::unique_ptr<Expression> Parser::parseVectorLiteral() {
+   Token typeToken = consume(); // Eat 'vec4'
+   int line = typeToken.line;
+   int col = typeToken.col;
+
+   consume(TOKEN_LEFT_PAREN, "Expected '(' after vector type constructor");
+
+   std::vector<std::unique_ptr<Expression>> args;
+   
+   if (current.type!= TOKEN_RIGHT_PAREN) {
+       do {
+           // Parse expression with lowest precedence to capture full arguments
+           args.push_back(parseExpression(PREC_COMMA));
+       } while (match(TOKEN_COMMA));
+   }
+
+   consume(TOKEN_RIGHT_PAREN, "Expected ')' to close vector constructor");
+
+   return std::make_unique<VectorLiteral>(
+       typeToken.type, std::move(args), line, col
+   );
+}
+
+This implementation allows for nested expressions within the constructor, e.g., vec4(1.0 + x, sin(y),...) due to the recursive call to parseExpression.
+2.4 Semantic Analysis and Type Checking
+Before code generation, the TypeChecker pass must validate the arguments. Vector constructors are polymorphic:
+1. Scalar Broadcasting: vec4(1.0) implies {1.0, 1.0, 1.0, 1.0}.
+2. Element-wise Construction: vec2(1.0, 2.0).
+3. Composition: vec4(v2, 1.0, 1.0) where v2 is a vec2.
+Validation Algorithm:
+1. Determine Target Size: Map TOKEN_TYPE_VEC4 → 4 components.
+2. Flatten Arguments: Iterate through inputs. If an input is a scalar, it counts as 1. If it is a vector, it counts as its dimension (e.g., vec3 counts as 3).
+3. Check Component Sum:
+   * If argument count is 1 and it is a scalar: Valid (Broadcasting).
+   * Otherwise: The sum of components must exactly match the target size. vec4(vec3) is invalid (3!= 4).
+4. Check Element Types:
+   * Verify that input types match the vector's base type (e.g., no passing bool to vec4).
+   * Implicit Conversion: Ideally, insert ImplicitCast nodes for int → float literals if supported.
+2.5 LLVM Code Generation Strategy
+The backend generation is the most complex aspect, requiring different paths for constant vs. runtime values.
+2.5.1 The vec3 Alignment Problem
+A critical insight from the research is the handling of vec3 in LLVM and hardware buffers.8
+* Issue: Standard layout rules (std140 in OpenGL/Vulkan) align vec3 to 16 bytes (size of vec4).
+* LLVM Behavior: FixedVectorType::get(floatTy, 3) creates a <3 x float> type. However, when stored in a struct or array, LLVM might pack it tightly (12 bytes) or align it depending on the DataLayout.
+* Best Practice: The provided codegen_context.h snippet in the prompt hints: TypeKind::VEC3: return FixedVectorType::get(Type::getFloatTy(context), 4); // Padded. This indicates Aria already represents vec3 as <4 x float> in memory.
+* Implication: When constructing a vec3 literal, we must actually construct a 4-element vector where the 4th element is undef or 0.0. This avoids "store overwrites" or alignment faults when interfacing with GPU buffers.
+2.5.2 Code Generation Logic
+The CodegenVisitor::visit(VectorLiteral* node) must handle three cases:
+Case A: All operands are Compile-Time Constants
+We use llvm::ConstantVector.
+
+
+C++
+
+
+
+
+// Pseudocode for Constant Path
+std::vector<llvm::Constant*> constElements;
+//... flatten args...
+if (isVec3 && usePadding) {
+   constElements.push_back(llvm::ConstantFP::get(ctx, 0.0)); // Pad to vec4
+}
+lastValue = llvm::ConstantVector::get(constElements);
+
+Case B: Runtime Construction (The insertelement Chain)
+When arguments are variables, we cannot use ConstantVector. We must build the vector instruction by instruction.
+* Approach 1: insertelement Chain. Start with an undef vector and insert each element.
+Code snippet
+%v1 = insertelement <4 x float> undef, float %arg1, i32 0
+%v2 = insertelement <4 x float> %v1, float %arg2, i32 1
+
+...
+```
+Pros: Efficient, maps well to SIMD insert instructions.
+Cons: Verbose IR.
+   * Approach 2: shufflevector for Composition.
+If constructing vec4(v2, v2), using shufflevector is more efficient than extracting components and re-inserting them.
+Code snippet
+%res = shufflevector <2 x float> %a, <2 x float> %b, <4 x i32> <i32 0, i32 1, i32 2, i32 3>
+
+Case C: Broadcasting
+If the AST analysis indicates a broadcast (single scalar argument), we use a splat.
+      * Constant: llvm::ConstantVector::getSplat(...).
+      * Runtime: Use insertelement into index 0, then shufflevector with a zero-mask <0, 0, 0, 0>.
+Detailed C++ Implementation for src/backend/codegen.cpp:
+
+
+C++
+
+
+
+
+void CodegenVisitor::visit(VectorLiteral* node) {
+   llvm::Type* targetLLVMType = getLLVMType(node->vectorType);
+   unsigned targetSize = targetLLVMType->getVectorNumElements();
+   
+   std::vector<llvm::Value*> flattenedValues;
+   bool allConstants = true;
+
+   // 1. Evaluate and Flatten Arguments
+   for (const auto& expr : node->elements) {
+       expr->accept(*this); // sets 'lastValue'
+       llvm::Value* val = lastValue;
+       
+       if (!llvm::isa<llvm::Constant>(val)) allConstants = false;
+
+       if (val->getType()->isVectorTy()) {
+           // Deconstruct vector args (unless we implement smart shuffles later)
+           unsigned subSize = llvm::cast<llvm::FixedVectorType>(val->getType())->getNumElements();
+           for (unsigned i = 0; i < subSize; i++) {
+               if (llvm::isa<llvm::Constant>(val)) {
+                   flattenedValues.push_back(
+                       llvm::cast<llvm::Constant>(val)->getAggregateElement(i)
+                   );
+               } else {
+                   flattenedValues.push_back(
+                       builder.CreateExtractElement(val, i)
+                   );
+               }
+           }
+       } else {
+           flattenedValues.push_back(val);
+       }
+   }
+
+   // 2. Handle Broadcasting (1 scalar -> N slots)
+   if (flattenedValues.size() == 1 && flattenedValues->getType()->isFloatingPointTy()) {
+       llvm::Value* scalar = flattenedValues;
+       if (allConstants) {
+           lastValue = llvm::ConstantVector::getSplat(
+               llvm::ElementCount::getFixed(targetSize), 
+               llvm::cast<llvm::Constant>(scalar)
+           );
+       } else {
+           // Runtime Splat
+           llvm::Value* poison = llvm::PoisonValue::get(targetLLVMType);
+           llvm::Value* inserted = builder.CreateInsertElement(poison, scalar, (uint64_t)0);
+           // Create mask <0, 0,...>
+           std::vector<int> mask(targetSize, 0);
+           lastValue = builder.CreateShuffleVector(inserted, inserted, mask);
+       }
+       return;
+   }
+
+   // 3. Handle Padding for vec3 -> vec4
+   // If backend type expects 4 elements but we only parsed 3 (vec3)
+   if (targetSize == 4 && flattenedValues.size() == 3) {
+       // Append 0.0f or undef for padding
+       flattenedValues.push_back(llvm::ConstantFP::get(flattenedValues->getType(), 0.0));
+   }
+
+   // 4. Construct Vector
+   if (allConstants) {
+       std::vector<llvm::Constant*> consts;
+       for (auto* v : flattenedValues) consts.push_back(llvm::cast<llvm::Constant>(v));
+       lastValue = llvm::ConstantVector::get(consts);
+   } else {
+       llvm::Value* vec = llvm::PoisonValue::get(targetLLVMType);
+       for (unsigned i = 0; i < flattenedValues.size(); i++) {
+           vec = builder.CreateInsertElement(vec, flattenedValues[i], i);
+       }
+       lastValue = vec;
+   }
+}
+
+________________
+3. Issue 2: Parser Error Messages Improvement
+3.1 Philosophy of Error Reporting
+The current error format (Error: Expected token type 173) is a critical usability barrier. Research into compiler UX 5 establishes that effective error messages must be:
+      1. Descriptive: "Expected ')'" instead of "Type 173".
+      2. Contextual: Show the source code line with a caret (^) pointing to the column.
+      3. Actionable: Provide suggestions ("Did you mean 'vec3'?").
+      4. Visually Distinct: Use ANSI colors to separate error logic from source code.
+3.2 Token Stringification with X-Macros
+To solve the "enum to string" maintenance problem (Issue 2 requirement), we utilize the X-Macro pattern. This C++ preprocessor technique allows us to define the token list in one place and generate both the enum and the toString function automatically, guaranteeing synchronization.7
+Header Refactoring: src/frontend/tokens.h
+
+
+C++
+
+
+
+
+#ifndef ARIA_TOKENS_H
+#define ARIA_TOKENS_H
+
+#include <string>
+#include <vector>
+
+// The Master List: Define (Enum, String Representation)
+#define TOKEN_LIST(T) \
+   T(TOKEN_EOF, "end of file") \
+   T(TOKEN_INVALID, "invalid token") \
+   T(TOKEN_IDENTIFIER, "identifier") \
+   T(TOKEN_INT_LITERAL, "integer literal") \
+   T(TOKEN_KW_FUNC, "func") \
+   T(TOKEN_TYPE_VEC4, "vec4") \
+   T(TOKEN_LEFT_PAREN, "(") \
+   T(TOKEN_RIGHT_PAREN, ")") \
+   T(TOKEN_COLON, ":") \
+   //... add all other tokens...
+
+namespace aria {
+namespace frontend {
+
+enum TokenType {
+   #define DEFINE_ENUM(name, str) name,
+   TOKEN_LIST(DEFINE_ENUM)
+   #undef DEFINE_ENUM
+};
+
+// Automatic String Lookup
+inline const char* tokenTypeToString(TokenType type) {
+   static const char* names = {
+       #define DEFINE_STRING(name, str) str,
+       TOKEN_LIST(DEFINE_STRING)
+       #undef DEFINE_STRING
+   };
+   return names[type];
+}
+
+} // namespace frontend
+} // namespace aria
+#endif
+
+This single change immediately transforms "Expected 173" into "Expected ')'".
+3.3 Diagnostic Engine Architecture
+We introduce a DiagnosticEngine class to handle formatting and output. This decouples error reporting logic from the parser.
+Class Specification:
+
+
+C++
+
+
+
+
+// src/frontend/diagnostic.h
+class DiagnosticEngine {
+   const std::string& source;
+   std::string filename;
+
+   // ANSI Colors
+   const char* COLOR_RED = "\033
+
+**Algorithm Implementation:**
+
+```cpp
+// src/utils/string_utils.cpp
+
+size_t levenshteinDistance(const std::string& s1, const std::string& s2) {
+   const size_t m = s1.size();
+   const size_t n = s2.size();
+   if (m == 0) return n;
+   if (n == 0) return m;
+
+   std::vector<size_t> costs(n + 1);
+   for (size_t k = 0; k <= n; k++) costs[k] = k;
+
+   size_t i = 0;
+   for (char c1 : s1) {
+       costs = i + 1;
+       size_t corner = i;
+       i++;
+       size_t j = 0;
+       for (char c2 : s2) {
+           size_t upper = costs[j + 1];
+           if (c1 == c2) {
+               costs[j + 1] = corner;
+           } else {
+               size_t t = (upper < corner? upper : corner);
+               costs[j + 1] = (costs[j] < t? costs[j] : t) + 1;
+           }
+           corner = upper;
+           j++;
+       }
+   }
+   return costs[n];
+}
+
+// Helper to find best match
+std::string findClosestMatch(const std::string& typo, const std::vector<std::string>& candidates) {
+   std::string best = "";
+   size_t minDst = 4; // Threshold: don't suggest if very different
+
+   for (const auto& cand : candidates) {
+       size_t dst = levenshteinDistance(typo, cand);
+       if (dst < minDst) {
+           minDst = dst;
+           best = cand;
+       }
+   }
+   return best;
+}
+
+Integration:
+In Parser::expect(), if tokenType is TOKEN_IDENTIFIER but matches a keyword with a distance of 1 or 2, we generate a hint: "Did you mean 'vec4'?".
+________________
+4. Integration and Verification Strategy
+4.1 Testing Matrix
+To ensure robustness, the following test suite must be implemented. Tests should be automated using a simple Python script that invokes ariac and checks stderr (for errors) or stdout (for LLVM IR).
+Test Category
+	Test Case Description
+	Expected Outcome
+	Type Parsing
+	func f(v: vec4) {}
+	Success (no parse error).
+	Type Parsing
+	var mat3:m;
+	Success.
+	Error Messages
+	vec4 v = ;
+	"Expected expression but got ';'".
+	Error Messages
+	var x: vecr;
+	"Unknown type 'vecr'. Help: Did you mean 'vec4'?".
+	Literals
+	vec2(1.0, 2.0)
+	LLVM IR: <2 x float> <float 1.0, float 2.0>.
+	Literals
+	vec3(0.0)
+	LLVM IR: shufflevector (splat) with padding to vec4.
+	Literals
+	vec4(v2, 1.0, 2.0)
+	LLVM IR: extractelement chain + insertelement.
+	Semantics
+	vec2(1.0) (Broadcast)
+	Success.
+	Semantics
+	vec3(vec2) (Mismatch)
+	Error: "Vector constructor expects 3 components, found 2".
+	4.2 Edge Case Analysis
+1. vec3 Padding:
+As identified in Section 2.5.1, vec3 is a "problematic" type in LLVM due to alignment requirements. The implementation plan strictly pads vec3 to 4 floats in memory. This aligns with the "Robustness" requirement.
+      * Risk: Users expecting sizeof(vec3) == 12 might face buffer stride issues.
+      * Mitigation: Document clearly that vec3 uses 16-byte alignment (std140 rules).
+2. Constant Folding:
+The LLVM backend naturally folds constants (ConstantVector). However, if the user provides vec4(1+2,...) the Aria frontend should simplify 1+2 to 3 before vector construction if possible. The current plan relies on LLVM's optimizer (opt) to fold this later, which is acceptable for this phase.
+3. Large Vector Literals:
+While Aria currently targets small SIMD vectors (up to 4), the design handles arbitrary arguments. If vec4 is initialized with deeply nested expressions, the insertelement chain will grow. This is linearly complex and acceptable.
+________________
+5. Timeline and Recommendations
+Estimated Effort:
+      * Vector Types (Issue 3): 2 Hours. (Low complexity, high impact).
+      * Vector Literals (Issue 1): 12 Hours. (High complexity: Parser + Semantic Check + LLVM Codegen + Padding logic).
+      * Error Messages (Issue 2): 8 Hours. (Medium complexity: Refactoring + Algo implementation).
+Total: ~22 Hours / 3 Days.
+Recommendation: Begin with Issue 3 (Types). Without distinct tokens for vec4, parsing literals (Issue 1) is impossible. Follow with Issue 2 (Errors) to make debugging the complex literal parser easier. Finish with Issue 1 (Literals).
+This architectural overhaul moves Aria from a theoretical compiler to a practical tool for high-performance graphics development, leveraging industry-standard practices for syntax, error reporting, and code generation.
+Works cited
+      1. Introduction to GLSL Syntax | Cocos Creator, accessed December 7, 2025, https://docs.cocos.com/creator/3.6/manual/en/shader/glsl.html
+      2. GLSL Programming/Vector and Matrix Operations - Wikibooks, accessed December 7, 2025, https://en.wikibooks.org/wiki/GLSL_Programming/Vector_and_Matrix_Operations
+      3. HLSL Overview | Direct3D Succinctly | Syncfusion®, accessed December 7, 2025, https://www.syncfusion.com/succinctly-free-ebooks/direct3d/hlsl-overview
+      4. C++ Program to Implement Levenshtein Distance Computing Algorithm - Tutorials Point, accessed December 7, 2025, https://www.tutorialspoint.com/cplusplus-program-to-implement-levenshtein-distance-computing-algorithm
+      5. Writing Good Compiler Error Messages | Code → Software, accessed December 7, 2025, https://calebmer.com/2019/07/01/writing-good-compiler-error-messages.html
+      6. Error codes - Rust Compiler Development Guide, accessed December 7, 2025, https://rustc-dev-guide.rust-lang.org/diagnostics/error-codes.html
+      7. c++: Using X Macro to define enum and string array inside class? - Stack Overflow, accessed December 7, 2025, https://stackoverflow.com/questions/7354305/c-using-x-macro-to-define-enum-and-string-array-inside-class
+      8. vec3 and floats in UniformBufferObjects using std140 layout - LWJGL Forum, accessed December 7, 2025, http://forum.lwjgl.org/index.php?topic=7151.0
+      9. LLVM IR Undefined Behavior (UB) Manual — LLVM 22.0.0git documentation, accessed December 7, 2025, https://llvm.org/docs/UndefinedBehavior.html
+      10. GEMINI_WORK_PACKAGE_001.txt
+      11. 12.2 - GLSL Data Types and Variables - Learn WebGL, accessed December 7, 2025, http://learnwebgl.brown37.net/12_shader_language/glsl_data_types.html
+      12. GLSL Tutorial – Data Types - Lighthouse3d.com, accessed December 7, 2025, https://www.lighthouse3d.com/tutorials/glsl-tutorial/data-types/
+      13. Built-In Functions - LunarG Vulkan SDK, accessed December 7, 2025, https://vulkan.lunarg.com/doc/view/1.4.304.1/mac/antora/glsl/latest/chapters/builtinfunctions.html
+      14. Using SIMD Vector Types in Swift - SwiftRocks, accessed December 7, 2025, https://swiftrocks.com/using-simd-vector-types-in-swift
+      15. swift-evolution/proposals/0229-simd.md at main - GitHub, accessed December 7, 2025, https://github.com/apple/swift-evolution/blob/main/proposals/0229-simd.md
+      16. 6.3: GLSL - Engineering LibreTexts, accessed December 7, 2025, https://eng.libretexts.org/Bookshelves/Computer_Science/Applied_Programming/Introduction_to_Computer_Graphics_(Eck)/06%3A_Introduction_to_WebGL/6.03%3A_GLSL
+      17. D30810 Preserve vec3 type. - LLVM Phabricator archive, accessed December 7, 2025, https://reviews.llvm.org/D30810
+      18. Are very explanatory compiler error messages worth the effort needed to implement them?, accessed December 7, 2025, https://langdev.stackexchange.com/questions/544/are-very-explanatory-compiler-error-messages-worth-the-effort-needed-to-implemen
+      19. Tip of the day: use X-macros to keep enums and tables in sync : r/embedded - Reddit, accessed December 7, 2025, https://www.reddit.com/r/embedded/comments/vhhqf7/tip_of_the_day_use_xmacros_to_keep_enums_and/

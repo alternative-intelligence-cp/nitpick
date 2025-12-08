@@ -1,0 +1,846 @@
+================================================================================
+GEMINI DEEP RESEARCH WORK PACKAGE #002
+Aria Compiler - Core System Architecture Issues
+Generated: December 7, 2025
+================================================================================
+
+OBJECTIVE:
+Research and provide detailed implementation plans for three critical
+architectural features in the Aria compiler. These are high-priority issues
+that block major functionality or impact system reliability.
+
+SELECTED ISSUES:
+1. Generic Template Instantiation/Monomorphization (ISSUE 1.3 from knownProblems.txt)
+2. Lambda Closure Capture Implementation (ISSUE 1.4 from knownProblems.txt)
+3. Module System and UseStmt Resolution (ISSUE 1.5 from knownProblems.txt)
+
+PRIORITY RATIONALE:
+All three issues are marked as "High Priority" in knownProblems.txt. They
+represent fundamental compiler features that users expect and that block
+development of more complex programs. Issue 1.3 blocks generic programming,
+Issue 1.4 blocks functional programming patterns, and Issue 1.5 blocks
+multi-file projects and code organization.
+
+================================================================================
+ISSUE 1: GENERIC TEMPLATE INSTANTIATION (MONOMORPHIZATION)
+================================================================================
+
+STATUS: Skeleton Only
+PRIORITY: High
+COMPLEXITY: High
+IMPLEMENTATION IMPACT: Blocks generic programming entirely
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+The parser can recognize generic function syntax (func<T>:name) and stores
+generic parameters in FuncDecl::generics, but no monomorphization happens.
+Generic functions are not instantiated for concrete types, making them
+completely non-functional.
+
+CURRENT STATE:
+
+From src/frontend/parser_func.cpp lines 86-95:
+```cpp
+// 1. Generics (Optional)
+// Supports: func<T, U>:name
+std::vector<std::string> generics;
+if (match(TOKEN_LESS_THAN)) {
+    do {
+        Token genType = consume(TOKEN_TYPE_IDENTIFIER, "Expected generic type parameter");
+        generics.push_back(genType.lexeme);
+    } while (match(TOKEN_COMMA));
+    consume(TOKEN_GREATER_THAN, "Expected '>' after generics");
+}
+```
+
+Generic parameters are parsed and stored in FuncDecl::generics vector.
+
+From src/backend/codegen.cpp lines 115-180 (monomorphization skeleton):
+```cpp
+// Generic Function Monomorphization Support
+// Generic functions are stored as templates and instantiated on demand
+// when used with concrete type arguments
+struct GenericTemplate {
+    FuncDecl* ast;                              // Original AST node
+    std::vector<std::string> typeParams;         // Type parameter names (e.g., ["T", "U"])
+    std::map<std::string, Function*> specializations;  // Map type args -> LLVM function
+};
+
+std::map<std::string, GenericTemplate> genericTemplates;  // funcName -> template
+
+// Generate specialized version of generic function for concrete types
+// Example: identity<int8> generates "identity_int8" function
+Function* monomorphize(const std::string& funcName, const std::vector<std::string>& concreteTypes) {
+    auto it = genericTemplates.find(funcName);
+    if (it == genericTemplates.end()) {
+        return nullptr;  // Not a generic function
+    }
+    
+    GenericTemplate& tmpl = it->second;
+    
+    // Check if this specialization already exists
+    std::string typeKey = "";
+    for (const auto& t : concreteTypes) {
+        if (!typeKey.empty()) typeKey += "_";
+        typeKey += t;
+    }
+    
+    auto specIt = tmpl.specializations.find(typeKey);
+    if (specIt != tmpl.specializations.end()) {
+        return specIt->second;  // Already generated
+    }
+    
+    // Generate new specialization
+    FuncDecl* original = tmpl.ast;
+    
+    // Create type substitution map: T -> int8, U -> float32, etc.
+    std::map<std::string, std::string> typeSubstitution;
+    for (size_t i = 0; i < tmpl.typeParams.size() && i < concreteTypes.size(); ++i) {
+        typeSubstitution[tmpl.typeParams[i]] = concreteTypes[i];
+    }
+    
+    // We'll use the original AST but with modified context
+    // Save current type substitution state
+    auto prevSubstitution = ctx.typeSubstitution;
+    std::string prevMangledName = ctx.currentMangledName;
+    
+    // Set up substitution context
+    ctx.typeSubstitution = typeSubstitution;
+    ctx.currentMangledName = funcName + "_" + typeKey;
+    
+    // Temporarily clear generics to treat this as non-generic during codegen
+    auto originalGenerics = original->generics;
+    original->generics.clear();
+    
+    // Generate code (will use substituted types via ctx.typeSubstitution)
+    this->visit(original);
+    
+    // Restore state
+    original->generics = originalGenerics;
+    ctx.typeSubstitution = prevSubstitution;
+    ctx.currentMangledName = prevMangledName;
+    
+    // Look up the generated function and cache it
+    auto* specializedFunc = ctx.module->getFunction(ctx.currentModulePrefix + funcName + "_" + typeKey);
+    tmpl.specializations[typeKey] = specializedFunc;
+    
+    return specializedFunc;
+}
+```
+
+From src/backend/codegen_context.h (typeSubstitution map exists):
+```cpp
+// CodeGenContext has this field:
+std::map<std::string, std::string> typeSubstitution;  // T -> int8, U -> float32
+```
+
+WHAT'S BROKEN:
+
+1. **No Template Usage Tracking**: The compiler doesn't track which concrete types
+   are actually used with a generic function.
+
+2. **No Instantiation Trigger**: When a generic function is called with concrete
+   types (e.g., max<int8>(5, 10)), the monomorphize() function is never invoked.
+
+3. **No Name Mangling in Calls**: CallExpr doesn't resolve generic function calls
+   to mangled names (max_int8, max_float32, etc.).
+
+4. **No Type Parameter Substitution in Body**: While typeSubstitution map exists,
+   it's not used during type resolution in the function body.
+
+5. **No Generic Constraint Checking**: Future feature, but should be considered
+   in the design (T: Numeric, T: Comparable, etc.).
+
+DESIRED BEHAVIOR:
+
+Example Input:
+```aria
+func<T>:max = T(T:a, T:b) {
+    pass(is a > b : a : b);
+};
+
+func:main = int32() {
+    int8:x = max<int8>(5, 10);       // Should instantiate max_int8
+    flt64:y = max<flt64>(3.14, 2.71); // Should instantiate max_flt64
+    pass(0);
+};
+```
+
+Expected LLVM IR Output:
+```llvm
+; Instantiation for int8
+define i8 @max_int8(i8 %a, i8 %b) {
+entry:
+  %0 = icmp sgt i8 %a, %b
+  %1 = select i1 %0, i8 %a, i8 %b
+  ret i8 %1
+}
+
+; Instantiation for flt64
+define double @max_flt64(double %a, double %b) {
+entry:
+  %0 = fcmp ogt double %a, %b
+  %1 = select i1 %0, double %a, double %b
+  ret double %1
+}
+
+define i32 @main() {
+entry:
+  %x = call i8 @max_int8(i8 5, i8 10)
+  %y = call double @max_flt64(double 3.14, double 2.71)
+  ret i32 0
+}
+```
+
+RESEARCH QUESTIONS:
+
+1. **Template Discovery Phase**: Should there be a separate compilation pass that
+   scans for generic function calls and builds a work queue of instantiations?
+   Or should instantiation be on-demand during CallExpr codegen?
+
+2. **Recursive Generics**: How should we handle generic functions that call other
+   generic functions? Example:
+   ```aria
+   func<T>:identity = T(T:x) { pass(x); };
+   func<T>:twice = T(T:x) { pass(identity<T>(identity<T>(x))); };
+   ```
+
+3. **Type Inference**: Should the compiler support type inference for generics
+   where the type arguments can be deduced from call site? Example:
+   ```aria
+   int8:result = max(5, 10);  // Infer T=int8 from arguments
+   ```
+
+4. **Generic Instantiation Order**: Should we generate all possible instantiations
+   (whole-program analysis), or only generate instantiations as they're encountered
+   (incremental)? What happens with separate compilation?
+
+5. **Name Mangling Scheme**: The current approach uses "_" separator (max_int8).
+   Is this sufficient for complex scenarios? What about:
+   - Multi-parameter generics: func<T, U>:pair
+   - Nested generics: func<Vec<T>>:process
+   - Generic structs (future): struct<T>:Box
+
+6. **Error Messages**: When instantiation fails (e.g., type doesn't support
+   required operations), how should errors be reported? Should they reference
+   the generic function definition or the call site?
+
+7. **Code Size Explosion**: Monomorphization can lead to large binary sizes.
+   Are there optimizations we should consider?
+   - De-duplication of identical instantiations
+   - Threshold for switching to dynamic dispatch
+   - Compile-time size warnings
+
+IMPLEMENTATION DELIVERABLES REQUESTED:
+
+1. **Algorithm Pseudocode**: Step-by-step algorithm for the entire monomorphization
+   process, from call site detection to LLVM function generation.
+
+2. **Data Structure Design**: Refined design for tracking templates, instantiations,
+   and pending work. Should the GenericTemplate struct be enhanced?
+
+3. **Integration Points**: Exactly where in the existing codegen.cpp should
+   instantiation logic be triggered? Modify visit(CallExpr)? visit(FuncDecl)?
+   Add a new pre-codegen pass?
+
+4. **Type Substitution Logic**: How to apply typeSubstitution during type
+   resolution in the function body. Does this require changes to the type
+   system (types.h, type_checker.cpp)?
+
+5. **Testing Strategy**: Example test cases covering:
+   - Basic single-parameter generic (max, identity)
+   - Multi-parameter generic (pair, map)
+   - Recursive generic calls
+   - Error cases (type mismatch, missing constraints)
+
+6. **Comparison with Other Compilers**: How do C++, Rust, and Swift handle
+   template instantiation? What can we learn from their approaches?
+
+AFFECTED FILES:
+- src/frontend/parser_func.cpp (already parses generics)
+- src/backend/codegen.cpp (monomorphize() skeleton exists)
+- src/backend/codegen_context.h (typeSubstitution map exists)
+- src/frontend/sema/type_checker.cpp (may need type substitution support)
+- src/frontend/ast/decl.h (FuncDecl::generics field exists)
+
+================================================================================
+ISSUE 2: LAMBDA CLOSURE CAPTURE IMPLEMENTATION
+================================================================================
+
+STATUS: Partially Implemented (Analysis Complete, Environment Generation Missing)
+PRIORITY: High
+COMPLEXITY: High
+IMPLEMENTATION IMPACT: Blocks functional programming patterns, higher-order functions
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+Closure capture analysis exists and correctly identifies captured variables,
+but the environment struct generation is incomplete. Lambdas cannot access
+variables from enclosing scope, making them significantly less useful than
+intended.
+
+CURRENT STATE:
+
+From src/backend/codegen.cpp lines 187-300 (analyzeCapturedVariables):
+```cpp
+// Analyze which variables from enclosing scope are captured by lambda
+std::vector<std::string> analyzeCapturedVariables(aria::frontend::LambdaExpr* lambda) {
+    std::vector<std::string> captured;
+    std::set<std::string> visited;
+    
+    // Get parameter names (these are NOT captures)
+    std::set<std::string> paramNames;
+    for (const auto& param : lambda->parameters) {
+        paramNames.insert(param.name);
+    }
+    
+    // Recursively scan lambda body for variable references
+    analyzeBlockForCaptures(lambda->body.get(), captured, visited, paramNames);
+    
+    return captured;
+}
+
+void analyzeBlockForCaptures(frontend::Block* block, std::vector<std::string>& captured,
+                              std::set<std::string>& visited, const std::set<std::string>& localVars) {
+    if (!block) return;
+    
+    for (auto& stmt : block->statements) {
+        auto* statement = dynamic_cast<frontend::Statement*>(stmt.get());
+        if (statement) {
+            analyzeStmtForCaptures(statement, captured, visited, localVars);
+        }
+    }
+}
+
+void analyzeExprForCaptures(frontend::Expression* expr, std::vector<std::string>& captured,
+                             std::set<std::string>& visited, const std::set<std::string>& localVars) {
+    if (!expr) return;
+    
+    // Variable references - the key capture point
+    if (auto* varExpr = dynamic_cast<frontend::VarExpr*>(expr)) {
+        const std::string& varName = varExpr->name;
+        
+        // Skip if it's a local variable or parameter
+        if (localVars.count(varName) > 0) return;
+        
+        // Skip if already visited
+        if (visited.count(varName) > 0) return;
+        
+        // Check if it exists in an enclosing scope
+        auto* sym = ctx.lookup(varName);
+        if (sym && sym->strategy != CodeGenContext::AllocStrategy::VALUE) {
+            // This is a capture! Add it if not already in list
+            if (std::find(captured.begin(), captured.end(), varName) == captured.end()) {
+                captured.push_back(varName);
+                visited.insert(varName);
+            }
+        }
+        return;
+    }
+    
+    // [Additional expression type handling omitted for brevity]
+}
+```
+
+The analysis code is complete and works correctly. It identifies all variables
+from enclosing scopes that are referenced in the lambda body.
+
+WHAT'S MISSING:
+
+1. **Environment Struct Generation**: No code generates the LLVM struct type
+   to hold captured variables.
+
+2. **Environment Allocation**: No code allocates the environment (heap or stack).
+
+3. **Environment Population**: No code stores captured variables into environment.
+
+4. **Hidden Environment Parameter**: Lambda functions are not generated with an
+   implicit first parameter for the environment pointer.
+
+5. **Environment Access in Lambda Body**: Variable accesses in lambda body are
+   not rewritten to load from environment struct.
+
+6. **Lambda Value Representation**: The lambda value (function pointer + environment)
+   is not represented as a fat pointer or closure struct.
+
+DESIRED BEHAVIOR:
+
+Example Input:
+```aria
+func:outer = int32() {
+    int32:x = 10;
+    int32:y = 20;
+    
+    func:inner = int32() {
+        pass(x + y);  // Should capture x and y
+    };
+    
+    pass(inner());
+};
+```
+
+Expected LLVM IR Pattern:
+```llvm
+; Environment struct for captured variables
+%inner_env = type { i32, i32 }  ; {x, y}
+
+define i32 @outer() {
+entry:
+  ; Allocate locals
+  %x = alloca i32
+  store i32 10, i32* %x
+  %y = alloca i32
+  store i32 20, i32* %y
+  
+  ; Create environment for lambda
+  %env = call i8* @malloc(i64 8)  ; sizeof(inner_env)
+  %env_typed = bitcast i8* %env to %inner_env*
+  
+  ; Capture x
+  %x_val = load i32, i32* %x
+  %env_x_ptr = getelementptr %inner_env, %inner_env* %env_typed, i32 0, i32 0
+  store i32 %x_val, i32* %env_x_ptr
+  
+  ; Capture y
+  %y_val = load i32, i32* %y
+  %env_y_ptr = getelementptr %inner_env, %inner_env* %env_typed, i32 0, i32 1
+  store i32 %y_val, i32* %env_y_ptr
+  
+  ; Call lambda with environment
+  %result = call i32 @inner_lambda(%inner_env* %env_typed)
+  
+  ; Cleanup environment
+  call void @free(i8* %env)
+  
+  ret i32 %result
+}
+
+; Lambda function with environment parameter
+define i32 @inner_lambda(%inner_env* %env) {
+entry:
+  ; Load x from environment
+  %env_x_ptr = getelementptr %inner_env, %inner_env* %env, i32 0, i32 0
+  %x = load i32, i32* %env_x_ptr
+  
+  ; Load y from environment
+  %env_y_ptr = getelementptr %inner_env, %inner_env* %env, i32 0, i32 1
+  %y = load i32, i32* %env_y_ptr
+  
+  ; Lambda body: x + y
+  %sum = add i32 %x, %y
+  ret i32 %sum
+}
+```
+
+DESIGN QUESTIONS:
+
+1. **Environment Lifetime**: Should environments be heap-allocated (GC or wild)
+   or stack-allocated? What if the lambda escapes the enclosing function?
+   ```aria
+   func:makeAdder = func(int32:n) {
+       pass(int32(int32:x) { pass(x + n); });  // n escapes!
+   };
+   ```
+
+2. **Capture Semantics**: Should captures be by-value (copy) or by-reference?
+   Aria doesn't have explicit syntax for this. Rust uses `move` keyword, C++
+   has [=] vs [&]. What's the right default for Aria?
+
+3. **Mutable Captures**: If a lambda modifies a captured variable, should that
+   change be visible in the outer scope?
+   ```aria
+   int32:counter = 0;
+   func:increment = int32() { counter++; pass(counter); };
+   ```
+
+4. **Lambda Value Representation**: How should a lambda value be represented?
+   Options:
+   - Two-word struct: {function_ptr, env_ptr}
+   - Single pointer to struct: {function_ptr, env_ptr, captured_data...}
+   - Trampoline technique (generate stub function that calls real function with env)
+
+5. **Nested Lambdas**: How to handle lambdas inside lambdas?
+   ```aria
+   func:outer = int32() {
+       int32:x = 10;
+       func:middle = int32() {
+           int32:y = 20;
+           func:inner = int32() {
+               pass(x + y);  // Captures x from outer, y from middle
+           };
+           pass(inner());
+       };
+       pass(middle());
+   };
+   ```
+
+6. **Performance**: Environment allocation/deallocation overhead could be
+   significant. Are there optimizations we should consider?
+   - Stack-allocate environments when possible (escape analysis)
+   - Inline simple lambdas that don't escape
+   - Share environments between multiple lambdas in same scope
+
+7. **Interaction with GC**: If environments are GC-allocated, how does the GC
+   know which fields are pointers vs primitives? Do we need type descriptors?
+
+IMPLEMENTATION DELIVERABLES REQUESTED:
+
+1. **Environment Generation Algorithm**: Pseudocode for:
+   - Creating LLVM struct type from captured variable list
+   - Allocating environment (heap vs stack decision)
+   - Populating environment with captured values
+   - Passing environment to lambda calls
+
+2. **Variable Access Rewriting**: How to detect and rewrite VarExpr nodes in
+   lambda body to load from environment instead of local scope.
+
+3. **Lambda Calling Convention**: Exact representation of lambda values and
+   how they're called. Include struct layouts and calling sequence.
+
+4. **Integration with Existing Code**: Where in codegen.cpp should environment
+   generation be added? Modify visit(LambdaExpr)? Add new helper functions?
+
+5. **Testing Strategy**: Test cases covering:
+   - Simple closure (capture one variable)
+   - Multiple captures
+   - Nested closures
+   - Escaping closures
+   - Mutable captures
+   - Closure passed to higher-order function
+
+6. **Comparison with Other Languages**: How do C++ (lambdas), Rust (closures),
+   JavaScript (closures), and Swift (closures) implement closure capture?
+   What can we learn from their approaches?
+
+AFFECTED FILES:
+- src/backend/codegen.cpp (analyzeCapturedVariables exists, need environment generation)
+- src/frontend/ast/expr.h (LambdaExpr definition)
+- src/backend/codegen_context.h (may need closure struct tracking)
+
+================================================================================
+ISSUE 3: MODULE SYSTEM AND USESTMT RESOLUTION
+================================================================================
+
+STATUS: No-Op (Parsed but Ignored)
+PRIORITY: High
+COMPLEXITY: Very High
+IMPLEMENTATION IMPACT: Blocks multi-file projects, code organization, standard library
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+UseStmt is parsed correctly and creates AST nodes, but codegen completely
+ignores them. There is no module system, no symbol resolution across files,
+no linking of .aria modules. Every program must be a single file.
+
+CURRENT STATE:
+
+From src/frontend/ast/module.h lines 12-25 (UseStmt definition):
+```cpp
+// Use Statement (Import)
+// Example: use std.io; or use std.io.{read, write};
+class UseStmt : public Statement {
+public:
+    std::string module_path;  // e.g., "std.io"
+    std::vector<std::string> imports;  // Empty = import all, otherwise specific items
+
+    UseStmt(const std::string& path, const std::vector<std::string>& imps = {})
+        : module_path(path), imports(imps) {}
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+```
+
+UseStmt is parsed and stored in the AST, with module_path and selective imports.
+
+From src/backend/codegen.cpp (UseStmt codegen is empty):
+```cpp
+void visit(frontend::UseStmt* node) override {
+    // For now, use statements are no-ops in codegen
+    // TODO: Implement module loading and symbol resolution
+}
+```
+
+The visit function does literally nothing. No files are loaded, no symbols
+are imported, no validation occurs.
+
+WHAT'S MISSING:
+
+1. **Module Registry**: No global map of module names to file paths or compiled
+   LLVM modules.
+
+2. **Module Compilation**: No way to compile .aria files into reusable modules
+   (.bc LLVM bitcode or .o object files).
+
+3. **Symbol Import/Export**: No concept of public vs private symbols. No way
+   to make functions/types visible to other modules.
+
+4. **Symbol Resolution**: When a UseStmt imports symbols, they're not added to
+   the current scope for name resolution.
+
+5. **Module Linking**: No LLVM module linking (LLVMLinkModules) to combine
+   separately-compiled modules.
+
+6. **Circular Dependencies**: No detection or handling of circular imports.
+
+7. **Standard Library**: Can't implement stdlib because there's no module system
+   to organize it.
+
+DESIRED BEHAVIOR:
+
+Example Input - math.aria:
+```aria
+// math.aria - Math utilities module
+pub func:sqrt = flt64(flt64:x) {
+    // Newton's method approximation
+    flt64:guess = x / 2.0;
+    till:i = 0 : 10 : 1 {
+        guess = (guess + x / guess) / 2.0;
+    };
+    pass(guess);
+};
+
+pub func:pow = flt64(flt64:base, int32:exp) {
+    flt64:result = 1.0;
+    till:i = 0 : exp : 1 {
+        result = result * base;
+    };
+    pass(result);
+};
+
+// Private helper (not exported)
+func:abs = flt64(flt64:x) {
+    pass(is x < 0.0 : -x : x);
+};
+```
+
+Example Input - main.aria:
+```aria
+use math.{sqrt, pow};  // Import specific functions
+// OR: use math;        // Import all public symbols
+
+func:main = int32() {
+    flt64:x = sqrt(16.0);        // Should resolve to math.sqrt
+    flt64:y = pow(2.0, 8);       // Should resolve to math.pow
+    pass(0);
+};
+```
+
+Expected Compilation Process:
+```bash
+# 1. Compile math module to LLVM bitcode
+$ ariac math.aria --emit-llvm -o math.bc
+
+# 2. Compile main and link with math module
+$ ariac main.aria --link math.bc -o main
+
+# 3. Run the program
+$ ./main
+```
+
+Expected LLVM IR Pattern (simplified):
+```llvm
+; math.bc contains:
+define double @math.sqrt(double %x) {
+  ; Implementation...
+}
+
+define double @math.pow(double %base, i32 %exp) {
+  ; Implementation...
+}
+
+; main.bc contains:
+declare double @math.sqrt(double)
+declare double @math.pow(double, i32)
+
+define i32 @main() {
+entry:
+  %x = call double @math.sqrt(double 16.0)
+  %y = call double @math.pow(double 2.0, i32 8)
+  ret i32 0
+}
+
+; After linking, both definitions and calls are in same module
+```
+
+DESIGN QUESTIONS:
+
+1. **Module Format**: Should modules be:
+   - LLVM bitcode (.bc files)
+   - LLVM object files (.o files)
+   - Custom .aria module format with metadata
+   - Keep AST and type information for cross-module type checking
+
+2. **Module Search Path**: How to find module files?
+   - Relative paths: use ./math.aria
+   - Absolute paths: use /usr/lib/aria/math
+   - Environment variable: ARIA_MODULE_PATH
+   - Built-in stdlib path
+
+3. **Module Naming**: How do module paths map to file paths?
+   - use std.io → stdlib/std/io.aria?
+   - use math → math.aria or math/mod.aria?
+   - Rust-style: mod.aria for directory modules
+
+4. **Symbol Visibility**: How to mark symbols as public/private?
+   - Explicit pub keyword (like Rust): pub func:sqrt
+   - Public by default (like C)
+   - Module-level export list: export { sqrt, pow };
+
+5. **Namespace Management**: Should imported symbols be prefixed?
+   - use math; → call as math.sqrt()
+   - use math.sqrt; → call as sqrt()
+   - Alias support: use math.sqrt as squareRoot;
+
+6. **Separate Compilation**: Can modules be compiled independently?
+   - Yes: Faster builds, better for large projects
+   - No: Whole-program optimization opportunities
+
+7. **Type System Integration**: How to share struct definitions across modules?
+   ```aria
+   // math.aria
+   pub struct:Point = { flt64:x, flt64:y, };
+   
+   // main.aria
+   use math.Point;
+   Point:p = Point{ x: 1.0, y: 2.0 };
+   ```
+
+8. **Circular Dependencies**: How to handle?
+   - Forbid entirely (strict DAG of modules)
+   - Allow with restrictions (forward declarations)
+   - Allow freely (require multiple passes)
+
+9. **Build System Integration**: Should ariac have a build mode?
+   - ariac build → Compiles all modules in project
+   - Integration with Make, CMake, or custom build tool
+   - Dependency tracking and incremental compilation
+
+IMPLEMENTATION DELIVERABLES REQUESTED:
+
+1. **Module System Architecture**: High-level design document covering:
+   - Module file format and compilation pipeline
+   - Symbol import/export mechanism
+   - Module registry and search path
+   - Linking strategy (early vs late linking)
+
+2. **Implementation Phases**: Break this into manageable chunks:
+   - Phase 1: Single-file use statements (inlining)
+   - Phase 2: Separate compilation (.bc files)
+   - Phase 3: Symbol visibility and namespaces
+   - Phase 4: Circular dependency handling
+   - Phase 5: Build system integration
+
+3. **LLVM Integration**: Specific LLVM APIs and techniques:
+   - Module parsing: parseIRFile(), parseBitcodeFile()
+   - Module linking: Linker::linkModules()
+   - Symbol resolution: module->getFunction()
+   - Name mangling: avoid conflicts
+
+4. **Frontend Changes**: What parser and AST changes are needed?
+   - New pub keyword token?
+   - Module-level metadata (export lists)?
+   - Symbol table enhancements for cross-module references
+
+5. **Testing Strategy**: Comprehensive test suite including:
+   - Simple two-module example (math + main)
+   - Selective imports (use math.{sqrt})
+   - Wildcard imports (use math)
+   - Namespace conflicts (two modules export same name)
+   - Circular dependency error
+   - Standard library module structure
+
+6. **Comparison with Other Languages**: How do these languages handle modules?
+   - Rust: Crate system, mod.rs, pub/private, cargo
+   - Go: Package system, import paths, GOPATH
+   - C/C++: Header files, .o linking, namespaces
+   - Python: Import system, __init__.py, packages
+   
+   What are the pros and cons of each approach for Aria?
+
+AFFECTED FILES:
+- src/backend/codegen.cpp (visit(UseStmt) is currently empty)
+- src/frontend/parser.cpp (may need pub keyword support)
+- src/frontend/ast/module.h (UseStmt, ModDef, ExternBlock exist)
+- New files needed:
+  - src/module/module_loader.cpp (module file loading)
+  - src/module/module_registry.cpp (module search path)
+  - src/module/symbol_exporter.cpp (pub symbol tracking)
+  - src/linker/module_linker.cpp (LLVM module linking)
+
+ADDITIONAL CONTEXT:
+
+From knownProblems.txt:
+> Task 2 metadata implementation (module prefixes work)
+
+This suggests some module prefix work was done previously. Understanding what
+exists could inform the design.
+
+================================================================================
+DELIVERABLES SUMMARY
+================================================================================
+
+For each of the three issues, please provide:
+
+1. **Comprehensive Literature Review**:
+   - Academic papers on template instantiation, closure implementation, module systems
+   - Analysis of how major production compilers solve these problems
+   - Best practices and common pitfalls
+
+2. **Detailed Design Document**:
+   - Step-by-step algorithms
+   - Data structure specifications
+   - Integration points with existing Aria codebase
+   - Error handling and edge cases
+
+3. **Implementation Roadmap**:
+   - Ordered list of implementation steps
+   - Estimated complexity for each step
+   - Dependencies and prerequisites
+   - Suggested unit tests for each step
+
+4. **Code Examples**:
+   - Pseudocode for key algorithms
+   - Example LLVM IR patterns
+   - Sample Aria code covering various use cases
+
+5. **Risk Assessment**:
+   - Potential implementation challenges
+   - Performance implications
+   - Breaking changes to existing code
+   - Mitigation strategies
+
+================================================================================
+RESEARCH GUIDELINES
+================================================================================
+
+FOCUS AREAS:
+- Prioritize practical, implementable solutions over theoretical optimality
+- Consider Aria's existing architecture (LLVM backend, AST structure, codegen patterns)
+- Balance between simplicity and feature completeness
+- Think about future extensibility (generics with constraints, higher-kinded types, etc.)
+
+CONSTRAINTS:
+- Must work with LLVM 18 IR generation
+- Must integrate with existing Aria AST and visitor pattern
+- Should maintain Aria's design philosophy (explicit syntax, no magic)
+- Should not require massive rewrites of existing code
+
+OUTPUT FORMAT:
+- Markdown document with clear section headings
+- Code examples in C++ (for implementation) and Aria (for test cases)
+- LLVM IR examples where relevant
+- Diagrams or ASCII art for complex data structures
+
+================================================================================
+END OF WORK PACKAGE #002
+================================================================================
+
+Generated: December 7, 2025
+Compiler: Aria v0.0.7
+Target: LLVM 18
+
+Please conduct deep research on these three issues and provide comprehensive
+implementation guidance. These are foundational features that will unlock
+significant compiler capabilities once implemented.

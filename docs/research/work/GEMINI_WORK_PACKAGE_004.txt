@@ -1,0 +1,1167 @@
+================================================================================
+GEMINI DEEP RESEARCH WORK PACKAGE #004
+Aria Compiler - Type System and Debugging Infrastructure
+Generated: December 7, 2025
+================================================================================
+
+OBJECTIVE:
+Research and provide detailed implementation plans for medium-priority features
+that enhance developer experience and enable object-oriented programming patterns.
+These issues improve usability and debugging capabilities.
+
+SELECTED ISSUES:
+1. Struct Methods Implementation (ISSUE 4.1 from knownProblems.txt)
+2. Runtime Error Stack Traces (ISSUE 5.2 from knownProblems.txt)
+3. Fat Pointer Runtime Checks (ISSUE 2.4 from knownProblems.txt)
+
+PRIORITY RATIONALE:
+- Issue 4.1 (Struct Methods): Medium priority, enables OOP patterns
+- Issue 5.2 (Stack Traces): Medium priority, critical for debugging
+- Issue 2.4 (Fat Pointers): Medium priority, improves memory safety in debug builds
+
+These features significantly improve the developer experience and are commonly
+expected in modern programming languages.
+
+================================================================================
+ISSUE 1: STRUCT METHODS IMPLEMENTATION
+================================================================================
+
+STATUS: Not Started
+PRIORITY: Medium
+COMPLEXITY: Medium
+IMPLEMENTATION IMPACT: Enables object-oriented programming patterns
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+Structs exist and work correctly for data aggregation, but they have no methods.
+Users cannot define member functions, there's no self parameter, and no method
+call syntax. This forces procedural programming patterns even when OOP would
+be more natural.
+
+CURRENT STATE - STRUCT PARSING:
+
+From src/frontend/parser_struct.cpp lines 1-94:
+```cpp
+// Parse struct declaration
+// Grammar: const StructName = struct { field: type, field: type, };
+std::unique_ptr<StructDecl> Parser::parseStructDecl() {
+    bool is_const = false;
+    if (match(TOKEN_KW_CONST)) {
+        is_const = true;
+    }
+    
+    Token name_tok = expect(TOKEN_IDENTIFIER);
+    std::string struct_name = name_tok.value;
+    
+    expect(TOKEN_ASSIGN);
+    expect(TOKEN_KW_STRUCT);
+    expect(TOKEN_LEFT_BRACE);
+    
+    // Parse fields
+    std::vector<StructField> fields;
+    while (!check(TOKEN_RIGHT_BRACE) && current.type != TOKEN_EOF) {
+        Token field_name = expect(TOKEN_IDENTIFIER);
+        expect(TOKEN_COLON);
+        
+        // Parse field type
+        Token field_type = current;
+        advance();
+        
+        // Handle array types: field: int8[256]
+        std::string type_name = field_type.value;
+        if (check(TOKEN_LEFT_BRACKET)) {
+            advance();
+            type_name += "[";
+            if (!check(TOKEN_RIGHT_BRACKET)) {
+                Token size_tok = expect(TOKEN_INT_LITERAL);
+                type_name += size_tok.value;
+            }
+            expect(TOKEN_RIGHT_BRACKET);
+            type_name += "]";
+        }
+        
+        fields.emplace_back(type_name, field_name.value);
+        expect(TOKEN_COMMA);
+    }
+    
+    expect(TOKEN_RIGHT_BRACE);
+    expect(TOKEN_SEMICOLON);
+    
+    auto decl = std::make_unique<StructDecl>(struct_name, std::move(fields));
+    decl->is_const = is_const;
+    return decl;
+}
+```
+
+The parser only handles field declarations. No provision for methods.
+
+CURRENT WORKAROUND - FREE FUNCTIONS:
+
+Users must write free functions that take structs as parameters:
+```aria
+struct:Point = {
+    flt32:x,
+    flt32:y,
+};
+
+func:distance = flt32(Point:p) {
+    pass(sqrt(p.x * p.x + p.y * p.y));
+};
+
+func:main = int32() {
+    Point:p = Point{ x: 3.0, y: 4.0 };
+    flt32:d = distance(p);  // Procedural style
+    pass(0);
+};
+```
+
+This works but is less ergonomic than method syntax.
+
+PROPOSED SYNTAX AND BEHAVIOR:
+
+```aria
+struct:Point = {
+    flt32:x,
+    flt32:y,
+    
+    // Method definition with implicit 'self' parameter
+    func:distance = flt32(self) {
+        pass(sqrt(self.x * self.x + self.y * self.y));
+    };
+    
+    // Method with additional parameters
+    func:distance_to = flt32(self, Point:other) {
+        flt32:dx = self.x - other.x;
+        flt32:dy = self.y - other.y;
+        pass(sqrt(dx * dx + dy * dy));
+    };
+    
+    // Static method (no self parameter)
+    func:origin = Point() {
+        pass(Point{ x: 0.0, y: 0.0 });
+    };
+};
+
+func:main = int32() {
+    Point:p1 = Point{ x: 3.0, y: 4.0 };
+    Point:p2 = Point{ x: 0.0, y: 0.0 };
+    
+    flt32:d1 = p1.distance();           // Method call syntax
+    flt32:d2 = p1.distance_to(p2);      // Method with argument
+    Point:origin = Point.origin();      // Static method call
+    
+    pass(0);
+};
+```
+
+Expected LLVM IR:
+```llvm
+; Struct type definition
+%Point = type { float, float }
+
+; Method becomes mangled free function
+; distance(self: Point) -> Point_distance(Point)
+define float @Point_distance(%Point %self) {
+entry:
+  %x = extractvalue %Point %self, 0
+  %y = extractvalue %Point %self, 1
+  %x_sq = fmul float %x, %x
+  %y_sq = fmul float %y, %y
+  %sum = fadd float %x_sq, %y_sq
+  %result = call float @sqrt(float %sum)
+  ret float %result
+}
+
+; distance_to(self: Point, other: Point) -> Point_distance_to(Point, Point)
+define float @Point_distance_to(%Point %self, %Point %other) {
+entry:
+  %self_x = extractvalue %Point %self, 0
+  %self_y = extractvalue %Point %self, 1
+  %other_x = extractvalue %Point %other, 0
+  %other_y = extractvalue %Point %other, 1
+  %dx = fsub float %self_x, %other_x
+  %dy = fsub float %self_y, %other_y
+  ; ... rest of implementation
+  ret float %result
+}
+
+; Static method (no self)
+define %Point @Point_origin() {
+entry:
+  %0 = insertvalue %Point undef, float 0.0, 0
+  %1 = insertvalue %Point %0, float 0.0, 1
+  ret %Point %1
+}
+
+define i32 @main() {
+entry:
+  ; Create Point instances
+  %p1 = insertvalue %Point undef, float 3.0, 0
+  %p1_final = insertvalue %Point %p1, float 4.0, 1
+  
+  %p2 = insertvalue %Point undef, float 0.0, 0
+  %p2_final = insertvalue %Point %p2, float 0.0, 1
+  
+  ; Method calls
+  %d1 = call float @Point_distance(%Point %p1_final)
+  %d2 = call float @Point_distance_to(%Point %p1_final, %Point %p2_final)
+  %origin = call %Point @Point_origin()
+  
+  ret i32 0
+}
+```
+
+WHAT'S NEEDED:
+
+The runtime implementation is complete and production-ready. What's missing is
+the CODEGEN integration to actually call these functions.
+
+**Required Codegen Changes:**
+
+1. **Scope Tracking in Codegen Context**: Add scope management to CodeGenVisitor
+   ```cpp
+   class CodeGenVisitor {
+       std::stack<Value*> scopeStack;  // Track current scope IDs
+       
+       void enterScope() {
+           // Call aria_scope_enter() and push result
+           FunctionCallee scopeEnterFn = ctx.module->getOrInsertFunction(
+               "aria_scope_enter",
+               Type::getInt64Ty(ctx.llvmContext)
+           );
+           Value* scopeId = ctx.builder->CreateCall(scopeEnterFn);
+           scopeStack.push(scopeId);
+       }
+       
+       void exitScope() {
+           // Pop scope ID and call aria_scope_exit()
+           Value* scopeId = scopeStack.top();
+           scopeStack.pop();
+           
+           FunctionCallee scopeExitFn = ctx.module->getOrInsertFunction(
+               "aria_scope_exit",
+               Type::getVoidTy(ctx.llvmContext),
+               Type::getInt64Ty(ctx.llvmContext)
+           );
+           ctx.builder->CreateCall(scopeExitFn, {scopeId});
+       }
+   };
+   ```
+
+2. **Insert Scope Calls in Block Visitors**: 
+   - `visit(BlockStmt*)`: Call enterScope() at start, exitScope() at end
+   - `visit(FuncDecl*)`: Call enterScope() for function body
+   - `visit(IfStmt*)`, `visit(WhileStmt*)`: Scopes for each block
+
+3. **Fat Pointer Creation at Allocations**:
+   ```cpp
+   // In visit(VarDecl*) for pointer types:
+   #ifdef ARIA_DEBUG
+       if (isPtrType(var->type)) {
+           Value* rawPtr = /* allocation */;
+           Value* scopeId = scopeStack.top();
+           
+           FunctionCallee createFn = ctx.module->getOrInsertFunction(
+               "aria_fat_ptr_create",
+               /* return aria_fat_pointer_t struct */,
+               Type::getInt8PtrTy(ctx.llvmContext),
+               Type::getInt64Ty(ctx.llvmContext)
+           );
+           
+           Value* fatPtr = ctx.builder->CreateCall(createFn, {rawPtr, scopeId});
+           /* store fatPtr instead of rawPtr */
+       }
+   #endif
+   ```
+
+4. **Fat Pointer Validation at Dereferences**:
+   ```cpp
+   // In visit(MemberAccessExpr*) or visit(IndexExpr*):
+   #ifdef ARIA_DEBUG
+       Value* fatPtr = /* load from variable */;
+       
+       FunctionCallee derefFn = ctx.module->getOrInsertFunction(
+           "aria_fat_ptr_deref",
+           Type::getInt8PtrTy(ctx.llvmContext),
+           /* aria_fat_pointer_t type */
+       );
+       
+       Value* rawPtr = ctx.builder->CreateCall(derefFn, {fatPtr});
+       /* use rawPtr for actual memory access */
+   #endif
+   ```
+
+5. **Conditional Compilation**: Use preprocessor guards
+   ```cpp
+   #ifdef ARIA_DEBUG
+       // Fat pointer instrumentation
+   #else
+       // Normal pointer operations
+   #endif
+   ```
+
+DESIGN QUESTIONS:
+
+1. **Scope Granularity**: When to create scopes?
+   - Every block statement { }?
+   - Only function bodies?
+   - If/while/for blocks?
+   
+   Trade-off: More scopes = better error detection but more overhead
+
+2. **Fat Pointer Type Representation**: How to pass fat pointers in LLVM IR?
+   - As struct: `{ i8*, i64, i64 }` (pointer + scope_id + timestamp)
+   - Needs ABI calling convention decisions
+   - Return by value or by pointer?
+
+3. **Performance Impact**: Debug builds will be slower
+   - Scope enter/exit on every block
+   - Fat pointer validation on every dereference
+   - Acceptable for debug builds only, or offer levels?
+     - Level 0: No checks (release)
+     - Level 1: Scope validation only
+     - Level 2: Full fat pointer tracking
+
+4. **Integration with Existing Pointer Types**: 
+   - Regular pointers (int8@) become fat pointers in debug mode
+   - References (int8&) also use fat pointers?
+   - Array pointers need bounds tracking too?
+
+5. **Thread Safety**: Current runtime uses global state
+   - Thread-local scope stacks for multi-threaded code?
+   - Atomic operations for scope ID allocation?
+   - Per-thread statistics?
+
+6. **Interop with C Code**: C libraries return raw pointers
+   - Wrap external pointers in fat pointers?
+   - Assume external pointers are in "global scope"?
+   - Special handling for malloc/free?
+
+7. **Error Reporting**: When validation fails, how much info to show?
+   - Just "use-after-scope" message?
+   - Full stack trace (requires Issue 5.2)?
+   - Scope allocation/deallocation history?
+
+IMPLEMENTATION DELIVERABLES REQUESTED:
+
+1. **Codegen Integration Design**: Complete specification for integrating with
+   existing runtime implementation:
+   - Scope tracking in CodeGenVisitor
+   - When to call aria_scope_enter/exit
+   - Fat pointer struct type definition in LLVM IR
+   - Calling conventions for fat pointer functions
+
+2. **Modified Codegen Code**: Updated visit methods:
+   - visit(BlockStmt*) - scope enter/exit
+   - visit(FuncDecl*) - function-level scopes
+   - visit(VarDecl*) - fat pointer creation for pointer types
+   - visit(MemberAccessExpr*) - fat pointer validation before deref
+   - Conditional compilation guards
+
+3. **Type System Integration**: How to represent fat pointers in type system:
+   - PointerType variations (raw vs fat)
+   - Type checking for fat pointer operations
+   - Automatic conversion when needed
+
+4. **Testing Strategy**: Comprehensive tests:
+   - Use-after-scope detection
+   - Nested scope tracking
+   - Fat pointer validation
+   - Performance benchmarks (debug vs release)
+
+5. **Build System Changes**: Enable/disable fat pointers:
+   - -DARIA_DEBUG=1 for debug builds
+   - -DARIA_FAT_POINTERS_ENABLED=1 for runtime
+   - Linking with fat_pointer.c
+
+6. **Error Message Design**: When aria_fat_ptr_deref fails:
+   ```
+   [ARIA FAT PTR] Use-after-scope detected
+     Pointer: 0x7ffc12345678
+     Dead scope ID: 42
+     Access location: my_program.aria:89
+     Allocation location: my_program.aria:45
+   ```
+
+7. **Comparison with Existing Tools**:
+   - AddressSanitizer: How does ASan track scope lifetimes?
+   - Rust borrow checker: Compile-time vs runtime checking
+   - Valgrind Memcheck: Dynamic instrumentation approach
+   
+   What can we learn from their implementations?
+
+8. **Performance Analysis**:
+   - Overhead of scope enter/exit per block
+   - Overhead of fat pointer validation per dereference
+   - Memory usage for fat pointer metadata
+   - Comparison: debug build vs release build benchmarks
+
+AFFECTED FILES:
+- src/backend/codegen.cpp (add scope tracking and fat pointer calls)
+- src/backend/codegen_visitor.h (add scopeStack member)
+- src/runtime/debug/fat_pointer.c (ALREADY COMPLETE - 274 lines)
+- src/runtime/debug/fat_pointer.h (public API declarations)
+- Build system (ARIA_DEBUG and ARIA_FAT_POINTERS_ENABLED flags)
+
+================================================================================
+ISSUE 2: RUNTIME ERROR STACK TRACES
+================================================================================
+
+STATUS: Not Implemented
+PRIORITY: Medium
+COMPLEXITY: High
+IMPLEMENTATION IMPACT: Critical for debugging, error diagnosis
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+When runtime errors occur (segfaults, null pointer dereferences, division by
+zero, assertion failures), the program crashes with no stack trace. Developers
+have no idea where the error occurred or what the call stack was.
+
+CURRENT BEHAVIOR:
+
+```bash
+$ ./my_aria_program
+Segmentation fault (core dumped)
+```
+
+No information about:
+- Which function crashed
+- What line number
+- Call stack leading to the crash
+- Variable values at crash time
+
+DESIRED BEHAVIOR:
+
+```bash
+$ ./my_aria_program
+Runtime Error: Segmentation fault (null pointer dereference)
+
+Stack trace:
+  #0  0x00007f8b9c123456 in process_data (data=0x0) at my_program.aria:45
+  #1  0x00007f8b9c123789 in handle_request (req=0x7ffc12345678) at my_program.aria:89
+  #2  0x00007f8b9c123abc in main () at my_program.aria:120
+
+Registers:
+  rax: 0x0000000000000000   rbx: 0x00007ffc12345678
+  rcx: 0x0000000000000042   rdx: 0x00007f8b9c200000
+  
+Backtrace saved to: crash_20251207_143022.log
+```
+
+REQUIRED COMPONENTS:
+
+1. **DWARF Debug Info Generation**: Emit debug metadata during compilation
+   - Source file and line number information
+   - Variable locations (registers, stack offsets)
+   - Function names and boundaries
+   - Type information
+
+2. **Stack Unwinding Library**: Use libunwind or similar to walk the stack
+   - Frame pointer unwinding (fast, requires -fno-omit-frame-pointer)
+   - DWARF-based unwinding (slower, works with optimized code)
+   - Signal-safe unwinding (for crash handlers)
+
+3. **Signal Handlers**: Catch crashes and print diagnostics
+   - SIGSEGV (segmentation fault)
+   - SIGABRT (abort/assertion failure)
+   - SIGFPE (floating point exception)
+   - SIGILL (illegal instruction)
+   - SIGBUS (bus error)
+
+4. **Symbol Resolution**: Map instruction addresses to function names
+   - Parse symbol table from executable
+   - Use dladdr() on POSIX systems
+   - Cache symbol lookups for performance
+
+5. **Source Line Resolution**: Map addresses to source file:line
+   - Parse DWARF .debug_line section
+   - Binary search for efficient lookup
+   - Handle inlined functions
+
+6. **Pretty Printing**: Format stack traces for readability
+   - Demangled function names
+   - File paths (absolute or relative)
+   - Syntax highlighting (optional)
+   - Frame arguments and local variables (advanced)
+
+IMPLEMENTATION APPROACH - PHASE 1 (DWARF Generation):
+
+LLVM provides DIBuilder for debug info. In codegen.cpp:
+
+```cpp
+#include <llvm/IR/DIBuilder.h>
+#include <llvm/IR/DebugInfoMetadata.h>
+
+class CodeGenVisitor {
+    std::unique_ptr<DIBuilder> debugInfoBuilder;
+    DICompileUnit* compileUnit;
+    DIFile* currentFile;
+    std::vector<DIScope*> scopeStack;
+    
+    void initializeDebugInfo(const std::string& filename) {
+        debugInfoBuilder = std::make_unique<DIBuilder>(*ctx.module);
+        
+        // Create compile unit
+        currentFile = debugInfoBuilder->createFile(filename, ".");
+        compileUnit = debugInfoBuilder->createCompileUnit(
+            dwarf::DW_LANG_C_plus_plus,  // Or custom DWARF language code
+            currentFile,
+            "Aria Compiler v0.0.7",      // Producer
+            false,                        // isOptimized
+            "",                           // Flags
+            0                             // Runtime version
+        );
+        
+        scopeStack.push_back(compileUnit);
+    }
+    
+    void emitLocation(unsigned line, unsigned col) {
+        if (scopeStack.empty()) return;
+        
+        DILocation* loc = DILocation::get(
+            ctx.llvmContext,
+            line,
+            col,
+            scopeStack.back()
+        );
+        
+        ctx.builder->SetCurrentDebugLocation(loc);
+    }
+    
+    void visit(FuncDecl* node) override {
+        // Create function debug info
+        DISubroutineType* funcType = debugInfoBuilder->createSubroutineType(
+            debugInfoBuilder->getOrCreateTypeArray({})
+        );
+        
+        DISubprogram* funcDebugInfo = debugInfoBuilder->createFunction(
+            scopeStack.back(),           // Scope
+            node->name,                  // Name
+            node->name,                  // Linkage name
+            currentFile,                 // File
+            node->line,                  // Line number
+            funcType,                    // Type
+            node->line,                  // Scope line
+            DINode::FlagPrototyped,      // Flags
+            DISubprogram::SPFlagDefinition
+        );
+        
+        llvmFunction->setSubprogram(funcDebugInfo);
+        scopeStack.push_back(funcDebugInfo);
+        
+        // ... rest of function codegen ...
+        
+        scopeStack.pop_back();
+        debugInfoBuilder->finalize();
+    }
+};
+```
+
+IMPLEMENTATION APPROACH - PHASE 2 (Stack Unwinding):
+
+Create src/runtime/debug/stacktrace.cpp:
+
+```cpp
+#include <signal.h>
+#include <libunwind.h>
+#include <cxxabi.h>
+#include <execinfo.h>
+#include <dlfcn.h>
+#include <cstdio>
+#include <cstdlib>
+
+struct StackFrame {
+    void* address;
+    char* function_name;
+    char* file_name;
+    int line_number;
+};
+
+// Print stack trace (signal-safe version)
+void print_stacktrace(int max_frames = 64) {
+    unw_cursor_t cursor;
+    unw_context_t context;
+    
+    // Initialize libunwind
+    unw_getcontext(&context);
+    unw_init_local(&cursor, &context);
+    
+    fprintf(stderr, "\nStack trace:\n");
+    
+    int frame_num = 0;
+    while (unw_step(&cursor) > 0 && frame_num < max_frames) {
+        unw_word_t offset, pc;
+        unw_get_reg(&cursor, UNW_REG_IP, &pc);
+        
+        if (pc == 0) break;
+        
+        char sym[256];
+        if (unw_get_proc_name(&cursor, sym, sizeof(sym), &offset) == 0) {
+            // Demangle C++ names
+            int status;
+            char* demangled = abi::__cxa_demangle(sym, nullptr, nullptr, &status);
+            
+            // Get source location via dladdr
+            Dl_info info;
+            if (dladdr((void*)pc, &info)) {
+                fprintf(stderr, "  #%d  0x%016lx in %s (%s+0x%lx)\n",
+                        frame_num,
+                        pc,
+                        status == 0 ? demangled : sym,
+                        info.dli_fname,
+                        (unsigned long)offset);
+            } else {
+                fprintf(stderr, "  #%d  0x%016lx in %s+0x%lx\n",
+                        frame_num,
+                        pc,
+                        status == 0 ? demangled : sym,
+                        (unsigned long)offset);
+            }
+            
+            if (demangled) free(demangled);
+        } else {
+            fprintf(stderr, "  #%d  0x%016lx in <unknown>\n", frame_num, pc);
+        }
+        
+        frame_num++;
+    }
+}
+
+// Signal handler for crashes
+void crash_handler(int sig) {
+    const char* sig_name = "UNKNOWN";
+    switch (sig) {
+        case SIGSEGV: sig_name = "SIGSEGV (Segmentation fault)"; break;
+        case SIGABRT: sig_name = "SIGABRT (Abort)"; break;
+        case SIGFPE:  sig_name = "SIGFPE (Floating point exception)"; break;
+        case SIGILL:  sig_name = "SIGILL (Illegal instruction)"; break;
+        case SIGBUS:  sig_name = "SIGBUS (Bus error)"; break;
+    }
+    
+    fprintf(stderr, "\n=== RUNTIME ERROR ===\n");
+    fprintf(stderr, "Signal: %s\n", sig_name);
+    
+    print_stacktrace();
+    
+    fprintf(stderr, "\n");
+    
+    // Re-raise signal to generate core dump
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+// Install crash handlers
+extern "C" void aria_install_crash_handlers() {
+    signal(SIGSEGV, crash_handler);
+    signal(SIGABRT, crash_handler);
+    signal(SIGFPE, crash_handler);
+    signal(SIGILL, crash_handler);
+    signal(SIGBUS, crash_handler);
+}
+
+// Initialize at program startup
+__attribute__((constructor))
+static void init_stacktrace() {
+    aria_install_crash_handlers();
+}
+```
+
+IMPLEMENTATION APPROACH - PHASE 3 (Source Line Resolution):
+
+For DWARF parsing to get file:line info, use libdwarf or LLVM's Symbolizer:
+
+```cpp
+#include <llvm/DebugInfo/Symbolize/Symbolize.h>
+
+std::string resolve_source_location(void* addr) {
+    static llvm::symbolize::LLVMSymbolizer symbolizer;
+    
+    auto result = symbolizer.symbolizeCode(
+        "/path/to/executable",
+        {(uint64_t)addr}
+    );
+    
+    if (result) {
+        return result->FileName + ":" + std::to_string(result->Line);
+    }
+    
+    return "<unknown>";
+}
+```
+
+DESIGN QUESTIONS:
+
+1. **Debug Info Overhead**: DWARF info can be large. Should it be:
+   - Always included (even in release builds)?
+   - Stripped by default, enabled with -g flag?
+   - Separate debug symbols file (.dSYM on macOS, .pdb on Windows)?
+
+2. **Unwinding Method**: Which unwinding strategy?
+   - Frame pointer (fast, simple, requires -fno-omit-frame-pointer)
+   - DWARF .eh_frame (slower, works with optimized code)
+   - Hybrid approach (try frame pointer, fall back to DWARF)
+
+3. **Signal Safety**: Stack trace printing happens in signal handler context.
+   Must use signal-safe functions only (no malloc, no C++ iostreams). Use:
+   - write() instead of fprintf() for production?
+   - Pre-allocated buffers?
+   - Async-signal-safe unwinding?
+
+4. **Performance Impact**: Stack unwinding is expensive. When to unwind?
+   - Only on crash (no overhead normally)
+   - On every assertion (Debug.assert)?
+   - Profiler-style periodic sampling?
+
+5. **Cross-Platform Support**: Different OSes have different APIs:
+   - Linux: backtrace(), libunwind, /proc/self/maps
+   - macOS: backtrace(), libunwind, dyld
+   - Windows: CaptureStackBackTrace(), SymFromAddr(), .pdb files
+   
+   Should we support all platforms or start with Linux only?
+
+6. **Inlined Functions**: Optimized code has inlined functions. Should we:
+   - Show all inlined frames (verbose but accurate)
+   - Show only non-inlined frames (cleaner, less info)
+   - Make it configurable?
+
+7. **Memory Safety**: Stack traces are triggered during crashes, possibly with
+   corrupted memory. How to handle:
+   - Invalid stack pointers
+   - Infinite recursion (stack overflow)
+   - Partial stack frames
+
+IMPLEMENTATION DELIVERABLES REQUESTED:
+
+1. **DWARF Generation Guide**: Complete implementation for emitting debug info
+   - DIBuilder integration in codegen
+   - Debug info for functions, variables, types
+   - Line number table generation
+
+2. **Stack Unwinding Implementation**: Production-ready stack unwinder
+   - libunwind integration or alternative
+   - Signal handler setup
+   - Demangling support
+
+3. **Source Location Resolution**: DWARF parsing or LLVM Symbolizer integration
+   - Address to file:line mapping
+   - Caching for performance
+   - Error handling for missing debug info
+
+4. **Testing Strategy**: How to test crash handling?
+   - Trigger intentional crashes
+   - Verify stack traces are correct
+   - Test edge cases (no debug info, stripped binaries, etc.)
+
+5. **Documentation**: User guide for debugging with stack traces
+   - Compiling with debug info (-g flag)
+   - Interpreting stack traces
+   - Using external tools (gdb, lldb integration)
+
+6. **Comparison with Other Tools**: How do these tools work?
+   - GCC -g and backtrace()
+   - Rust panic! handler and backtraces
+   - Go panic() and runtime.Caller
+   - AddressSanitizer and MemorySanitizer output
+
+AFFECTED FILES:
+- src/backend/codegen.cpp (DWARF generation via DIBuilder)
+- src/runtime/debug/stacktrace.cpp (NEW - stack unwinding)
+- src/runtime/debug/crash_handler.cpp (NEW - signal handlers)
+- Build system (link with -lunwind, -ldl)
+
+================================================================================
+ISSUE 3: FAT POINTER RUNTIME CHECKS
+================================================================================
+
+STATUS: Implementation Exists But Not Connected
+PRIORITY: Medium
+COMPLEXITY: Medium-Low
+IMPLEMENTATION IMPACT: Improves memory safety in debug builds
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+Debug builds have complete fat pointer implementation in the runtime library
+(src/runtime/debug/fat_pointer.c - 274 lines), but the codegen doesn't emit
+calls to these functions. The infrastructure exists but isn't integrated.
+
+CURRENT STATE - RUNTIME IMPLEMENTATION:
+
+Complete implementation exists in src/runtime/debug/fat_pointer.c (274 lines):
+
+```c
+/**
+ * Aria Runtime - Fat Pointer Implementation
+ * Version: 0.0.7
+ * 
+ * Implements scope tracking and fat pointer validation for debug builds.
+ * 
+ * Implementation Strategy:
+ * - Monotonic scope ID counter (thread-local for concurrency)
+ * - Active scope bit set (uint64_t bitmap for fast lookups)
+ * - Scope stack tracking for proper nesting
+ * 
+ * Performance:
+ * - Scope enter/exit: O(1) - just counter increment and bit set
+ * - Scope validation: O(1) - bit check in active scope set
+ * - Memory overhead: ~8 KB for scope tracking (up to 512 active scopes)
+ */
+
+// Configuration
+#define MAX_ACTIVE_SCOPES 512
+#define INVALID_SCOPE_ID 0
+
+// Global state
+static uint64_t g_next_scope_id = 1;
+static uint64_t g_active_scopes[MAX_ACTIVE_SCOPES / 64] = {0};  // Bit set
+static uint64_t g_scope_stack[MAX_ACTIVE_SCOPES];
+static size_t g_scope_stack_top = 0;
+
+// Scope activation/deactivation using bit operations
+static inline void scope_activate(uint64_t scope_id) {
+    size_t word_idx = scope_id / 64;
+    size_t bit_idx = scope_id % 64;
+    g_active_scopes[word_idx] |= (1ULL << bit_idx);
+}
+
+static inline bool scope_is_active(uint64_t scope_id) {
+    size_t word_idx = scope_id / 64;
+    size_t bit_idx = scope_id % 64;
+    return (g_active_scopes[word_idx] & (1ULL << bit_idx)) != 0;
+}
+```
+
+The runtime provides:
+- `aria_fat_ptr_scope_enter()` - Enter new scope, returns scope ID
+- `aria_fat_ptr_scope_exit(scope_id)` - Exit scope
+- `aria_fat_ptr_validate(scope_id, file, line)` - Validate scope still active
+- Bit-set based tracking for O(1) validation
+
+But codegen doesn't emit calls to these functions.
+
+WHAT FAT POINTERS SHOULD DO:
+
+Fat pointers add metadata to detect memory errors:
+
+```cpp
+struct FatPointer {
+    void* ptr;              // Actual pointer
+    uint32_t scope_id;      // Allocation scope (for use-after-free)
+    uint64_t timestamp;     // Allocation timestamp
+    size_t size;            // Allocation size (for bounds checking)
+    uint32_t magic;         // Magic number (0xFAFAFAFA for validation)
+};
+```
+
+On every pointer dereference in debug mode:
+1. Validate magic number (detect corruption)
+2. Check scope_id (detect use-after-free if scope is dead)
+3. Check bounds if doing pointer arithmetic
+4. Update timestamp (for LRU eviction in metadata cache)
+
+IMPLEMENTATION STRATEGY:
+
+Create src/runtime/debug/fat_pointer.cpp:
+
+```cpp
+#include <cstdint>
+#include <cstdlib>
+#include <cstdio>
+#include <unordered_map>
+#include <mutex>
+
+// Magic number for validation
+#define FAT_PTR_MAGIC 0xFAFAFAFA
+
+struct FatPointerMetadata {
+    uint32_t scope_id;
+    uint64_t timestamp;
+    size_t size;
+    bool is_freed;
+};
+
+// Global metadata table (pointer -> metadata)
+static std::unordered_map<void*, FatPointerMetadata> metadata_table;
+static std::mutex metadata_mutex;
+static uint64_t global_timestamp = 0;
+
+// Scope tracking (for use-after-free detection)
+static std::unordered_set<uint32_t> live_scopes;
+static std::mutex scope_mutex;
+
+// Create fat pointer (called at allocation)
+extern "C" void* aria_fat_ptr_create(void* ptr, uint32_t scope_id, size_t size) {
+    if (!ptr) return nullptr;
+    
+    std::lock_guard<std::mutex> lock(metadata_mutex);
+    
+    FatPointerMetadata meta;
+    meta.scope_id = scope_id;
+    meta.timestamp = global_timestamp++;
+    meta.size = size;
+    meta.is_freed = false;
+    
+    metadata_table[ptr] = meta;
+    
+    return ptr;  // Return the same pointer (metadata is in separate table)
+}
+
+// Validate fat pointer (called before dereference)
+extern "C" void aria_fat_ptr_validate(void* ptr, const char* file, int line) {
+    if (!ptr) {
+        fprintf(stderr, "Fat Pointer Error: Null pointer dereference at %s:%d\n",
+                file, line);
+        abort();
+    }
+    
+    std::lock_guard<std::mutex> lock(metadata_mutex);
+    
+    auto it = metadata_table.find(ptr);
+    if (it == metadata_table.end()) {
+        fprintf(stderr, "Fat Pointer Error: Unknown pointer %p dereferenced at %s:%d\n",
+                ptr, file, line);
+        fprintf(stderr, "  This pointer was never allocated via aria_fat_ptr_create\n");
+        abort();
+    }
+    
+    FatPointerMetadata& meta = it->second;
+    
+    if (meta.is_freed) {
+        fprintf(stderr, "Fat Pointer Error: Use-after-free detected at %s:%d\n",
+                file, line);
+        fprintf(stderr, "  Pointer: %p\n", ptr);
+        fprintf(stderr, "  Scope ID: %u\n", meta.scope_id);
+        fprintf(stderr, "  Original allocation timestamp: %lu\n", meta.timestamp);
+        abort();
+    }
+    
+    // Check if scope is still live
+    {
+        std::lock_guard<std::mutex> scope_lock(scope_mutex);
+        if (live_scopes.find(meta.scope_id) == live_scopes.end()) {
+            fprintf(stderr, "Fat Pointer Error: Use-after-scope detected at %s:%d\n",
+                    file, line);
+            fprintf(stderr, "  Pointer: %p\n", ptr);
+            fprintf(stderr, "  Dead scope ID: %u\n", meta.scope_id);
+            abort();
+        }
+    }
+    
+    // Pointer is valid - update timestamp
+    meta.timestamp = global_timestamp++;
+}
+
+// Mark pointer as freed
+extern "C" void aria_fat_ptr_free(void* ptr) {
+    if (!ptr) return;
+    
+    std::lock_guard<std::mutex> lock(metadata_mutex);
+    
+    auto it = metadata_table.find(ptr);
+    if (it != metadata_table.end()) {
+        it->second.is_freed = true;
+        // Don't erase - keep metadata to detect use-after-free
+    }
+}
+
+// Scope management
+extern "C" void aria_fat_ptr_enter_scope(uint32_t scope_id) {
+    std::lock_guard<std::mutex> lock(scope_mutex);
+    live_scopes.insert(scope_id);
+}
+
+extern "C" void aria_fat_ptr_exit_scope(uint32_t scope_id) {
+    std::lock_guard<std::mutex> lock(scope_mutex);
+    live_scopes.erase(scope_id);
+}
+
+// Bounds checking for pointer arithmetic
+extern "C" void aria_fat_ptr_check_bounds(void* ptr, ptrdiff_t offset,
+                                           const char* file, int line) {
+    std::lock_guard<std::mutex> lock(metadata_mutex);
+    
+    auto it = metadata_table.find(ptr);
+    if (it == metadata_table.end()) return;  // Unknown pointer
+    
+    FatPointerMetadata& meta = it->second;
+    
+    if (offset < 0 || (size_t)offset >= meta.size) {
+        fprintf(stderr, "Fat Pointer Error: Out-of-bounds access at %s:%d\n",
+                file, line);
+        fprintf(stderr, "  Pointer: %p\n", ptr);
+        fprintf(stderr, "  Offset: %td\n", offset);
+        fprintf(stderr, "  Allocation size: %zu\n", meta.size);
+        abort();
+    }
+}
+```
+
+CODEGEN INTEGRATION:
+
+Modify codegen to emit validation calls:
+
+```cpp
+// Before pointer dereference
+#ifdef ARIA_DEBUG
+    Function* validateFn = ctx.module->getOrInsertFunction(
+        "aria_fat_ptr_validate",
+        Type::getVoidTy(ctx.llvmContext),
+        Type::getInt8PtrTy(ctx.llvmContext),
+        Type::getInt8PtrTy(ctx.llvmContext),
+        Type::getInt32Ty(ctx.llvmContext)
+    ).getCallee()->stripPointerCasts();
+    
+    Value* filename = ctx.builder->CreateGlobalStringPtr(__FILE__);
+    Value* lineno = ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), __LINE__);
+    
+    ctx.builder->CreateCall(validateFn, {ptr, filename, lineno});
+#endif
+
+// Load/store now happens with validated pointer
+Value* loaded = ctx.builder->CreateLoad(type, ptr);
+```
+
+DESIGN QUESTIONS:
+
+1. **Metadata Storage**: How to store metadata efficiently?
+   - Hash table (current approach): O(1) lookup, memory overhead
+   - Inline with allocation: Larger allocations, simpler tracking
+   - Shadow memory: Like AddressSanitizer, fixed offset from pointer
+
+2. **Performance Overhead**: Debug builds will be slow. Acceptable tradeoff?
+   - Validate on every dereference: Very slow, very safe
+   - Validate on entry/exit: Fast, less coverage
+   - Sampling: Validate randomly, statistical safety
+
+3. **Scope Tracking**: How to track scope lifetimes?
+   - Compiler generates scope_enter/scope_exit calls
+   - Use LLVM lifetime intrinsics
+   - RAII-style scope guards in generated code
+
+4. **Thread Safety**: Metadata table must be thread-safe
+   - Global mutex (simple, contention under concurrency)
+   - Per-thread metadata (no contention, harder use-after-free detection)
+   - Lock-free data structures (complex, high performance)
+
+5. **Integration with GC**: GC allocations also need fat pointers
+   - Extend GC allocator to register with fat pointer system
+   - Or separate tracking for GC vs wild pointers?
+
+6. **Bounds Checking**: Should we validate array indices?
+   ```aria
+   int8[100]:arr;
+   int8:val = arr[150];  // Out of bounds - detect in debug mode?
+   ```
+
+7. **Pointer Arithmetic**: Should we track pointer offsets?
+   ```aria
+   int8@:ptr = allocate(100);
+   int8@:offset_ptr = ptr + 50;  // Valid
+   int8@:bad_ptr = ptr + 200;    // Out of bounds - detect?
+   ```
+
+IMPLEMENTATION DELIVERABLES REQUESTED:
+
+1. **Complete Implementation**: Production-ready fat_pointer.cpp with:
+   - Metadata table management
+   - Validation functions
+   - Scope tracking
+   - Thread safety
+
+2. **Codegen Integration**: Modified codegen.cpp to emit:
+   - aria_fat_ptr_create calls at allocations
+   - aria_fat_ptr_validate calls at dereferences
+   - Scope enter/exit calls
+   - Conditional compilation (#ifdef ARIA_DEBUG)
+
+3. **Testing Strategy**: Tests for:
+   - Use-after-free detection
+   - Use-after-scope detection
+   - Null pointer detection
+   - Out-of-bounds access
+   - Multi-threaded scenarios
+
+4. **Performance Benchmarks**: Measure overhead:
+   - Debug build vs release build
+   - Different validation strategies
+   - Memory usage of metadata table
+
+5. **Comparison with Other Tools**: How do these tools work?
+   - AddressSanitizer (ASan): Shadow memory, compile-time instrumentation
+   - Valgrind: Dynamic binary instrumentation
+   - Electric Fence: Page-level protection
+   
+   What can we learn from their approaches?
+
+AFFECTED FILES:
+- src/runtime/debug/fat_pointer.cpp (NEW)
+- src/backend/codegen.cpp (add validation calls)
+- Build system (conditional compilation for ARIA_DEBUG)
+
+================================================================================
+DELIVERABLES SUMMARY
+================================================================================
+
+For each of the three issues, please provide:
+
+1. **Complete Implementation Plan**:
+   - Step-by-step implementation guide
+   - Code examples and pseudocode
+   - Integration points with existing code
+   - Data structure specifications
+
+2. **Design Document**:
+   - Architecture decisions with justifications
+   - Tradeoff analysis
+   - Alternative approaches considered
+   - Future extensibility considerations
+
+3. **Testing Strategy**:
+   - Unit tests for components
+   - Integration tests for full features
+   - Edge case coverage
+   - Performance benchmarks where applicable
+
+4. **Documentation**:
+   - User-facing documentation (how to use methods, read stack traces)
+   - Developer documentation (how systems work internally)
+   - API references
+
+5. **Comparison Analysis**:
+   - How other languages/compilers solve these problems
+   - Best practices from industry
+   - Lessons learned and pitfalls to avoid
+
+================================================================================
+RESEARCH GUIDELINES
+================================================================================
+
+FOCUS AREAS:
+- Practical, implementable solutions
+- Developer experience and usability
+- Performance implications
+- Integration with existing Aria codebase
+
+CONSTRAINTS:
+- Must work with LLVM 18
+- Maintain Aria's design philosophy
+- Minimize breaking changes
+- Consider future extensibility
+
+OUTPUT FORMAT:
+- Markdown with clear sections
+- Code examples (C++, Aria, LLVM IR as needed)
+- Diagrams for complex architectures
+- Performance data where available
+
+================================================================================
+END OF WORK PACKAGE #004
+================================================================================
+
+Generated: December 7, 2025
+Compiler: Aria v0.0.7
+Target: LLVM 18
+
+These three issues significantly improve developer experience through better
+language features (struct methods), debugging capabilities (stack traces),
+and memory safety (fat pointers).
