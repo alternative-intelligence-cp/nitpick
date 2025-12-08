@@ -438,6 +438,30 @@ src/backend/lowering_ternary.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.s
 .PHONY : src/backend/lowering_ternary.cpp.s
 
+src/backend/tbb_optimizer.o: src/backend/tbb_optimizer.cpp.o
+.PHONY : src/backend/tbb_optimizer.o
+
+# target to build an object file
+src/backend/tbb_optimizer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o
+.PHONY : src/backend/tbb_optimizer.cpp.o
+
+src/backend/tbb_optimizer.i: src/backend/tbb_optimizer.cpp.i
+.PHONY : src/backend/tbb_optimizer.i
+
+# target to preprocess a source file
+src/backend/tbb_optimizer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.i
+.PHONY : src/backend/tbb_optimizer.cpp.i
+
+src/backend/tbb_optimizer.s: src/backend/tbb_optimizer.cpp.s
+.PHONY : src/backend/tbb_optimizer.s
+
+# target to generate assembly for a file
+src/backend/tbb_optimizer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.s
+.PHONY : src/backend/tbb_optimizer.cpp.s
+
 src/driver/main.o: src/driver/main.cpp.o
 .PHONY : src/driver/main.o
 
@@ -955,6 +979,9 @@ help:
 	@echo "... src/backend/lowering_ternary.o"
 	@echo "... src/backend/lowering_ternary.i"
 	@echo "... src/backend/lowering_ternary.s"
+	@echo "... src/backend/tbb_optimizer.o"
+	@echo "... src/backend/tbb_optimizer.i"
+	@echo "... src/backend/tbb_optimizer.s"
 	@echo "... src/driver/main.o"
 	@echo "... src/driver/main.i"
 	@echo "... src/driver/main.s"

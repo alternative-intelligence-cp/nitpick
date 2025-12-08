@@ -18,7 +18,7 @@ message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
 llvm_map_components_to_libnames(llvm_libs 
-    core support native irreader
+    core support native irreader passes
     x86asmparser x86codegen x86desc x86info
     aarch64asmparser aarch64codegen aarch64desc aarch64info
     armasmparser armcodegen armdesc arminfo
@@ -69,6 +69,7 @@ add_executable(ariac
  # src/frontend/ast/control_flow.cpp  # TODO: Create when implementing control flow AST nodes
  src/backend/codegen.cpp
  src/backend/codegen_tbb.cpp           # TBB Sticky Error Propagation (v0.0.7 Critical Fix)
+ src/backend/tbb_optimizer.cpp         # TBB Optimization Pass (Value Range Propagation)
  src/backend/lowering_ternary.cpp  # AVX-512 Lowering Logic
 )
 

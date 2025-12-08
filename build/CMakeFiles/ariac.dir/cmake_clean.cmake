@@ -5,6 +5,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.o.d"
   "CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o"
   "CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o.d"
+  "CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o"
+  "CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o.d"
   "CMakeFiles/ariac.dir/src/driver/main.cpp.o"
   "CMakeFiles/ariac.dir/src/driver/main.cpp.o.d"
   "CMakeFiles/ariac.dir/src/frontend/lexer.cpp.o"

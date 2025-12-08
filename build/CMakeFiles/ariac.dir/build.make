@@ -209,10 +209,24 @@ CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_tbb.cpp -o CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.s
 
+CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o: CMakeFiles/ariac.dir/flags.make
+CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/tbb_optimizer.cpp
+CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o -MF CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/tbb_optimizer.cpp
+
+CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/randy/._____RANDY_____/REPOS/aria/src/backend/tbb_optimizer.cpp > CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.i
+
+CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/backend/tbb_optimizer.cpp -o CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.s
+
 CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o: CMakeFiles/ariac.dir/flags.make
 CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/lowering_ternary.cpp
 CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Building CXX object CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o -MF CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/lowering_ternary.cpp
 
 CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.i: cmake_force
@@ -235,6 +249,7 @@ ariac_OBJECTS = \
 "CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o" \
 "CMakeFiles/ariac.dir/src/backend/codegen.cpp.o" \
 "CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.o" \
+"CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o" \
 "CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o"
 
 # External object files for target ariac
@@ -250,11 +265,13 @@ ariac: CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.o
 ariac: CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o
 ariac: CMakeFiles/ariac.dir/src/backend/codegen.cpp.o
 ariac: CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.o
+ariac: CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o
 ariac: CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o
 ariac: CMakeFiles/ariac.dir/build.make
 ariac: /usr/lib/llvm-19/lib/libLLVMCore.a
 ariac: /usr/lib/llvm-19/lib/libLLVMSupport.a
 ariac: /usr/lib/llvm-19/lib/libLLVMIRReader.a
+ariac: /usr/lib/llvm-19/lib/libLLVMPasses.a
 ariac: /usr/lib/llvm-19/lib/libLLVMX86AsmParser.a
 ariac: /usr/lib/llvm-19/lib/libLLVMX86CodeGen.a
 ariac: /usr/lib/llvm-19/lib/libLLVMX86Desc.a
@@ -277,27 +294,28 @@ ariac: /usr/lib/llvm-19/lib/libLLVMX86Desc.a
 ariac: /usr/lib/llvm-19/lib/libLLVMX86Disassembler.a
 ariac: /usr/lib/llvm-19/lib/libLLVMX86Info.a
 ariac: vendor/mimalloc/libmimalloc.a
+ariac: /usr/lib/llvm-19/lib/libLLVMCoroutines.a
+ariac: /usr/lib/llvm-19/lib/libLLVMHipStdPar.a
 ariac: /usr/lib/llvm-19/lib/libLLVMIRPrinter.a
 ariac: /usr/lib/llvm-19/lib/libLLVMAArch64Utils.a
 ariac: /usr/lib/llvm-19/lib/libLLVMCFGuard.a
 ariac: /usr/lib/llvm-19/lib/libLLVMARMUtils.a
+ariac: /usr/lib/llvm-19/lib/libLLVMipo.a
+ariac: /usr/lib/llvm-19/lib/libLLVMInstrumentation.a
+ariac: /usr/lib/llvm-19/lib/libLLVMFrontendOpenMP.a
+ariac: /usr/lib/llvm-19/lib/libLLVMFrontendOffloading.a
+ariac: /usr/lib/llvm-19/lib/libLLVMLinker.a
+ariac: /usr/lib/llvm-19/lib/libLLVMVectorize.a
 ariac: /usr/lib/llvm-19/lib/libLLVMAsmPrinter.a
 ariac: /usr/lib/llvm-19/lib/libLLVMGlobalISel.a
 ariac: /usr/lib/llvm-19/lib/libLLVMSelectionDAG.a
 ariac: /usr/lib/llvm-19/lib/libLLVMCodeGen.a
 ariac: /usr/lib/llvm-19/lib/libLLVMObjCARCOpts.a
-ariac: /usr/lib/llvm-19/lib/libLLVMCodeGenTypes.a
-ariac: /usr/lib/llvm-19/lib/libLLVMTarget.a
-ariac: /usr/lib/llvm-19/lib/libLLVMipo.a
-ariac: /usr/lib/llvm-19/lib/libLLVMInstrumentation.a
-ariac: /usr/lib/llvm-19/lib/libLLVMVectorize.a
-ariac: /usr/lib/llvm-19/lib/libLLVMBitWriter.a
-ariac: /usr/lib/llvm-19/lib/libLLVMFrontendOpenMP.a
 ariac: /usr/lib/llvm-19/lib/libLLVMScalarOpts.a
 ariac: /usr/lib/llvm-19/lib/libLLVMAggressiveInstCombine.a
 ariac: /usr/lib/llvm-19/lib/libLLVMInstCombine.a
-ariac: /usr/lib/llvm-19/lib/libLLVMFrontendOffloading.a
-ariac: /usr/lib/llvm-19/lib/libLLVMLinker.a
+ariac: /usr/lib/llvm-19/lib/libLLVMBitWriter.a
+ariac: /usr/lib/llvm-19/lib/libLLVMTarget.a
 ariac: /usr/lib/llvm-19/lib/libLLVMTransformUtils.a
 ariac: /usr/lib/llvm-19/lib/libLLVMAnalysis.a
 ariac: /usr/lib/llvm-19/lib/libLLVMProfileData.a
@@ -315,6 +333,7 @@ ariac: /usr/lib/llvm-19/lib/libLLVMRemarks.a
 ariac: /usr/lib/llvm-19/lib/libLLVMBitstreamReader.a
 ariac: /usr/lib/llvm-19/lib/libLLVMMCParser.a
 ariac: /usr/lib/llvm-19/lib/libLLVMTextAPI.a
+ariac: /usr/lib/llvm-19/lib/libLLVMCodeGenTypes.a
 ariac: /usr/lib/llvm-19/lib/libLLVMMCDisassembler.a
 ariac: /usr/lib/llvm-19/lib/libLLVMMC.a
 ariac: /usr/lib/llvm-19/lib/libLLVMBinaryFormat.a
@@ -325,7 +344,7 @@ ariac: /usr/lib/llvm-19/lib/libLLVMDemangle.a
 ariac: /usr/lib/x86_64-linux-gnu/libz.so
 ariac: /usr/lib/x86_64-linux-gnu/libzstd.so
 ariac: CMakeFiles/ariac.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Linking CXX executable ariac"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Linking CXX executable ariac"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/ariac.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

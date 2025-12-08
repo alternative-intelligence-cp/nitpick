@@ -19,7 +19,9 @@
  */
 
 #include "codegen.h"
+#include "codegen_context.h"
 #include "codegen_tbb.h"
+#include "tbb_optimizer.h"
 #include "../frontend/ast.h"
 #include "../frontend/ast/stmt.h"
 #include "../frontend/ast/expr.h"
@@ -44,6 +46,9 @@
 #include <llvm/Target/TargetOptions.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/MC/TargetRegistry.h>
+#include <llvm/Passes/PassBuilder.h>
+#include <llvm/Analysis/LoopAnalysisManager.h>
+#include <llvm/Analysis/CGSCCPassManager.h>
 
 #include <vector>
 #include <map>
@@ -87,260 +92,9 @@ using aria::frontend::UseStmt;
 using aria::frontend::ModDef;
 using aria::frontend::ExternBlock;
 
-// =============================================================================
-// Code Generation Context
-// =============================================================================
-
-// Forward declaration
-class CodeGenVisitor;
-
-class CodeGenContext {
-public:
-    LLVMContext llvmContext;
-    std::unique_ptr<Module> module;
-    std::unique_ptr<IRBuilder<>> builder;
-    
-    // Symbol Table: Maps variable names to LLVM Allocas or Values
-    enum class AllocStrategy { STACK, WILD, WILDX, GC, VALUE };
-    struct Symbol {
-        Value* val;
-        bool is_ref; // Is this a pointer to the value (alloca) or the value itself?
-        std::string ariaType; // Store the Aria type for proper loading
-        AllocStrategy strategy; // How was this allocated?
-    };
-    std::vector<std::map<std::string, Symbol>> scopeStack;
-    
-    // Expression type tracking: Maps LLVM Value* to its Aria type
-    // This is critical for TBB safety - we need to know if a value is TBB to apply sticky error propagation
-    std::map<Value*, std::string> exprTypeMap;
-    
-    // Struct metadata: Maps struct name to field name->index mapping
-    std::map<std::string, std::map<std::string, unsigned>> structFieldMaps;
-
-    // Current compilation state
-    Function* currentFunction = nullptr;
-    BasicBlock* returnBlock = nullptr;
-    Value* returnValue = nullptr; // Pointer to return value storage
-    
-    // Function return type tracking (for result type validation)
-    std::string currentFunctionReturnType = "";  // The VAL type (e.g., "int8")
-    bool currentFunctionAutoWrap = false;         // Whether function uses * auto-wrap
-    
-    // Pick statement context (for fall() statements)
-    std::map<std::string, BasicBlock*>* pickLabelBlocks = nullptr;
-    BasicBlock* pickDoneBlock = nullptr;
-    
-    // Loop context (for break/continue)
-    BasicBlock* currentLoopBreakTarget = nullptr;
-    BasicBlock* currentLoopContinueTarget = nullptr;
-    
-    // Defer statement stack (LIFO execution on scope exit)
-    std::vector<std::vector<Block*>> deferStacks;  // Stack of defer blocks per scope
-    
-    // Module system
-    std::string currentModulePrefix = "";  // Current module namespace prefix (e.g., "math.")
-
-    CodeGenContext(std::string moduleName) {
-        module = std::make_unique<Module>(moduleName, llvmContext);
-        builder = std::make_unique<IRBuilder<>>(llvmContext);
-        pushScope(); // Global scope
-    }
-
-    void pushScope() { 
-        scopeStack.emplace_back(); 
-        deferStacks.emplace_back();  // New defer stack for this scope
-    }
-    
-    void popScope() { 
-        scopeStack.pop_back(); 
-        if (!deferStacks.empty()) {
-            deferStacks.pop_back();  // Remove defer stack for this scope
-        }
-    }
-    
-    // Add a defer block to the current scope
-    void pushDefer(Block* deferBlock) {
-        if (!deferStacks.empty()) {
-            deferStacks.back().push_back(deferBlock);
-        }
-    }
-    
-    // Execute all defers for the current scope in LIFO order
-    void executeScopeDefers(CodeGenVisitor* visitor);  // Forward declare
-
-    void define(const std::string& name, Value* val, bool is_ref = true, const std::string& ariaType = "", AllocStrategy strategy = AllocStrategy::VALUE) {
-        scopeStack.back()[name] = {val, is_ref, ariaType, strategy};
-    }
-
-    Symbol* lookup(const std::string& name) {
-        for (auto it = scopeStack.rbegin(); it!= scopeStack.rend(); ++it) {
-            auto found = it->find(name);
-            if (found!= it->end()) return &found->second;
-        }
-        return nullptr;
-    }
-
-    // Helper: Map Aria Types to LLVM Types
-    llvm::Type* getLLVMType(const std::string& ariaType) {
-        // Check for array types: int8[256] or int8[]
-        size_t bracketPos = ariaType.find('[');
-        if (bracketPos != std::string::npos) {
-            std::string elemType = ariaType.substr(0, bracketPos);
-            std::string sizeStr = ariaType.substr(bracketPos + 1);
-            sizeStr = sizeStr.substr(0, sizeStr.find(']'));
-            
-            Type* elementType = getLLVMType(elemType);
-            
-            if (sizeStr.empty()) {
-                // Dynamic array: int8[] - represented as pointer
-                return PointerType::getUnqual(llvmContext);
-            } else {
-                // Fixed-size array: int8[256] - represented as [256 x i8]
-                uint64_t arraySize = std::stoull(sizeStr);
-                return ArrayType::get(elementType, arraySize);
-            }
-        }
-        
-        // Integer types (all bit widths, signed and unsigned)
-        // Note: uint1, uint2, uint4 alias to int1, int2, int4 (not in spec, but user-friendly)
-        if (ariaType == "int1" || ariaType == "uint1") return Type::getInt1Ty(llvmContext);
-        if (ariaType == "int2" || ariaType == "uint2") return Type::getIntNTy(llvmContext, 2);
-        if (ariaType == "int4" || ariaType == "uint4" || ariaType == "nit") return Type::getIntNTy(llvmContext, 4);
-        if (ariaType == "int8" || ariaType == "uint8" || ariaType == "byte" || ariaType == "trit") 
-            return Type::getInt8Ty(llvmContext);
-        if (ariaType == "int16" || ariaType == "uint16" || ariaType == "tryte" || ariaType == "nyte") 
-            return Type::getInt16Ty(llvmContext);
-        if (ariaType == "int32" || ariaType == "uint32") return Type::getInt32Ty(llvmContext);
-        if (ariaType == "int64" || ariaType == "uint64") return Type::getInt64Ty(llvmContext);
-        if (ariaType == "int128" || ariaType == "uint128") return Type::getInt128Ty(llvmContext);
-        if (ariaType == "int256" || ariaType == "uint256") return Type::getIntNTy(llvmContext, 256);
-        if (ariaType == "int512" || ariaType == "uint512") return Type::getIntNTy(llvmContext, 512);
-        
-        // Twisted Balanced Binary (TBB) types - symmetric range with error sentinel
-        // tbb8: [-127, +127] with -128 (0x80) as ERR
-        // tbb16: [-32767, +32767] with -32768 (0x8000) as ERR
-        // tbb32: [-2147483647, +2147483647] with -2147483648 (0x80000000) as ERR
-        // tbb64: [-9223372036854775807, +9223372036854775807] with min as ERR
-        // NOTE: Storage representation is identical to standard int types (two's complement)
-        // Semantic difference is in arithmetic operations and range validation
-        if (ariaType == "tbb8") return Type::getInt8Ty(llvmContext);
-        if (ariaType == "tbb16") return Type::getInt16Ty(llvmContext);
-        if (ariaType == "tbb32") return Type::getInt32Ty(llvmContext);
-        if (ariaType == "tbb64") return Type::getInt64Ty(llvmContext);
-        
-        // Float types (all bit widths)
-        if (ariaType == "float" || ariaType == "flt32") 
-            return Type::getFloatTy(llvmContext);
-        if (ariaType == "double" || ariaType == "flt64") 
-            return Type::getDoubleTy(llvmContext);
-        if (ariaType == "flt128") return Type::getFP128Ty(llvmContext);
-        if (ariaType == "flt256") return Type::getFP128Ty(llvmContext);  // LLVM max is fp128, use for now
-        if (ariaType == "flt512") return Type::getFP128Ty(llvmContext);  // LLVM max is fp128, use for now
-        
-        if (ariaType == "void") return Type::getVoidTy(llvmContext);
-        
-        // Dynamic type (GC-allocated catch-all)
-        if (ariaType == "dyn") return PointerType::getUnqual(llvmContext);
-        
-        // Result type: struct with err (ptr) and val (T) fields
-        // Generic result type without val type specified - use default i64
-        if (ariaType == "result" || ariaType == "Result") {
-            return getResultType("int64");
-        }
-        
-        // Pointers (opaque in LLVM 18)
-        // We return ptr for strings, arrays, objects
-        return PointerType::getUnqual(llvmContext);
-    }
-    
-    // Get or create parametric result type: result<valType>
-    // Creates a struct { i8 err, T val } where T is the val type
-    // err: uint8 semantics - 0 = success, 1-255 = error codes (C-style)
-    // Note: LLVM uses i8 for both signed/unsigned - semantics determined by operations
-    // Each unique val type gets its own struct: result_int8, result_int32, etc.
-    Type* getResultType(const std::string& valTypeName) {
-        // Generate unique name for this result variant
-        std::string structName = "result_" + valTypeName;
-        
-        // Try to get existing type first (avoid duplicates)
-        if (auto* existing = StructType::getTypeByName(llvmContext, structName)) {
-            return existing;
-        }
-        
-        // Get the LLVM type for the val field
-        Type* valType = getLLVMType(valTypeName);
-        
-        // Create new named struct: { i8 err, T val }
-        std::vector<Type*> fields;
-        fields.push_back(Type::getInt8Ty(llvmContext));  // err field (always i8, 0=success)
-        fields.push_back(valType);                        // val field (type-specific)
-        
-        return StructType::create(llvmContext, fields, structName);
-    }
-    
-    // Parse function signature from type string
-    // Format: "func<returnType(param1Type,param2Type,...)>"
-    // Returns FunctionType, or nullptr if not a function signature
-    FunctionType* parseFunctionSignature(const std::string& typeStr) {
-        // Check if it's a function signature
-        if (typeStr.find("func<") != 0) {
-            return nullptr;  // Not a function signature
-        }
-        
-        // Find the return type (between < and ()
-        size_t ltPos = typeStr.find('<');
-        size_t parenPos = typeStr.find('(');
-        if (ltPos == std::string::npos || parenPos == std::string::npos) {
-            return nullptr;
-        }
-        
-        std::string returnTypeStr = typeStr.substr(ltPos + 1, parenPos - ltPos - 1);
-        Type* returnType = getLLVMType(returnTypeStr);
-        
-        // Parse parameter types (between ( and ))
-        size_t endParenPos = typeStr.find(')');
-        if (endParenPos == std::string::npos) {
-            return nullptr;
-        }
-        
-        std::string paramsStr = typeStr.substr(parenPos + 1, endParenPos - parenPos - 1);
-        std::vector<Type*> paramTypes;
-        
-        if (!paramsStr.empty()) {
-            // Split by comma
-            size_t start = 0;
-            while (start < paramsStr.length()) {
-                size_t comma = paramsStr.find(',', start);
-                if (comma == std::string::npos) {
-                    comma = paramsStr.length();
-                }
-                
-                std::string paramTypeStr = paramsStr.substr(start, comma - start);
-                paramTypes.push_back(getLLVMType(paramTypeStr));
-                
-                start = comma + 1;
-            }
-        }
-        
-        return FunctionType::get(returnType, paramTypes, false);
-    }
-};
-
-// =============================================================================
-// RAII Scope Guard for Symbol Table Management
-// =============================================================================
-
-// Ensures popScope() is called even if exceptions occur or early returns happen
-// This prevents scope leaks in the symbol table
-class ScopeGuard {
-    CodeGenContext& ctx;
-public:
-    ScopeGuard(CodeGenContext& c) : ctx(c) { ctx.pushScope(); }
-    ~ScopeGuard() { ctx.popScope(); }
-    // Prevent copying to avoid double-pop
-    ScopeGuard(const ScopeGuard&) = delete;
-    ScopeGuard& operator=(const ScopeGuard&) = delete;
-};
+// Bring CodeGenContext and ScopeGuard from extracted header
+using aria::backend::CodeGenContext;
+using aria::backend::ScopeGuard;
 
 // =============================================================================
 // The Code Generator Visitor
@@ -361,10 +115,15 @@ public:
     //   rax = syscall number
     //   rdi, rsi, rdx, r10 (NOT rcx!), r8, r9 = args 1-6
     //   Clobbers: rcx (replaced by r10), r11 (used by kernel)
-    Value* createSyscall(uint64_t syscallNum, const std::vector<Value*>& args) {
+    Value* createSyscall(uint64_t syscallNum, const std::vector<Value*>& args, Type* returnType = nullptr) {
         // Syscall arguments (max 6)
         if (args.size() > 6) {
             throw std::runtime_error("Syscalls support max 6 arguments");
+        }
+        
+        // Default return type is i64 (syscalls always return i64)
+        if (returnType == nullptr) {
+            returnType = Type::getInt64Ty(ctx.llvmContext);
         }
         
         // Register constraints for inline assembly
@@ -407,7 +166,14 @@ public:
         );
         
         // Call inline assembly with arguments
-        return ctx.builder->CreateCall(inlineAsm, args, "syscall_result");
+        Value* result = ctx.builder->CreateCall(inlineAsm, args, "syscall_result");
+        
+        // Cast result to expected return type if needed
+        if (returnType->isIntegerTy() && returnType != Type::getInt64Ty(ctx.llvmContext)) {
+            result = ctx.builder->CreateIntCast(result, returnType, true, "syscall_cast");
+        }
+        
+        return result;
     }
     
     // emitAllocExec - Allocate executable memory using mmap syscall
@@ -415,7 +181,7 @@ public:
     // Returns i8* to RW memory (caller transitions to RX later via emitProtectExec)
     Value* emitAllocExec(Value* size) {
         // mmap syscall number on x86-64 Linux
-        const uint64_t SYS_mmap = 9;
+        const uint64_t SYSCALL_MMAP = 9;
         
         // mmap constants
         const uint64_t PROT_READ = 1;
@@ -433,7 +199,7 @@ public:
         mmapArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));  // offset = 0
         
         // Invoke mmap syscall
-        Value* result = createSyscall(SYS_mmap, mmapArgs);
+        Value* result = createSyscall(SYSCALL_MMAP, mmapArgs);
         
         // mmap returns i64, convert to i8* (opaque pointer in LLVM 18)
         return ctx.builder->CreateIntToPtr(result, PointerType::getUnqual(ctx.llvmContext), "alloc_exec_ptr");
@@ -444,7 +210,7 @@ public:
     // Used to finalize wildx memory after JIT compilation
     void emitProtectExec(Value* addr, Value* size) {
         // mprotect syscall number on x86-64 Linux
-        const uint64_t SYS_mprotect = 10;
+        const uint64_t SYSCALL_MPROTECT = 10;
         
         // mprotect constants
         const uint64_t PROT_READ = 1;
@@ -460,7 +226,7 @@ public:
         mprotectArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), PROT_READ | PROT_EXEC));
         
         // Invoke mprotect syscall (return value ignored - would be 0 on success, -1 on error)
-        createSyscall(SYS_mprotect, mprotectArgs);
+        createSyscall(SYSCALL_MPROTECT, mprotectArgs);
     }
     
     // getOrInsertAriaAlloc - Declare aria.alloc (standard heap via mimalloc)
@@ -507,11 +273,11 @@ public:
         Value* size = func->getArg(0);
         
         // Call emitAllocExec (uses mmap syscall)
-        // Temporarily set builder to tmpBuilder for syscall generation
-        IRBuilder<>* oldBuilder = ctx.builder;
-        ctx.builder = &tmpBuilder;
+        // Temporarily swap builder for syscall generation
+        std::unique_ptr<IRBuilder<>> savedBuilder = std::move(ctx.builder);
+        ctx.builder = std::make_unique<IRBuilder<>>(entry);
         Value* ptr = emitAllocExec(size);
-        ctx.builder = oldBuilder;
+        ctx.builder = std::move(savedBuilder);
         
         tmpBuilder.CreateRet(ptr);
         
@@ -546,6 +312,96 @@ public:
         );
         
         return Function::Create(gcAllocType, Function::ExternalLinkage, "aria.gc_alloc", ctx.module.get());
+    }
+    
+    // getOrInsertAriaMemProtectExec - Declare aria_mem_protect_exec (make memory executable)
+    Function* getOrInsertAriaMemProtectExec() {
+        if (Function* existing = ctx.module->getFunction("aria_mem_protect_exec")) {
+            return existing;
+        }
+        
+        FunctionType* protectType = FunctionType::get(
+            Type::getInt32Ty(ctx.llvmContext),  // Returns 0 on success
+            {PointerType::getUnqual(ctx.llvmContext), Type::getInt64Ty(ctx.llvmContext)},
+            false
+        );
+        
+        return Function::Create(protectType, Function::ExternalLinkage, "aria_mem_protect_exec", ctx.module.get());
+    }
+    
+    // getOrInsertAriaMemProtectWrite - Declare aria_mem_protect_write (make memory writable)
+    Function* getOrInsertAriaMemProtectWrite() {
+        if (Function* existing = ctx.module->getFunction("aria_mem_protect_write")) {
+            return existing;
+        }
+        
+        FunctionType* protectType = FunctionType::get(
+            Type::getInt32Ty(ctx.llvmContext),  // Returns 0 on success
+            {PointerType::getUnqual(ctx.llvmContext), Type::getInt64Ty(ctx.llvmContext)},
+            false
+        );
+        
+        return Function::Create(protectType, Function::ExternalLinkage, "aria_mem_protect_write", ctx.module.get());
+    }
+    
+    // getOrInsertAriaFreeExec - Declare aria_free_exec (free executable memory)
+    Function* getOrInsertAriaFreeExec() {
+        if (Function* existing = ctx.module->getFunction("aria_free_exec")) {
+            return existing;
+        }
+        
+        FunctionType* freeType = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            {PointerType::getUnqual(ctx.llvmContext)},
+            false
+        );
+        
+        return Function::Create(freeType, Function::ExternalLinkage, "aria_free_exec", ctx.module.get());
+    }
+    
+    // declareLLVMIntrinsic - Declare LLVM math intrinsics (llvm.sin.f32, etc.)
+    Function* declareLLVMIntrinsic(const std::string& name) {
+        // Parse intrinsic name: llvm_<name>_<type>
+        std::string intrName;
+        Type* argType = nullptr;
+        
+        if (name.find("_f32") != std::string::npos) {
+            argType = Type::getFloatTy(ctx.llvmContext);
+            intrName = name.substr(5, name.length() - 9); // Remove "llvm_" prefix and "_f32" suffix
+        } else if (name.find("_f64") != std::string::npos) {
+            argType = Type::getDoubleTy(ctx.llvmContext);
+            intrName = name.substr(5, name.length() - 9); // Remove "llvm_" prefix and "_f64" suffix
+        } else {
+            return nullptr;  // Unknown type
+        }
+        
+        // Map intrinsic names to LLVM Intrinsic IDs
+        Intrinsic::ID intrID = Intrinsic::not_intrinsic;
+        
+        if (intrName == "sin") intrID = Intrinsic::sin;
+        else if (intrName == "cos") intrID = Intrinsic::cos;
+        else if (intrName == "exp") intrID = Intrinsic::exp;
+        else if (intrName == "exp2") intrID = Intrinsic::exp2;
+        else if (intrName == "log") intrID = Intrinsic::log;
+        else if (intrName == "log2") intrID = Intrinsic::log2;
+        else if (intrName == "log10") intrID = Intrinsic::log10;
+        else if (intrName == "sqrt") intrID = Intrinsic::sqrt;
+        else if (intrName == "ceil") intrID = Intrinsic::ceil;
+        else if (intrName == "floor") intrID = Intrinsic::floor;
+        else if (intrName == "round") intrID = Intrinsic::round;
+        else if (intrName == "trunc") intrID = Intrinsic::trunc;
+        else if (intrName == "fabs") intrID = Intrinsic::fabs;
+        else if (intrName == "minnum") intrID = Intrinsic::minnum;
+        else if (intrName == "maxnum") intrID = Intrinsic::maxnum;
+        else if (intrName == "copysign") intrID = Intrinsic::copysign;
+        else if (intrName == "pow") intrID = Intrinsic::pow;
+        else if (intrName == "fma") intrID = Intrinsic::fma;
+        else {
+            return nullptr;  // Unknown intrinsic
+        }
+        
+        // Declare the intrinsic
+        return Intrinsic::getDeclaration(ctx.module.get(), intrID, {argType});
     }
 
     // -------------------------------------------------------------------------
@@ -909,10 +765,59 @@ public:
     }
 
     void visit(FuncDecl* node) override {
-        // 1. Create function type
+        // 1. Create function type with optimized parameter passing
         std::vector<Type*> paramTypes;
+        std::vector<bool> shouldScalarize;  // Track which params to scalarize
+        std::vector<std::vector<Type*>> scalarizedTypes;  // Scalarized field types
+        
         for (auto& param : node->parameters) {
-            paramTypes.push_back(ctx.getLLVMType(param.type));
+            Type* paramType = ctx.getLLVMType(param.type);
+            
+            // ================================================================
+            // OPTIMIZATION: Small Struct Parameter Passing
+            // ================================================================
+            // System V AMD64 ABI allows passing small structs in registers:
+            // - Structs ≤ 16 bytes can be passed in up to 2 registers
+            // - We scalarize structs into individual fields for optimal codegen
+            //
+            // Example: struct Vec3 { float x, y, z; }  (12 bytes)
+            // Before: Pass pointer, load 3 floats from memory (L1 cache miss)
+            // After: Pass x, y, z in XMM0, XMM1, XMM2 registers directly
+            // ================================================================
+            
+            bool shouldOptimize = false;
+            std::vector<Type*> fieldTypes;
+            
+            if (paramType->isStructTy()) {
+                auto* structType = cast<StructType>(paramType);
+                
+                // Check if struct is small enough to optimize
+                if (structType->isSized()) {
+                    uint64_t structSize = ctx.module->getDataLayout().getTypeAllocSize(structType);
+                    
+                    // Optimize structs ≤ 16 bytes (fits in 2 registers)
+                    if (structSize > 0 && structSize <= 16) {
+                        // Scalarize: pass each field as separate parameter
+                        for (unsigned i = 0; i < structType->getNumElements(); ++i) {
+                            Type* fieldType = structType->getElementType(i);
+                            fieldTypes.push_back(fieldType);
+                            paramTypes.push_back(fieldType);
+                        }
+                        shouldOptimize = true;
+                    }
+                }
+            }
+            
+            if (!shouldOptimize) {
+                // Standard parameter: pass as-is
+                paramTypes.push_back(paramType);
+                shouldScalarize.push_back(false);
+                scalarizedTypes.push_back({});
+            } else {
+                // Optimized parameter: scalarized
+                shouldScalarize.push_back(true);
+                scalarizedTypes.push_back(fieldTypes);
+            }
         }
         
         Type* returnType = ctx.getLLVMType(node->return_type);
@@ -1011,12 +916,68 @@ public:
         }
         
         // 6. Create allocas for parameters (to allow taking addresses)
+        // For scalarized struct parameters, reconstruct the struct from individual fields
         idx = 0;
-        for (auto& arg : func->args()) {
-            Type* argType = arg.getType();
-            AllocaInst* alloca = ctx.builder->CreateAlloca(argType, nullptr, arg.getName());
-            ctx.builder->CreateStore(&arg, alloca);
-            ctx.define(std::string(arg.getName()), alloca, true);
+        size_t argIdx = 0;  // Track position in func->args() (may not match param index due to scalarization)
+        
+        for (size_t paramIdx = 0; paramIdx < node->parameters.size(); ++paramIdx) {
+            auto& param = node->parameters[paramIdx];
+            
+            if (paramIdx < shouldScalarize.size() && shouldScalarize[paramIdx]) {
+                // ============================================================
+                // SCALARIZED STRUCT PARAMETER
+                // ============================================================
+                // This parameter was scalarized into multiple arguments
+                // Reconstruct the original struct from the fields
+                
+                Type* originalType = ctx.getLLVMType(param.type);
+                auto* structType = cast<StructType>(originalType);
+                
+                // Create alloca for the reconstructed struct
+                AllocaInst* structAlloca = ctx.builder->CreateAlloca(
+                    structType, nullptr, param.name + "_reconstructed");
+                
+                // Copy each field from the scalarized arguments into the struct
+                for (unsigned fieldIdx = 0; fieldIdx < scalarizedTypes[paramIdx].size(); ++fieldIdx) {
+                    // Get the scalarized argument
+                    auto argIter = func->arg_begin();
+                    std::advance(argIter, argIdx + fieldIdx);
+                    Value* fieldArg = &*argIter;
+                    
+                    // Set argument name for debugging
+                    fieldArg->setName(param.name + "_field" + std::to_string(fieldIdx));
+                    
+                    // Get pointer to struct field
+                    Value* fieldPtr = ctx.builder->CreateStructGEP(
+                        structType, structAlloca, fieldIdx,
+                        param.name + "_field" + std::to_string(fieldIdx) + "_ptr");
+                    
+                    // Store the argument value into the struct field
+                    ctx.builder->CreateStore(fieldArg, fieldPtr);
+                }
+                
+                // Register the reconstructed struct in symbol table
+                ctx.define(param.name, structAlloca, true, param.type);
+                
+                // Advance argument index by number of fields
+                argIdx += scalarizedTypes[paramIdx].size();
+            } else {
+                // ============================================================
+                // NORMAL PARAMETER (not scalarized)
+                // ============================================================
+                auto argIter = func->arg_begin();
+                std::advance(argIter, argIdx);
+                Value* arg = &*argIter;
+                
+                arg->setName(param.name);
+                
+                Type* argType = arg->getType();
+                AllocaInst* alloca = ctx.builder->CreateAlloca(argType, nullptr, param.name);
+                ctx.builder->CreateStore(arg, alloca);
+                ctx.define(param.name, alloca, true, param.type);
+                
+                argIdx++;
+            }
         }
         
         // 7. Generate function body
@@ -1096,10 +1057,104 @@ public:
         ctx.pickLabelBlocks = &labelBlocks;
         ctx.pickDoneBlock = doneBB;
         
+        // =====================================================================
+        // OPTIMIZATION: Group consecutive EXACT integer cases into SwitchInst
+        // This converts O(N) linear search into O(1) jump table
+        // =====================================================================
+        
+        // Check if we can use switch optimization
+        bool canUseSwitch = selector->getType()->isIntegerTy();
+        
+        // Scan for consecutive EXACT cases at the start
+        size_t exactCaseCount = 0;
+        if (canUseSwitch) {
+            for (size_t i = 0; i < node->cases.size(); ++i) {
+                auto& pcase = node->cases[i];
+                if (pcase.type == PickCase::EXACT && pcase.label.empty()) {
+                    // Check if value is a constant (required for switch)
+                    Value* caseVal = visitExpr(pcase.value_start.get());
+                    if (isa<ConstantInt>(caseVal)) {
+                        exactCaseCount = i + 1;
+                    } else {
+                        // Non-constant value - cannot use switch for remaining cases
+                        break;
+                    }
+                } else {
+                    // Different case type - stop grouping
+                    break;
+                }
+            }
+        }
+        
+        // If we have 3+ consecutive EXACT constant cases, use SwitchInst
+        if (exactCaseCount >= 3) {
+            // Create switch instruction
+            BasicBlock* defaultBB = BasicBlock::Create(ctx.llvmContext, "switch_default", func);
+            SwitchInst* switchInst = ctx.builder->CreateSwitch(selector, defaultBB, exactCaseCount);
+            
+            // Add each exact case to the switch
+            for (size_t i = 0; i < exactCaseCount; ++i) {
+                auto& pcase = node->cases[i];
+                Value* caseVal = visitExpr(pcase.value_start.get());
+                auto* caseConst = cast<ConstantInt>(caseVal);
+                
+                // Create case body block
+                BasicBlock* caseBodyBB = BasicBlock::Create(
+                    ctx.llvmContext, 
+                    "switch_case_" + std::to_string(i), 
+                    func
+                );
+                
+                // Add to switch
+                switchInst->addCase(caseConst, caseBodyBB);
+                
+                // Generate case body
+                ctx.builder->SetInsertPoint(caseBodyBB);
+                {
+                    ScopeGuard guard(ctx);
+                    pcase.body->accept(*this);
+                }
+                
+                // Auto-break unless terminated
+                if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                    ctx.builder->CreateBr(doneBB);
+                }
+            }
+            
+            // Continue with remaining cases (if any) using linear chain
+            ctx.builder->SetInsertPoint(defaultBB);
+            
+            // Process remaining cases (starting from exactCaseCount)
+            size_t remainingStart = exactCaseCount;
+            if (remainingStart < node->cases.size()) {
+                // Fall through to linear case chain for remaining cases
+                generateLinearCaseChain(node, remainingStart, func, doneBB, labelBlocks);
+            } else {
+                // All cases were handled by switch - jump to done
+                ctx.builder->CreateBr(doneBB);
+            }
+            
+        } else {
+            // Use traditional linear if-else chain (original implementation)
+            generateLinearCaseChain(node, 0, func, doneBB, labelBlocks);
+        }
+        
+        func->insert(func->end(), doneBB);
+        ctx.builder->SetInsertPoint(doneBB);
+        
+        // Clear pick context
+        ctx.pickLabelBlocks = nullptr;
+        ctx.pickDoneBlock = nullptr;
+    }
+    
+    // Helper: Generate traditional linear if-else case chain
+    void generateLinearCaseChain(PickStmt* node, size_t startIdx, Function* func, 
+                                 BasicBlock* doneBB, std::map<std::string, BasicBlock*>& labelBlocks) {
         BasicBlock* nextCaseBB = nullptr;
+        Value* selector = visitExpr(node->selector.get());
         
         // Second pass: generate case logic
-        for (size_t i = 0; i < node->cases.size(); ++i) {
+        for (size_t i = startIdx; i < node->cases.size(); ++i) {
             auto& pcase = node->cases[i];
             
             // For labeled cases, jump directly to their block
@@ -1422,14 +1477,10 @@ public:
         if (!ctx.builder->GetInsertBlock()->getTerminator()) {
             ctx.builder->CreateBr(doneBB);
         }
-        
-        func->insert(func->end(), doneBB);
-        ctx.builder->SetInsertPoint(doneBB);
-        
-        // Clear pick context
-        ctx.pickLabelBlocks = nullptr;
-        ctx.pickDoneBlock = nullptr;
     }
+    
+    // End of visit(PickStmt) - helper function above
+
     
     void visit(FallStmt* node) override {
         // fall(label) - explicit fallthrough to labeled case in pick
@@ -2037,21 +2088,76 @@ public:
                 callFuncType = funcType;
             }
             
+            // Track which parameters are scalarized (for struct optimization)
+            // We need to match against the original function declaration to know
+            // which parameters were scalarized
+            size_t paramTypeIdx = 0;
+            
             for (size_t i = 0; i < call->arguments.size(); i++) {
                 Value* argVal = visitExpr(call->arguments[i].get());
                 
-                // Cast argument to match parameter type if needed
-                if (callFuncType && i < callFuncType->getNumParams()) {
-                    Type* expectedType = callFuncType->getParamType(i);
-                    if (argVal->getType() != expectedType) {
-                        // If both are integers, perform cast
-                        if (argVal->getType()->isIntegerTy() && expectedType->isIntegerTy()) {
-                            argVal = ctx.builder->CreateIntCast(argVal, expectedType, true);
+                // ================================================================
+                // OPTIMIZATION: Scalarize struct arguments for optimized functions
+                // ================================================================
+                // If the argument is a struct and fits the optimization criteria,
+                // extract individual fields and pass them as separate arguments
+                // ================================================================
+                
+                bool scalarized = false;
+                
+                if (argVal->getType()->isStructTy() && callFuncType) {
+                    auto* structType = cast<StructType>(argVal->getType());
+                    
+                    // Check if this parameter was scalarized in the function declaration
+                    // (This happens if struct size ≤ 16 bytes)
+                    if (structType->isSized()) {
+                        uint64_t structSize = ctx.module->getDataLayout().getTypeAllocSize(structType);
+                        
+                        if (structSize > 0 && structSize <= 16) {
+                            // Check if we have enough parameter slots for all fields
+                            if (paramTypeIdx + structType->getNumElements() <= callFuncType->getNumParams()) {
+                                // Verify types match (scalarized)
+                                bool typesMatch = true;
+                                for (unsigned fieldIdx = 0; fieldIdx < structType->getNumElements(); ++fieldIdx) {
+                                    if (callFuncType->getParamType(paramTypeIdx + fieldIdx) != 
+                                        structType->getElementType(fieldIdx)) {
+                                        typesMatch = false;
+                                        break;
+                                    }
+                                }
+                                
+                                if (typesMatch) {
+                                    // Scalarize: extract and pass each field separately
+                                    for (unsigned fieldIdx = 0; fieldIdx < structType->getNumElements(); ++fieldIdx) {
+                                        Value* fieldVal = ctx.builder->CreateExtractValue(
+                                            argVal, fieldIdx,
+                                            "arg_field" + std::to_string(fieldIdx));
+                                        args.push_back(fieldVal);
+                                    }
+                                    paramTypeIdx += structType->getNumElements();
+                                    scalarized = true;
+                                }
+                            }
                         }
                     }
                 }
                 
-                args.push_back(argVal);
+                if (!scalarized) {
+                    // Standard argument passing (no scalarization)
+                    // Cast argument to match parameter type if needed
+                    if (callFuncType && paramTypeIdx < callFuncType->getNumParams()) {
+                        Type* expectedType = callFuncType->getParamType(paramTypeIdx);
+                        if (argVal->getType() != expectedType) {
+                            // If both are integers, perform cast
+                            if (argVal->getType()->isIntegerTy() && expectedType->isIntegerTy()) {
+                                argVal = ctx.builder->CreateIntCast(argVal, expectedType, true);
+                            }
+                        }
+                    }
+                    
+                    args.push_back(argVal);
+                    paramTypeIdx++;
+                }
             }
             
             // Generate the call
@@ -2108,15 +2214,60 @@ public:
                 }
                 case aria::frontend::UnaryOp::ADDRESS_OF: {
                     // @ operator: get address of a variable (like C's &)
-                    // For now, return the pointer itself (for stack variables, this is the alloca)
-                    // For the operand to be valid, it must be a variable reference
+                    // 
+                    // DEBUG BUILDS: Generate fat pointer with scope ID
+                    // RELEASE BUILDS: Generate raw pointer (zero overhead)
+                    //
+                    // Fat Pointer Structure (debug):
+                    //   { i8* ptr, i64 scope_id, i64 timestamp }
+                    // 
+                    // This enables runtime detection of use-after-scope bugs
+                    
                     if (auto* varExpr = dynamic_cast<aria::frontend::VarExpr*>(unary->operand.get())) {
                         auto* sym = ctx.lookup(varExpr->name);
                         if (!sym || !sym->is_ref) return nullptr;
                         
+                        #ifdef ARIA_DEBUG
+                        // === DEBUG BUILD: Generate fat pointer ===
+                        
+                        // 1. Get or declare aria_fat_ptr_create function
+                        Function* createFatPtr = ctx.module->getFunction("aria_fat_ptr_create");
+                        if (!createFatPtr) {
+                            // aria_fat_pointer_t aria_fat_ptr_create(void* raw_ptr, uint64_t scope_id)
+                            std::vector<Type*> paramTypes = {
+                                PointerType::getUnqual(ctx.llvmContext),  // void* raw_ptr
+                                Type::getInt64Ty(ctx.llvmContext)         // uint64_t scope_id
+                            };
+                            
+                            // Return type: { i8*, i64, i64 } (fat pointer struct)
+                            std::vector<Type*> fatPtrFields = {
+                                PointerType::getUnqual(ctx.llvmContext),  // ptr
+                                Type::getInt64Ty(ctx.llvmContext),        // scope_id
+                                Type::getInt64Ty(ctx.llvmContext)         // alloc_timestamp
+                            };
+                            StructType* fatPtrType = StructType::get(ctx.llvmContext, fatPtrFields);
+                            
+                            FunctionType* funcType = FunctionType::get(fatPtrType, paramTypes, false);
+                            createFatPtr = Function::Create(funcType, Function::ExternalLinkage,
+                                                          "aria_fat_ptr_create", ctx.module.get());
+                        }
+                        
+                        // 2. Generate call: aria_fat_ptr_create(sym->val, current_scope_id)
+                        std::vector<Value*> args = {
+                            sym->val,  // Raw pointer (alloca address)
+                            ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), ctx.current_scope_id)
+                        };
+                        
+                        return ctx.builder->CreateCall(createFatPtr, args, "fat_ptr");
+                        
+                        #else
+                        // === RELEASE BUILD: Generate raw pointer (zero overhead) ===
+                        
                         // Return the pointer (alloca address) as an integer
                         // PtrToInt converts pointer to integer representation
                         return ctx.builder->CreatePtrToInt(sym->val, Type::getInt64Ty(ctx.llvmContext));
+                        
+                        #endif
                     }
                     return nullptr;
                 }
@@ -3386,221 +3537,6 @@ public:
         }
     }
 
-private:
-    // Runtime Linkage
-    Function* getOrInsertAriaAlloc() {
-        return Function::Create(
-            FunctionType::get(PointerType::getUnqual(ctx.llvmContext), {Type::getInt64Ty(ctx.llvmContext)}, false),
-            Function::ExternalLinkage, "aria_alloc", ctx.module.get());
-    }
-    
-    Function* getOrInsertGCAlloc() {
-        std::vector<Type*> args = {PointerType::getUnqual(ctx.llvmContext), Type::getInt64Ty(ctx.llvmContext)};
-        return Function::Create(
-            FunctionType::get(PointerType::getUnqual(ctx.llvmContext), args, false),
-            Function::ExternalLinkage, "aria_gc_alloc", ctx.module.get());
-    }
-    
-    // Helper: Declare LLVM intrinsic functions
-    Function* declareLLVMIntrinsic(const std::string& name) {
-        // Map function names to LLVM intrinsics
-        // Format: llvm_<intrinsic>_<type>
-        
-        // Extract intrinsic name and type
-        std::string intrName;
-        Type* argType = nullptr;
-        
-        if (name.find("_f32") != std::string::npos) {
-            argType = Type::getFloatTy(ctx.llvmContext);
-            intrName = name.substr(5, name.length() - 9); // Remove "llvm_" and "_f32"
-        } else if (name.find("_f64") != std::string::npos) {
-            argType = Type::getDoubleTy(ctx.llvmContext);
-            intrName = name.substr(5, name.length() - 9); // Remove "llvm_" and "_f64"
-        } else {
-            return nullptr;
-        }
-        
-        // Map intrinsic names to LLVM Intrinsic IDs
-        Intrinsic::ID intrID = Intrinsic::not_intrinsic;
-        int numArgs = 1;  // Most math intrinsics take 1 argument
-        
-        if (intrName == "sin") intrID = Intrinsic::sin;
-        else if (intrName == "cos") intrID = Intrinsic::cos;
-        else if (intrName == "exp") intrID = Intrinsic::exp;
-        else if (intrName == "exp2") intrID = Intrinsic::exp2;
-        else if (intrName == "log") intrID = Intrinsic::log;
-        else if (intrName == "log2") intrID = Intrinsic::log2;
-        else if (intrName == "log10") intrID = Intrinsic::log10;
-        else if (intrName == "sqrt") intrID = Intrinsic::sqrt;
-        else if (intrName == "ceil") intrID = Intrinsic::ceil;
-        else if (intrName == "floor") intrID = Intrinsic::floor;
-        else if (intrName == "round") intrID = Intrinsic::round;
-        else if (intrName == "trunc") intrID = Intrinsic::trunc;
-        else if (intrName == "fabs") intrID = Intrinsic::fabs;
-        else if (intrName == "minnum") { intrID = Intrinsic::minnum; numArgs = 2; }
-        else if (intrName == "maxnum") { intrID = Intrinsic::maxnum; numArgs = 2; }
-        else if (intrName == "copysign") { intrID = Intrinsic::copysign; numArgs = 2; }
-        else if (intrName == "pow") { intrID = Intrinsic::pow; numArgs = 2; }
-        else if (intrName == "fma") { intrID = Intrinsic::fma; numArgs = 3; }
-        else {
-            return nullptr;  // Unknown intrinsic
-        }
-        
-        // Declare the intrinsic with appropriate overload type
-        return Intrinsic::getDeclaration(ctx.module.get(), intrID, {argType});
-    }
-    
-    Function* getOrInsertAriaAllocExec() {
-        return Function::Create(
-            FunctionType::get(PointerType::getUnqual(ctx.llvmContext), {Type::getInt64Ty(ctx.llvmContext)}, false),
-            Function::ExternalLinkage, "aria_alloc_exec", ctx.module.get());
-    }
-    
-    Function* getOrInsertAriaMemProtectExec() {
-        std::vector<Type*> args = {
-            PointerType::getUnqual(ctx.llvmContext),  // ptr
-            Type::getInt64Ty(ctx.llvmContext)          // size
-        };
-        return Function::Create(
-            FunctionType::get(Type::getInt32Ty(ctx.llvmContext), args, false),
-            Function::ExternalLinkage, "aria_mem_protect_exec", ctx.module.get());
-    }
-    
-    Function* getOrInsertAriaMemProtectWrite() {
-        std::vector<Type*> args = {
-            PointerType::getUnqual(ctx.llvmContext),  // ptr
-            Type::getInt64Ty(ctx.llvmContext)          // size
-        };
-        return Function::Create(
-            FunctionType::get(Type::getInt32Ty(ctx.llvmContext), args, false),
-            Function::ExternalLinkage, "aria_mem_protect_write", ctx.module.get());
-    }
-    
-    Function* getOrInsertAriaFreeExec() {
-        std::vector<Type*> args = {
-            PointerType::getUnqual(ctx.llvmContext),  // ptr
-            Type::getInt64Ty(ctx.llvmContext)          // size
-        };
-        return Function::Create(
-            FunctionType::get(Type::getVoidTy(ctx.llvmContext), args, false),
-            Function::ExternalLinkage, "aria_free_exec", ctx.module.get());
-    }
-    
-    // Helper: Create a syscall via inline assembly
-    // This generates a direct syscall instruction for Linux x86-64
-    Value* createSyscall(int syscallNum, const std::vector<Value*>& args, Type* returnType) {
-        // x86-64 Linux syscall convention:
-        // syscall number in RAX
-        // arguments in RDI, RSI, RDX, R10, R8, R9
-        // return value in RAX
-        
-        // Inline assembly template:
-        // "mov $<syscall_num>, %rax; syscall"
-        // Input constraints: register-mapped arguments
-        // Output: return value in RAX
-        
-        std::string asmStr = "syscall";
-        std::string constraints;
-        std::vector<Value*> asmArgs;
-        
-        // Build inline assembly based on argument count
-        if (args.empty()) {
-            // No arguments, just syscall number
-            constraints = "={rax},{rax}";  // output in rax, input syscall number
-            asmArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), syscallNum));
-        } else if (args.size() == 1) {
-            // 1 argument: RDI
-            constraints = "={rax},{rax},{rdi}";
-            asmArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), syscallNum));
-            // Cast all arguments to i64
-            if (args[0]->getType()->isPointerTy()) {
-                asmArgs.push_back(ctx.builder->CreatePtrToInt(args[0], Type::getInt64Ty(ctx.llvmContext)));
-            } else if (args[0]->getType()->isIntegerTy()) {
-                asmArgs.push_back(ctx.builder->CreateIntCast(args[0], Type::getInt64Ty(ctx.llvmContext), true));
-            } else {
-                asmArgs.push_back(args[0]);
-            }
-        } else if (args.size() == 2) {
-            // 2 arguments: RDI, RSI
-            constraints = "={rax},{rax},{rdi},{rsi}";
-            asmArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), syscallNum));
-            for (size_t i = 0; i < 2; i++) {
-                if (args[i]->getType()->isPointerTy()) {
-                    asmArgs.push_back(ctx.builder->CreatePtrToInt(args[i], Type::getInt64Ty(ctx.llvmContext)));
-                } else if (args[i]->getType()->isIntegerTy()) {
-                    asmArgs.push_back(ctx.builder->CreateIntCast(args[i], Type::getInt64Ty(ctx.llvmContext), true));
-                } else {
-                    asmArgs.push_back(args[i]);
-                }
-            }
-        } else if (args.size() == 3) {
-            // 3 arguments: RDI, RSI, RDX
-            constraints = "={rax},{rax},{rdi},{rsi},{rdx}";
-            asmArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), syscallNum));
-            for (size_t i = 0; i < 3; i++) {
-                if (args[i]->getType()->isPointerTy()) {
-                    asmArgs.push_back(ctx.builder->CreatePtrToInt(args[i], Type::getInt64Ty(ctx.llvmContext)));
-                } else if (args[i]->getType()->isIntegerTy()) {
-                    asmArgs.push_back(ctx.builder->CreateIntCast(args[i], Type::getInt64Ty(ctx.llvmContext), true));
-                } else {
-                    asmArgs.push_back(args[i]);
-                }
-            }
-        } else if (args.size() == 4) {
-            // 4 arguments: RDI, RSI, RDX, R10
-            constraints = "={rax},{rax},{rdi},{rsi},{rdx},{r10}";
-            asmArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), syscallNum));
-            for (size_t i = 0; i < 4; i++) {
-                if (args[i]->getType()->isPointerTy()) {
-                    asmArgs.push_back(ctx.builder->CreatePtrToInt(args[i], Type::getInt64Ty(ctx.llvmContext)));
-                } else if (args[i]->getType()->isIntegerTy()) {
-                    asmArgs.push_back(ctx.builder->CreateIntCast(args[i], Type::getInt64Ty(ctx.llvmContext), true));
-                } else {
-                    asmArgs.push_back(args[i]);
-                }
-            }
-        } else {
-            throw std::runtime_error("Syscalls with more than 4 arguments not yet supported");
-        }
-        
-        // Create inline assembly function type
-        std::vector<Type*> asmParamTypes;
-        for (auto* arg : asmArgs) {
-            asmParamTypes.push_back(arg->getType());
-        }
-        
-        FunctionType* asmFuncType = FunctionType::get(
-            Type::getInt64Ty(ctx.llvmContext),  // Always return i64 from syscall
-            asmParamTypes,
-            false
-        );
-        
-        // Create the inline assembly call
-        InlineAsm* inlineAsm = InlineAsm::get(
-            asmFuncType,
-            asmStr,
-            constraints,
-            true,  // has side effects
-            false  // not stack aligned
-        );
-        
-        Value* result = ctx.builder->CreateCall(inlineAsm, asmArgs, "syscall_result");
-        
-        // Cast result to expected return type if needed
-        if (returnType->isIntegerTy() && returnType != Type::getInt64Ty(ctx.llvmContext)) {
-            result = ctx.builder->CreateIntCast(result, returnType, true, "syscall_cast");
-        }
-        
-        return result;
-    }
-    
-    Function* getOrInsertGetNursery() {
-        return Function::Create(
-            FunctionType::get(PointerType::getUnqual(ctx.llvmContext), {}, false),
-            Function::ExternalLinkage, "get_current_thread_nursery", ctx.module.get());
-    }
-    
-    // =============================================================================
     // Module System Visitors
     // =============================================================================
     
@@ -3735,6 +3671,39 @@ bool generate_code(aria::frontend::Block* root, const std::string& filename, boo
     
     // Verify main function
     verifyFunction(*mainFunc);
+    
+    // =========================================================================
+    // RUN OPTIMIZATION PASSES
+    // =========================================================================
+    
+    // Create pass managers
+    LoopAnalysisManager LAM;
+    FunctionAnalysisManager FAM;
+    CGSCCAnalysisManager CGAM;
+    ModuleAnalysisManager MAM;
+    
+    // Create pass builder and register analyses
+    PassBuilder PB;
+    PB.registerModuleAnalyses(MAM);
+    PB.registerCGSCCAnalyses(CGAM);
+    PB.registerFunctionAnalyses(FAM);
+    PB.registerLoopAnalyses(LAM);
+    PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+    
+    // Build custom optimization pipeline
+    ModulePassManager MPM;
+    
+    // Add our custom TBB optimizer pass (runs on each function)
+    FunctionPassManager FPM;
+    FPM.addPass(TBBOptimizerPass());
+    
+    // Add the function pass manager to the module pass manager
+    MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+    
+    // Run the optimization pipeline
+    MPM.run(*ctx.module, MAM);
+    
+    // =========================================================================
     
     bool verificationPassed = true;
     
