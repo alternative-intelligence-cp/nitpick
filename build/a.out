@@ -1,8 +1,6 @@
 ; ModuleID = 'aria_module'
 source_filename = "aria_module"
 
-@x = internal global i8 42
-
 declare void @puts(ptr)
 
 declare void @print(ptr)
@@ -14,6 +12,9 @@ entry:
 
 define i64 @main() {
 entry:
+  call void @aria_scheduler_init(i32 0)
   call void @__aria_module_init()
   ret i64 0
 }
+
+declare void @aria_scheduler_init(i32)

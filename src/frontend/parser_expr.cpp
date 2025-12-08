@@ -145,6 +145,65 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
         case TOKEN_IDENTIFIER:
             return std::make_unique<VarExpr>(token.lexeme);
         
+        // --- Vector Literal Constructors (GLSL-style) ---
+        // Example: vec4(1.0, 2.0, 3.0, 4.0), ivec2(10, 20), vec3(0.0)
+        // Check all vector type tokens
+        case TOKEN_TYPE_VEC2:
+        case TOKEN_TYPE_VEC3:
+        case TOKEN_TYPE_VEC4:
+        case TOKEN_TYPE_VEC9:
+        case TOKEN_TYPE_DVEC2:
+        case TOKEN_TYPE_DVEC3:
+        case TOKEN_TYPE_DVEC4:
+        case TOKEN_TYPE_IVEC2:
+        case TOKEN_TYPE_IVEC3:
+        case TOKEN_TYPE_IVEC4:
+        case TOKEN_TYPE_UVEC2:
+        case TOKEN_TYPE_UVEC3:
+        case TOKEN_TYPE_UVEC4:
+        case TOKEN_TYPE_BVEC2:
+        case TOKEN_TYPE_BVEC3:
+        case TOKEN_TYPE_BVEC4:
+        // Also handle matrix constructors
+        case TOKEN_TYPE_MAT2:
+        case TOKEN_TYPE_MAT3:
+        case TOKEN_TYPE_MAT4:
+        case TOKEN_TYPE_MAT2X3:
+        case TOKEN_TYPE_MAT2X4:
+        case TOKEN_TYPE_MAT3X2:
+        case TOKEN_TYPE_MAT3X4:
+        case TOKEN_TYPE_MAT4X2:
+        case TOKEN_TYPE_MAT4X3:
+        case TOKEN_TYPE_DMAT2:
+        case TOKEN_TYPE_DMAT3:
+        case TOKEN_TYPE_DMAT4:
+        case TOKEN_TYPE_DMAT2X3:
+        case TOKEN_TYPE_DMAT2X4:
+        case TOKEN_TYPE_DMAT3X2:
+        case TOKEN_TYPE_DMAT3X4:
+        case TOKEN_TYPE_DMAT4X2:
+        case TOKEN_TYPE_DMAT4X3: {
+            // Store the vector/matrix type name
+            std::string typeName = token.lexeme;
+            auto vecLit = std::make_unique<VectorLiteral>(typeName);
+            
+            // Consume opening parenthesis
+            consume(TOKEN_LEFT_PAREN, "Expected '(' after " + typeName + " constructor");
+            
+            // Parse constructor arguments (comma-separated expressions)
+            if (!check(TOKEN_RIGHT_PAREN)) {
+                do {
+                    auto element = parseExpression(PREC_COMMA + 1);
+                    vecLit->elements.push_back(std::move(element));
+                } while (match(TOKEN_COMMA));
+            }
+            
+            // Consume closing parenthesis
+            consume(TOKEN_RIGHT_PAREN, "Expected ')' after " + typeName + " constructor arguments");
+            
+            return vecLit;
+        }
+        
         // --- Special Variable ($) ---
         // $ is a special iterator variable in till loops: till(100, 1) { $ }
         case TOKEN_DOLLAR:
