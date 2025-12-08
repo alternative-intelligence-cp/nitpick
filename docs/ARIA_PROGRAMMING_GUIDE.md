@@ -1,19 +1,20 @@
-# Aria Programming Language v0.0.6 - Complete Programming Guide
-**Date**: December 7, 2025  
-**Status**: Working Compiler - Core Features Complete
+# Aria Programming Language v0.0.7 - Complete Programming Guide
+**Date**: January 15, 2025  
+**Status**: Working Compiler - Core Features Complete + Generics
 
 ## Table of Contents
 1. [Quick Start](#quick-start)
 2. [Critical Rules (Read First!)](#critical-rules)
 3. [Type System](#type-system)
 4. [Function Syntax](#function-syntax)
-5. [Macro System](#macro-system)
-6. [Control Flow](#control-flow)
-7. [Memory Model](#memory-model)
-8. [Operators](#operators)
-9. [Standard Library](#standard-library)
-10. [Common Pitfalls](#common-pitfalls)
-11. [Working Examples](#working-examples)
+5. [Generics (Template Functions)](#generics-template-functions)
+6. [Macro System](#macro-system)
+7. [Control Flow](#control-flow)
+8. [Memory Model](#memory-model)
+9. [Operators](#operators)
+10. [Standard Library](#standard-library)
+11. [Common Pitfalls](#common-pitfalls)
+12. [Working Examples](#working-examples)
 
 ---
 
@@ -195,6 +196,118 @@ int8:result = applyTwice(
     5
 ) ? 0;  // Result: 7
 ```
+
+---
+
+## Generics (Template Functions)
+
+Aria supports generic programming through template functions with C++/Rust-style monomorphization.
+
+### Basic Generic Function
+```aria
+// Generic identity function
+func<T>:identity = *T(*T:value) {
+    pass(value);
+};
+
+// Explicit type argument
+int8:x = identity<int8>(42) ? 0;
+
+// Type inference from argument
+int32:y = identity(100) ? 0;  // Infers T = int32
+```
+
+### Generic Type Marker: The `*` Prefix
+In generic functions, `*` marks each use of a generic type parameter:
+- `*T` in return type position
+- `*T` in parameter types
+- `*T` for local variables of generic type
+
+```aria
+func<T>:swap = void(*T:a, *T:b) {
+    *T:temp = a;  // Local variable of generic type
+    a = b;
+    b = temp;
+    pass();
+};
+```
+
+### Multiple Type Parameters
+```aria
+func<T,U>:pair = *T(*T:first, *U:second) {
+    // Returns the first value, ignores second
+    pass(first);
+};
+
+int8:result = pair<int8,string>(42, "hello") ? 0;
+```
+
+### Generic Array Operations
+```aria
+func<T>:max = *T(*T[]:arr, int64:length) {
+    *T:maxVal = arr[0];
+    int64:i = 1;
+    till i >= length {
+        if (arr[i] > maxVal) {
+            maxVal = arr[i];
+        }
+        i = i + 1;
+    };
+    pass(maxVal);
+};
+
+int32[]:numbers = [10, 20, 5, 15];
+int32:largest = max<int32>(numbers, 4) ? 0;  // Returns 20
+
+// With type inference
+int32:largest = max(numbers, 4) ? 0;  // Compiler infers T = int32
+```
+
+### How Generics Work
+1. **Declaration**: Generic templates are parsed and stored but NOT type-checked or compiled
+2. **Call Site**: When you call `identity<int8>(42)`, the compiler:
+   - Detects the generic function call
+   - Infers or extracts concrete type (int8)
+   - Generates a specialized version: `func:identity_int8 = int8(int8:value) { pass(value); };`
+   - Type-checks and compiles the specialized version
+   - Caches it for reuse
+3. **Monomorphization**: Each unique type instantiation generates separate machine code
+
+### Advantages
+- Zero runtime overhead (fully compiled away)
+- Type safety at compile time
+- No code until actually used (unlike macros which generate upfront)
+- Clear, explicit syntax with `*` markers
+
+### Current Limitations (v0.0.7)
+- Type inference not yet implemented (must use explicit type args)
+- Monomorphization not yet implemented (templates parse but don't instantiate)
+- Constraints/bounds not supported
+- Generic structs not yet implemented
+
+### Difference from Macros
+```aria
+// MACRO - generates code during preprocessing, before parsing
+%macro GEN_MAX 1
+func:max_%1 = %1(%1:a, %1:b) {
+    if (a > b) { pass(a); }
+    pass(b);
+};
+%endmacro
+GEN_MAX(int8)   // Generates max_int8 immediately
+GEN_MAX(int32)  // Generates max_int32 immediately
+
+// GENERIC - generates code at call site during compilation
+func<T>:max = *T(*T:a, *T:b) {
+    if (a > b) { pass(a); }
+    pass(b);
+};
+// No code generated yet...
+int8:x = max<int8>(10, 20) ? 0;    // NOW generates max_int8
+int32:y = max<int32>(100, 200) ? 0;  // NOW generates max_int32
+```
+
+Macros are preprocessor text substitution; generics are type-aware templates with compile-time instantiation.
 
 ---
 
@@ -655,7 +768,7 @@ func:test = *int8() {
 ### Example 1: Collections Library (130 Functions)
 ```aria
 %macro GEN_MIN 1
-func:min_%1 = *%1(%1[]:arr, int64:length) {
+func:min_%1 = %1(%1[]:arr, int64:length) {
     %1:minVal = arr[0];
     int64:i = 1;
     while (i < length) {
@@ -664,7 +777,7 @@ func:min_%1 = *%1(%1[]:arr, int64:length) {
         }
         i = i + 1;
     }
-    return minVal;
+    pass(minVal);
 };
 %endmacro
 
@@ -676,23 +789,23 @@ GEN_MIN(flt32)
 ### Example 2: Math Library (24 Functions)
 ```aria
 %macro GEN_ABS 1
-func:abs_%1 = *%1(%1:value) {
+func:abs_%1 = %1(%1:value) {
     if (value < 0) {
-        return 0 - value;
+        pass(0 - value);
     }
-    return value;
+    pass(value);
 };
 %endmacro
 
 %macro GEN_CLAMP 1
-func:clamp_%1 = *%1(%1:value, %1:lo, %1:hi) {
+func:clamp_%1 = %1(%1:value, %1:lo, %1:hi) {
     if (value < lo) {
-        return lo;
+        pass(lo);
     }
     if (value > hi) {
-        return hi;
+        pass(hi);
     }
-    return value;
+    pass(value);
 };
 %endmacro
 
@@ -705,37 +818,39 @@ GEN_CLAMP(int32)
 
 ### Example 3: Recursive Fibonacci
 ```aria
-func:fibonacci = *int64(int64:n) {
+func:fibonacci = int64(int64:n) {
     if (n <= 1) {
-        return n;
+        pass(n);
     }
-    return fibonacci(n - 1) + fibonacci(n - 2);
+    int64:fib1 = fibonacci(n - 1) ? 0;
+    int64:fib2 = fibonacci(n - 2) ? 0;
+    pass(fib1 + fib2);
 };
 
-func:main = *int8() {
-    int64:fib10 = fibonacci(10);
+func:main = int8() {
+    int64:fib10 = fibonacci(10) ? 0;
     print(`Fibonacci(10) = &{fib10}`);
-    return 0;
+    pass(0);
 };
 ```
 
 ### Example 4: Closures and Higher-Order Functions
 ```aria
-func:makeMultiplier = *func(int8:factor) {
-    func:multiply = *int8(int8:x) {
-        return x * factor;  // Captures 'factor'
+func:makeMultiplier = func(int8:factor) {
+    func:multiply = int8(int8:x) {
+        pass(x * factor);  // Captures 'factor'
     };
-    return multiply;
+    pass(multiply);
 };
 
-func:main = *int8() {
-    func:times3 = makeMultiplier(3);
-    func:times5 = makeMultiplier(5);
+func:main = int8() {
+    func:times3 = makeMultiplier(3) ? fail(1);
+    func:times5 = makeMultiplier(5) ? fail(1);
     
-    int8:a = times3(10);  // 30
-    int8:b = times5(10);  // 50
+    int8:a = times3(10) ? 0;  // 30
+    int8:b = times5(10) ? 0;  // 50
     
-    return 0;
+    pass(0);
 };
 ```
 
@@ -800,9 +915,10 @@ lli program.ll
 
 ### Verify Syntax
 1. Check all variable names against reserved keywords
-2. Ensure all functions have * prefix if using `return value;`
+2. Ensure all functions use `pass(value)` or `fail(code)` for returns
 3. Verify semicolons after function definitions
 4. Check macro parameter substitution (%1, %2, etc.)
+5. In generic functions, use `*T` to mark each generic type usage
 
 ---
 
