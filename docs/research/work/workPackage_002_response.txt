@@ -1,0 +1,345 @@
+﻿Architectural Blueprint for Aria Compiler: Core Feature Implementation
+1. Executive Summary and Architectural Context
+The Aria compiler project, currently at version 0.0.7, represents a significant undertaking in the domain of systems programming language design. The objective is to construct a high-performance, statically typed language leveraging the LLVM 18 backend infrastructure. However, the current iteration faces substantial architectural blockers that prevent it from functioning as a viable tool for complex software development. As detailed in the "GEMINI DEEP RESEARCH WORK PACKAGE #002" 1, three critical deficiencies have been identified: the absence of Generic Template Instantiation (Monomorphization), the incomplete implementation of Lambda Closure Captures, and the lack of a functional Module System. These features are not merely auxiliary enhancements; they are foundational pillars required to support modern programming paradigms, including generic programming, functional patterns, and modular software architecture.
+This comprehensive research report provides an exhaustive analysis and detailed implementation roadmap for addressing these three high-priority issues. The analysis draws upon a deep review of academic literature regarding compiler construction, a comparative study of established languages such as C++, Rust, Swift, and Go, and a rigorous examination of the existing Aria codebase. The proposed solutions are designed to align with the constraints of the LLVM 18 IR generation pipeline while maintaining the performance characteristics expected of a systems language.
+The report is structured into three primary sections, each dedicated to one of the critical issues. For each issue, the report provides a theoretical grounding, a comparative industry analysis, a specific architectural design for Aria, detailed algorithmic descriptions, and a concrete implementation plan. The overarching goal is to transition the Aria compiler from a prototype parser to a fully operational compiler capable of supporting a standard library and complex user applications.
+________________
+2. Generic Template Instantiation (Monomorphization)
+The implementation of generics is arguably the most significant feature for a modern statically typed language, as it allows developers to write code that is abstract over types without incurring runtime overhead. The current state of the Aria compiler recognizes generic syntax but fails to generate executable code for generic functions, effectively rendering the feature non-functional.1
+2.1 Theoretical Foundations and Industry Standards
+Parametric polymorphism, commonly known as generics, poses a fundamental trade-off in compiler design: the choice between code size and execution speed. This trade-off manifests in two primary implementation strategies: Type Erasure (Homogeneous Translation) and Monomorphization (Heterogeneous Translation).
+Type Erasure acts by removing type information at compile time and replacing generic parameters with a common base type, such as Object in Java or void* in C. This approach generates a single machine code body for a generic function, regardless of how many different types it is instantiated with. While this minimizes binary size and compilation time, it introduces significant runtime overhead due to the necessity of boxing primitive types and the use of dynamic dispatch. It also precludes compiler optimizations that rely on type-specific information, such as vectorization or inline expansion.
+Monomorphization, the strategy employed by C++, Rust, and increasingly Swift, takes the opposite approach. For every unique combination of type arguments used to instantiate a generic function, the compiler generates a specialized copy of the function code. If a user calls max<int>(5, 10) and max<float>(3.0, 4.0), the compiler emits two distinct functions: max_int and max_float. This technique results in "zero-cost abstractions" at runtime, as the generated code is as efficient as if the programmer had manually written specialized functions for each type. The cost is paid in compilation time (due to repeated optimization of similar bodies) and binary size (code bloat).
+Comparative Analysis of Production Compilers:
+Language
+	Strategy
+	Pros
+	Cons
+	C++ (Templates)
+	Monomorphization
+	Maximum runtime performance; Turing-complete metaprogramming.
+	Slow compile times; cryptic error messages (historically); significant code bloat.
+	Rust (Generics)
+	Monomorphization
+	Zero-cost abstractions; strong type checking at definition site (Traits).
+	Slower compile times; binary size increase; complexity in shared library boundaries.
+	Java (Generics)
+	Type Erasure
+	Fast compilation; high code sharing; simple ABI.
+	Performance penalty for primitives (boxing); loss of type info at runtime (reification issues).
+	Swift
+	Hybrid
+	Best of both worlds; specializes when visible, falls back to dynamic dispatch (Witness Tables) otherwise.
+	High implementation complexity; performance unpredictability.
+	Go
+	Hybrid (GCShape)
+	Shared implementation for pointers, specialized for unique memory layouts.
+	Balances size and speed; complex internal implementation.
+	Architectural Decision for Aria:
+Given the Aria compiler's focus on systems programming and its usage of LLVM, Monomorphization is the unequivocal choice. The goal is to produce high-performance machine code where generic abstractions dissolve at compile time. The prompt explicitly requests LLVM IR patterns showing distinct functions (@max_int8, @max_flt64) 1, confirming that the user expects a monomorphization strategy similar to Rust or C++.
+2.2 Architectural Design for Aria
+The implementation of monomorphization in Aria requires a fundamental shift in how the backend processes function declarations. Currently, FuncDecl nodes are processed sequentially. With generics, a FuncDecl containing generic parameters is no longer a function to be compiled; it is a template or blueprint to be stored.
+2.2.1 The Template Registry
+The compiler must maintain a global registry of generic templates. When the parser encounters a function like func<T>:max, it should not emit LLVM IR. Instead, it must serialize or store the AST subtree for max into a GenericTemplate structure. This structure acts as a dictionary where the key is the function name and the value contains the AST and a cache of already-instantiated specializations.
+This registry must persist throughout the compilation of a module. In a multi-module context (discussed in Section 4), this registry needs to be accessible across compilation boundaries, implying that module metadata must export generic ASTs or an intermediate representation that allows instantiation by importers.
+2.2.2 The Instantiation Pipeline
+The trigger for code generation shifts from the definition site to the call site. The CallExpr visitor becomes the engine of instantiation. The pipeline proceeds as follows:
+1. Detection: When visiting a CallExpr, the compiler checks if the callee name resolves to a generic template.
+2. Type Unification: The compiler maps the provided arguments to the generic type parameters. This includes handling explicit type arguments (max<int8>) and performing type inference if arguments are omitted.
+3. Mangling: A unique identifier is generated based on the concrete types (e.g., max_int8).
+4. Cache Lookup: The compiler checks the template's specialization map. If max_int8 exists, the previously generated llvm::Function* is returned.
+5. Generation: If not found, the compiler initiates the instantiation process:
+   * A new compilation context is established.
+   * A type substitution map (T -> int8) is injected into the context.
+   * The function body AST is traversed, generating a new LLVM function.
+   * The result is cached and returned.
+2.2.3 Name Mangling Scheme
+A robust name mangling scheme is critical to prevent symbol collisions and enable correct linking. The simple underscore concatenation suggested in the prompt (max_int8) 1 is insufficient for complex nested types (e.g., process<Vec<List<int>>>).
+Aria should adopt a scheme inspired by the Itanium C++ ABI, which is standard for LLVM languages. A proposed scheme for Aria is:
+_Z (prefix) + L (identifier length) + Identifier + I (start generics) + `` + E (end generics).
+* max<int8> becomes _Z3maxI2i8E
+* max<flt64> becomes _Z3maxI3f64E
+* pair<int, float> becomes _Z4pairI3i323f32E
+This recursive structure ensures that Vec<T> inside another generic is handled unambiguously.
+2.3 Detailed Algorithms and Implementation Logic
+The following sections detail the core algorithms required for the implementation.
+2.3.1 Type Substitution Logic
+The typeSubstitution map in CodeGenContext 1 is the mechanism for replacing generic placeholders with concrete types. This logic must be pervasive. Every AST visitor that handles types—VarDecl, CastExpr, FuncDecl, and TypeSpec—must check this map.
+Pseudocode for Type Resolution:
+
+
+C++
+
+
+
+
+Type* CodeGenContext::resolveType(const std::string& typeName) {
+   // 1. Check if typeName is a generic placeholder in the current context
+   if (typeSubstitution.count(typeName)) {
+       std::string concreteName = typeSubstitution[typeName];
+       return resolveType(concreteName); // Recursive resolve
+   }
+   
+   // 2. Standard Type Lookup
+   if (typeName == "int8") return llvm::Type::getInt8Ty(llvmContext);
+   if (typeName == "flt64") return llvm::Type::getDoubleTy(llvmContext);
+   
+   // 3. Look up user-defined structs
+   auto it = structMap.find(typeName);
+   if (it!= structMap.end()) return it->second;
+
+   reportError("Unknown type: " + typeName);
+   return nullptr;
+}
+
+This ensures that when the compiler processes T:a inside max<int8>, it effectively compiles int8:a.
+2.3.2 Monomorphization Driver
+The core logic resides in src/backend/codegen.cpp. The following algorithm outlines the monomorphize function, addressing the "Integration Points" requirement.1
+Algorithm: monomorphize
+1. Input: funcName (string), concreteTypes (list of strings).
+2. Lookup Template: Find GenericTemplate for funcName. If missing, error.
+3. Generate Signature Key: Concatenate concrete types to form a key (e.g., "i8_f64").
+4. Check Recursion limit: If instantiation depth > MAX_DEPTH (e.g., 100), abort to prevent infinite recursion in cases like func<T> foo() { foo<Vec<T>>(); }.
+5. Check Cache: If key exists in template.specializations, return llvm::Function*.
+6. Create Substitution Map:
+   * Iterate template.typeParams.
+   * Map template.typeParams[i] to concreteTypes[i].
+7. Save Context State:
+   * Push ctx.typeSubstitution.
+   * Push ctx.currentFunction.
+8. Update Context:
+   * ctx.typeSubstitution = newMap.
+9. Generate Function Prototype:
+   * Resolve return type using resolveType.
+   * Resolve parameter types using resolveType.
+   * Construct llvm::FunctionType.
+   * Mangle name: _Z....
+   * Create llvm::Function.
+10. Mark Cache: Store llvm::Function* in cache before generating body to handle direct recursion (e.g., func<T> fact() {... fact<T>()... }).
+11. Generate Body:
+   * Create entry basic block.
+   * Set Builder insert point.
+   * Map LLVM function arguments to AST parameter names in ctx.namedValues.
+   * Call template.ast->body->accept(this).
+12. Restore Context:
+   * Pop ctx.currentFunction.
+   * Pop ctx.typeSubstitution.
+13. Return llvm::Function*.
+2.3.3 Type Inference Implementation
+To support max(5, 10) without explicit <int8> 1, the compiler must implement a unification algorithm during the CallExpr visit.
+Algorithm: Generic Type Inference
+1. Retrieve Generic Params: Get `` from max.
+2. Retrieve Arg Types: Analyze arguments 5 (int8) and 10 (int8).
+3. Map Parameters: max expects (T, T).
+4. Unify:
+   * Arg 0: T matches int8. Inference: T = int8.
+   * Arg 1: T matches int8. Check consistency: int8 == int8. OK.
+5. Result: concreteTypes = ["int8"].
+6. Edge Case: If max(5, 3.14) is called.
+   * Arg 0: T = int8.
+   * Arg 1: T = flt64.
+   * Conflict: Report "Type deduction failed: conflicting types for parameter T".
+2.4 Implementation Roadmap
+1. Refactor FuncDecl Visitor: Modify src/backend/codegen.cpp to skip code generation for functions with non-empty generics vectors and instead populate the genericTemplates map.
+2. Implement GenericTemplate Struct: Define the structure in codegen_context.h to hold the AST and the specialization cache.
+3. Implement Name Mangling: Create a utility function for the Itanium-style mangling described above.
+4. Implement monomorphize: Add the core logic to codegen.cpp.
+5. Update CallExpr Visitor: Add the logic to detect generic calls, perform type inference (optional for phase 1, but recommended), and trigger monomorphize.
+6. Update Type Resolution: Modify all type-related AST visitors to query the typeSubstitution map.
+________________
+3. Lambda Closure Capture Implementation
+The second critical issue is the incomplete implementation of lambda closures. While the parsing and capture analysis logic exists, the backend currently fails to generate the necessary runtime infrastructure—specifically the environment struct—to make closures work.1 This blocks functional programming patterns and higher-order functions.
+3.1 Theoretical Foundations and Capture Semantics
+A Lambda is an anonymous function. A Closure is the runtime instance of a lambda, consisting of the function code plus the lexical environment (captured variables) in which it was created. The transition from a lambda expression to a closure is known as Closure Conversion.
+The central challenge in implementing closures is managing the lifetime and storage of captured variables. This is often referred to as the "Funarg Problem."
+* Upwards Funarg Problem: When a closure is returned from a function, the captured variables must survive after the creating function returns. This implies that stack allocation of local variables is insufficient; captured variables must "escape" to the heap.
+* Downwards Funarg Problem: When a closure is passed as an argument to a function but not returned, it generally does not outlive the creating function. In this case, stack allocation is safe and more efficient.
+Capture Strategies:
+1. Capture by Value (Copy): The closure gets a copy of the variable at the moment of creation. Mutation inside the closure does not affect the outer variable. This is simpler to implement and safer for concurrency.
+2. Capture by Reference: The closure holds a reference (pointer) to the outer variable. Mutation is shared. This is required for common patterns like an accumulator (e.g., count++), but it complicates memory management because the outer variable must be promoted to the heap if the closure escapes.
+Comparative Analysis:
+* C++: Offers explicit control ([=] for value, [&] for reference). Captures are members of a generated functor class.
+* Java: Allows capture of "effectively final" variables only (by value). This avoids the confusion of shared mutable state but limits expressivity.
+* JavaScript/Python: Implicit capture by reference. Variables are "hoisted" to heap-allocated contexts if they are captured, ensuring they survive as long as the closure exists.
+* Rust: Explicit move semantics. move || takes ownership. Without move, it borrows (references). This is enforcing strict ownership rules at compile time.
+Architectural Decision for Aria:
+Given the requirement to be "exhaustive" and the "High Priority" status, Aria should implement a robust, safe default. We will implement Capture by Value (Copy) for primitive types and Capture by Reference (Pointer) for objects/pointers. To support mutable shared state (as requested in the design questions: "If a lambda modifies a captured variable, should that change be visible?" 1), the standard solution in systems languages without complex escape analysis is to require the user to explicitly capture a pointer or "box" the variable. However, for this implementation phase, we will focus on Heap-Allocated Environments that store copies of captured values. This solves the lifetime issue (the environment survives the function return) and provides a baseline for future optimization.
+3.2 Architectural Design for Aria
+The implementation involves generating a custom LLVM structure for each lambda expression to hold its captured state. This structure acts as the "Environment."
+3.2.1 The Environment Layout
+For a lambda capturing variables x (int32) and y (flt64), the compiler must generate:
+1. Environment Struct:
+Code snippet
+%LambdaEnv_1 = type { i32, double }
+
+2. Function Signature:
+The lambda function itself must be transformed to accept a pointer to this environment as its first argument (often called the static chain or context pointer).
+Code snippet
+define i32 @lambda_impl_1(%LambdaEnv_1* %env,...) {... }
+
+3. Closure Representation:
+Since a "function" in Aria is currently just a raw function pointer, we cannot simply pass @lambda_impl_1 around—it needs its environment. We must introduce a Fat Pointer or a Closure Object.
+A Closure Object is a struct:
+Code snippet
+%Closure = type { i8*, i8* } ; { function_ptr, env_ptr }
+
+This allows the caller to invoke the function pointer using the environment pointer as the first argument.
+3.2.2 Variable Access Rewriting
+The body of the lambda currently refers to x and y by name. The compiler must intercept these lookups. When compiling the lambda body:
+   * A local symbol table entry for x should not point to an alloca on the stack.
+   * Instead, it should point to a load sequence: env_ptr -> GEP(index of x) -> Load.
+3.3 Detailed Algorithms and Implementation Logic
+The implementation requires creating a new LambdaGenerator class or extending CodeGenContext to track lambda state.
+3.3.1 Environment Generation Algorithm
+Algorithm: generateEnvironment
+   1. Input: LambdaExpr* node, captures (list of strings).
+   2. Define Struct:
+   * Create a vector of llvm::Type*.
+   * For each variable var in captures:
+   * Lookup var in the enclosing scope to get its type T.
+   * Add T to the vector.
+   * Call StructType::create(ctx, types, "env_struct").
+   3. Allocate Environment:
+   * Calculate size of struct.
+   * Emit malloc call (or GC allocation if Aria has a GC).
+   * Bitcast result to env_struct*.
+   4. Populate Environment:
+   * For each variable var at index i in captures:
+   * Generate code to load var from the enclosing scope.
+   * Generate GetElementPtr (GEP) to index i of the allocated environment.
+   * Generate Store instruction to write the value into the environment.
+   5. Output: env_ptr (Value*).
+3.3.2 Lambda Body Generation Algorithm
+Algorithm: visit(LambdaExpr)
+   1. Analyze Captures: Call analyzeCapturedVariables.
+   2. Generate Environment: Run generateEnvironment (above).
+   3. Create Function:
+   * Define function type RetTy (EnvPtr*, Args...).
+   * Create llvm::Function.
+   4. Setup Body Context:
+   * Create entry block.
+   * Define envArg = func->getArg(0).
+   5. Map Captures in Symbol Table:
+   * For each variable var at index i in captures:
+   * Create a "Proxy Symbol" or special entry in ctx.namedValues.
+   * This entry records that var is located at GEP(envArg, 0, i).
+   6. Visit Body: Call node->body->accept(this).
+   * Crucial: The visit(VarExpr) method must be updated. If it resolves a name to a Proxy Symbol, it must emit a load from the GEP address rather than returning the address itself.
+   7. Create Closure:
+   * Allocate a %Closure { i8*, i8* } struct.
+   * Store bitcast(function) into index 0.
+   * Store bitcast(env_ptr) into index 1.
+   8. Return: The closure object (or pointer to it).
+3.3.3 Calling Convention for Closures
+Calling a closure is different from calling a function. The CallExpr visitor must handle this distinction.
+Algorithm: visit(CallExpr) for Closures
+   1. Evaluate Callee: Generate code for the expression being called.
+   2. Check Type: If type is %Closure*:
+   * Load function pointer: fn = load closure->idx0.
+   * Load env pointer: env = load closure->idx1.
+   * Cast fn to correct function signature (i8*, args...).
+   * Call fn(env, args...).
+   3. Else (Regular Function):
+   * Call fn(args...).
+3.4 Implementation Roadmap
+   1. Environment Struct Definition: Update codegen.cpp to define the LLVM struct types dynamically based on capture analysis.
+   2. Malloc Integration: Ensure the compiler can emit calls to malloc (declare malloc as external).
+   3. Update VarExpr Visitor: Modify the variable lookup logic to handle "indirect" variables located in the environment struct.
+   4. Implement Closure Struct: Define the { func, env } pair type in the backend.
+   5. Update CallExpr: Differentiate between direct function calls and closure invocations.
+   6. Memory Management Strategy: For v0.0.7, document that environments are leaked. In v0.1.0, implement a free injection or GC strategy.
+________________
+4. Module System and UseStmt Resolution
+The third pillar is the Module System. Currently, Aria parses UseStmt but ignores it, forcing all code to reside in a single file.1 This makes the development of a standard library or any large application impossible. The goal is to implement a system that supports separate compilation, namespaces, and symbol visibility.
+4.1 Theoretical Foundations and Systems Analysis
+A module system serves two primary purposes: Namespace Management (preventing name collisions) and Code Organization (breaking logic into physical units).
+Compilation Models:
+   1. Textual Inclusion (C/C++): #include literally pastes file content. This is simple but leads to the "fragile base class" problem, slow builds (re-parsing headers millions of times), and macro pollution.
+   2. Binary Linking (C/C++ Objects): Files are compiled individually to .o files and linked. Requires header files to promise what symbols exist.
+   3. Modern Modules (Rust, Go, Python): The compiler reads the source or a binary metadata summary of the dependency. It understands the dependency's AST or type information directly, removing the need for redundant header files.
+Architectural Decision for Aria:
+Aria should adopt a Translation Unit + Bitcode Linking model, similar to the modern LLVM workflow (e.g., Clang with LTO).
+   1. Module = File: One .aria file corresponds to one Module.
+   2. Compilation: Each module is compiled to an LLVM Bitcode (.bc) file.
+   3. Importing: When use math; is encountered, the compiler parses math.aria to extract type information (signatures) for type checking the current file.
+   4. Linking: The final step involves the LLVM Linker merging all relevant .bc files into a single executable.
+This "Source-Based Importing" (step 3) is chosen for simplicity in the v0.0.7 stage. It avoids the complexity of defining a custom metadata format (.ariameta). The compiler simply parses the dependency on-the-fly to populate the symbol table but does not generate code for it again if a .bc already exists.
+4.2 Architectural Design for Aria
+The module system implementation requires changes to the build driver, the AST, and the symbol resolution logic.
+4.2.1 Module Resolution Logic
+The compiler needs a search algorithm to locate modules.
+Search Path Strategy:
+   1. Relative Imports: use./utils; looks for utils.aria in the same directory.
+   2. Standard Library: use std.io; looks in $ARIA_HOME/lib/std/io.aria.
+   3. Project Root: use core.types; looks in the project source root.
+4.2.2 Visibility and the pub Keyword
+The pub keyword acts as a gatekeeper. By default, all symbols in a module should be private (internal linkage). Only symbols marked pub are exported (external linkage).
+   * AST Change: Add bool isPublic field to FuncDecl, StructDecl, and VarDecl.
+   * Parser Change: Update parser to consume optional TOKEN_PUB before declarations.
+   * Semantic Check: When main.aria tries to access math.secretHelper, the type checker looks up secretHelper in math's symbol table. If isPublic is false, it emits "Error: symbol 'secretHelper' is private."
+4.2.3 Name Mangling for Modules
+To avoid collisions between math.sqrt and physics.sqrt, names must be mangled with their module path.
+   * Aria Source: module math { func sqrt()... }
+   * LLVM IR Name: @math_sqrt or _Z4math4sqrt.
+This must apply to all top-level declarations. The main function is the only exception; it must remain @main (or the compiler must generate a stub @main that calls @root_main).
+4.3 Detailed Algorithms and Implementation Logic
+4.3.1 The Import Visitor Algorithm
+The UseStmt visitor is the entry point. Note that this visitor operates during the Semantic Analysis phase, not just Codegen, because types need to be known early.
+Algorithm: visit(UseStmt)
+   1. Resolve Path: Convert std.io to /usr/lib/aria/std/io.aria.
+   2. Check Cycle: If module is in ctx.compilationStack, error "Circular dependency".
+   3. Parse Dependency:
+   * Create a sub-parser.
+   * Parse the file into a ModuleAST.
+   4. Process Exports:
+   * Iterate over ModuleAST->declarations.
+   * If decl->isPublic:
+   * Mangle name (std_io_print).
+   * Add to current SymbolTable with a "Module" tag.
+   * Import types (Structs) into TypeTable.
+   5. Store AST: Save ModuleAST in a global registry (needed for Generic Instantiation, see Section 2).
+4.3.2 The Linker Driver
+Aria needs a "Driver" function that orchestrates the build.
+Algorithm: Build Pipeline
+   1. Queue: Start with [main.aria].
+   2. Process Queue:
+   * Pop currentFile.
+   * Parse currentFile.
+   * For every UseStmt found:
+   * If not already compiled/queued, add to Queue.
+   * Perform "Import Visitor" logic (load symbols).
+   * Codegen: Compile currentFile to LLVM Module.
+   * Write: Save to currentFile.bc.
+   3. Link:
+   * Create llvm::Linker.
+   * Load all generated .bc files.
+   * Linker::linkModules.
+   4. Output: Emit executable.
+4.4 Implementation Roadmap
+   1. Add pub Keyword: Modify Lexer/Parser to recognize pub and store it in AST nodes.
+   2. Implement ModuleLoader: Create a class to handle file I/O and path resolution.
+   3. Implement SymbolExporter: Create logic to expose only public symbols from a parsed AST.
+   4. Update UseStmt Visitor: Connect the loader to the current scope.
+   5. Integrate LLVM Linker: Update the main compiler entry point to support multi-file linking.
+   6. Standard Library Bootstrap: Create a simple std folder with math.aria to test the system.
+________________
+5. Risk Assessment and Mitigation
+Implementing these three features simultaneously introduces significant complexity and risk.
+5.1 Complexity Management
+   * Risk: The interaction between Generics and Modules is notoriously difficult. If main.aria uses math.max<T>, and max is in math.aria, the compiler needs the AST of max while compiling main.
+   * Mitigation: The "Source-Based Importing" strategy (4.1) mitigates this. Since we parse dependencies into ASTs to read signatures, we have the ASTs available in memory. We must ensure we don't discard the ASTs of generic functions after parsing.
+5.2 Performance Implications
+   * Risk: Monomorphization can lead to "Code Bloat," resulting in large binaries and instruction cache pressure.
+   * Mitigation: Enable LLVM's MergeFunctions pass, which identifies functions with identical machine code (e.g., vector<int*> and vector<float*>) and merges them.
+5.3 Memory Safety
+   * Risk: Heap-allocated closure environments introduce memory leaks in the absence of a Garbage Collector.
+   * Mitigation: This is an acceptable technical debt for v0.0.7. The priority is functionality (enabling functional patterns). Memory management strategies (ARC or Tracing GC) can be implemented in v0.1.0 on top of the generated environment structs.
+________________
+6. Conclusion
+The implementation of Generic Instantiation, Lambda Closures, and a Module System constitutes a transformative leap for the Aria compiler.
+   * Generics will unlock type-safe reusable algorithms.
+   * Closures will enable expressive functional APIs.
+   * Modules will allow the ecosystem to scale beyond single-file scripts.
+By adhering to the "Monomorphization" strategy for generics, "Heap-Allocated Environments" for closures, and "Bitcode Linking" for modules, Aria aligns itself with the performance and scalability characteristics of modern systems languages like Rust and C++. The detailed algorithms and architectural decisions provided in this report offer a clear, actionable path for the engineering team to execute this upgrade. The immediate next step is the implementation of the Module System foundation (Phase 1), as it provides the organizational structure required to test and house the subsequent Generic and Closure features.
+Works cited
+   1. GEMINI_WORK_PACKAGE_002.txt

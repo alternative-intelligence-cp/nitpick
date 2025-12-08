@@ -1,0 +1,1101 @@
+================================================================================
+GEMINI DEEP RESEARCH WORK PACKAGE #005
+Aria Compiler - Low Priority Enhancements and Completeness
+Generated: December 7, 2025
+================================================================================
+
+OBJECTIVE:
+Research and provide implementation guidance for low-priority features that
+improve completeness and edge case handling. These issues are not blockers
+but enhance the overall robustness of the compiler.
+
+SELECTED ISSUES:
+1. TBB Optimizer Edge Cases (ISSUE 2.2 from knownProblems.txt)
+2. Platform Abstraction Missing Functions (ISSUE 3.2 from knownProblems.txt)
+3. Trait/Interface System (ISSUE 4.2 from knownProblems.txt)
+
+PRIORITY RATIONALE:
+- Issue 2.2 (TBB Optimizer): Low priority, optimization not correctness
+- Issue 3.2 (Platform Abstraction): Low priority, minimal current usage
+- Issue 4.2 (Traits): Low priority, can use composition instead
+
+These issues improve quality-of-life and completeness but aren't critical for
+core functionality.
+
+================================================================================
+ISSUE 1: TBB OPTIMIZER EDGE CASES
+================================================================================
+
+STATUS: Working but Limited
+PRIORITY: Low
+COMPLEXITY: High
+IMPLEMENTATION IMPACT: Improves optimization quality, not correctness
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+The TBB (Ternary Branch Bypass) optimizer successfully eliminates redundant
+checks in many cases but has known limitations. It doesn't handle all control
+flow patterns, leading to missed optimization opportunities.
+
+CURRENT STATE - TBB OPTIMIZER:
+
+From knownProblems.txt:
+```
+TBB optimizer handles SelectInst and PHI patterns but doesn't handle all
+control flow scenarios. Some redundant checks remain.
+
+KNOWN LIMITATIONS:
+1. Doesn't optimize across function boundaries
+2. No interprocedural range analysis
+3. Doesn't handle loops with induction variables
+4. Conservative on pointer arithmetic
+```
+
+The optimizer exists in src/backend/tbb_optimizer.cpp and works well for
+basic patterns like:
+
+```aria
+func:clamp = int32(int32:x, int32:min, int32:max) {
+    if (x < min) { pass(min); };
+    if (x > max) { pass(max); };  // TBB recognizes x >= min here
+    pass(x);
+};
+```
+
+But fails on more complex cases:
+
+```aria
+// LIMITATION 1: Induction variables in loops
+func:sum_range = int32(int32:n) {
+    int32:sum = 0;
+    int32:i = 0;
+    while (i < n) {
+        sum = sum + i;
+        i = i + 1;
+        
+        // TBB doesn't know that i is always < n here
+        if (i < n) {  // Redundant check could be eliminated
+            // ...
+        };
+    };
+    pass(sum);
+};
+
+// LIMITATION 2: Interprocedural analysis
+func:is_positive = bool(int32:x) {
+    pass(x > 0);
+};
+
+func:process = int32(int32:x) {
+    if (is_positive(x)) {
+        // TBB doesn't know x > 0 here (crosses function boundary)
+        if (x > 0) {  // Redundant check
+            // ...
+        };
+    };
+    pass(x);
+};
+
+// LIMITATION 3: Pointer bounds
+func:process_array = void(int32[100]@:arr, int32:idx) {
+    if (idx >= 0 && idx < 100) {
+        int32:val = arr[idx];
+        
+        // TBB doesn't track bounds for subsequent accesses
+        if (idx < 100) {  // Redundant
+            int32:val2 = arr[idx];
+        };
+    };
+};
+```
+
+CURRENT IMPLEMENTATION APPROACH:
+
+From src/backend/tbb_optimizer.cpp (referenced in knownProblems.txt):
+```cpp
+// Optimize PHI nodes with ternary checks
+void TBBOptimizer::optimizeTBBPhi(Function* F) {
+    for (BasicBlock& BB : *F) {
+        for (Instruction& I : BB) {
+            if (PHINode* phi = dyn_cast<PHINode>(&I)) {
+                // Check if PHI comes from ternary pattern
+                if (phi->getNumIncomingValues() == 2) {
+                    Value* trueVal = phi->getIncomingValue(0);
+                    Value* falseVal = phi->getIncomingValue(1);
+                    BasicBlock* trueBB = phi->getIncomingBlock(0);
+                    BasicBlock* falseBB = phi->getIncomingBlock(1);
+                    
+                    // Look for dominating comparison
+                    if (BranchInst* br = dyn_cast<BranchInst>(trueBB->getTerminator())) {
+                        if (br->isConditional()) {
+                            // Analyze comparison and eliminate redundant checks
+                            // ...
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+The optimizer works within a single function and basic block scope but doesn't
+have global knowledge.
+
+WHAT'S NEEDED FOR IMPROVEMENT:
+
+1. **Loop Induction Variable Analysis**: Recognize loop patterns
+   ```cpp
+   // Detect loop header
+   Loop* L = LI->getLoopFor(&BB);
+   if (L && L->getHeader() == &BB) {
+       PHINode* inductionVar = L->getCanonicalInductionVariable();
+       ConstantInt* loopBound = getLoopBound(L);
+       
+       // Track that inductionVar < loopBound within loop body
+       addRangeConstraint(inductionVar, 0, loopBound);
+   }
+   ```
+
+2. **Interprocedural Range Propagation**: Function summaries
+   ```cpp
+   struct FunctionSummary {
+       std::vector<RangeConstraint> preconditions;
+       std::vector<RangeConstraint> postconditions;
+   };
+   
+   // Build summaries during first pass
+   FunctionSummary summarizeFunction(Function* F) {
+       FunctionSummary summary;
+       
+       // Analyze returns to determine postconditions
+       for (ReturnInst* ret : getReturns(F)) {
+           if (CmpInst* cmp = getLastCompare(ret)) {
+               summary.postconditions.push_back(extractConstraint(cmp));
+           }
+       }
+       
+       return summary;
+   }
+   
+   // Apply summaries at call sites
+   void optimizeCallSite(CallInst* call, FunctionSummary& summary) {
+       for (const auto& postcond : summary.postconditions) {
+           // Propagate constraint to code after call
+           addConstraint(postcond);
+       }
+   }
+   ```
+
+3. **Pointer Bounds Tracking**: Track array access ranges
+   ```cpp
+   // When we see: if (idx >= 0 && idx < 100)
+   struct PointerBounds {
+       Value* pointer;
+       Value* index;
+       ConstantInt* lowerBound;
+       ConstantInt* upperBound;
+       BasicBlock* validScope;
+   };
+   
+   std::vector<PointerBounds> boundsInfo;
+   
+   void trackBounds(ICmpInst* cmp, BasicBlock* trueBranch) {
+       // Extract bounds from comparison
+       if (cmp->getPredicate() == ICmpInst::ICMP_SLT) {
+           PointerBounds bounds;
+           bounds.index = cmp->getOperand(0);
+           bounds.upperBound = dyn_cast<ConstantInt>(cmp->getOperand(1));
+           bounds.validScope = trueBranch;
+           boundsInfo.push_back(bounds);
+       }
+   }
+   
+   void optimizeArrayAccess(GetElementPtrInst* gep) {
+       Value* index = gep->getOperand(1);
+       
+       // Check if index has known bounds
+       for (const auto& bounds : boundsInfo) {
+           if (bounds.index == index && isDominatedBy(gep, bounds.validScope)) {
+               // Index is known to be in bounds - can skip runtime check
+               eliminateCheck(gep);
+           }
+       }
+   }
+   ```
+
+4. **LLVM MemorySSA Integration**: Track memory dependencies
+   ```cpp
+   #include <llvm/Analysis/MemorySSA.h>
+   
+   MemorySSA* MSSA = &getAnalysis<MemorySSAWrapperPass>().getMSSA();
+   
+   // Use MemorySSA to track which checks dominate which accesses
+   if (MemoryUse* use = dyn_cast<MemoryUse>(MSSA->getMemoryAccess(inst))) {
+       MemoryAccess* definingAccess = use->getDefiningAccess();
+       // Analyze defining access for bounds information
+   }
+   ```
+
+5. **SCCP (Sparse Conditional Constant Propagation) Integration**:
+   ```cpp
+   // Use LLVM's existing SCCP pass to propagate constants through PHI nodes
+   PassBuilder PB;
+   FunctionPassManager FPM;
+   FPM.addPass(SCCPPass());
+   FPM.run(*F, FAM);
+   
+   // Then run TBB optimizer on the simplified IR
+   ```
+
+DESIGN QUESTIONS:
+
+1. **Optimization Aggressiveness**: How aggressive should the optimizer be?
+   - Conservative: Only optimize obvious cases (current approach)
+   - Moderate: Intra-procedural + loop analysis
+   - Aggressive: Full interprocedural analysis (expensive compile times)
+
+2. **Compile Time Impact**: Interprocedural analysis is expensive
+   - Run only at -O2 and above?
+   - Use heuristics to limit analysis scope?
+   - Cache function summaries between compilations?
+
+3. **Soundness vs Completeness**: 
+   - Sound: Never eliminate a necessary check (safety-critical)
+   - Complete: Eliminate all redundant checks (performance-critical)
+   
+   Current optimizer is sound but incomplete. Should we stay conservative?
+
+4. **Integration with LLVM Passes**: Should we use LLVM's existing analyses?
+   - LoopInfo: Loop structure analysis
+   - ScalarEvolution: Induction variable analysis
+   - LazyValueInfo: Value range analysis
+   - MemorySSA: Memory dependency analysis
+   
+   Or build custom analysis for Aria-specific patterns?
+
+5. **Testing Strategy**: How to verify optimizations don't break correctness?
+   - Fuzzing with random programs?
+   - Formal verification of optimizer rules?
+   - Differential testing (compare optimized vs unoptimized output)?
+
+IMPLEMENTATION DELIVERABLES REQUESTED:
+
+1. **Loop Analysis Implementation**: Code for detecting loop induction variables
+   and propagating bounds within loops.
+
+2. **Interprocedural Analysis Design**: Specification for function summaries,
+   how to build them, and how to use them at call sites.
+
+3. **Pointer Bounds Tracking**: Algorithm for tracking array bounds and
+   eliminating redundant checks on array accesses.
+
+4. **Integration Guide**: How to integrate with LLVM's existing analysis passes
+   (LoopInfo, ScalarEvolution, LazyValueInfo).
+
+5. **Testing Framework**: Strategy for testing optimizer correctness and
+   measuring missed optimization opportunities.
+
+6. **Performance Analysis**: Compile-time cost of enhanced optimizations,
+   runtime performance improvements.
+
+7. **Comparison with Other Compilers**:
+   - GCC: -ftree-vrp (Value Range Propagation)
+   - LLVM: -instcombine and -simplifycfg
+   - Rust: MIR optimizations
+   
+   What techniques do they use? What can we adopt?
+
+AFFECTED FILES:
+- src/backend/tbb_optimizer.cpp (enhance existing optimizer)
+- src/backend/loop_analysis.cpp (NEW - loop induction variable analysis)
+- src/backend/interprocedural.cpp (NEW - function summaries)
+- Build system (optional optimization levels)
+
+================================================================================
+ISSUE 2: PLATFORM ABSTRACTION MISSING FUNCTIONS
+================================================================================
+
+STATUS: Basic Implementation Exists
+PRIORITY: Low
+COMPLEXITY: Low-Medium
+IMPLEMENTATION IMPACT: Improves portability across platforms
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+Platform abstraction layer exists but is incomplete. Some OS-specific
+functionality isn't abstracted, limiting portability to non-Linux platforms.
+
+CURRENT STATE:
+
+From knownProblems.txt:
+```
+Platform abstraction exists in src/runtime/platform/ but has gaps:
+- File I/O abstraction incomplete
+- Network I/O missing entirely
+- Thread primitives exist but not fully tested on Windows
+- No macOS-specific testing
+```
+
+The platform layer currently has:
+- `src/runtime/platform/platform.h` - Abstract interface
+- `src/runtime/platform/linux.c` - Linux implementation
+- `src/runtime/platform/windows.c` - Windows implementation (incomplete)
+- `src/runtime/platform/macos.c` - macOS implementation (missing)
+
+EXAMPLE - CURRENT FILE I/O:
+
+```c
+// src/runtime/platform/platform.h
+typedef struct aria_file_handle {
+    void* platform_specific;
+} aria_file_handle_t;
+
+aria_file_handle_t* aria_file_open(const char* path, const char* mode);
+size_t aria_file_read(aria_file_handle_t* file, void* buffer, size_t size);
+size_t aria_file_write(aria_file_handle_t* file, const void* buffer, size_t size);
+void aria_file_close(aria_file_handle_t* file);
+
+// But missing:
+// aria_file_seek, aria_file_tell, aria_file_size
+// aria_file_stat (get metadata)
+// aria_file_exists, aria_file_delete
+```
+
+WHAT'S MISSING:
+
+**1. File I/O Completeness:**
+```c
+// Seeking and positioning
+int64_t aria_file_seek(aria_file_handle_t* file, int64_t offset, int whence);
+int64_t aria_file_tell(aria_file_handle_t* file);
+int64_t aria_file_size(aria_file_handle_t* file);
+
+// File metadata and operations
+bool aria_file_exists(const char* path);
+bool aria_file_delete(const char* path);
+bool aria_file_rename(const char* old_path, const char* new_path);
+
+struct aria_file_stat {
+    uint64_t size;
+    uint64_t created_time;
+    uint64_t modified_time;
+    bool is_directory;
+    bool is_readonly;
+};
+
+bool aria_file_stat(const char* path, struct aria_file_stat* out);
+```
+
+Linux implementation:
+```c
+// src/runtime/platform/linux.c
+int64_t aria_file_seek(aria_file_handle_t* file, int64_t offset, int whence) {
+    int fd = *(int*)file->platform_specific;
+    return lseek(fd, offset, whence);
+}
+
+bool aria_file_exists(const char* path) {
+    return access(path, F_OK) == 0;
+}
+
+bool aria_file_stat(const char* path, struct aria_file_stat* out) {
+    struct stat st;
+    if (stat(path, &st) != 0) return false;
+    
+    out->size = st.st_size;
+    out->created_time = st.st_ctime;
+    out->modified_time = st.st_mtime;
+    out->is_directory = S_ISDIR(st.st_mode);
+    out->is_readonly = !(st.st_mode & S_IWUSR);
+    return true;
+}
+```
+
+Windows implementation:
+```c
+// src/runtime/platform/windows.c
+int64_t aria_file_seek(aria_file_handle_t* file, int64_t offset, int whence) {
+    HANDLE hFile = (HANDLE)file->platform_specific;
+    DWORD moveMethod = (whence == SEEK_SET) ? FILE_BEGIN :
+                       (whence == SEEK_CUR) ? FILE_CURRENT :
+                       FILE_END;
+    
+    LARGE_INTEGER li;
+    li.QuadPart = offset;
+    
+    if (!SetFilePointerEx(hFile, li, &li, moveMethod)) {
+        return -1;
+    }
+    
+    return li.QuadPart;
+}
+
+bool aria_file_exists(const char* path) {
+    DWORD attrs = GetFileAttributesA(path);
+    return attrs != INVALID_FILE_ATTRIBUTES;
+}
+
+bool aria_file_stat(const char* path, struct aria_file_stat* out) {
+    WIN32_FILE_ATTRIBUTE_DATA attrs;
+    if (!GetFileAttributesExA(path, GetFileExInfoStandard, &attrs)) {
+        return false;
+    }
+    
+    LARGE_INTEGER size;
+    size.LowPart = attrs.nFileSizeLow;
+    size.HighPart = attrs.nFileSizeHigh;
+    out->size = size.QuadPart;
+    
+    // Convert FILETIME to Unix timestamp
+    out->created_time = filetime_to_unix(&attrs.ftCreationTime);
+    out->modified_time = filetime_to_unix(&attrs.ftLastWriteTime);
+    
+    out->is_directory = (attrs.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    out->is_readonly = (attrs.dwFileAttributes & FILE_ATTRIBUTE_READONLY) != 0;
+    
+    return true;
+}
+```
+
+**2. Network I/O (Currently Missing Entirely):**
+
+```c
+// src/runtime/platform/network.h (NEW)
+
+typedef struct aria_socket {
+    void* platform_specific;
+} aria_socket_t;
+
+// TCP sockets
+aria_socket_t* aria_socket_tcp_create(void);
+bool aria_socket_connect(aria_socket_t* sock, const char* host, uint16_t port);
+bool aria_socket_bind(aria_socket_t* sock, const char* address, uint16_t port);
+bool aria_socket_listen(aria_socket_t* sock, int backlog);
+aria_socket_t* aria_socket_accept(aria_socket_t* sock);
+ssize_t aria_socket_send(aria_socket_t* sock, const void* data, size_t len);
+ssize_t aria_socket_recv(aria_socket_t* sock, void* buffer, size_t len);
+void aria_socket_close(aria_socket_t* sock);
+
+// UDP sockets
+aria_socket_t* aria_socket_udp_create(void);
+ssize_t aria_socket_sendto(aria_socket_t* sock, const void* data, size_t len,
+                            const char* host, uint16_t port);
+ssize_t aria_socket_recvfrom(aria_socket_t* sock, void* buffer, size_t len,
+                              char* from_host, uint16_t* from_port);
+
+// Socket options
+bool aria_socket_set_nonblocking(aria_socket_t* sock, bool nonblocking);
+bool aria_socket_set_timeout(aria_socket_t* sock, uint32_t ms);
+```
+
+Linux implementation:
+```c
+aria_socket_t* aria_socket_tcp_create(void) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return NULL;
+    
+    aria_socket_t* sock = malloc(sizeof(aria_socket_t));
+    sock->platform_specific = malloc(sizeof(int));
+    *(int*)sock->platform_specific = fd;
+    return sock;
+}
+
+bool aria_socket_connect(aria_socket_t* sock, const char* host, uint16_t port) {
+    int fd = *(int*)sock->platform_specific;
+    
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    inet_pton(AF_INET, host, &addr.sin_addr);
+    
+    return connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == 0;
+}
+```
+
+Windows implementation:
+```c
+aria_socket_t* aria_socket_tcp_create(void) {
+    WSADATA wsaData;
+    WSAStartup(MAKEWORD(2, 2), &wsaData);
+    
+    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (s == INVALID_SOCKET) return NULL;
+    
+    aria_socket_t* sock = malloc(sizeof(aria_socket_t));
+    sock->platform_specific = malloc(sizeof(SOCKET));
+    *(SOCKET*)sock->platform_specific = s;
+    return sock;
+}
+
+bool aria_socket_connect(aria_socket_t* sock, const char* host, uint16_t port) {
+    SOCKET s = *(SOCKET*)sock->platform_specific;
+    
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    inet_pton(AF_INET, host, &addr.sin_addr);
+    
+    return connect(s, (struct sockaddr*)&addr, sizeof(addr)) != SOCKET_ERROR;
+}
+```
+
+**3. Thread Primitives (Incomplete on Windows):**
+
+Existing but needs testing and completion:
+```c
+// src/runtime/platform/platform.h
+typedef struct aria_thread aria_thread_t;
+typedef struct aria_mutex aria_mutex_t;
+typedef struct aria_condvar aria_condvar_t;
+
+// Thread creation and management
+aria_thread_t* aria_thread_create(void (*func)(void*), void* arg);
+void aria_thread_join(aria_thread_t* thread);
+void aria_thread_detach(aria_thread_t* thread);
+
+// Mutex operations
+aria_mutex_t* aria_mutex_create(void);
+void aria_mutex_lock(aria_mutex_t* mutex);
+void aria_mutex_unlock(aria_mutex_t* mutex);
+bool aria_mutex_trylock(aria_mutex_t* mutex);
+void aria_mutex_destroy(aria_mutex_t* mutex);
+
+// Condition variables
+aria_condvar_t* aria_condvar_create(void);
+void aria_condvar_wait(aria_condvar_t* cv, aria_mutex_t* mutex);
+void aria_condvar_signal(aria_condvar_t* cv);
+void aria_condvar_broadcast(aria_condvar_t* cv);
+void aria_condvar_destroy(aria_condvar_t* cv);
+```
+
+These exist but Windows implementation needs completion and testing.
+
+DESIGN QUESTIONS:
+
+1. **Abstraction Level**: How abstract should the platform layer be?
+   - Low-level (1:1 mapping to OS APIs, minimal overhead)
+   - High-level (Rich abstractions, easier to use but slower)
+   - Hybrid (Low-level primitives + high-level convenience functions)
+
+2. **Error Handling**: How to report errors across platforms?
+   - Return codes (POSIX style)?
+   - Error structs with detailed info?
+   - Thread-local error state (errno-like)?
+
+3. **Async I/O**: Should platform layer support async operations?
+   - Linux: epoll, io_uring
+   - Windows: IOCP (I/O Completion Ports)
+   - macOS: kqueue
+   
+   Or just blocking I/O and let user-space async handle it?
+
+4. **Testing Strategy**: How to test on multiple platforms?
+   - CI/CD with Linux, Windows, macOS runners
+   - Cross-compilation for different targets
+   - Platform-specific test suites
+
+5. **Future Platforms**: Should we prepare for non-desktop platforms?
+   - Embedded systems (no file system, no networking)
+   - WebAssembly (WASI abstractions)
+   - Mobile (iOS, Android)
+
+IMPLEMENTATION DELIVERABLES REQUESTED:
+
+1. **Complete Platform API Specification**: Full interface for file I/O,
+   network I/O, threads, and other OS services.
+
+2. **Linux Implementation**: Complete all missing functions for Linux.
+
+3. **Windows Implementation**: Complete and test Windows-specific code.
+
+4. **macOS Implementation**: Create macOS-specific implementations.
+
+5. **Testing Suite**: Cross-platform tests that verify behavior on all OSes.
+
+6. **Documentation**: Guide for adding new platform abstractions and
+   supporting new operating systems.
+
+7. **Comparison with Other Runtimes**:
+   - libuv (Node.js): Cross-platform async I/O
+   - Boost.Asio: C++ networking library
+   - Rust std::os: Platform-specific modules
+   
+   What design patterns can we adopt?
+
+AFFECTED FILES:
+- src/runtime/platform/platform.h (expand interface)
+- src/runtime/platform/linux.c (complete implementation)
+- src/runtime/platform/windows.c (complete implementation)
+- src/runtime/platform/macos.c (NEW - macOS implementation)
+- src/runtime/platform/network.h (NEW - networking abstraction)
+- src/runtime/platform/network_linux.c (NEW)
+- src/runtime/platform/network_windows.c (NEW)
+- Build system (platform-specific compilation)
+
+================================================================================
+ISSUE 3: TRAIT/INTERFACE SYSTEM
+================================================================================
+
+STATUS: Not Started
+PRIORITY: Low
+COMPLEXITY: High
+IMPLEMENTATION IMPACT: Enables polymorphism and generic programming
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+Aria has structs but no way to define interfaces or traits. This limits
+polymorphism and code reuse. Users can't write functions that accept "anything
+with a draw() method" or "anything implementing Iterator".
+
+CURRENT WORKAROUND:
+
+Without traits, users must use composition or concrete types:
+
+```aria
+// Can't do this (no trait system):
+// trait:Drawable = {
+//     func:draw = void(self);
+// };
+
+// Must use concrete types:
+struct:Circle = {
+    flt32:radius,
+};
+
+struct:Rectangle = {
+    flt32:width,
+    flt32:height,
+};
+
+// Can't write generic draw function:
+// func:draw_all = void(Drawable[]@:shapes) { ... }
+
+// Must write separate functions:
+func:draw_circle = void(Circle:c) { ... };
+func:draw_rectangle = void(Rectangle:r) { ... };
+```
+
+DESIRED CAPABILITY:
+
+```aria
+// Define trait
+trait:Drawable = {
+    func:draw = void(self);
+    func:area = flt32(self);
+};
+
+// Implement trait for Circle
+impl:Drawable:for:Circle = {
+    func:draw = void(self) {
+        io.print("Circle with radius: ");
+        io.print(self.radius);
+    };
+    
+    func:area = flt32(self) {
+        pass(3.14159 * self.radius * self.radius);
+    };
+};
+
+// Implement trait for Rectangle
+impl:Drawable:for:Rectangle = {
+    func:draw = void(self) {
+        io.print("Rectangle ");
+        io.print(self.width);
+        io.print("x");
+        io.print(self.height);
+    };
+    
+    func:area = flt32(self) {
+        pass(self.width * self.height);
+    };
+};
+
+// Generic function using trait
+func:total_area = flt32(Drawable[]@:shapes) {
+    flt32:total = 0.0;
+    int32:i = 0;
+    while (i < shapes.length) {
+        total = total + shapes[i].area();
+        i = i + 1;
+    };
+    pass(total);
+};
+
+func:main = int32() {
+    Circle:c = Circle{ radius: 5.0 };
+    Rectangle:r = Rectangle{ width: 10.0, height: 20.0 };
+    
+    // Heterogeneous array of Drawable objects
+    Drawable[]@:shapes = [c, r];  // Boxed into trait objects
+    
+    flt32:area = total_area(shapes);
+    pass(0);
+};
+```
+
+IMPLEMENTATION APPROACHES:
+
+**Option 1: Static Dispatch (Rust-style monomorphization)**
+
+```aria
+// Each call to total_area is monomorphized:
+// total_area_Circle(Circle[]@)
+// total_area_Rectangle(Rectangle[]@)
+
+// No runtime overhead, but code size increase
+```
+
+Pros: Zero runtime cost, full optimization potential
+Cons: Code bloat, can't have heterogeneous collections
+
+**Option 2: Dynamic Dispatch (C++ virtual tables)**
+
+```
+Drawable trait object layout:
++-----------------+
+| vtable pointer  |  -> +---------------------+
++-----------------+     | draw function ptr   |
+| data pointer    |     | area function ptr   |
++-----------------+     +---------------------+
+
+// Single implementation of total_area, calls through vtable
+```
+
+Pros: Single compiled function, heterogeneous collections
+Cons: Runtime overhead, virtual call indirection
+
+**Option 3: Hybrid (Rust-style trait objects)**
+
+```
+// Static dispatch by default:
+func:draw<T: Drawable> = void(T:shape) {
+    shape.draw();  // Monomorphized, no overhead
+};
+
+// Dynamic dispatch when needed:
+func:total_area = flt32(dyn Drawable[]@:shapes) {
+    // shapes is array of trait objects (vtable + data)
+    // Runtime dispatch for area() calls
+};
+```
+
+Pros: Flexibility, pay-for-what-you-use
+Cons: Complex implementation, two code paths
+
+PROPOSED DESIGN (Rust-inspired):
+
+**1. Trait Definition Syntax:**
+```aria
+trait:TraitName = {
+    func:method1 = ReturnType(ParamType:param);
+    func:method2 = ReturnType(self, OtherType:param);
+    // Associated types (advanced):
+    type:Item;
+};
+```
+
+**2. Trait Implementation Syntax:**
+```aria
+impl:TraitName:for:StructName = {
+    func:method1 = ReturnType(ParamType:param) {
+        // Implementation
+    };
+    
+    func:method2 = ReturnType(self, OtherType:param) {
+        // Implementation
+    };
+};
+```
+
+**3. Generic Functions with Trait Bounds:**
+```aria
+func:process<T: Drawable> = void(T:item) {
+    item.draw();  // Statically dispatched
+};
+```
+
+**4. Trait Objects for Dynamic Dispatch:**
+```aria
+func:process_many = void(dyn Drawable[]@:items) {
+    int32:i = 0;
+    while (i < items.length) {
+        items[i].draw();  // Dynamically dispatched
+        i = i + 1;
+    };
+};
+```
+
+IMPLEMENTATION REQUIREMENTS:
+
+**1. Parser Changes:**
+```cpp
+// New AST nodes
+struct TraitDecl {
+    std::string name;
+    std::vector<FuncSignature> methods;
+    std::vector<TypeAlias> associated_types;
+};
+
+struct ImplDecl {
+    std::string trait_name;
+    std::string struct_name;
+    std::vector<std::unique_ptr<FuncDecl>> method_impls;
+};
+
+// Parse trait:Name = { ... }
+std::unique_ptr<TraitDecl> Parser::parseTraitDecl();
+
+// Parse impl:Trait:for:Struct = { ... }
+std::unique_ptr<ImplDecl> Parser::parseImplDecl();
+```
+
+**2. Type System Changes:**
+```cpp
+// Trait types
+struct TraitType : public Type {
+    TraitDecl* trait_decl;
+    bool is_dynamic;  // dyn Trait vs static Trait
+};
+
+// Generic types with trait bounds
+struct GenericType : public Type {
+    std::string type_param;
+    std::vector<TraitType*> bounds;
+};
+
+// Type checking: does StructType implement Trait?
+bool TypeChecker::implementsTrait(StructType* struct_type, TraitType* trait) {
+    // Look up impl declaration
+    ImplDecl* impl = findImpl(struct_type->name, trait->trait_name);
+    if (!impl) return false;
+    
+    // Verify all methods are implemented
+    for (const auto& method : trait->trait_decl->methods) {
+        if (!hasMethod(impl, method.name)) return false;
+    }
+    
+    return true;
+}
+```
+
+**3. Monomorphization for Static Dispatch:**
+```cpp
+// During codegen, instantiate generic functions for each concrete type
+void CodeGen::instantiateGeneric(FuncDecl* generic_func, Type* concrete_type) {
+    // Clone function with substituted type
+    FuncDecl* monomorphed = cloneFunction(generic_func);
+    substituteType(monomorphed, generic_func->type_param, concrete_type);
+    
+    // Generate LLVM IR for monomorphed version
+    visit(monomorphed);
+}
+```
+
+**4. Vtable Generation for Dynamic Dispatch:**
+```cpp
+// Generate vtable for trait implementation
+void CodeGen::generateVTable(ImplDecl* impl) {
+    // Create global vtable struct
+    std::vector<Constant*> vtable_entries;
+    
+    for (const auto& method : impl->method_impls) {
+        Function* llvm_func = ctx.module->getFunction(method->name);
+        vtable_entries.push_back(llvm_func);
+    }
+    
+    ArrayType* vtable_type = ArrayType::get(
+        Type::getInt8PtrTy(ctx.llvmContext),
+        vtable_entries.size()
+    );
+    
+    GlobalVariable* vtable = new GlobalVariable(
+        *ctx.module,
+        vtable_type,
+        true,  // isConstant
+        GlobalValue::LinkOnceODRLinkage,
+        ConstantArray::get(vtable_type, vtable_entries),
+        impl->trait_name + "_" + impl->struct_name + "_vtable"
+    );
+}
+
+// Generate trait object (fat pointer: vtable + data)
+Value* CodeGen::createTraitObject(Value* struct_val, TraitType* trait) {
+    // Allocate trait object: { vtable*, data* }
+    StructType* trait_obj_type = StructType::get(
+        ctx.llvmContext,
+        {Type::getInt8PtrTy(ctx.llvmContext),  // vtable
+         Type::getInt8PtrTy(ctx.llvmContext)}  // data
+    );
+    
+    Value* trait_obj = ctx.builder->CreateAlloca(trait_obj_type);
+    
+    // Get vtable for this struct+trait combination
+    GlobalVariable* vtable = getVTable(struct_val->getType(), trait);
+    Value* vtable_ptr = ctx.builder->CreateBitCast(vtable, Type::getInt8PtrTy(ctx.llvmContext));
+    
+    // Store vtable pointer
+    Value* vtable_field = ctx.builder->CreateStructGEP(trait_obj_type, trait_obj, 0);
+    ctx.builder->CreateStore(vtable_ptr, vtable_field);
+    
+    // Store data pointer
+    Value* data_ptr = ctx.builder->CreateBitCast(struct_val, Type::getInt8PtrTy(ctx.llvmContext));
+    Value* data_field = ctx.builder->CreateStructGEP(trait_obj_type, trait_obj, 1);
+    ctx.builder->CreateStore(data_ptr, data_field);
+    
+    return trait_obj;
+}
+```
+
+DESIGN QUESTIONS:
+
+1. **Default vs Required Methods**: Should traits allow default implementations?
+   ```aria
+   trait:Iterator = {
+       type:Item;
+       func:next = Item?(self);  // Required
+       
+       // Default method using next():
+       func:count = int32(self) {
+           int32:n = 0;
+           while (self.next() != null) {
+               n = n + 1;
+           };
+           pass(n);
+       };
+   };
+   ```
+
+2. **Multiple Trait Bounds**: How to specify multiple traits?
+   ```aria
+   func:process<T: Drawable + Serializable> = void(T:item) { ... };
+   ```
+
+3. **Supertraits**: Should traits be able to extend other traits?
+   ```aria
+   trait:Shape = {
+       func:area = flt32(self);
+   };
+   
+   trait:ColoredShape: Shape = {  // Supertrait
+       func:color = Color(self);
+   };
+   ```
+
+4. **Orphan Rules**: Can you implement external traits for external types?
+   - Coherence: Prevent conflicting implementations
+   - Flexibility: Allow extending external types
+   
+   Rust rule: Can implement if trait OR type is local
+
+5. **Associated Types vs Generic Parameters**: When to use each?
+   ```aria
+   // Associated type (output determined by implementor)
+   trait:Iterator = {
+       type:Item;
+       func:next = Item?(self);
+   };
+   
+   // Generic parameter (caller specifies type)
+   trait:Container<T> = {
+       func:get = T?(self, int32:index);
+   };
+   ```
+
+6. **Object Safety**: Which traits can be used as trait objects?
+   - Disallow methods that return Self
+   - Disallow generic methods
+   - Disallow associated types (or box them)
+
+7. **Performance**: Vtable call overhead
+   - Inline caching for hot paths?
+   - Devirtualization optimization?
+   - Measure and optimize critical trait methods?
+
+IMPLEMENTATION DELIVERABLES REQUESTED:
+
+1. **Complete Design Document**: Full specification of trait system
+   - Syntax for traits, impls, generics
+   - Semantics and type rules
+   - Coherence and orphan rules
+
+2. **Parser Implementation**: Code for parsing trait and impl declarations.
+
+3. **Type Checker Implementation**: Trait bound checking, method resolution.
+
+4. **Monomorphization Algorithm**: Instantiate generic functions for concrete types.
+
+5. **Vtable Generation**: Create vtables for dynamic dispatch.
+
+6. **Testing Strategy**: Tests for:
+   - Static dispatch (generics)
+   - Dynamic dispatch (trait objects)
+   - Edge cases (empty traits, cyclic dependencies)
+
+7. **Performance Analysis**: Benchmark static vs dynamic dispatch, vtable overhead.
+
+8. **Comparison with Other Languages**:
+   - Rust: Traits, monomorphization, trait objects
+   - Haskell: Type classes
+   - Swift: Protocols
+   - Go: Interfaces (implicit implementation)
+   
+   What design choices should we make?
+
+AFFECTED FILES:
+- src/frontend/parser_trait.cpp (NEW - parse trait/impl)
+- src/frontend/ast/trait.h (NEW - TraitDecl, ImplDecl AST nodes)
+- src/frontend/sema/trait_checker.cpp (NEW - trait implementation checking)
+- src/backend/monomorphize.cpp (NEW - generic instantiation)
+- src/backend/vtable_gen.cpp (NEW - vtable generation)
+- src/backend/codegen.cpp (trait object creation, dynamic dispatch)
+
+================================================================================
+DELIVERABLES SUMMARY
+================================================================================
+
+For each of the three issues, please provide:
+
+1. **Implementation Plan**: Detailed step-by-step guide with code examples.
+
+2. **Design Document**: Architecture decisions, tradeoffs, alternatives.
+
+3. **Testing Strategy**: How to test correctness and performance.
+
+4. **Documentation**: User guide and developer reference.
+
+5. **Comparison Analysis**: How other compilers/languages solve these problems.
+
+================================================================================
+RESEARCH GUIDELINES
+================================================================================
+
+FOCUS AREAS:
+- Practical implementation approaches
+- Performance implications and tradeoffs
+- Integration with existing codebase
+- Future extensibility
+
+CONSTRAINTS:
+- LLVM 18 compatibility
+- Aria language design philosophy
+- Reasonable compile-time overhead
+- Maintainability
+
+OUTPUT FORMAT:
+- Markdown with clear sections
+- Code examples (C++, Aria, LLVM IR)
+- Diagrams for complex systems
+- Performance data where available
+
+================================================================================
+END OF WORK PACKAGE #005
+================================================================================
+
+Generated: December 7, 2025
+Compiler: Aria v0.0.7
+Target: LLVM 18
+
+These three low-priority issues enhance optimization quality (TBB), improve
+cross-platform support (platform abstraction), and enable advanced programming
+patterns (traits/interfaces).

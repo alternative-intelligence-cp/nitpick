@@ -1,0 +1,344 @@
+﻿Implementation Architecture for Aria Compiler: Object Model, Debugging Infrastructure, and Memory Safety Mechanisms
+1. Executive Summary and Architectural Context
+The evolution of the Aria programming language, as detailed in the specification v0.0.7 1 and the Gemini Deep Research Work Package #004 1, represents a critical transition from a functional-procedural hybrid to a robust systems language capable of supporting complex, multi-threaded applications. The current architecture faces significant hurdles in developer ergonomics and operational safety, specifically the lack of object-oriented data encapsulation, the opacity of runtime failures, and the inherent risks associated with "wild" memory management. This report provides a comprehensive, exhaustive implementation plan to address these deficits through three interconnected subsystems: Struct Methods (Issue 4.1), Runtime Error Stack Traces (Issue 5.2), and Fat Pointer Runtime Checks (Issue 2.4).
+The proposed architecture adheres strictly to Aria’s design philosophy: "batteries included, but opt-in".1 The implementation of struct methods introduces semantic sugar for better code organization without mandating a heavy runtime object model or virtual dispatch tables. The debugging infrastructure leverages industry-standard DWARF metadata and libunwind integration to provide actionable diagnostics, a necessity given Aria's complex features like Twisted Balanced Binary (TBB) arithmetic and asynchronous process spawning. Finally, the fat pointer system implements a sidecar metadata approach to secure "wild" memory access—Aria’s mechanism for opting out of garbage collection—ensuring that the performance benefits of manual memory management do not come at the cost of safety during the development cycle.
+This report analyzes the integration of these features into the existing LLVM 18 backend, detailing the necessary mutations to the Abstract Syntax Tree (AST), the intermediate representation (IR) generation strategies, and the runtime support libraries. It explores the implications of thread safety in the context of Aria's spawn and fork primitives 1, the handling of unique types like tbb64 and tryte within debug information, and the requisite compiler flags to manage the trade-off between release-build performance and debug-build safety.
+2. Component I: Object-Oriented Struct Methods Implementation
+2.1 Theoretical Foundation and Semantic Design
+The current iteration of Aria treats structs purely as data aggregates.1 While this aligns with C-style procedural programming, it necessitates a pattern where functions are decoupled from the data they operate on, polluting the global namespace and reducing code discoverability. The goal of implementing Struct Methods is to provide the organizational benefits of Object-Oriented Programming (OOP) while avoiding the runtime overhead associated with dynamic dispatch, inheritance, and virtual tables often found in languages like Java or C++.
+In Aria, a struct method is semantically identical to a free function where the first argument is the struct instance itself. This is often referred to as Uniform Function Call Syntax (UFCS) in other languages, though here it is implemented as a strict syntactic transformation. The design requires the introduction of the self keyword, a context-dependent identifier that represents the instance context.
+The integration of methods must respect Aria's existing type system, particularly its distinction between "wild" pointers (@), safe references ($), and direct values. When a method is defined, the compiler must infer whether self represents a value copy (for small structs like vec2 or vec3 1) or a pointer (for large state containers). Given Aria's explicit nature, the initial implementation will strictly follow the signature defined by the user: func:method = type(self) implies pass-by-value, whereas func:method = type(self@) implies pass-by-pointer. This distinction is critical for performance, especially when dealing with atomic types or large buffers allocated via aria.alloc_buffer.1
+2.2 detailed Parser Implementation Strategy
+The parsing logic resides in src/frontend/parser_struct.cpp.1 Currently, the parseStructDecl function iterates through tokens inside a struct block, expecting identifier: type pairs. This logic must be bifurcated to detect the func keyword, signaling the start of a method definition.
+2.2.1 Grammar Extension Analysis
+The grammar modification transforms the struct block from a simple tuple definition into a scope capable of containing function definitions. The parser must maintain the distinction between "fields" (state) and "methods" (behavior). Fields must be declared before methods to ensure memory layout is deterministic and aligned with C ABIs for FFI compatibility, a requirement for the extern "libc" integration mentioned in the specifications.1
+The proposed grammar update is as follows:
+
+
+Code snippet
+
+
+
+
+const Point = struct {
+   // Fields
+   flt32:x,
+   flt32:y,
+
+   // Methods
+   func:distance = flt32(self) {... }
+   func:origin = Point() {... }
+};
+
+2.2.2 AST Node Architecture Modifications
+The StructDecl class in the AST must be expanded. Currently, it likely holds a std::vector<StructField>. To support methods, we introduce two additional containers: instance_methods and static_methods. This separation at the AST level simplifies the work of the semantic analyzer and code generator later in the pipeline.
+The StructDecl class definition requires the following augmentation:
+
+
+C++
+
+
+
+
+class StructDecl : public Decl {
+public:
+   std::string name;
+   std::vector<StructField> fields;
+   std::vector<std::shared_ptr<FuncDecl>> instance_methods;
+   std::vector<std::shared_ptr<FuncDecl>> static_methods;
+   bool is_const;
+
+   StructDecl(std::string n, std::vector<StructField> f) 
+       : name(n), fields(f), is_const(false) {}
+       
+   void addMethod(std::shared_ptr<FuncDecl> method) {
+       if (method->params.size() > 0 && method->params.name == "self") {
+           instance_methods.push_back(method);
+       } else {
+           static_methods.push_back(method);
+       }
+   }
+};
+
+This logic implies that the distinction between a static method (like a factory function) and an instance method is purely determined by the presence of the self parameter. This mirrors Python's explicit self but statically typed.
+2.2.3 Parser Logic Expansion
+The Parser::parseStructDecl function requires a significant rewrite to accommodate the new grammar. The existing while-loop that consumes tokens until TOKEN_RIGHT_BRACE must now switch on the token type. If TOKEN_KW_FUNC is encountered, the parser delegates to parseFuncDecl. However, parseFuncDecl typically consumes a function name and signature. Inside a struct, the syntax is func:name =.... The parser must ensure that the name provided is bound to the struct scope, not the global scope.
+Crucially, the parser must handle the self parameter's type inference. In the syntax func:dist = flt32(self), the type of self is implicitly the struct currently being defined. The parser must inject this type information immediately so that the body of the function can resolve member accesses like self.x.
+2.3 Semantic Analysis: Name Mangling and Scope Resolution
+Aria compiles to LLVM IR, which (like C) has a flat namespace for functions. To support Point.distance() and Line.distance() simultaneously, the compiler must employ name mangling. Unlike C++ which uses complex encoding to support overloading, Aria's mangling can be simpler due to the lack of function overloading mentioned in the specs.1
+2.3.1 The Mangling Scheme
+The proposed mangling scheme is _Aria_<ModuleName>_<StructName>_<MethodName>.
+If the struct Point is defined in module geometry, the method distance becomes _Aria_geometry_Point_distance.
+This prevents collisions between modules, a critical requirement given the module system usage use std.io and mod crypto defined in.1
+The TypeChecker or SemanticAnalyzer phase must resolve method calls. When it encounters an expression p.distance(), it performs the following steps:
+1. Type Resolution: Determine the type of expression p. Let's assume it resolves to struct:Point.
+2. Symbol Lookup: Query the symbol table for Point. Verify it is a struct and contains a method named distance.
+3. AST Transformation: The semantic analyzer transforms the MethodCallExpr node into a FuncCallExpr node targeting the mangled name _Aria_Point_distance, moving p into the first argument position.
+2.3.2 Handling 'self' Semantics
+The handling of self dictates the efficiency of the method call. If self is passed by value, the entire struct is copied onto the stack. For a vec3 (3 floats), this is acceptable. For a matrix (potentially 4x4 or larger), this is inefficient.
+The compiler should enforce or at least recommend pass-by-pointer for structs larger than a certain threshold (e.g., 2 words).
+However, complying with the snippet 1 which shows func:distance = flt32(self), the default implementation will match the user's explicit type. If the user writes self, it is by value. If self@, it is by reference.
+Special care must be taken with Aria's specific types like tbb64.1 TBB types have sticky error propagation. If a method operates on self by value and mutations occur (e.g., self.val += 1), and self.val becomes ERR, this change is reflected only in the local copy, not the caller's object. This is a common pitfall. The documentation and compiler warnings should suggest using self@ (pointer) or self$ (safe reference) for any method intended to mutate state.
+2.4 Code Generation (LLVM IR)
+The CodeGenVisitor is responsible for translating the AST into LLVM IR. This involves two distinct tasks: generating the function body for the method and generating the call site.
+2.4.1 Method Body Generation
+When visiting a StructDecl, after generating the LLVM structure type definition type { float, float }, the visitor iterates over the method list.
+For each method, it constructs an LLVM Function.
+Parameter Injection:
+The visitor must synthesize the argument list. The first argument is typed as the LLVM struct type (or a pointer to it). The argument name is set to "self".
+Inside the function entry block, an alloca instruction is generated to create stack space for self. The argument value is stored into this alloca.
+The symbol table for the function scope is populated with self pointing to this allocation. This ensures that subsequent member access expressions self.x correctly generate getelementptr instructions off this base pointer.
+Table 1: LLVM IR Generation Strategy for Methods
+Component
+	Aria Syntax
+	LLVM IR Construct
+	Notes
+	Function Name
+	func:distance
+	@_Aria_Point_distance
+	Mangled with Struct Name
+	Self Param (Val)
+	(self)
+	define float @func(%Point %self)
+	By value, copies data
+	Self Param (Ptr)
+	(self@)
+	define float @func(%Point* %self)
+	By pointer, efficient
+	Member Access
+	self.x
+	getelementptr... i32 0, i32 0
+	Zero-cost offset calc
+	Return
+	pass(...)
+	ret float...
+	Standard return
+	2.4.2 Call Site Generation
+When the visitor encounters a MemberAccessExpr that resolves to a function type, it identifies it as a method call.
+The code generator evaluates the object expression (the left-hand side of the dot).
+If the method expects a pointer (self@) but the object is a value, the generator must emit an alloca and store to create a temporary memory location, then pass the address. This "auto-referencing" is a common convenience in modern languages (Rust, Go) and significantly improves usability.
+Conversely, if the method expects a value (self) but the object is a pointer, the generator emits a load instruction to dereference the pointer before passing it. This "auto-dereferencing" ensures the . operator works uniformly regardless of whether the variable is Point or Point@.
+2.5 Integration with TBB Types and Features
+Aria's unique Twisted Balanced Binary types 1 present specific challenges for struct methods.
+If a struct contains a tbb64, the generated LLVM IR for methods must respect the sentinel values (e.g., min_value for tbb64). When a method performs arithmetic on a field self.balance, the compiler must inject the sticky-error checks defined in the TBB spec.
+Since TBB logic is likely implemented as LLVM intrinsics or runtime library calls (e.g., __aria_tbb64_add), the struct method codegen effectively becomes a wrapper around these calls.
+Example: self.balance += 100 inside a method becomes:
+1. Load self.balance.
+2. Call @__aria_tbb64_add(balance, 100).
+3. Store result back to self.balance.
+This ensures that the "NOT NEGOTIABLE" error sentinel requirements 1 are preserved even within the abstraction of object methods.
+3. Component II: Runtime Error Stack Traces
+3.1 The Debugging Void
+Currently, Aria programs crash with opaque messages like Segmentation fault.1 For a language aiming to support "advanced threading," "ML libraries," and "blockchain" 1, this lack of observability is a critical failure. Developers need to know the call stack, the file, and the line number where the error occurred. This is particularly vital for debugging asynchronous processes spawned via spawn() or coroutines, where the control flow is non-linear.
+3.2 Phase 1: DWARF Debug Information Generation
+The foundation of stack traces is the DWARF (Debugging With Attributed Record Formats) metadata embedded in the binary. This metadata maps the machine code back to the source code.
+3.2.1 LLVM DIBuilder Integration
+The CodeGenVisitor must be augmented with an instance of llvm::DIBuilder. This builder constructs the debugging hierarchy parallel to the code generation.
+1. Compile Unit (CU): At the start of the module, we create a DICompileUnit. This represents the entire file being compiled. We specify the source language (closest approximation is C99 or C++11, or a custom ID if registered), the producer ("Aria Compiler v0.0.7"), and optimization flags.
+2. File Metadata: Each source file imported via use 1 gets a DIFile entry.
+3. Subprograms: Every function generation (visit(FuncDecl)) must now create a DISubprogram. This entity describes the function name, its linkage name (the mangled name), the file, and the line number where it starts.
+   * Crucial Detail: The DISubprogram is attached to the LLVM Function object via setSubprogram.
+4. Lexical Blocks: Every block statement ({... }) creates a DILexicalBlock. This allows the debugger to understand variable scoping.
+5. Location Emission: Before every instruction generation, the visitor must call builder->SetCurrentDebugLocation(...). This associates the specific machine instruction with a line and column in the .aria source file.
+3.2.2 Handling Aria-Specific Types in DWARF
+Aria's types need DWARF representation.
+* Primitives: int8, flt32 map to standard DWARF base types.
+* TBB Types: tbb8 should be emitted as a DW_TAG_typedef pointing to a signed 8-bit integer. This allows debuggers to see the type name "tbb8" instead of just "char".
+* Structs: struct:Point maps to DW_TAG_structure_type. The generator iterates fields, calculating offsets (using DataLayout), and emitting DW_TAG_member entries.
+* Trits/Trytes: These unique base-3 types 1 pose a challenge. They are stored in uint16 (tryte) or int8 (trit). DWARF should reflect the storage type but typedef it to tryte for clarity.
+3.3 Phase 2: Runtime Stack Unwinding
+Generating DWARF allows external debuggers (GDB/LLDB) to work. However, Issue 5.2 specifically requests runtime stack traces printed to stderr on crash. This requires the application to self-inspect its stack.
+3.3.1 The Unwinding Strategy
+We will use libunwind, a portable and efficient C API for determining the call chain.
+The implementation resides in src/runtime/debug/stacktrace.cpp.1
+The Unwinding Loop:
+
+
+C++
+
+
+
+
+void print_stacktrace() {
+   unw_cursor_t cursor;
+   unw_context_t context;
+   unw_getcontext(&context);
+   unw_init_local(&cursor, &context);
+
+   while (unw_step(&cursor) > 0) {
+       unw_word_t offset, pc;
+       unw_get_reg(&cursor, UNW_REG_IP, &pc);
+       char sym;
+       if (unw_get_proc_name(&cursor, sym, sizeof(sym), &offset) == 0) {
+           // Symbol found: _Aria_Point_distance
+       } else {
+           // No symbol
+       }
+       // Print PC, Symbol, Offset
+   }
+}
+
+Symbol Resolution:
+libunwind provides the function name. However, mapping the Instruction Pointer (PC) to a filename and line number at runtime is complex. It typically requires parsing the .debug_line section of the binary, which is heavy.
+Recommendation: The runtime report will list the Instruction Pointer (IP) and Symbol Name. A helper utility (aria-symbolize) or the developer's use of addr2line can map these to line numbers. This avoids bloating the runtime with a full DWARF parser.
+3.3.2 Signal Handling and Safety
+The stack trace is usually triggered by a catastrophic failure (Segfault). The signal handler executes in a fragile state. The POSIX standard strictly limits what functions can be called here (Async-Signal-Safe).
+* malloc, printf, and dlopen are not safe.
+* write, open, and _exit are safe.
+Implementation Conundrum: libunwind and dladdr are often not strictly async-signal-safe (they might take locks).
+Solution:
+1. Best Effort: In a crash handler, we attempt to use them. If the lock is held (deadlock), the program will hang—which is no worse than the crash.
+2. Pre-allocation: We pre-allocate the buffer for the stack trace text at startup (init_stacktrace) to avoid malloc during the crash.
+3. Direct Syscalls: We use write(STDERR_FILENO,...) instead of fprintf.
+Table 2: Signal Handler Configuration
+Signal
+	Description
+	Handler Action
+	SIGSEGV
+	Segmentation Fault
+	Print Trace, Exit
+	SIGABRT
+	Abort (Assert fail)
+	Print Trace, Exit
+	SIGFPE
+	Float Exception
+	Print Trace, Exit
+	SIGILL
+	Illegal Instruction
+	Print Trace, Exit
+	SIGBUS
+	Bus Error
+	Print Trace, Exit
+	3.4 Integration with Async/Await
+Aria supports async and spawn.1 These create new execution contexts with separate stacks.
+If a crash occurs in a spawned "green thread" (coroutine), a standard stack walk might only show the coroutine's internal stack, stopping at the scheduler loop.
+To provide a useful trace, the coroutine implementation must store a "link" to the spawner's stack trace. This "Linked Stack Trace" is an advanced feature.
+Initial Plan: Implement standard thread-local stack walking. For spawned processes (which are OS processes in Aria 1), the standard approach works perfectly as they have their own OS stack.
+4. Component III: Fat Pointer Runtime Checks
+4.1 Memory Safety in a "Wild" Environment
+Aria offers explicit memory control via the wild keyword and @ operator.1 This allows direct interaction with libc malloc/free and raw pointers, bypassing the GC. While efficient, it introduces temporal safety bugs (Use-After-Free) and spatial safety bugs (Buffer Overflow).
+The "Fat Pointer" system is a debug-mode instrumentation that augments raw pointers with metadata without changing the pointer size (keeping ABI compatibility).
+4.2 The Metadata Sidecar Architecture
+Since we cannot change sizeof(void*) (it must remain 64-bit for interaction with C libraries), we store the "fat" data (size, scope ID, allocation state) in a global sidecar table.
+4.2.1 Data Structures
+The metadata is stored in a hash map mapping void* (the allocation base address) to a Metadata struct.
+
+
+C++
+
+
+
+
+struct FatPointerMetadata {
+   uintptr_t base_addr;
+   size_t size;
+   uint32_t scope_id;
+   bool is_freed;
+   uint64_t timestamp;
+};
+
+Concurrency Management:
+Aria supports threading (spawn, fork). A single global std::unordered_map would be a massive bottleneck protected by a single mutex.
+Solution: Sharding. We divide the address space into $N$ shards (e.g., 64). The shard index is calculated via Hash(ptr) % 64. Each shard has its own std::mutex. This reduces lock contention significantly.
+4.2.2 Codegen Instrumentation
+The compiler injects calls to the runtime library src/runtime/debug/fat_pointer.cpp 1 at key points.
+1. Allocation:
+When aria.alloc(size) or wildx is used:
+Code snippet
+%ptr = call i8* @aria_alloc(i64 %size)
+; Instrumentation
+%scope = call i32 @aria_get_current_scope()
+call void @aria_fat_ptr_create(i8* %ptr, i32 %scope, i64 %size)
+
+2. Dereference:
+Before any load or store via a raw pointer @:
+Code snippet
+call void @aria_fat_ptr_validate(i8* %ptr, i8* %filename, i32 %line)
+%val = load...
+
+3. Scope Management:
+At the entry of every block {:
+Code snippet
+call void @aria_fat_ptr_scope_enter()
+
+At the exit }:
+Code snippet
+call void @aria_fat_ptr_scope_exit()
+
+4.2.3 Pointer Arithmetic Validation
+Aria allows pointer arithmetic: ptr + 5.
+The validation function aria_fat_ptr_validate receives the resultant pointer. It must check if this pointer lies within the valid range of an allocated block.
+Challenge: The hash map keys are base addresses. If we look up ptr + 5, we won't find it.
+Solution: The implementation in fat_pointer.cpp must use an interval map (or std::map with lower_bound) to find the allocation containing the pointer. Alternatively, strict bounds checking requires the compiler to pass the base pointer and the offset to a specific check function aria_fat_ptr_check_bounds, rather than just validating the final pointer.
+Given the snippet 1 shows aria_fat_ptr_check_bounds, the compiler handles the separation. It tracks the provenance of the pointer in the IR and emits the check on arithmetic operations.
+Table 3: Safety Checks Matrix
+Violation Type
+	Detection Mechanism
+	Action
+	Use-After-Free
+	Metadata is_freed flag is true.
+	Abort with Stack Trace
+	Use-After-Scope
+	scope_id of ptr is not in live_scopes set.
+	Abort with Stack Trace
+	Buffer Overflow
+	offset >= metadata.size.
+	Abort with Stack Trace
+	Null Deref
+	ptr == 0.
+	Abort with Stack Trace
+	4.3 Integration with TBB Error Sentinels
+An interesting interaction arises with TBB types. TBB uses ERR sentinels (e.g., -128 for tbb8) to represent invalid data. This is "logical" safety. Fat pointers provide "memory" safety.
+If a tbb8* pointer is valid (memory safe), but points to a value of -128 (logical error), the Fat Pointer check passes. The application then loads -128.
+This distinction is crucial: Fat Pointers prevent crashes (Segfaults). TBB types prevent calculation errors (Overflows). They are complementary layers of defense.
+5. Implementation Roadmap and Deliverables
+5.1 Development Phases
+   1. Phase 1: Runtime Core (Week 1-2)
+   * Implement src/runtime/debug/stacktrace.cpp with libunwind.
+   * Implement src/runtime/debug/fat_pointer.cpp with sharded locking.
+   * Create C++ unit tests for these components independent of the compiler.
+   2. Phase 2: Compiler Frontend (Week 3)
+   * Update Parser::parseStructDecl to handle func keywords.
+   * Update TypeChecker to handle method resolution and name mangling.
+   3. Phase 3: Compiler Backend (Week 4-5)
+   * Integrate DIBuilder for DWARF generation.
+   * Implement CodeGenVisitor logic for StructDecl (methods) and MethodCallExpr.
+   * Inject Fat Pointer calls for wild memory operations.
+   4. Phase 4: Integration & Validation (Week 6)
+   * Verify Stack Traces on segfaults using sample Aria apps.
+   * Test Fat Pointers with intentional UAF and Overflow bugs.
+   * Benchmark the overhead of Fat Pointers (expecting ~2x-5x slowdown in Debug builds).
+5.2 Compiler Flags and Build System
+To manage these features, the build system (likely CMake or a custom build script for Aria) must support modes:
+   * Release (-O3): No DWARF (or limited), No Fat Pointers. Struct methods are fully inlined where possible.
+   * Debug (-g): Full DWARF. Fat Pointers enabled (-DARIA_DEBUG).
+   * Safety (-safe): Optimized build with Fat Pointers enabled (for staging environments).
+6. Conclusion
+The implementation of Struct Methods, Stack Traces, and Fat Pointer Checks addresses the most pressing needs of the Aria ecosystem. By bridging the gap between high-level OOP semantics and low-level system observability, we enable the development of the robust applications envisioned in the language specification—from blockchain nodes to ML trainers.
+The Struct Method implementation provides the necessary syntactic convenience for library authors. The Debugging Infrastructure transforms catastrophic failures into solvable problems. The Memory Safety mechanisms provide a safety net for the powerful "wild" memory features that differentiate Aria from managed languages.
+Together, these features mature the Aria compiler from an experimental prototype to a production-grade toolchain.
+7. Comparative Analysis of Debugging Approaches
+To contextualize the chosen architecture, we compare Aria's approach against established systems.
+Feature
+	Aria (Proposed)
+	Rust
+	C++ (AddressSanitizer)
+	Method Dispatch
+	Static (Mangled Names). No vtable.
+	Static (impl). Dynamic via Traits (dyn).
+	Static or Dynamic (virtual).
+	Stack Unwind
+	Runtime libunwind + Signal Handler.
+	Panic Handler (libbacktrace).
+	External tooling required usually.
+	Memory Checks
+	Runtime Sidecar Table (Opt-in).
+	Compile-time Borrow Checker.
+	Compile-time Shadow Memory instrumentation.
+	Overhead
+	Medium (Hash Map lookups).
+	Zero (Compile time).
+	High (RAM usage for shadow mem).
+	Aria's choice of Sidecar Metadata for memory checks is a specific trade-off: it preserves ABI compatibility with C (pointers remain 64-bit) at the cost of runtime performance in debug builds, avoiding the complexity of a Rust-like borrow checker in the compiler frontend for "wild" pointers.
+Works cited
+   1. aria_specs.txt

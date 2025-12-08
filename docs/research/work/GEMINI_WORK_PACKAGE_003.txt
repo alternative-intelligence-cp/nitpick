@@ -1,0 +1,1056 @@
+================================================================================
+GEMINI DEEP RESEARCH WORK PACKAGE #003
+Aria Compiler - Runtime Systems and Optimizations
+Generated: December 7, 2025
+================================================================================
+
+OBJECTIVE:
+Research and provide detailed implementation plans for three critical runtime
+and optimization features. These issues involve connecting existing infrastructure,
+implementing performance optimizations, and completing safety systems.
+
+SELECTED ISSUES:
+1. Async/Await Scheduler Integration (ISSUE 2.1 from knownProblems.txt)
+2. SIMD Vector Operations (ISSUE 2.3 from knownProblems.txt)  
+3. GC Nursery Allocator Connection (ISSUE 3.1 from knownProblems.txt)
+
+PRIORITY RATIONALE:
+- Issue 2.1 (Async/Await): High priority, blocks concurrent programming
+- Issue 2.3 (SIMD): Medium priority, significant performance impact
+- Issue 3.1 (GC Nursery): Medium priority, GC performance and correctness
+
+These issues are "implementation complete but disconnected" - the hard work
+is done, they just need to be wired together properly.
+
+================================================================================
+ISSUE 1: ASYNC/AWAIT SCHEDULER INTEGRATION
+================================================================================
+
+STATUS: Implemented but Disconnected
+PRIORITY: High
+COMPLEXITY: Medium
+IMPLEMENTATION IMPACT: Blocks all asynchronous and concurrent programming
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+AwaitExpr generates correct LLVM coroutine suspension using llvm.coro.* 
+intrinsics, and a work-stealing scheduler exists in the runtime library.
+However, they're not connected - coroutines suspend but never resume because
+the scheduler is never notified about suspended coroutines.
+
+CURRENT STATE - CODEGEN (Coroutine Suspension):
+
+From src/backend/codegen.cpp lines 3785-3880 (visit AwaitExpr):
+```cpp
+// Step 1: Evaluate awaited expression
+Value* awaitedValue = visitExpr(node->expression.get());
+
+// Step 2: Save coroutine state
+Function* coroSave = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_save);
+Function* coroFrame = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_frame);
+Value* framePtr = ctx.builder->CreateCall(coroFrame, {}, "coro_frame");
+Value* saveToken = ctx.builder->CreateCall(coroSave, {framePtr}, "save_point");
+
+// Step 3: Suspend coroutine execution
+Function* coroSuspend = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_suspend);
+Value* suspendResult = ctx.builder->CreateCall(coroSuspend, {
+    saveToken,
+    ConstantInt::getFalse(ctx.llvmContext)  // final = false
+}, "suspend_result");
+
+// Step 4: Create state machine basic blocks
+BasicBlock* suspendBB = BasicBlock::Create(ctx.llvmContext, "await_suspend", ctx.currentFunction);
+BasicBlock* resumeBB = BasicBlock::Create(ctx.llvmContext, "await_resume", ctx.currentFunction);
+BasicBlock* cleanupBB = BasicBlock::Create(ctx.llvmContext, "await_cleanup", ctx.currentFunction);
+
+// Switch on suspend result
+SwitchInst* suspendSwitch = ctx.builder->CreateSwitch(suspendResult, suspendBB, 2);
+suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), resumeBB);
+suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), cleanupBB);
+
+// SUSPEND PATH: Return to caller
+ctx.builder->SetInsertPoint(suspendBB);
+ctx.builder->CreateRet(framePtr);  // Return coroutine handle
+
+// RESUME PATH: Continue after await
+ctx.builder->SetInsertPoint(resumeBB);
+// Awaited value is now available
+// Continue execution...
+
+// CLEANUP PATH: Coroutine destroyed
+ctx.builder->SetInsertPoint(cleanupBB);
+// Cleanup resources...
+```
+
+The coroutine suspension is correctly implemented with proper state machine
+generation. The framePtr is returned, which represents the coroutine handle.
+
+CURRENT STATE - RUNTIME (Scheduler):
+
+From src/runtime/concurrency/scheduler.cpp lines 1-154:
+```cpp
+// Global scheduler instance
+static Scheduler* global_scheduler = nullptr;
+
+// Initialize scheduler with N worker threads
+extern "C" void aria_scheduler_init(int num_threads) {
+    if (global_scheduler) return;
+    
+    if (num_threads <= 0) {
+        num_threads = std::thread::hardware_concurrency();
+        if (num_threads == 0) num_threads = 4;
+    }
+    
+    global_scheduler = new Scheduler();
+    global_scheduler->workers.reserve(num_threads);
+    global_scheduler->queues.reserve(num_threads);
+    
+    // Create worker queues
+    for (int i = 0; i < num_threads; ++i) {
+        Worker* worker = new Worker();
+        worker->id = i;
+        global_scheduler->queues.push_back(worker);
+    }
+    
+    // Start worker threads
+    for (int i = 0; i < num_threads; ++i) {
+        global_scheduler->workers.emplace_back([i]() {
+            global_scheduler->queues[i]->run();
+        });
+    }
+}
+
+// Schedule a task (coroutine frame)
+extern "C" void aria_scheduler_schedule(CoroutineFrame* frame) {
+    if (!global_scheduler) {
+        aria_scheduler_init(std::thread::hardware_concurrency());
+    }
+    
+    Task* task = new Task();
+    task->frame = frame;
+    task->has_wild_affinity = false;
+    
+    // Round-robin to workers
+    static int next_worker = 0;
+    int worker_id = next_worker++ % global_scheduler->queues.size();
+    
+    Worker* worker = global_scheduler->queues[worker_id];
+    {
+        std::lock_guard<std::mutex> lock(worker->queue_lock);
+        worker->local_queue.push_back(task);
+    }
+}
+
+// Worker execution loop
+void Worker::run() {
+    while (true) {
+        Task* task = nullptr;
+        
+        // 1. Try local queue (LIFO for cache locality)
+        {
+            std::lock_guard<std::mutex> lock(queue_lock);
+            if (!local_queue.empty()) {
+                task = local_queue.back();
+                local_queue.pop_back();
+            }
+        }
+        
+        // 2. Try to steal from other workers (FIFO)
+        if (!task && global_scheduler) {
+            // Work-stealing logic with wild affinity checks...
+        }
+        
+        // 3. Execute coroutine
+        if (task) {
+            if (task->frame && task->frame->resume_pc) {
+                auto func = (void (*)(CoroutineFrame*))task->frame->resume_pc;
+                func(task->frame);
+                
+                if (task->frame->state == CORO_COMPLETE) {
+                    delete task;
+                } else if (task->frame->state == CORO_SUSPENDED) {
+                    // Will be rescheduled when ready
+                }
+            }
+        } else {
+            std::this_thread::yield();
+        }
+    }
+}
+```
+
+The scheduler is complete with:
+- Work-stealing queue per thread
+- Wild affinity support (for thread-local allocations)
+- Proper locking and load balancing
+- Coroutine execution via resume_pc function pointer
+
+WHAT'S MISSING (THE GAP):
+
+1. **No Schedule Call After Suspension**: When AwaitExpr suspends the coroutine,
+   it returns the framePtr but never calls aria_scheduler_schedule(framePtr).
+   The caller gets the handle but doesn't know what to do with it.
+
+2. **No Coroutine Resume Mechanism**: The scheduler has resume_pc but the
+   generated LLVM coroutines use llvm.coro.resume intrinsic, not function pointers.
+   These need to be bridged.
+
+3. **No Task<T> Wrapper Type**: Async functions should return Task<T> (like
+   Rust's Future or C++ std::future), not raw coroutine handles. This wrapper
+   would handle scheduling.
+
+4. **No await on Non-Async Error**: The compiler doesn't check if await is
+   used on non-async functions (should be compile error).
+
+5. **No Coroutine Result Passing**: When awaited coroutine completes, its
+   result value needs to be passed back to the awaiter.
+
+DESIRED BEHAVIOR:
+
+Example Input:
+```aria
+async func:fetch_data = int32(string:url) {
+    // Simulate async I/O
+    aria_sleep_async(1000);  // 1 second delay
+    pass(42);
+};
+
+async func:process_data = int32() {
+    int32:result = await fetch_data("https://example.com");
+    pass(result * 2);
+};
+
+func:main = int32() {
+    // Initialize scheduler
+    aria_scheduler_init(4);
+    
+    // Start async task
+    Task<int32>:task = process_data();
+    
+    // Wait for completion
+    int32:final = task.await();
+    
+    pass(final);
+};
+```
+
+Expected Flow:
+1. main() calls process_data() → creates coroutine, schedules it
+2. Scheduler worker picks up process_data coroutine, runs it
+3. process_data calls fetch_data() → creates another coroutine, schedules it
+4. fetch_data reaches await → suspends, schedules resume after 1 second
+5. Worker picks up other work while fetch_data is suspended
+6. After 1 second, timer callback schedules fetch_data for resumption
+7. Worker resumes fetch_data → completes with value 42
+8. fetch_data completion schedules process_data resumption
+9. Worker resumes process_data → completes with value 84
+10. main()'s task.await() returns 84
+
+INTEGRATION POINTS:
+
+The connection needs to happen in codegen:
+
+```cpp
+// After suspension, schedule the coroutine
+// In visit(AwaitExpr), SUSPEND PATH:
+ctx.builder->SetInsertPoint(suspendBB);
+
+// Call aria_scheduler_schedule with the coroutine handle
+Function* schedulerSchedule = ctx.module->getFunction("aria_scheduler_schedule");
+if (!schedulerSchedule) {
+    // Declare the function
+    FunctionType* schedFuncType = FunctionType::get(
+        Type::getVoidTy(ctx.llvmContext),
+        {Type::getInt8PtrTy(ctx.llvmContext)},  // CoroutineFrame*
+        false
+    );
+    schedulerSchedule = Function::Create(
+        schedFuncType,
+        Function::ExternalLinkage,
+        "aria_scheduler_schedule",
+        ctx.module.get()
+    );
+}
+
+// Schedule the coroutine for resumption
+Value* frameAsVoidPtr = ctx.builder->CreateBitCast(
+    framePtr, 
+    Type::getInt8PtrTy(ctx.llvmContext)
+);
+ctx.builder->CreateCall(schedulerSchedule, {frameAsVoidPtr});
+
+// Return from coroutine (yields to scheduler)
+ctx.builder->CreateRet(framePtr);
+```
+
+RESEARCH QUESTIONS:
+
+1. **Coroutine Resume Bridge**: LLVM coroutines use llvm.coro.resume intrinsic,
+   but the scheduler expects a function pointer (resume_pc). How to bridge these?
+   - Generate wrapper function that calls llvm.coro.resume?
+   - Extract resume address from LLVM coroutine frame?
+   - Use LLVM's coroutine lowering pass differently?
+
+2. **Task<T> Type Design**: How should the Task<T> wrapper be implemented?
+   ```cpp
+   struct Task {
+       void* coro_handle;
+       int32_t (*resume)(void*);  // Type-specific resume
+       T result;                   // Result value when complete
+       bool is_complete;
+   };
+   ```
+   Should this be in Aria language or pure runtime library?
+
+3. **Await Result Extraction**: When awaited coroutine completes, how to get
+   its return value? Options:
+   - Store in coroutine frame (requires frame layout access)
+   - Pass via scheduler callback
+   - Use shared memory location
+
+4. **Scheduler Initialization**: Should scheduler auto-initialize on first async
+   function call, or require explicit init in main()?
+
+5. **Error Handling in Async**: How should errors propagate through async boundaries?
+   ```aria
+   async func:might_fail = Result<int32>() {
+       // If this fails, should it bubble up to awaiter?
+   };
+   ```
+
+6. **Async Function Compilation Check**: How to enforce that await is only used:
+   - Inside async functions
+   - On expressions that return Task<T> or are async functions
+   
+   This requires type system integration.
+
+7. **Performance Optimization**: Inline simple async functions that don't actually
+   suspend? (Like C++'s eager coroutines)
+
+8. **Wild Affinity Integration**: Coroutines that use wild allocations must
+   always run on the same thread. How to detect and mark these automatically?
+
+IMPLEMENTATION DELIVERABLES REQUESTED:
+
+1. **Bridging Algorithm**: Step-by-step process for connecting LLVM coroutines
+   to the scheduler, including:
+   - Extracting resume function pointer from coro.resume
+   - Populating CoroutineFrame struct
+   - Calling aria_scheduler_schedule at the right points
+
+2. **Task<T> Design Document**: Complete specification for:
+   - Task<T> struct layout
+   - Task creation from async function call
+   - Task.await() implementation
+   - Memory management (who owns Task, when to free)
+
+3. **Modified Codegen Pseudocode**: Exact changes needed in visit(AwaitExpr)
+   and async function prologue/epilogue.
+
+4. **Type System Integration**: How to add Task<T> type to Aria's type system
+   and enforce async/await usage rules in type checker.
+
+5. **Testing Strategy**: Test cases for:
+   - Simple async function (no await)
+   - Async function with await
+   - Chained async calls (A awaits B awaits C)
+   - Multiple concurrent tasks
+   - Error propagation through async
+
+6. **Comparison with Other Languages**: How do Rust (async/await), C++20
+   (coroutines), JavaScript (async/await), Go (goroutines) implement this?
+   What can we learn?
+
+AFFECTED FILES:
+- src/backend/codegen.cpp (visit AwaitExpr, async function generation)
+- src/runtime/concurrency/scheduler.cpp (working, may need minor tweaks)
+- src/runtime/concurrency/scheduler.h (CoroutineFrame struct definition needed)
+- src/frontend/sema/type_checker.cpp (Task<T> type and async/await validation)
+
+================================================================================
+ISSUE 2: SIMD VECTOR OPERATIONS LOWERING
+================================================================================
+
+STATUS: Type System Ready, Operations Missing
+PRIORITY: Medium
+COMPLEXITY: Medium-Low
+IMPLEMENTATION IMPACT: Significant performance gains for vector math (graphics, ML)
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+Vector types (vec2, vec3, vec4, dvec2-4, ivec2-4) are fully defined in the
+type system and correctly lower to LLVM FixedVectorType. However, arithmetic
+operations on vectors generate scalar code instead of SIMD instructions, losing
+all performance benefits.
+
+CURRENT STATE:
+
+Type system (from types.h):
+```cpp
+enum class TypeKind {
+    VEC2,   // 2D float vector
+    VEC3,   // 3D float vector
+    VEC4,   // 4D float vector
+    DVEC2,  // 2D double vector
+    DVEC3,  // 3D double vector
+    DVEC4,  // 4D double vector
+    IVEC2,  // 2D int32 vector
+    IVEC3,  // 3D int32 vector
+    IVEC4,  // 4D int32 vector
+};
+```
+
+Backend lowering (from codegen_context.h lines 232-250):
+```cpp
+case TypeKind::VEC2:
+    return FixedVectorType::get(Type::getFloatTy(context), 2);
+case TypeKind::VEC3:
+    return FixedVectorType::get(Type::getFloatTy(context), 3);
+case TypeKind::VEC4:
+    return FixedVectorType::get(Type::getFloatTy(context), 4);
+case TypeKind::DVEC2:
+    return FixedVectorType::get(Type::getDoubleTy(context), 2);
+// ... etc
+```
+
+Type lowering is correct: vec4 → <4 x float>
+
+WHAT'S BROKEN:
+
+Binary operations on vectors (from codegen.cpp visit(BinaryOp)):
+```cpp
+void visit(BinaryOp* node) {
+    Value* left = visitExpr(node->left.get());
+    Value* right = visitExpr(node->right.get());
+    
+    // Current code assumes scalar types
+    switch (node->op) {
+        case BinaryOp::ADD:
+            return builder->CreateAdd(left, right);  // Wrong for vectors!
+        case BinaryOp::MUL:
+            return builder->CreateMul(left, right);  // Wrong for vectors!
+    }
+}
+```
+
+For vector types, this generates:
+```llvm
+; Input Aria: vec4:c = a + b;
+; Current (WRONG) output:
+%a = load <4 x float>, <4 x float>* %a_ptr
+%b = load <4 x float>, <4 x float>* %b_ptr
+%c = add <4 x float> %a, %b  ; Generic add, not optimized
+
+; Desired output:
+%a = load <4 x float>, <4 x float>* %a_ptr
+%b = load <4 x float>, <4 x float>* %b_ptr
+%c = fadd <4 x float> %a, %b  ; Floating-point vector add
+; Or even better, use intrinsic:
+%c = call <4 x float> @llvm.x86.sse.add.ps(<4 x float> %a, <4 x float> %b)
+```
+
+Actually, CreateAdd might work for vectors, but we should use proper typed
+operations (CreateFAdd for floats) and potentially intrinsics for better codegen.
+
+WHAT'S NEEDED:
+
+1. **Type-Aware Binary Operations**: Detect when operands are vector types and
+   use appropriate LLVM vector operations:
+   - fadd/fsub/fmul/fdiv for float vectors
+   - add/sub/mul/sdiv for integer vectors
+   - Proper comparison operations (fcmp vs icmp)
+
+2. **Vector Intrinsics**: Implement GLSL-style vector functions:
+   - dot(vec4, vec4) → float (dot product)
+   - cross(vec3, vec3) → vec3 (cross product)
+   - length(vec4) → float (magnitude)
+   - normalize(vec4) → vec4 (unit vector)
+   - distance(vec4, vec4) → float
+
+3. **Swizzling**: Implement vector component access:
+   ```aria
+   vec4:v = vec4(1, 2, 3, 4);
+   vec2:xy = v.xy;     // Extract first two components
+   vec3:bgr = v.zyx;   // Swizzle and reverse
+   ```
+
+4. **Vector Constructors**: Already tracked in Work Package #001, but needed
+   for complete SIMD support.
+
+5. **SIMD Instruction Verification**: Ensure generated assembly uses actual
+   SIMD instructions (movaps, addps, mulps, etc.)
+
+DESIRED BEHAVIOR:
+
+Example Input:
+```aria
+func:vector_math = vec4(vec4:a, vec4:b) {
+    vec4:sum = a + b;              // Element-wise add
+    vec4:product = a * b;          // Element-wise multiply
+    flt32:dot_prod = dot(a, b);    // Dot product
+    vec4:scaled = a * 2.0;         // Scalar multiply
+    pass(sum);
+};
+```
+
+Expected LLVM IR:
+```llvm
+define <4 x float> @vector_math(<4 x float> %a, <4 x float> %b) {
+entry:
+  ; Element-wise add (SIMD)
+  %sum = fadd <4 x float> %a, %b
+  
+  ; Element-wise multiply (SIMD)
+  %product = fmul <4 x float> %a, %b
+  
+  ; Dot product
+  %dot_mul = fmul <4 x float> %a, %b
+  %dot_0 = extractelement <4 x float> %dot_mul, i32 0
+  %dot_1 = extractelement <4 x float> %dot_mul, i32 1
+  %dot_2 = extractelement <4 x float> %dot_mul, i32 2
+  %dot_3 = extractelement <4 x float> %dot_mul, i32 3
+  %dot_01 = fadd float %dot_0, %dot_1
+  %dot_23 = fadd float %dot_2, %dot_3
+  %dot_prod = fadd float %dot_01, %dot_23
+  
+  ; Scalar multiply
+  %scalar_splat = insertelement <4 x float> undef, float 2.0, i32 0
+  %scalar_vec = shufflevector <4 x float> %scalar_splat, <4 x float> undef,
+                              <4 x i32> <i32 0, i32 0, i32 0, i32 0>
+  %scaled = fmul <4 x float> %a, %scalar_vec
+  
+  ret <4 x float> %sum
+}
+```
+
+Expected x86-64 Assembly (with SSE):
+```asm
+vector_math:
+  movaps %xmm0, %xmm2    ; Copy a to xmm2
+  addps  %xmm1, %xmm2    ; sum = a + b (packed single-precision add)
+  mulps  %xmm0, %xmm1    ; product = a * b (packed single-precision mul)
+  
+  ; Dot product using SSE4.1 dpps instruction
+  dpps   $0xF1, %xmm1, %xmm0  ; Dot product to scalar
+  
+  movaps %xmm2, %xmm0    ; Return sum
+  ret
+```
+
+IMPLEMENTATION STRATEGY:
+
+Modified visit(BinaryOp) pseudocode:
+```cpp
+void visit(BinaryOp* node) {
+    Value* left = visitExpr(node->left.get());
+    Value* right = visitExpr(node->right.get());
+    
+    Type* leftType = left->getType();
+    Type* rightType = right->getType();
+    
+    // Check if either operand is a vector
+    bool isVector = leftType->isVectorTy() || rightType->isVectorTy();
+    
+    if (isVector) {
+        // Handle vector operations
+        return generateVectorBinaryOp(node->op, left, right, leftType, rightType);
+    } else {
+        // Handle scalar operations (existing code)
+        return generateScalarBinaryOp(node->op, left, right);
+    }
+}
+
+Value* generateVectorBinaryOp(BinaryOp::OpType op, Value* left, Value* right,
+                                Type* leftType, Type* rightType) {
+    // Handle scalar-vector broadcasting
+    if (!leftType->isVectorTy() && rightType->isVectorTy()) {
+        // Broadcast left to vector
+        left = broadcastScalarToVector(left, rightType);
+        leftType = rightType;
+    } else if (leftType->isVectorTy() && !rightType->isVectorTy()) {
+        // Broadcast right to vector
+        right = broadcastScalarToVector(right, leftType);
+        rightType = leftType;
+    }
+    
+    // Both operands are now vectors (or were already)
+    auto* vecType = cast<FixedVectorType>(leftType);
+    Type* elemType = vecType->getElementType();
+    
+    switch (op) {
+        case BinaryOp::ADD:
+            if (elemType->isFloatingPointTy())
+                return builder->CreateFAdd(left, right, "vec_add");
+            else
+                return builder->CreateAdd(left, right, "vec_add");
+        
+        case BinaryOp::MUL:
+            if (elemType->isFloatingPointTy())
+                return builder->CreateFMul(left, right, "vec_mul");
+            else
+                return builder->CreateMul(left, right, "vec_mul");
+        
+        // ... other operations
+    }
+}
+
+Value* broadcastScalarToVector(Value* scalar, Type* targetVecType) {
+    auto* vecType = cast<FixedVectorType>(targetVecType);
+    unsigned numElems = vecType->getNumElements();
+    
+    // Create undef vector
+    Value* vec = UndefValue::get(vecType);
+    
+    // Insert scalar into first position
+    vec = builder->CreateInsertElement(vec, scalar, uint64_t(0));
+    
+    // Broadcast to all positions
+    SmallVector<int, 16> mask(numElems, 0);
+    return builder->CreateShuffleVector(vec, UndefValue::get(vecType), mask);
+}
+```
+
+RESEARCH QUESTIONS:
+
+1. **Intrinsic Selection**: Should we use generic LLVM operations (fadd, fmul)
+   and let LLVM select best instruction, or directly use target-specific
+   intrinsics (llvm.x86.sse.add.ps)?
+   - Generic: More portable, relies on LLVM optimization
+   - Intrinsic: More control, potentially better codegen
+
+2. **Vector Function Library**: Where should vector math functions live?
+   - Compiler built-ins (like GLSL)
+   - Standard library functions
+   - Both (built-ins inline to intrinsics, stdlib provides fallbacks)
+
+3. **Swizzling Syntax**: How to parse and represent swizzling?
+   ```aria
+   vec4:v;
+   vec2:xy = v.xy;    // MemberAccess with special handling?
+   vec4:wzyx = v.wzyx;  // Shuffle vector operation
+   ```
+   Parser changes needed? AST node type?
+
+4. **Mixed-Width Vectors**: How to handle operations between different vector sizes?
+   ```aria
+   vec3:a;
+   vec4:b;
+   ??? c = a + b;  // Compile error? Extend vec3 to vec4?
+   ```
+
+5. **Integer vs Float Vectors**: Type promotion rules for mixed operations?
+   ```aria
+   ivec4:a;
+   vec4:b;
+   ??? c = a + b;  // Convert ivec4 to vec4? Compile error?
+   ```
+
+6. **Auto-Vectorization**: Should the compiler try to auto-vectorize scalar
+   loops into SIMD? Or only explicit vector types?
+
+7. **Target-Specific Optimization**: Generate AVX2/AVX-512 for 8-element vectors?
+   Detect CPU features at runtime or compile-time?
+
+IMPLEMENTATION DELIVERABLES REQUESTED:
+
+1. **Modified BinaryOp Handler**: Complete implementation of vector-aware
+   binary operation generation with all edge cases handled.
+
+2. **Vector Intrinsic Library**: Specification and implementation for:
+   - dot, cross, length, normalize, distance
+   - min, max, clamp
+   - Any other GLSL-standard functions
+
+3. **Swizzling Implementation**: Parser changes, AST representation, and
+   codegen for swizzle operations.
+
+4. **Testing Strategy**: Comprehensive tests including:
+   - Basic vector arithmetic (add, sub, mul, div)
+   - Vector-scalar operations (broadcasting)
+   - Dot and cross products
+   - Swizzling
+   - Assembly verification (check for SIMD instructions)
+   - Performance benchmarks vs scalar code
+
+5. **Optimization Guide**: Best practices for:
+   - When to use vectors vs scalars
+   - Alignment considerations
+   - Cache-friendly access patterns
+
+6. **Comparison with GLSL/HLSL**: How do shader languages implement vector
+   operations? What can we learn from their design?
+
+AFFECTED FILES:
+- src/backend/codegen.cpp (visit BinaryOp, need vector operation handling)
+- src/backend/codegen.cpp (visit CallExpr, for vector intrinsics)
+- src/frontend/parser_expr.cpp (swizzling syntax)
+- stdlib/math.aria (vector math library functions)
+
+================================================================================
+ISSUE 3: GC NURSERY ALLOCATOR CONNECTION
+================================================================================
+
+STATUS: Implemented but Unused
+PRIORITY: Medium
+COMPLEXITY: Medium
+IMPLEMENTATION IMPACT: GC performance (allocation speed, collection efficiency)
+
+PROBLEM DESCRIPTION:
+-------------------------------------------------------------------------------
+A complete fragmented nursery allocator implementation exists (116 lines of
+C++ in nursery.cpp), but aria_gc_alloc() bypasses it and allocates directly
+from mimalloc. The nursery is never used, making the generational GC strategy
+ineffective.
+
+CURRENT STATE - NURSERY IMPLEMENTATION:
+
+From src/runtime/gc/nursery.cpp lines 1-116:
+```cpp
+// Global config
+const size_t NURSERY_SIZE = 4 * 1024 * 1024; // 4MB
+
+// Alignment
+#define ALLOCATION_ALIGNMENT 8
+#define ALIGN_UP(n, align) (((n) + (align) - 1) & ~((align) - 1))
+
+// The core allocation routine (Hot Path)
+extern "C" void* aria_gc_alloc(Nursery* nursery, size_t size) {
+   // 1. Fast Path: Standard Bump Allocation
+   size_t aligned_size = ALIGN_UP(size, ALLOCATION_ALIGNMENT);
+   char* new_bump = nursery->bump_ptr + aligned_size;
+   
+   if (new_bump <= nursery->end_addr) {
+       void* ptr = nursery->bump_ptr;
+       nursery->bump_ptr = new_bump;
+       return ptr;
+   }
+
+   // 2. Slow Path: Fragment Search or Collection Trigger
+   if (nursery->fragments) {
+       Fragment* prev = nullptr;
+       Fragment* curr = nursery->fragments;
+       
+       while (curr) {
+           if (curr->size >= aligned_size) {
+               // Found a fit!
+               void* ptr = curr->start;
+               curr->start += aligned_size;
+               curr->size -= aligned_size;
+               
+               // If fragment exhausted, remove from list
+               if (curr->size == 0) {
+                   if (prev) prev->next = curr->next;
+                   else nursery->fragments = curr->next;
+                   free(curr);
+               }
+               
+               return ptr;
+           }
+           prev = curr;
+           curr = curr->next;
+       }
+   }
+
+   // 3. Out of memory: Trigger collection
+   aria_gc_collect_minor();
+   
+   // 4. Retry allocation after collection
+   new_bump = nursery->bump_ptr + aligned_size;
+   if (new_bump <= nursery->end_addr) {
+       void* ptr = nursery->bump_ptr;
+       nursery->bump_ptr = new_bump;
+       return ptr;
+   }
+   
+   // Still out of memory: Fall back to system allocator
+   return malloc(aligned_size);
+}
+```
+
+The nursery has:
+- Fast path: O(1) bump allocation
+- Slow path: Fragment list for holes around pinned objects
+- Collection trigger when full
+- Retry after collection
+- Fallback to malloc if still no space
+
+This is a production-ready implementation!
+
+CURRENT STATE - GC ALLOCATOR:
+
+From src/runtime/gc/gc_impl.cpp (actual allocator used):
+```cpp
+// This is what's currently called by generated code
+extern "C" void* aria_gc_alloc_current(size_t size) {
+    // BYPASSES NURSERY - goes straight to mimalloc
+    return mi_malloc(size);
+}
+```
+
+The problem: codegen calls aria_gc_alloc_current (or similar), which ignores
+the nursery entirely.
+
+CURRENT STATE - COLLECTION:
+
+From src/runtime/gc/gc_impl.cpp lines 45-100:
+```cpp
+// Minor Collection (Nursery Evacuation)
+void aria_gc_collect_minor() {
+   auto roots = get_thread_roots();
+   
+   for (void* root_ptr : roots) {
+       if (!root_ptr) continue;
+       ObjHeader* obj = (ObjHeader*)((char*)root_ptr - sizeof(ObjHeader));
+       
+       if (obj->is_nursery) {
+           if (obj->pinned_bit) {
+               // Pinned: Cannot move
+           } else {
+               // Not Pinned: Move to Old Gen
+               ObjHeader* new_loc = (ObjHeader*)malloc(obj->size_class);
+               memcpy(new_loc, obj, obj->size_class);
+               new_loc->is_nursery = 0;
+               new_loc->pinned_bit = 0;
+               old_gen_objects.push_back(new_loc);
+           }
+       }
+   }
+   
+   // CRITICAL FIX: Reset nursery
+   Nursery* n = get_current_thread_nursery();
+   if (n) {
+       n->bump_ptr = n->start_addr;
+       n->fragments = nullptr;
+   }
+}
+```
+
+Collection code exists but has a FIXME note about temporary implementation.
+
+WHAT'S MISSING:
+
+1. **Codegen Integration**: Generated code needs to call the nursery allocator
+   instead of mi_malloc.
+
+2. **Thread-Local Nursery**: Each thread needs its own nursery. Need TLS
+   (thread-local storage) for nursery pointers.
+
+3. **Nursery Initialization**: When/where are nurseries created? Main thread?
+   Worker threads?
+
+4. **Write Barriers**: For generational GC, need write barriers to track
+   old → young pointers (not mentioned in nursery.cpp).
+
+5. **Complete Fragment Handling**: Pinned objects create fragments, but the
+   fragment list building during collection is stubbed out.
+
+6. **Major GC Trigger**: When should major GC run? After N minor GCs? When
+   old generation reaches threshold?
+
+7. **Root Scanning**: get_thread_roots() is a mock - needs real stack scanning
+   (libunwind, DWARF).
+
+DESIRED BEHAVIOR:
+
+Allocation flow:
+```cpp
+// Generated code (from codegen.cpp):
+Value* obj = CreateCall(gcAlloc, {sizeValue});
+
+// Runtime (aria_gc_alloc):
+void* aria_gc_alloc(size_t size) {
+    Nursery* nursery = get_current_thread_nursery();
+    if (!nursery) {
+        nursery = create_nursery();
+        set_current_thread_nursery(nursery);
+    }
+    
+    // Use the existing nursery allocator
+    return aria_nursery_alloc(nursery, size);
+}
+
+// Thread-local nursery storage:
+thread_local Nursery* current_nursery = nullptr;
+
+Nursery* get_current_thread_nursery() {
+    return current_nursery;
+}
+
+void set_current_thread_nursery(Nursery* n) {
+    current_nursery = n;
+}
+
+Nursery* create_nursery() {
+    Nursery* n = (Nursery*)malloc(sizeof(Nursery));
+    n->start_addr = (char*)malloc(NURSERY_SIZE);
+    n->end_addr = n->start_addr + NURSERY_SIZE;
+    n->bump_ptr = n->start_addr;
+    n->fragments = nullptr;
+    return n;
+}
+```
+
+RESEARCH QUESTIONS:
+
+1. **Thread-Local Storage**: How to implement TLS for nursery pointers?
+   - C++11 thread_local keyword (simple, portable)
+   - pthread_key_create (POSIX, lower-level)
+   - Compiler TLS (__thread, Windows __declspec(thread))
+
+2. **Write Barrier Generation**: Where in codegen should write barriers be
+   inserted? Every pointer store?
+   ```cpp
+   // Without barrier (current):
+   obj->field = other_obj;
+   
+   // With barrier:
+   obj->field = other_obj;
+   if (is_old_gen(obj) && is_young_gen(other_obj)) {
+       remember_set_add(obj);
+   }
+   ```
+
+3. **Stack Scanning**: How to implement get_thread_roots()?
+   - Conservative scanning (treat everything as potential pointer)
+   - Precise scanning (use DWARF/debug info to know exact roots)
+   - Compiler-generated root maps (track GC pointers explicitly)
+
+4. **Nursery Size Tuning**: 4MB default, but should this be configurable?
+   Runtime flag? Compile-time constant? Auto-tune based on allocation rate?
+
+5. **Nursery Per Thread or Per Core**: Work-stealing scheduler can migrate
+   tasks. How does this interact with thread-local nurseries?
+   - Wild affinity already exists for this reason
+   - Should GC objects also have affinity?
+
+6. **Pinning Implementation**: How are objects marked as pinned?
+   ```aria
+   wild int8@:ptr = gc_allocate(1024);
+   pin(ptr);  // Prevents movement during collection
+   // ... use ptr ...
+   unpin(ptr);
+   ```
+   
+   Or automatic pinning when address is taken?
+
+7. **Performance Metrics**: How to measure GC effectiveness?
+   - Allocation throughput (objects/sec)
+   - Collection pause time (ms)
+   - Memory overhead (nursery + old gen vs live data)
+   - Survival rate (objects promoted vs collected)
+
+IMPLEMENTATION DELIVERABLES REQUESTED:
+
+1. **Integration Plan**: Step-by-step process for connecting nursery to
+   actual allocations:
+   - TLS nursery setup
+   - Codegen changes (call aria_gc_alloc instead of mi_malloc)
+   - Nursery initialization and cleanup
+   - Testing strategy
+
+2. **Write Barrier Design**: Specification for write barriers including:
+   - When to insert barriers (codegen)
+   - Remember set data structure
+   - Integration with minor GC
+
+3. **Stack Scanning Implementation**: Choose and implement root scanning:
+   - Conservative vs precise tradeoff analysis
+   - Implementation approach (libunwind, shadow stack, compiler metadata)
+   - Performance impact
+
+4. **Complete Collection Algorithm**: Fill in the gaps in aria_gc_collect_minor:
+   - Proper fragment list building
+   - Forwarding pointer updates
+   - Major GC trigger logic
+
+5. **Testing Strategy**: Comprehensive tests for:
+   - Basic nursery allocation (fast path)
+   - Fragment allocation (slow path)
+   - Minor GC triggering and evacuation
+   - Pinned object handling
+   - Multi-threaded allocation
+   - Performance benchmarks
+
+6. **Comparison with Other GCs**: How do production GCs handle this?
+   - V8 (JavaScript): Generational semi-space
+   - JVM: Generational with concurrent marking
+   - Go: Concurrent mark-sweep
+   - Rust: No GC (ownership), but library GCs exist
+   
+   What can we learn from their designs?
+
+AFFECTED FILES:
+- src/runtime/gc/nursery.cpp (working, may need minor tweaks)
+- src/runtime/gc/gc_impl.cpp (collection logic, needs completion)
+- src/runtime/memory/allocator.c (current allocator, needs replacement)
+- src/backend/codegen.cpp (GC allocation call sites)
+- New files needed:
+  - src/runtime/gc/roots.cpp (stack scanning)
+  - src/runtime/gc/write_barrier.cpp (generational GC support)
+
+================================================================================
+DELIVERABLES SUMMARY
+================================================================================
+
+For each of the three issues, please provide:
+
+1. **Detailed Implementation Guide**:
+   - Step-by-step integration process
+   - Code modifications with exact locations
+   - Data structure specifications
+   - Algorithm pseudocode
+
+2. **Design Decisions**:
+   - Tradeoff analysis for key choices
+   - Justification for recommended approach
+   - Alternative approaches considered
+
+3. **Complete Code Examples**:
+   - Before/after snippets
+   - Example LLVM IR (where applicable)
+   - Example Aria test programs
+
+4. **Performance Analysis**:
+   - Expected performance impact
+   - Benchmarking methodology
+   - Optimization opportunities
+
+5. **Testing Strategy**:
+   - Unit tests for each component
+   - Integration tests for full flow
+   - Performance benchmarks
+   - Edge cases and error conditions
+
+================================================================================
+RESEARCH GUIDELINES
+================================================================================
+
+FOCUS AREAS:
+- Practical integration strategies (these systems exist, just need connection)
+- Performance implications of design choices
+- Robustness and error handling
+- Real-world use cases and examples
+
+CONSTRAINTS:
+- Preserve existing working implementations
+- Maintain compatibility with LLVM 18
+- Follow Aria's design philosophy
+- Minimize breaking changes
+
+OUTPUT FORMAT:
+- Markdown with clear sections
+- Code examples in C++ (runtime), Aria (tests), LLVM IR (verification)
+- Performance data and benchmarks where available
+- Diagrams for complex flows
+
+================================================================================
+END OF WORK PACKAGE #003
+================================================================================
+
+Generated: December 7, 2025
+Compiler: Aria v0.0.7
+Target: LLVM 18
+
+These three issues are "90% complete" - the hard work is done, they just need
+to be connected properly. This should be a quicker research cycle than the
+previous packages since the implementations exist and work correctly.
