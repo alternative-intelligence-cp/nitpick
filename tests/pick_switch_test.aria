@@ -1,0 +1,182 @@
+/**
+ * test_pick_optimization.aria
+ * 
+ * Test case for Pick Statement Switch Optimization
+ * 
+ * Demonstrates the compiler's ability to convert linear if-else chains
+ * into efficient jump tables for exact integer matches.
+ * 
+ * Performance improvement:
+ * - Before: O(N) linear search (N comparisons worst case)
+ * - After: O(1) jump table lookup
+ * - Speedup: ~10x for 10+ cases
+ */
+
+fn test_switch_optimization(x: int32) -> int32 {
+    // This pick statement has 10 consecutive EXACT cases
+    // The compiler will optimize this into a single SwitchInst
+    
+    pick x {
+        // These 10 cases will be grouped into a jump table
+        (0) => { return 100; }
+        (1) => { return 101; }
+        (2) => { return 102; }
+        (3) => { return 103; }
+        (4) => { return 104; }
+        (5) => { return 105; }
+        (6) => { return 106; }
+        (7) => { return 107; }
+        (8) => { return 108; }
+        (9) => { return 109; }
+        
+        // Wildcard (default case)
+        (*) => { return -1; }
+    }
+}
+
+fn test_no_optimization_mixed(x: int32) -> int32 {
+    // This pick statement has mixed case types
+    // Cannot use switch optimization - will use linear chain
+    
+    pick x {
+        (0) => { return 0; }
+        (1) => { return 1; }
+        (>5) => { return 100; }  // Different case type - breaks optimization
+        (10) => { return 10; }
+        (*) => { return -1; }
+    }
+}
+
+fn test_no_optimization_variable(x: int32, y: int32) -> int32 {
+    // This pick statement uses a variable in case
+    // Cannot use switch optimization (non-constant case value)
+    
+    pick x {
+        (0) => { return 0; }
+        (y) => { return 1; }  // Variable - cannot be in switch
+        (2) => { return 2; }
+        (*) => { return -1; }
+    }
+}
+
+fn test_partial_optimization(x: int32) -> int32 {
+    // First 5 cases are EXACT constants -> use switch
+    // Remaining cases use linear chain
+    
+    pick x {
+        // These will be optimized into switch
+        (0) => { return 0; }
+        (1) => { return 1; }
+        (2) => { return 2; }
+        (3) => { return 3; }
+        (4) => { return 4; }
+        
+        // These use linear chain (different case types)
+        (<10) => { return 100; }
+        (>20) => { return 200; }
+        (*) => { return -1; }
+    }
+}
+
+fn test_sparse_switch(x: int32) -> int32 {
+    // Switch with sparse values (not 0-N sequence)
+    // LLVM will still generate efficient jump table or binary search
+    
+    pick x {
+        (10) => { return 100; }
+        (20) => { return 200; }
+        (30) => { return 300; }
+        (100) => { return 1000; }
+        (200) => { return 2000; }
+        (500) => { return 5000; }
+        (1000) => { return 10000; }
+        (*) => { return 0; }
+    }
+}
+
+fn test_fall_no_optimization(x: int32) -> int32 {
+    // Labeled cases prevent switch optimization
+    // (labels require addressable blocks)
+    
+    pick x {
+        (0) @label1 => { return 0; }  // Labeled case
+        (1) => { return 1; }
+        (2) => { fall label1; }  // Uses labeled block
+        (*) => { return -1; }
+    }
+}
+
+fn benchmark_switch_vs_linear(n: int32) -> int64 {
+    // Performance benchmark: switch vs linear
+    
+    let sum: int64 = 0;
+    
+    // Test worst-case: last case match
+    for i in 0..1000000 {
+        let result: int32 = test_switch_optimization(9);
+        sum = sum + result as int64;
+    }
+    
+    return sum;  // Should be 109 * 1,000,000 = 109,000,000
+}
+
+fn main() -> int64 {
+    // Test all optimization scenarios
+    
+    let r1: int32 = test_switch_optimization(5);      // 105 (from switch)
+    let r2: int32 = test_no_optimization_mixed(6);    // 100 (from linear >5)
+    let r3: int32 = test_partial_optimization(2);     // 2 (from switch)
+    let r4: int32 = test_partial_optimization(15);    // -1 (from linear)
+    let r5: int32 = test_sparse_switch(100);          // 1000 (from switch)
+    
+    let sum: int64 = r1 as int64 + r2 as int64 + r3 as int64 + 
+                     r4 as int64 + r5 as int64;
+    
+    // Expected: 105 + 100 + 2 + (-1) + 1000 = 1206
+    
+    return sum;
+}
+
+/**
+ * Expected LLVM IR (for test_switch_optimization):
+ * 
+ * Before optimization (linear chain - 10 case labels):
+ * ```llvm
+ * %cmp0 = icmp eq i32 %x, 0
+ * br i1 %cmp0, label %case0, label %check1
+ * 
+ * check1:
+ * %cmp1 = icmp eq i32 %x, 1
+ * br i1 %cmp1, label %case1, label %check2
+ * 
+ * check2:
+ * %cmp2 = icmp eq i32 %x, 2
+ * br i1 %cmp2, label %case2, label %check3
+ * ...
+ * ```
+ * Worst case: 10 comparisons, 10 branches
+ * 
+ * After optimization (switch instruction):
+ * ```llvm
+ * switch i32 %x, label %default [
+ *   i32 0, label %case0
+ *   i32 1, label %case1
+ *   i32 2, label %case2
+ *   i32 3, label %case3
+ *   i32 4, label %case4
+ *   i32 5, label %case5
+ *   i32 6, label %case6
+ *   i32 7, label %case7
+ *   i32 8, label %case8
+ *   i32 9, label %case9
+ * ]
+ * ```
+ * Best case: 1 comparison (range check), 1 indirect jump via table
+ * 
+ * On x86-64, this compiles to:
+ * ```asm
+ * cmp %edi, 9          ; Check if x <= 9
+ * ja .default          ; Jump if above
+ * jmp *.L_jump_table(,%rdi,8)  ; Jump via table[x]
+ * ```
+ */

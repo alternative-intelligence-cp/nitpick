@@ -26,9 +26,11 @@ namespace sema {
 struct EscapeContext {
     std::unordered_set<std::string> stack_locals;   // Stack-allocated variables
     std::unordered_set<std::string> wild_locals;    // Wild-allocated variables
+    std::unordered_set<std::string> wildx_locals;   // WildX (executable) allocated variables - SECURITY CRITICAL
     std::unordered_set<std::string> escaped_vars;   // Variables that have escaped
     int escape_count = 0;
     bool has_errors = false;
+    bool has_wildx_violations = false;  // Track critical wildx violations
     
     void warning(const std::string& msg) {
         std::cerr << "Escape Analysis Warning: " << msg << std::endl;
@@ -38,11 +40,45 @@ struct EscapeContext {
         std::cerr << "Escape Analysis Error: " << msg << std::endl;
         has_errors = true;
     }
+    
+    void security_error(const std::string& msg) {
+        std::cerr << "\n*** SECURITY VIOLATION ***" << std::endl;
+        std::cerr << "WildX Escape Analysis Error: " << msg << std::endl;
+        std::cerr << "WildX pointers (executable memory) MUST NOT escape their scope." << std::endl;
+        std::cerr << "This is a critical security violation that could enable code injection." << std::endl;
+        std::cerr << "*** END SECURITY VIOLATION ***\n" << std::endl;
+        has_errors = true;
+        has_wildx_violations = true;
+    }
 };
 
 // Forward declarations
 void analyzeStatement(frontend::Statement* stmt, EscapeContext& ctx);
 void analyzeExpression(frontend::Expression* expr, EscapeContext& ctx, bool is_escaping);
+
+// Check if expression references a wildx pointer (SECURITY CRITICAL)
+bool referencesWildX(frontend::Expression* expr, const EscapeContext& ctx) {
+    if (!expr) return false;
+    
+    // Direct wildx variable reference
+    if (auto* var = dynamic_cast<frontend::VarExpr*>(expr)) {
+        return ctx.wildx_locals.find(var->name) != ctx.wildx_locals.end();
+    }
+    
+    // Address-of wildx
+    if (auto* unary = dynamic_cast<frontend::UnaryOp*>(expr)) {
+        if (unary->op == frontend::UnaryOp::ADDRESS_OF) {
+            return referencesWildX(unary->operand.get(), ctx);
+        }
+    }
+    
+    // Member access on wildx
+    if (auto* member = dynamic_cast<frontend::MemberAccess*>(expr)) {
+        return referencesWildX(member->object.get(), ctx);
+    }
+    
+    return false;
+}
 
 // Check if expression references a local variable that shouldn't escape
 bool referencesLocal(frontend::Expression* expr, const EscapeContext& ctx) {
@@ -50,7 +86,8 @@ bool referencesLocal(frontend::Expression* expr, const EscapeContext& ctx) {
     
     // Check for direct variable reference
     if (auto* var = dynamic_cast<frontend::VarExpr*>(expr)) {
-        return ctx.stack_locals.find(var->name) != ctx.stack_locals.end();
+        return ctx.stack_locals.find(var->name) != ctx.stack_locals.end() ||
+               ctx.wildx_locals.find(var->name) != ctx.wildx_locals.end();
     }
     
     // Check for address-of operator on local
@@ -72,8 +109,15 @@ void analyzeVarDecl(frontend::VarDecl* decl, EscapeContext& ctx) {
         ctx.stack_locals.insert(decl->name);
     }
     
+    // Track wildx allocations (SECURITY CRITICAL)
+    // WildX = executable memory - highest security concern
+    if (decl->is_wildx) {
+        ctx.wildx_locals.insert(decl->name);
+        // Note: wildx implies wild, but we track separately for stricter checks
+    }
+    
     // Track wild allocations
-    if (decl->is_wild) {
+    if (decl->is_wild && !decl->is_wildx) {
         ctx.wild_locals.insert(decl->name);
     }
     
@@ -108,7 +152,18 @@ void analyzeExpression(frontend::Expression* expr, EscapeContext& ctx, bool is_e
     if (auto* unary = dynamic_cast<frontend::UnaryOp*>(expr)) {
         // Address-of operator creates a pointer that could escape
         if (unary->op == frontend::UnaryOp::ADDRESS_OF && is_escaping) {
-            if (referencesLocal(unary->operand.get(), ctx)) {
+            // CRITICAL: Check for wildx address leakage
+            if (referencesWildX(unary->operand.get(), ctx)) {
+                auto* var = dynamic_cast<frontend::VarExpr*>(unary->operand.get());
+                if (var) {
+                    ctx.security_error("Taking address of wildx pointer '" + var->name + 
+                                     "' in escaping context. WildX addresses must never escape.");
+                } else {
+                    ctx.security_error("Taking address of wildx memory in escaping context. " +
+                                     std::string("WildX addresses must never escape."));
+                }
+                ctx.escape_count++;
+            } else if (referencesLocal(unary->operand.get(), ctx)) {
                 auto* var = dynamic_cast<frontend::VarExpr*>(unary->operand.get());
                 if (var) {
                     ctx.warning("Taking address of stack variable '" + var->name + 
@@ -129,6 +184,26 @@ void analyzeExpression(frontend::Expression* expr, EscapeContext& ctx, bool is_e
         return;
     }
     
+    // Cast expressions - check for wildx to dyn casts
+    if (auto* cast = dynamic_cast<frontend::CastExpr*>(expr)) {
+        // =====================================================================
+        // SECURITY CHECK: WildX to dyn type cast
+        // =====================================================================
+        // Casting wildx to dyn (dynamic/generic type) is forbidden without
+        // explicit runtime verification because it enables type confusion
+        // attacks on executable memory.
+        if (referencesWildX(cast->expression.get(), ctx)) {
+            // Check if target type is 'dyn' or contains 'dyn'
+            if (cast->target_type.find("dyn") != std::string::npos) {
+                ctx.security_error("Casting wildx pointer to 'dyn' type is FORBIDDEN without runtime verification. " +
+                                 std::string("This could enable type confusion attacks on executable memory."));
+                ctx.escape_count++;
+            }
+        }
+        analyzeExpression(cast->expression.get(), ctx, is_escaping);
+        return;
+    }
+    
     // Ternary expressions
     if (auto* ternary = dynamic_cast<frontend::TernaryExpr*>(expr)) {
         analyzeExpression(ternary->condition.get(), ctx, false);
@@ -139,8 +214,19 @@ void analyzeExpression(frontend::Expression* expr, EscapeContext& ctx, bool is_e
     
     // Function calls
     if (auto* call = dynamic_cast<frontend::CallExpr*>(expr)) {
-        // Arguments might escape to the called function
+        // =====================================================================
+        // SECURITY CHECK: WildX pointers passed to functions
+        // =====================================================================
+        // Passing wildx to external functions is dangerous unless the function
+        // is explicitly marked as wildx-safe. For now, we ban all escapes.
         for (auto& arg : call->arguments) {
+            if (referencesWildX(arg.get(), ctx)) {
+                ctx.security_error("Passing wildx pointer to function '" + call->function_name + 
+                                 "'. WildX pointers (executable memory) should not be passed to generic functions. " +
+                                 "This could enable code injection if the function stores or returns the pointer.");
+                ctx.escape_count++;
+            }
+            // Arguments might escape to the called function
             analyzeExpression(arg.get(), ctx, true);
         }
         return;
@@ -150,6 +236,24 @@ void analyzeExpression(frontend::Expression* expr, EscapeContext& ctx, bool is_e
 // Analyze return statement for escaping values
 void analyzeReturn(frontend::ReturnStmt* ret, EscapeContext& ctx) {
     if (!ret || !ret->value) return;
+    
+    // =========================================================================
+    // CRITICAL SECURITY CHECK: WildX pointers MUST NEVER escape
+    // =========================================================================
+    // WildX pointers point to executable memory. Allowing them to escape
+    // creates a code injection vector. This is a HARD ERROR, not a warning.
+    if (referencesWildX(ret->value.get(), ctx)) {
+        if (auto* var = dynamic_cast<frontend::VarExpr*>(ret->value.get())) {
+            ctx.security_error("Returning wildx pointer '" + var->name + 
+                             "' is FORBIDDEN. WildX pointers (executable memory) must never escape their scope.");
+        } else {
+            ctx.security_error("Return value contains wildx pointer. " 
+                             "WildX pointers (executable memory) must never escape their scope.");
+        }
+        ctx.escaped_vars.insert("<wildx_return>");
+        ctx.escape_count++;
+        return;  // Don't perform further checks if wildx violation detected
+    }
     
     // Check if returning a stack-allocated variable
     if (auto* var = dynamic_cast<frontend::VarExpr*>(ret->value.get())) {
@@ -251,6 +355,7 @@ EscapeAnalysisResult run_escape_analysis(aria::frontend::Block* root) {
     EscapeAnalysisResult result;
     result.has_escapes = !ctx.escaped_vars.empty();
     result.escaped_count = ctx.escape_count;
+    result.has_wildx_violations = ctx.has_wildx_violations;
     
     return result;
 }
