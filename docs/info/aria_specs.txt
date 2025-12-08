@@ -230,6 +230,58 @@ int8[]arr; //empty array, cannot use without initializing properly
 int8[256]arr2; //empty int8 array with 256 elements
 int8[]:arr3=[100,300,550]; //3 element int8 array with values
 
+/* GENERICS/TEMPLATES (Zero-cost Abstractions)
+Generic functions use monomorphization (like C++/Rust) for zero runtime cost.
+The * prefix marks generic type parameters in function bodies.
+
+Syntax: func<T, U>:name = returnType(params) { body };
+Where T, U are type parameters used as *T, *U in the body
+
+Examples:
+*/
+
+// Generic identity function
+func<T>:identity = *T(*T:value) {
+    pass(value);
+};
+
+// Generic max function  
+func<T>:max = *T(*T:a, *T:b) {
+    if (a > b) {
+        pass(a);
+    }
+    pass(b);
+};
+
+// Multiple generic parameters
+func<T,U>:convert = *T(*U:value) {
+    // conversion logic
+    pass(converted_value);
+};
+
+// Generic array operations
+func<T>:first = *T(*T[]:arr, int64:len) {
+    if (len > 0) {
+        pass(arr[0]);
+    }
+    fail(1);
+};
+
+// Using generics with explicit types
+int8:result = identity<int8>(42) ? 0;
+flt32:pi = identity<flt32>(3.14) ? 0.0;
+
+// Using generics with type inference
+int8:val = max(10, 20) ? 0;  // T inferred as int8
+flt32:bigger = max(1.5, 2.7) ? 0.0;  // T inferred as flt32
+
+// * prefix marks generic types in:
+// 1. Return type: *T means "return value of type T"
+// 2. Parameters: *T:param means "parameter of type T"
+// 3. Local variables: *T:local for generic-typed locals
+
+/* end generics */
+
 //standard while loop
 while(i < 100){
     print(`&{i}`);
@@ -295,16 +347,13 @@ result:r;
 int8:t;
 int8:closureTest = 2;
 func:test = int8(int8:a,int8:b){
-    return {
-        err:NULL,
-        val:a*b*closureTest
-    };
+    pass(a*b*closureTest);
 };
 r=test(3,4);
 t = is r.err == NULL : r.val : -1; //t should be 24 if closure worked
 func:test2 = int8(func:tt,int8:a,int8:b){
     result:res = tt(a,b);
-    return res; //should return { err:NULL,val:24} with input of 3,4
+    pass(res.val);
 };
 r=test2(test,3,4);
 t = is r.err == NULL :r.val : -1; //t should be 24 if closure worked
@@ -589,30 +638,36 @@ const int:BUFFER_SIZE = computeOptimalSize(); // Computed at compile time
 array[BUFFER_SIZE]:buffer;
 
 // GENERICS/TEMPLATES (type safety without performance cost)
-func<T>:identity = T(T:value) {
-    return { err: NULL, val: value };
+// * prefix marks generic type usage in function body
+func<T>:identity = *T(*T:value) {
+    pass(value);
 };
-result:a = identity<int>(42);
-int:a_val = a ? 0;
+result:a = identity<int8>(42);
+int8:a_val = a ? 0;
 result:s = identity<string>("hello");
 string:s_val = s ? "";
 
+// Generic with type inference
+int8:num = identity(42) ? 0;  // T inferred as int8
+string:str = identity("test") ? "";  // T inferred as string
+
 // CLOSURES WITH CAPTURE SEMANTICS
 func:createCounter = func() {
-    wild int:count = 0; // Captured by reference
-    return { err: NULL, val: func() { 
-        count++;
-        return { err: NULL, val: count };
-    }};
+    wild int32:count = 0; // Captured by reference
+    func:increment = int32() { 
+        count = count + 1;
+        pass(count);
+    };
+    pass(increment);
 };
 result:counter1_res = createCounter();
-func:counter1 = counter1_res ? NULL;
+func:counter1 = counter1_res.val;
 result:counter2_res = createCounter();
-func:counter2 = counter2_res ? NULL;
-result:c1 = counter1();
-result:c2 = counter1();
-result:c3 = counter2();
-print(`&{c1 ? 0} &{c2 ? 0} &{c3 ? 0}`); // Should print "1 2 1" 
+func:counter2 = counter2_res.val;
+int32:c1 = counter1() ? 0;
+int32:c2 = counter1() ? 0;
+int32:c3 = counter2() ? 0;
+print(`&{c1} &{c2} &{c3}`); // Should print "1 2 1" 
 
 /* COMPLETE TOKEN LIST for AST
 

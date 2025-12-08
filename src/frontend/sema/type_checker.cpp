@@ -295,6 +295,17 @@ void TypeChecker::visit(frontend::LambdaExpr* node) {
 
 // Visit VarDecl
 void TypeChecker::visit(frontend::VarDecl* node) {
+    // Skip type checking for generic function templates
+    // They will be type-checked when monomorphized at call sites
+    if (!node->generic_params.empty()) {
+        // Generic function template - register in symbol table but don't type check
+        // We'll type-check the instantiated versions later
+        // For now, just mark it as a dynamic/template type
+        auto template_type = std::make_shared<Type>(TypeKind::DYN, "template<" + node->name + ">");
+        symbols->define(node->name, template_type, false);
+        return;
+    }
+    
     // Parse the declared type
     auto declared_type = parseType(node->type);
     

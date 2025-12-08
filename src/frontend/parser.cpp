@@ -88,51 +88,97 @@ std::string Parser::parseTypeName() {
         throw std::runtime_error("Expected type name");
     }
     
-    // Handle function signature: func<returnType(paramTypes)>
+    // Handle function signature: func<returnType(paramTypes)> or func<T, U> (generic params)
     if (typeName == "func" && current.type == TOKEN_LT) {
         typeName += "<";
         advance(); // consume <
         
-        // Parse return type
-        std::string returnType = parseTypeName();
-        typeName += returnType;
+        // Distinguishing generic params from function signature:
+        // - Generic params: func<T, U> (identifiers only, followed by , or >)
+        // - Function signature: func<returnType(params)> (type followed by lparen)
+        // 
+        // Start parsing and check what we find
+        std::vector<std::string> tokens_seen;
+        bool looks_like_generic_params = true;
         
-        // Expect (
-        if (current.type != TOKEN_LPAREN) {
-            throw std::runtime_error("Expected '(' after return type in function signature");
-        }
-        typeName += "(";
-        advance(); // consume (
-        
-        // Parse parameter types
-        bool first = true;
-        while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
-            if (!first) {
-                if (current.type != TOKEN_COMMA) {
-                    throw std::runtime_error("Expected ',' between parameter types");
-                }
-                typeName += ",";
-                advance(); // consume ,
-            }
-            first = false;
+        // Parse first element
+        if (current.type == TOKEN_IDENTIFIER) {
+            tokens_seen.push_back(current.value);
+            advance();
             
-            std::string paramType = parseTypeName();
-            typeName += paramType;
+            // If followed by LPAREN, it's a function signature (returnType is the identifier)
+            if (current.type == TOKEN_LPAREN) {
+                looks_like_generic_params = false;
+            }
+        } else {
+            // Starts with a non-identifier (like int8), must be function signature
+            looks_like_generic_params = false;
         }
         
-        // Expect )
-        if (current.type != TOKEN_RPAREN) {
-            throw std::runtime_error("Expected ')' after parameter types");
-        }
-        typeName += ")";
-        advance(); // consume )
+        if (looks_like_generic_params && !tokens_seen.empty()) {
+            // Parse as generic params: we've already consumed first identifier
+            typeName += tokens_seen[0];
+            
+            while (current.type == TOKEN_COMMA) {
+                typeName += ",";
+                advance(); // consume comma
+                
+                Token typeParam = expect(TOKEN_IDENTIFIER);
+                typeName += typeParam.value;
+            }
+            
+            expect(TOKEN_GT);
+            typeName += ">";
+        } else {
+            // Parse as function type signature
+            // We may have consumed one identifier already, need to handle that
+            std::string returnType;
+            if (!tokens_seen.empty()) {
+                returnType = tokens_seen[0];
+                // current is now at LPAREN
+            } else {
+                // Parse return type normally
+                returnType = parseTypeName();
+            }
+            typeName += returnType;
+            
+            // Expect (
+            if (current.type != TOKEN_LPAREN) {
+                throw std::runtime_error("Expected '(' after return type in function signature");
+            }
+            typeName += "(";
+            advance(); // consume (
         
-        // Expect >
-        if (current.type != TOKEN_GT) {
-            throw std::runtime_error("Expected '>' after function signature");
+            // Parse parameter types
+            bool first = true;
+            while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
+                if (!first) {
+                    if (current.type != TOKEN_COMMA) {
+                        throw std::runtime_error("Expected ',' between parameter types");
+                    }
+                    typeName += ",";
+                    advance(); // consume ,
+                }
+                first = false;
+                
+                std::string paramType = parseTypeName();
+                typeName += paramType;
+            }
+            
+            // Expect )
+            if (current.type != TOKEN_RPAREN) {
+                throw std::runtime_error("Expected ')' after parameter types");
+            }
+            typeName += ")";
+            advance(); // consume )
+            
+            // Expect >
+            if (current.type != TOKEN_GT) {
+                throw std::runtime_error("Expected '>' after function signature");
+            }
+            typeName += ">";
+            advance(); // consume >
         }
-        typeName += ">";
-        advance(); // consume >
     }
     
     // Handle pointer suffix (@)
@@ -1171,15 +1217,28 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         }
     }
     
-    // Check for * prefix (auto-wrap lambda)
-    bool auto_wrap = false;
+    // Check for * prefix - now means "generic type follows" not autowrap
+    // Example: *T(x) means T is a generic type parameter, not autowrap
+    bool is_generic_type_marker = false;
     if (current.type == TOKEN_STAR) {
-        auto_wrap = true;
+        is_generic_type_marker = true;
         advance();  // consume *
     }
     
-    // Check if this is a type token - could be var decl OR lambda
-    if (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING) {
+    // Check if this is a type token OR a generic type parameter (with * prefix)
+    bool isTypeOrGeneric = (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING);
+    if (!isTypeOrGeneric && current.type == TOKEN_IDENTIFIER && is_generic_type_marker) {
+        // * followed by identifier means it's a generic type parameter
+        // Check if identifier is a known generic type parameter
+        for (const auto& param : context.genericTypeParams) {
+            if (current.value == param) {
+                isTypeOrGeneric = true;
+                break;
+            }
+        }
+    }
+    
+    if (isTypeOrGeneric) {
         // Lookahead: if next token is '(', this is a lambda expression statement
         // BUT: for func<...> signatures, we need to parse the full type first
         
@@ -1263,7 +1322,7 @@ std::unique_ptr<Statement> Parser::parseStmt() {
             auto body = parseBlock();
             
             auto lambda = std::make_unique<LambdaExpr>(return_type, std::move(params), std::move(body));
-            lambda->auto_wrap = auto_wrap;
+            // Note: auto_wrap removed - now use explicit pass()/fail() syntax
             
             // Check for immediate invocation
             if (current.type == TOKEN_LPAREN) {
@@ -1519,7 +1578,8 @@ std::unique_ptr<Statement> Parser::parseVarDecl() {
     }
     
     // Not a simple identifier - must be a built-in type or complex type like func<...>
-    // Use parseTypeName to handle it (it will handle func<...> signatures)
+    
+    // Use parseTypeName to handle all types including func<...>
     std::string fullType = parseTypeName();
 
     // Colon (Aria syntax: type:name)
@@ -1528,11 +1588,42 @@ std::unique_ptr<Statement> Parser::parseVarDecl() {
     // Name
     Token nameToken = expect(TOKEN_IDENTIFIER);
 
+    // Extract generic parameters from type if present and add to context
+    std::vector<std::string> savedGenericParams = context.genericTypeParams;
+    if (fullType.substr(0, 5) == "func<") {
+        size_t start = 5;  // After "func<"
+        size_t end = fullType.find('>');
+        if (end != std::string::npos) {
+            std::string params_str = fullType.substr(start, end - start);
+            
+            // Split by comma
+            size_t pos = 0;
+            while (pos < params_str.length()) {
+                size_t comma = params_str.find(',', pos);
+                if (comma == std::string::npos) {
+                    comma = params_str.length();
+                }
+                std::string param = params_str.substr(pos, comma - pos);
+                // Trim whitespace
+                size_t first = param.find_first_not_of(" \t");
+                size_t last = param.find_last_not_of(" \t");
+                if (first != std::string::npos && last != std::string::npos) {
+                    param = param.substr(first, last - first + 1);
+                    context.genericTypeParams.push_back(param);
+                }
+                pos = comma + 1;
+            }
+        }
+    }
+
     // Initializer
     std::unique_ptr<Expression> init = nullptr;
     if (match(TOKEN_ASSIGN)) {
         init = parseExpr();
     }
+
+    // Restore original generic params
+    context.genericTypeParams = savedGenericParams;
 
     expect(TOKEN_SEMICOLON);
 
@@ -1541,6 +1632,30 @@ std::unique_ptr<Statement> Parser::parseVarDecl() {
     varDecl->is_wild = is_wild;
     varDecl->is_wildx = is_wildx;
     varDecl->is_stack = is_stack;
+    
+    // Store generic parameters in VarDecl for codegen
+    if (fullType.substr(0, 5) == "func<") {
+        size_t start = 5;
+        size_t end = fullType.find('>');
+        if (end != std::string::npos) {
+            std::string params_str = fullType.substr(start, end - start);
+            size_t pos = 0;
+            while (pos < params_str.length()) {
+                size_t comma = params_str.find(',', pos);
+                if (comma == std::string::npos) {
+                    comma = params_str.length();
+                }
+                std::string param = params_str.substr(pos, comma - pos);
+                size_t first = param.find_first_not_of(" \t");
+                size_t last = param.find_last_not_of(" \t");
+                if (first != std::string::npos && last != std::string::npos) {
+                    param = param.substr(first, last - first + 1);
+                    varDecl->generic_params.push_back(param);
+                }
+                pos = comma + 1;
+            }
+        }
+    }
     
     return varDecl;
 }
@@ -2002,8 +2117,16 @@ std::vector<FuncParam> Parser::parseParams() {
     while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
         // Parse param_type:param_name (with optional memory qualifiers and array/pointer suffixes)
         // Can have optional wild/wildx qualifier: "wild int8@:ptr"
+        // NEW: Can have * prefix for generic types: "*T:value"
         
         std::string param_type = "";
+        
+        // Check for * prefix (generic type marker)
+        bool has_generic_marker = false;
+        if (current.type == TOKEN_STAR) {
+            has_generic_marker = true;
+            advance();
+        }
         
         // Check for memory qualifier (wild, wildx)
         if (current.type == TOKEN_KW_WILD) {
@@ -2015,7 +2138,19 @@ std::vector<FuncParam> Parser::parseParams() {
         }
         
         // Now parse the base type
-        if (!isTypeToken(current.type)) {
+        // If has_generic_marker, identifier is allowed (generic type param)
+        bool is_valid_type = isTypeToken(current.type);
+        if (!is_valid_type && has_generic_marker && current.type == TOKEN_IDENTIFIER) {
+            // Check if it's a known generic type parameter
+            for (const auto& param : context.genericTypeParams) {
+                if (current.value == param) {
+                    is_valid_type = true;
+                    break;
+                }
+            }
+        }
+        
+        if (!is_valid_type) {
             throw std::runtime_error("Expected type token in parameter list");
         }
         
