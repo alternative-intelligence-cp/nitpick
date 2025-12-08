@@ -98,6 +98,7 @@ using aria::frontend::ReturnStmt;
 using aria::frontend::UseStmt;
 using aria::frontend::ModDef;
 using aria::frontend::ExternBlock;
+using aria::frontend::FuncParam;
 
 // Bring CodeGenContext and ScopeGuard from extracted header
 using aria::backend::CodeGenContext;
@@ -213,8 +214,14 @@ class CodeGenVisitor : public AstVisitor {
         // Set up substitution context
         ctx.typeSubstitution = typeSubstitution;
         
-        // Generate the lambda body with type substitution active
-        generateLambdaBody(originalLambda, specializedFunc);
+        // Generate the function body based on which style we have
+        if (tmpl.funcDecl) {
+            // TODO: Implement FuncDecl monomorphization
+            throw std::runtime_error("FuncDecl-style generic functions not yet supported for monomorphization");
+        } else {
+            // Lambda style (VarDecl) - use generateLambdaBody
+            generateLambdaBody(originalLambda, specializedFunc);
+        }
         
         // Restore state
         ctx.typeSubstitution = prevSubstitution;
@@ -235,7 +242,8 @@ public:
     // Infer concrete types for generic parameters from call arguments
     // Example: max(5, 10) -> infer T=int8 from both arguments
     std::vector<std::string> inferGenericTypes(const GenericTemplate& tmpl, CallExpr* call) {
-        if (call->arguments.size() != tmpl.lambda->parameters.size()) {
+        const auto& params = tmpl.getParameters();
+        if (call->arguments.size() != params.size()) {
             return {};  // Argument count mismatch, can't infer
         }
         
@@ -244,7 +252,7 @@ public:
         
         // Analyze each argument to infer types
         for (size_t i = 0; i < call->arguments.size(); ++i) {
-            const auto& param = tmpl.lambda->parameters[i];
+            const auto& param = params[i];
             Expression* argExpr = call->arguments[i].get();
             
             // Get the Aria type of the argument
@@ -893,7 +901,7 @@ public:
             if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node->initializer.get())) {
                 // Register the generic function template
                 GenericTemplate tmpl;
-                tmpl.ast = node;
+                tmpl.varDecl = node;
                 tmpl.lambda = lambda;
                 tmpl.typeParams = node->generic_params;
                 
@@ -1157,7 +1165,7 @@ public:
         // code immediately. Instead, store as template for later monomorphization.
         if (!node->generics.empty()) {
             GenericTemplate tmpl;
-            tmpl.ast = node;  // Store pointer to AST
+            tmpl.funcDecl = node;  // Store pointer to FuncDecl
             tmpl.typeParams = node->generics;
             genericTemplates[node->name] = tmpl;
             
