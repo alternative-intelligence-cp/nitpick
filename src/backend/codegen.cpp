@@ -841,6 +841,20 @@ public:
     }
 
     void visit(VarDecl* node) override {
+        // SPECIAL CASE: Generic function template (has generic_params)
+        // Don't generate code immediately - store as template for monomorphization
+        if (!node->generic_params.empty() && 
+            (node->type == "func" || node->type.find("func<") == 0) && 
+            node->initializer) {
+            
+            if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node->initializer.get())) {
+                // Store the generic function template
+                // For now, just skip code generation - template will be instantiated at call sites
+                // TODO: Implement full monomorphization system with template storage
+                return;
+            }
+        }
+        
         // Special case: Function variables (type="func" or "func<signature>" with Lambda initializer)
         if ((node->type == "func" || node->type.find("func<") == 0) && node->initializer) {
             if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node->initializer.get())) {

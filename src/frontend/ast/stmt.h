@@ -18,11 +18,13 @@ public:
 
 // Variable Declaration Statement
 // Example: int64:x = 42;
+// Generic function example: func<T>:identity = *T(T:x) { return x; };
 class VarDecl : public Statement {
 public:
     std::string name;
     std::string type;
     std::unique_ptr<Expression> initializer;
+    std::vector<std::string> generic_params;  // Generic type parameters (e.g., ["T", "U"])
     bool is_stack = false;
     bool is_wild = false;
     bool is_wildx = false;  // Executable memory for JIT compilation

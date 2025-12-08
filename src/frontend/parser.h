@@ -20,6 +20,7 @@ namespace frontend {
 // Stores configuration and state for parsing
 struct ParserContext {
     bool strictMode = false;  // Enable strict type checking
+    std::vector<std::string> genericTypeParams;  // Active generic type parameters (e.g., ["T", "U"])
     // Future: Add more parser configuration options
 };
 
