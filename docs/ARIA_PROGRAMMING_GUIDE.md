@@ -21,9 +21,9 @@
 
 ### Minimal Hello World
 ```aria
-func:main = *int8() {
+func:main = int8() {
     puts("Hello, Aria!");
-    return 0;
+    pass(0);
 };
 ```
 
@@ -54,9 +54,10 @@ func:helper = *int32(int32:x) {
 
 **Reserved Keywords**: `result`, `func`, `wild`, `defer`, `async`, `const`, `use`, `mod`, `pub`, `extern`, `ERR`, `stack`, `gc`, `wildx`, `struct`, `enum`, `type`, `is`, `in`, `fall`, `pass`, `fail`
 
-### ⚡ Auto-Wrap Return Types
+### ⚡ Return Value Helpers
+All Aria functions return a `result` type containing `{err, val}`. Use helper functions for cleaner code:
+
 ```aria
-// WITHOUT * prefix: Must use pass()/fail()
 func:divide = int32(int32:a, int32:b) {
     if (b == 0) {
         fail(1);  // Return {err: 1, val: 0}
@@ -64,27 +65,26 @@ func:divide = int32(int32:a, int32:b) {
     pass(a / b);  // Return {err: 0, val: result}
 };
 
-// WITH * prefix: Direct return allowed
-func:divide = *int32(int32:a, int32:b) {
+// Alternative: Explicit result construction
+func:divide = int32(int32:a, int32:b) {
     if (b == 0) {
-        fail(1);
+        return {err: 1, val: 0};
     }
-    return a / b;  // Automatically wrapped to {err: 0, val: a/b}
+    return {err: 0, val: a / b};
 };
 ```
 
-**Rule**: `*` prefix on return type = auto-wrap enabled = allows `return value;`  
-**Without** `*` = must use `pass(value)` or `fail(code)`
+**Best Practice**: Use `pass(value)` for success and `fail(code)` for errors instead of constructing result structs manually.
 
 ### 📝 Function Declaration Syntax
 ```aria
 // Function stored in variable (can be called later)
-func:myFunction = *int8(int8:x, int8:y) {
-    return x + y;
+func:myFunction = int8(int8:x, int8:y) {
+    pass(x + y);
 };
 
 // Immediate execution (result stored in variable)
-int8:sum = int8(int8:x, int8:y) { return x + y; }(3, 4);
+int8:sum = int8(int8:x, int8:y) { pass(x + y); }(3, 4) ? 0;
 //         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^
 //         Anonymous lambda                      Call it immediately
 
@@ -137,7 +137,7 @@ nyte:ny;                        // 5 nits in uint16
 ### Compound Types
 ```aria
 string:name = "Alice";
-func:callback = *int8(int8:x) { return x * 2; };
+func:callback = int8(int8:x) { pass(x * 2); };
 dyn:flexible = 42;              // Can change type
 obj:config = {port: 8080};      // Object literal
 int8[10]:array;                 // Fixed-size array
@@ -155,8 +155,8 @@ flt64@:float_ptr = 0;           // Pointer to flt64
 
 ### Basic Function
 ```aria
-func:add = *int32(int32:a, int32:b) {
-    return a + b;
+func:add = int32(int32:a, int32:b) {
+    pass(a + b);
 };
 ```
 
@@ -164,34 +164,36 @@ func:add = *int32(int32:a, int32:b) {
 ```aria
 int8:multiplier = 3;
 
-func:multiply = *int8(int8:x) {
-    return x * multiplier;  // Captures 'multiplier' from outer scope
+func:multiply = int8(int8:x) {
+    pass(x * multiplier);  // Captures 'multiplier' from outer scope
 };
 
-int8:result = multiply(5);  // 15
+int8:result = multiply(5) ? 0;  // 15
 ```
 
 ### Recursive Functions
 ```aria
-func:factorial = *int64(int64:n) {
+func:factorial = int64(int64:n) {
     if (n <= 1) {
-        return 1;
+        pass(1);
     }
-    return n * factorial(n - 1);  // Can call itself
+    int64:subresult = factorial(n - 1) ? 0;
+    pass(n * subresult);  // Can call itself
 };
 ```
 
 ### Lambda as Argument
 ```aria
-func:applyTwice = *int8(func:operation, int8:value) {
-    int8:temp = operation(value);
-    return operation(temp);
+func:applyTwice = int8(func:operation, int8:value) {
+    int8:temp = operation(value) ? 0;
+    int8:result = operation(temp) ? 0;
+    pass(result);
 };
 
 int8:result = applyTwice(
-    int8(int8:x) { return x + 1; },  // Anonymous lambda
+    int8(int8:x) { pass(x + 1); },  // Anonymous lambda
     5
-);  // Result: 7
+) ? 0;  // Result: 7
 ```
 
 ---
@@ -295,17 +297,17 @@ func:process_%1 = *int32(%1:x) {
 
 // ❌ AVOID: Using reserved keywords in generated code
 %macro BAD_MACRO 1
-func:process_%1 = *%1(%1:input) {
+func:process_%1 = %1(%1:input) {
     %1:result = input * 2;  // ERROR: 'result' is reserved!
-    return result;
+    pass(result);
 };
 %endmacro
 
 // ✅ FIXED:
 %macro GOOD_MACRO 1
-func:process_%1 = *%1(%1:input) {
+func:process_%1 = %1(%1:input) {
     %1:output = input * 2;  // OK: 'output' is not reserved
-    return output;
+    pass(output);
 };
 %endmacro
 ```
@@ -323,9 +325,9 @@ func:process_%1 = *%1(%1:input) {
 ```aria
 // ❌ FAILS with multiple invocations
 %macro GEN_POPCOUNT 1
-func:popcount_%1 = *int32(%1:x) {
+func:popcount_%1 = int32(%1:x) {
     %1:val = x;  // Problematic!
-    return 0;
+    pass(0);
 };
 %endmacro
 
@@ -334,9 +336,9 @@ GEN_POPCOUNT(uint8)  // Second invocation causes parse error!
 
 // ✅ WORKS - use fixed type for internal variables
 %macro GEN_POPCOUNT 1
-func:popcount_%1 = *int32(%1:x) {
+func:popcount_%1 = int32(%1:x) {
     int32:val = x;  // Fixed type - works with multiple invocations
-    return 0;
+    pass(0);
 };
 %endmacro
 
@@ -534,9 +536,10 @@ uint8@:my_ptr = 0;
 int32@:num_ptr = 0;
 
 // Pass pointer to function
-int32:status = process(my_ptr, 100);
+int32:status = process(my_ptr, 100) ? 0;
 
 // Note: Address-of (&) and dereference (*) operators not yet implemented
+// The * prefix in generics context (func<T>) marks generic type usage
 ```
 
 ### String Interpolation
