@@ -103,10 +103,16 @@ struct StructField {
 
 // Struct Declaration
 // Example: const Point = struct { x: int64, y: int64, };
+// With methods: const Point = struct {
+//     x: int64,
+//     y: int64,
+//     func:distance = flt32(self) { pass(sqrt(self.x*self.x + self.y*self.y)); };
+// };
 class StructDecl : public Statement {
 public:
     std::string name;
     std::vector<StructField> fields;
+    std::vector<std::unique_ptr<VarDecl>> methods;  // Methods are VarDecls with lambda initializers
     bool is_const = true;  // Structs are typically const type definitions
     
     StructDecl(const std::string& n, std::vector<StructField> f)

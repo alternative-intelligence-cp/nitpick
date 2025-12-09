@@ -1344,6 +1344,28 @@ public:
         
         // Note: We don't need to add to symbol table - struct types are looked up by name
         // The type system will resolve "Point" to the LLVM StructType when needed
+        
+        // =====================================================================
+        // STRUCT METHODS: Generate as mangled free functions
+        // =====================================================================
+        // Methods defined inside structs are transformed into free functions:
+        // Example: Point.distance(self) -> Point_distance(Point self)
+        // Methods are stored as VarDecls with lambda initializers
+        for (auto& methodVarDecl : node->methods) {
+            // Extract lambda from VarDecl
+            auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(methodVarDecl->initializer.get());
+            if (!lambda) continue;
+            
+            // Create mangled name: Point.distance -> Point_distance
+            std::string mangledName = ctx.currentModulePrefix + node->name + "_" + methodVarDecl->name;
+            
+            // Generate function directly from lambda
+            // We'll visit the lambda as if it were a function
+            std::string originalName = methodVarDecl->name;
+            methodVarDecl->name = mangledName;
+            visit(methodVarDecl.get());  // Visit the VarDecl (will generate function from lambda)
+            methodVarDecl->name = originalName;
+        }
     }
 
     void visit(ExpressionStmt* node) override {
@@ -3259,57 +3281,58 @@ public:
             // Standard operations (non-TBB or comparison/logical operations)
             switch (binop->op) {
                 case aria::frontend::BinaryOp::ADD:
-                    if (L->getType()->isFloatingPointTy()) {
+                    // Check if operand is floating-point (scalar or vector)
+                    if (L->getType()->isFPOrFPVectorTy()) {
                         return ctx.builder->CreateFAdd(L, R, "addtmp");
                     }
                     return ctx.builder->CreateAdd(L, R, "addtmp");
                 case aria::frontend::BinaryOp::SUB:
-                    if (L->getType()->isFloatingPointTy()) {
+                    if (L->getType()->isFPOrFPVectorTy()) {
                         return ctx.builder->CreateFSub(L, R, "subtmp");
                     }
                     return ctx.builder->CreateSub(L, R, "subtmp");
                 case aria::frontend::BinaryOp::MUL:
-                    if (L->getType()->isFloatingPointTy()) {
+                    if (L->getType()->isFPOrFPVectorTy()) {
                         return ctx.builder->CreateFMul(L, R, "multmp");
                     }
                     return ctx.builder->CreateMul(L, R, "multmp");
                 case aria::frontend::BinaryOp::DIV:
-                    if (L->getType()->isFloatingPointTy()) {
+                    if (L->getType()->isFPOrFPVectorTy()) {
                         return ctx.builder->CreateFDiv(L, R, "divtmp");
                     }
                     return ctx.builder->CreateSDiv(L, R, "divtmp");
                 case aria::frontend::BinaryOp::MOD:
-                    if (L->getType()->isFloatingPointTy()) {
+                    if (L->getType()->isFPOrFPVectorTy()) {
                         return ctx.builder->CreateFRem(L, R, "modtmp");
                     }
                     return ctx.builder->CreateSRem(L, R, "modtmp");
                 case aria::frontend::BinaryOp::EQ:
-                    if (L->getType()->isFloatingPointTy()) {
+                    if (L->getType()->isFPOrFPVectorTy()) {
                         return ctx.builder->CreateFCmpOEQ(L, R, "eqtmp");
                     }
                     return ctx.builder->CreateICmpEQ(L, R, "eqtmp");
                 case aria::frontend::BinaryOp::NE:
-                    if (L->getType()->isFloatingPointTy()) {
+                    if (L->getType()->isFPOrFPVectorTy()) {
                         return ctx.builder->CreateFCmpONE(L, R, "netmp");
                     }
                     return ctx.builder->CreateICmpNE(L, R, "netmp");
                 case aria::frontend::BinaryOp::LT:
-                    if (L->getType()->isFloatingPointTy()) {
+                    if (L->getType()->isFPOrFPVectorTy()) {
                         return ctx.builder->CreateFCmpOLT(L, R, "lttmp");
                     }
                     return ctx.builder->CreateICmpSLT(L, R, "lttmp");
                 case aria::frontend::BinaryOp::GT:
-                    if (L->getType()->isFloatingPointTy()) {
+                    if (L->getType()->isFPOrFPVectorTy()) {
                         return ctx.builder->CreateFCmpOGT(L, R, "gttmp");
                     }
                     return ctx.builder->CreateICmpSGT(L, R, "gttmp");
                 case aria::frontend::BinaryOp::LE:
-                    if (L->getType()->isFloatingPointTy()) {
+                    if (L->getType()->isFPOrFPVectorTy()) {
                         return ctx.builder->CreateFCmpOLE(L, R, "letmp");
                     }
                     return ctx.builder->CreateICmpSLE(L, R, "letmp");
                 case aria::frontend::BinaryOp::GE:
-                    if (L->getType()->isFloatingPointTy()) {
+                    if (L->getType()->isFPOrFPVectorTy()) {
                         return ctx.builder->CreateFCmpOGE(L, R, "getmp");
                     }
                     return ctx.builder->CreateICmpSGE(L, R, "getmp");
@@ -4292,8 +4315,30 @@ public:
             suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), resumeBB);
             suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), cleanupBB);
             
-            // SUSPEND PATH - Return to caller/scheduler
+            // SUSPEND PATH - Schedule coroutine for resumption and return to caller
             ctx.builder->SetInsertPoint(suspendBB);
+            
+            // Declare aria_scheduler_schedule if not already present
+            Function* schedulerSchedule = ctx.module->getFunction("aria_scheduler_schedule");
+            if (!schedulerSchedule) {
+                FunctionType* schedFuncType = FunctionType::get(
+                    Type::getVoidTy(ctx.llvmContext),
+                    {PointerType::getUnqual(ctx.llvmContext)},  // void* handle parameter
+                    false
+                );
+                schedulerSchedule = Function::Create(
+                    schedFuncType,
+                    Function::ExternalLinkage,
+                    "aria_scheduler_schedule",
+                    ctx.module.get()
+                );
+            }
+            
+            // Schedule the coroutine for resumption
+            // The scheduler will call the resume wrapper function we generated
+            ctx.builder->CreateCall(schedulerSchedule, {coroHandle});
+            
+            // Return to caller (control goes back to scheduler)
             ctx.builder->CreateRet(Constant::getNullValue(ctx.currentFunction->getReturnType()));
             
             // CLEANUP PATH - Coroutine destroyed

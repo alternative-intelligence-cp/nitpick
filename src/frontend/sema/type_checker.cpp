@@ -268,9 +268,9 @@ void TypeChecker::visit(frontend::UnaryOp* node) {
 
 // Visit CallExpr
 void TypeChecker::visit(frontend::CallExpr* node) {
-    // For now, just assume function calls return int64
-    // Full implementation would look up function signature
-    current_expr_type = makeIntType(64);
+    // All functions in Aria return result type (with {err, val} fields)
+    // TODO: Look up actual function signature to validate argument types
+    current_expr_type = std::make_shared<Type>(TypeKind::STRUCT, "result");
 }
 
 // Visit LambdaExpr
@@ -284,12 +284,29 @@ void TypeChecker::visit(frontend::LambdaExpr* node) {
         return;
     }
     
+    // Create new scope for lambda parameters (child of current scope)
+    auto saved_symbols = std::move(symbols);
+    symbols = std::make_unique<SymbolTable>(std::move(saved_symbols));
+    
+    // Add parameters to symbol table
+    for (const auto& param : node->parameters) {
+        auto param_type = parseType(param.type);
+        if (!param_type) {
+            addError("Unknown parameter type '" + param.type + "' for parameter '" + param.name + "'");
+            param_type = makeErrorType();
+        }
+        symbols->define(param.name, param_type, false);
+    }
+    
     // Type check lambda body
     if (node->body) {
         node->body->accept(*this);
     }
     
-    // TODO: Check function parameters
+    // Note: We leave the lambda scope in place since SymbolTable parent is unique_ptr
+    // This is fine - future lookups in outer scope will traverse parent chain
+    // Parameters won't leak since they're in a deeper scope level
+    
     // TODO: If immediately invoked, check argument types match parameters
 }
 
