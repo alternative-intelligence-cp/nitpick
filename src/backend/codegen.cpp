@@ -246,7 +246,8 @@ class CodeGenVisitor : public AstVisitor {
             throw std::runtime_error("FuncDecl-style generic functions not yet supported for monomorphization");
         } else {
             // Lambda style (VarDecl) - use generateLambdaBody
-            generateLambdaBody(originalLambda, specializedFunc);
+            // TODO: Add closure support for generic functions
+            generateLambdaBody(originalLambda, specializedFunc, nullptr);
         }
         
         // Restore state
@@ -846,13 +847,100 @@ public:
     // 1. Variable Declarations
     // -------------------------------------------------------------------------
     
+    // Helper: Generate environment struct type for closure captures
+    StructType* generateClosureEnvType(aria::frontend::LambdaExpr* lambda, const std::string& envName) {
+        if (!lambda->needs_heap_environment || lambda->captured_variables.empty()) {
+            return nullptr;
+        }
+        
+        std::vector<Type*> fieldTypes;
+        for (const auto& captured : lambda->captured_variables) {
+            if (!captured.is_global) {  // Only include local captures in environment
+                Type* fieldType = ctx.getLLVMType(captured.type);
+                fieldTypes.push_back(fieldType);
+            }
+        }
+        
+        if (fieldTypes.empty()) {
+            return nullptr;
+        }
+        
+        return StructType::create(ctx.llvmContext, fieldTypes, envName);
+    }
+    
+    // Helper: Allocate closure environment on heap
+    Value* allocateClosureEnv(StructType* envType) {
+        if (!envType) return nullptr;
+        
+        // Get or declare malloc
+        FunctionType* mallocType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),
+            {Type::getInt64Ty(ctx.llvmContext)},
+            false
+        );
+        FunctionCallee mallocFunc = ctx.module->getOrInsertFunction("malloc", mallocType);
+        
+        // Calculate size of environment struct
+        const DataLayout& DL = ctx.module->getDataLayout();
+        uint64_t envSize = DL.getTypeAllocSize(envType);
+        Value* size = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), envSize);
+        
+        // Allocate environment
+        Value* envPtr = ctx.builder->CreateCall(mallocFunc, {size}, "closure_env");
+        
+        return envPtr;
+    }
+    
+    // Helper: Store captured values into environment
+    void populateClosureEnv(Value* envPtr, StructType* envType, aria::frontend::LambdaExpr* lambda) {
+        if (!envPtr || !envType) return;
+        
+        unsigned fieldIdx = 0;
+        for (const auto& captured : lambda->captured_variables) {
+            if (!captured.is_global) {  // Only populate local captures
+                // Look up the captured variable in current scope
+                auto* sym = ctx.lookup(captured.name);
+                if (sym && sym->val) {
+                    // Load the value if it's a reference
+                    Value* valueToStore = sym->val;
+                    if (sym->is_ref) {
+                        valueToStore = ctx.builder->CreateLoad(
+                            ctx.getLLVMType(captured.type),
+                            sym->val,
+                            captured.name + ".val"
+                        );
+                    }
+                    
+                    // Get pointer to environment field
+                    Value* fieldPtr = ctx.builder->CreateStructGEP(
+                        envType,
+                        envPtr,
+                        fieldIdx,
+                        "env." + captured.name
+                    );
+                    
+                    // Store the value
+                    ctx.builder->CreateStore(valueToStore, fieldPtr);
+                }
+                fieldIdx++;
+            }
+        }
+    }
+    
     // Helper: Generate lambda function body (for recursive function support)
-    void generateLambdaBody(aria::frontend::LambdaExpr* lambda, Function* func) {
+    void generateLambdaBody(aria::frontend::LambdaExpr* lambda, Function* func, StructType* envType = nullptr) {
         // Set parameter names
         unsigned idx = 0;
-        for (auto& arg : func->args()) {
+        unsigned argIdx = 0;
+        
+        // If we have an environment, first arg is __env (already named)
+        if (lambda->needs_heap_environment && envType) {
+            argIdx = 1;  // Skip environment parameter when naming user parameters
+        }
+        
+        for (auto argIt = func->arg_begin() + argIdx; argIt != func->arg_end(); ++argIt) {
             if (idx < lambda->parameters.size()) {
-                arg.setName(lambda->parameters[idx++].name);
+                argIt->setName(lambda->parameters[idx++].name);
             }
         }
         
@@ -951,16 +1039,64 @@ public:
         ctx.deferStacks = std::vector<std::vector<Block*>>();
         ctx.deferStacks.emplace_back();
         
+        // CLOSURE SUPPORT: Extract captured variables from environment
+        if (lambda->needs_heap_environment && envType) {
+            // First parameter is environment pointer
+            Argument* envArg = func->arg_begin();
+            
+            // Extract each captured variable from environment
+            unsigned fieldIdx = 0;
+            for (const auto& captured : lambda->captured_variables) {
+                if (!captured.is_global) {
+                    // Get pointer to environment field
+                    Value* fieldPtr = ctx.builder->CreateStructGEP(
+                        envType,
+                        envArg,
+                        fieldIdx,
+                        "env." + captured.name
+                    );
+                    
+                    // Load the captured value
+                    Type* fieldType = ctx.getLLVMType(captured.type);
+                    Value* capturedValue = ctx.builder->CreateLoad(
+                        fieldType,
+                        fieldPtr,
+                        captured.name
+                    );
+                    
+                    // Store in alloca so it can be referenced in lambda body
+                    AllocaInst* alloca = ctx.builder->CreateAlloca(
+                        fieldType,
+                        nullptr,
+                        captured.name + ".addr"
+                    );
+                    ctx.builder->CreateStore(capturedValue, alloca);
+                    
+                    // Register in symbol table
+                    ctx.define(captured.name, alloca, true, captured.type);
+                    
+                    fieldIdx++;
+                }
+            }
+        }
+        
         // Create allocas for parameters
         std::vector<std::pair<std::string, CodeGenContext::Symbol*>> savedSymbols;
         
         idx = 0;
-        for (auto& arg : func->args()) {
-            Type* argType = arg.getType();
-            AllocaInst* alloca = ctx.builder->CreateAlloca(argType, nullptr, arg.getName());
-            ctx.builder->CreateStore(&arg, alloca);
+        argIdx = 0;
+        
+        // Skip environment parameter if present
+        if (lambda->needs_heap_environment && envType) {
+            argIdx = 1;
+        }
+        
+        for (auto argIt = func->arg_begin() + argIdx; argIt != func->arg_end(); ++argIt) {
+            Type* argType = argIt->getType();
+            AllocaInst* alloca = ctx.builder->CreateAlloca(argType, nullptr, argIt->getName());
+            ctx.builder->CreateStore(&(*argIt), alloca);
             
-            std::string argName = std::string(arg.getName());
+            std::string argName = std::string(argIt->getName());
             auto* existingSym = ctx.lookup(argName);
             if (existingSym) {
                 savedSymbols.push_back({argName, existingSym});
@@ -1114,6 +1250,17 @@ public:
                 
                 // Create function type
                 std::vector<Type*> paramTypes;
+                
+                // CLOSURE SUPPORT: Add hidden environment pointer parameter if needed
+                StructType* envType = nullptr;
+                if (lambda->needs_heap_environment) {
+                    envType = generateClosureEnvType(lambda, node->name + "_env");
+                    if (envType) {
+                        // Add ptr as first parameter
+                        paramTypes.push_back(PointerType::getUnqual(ctx.llvmContext));
+                    }
+                }
+                
                 for (auto& param : lambda->parameters) {
                     paramTypes.push_back(ctx.getLLVMType(param.type));
                 }
@@ -1131,12 +1278,52 @@ public:
                     ctx.module.get()
                 );
                 
-                // Register IMMEDIATELY so recursive calls can find it
-                ctx.define(node->name, func, false, node->type);
+                // Set name for environment parameter if present
+                if (lambda->needs_heap_environment && envType) {
+                    func->arg_begin()->setName("__env");
+                }
+                
+                // CLOSURE SUPPORT: If we need heap environment, create and populate it
+                Value* closureValue = nullptr;
+                if (lambda->needs_heap_environment && envType) {
+                    // Allocate environment on heap
+                    Value* envPtr = allocateClosureEnv(envType);
+                    
+                    // Populate environment with captured values
+                    populateClosureEnv(envPtr, envType, lambda);
+                    
+                    // Create fat pointer structure {func_ptr, env_ptr}
+                    // For now, we'll store this as a struct in memory
+                    Type* fatPtrFields[] = {
+                        PointerType::getUnqual(ctx.llvmContext),  // func ptr
+                        PointerType::getUnqual(ctx.llvmContext)   // env ptr
+                    };
+                    StructType* fatPtrType = StructType::create(ctx.llvmContext, fatPtrFields, node->name + "_closure_t");
+                    
+                    // Allocate fat pointer on stack
+                    AllocaInst* fatPtrAlloca = ctx.builder->CreateAlloca(fatPtrType, nullptr, node->name + ".closure");
+                    
+                    // Store function pointer
+                    Value* funcPtrField = ctx.builder->CreateStructGEP(fatPtrType, fatPtrAlloca, 0);
+                    ctx.builder->CreateStore(func, funcPtrField);
+                    
+                    // Store environment pointer
+                    Value* envPtrField = ctx.builder->CreateStructGEP(fatPtrType, fatPtrAlloca, 1);
+                    ctx.builder->CreateStore(envPtr, envPtrField);
+                    
+                    closureValue = fatPtrAlloca;
+                    
+                    // Register closure (fat pointer) in symbol table
+                    ctx.define(node->name, closureValue, true, node->type, CodeGenContext::AllocStrategy::STACK);
+                } else {
+                    // No captures, just register function directly
+                    ctx.define(node->name, func, false, node->type);
+                }
                 
                 // Now generate the lambda body (visitExpr will fill in the function)
                 // We pass the pre-created function to be filled
-                generateLambdaBody(lambda, func);
+                // Also pass the environment type so lambda body can extract captured variables
+                generateLambdaBody(lambda, func, envType);
                 
                 return;
             }

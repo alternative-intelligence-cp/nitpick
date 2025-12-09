@@ -296,17 +296,12 @@ public:
         for (const auto& var : referenced_vars) {
             if (local_vars.find(var) == local_vars.end()) {
                 captured.insert(var);
-                std::cout << "[CAPTURE_ANALYZER] Variable '" << var << "' is captured (not in local vars)" << std::endl;
             }
         }
-        std::cout << "[CAPTURE_ANALYZER] Total captured: " << captured.size() 
-                  << ", total referenced: " << referenced_vars.size() 
-                  << ", total local: " << local_vars.size() << std::endl;
         return captured;
     }
     
     void visit(frontend::VarExpr* node) override {
-        std::cout << "[CAPTURE_ANALYZER] VarExpr: " << node->name << std::endl;
         referenced_vars.insert(node->name);
     }
     
@@ -334,7 +329,6 @@ public:
     }
     
     void visit(frontend::ReturnStmt* node) override {
-        std::cout << "[CAPTURE_ANALYZER] ReturnStmt" << std::endl;
         if (node->value) node->value->accept(*this);
     }
     
@@ -393,10 +387,8 @@ public:
     void visit(frontend::WhenExpr*) override {}
     void visit(frontend::AwaitExpr*) override {}
     void visit(frontend::ObjectLiteral* node) override {
-        std::cout << "[CAPTURE_ANALYZER] ObjectLiteral with " << node->fields.size() << " fields" << std::endl;
         for (auto& field : node->fields) {
             if (field.value) {
-                std::cout << "[CAPTURE_ANALYZER]   Field: " << field.name << std::endl;
                 field.value->accept(*this);
             }
         }
@@ -410,8 +402,6 @@ public:
 
 // Visit LambdaExpr
 void TypeChecker::visit(frontend::LambdaExpr* node) {
-    std::cout << "[TYPE_CHECK] Visiting LambdaExpr (return type: " << node->return_type << ")" << std::endl;
-    
     // Lambda expressions evaluate to their return type
     current_expr_type = parseType(node->return_type);
     
@@ -446,17 +436,7 @@ void TypeChecker::visit(frontend::LambdaExpr* node) {
                 if (!is_global) {
                     node->needs_heap_environment = true;
                 }
-                
-                // Debug output
-                std::cout << "[CAPTURE] Lambda captures '" << var_name 
-                          << "' (type: " << var_info->type_name
-                          << ", " << (is_global ? "global" : "local") << ")" << std::endl;
             }
-        }
-        
-        if (node->needs_heap_environment) {
-            std::cout << "[CAPTURE] Lambda needs heap environment (captures " 
-                      << node->captured_variables.size() << " variables)" << std::endl;
         }
     }
     
