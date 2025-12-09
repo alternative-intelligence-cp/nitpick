@@ -48,6 +48,21 @@ public:
     }
 };
 
+// Spawn Expression (Concurrent Execution)
+// Example: spawn fetchData(url)
+// Returns Future<T> where T is the return type of the spawned function
+class SpawnExpr : public Expression {
+public:
+    std::unique_ptr<Expression> expression;  // Usually a CallExpr
+
+    SpawnExpr(std::unique_ptr<Expression> expr)
+        : expression(std::move(expr)) {}
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
 // Variable Reference Expression
 // Example: x, myVar
 class VarExpr : public Expression {

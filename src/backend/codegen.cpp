@@ -5013,6 +5013,23 @@ public:
         // For v0.0.7, this is a placeholder
     }
     
+    void visit(frontend::SpawnExpr* node) override {
+        // spawn <expression>
+        // Spawns expression (usually function call) on scheduler
+        // Returns Future<T> handle that can be awaited later
+        
+        // For now, just execute the expression immediately
+        // TODO: Implement actual spawn with Future<T> return
+        // This requires:
+        // 1. Wrap expression in a task closure
+        // 2. Call aria_scheduler_schedule with the task
+        // 3. Return a Future<T> handle
+        
+        if (node->expression) {
+            visitExpr(node->expression.get());
+        }
+    }
+    
     void visit(IntLiteral* node) override {} // Handled by visitExpr()
     void visit(frontend::FloatLiteral* node) override {} // Handled by visitExpr()
     void visit(BoolLiteral* node) override {} // Handled by visitExpr()

@@ -44,6 +44,7 @@ class BreakStmt;
 class ContinueStmt;
 class WhenExpr;
 class AwaitExpr;
+class SpawnExpr;
 class UnwrapExpr;
 class ObjectLiteral;
 class VectorLiteral;
@@ -116,6 +117,7 @@ public:
     // New expression types (Bugs #69-70)
     virtual void visit(WhenExpr* node) { /* default: do nothing */ }
     virtual void visit(AwaitExpr* node) { /* default: do nothing */ }
+    virtual void visit(SpawnExpr* node) { /* default: do nothing */ }
     
     // Async/await support (Bug #70)
     virtual void visit(AsyncBlock* node) { /* default: do nothing */ }
