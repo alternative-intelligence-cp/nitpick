@@ -34,6 +34,7 @@ bool Parser::isTypeToken(TokenType type) {
            type == TOKEN_TYPE_BOOL || type == TOKEN_TYPE_VOID ||
            type == TOKEN_TYPE_STRING || type == TOKEN_TYPE_RESULT ||
            type == TOKEN_TYPE_FUNC ||
+           type == TOKEN_KW_FUNC ||  // func keyword can be used as type (func:name = ...)
            // Vector types
            type == TOKEN_TYPE_VEC2 || type == TOKEN_TYPE_VEC3 || type == TOKEN_TYPE_VEC4 || type == TOKEN_TYPE_VEC9 ||
            type == TOKEN_TYPE_DVEC2 || type == TOKEN_TYPE_DVEC3 || type == TOKEN_TYPE_DVEC4 ||

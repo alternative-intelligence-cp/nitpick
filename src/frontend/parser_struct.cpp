@@ -36,8 +36,9 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
         // Check if this is a method declaration
         // Methods start with: func:methodName = ...
         // Fields start with: fieldName:type,
-        // So we check if identifier is "func" followed by ":"
-        if (current.type == TOKEN_IDENTIFIER && current.value == "func") {
+        // Check if current token is TOKEN_KW_FUNC (the keyword) or identifier "func"
+        if (current.type == TOKEN_KW_FUNC || 
+            (current.type == TOKEN_IDENTIFIER && current.value == "func")) {
             // This is a method - parse as VarDecl (func:name = lambda)
             auto stmt = parseVarDecl();
             auto* varDecl = dynamic_cast<VarDecl*>(stmt.get());

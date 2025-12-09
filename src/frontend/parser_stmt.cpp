@@ -58,7 +58,41 @@ std::unique_ptr<Block> Parser::parseProgram() {
             continue;
         }
         
-        // TODO: struct, type, const, use, mod, extern declarations
+        // Check for struct declaration: const Name = struct { ... }
+        if (current.type == TOKEN_KW_CONST || current.type == TOKEN_IDENTIFIER) {
+            // Save position to check if this is a struct declaration
+            Token saved = current;
+            
+            // Skip optional const
+            if (current.type == TOKEN_KW_CONST) {
+                advance();
+            }
+            
+            // Check pattern: Identifier = struct
+            if (current.type == TOKEN_IDENTIFIER) {
+                Token name = current;
+                advance();
+                
+                if (current.type == TOKEN_ASSIGN) {
+                    advance();
+                    
+                    if (current.type == TOKEN_KW_STRUCT) {
+                        // This is a struct declaration! Restore to saved position and parse
+                        current = saved;  // Restore position
+                        auto structDecl = parseStructDecl();
+                        if (structDecl) {
+                            block->statements.push_back(std::move(structDecl));
+                        }
+                        continue;
+                    }
+                }
+            }
+            
+            // Not a struct, restore position and continue to error handler
+            current = saved;
+        }
+        
+        // TODO: type, use, mod, extern declarations
         // For now, treat unrecognized top-level as error
         std::stringstream ss;
         ss << "Unexpected token at top level: " << current.value
@@ -183,6 +217,37 @@ std::unique_ptr<Block> Parser::parseBlock() {
                 block->statements.push_back(std::move(func));
             }
             continue;
+        }
+        
+        // Check for struct declaration: const Name = struct { ... }
+        if (current.type == TOKEN_KW_CONST || current.type == TOKEN_IDENTIFIER) {
+            Token saved = current;
+            
+            if (current.type == TOKEN_KW_CONST) {
+                advance();
+            }
+            
+            if (current.type == TOKEN_IDENTIFIER) {
+                Token name = current;
+                advance();
+                
+                if (current.type == TOKEN_ASSIGN) {
+                    advance();
+                    
+                    if (current.type == TOKEN_KW_STRUCT) {
+                        // This is a struct declaration
+                        current = saved;
+                        auto structDecl = parseStructDecl();
+                        if (structDecl) {
+                            block->statements.push_back(std::move(structDecl));
+                        }
+                        continue;
+                    }
+                }
+            }
+            
+            // Not a struct, restore and parse as statement
+            current = saved;
         }
         
         auto stmt = parseStmt();
