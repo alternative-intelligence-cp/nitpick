@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <set>
 #include <memory>
 #include <stack>
 
@@ -106,6 +107,11 @@ public:
     // Generic function monomorphization support
     std::map<std::string, std::string> typeSubstitution;  // Map generic type params to concrete types (T -> int8)
     std::string currentMangledName = "";  // Current mangled name for specialized function
+    
+    // Module system support
+    std::set<std::string> loadedModules;  // Track which modules have been loaded (prevent circular imports)
+    std::vector<std::string> moduleSearchPaths;  // Directories to search for .aria modules
+    std::string currentSourceFile = "";  // Current file being compiled (for relative imports)
 
     CodeGenContext(std::string moduleName) {
         module = std::make_unique<Module>(moduleName, llvmContext);

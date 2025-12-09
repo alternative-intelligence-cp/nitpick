@@ -1044,6 +1044,34 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         return std::make_unique<ContinueStmt>();
     }
 
+    // Async function declaration: async func:name = returnType(params) { body };
+    if (current.type == TOKEN_KW_ASYNC) {
+        advance(); // consume 'async'
+        
+        // Must be followed by func:name pattern
+        if (current.type != TOKEN_IDENTIFIER && 
+            (current.type < TOKEN_TYPE_VOID || current.type > TOKEN_TYPE_STRING)) {
+            throw std::runtime_error("Expected type identifier after 'async'");
+        }
+        
+        // Parse the VarDecl normally
+        auto stmt = parseVarDecl();
+        
+        // Downcast to VarDecl to access initializer
+        if (auto* var_decl = dynamic_cast<VarDecl*>(stmt.get())) {
+            // Mark the lambda as async
+            if (var_decl->initializer) {
+                if (auto* lambda = dynamic_cast<LambdaExpr*>(var_decl->initializer.get())) {
+                    lambda->is_async = true;
+                } else {
+                    throw std::runtime_error("async can only be used with function (lambda) declarations");
+                }
+            }
+        }
+        
+        return stmt;
+    }
+
     // Variable declaration: [const|wild|stack] type:name = expr;
     // BUT: type( is a lambda expression, not a variable declaration!
     // AND: *type( is an auto-wrap lambda!
