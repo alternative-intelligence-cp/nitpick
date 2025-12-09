@@ -2109,8 +2109,10 @@ std::unique_ptr<Statement> Parser::parseModDef() {
 bool Parser::isTypeToken(TokenType type) {
     // Check if token is a primitive or compound type
     // Types are in the range TOKEN_TYPE_VOID to TOKEN_TYPE_STRING
+    // Also include TOKEN_KW_FUNC for function types (func:name = ...)
     return (type >= TOKEN_TYPE_VOID && type <= TOKEN_TYPE_STRING) || 
-           type == TOKEN_IDENTIFIER;  // user-defined types
+           type == TOKEN_IDENTIFIER ||  // user-defined types
+           type == TOKEN_KW_FUNC;       // function type keyword
 }
 
 // Helper: parse array/pointer type modifiers ([], [256], @)
