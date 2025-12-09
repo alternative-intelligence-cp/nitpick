@@ -5,13 +5,13 @@
 # compile CXX with /usr/bin/c++
 C_DEFINES = 
 
-C_INCLUDES = -I/usr/lib/llvm-19/include -I/home/randy/._____RANDY_____/REPOS/aria/src -I/home/randy/._____RANDY_____/REPOS/aria/vendor/mimalloc/include
+C_INCLUDES = -I/usr/lib/llvm-20/include -I/home/randy/._____RANDY_____/REPOS/aria/src -I/home/randy/._____RANDY_____/REPOS/aria/vendor/mimalloc/include
 
 C_FLAGS =   -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -Wall -Wextra -Wno-unused-parameter
 
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/usr/lib/llvm-19/include -I/home/randy/._____RANDY_____/REPOS/aria/src -I/home/randy/._____RANDY_____/REPOS/aria/vendor/mimalloc/include
+CXX_INCLUDES = -I/usr/lib/llvm-20/include -I/home/randy/._____RANDY_____/REPOS/aria/src -I/home/randy/._____RANDY_____/REPOS/aria/vendor/mimalloc/include
 
 CXX_FLAGS = -std=gnu++20   -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -Wall -Wextra -Wno-unused-parameter
 

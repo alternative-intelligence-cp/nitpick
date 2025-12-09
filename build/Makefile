@@ -185,6 +185,19 @@ intrinsics_gen/fast:
 .PHONY : intrinsics_gen/fast
 
 #=============================================================================
+# Target rules for targets named vt_gen
+
+# Build rule for target.
+vt_gen: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 vt_gen
+.PHONY : vt_gen
+
+# fast build rule for target.
+vt_gen/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vt_gen.dir/build.make CMakeFiles/vt_gen.dir/build
+.PHONY : vt_gen/fast
+
+#=============================================================================
 # Target rules for targets named omp_gen
 
 # Build rule for target.
@@ -987,6 +1000,7 @@ help:
 	@echo "... mimalloc-obj-target"
 	@echo "... omp_gen"
 	@echo "... run_tests"
+	@echo "... vt_gen"
 	@echo "... aria_runtime"
 	@echo "... ariac"
 	@echo "... mimalloc-obj"

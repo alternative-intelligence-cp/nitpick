@@ -4,7 +4,7 @@
 # compile C with /usr/bin/cc
 C_DEFINES = -DMI_BUILD_RELEASE -DMI_CMAKE_BUILD_TYPE=release
 
-C_INCLUDES = -I/usr/lib/llvm-19/include -I/home/randy/._____RANDY_____/REPOS/aria/vendor/mimalloc/include
+C_INCLUDES = -I/usr/lib/llvm-20/include -I/home/randy/._____RANDY_____/REPOS/aria/vendor/mimalloc/include
 
 C_FLAGS = -O3 -DNDEBUG -std=gnu11 -fPIC   -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -Wall -Wextra -Wno-unknown-pragmas -fvisibility=hidden -Wstrict-prototypes -ftls-model=initial-exec
 
