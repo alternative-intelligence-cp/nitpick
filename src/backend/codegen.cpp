@@ -4637,6 +4637,16 @@ public:
             return awaitedValue;
         }
         
+        // Handle SpawnExpr (spawn-based concurrency - Go-style)
+        if (auto* spawn = dynamic_cast<aria::frontend::SpawnExpr*>(node)) {
+            // Call the visit method which handles all the logic
+            visit(spawn);
+            
+            // For now, spawn returns void (no Future yet)
+            // TODO: Return Future<T> handle that can be used to get() the result
+            return ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0);
+        }
+        
         //... Handle other ops...
         return nullptr;
     }
@@ -5016,18 +5026,232 @@ public:
     void visit(frontend::SpawnExpr* node) override {
         // spawn <expression>
         // Spawns expression (usually function call) on scheduler
-        // Returns Future<T> handle that can be awaited later
+        // Returns void for now (Future<T> in next iteration)
         
-        // For now, just execute the expression immediately
-        // TODO: Implement actual spawn with Future<T> return
-        // This requires:
-        // 1. Wrap expression in a task closure
-        // 2. Call aria_scheduler_schedule with the task
-        // 3. Return a Future<T> handle
+        // For v1: Just spawn without Future return
+        // This requires the spawn runtime (spawn.h/spawn.cpp)
         
-        if (node->expression) {
-            visitExpr(node->expression.get());
+        if (!node->expression) {
+            return;
         }
+        
+        // Currently, we only support spawning function calls
+        // TODO: Support spawning lambdas and other expressions
+        auto* call = dynamic_cast<aria::frontend::CallExpr*>(node->expression.get());
+        if (!call) {
+            throw std::runtime_error("spawn currently only supports function calls");
+        }
+        
+        // Get the function being called
+        std::string funcName = call->function_name;
+        Function* targetFunc = ctx.module->getFunction(funcName);
+        if (!targetFunc) {
+            auto* sym = ctx.lookup(funcName);
+            if (sym && !sym->is_ref) {
+                targetFunc = dyn_cast_or_null<Function>(sym->val);
+            }
+        }
+        
+        if (!targetFunc) {
+            throw std::runtime_error("spawn: cannot find function '" + funcName + "'");
+        }
+        
+        // Generate wrapper function that captures the call
+        // The wrapper has signature: void wrapper_N(void* args)
+        // It unpacks args and calls the target function
+        
+        static int wrapperCount = 0;
+        std::string wrapperName = "spawn_wrapper_" + std::to_string(wrapperCount++);
+        
+        // Wrapper function type: void(void*)
+        FunctionType* wrapperType = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            {PointerType::getUnqual(ctx.llvmContext)},  // void* args
+            false
+        );
+        
+        Function* wrapperFunc = Function::Create(
+            wrapperType,
+            Function::InternalLinkage,
+            wrapperName,
+            ctx.module.get()
+        );
+        
+        // Generate wrapper body in new basic block
+        BasicBlock* wrapperEntry = BasicBlock::Create(ctx.llvmContext, "entry", wrapperFunc);
+        IRBuilder<> wrapperBuilder(wrapperEntry);
+        
+        // If function has arguments, unpack them from args struct
+        std::vector<Value*> callArgs;
+        if (!call->arguments.empty()) {
+            // Get argument types from the TARGET FUNCTION signature, not from visitExpr
+            // This ensures type correctness in the wrapper
+            FunctionType* targetFuncType = targetFunc->getFunctionType();
+            std::vector<Type*> argTypes;
+            
+            for (unsigned i = 0; i < targetFuncType->getNumParams(); i++) {
+                argTypes.push_back(targetFuncType->getParamType(i));
+            }
+            
+            StructType* argsStructType = StructType::create(ctx.llvmContext, argTypes, "spawn_args");
+            
+            // Cast void* to args struct ptr
+            Value* argsPtr = wrapperFunc->arg_begin();
+            
+            // Load each field and build call argument list
+            for (size_t i = 0; i < argTypes.size(); i++) {
+                Value* fieldPtr = wrapperBuilder.CreateStructGEP(argsStructType, argsPtr, i);
+                Value* fieldVal = wrapperBuilder.CreateLoad(argTypes[i], fieldPtr);
+                callArgs.push_back(fieldVal);
+            }
+        }
+        
+        // Call the target function from within wrapper
+        wrapperBuilder.CreateCall(targetFunc, callArgs);
+        wrapperBuilder.CreateRetVoid();
+        
+        // Now in the original function, allocate args struct and populate it
+        if (!call->arguments.empty()) {
+            // Use TARGET FUNCTION parameter types
+            FunctionType* targetFuncType = targetFunc->getFunctionType();
+            std::vector<Type*> argTypes;
+            std::vector<Value*> argValues;
+            
+            for (unsigned i = 0; i < call->arguments.size(); i++) {
+                Value* argVal = visitExpr(call->arguments[i].get());
+                Type* expectedType = targetFuncType->getParamType(i);
+                
+                // Cast argument to match target function's parameter type if needed
+                if (argVal->getType() != expectedType) {
+                    if (argVal->getType()->isIntegerTy() && expectedType->isIntegerTy()) {
+                        argVal = ctx.builder->CreateIntCast(argVal, expectedType, true);
+                    }
+                }
+                
+                argTypes.push_back(expectedType);
+                argValues.push_back(argVal);
+            }
+            
+            StructType* argsStructType = StructType::create(ctx.llvmContext, argTypes, "spawn_args");
+            
+            // Allocate args struct on heap (it will be freed by the worker after execution)
+            // For now, use malloc (TODO: use aria.alloc)
+            Function* mallocFunc = ctx.module->getFunction("malloc");
+            if (!mallocFunc) {
+                FunctionType* mallocType = FunctionType::get(
+                    PointerType::getUnqual(ctx.llvmContext),
+                    {Type::getInt64Ty(ctx.llvmContext)},
+                    false
+                );
+                mallocFunc = Function::Create(mallocType, Function::ExternalLinkage, "malloc", ctx.module.get());
+            }
+            
+            uint64_t structSize = ctx.module->getDataLayout().getTypeAllocSize(argsStructType);
+            Value* argsPtr = ctx.builder->CreateCall(
+                mallocFunc,
+                {ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), structSize)}
+            );
+            
+            // Store each argument into the struct
+            for (size_t i = 0; i < argValues.size(); i++) {
+                Value* fieldPtr = ctx.builder->CreateStructGEP(argsStructType, argsPtr, i);
+                ctx.builder->CreateStore(argValues[i], fieldPtr);
+            }
+            
+            // Create SpawnTask struct on heap
+            // struct SpawnTask { void (*function)(void*); void* args; void* future; void (*completion)(...); }
+            StructType* spawnTaskType = StructType::create(ctx.llvmContext, {
+                PointerType::getUnqual(ctx.llvmContext),  // function pointer
+                PointerType::getUnqual(ctx.llvmContext),  // args
+                PointerType::getUnqual(ctx.llvmContext),  // future (unused for now)
+                PointerType::getUnqual(ctx.llvmContext)   // completion (unused for now)
+            }, "SpawnTask");
+            
+            Value* taskPtr = ctx.builder->CreateCall(
+                mallocFunc,
+                {ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 
+                    ctx.module->getDataLayout().getTypeAllocSize(spawnTaskType))}
+            );
+            
+            // Store wrapper function pointer
+            Value* funcPtrField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 0);
+            ctx.builder->CreateStore(wrapperFunc, funcPtrField);
+            
+            // Store args pointer
+            Value* argsPtrField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 1);
+            ctx.builder->CreateStore(argsPtr, argsPtrField);
+            
+            // Store null for future and completion (not used yet)
+            Value* futureField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 2);
+            ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), futureField);
+            
+            Value* completionField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 3);
+            ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), completionField);
+            
+            // Call aria_spawn_schedule(task)
+            Function* scheduleFunc = ctx.module->getFunction("aria_spawn_schedule");
+            if (!scheduleFunc) {
+                FunctionType* scheduleType = FunctionType::get(
+                    Type::getVoidTy(ctx.llvmContext),
+                    {PointerType::getUnqual(ctx.llvmContext)},
+                    false
+                );
+                scheduleFunc = Function::Create(scheduleType, Function::ExternalLinkage, "aria_spawn_schedule", ctx.module.get());
+            }
+            
+            ctx.builder->CreateCall(scheduleFunc, {taskPtr});
+        } else {
+            // No arguments - simpler path
+            // Create SpawnTask with null args
+            StructType* spawnTaskType = StructType::create(ctx.llvmContext, {
+                PointerType::getUnqual(ctx.llvmContext),  // function pointer
+                PointerType::getUnqual(ctx.llvmContext),  // args
+                PointerType::getUnqual(ctx.llvmContext),  // future
+                PointerType::getUnqual(ctx.llvmContext)   // completion
+            }, "SpawnTask");
+            
+            Function* mallocFunc = ctx.module->getFunction("malloc");
+            if (!mallocFunc) {
+                FunctionType* mallocType = FunctionType::get(
+                    PointerType::getUnqual(ctx.llvmContext),
+                    {Type::getInt64Ty(ctx.llvmContext)},
+                    false
+                );
+                mallocFunc = Function::Create(mallocType, Function::ExternalLinkage, "malloc", ctx.module.get());
+            }
+            
+            Value* taskPtr = ctx.builder->CreateCall(
+                mallocFunc,
+                {ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 
+                    ctx.module->getDataLayout().getTypeAllocSize(spawnTaskType))}
+            );
+            
+            Value* funcPtrField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 0);
+            ctx.builder->CreateStore(wrapperFunc, funcPtrField);
+            
+            Value* argsPtrField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 1);
+            ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), argsPtrField);
+            
+            Value* futureField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 2);
+            ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), futureField);
+            
+            Value* completionField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 3);
+            ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), completionField);
+            
+            Function* scheduleFunc = ctx.module->getFunction("aria_spawn_schedule");
+            if (!scheduleFunc) {
+                FunctionType* scheduleType = FunctionType::get(
+                    Type::getVoidTy(ctx.llvmContext),
+                    {PointerType::getUnqual(ctx.llvmContext)},
+                    false
+                );
+                scheduleFunc = Function::Create(scheduleType, Function::ExternalLinkage, "aria_spawn_schedule", ctx.module.get());
+            }
+            
+            ctx.builder->CreateCall(scheduleFunc, {taskPtr});
+        }
+        
+        // TODO: Return Future<T> instead of void
     }
     
     void visit(IntLiteral* node) override {} // Handled by visitExpr()
