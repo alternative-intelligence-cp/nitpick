@@ -370,6 +370,18 @@ public:
     
     // Async flag: if true, this is an async function (uses coroutines)
     bool is_async = false;
+    
+    // Closure capture tracking (populated by type checker)
+    struct CapturedVariable {
+        std::string name;
+        std::string type;
+        bool is_global;  // true if module-level, false if from parent scope
+        
+        CapturedVariable(const std::string& n, const std::string& t, bool global)
+            : name(n), type(t), is_global(global) {}
+    };
+    std::vector<CapturedVariable> captured_variables;
+    bool needs_heap_environment = false;  // true if captures non-global variables
 
     LambdaExpr(const std::string& ret_type, std::vector<FuncParam> params, std::unique_ptr<Block> b)
         : return_type(ret_type), parameters(std::move(params)), body(std::move(b)) {}

@@ -216,4 +216,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: \
  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/loops.h \
  /usr/include/c++/13/sstream /usr/include/c++/13/istream \
  /usr/include/c++/13/bits/istream.tcc \
- /usr/include/c++/13/bits/sstream.tcc /usr/include/c++/13/iostream
+ /usr/include/c++/13/bits/sstream.tcc /usr/include/c++/13/iostream \
+ /usr/include/c++/13/set /usr/include/c++/13/bits/stl_set.h \
+ /usr/include/c++/13/bits/stl_multiset.h

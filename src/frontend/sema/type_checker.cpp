@@ -14,6 +14,7 @@
 #include "../ast/loops.h"
 #include <sstream>
 #include <iostream>
+#include <set>
 
 namespace aria {
 namespace sema {
@@ -273,8 +274,144 @@ void TypeChecker::visit(frontend::CallExpr* node) {
     current_expr_type = std::make_shared<Type>(TypeKind::STRUCT, "result");
 }
 
+// Helper class to analyze variable captures in lambda body
+class CaptureAnalyzer : public frontend::AstVisitor {
+private:
+    std::set<std::string> local_vars;      // Variables defined in this lambda
+    std::set<std::string> referenced_vars;  // All variables referenced
+    SymbolTable* parent_scope;              // Parent scope to check captures
+    
+public:
+    CaptureAnalyzer(const std::vector<frontend::FuncParam>& params, SymbolTable* parent)
+        : parent_scope(parent) {
+        // Lambda parameters are local variables
+        for (const auto& param : params) {
+            local_vars.insert(param.name);
+        }
+    }
+    
+    // Get variables that are captured (referenced but not local)
+    std::set<std::string> getCapturedVariables() const {
+        std::set<std::string> captured;
+        for (const auto& var : referenced_vars) {
+            if (local_vars.find(var) == local_vars.end()) {
+                captured.insert(var);
+                std::cout << "[CAPTURE_ANALYZER] Variable '" << var << "' is captured (not in local vars)" << std::endl;
+            }
+        }
+        std::cout << "[CAPTURE_ANALYZER] Total captured: " << captured.size() 
+                  << ", total referenced: " << referenced_vars.size() 
+                  << ", total local: " << local_vars.size() << std::endl;
+        return captured;
+    }
+    
+    void visit(frontend::VarExpr* node) override {
+        std::cout << "[CAPTURE_ANALYZER] VarExpr: " << node->name << std::endl;
+        referenced_vars.insert(node->name);
+    }
+    
+    void visit(frontend::VarDecl* node) override {
+        // Variable declarations add to local scope
+        local_vars.insert(node->name);
+        if (node->initializer) {
+            node->initializer->accept(*this);
+        }
+    }
+    
+    void visit(frontend::BinaryOp* node) override {
+        if (node->left) node->left->accept(*this);
+        if (node->right) node->right->accept(*this);
+    }
+    
+    void visit(frontend::UnaryOp* node) override {
+        if (node->operand) node->operand->accept(*this);
+    }
+    
+    void visit(frontend::CallExpr* node) override {
+        for (auto& arg : node->arguments) {
+            if (arg) arg->accept(*this);
+        }
+    }
+    
+    void visit(frontend::ReturnStmt* node) override {
+        std::cout << "[CAPTURE_ANALYZER] ReturnStmt" << std::endl;
+        if (node->value) node->value->accept(*this);
+    }
+    
+    void visit(frontend::IfStmt* node) override {
+        if (node->condition) node->condition->accept(*this);
+        if (node->then_block) node->then_block->accept(*this);
+        if (node->else_block) node->else_block->accept(*this);
+    }
+    
+    void visit(frontend::Block* node) override {
+        for (auto& stmt : node->statements) {
+            if (stmt) stmt->accept(*this);
+        }
+    }
+    
+    void visit(frontend::ExpressionStmt* node) override {
+        if (node->expression) node->expression->accept(*this);
+    }
+    
+    void visit(frontend::LambdaExpr* node) override {
+        // Nested lambdas: don't traverse into them for now
+        // They will have their own capture analysis
+    }
+    
+    // Stub implementations for required visitors
+    void visit(frontend::IntLiteral*) override {}
+    void visit(frontend::FloatLiteral*) override {}
+    void visit(frontend::BoolLiteral*) override {}
+    void visit(frontend::NullLiteral*) override {}
+    void visit(frontend::StringLiteral*) override {}
+    void visit(frontend::TemplateString*) override {}
+    void visit(frontend::TernaryExpr* node) override {
+        if (node->condition) node->condition->accept(*this);
+        if (node->true_expr) node->true_expr->accept(*this);
+        if (node->false_expr) node->false_expr->accept(*this);
+    }
+    void visit(frontend::PickStmt*) override {}
+    void visit(frontend::TillLoop* node) override {
+        if (node->limit) node->limit->accept(*this);
+        if (node->step) node->step->accept(*this);
+        if (node->body) node->body->accept(*this);
+    }
+    void visit(frontend::WhenLoop* node) override {
+        if (node->body) node->body->accept(*this);
+    }
+    void visit(frontend::DeferStmt*) override {}
+    void visit(frontend::ForLoop* node) override {
+        if (node->body) node->body->accept(*this);
+    }
+    void visit(frontend::WhileLoop* node) override {
+        if (node->condition) node->condition->accept(*this);
+        if (node->body) node->body->accept(*this);
+    }
+    void visit(frontend::BreakStmt*) override {}
+    void visit(frontend::ContinueStmt*) override {}
+    void visit(frontend::WhenExpr*) override {}
+    void visit(frontend::AwaitExpr*) override {}
+    void visit(frontend::ObjectLiteral* node) override {
+        std::cout << "[CAPTURE_ANALYZER] ObjectLiteral with " << node->fields.size() << " fields" << std::endl;
+        for (auto& field : node->fields) {
+            if (field.value) {
+                std::cout << "[CAPTURE_ANALYZER]   Field: " << field.name << std::endl;
+                field.value->accept(*this);
+            }
+        }
+    }
+    void visit(frontend::MemberAccess* node) override {
+        if (node->object) node->object->accept(*this);
+    }
+    void visit(frontend::UnwrapExpr*) override {}
+    void visit(frontend::VectorLiteral*) override {}
+};
+
 // Visit LambdaExpr
 void TypeChecker::visit(frontend::LambdaExpr* node) {
+    std::cout << "[TYPE_CHECK] Visiting LambdaExpr (return type: " << node->return_type << ")" << std::endl;
+    
     // Lambda expressions evaluate to their return type
     current_expr_type = parseType(node->return_type);
     
@@ -282,6 +419,45 @@ void TypeChecker::visit(frontend::LambdaExpr* node) {
         addError("Unknown return type '" + node->return_type + "' in lambda expression");
         current_expr_type = makeErrorType();
         return;
+    }
+    
+    // Analyze captured variables BEFORE creating new scope
+    // This allows the analyzer to access parent scope symbols
+    if (node->body) {
+        CaptureAnalyzer analyzer(node->parameters, symbols.get());
+        node->body->accept(analyzer);
+        
+        auto captured = analyzer.getCapturedVariables();
+        for (const auto& var_name : captured) {
+            // Look up variable in parent scopes
+            auto var_info = symbols->lookup(var_name);
+            if (var_info) {
+                // Check if it's a global (top-level) or local variable
+                bool is_global = symbols->isGlobal(var_name);
+                
+                // Add to captured variables list
+                node->captured_variables.emplace_back(
+                    var_name,
+                    var_info->type_name,
+                    is_global
+                );
+                
+                // Mark that we need heap environment if capturing local variables
+                if (!is_global) {
+                    node->needs_heap_environment = true;
+                }
+                
+                // Debug output
+                std::cout << "[CAPTURE] Lambda captures '" << var_name 
+                          << "' (type: " << var_info->type_name
+                          << ", " << (is_global ? "global" : "local") << ")" << std::endl;
+            }
+        }
+        
+        if (node->needs_heap_environment) {
+            std::cout << "[CAPTURE] Lambda needs heap environment (captures " 
+                      << node->captured_variables.size() << " variables)" << std::endl;
+        }
     }
     
     // Create new scope for lambda parameters (child of current scope)
