@@ -97,6 +97,7 @@ add_library(aria_runtime STATIC
  src/runtime/io/print.cpp              # Print functions (print, println)
  src/runtime/io/file.cpp               # File I/O (readFile, writeFile)
  src/runtime/concurrency/scheduler.cpp # Work-stealing logic
+ src/runtime/concurrency/spawn.cpp     # Spawn/Future concurrency runtime
  src/runtime/concurrency/ramp.cpp      # [New] RAMP Logic
  src/stdlib/io/fast_read.cpp
  src/runtime/core/string_impl.cpp      # SSO String Implementation

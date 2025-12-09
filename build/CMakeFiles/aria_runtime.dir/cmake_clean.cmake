@@ -3,6 +3,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o.d"
   "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o"
   "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.o.d"
+  "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/spawn.cpp.o"
+  "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/spawn.cpp.o.d"
   "CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o"
   "CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o.d"
   "CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o"

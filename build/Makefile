@@ -715,6 +715,30 @@ src/runtime/concurrency/scheduler.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/concurrency/scheduler.cpp.s
 .PHONY : src/runtime/concurrency/scheduler.cpp.s
 
+src/runtime/concurrency/spawn.o: src/runtime/concurrency/spawn.cpp.o
+.PHONY : src/runtime/concurrency/spawn.o
+
+# target to build an object file
+src/runtime/concurrency/spawn.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/concurrency/spawn.cpp.o
+.PHONY : src/runtime/concurrency/spawn.cpp.o
+
+src/runtime/concurrency/spawn.i: src/runtime/concurrency/spawn.cpp.i
+.PHONY : src/runtime/concurrency/spawn.i
+
+# target to preprocess a source file
+src/runtime/concurrency/spawn.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/concurrency/spawn.cpp.i
+.PHONY : src/runtime/concurrency/spawn.cpp.i
+
+src/runtime/concurrency/spawn.s: src/runtime/concurrency/spawn.cpp.s
+.PHONY : src/runtime/concurrency/spawn.s
+
+# target to generate assembly for a file
+src/runtime/concurrency/spawn.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/concurrency/spawn.cpp.s
+.PHONY : src/runtime/concurrency/spawn.cpp.s
+
 src/runtime/core/string_impl.o: src/runtime/core/string_impl.cpp.o
 .PHONY : src/runtime/core/string_impl.o
 
@@ -1050,6 +1074,9 @@ help:
 	@echo "... src/runtime/concurrency/scheduler.o"
 	@echo "... src/runtime/concurrency/scheduler.i"
 	@echo "... src/runtime/concurrency/scheduler.s"
+	@echo "... src/runtime/concurrency/spawn.o"
+	@echo "... src/runtime/concurrency/spawn.i"
+	@echo "... src/runtime/concurrency/spawn.s"
 	@echo "... src/runtime/core/string_impl.o"
 	@echo "... src/runtime/core/string_impl.i"
 	@echo "... src/runtime/core/string_impl.s"
