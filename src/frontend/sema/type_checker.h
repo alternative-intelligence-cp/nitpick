@@ -17,6 +17,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <set>
 
 namespace aria {
 namespace sema {
@@ -33,10 +34,16 @@ private:
     std::unique_ptr<SymbolTable> symbols;
     std::vector<std::string> errors;
     std::shared_ptr<Type> current_expr_type;  // Type of last visited expression
+    std::set<std::string> registered_structs;  // Track user-defined struct types
 
 public:
     TypeChecker() : symbols(std::make_unique<SymbolTable>()) {
         // Initialize built-in types
+    }
+    
+    // Check if a type name is a registered struct
+    bool isRegisteredStruct(const std::string& name) const {
+        return registered_structs.find(name) != registered_structs.end();
     }
 
     // Get type checking results
@@ -64,6 +71,7 @@ public:
 
     // Visitor methods for statements
     void visit(frontend::VarDecl* node) override;
+    void visit(frontend::StructDecl* node) override;
     void visit(frontend::ReturnStmt* node) override;
     void visit(frontend::IfStmt* node) override;
     void visit(frontend::Block* node) override;

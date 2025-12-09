@@ -3825,11 +3825,23 @@ public:
                     // Store value
                     Type* fieldType = structType->getElementType(fieldIdx);
                     if (fieldValue->getType() != fieldType) {
-                        // Try to cast integers
+                        // Try to cast to match field type
                         if (fieldValue->getType()->isIntegerTy() && fieldType->isIntegerTy()) {
+                            // Integer to integer cast
                             fieldValue = ctx.builder->CreateIntCast(fieldValue, fieldType, true);
+                        } else if (fieldValue->getType()->isFloatingPointTy() && fieldType->isFloatingPointTy()) {
+                            // Float to float cast
+                            fieldValue = ctx.builder->CreateFPCast(fieldValue, fieldType);
+                        } else if (fieldValue->getType()->isIntegerTy() && fieldType->isFloatingPointTy()) {
+                            // Integer to float cast
+                            fieldValue = ctx.builder->CreateSIToFP(fieldValue, fieldType);
+                        } else if (fieldValue->getType()->isFloatingPointTy() && fieldType->isIntegerTy()) {
+                            // Float to integer cast
+                            fieldValue = ctx.builder->CreateFPToSI(fieldValue, fieldType);
                         } else {
-                            throw std::runtime_error("Type mismatch for field: " + field.name);
+                            throw std::runtime_error("Type mismatch for field: " + field.name + 
+                                " (expected " + std::string(fieldType->isFloatingPointTy() ? "float" : "non-float") +
+                                ", got " + std::string(fieldValue->getType()->isFloatingPointTy() ? "float" : "non-float") + ")");
                         }
                     }
                     ctx.builder->CreateStore(fieldValue, fieldPtr);
