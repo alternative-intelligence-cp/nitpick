@@ -4,6 +4,8 @@
 #include "shadow_stack.h"
 #include <vector>
 #include <stack>
+#include <algorithm>
+#include <utility>
 #include <cstdlib>
 #include <cstring>
 
@@ -54,53 +56,140 @@ void mark_object(ObjHeader* obj) {
 // Phase 1: Minor Collection (Nursery Evacuation)
 // This function moves non-pinned objects out of the nursery to the old generation.
 extern "C" void aria_gc_collect_minor(Nursery* nursery) {
+   if (!nursery) return;
+   
+   // Track pinned object locations for fragment building
+   std::vector<std::pair<char*, size_t>> pinned_regions;
+   
    // 1. Get Roots
    auto roots = get_thread_roots();
-   // 2. Evacuate Survivors
+   
+   // 2. Evacuate Survivors and track pinned objects
    for (void* root_ptr : roots) {
        if (!root_ptr) continue;
+       
+       // Get object header (located before the user data)
        ObjHeader* obj = (ObjHeader*)((char*)root_ptr - sizeof(ObjHeader));
        
-       // If object is in Nursery...
-       if (obj->is_nursery) {
-           if (obj->pinned_bit) {
-               // Pinned: Cannot move. Mark as preserved.
-               // The nursery reset logic will skip this memory block.
-           } else {
-               // Not Pinned: Move to Old Gen
-               // a. Alloc in Old Gen
-               ObjHeader* new_loc = (ObjHeader*)malloc(obj->size_class);
-               memcpy(new_loc, obj, obj->size_class);
-               
-               // b. Update Header
-               new_loc->is_nursery = 0;
-               new_loc->pinned_bit = 0; // Pinning applies to nursery location usually
-               
-               // c. Forwarding Pointer (broken heart) logic would go here
-               // to update other references to this object.
-               // In a moving collector, we leave a forwarding address in the old location.
-               
-               old_gen_objects.push_back(new_loc);
+       // Only process objects in the nursery
+       char* obj_addr = (char*)obj;
+       if (obj_addr < nursery->start_addr || obj_addr >= nursery->end_addr) {
+           continue; // Not in nursery
+       }
+       
+       if (obj->pinned_bit) {
+           // Pinned: Cannot move. Record location for fragment list
+           size_t obj_size = obj->size_class;
+           pinned_regions.push_back({obj_addr, obj_size});
+       } else {
+           // Not Pinned: Move to Old Gen
+           size_t obj_size = obj->size_class;
+           
+           // Allocate in old generation
+           ObjHeader* new_loc = (ObjHeader*)malloc(obj_size);
+           if (!new_loc) {
+               // Out of memory - trigger major GC and retry
+               aria_gc_collect_major();
+               new_loc = (ObjHeader*)malloc(obj_size);
+               if (!new_loc) {
+                   // Still failed - critical error
+                   return;
+               }
            }
+           
+           // Copy object to old gen
+           memcpy(new_loc, obj, obj_size);
+           
+           // Update header flags
+           new_loc->is_nursery = 0;
+           new_loc->pinned_bit = 0;
+           new_loc->forwarded_bit = 1;
+           
+           // Leave forwarding pointer in old location
+           obj->forwarded_bit = 1;
+           // Store new address in the old object's memory (broken heart pattern)
+           *(void**)((char*)obj + sizeof(ObjHeader)) = new_loc;
+           
+           // Add to old generation tracking
+           old_gen_objects.push_back(new_loc);
        }
    }
    
-   // 3. Rebuild Fragments (Simplified)
-   // The nursery bump pointer is reset, but we must construct the free list
-   // to skip over the pinned objects identified in step 2.
-
-   // CRITICAL FIX: Reset nursery to prevent infinite recursion
-   // When aria_gc_alloc() calls this function and retries allocation,
-   // we must ensure space is available or the retry will recurse infinitely.
-   // TODO: This is a TEMPORARY FIX - proper implementation should:
-   //  - Build fragment list around pinned objects
-   //  - Handle case where ALL nursery space is pinned (trigger major GC)
-   //  - Update forwarding pointers for moved objects
-   if (nursery) {
-       // Simple reset: assumes no pinned objects for now
-       // This prevents infinite recursion but loses pinned object support
+   // 3. Build fragment list around pinned objects
+   if (pinned_regions.empty()) {
+       // No pinned objects - full reset
        nursery->bump_ptr = nursery->start_addr;
        nursery->fragments = nullptr;
+   } else {
+       // Sort pinned regions by address for fragment construction
+       std::sort(pinned_regions.begin(), pinned_regions.end());
+       
+       // Save original end address before modifying
+       char* nursery_end = nursery->end_addr;
+       
+       // Clear old fragment list
+       Fragment* old_frag = nursery->fragments;
+       while (old_frag) {
+           Fragment* next = old_frag->next;
+           free(old_frag);
+           old_frag = next;
+       }
+       nursery->fragments = nullptr;
+       
+       // Build new fragment list
+       Fragment* last_fragment = nullptr;
+       char* free_start = nursery->start_addr;
+       
+       for (const auto& pinned : pinned_regions) {
+           char* pinned_start = pinned.first;
+           size_t pinned_size = pinned.second;
+           
+           // Create fragment for free space before this pinned object
+           if (free_start < pinned_start) {
+               Fragment* frag = (Fragment*)malloc(sizeof(Fragment));
+               frag->start = free_start;
+               frag->size = pinned_start - free_start;
+               frag->next = nullptr;
+               
+               if (last_fragment) {
+                   last_fragment->next = frag;
+               } else {
+                   nursery->fragments = frag;
+               }
+               last_fragment = frag;
+           }
+           
+           // Skip past the pinned object
+           free_start = pinned_start + pinned_size;
+       }
+       
+       // Create final fragment for space after last pinned object
+       if (free_start < nursery_end) {
+           Fragment* frag = (Fragment*)malloc(sizeof(Fragment));
+           frag->start = free_start;
+           frag->size = nursery_end - free_start;
+           frag->next = nullptr;
+           
+           if (last_fragment) {
+               last_fragment->next = frag;
+           } else {
+               nursery->fragments = frag;
+           }
+       }
+       
+       // Set bump pointer to first fragment (if any)
+       if (nursery->fragments) {
+           nursery->bump_ptr = nursery->fragments->start;
+           nursery->end_addr = nursery->fragments->start + nursery->fragments->size;
+       } else {
+           // All space is pinned - trigger major GC
+           aria_gc_collect_major();
+           // After major GC, some pinned objects may be freed
+           // Reset nursery completely as last resort
+           nursery->bump_ptr = nursery->start_addr;
+           nursery->end_addr = nursery_end;
+           nursery->fragments = nullptr;
+       }
    }
 }
 
