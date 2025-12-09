@@ -119,17 +119,35 @@ void SpawnWorker::run() {
         
         // 3. Execute task
         if (task) {
-            // Call the spawned function
-            task->function(task->args);
-            
-            // Note: Result handling will be done inside the function wrapper
-            // The function knows its Future<T> and will call future->set(result)
+            // Call the spawned function, passing the entire task pointer
+            // The wrapper will extract args, call the function, and handle the future
+            task->function(task);
             
             // Clean up task structure
+            // Note: args and future are heap-allocated and managed separately
+            if (task->args) {
+                free(task->args);
+            }
             delete task;
         } else {
             // No work, yield CPU
             std::this_thread::yield();
         }
+    }
+}
+
+// C API implementations
+extern "C" Future* aria_future_create(size_t result_size) {
+    return new Future(result_size);
+}
+
+extern "C" void* aria_future_get(Future* future) {
+    if (!future) return nullptr;
+    return future->get();
+}
+
+extern "C" void aria_future_free(Future* future) {
+    if (future) {
+        delete future;
     }
 }
