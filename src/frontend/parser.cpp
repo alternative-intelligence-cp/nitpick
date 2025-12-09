@@ -542,6 +542,12 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         return std::make_unique<AwaitExpr>(std::move(expr));
     }
 
+    // Spawn expression (Go-style concurrency)
+    if (match(TOKEN_KW_SPAWN)) {
+        auto expr = parseUnary();  // Parse the expression to spawn
+        return std::make_unique<SpawnExpr>(std::move(expr));
+    }
+
     // Error: unexpected token
     std::stringstream ss;
     ss << "Unexpected token in expression: " << current.value

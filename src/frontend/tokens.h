@@ -42,6 +42,7 @@ enum TokenType {
     TOKEN_KW_FALL,          // Fallthrough in pick
     TOKEN_KW_ASYNC,         // Async function
     TOKEN_KW_AWAIT,         // Await async result
+    TOKEN_KW_SPAWN,         // Spawn concurrent task
     TOKEN_KW_CATCH,         // Catch clause
     TOKEN_KW_DEFER,
     TOKEN_KW_WILD,          // Wild heap allocation

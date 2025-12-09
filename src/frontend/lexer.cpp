@@ -262,6 +262,7 @@ Token AriaLexer::nextToken() {
                {"continue", TOKEN_KW_CONTINUE},
                {"async", TOKEN_KW_ASYNC},
                {"await", TOKEN_KW_AWAIT},
+               {"spawn", TOKEN_KW_SPAWN},
                {"catch", TOKEN_KW_CATCH},
                
                // Memory management
