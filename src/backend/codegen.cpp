@@ -1042,6 +1042,19 @@ public:
         ctx.deferStacks = std::vector<std::vector<Block*>>();
         ctx.deferStacks.emplace_back();
         
+        // SHADOW STACK: Push frame for GC root tracking
+        // Get or declare aria_shadow_stack_push_frame()
+        FunctionType* pushFrameType = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            {},
+            false
+        );
+        FunctionCallee pushFrameFunc = ctx.module->getOrInsertFunction(
+            "aria_shadow_stack_push_frame",
+            pushFrameType
+        );
+        ctx.builder->CreateCall(pushFrameFunc);
+        
         // CLOSURE SUPPORT: Extract captured variables from environment
         if (lambda->needs_heap_environment && envType) {
             // First parameter is environment pointer
@@ -1124,6 +1137,18 @@ public:
                     (*it)->accept(*this);
                 }
             }
+            
+            // SHADOW STACK: Pop frame before return
+            FunctionType* popFrameType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {},
+                false
+            );
+            FunctionCallee popFrameFunc = ctx.module->getOrInsertFunction(
+                "aria_shadow_stack_pop_frame",
+                popFrameType
+            );
+            ctx.builder->CreateCall(popFrameFunc);
             
             Type* returnType = func->getReturnType();
             if (returnType->isVoidTy()) {
@@ -5623,6 +5648,18 @@ public:
                 (*it)->accept(*this);
             }
         }
+        
+        // SHADOW STACK: Pop frame before return (after defers, before actual return)
+        FunctionType* popFrameType = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            {},
+            false
+        );
+        FunctionCallee popFrameFunc = ctx.module->getOrInsertFunction(
+            "aria_shadow_stack_pop_frame",
+            popFrameType
+        );
+        ctx.builder->CreateCall(popFrameFunc);
         
         // ASYNC COROUTINE SPECIAL HANDLING
         // For async functions, return statements trigger final suspension and return the coroutine handle

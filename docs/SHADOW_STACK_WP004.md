@@ -274,33 +274,62 @@ assert(roots.size() == 1);  // GC sees our root
 
 ## Future Enhancements
 
-### 1. LLVM Codegen Integration
+### 1. LLVM Codegen Integration ✅ COMPLETE
 **Goal:** Automatically insert shadow stack calls in generated code
+
+**Implementation Complete (2024-12-25):**
+```cpp
+// Function entry (in generateLambdaBody)
+FunctionType* pushFrameType = FunctionType::get(
+    Type::getVoidTy(ctx.llvmContext), {}, false
+);
+FunctionCallee pushFrameFunc = ctx.module->getOrInsertFunction(
+    "aria_shadow_stack_push_frame", pushFrameType
+);
+builder->CreateCall(pushFrameFunc);
+
+// Function exit (in visit(ReturnStmt) and implicit returns)
+FunctionType* popFrameType = FunctionType::get(
+    Type::getVoidTy(ctx.llvmContext), {}, false
+);
+FunctionCallee popFrameFunc = ctx.module->getOrInsertFunction(
+    "aria_shadow_stack_pop_frame", popFrameType
+);
+builder->CreateCall(popFrameFunc);
+```
+
+**Generated LLVM IR:**
+```llvm
+define internal i8 @simple() {
+entry:
+  call void @aria_shadow_stack_push_frame()  ; ← Automatic!
+  %x = alloca ptr, align 8
+  store i64 42, ptr %x, align 4
+  call void @aria_shadow_stack_pop_frame()   ; ← Automatic!
+  ret i8 0
+}
+```
+
+**Status:** ✅ Complete - Every function now gets shadow stack frame management
+
+### 2. Root Registration for GC Allocations
+**Goal:** Automatically register GC-allocated pointers as roots
 
 **Changes Needed:**
 ```cpp
-// Function entry (in generateLambdaBody)
-Function* pushFrame = module->getOrInsertFunction(
-    "aria_shadow_stack_push_frame", ...
-);
-builder->CreateCall(pushFrame);
-
-// After GC allocation
+// After GC allocation (when we add GC allocation codegen)
 AllocaInst* alloca = builder->CreateAlloca(ptrType, nullptr, varName);
+Value* objPtr = builder->CreateCall(aria_gc_alloc, {nursery, size});
+builder->CreateStore(objPtr, alloca);
+
+// Register as root
 Function* addRoot = module->getOrInsertFunction(
     "aria_shadow_stack_add_root", ...
 );
-builder->CreateCall(addRoot, {alloca});
-
-// Function exit (all return paths)
-Function* popFrame = module->getOrInsertFunction(
-    "aria_shadow_stack_pop_frame", ...
-);
-builder->CreateCall(popFrame);
-builder->CreateRet(...);
+builder->CreateCall(addRoot, {alloca});  // Pass &local_var
 ```
 
-**Status:** Not yet implemented (WP 004 runtime only)
+**Status:** Not yet implemented (need GC allocation codegen first)
 
 ### 2. Root Set Compression
 **Goal:** Reduce memory overhead for large frames
@@ -472,4 +501,4 @@ With shadow stack complete, ready for:
 ---
 **Date:** 2024-12-25  
 **Work Package:** 004 - Shadow Stack Root Tracking  
-**Status:** Runtime Complete ✅ | Codegen Integration: Not Started
+**Status:** ✅ COMPLETE (Runtime + Codegen Integration)
