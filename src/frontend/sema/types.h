@@ -150,13 +150,20 @@ public:
         }
     }
 
-    // Check if type is numeric
+    // Check if type is numeric (scalar or vector)
     bool isNumeric() const {
         return kind == TypeKind::INT8 || kind == TypeKind::INT16 ||
                kind == TypeKind::INT32 || kind == TypeKind::INT64 ||
                kind == TypeKind::INT128 || kind == TypeKind::INT256 ||
                kind == TypeKind::INT512 || kind == TypeKind::FLT32 ||
-               kind == TypeKind::FLT64;
+               kind == TypeKind::FLT64 || isVector();
+    }
+
+    // Check if type is a vector type
+    bool isVector() const {
+        return kind == TypeKind::VEC2 || kind == TypeKind::VEC3 || kind == TypeKind::VEC4 ||
+               kind == TypeKind::DVEC2 || kind == TypeKind::DVEC3 || kind == TypeKind::DVEC4 ||
+               kind == TypeKind::IVEC2 || kind == TypeKind::IVEC3 || kind == TypeKind::IVEC4;
     }
 
     // Check if type is integer
@@ -164,12 +171,15 @@ public:
         return kind == TypeKind::INT8 || kind == TypeKind::INT16 ||
                kind == TypeKind::INT32 || kind == TypeKind::INT64 ||
                kind == TypeKind::INT128 || kind == TypeKind::INT256 ||
-               kind == TypeKind::INT512;
+               kind == TypeKind::INT512 ||
+               kind == TypeKind::IVEC2 || kind == TypeKind::IVEC3 || kind == TypeKind::IVEC4;
     }
 
     // Check if type is floating point
     bool isFloat() const {
-        return kind == TypeKind::FLT32 || kind == TypeKind::FLT64;
+        return kind == TypeKind::FLT32 || kind == TypeKind::FLT64 ||
+               kind == TypeKind::VEC2 || kind == TypeKind::VEC3 || kind == TypeKind::VEC4 ||
+               kind == TypeKind::DVEC2 || kind == TypeKind::DVEC3 || kind == TypeKind::DVEC4;
     }
 };
 

@@ -156,11 +156,29 @@ void TypeChecker::visit(frontend::BinaryOp* node) {
                 current_expr_type = makeErrorType();
                 return;
             }
-            // Result type is the wider of the two types (simplified)
-            if (left_type->isFloat() || right_type->isFloat()) {
-                current_expr_type = makeFloatType(64);
+            // Vector operations preserve vector type
+            if (left_type->isVector() && right_type->isVector()) {
+                // Both are vectors - they should be the same type
+                if (left_type->kind != right_type->kind) {
+                    addError("Vector arithmetic requires matching vector types: " +
+                            left_type->toString() + " and " + right_type->toString());
+                    current_expr_type = makeErrorType();
+                    return;
+                }
+                current_expr_type = left_type;  // Result is same vector type
+            } else if (left_type->isVector()) {
+                // Vector op scalar - result is vector type
+                current_expr_type = left_type;
+            } else if (right_type->isVector()) {
+                // Scalar op vector - result is vector type
+                current_expr_type = right_type;
             } else {
-                current_expr_type = makeIntType(64);
+                // Scalar arithmetic - use wider type
+                if (left_type->isFloat() || right_type->isFloat()) {
+                    current_expr_type = makeFloatType(64);
+                } else {
+                    current_expr_type = makeIntType(64);
+                }
             }
             break;
 
