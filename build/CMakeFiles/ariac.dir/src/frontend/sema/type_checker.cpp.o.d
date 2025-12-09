@@ -209,13 +209,13 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: \
  /usr/include/c++/13/bits/node_handle.h \
  /usr/include/c++/13/bits/stl_map.h \
  /usr/include/c++/13/bits/stl_multimap.h \
- /usr/include/c++/13/bits/erase_if.h \
+ /usr/include/c++/13/bits/erase_if.h /usr/include/c++/13/set \
+ /usr/include/c++/13/bits/stl_set.h \
+ /usr/include/c++/13/bits/stl_multiset.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/control_flow.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/stmt.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/defer.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/loops.h \
  /usr/include/c++/13/sstream /usr/include/c++/13/istream \
  /usr/include/c++/13/bits/istream.tcc \
- /usr/include/c++/13/bits/sstream.tcc /usr/include/c++/13/iostream \
- /usr/include/c++/13/set /usr/include/c++/13/bits/stl_set.h \
- /usr/include/c++/13/bits/stl_multiset.h
+ /usr/include/c++/13/bits/sstream.tcc /usr/include/c++/13/iostream

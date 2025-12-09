@@ -19,6 +19,10 @@
 namespace aria {
 namespace sema {
 
+// Global set to track registered struct types across type checker instances
+// This is needed because parseType is a free function
+static std::set<std::string> global_registered_structs;
+
 // Helper: Parse type from string
 std::shared_ptr<Type> parseType(const std::string& type_str) {
     if (type_str == "void") return makeVoidType();
@@ -48,8 +52,13 @@ std::shared_ptr<Type> parseType(const std::string& type_str) {
     if (type_str == "ivec3") return std::make_shared<Type>(TypeKind::IVEC3, "ivec3");
     if (type_str == "ivec4") return std::make_shared<Type>(TypeKind::IVEC4, "ivec4");
 
-    // Default to int64 for unknown types (for now)
-    return makeIntType(64);
+    // Check if it's a registered user-defined struct type
+    if (global_registered_structs.find(type_str) != global_registered_structs.end()) {
+        return std::make_shared<Type>(TypeKind::STRUCT, type_str);
+    }
+
+    // Default to dyn for unknown types (was int64, but dyn is more permissive)
+    return makeDynType();
 }
 
 // Visit VarExpr (variable reference)
@@ -559,6 +568,20 @@ void TypeChecker::visit(frontend::VarDecl* node) {
     }
 }
 
+// Visit StructDecl - register struct type
+void TypeChecker::visit(frontend::StructDecl* node) {
+    // Register this struct as a valid type
+    registered_structs.insert(node->name);
+    global_registered_structs.insert(node->name);
+    
+    // Type check method initializers if present
+    for (auto& method : node->methods) {
+        if (method->initializer) {
+            method->initializer->accept(*this);
+        }
+    }
+}
+
 // Visit ReturnStmt
 void TypeChecker::visit(frontend::ReturnStmt* node) {
     if (node->value) {
@@ -794,8 +817,17 @@ void TypeChecker::visit(frontend::ObjectLiteral* node) {
             // Could build struct type from field types
         }
     }
-    // For now, object literals have dyn type (catch-all)
-    // In full implementation, would create anonymous struct type
+    
+    // Check if this is a struct constructor (has type_name)
+    if (!node->type_name.empty()) {
+        // Verify the type is a registered struct
+        if (isRegisteredStruct(node->type_name)) {
+            current_expr_type = std::make_shared<Type>(TypeKind::STRUCT, node->type_name);
+            return;
+        }
+    }
+    
+    // For anonymous object literals, use dyn type
     current_expr_type = makeDynType();
 }
 
