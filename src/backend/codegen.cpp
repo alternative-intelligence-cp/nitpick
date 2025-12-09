@@ -4791,12 +4791,69 @@ public:
             // SUSPEND PATH - Schedule coroutine for resumption and return to caller
             ctx.builder->SetInsertPoint(suspendBB);
             
+            // We need to allocate a CoroutineFrame struct and fill it in before scheduling
+            // The scheduler expects: struct CoroutineFrame { void* coro_handle; void* data; CoroutineFrame* waiting_on; int state; char padding; }
+            
+            // Declare aria_frame_alloc if not present (allocates CoroutineFrame on heap)
+            Function* frameAlloc = ctx.module->getFunction("aria_frame_alloc");
+            if (!frameAlloc) {
+                FunctionType* allocType = FunctionType::get(
+                    PointerType::getUnqual(ctx.llvmContext),  // Returns CoroutineFrame*
+                    {},
+                    false
+                );
+                frameAlloc = Function::Create(
+                    allocType,
+                    Function::ExternalLinkage,
+                    "aria_frame_alloc",
+                    ctx.module.get()
+                );
+            }
+            
+            // Allocate the CoroutineFrame
+            Value* frame = ctx.builder->CreateCall(frameAlloc, {}, "coro_frame_alloc");
+            
+            // Now set frame->coro_handle = coroHandle
+            // CoroutineFrame struct layout: { void* coro_handle; void* data; CoroutineFrame* waiting_on; int state; char padding; }
+            // Field 0 is coro_handle
+            Value* handleFieldPtr = ctx.builder->CreateStructGEP(
+                StructType::get(ctx.llvmContext, {
+                    PointerType::getUnqual(ctx.llvmContext),  // coro_handle
+                    PointerType::getUnqual(ctx.llvmContext),  // data
+                    PointerType::getUnqual(ctx.llvmContext),  // waiting_on
+                    Type::getInt32Ty(ctx.llvmContext),        // state
+                    Type::getInt8Ty(ctx.llvmContext)          // padding
+                }),
+                frame,
+                0,  // Field index 0 = coro_handle
+                "frame_handle_ptr"
+            );
+            ctx.builder->CreateStore(coroHandle, handleFieldPtr);
+            
+            // Set frame->state = CORO_SUSPENDED (value 1)
+            Value* stateFieldPtr = ctx.builder->CreateStructGEP(
+                StructType::get(ctx.llvmContext, {
+                    PointerType::getUnqual(ctx.llvmContext),
+                    PointerType::getUnqual(ctx.llvmContext),
+                    PointerType::getUnqual(ctx.llvmContext),
+                    Type::getInt32Ty(ctx.llvmContext),
+                    Type::getInt8Ty(ctx.llvmContext)
+                }),
+                frame,
+                3,  // Field index 3 = state
+                "frame_state_ptr"
+            );
+            ctx.builder->CreateStore(
+                ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 1),  // CORO_SUSPENDED = 1
+                stateFieldPtr
+            );
+            
             // Declare aria_scheduler_schedule if not already present
             Function* schedulerSchedule = ctx.module->getFunction("aria_scheduler_schedule");
             if (!schedulerSchedule) {
                 FunctionType* schedFuncType = FunctionType::get(
                     Type::getVoidTy(ctx.llvmContext),
-                    {PointerType::getUnqual(ctx.llvmContext)},  // void* handle parameter
+                    {PointerType::getUnqual(ctx.llvmContext)},  // CoroutineFrame* parameter
                     false
                 );
                 schedulerSchedule = Function::Create(
@@ -4807,9 +4864,9 @@ public:
                 );
             }
             
-            // Schedule the coroutine for resumption
-            // The scheduler will call the resume wrapper function we generated
-            ctx.builder->CreateCall(schedulerSchedule, {coroHandle});
+            // Schedule the coroutine for resumption (pass the CoroutineFrame*)
+            // The scheduler will call aria_coro_resume_bridge(frame->coro_handle)
+            ctx.builder->CreateCall(schedulerSchedule, {frame});
             
             // Return to caller (control goes back to scheduler)
             ctx.builder->CreateRet(Constant::getNullValue(ctx.currentFunction->getReturnType()));

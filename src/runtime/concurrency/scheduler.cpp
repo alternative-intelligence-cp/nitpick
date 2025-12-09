@@ -6,6 +6,22 @@
 // Global scheduler instance (singleton)
 static Scheduler* global_scheduler = nullptr;
 
+// Allocate a CoroutineFrame on the heap
+extern "C" CoroutineFrame* aria_frame_alloc() {
+    CoroutineFrame* frame = new CoroutineFrame();
+    frame->coro_handle = nullptr;
+    frame->data = nullptr;
+    frame->waiting_on = nullptr;
+    frame->state = CORO_SUSPENDED;
+    frame->padding = 0;
+    return frame;
+}
+
+// Free a CoroutineFrame
+extern "C" void aria_frame_free(CoroutineFrame* frame) {
+    delete frame;
+}
+
 // Initialize the global scheduler with N worker threads
 extern "C" void aria_scheduler_init(int num_threads) {
     if (global_scheduler) return;  // Already initialized

@@ -48,3 +48,14 @@ struct CoroutineFrame {
 // Bridge function for resuming LLVM coroutines
 // Called by scheduler, internally invokes llvm.coro.resume
 extern "C" void aria_coro_resume_bridge(void* coro_handle);
+
+// Allocate and free CoroutineFrame structs
+extern "C" CoroutineFrame* aria_frame_alloc();
+extern "C" void aria_frame_free(CoroutineFrame* frame);
+
+// Scheduler C API
+extern "C" void aria_scheduler_init(int num_threads);
+extern "C" void aria_scheduler_shutdown();
+extern "C" void aria_scheduler_schedule(CoroutineFrame* frame);
+extern "C" void aria_scheduler_resume(CoroutineFrame* frame);
+
