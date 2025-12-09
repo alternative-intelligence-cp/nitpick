@@ -1768,6 +1768,7 @@ public:
             AllocaInst* coroHandleAlloca = ctx.builder->CreateAlloca(
                 PointerType::getUnqual(ctx.llvmContext), nullptr, "__coro_handle");
             ctx.builder->CreateStore(hdl, coroHandleAlloca);
+            ctx.define("__coro_handle__", coroHandleAlloca, false, "void*");
         }
         
         // 6. Create allocas for parameters (to allow taking addresses)
@@ -4791,6 +4792,13 @@ public:
             // SUSPEND PATH - Schedule coroutine for resumption and return to caller
             ctx.builder->SetInsertPoint(suspendBB);
             
+            // Reload the coroutine handle in this block (can't use value from previous block)
+            Value* coroHandleSuspend = ctx.builder->CreateLoad(
+                PointerType::getUnqual(ctx.llvmContext),
+                coroHandleSym->val,
+                "coro.handle.suspend"
+            );
+            
             // We need to allocate a CoroutineFrame struct and fill it in before scheduling
             // The scheduler expects: struct CoroutineFrame { void* coro_handle; void* data; CoroutineFrame* waiting_on; int state; char padding; }
             
@@ -4813,7 +4821,7 @@ public:
             // Allocate the CoroutineFrame
             Value* frame = ctx.builder->CreateCall(frameAlloc, {}, "coro_frame_alloc");
             
-            // Now set frame->coro_handle = coroHandle
+            // Now set frame->coro_handle = coroHandleSuspend
             // CoroutineFrame struct layout: { void* coro_handle; void* data; CoroutineFrame* waiting_on; int state; char padding; }
             // Field 0 is coro_handle
             Value* handleFieldPtr = ctx.builder->CreateStructGEP(
@@ -4828,7 +4836,7 @@ public:
                 0,  // Field index 0 = coro_handle
                 "frame_handle_ptr"
             );
-            ctx.builder->CreateStore(coroHandle, handleFieldPtr);
+            ctx.builder->CreateStore(coroHandleSuspend, handleFieldPtr);
             
             // Set frame->state = CORO_SUSPENDED (value 1)
             Value* stateFieldPtr = ctx.builder->CreateStructGEP(
@@ -4873,25 +4881,7 @@ public:
             
             // CLEANUP PATH - Coroutine destroyed
             ctx.builder->SetInsertPoint(cleanupBB);
-            
-            // We need the coro.id token - find it in the entry block
-            Value* coroIdToken = nullptr;
-            for (auto& I : ctx.currentFunction->getEntryBlock()) {
-                if (auto* call = dyn_cast<CallInst>(&I)) {
-                    if (call->getCalledFunction() && 
-                        call->getCalledFunction()->getName() == "llvm.coro.id") {
-                        coroIdToken = call;
-                        break;
-                    }
-                }
-            }
-            
-            Function* coroEnd = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_end);
-            ctx.builder->CreateCall(coroEnd, {
-                coroHandle,
-                ConstantInt::getFalse(ctx.llvmContext),  // unwind = false
-                coroIdToken ? coroIdToken : (Value*)ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))
-            });
+            // Just return - cleanup will happen when the coroutine frame is freed
             ctx.builder->CreateRet(Constant::getNullValue(ctx.currentFunction->getReturnType()));
             
             // RESUME PATH - Continue after await
