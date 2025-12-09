@@ -165,11 +165,22 @@ All phases verified with:
 
 ## Limitations & Future Work
 
-### Current Limitations
-1. No closure return values (closures can't be returned from functions)
-2. No closure assignment (can't reassign closure variables)
-3. No closure arrays or struct fields
-4. Captured variables are copied, not referenced (changes not visible)
+###Current Limitations
+1. **Multiple closures in same scope**: Creating multiple closures that capture the same variable in one function scope causes symbol table pollution
+   - Example: Two separate closures both capturing `x` from parent function
+   - Root cause: Symbol restoration after lambda body generation not fully working
+   - Workaround: Use nested scopes or single closure per captured variable
+   
+2. **No closure return values**: Closures can't be returned from functions
+   - Requires heap allocation of fat pointer
+   - Lifetime management considerations
+
+3. **No closure assignment**: Can't reassign closure variables
+
+4. **No closure arrays or struct fields**
+
+5. **Captured variables are copied**: Changes not visible in parent scope
+   - Capture by value, not by reference
 
 ### Future Enhancements
 1. **Closure Return Values**: Support returning closures from functions
