@@ -2900,6 +2900,151 @@ public:
                 return createSyscall(8, args, Type::getInt64Ty(ctx.llvmContext));
             }
             
+            // ================================================================
+            // SIMD VECTOR INTRINSICS
+            // ================================================================
+            // Check for SIMD intrinsic functions (dot, cross, normalize, length)
+            if (funcName == "dot" && call->arguments.size() == 2) {
+                // Dot product: dot(vec, vec) -> scalar
+                Value* v1 = visitExpr(call->arguments[0].get());
+                Value* v2 = visitExpr(call->arguments[1].get());
+                
+                if (v1 && v2 && v1->getType()->isVectorTy() && v2->getType()->isVectorTy()) {
+                    auto* vecType = cast<FixedVectorType>(v1->getType());
+                    Type* elemType = vecType->getElementType();
+                    unsigned numElems = vecType->getNumElements();
+                    
+                    // Component-wise multiply
+                    Value* product = ctx.builder->CreateFMul(v1, v2, "dot_mul");
+                    
+                    // Horizontal sum using vector reduction
+                    // Extract and accumulate all elements
+                    Value* sum = Constant::getNullValue(elemType);
+                    for (unsigned i = 0; i < numElems; i++) {
+                        Value* elem = ctx.builder->CreateExtractElement(
+                            product, ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), i), "dot_elem");
+                        sum = ctx.builder->CreateFAdd(sum, elem, "dot_sum");
+                    }
+                    return sum;
+                }
+            } else if (funcName == "cross" && call->arguments.size() == 2) {
+                // Cross product: cross(vec3, vec3) -> vec3 (only for 3D vectors)
+                Value* v1 = visitExpr(call->arguments[0].get());
+                Value* v2 = visitExpr(call->arguments[1].get());
+                
+                if (v1 && v2 && v1->getType()->isVectorTy() && v2->getType()->isVectorTy()) {
+                    auto* vecType = cast<FixedVectorType>(v1->getType());
+                    // Note: vec3 is actually stored as vec4 (SIMD alignment), so check for >= 3
+                    if (vecType->getNumElements() >= 3) {
+                        // Cross product formula: (a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x)
+                        Type* i32 = Type::getInt32Ty(ctx.llvmContext);
+                        
+                        Value* ax = ctx.builder->CreateExtractElement(v1, ConstantInt::get(i32, 0), "ax");
+                        Value* ay = ctx.builder->CreateExtractElement(v1, ConstantInt::get(i32, 1), "ay");
+                        Value* az = ctx.builder->CreateExtractElement(v1, ConstantInt::get(i32, 2), "az");
+                        
+                        Value* bx = ctx.builder->CreateExtractElement(v2, ConstantInt::get(i32, 0), "bx");
+                        Value* by = ctx.builder->CreateExtractElement(v2, ConstantInt::get(i32, 1), "by");
+                        Value* bz = ctx.builder->CreateExtractElement(v2, ConstantInt::get(i32, 2), "bz");
+                        
+                        // X component: ay*bz - az*by
+                        Value* cx = ctx.builder->CreateFSub(
+                            ctx.builder->CreateFMul(ay, bz, "ay_bz"),
+                            ctx.builder->CreateFMul(az, by, "az_by"),
+                            "cross_x"
+                        );
+                        
+                        // Y component: az*bx - ax*bz
+                        Value* cy = ctx.builder->CreateFSub(
+                            ctx.builder->CreateFMul(az, bx, "az_bx"),
+                            ctx.builder->CreateFMul(ax, bz, "ax_bz"),
+                            "cross_y"
+                        );
+                        
+                        // Z component: ax*by - ay*bx
+                        Value* cz = ctx.builder->CreateFSub(
+                            ctx.builder->CreateFMul(ax, by, "ax_by"),
+                            ctx.builder->CreateFMul(ay, bx, "ay_bx"),
+                            "cross_z"
+                        );
+                        
+                        // Build result vector
+                        Value* result = UndefValue::get(vecType);
+                        result = ctx.builder->CreateInsertElement(result, cx, ConstantInt::get(i32, 0), "cross_0");
+                        result = ctx.builder->CreateInsertElement(result, cy, ConstantInt::get(i32, 1), "cross_1");
+                        result = ctx.builder->CreateInsertElement(result, cz, ConstantInt::get(i32, 2), "cross_2");
+                        return result;
+                    }
+                }
+            } else if (funcName == "length" && call->arguments.size() == 1) {
+                // Length (magnitude): length(vec) -> scalar = sqrt(dot(vec, vec))
+                Value* v = visitExpr(call->arguments[0].get());
+                
+                if (v && v->getType()->isVectorTy()) {
+                    auto* vecType = cast<FixedVectorType>(v->getType());
+                    Type* elemType = vecType->getElementType();
+                    unsigned numElems = vecType->getNumElements();
+                    
+                    // Compute dot product with itself
+                    Value* product = ctx.builder->CreateFMul(v, v, "len_sq");
+                    Value* sum = Constant::getNullValue(elemType);
+                    for (unsigned i = 0; i < numElems; i++) {
+                        Value* elem = ctx.builder->CreateExtractElement(
+                            product, ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), i), "len_elem");
+                        sum = ctx.builder->CreateFAdd(sum, elem, "len_sum");
+                    }
+                    
+                    // sqrt(sum)
+                    Function* sqrtFn = Intrinsic::getDeclaration(
+                        ctx.module.get(),
+                        elemType->isFloatTy() ? Intrinsic::sqrt : Intrinsic::sqrt,
+                        {elemType}
+                    );
+                    return ctx.builder->CreateCall(sqrtFn, {sum}, "length");
+                }
+            } else if (funcName == "normalize" && call->arguments.size() == 1) {
+                // Normalize: normalize(vec) -> vec / length(vec)
+                Value* v = visitExpr(call->arguments[0].get());
+                
+                if (v && v->getType()->isVectorTy()) {
+                    auto* vecType = cast<FixedVectorType>(v->getType());
+                    Type* elemType = vecType->getElementType();
+                    unsigned numElems = vecType->getNumElements();
+                    
+                    // Compute length
+                    Value* product = ctx.builder->CreateFMul(v, v, "norm_sq");
+                    Value* sum = Constant::getNullValue(elemType);
+                    for (unsigned i = 0; i < numElems; i++) {
+                        Value* elem = ctx.builder->CreateExtractElement(
+                            product, ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), i), "norm_elem");
+                        sum = ctx.builder->CreateFAdd(sum, elem, "norm_sum");
+                    }
+                    
+                    Function* sqrtFn = Intrinsic::getDeclaration(
+                        ctx.module.get(),
+                        elemType->isFloatTy() ? Intrinsic::sqrt : Intrinsic::sqrt,
+                        {elemType}
+                    );
+                    Value* len = ctx.builder->CreateCall(sqrtFn, {sum}, "norm_len");
+                    
+                    // Broadcast scalar to vector
+                    Value* lenVec = UndefValue::get(vecType);
+                    for (unsigned i = 0; i < numElems; i++) {
+                        lenVec = ctx.builder->CreateInsertElement(
+                            lenVec, len,
+                            ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), i),
+                            "norm_broadcast"
+                        );
+                    }
+                    
+                    // Divide vector by length vector
+                    return ctx.builder->CreateFDiv(v, lenVec, "normalized");
+                }
+            }
+            // ================================================================
+            // END SIMD VECTOR INTRINSICS
+            // ================================================================
+            
             // Check for wildx memory protection intrinsics
             // These map to the runtime functions directly
             bool is_wildx_intrinsic = false;
