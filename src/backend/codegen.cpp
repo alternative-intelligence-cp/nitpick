@@ -111,6 +111,9 @@ using aria::backend::ScopeGuard;
 class CodeGenVisitor : public AstVisitor {
     CodeGenContext& ctx;
     
+    // Future handle for spawn expressions (set by visit(SpawnExpr), retrieved by visitExpr)
+    Value* currentSpawnFuture = nullptr;
+    
     // -------------------------------------------------------------------------
     // Generic Function Monomorphization Support
     // -------------------------------------------------------------------------
@@ -4642,9 +4645,13 @@ public:
             // Call the visit method which handles all the logic
             visit(spawn);
             
-            // For now, spawn returns void (no Future yet)
-            // TODO: Return Future<T> handle that can be used to get() the result
-            return ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0);
+            // Return the Future handle (or null if void return type)
+            if (currentSpawnFuture) {
+                return currentSpawnFuture;
+            } else {
+                // For void returns, return null pointer
+                return ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext));
+            }
         }
         
         //... Handle other ops...
@@ -5057,8 +5064,8 @@ public:
         }
         
         // Generate wrapper function that captures the call
-        // The wrapper has signature: void wrapper_N(void* args)
-        // It unpacks args and calls the target function
+        // The wrapper has signature: void wrapper_N(void* task_ptr)
+        // It casts to SpawnTask*, unpacks args, calls function, stores result
         
         static int wrapperCount = 0;
         std::string wrapperName = "spawn_wrapper_" + std::to_string(wrapperCount++);
@@ -5066,7 +5073,7 @@ public:
         // Wrapper function type: void(void*)
         FunctionType* wrapperType = FunctionType::get(
             Type::getVoidTy(ctx.llvmContext),
-            {PointerType::getUnqual(ctx.llvmContext)},  // void* args
+            {PointerType::getUnqual(ctx.llvmContext)},  // void* task_ptr
             false
         );
         
@@ -5081,22 +5088,36 @@ public:
         BasicBlock* wrapperEntry = BasicBlock::Create(ctx.llvmContext, "entry", wrapperFunc);
         IRBuilder<> wrapperBuilder(wrapperEntry);
         
+        // Get task pointer argument
+        Value* taskPtr = wrapperFunc->arg_begin();
+        
+        // Get return type of target function
+        FunctionType* targetFuncType = targetFunc->getFunctionType();
+        Type* returnType = targetFuncType->getReturnType();
+        bool hasReturnValue = !returnType->isVoidTy();
+        
         // If function has arguments, unpack them from args struct
         std::vector<Value*> callArgs;
         if (!call->arguments.empty()) {
-            // Get argument types from the TARGET FUNCTION signature, not from visitExpr
-            // This ensures type correctness in the wrapper
-            FunctionType* targetFuncType = targetFunc->getFunctionType();
-            std::vector<Type*> argTypes;
+            // SpawnTask has: void (*function)(void*); void* args; Future* future; void (*completion)(...);
+            // We need to load the 'args' field (index 1)
+            StructType* spawnTaskType = StructType::get(ctx.llvmContext, {
+                PointerType::getUnqual(ctx.llvmContext),  // function
+                PointerType::getUnqual(ctx.llvmContext),  // args
+                PointerType::getUnqual(ctx.llvmContext),  // future
+                PointerType::getUnqual(ctx.llvmContext)   // completion
+            });
             
+            Value* argsFieldPtr = wrapperBuilder.CreateStructGEP(spawnTaskType, taskPtr, 1);
+            Value* argsPtr = wrapperBuilder.CreateLoad(PointerType::getUnqual(ctx.llvmContext), argsFieldPtr);
+            
+            // Get argument types from target function
+            std::vector<Type*> argTypes;
             for (unsigned i = 0; i < targetFuncType->getNumParams(); i++) {
                 argTypes.push_back(targetFuncType->getParamType(i));
             }
             
             StructType* argsStructType = StructType::create(ctx.llvmContext, argTypes, "spawn_args");
-            
-            // Cast void* to args struct ptr
-            Value* argsPtr = wrapperFunc->arg_begin();
             
             // Load each field and build call argument list
             for (size_t i = 0; i < argTypes.size(); i++) {
@@ -5106,8 +5127,43 @@ public:
             }
         }
         
-        // Call the target function from within wrapper
-        wrapperBuilder.CreateCall(targetFunc, callArgs);
+        // Call the target function and capture result
+        Value* result = wrapperBuilder.CreateCall(targetFunc, callArgs);
+        
+        // If function returns a value, store it in the Future
+        if (hasReturnValue) {
+            // Get SpawnTask fields
+            StructType* spawnTaskType = StructType::get(ctx.llvmContext, {
+                PointerType::getUnqual(ctx.llvmContext),  // function
+                PointerType::getUnqual(ctx.llvmContext),  // args
+                PointerType::getUnqual(ctx.llvmContext),  // future
+                PointerType::getUnqual(ctx.llvmContext)   // completion
+            });
+            
+            // Load Future* (field index 2)
+            Value* futureFieldPtr = wrapperBuilder.CreateStructGEP(spawnTaskType, taskPtr, 2);
+            Value* futurePtr = wrapperBuilder.CreateLoad(PointerType::getUnqual(ctx.llvmContext), futureFieldPtr);
+            
+            // Allocate space for result on stack
+            Value* resultPtr = wrapperBuilder.CreateAlloca(returnType);
+            wrapperBuilder.CreateStore(result, resultPtr);
+            
+            // Call Future->set(result_ptr)
+            // Future.set() signature: void set(void* value)
+            Function* futureSetFunc = ctx.module->getFunction("_ZN6Future3setEPv");  // Mangled name
+            if (!futureSetFunc) {
+                // Declare it if not present
+                FunctionType* setFuncType = FunctionType::get(
+                    Type::getVoidTy(ctx.llvmContext),
+                    {PointerType::getUnqual(ctx.llvmContext), PointerType::getUnqual(ctx.llvmContext)},  // this, void* value
+                    false
+                );
+                futureSetFunc = Function::Create(setFuncType, Function::ExternalLinkage, "_ZN6Future3setEPv", ctx.module.get());
+            }
+            
+            wrapperBuilder.CreateCall(futureSetFunc, {futurePtr, resultPtr});
+        }
+        
         wrapperBuilder.CreateRetVoid();
         
         // Now in the original function, allocate args struct and populate it
@@ -5135,7 +5191,6 @@ public:
             StructType* argsStructType = StructType::create(ctx.llvmContext, argTypes, "spawn_args");
             
             // Allocate args struct on heap (it will be freed by the worker after execution)
-            // For now, use malloc (TODO: use aria.alloc)
             Function* mallocFunc = ctx.module->getFunction("malloc");
             if (!mallocFunc) {
                 FunctionType* mallocType = FunctionType::get(
@@ -5158,13 +5213,36 @@ public:
                 ctx.builder->CreateStore(argValues[i], fieldPtr);
             }
             
+            // Create Future for the return value
+            Type* returnType = targetFuncType->getReturnType();
+            Value* futurePtr = nullptr;
+            
+            if (!returnType->isVoidTy()) {
+                // Allocate Future via aria_future_create(result_size)
+                Function* futureCreateFunc = ctx.module->getFunction("aria_future_create");
+                if (!futureCreateFunc) {
+                    FunctionType* createFuncType = FunctionType::get(
+                        PointerType::getUnqual(ctx.llvmContext),
+                        {Type::getInt64Ty(ctx.llvmContext)},  // size_t result_size
+                        false
+                    );
+                    futureCreateFunc = Function::Create(createFuncType, Function::ExternalLinkage, "aria_future_create", ctx.module.get());
+                }
+                
+                uint64_t resultSize = ctx.module->getDataLayout().getTypeAllocSize(returnType);
+                futurePtr = ctx.builder->CreateCall(
+                    futureCreateFunc,
+                    {ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), resultSize)}
+                );
+            }
+            
             // Create SpawnTask struct on heap
-            // struct SpawnTask { void (*function)(void*); void* args; void* future; void (*completion)(...); }
+            // struct SpawnTask { void (*function)(void*); void* args; Future* future; void (*completion)(...); }
             StructType* spawnTaskType = StructType::create(ctx.llvmContext, {
                 PointerType::getUnqual(ctx.llvmContext),  // function pointer
                 PointerType::getUnqual(ctx.llvmContext),  // args
-                PointerType::getUnqual(ctx.llvmContext),  // future (unused for now)
-                PointerType::getUnqual(ctx.llvmContext)   // completion (unused for now)
+                PointerType::getUnqual(ctx.llvmContext),  // future
+                PointerType::getUnqual(ctx.llvmContext)   // completion
             }, "SpawnTask");
             
             Value* taskPtr = ctx.builder->CreateCall(
@@ -5181,10 +5259,15 @@ public:
             Value* argsPtrField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 1);
             ctx.builder->CreateStore(argsPtr, argsPtrField);
             
-            // Store null for future and completion (not used yet)
+            // Store future pointer (or null if void return)
             Value* futureField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 2);
-            ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), futureField);
+            if (futurePtr) {
+                ctx.builder->CreateStore(futurePtr, futureField);
+            } else {
+                ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), futureField);
+            }
             
+            // Store null for completion (not used yet - Future::set is called directly)
             Value* completionField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 3);
             ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), completionField);
             
@@ -5200,8 +5283,35 @@ public:
             }
             
             ctx.builder->CreateCall(scheduleFunc, {taskPtr});
+            
+            // Save future pointer for visitExpr to return
+            currentSpawnFuture = futurePtr;
         } else {
             // No arguments - simpler path
+            // Get return type for Future creation
+            FunctionType* targetFuncType = targetFunc->getFunctionType();
+            Type* returnType = targetFuncType->getReturnType();
+            Value* futurePtr = nullptr;
+            
+            if (!returnType->isVoidTy()) {
+                // Allocate Future via aria_future_create(result_size)
+                Function* futureCreateFunc = ctx.module->getFunction("aria_future_create");
+                if (!futureCreateFunc) {
+                    FunctionType* createFuncType = FunctionType::get(
+                        PointerType::getUnqual(ctx.llvmContext),
+                        {Type::getInt64Ty(ctx.llvmContext)},
+                        false
+                    );
+                    futureCreateFunc = Function::Create(createFuncType, Function::ExternalLinkage, "aria_future_create", ctx.module.get());
+                }
+                
+                uint64_t resultSize = ctx.module->getDataLayout().getTypeAllocSize(returnType);
+                futurePtr = ctx.builder->CreateCall(
+                    futureCreateFunc,
+                    {ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), resultSize)}
+                );
+            }
+            
             // Create SpawnTask with null args
             StructType* spawnTaskType = StructType::create(ctx.llvmContext, {
                 PointerType::getUnqual(ctx.llvmContext),  // function pointer
@@ -5232,8 +5342,13 @@ public:
             Value* argsPtrField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 1);
             ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), argsPtrField);
             
+            // Store future pointer (or null if void return)
             Value* futureField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 2);
-            ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), futureField);
+            if (futurePtr) {
+                ctx.builder->CreateStore(futurePtr, futureField);
+            } else {
+                ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), futureField);
+            }
             
             Value* completionField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 3);
             ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), completionField);
@@ -5249,6 +5364,9 @@ public:
             }
             
             ctx.builder->CreateCall(scheduleFunc, {taskPtr});
+            
+            // Save future pointer for visitExpr to return
+            currentSpawnFuture = futurePtr;
         }
         
         // TODO: Return Future<T> instead of void
