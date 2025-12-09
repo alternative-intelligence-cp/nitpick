@@ -726,9 +726,9 @@ public:
         return func;
     }
     
-    // getOrInsertGetNursery - Declare aria.get_nursery (GC arena)
+    // getOrInsertGetNursery - Declare get_current_thread_nursery (GC arena)
     Function* getOrInsertGetNursery() {
-        if (Function* existing = ctx.module->getFunction("aria.get_nursery")) {
+        if (Function* existing = ctx.module->getFunction("get_current_thread_nursery")) {
             return existing;
         }
         
@@ -738,12 +738,12 @@ public:
             false
         );
         
-        return Function::Create(nurseryType, Function::ExternalLinkage, "aria.get_nursery", ctx.module.get());
+        return Function::Create(nurseryType, Function::ExternalLinkage, "get_current_thread_nursery", ctx.module.get());
     }
     
-    // getOrInsertGCAlloc - Declare aria.gc_alloc (GC allocation)
+    // getOrInsertGCAlloc - Declare aria_gc_alloc (GC allocation)
     Function* getOrInsertGCAlloc() {
-        if (Function* existing = ctx.module->getFunction("aria.gc_alloc")) {
+        if (Function* existing = ctx.module->getFunction("aria_gc_alloc")) {
             return existing;
         }
         
@@ -753,7 +753,7 @@ public:
             false
         );
         
-        return Function::Create(gcAllocType, Function::ExternalLinkage, "aria.gc_alloc", ctx.module.get());
+        return Function::Create(gcAllocType, Function::ExternalLinkage, "aria_gc_alloc", ctx.module.get());
     }
     
     // getOrInsertAriaMemProtectExec - Declare aria_mem_protect_exec (make memory executable)

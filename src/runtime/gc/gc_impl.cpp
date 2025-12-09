@@ -10,9 +10,18 @@
 // In a production system, this would be a paged block allocator.
 // For reference, we use a simple vector of pointers.
 std::vector<ObjHeader*> old_gen_objects;
-// Mock function to retrieve roots from the stack and registers.
-// In reality, this requires intricate stack frame walking (e.g., libunwind).
-extern std::vector<void*> get_thread_roots();
+
+// Stub implementation of root scanning
+// TODO: Implement proper stack scanning with shadow stack or stack maps
+// For now, returns empty set (conservative - assumes no roots on stack)
+std::vector<void*> get_thread_roots() {
+    // In production, this would:
+    // 1. Scan stack frames for pointer-like values
+    // 2. Check shadow stack (LLVM gcroot intrinsics)
+    // 3. Scan thread-local storage
+    // 4. Return all potential GC roots
+    return std::vector<void*>();
+}
 
 // Forward declaration of C function
 extern "C" Nursery* get_current_thread_nursery();
@@ -48,7 +57,7 @@ void mark_object(ObjHeader* obj) {
 
 // Phase 1: Minor Collection (Nursery Evacuation)
 // This function moves non-pinned objects out of the nursery to the old generation.
-void aria_gc_collect_minor() {
+extern "C" void aria_gc_collect_minor(Nursery* nursery) {
    // 1. Get Roots
    auto roots = get_thread_roots();
    // 2. Evacuate Survivors
@@ -91,18 +100,17 @@ void aria_gc_collect_minor() {
    //  - Build fragment list around pinned objects
    //  - Handle case where ALL nursery space is pinned (trigger major GC)
    //  - Update forwarding pointers for moved objects
-   Nursery* n = get_current_thread_nursery();
-   if (n) {
+   if (nursery) {
        // Simple reset: assumes no pinned objects for now
        // This prevents infinite recursion but loses pinned object support
-       n->bump_ptr = n->start_addr;
-       n->fragments = nullptr;
+       nursery->bump_ptr = nursery->start_addr;
+       nursery->fragments = nullptr;
    }
 }
 
 // Phase 2: Major Collection (Mark-Sweep)
 // This function reclaims memory from the Old Generation.
-void aria_gc_collect_major() {
+extern "C" void aria_gc_collect_major() {
    // 1. Mark Phase
    auto roots = get_thread_roots();
    for (void* root : roots) {
