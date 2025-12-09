@@ -10,3 +10,5 @@ add_test(GCHeaderTests "/home/randy/._____RANDY_____/REPOS/aria/build/tests/test
 set_tests_properties(GCHeaderTests PROPERTIES  _BACKTRACE_TRIPLES "/home/randy/._____RANDY_____/REPOS/aria/tests/CMakeLists.txt;47;add_test;/home/randy/._____RANDY_____/REPOS/aria/tests/CMakeLists.txt;0;")
 add_test(ParserTests "/home/randy/._____RANDY_____/REPOS/aria/build/tests/test_parser")
 set_tests_properties(ParserTests PROPERTIES  _BACKTRACE_TRIPLES "/home/randy/._____RANDY_____/REPOS/aria/tests/CMakeLists.txt;63;add_test;/home/randy/._____RANDY_____/REPOS/aria/tests/CMakeLists.txt;0;")
+add_test(ShadowStackTests "/home/randy/._____RANDY_____/REPOS/aria/build/tests/test_shadow_stack")
+set_tests_properties(ShadowStackTests PROPERTIES  _BACKTRACE_TRIPLES "/home/randy/._____RANDY_____/REPOS/aria/tests/CMakeLists.txt;82;add_test;/home/randy/._____RANDY_____/REPOS/aria/tests/CMakeLists.txt;0;")

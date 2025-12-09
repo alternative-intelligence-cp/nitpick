@@ -367,6 +367,19 @@ test_parser/fast:
 .PHONY : test_parser/fast
 
 #=============================================================================
+# Target rules for targets named test_shadow_stack
+
+# Build rule for target.
+test_shadow_stack: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_shadow_stack
+.PHONY : test_shadow_stack
+
+# fast build rule for target.
+test_shadow_stack/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/build
+.PHONY : test_shadow_stack/fast
+
+#=============================================================================
 # Target rules for targets named run_tests
 
 # Build rule for target.
@@ -811,6 +824,30 @@ src/runtime/gc/nursery.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.s
 .PHONY : src/runtime/gc/nursery.cpp.s
 
+src/runtime/gc/shadow_stack.o: src/runtime/gc/shadow_stack.cpp.o
+.PHONY : src/runtime/gc/shadow_stack.o
+
+# target to build an object file
+src/runtime/gc/shadow_stack.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/gc/shadow_stack.cpp.o
+.PHONY : src/runtime/gc/shadow_stack.cpp.o
+
+src/runtime/gc/shadow_stack.i: src/runtime/gc/shadow_stack.cpp.i
+.PHONY : src/runtime/gc/shadow_stack.i
+
+# target to preprocess a source file
+src/runtime/gc/shadow_stack.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/gc/shadow_stack.cpp.i
+.PHONY : src/runtime/gc/shadow_stack.cpp.i
+
+src/runtime/gc/shadow_stack.s: src/runtime/gc/shadow_stack.cpp.s
+.PHONY : src/runtime/gc/shadow_stack.s
+
+# target to generate assembly for a file
+src/runtime/gc/shadow_stack.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/gc/shadow_stack.cpp.s
+.PHONY : src/runtime/gc/shadow_stack.cpp.s
+
 src/runtime/io/file.o: src/runtime/io/file.cpp.o
 .PHONY : src/runtime/io/file.o
 
@@ -1032,6 +1069,7 @@ help:
 	@echo "... test_allocator"
 	@echo "... test_gc_header"
 	@echo "... test_parser"
+	@echo "... test_shadow_stack"
 	@echo "... src/backend/codegen.o"
 	@echo "... src/backend/codegen.i"
 	@echo "... src/backend/codegen.s"
@@ -1086,6 +1124,9 @@ help:
 	@echo "... src/runtime/gc/nursery.o"
 	@echo "... src/runtime/gc/nursery.i"
 	@echo "... src/runtime/gc/nursery.s"
+	@echo "... src/runtime/gc/shadow_stack.o"
+	@echo "... src/runtime/gc/shadow_stack.i"
+	@echo "... src/runtime/gc/shadow_stack.s"
 	@echo "... src/runtime/io/file.o"
 	@echo "... src/runtime/io/file.i"
 	@echo "... src/runtime/io/file.s"

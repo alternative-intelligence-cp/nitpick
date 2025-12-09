@@ -69,6 +69,7 @@ include tests/CMakeFiles/run_tests.dir/progress.make
 tests/CMakeFiles/run_tests: tests/test_allocator
 tests/CMakeFiles/run_tests: tests/test_gc_header
 tests/CMakeFiles/run_tests: tests/test_parser
+tests/CMakeFiles/run_tests: tests/test_shadow_stack
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Running all Aria unit tests..."
 	/usr/bin/ctest --output-on-failure --verbose
 

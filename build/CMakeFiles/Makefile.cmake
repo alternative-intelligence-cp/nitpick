@@ -93,5 +93,6 @@ set(CMAKE_DEPEND_INFO_FILES
   "tests/CMakeFiles/test_allocator.dir/DependInfo.cmake"
   "tests/CMakeFiles/test_gc_header.dir/DependInfo.cmake"
   "tests/CMakeFiles/test_parser.dir/DependInfo.cmake"
+  "tests/CMakeFiles/test_shadow_stack.dir/DependInfo.cmake"
   "tests/CMakeFiles/run_tests.dir/DependInfo.cmake"
   )

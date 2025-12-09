@@ -214,6 +214,20 @@ test_parser/fast:
 .PHONY : test_parser/fast
 
 # Convenience name for target.
+tests/CMakeFiles/test_shadow_stack.dir/rule:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/test_shadow_stack.dir/rule
+.PHONY : tests/CMakeFiles/test_shadow_stack.dir/rule
+
+# Convenience name for target.
+test_shadow_stack: tests/CMakeFiles/test_shadow_stack.dir/rule
+.PHONY : test_shadow_stack
+
+# fast build rule for target.
+test_shadow_stack/fast:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/build
+.PHONY : test_shadow_stack/fast
+
+# Convenience name for target.
 tests/CMakeFiles/run_tests.dir/rule:
 	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/run_tests.dir/rule
 .PHONY : tests/CMakeFiles/run_tests.dir/rule
@@ -298,6 +312,78 @@ __/src/frontend/preprocessor.s: __/src/frontend/preprocessor.cpp.s
 __/src/frontend/preprocessor.cpp.s:
 	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/__/src/frontend/preprocessor.cpp.s
 .PHONY : __/src/frontend/preprocessor.cpp.s
+
+__/src/runtime/gc/gc_impl.o: __/src/runtime/gc/gc_impl.cpp.o
+.PHONY : __/src/runtime/gc/gc_impl.o
+
+# target to build an object file
+__/src/runtime/gc/gc_impl.cpp.o:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/__/src/runtime/gc/gc_impl.cpp.o
+.PHONY : __/src/runtime/gc/gc_impl.cpp.o
+
+__/src/runtime/gc/gc_impl.i: __/src/runtime/gc/gc_impl.cpp.i
+.PHONY : __/src/runtime/gc/gc_impl.i
+
+# target to preprocess a source file
+__/src/runtime/gc/gc_impl.cpp.i:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/__/src/runtime/gc/gc_impl.cpp.i
+.PHONY : __/src/runtime/gc/gc_impl.cpp.i
+
+__/src/runtime/gc/gc_impl.s: __/src/runtime/gc/gc_impl.cpp.s
+.PHONY : __/src/runtime/gc/gc_impl.s
+
+# target to generate assembly for a file
+__/src/runtime/gc/gc_impl.cpp.s:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/__/src/runtime/gc/gc_impl.cpp.s
+.PHONY : __/src/runtime/gc/gc_impl.cpp.s
+
+__/src/runtime/gc/nursery.o: __/src/runtime/gc/nursery.cpp.o
+.PHONY : __/src/runtime/gc/nursery.o
+
+# target to build an object file
+__/src/runtime/gc/nursery.cpp.o:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/__/src/runtime/gc/nursery.cpp.o
+.PHONY : __/src/runtime/gc/nursery.cpp.o
+
+__/src/runtime/gc/nursery.i: __/src/runtime/gc/nursery.cpp.i
+.PHONY : __/src/runtime/gc/nursery.i
+
+# target to preprocess a source file
+__/src/runtime/gc/nursery.cpp.i:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/__/src/runtime/gc/nursery.cpp.i
+.PHONY : __/src/runtime/gc/nursery.cpp.i
+
+__/src/runtime/gc/nursery.s: __/src/runtime/gc/nursery.cpp.s
+.PHONY : __/src/runtime/gc/nursery.s
+
+# target to generate assembly for a file
+__/src/runtime/gc/nursery.cpp.s:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/__/src/runtime/gc/nursery.cpp.s
+.PHONY : __/src/runtime/gc/nursery.cpp.s
+
+__/src/runtime/gc/shadow_stack.o: __/src/runtime/gc/shadow_stack.cpp.o
+.PHONY : __/src/runtime/gc/shadow_stack.o
+
+# target to build an object file
+__/src/runtime/gc/shadow_stack.cpp.o:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/__/src/runtime/gc/shadow_stack.cpp.o
+.PHONY : __/src/runtime/gc/shadow_stack.cpp.o
+
+__/src/runtime/gc/shadow_stack.i: __/src/runtime/gc/shadow_stack.cpp.i
+.PHONY : __/src/runtime/gc/shadow_stack.i
+
+# target to preprocess a source file
+__/src/runtime/gc/shadow_stack.cpp.i:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/__/src/runtime/gc/shadow_stack.cpp.i
+.PHONY : __/src/runtime/gc/shadow_stack.cpp.i
+
+__/src/runtime/gc/shadow_stack.s: __/src/runtime/gc/shadow_stack.cpp.s
+.PHONY : __/src/runtime/gc/shadow_stack.s
+
+# target to generate assembly for a file
+__/src/runtime/gc/shadow_stack.cpp.s:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/__/src/runtime/gc/shadow_stack.cpp.s
+.PHONY : __/src/runtime/gc/shadow_stack.cpp.s
 
 __/src/runtime/memory/allocator.o: __/src/runtime/memory/allocator.c.o
 .PHONY : __/src/runtime/memory/allocator.o
@@ -395,6 +481,30 @@ test_parser.cpp.s:
 	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_parser.dir/build.make tests/CMakeFiles/test_parser.dir/test_parser.cpp.s
 .PHONY : test_parser.cpp.s
 
+test_shadow_stack.o: test_shadow_stack.cpp.o
+.PHONY : test_shadow_stack.o
+
+# target to build an object file
+test_shadow_stack.cpp.o:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/test_shadow_stack.cpp.o
+.PHONY : test_shadow_stack.cpp.o
+
+test_shadow_stack.i: test_shadow_stack.cpp.i
+.PHONY : test_shadow_stack.i
+
+# target to preprocess a source file
+test_shadow_stack.cpp.i:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/test_shadow_stack.cpp.i
+.PHONY : test_shadow_stack.cpp.i
+
+test_shadow_stack.s: test_shadow_stack.cpp.s
+.PHONY : test_shadow_stack.s
+
+# target to generate assembly for a file
+test_shadow_stack.cpp.s:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/test_shadow_stack.cpp.s
+.PHONY : test_shadow_stack.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -412,6 +522,7 @@ help:
 	@echo "... test_allocator"
 	@echo "... test_gc_header"
 	@echo "... test_parser"
+	@echo "... test_shadow_stack"
 	@echo "... __/src/frontend/lexer.o"
 	@echo "... __/src/frontend/lexer.i"
 	@echo "... __/src/frontend/lexer.s"
@@ -421,6 +532,15 @@ help:
 	@echo "... __/src/frontend/preprocessor.o"
 	@echo "... __/src/frontend/preprocessor.i"
 	@echo "... __/src/frontend/preprocessor.s"
+	@echo "... __/src/runtime/gc/gc_impl.o"
+	@echo "... __/src/runtime/gc/gc_impl.i"
+	@echo "... __/src/runtime/gc/gc_impl.s"
+	@echo "... __/src/runtime/gc/nursery.o"
+	@echo "... __/src/runtime/gc/nursery.i"
+	@echo "... __/src/runtime/gc/nursery.s"
+	@echo "... __/src/runtime/gc/shadow_stack.o"
+	@echo "... __/src/runtime/gc/shadow_stack.i"
+	@echo "... __/src/runtime/gc/shadow_stack.s"
 	@echo "... __/src/runtime/memory/allocator.o"
 	@echo "... __/src/runtime/memory/allocator.i"
 	@echo "... __/src/runtime/memory/allocator.s"
@@ -433,6 +553,9 @@ help:
 	@echo "... test_parser.o"
 	@echo "... test_parser.i"
 	@echo "... test_parser.s"
+	@echo "... test_shadow_stack.o"
+	@echo "... test_shadow_stack.i"
+	@echo "... test_shadow_stack.s"
 .PHONY : help
 
 

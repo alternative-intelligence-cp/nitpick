@@ -17,6 +17,7 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/core/string_impl.cpp" "CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/gc/gc_impl.cpp" "CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/gc/nursery.cpp" "CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o.d"
+  "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/gc/shadow_stack.cpp" "CMakeFiles/aria_runtime.dir/src/runtime/gc/shadow_stack.cpp.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/gc/shadow_stack.cpp.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/io/file.cpp" "CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/io/print.cpp" "CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/io_linux.cpp" "CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/io_linux.cpp.o.d"

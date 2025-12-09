@@ -11,6 +11,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/aria_runtime.dir/src/runtime/gc/gc_impl.cpp.o.d"
   "CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o"
   "CMakeFiles/aria_runtime.dir/src/runtime/gc/nursery.cpp.o.d"
+  "CMakeFiles/aria_runtime.dir/src/runtime/gc/shadow_stack.cpp.o"
+  "CMakeFiles/aria_runtime.dir/src/runtime/gc/shadow_stack.cpp.o.d"
   "CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.o"
   "CMakeFiles/aria_runtime.dir/src/runtime/io/file.cpp.o.d"
   "CMakeFiles/aria_runtime.dir/src/runtime/io/print.cpp.o"
