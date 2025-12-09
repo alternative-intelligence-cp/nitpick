@@ -2884,19 +2884,40 @@ public:
             FunctionType* funcType = nullptr;  // For indirect calls with signature
             
             auto* sym = ctx.lookup(call->function_name);
-            if (sym && !sym->is_ref) {
-                // Direct function value (registered from FuncDecl or Lambda)
-                callee = dyn_cast_or_null<Function>(sym->val);
-                
-                // If not a Function*, check if it's a func variable with signature
-                if (!callee && sym->ariaType.find("func<") == 0) {
-                    // This is a func variable with a signature - indirect call
+            if (sym) {
+                // Check if this is a closure variable (stored as reference to fat pointer struct)
+                // Closures have is_ref=true and type is "func" or starts with "func<"
+                if (sym->is_ref && (sym->ariaType == "func" || sym->ariaType.find("func<") == 0)) {
+                    // The closure is stored as a pointer to the fat pointer struct
                     calleePtr = sym->val;
-                    funcType = ctx.parseFunctionSignature(sym->ariaType);
                     
-                    if (!funcType) {
-                        throw std::runtime_error("Invalid function signature for '" + call->function_name + "'");
+                    // Get the function type from the actual function
+                    // The function should be in the module with the same name
+                    Function* lambdaFunc = ctx.module->getFunction(call->function_name);
+                    if (lambdaFunc) {
+                        // The lambda function has signature (ptr %env, ...args) -> result
+                        // We need to build funcType for the user-visible signature (...args) -> result
+                        FunctionType* lambdaFuncType = lambdaFunc->getFunctionType();
+                        std::vector<Type*> userParamTypes;
+                        
+                        // Skip first parameter (environment) if present
+                        unsigned startParam = (lambdaFuncType->getNumParams() > 0) ? 1 : 0;
+                        for (unsigned i = startParam; i < lambdaFuncType->getNumParams(); ++i) {
+                            userParamTypes.push_back(lambdaFuncType->getParamType(i));
+                        }
+                        
+                        funcType = FunctionType::get(
+                            lambdaFuncType->getReturnType(),
+                            userParamTypes,
+                            false
+                        );
+                    } else {
+                        throw std::runtime_error("Cannot find lambda function for closure '" + call->function_name + "'");
                     }
+                }
+                // If is_ref is false, check if it's a direct function
+                else if (!sym->is_ref) {
+                    callee = dyn_cast_or_null<Function>(sym->val);
                 }
             }
             
@@ -3025,8 +3046,17 @@ public:
                 Type* calleePtrType = calleePtr->getType();
                 
                 // Check if this is a closure struct {ptr, ptr}
+                // calleePtr might be a pointer to the struct (alloca) or the struct itself
                 bool isClosure = false;
-                if (calleePtrType->isStructTy()) {
+                Value* closureStruct = calleePtr;
+                
+                // If it's a pointer, we need to check what it points to
+                // In opaque pointer world, we can't directly inspect, so we use context
+                // We know closures are registered with is_ref=true
+                if (calleePtrType->isPointerTy()) {
+                    // This is a pointer to the closure struct
+                    isClosure = true;
+                } else if (calleePtrType->isStructTy()) {
                     StructType* structType = cast<StructType>(calleePtrType);
                     if (structType->getNumElements() == 2 &&
                         structType->getElementType(0)->isPointerTy() &&
@@ -3037,14 +3067,55 @@ public:
                 
                 if (isClosure) {
                     // Extract function pointer from closure (field 0)
-                    Value* funcPtr = ctx.builder->CreateExtractValue(
-                        calleePtr, 0, "closure_func_ptr"
-                    );
+                    // For pointers, use GEP; for values, use ExtractValue
+                    Value* funcPtr;
+                    Value* envPtr;
                     
-                    // Extract environment pointer from closure (field 1)
-                    Value* envPtr = ctx.builder->CreateExtractValue(
-                        calleePtr, 1, "closure_env_ptr"
-                    );
+                    if (calleePtrType->isPointerTy()) {
+                        // For opaque pointers, we need to know the struct type
+                        // We can get it from the fat pointer alloca instruction
+                        StructType* fatPtrType = nullptr;
+                        if (auto* allocaInst = dyn_cast<AllocaInst>(closureStruct)) {
+                            fatPtrType = dyn_cast<StructType>(allocaInst->getAllocatedType());
+                        }
+                        
+                        if (!fatPtrType) {
+                            throw std::runtime_error("Cannot determine closure struct type for '" + call->function_name + "'");
+                        }
+                        
+                        // Use GEP to get pointers to fields, then load
+                        Value* funcPtrPtr = ctx.builder->CreateStructGEP(
+                            fatPtrType,
+                            closureStruct, 
+                            0, 
+                            "closure_func_ptr_ptr"
+                        );
+                        funcPtr = ctx.builder->CreateLoad(
+                            PointerType::getUnqual(ctx.llvmContext),
+                            funcPtrPtr,
+                            "closure_func_ptr"
+                        );
+                        
+                        Value* envPtrPtr = ctx.builder->CreateStructGEP(
+                            fatPtrType,
+                            closureStruct,
+                            1,
+                            "closure_env_ptr_ptr"
+                        );
+                        envPtr = ctx.builder->CreateLoad(
+                            PointerType::getUnqual(ctx.llvmContext),
+                            envPtrPtr,
+                            "closure_env_ptr"
+                        );
+                    } else {
+                        // Struct value - use ExtractValue
+                        funcPtr = ctx.builder->CreateExtractValue(
+                            closureStruct, 0, "closure_func_ptr"
+                        );
+                        envPtr = ctx.builder->CreateExtractValue(
+                            closureStruct, 1, "closure_env_ptr"
+                        );
+                    }
                     
                     // Prepend environment pointer to arguments
                     std::vector<Value*> closureArgs;
@@ -5005,17 +5076,92 @@ public:
         } else {
             // Regular function call - look up function in symbol table first, then module
             auto* sym = ctx.lookup(node->function_name);
-            if (sym && !sym->is_ref) {
-                callee = dyn_cast_or_null<Function>(sym->val);
+            
+            std::cerr << "[CLOSURE_CALL] Function: " << node->function_name << std::endl;
+            if (sym) {
+                std::cerr << "[CLOSURE_CALL] Found symbol, is_ref: " << sym->is_ref << std::endl;
+                if (sym->val) {
+                    std::cerr << "[CLOSURE_CALL] Symbol value type: " << sym->val->getType()->getTypeID() << std::endl;
+                }
             }
-            if (!callee) {
-                callee = ctx.module->getFunction(node->function_name);
+            
+            // CLOSURE SUPPORT: Check if this is a fat pointer (closure)
+            bool isClosure = false;
+            Value* closurePtr = nullptr;
+            Value* envPtr = nullptr;
+            
+            if (sym && sym->is_ref) {
+                // This is a reference (could be a fat pointer)
+                // Check if it's a struct type with 2 pointer fields (fat pointer pattern)
+                if (auto* allocaInst = dyn_cast<AllocaInst>(sym->val)) {
+                    Type* allocatedType = allocaInst->getAllocatedType();
+                    if (auto* structType = dyn_cast<StructType>(allocatedType)) {
+                        // Check if it matches fat pointer pattern: {ptr, ptr}
+                        if (structType->getNumElements() == 2 &&
+                            structType->getElementType(0)->isPointerTy() &&
+                            structType->getElementType(1)->isPointerTy()) {
+                            isClosure = true;
+                            closurePtr = sym->val;
+                            
+                            // Extract function pointer (field 0)
+                            Value* funcPtrField = ctx.builder->CreateStructGEP(
+                                structType,
+                                closurePtr,
+                                0,
+                                "closure.func_ptr"
+                            );
+                            Value* funcPtr = ctx.builder->CreateLoad(
+                                PointerType::getUnqual(ctx.llvmContext),
+                                funcPtrField,
+                                "func_ptr"
+                            );
+                            callee = dyn_cast<Function>(funcPtr);
+                            
+                            // Extract environment pointer (field 1)
+                            Value* envPtrField = ctx.builder->CreateStructGEP(
+                                structType,
+                                closurePtr,
+                                1,
+                                "closure.env_ptr"
+                            );
+                            envPtr = ctx.builder->CreateLoad(
+                                PointerType::getUnqual(ctx.llvmContext),
+                                envPtrField,
+                                "env_ptr"
+                            );
+                        }
+                    }
+                }
+            }
+            
+            // If not a closure, try regular function lookup
+            if (!isClosure) {
+                if (sym && !sym->is_ref) {
+                    callee = dyn_cast_or_null<Function>(sym->val);
+                }
+                if (!callee) {
+                    callee = ctx.module->getFunction(node->function_name);
+                }
             }
             
             if (!callee) {
                 std::string errorMsg = "Undefined function '" + node->function_name + "'";
                 errorMsg += "\n\nMake sure the function is declared before it's called.";
                 throw std::runtime_error(errorMsg);
+            }
+            
+            // CLOSURE SUPPORT: Prepend environment pointer to arguments if this is a closure
+            if (isClosure && envPtr) {
+                // Evaluate user arguments
+                std::vector<Value*> args;
+                args.push_back(envPtr);  // Hidden environment parameter
+                for (auto& arg : node->arguments) {
+                    args.push_back(visitExpr(arg.get()));
+                }
+                
+                // Create call instruction with environment
+                ctx.builder->CreateCall(callee, args, "calltmp");
+                return;
             }
         }
         
