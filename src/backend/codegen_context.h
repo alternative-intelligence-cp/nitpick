@@ -311,7 +311,13 @@ public:
     // err: uint8 semantics - 0 = success, 1-255 = error codes (C-style)
     // Note: LLVM uses i8 for both signed/unsigned - semantics determined by operations
     // Each unique val type gets its own struct: result_int8, result_int32, etc.
+    // Special case: result<void> is just i8 (error code only, no value)
     Type* getResultType(const std::string& valTypeName) {
+        // Special case: void results are just the error code
+        if (valTypeName == "void") {
+            return Type::getInt8Ty(llvmContext);  // Just the error byte
+        }
+        
         // Generate unique name for this result variant
         std::string structName = "result_" + valTypeName;
         
