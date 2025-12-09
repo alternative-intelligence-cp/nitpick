@@ -28,10 +28,34 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
     // 5. Expect opening brace
     expect(TOKEN_LEFT_BRACE);
     
-    // 6. Parse fields
+    // 6. Parse fields and methods
     std::vector<StructField> fields;
+    std::vector<std::unique_ptr<VarDecl>> methods;
     
     while (!check(TOKEN_RIGHT_BRACE) && current.type != TOKEN_EOF) {
+        // Check if this is a method declaration
+        // Methods start with: func:methodName = ...
+        // Fields start with: fieldName:type,
+        // So we check if identifier is "func" followed by ":"
+        if (current.type == TOKEN_IDENTIFIER && current.value == "func") {
+            // This is a method - parse as VarDecl (func:name = lambda)
+            auto stmt = parseVarDecl();
+            auto* varDecl = dynamic_cast<VarDecl*>(stmt.get());
+            
+            if (varDecl && varDecl->initializer) {
+                // Verify it's a lambda (methods must be lambdas)
+                auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(varDecl->initializer.get());
+                if (lambda) {
+                    // Store the VarDecl directly - no conversion needed!
+                    // Cast unique_ptr<Statement> to unique_ptr<VarDecl>
+                    methods.push_back(std::unique_ptr<VarDecl>(static_cast<VarDecl*>(stmt.release())));
+                }
+            }
+            
+            continue;
+        }
+        
+        // Otherwise, parse as a field
         // Parse field name
         Token field_name = expect(TOKEN_IDENTIFIER);
         
@@ -67,8 +91,10 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
         // Add field to list
         fields.emplace_back(type_name, field_name.value);
         
-        // Expect comma (Aria requires explicit commas)
-        expect(TOKEN_COMMA);
+        // Expect comma unless this is the last field (next token is })
+        if (!check(TOKEN_RIGHT_BRACE)) {
+            expect(TOKEN_COMMA);
+        }
     }
     
     // 7. Expect closing brace
@@ -80,6 +106,7 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
     // 9. Create and return AST node
     auto decl = std::make_unique<StructDecl>(struct_name, std::move(fields));
     decl->is_const = is_const;
+    decl->methods = std::move(methods);  // Add methods to struct
     
     return decl;
 }
