@@ -134,6 +134,16 @@ class CodeGenVisitor : public AstVisitor {
     
     std::map<std::string, GenericTemplate> genericTemplates;  // funcName -> template
     
+    // Generate mangled name for generic specialization
+    // Example: identity<int8> -> "identity_int8"
+    std::string mangleGenericName(const std::string& funcName, const std::vector<std::string>& concreteTypes) {
+        std::string mangledName = funcName;
+        for (const auto& t : concreteTypes) {
+            mangledName += "_" + t;
+        }
+        return mangledName;
+    }
+    
     // Generate specialized version of generic function for concrete types
     // Example: identity<int8> generates "identity_int8" function
     Function* monomorphize(const std::string& funcName, const std::vector<std::string>& concreteTypes) {
@@ -159,18 +169,26 @@ class CodeGenVisitor : public AstVisitor {
         // Generate new specialization
         // Check which style of generic function we have
         aria::frontend::LambdaExpr* originalLambda = nullptr;
-        std::vector<FuncParam> funcParams;
+        const std::vector<FuncParam>* funcParamsPtr = nullptr;
         std::string funcReturnType;
         
         if (tmpl.funcDecl) {
-            funcParams = tmpl.funcDecl->parameters;
+            funcParamsPtr = &(tmpl.funcDecl->parameters);
             funcReturnType = tmpl.funcDecl->return_type;
         } else if (tmpl.lambda) {
             originalLambda = tmpl.lambda;
-            funcParams = originalLambda->parameters;
+            funcParamsPtr = &(originalLambda->parameters);
             funcReturnType = originalLambda->return_type;
         } else {
             throw std::runtime_error("Invalid GenericTemplate");
+        }
+        
+        const std::vector<FuncParam>& funcParams = *funcParamsPtr;
+        
+        // Strip generic type marker (*) from return type if present
+        // *T becomes T,  which will then be substituted
+        if (!funcReturnType.empty() && funcReturnType[0] == '*') {
+            funcReturnType = funcReturnType.substr(1);
         }
         
         // Create type substitution map: T -> int8, U -> float32, etc.
@@ -182,8 +200,14 @@ class CodeGenVisitor : public AstVisitor {
         // Create specialized function type
         std::vector<Type*> paramTypes;
         for (auto& param : funcParams) {
-            // Substitute generic types in parameters
+            // Strip generic type marker (*) from parameter type if present
+            // *T:x becomes T:x, then T gets substituted
             std::string paramType = param.type;
+            if (!paramType.empty() && paramType[0] == '*') {
+                paramType = paramType.substr(1);
+            }
+            
+            // Substitute generic types in parameters
             if (typeSubstitution.count(paramType) > 0) {
                 paramType = typeSubstitution[paramType];
             }
@@ -210,9 +234,11 @@ class CodeGenVisitor : public AstVisitor {
         
         // Save current type substitution state
         auto prevSubstitution = ctx.typeSubstitution;
+        auto prevReturnType = ctx.currentFunctionReturnType;
         
         // Set up substitution context
         ctx.typeSubstitution = typeSubstitution;
+        ctx.currentFunctionReturnType = returnType;  // Set substituted return type for validation
         
         // Generate the function body based on which style we have
         if (tmpl.funcDecl) {
@@ -225,6 +251,7 @@ class CodeGenVisitor : public AstVisitor {
         
         // Restore state
         ctx.typeSubstitution = prevSubstitution;
+        ctx.currentFunctionReturnType = prevReturnType;
         
         // Cache the specialized function
         tmpl.specializations[typeKey] = specializedFunc;
@@ -333,6 +360,44 @@ public:
         return "";
     }
 
+    // -------------------------------------------------------------------------
+    // Helper: Closure Fat Pointer Creation
+    // -------------------------------------------------------------------------
+    
+    // Create a closure struct (fat pointer) containing function pointer and environment
+    // Closure representation: { ptr function, ptr environment }
+    Value* createClosureStruct(Function* func, Value* envPtr) {
+        // Define closure struct type if not already defined
+        // %closure = type { ptr, ptr }  (function pointer, environment pointer)
+        StructType* closureType = StructType::get(
+            ctx.llvmContext,
+            {
+                PointerType::getUnqual(ctx.llvmContext),  // function pointer
+                PointerType::getUnqual(ctx.llvmContext)   // environment pointer
+            }
+        );
+        
+        // Allocate closure struct on stack
+        AllocaInst* closureAlloca = ctx.builder->CreateAlloca(closureType, nullptr, "closure");
+        
+        // Store function pointer
+        Value* funcPtrField = ctx.builder->CreateStructGEP(closureType, closureAlloca, 0, "closure_func_ptr");
+        ctx.builder->CreateStore(func, funcPtrField);
+        
+        // Store environment pointer (or null if no captures)
+        Value* envPtrField = ctx.builder->CreateStructGEP(closureType, closureAlloca, 1, "closure_env_ptr");
+        if (envPtr) {
+            ctx.builder->CreateStore(envPtr, envPtrField);
+        } else {
+            // No environment - store null pointer
+            Value* nullPtr = ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext));
+            ctx.builder->CreateStore(nullPtr, envPtrField);
+        }
+        
+        // Load and return the closure struct value
+        return ctx.builder->CreateLoad(closureType, closureAlloca, "closure_val");
+    }
+    
     // -------------------------------------------------------------------------
     // Helper: Closure Capture Analysis
     // -------------------------------------------------------------------------
@@ -801,9 +866,86 @@ public:
         bool prevAutoWrap = ctx.currentFunctionAutoWrap;
         
         ctx.currentFunction = func;
-        ctx.currentFunctionReturnType = lambda->return_type;
+        
+        // If we're in a generic monomorphization context (typeSubstitution is not empty),
+        // currentFunctionReturnType has already been set to the substituted type.
+        // Don't overwrite it with the lambda's original generic type.
+        if (ctx.typeSubstitution.empty()) {
+            ctx.currentFunctionReturnType = lambda->return_type;
+        }
+        // Otherwise, keep the already-set substituted return type
+        
         ctx.currentFunctionAutoWrap = lambda->auto_wrap;
         ctx.builder->SetInsertPoint(entry);
+        
+        // ASYNC COROUTINE SETUP (if lambda is marked async)
+        if (lambda->is_async) {
+            // Get LLVM coroutine intrinsics
+            Function* coroId = Intrinsic::getDeclaration(
+                ctx.module.get(), 
+                Intrinsic::coro_id
+            );
+            Function* coroBegin = Intrinsic::getDeclaration(
+                ctx.module.get(), 
+                Intrinsic::coro_begin
+            );
+            Function* coroSize = Intrinsic::getDeclaration(
+                ctx.module.get(), 
+                Intrinsic::coro_size, 
+                {Type::getInt32Ty(ctx.llvmContext)}
+            );
+            Function* coroAlloc = Intrinsic::getDeclaration(
+                ctx.module.get(), 
+                Intrinsic::coro_alloc
+            );
+            
+            // Create coroutine ID token
+            Value* nullPtr = ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext));
+            Value* coroIdVal = ctx.builder->CreateCall(
+                coroId,
+                {
+                    ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0),  // alignment
+                    nullPtr,  // promise
+                    nullPtr,  // coroaddr
+                    nullPtr   // fnaddr
+                },
+                "coro.id"
+            );
+            
+            // Get coroutine frame size
+            Value* size = ctx.builder->CreateCall(coroSize, {}, "coro.size");
+            
+            // Check if we need to allocate
+            Value* needAlloc = ctx.builder->CreateCall(coroAlloc, {coroIdVal}, "coro.alloc");
+            
+            // Allocate coroutine frame using malloc
+            // Get or declare malloc
+            FunctionType* mallocType = FunctionType::get(
+                PointerType::getUnqual(ctx.llvmContext),
+                {Type::getInt32Ty(ctx.llvmContext)},
+                false
+            );
+            FunctionCallee mallocFunc = ctx.module->getOrInsertFunction("malloc", mallocType);
+            
+            // Allocate frame
+            Value* frame = ctx.builder->CreateCall(mallocFunc, {size}, "coro.frame");
+            
+            // Begin coroutine
+            Value* hdl = ctx.builder->CreateCall(
+                coroBegin,
+                {coroIdVal, frame},
+                "coro.handle"
+            );
+            
+            // Store handle in a variable for later use
+            AllocaInst* hdlAlloca = ctx.builder->CreateAlloca(
+                hdl->getType(), 
+                nullptr, 
+                "coro.handle.addr"
+            );
+            ctx.builder->CreateStore(hdl, hdlAlloca);
+            ctx.define("__coro_handle__", hdlAlloca, false, "void*");
+        }
         
         // Clear defer stacks for new function
         ctx.deferStacks = std::vector<std::vector<Block*>>();
@@ -855,6 +997,58 @@ public:
         // Restore previous symbols
         for (auto& pair : savedSymbols) {
             ctx.define(pair.first, pair.second->val, pair.second->is_ref);
+        }
+        
+        // Generate resume wrapper for async functions
+        // This bridges LLVM coroutines with the Aria scheduler's function-pointer model
+        if (lambda->is_async) {
+            // Create the resume wrapper function: void funcName_resume(void* handle)
+            std::string resumeName = std::string(func->getName()) + "_resume";
+            
+            FunctionType* resumeType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {PointerType::getUnqual(ctx.llvmContext)},  // void* handle parameter
+                false
+            );
+            
+            Function* resumeFunc = Function::Create(
+                resumeType,
+                Function::ExternalLinkage,  // External so scheduler can call it
+                resumeName,
+                ctx.module.get()
+            );
+            
+            // Generate the resume wrapper body
+            BasicBlock* resumeEntry = BasicBlock::Create(ctx.llvmContext, "entry", resumeFunc);
+            IRBuilder<> resumeBuilder(resumeEntry);
+            
+            // Get the handle parameter
+            Value* handle = resumeFunc->arg_begin();
+            handle->setName("handle");
+            
+            // Get llvm.coro.resume intrinsic
+            Function* coroResume = Intrinsic::getDeclaration(
+                ctx.module.get(),
+                Intrinsic::coro_resume
+            );
+            
+            // Call llvm.coro.resume(handle)
+            resumeBuilder.CreateCall(coroResume, {handle});
+            
+            // Return void
+            resumeBuilder.CreateRetVoid();
+            
+            // Store the resume function pointer in a global variable
+            // so the scheduler can find it when setting up the CoroutineFrame
+            std::string resumePtrName = std::string(func->getName()) + "_resume_ptr";
+            GlobalVariable* resumePtr = new GlobalVariable(
+                *ctx.module,
+                resumeFunc->getType(),
+                true,  // constant
+                GlobalValue::ExternalLinkage,
+                resumeFunc,
+                resumePtrName
+            );
         }
         
         // Restore previous function context
@@ -2375,6 +2569,46 @@ public:
             return sym->val; // PHI or direct value
         }
         if (auto* call = dynamic_cast<aria::frontend::CallExpr*>(node)) {
+            // ================================================================
+            // GENERIC TEMPLATE MONOMORPHIZATION
+            // ================================================================
+            // Check if this is a call to a generic function that needs to be
+            // instantiated with concrete types at the call site.
+            // ================================================================
+            
+            bool isGenericCall = !call->type_arguments.empty();
+            auto templateIt = genericTemplates.find(call->function_name);
+            
+            if (templateIt != genericTemplates.end()) {
+                const GenericTemplate& tmpl = templateIt->second;
+                
+                // Determine the concrete type arguments
+                std::vector<std::string> concreteTypes;
+                
+                if (isGenericCall) {
+                    // Explicit type arguments: identity<int8>(42)
+                    concreteTypes = call->type_arguments;
+                } else {
+                    // Type inference: identity(42)
+                    concreteTypes = inferGenericTypes(tmpl, call);
+                }
+                
+                // Check if we already have a specialization for these types
+                std::string mangledName = mangleGenericName(call->function_name, concreteTypes);
+                
+                if (tmpl.specializations.find(mangledName) == tmpl.specializations.end()) {
+                    // Need to instantiate a new specialization
+                    monomorphize(call->function_name, concreteTypes);
+                }
+                
+                // Redirect the call to the specialized version
+                call->function_name = mangledName;
+            }
+            
+            // ================================================================
+            // END GENERIC TEMPLATE MONOMORPHIZATION
+            // ================================================================
+            
             // Handle function call
             // First check if it's a known builtin mapping
             std::string funcName = call->function_name;
@@ -2578,15 +2812,64 @@ public:
             
             // Generate the call
             if (calleePtr) {
-                // Indirect call through function pointer
-                // Cast the pointer to the correct function type
-                Value* funcPtr = ctx.builder->CreateBitCast(calleePtr, PointerType::getUnqual(funcType));
+                // Indirect call through function pointer or closure
+                Type* calleePtrType = calleePtr->getType();
                 
-                // Void functions shouldn't have result names
-                if (funcType->getReturnType()->isVoidTy()) {
-                    return ctx.builder->CreateCall(funcType, funcPtr, args);
+                // Check if this is a closure struct {ptr, ptr}
+                bool isClosure = false;
+                if (calleePtrType->isStructTy()) {
+                    StructType* structType = cast<StructType>(calleePtrType);
+                    if (structType->getNumElements() == 2 &&
+                        structType->getElementType(0)->isPointerTy() &&
+                        structType->getElementType(1)->isPointerTy()) {
+                        isClosure = true;
+                    }
                 }
-                return ctx.builder->CreateCall(funcType, funcPtr, args, "calltmp");
+                
+                if (isClosure) {
+                    // Extract function pointer from closure (field 0)
+                    Value* funcPtr = ctx.builder->CreateExtractValue(
+                        calleePtr, 0, "closure_func_ptr"
+                    );
+                    
+                    // Extract environment pointer from closure (field 1)
+                    Value* envPtr = ctx.builder->CreateExtractValue(
+                        calleePtr, 1, "closure_env_ptr"
+                    );
+                    
+                    // Prepend environment pointer to arguments
+                    std::vector<Value*> closureArgs;
+                    closureArgs.push_back(envPtr);
+                    closureArgs.insert(closureArgs.end(), args.begin(), args.end());
+                    
+                    // Cast function pointer to correct type
+                    // The function type has environment as first parameter
+                    std::vector<Type*> paramTypes;
+                    paramTypes.push_back(PointerType::getUnqual(ctx.llvmContext)); // env
+                    if (funcType) {
+                        for (unsigned i = 0; i < funcType->getNumParams(); ++i) {
+                            paramTypes.push_back(funcType->getParamType(i));
+                        }
+                    }
+                    Type* returnType = funcType ? funcType->getReturnType() : Type::getVoidTy(ctx.llvmContext);
+                    FunctionType* closureFuncType = FunctionType::get(returnType, paramTypes, false);
+                    
+                    // Call through extracted function pointer
+                    if (closureFuncType->getReturnType()->isVoidTy()) {
+                        return ctx.builder->CreateCall(closureFuncType, funcPtr, closureArgs);
+                    }
+                    return ctx.builder->CreateCall(closureFuncType, funcPtr, closureArgs, "closure_call");
+                } else {
+                    // Regular indirect call through function pointer
+                    // Cast the pointer to the correct function type
+                    Value* funcPtr = ctx.builder->CreateBitCast(calleePtr, PointerType::getUnqual(funcType));
+                    
+                    // Void functions shouldn't have result names
+                    if (funcType->getReturnType()->isVoidTy()) {
+                        return ctx.builder->CreateCall(funcType, funcPtr, args);
+                    }
+                    return ctx.builder->CreateCall(funcType, funcPtr, args, "calltmp");
+                }
             } else {
                 // Direct call
                 // Void functions shouldn't have result names
@@ -3454,6 +3737,76 @@ public:
             ctx.currentFunctionAutoWrap = lambda->auto_wrap;       // Store auto-wrap flag
             ctx.builder->SetInsertPoint(entry);
             
+            // ASYNC COROUTINE SETUP (if lambda is marked async)
+            if (lambda->is_async) {
+                // Get LLVM coroutine intrinsics
+                Function* coroId = Intrinsic::getDeclaration(
+                    ctx.module.get(), 
+                    Intrinsic::coro_id
+                );
+                Function* coroBegin = Intrinsic::getDeclaration(
+                    ctx.module.get(), 
+                    Intrinsic::coro_begin
+                );
+                Function* coroSize = Intrinsic::getDeclaration(
+                    ctx.module.get(), 
+                    Intrinsic::coro_size, 
+                    {Type::getInt32Ty(ctx.llvmContext)}
+                );
+                Function* coroAlloc = Intrinsic::getDeclaration(
+                    ctx.module.get(), 
+                    Intrinsic::coro_alloc
+                );
+                
+                // Create coroutine ID token
+                Value* nullPtr = ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext));
+                Value* coroIdVal = ctx.builder->CreateCall(
+                    coroId,
+                    {
+                        ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0),  // alignment
+                        nullPtr,  // promise
+                        nullPtr,  // coroaddr
+                        nullPtr   // fnaddr
+                    },
+                    "coro.id"
+                );
+                
+                // Get coroutine frame size
+                Value* size = ctx.builder->CreateCall(coroSize, {}, "coro.size");
+                
+                // Check if we need to allocate
+                Value* needAlloc = ctx.builder->CreateCall(coroAlloc, {coroIdVal}, "coro.alloc");
+                
+                // Allocate coroutine frame using malloc
+                // Get or declare malloc
+                FunctionType* mallocType = FunctionType::get(
+                    PointerType::getUnqual(ctx.llvmContext),
+                    {Type::getInt32Ty(ctx.llvmContext)},
+                    false
+                );
+                FunctionCallee mallocFunc = ctx.module->getOrInsertFunction("malloc", mallocType);
+                
+                // Allocate frame
+                Value* frame = ctx.builder->CreateCall(mallocFunc, {size}, "coro.frame");
+                
+                // Begin coroutine
+                Value* hdl = ctx.builder->CreateCall(
+                    coroBegin,
+                    {coroIdVal, frame},
+                    "coro.handle"
+                );
+                
+                // Store handle in a variable for later use
+                // (This will be needed for suspend/resume operations)
+                AllocaInst* hdlAlloca = ctx.builder->CreateAlloca(
+                    hdl->getType(), 
+                    nullptr, 
+                    "coro.handle.addr"
+                );
+                ctx.builder->CreateStore(hdl, hdlAlloca);
+                ctx.define("__coro_handle__", hdlAlloca, false, "void*");
+            }
+            
             // CRITICAL: Clear defer stacks for new function (defers don't persist across functions)
             ctx.deferStacks = std::vector<std::vector<Block*>>();
             ctx.deferStacks.emplace_back();  // Start with one scope for the function
@@ -3608,17 +3961,69 @@ public:
                 // Call the lambda and return its result
                 return ctx.builder->CreateCall(func, args, "lambda_result");
             } else {
-                // Lambdas with captures cannot be returned as plain function pointers
-                // They need to carry their environment. For now, we don't support this.
+                // Non-immediately-invoked lambda: Return as closure (fat pointer)
+                // Closures with captures need heap-allocated environment
+                Value* heapEnv = nullptr;
+                
                 if (!capturedVars.empty()) {
-                    throw std::runtime_error(
-                        "Closures with captured variables cannot be returned as function pointers. "
-                        "Use immediately-invoked lambdas or refactor to avoid captures."
+                    // Allocate environment on heap (for escaping closures)
+                    // Calculate size of environment struct
+                    const DataLayout& DL = ctx.module->getDataLayout();
+                    uint64_t envSize = DL.getTypeAllocSize(envType);
+                    
+                    // Call aria.alloc to allocate heap memory
+                    Function* ariaAlloc = ctx.module->getFunction("aria.alloc");
+                    if (!ariaAlloc) {
+                        // Declare aria.alloc if not already declared
+                        FunctionType* allocType = FunctionType::get(
+                            PointerType::getUnqual(ctx.llvmContext),
+                            {Type::getInt64Ty(ctx.llvmContext)},
+                            false
+                        );
+                        ariaAlloc = Function::Create(
+                            allocType,
+                            Function::ExternalLinkage,
+                            "aria.alloc",
+                            ctx.module.get()
+                        );
+                    }
+                    
+                    Value* sizeVal = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), envSize);
+                    heapEnv = ctx.builder->CreateCall(ariaAlloc, {sizeVal}, "closure_env_heap");
+                    
+                    // Cast to environment struct type
+                    Value* typedHeapEnv = ctx.builder->CreateBitCast(
+                        heapEnv,
+                        PointerType::get(envType, 0),
+                        "closure_env_typed"
                     );
+                    
+                    // Copy environment data from stack to heap
+                    if (envStruct) {
+                        for (unsigned i = 0; i < capturedVars.size(); ++i) {
+                            // Load from stack environment
+                            Value* stackFieldPtr = ctx.builder->CreateStructGEP(
+                                envType, envStruct, i, "stack_field_ptr"
+                            );
+                            Type* fieldType = envType->getElementType(i);
+                            Value* fieldValue = ctx.builder->CreateLoad(
+                                fieldType, stackFieldPtr, "field_value"
+                            );
+                            
+                            // Store to heap environment
+                            Value* heapFieldPtr = ctx.builder->CreateStructGEP(
+                                envType, typedHeapEnv, i, "heap_field_ptr"
+                            );
+                            ctx.builder->CreateStore(fieldValue, heapFieldPtr);
+                        }
+                    }
+                    
+                    // Use heap environment for closure
+                    heapEnv = typedHeapEnv;
                 }
                 
-                // Return function pointer (for passing lambdas as values)
-                return func;
+                // Create and return closure struct (fat pointer)
+                return createClosureStruct(func, heapEnv);
             }
         }
         if (auto* unwrap = dynamic_cast<aria::frontend::UnwrapExpr*>(node)) {
@@ -3839,6 +4244,88 @@ public:
             
             return result;
         }
+        
+        // Handle AwaitExpr (async/await - coroutine suspension)
+        if (auto* await = dynamic_cast<aria::frontend::AwaitExpr*>(node)) {
+            // First, check if we're in an async function
+            if (!ctx.currentFunction) {
+                throw std::runtime_error("await can only be used inside functions");
+            }
+            
+            // Check if we have the coroutine handle variable (set during async function setup)
+            auto* coroHandleSym = ctx.lookup("__coro_handle__");
+            if (!coroHandleSym) {
+                throw std::runtime_error("await can only be used inside async functions - function must be marked with 'async' keyword");
+            }
+            
+            // FULL COROUTINE SUSPENSION IMPLEMENTATION
+            // Step 1: Evaluate the awaited expression
+            Value* awaitedValue = visitExpr(await->expression.get());
+            
+            // Step 2: Get coroutine intrinsics
+            Function* coroSave = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_save);
+            Function* coroSuspend = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_suspend);
+            
+            // Load the coroutine handle
+            Value* coroHandle = ctx.builder->CreateLoad(
+                PointerType::getUnqual(ctx.llvmContext),
+                coroHandleSym->val,
+                "coro.handle.load"
+            );
+            
+            // Step 3: Save suspension point
+            Value* saveToken = ctx.builder->CreateCall(coroSave, {coroHandle}, "save_point");
+            
+            // Step 4: Suspend coroutine
+            Value* suspendResult = ctx.builder->CreateCall(coroSuspend, {
+                saveToken,
+                ConstantInt::getFalse(ctx.llvmContext)  // final = false
+            }, "suspend_result");
+            
+            // Step 5: Create state machine basic blocks
+            BasicBlock* suspendBB = BasicBlock::Create(ctx.llvmContext, "await.suspend", ctx.currentFunction);
+            BasicBlock* resumeBB = BasicBlock::Create(ctx.llvmContext, "await.resume", ctx.currentFunction);
+            BasicBlock* cleanupBB = BasicBlock::Create(ctx.llvmContext, "await.cleanup", ctx.currentFunction);
+            
+            // Switch on suspend result
+            SwitchInst* suspendSwitch = ctx.builder->CreateSwitch(suspendResult, suspendBB, 2);
+            suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), resumeBB);
+            suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), cleanupBB);
+            
+            // SUSPEND PATH - Return to caller/scheduler
+            ctx.builder->SetInsertPoint(suspendBB);
+            ctx.builder->CreateRet(Constant::getNullValue(ctx.currentFunction->getReturnType()));
+            
+            // CLEANUP PATH - Coroutine destroyed
+            ctx.builder->SetInsertPoint(cleanupBB);
+            
+            // We need the coro.id token - find it in the entry block
+            Value* coroIdToken = nullptr;
+            for (auto& I : ctx.currentFunction->getEntryBlock()) {
+                if (auto* call = dyn_cast<CallInst>(&I)) {
+                    if (call->getCalledFunction() && 
+                        call->getCalledFunction()->getName() == "llvm.coro.id") {
+                        coroIdToken = call;
+                        break;
+                    }
+                }
+            }
+            
+            Function* coroEnd = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_end);
+            ctx.builder->CreateCall(coroEnd, {
+                coroHandle,
+                ConstantInt::getFalse(ctx.llvmContext),  // unwind = false
+                coroIdToken ? coroIdToken : (Value*)ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))
+            });
+            ctx.builder->CreateRet(Constant::getNullValue(ctx.currentFunction->getReturnType()));
+            
+            // RESUME PATH - Continue after await
+            ctx.builder->SetInsertPoint(resumeBB);
+            
+            // Return the awaited value (it's available after resumption)
+            return awaitedValue;
+        }
+        
         //... Handle other ops...
         return nullptr;
     }
@@ -4119,7 +4606,33 @@ public:
         // Coroutine yields control back to caller
         ctx.builder->SetInsertPoint(suspendBB);
         
-        // Return coroutine handle to caller (allows resumption)
+        // =====================================================================
+        // SCHEDULER INTEGRATION
+        // =====================================================================
+        // Schedule the coroutine for resumption by the runtime scheduler
+        // This bridges LLVM coroutines with the Aria work-stealing scheduler
+        
+        // Declare aria_scheduler_schedule if not already declared
+        Function* schedulerSchedule = ctx.module->getFunction("aria_scheduler_schedule");
+        if (!schedulerSchedule) {
+            FunctionType* schedFuncType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {PointerType::getUnqual(ctx.llvmContext)},  // void* coroutine_handle
+                false
+            );
+            schedulerSchedule = Function::Create(
+                schedFuncType,
+                Function::ExternalLinkage,
+                "aria_scheduler_schedule",
+                ctx.module.get()
+            );
+        }
+        
+        // Schedule the coroutine for resumption
+        // The scheduler will call llvm.coro.resume on this handle when ready
+        ctx.builder->CreateCall(schedulerSchedule, {framePtr});
+        
+        // Return coroutine handle to caller (allows direct resumption if needed)
         Function* coroBegin = nullptr;
         for (auto& BB : *ctx.currentFunction) {
             for (auto& I : BB) {
@@ -4207,8 +4720,13 @@ public:
         // GENERIC FUNCTION CALL DETECTION
         // =====================================================================
         // Check if this is a call to a generic function template
+        std::cerr << "[DEBUG] CallExpr: looking for function '" << node->function_name << "'" << std::endl;
+        std::cerr << "[DEBUG] genericTemplates size: " << genericTemplates.size() << std::endl;
+        
         auto templateIt = genericTemplates.find(node->function_name);
         bool isGenericCall = (templateIt != genericTemplates.end());
+        
+        std::cerr << "[DEBUG] isGenericCall: " << (isGenericCall ? "YES" : "NO") << std::endl;
         
         Function* callee = nullptr;
         

@@ -44,7 +44,7 @@ public:
         : expression(std::move(expr)) {}
 
     void accept(AstVisitor& visitor) override {
-        // visitor.visit(this);
+        visitor.visit(this);
     }
 };
 
@@ -367,6 +367,9 @@ public:
     // Auto-wrap flag: if true, compiler wraps return values in {err:NULL, val:...}
     // Set when return type is prefixed with * (e.g., *int8)
     bool auto_wrap = false;
+    
+    // Async flag: if true, this is an async function (uses coroutines)
+    bool is_async = false;
 
     LambdaExpr(const std::string& ret_type, std::vector<FuncParam> params, std::unique_ptr<Block> b)
         : return_type(ret_type), parameters(std::move(params)), body(std::move(b)) {}
