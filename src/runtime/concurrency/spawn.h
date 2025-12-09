@@ -36,16 +36,7 @@ struct Future {
     }
     
     // Called by worker thread when task completes
-    void set(void* value) {
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            if (result && value && result_size > 0) {
-                memcpy(result, value, result_size);
-            }
-            completed.store(true);
-        }
-        cv.notify_all();  // Wake up anyone waiting
-    }
+    void set(void* value);
     
     // Get result pointer (caller must cast to correct type)
     void* get() {

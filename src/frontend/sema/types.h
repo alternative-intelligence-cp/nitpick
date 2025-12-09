@@ -33,6 +33,7 @@ enum class TypeKind {
     ARRAY,
     FUNCTION,
     STRUCT,
+    FUTURE,        // Future<T> - async result handle
     // SIMD Vector types for hardware-accelerated operations
     VEC2, VEC3, VEC4,     // Float vectors (32-bit)
     DVEC2, DVEC3, DVEC4,  // Double vectors (64-bit)
@@ -59,6 +60,9 @@ public:
     // For functions
     std::shared_ptr<Type> return_type = nullptr;
     std::vector<std::shared_ptr<Type>> param_types;
+    
+    // For Future<T>
+    std::shared_ptr<Type> future_value_type = nullptr;
 
     Type(TypeKind k, const std::string& n = "") : kind(k), name(n) {}
 
@@ -81,6 +85,13 @@ public:
                 return element_type->equals(*other.element_type);
             }
             return element_type == other.element_type;
+        }
+        
+        if (kind == TypeKind::FUTURE) {
+            if (future_value_type && other.future_value_type) {
+                return future_value_type->equals(*other.future_value_type);
+            }
+            return future_value_type == other.future_value_type;
         }
 
         return true;
@@ -127,6 +138,11 @@ public:
                            (array_size >= 0 ? std::to_string(array_size) : "") + "]";
                 }
                 return "array";
+            case TypeKind::FUTURE:
+                if (future_value_type) {
+                    return "Future<" + future_value_type->toString() + ">";
+                }
+                return "Future";
             case TypeKind::FUNCTION: return "func";
             case TypeKind::UNKNOWN: return "unknown";
             case TypeKind::ERROR: return "<error>";
@@ -165,6 +181,11 @@ struct Symbol {
     bool is_mutable = false;
     bool is_initialized = false;
     int scope_level = 0;
+    
+    // Function signature info (if this symbol is a function)
+    bool is_function = false;
+    std::string function_return_type;  // Return type string (e.g., "int8")
+    std::vector<std::string> function_param_types;  // Parameter type strings
 };
 
 // Symbol table for type checking

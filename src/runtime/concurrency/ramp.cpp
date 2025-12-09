@@ -41,8 +41,8 @@ extern "C" CoroutineFrame* __aria_ramp_promote(void* stack_vars, size_t size, vo
     // Move the local variables from the stack to the heap payload area
     memcpy(heap_frame->data, stack_vars, size);
     
-    // 3. Set Resume Point
-    heap_frame->resume_pc = instruction_ptr;
+    // 3. Set Resume Point (now stores LLVM coroutine handle)
+    heap_frame->coro_handle = instruction_ptr;
     heap_frame->state = CORO_SUSPENDED;
     
     return heap_frame;

@@ -1,0 +1,90 @@
+; ModuleID = 'aria_module'
+source_filename = "aria_module"
+
+%result_int8 = type { i8, i8 }
+%spawn_args.0 = type { i8 }
+%SpawnTask = type { ptr, ptr, ptr, ptr }
+%spawn_args = type { i8 }
+
+@0 = private unnamed_addr constant [47 x i8] c"Main continues, future computing in background\00", align 1
+
+declare void @puts(ptr)
+
+declare void @print(ptr)
+
+define internal void @__aria_module_init() {
+entry:
+  ret void
+}
+
+define internal %result_int8 @compute(i8 %x) {
+entry:
+  %x1 = alloca i8, align 1
+  store i8 %x, ptr %x1, align 1
+  %0 = load i8, ptr %x1, align 1
+  %1 = load i8, ptr %x1, align 1
+  %addtmp = add i8 %0, %1
+  %result = alloca %result_int8, align 8
+  %err_ptr = getelementptr inbounds nuw %result_int8, ptr %result, i32 0, i32 0
+  store i8 0, ptr %err_ptr, align 1
+  %val_ptr = getelementptr inbounds nuw %result_int8, ptr %result, i32 0, i32 1
+  store i8 %addtmp, ptr %val_ptr, align 1
+  %result_val = load %result_int8, ptr %result, align 1
+  ret %result_int8 %result_val
+}
+
+define internal i8 @__user_main() {
+entry:
+  %future_result = alloca ptr, align 8
+  %0 = call ptr @malloc(i64 1)
+  %1 = getelementptr inbounds nuw %spawn_args.0, ptr %0, i32 0, i32 0
+  store i8 21, ptr %1, align 1
+  %2 = call ptr @aria_future_create(i64 2)
+  %3 = call ptr @malloc(i64 32)
+  %4 = getelementptr inbounds nuw %SpawnTask, ptr %3, i32 0, i32 0
+  store ptr @spawn_wrapper_0, ptr %4, align 8
+  %5 = getelementptr inbounds nuw %SpawnTask, ptr %3, i32 0, i32 1
+  store ptr %0, ptr %5, align 8
+  %6 = getelementptr inbounds nuw %SpawnTask, ptr %3, i32 0, i32 2
+  store ptr %2, ptr %6, align 8
+  %7 = getelementptr inbounds nuw %SpawnTask, ptr %3, i32 0, i32 3
+  store ptr null, ptr %7, align 8
+  call void @aria_spawn_schedule(ptr %3)
+  store ptr %2, ptr %future_result, align 8
+  call void @puts(ptr @0)
+  ret i8 0
+}
+
+define internal void @spawn_wrapper_0(ptr %0) {
+entry:
+  %1 = getelementptr inbounds nuw { ptr, ptr, ptr, ptr }, ptr %0, i32 0, i32 1
+  %2 = load ptr, ptr %1, align 8
+  %3 = getelementptr inbounds nuw %spawn_args, ptr %2, i32 0, i32 0
+  %4 = load i8, ptr %3, align 1
+  %5 = call %result_int8 @compute(i8 %4)
+  %6 = getelementptr inbounds nuw { ptr, ptr, ptr, ptr }, ptr %0, i32 0, i32 2
+  %7 = load ptr, ptr %6, align 8
+  %8 = alloca %result_int8, align 8
+  store %result_int8 %5, ptr %8, align 1
+  call void @_ZN6Future3setEPv(ptr %7, ptr %8)
+  ret void
+}
+
+declare void @_ZN6Future3setEPv(ptr, ptr)
+
+declare ptr @malloc(i64)
+
+declare ptr @aria_future_create(i64)
+
+declare void @aria_spawn_schedule(ptr)
+
+define i64 @main() {
+entry:
+  call void @aria_scheduler_init(i32 0)
+  call void @__aria_module_init()
+  %0 = call i8 @__user_main()
+  %1 = sext i8 %0 to i64
+  ret i64 %1
+}
+
+declare void @aria_scheduler_init(i32)

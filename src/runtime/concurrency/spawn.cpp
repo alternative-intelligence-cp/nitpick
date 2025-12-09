@@ -141,6 +141,18 @@ extern "C" Future* aria_future_create(size_t result_size) {
     return new Future(result_size);
 }
 
+// Future method implementations (must be non-inline for linkage)
+void Future::set(void* value) {
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (result && value && result_size > 0) {
+            memcpy(result, value, result_size);
+        }
+        completed.store(true);
+    }
+    cv.notify_all();  // Wake up anyone waiting
+}
+
 extern "C" void* aria_future_get(Future* future) {
     if (!future) return nullptr;
     return future->get();

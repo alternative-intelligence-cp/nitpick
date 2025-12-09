@@ -38,9 +38,13 @@ struct Scheduler {
 
 // RAMP: Coroutine Frame definition
 struct CoroutineFrame {
-    void* resume_pc;       // Function pointer for resumption
+    void* coro_handle;     // LLVM coroutine handle (opaque ptr from llvm.coro.begin)
     void* data;            // Captured state (promoted from stack)
     CoroutineFrame* waiting_on; 
     int state;             // RUNNING, SUSPENDED, COMPLETE
     char padding;      // Alignment for AVX
 };
+
+// Bridge function for resuming LLVM coroutines
+// Called by scheduler, internally invokes llvm.coro.resume
+extern "C" void aria_coro_resume_bridge(void* coro_handle);

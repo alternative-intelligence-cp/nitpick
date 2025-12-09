@@ -3886,6 +3886,40 @@ public:
             Value* obj = visitExpr(member->object.get());
             if (!obj) return nullptr;
             
+            // Special handling for Future<T>.get() - call aria_future_get()
+            if (member->member_name == "get") {
+                // Check if this is a Future pointer
+                // Future pointers are opaque i8* from aria_future_create
+                Type* objType = obj->getType();
+                if (objType->isPointerTy()) {
+                    // Declare or get aria_future_get function
+                    Function* futureGetFn = ctx.module->getFunction("aria_future_get");
+                    if (!futureGetFn) {
+                        FunctionType* futureGetType = FunctionType::get(
+                            PointerType::getUnqual(ctx.llvmContext),  // returns void*
+                            {PointerType::getUnqual(ctx.llvmContext)}, // takes void* (future)
+                            false
+                        );
+                        futureGetFn = Function::Create(
+                            futureGetType,
+                            Function::ExternalLinkage,
+                            "aria_future_get",
+                            ctx.module.get()
+                        );
+                    }
+                    
+                    // Call aria_future_get(future) -> void* result
+                    Value* resultPtr = ctx.builder->CreateCall(futureGetFn, {obj}, "future_result");
+                    
+                    // Cast void* back to result<T>* and load it
+                    // For now, assume result<int8> - in full implementation would use type info
+                    Type* resultType = ctx.getResultType("int8");
+                    Type* resultPtrType = PointerType::getUnqual(ctx.llvmContext);
+                    Value* typedPtr = ctx.builder->CreateBitCast(resultPtr, resultPtrType, "typed_result_ptr");
+                    return ctx.builder->CreateLoad(resultType, typedPtr, "result_val");
+                }
+            }
+            
             // Handle both direct struct values and pointers to structs
             Type* objType = obj->getType();
             StructType* structType = nullptr;
@@ -4937,15 +4971,52 @@ public:
         // =====================================================================
         // SCHEDULER INTEGRATION
         // =====================================================================
-        // Schedule the coroutine for resumption by the runtime scheduler
-        // This bridges LLVM coroutines with the Aria work-stealing scheduler
+        // Wrap LLVM coroutine handle in CoroutineFrame for scheduler
+        // The scheduler expects a CoroutineFrame* with coro_handle field
+        
+        // Define CoroutineFrame struct type if not already defined
+        StructType* coroFrameType = StructType::getTypeByName(ctx.llvmContext, "CoroutineFrame");
+        if (!coroFrameType) {
+            // struct CoroutineFrame { void* coro_handle; void* data; CoroutineFrame* waiting_on; int state; char padding; }
+            std::vector<Type*> frameFields = {
+                PointerType::getUnqual(ctx.llvmContext),  // coro_handle
+                PointerType::getUnqual(ctx.llvmContext),  // data
+                PointerType::getUnqual(ctx.llvmContext),  // waiting_on (CoroutineFrame*)
+                Type::getInt32Ty(ctx.llvmContext),        // state
+                Type::getInt8Ty(ctx.llvmContext)          // padding
+            };
+            coroFrameType = StructType::create(ctx.llvmContext, frameFields, "CoroutineFrame");
+        }
+        
+        // Allocate CoroutineFrame on heap
+        Function* mallocFn = ctx.module->getFunction("malloc");
+        if (!mallocFn) {
+            FunctionType* mallocType = FunctionType::get(
+                PointerType::getUnqual(ctx.llvmContext),
+                {Type::getInt64Ty(ctx.llvmContext)},
+                false
+            );
+            mallocFn = Function::Create(mallocType, Function::ExternalLinkage, "malloc", ctx.module.get());
+        }
+        
+        Value* frameSize = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 
+            ctx.module->getDataLayout().getTypeAllocSize(coroFrameType));
+        Value* frameAlloc = ctx.builder->CreateCall(mallocFn, {frameSize}, "coro_frame_alloc");
+        
+        // Store LLVM coroutine handle in CoroutineFrame.coro_handle
+        Value* handleField = ctx.builder->CreateStructGEP(coroFrameType, frameAlloc, 0, "coro_handle_ptr");
+        ctx.builder->CreateStore(framePtr, handleField);
+        
+        // Initialize state to SUSPENDED (1)
+        Value* stateField = ctx.builder->CreateStructGEP(coroFrameType, frameAlloc, 3, "state_ptr");
+        ctx.builder->CreateStore(ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 1), stateField);
         
         // Declare aria_scheduler_schedule if not already declared
         Function* schedulerSchedule = ctx.module->getFunction("aria_scheduler_schedule");
         if (!schedulerSchedule) {
             FunctionType* schedFuncType = FunctionType::get(
                 Type::getVoidTy(ctx.llvmContext),
-                {PointerType::getUnqual(ctx.llvmContext)},  // void* coroutine_handle
+                {PointerType::getUnqual(ctx.llvmContext)},  // CoroutineFrame*
                 false
             );
             schedulerSchedule = Function::Create(
@@ -4956,9 +5027,8 @@ public:
             );
         }
         
-        // Schedule the coroutine for resumption
-        // The scheduler will call llvm.coro.resume on this handle when ready
-        ctx.builder->CreateCall(schedulerSchedule, {framePtr});
+        // Schedule the CoroutineFrame (not raw LLVM handle)
+        ctx.builder->CreateCall(schedulerSchedule, {frameAlloc});
         
         // Return coroutine handle to caller (allows direct resumption if needed)
         Function* coroBegin = nullptr;
@@ -5912,6 +5982,41 @@ bool generate_code(aria::frontend::Block* root, const std::string& filename, boo
         
         // Create alias for Aria 'print' function
         Function::Create(printType, Function::ExternalLinkage, "print", ctx.module.get());
+
+        // Generate coroutine resume bridge for scheduler integration
+        // This allows C++ scheduler to resume LLVM coroutines via llvm.coro.resume
+        {
+            // Declare llvm.coro.resume intrinsic
+            FunctionType* coroResumeType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {PointerType::getUnqual(ctx.llvmContext)},  // takes ptr (coroutine handle)
+                false
+            );
+            Function* coroResumeIntrinsic = Intrinsic::getOrInsertDeclaration(
+                ctx.module.get(),
+                Intrinsic::coro_resume
+            );
+            
+            // Create bridge function: void aria_coro_resume_bridge(void* coro_handle)
+            FunctionType* bridgeType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {PointerType::getUnqual(ctx.llvmContext)},
+                false
+            );
+            Function* bridgeFn = Function::Create(
+                bridgeType,
+                Function::ExternalLinkage,
+                "aria_coro_resume_bridge",
+                ctx.module.get()
+            );
+            
+            // Generate bridge body: just call llvm.coro.resume(handle)
+            BasicBlock* bridgeEntry = BasicBlock::Create(ctx.llvmContext, "entry", bridgeFn);
+            IRBuilder<> bridgeBuilder(bridgeEntry);
+            Value* handleArg = bridgeFn->getArg(0);
+            bridgeBuilder.CreateCall(coroResumeIntrinsic, {handleArg});
+            bridgeBuilder.CreateRetVoid();
+        }
 
         // JavaScript-style module execution:
         // Module-level code runs in a global initializer function
