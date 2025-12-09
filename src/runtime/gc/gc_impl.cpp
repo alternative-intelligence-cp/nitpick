@@ -1,6 +1,7 @@
 // Implementation of the Major and Minor Garbage Collection Logic
 #include "gc_impl.h"
 #include "header.h"
+#include "shadow_stack.h"
 #include <vector>
 #include <stack>
 #include <cstdlib>
@@ -11,16 +12,11 @@
 // For reference, we use a simple vector of pointers.
 std::vector<ObjHeader*> old_gen_objects;
 
-// Stub implementation of root scanning
-// TODO: Implement proper stack scanning with shadow stack or stack maps
-// For now, returns empty set (conservative - assumes no roots on stack)
+// Root scanning using shadow stack
+// Returns all GC-managed pointers tracked by the shadow stack
 std::vector<void*> get_thread_roots() {
-    // In production, this would:
-    // 1. Scan stack frames for pointer-like values
-    // 2. Check shadow stack (LLVM gcroot intrinsics)
-    // 3. Scan thread-local storage
-    // 4. Return all potential GC roots
-    return std::vector<void*>();
+    // Use shadow stack for precise root tracking
+    return aria_shadow_stack_get_roots();
 }
 
 // Forward declaration of C function
