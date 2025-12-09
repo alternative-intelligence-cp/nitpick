@@ -92,6 +92,7 @@ add_library(aria_runtime STATIC
  src/runtime/platform/platform.c       # Cross-platform abstraction layer (NEW)
  src/runtime/gc/gc_impl.cpp            # Major/Minor GC Logic
  src/runtime/gc/nursery.cpp            # Fragmented Nursery Implementation
+ src/runtime/gc/shadow_stack.cpp       # Shadow Stack for Root Tracking (WP 004)
  src/runtime/io_windows.cpp            # lpReserved2 implementation
  src/runtime/io_linux.cpp              # Linux fork/dup2 implementation
  src/runtime/io/print.cpp              # Print functions (print, println)

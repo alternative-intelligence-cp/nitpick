@@ -63,12 +63,31 @@ target_link_libraries(test_parser PRIVATE ${llvm_libs})
 add_test(NAME ParserTests COMMAND test_parser)
 
 # ==============================================================================
+# Test 4: Shadow Stack Tests
+# ==============================================================================
+add_executable(test_shadow_stack test_shadow_stack.cpp
+    ../src/runtime/gc/shadow_stack.cpp
+    ../src/runtime/gc/gc_impl.cpp
+    ../src/runtime/gc/nursery.cpp
+)
+
+target_include_directories(test_shadow_stack PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+target_link_libraries(test_shadow_stack
+    PRIVATE
+    mimalloc-static
+    pthread
+)
+
+add_test(NAME ShadowStackTests COMMAND test_shadow_stack)
+
+# ==============================================================================
 # Custom Test Target
 # ==============================================================================
 # Add a custom target to run all tests
 add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS test_allocator test_gc_header test_parser
+    DEPENDS test_allocator test_gc_header test_parser test_shadow_stack
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Running all Aria unit tests..."
 )
@@ -78,6 +97,9 @@ add_custom_target(run_tests
 # ==============================================================================
 message(STATUS "Aria Unit Tests Configured:")
 message(STATUS "  - test_allocator: Memory allocation tests")
+message(STATUS "  - test_gc_header: GC header bitfield tests")
+message(STATUS "  - test_parser: Parser comprehensive tests (16 test functions)")
+message(STATUS "  - test_shadow_stack: Shadow stack GC root tracking tests")
 message(STATUS "  - test_gc_header: GC header bitfield tests")
 message(STATUS "  - test_parser: Parser comprehensive tests (16 test functions)")
 message(STATUS "Run 'make test' or 'ninja test' to execute all tests")
