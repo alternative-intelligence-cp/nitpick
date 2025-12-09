@@ -1,4 +1,5 @@
 // Minimal async test - correct Aria syntax with async keyword
+// Note: async functions return i8* (coroutine handle), not their declared type
 {
 async func:test_async = int8() {
     int8:value = 42;
@@ -7,7 +8,7 @@ async func:test_async = int8() {
 };
 
 func:main = void() {
-    int8:output = test_async();
+    test_async();  // Just call it, don't capture
     print("Async test completed");
 };
 }
