@@ -161,6 +161,7 @@ public:
 struct Symbol {
     std::string name;
     std::shared_ptr<Type> type;
+    std::string type_name;  // String representation of type (for capture analysis)
     bool is_mutable = false;
     bool is_initialized = false;
     int scope_level = 0;
@@ -191,6 +192,7 @@ public:
         Symbol sym;
         sym.name = name;
         sym.type = type;
+        sym.type_name = type->toString();  // Store string representation
         sym.is_mutable = is_mut;
         sym.is_initialized = true;
         sym.scope_level = current_scope_level;
@@ -211,6 +213,12 @@ public:
         }
 
         return nullptr;
+    }
+    
+    // Check if a symbol is global (defined at scope level 0)
+    bool isGlobal(const std::string& name) {
+        auto* sym = lookup(name);
+        return sym && sym->scope_level == 0;
     }
 
     // Note: Scope management is handled manually in type checker
