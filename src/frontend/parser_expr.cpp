@@ -125,13 +125,13 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
         case TOKEN_INTEGER_LITERAL: {
             // Need to handle parsing of int64 vs int512 here strictly
             // For now assuming standard unsigned long long parsing
-            uint64_t val = std::stoull(token.lexeme); 
+            uint64_t val = std::stoull(token.value); 
             return std::make_unique<IntLiteral>(val);
         }
         case TOKEN_FLOAT_LITERAL:
-            return std::make_unique<FloatLiteral>(std::stod(token.lexeme));
+            return std::make_unique<FloatLiteral>(std::stod(token.value));
         case TOKEN_STRING_LITERAL:
-            return std::make_unique<StringLiteral>(token.lexeme);
+            return std::make_unique<StringLiteral>(token.value);
         case TOKEN_BACKTICK:
             // Template string with interpolation: `text &{expr} more`
             // Note: TOKEN_BACKTICK is already consumed by parsePrefix's advance()
@@ -139,11 +139,11 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
             // For now, handle inline
             return parseTemplateString();
         case TOKEN_BOOLEAN_LITERAL:
-            return std::make_unique<BoolLiteral>(token.lexeme == "true");
+            return std::make_unique<BoolLiteral>(token.value == "true");
         case TOKEN_NULL_LITERAL:
             return std::make_unique<NullLiteral>();
         case TOKEN_IDENTIFIER:
-            return std::make_unique<VarExpr>(token.lexeme);
+            return std::make_unique<VarExpr>(token.value);
         
         // --- Vector Literal Constructors (GLSL-style) ---
         // Example: vec4(1.0, 2.0, 3.0, 4.0), ivec2(10, 20), vec3(0.0)
@@ -245,7 +245,7 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
                     
                     // Add field to object
                     ObjectLiteral::Field field;
-                    field.name = fieldName.lexeme;
+                    field.name = fieldName.value;
                     field.value = std::move(value);
                     obj->fields.push_back(std::move(field));
                     
@@ -271,6 +271,19 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
             
             consume(TOKEN_RIGHT_BRACKET, "Expected ']' after array literal");
             return arr;
+        }
+
+        // --- Async/Await Keywords ---
+        case TOKEN_KW_AWAIT: {
+            // await expression
+            auto expr = parseExpression(PREC_UNARY);
+            return std::make_unique<AwaitExpr>(std::move(expr));
+        }
+        
+        case TOKEN_KW_SPAWN: {
+            // spawn expression
+            auto expr = parseExpression(PREC_UNARY);
+            return std::make_unique<SpawnExpr>(std::move(expr));
         }
 
         // --- Unary Operators ---
@@ -364,7 +377,7 @@ std::unique_ptr<Expression> Parser::parseInfix(std::unique_ptr<Expression> left,
         case TOKEN_SAFE_NAV: {
             Token name = consume(TOKEN_IDENTIFIER, "Expected property name after '.'");
             bool isSafe = (op.type == TOKEN_SAFE_NAV);
-            return std::make_unique<MemberAccess>(std::move(left), name.lexeme, isSafe);
+            return std::make_unique<MemberAccess>(std::move(left), name.value, isSafe);
         }
 
         // --- Index Access (arr[i]) ---
