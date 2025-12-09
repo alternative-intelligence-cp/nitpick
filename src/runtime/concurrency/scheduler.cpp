@@ -131,10 +131,9 @@ void Worker::run() {
 
      // 3. Execution
      if (task) {
-         // Execute the coroutine by calling its resume function
-         if (task->frame && task->frame->resume_pc) {
-             auto func = (void (*)(CoroutineFrame*))task->frame->resume_pc;
-             func(task->frame);
+         // Execute the coroutine by calling the bridge to llvm.coro.resume
+         if (task->frame && task->frame->coro_handle) {
+             aria_coro_resume_bridge(task->frame->coro_handle);
              
              // Check if coroutine is complete
              if (task->frame->state == CORO_COMPLETE) {

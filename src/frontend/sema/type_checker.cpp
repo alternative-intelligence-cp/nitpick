@@ -269,8 +269,19 @@ void TypeChecker::visit(frontend::UnaryOp* node) {
 
 // Visit CallExpr
 void TypeChecker::visit(frontend::CallExpr* node) {
-    // All functions in Aria return result type (with {err, val} fields)
-    // TODO: Look up actual function signature to validate argument types
+    // Look up function in symbol table to get actual return type
+    auto* func_sym = symbols->lookup(node->function_name);
+    
+    if (func_sym && func_sym->is_function) {
+        // Parse the actual return type from function signature
+        auto return_type = parseType(func_sym->function_return_type);
+        if (return_type) {
+            current_expr_type = return_type;
+            return;
+        }
+    }
+    
+    // Fallback: All functions in Aria return result type (with {err, val} fields)
     current_expr_type = std::make_shared<Type>(TypeKind::STRUCT, "result");
 }
 
@@ -502,9 +513,29 @@ void TypeChecker::visit(frontend::VarDecl* node) {
                     "': expected " + declared_type->toString() +
                     ", got " + init_type->toString());
         }
+        
+        // If initializer is a lambda and type is func, store function signature
+        if (declared_type->kind == TypeKind::FUNCTION) {
+            if (auto* lambda = dynamic_cast<frontend::LambdaExpr*>(node->initializer.get())) {
+                // Store function signature in symbol table
+                if (symbols->define(node->name, declared_type, false)) {
+                    auto* sym = symbols->lookup(node->name);
+                    if (sym) {
+                        sym->is_function = true;
+                        sym->function_return_type = lambda->return_type;
+                        for (const auto& param : lambda->parameters) {
+                            sym->function_param_types.push_back(param.type);
+                        }
+                    }
+                } else {
+                    addError("Redefinition of function: " + node->name);
+                }
+                return;
+            }
+        }
     }
 
-    // Add symbol to table
+    // Add symbol to table (non-function case)
     if (!symbols->define(node->name, declared_type, false)) {
         addError("Redefinition of variable: " + node->name);
     }
@@ -713,6 +744,29 @@ void TypeChecker::visit(frontend::AwaitExpr* node) {
     // For now, preserve the expression's type
 }
 
+// Visit SpawnExpr
+void TypeChecker::visit(frontend::SpawnExpr* node) {
+    // Check the spawned expression (usually a function call)
+    if (node->expression) {
+        node->expression->accept(*this);
+        
+        // Spawn returns Future<T> where T is the return type of the spawned expression
+        // If the expression is a CallExpr, we can determine its return type
+        auto spawn_result_type = current_expr_type;
+        
+        if (spawn_result_type) {
+            // Create Future<result_type>
+            auto future_type = std::make_shared<Type>(TypeKind::FUTURE);
+            future_type->future_value_type = spawn_result_type;
+            current_expr_type = future_type;
+        } else {
+            // Unknown type - use error marker
+            current_expr_type = std::make_shared<Type>(TypeKind::ERROR);
+            addError("Cannot determine return type of spawned expression");
+        }
+    }
+}
+
 // Visit ObjectLiteral
 void TypeChecker::visit(frontend::ObjectLiteral* node) {
     // Type check all field values
@@ -733,6 +787,28 @@ void TypeChecker::visit(frontend::MemberAccess* node) {
     if (node->object) {
         node->object->accept(*this);
         auto obj_type = current_expr_type;
+        
+        // Handle Future<T>.get() - returns T
+        if (obj_type && obj_type->kind == TypeKind::FUTURE) {
+            if (node->member_name == "get") {
+                // Return the inner type of the Future
+                if (obj_type->future_value_type) {
+                    current_expr_type = obj_type->future_value_type;
+                } else {
+                    addError("Future type has no value type");
+                    current_expr_type = makeErrorType();
+                }
+                return;
+            } else if (node->member_name == "is_ready") {
+                // Future.is_ready() returns bool
+                current_expr_type = makeBoolType();
+                return;
+            } else {
+                addError("Unknown Future method: " + node->member_name);
+                current_expr_type = makeErrorType();
+                return;
+            }
+        }
         
         // In full implementation, would:
         // 1. Verify obj_type is a struct/object type
@@ -958,6 +1034,11 @@ void TypeChecker::visit(frontend::VectorLiteral* node) {
 bool TypeChecker::checkTypeCompatibility(const Type& expected, const Type& actual) {
     // Exact match
     if (expected.equals(actual)) {
+        return true;
+    }
+
+    // dyn type accepts anything
+    if (expected.kind == TypeKind::DYN) {
         return true;
     }
 
