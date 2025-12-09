@@ -1264,7 +1264,15 @@ public:
                 for (auto& param : lambda->parameters) {
                     paramTypes.push_back(ctx.getLLVMType(param.type));
                 }
-                Type* returnType = ctx.getResultType(lambda->return_type);
+                
+                // ASYNC FUNCTIONS: Return coroutine handle (ptr) instead of declared type
+                Type* returnType;
+                if (lambda->is_async) {
+                    returnType = PointerType::getUnqual(ctx.llvmContext);  // i8* coroutine handle
+                } else {
+                    returnType = ctx.getResultType(lambda->return_type);
+                }
+                
                 FunctionType* funcType = FunctionType::get(returnType, paramTypes, false);
                 
                 // Create function with module prefix if in a module
@@ -5185,6 +5193,82 @@ public:
             for (auto it = ctx.deferStacks[0].rbegin(); it != ctx.deferStacks[0].rend(); ++it) {
                 (*it)->accept(*this);
             }
+        }
+        
+        // ASYNC COROUTINE SPECIAL HANDLING
+        // For async functions, return statements trigger final suspension and return the coroutine handle
+        // The actual return value (if any) is stored in the coroutine frame for the awaiter
+        if (ctx.lookup("__coro_handle__")) {
+            // This is an async function
+            // TODO: Store return value in coroutine frame if present
+            // For now, just perform final suspend and return handle
+            
+            // Get coroutine handle from symbol table
+            auto* hdlSym = ctx.lookup("__coro_handle__");
+            Value* hdlAlloca = hdlSym->val;
+            Value* hdl = ctx.builder->CreateLoad(
+                PointerType::getUnqual(ctx.llvmContext),
+                hdlAlloca,
+                "coro.handle.final"
+            );
+            
+            // Perform final suspend (tells LLVM the coroutine is done)
+            Function* coroSuspend = Intrinsic::getDeclaration(
+                ctx.module.get(),
+                Intrinsic::coro_suspend
+            );
+            
+            // Final suspend (final=true)
+            Value* suspendResult = ctx.builder->CreateCall(coroSuspend, {
+                ConstantTokenNone::get(ctx.llvmContext),
+                ConstantInt::getTrue(ctx.llvmContext)  // final=true
+            }, "final.suspend");
+            
+            // Create switch for final suspend
+            BasicBlock* suspendBB = BasicBlock::Create(ctx.llvmContext, "final.suspend", ctx.currentFunction);
+            BasicBlock* resumeBB = BasicBlock::Create(ctx.llvmContext, "final.resume", ctx.currentFunction);
+            BasicBlock* destroyBB = BasicBlock::Create(ctx.llvmContext, "final.destroy", ctx.currentFunction);
+            
+            SwitchInst* suspendSwitch = ctx.builder->CreateSwitch(suspendResult, suspendBB, 2);
+            suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), resumeBB);
+            suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), destroyBB);
+            
+            // Suspend block (shouldn't happen for final suspend)
+            ctx.builder->SetInsertPoint(suspendBB);
+            ctx.builder->CreateUnreachable();
+            
+            // Resume block (shouldn't happen for final suspend)
+            ctx.builder->SetInsertPoint(resumeBB);
+            ctx.builder->CreateUnreachable();
+            
+            // Destroy block - cleanup and return
+            ctx.builder->SetInsertPoint(destroyBB);
+            Function* coroEnd = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_end);
+            
+            // Need to get the coro.id token from function entry
+            // Search for it in the entry block
+            Value* coroIdToken = nullptr;
+            for (auto& BB : *ctx.currentFunction) {
+                for (auto& I : BB) {
+                    if (auto* call = dyn_cast<CallInst>(&I)) {
+                        if (call->getCalledFunction() && 
+                            call->getCalledFunction()->getName() == "llvm.coro.id") {
+                            coroIdToken = call;
+                            break;
+                        }
+                    }
+                }
+                if (coroIdToken) break;
+            }
+            
+            ctx.builder->CreateCall(coroEnd, {
+                hdl,
+                ConstantInt::getFalse(ctx.llvmContext),  // unwind = false
+                coroIdToken ? coroIdToken : static_cast<Value*>(ConstantTokenNone::get(ctx.llvmContext))
+            });
+            ctx.builder->CreateRet(hdl);  // Return coroutine handle
+            
+            return;  // Done with async return handling
         }
         
         if (node->value) {
