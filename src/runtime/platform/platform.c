@@ -358,3 +358,120 @@ int aria_platform_spawn_process(const char* cmd, const char* const* argv,
     return (int)pid;  // Parent: return child PID
 #endif
 }
+
+// =============================================================================
+// Work Package 005: File System Abstraction
+// =============================================================================
+
+#ifdef _WIN32
+
+// Windows epoch is 1601-01-01, Unix epoch is 1970-01-01
+// Difference is 116444736000000000 ticks (100ns units)
+#define UNIX_TIME_START 0x019DB1DED53E8000ULL
+#define TICKS_PER_SECOND 10000000ULL
+
+static uint64_t filetime_to_unix(const FILETIME* ft) {
+    ULARGE_INTEGER li;
+    li.LowPart = ft->dwLowDateTime;
+    li.HighPart = ft->dwHighDateTime;
+    
+    // Saturating subtract to avoid underflow if file predates 1970
+    if (li.QuadPart < UNIX_TIME_START) return 0;
+    return (li.QuadPart - UNIX_TIME_START) / TICKS_PER_SECOND;
+}
+
+int aria_file_stat(const char* path, aria_file_stat_t* out) {
+    if (!path || !out) return 0;
+    
+    WIN32_FILE_ATTRIBUTE_DATA attrs;
+    if (!GetFileAttributesExA(path, GetFileExInfoStandard, &attrs)) {
+        return 0;
+    }
+    
+    ULARGE_INTEGER size;
+    size.LowPart = attrs.nFileSizeLow;
+    size.HighPart = attrs.nFileSizeHigh;
+    out->size = size.QuadPart;
+    
+    out->created_time = filetime_to_unix(&attrs.ftCreationTime);
+    out->modified_time = filetime_to_unix(&attrs.ftLastWriteTime);
+    out->accessed_time = filetime_to_unix(&attrs.ftLastAccessTime);
+    
+    out->is_directory = (attrs.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    out->is_readonly = (attrs.dwFileAttributes & FILE_ATTRIBUTE_READONLY) != 0;
+    
+    return 1;
+}
+
+#else // POSIX (Linux/macOS)
+
+#ifdef __linux__
+    #define _GNU_SOURCE
+    #include <fcntl.h>
+    #include <sys/syscall.h>
+    
+    // Linux has statx for creation time (kernel 4.11+)
+    // But we need to handle older systems gracefully
+    #ifndef STATX_BTIME
+        #define STATX_BTIME 0x0800
+    #endif
+#endif
+
+#ifdef __APPLE__
+    #include <sys/stat.h>
+#endif
+
+int aria_file_stat(const char* path, aria_file_stat_t* out) {
+    if (!path || !out) return 0;
+    
+#ifdef __linux__
+    // Try statx first for creation time support
+    struct statx stx;
+    if (syscall(SYS_statx, AT_FDCWD, path, 0, 
+                STATX_BTIME | STATX_MTIME | STATX_ATIME | STATX_SIZE, 
+                &stx) == 0) {
+        out->size = stx.stx_size;
+        out->modified_time = stx.stx_mtime.tv_sec;
+        out->accessed_time = stx.stx_atime.tv_sec;
+        
+        // Check if birth time is available
+        if (stx.stx_mask & STATX_BTIME) {
+            out->created_time = stx.stx_btime.tv_sec;
+        } else {
+            // Fallback: use ctime (status change time)
+            out->created_time = stx.stx_ctime.tv_sec;
+        }
+        
+        out->is_directory = S_ISDIR(stx.stx_mode);
+        out->is_readonly = (stx.stx_mode & S_IWUSR) == 0;
+        return 1;
+    }
+    
+    // Fallback to regular stat if statx not available
+#endif
+    
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        return 0;
+    }
+    
+    out->size = st.st_size;
+    out->modified_time = st.st_mtime;
+    out->accessed_time = st.st_atime;
+    
+#ifdef __APPLE__
+    // macOS has st_birthtime for creation time
+    out->created_time = st.st_birthtime;
+#else
+    // Linux: ctime is status change time, not creation time
+    // Best we can do without statx
+    out->created_time = st.st_ctime;
+#endif
+    
+    out->is_directory = S_ISDIR(st.st_mode);
+    out->is_readonly = (st.st_mode & S_IWUSR) == 0;
+    
+    return 1;
+}
+
+#endif // POSIX
