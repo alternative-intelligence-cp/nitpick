@@ -1568,23 +1568,57 @@ std::unique_ptr<Statement> Parser::parseVarDecl() {
                 expect(TOKEN_LEFT_BRACE);
                 
                 std::vector<StructField> fields;
-                std::vector<std::unique_ptr<VarDecl>> methods;
+                std::vector<std::unique_ptr<FuncDecl>> methods;
                 
                 while (!check(TOKEN_RIGHT_BRACE)) {
                     // Check if this is a method (func:name) or field (name:type)
-                    // Methods use func:name = lambda syntax
+                    // Methods use func:name = returnType() { ... }
                     // Fields use name:type syntax
                     if (current.type == TOKEN_TYPE_FUNC) {
                         // This is a method declaration: func:methodName = returnType() { ... };
-                        // Parse it as a variable declaration with func type
-                        std::string method_type = current.value; // "func"
-                        advance();
+                        advance(); // consume 'func'
                         expect(TOKEN_COLON);
                         Token method_name = expect(TOKEN_IDENTIFIER);
                         expect(TOKEN_ASSIGN);
-                        auto method_init = parseExpr(); // Parse the function expression
                         
-                        auto method_decl = std::make_unique<VarDecl>(method_type, method_name.value, std::move(method_init));
+                        // Parse return type
+                        std::string return_type = parseTypeName();
+                        
+                        // Parse parameters
+                        expect(TOKEN_LEFT_PAREN);
+                        std::vector<FuncParam> params;
+                        
+                        while (!check(TOKEN_RIGHT_PAREN) && current.type != TOKEN_EOF) {
+                            // Check for 'self' parameter
+                            if (current.type == TOKEN_IDENTIFIER && current.value == "self") {
+                                advance();
+                                params.emplace_back(maybe_struct_name.value, "self", nullptr);
+                            } else {
+                                std::string param_type = parseTypeName();
+                                expect(TOKEN_COLON);
+                                Token param_name = expect(TOKEN_IDENTIFIER);
+                                params.emplace_back(param_type, param_name.value, nullptr);
+                            }
+                            
+                            if (!check(TOKEN_RIGHT_PAREN)) {
+                                expect(TOKEN_COMMA);
+                            }
+                        }
+                        
+                        expect(TOKEN_RIGHT_PAREN);
+                        
+                        // Parse body
+                        auto body = parseBlock();
+                        
+                        // Create FuncDecl
+                        std::vector<std::string> no_generics;
+                        auto method_decl = std::make_unique<FuncDecl>(
+                            method_name.value,
+                            no_generics,
+                            std::move(params),
+                            return_type,
+                            std::move(body)
+                        );
                         methods.push_back(std::move(method_decl));
                         
                         expect(TOKEN_SEMICOLON);

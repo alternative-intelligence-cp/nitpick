@@ -574,10 +574,11 @@ void TypeChecker::visit(frontend::StructDecl* node) {
     registered_structs.insert(node->name);
     global_registered_structs.insert(node->name);
     
-    // Type check method initializers if present
+    // Type check methods if present
     for (auto& method : node->methods) {
-        if (method->initializer) {
-            method->initializer->accept(*this);
+        // Methods are now FuncDecl nodes, visit the function body
+        if (method->body) {
+            method->body->accept(*this);
         }
     }
 }

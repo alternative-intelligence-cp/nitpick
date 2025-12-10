@@ -29,6 +29,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o.d"
   "CMakeFiles/aria_runtime.dir/src/runtime/platform/platform.c.o"
   "CMakeFiles/aria_runtime.dir/src/runtime/platform/platform.c.o.d"
+  "CMakeFiles/aria_runtime.dir/src/runtime/safety/fat_pointer.c.o"
+  "CMakeFiles/aria_runtime.dir/src/runtime/safety/fat_pointer.c.o.d"
   "CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o"
   "CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o.d"
   "libaria_runtime.a"

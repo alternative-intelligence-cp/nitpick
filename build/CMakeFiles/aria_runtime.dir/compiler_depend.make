@@ -1925,6 +1925,77 @@ CMakeFiles/aria_runtime.dir/src/runtime/platform/platform.c.o: /home/randy/.____
   /usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h
 
+CMakeFiles/aria_runtime.dir/src/runtime/safety/fat_pointer.c.o: /home/randy/._____RANDY_____/REPOS/aria/src/runtime/safety/fat_pointer.c \
+  /home/randy/._____RANDY_____/REPOS/aria/src/runtime/debug/stacktrace.h \
+  /home/randy/._____RANDY_____/REPOS/aria/src/runtime/memory/allocator.h \
+  /home/randy/._____RANDY_____/REPOS/aria/src/runtime/safety/fat_pointer.h \
+  /usr/include/alloca.h \
+  /usr/include/endian.h \
+  /usr/include/features-time64.h \
+  /usr/include/features.h \
+  /usr/include/inttypes.h \
+  /usr/include/stdc-predef.h \
+  /usr/include/stdint.h \
+  /usr/include/stdio.h \
+  /usr/include/stdlib.h \
+  /usr/include/string.h \
+  /usr/include/strings.h \
+  /usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h \
+  /usr/include/x86_64-linux-gnu/bits/byteswap.h \
+  /usr/include/x86_64-linux-gnu/bits/endian.h \
+  /usr/include/x86_64-linux-gnu/bits/endianness.h \
+  /usr/include/x86_64-linux-gnu/bits/floatn-common.h \
+  /usr/include/x86_64-linux-gnu/bits/floatn.h \
+  /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
+  /usr/include/x86_64-linux-gnu/bits/long-double.h \
+  /usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h \
+  /usr/include/x86_64-linux-gnu/bits/pthreadtypes.h \
+  /usr/include/x86_64-linux-gnu/bits/select.h \
+  /usr/include/x86_64-linux-gnu/bits/stdint-intn.h \
+  /usr/include/x86_64-linux-gnu/bits/stdint-least.h \
+  /usr/include/x86_64-linux-gnu/bits/stdint-uintn.h \
+  /usr/include/x86_64-linux-gnu/bits/stdio_lim.h \
+  /usr/include/x86_64-linux-gnu/bits/stdlib-float.h \
+  /usr/include/x86_64-linux-gnu/bits/struct_mutex.h \
+  /usr/include/x86_64-linux-gnu/bits/struct_rwlock.h \
+  /usr/include/x86_64-linux-gnu/bits/thread-shared-types.h \
+  /usr/include/x86_64-linux-gnu/bits/time64.h \
+  /usr/include/x86_64-linux-gnu/bits/timesize.h \
+  /usr/include/x86_64-linux-gnu/bits/types.h \
+  /usr/include/x86_64-linux-gnu/bits/types/FILE.h \
+  /usr/include/x86_64-linux-gnu/bits/types/__FILE.h \
+  /usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/__locale_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/__mbstate_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/clock_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/clockid_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/cookie_io_functions_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/locale_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/sigset_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h \
+  /usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h \
+  /usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h \
+  /usr/include/x86_64-linux-gnu/bits/types/time_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/timer_t.h \
+  /usr/include/x86_64-linux-gnu/bits/typesizes.h \
+  /usr/include/x86_64-linux-gnu/bits/uintn-identity.h \
+  /usr/include/x86_64-linux-gnu/bits/waitflags.h \
+  /usr/include/x86_64-linux-gnu/bits/waitstatus.h \
+  /usr/include/x86_64-linux-gnu/bits/wchar.h \
+  /usr/include/x86_64-linux-gnu/bits/wordsize.h \
+  /usr/include/x86_64-linux-gnu/gnu/stubs-64.h \
+  /usr/include/x86_64-linux-gnu/gnu/stubs.h \
+  /usr/include/x86_64-linux-gnu/sys/cdefs.h \
+  /usr/include/x86_64-linux-gnu/sys/select.h \
+  /usr/include/x86_64-linux-gnu/sys/types.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/stdarg.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/stdatomic.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/stdbool.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h
+
 CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/stdlib/io/fast_read.cpp \
   /usr/include/alloca.h \
   /usr/include/c++/13/algorithm \
@@ -2035,6 +2106,10 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 
 /home/randy/._____RANDY_____/REPOS/aria/src/stdlib/io/fast_read.cpp:
 
+/usr/lib/gcc/x86_64-linux-gnu/13/include/stdatomic.h:
+
+/home/randy/._____RANDY_____/REPOS/aria/src/runtime/safety/fat_pointer.h:
+
 /home/randy/._____RANDY_____/REPOS/aria/src/runtime/platform/platform.c:
 
 /usr/include/x86_64-linux-gnu/sys/mman.h:
@@ -2128,6 +2203,8 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 /usr/include/x86_64-linux-gnu/bits/fcntl.h:
 
 /home/randy/._____RANDY_____/REPOS/aria/src/runtime/debug/stacktrace.c:
+
+/home/randy/._____RANDY_____/REPOS/aria/src/runtime/safety/fat_pointer.c:
 
 /home/randy/._____RANDY_____/REPOS/aria/src/runtime/core/string_impl.cpp:
 
@@ -2244,6 +2321,8 @@ CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o: /home/randy/._____RAN
 /usr/include/c++/13/debug/assertions.h:
 
 /usr/include/c++/13/ctime:
+
+/usr/include/inttypes.h:
 
 /usr/include/c++/13/deque:
 

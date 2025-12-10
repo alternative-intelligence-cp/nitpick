@@ -112,7 +112,7 @@ class StructDecl : public Statement {
 public:
     std::string name;
     std::vector<StructField> fields;
-    std::vector<std::unique_ptr<VarDecl>> methods;  // Methods are VarDecls with lambda initializers
+    std::vector<std::unique_ptr<FuncDecl>> methods;  // Changed from VarDecl to FuncDecl for proper method support
     bool is_const = true;  // Structs are typically const type definitions
     
     StructDecl(const std::string& n, std::vector<StructField> f)

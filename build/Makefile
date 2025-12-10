@@ -1040,6 +1040,30 @@ src/runtime/platform/platform.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/platform/platform.c.s
 .PHONY : src/runtime/platform/platform.c.s
 
+src/runtime/safety/fat_pointer.o: src/runtime/safety/fat_pointer.c.o
+.PHONY : src/runtime/safety/fat_pointer.o
+
+# target to build an object file
+src/runtime/safety/fat_pointer.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/safety/fat_pointer.c.o
+.PHONY : src/runtime/safety/fat_pointer.c.o
+
+src/runtime/safety/fat_pointer.i: src/runtime/safety/fat_pointer.c.i
+.PHONY : src/runtime/safety/fat_pointer.i
+
+# target to preprocess a source file
+src/runtime/safety/fat_pointer.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/safety/fat_pointer.c.i
+.PHONY : src/runtime/safety/fat_pointer.c.i
+
+src/runtime/safety/fat_pointer.s: src/runtime/safety/fat_pointer.c.s
+.PHONY : src/runtime/safety/fat_pointer.s
+
+# target to generate assembly for a file
+src/runtime/safety/fat_pointer.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/safety/fat_pointer.c.s
+.PHONY : src/runtime/safety/fat_pointer.c.s
+
 src/stdlib/io/fast_read.o: src/stdlib/io/fast_read.cpp.o
 .PHONY : src/stdlib/io/fast_read.o
 
@@ -1175,6 +1199,9 @@ help:
 	@echo "... src/runtime/platform/platform.o"
 	@echo "... src/runtime/platform/platform.i"
 	@echo "... src/runtime/platform/platform.s"
+	@echo "... src/runtime/safety/fat_pointer.o"
+	@echo "... src/runtime/safety/fat_pointer.i"
+	@echo "... src/runtime/safety/fat_pointer.s"
 	@echo "... src/stdlib/io/fast_read.o"
 	@echo "... src/stdlib/io/fast_read.i"
 	@echo "... src/stdlib/io/fast_read.s"

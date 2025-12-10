@@ -287,12 +287,13 @@ public:
 };
 
 // Member Access Expression
-// Example: obj.field, result.err, result.val
+// Example: obj.field, result.err, result.val, p.distance(), Point.origin()
 class MemberAccess : public Expression {
 public:
     std::unique_ptr<Expression> object;
     std::string member_name;
     bool is_safe;  // true for ?. operator
+    bool is_static = false;  // true for Type.member (static method/field access)
 
     MemberAccess(std::unique_ptr<Expression> obj, const std::string& member, bool safe = false)
         : object(std::move(obj)), member_name(member), is_safe(safe) {}
