@@ -102,10 +102,12 @@ add_library(aria_runtime STATIC
  src/runtime/concurrency/ramp.cpp      # [New] RAMP Logic
  src/stdlib/io/fast_read.cpp
  src/runtime/core/string_impl.cpp      # SSO String Implementation
+ src/runtime/debug/stacktrace.c        # Stack trace capture and crash handling (WP 004.2)
 )
 
 # Critical: The runtime MUST contain the static mimalloc symbols.
-target_link_libraries(aria_runtime mimalloc-static)
+# Also link dl library for dladdr() symbol resolution in stack traces
+target_link_libraries(aria_runtime mimalloc-static dl)
 
 # ==============================================================================
 # 5. Testing Infrastructure

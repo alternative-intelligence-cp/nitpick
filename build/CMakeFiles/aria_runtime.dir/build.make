@@ -279,6 +279,20 @@ CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/runtime/core/string_impl.cpp -o CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.s
 
+CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.o: CMakeFiles/aria_runtime.dir/flags.make
+CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.o: /home/randy/._____RANDY_____/REPOS/aria/src/runtime/debug/stacktrace.c
+CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.o: CMakeFiles/aria_runtime.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Building C object CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.o -MF CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.o.d -o CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.o -c /home/randy/._____RANDY_____/REPOS/aria/src/runtime/debug/stacktrace.c
+
+CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.i"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /home/randy/._____RANDY_____/REPOS/aria/src/runtime/debug/stacktrace.c > CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.i
+
+CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.s"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/runtime/debug/stacktrace.c -o CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.s
+
 # Object files for target aria_runtime
 aria_runtime_OBJECTS = \
 "CMakeFiles/aria_runtime.dir/src/runtime/memory/allocator.c.o" \
@@ -295,7 +309,8 @@ aria_runtime_OBJECTS = \
 "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/spawn.cpp.o" \
 "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o" \
 "CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o" \
-"CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o"
+"CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o" \
+"CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.o"
 
 # External object files for target aria_runtime
 aria_runtime_EXTERNAL_OBJECTS =
@@ -315,9 +330,10 @@ libaria_runtime.a: CMakeFiles/aria_runtime.dir/src/runtime/concurrency/spawn.cpp
 libaria_runtime.a: CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o
 libaria_runtime.a: CMakeFiles/aria_runtime.dir/src/stdlib/io/fast_read.cpp.o
 libaria_runtime.a: CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.o
+libaria_runtime.a: CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.o
 libaria_runtime.a: CMakeFiles/aria_runtime.dir/build.make
 libaria_runtime.a: CMakeFiles/aria_runtime.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Linking CXX static library libaria_runtime.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_17) "Linking CXX static library libaria_runtime.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/aria_runtime.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/aria_runtime.dir/link.txt --verbose=$(VERBOSE)
 

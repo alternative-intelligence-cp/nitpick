@@ -776,6 +776,30 @@ src/runtime/core/string_impl.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/core/string_impl.cpp.s
 .PHONY : src/runtime/core/string_impl.cpp.s
 
+src/runtime/debug/stacktrace.o: src/runtime/debug/stacktrace.c.o
+.PHONY : src/runtime/debug/stacktrace.o
+
+# target to build an object file
+src/runtime/debug/stacktrace.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.o
+.PHONY : src/runtime/debug/stacktrace.c.o
+
+src/runtime/debug/stacktrace.i: src/runtime/debug/stacktrace.c.i
+.PHONY : src/runtime/debug/stacktrace.i
+
+# target to preprocess a source file
+src/runtime/debug/stacktrace.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.i
+.PHONY : src/runtime/debug/stacktrace.c.i
+
+src/runtime/debug/stacktrace.s: src/runtime/debug/stacktrace.c.s
+.PHONY : src/runtime/debug/stacktrace.s
+
+# target to generate assembly for a file
+src/runtime/debug/stacktrace.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.s
+.PHONY : src/runtime/debug/stacktrace.c.s
+
 src/runtime/gc/gc_impl.o: src/runtime/gc/gc_impl.cpp.o
 .PHONY : src/runtime/gc/gc_impl.o
 
@@ -1118,6 +1142,9 @@ help:
 	@echo "... src/runtime/core/string_impl.o"
 	@echo "... src/runtime/core/string_impl.i"
 	@echo "... src/runtime/core/string_impl.s"
+	@echo "... src/runtime/debug/stacktrace.o"
+	@echo "... src/runtime/debug/stacktrace.i"
+	@echo "... src/runtime/debug/stacktrace.s"
 	@echo "... src/runtime/gc/gc_impl.o"
 	@echo "... src/runtime/gc/gc_impl.i"
 	@echo "... src/runtime/gc/gc_impl.s"
