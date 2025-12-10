@@ -31,22 +31,77 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
     
     // 6. Parse fields and methods
     std::vector<StructField> fields;
-    std::vector<std::unique_ptr<VarDecl>> methods;
+    std::vector<std::unique_ptr<FuncDecl>> methods;
     
     while (!check(TOKEN_RIGHT_BRACE) && current.type != TOKEN_EOF) {
-        // Check if this is a method declaration
-        // Methods use func:name = returnType() { body } syntax
-        // Fields use name:type syntax
-        if (current.type != TOKEN_IDENTIFIER) {
-            // Assume it's a method declaration (func:name = ...)
-            // The inline struct parser in parser.cpp handles this,
-            // so this path might not be used. Keep for completeness.
-            auto stmt = parseVarDecl();
-            auto* varDecl = dynamic_cast<VarDecl*>(stmt.get());
+        // Peek ahead to determine if this is a field or method
+        // Field syntax: name:type,
+        // Method syntax: func:name = returnType(...) { ... },
+        
+        // Check for func:name pattern
+        if (current.type == TOKEN_IDENTIFIER && current.value == "func") {
+            // This is a method declaration
+            advance(); // consume 'func'
+            expect(TOKEN_COLON);
             
-            if (varDecl && varDecl->initializer) {
-                // Store the VarDecl (no type verification needed)
-                methods.push_back(std::unique_ptr<VarDecl>(static_cast<VarDecl*>(stmt.release())));
+            // Parse method name
+            Token method_name_tok = expect(TOKEN_IDENTIFIER);
+            std::string method_name = method_name_tok.value;
+            
+            expect(TOKEN_ASSIGN);
+            
+            // Parse return type (before the parameter list)
+            Token return_type_tok = current;
+            std::string return_type = return_type_tok.value;
+            advance(); // consume return type
+            
+            // Parse parameter list
+            expect(TOKEN_LEFT_PAREN);
+            std::vector<FuncParam> params;
+            
+            while (!check(TOKEN_RIGHT_PAREN) && current.type != TOKEN_EOF) {
+                // Check for special 'self' parameter
+                if (current.type == TOKEN_IDENTIFIER && current.value == "self") {
+                    // self parameter - type is implicitly the struct being defined
+                    advance(); // consume 'self'
+                    
+                    // Add self as first parameter with struct type
+                    params.emplace_back(struct_name, "self", nullptr);
+                } else {
+                    // Regular parameter: type:name
+                    Token param_type = current;
+                    advance();
+                    expect(TOKEN_COLON);
+                    Token param_name = expect(TOKEN_IDENTIFIER);
+                    
+                    params.emplace_back(param_type.value, param_name.value, nullptr);
+                }
+                
+                if (!check(TOKEN_RIGHT_PAREN)) {
+                    expect(TOKEN_COMMA);
+                }
+            }
+            
+            expect(TOKEN_RIGHT_PAREN);
+            
+            // Parse method body
+            auto body = parseBlock();
+            
+            // Create FuncDecl for the method
+            std::vector<std::string> no_generics;  // Methods don't have generic params (struct might)
+            auto method_decl = std::make_unique<FuncDecl>(
+                method_name,
+                no_generics,
+                std::move(params),
+                return_type,
+                std::move(body)
+            );
+            
+            methods.push_back(std::move(method_decl));
+            
+            // Expect comma after method (optional before closing brace)
+            if (!check(TOKEN_RIGHT_BRACE)) {
+                expect(TOKEN_COMMA);
             }
             
             continue;

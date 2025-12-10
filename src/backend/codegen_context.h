@@ -100,9 +100,11 @@ public:
     // Module system
     std::string currentModulePrefix = "";  // Current module namespace prefix (e.g., "math.")
     
-    // Fat pointer support (debug builds)
+    // Fat pointer support (debug builds) - WP 004.3
     uint64_t current_scope_id = 0;  // Current scope ID for fat pointer generation
     std::stack<uint64_t> scope_id_stack;  // Stack of scope IDs for proper nesting
+    StructType* fatPointerTy = nullptr;  // Cached fat pointer type (32-byte struct)
+    bool enableSafety = false;  // Runtime flag for safety mode (set from ARIA_ENABLE_SAFETY)
     
     // Generic function monomorphization support
     std::map<std::string, std::string> typeSubstitution;  // Map generic type params to concrete types (T -> int8)
@@ -117,6 +119,31 @@ public:
         module = std::make_unique<Module>(moduleName, llvmContext);
         builder = std::make_unique<IRBuilder<>>(llvmContext);
         pushScope(); // Global scope
+        
+        // Check if safety mode is enabled at compile time
+        #ifdef ARIA_SAFETY_ENABLED
+        enableSafety = true;
+        #else
+        enableSafety = false;
+        #endif
+    }
+    
+    /**
+     * Get the Fat Pointer struct type for safety mode (WP 004.3)
+     * Layout: { i8* ptr, i8* base, i64 size, i64 alloc_id }
+     * Matches struct aria_fat_pointer in fat_pointer.h
+     */
+    StructType* getFatPointerType() {
+        if (fatPointerTy) return fatPointerTy;
+        
+        Type* voidPtr = PointerType::getUnqual(llvmContext);
+        Type* sizeTy = Type::getInt64Ty(llvmContext);
+        Type* idTy = Type::getInt64Ty(llvmContext);
+        
+        // { ptr, base, size, alloc_id }
+        std::vector<Type*> members = { voidPtr, voidPtr, sizeTy, idTy };
+        fatPointerTy = StructType::create(llvmContext, members, "struct.aria_fat_pointer");
+        return fatPointerTy;
     }
 
     void pushScope() { 

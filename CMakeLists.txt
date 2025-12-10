@@ -42,6 +42,16 @@ add_subdirectory(vendor/mimalloc)
 # 2. Source Configuration
 # ==============================================================================
 
+# Memory Safety Configuration (WP 004.3)
+option(ARIA_ENABLE_SAFETY "Enable Fat Pointer Runtime Checks" ON)
+
+if (ARIA_ENABLE_SAFETY)
+    add_compile_definitions(ARIA_SAFETY_ENABLED)
+    message(STATUS "Aria Memory Safety: ENABLED (Fat Pointers)")
+else()
+    message(STATUS "Aria Memory Safety: DISABLED (Fast Mode)")
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Enable strict warnings to catch potential pointer aliasing issues early
@@ -80,13 +90,18 @@ target_link_libraries(ariac
  mimalloc-static
 )
 
+# Pass safety mode flag to compiler codegen
+target_compile_definitions(ariac PRIVATE 
+    ARIA_SAFETY_ENABLED=$<BOOL:${ARIA_ENABLE_SAFETY}>
+)
+
 # ==============================================================================
 # 4. Target Definition: The Runtime Library (libaria)
 # ==============================================================================
 
 # This library is linked into every compiled Aria program.
 # It contains the GC, the Scheduler, and the bridge to Mimalloc.
-add_library(aria_runtime STATIC
+set(RUNTIME_SOURCES
  src/runtime/memory/allocator.c        # The bridge (aria.alloc -> mi_malloc)
  src/runtime/memory/wildx_allocator.c  # Wildx allocator (executable memory for JIT)
  src/runtime/platform/platform.c       # Cross-platform abstraction layer (NEW)
@@ -104,6 +119,13 @@ add_library(aria_runtime STATIC
  src/runtime/core/string_impl.cpp      # SSO String Implementation
  src/runtime/debug/stacktrace.c        # Stack trace capture and crash handling (WP 004.2)
 )
+
+# Conditionally add Fat Pointer safety system (WP 004.3)
+if (ARIA_ENABLE_SAFETY)
+    list(APPEND RUNTIME_SOURCES src/runtime/safety/fat_pointer.c)
+endif()
+
+add_library(aria_runtime STATIC ${RUNTIME_SOURCES})
 
 # Critical: The runtime MUST contain the static mimalloc symbols.
 # Also link dl library for dladdr() symbol resolution in stack traces

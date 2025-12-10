@@ -1573,21 +1573,20 @@ public:
         // =====================================================================
         // Methods defined inside structs are transformed into free functions:
         // Example: Point.distance(self) -> Point_distance(Point self)
-        // Methods are stored as VarDecls with lambda initializers
-        for (auto& methodVarDecl : node->methods) {
-            // Extract lambda from VarDecl
-            auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(methodVarDecl->initializer.get());
-            if (!lambda) continue;
-            
+        // Methods are now stored as FuncDecl nodes
+        for (auto& methodDecl : node->methods) {
             // Create mangled name: Point.distance -> Point_distance
-            std::string mangledName = ctx.currentModulePrefix + node->name + "_" + methodVarDecl->name;
+            std::string originalName = methodDecl->name;
+            std::string mangledName = ctx.currentModulePrefix + node->name + "_" + methodDecl->name;
             
-            // Generate function directly from lambda
-            // We'll visit the lambda as if it were a function
-            std::string originalName = methodVarDecl->name;
-            methodVarDecl->name = mangledName;
-            visit(methodVarDecl.get());  // Visit the VarDecl (will generate function from lambda)
-            methodVarDecl->name = originalName;
+            // Temporarily change the name for code generation
+            methodDecl->name = mangledName;
+            
+            // Visit the method FuncDecl to generate the function
+            visit(methodDecl.get());
+            
+            // Restore original name
+            methodDecl->name = originalName;
         }
     }
 
