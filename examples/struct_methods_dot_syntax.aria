@@ -1,0 +1,38 @@
+// Aria Language - Struct Methods with Dot Syntax Example
+// This demonstrates WP 004.1 - Struct Methods with Result Types
+
+const Point = struct {
+    x: flt32,
+    y: flt32,
+    
+    // Instance method that returns x coordinate
+    func:get_x = *flt32(self) {
+        return 3.14;
+    };
+    
+    // Instance method that returns a value
+    func:get_value = *int8(self) {
+        return 42;
+    };
+    
+    // Method that accesses struct fields
+    func:sum = *flt32(self) {
+        // TODO: Once field access is implemented, this will return self.x + self.y
+        return 5.0;
+    };
+};
+
+func:main = *int8() {
+    // Create a Point instance
+    Point:p = Point{ x: 1.0, y: 2.0 };
+    
+    // Call methods using dot syntax - automatically transforms to mangled calls!
+    // p.get_value() becomes Point_get_value(p)
+    p.get_value();
+    
+    // Can also call as mangled free functions (explicit syntax)
+    result:val = Point_get_value(p);
+    result:x = Point_get_x(p);
+    
+    return 0;
+};
