@@ -1,0 +1,172 @@
+// Test file for Aria UnwrapExpr (? operator)
+// Tests output type unwrapping and error propagation
+
+// Helper function that returns a successful output
+func:make_success = output(int8:value) {
+    return { err: NULL, val: value };
+};
+
+// Helper function that returns an error output
+func:make_error = output(int8:code) {
+    return { err: @code, val: 0 };
+};
+
+// Test 1: Unwrap successful output
+func:test_unwrap_success = int8() {
+    output:r = make_success(42);
+    int8:value = r ? -1;  // Should get 42, not -1
+    return value;
+};
+
+// Test 2: Unwrap error output (should use default)
+func:test_unwrap_error = int8() {
+    output:r = make_error(1);
+    int8:value = r ? -1;  // Should get -1 (default)
+    return value;
+};
+
+// Test 3: Chain unwrap operations
+func:test_unwrap_chain = int8() {
+    output:r1 = make_success(10);
+    output:r2 = make_success(20);
+    output:r3 = make_success(30);
+    
+    int8:sum = (r1 ? 0) + (r2 ? 0) + (r3 ? 0);
+    return sum;  // Should be 60
+};
+
+// Test 4: Unwrap in expression
+func:test_unwrap_expr = int8() {
+    output:output = make_success(5);
+    int8:doubled = (output ? 0) * 2;
+    return doubled;  // Should be 10
+};
+
+// Test 5: Unwrap with different default values
+func:test_unwrap_defaults = int8() {
+    output:r1 = make_error(1);
+    output:r2 = make_error(2);
+    
+    int8:v1 = r1 ? 100;
+    int8:v2 = r2 ? 200;
+    
+    return v1 + v2;  // Should be 300
+};
+
+// Test 6: Unwrap in conditional
+func:test_unwrap_condition = int8() {
+    output:output = make_success(5);
+    int8:value = output ? -1;
+    
+    int8:output = 0;
+    is value > 0 : output = 1 : output = -1;
+    return output;  // Should be 1
+};
+
+// Test 7: Nested unwrap
+func:test_unwrap_nested = int8() {
+    output:outer = make_success(10);
+    int8:outer_val = outer ? 0;
+    
+    is outer_val > 5 : {
+        output:inner = make_success(20);
+        return inner ? 0;  // Should be 20
+    } : {
+        return 0;
+    };
+};
+
+// Test 8: Unwrap with member access
+func:test_unwrap_member = int8() {
+    output:output = make_success(42);
+    
+    // Access val directly
+    int8:direct = output.val;
+    
+    // Access with unwrap
+    int8:unwrapped = output ? 0;
+    
+    return direct + unwrapped;  // Should be 84 (42 + 42)
+};
+
+// Test 9: Function returning Result, unwrapped
+func:divide = Result(int8:a, int8:b) {
+    is b == 0 : {
+        return { err: @1, val: 0 };  // Error: division by zero
+    } : {
+        return { err: NULL, val: a / b };
+    };
+};
+
+func:test_unwrap_function = int8() {
+    int8:result1 = divide(10, 2) ? -1;  // Should be 5
+    int8:result2 = divide(10, 0) ? -1;  // Should be -1 (error)
+    
+    return result1 + result2;  // Should be 4 (5 + -1)
+};
+
+// Test 10: Multiple unwraps with different results
+func:test_unwrap_mixed = int8() {
+    output:success = make_success(10);
+    output:error = make_error(1);
+    
+    int8:v1 = success ? 0;  // 10
+    int8:v2 = error ? 0;    // 0
+    int8:v3 = success ? 5;  // 10
+    int8:v4 = error ? 5;    // 5
+    
+    return v1 + v2 + v3 + v4;  // Should be 25 (10+0+10+5)
+};
+
+// Test 11: Unwrap in loop
+func:test_unwrap_loop = int8() {
+    int8:sum = 0;
+    int8:i = 0;
+    
+    while (i < 5) {
+        output:output = make_success(i);
+        sum = sum + (output ? 0);
+        i = i + 1;
+    }
+    
+    return sum;  // Should be 10 (0+1+2+3+4)
+};
+
+// Test 12: Unwrap with pick
+func:test_unwrap_pick = int8() {
+    output:output = make_success(3);
+    int8:value = output ? 0;
+    
+    int8:output = 0;
+    pick (value) {
+        (0) { output = 10; }
+        (1) { output = 20; }
+        (2) { output = 30; }
+        (3) { output = 40; }
+        (*) { output = 50; }
+    }
+    
+    return output;  // Should be 40
+};
+
+// Module-level test execution
+func:main = int8() {
+    // Test basic unwrapping
+    int8:r1 = test_unwrap_success();  // Should be 42
+    int8:r2 = test_unwrap_error();    // Should be -1
+    
+    // Test chaining
+    int8:r3 = test_unwrap_chain();  // Should be 60
+    
+    // Test in expressions
+    int8:r4 = test_unwrap_expr();  // Should be 10
+    
+    // Test function results
+    int8:r5 = test_unwrap_function();  // Should be 4
+    
+    // Test mixed results
+    int8:r6 = test_unwrap_mixed();  // Should be 25
+    
+    print("All unwrap tests complete!");
+    return 0;
+};

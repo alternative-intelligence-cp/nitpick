@@ -1,0 +1,225 @@
+# =========================================================
+# Aria Struct Parameter Optimization Test
+# =========================================================
+# Tests optimization of small struct parameters (≤16 bytes)
+# passed in registers rather than by pointer.
+#
+# Optimization applies to structs that:
+# - Are ≤ 16 bytes total size
+# - Comply with System V AMD64 ABI
+# - Can be scalarized into individual fields
+#
+# Expected behavior:
+# - Small structs pass fields as individual register args
+# - Large structs (>16 bytes) pass by pointer (unoptimized)
+# =========================================================
+
+struct Vec3:
+    i32 x
+    i32 y  
+    i32 z
+# Size: 12 bytes → SHOULD BE OPTIMIZED
+
+struct Point2D:
+    i64 x
+    i64 y
+# Size: 16 bytes → SHOULD BE OPTIMIZED (exactly 16 bytes)
+
+struct Vec4:
+    i32 x
+    i32 y
+    i32 z
+    i32 w
+    i32 extra
+# Size: 20 bytes → SHOULD NOT BE OPTIMIZED (>16 bytes)
+
+# =========================================================
+# Test 1: Small struct (12 bytes) - OPTIMIZED
+# =========================================================
+fn addVec3(Vec3 a, Vec3 b) -> Vec3:
+    # When optimized, this function signature becomes:
+    # (i32 a.x, i32 a.y, i32 a.z, i32 b.x, i32 b.y, i32 b.z)
+    # instead of:
+    # (%Vec3* a, %Vec3* b)
+    
+    return Vec3:
+        x: a.x + b.x
+        y: a.y + b.y
+        z: a.z + b.z
+
+fn testVec3() -> i32:
+    Vec3 v1 = Vec3:
+        x: 1
+        y: 2
+        z: 3
+    
+    Vec3 v2 = Vec3:
+        x: 4
+        y: 5
+        z: 6
+    
+    # When optimized, this call becomes:
+    # call @addVec3(i32 1, i32 2, i32 3, i32 4, i32 5, i32 6)
+    # instead of:
+    # call @addVec3(%Vec3* v1, %Vec3* v2)
+    
+    Vec3 result = addVec3(v1, v2)
+    
+    return result.x + result.y + result.z  # Should be 21
+
+# =========================================================
+# Test 2: Edge case - Exactly 16 bytes - OPTIMIZED
+# =========================================================
+fn addPoint2D(Point2D a, Point2D b) -> Point2D:
+    # Signature becomes: (i64 a.x, i64 a.y, i64 b.x, i64 b.y)
+    return Point2D:
+        x: a.x + b.x
+        y: a.y + b.y
+
+fn testPoint2D() -> i64:
+    Point2D p1 = Point2D:
+        x: 100
+        y: 200
+    
+    Point2D p2 = Point2D:
+        x: 50
+        y: 75
+    
+    # Call becomes: call @addPoint2D(i64 100, i64 200, i64 50, i64 75)
+    Point2D result = addPoint2D(p1, p2)
+    
+    return result.x + result.y  # Should be 425
+
+# =========================================================
+# Test 3: Large struct (20 bytes) - NOT OPTIMIZED
+# =========================================================
+fn addVec4(Vec4 a, Vec4 b) -> Vec4:
+    # NO OPTIMIZATION - struct >16 bytes
+    # Signature remains: (%Vec4* a, %Vec4* b)
+    return Vec4:
+        x: a.x + b.x
+        y: a.y + b.y
+        z: a.z + b.z
+        w: a.w + b.w
+        extra: a.extra + b.extra
+
+fn testVec4() -> i32:
+    Vec4 v1 = Vec4:
+        x: 1
+        y: 2
+        z: 3
+        w: 4
+        extra: 5
+    
+    Vec4 v2 = Vec4:
+        x: 10
+        y: 20
+        z: 30
+        w: 40
+        extra: 50
+    
+    # Call remains unoptimized (pointer passing)
+    Vec4 result = addVec4(v1, v2)
+    
+    return result.x + result.y + result.z + result.w + result.extra  # Should be 165
+
+# =========================================================
+# Test 4: Performance comparison
+# =========================================================
+fn benchmarkOptimized() -> i32:
+    Vec3 accumulator = Vec3:
+        x: 0
+        y: 0
+        z: 0
+    
+    Vec3 increment = Vec3:
+        x: 1
+        y: 2
+        z: 3
+    
+    # This loop should be fast due to register passing
+    i32 i = 0
+    while i < 1000:
+        accumulator = addVec3(accumulator, increment)
+        i = i + 1
+    
+    return accumulator.x + accumulator.y + accumulator.z
+
+fn benchmarkUnoptimized() -> i32:
+    Vec4 accumulator = Vec4:
+        x: 0
+        y: 0
+        z: 0
+        w: 0
+        extra: 0
+    
+    Vec4 increment = Vec4:
+        x: 1
+        y: 2
+        z: 3
+        w: 4
+        extra: 5
+    
+    # This loop should be slower due to pointer passing
+    i32 i = 0
+    while i < 1000:
+        accumulator = addVec4(accumulator, increment)
+        i = i + 1
+    
+    return accumulator.x + accumulator.y + accumulator.z + accumulator.w + accumulator.extra
+
+# =========================================================
+# Main test runner
+# =========================================================
+fn main() -> i32:
+    # Test 1: Vec3 (12 bytes - optimized)
+    i32 test1 = testVec3()
+    if test1 != 21:
+        return 1  # Test 1 failed
+    
+    # Test 2: Point2D (16 bytes - optimized)
+    i64 test2 = testPoint2D()
+    if test2 != 425:
+        return 2  # Test 2 failed
+    
+    # Test 3: Vec4 (20 bytes - not optimized)
+    i32 test3 = testVec4()
+    if test3 != 165:
+        return 3  # Test 3 failed
+    
+    # Test 4: Performance benchmarks
+    i32 optimizedResult = benchmarkOptimized()
+    i32 unoptimizedResult = benchmarkUnoptimized()
+    
+    # Results should be mathematically correct
+    if optimizedResult != 6000:    # 1000 * (1+2+3)
+        return 4  # Optimized benchmark failed
+    
+    if unoptimizedResult != 15000: # 1000 * (1+2+3+4+5)
+        return 5  # Unoptimized benchmark failed
+    
+    return 0  # All tests passed!
+
+# =========================================================
+# Expected LLVM IR for optimized function:
+# =========================================================
+# define { i32, i32, i32 } @addVec3(i32 %a.x, i32 %a.y, i32 %a.z, 
+#                                    i32 %b.x, i32 %b.y, i32 %b.z) {
+#   %a_reconstructed = alloca %Vec3
+#   ; Store fields into reconstructed struct
+#   %a.x.ptr = getelementptr %Vec3, %Vec3* %a_reconstructed, i32 0, i32 0
+#   store i32 %a.x, i32* %a.x.ptr
+#   %a.y.ptr = getelementptr %Vec3, %Vec3* %a_reconstructed, i32 0, i32 1
+#   store i32 %a.y, i32* %a.y.ptr
+#   %a.z.ptr = getelementptr %Vec3, %Vec3* %a_reconstructed, i32 0, i32 2
+#   store i32 %a.z, i32* %a.z.ptr
+#   
+#   ; (Similar for b_reconstructed)
+#   
+#   ; Function body...
+# }
+#
+# Expected call site:
+# %result = call { i32, i32, i32 } @addVec3(i32 1, i32 2, i32 3, 
+#                                            i32 4, i32 5, i32 6)
+# =========================================================

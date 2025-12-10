@@ -1,0 +1,34 @@
+// EXACT spec example from Aria v0.0.6 Section 8.3
+// Pattern matching with fallthrough labels
+
+int8:c = 9;
+
+pick(c) {
+   (<9) {
+       fall(fail);
+   },
+   (>9) {
+       fall(fail);
+   },
+   (9) {
+       fall(success);
+   },
+   (*) {
+       fall(err);
+   },
+   fail:(!) {
+       print(`handle failure`);
+       fall(done);
+   },
+   success:(!) {
+       print(`handle success`);
+       fall(done);
+   },
+   err:(!) {
+       print(`handle error`);
+       fall(done);
+   },
+   done:(!) {
+       print(`cleanup`);
+   }
+}

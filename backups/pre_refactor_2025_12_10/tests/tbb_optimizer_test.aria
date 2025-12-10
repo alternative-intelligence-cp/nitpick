@@ -1,0 +1,120 @@
+/**
+ * test_tbb_optimization.aria
+ * 
+ * Test case for TBB Optimizer Pass
+ * 
+ * This test demonstrates how the optimizer eliminates redundant checks:
+ * 1. Input checks when values are known constants (not ERR)
+ * 2. Overflow checks when ranges guarantee no overflow
+ * 3. Sentinel collision checks when result cannot be sentinel
+ * 
+ * Expected optimization:
+ * - Before: ~15 instructions per operation (checks + selects)
+ * - After: ~3 instructions per operation (direct arithmetic)
+ * - Speedup: ~5x for pure TBB arithmetic
+ */
+
+fn test_constant_folding() -> tbb8 {
+    // These are compile-time constants - optimizer should eliminate ALL checks
+    let x: tbb8 = 5;
+    let y: tbb8 = 10;
+    let z: tbb8 = x + y;  // 15 - provably safe, no ERR input, no overflow
+    
+    // Expected IR (optimized):
+    //   %z = add i8 5, 10   ; Direct add, no checks!
+    
+    return z;
+}
+
+fn test_safe_range() -> tbb8 {
+    // Small values that cannot overflow in tbb8 (range: -127 to +127)
+    let a: tbb8 = 20;
+    let b: tbb8 = 30;
+    let c: tbb8 = a + b;  // 50 - safe range
+    
+    let d: tbb8 = 40;
+    let e: tbb8 = c + d;  // 90 - still safe
+    
+    // Optimizer can elide overflow checks (90 < 127)
+    // Cannot elide input checks yet (a, b, c, d could theoretically be ERR)
+    // But if we add constant propagation, even input checks go away
+    
+    return e;
+}
+
+fn test_overflow_case() -> tbb8 {
+    // This WILL overflow - optimizer should keep checks
+    let x: tbb8 = 100;
+    let y: tbb8 = 50;
+    let z: tbb8 = x + y;  // 150 > 127 - OVERFLOW! Result should be ERR
+    
+    // Expected IR (NOT optimized):
+    //   %overflow = call {i8, i1} @llvm.sadd.with.overflow(i8 100, i8 50)
+    //   %result = extractvalue {i8, i1} %overflow, 0
+    //   %did_overflow = extractvalue {i8, i1} %overflow, 1
+    //   %final = select i1 %did_overflow, i8 -128, i8 %result
+    
+    return z;
+}
+
+fn test_chained_operations() -> tbb8 {
+    // Chain of safe operations
+    let a: tbb8 = 1;
+    let b: tbb8 = 2;
+    let c: tbb8 = 3;
+    
+    let sum: tbb8 = a + b;     // 3
+    let product: tbb8 = sum * c;  // 9
+    let diff: tbb8 = product - a;  // 8
+    
+    // Optimizer should:
+    // 1. Recognize constants (a=1, b=2, c=3)
+    // 2. Compute ranges (sum=[3,3], product=[9,9], diff=[8,8])
+    // 3. Elide all checks (no overflow possible)
+    // 4. Result: constant folding to 8
+    
+    return diff;
+}
+
+fn test_division_safety() -> tbb8 {
+    // Division by constant (never zero, never -1 with sentinel)
+    let x: tbb8 = 100;
+    let y: tbb8 = 5;
+    let z: tbb8 = x / y;  // 20 - safe
+    
+    // Optimizer can elide division-by-zero check (5 != 0)
+    // Optimizer can elide MIN/-1 check (100 != -128)
+    
+    return z;
+}
+
+fn test_modulo_safety() -> tbb8 {
+    // Modulo with safe divisor
+    let x: tbb8 = 100;
+    let y: tbb8 = 7;
+    let z: tbb8 = x % y;  // 2 - safe
+    
+    // Optimizer can elide:
+    // 1. Modulo-by-zero check (7 != 0)
+    // 2. MIN % -1 hardware trap check (100 != -128, 7 != -1)
+    
+    return z;
+}
+
+fn main() -> int64 {
+    // Run all tests
+    let r1: tbb8 = test_constant_folding();   // Should be 15
+    let r2: tbb8 = test_safe_range();         // Should be 90
+    let r3: tbb8 = test_overflow_case();      // Should be ERR (-128)
+    let r4: tbb8 = test_chained_operations(); // Should be 8
+    let r5: tbb8 = test_division_safety();    // Should be 20
+    let r6: tbb8 = test_modulo_safety();      // Should be 2
+    
+    // Print results (convert to int64 for printing)
+    let sum: int64 = r1 as int64 + r2 as int64 + r4 as int64 + r5 as int64 + r6 as int64;
+    
+    // Expected: 15 + 90 + 8 + 20 + 2 = 135
+    // (r3 is ERR so we don't include it)
+    
+    return sum;
+}

@@ -1,0 +1,259 @@
+# =========================================================
+# Aria WildX Escape Analysis Test Suite
+# =========================================================
+# Tests the strengthened escape analysis for wildx pointers
+# (executable memory allocations).
+#
+# WildX Security Model:
+# - WildX pointers point to executable memory (RWX or RX)
+# - They must NEVER escape their allocation scope
+# - Escaping enables code injection attacks
+# - All escape attempts should be caught at compile time
+#
+# Test Categories:
+# 1. Safe wildx usage (should pass)
+# 2. Wildx return escape (should fail)
+# 3. Wildx function argument escape (should fail)
+# 4. Wildx address-of escape (should fail)
+# 5. Wildx cast to dyn (should fail)
+# =========================================================
+
+# =========================================================
+# Test 1: Safe WildX Usage - LOCAL ONLY
+# =========================================================
+# This should compile successfully - wildx stays local
+fn test_safe_wildx_local() -> i32:
+    # Allocate executable memory
+    wildx i8* code = wildx_alloc(64)
+    
+    # Write machine code (example: return 42)
+    # x86-64: mov eax, 42; ret
+    code[0] = 0xB8  # MOV EAX, imm32
+    code[1] = 0x2A  # 42
+    code[2] = 0x00
+    code[3] = 0x00
+    code[4] = 0x00
+    code[5] = 0xC3  # RET
+    
+    # Protect memory as executable
+    wildx_protect_exec(code, 64)
+    
+    # Execute (cast to function pointer and call)
+    # This is safe because code never leaves this scope
+    fn() -> i32* func = cast(code)
+    i32 result = func()
+    
+    # Clean up
+    wildx_free(code)
+    
+    return result  # Should return 42
+
+# =========================================================
+# Test 2: WildX Return Escape - SHOULD FAIL
+# =========================================================
+# This should trigger SECURITY VIOLATION error
+# Returning wildx pointer allows it to escape scope
+fn test_wildx_return_escape() -> wildx i8*:
+    wildx i8* code = wildx_alloc(64)
+    
+    # Write some code
+    code[0] = 0xC3  # RET instruction
+    
+    # VIOLATION: Returning wildx pointer
+    return code  # *** SECURITY ERROR: wildx must not escape ***
+
+# =========================================================
+# Test 3: WildX Function Argument Escape - SHOULD FAIL
+# =========================================================
+# Passing wildx to generic functions is dangerous
+fn store_pointer(i8* ptr) -> i32:
+    # Some generic function that might store the pointer
+    return 0
+
+fn test_wildx_arg_escape() -> i32:
+    wildx i8* code = wildx_alloc(64)
+    
+    # VIOLATION: Passing wildx to generic function
+    # The function might store it, causing escape
+    i32 result = store_pointer(code)  # *** SECURITY ERROR ***
+    
+    wildx_free(code)
+    return result
+
+# =========================================================
+# Test 4: WildX Address-of Escape - SHOULD FAIL
+# =========================================================
+# Taking address of wildx and storing it elsewhere
+fn test_wildx_address_escape() -> i8**:
+    wildx i8* code = wildx_alloc(64)
+    
+    # VIOLATION: Taking address of wildx in escaping context
+    return @code  # *** SECURITY ERROR: address of wildx escapes ***
+
+# =========================================================
+# Test 5: WildX Cast to Dyn - SHOULD FAIL
+# =========================================================
+# Casting wildx to dynamic type without verification
+fn test_wildx_to_dyn_cast() -> dyn:
+    wildx i8* code = wildx_alloc(64)
+    
+    # VIOLATION: Casting wildx to dyn type
+    # This enables type confusion on executable memory
+    dyn generic = cast<dyn>(code)  # *** SECURITY ERROR ***
+    
+    wildx_free(code)
+    return generic
+
+# =========================================================
+# Test 6: Safe WildX with Defer Cleanup
+# =========================================================
+# Demonstrates proper wildx lifecycle management
+fn test_safe_wildx_with_defer() -> i32:
+    wildx i8* code = wildx_alloc(64)
+    
+    # Use defer to ensure cleanup
+    defer:
+        wildx_free(code)
+    
+    # Write NOPs
+    i32 i = 0
+    while i < 64:
+        code[i] = 0x90  # NOP instruction
+        i = i + 1
+    
+    # Protect as executable
+    wildx_protect_exec(code, 64)
+    
+    # Execute
+    fn() -> i32* func = cast(code)
+    return func()  # Will execute NOPs and return whatever is in EAX
+
+# =========================================================
+# Test 7: WildX in Struct - SHOULD FAIL if struct escapes
+# =========================================================
+struct CodeBuffer:
+    wildx i8* code
+    i64 size
+
+fn create_buffer() -> CodeBuffer:
+    CodeBuffer buf
+    buf.code = wildx_alloc(64)  # Allocate wildx
+    buf.size = 64
+    
+    # VIOLATION: Returning struct containing wildx
+    return buf  # *** SECURITY ERROR: wildx escapes via struct ***
+
+# =========================================================
+# Test 8: WildX Assignment to Non-WildX Variable - SHOULD FAIL
+# =========================================================
+fn test_wildx_type_escape() -> i8*:
+    wildx i8* exec_mem = wildx_alloc(64)
+    
+    # VIOLATION: Assigning wildx to non-wildx pointer
+    # This loses type information and enables escape
+    i8* generic_ptr = exec_mem  # *** SECURITY ERROR ***
+    
+    return generic_ptr
+
+# =========================================================
+# Test 9: Safe WildX JIT Compilation Example
+# =========================================================
+# Demonstrates legitimate wildx usage for JIT
+fn jit_compile_add(i32 a, i32 b) -> i32:
+    # Allocate JIT buffer
+    wildx i8* jit_code = wildx_alloc(128)
+    defer:
+        wildx_free(jit_code)
+    
+    # Generate x86-64 code for: int add(int a, int b) { return a + b; }
+    # Function receives args in EDI (a) and ESI (b)
+    i32 idx = 0
+    
+    # mov eax, edi     (copy first arg to return register)
+    jit_code[idx] = 0x89
+    jit_code[idx+1] = 0xF8
+    idx = idx + 2
+    
+    # add eax, esi     (add second arg)
+    jit_code[idx] = 0x01
+    jit_code[idx+1] = 0xF0
+    idx = idx + 2
+    
+    # ret
+    jit_code[idx] = 0xC3
+    
+    # Protect as executable
+    wildx_protect_exec(jit_code, 128)
+    
+    # Execute JIT code
+    fn(i32, i32) -> i32* jit_func = cast(jit_code)
+    return jit_func(a, b)
+
+# =========================================================
+# Test 10: WildX Lambda Capture - SHOULD FAIL
+# =========================================================
+fn test_wildx_lambda_escape() -> fn() -> i32:
+    wildx i8* code = wildx_alloc(64)
+    code[0] = 0xC3  # RET
+    
+    # VIOLATION: Capturing wildx in lambda that escapes
+    fn() -> i32 escaped_lambda = fn():
+        # This lambda captures 'code' wildx pointer
+        wildx_protect_exec(code, 64)
+        fn() -> i32* f = cast(code)
+        return f()
+    
+    # Returning lambda that captured wildx
+    return escaped_lambda  # *** SECURITY ERROR: wildx escapes via lambda capture ***
+
+# =========================================================
+# Expected Compilation Results
+# =========================================================
+# The strengthened escape analysis should produce:
+#
+# PASS (compiles):
+# - test_safe_wildx_local()
+# - test_safe_wildx_with_defer()
+# - jit_compile_add()
+#
+# FAIL (security violations):
+# - test_wildx_return_escape() - returns wildx
+# - test_wildx_arg_escape() - passes wildx to function
+# - test_wildx_address_escape() - takes address of wildx
+# - test_wildx_to_dyn_cast() - casts wildx to dyn
+# - create_buffer() - returns struct with wildx
+# - test_wildx_type_escape() - assigns to non-wildx var
+# - test_wildx_lambda_escape() - captures wildx in escaping lambda
+#
+# Security Error Output Format:
+# *** SECURITY VIOLATION ***
+# WildX Escape Analysis Error: <specific violation>
+# WildX pointers (executable memory) must never escape their scope.
+# This is a critical security violation that could enable code injection.
+# *** END SECURITY VIOLATION ***
+# =========================================================
+
+fn main() -> i32:
+    # Only run safe tests
+    i32 result1 = test_safe_wildx_local()
+    if result1 != 42:
+        return 1  # Test 1 failed
+    
+    i32 result2 = test_safe_wildx_with_defer()
+    # Result is undefined (NOPs), but shouldn't crash
+    
+    i32 result3 = jit_compile_add(10, 32)
+    if result3 != 42:
+        return 3  # Test 3 failed
+    
+    # The unsafe tests should not compile!
+    # Uncommenting any of these should cause compilation errors:
+    # wildx i8* escaped1 = test_wildx_return_escape()
+    # i32 escaped2 = test_wildx_arg_escape()
+    # i8** escaped3 = test_wildx_address_escape()
+    # dyn escaped4 = test_wildx_to_dyn_cast()
+    # CodeBuffer escaped5 = create_buffer()
+    # i8* escaped6 = test_wildx_type_escape()
+    # fn() -> i32 escaped7 = test_wildx_lambda_escape()
+    
+    return 0  # All safe tests passed
