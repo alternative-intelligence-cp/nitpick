@@ -9,13 +9,14 @@
  * Uses function summaries to optimize across function boundaries.
  */
 
+#include "llvm/IR/Module.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Analysis/LazyValueInfo.h"
-#include "llvm/Analysis/ConstantRange.h"
+#include "llvm/IR/ConstantRange.h"
 #include "llvm/Support/raw_ostream.h"
 #include <vector>
 #include <optional>

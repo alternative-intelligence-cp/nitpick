@@ -24,6 +24,8 @@
 #include <memory>
 #include <string>
 
+using namespace aria::frontend;
+
 // Helper: Check if current token is a valid type token
 bool Parser::isTypeToken(TokenType type) {
     return type == TOKEN_TYPE_IDENTIFIER ||
@@ -51,8 +53,8 @@ bool Parser::isTypeToken(TokenType type) {
 }
 
 // Helper: Parse Parameter List: (type:name, type:name)
-std::vector<Param> Parser::parseParams() {
-    std::vector<Param> params;
+std::vector<FuncParam> Parser::parseParams() {
+    std::vector<FuncParam> params;
     consume(TOKEN_LPAREN, "Expected '(' to begin parameter list");
     
     if (!check(TOKEN_RPAREN)) {
@@ -78,7 +80,7 @@ std::vector<Param> Parser::parseParams() {
             consume(TOKEN_COLON, "Expected ':' after type");
             Token nameTok = consume(TOKEN_IDENTIFIER, "Expected parameter name");
             
-            params.push_back({paramType, nameTok.lexeme});
+            params.emplace_back(paramType, nameTok.value, nullptr);
         } while (match(TOKEN_COMMA));
     }
     
@@ -93,12 +95,12 @@ std::unique_ptr<FuncDecl> Parser::parseFuncDecl() {
     // 1. Generics (Optional)
     // Supports: func<T, U>:name
     std::vector<std::string> generics;
-    if (match(TOKEN_LESS_THAN)) {
+    if (match(TOKEN_LT)) {
         do {
             Token genType = consume(TOKEN_TYPE_IDENTIFIER, "Expected generic type parameter");
-            generics.push_back(genType.lexeme);
+            generics.push_back(genType.value);
         } while (match(TOKEN_COMMA));
-        consume(TOKEN_GREATER_THAN, "Expected '>' after generics");
+        consume(TOKEN_GT, "Expected '>' after generics");
     }
 
     // 2. Name Binding
@@ -114,7 +116,7 @@ std::unique_ptr<FuncDecl> Parser::parseFuncDecl() {
         // Prototype only (extern or interface)
         consume(TOKEN_SEMICOLON, "Expected ';' or '=' for function");
         // Return declarations with null body
-        return std::make_unique<FuncDecl>(nameToken.lexeme, generics, std::vector<Param>(), "", nullptr);
+        return std::make_unique<FuncDecl>(nameToken.value, generics, std::vector<FuncParam>(), "", nullptr);
     }
 
     // 4. Return Type (comes BEFORE parameters in new syntax)
@@ -140,14 +142,14 @@ std::unique_ptr<FuncDecl> Parser::parseFuncDecl() {
         current.type == TOKEN_TYPE_DMAT2 || current.type == TOKEN_TYPE_DMAT3 || current.type == TOKEN_TYPE_DMAT4 ||
         current.type == TOKEN_TYPE_DMAT2X3 || current.type == TOKEN_TYPE_DMAT2X4 || current.type == TOKEN_TYPE_DMAT3X2 ||
         current.type == TOKEN_TYPE_DMAT3X4 || current.type == TOKEN_TYPE_DMAT4X2 || current.type == TOKEN_TYPE_DMAT4X3) {
-        returnType = current.lexeme;
+        returnType = current.value;
         advance();  // Consume the return type token
     } else {
-        error("Expected return type before parameter list");
+        throw std::runtime_error("Expected return type before parameter list");
     }
 
     // 5. Parameters
-    std::vector<Param> params = parseParams();
+    std::vector<FuncParam> params = parseParams();
 
     // 6. Body
     std::unique_ptr<Block> body = parseBlock();
@@ -156,12 +158,10 @@ std::unique_ptr<FuncDecl> Parser::parseFuncDecl() {
     // In Aria v0.0.6, top-level statements end with semicolons.
     match(TOKEN_SEMICOLON);
 
-    auto decl = std::make_unique<FuncDecl>(nameToken.lexeme, generics, params, returnType, std::move(body));
+    auto decl = std::make_unique<FuncDecl>(nameToken.value, generics, std::move(params), returnType, std::move(body));
     
-    // Register in Symbol Table
-    // We register the function name with a generated signature type string "func"
-    // This allows the Borrow Checker to resolve calls to this function later.
-    currentScope->define(decl->name, "func"); 
+    // TODO: Register in Symbol Table when implemented
+    // currentScope->define(decl->name, "func"); 
 
     return decl;
 }
@@ -175,25 +175,26 @@ std::unique_ptr<Expression> Parser::parseLambda() {
     // 1. Parameters
     // We reuse the parameter parsing logic, though lambdas might support type inference in v0.1.
     // For v0.0.6, explicit types are required in lambdas too.
-    std::vector<Param> params = parseParams();
+    std::vector<FuncParam> params = parseParams();
     
     // 2. Arrow Operator
     consume(TOKEN_LAMBDA_ARROW, "Expected '=>' in lambda");
     
-    auto lambda = std::make_unique<LambdaExpr>();
-    lambda->params = params;
+    // 3. Parse return type or infer from body
+    std::string return_type = "void";  // Default, will be inferred by type checker
     
-    // 3. Body (Block or Expression)
+    // 4. Body (must be a block for LambdaExpr constructor)
+    std::unique_ptr<Block> body;
     if (check(TOKEN_LEFT_BRACE)) {
         // Block Body: (args) => {... }
-        lambda->bodyBlock = parseBlock();
-        lambda->isExpressionBody = false;
+        body = parseBlock();
     } else {
         // Single expression body: (x) => x + 1
-        // Implicit return of the expression value.
-        lambda->bodyExpr = parseExpression();
-        lambda->isExpressionBody = true;
+        // Wrap in a block with implicit return
+        throw std::runtime_error("Expression-body lambdas not yet supported, use block syntax");
     }
+    
+    auto lambda = std::make_unique<LambdaExpr>(return_type, std::move(params), std::move(body));
     
     return lambda;
 }

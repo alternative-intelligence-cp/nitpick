@@ -60,12 +60,12 @@ static Precedence getPrecedence(TokenType type) {
         case TOKEN_PIPE_BACKWARD:   return PREC_PIPELINE;
         case TOKEN_LOGICAL_OR:      return PREC_LOGICAL_OR;
         case TOKEN_LOGICAL_AND:     return PREC_LOGICAL_AND;
-        case TOKEN_EQUAL:
-        case TOKEN_NOT_EQUAL:       return PREC_EQUALITY;
-        case TOKEN_LESS_THAN:
-        case TOKEN_GREATER_THAN:
-        case TOKEN_LESS_EQUAL:
-        case TOKEN_GREATER_EQUAL:   return PREC_RELATIONAL;
+        case TOKEN_EQ:
+        case TOKEN_NE:       return PREC_EQUALITY;
+        case TOKEN_LT:
+        case TOKEN_GT:
+        case TOKEN_LE:
+        case TOKEN_GE:   return PREC_RELATIONAL;
         case TOKEN_SPACESHIP:       return PREC_SPACESHIP;
         case TOKEN_PLUS:
         case TOKEN_MINUS:           return PREC_ADD;
@@ -78,6 +78,53 @@ static Precedence getPrecedence(TokenType type) {
         case TOKEN_LEFT_BRACKET:    return PREC_CALL; // Index
         case TOKEN_UNWRAP:          return PREC_CALL; // Unwrap operator (?)
         default:                    return PREC_NONE;
+    }
+}
+
+// Convert TokenType to BinaryOp::OpType
+static BinaryOp::OpType tokenToBinaryOp(TokenType type) {
+    switch (type) {
+        case TOKEN_PLUS:            return BinaryOp::ADD;
+        case TOKEN_MINUS:           return BinaryOp::SUB;
+        case TOKEN_MULTIPLY:        return BinaryOp::MUL;
+        case TOKEN_DIVIDE:          return BinaryOp::DIV;
+        case TOKEN_MODULO:          return BinaryOp::MOD;
+        case TOKEN_EQ:           return BinaryOp::EQ;
+        case TOKEN_NE:       return BinaryOp::NE;
+        case TOKEN_LT:       return BinaryOp::LT;
+        case TOKEN_GT:    return BinaryOp::GT;
+        case TOKEN_LE:      return BinaryOp::LE;
+        case TOKEN_GE:   return BinaryOp::GE;
+        case TOKEN_LOGICAL_AND:     return BinaryOp::LOGICAL_AND;
+        case TOKEN_LOGICAL_OR:      return BinaryOp::LOGICAL_OR;
+        case TOKEN_AMPERSAND:     return BinaryOp::BITWISE_AND;
+        case TOKEN_PIPE:      return BinaryOp::BITWISE_OR;
+        case TOKEN_CARET:     return BinaryOp::BITWISE_XOR;
+        case TOKEN_LSHIFT:          return BinaryOp::LSHIFT;
+        case TOKEN_RSHIFT:          return BinaryOp::RSHIFT;
+        case TOKEN_ASSIGN:          return BinaryOp::ASSIGN;
+        case TOKEN_PLUS_ASSIGN:     return BinaryOp::PLUS_ASSIGN;
+        case TOKEN_MINUS_ASSIGN:    return BinaryOp::MINUS_ASSIGN;
+        case TOKEN_STAR_ASSIGN:     return BinaryOp::STAR_ASSIGN;
+        case TOKEN_SLASH_ASSIGN:    return BinaryOp::SLASH_ASSIGN;
+        case TOKEN_MOD_ASSIGN:      return BinaryOp::MOD_ASSIGN;
+        default:
+            throw std::runtime_error("Unknown binary operator token: " + std::to_string(type));
+    }
+}
+
+// Convert TokenType to UnaryOp::OpType
+static UnaryOp::OpType tokenToUnaryOp(TokenType type) {
+    switch (type) {
+        case TOKEN_MINUS:           return UnaryOp::NEG;
+        case TOKEN_LOGICAL_NOT:     return UnaryOp::LOGICAL_NOT;
+        case TOKEN_TILDE:     return UnaryOp::BITWISE_NOT;
+        case TOKEN_INCREMENT:       return UnaryOp::POST_INC;
+        case TOKEN_DECREMENT:       return UnaryOp::POST_DEC;
+        case TOKEN_AT:              return UnaryOp::ADDRESS_OF;
+        case TOKEN_HASH:            return UnaryOp::PIN;
+        default:
+            throw std::runtime_error("Unknown unary operator token: " + std::to_string(type));
     }
 }
 
@@ -94,14 +141,15 @@ std::unique_ptr<Expression> Parser::parseExpression(int minPrec) {
     // 2. Precedence Climbing Loop (LED)
     // While the next token is an operator with higher precedence than our current context...
     while (true) {
-        TokenType nextType = peek().type;
+        TokenType nextType = current.type;
         int nextPrec = getPrecedence(nextType);
 
         // Stop if next token has lower precedence or isn't an operator
         if (nextPrec < minPrec) break;
 
         // Consume the operator and parse the infix expression
-        Token opToken = advance();
+        Token opToken = current;
+        advance();
         left = parseInfix(std::move(left), opToken);
     }
 
@@ -118,11 +166,12 @@ std::unique_ptr<Expression> Parser::parseExpression() {
 // =============================================================================
 
 std::unique_ptr<Expression> Parser::parsePrefix() {
-    Token token = advance();
+    Token token = current;
+    advance();
 
     switch (token.type) {
         // --- Literals ---
-        case TOKEN_INTEGER_LITERAL: {
+        case TOKEN_INT_LITERAL: {
             // Need to handle parsing of int64 vs int512 here strictly
             // For now assuming standard unsigned long long parsing
             uint64_t val = std::stoull(token.value); 
@@ -138,9 +187,10 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
             // but we need to put it back for parseTemplateString to handle properly
             // For now, handle inline
             return parseTemplateString();
-        case TOKEN_BOOLEAN_LITERAL:
+        case TOKEN_KW_TRUE:
+        case TOKEN_KW_FALSE:
             return std::make_unique<BoolLiteral>(token.value == "true");
-        case TOKEN_NULL_LITERAL:
+        case TOKEN_KW_NULL:
             return std::make_unique<NullLiteral>();
         case TOKEN_IDENTIFIER:
             return std::make_unique<VarExpr>(token.value);
@@ -206,15 +256,15 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
         
         // --- Special Variable ($) ---
         // $ is a special iterator variable in till loops: till(100, 1) { $ }
+        // TOKEN_ITERATION is an alias for TOKEN_DOLLAR
         case TOKEN_DOLLAR:
-        case TOKEN_ITERATION:  // TOKEN_ITERATION is an alias for TOKEN_DOLLAR
             return std::make_unique<VarExpr>("$");
         
         // --- Grouping or Cast ---
         case TOKEN_LEFT_PAREN: {
             // Lookahead to distinguish between (expr) and (Type)expr
             // Check if next token could start a type name
-            if (isType(peek())) {
+            if (isType(current)) {
                 // This looks like a cast: (TypeName)expr
                 std::string targetType = parseTypeName();
                 consume(TOKEN_RIGHT_PAREN, "Expected ')' after cast type");
@@ -291,13 +341,13 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
         // Note: $ (TOKEN_ITERATION) is NOT a unary operator - it's a variable in till loops
         case TOKEN_MINUS:
         case TOKEN_LOGICAL_NOT:
-        case TOKEN_BITWISE_NOT:
+        case TOKEN_TILDE:
         case TOKEN_PIN:       // #
         case TOKEN_ADDRESS:   // @
         {
             // Recursive call with UNARY precedence to bind tight
             auto operand = parseExpression(PREC_UNARY);
-            return std::make_unique<UnaryOp>(token.type, std::move(operand));
+            return std::make_unique<UnaryOp>(tokenToUnaryOp(token.type), std::move(operand));
         }
 
         // --- Ternary Start ---
@@ -326,8 +376,7 @@ std::unique_ptr<Expression> Parser::parsePrefix() {
 
         default:
             // Error handling via the Parser context
-            error("Unexpected token in expression: " + token.lexeme);
-            return nullptr; // Unreachable
+            throw std::runtime_error("Unexpected token in expression: " + token.value);
     }
 }
 
@@ -343,10 +392,10 @@ std::unique_ptr<Expression> Parser::parseInfix(std::unique_ptr<Expression> left,
         case TOKEN_MULTIPLY:
         case TOKEN_DIVIDE:
         case TOKEN_MODULO:
-        case TOKEN_EQUAL:
-        case TOKEN_NOT_EQUAL:
-        case TOKEN_LESS_THAN:
-        case TOKEN_GREATER_THAN:
+        case TOKEN_EQ:
+        case TOKEN_NE:
+        case TOKEN_LT:
+        case TOKEN_GT:
         case TOKEN_SPACESHIP:       // <=>
         case TOKEN_PIPE_FORWARD:    // |>
         case TOKEN_PIPE_BACKWARD:   // <|
@@ -356,7 +405,7 @@ std::unique_ptr<Expression> Parser::parseInfix(std::unique_ptr<Expression> left,
             // Parse right side with slightly higher precedence (+1) for left-associativity
             // This ensures 1 + 2 + 3 parses as (1 + 2) + 3
             auto right = parseExpression(prec + 1);
-            return std::make_unique<BinaryOp>(op.type, std::move(left), std::move(right));
+            return std::make_unique<BinaryOp>(tokenToBinaryOp(op.type), std::move(left), std::move(right));
         }
 
         // --- Call Expression (foo(), p.method(), etc.) ---
@@ -365,7 +414,7 @@ std::unique_ptr<Expression> Parser::parseInfix(std::unique_ptr<Expression> left,
             std::unique_ptr<CallExpr> call;
             
             // Check if left is a simple identifier (common case)
-            if (auto* ident = dynamic_cast<Identifier*>(left.get())) {
+            if (auto* ident = dynamic_cast<VarExpr*>(left.get())) {
                 // Simple function call: foo()
                 call = std::make_unique<CallExpr>(ident->name);
             } else {
@@ -423,8 +472,9 @@ std::unique_ptr<Expression> Parser::parseTemplateString() {
     while (!check(TOKEN_BACKTICK) && !check(TOKEN_EOF)) {
         if (check(TOKEN_STRING_CONTENT)) {
             // Static string part
-            Token content_token = advance();
-            templ->parts.emplace_back(content_token.lexeme);
+            Token content_token = current;
+            advance();
+            templ->parts.emplace_back(content_token.value);
         }
         else if (match(TOKEN_INTERP_START)) {
             // Interpolated expression: &{expr}
@@ -439,10 +489,4 @@ std::unique_ptr<Expression> Parser::parseTemplateString() {
     
     consume(TOKEN_BACKTICK, "Expected closing '`' for template string");
     return templ;
-}
-
-        default:
-            error("Unknown infix operator");
-            return nullptr;
-    }
 }

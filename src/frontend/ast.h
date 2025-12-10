@@ -56,6 +56,8 @@ class CastExpr;
 class UseStmt;
 class ModDef;
 class ExternBlock;
+class TraitDecl;
+class ImplDecl;
 
 // Base AST Node
 // All AST nodes inherit from this class
@@ -126,6 +128,10 @@ public:
     virtual void visit(UseStmt* node) { /* default: do nothing */ }
     virtual void visit(ModDef* node) { /* default: do nothing */ }
     virtual void visit(ExternBlock* node) { /* default: do nothing */ }
+    
+    // Trait system (WP 005)
+    virtual void visit(TraitDecl* node) { /* default: do nothing */ }
+    virtual void visit(ImplDecl* node) { /* default: do nothing */ }
 };
 
 // Block Statement

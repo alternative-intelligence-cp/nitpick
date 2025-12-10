@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <cassert>
 #include <cstdio>
+#include <iostream>
 
 namespace aria {
 namespace frontend {
@@ -56,6 +57,24 @@ std::unique_ptr<Block> Parser::parseProgram() {
                     func->is_async = true;
                     block->statements.push_back(std::move(func));
                 }
+            }
+            continue;
+        }
+        
+        // Check for trait declaration: trait:Name = { ... }
+        if (current.type == TOKEN_KW_TRAIT) {
+            auto traitDecl = parseTraitDecl();
+            if (traitDecl) {
+                block->statements.push_back(std::move(traitDecl));
+            }
+            continue;
+        }
+        
+        // Check for impl declaration: impl:Trait:for:Type = { ... }
+        if (current.type == TOKEN_KW_IMPL) {
+            auto implDecl = parseImplDecl();
+            if (implDecl) {
+                block->statements.push_back(std::move(implDecl));
             }
             continue;
         }
@@ -286,7 +305,7 @@ std::unique_ptr<Block> Parser::parseBlockOrStatement() {
 }
 
 // Parse variable declaration: type:name = value;
-std::unique_ptr<VarDecl> Parser::parseVarDecl() {
+std::unique_ptr<Statement> Parser::parseVarDecl() {
     // Current token should be a type
     if (!isTypeToken(current.type)) {
         std::stringstream ss;

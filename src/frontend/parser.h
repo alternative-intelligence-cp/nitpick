@@ -60,6 +60,12 @@ private:
     std::unique_ptr<Expression> parseLogicalOr();
     std::unique_ptr<Expression> parseTernary();
     std::unique_ptr<Expression> parseAssignment();
+    
+    // Pratt parsing (used by parser_expr.cpp)
+    std::unique_ptr<Expression> parseExpression(int minPrec);  // Pratt parser with precedence
+    std::unique_ptr<Expression> parseExpression();  // Wrapper (calls parseExpression(PREC_COMMA+1))
+    std::unique_ptr<Expression> parsePrefix();  // Prefix expression handlers (NUD)
+    std::unique_ptr<Expression> parseInfix(std::unique_ptr<Expression> left, Token op);  // Infix handlers (LED)
 
 public:
     Parser(AriaLexer& lex);
@@ -70,10 +76,13 @@ public:
     std::unique_ptr<Block> parseBlockOrStatement();  // Parse block or single statement (for one-liner if/while/etc)
     std::unique_ptr<Expression> parseExpr();
     std::unique_ptr<Expression> parseTemplateString();
+    std::unique_ptr<Expression> parseLambda();  // Parse lambda expressions
     std::unique_ptr<Statement> parseStmt();
     std::unique_ptr<Statement> parseVarDecl();  // Parse variable OR struct declaration (detects which)
     std::unique_ptr<FuncDecl> parseFuncDecl();  // Bug #70: async functions
     std::unique_ptr<StructDecl> parseStructDecl();  // Parse struct declaration
+    std::unique_ptr<TraitDecl> parseTraitDecl();  // Parse trait declaration
+    std::unique_ptr<ImplDecl> parseImplDecl();  // Parse trait implementation
     std::unique_ptr<Statement> parseAsyncBlock();  // Bug #70: async blocks
     std::unique_ptr<PickStmt> parsePickStmt();
     std::unique_ptr<DestructurePattern> parseDestructurePattern();  // Bug #64

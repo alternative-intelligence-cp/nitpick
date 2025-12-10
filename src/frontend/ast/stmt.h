@@ -162,6 +162,50 @@ public:
     }
 };
 
+// Trait Method Signature (WP 005: Trait System)
+// Represents a method signature in a trait declaration
+struct TraitMethod {
+    std::string name;
+    std::vector<FuncParam> parameters;
+    std::string return_type;
+    bool auto_wrap = false;
+    
+    TraitMethod(const std::string& n, std::vector<FuncParam> params, const std::string& ret)
+        : name(n), parameters(std::move(params)), return_type(ret) {}
+};
+
+// Trait Declaration (WP 005: Trait System)
+// Example: trait:Drawable = { func:draw = void(self); func:area = flt32(self); };
+class TraitDecl : public Statement {
+public:
+    std::string name;
+    std::vector<TraitMethod> methods;
+    std::vector<std::string> super_traits;  // Trait inheritance (future)
+    
+    TraitDecl(const std::string& n, std::vector<TraitMethod> m)
+        : name(n), methods(std::move(m)) {}
+    
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
+// Trait Implementation (WP 005: Trait System)
+// Example: impl:Drawable:for:Circle = { func:draw = void(self) { ... }; func:area = flt32(self) { ... }; };
+class ImplDecl : public Statement {
+public:
+    std::string trait_name;
+    std::string type_name;
+    std::vector<std::unique_ptr<FuncDecl>> methods;
+    
+    ImplDecl(const std::string& trait, const std::string& type, std::vector<std::unique_ptr<FuncDecl>> m)
+        : trait_name(trait), type_name(type), methods(std::move(m)) {}
+    
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
 } // namespace frontend
 } // namespace aria
 

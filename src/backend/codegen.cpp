@@ -22,6 +22,8 @@
 #include "codegen_context.h"
 #include "codegen_tbb.h"
 #include "tbb_optimizer.h"
+#include "monomorphization.h"
+#include "vtable.h"
 #include "../frontend/ast.h"
 #include "../frontend/ast/stmt.h"
 #include "../frontend/ast/expr.h"
@@ -6543,5 +6545,48 @@ bool generate_code(aria::frontend::Block* root, const std::string& filename, boo
         return false;
     }
 }
+
+// =============================================================================
+// Trait-Aware Code Generation Entry Point
+// =============================================================================
+
+bool generate_code(aria::frontend::Block* root, const std::string& filename, const TraitContext& traitCtx, bool enableVerify) {
+    try {
+        // If no traits/impls, use fast path
+        if (traitCtx.traits.empty() && traitCtx.impls.empty()) {
+            return generate_code(root, filename, enableVerify);
+        }
+
+        // Create monomorphization context
+        MonomorphizationContext monoCtx;
+        Monomorphizer monomorphizer(monoCtx);
+        
+        // Register all traits and impls
+        for (auto* trait : traitCtx.traits) {
+            monomorphizer.registerTrait(trait);
+        }
+        for (auto* impl : traitCtx.impls) {
+            monomorphizer.registerImpl(impl);
+        }
+        
+        // Run monomorphization pass to generate specialized functions
+        // This creates specialized versions of trait methods for each type
+        auto specializedFuncs = monomorphizer.monomorphizeAll();
+        
+        // Now generate code normally
+        // The specialized functions will be added to the module during code generation
+        // Note: Full integration would require modifying the AST or adding specialized
+        // functions to the symbol table before code generation. For now, we use the
+        // standard code generation path and note that specialized functions need to be
+        // generated during the codegen visitor pass when trait method calls are encountered.
+        
+        return generate_code(root, filename, enableVerify);
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Trait monomorphization error: " << e.what() << "\n";
+        return false;
+    }
+}
+
 } // namespace backend
 } // namespace aria
