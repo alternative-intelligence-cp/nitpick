@@ -255,11 +255,16 @@ public:
 // Example: foo(a, b, c) or max<int8>(5, 10) for generic calls
 class CallExpr : public Expression {
 public:
-    std::string function_name;
+    std::string function_name;  // For simple calls: foo()
+    std::unique_ptr<Expression> callee;  // For complex calls: p.method(), (get_fn())()
     std::vector<std::unique_ptr<Expression>> arguments;
     std::vector<std::string> type_arguments;  // Generic type args: max<int8, int8>
 
+    // Constructor for simple function calls by name
     CallExpr(const std::string& name) : function_name(name) {}
+    
+    // Constructor for calls with expression callee (member access, etc.)
+    CallExpr(std::unique_ptr<Expression> callee_expr) : callee(std::move(callee_expr)) {}
 
     void accept(AstVisitor& visitor) override {
         visitor.visit(this);

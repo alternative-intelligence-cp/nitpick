@@ -78,12 +78,18 @@ bool Parser::check(TokenType type) {
 std::string Parser::parseTypeName() {
     std::string typeName;
     
+    // Check for * prefix (result type wrapper)
+    if (current.type == TOKEN_STAR) {
+        typeName = "*";
+        advance();
+    }
+    
     // Check if it's a built-in type keyword (func, result, int8, etc.)
     if (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING) {
-        typeName = current.value;
+        typeName += current.value;
         advance();
     } else if (current.type == TOKEN_IDENTIFIER) {
-        typeName = current.value;
+        typeName += current.value;
         advance();
     } else {
         throw std::runtime_error("Expected type name");
@@ -1185,7 +1191,15 @@ std::unique_ptr<Statement> Parser::parseStmt() {
                         advance(); // consume (
                     }
                     
-                    auto call = std::make_unique<CallExpr>(saved.value);
+                    // If expr is just a VarExpr, use function name directly
+                    // Otherwise use expr as the callee (for member access, etc.)
+                    std::unique_ptr<CallExpr> call;
+                    if (auto* varExpr = dynamic_cast<VarExpr*>(expr.get())) {
+                        call = std::make_unique<CallExpr>(varExpr->name);
+                    } else {
+                        call = std::make_unique<CallExpr>(std::move(expr));
+                    }
+                    
                     if (!typeArgs.empty()) {
                         call->type_arguments = typeArgs;
                     }

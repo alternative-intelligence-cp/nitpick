@@ -359,13 +359,24 @@ std::unique_ptr<Expression> Parser::parseInfix(std::unique_ptr<Expression> left,
             return std::make_unique<BinaryOp>(op.type, std::move(left), std::move(right));
         }
 
-        // --- Call Expression (foo()) ---
+        // --- Call Expression (foo(), p.method(), etc.) ---
         case TOKEN_LEFT_PAREN: {
-            // 'left' is the callee
-            auto call = std::make_unique<CallExpr>(std::move(left));
+            // 'left' is the callee expression (can be identifier, member access, etc.)
+            std::unique_ptr<CallExpr> call;
+            
+            // Check if left is a simple identifier (common case)
+            if (auto* ident = dynamic_cast<Identifier*>(left.get())) {
+                // Simple function call: foo()
+                call = std::make_unique<CallExpr>(ident->name);
+            } else {
+                // Complex callee: p.method(), (get_fn())(), etc.
+                call = std::make_unique<CallExpr>(std::move(left));
+            }
+            
+            // Parse arguments
             if (!check(TOKEN_RIGHT_PAREN)) {
                 do {
-                    call->args.push_back(parseExpression());
+                    call->arguments.push_back(parseExpression());
                 } while (match(TOKEN_COMMA));
             }
             consume(TOKEN_RIGHT_PAREN, "Expected ')' after arguments");

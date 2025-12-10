@@ -1666,7 +1666,14 @@ public:
             }
         }
         
-        Type* returnType = ctx.getLLVMType(node->return_type);
+        // Strip * prefix from return type if present (result wrapper syntax)
+        std::string returnTypeStr = node->return_type;
+        if (!returnTypeStr.empty() && returnTypeStr[0] == '*') {
+            returnTypeStr = returnTypeStr.substr(1);  // Remove leading *
+        }
+        
+        // ALL functions must return result types (TBB requirement)
+        Type* returnType = ctx.getResultType(returnTypeStr);
         
         // ASYNC FUNCTION SUPPORT (Bug #70)
         // Async functions return a coroutine handle (i8*) instead of their declared type
@@ -1722,7 +1729,13 @@ public:
         // SPEC REQUIREMENT: ALL functions return Result objects - enable auto-wrap by default
         // "NO BYPASSING THIS!!! NO REGULAR VALUE RETURNS ALLOWED!!!!" - Section 8.4
         ctx.currentFunctionAutoWrap = true;
-        ctx.currentFunctionReturnType = node->return_type;
+        
+        // Strip * prefix if present (result type wrapper syntax)
+        std::string returnTypeBase = node->return_type;
+        if (!returnTypeBase.empty() && returnTypeBase[0] == '*') {
+            returnTypeBase = returnTypeBase.substr(1);  // Remove leading *
+        }
+        ctx.currentFunctionReturnType = returnTypeBase;
         
         // ASYNC FUNCTION COROUTINE SETUP
         if (node->is_async) {
@@ -2854,9 +2867,98 @@ public:
             // END GENERIC TEMPLATE MONOMORPHIZATION
             // ================================================================
             
-            // Handle function call
+            // ================================================================
+            // MEMBER ACCESS METHOD CALLS
+            // ================================================================
+            // Transform p.method() → StructName_method(p)
+            // Transform Type.method() → StructName_method()
+            // ================================================================
+            
+            if (call->callee) {
+                // Complex callee expression (member access, etc.)
+                if (auto* memberAccess = dynamic_cast<aria::frontend::MemberAccess*>(call->callee.get())) {
+                    // This is a method call: p.method() or Type.method()
+                    
+                    // Determine the struct type
+                    std::string structTypeName;
+                    bool isStaticCall = memberAccess->is_static;
+                    
+                    if (isStaticCall) {
+                        // Static call: Type.method()
+                        // The object is a VarExpr with the type name
+                        if (auto* typeIdent = dynamic_cast<aria::frontend::VarExpr*>(memberAccess->object.get())) {
+                            structTypeName = typeIdent->name;
+                        }
+                    } else {
+                        // Instance call: p.method()
+                        // Need to get the type of the object expression
+                        Value* objValue = visitExpr(memberAccess->object.get());
+                        
+                        // Lookup the object's Aria type from exprTypeMap
+                        if (ctx.exprTypeMap.count(objValue) > 0) {
+                            structTypeName = ctx.exprTypeMap[objValue];
+                        } else {
+                            // Fallback: try to infer from object if it's a VarExpr
+                            if (auto* objIdent = dynamic_cast<aria::frontend::VarExpr*>(memberAccess->object.get())) {
+                                auto* sym = ctx.lookup(objIdent->name);
+                                if (sym) {
+                                    structTypeName = sym->ariaType;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (!structTypeName.empty()) {
+                        // Build mangled method name: StructName_methodName
+                        std::string mangledMethodName = ctx.currentModulePrefix + structTypeName + "_" + memberAccess->member_name;
+                        
+                        // Find the method function
+                        Function* methodFunc = ctx.module->getFunction(mangledMethodName);
+                        
+                        if (methodFunc) {
+                            // Build argument list
+                            std::vector<Value*> args;
+                            
+                            if (!isStaticCall) {
+                                // Instance method: pass object as first argument (self)
+                                Value* objPtr = visitExpr(memberAccess->object.get());
+                                args.push_back(objPtr);
+                            }
+                            
+                            // Add remaining arguments
+                            for (auto& arg : call->arguments) {
+                                args.push_back(visitExpr(arg.get()));
+                            }
+                            
+                            // Generate the call
+                            return ctx.builder->CreateCall(methodFunc, args, "method_call");
+                        } else {
+                            throw std::runtime_error("Method '" + memberAccess->member_name + 
+                                                   "' not found on type '" + structTypeName + "'");
+                        }
+                    } else {
+                        throw std::runtime_error("Unable to determine type for method call '" + memberAccess->member_name + "'");
+                    }
+                } else {
+                    // callee exists but isn't a MemberAccess - might be function pointer, etc.
+                    // For now, just evaluate the callee and try to call it
+                    // This path isn't fully implemented yet
+                    throw std::runtime_error("Complex callee expressions (function pointers, etc.) not yet implemented");
+                }
+            }
+            
+            // ================================================================
+            // END MEMBER ACCESS METHOD CALLS
+            // ================================================================
+            
+            // Handle simple function call by name
             // First check if it's a known builtin mapping
             std::string funcName = call->function_name;
+            
+            // If we have a callee but got here, something went wrong
+            if (call->callee) {
+                throw std::runtime_error("Internal error: CallExpr has callee but it wasn't handled");
+            }
             if (funcName == "print") {
                 funcName = "puts";
             }

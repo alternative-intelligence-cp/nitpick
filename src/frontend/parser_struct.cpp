@@ -27,13 +27,13 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
     expect(TOKEN_KW_STRUCT);
     
     // 5. Expect opening brace
-    expect(TOKEN_LEFT_BRACE);
+    expect(TOKEN_LBRACE);
     
     // 6. Parse fields and methods
     std::vector<StructField> fields;
     std::vector<std::unique_ptr<FuncDecl>> methods;
     
-    while (!check(TOKEN_RIGHT_BRACE) && current.type != TOKEN_EOF) {
+    while (!check(TOKEN_RBRACE) && current.type != TOKEN_EOF) {
         // Peek ahead to determine if this is a field or method
         // Field syntax: name:type,
         // Method syntax: func:name = returnType(...) { ... },
@@ -50,16 +50,14 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
             
             expect(TOKEN_ASSIGN);
             
-            // Parse return type (before the parameter list)
-            Token return_type_tok = current;
-            std::string return_type = return_type_tok.value;
-            advance(); // consume return type
+            // Parse return type (handles * prefix for result types)
+            std::string return_type = parseTypeName();
             
             // Parse parameter list
-            expect(TOKEN_LEFT_PAREN);
+            expect(TOKEN_LPAREN);
             std::vector<FuncParam> params;
             
-            while (!check(TOKEN_RIGHT_PAREN) && current.type != TOKEN_EOF) {
+            while (!check(TOKEN_RPAREN) && current.type != TOKEN_EOF) {
                 // Check for special 'self' parameter
                 if (current.type == TOKEN_IDENTIFIER && current.value == "self") {
                     // self parameter - type is implicitly the struct being defined
@@ -77,12 +75,12 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
                     params.emplace_back(param_type.value, param_name.value, nullptr);
                 }
                 
-                if (!check(TOKEN_RIGHT_PAREN)) {
+                if (!check(TOKEN_RPAREN)) {
                     expect(TOKEN_COMMA);
                 }
             }
             
-            expect(TOKEN_RIGHT_PAREN);
+            expect(TOKEN_RPAREN);
             
             // Parse method body
             auto body = parseBlock();
@@ -99,10 +97,8 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
             
             methods.push_back(std::move(method_decl));
             
-            // Expect comma after method (optional before closing brace)
-            if (!check(TOKEN_RIGHT_BRACE)) {
-                expect(TOKEN_COMMA);
-            }
+            // Check if there's a comma (optional trailing comma)
+            match(TOKEN_COMMA);
             
             continue;
         }
@@ -126,17 +122,17 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
         
         // Handle array types: field: int8[256] or int64[]
         std::string type_name = field_type.value;
-        if (check(TOKEN_LEFT_BRACKET)) {
+        if (check(TOKEN_LBRACKET)) {
             advance(); // consume [
             type_name += "[";
             
             // Check for array size
-            if (!check(TOKEN_RIGHT_BRACKET)) {
+            if (!check(TOKEN_RBRACKET)) {
                 Token size_tok = expect(TOKEN_INT_LITERAL);
                 type_name += size_tok.value;
             }
             
-            expect(TOKEN_RIGHT_BRACKET);
+            expect(TOKEN_RBRACKET);
             type_name += "]";
         }
         
@@ -144,13 +140,13 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
         fields.emplace_back(type_name, field_name.value);
         
         // Expect comma unless this is the last field (next token is })
-        if (!check(TOKEN_RIGHT_BRACE)) {
+        if (!check(TOKEN_RBRACE)) {
             expect(TOKEN_COMMA);
         }
     }
     
     // 7. Expect closing brace
-    expect(TOKEN_RIGHT_BRACE);
+    expect(TOKEN_RBRACE);
     
     // 8. Expect semicolon (end of statement)
     expect(TOKEN_SEMICOLON);
