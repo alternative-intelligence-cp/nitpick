@@ -1,0 +1,168 @@
+// Demo: Matrix Operations with Wild Memory
+// Tests: nested loops, wild allocations, complex calculations, multiple result types
+
+// Error codes:
+// 0 = success
+// 1 = allocation failed
+// 2 = invalid dimensions
+// 3 = index out of bounds
+
+// Create a simple 3x3 identity matrix using wild memory
+func:create_identity_matrix = int64() {
+    wild int64:m00 = 1;
+    wild int64:m01 = 0;
+    wild int64:m02 = 0;
+    wild int64:m10 = 0;
+    wild int64:m11 = 1;
+    wild int64:m12 = 0;
+    wild int64:m20 = 0;
+    wild int64:m21 = 0;
+    wild int64:m22 = 1;
+    
+    // Sum diagonal elements (should be 3)
+    int64:diagonal_sum = m00 + m11 + m22;
+    
+    return {err:0, val:diagonal_sum};
+};
+
+// Multiply two matrices (simplified 2x2)
+func:matrix_multiply_2x2 = int64(int64:a00, int64:a01, int64:a10, int64:a11, int64:b00, int64:b01, int64:b10, int64:b11) {
+    // Result matrix elements
+    int64:c00 = a00 * b00 + a01 * b10;
+    int64:c01 = a00 * b01 + a01 * b11;
+    int64:c10 = a10 * b00 + a11 * b10;
+    int64:c11 = a10 * b01 + a11 * b11;
+    
+    // Return sum of all elements as a test
+    int64:sum = c00 + c01 + c10 + c11;
+    
+    return {err:0, val:sum};
+};
+
+// Calculate dot product of two 3D vectors
+func:vector_dot_product = int64(int64:x1, int64:y1, int64:z1, int64:x2, int64:y2, int64:z2) {
+    int64:dot_res = x1 * x2 + y1 * y2 + z1 * z2;
+    return {err:0, val:dot_res};
+};
+
+// Nested loop computation - calculate sum of products
+func:nested_computation = *int64() {
+    int64:total = 0;
+    int64:i = 0;
+    
+    while(i < 5) {
+        int64:j = 0;
+        while(j < 5) {
+            int64:product = i * j;
+            total = total + product;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    
+    return total;
+};
+
+// Fibonacci using iteration and result types
+func:fibonacci = int64(int64:n) {
+    pick(n) {
+        (0) {
+            return {err:0, val:0};
+        },
+        (1) {
+            return {err:0, val:1};
+        },
+        (*) {
+            int64:a = 0;
+            int64:b = 1;
+            int64:count = 2;
+            
+            while(count <= n) {
+                int64:temp = a + b;
+                a = b;
+                b = temp;
+                count = count + 1;
+            }
+            
+            return {err:0, val:b};
+        }
+    }
+    return {err:0, val:0};
+};
+
+// Factorial with recursion simulation using loop
+func:factorial = int64(int64:n) {
+    pick(n) {
+        (0) {
+            return {err:0, val:1};
+        },
+        (1) {
+            return {err:0, val:1};
+        },
+        (*) {
+            int64:res = 1;
+            int64:i = 2;
+            
+            while(i <= n) {
+                res = res * i;
+                i = i + 1;
+            }
+            
+            return {err:0, val:res};
+        }
+    }
+    return {err:0, val:1};
+};
+
+// Test nested function calls with error propagation
+func:complex_calculation = int64(int64:a, int64:b, int64:c) {
+    // Get fibonacci of a
+    int64:fib_a = fibonacci(a) ? 0;
+    
+    // Get factorial of b
+    int64:fact_b = factorial(b) ? 1;
+    
+    // Calculate dot product with c
+    int64:dot = vector_dot_product(fib_a, fact_b, c, 1, 1, 1) ? 0;
+    
+    return {err:0, val:dot};
+};
+
+func:main = *int64() {
+    print("=== Matrix and Vector Operations Demo ===");
+    
+    // Test identity matrix
+    int64:identity_sum = create_identity_matrix() ? 0;
+    print("Identity matrix diagonal sum calculated");
+    
+    // Test 2x2 matrix multiplication
+    // [[1,2], [3,4]] * [[5,6], [7,8]]
+    int64:mat_result = matrix_multiply_2x2(1, 2, 3, 4, 5, 6, 7, 8) ? 0;
+    print("Matrix multiplication complete");
+    
+    // Test vector dot product
+    // [1,2,3] dot [4,5,6] = 1*4 + 2*5 + 3*6 = 32
+    int64:dot_result = vector_dot_product(1, 2, 3, 4, 5, 6) ? 0;
+    print("Dot product calculated");
+    
+    // Test nested loops
+    int64:nested_result = nested_computation() ? 0;
+    print("Nested computation complete");
+    
+    // Test fibonacci sequence
+    int64:fib5 = fibonacci(5) ? 0;   // Should be 5
+    int64:fib10 = fibonacci(10) ? 0; // Should be 55
+    print("Fibonacci calculations complete");
+    
+    // Test factorial
+    int64:fact5 = factorial(5) ? 1;   // Should be 120
+    int64:fact6 = factorial(6) ? 1;   // Should be 720
+    print("Factorial calculations complete");
+    
+    // Test complex nested calculations
+    int64:complex = complex_calculation(5, 4, 10) ? 0;
+    print("Complex calculation complete");
+    
+    print("All operations complete!");
+    return 0;
+};

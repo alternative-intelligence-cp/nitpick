@@ -1,0 +1,49 @@
+// Test SIMD intrinsic functions (dot, cross, length, normalize)
+{
+func:test_dot_product = void() {
+    print("Testing dot product...");
+    vec4:v1 = vec4(1.0, 2.0, 3.0, 4.0);
+    vec4:v2 = vec4(5.0, 6.0, 7.0, 8.0);
+    
+    // dot(v1, v2) = 1*5 + 2*6 + 3*7 + 4*8 = 5 + 12 + 21 + 32 = 70
+    dot(v1, v2);  // Result: 70.0
+    print("Dot product test passed");
+};
+
+func:test_cross_product = void() {
+    print("Testing cross product...");
+    vec3:a = vec3(1.0, 0.0, 0.0);  // X axis
+    vec3:b = vec3(0.0, 1.0, 0.0);  // Y axis
+    
+    // a × b should equal Z axis (0, 0, 1)
+    cross(a, b);
+    print("Cross product test passed");
+};
+
+func:test_length = void() {
+    print("Testing vector length...");
+    vec3:v = vec3(3.0, 4.0, 0.0);
+    
+    // length = sqrt(3² + 4² + 0²) = sqrt(25) = 5
+    length(v);  // Result: 5.0
+    print("Length test passed");
+};
+
+func:test_normalize = void() {
+    print("Testing vector normalization...");
+    vec3:v = vec3(3.0, 4.0, 0.0);
+    
+    // normalized = (3/5, 4/5, 0) = (0.6, 0.8, 0)
+    normalize(v);  // Result should be unit vector
+    print("Normalize test passed");
+};
+
+func:main = void() {
+    test_dot_product();
+    test_cross_product();
+    test_length();
+    test_normalize();
+    print("All SIMD intrinsic tests completed successfully!");
+};
+}
+}
