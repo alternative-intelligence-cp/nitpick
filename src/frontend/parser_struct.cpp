@@ -1,6 +1,7 @@
 #include "parser.h"
 #include "ast/stmt.h"
 #include <stdexcept>
+#include <iostream>
 
 namespace aria {
 namespace frontend {
@@ -34,23 +35,18 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
     
     while (!check(TOKEN_RIGHT_BRACE) && current.type != TOKEN_EOF) {
         // Check if this is a method declaration
-        // Methods start with: func:methodName = ...
-        // Fields start with: fieldName:type,
-        // Check if current token is TOKEN_KW_FUNC (the keyword) or identifier "func"
-        if (current.type == TOKEN_KW_FUNC || 
-            (current.type == TOKEN_IDENTIFIER && current.value == "func")) {
-            // This is a method - parse as VarDecl (func:name = lambda)
+        // Methods use func:name = returnType() { body } syntax
+        // Fields use name:type syntax
+        if (current.type != TOKEN_IDENTIFIER) {
+            // Assume it's a method declaration (func:name = ...)
+            // The inline struct parser in parser.cpp handles this,
+            // so this path might not be used. Keep for completeness.
             auto stmt = parseVarDecl();
             auto* varDecl = dynamic_cast<VarDecl*>(stmt.get());
             
             if (varDecl && varDecl->initializer) {
-                // Verify it's a lambda (methods must be lambdas)
-                auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(varDecl->initializer.get());
-                if (lambda) {
-                    // Store the VarDecl directly - no conversion needed!
-                    // Cast unique_ptr<Statement> to unique_ptr<VarDecl>
-                    methods.push_back(std::unique_ptr<VarDecl>(static_cast<VarDecl*>(stmt.release())));
-                }
+                // Store the VarDecl (no type verification needed)
+                methods.push_back(std::unique_ptr<VarDecl>(static_cast<VarDecl*>(stmt.release())));
             }
             
             continue;

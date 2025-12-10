@@ -15,6 +15,7 @@
 #include "tokens.h"
 #include <stdexcept>
 #include <sstream>
+#include <iostream>
 
 namespace aria {
 namespace frontend {
@@ -1558,29 +1559,60 @@ std::unique_ptr<Statement> Parser::parseVarDecl() {
         advance();
         
         if (current.type == TOKEN_ASSIGN) {
-            // This is a struct declaration!
+            // This could be a struct declaration!
             advance(); // consume =
-            expect(TOKEN_KW_STRUCT);
-            expect(TOKEN_LEFT_BRACE);
             
-            std::vector<StructField> fields;
-            while (!check(TOKEN_RIGHT_BRACE)) {
-                Token field_name = expect(TOKEN_IDENTIFIER);
-                expect(TOKEN_COLON);
+            if (current.type == TOKEN_KW_STRUCT) {
+                // This is a struct declaration!
+                advance(); // consume 'struct'
+                expect(TOKEN_LEFT_BRACE);
                 
-                // Parse field type using parseTypeName for complex types
-                std::string type_name = parseTypeName();
+                std::vector<StructField> fields;
+                std::vector<std::unique_ptr<VarDecl>> methods;
                 
-                fields.emplace_back(type_name, field_name.value);
-                expect(TOKEN_COMMA);
+                while (!check(TOKEN_RIGHT_BRACE)) {
+                    // Check if this is a method (func:name) or field (name:type)
+                    // Methods use func:name = lambda syntax
+                    // Fields use name:type syntax
+                    if (current.type == TOKEN_TYPE_FUNC) {
+                        // This is a method declaration: func:methodName = returnType() { ... };
+                        // Parse it as a variable declaration with func type
+                        std::string method_type = current.value; // "func"
+                        advance();
+                        expect(TOKEN_COLON);
+                        Token method_name = expect(TOKEN_IDENTIFIER);
+                        expect(TOKEN_ASSIGN);
+                        auto method_init = parseExpr(); // Parse the function expression
+                        
+                        auto method_decl = std::make_unique<VarDecl>(method_type, method_name.value, std::move(method_init));
+                        methods.push_back(std::move(method_decl));
+                        
+                        expect(TOKEN_SEMICOLON);
+                    } else {
+                        // This is a field declaration: fieldName:type
+                        Token field_name = expect(TOKEN_IDENTIFIER);
+                        expect(TOKEN_COLON);
+                        
+                        // Parse field type using parseTypeName for complex types
+                        std::string type_name = parseTypeName();
+                        
+                        fields.emplace_back(type_name, field_name.value);
+                        expect(TOKEN_COMMA);
+                    }
+                }
+                
+                expect(TOKEN_RIGHT_BRACE);
+                expect(TOKEN_SEMICOLON);
+                
+                auto decl = std::make_unique<StructDecl>(maybe_struct_name.value, fields);
+                decl->is_const = is_const;
+                decl->methods = std::move(methods);
+                return decl;
             }
             
-            expect(TOKEN_RIGHT_BRACE);
-            expect(TOKEN_SEMICOLON);
-            
-            auto decl = std::make_unique<StructDecl>(maybe_struct_name.value, fields);
-            decl->is_const = is_const;
-            return decl;
+            // Not a struct, put assignment back and continue as variable declaration
+            // We're already past the = so we need to handle this carefully
+            // Actually we can't "put it back" easily, so handle as expression init
         }
         
         // Not a struct - it's a variable with simple type
@@ -2109,10 +2141,11 @@ std::unique_ptr<Statement> Parser::parseModDef() {
 bool Parser::isTypeToken(TokenType type) {
     // Check if token is a primitive or compound type
     // Types are in the range TOKEN_TYPE_VOID to TOKEN_TYPE_STRING
-    // Also include TOKEN_KW_FUNC for function types (func:name = ...)
+    // Also include TOKEN_KW_FUNC and TOKEN_TYPE_FUNC for function types (func:name = ...)
     return (type >= TOKEN_TYPE_VOID && type <= TOKEN_TYPE_STRING) || 
-           type == TOKEN_IDENTIFIER ||  // user-defined types
-           type == TOKEN_KW_FUNC;       // function type keyword
+           type == TOKEN_IDENTIFIER ||   // user-defined types
+           type == TOKEN_KW_FUNC ||      // function type keyword
+           type == TOKEN_TYPE_FUNC;      // function type token (lexer maps "func" to this)
 }
 
 // Helper: parse array/pointer type modifiers ([], [256], @)

@@ -1,0 +1,25 @@
+{
+// Test struct methods - WP 004 Issue 1
+// Full method call syntax test
+
+const Point = struct {
+    x: flt32,
+    y: flt32,
+    
+    // Method as lambda with explicit Point:self parameter
+    func:distance = (Point:self) => {
+        flt32:dx = self.x * self.x;
+        flt32:dy = self.y * self.y;
+        pass(dx + dy);
+    };
+};
+
+func:main = int32() {
+    Point:p1 = Point{ x: 3.0, y: 4.0 };
+    
+    // Try calling method as free function (this should work with codegen)
+    flt32:d = Point_distance(p1);
+    
+    pass(0);
+};
+}
