@@ -267,6 +267,28 @@ const char* aria_platform_error_string(int error_code, char* buffer, size_t size
  * - Uses clock_gettime for high-res time
  */
 
+// =============================================================================
+// Work Package 005: Platform Abstraction Layer Enhancements
+// =============================================================================
+
+/// Unified file metadata structure
+/// All timestamps are Unix epoch (seconds since 1970-01-01 00:00:00 UTC)
+typedef struct aria_file_stat {
+    uint64_t size;           ///< File size in bytes
+    uint64_t created_time;   ///< Creation time (Unix timestamp)
+    uint64_t modified_time;  ///< Last modification time (Unix timestamp)
+    uint64_t accessed_time;  ///< Last access time (Unix timestamp)
+    int is_directory;        ///< Non-zero if this is a directory
+    int is_readonly;         ///< Non-zero if readonly attribute is set
+} aria_file_stat_t;
+
+/// Get file metadata in a platform-independent way
+/// 
+/// @param path File path (UTF-8 encoded)
+/// @param out Output structure to fill
+/// @return Non-zero on success, zero on error
+int aria_file_stat(const char* path, aria_file_stat_t* out);
+
 #ifdef __cplusplus
 }
 #endif
