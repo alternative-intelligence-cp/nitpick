@@ -356,6 +356,7 @@ CMakeFiles/ariac.dir/src/driver/main.cpp.o: \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/ast/defer.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/ast/loops.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/ast/module.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/ast/stmt.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/borrow_checker.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/escape_analysis.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/../ast.h \
@@ -364,4 +365,5 @@ CMakeFiles/ariac.dir/src/driver/main.cpp.o: \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/../ast/stmt.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../frontend/sema/types.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/driver/../backend/codegen.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/driver/../backend/../frontend/ast.h
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../backend/../frontend/ast.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/driver/../backend/../frontend/ast/stmt.h

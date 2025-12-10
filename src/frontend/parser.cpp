@@ -74,6 +74,11 @@ bool Parser::check(TokenType type) {
     return current.type == type;
 }
 
+// Peek at current token without consuming
+Token Parser::peek() {
+    return current;
+}
+
 // Parse a complete type name, including built-in types, identifiers, and suffixes
 std::string Parser::parseTypeName() {
     std::string typeName;

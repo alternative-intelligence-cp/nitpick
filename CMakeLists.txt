@@ -67,19 +67,24 @@ add_executable(ariac
  src/driver/main.cpp               # Compiler Driver Entry Point
  src/frontend/preprocessor.cpp    # Preprocessor (Macros, Includes, Conditionals)
  src/frontend/lexer.cpp
- src/frontend/parser.cpp           # Core Parser Implementation (all methods consolidated)
- src/frontend/parser_struct.cpp    # Struct declarations
- # src/frontend/parser_decl.cpp      # Variable declarations (merged into parser.cpp)
- # src/frontend/parser_expr.cpp      # Expression parsing (merged into parser.cpp)
- # src/frontend/parser_func.cpp      # Function declarations (merged into parser.cpp)
- # src/frontend/parser_stmt.cpp      # Statement parsing (merged into parser.cpp)
+ src/frontend/parser.cpp           # Core Parser Implementation
+ # src/frontend/parser_decl.cpp    # EXCLUDED: Duplicates with parser.cpp
+ # src/frontend/parser_expr.cpp    # EXCLUDED: Duplicates with parser.cpp
+ # src/frontend/parser_func.cpp    # EXCLUDED: Duplicates with parser.cpp
+ # src/frontend/parser_stmt.cpp    # EXCLUDED: Duplicates with parser.cpp
+ # src/frontend/parser_struct.cpp  # EXCLUDED: Duplicates with parser.cpp
+ src/frontend/parser_trait.cpp     # Trait declarations (WP 005.4)
  src/frontend/sema/borrow_checker.cpp  # Borrow Checker Implementation
  src/frontend/sema/escape_analysis.cpp # Escape Analysis Implementation
  src/frontend/sema/type_checker.cpp    # Type Checking Implementation
- # src/frontend/ast/control_flow.cpp  # TODO: Create when implementing control flow AST nodes
+ src/frontend/sema/trait_checker.cpp   # Trait Type Checking (WP 005.4)
  src/backend/codegen.cpp
  src/backend/codegen_tbb.cpp           # TBB Sticky Error Propagation (v0.0.7 Critical Fix)
  src/backend/tbb_optimizer.cpp         # TBB Optimization Pass (Value Range Propagation)
+ src/backend/tbb_loop_optimizer.cpp    # TBB Loop Optimizer (WP 005.1)
+ src/backend/tbb_interprocedural.cpp   # TBB Interprocedural Analysis (WP 005.2)
+ src/backend/monomorphization.cpp      # Trait Monomorphization Engine (WP 005.4)
+ src/backend/vtable.cpp                # Trait Vtable Generation (WP 005.4)
  src/backend/lowering_ternary.cpp  # AVX-512 Lowering Logic
 )
 

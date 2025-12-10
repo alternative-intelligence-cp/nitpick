@@ -18,6 +18,7 @@
 #include <string>
 #include <memory>
 #include <set>
+#include <map>
 
 namespace aria {
 namespace sema {
@@ -35,6 +36,8 @@ private:
     std::vector<std::string> errors;
     std::shared_ptr<Type> current_expr_type;  // Type of last visited expression
     std::set<std::string> registered_structs;  // Track user-defined struct types
+    std::map<std::string, frontend::TraitDecl*> trait_table;  // Trait registry
+    std::multimap<std::string, frontend::ImplDecl*> impl_table;  // Implementation registry (trait_name -> impls)
 
 public:
     TypeChecker() : symbols(std::make_unique<SymbolTable>()) {
@@ -72,6 +75,8 @@ public:
     // Visitor methods for statements
     void visit(frontend::VarDecl* node) override;
     void visit(frontend::StructDecl* node) override;
+    void visit(frontend::TraitDecl* node) override;
+    void visit(frontend::ImplDecl* node) override;
     void visit(frontend::ReturnStmt* node) override;
     void visit(frontend::IfStmt* node) override;
     void visit(frontend::Block* node) override;

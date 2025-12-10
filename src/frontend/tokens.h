@@ -59,6 +59,8 @@ enum TokenType {
     TOKEN_KW_STRUCT,
     TOKEN_KW_ENUM,
     TOKEN_KW_TYPE,
+    TOKEN_KW_TRAIT,         // Trait declaration
+    TOKEN_KW_IMPL,          // Trait implementation
     TOKEN_KW_MUT,           // Mutable
     TOKEN_KW_IMPORT,
     TOKEN_KW_EXPORT,

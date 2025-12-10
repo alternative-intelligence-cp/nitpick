@@ -278,6 +278,8 @@ Token AriaLexer::nextToken() {
                {"struct", TOKEN_KW_STRUCT},
                {"enum", TOKEN_KW_ENUM},
                {"type", TOKEN_KW_TYPE},
+               {"trait", TOKEN_KW_TRAIT},
+               {"impl", TOKEN_KW_IMPL},
                {"mut", TOKEN_KW_MUT},
                {"pub", TOKEN_KW_PUB},
 

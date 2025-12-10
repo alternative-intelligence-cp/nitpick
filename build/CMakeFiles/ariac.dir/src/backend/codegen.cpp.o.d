@@ -200,6 +200,9 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/stmt.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/../ast.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/expr.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_context.h \
  /usr/lib/llvm-20/include/llvm/IR/LLVMContext.h \
  /usr/lib/llvm-20/include/llvm-c/Types.h \
@@ -355,9 +358,8 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/lib/llvm-20/include/llvm/Analysis/SimplifyQuery.h \
  /usr/lib/llvm-20/include/llvm/Analysis/WithCache.h \
  /usr/lib/llvm-20/include/llvm/Support/KnownBits.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/stmt.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/../ast.h \
- /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/expr.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/monomorphization.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/vtable.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/expr.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/control_flow.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/stmt.h \

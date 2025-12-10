@@ -464,6 +464,78 @@ src/backend/lowering_ternary.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.s
 .PHONY : src/backend/lowering_ternary.cpp.s
 
+src/backend/monomorphization.o: src/backend/monomorphization.cpp.o
+.PHONY : src/backend/monomorphization.o
+
+# target to build an object file
+src/backend/monomorphization.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.o
+.PHONY : src/backend/monomorphization.cpp.o
+
+src/backend/monomorphization.i: src/backend/monomorphization.cpp.i
+.PHONY : src/backend/monomorphization.i
+
+# target to preprocess a source file
+src/backend/monomorphization.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.i
+.PHONY : src/backend/monomorphization.cpp.i
+
+src/backend/monomorphization.s: src/backend/monomorphization.cpp.s
+.PHONY : src/backend/monomorphization.s
+
+# target to generate assembly for a file
+src/backend/monomorphization.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.s
+.PHONY : src/backend/monomorphization.cpp.s
+
+src/backend/tbb_interprocedural.o: src/backend/tbb_interprocedural.cpp.o
+.PHONY : src/backend/tbb_interprocedural.o
+
+# target to build an object file
+src/backend/tbb_interprocedural.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.o
+.PHONY : src/backend/tbb_interprocedural.cpp.o
+
+src/backend/tbb_interprocedural.i: src/backend/tbb_interprocedural.cpp.i
+.PHONY : src/backend/tbb_interprocedural.i
+
+# target to preprocess a source file
+src/backend/tbb_interprocedural.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.i
+.PHONY : src/backend/tbb_interprocedural.cpp.i
+
+src/backend/tbb_interprocedural.s: src/backend/tbb_interprocedural.cpp.s
+.PHONY : src/backend/tbb_interprocedural.s
+
+# target to generate assembly for a file
+src/backend/tbb_interprocedural.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.s
+.PHONY : src/backend/tbb_interprocedural.cpp.s
+
+src/backend/tbb_loop_optimizer.o: src/backend/tbb_loop_optimizer.cpp.o
+.PHONY : src/backend/tbb_loop_optimizer.o
+
+# target to build an object file
+src/backend/tbb_loop_optimizer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.o
+.PHONY : src/backend/tbb_loop_optimizer.cpp.o
+
+src/backend/tbb_loop_optimizer.i: src/backend/tbb_loop_optimizer.cpp.i
+.PHONY : src/backend/tbb_loop_optimizer.i
+
+# target to preprocess a source file
+src/backend/tbb_loop_optimizer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.i
+.PHONY : src/backend/tbb_loop_optimizer.cpp.i
+
+src/backend/tbb_loop_optimizer.s: src/backend/tbb_loop_optimizer.cpp.s
+.PHONY : src/backend/tbb_loop_optimizer.s
+
+# target to generate assembly for a file
+src/backend/tbb_loop_optimizer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.s
+.PHONY : src/backend/tbb_loop_optimizer.cpp.s
+
 src/backend/tbb_optimizer.o: src/backend/tbb_optimizer.cpp.o
 .PHONY : src/backend/tbb_optimizer.o
 
@@ -487,6 +559,30 @@ src/backend/tbb_optimizer.s: src/backend/tbb_optimizer.cpp.s
 src/backend/tbb_optimizer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.s
 .PHONY : src/backend/tbb_optimizer.cpp.s
+
+src/backend/vtable.o: src/backend/vtable.cpp.o
+.PHONY : src/backend/vtable.o
+
+# target to build an object file
+src/backend/vtable.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/vtable.cpp.o
+.PHONY : src/backend/vtable.cpp.o
+
+src/backend/vtable.i: src/backend/vtable.cpp.i
+.PHONY : src/backend/vtable.i
+
+# target to preprocess a source file
+src/backend/vtable.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/vtable.cpp.i
+.PHONY : src/backend/vtable.cpp.i
+
+src/backend/vtable.s: src/backend/vtable.cpp.s
+.PHONY : src/backend/vtable.s
+
+# target to generate assembly for a file
+src/backend/vtable.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/vtable.cpp.s
+.PHONY : src/backend/vtable.cpp.s
 
 src/driver/main.o: src/driver/main.cpp.o
 .PHONY : src/driver/main.o
@@ -560,29 +656,29 @@ src/frontend/parser.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser.cpp.s
 .PHONY : src/frontend/parser.cpp.s
 
-src/frontend/parser_struct.o: src/frontend/parser_struct.cpp.o
-.PHONY : src/frontend/parser_struct.o
+src/frontend/parser_trait.o: src/frontend/parser_trait.cpp.o
+.PHONY : src/frontend/parser_trait.o
 
 # target to build an object file
-src/frontend/parser_struct.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.o
-.PHONY : src/frontend/parser_struct.cpp.o
+src/frontend/parser_trait.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_trait.cpp.o
+.PHONY : src/frontend/parser_trait.cpp.o
 
-src/frontend/parser_struct.i: src/frontend/parser_struct.cpp.i
-.PHONY : src/frontend/parser_struct.i
+src/frontend/parser_trait.i: src/frontend/parser_trait.cpp.i
+.PHONY : src/frontend/parser_trait.i
 
 # target to preprocess a source file
-src/frontend/parser_struct.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.i
-.PHONY : src/frontend/parser_struct.cpp.i
+src/frontend/parser_trait.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_trait.cpp.i
+.PHONY : src/frontend/parser_trait.cpp.i
 
-src/frontend/parser_struct.s: src/frontend/parser_struct.cpp.s
-.PHONY : src/frontend/parser_struct.s
+src/frontend/parser_trait.s: src/frontend/parser_trait.cpp.s
+.PHONY : src/frontend/parser_trait.s
 
 # target to generate assembly for a file
-src/frontend/parser_struct.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_struct.cpp.s
-.PHONY : src/frontend/parser_struct.cpp.s
+src/frontend/parser_trait.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser_trait.cpp.s
+.PHONY : src/frontend/parser_trait.cpp.s
 
 src/frontend/preprocessor.o: src/frontend/preprocessor.cpp.o
 .PHONY : src/frontend/preprocessor.o
@@ -655,6 +751,30 @@ src/frontend/sema/escape_analysis.s: src/frontend/sema/escape_analysis.cpp.s
 src/frontend/sema/escape_analysis.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.s
 .PHONY : src/frontend/sema/escape_analysis.cpp.s
+
+src/frontend/sema/trait_checker.o: src/frontend/sema/trait_checker.cpp.o
+.PHONY : src/frontend/sema/trait_checker.o
+
+# target to build an object file
+src/frontend/sema/trait_checker.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/trait_checker.cpp.o
+.PHONY : src/frontend/sema/trait_checker.cpp.o
+
+src/frontend/sema/trait_checker.i: src/frontend/sema/trait_checker.cpp.i
+.PHONY : src/frontend/sema/trait_checker.i
+
+# target to preprocess a source file
+src/frontend/sema/trait_checker.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/trait_checker.cpp.i
+.PHONY : src/frontend/sema/trait_checker.cpp.i
+
+src/frontend/sema/trait_checker.s: src/frontend/sema/trait_checker.cpp.s
+.PHONY : src/frontend/sema/trait_checker.s
+
+# target to generate assembly for a file
+src/frontend/sema/trait_checker.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/trait_checker.cpp.s
+.PHONY : src/frontend/sema/trait_checker.cpp.s
 
 src/frontend/sema/type_checker.o: src/frontend/sema/type_checker.cpp.o
 .PHONY : src/frontend/sema/type_checker.o
@@ -1127,9 +1247,21 @@ help:
 	@echo "... src/backend/lowering_ternary.o"
 	@echo "... src/backend/lowering_ternary.i"
 	@echo "... src/backend/lowering_ternary.s"
+	@echo "... src/backend/monomorphization.o"
+	@echo "... src/backend/monomorphization.i"
+	@echo "... src/backend/monomorphization.s"
+	@echo "... src/backend/tbb_interprocedural.o"
+	@echo "... src/backend/tbb_interprocedural.i"
+	@echo "... src/backend/tbb_interprocedural.s"
+	@echo "... src/backend/tbb_loop_optimizer.o"
+	@echo "... src/backend/tbb_loop_optimizer.i"
+	@echo "... src/backend/tbb_loop_optimizer.s"
 	@echo "... src/backend/tbb_optimizer.o"
 	@echo "... src/backend/tbb_optimizer.i"
 	@echo "... src/backend/tbb_optimizer.s"
+	@echo "... src/backend/vtable.o"
+	@echo "... src/backend/vtable.i"
+	@echo "... src/backend/vtable.s"
 	@echo "... src/driver/main.o"
 	@echo "... src/driver/main.i"
 	@echo "... src/driver/main.s"
@@ -1139,9 +1271,9 @@ help:
 	@echo "... src/frontend/parser.o"
 	@echo "... src/frontend/parser.i"
 	@echo "... src/frontend/parser.s"
-	@echo "... src/frontend/parser_struct.o"
-	@echo "... src/frontend/parser_struct.i"
-	@echo "... src/frontend/parser_struct.s"
+	@echo "... src/frontend/parser_trait.o"
+	@echo "... src/frontend/parser_trait.i"
+	@echo "... src/frontend/parser_trait.s"
 	@echo "... src/frontend/preprocessor.o"
 	@echo "... src/frontend/preprocessor.i"
 	@echo "... src/frontend/preprocessor.s"
@@ -1151,6 +1283,9 @@ help:
 	@echo "... src/frontend/sema/escape_analysis.o"
 	@echo "... src/frontend/sema/escape_analysis.i"
 	@echo "... src/frontend/sema/escape_analysis.s"
+	@echo "... src/frontend/sema/trait_checker.o"
+	@echo "... src/frontend/sema/trait_checker.i"
+	@echo "... src/frontend/sema/trait_checker.s"
 	@echo "... src/frontend/sema/type_checker.o"
 	@echo "... src/frontend/sema/type_checker.i"
 	@echo "... src/frontend/sema/type_checker.s"

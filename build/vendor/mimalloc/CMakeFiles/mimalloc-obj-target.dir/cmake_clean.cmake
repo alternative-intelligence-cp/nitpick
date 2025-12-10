@@ -1,6 +1,6 @@
 file(REMOVE_RECURSE
   "CMakeFiles/mimalloc-obj-target"
-  "mimalloc-debug.o"
+  "mimalloc.o"
 )
 
 # Per-language clean rules from dependency scanning.

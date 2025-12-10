@@ -41,6 +41,7 @@
 #include "../frontend/preprocessor.h"
 #include "../frontend/lexer.h"
 #include "../frontend/parser.h"
+#include "../frontend/ast/stmt.h"  // For TraitDecl, ImplDecl
 #include "../frontend/sema/borrow_checker.h"
 #include "../frontend/sema/escape_analysis.h"
 #include "../frontend/sema/type_checker.h"
@@ -234,6 +235,27 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // 5.5 Collect Trait Declarations and Implementations
+    // Build trait registry for monomorphization and vtable generation
+    if (Verbose) outs() << "[Phase 3b] Collecting Traits...\n";
+    
+    // Scan AST for trait declarations and implementations
+    std::vector<aria::frontend::TraitDecl*> traitDecls;
+    std::vector<aria::frontend::ImplDecl*> implDecls;
+    
+    for (const auto& stmt : astRoot->statements) {
+        if (auto* traitDecl = dynamic_cast<aria::frontend::TraitDecl*>(stmt.get())) {
+            traitDecls.push_back(traitDecl);
+        } else if (auto* implDecl = dynamic_cast<aria::frontend::ImplDecl*>(stmt.get())) {
+            implDecls.push_back(implDecl);
+        }
+    }
+    
+    if (Verbose && (!traitDecls.empty() || !implDecls.empty())) {
+        outs() << "  Found " << traitDecls.size() << " trait(s) and " 
+               << implDecls.size() << " implementation(s)\n";
+    }
+
     // 6. Semantic Analysis: Borrow Checker
     // Enforces the "Appendage Theory" rules (pinning, wild pointers)
     // See src/frontend/sema/borrow_checker.cpp
@@ -293,9 +315,14 @@ int main(int argc, char** argv) {
 
     if (Verbose) outs() << "Output file: " << outPath << "\n";
 
-    // Generate code
+    // Build trait context for code generation
+    aria::backend::TraitContext traitCtx;
+    traitCtx.traits = traitDecls;
+    traitCtx.impls = implDecls;
+
+    // Generate code with trait support
     bool verifyIR = !NoVerify;  // Verify by default, skip if --no-verify
-    bool codegenSuccess = aria::backend::generate_code(astRoot.get(), outPath, verifyIR);
+    bool codegenSuccess = aria::backend::generate_code(astRoot.get(), outPath, traitCtx, verifyIR);
     
     if (!codegenSuccess) {
         errs() << "\nCode generation failed due to IR verification errors.\n";
