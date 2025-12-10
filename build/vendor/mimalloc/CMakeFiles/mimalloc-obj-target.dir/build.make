@@ -66,14 +66,14 @@ include vendor/mimalloc/CMakeFiles/mimalloc-obj-target.dir/compiler_depend.make
 # Include the progress variables for this target.
 include vendor/mimalloc/CMakeFiles/mimalloc-obj-target.dir/progress.make
 
-vendor/mimalloc/CMakeFiles/mimalloc-obj-target: vendor/mimalloc/mimalloc.o
+vendor/mimalloc/CMakeFiles/mimalloc-obj-target: vendor/mimalloc/mimalloc-debug.o
 
-vendor/mimalloc/mimalloc.o:
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Generating mimalloc.o"
-	cd /home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc && /usr/bin/cmake -E copy /home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc/CMakeFiles/mimalloc-obj.dir/src/static.c.o /home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc/mimalloc.o
+vendor/mimalloc/mimalloc-debug.o:
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Generating mimalloc-debug.o"
+	cd /home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc && /usr/bin/cmake -E copy /home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc/CMakeFiles/mimalloc-obj.dir/src/static.c.o /home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc/mimalloc-debug.o
 
 mimalloc-obj-target: vendor/mimalloc/CMakeFiles/mimalloc-obj-target
-mimalloc-obj-target: vendor/mimalloc/mimalloc.o
+mimalloc-obj-target: vendor/mimalloc/mimalloc-debug.o
 mimalloc-obj-target: vendor/mimalloc/CMakeFiles/mimalloc-obj-target.dir/build.make
 .PHONY : mimalloc-obj-target
 

@@ -108,7 +108,7 @@ test_allocator_EXTERNAL_OBJECTS =
 tests/test_allocator: tests/CMakeFiles/test_allocator.dir/test_allocator.cpp.o
 tests/test_allocator: tests/CMakeFiles/test_allocator.dir/__/src/runtime/memory/allocator.c.o
 tests/test_allocator: tests/CMakeFiles/test_allocator.dir/build.make
-tests/test_allocator: vendor/mimalloc/libmimalloc.a
+tests/test_allocator: vendor/mimalloc/libmimalloc-debug.a
 tests/test_allocator: tests/CMakeFiles/test_allocator.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Linking CXX executable test_allocator"
 	cd /home/randy/._____RANDY_____/REPOS/aria/build/tests && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/test_allocator.dir/link.txt --verbose=$(VERBOSE)

@@ -8,6 +8,8 @@
 #include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <cassert>
+#include <cstdio>
 
 namespace aria {
 namespace frontend {
@@ -221,20 +223,26 @@ std::unique_ptr<Block> Parser::parseBlock() {
         
         // Check for struct declaration: const Name = struct { ... }
         if (current.type == TOKEN_KW_CONST || current.type == TOKEN_IDENTIFIER) {
+            std::cerr << "DEBUG parseBlock: Checking for struct, current=" << current.value 
+                      << " type=" << static_cast<int>(current.type) << std::endl;
             Token saved = current;
             
             if (current.type == TOKEN_KW_CONST) {
                 advance();
+                std::cerr << "DEBUG: After CONST, current=" << current.value << std::endl;
             }
             
             if (current.type == TOKEN_IDENTIFIER) {
                 Token name = current;
                 advance();
+                std::cerr << "DEBUG: After IDENTIFIER, current=" << current.value << std::endl;
                 
                 if (current.type == TOKEN_ASSIGN) {
                     advance();
+                    std::cerr << "DEBUG: After ASSIGN, current=" << current.value << std::endl;
                     
                     if (current.type == TOKEN_KW_STRUCT) {
+                        std::cerr << "DEBUG: Found STRUCT keyword! Calling parseStructDecl()" << std::endl;
                         // This is a struct declaration
                         current = saved;
                         auto structDecl = parseStructDecl();
@@ -247,6 +255,7 @@ std::unique_ptr<Block> Parser::parseBlock() {
             }
             
             // Not a struct, restore and parse as statement
+            std::cerr << "DEBUG: Not a struct, restoring position" << std::endl;
             current = saved;
         }
         
@@ -312,6 +321,42 @@ std::unique_ptr<VarDecl> Parser::parseVarDecl() {
 
 std::unique_ptr<Statement> Parser::parseStmt() {
     // Handle various statement types
+    assert(false && "DEBUG: parseStmt called");
+    printf("DEBUG parseStmt: current=%s (type %d)\n", current.value.c_str(), static_cast<int>(current.type));
+    fflush(stdout);
+    
+    // Struct declaration: const Name = struct { ... }
+    if (current.type == TOKEN_KW_CONST || current.type == TOKEN_IDENTIFIER) {
+        printf("DEBUG parseStmt: Checking struct lookahead\n"); fflush(stdout);
+        Token saved = current;
+        
+        if (current.type == TOKEN_KW_CONST) {
+            advance();
+            printf("DEBUG parseStmt: After const, current=%s\n", current.value.c_str()); fflush(stdout);
+        }
+        
+        if (current.type == TOKEN_IDENTIFIER) {
+            Token name = current;
+            advance();
+            printf("DEBUG parseStmt: After identifier, current=%s\n", current.value.c_str()); fflush(stdout);
+            
+            if (current.type == TOKEN_ASSIGN) {
+                advance();
+                printf("DEBUG parseStmt: After assign, current=%s\n", current.value.c_str()); fflush(stdout);
+                
+                if (current.type == TOKEN_KW_STRUCT) {
+                    // This is a struct declaration
+                    printf("DEBUG parseStmt: FOUND STRUCT! Calling parseStructDecl\n"); fflush(stdout);
+                    current = saved;
+                    return parseStructDecl();
+                }
+            }
+        }
+        
+        // Not a struct, restore position
+        printf("DEBUG parseStmt: Not a struct, restoring\n"); fflush(stdout);
+        current = saved;
+    }
     
     // Variable declaration: type:name = value;
     if (isTypeToken(current.type)) {

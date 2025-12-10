@@ -12,7 +12,7 @@ if(NOT DEFINED CMAKE_INSTALL_CONFIG_NAME)
     string(REGEX REPLACE "^[^A-Za-z0-9_]+" ""
            CMAKE_INSTALL_CONFIG_NAME "${BUILD_TYPE}")
   else()
-    set(CMAKE_INSTALL_CONFIG_NAME "Release")
+    set(CMAKE_INSTALL_CONFIG_NAME "Debug")
   endif()
   message(STATUS "Install configuration: \"${CMAKE_INSTALL_CONFIG_NAME}\"")
 endif()
@@ -43,11 +43,11 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/mimalloc-2.2" TYPE STATIC_LIBRARY FILES "/home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc/libmimalloc.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/mimalloc-2.2" TYPE STATIC_LIBRARY FILES "/home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc/libmimalloc-debug.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  include("/home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc/CMakeFiles/mimalloc-static.dir/install-cxx-module-bmi-Release.cmake" OPTIONAL)
+  include("/home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc/CMakeFiles/mimalloc-static.dir/install-cxx-module-bmi-Debug.cmake" OPTIONAL)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
@@ -68,8 +68,8 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
     unset(_cmake_export_file_changed)
   endif()
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/mimalloc-2.2" TYPE FILE FILES "/home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc/CMakeFiles/Export/a27d3ce921b52c9f46f6b84a202fc7cf/mimalloc.cmake")
-  if(CMAKE_INSTALL_CONFIG_NAME MATCHES "^([Rr][Ee][Ll][Ee][Aa][Ss][Ee])$")
-    file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/mimalloc-2.2" TYPE FILE FILES "/home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc/CMakeFiles/Export/a27d3ce921b52c9f46f6b84a202fc7cf/mimalloc-release.cmake")
+  if(CMAKE_INSTALL_CONFIG_NAME MATCHES "^([Dd][Ee][Bb][Uu][Gg])$")
+    file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/mimalloc-2.2" TYPE FILE FILES "/home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc/CMakeFiles/Export/a27d3ce921b52c9f46f6b84a202fc7cf/mimalloc-debug.cmake")
   endif()
 endif()
 
@@ -98,7 +98,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/mimalloc-2.2" TYPE FILE RENAME "mimalloc.o" FILES "/home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc/CMakeFiles/mimalloc-obj.dir/src/static.c.o")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/mimalloc-2.2" TYPE FILE RENAME "mimalloc-debug.o" FILES "/home/randy/._____RANDY_____/REPOS/aria/build/vendor/mimalloc/CMakeFiles/mimalloc-obj.dir/src/static.c.o")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)

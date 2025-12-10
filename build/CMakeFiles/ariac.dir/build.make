@@ -293,7 +293,7 @@ ariac: /usr/lib/llvm-20/lib/libLLVMX86AsmParser.a
 ariac: /usr/lib/llvm-20/lib/libLLVMX86Desc.a
 ariac: /usr/lib/llvm-20/lib/libLLVMX86Disassembler.a
 ariac: /usr/lib/llvm-20/lib/libLLVMX86Info.a
-ariac: vendor/mimalloc/libmimalloc.a
+ariac: vendor/mimalloc/libmimalloc-debug.a
 ariac: /usr/lib/llvm-20/lib/libLLVMCoroutines.a
 ariac: /usr/lib/llvm-20/lib/libLLVMHipStdPar.a
 ariac: /usr/lib/llvm-20/lib/libLLVMIRPrinter.a
