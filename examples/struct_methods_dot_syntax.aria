@@ -5,20 +5,14 @@ const Point = struct {
     x: flt32,
     y: flt32,
     
-    // Instance method that returns x coordinate
-    func:get_x = *flt32(self) {
-        return 3.14;
-    };
-    
-    // Instance method that returns a value
+    // Instance method that returns a value (result type wraps int8)
     func:get_value = *int8(self) {
         return 42;
     };
     
-    // Method that accesses struct fields
-    func:sum = *flt32(self) {
-        // TODO: Once field access is implemented, this will return self.x + self.y
-        return 5.0;
+    // Another instance method
+    func:get_code = *int8(self) {
+        return 100;
     };
 };
 
@@ -32,7 +26,7 @@ func:main = *int8() {
     
     // Can also call as mangled free functions (explicit syntax)
     result:val = Point_get_value(p);
-    result:x = Point_get_x(p);
+    result:code = Point_get_code(p);
     
     return 0;
 };
