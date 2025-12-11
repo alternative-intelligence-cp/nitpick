@@ -1,0 +1,175 @@
+# RESEARCH TASK: Borrow Checker Implementation for Aria
+
+**Task ID:** research_001_borrow_checker
+**Priority:** CRITICAL
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Time:** 45-60 minutes
+
+---
+
+## PROBLEM STATEMENT
+
+The Aria language specification explicitly requires a "Rust-style borrow checker combined with OPT-OUT garbage collecting" as part of the core features (marked "!! REQUIRED FEATURES, part of core !!"). However, **zero research exists** for this critical safety component.
+
+Without the borrow checker:
+- Wild memory allocations become unsafe
+- Pinning operator (#) has no enforcement mechanism
+- Safe reference operator ($) cannot be validated
+- GC integration with wild/stack memory becomes unreliable
+- "Appendage Theory" (safe references to wild memory) cannot be implemented
+
+This is the **single biggest gap** in the Aria implementation plan.
+
+---
+
+## CONTEXT
+
+### What We Know (From Spec)
+
+**Memory Model**: Aria uses a hybrid system:
+- `gc` - Garbage collected (default, managed)
+- `wild` - Manual memory management (opt-out of GC)
+- `stack` - Stack allocation
+- `wildx` - Executable memory for JIT
+
+**Key Operators**:
+- `#` (pin) - Pin GC object so wild pointers can reference it safely
+- `$` (safe reference) - Create safe reference (borrow checker validates)
+- `@` (address-of) - Get pointer to variable
+
+**Appendage Theory** (from spec):
+> "The managed heap is the 'body' of the program, while the wild heap forms 'appendages.' 
+> The connection points are critical failure zones. Aria's # (pinning) operator is the 
+> surgical screw that fixes the body in place, allowing the appendage to grip it safely."
+
+### What Exists
+
+We have **extensive research** on:
+- Wildx memory management (W^X security)
+- Fat pointer runtime checks for wild allocations
+- GC nursery allocator architecture
+- Memory safety mechanisms
+
+But **nothing** on lifetime analysis and borrow checking.
+
+---
+
+## DELIVERABLES
+
+Please provide comprehensive research and architectural design for:
+
+### 1. Lifetime Analysis Algorithm
+
+**Requirements:**
+- How to track lifetimes across gc/wild/stack boundaries
+- Lifetime inference rules for Aria's syntax
+- How pinning (#) affects lifetime calculations
+- Integration with result type and error handling
+
+**Include:**
+- Algorithmic description (pseudocode or detailed steps)
+- Data structures needed (lifetime annotations, constraint graphs, etc.)
+- Comparison with Rust's approach (what to adopt, what to change for Aria)
+
+### 2. Borrow Checking Rules
+
+**Requirements:**
+- Rules for safe references ($) validation
+- When wild pointers can/cannot reference gc memory
+- How pinning creates valid borrow regions
+- Mutable vs immutable borrow semantics for Aria
+
+**Include:**
+- Complete ruleset with examples
+- Error conditions and violation detection
+- Edge cases (async, closures, generics)
+
+### 3. Integration Strategy
+
+**Requirements:**
+- Where in compiler pipeline (after type checking? separate pass?)
+- AST annotations needed
+- Error message design (how to explain borrow violations)
+- Performance considerations (compile-time cost)
+
+**Include:**
+- Implementation phases (MVP → full system)
+- Testing strategy
+- Migration path (how to add to existing codebase)
+
+---
+
+## RELEVANT SPECIFICATIONS
+
+### From aria_specs.txt
+
+```
+# (pin) memory pinning operator
+$ (safe reference) iteration variable in till loops, safe reference
+
+!! REQUIRED FEATURES, part of core !!
+- rust style borrow checker combined with OPT-OUT garbage collecting via wild keyword 
+  and safe ($) and pinning (#) operators
+```
+
+### Appendage Theory Quote (from AriaInfo.txt)
+
+The spec describes a unique approach where:
+1. GC heap is the "body" (stable, can move during collection)
+2. Wild heap is "appendages" (manual, never moves)
+3. Connection requires pinning to prevent GC moves while wild reference exists
+
+This is **different from Rust** where everything is manual. Aria allows GC objects but must prevent moves when wild pointers reference them.
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Focus Areas:**
+1. How lifetime analysis differs when mixing GC + manual memory
+2. What makes Aria's pinning operator safe vs unsafe
+3. Concrete algorithms for borrow checking (not just theory)
+
+**Deliverable Format:**
+- Provide implementable specifications
+- Include pseudocode or algorithm steps
+- Give examples showing valid/invalid code patterns
+- Reference similar systems (Rust, Swift, etc.) but adapt for Aria's hybrid model
+
+**Key Questions to Answer:**
+- When must an object be pinned?
+- How long does a pin last?
+- Can pinned objects be un-pinned? When?
+- What happens if GC runs while object is pinned?
+- How do closures capture variables across memory boundaries?
+- How does async/await interact with borrowing?
+
+**Avoid:**
+- Generic borrow checker descriptions (we need Aria-specific)
+- Assuming Rust's model works directly (Aria has GC!)
+- Hand-waving on hard problems (closures, async, generics)
+
+---
+
+## SUCCESS CRITERIA
+
+Research is complete when we can:
+1. Implement lifetime analysis pass in the compiler
+2. Write borrow checking rules that prevent unsound code
+3. Generate helpful error messages for violations
+4. Handle all memory model interactions (gc/wild/stack/wildx)
+
+---
+
+## RELATED RESEARCH
+
+Existing research that may inform this work:
+- `workPackage_003_response.txt` - GC Nursery architecture
+- `workPackage_004_response.txt` - Fat pointer runtime checks
+- `Custom Language RWX Memory Allocation.txt` - Wildx memory semantics
+- `AriaInfo.txt` - Appendage Theory description
+
+---
+
+**PRIORITY:** This blocks safe memory management. Consider this the highest priority research task.

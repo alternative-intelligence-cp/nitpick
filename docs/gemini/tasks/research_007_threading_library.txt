@@ -1,0 +1,123 @@
+# RESEARCH TASK: Threading and Concurrency Library
+
+**Task ID:** research_007_threading_library
+**Priority:** HIGH
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Time:** 30-35 minutes
+
+---
+
+## PROBLEM STATEMENT
+
+Aria spec mentions threading but **no concrete research** on concurrency model:
+- Go-style lightweight threading?
+- Traditional OS threads?
+- Work-stealing scheduler?
+- Thread pool management?
+
+Need comprehensive threading library design that complements existing async/await system.
+
+---
+
+## CONTEXT
+
+### Existing Work
+- Async/await implementation (exists in research)
+- Event loop for I/O
+- But no thread-based parallelism research
+
+### Considerations
+- Multi-core utilization
+- Thread synchronization primitives
+- Integration with async system
+- Memory model guarantees
+- Go's goroutines vs Rust's threads
+
+---
+
+## DELIVERABLES
+
+### 1. Threading Model Design
+
+**Requirements:**
+- Thread creation API
+- Lightweight threads vs OS threads
+- Scheduler design (work-stealing?)
+- Thread pooling
+
+**Include:**
+- API function signatures
+- Usage examples
+- Comparison with Go, Rust, Java
+
+### 2. Synchronization Primitives
+
+**Requirements:**
+- Mutexes, RWLocks
+- Condition variables
+- Channels (Go-style?)
+- Semaphores, barriers
+
+**Include:**
+- API design for each primitive
+- Usage patterns
+- Deadlock prevention strategies
+
+### 3. Async/Thread Integration
+
+**Requirements:**
+- How threads interact with async
+- Blocking thread pool for CPU-bound work
+- Switching between async and threaded code
+
+**Include:**
+- Integration patterns
+- Example scenarios
+- Performance considerations
+
+---
+
+## RELEVANT SPECIFICATIONS
+
+From aria_specs.txt:
+```
+(Threading mentioned but not detailed in spec)
+```
+
+Also reference:
+- `/home/randy/._____RANDY_____/REPOS/aria/docs/research/async_await_implementation.md`
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Focus Areas:**
+1. Modern threading patterns (Go, Rust, Tokio)
+2. Work-stealing schedulers
+3. Integration with event loop
+
+**Key Questions:**
+- Should we use M:N threading (like Go)?
+- How to avoid thread-per-task overhead?
+- Channel vs shared memory patterns?
+- How does Tokio handle blocking tasks?
+
+**Deliverable Format:**
+- Threading model proposal
+- API designs with examples
+- Integration strategy with async
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we can:
+1. Design thread API
+2. Choose concurrency model
+3. Plan synchronization primitives
+4. Integrate with async system
+
+---
+
+**PRIORITY:** Important for CPU-bound parallelism

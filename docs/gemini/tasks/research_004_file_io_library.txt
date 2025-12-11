@@ -1,0 +1,123 @@
+# RESEARCH TASK: File I/O Library Design
+
+**Task ID:** research_004_file_io_library
+**Priority:** HIGH
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Time:** 25-30 minutes
+
+---
+
+## PROBLEM STATEMENT
+
+Aria spec lists file I/O functions but we have **no research** on modern file I/O patterns:
+- `readFile(path: string) -> string` - Read entire file
+- `writeFile(path: string, content: string)` - Write entire file
+- `openFile(path: string, mode: string) -> File` - Open for streaming
+
+Need modern, safe file I/O design that integrates with Aria's memory model, error handling (TBB types), and async system.
+
+---
+
+## CONTEXT
+
+### Current Spec Functions
+```
+readFile(path: string) -> string
+writeFile(path: string, content: string)
+openFile(path: string, mode: string) -> File
+```
+
+### Design Considerations
+- TBB error propagation (file not found → tbb32/64)
+- GC vs wild memory for buffers
+- Integration with async/await
+- Cross-platform (Linux, Windows, macOS)
+- Memory-mapped file support?
+
+---
+
+## DELIVERABLES
+
+### 1. File I/O API Design
+
+**Requirements:**
+- Complete API surface for file operations
+- Read/write modes (text, binary, append)
+- Error handling patterns
+- Resource management (RAII-style)
+
+**Include:**
+- Function signatures
+- Usage examples
+- Comparison with Rust, Go, Zig approaches
+
+### 2. Error Handling Strategy
+
+**Requirements:**
+- How file errors map to TBB types
+- Common error conditions
+- Error context/messages
+
+**Include:**
+- Error propagation patterns
+- Example error handling code
+- Integration with `?.` and `??` operators
+
+### 3. Async I/O Integration
+
+**Requirements:**
+- How file I/O integrates with `async`/`await`
+- Non-blocking file operations
+- Streaming large files
+
+**Include:**
+- Async API design
+- Performance considerations
+- Examples of async file operations
+
+---
+
+## RELEVANT SPECIFICATIONS
+
+From aria_specs.txt:
+```
+Built-in Functions:
+  readFile(path: string) -> string
+  writeFile(path: string, content: string)
+  openFile(path: string, mode: string) -> File
+```
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Focus Areas:**
+1. Modern file I/O patterns (2024 best practices)
+2. Safe APIs that prevent resource leaks
+3. Integration with Aria's unique features
+
+**Key Questions:**
+- Should we use RAII, defer, or explicit close()?
+- How do buffered reads/writes work?
+- Memory-mapped files worth supporting?
+- How do other modern languages handle this?
+
+**Deliverable Format:**
+- Concrete API proposals
+- Code examples
+- Comparison with Rust std::fs, Go os package
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we can:
+1. Design complete file I/O API
+2. Define error handling patterns
+3. Integrate with async system
+4. Plan implementation approach
+
+---
+
+**PRIORITY:** Core standard library functionality

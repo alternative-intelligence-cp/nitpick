@@ -1,0 +1,126 @@
+# RESEARCH TASK: Balanced Nonary Arithmetic Implementation
+
+**Task ID:** research_003_balanced_nonary_arithmetic
+**Priority:** CRITICAL
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Time:** 30-45 minutes
+
+---
+
+## PROBLEM STATEMENT
+
+The Aria spec marks balanced nonary types as "NON-NEGOTIABLE":
+- `nit` - Balanced nonary digit: -4 to +4 (NON-NEGOTIABLE!!!)
+- `nyte` - 5 nits stored in uint16 (NON-NEGOTIABLE!!!)
+
+No implementation research exists for nonary (base-9) arithmetic operations. Similar to ternary task but for base-9 with digits -4, -3, -2, -1, 0, 1, 2, 3, 4.
+
+---
+
+## CONTEXT
+
+### Balanced Nonary Basics
+- Uses 9 digits: **-4, -3, -2, -1, 0, 1, 2, 3, 4**
+- Base-9 number system
+- Symmetric around zero
+- More compact than ternary
+
+### Spec Requirements
+```
+nit   - single balanced nonary digit (-4 to +4)
+nyte  - 5 nits = 9^5 = 59,049 values stored in uint16
+```
+
+Interesting: Both `tryte` (10 trits, 3^10) and `nyte` (5 nits, 9^5) = 59,049 values!
+
+---
+
+## DELIVERABLES
+
+### 1. Nonary Arithmetic Algorithms
+
+**Requirements:**
+- Addition algorithm for balanced nonary
+- Subtraction, multiplication, division
+- Handling carries/borrows in base-9
+- Comparison operations
+
+**Include:**
+- Algorithms with digit set {-4, -3, -2, -1, 0, 1, 2, 3, 4}
+- Truth tables or operation matrices
+- Examples showing correctness
+
+### 2. Packing Strategy for nyte
+
+**Requirements:**
+- Pack 5 nits into uint16
+- Efficient unpacking
+- Computational trade-offs
+
+**Include:**
+- Bit layout for 5 base-9 digits
+- Encoding/decoding formulas
+- Performance analysis
+
+### 3. Binary Conversion
+
+**Requirements:**
+- Binary ↔ Balanced nonary conversion
+- Handling negative numbers
+- Edge cases
+
+**Include:**
+- Conversion algorithms
+- Examples and test cases
+- Validation strategy
+
+---
+
+## RELEVANT SPECIFICATIONS
+
+From aria_specs.txt:
+```
+nit !!! IMPORTANT nit is balanced nonary digit (-4,-3,-2,-1,0,1,2,3,4) NOT NEGOTIABLE!!!
+nyte !!! IMPORTANT nyte is 5 nits for 9^5 values stored in uint16 NOT NEGOTIABLE!!!
+```
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Focus Areas:**
+1. Base-9 arithmetic with balanced digits
+2. Efficient packing of 5 nits
+3. Practical implementation strategies
+
+**Key Questions:**
+- How does nonary compare to ternary for efficiency?
+- What's the optimal packing scheme?
+- Are there applications where nonary is preferable to binary/ternary?
+- Can we reuse any ternary algorithms with modifications?
+
+**Deliverable Format:**
+- Concrete algorithms ready to code
+- Include worked examples
+- Compare with ternary where helpful
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we can:
+1. Implement `nit` and `nyte` arithmetic
+2. Convert between binary and nonary
+3. Pack/unpack nytes efficiently
+4. Understand when to use nonary vs ternary
+
+---
+
+## RELATED TASKS
+
+- research_002_balanced_ternary_arithmetic (similar problem space)
+
+---
+
+**PRIORITY:** Core type system, marked NON-NEGOTIABLE

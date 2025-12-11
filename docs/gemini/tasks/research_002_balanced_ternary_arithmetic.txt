@@ -1,0 +1,137 @@
+# RESEARCH TASK: Balanced Ternary Arithmetic Implementation
+
+**Task ID:** research_002_balanced_ternary_arithmetic
+**Priority:** CRITICAL  
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Time:** 30-45 minutes
+
+---
+
+## PROBLEM STATEMENT
+
+The Aria spec marks balanced ternary types as "NON-NEGOTIABLE" multiple times:
+- `trit` - Balanced ternary digit: -1, 0, 1 (NON-NEGOTIABLE!!!)
+- `tryte` - 10 trits stored in uint16 (NON-NEGOTIABLE!!!)
+
+However, we have **zero implementation research** for ternary arithmetic operations. Tokens exist in the lexer, but no algorithms for:
+- Ternary addition/subtraction
+- Ternary multiplication/division
+- Binary ↔ Ternary conversion
+- Packing 10 trits into uint16
+- Arithmetic operations on packed trytes
+
+---
+
+## CONTEXT
+
+### Balanced Ternary Basics
+- Uses digits: **-1 (T), 0 (0), 1 (+)**
+- Symmetric around zero (unlike binary)
+- No separate sign bit needed
+- Natural for representing signed numbers
+
+### Spec Requirements
+```
+trit   - single balanced ternary digit (-1, 0, 1)
+tryte  - 10 trits = 3^10 = 59,049 values stored in uint16
+```
+
+### Storage Format
+- Single `trit`: Likely int8 or custom enum
+- `tryte`: uint16 with 10 trits packed (3^10 = 59,049 < 65,536)
+
+---
+
+## DELIVERABLES
+
+### 1. Ternary Arithmetic Algorithms
+
+**Requirements:**
+- Addition algorithm for balanced ternary
+- Subtraction, multiplication, division
+- Handling carries/borrows in base-3
+- Comparison operations (<, >, ==)
+
+**Include:**
+- Pseudocode or step-by-step algorithms
+- Truth tables for basic operations
+- Example calculations showing correctness
+
+### 2. Packing/Unpacking Strategy
+
+**Requirements:**
+- How to pack 10 trits into uint16
+- Efficient unpacking for operations
+- Whether to compute on packed form or unpack first
+
+**Include:**
+- Bit layout diagram
+- Conversion formulas
+- Performance trade-offs
+
+### 3. Binary Conversion
+
+**Requirements:**
+- Binary integer → Balanced ternary
+- Balanced ternary → Binary integer
+- Handling negative numbers
+- Edge cases (max/min values)
+
+**Include:**
+- Algorithm pseudocode
+- Examples with various inputs
+- Correctness proofs or validation strategy
+
+---
+
+## RELEVANT SPECIFICATIONS
+
+From aria_specs.txt:
+```
+trit !!! IMPORTANT trit is balanced ternary digit (-1,0,1) NOT NEGOTIABLE!!!
+tryte !!! IMPORTANT tryte is 10 trits for 3^10 values stored in uint16 NOT NEGOTIABLE!!!
+```
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Focus Areas:**
+1. Practical algorithms (not just theory)
+2. Efficient implementation strategies
+3. How to handle tryte packed format
+
+**Key Questions:**
+- What's the most efficient packing scheme for 10 trits in uint16?
+- Should arithmetic operate on packed or unpacked form?
+- How do ternary operations compare to binary in performance?
+- Are there existing implementations to reference?
+
+**Deliverable Format:**
+- Provide concrete algorithms ready to implement
+- Include examples and test cases
+- Reference any existing ternary computer research
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we can:
+1. Implement `trit` and `tryte` arithmetic in C++
+2. Convert between binary and ternary
+3. Pack/unpack trytes efficiently
+4. Generate correct results for all operations
+
+---
+
+## RELATED RESEARCH
+
+May reference:
+- Academic papers on ternary computing
+- Historic ternary computer implementations (Setun, etc.)
+- Modern balanced ternary projects
+
+---
+
+**PRIORITY:** Core type system feature marked NON-NEGOTIABLE in spec

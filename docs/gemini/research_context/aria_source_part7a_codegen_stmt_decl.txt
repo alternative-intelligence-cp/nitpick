@@ -1,0 +1,1120 @@
+===================================
+ARIA COMPILER SOURCE - PART 7a of 9
+Backend: Statement & Declaration CodeGen
+===================================
+
+--- src/backend/codegen_stmt.h ---
+////////////////////////////////////////////////////////////////
+// FILE: src/backend/codegen_stmt.h
+// STATUS: NEW (Refactor Task 10 - Gemini Audit #2)
+// PURPOSE: Statement code generation (returns, expression statements, defer)
+////////////////////////////////////////////////////////////////
+#ifndef ARIA_BACKEND_CODEGEN_STMT_H
+#define ARIA_BACKEND_CODEGEN_STMT_H
+
+#include "codegen_fwd.h"
+#include "codegen_context.h"
+#include "../frontend/ast.h"
+#include "../frontend/ast/stmt.h"
+
+namespace aria {
+namespace backend {
+
+// Forward declare the other generators
+class ExprCodeGen;
+
+////////////////////////////////////////////////////////////////
+// Statement Code Generator
+// Handles statement lowering to LLVM IR
+////////////////////////////////////////////////////////////////
+class StmtCodeGen {
+    CodeGenContext& ctx;
+
+public:
+    explicit StmtCodeGen(CodeGenContext& context) : ctx(context) {}
+
+    // Statement generators
+    void visitReturnStmt(frontend::ReturnStmt* node, ExprCodeGen& exprGen, frontend::AstVisitor& visitor);
+    void visitExpressionStmt(frontend::ExpressionStmt* node, ExprCodeGen& exprGen);
+    void visitDeferStmt(frontend::DeferStmt* node);
+    void visitBreakStmt(frontend::BreakStmt* node);
+    void visitContinueStmt(frontend::ContinueStmt* node);
+    void visitFallStmt(frontend::FallStmt* node);
+};
+
+} // namespace backend
+} // namespace aria
+
+#endif // ARIA_BACKEND_CODEGEN_STMT_H
+
+
+
+--- src/backend/codegen_stmt.cpp ---
+////////////////////////////////////////////////////////////////
+// FILE: src/backend/codegen_stmt.cpp
+// STATUS: NEW (Refactor Task 10 - Gemini Audit #2)
+// PURPOSE: Statement code generation (returns, expression statements, defer)
+////////////////////////////////////////////////////////////////
+
+#include "codegen_stmt.h"
+#include "codegen_expr.h"
+#include "../frontend/ast.h"
+#include "../frontend/ast/stmt.h"
+#include "../frontend/ast/expr.h"
+#include "../frontend/ast/defer.h"
+#include "../frontend/ast/control_flow.h"
+#include <llvm/IR/Constants.h>
+
+using namespace llvm;
+
+namespace aria {
+namespace backend {
+
+// =============================================================================
+// Return Statement
+// =============================================================================
+
+void StmtCodeGen::visitReturnStmt(frontend::ReturnStmt* node, ExprCodeGen& exprGen, frontend::AstVisitor& visitor) {
+    // Execute all defers from the current function only (first scope in deferStacks after clear)
+    // We only execute defers from deferStacks[0] since we clear at function entry
+    if (!ctx.deferStacks.empty() && !ctx.deferStacks[0].empty()) {
+        // Execute in LIFO order
+        for (auto it = ctx.deferStacks[0].rbegin(); it != ctx.deferStacks[0].rend(); ++it) {
+            (*it)->accept(visitor);
+        }
+    }
+    
+    // SHADOW STACK: Pop frame before return (after defers, before actual return)
+    FunctionType* popFrameType = FunctionType::get(
+        Type::getVoidTy(ctx.llvmContext),
+        {},
+        false
+    );
+    FunctionCallee popFrameFunc = ctx.module->getOrInsertFunction(
+        "aria_shadow_stack_pop_frame",
+        popFrameType
+    );
+    ctx.builder->CreateCall(popFrameFunc);
+    
+    // ASYNC COROUTINE SPECIAL HANDLING
+    // For async functions, return statements trigger final suspension and return the coroutine handle
+    // The actual return value (if any) is stored in the coroutine frame for the awaiter
+    if (ctx.lookup("__coro_handle__")) {
+        // This is an async function
+        // TODO: Store return value in coroutine frame if present
+        // For now, just perform final suspend and return handle
+        
+        // Get coroutine handle from symbol table
+        auto* hdlSym = ctx.lookup("__coro_handle__");
+        Value* hdlAlloca = hdlSym->val;
+        Value* hdl = ctx.builder->CreateLoad(
+            PointerType::getUnqual(ctx.llvmContext),
+            hdlAlloca,
+            "coro.handle.final"
+        );
+        
+        // Perform final suspend (tells LLVM the coroutine is done)
+        Function* coroSuspend = Intrinsic::getDeclaration(
+            ctx.module.get(),
+            Intrinsic::coro_suspend
+        );
+        
+        // Final suspend (final=true)
+        Value* suspendResult = ctx.builder->CreateCall(coroSuspend, {
+            ConstantTokenNone::get(ctx.llvmContext),
+            ConstantInt::getTrue(ctx.llvmContext)  // final=true
+        }, "final.suspend");
+        
+        // Create switch for final suspend
+        BasicBlock* suspendBB = BasicBlock::Create(ctx.llvmContext, "final.suspend", ctx.currentFunction);
+        BasicBlock* resumeBB = BasicBlock::Create(ctx.llvmContext, "final.resume", ctx.currentFunction);
+        BasicBlock* destroyBB = BasicBlock::Create(ctx.llvmContext, "final.destroy", ctx.currentFunction);
+        
+        SwitchInst* suspendSwitch = ctx.builder->CreateSwitch(suspendResult, suspendBB, 2);
+        suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), resumeBB);
+        suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), destroyBB);
+        
+        // Suspend block (shouldn't happen for final suspend)
+        ctx.builder->SetInsertPoint(suspendBB);
+        ctx.builder->CreateUnreachable();
+        
+        // Resume block (shouldn't happen for final suspend)
+        ctx.builder->SetInsertPoint(resumeBB);
+        ctx.builder->CreateUnreachable();
+        
+        // Destroy block - cleanup and return
+        ctx.builder->SetInsertPoint(destroyBB);
+        Function* coroEnd = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_end);
+        
+        // Need to get the coro.id token from function entry
+        // Search for it in the entry block
+        Value* coroIdToken = nullptr;
+        for (auto& BB : *ctx.currentFunction) {
+            for (auto& I : BB) {
+                if (auto* call = dyn_cast<CallInst>(&I)) {
+                    if (call->getCalledFunction() && 
+                        call->getCalledFunction()->getName() == "llvm.coro.id") {
+                        coroIdToken = call;
+                        break;
+                    }
+                }
+            }
+            if (coroIdToken) break;
+        }
+        
+        ctx.builder->CreateCall(coroEnd, {
+            hdl,
+            ConstantInt::getFalse(ctx.llvmContext),  // unwind = false
+            coroIdToken ? coroIdToken : static_cast<Value*>(ConstantTokenNone::get(ctx.llvmContext))
+        });
+        ctx.builder->CreateRet(hdl);  // Return coroutine handle
+        
+        return;  // Done with async return handling
+    }
+    
+    if (node->value) {
+        // Return with value
+        Value* retVal = exprGen.generate(node->value.get());
+        if (retVal) {
+            Type* expectedReturnType = ctx.currentFunction->getReturnType();
+            
+            // Check if this function uses auto-wrap (*)
+            if (ctx.currentFunctionAutoWrap) {
+                // AUTO-WRAP: Wrap raw value in {err:NULL, val:retVal}
+                // Expected return type is result<T>, need to create the struct
+                
+                StructType* resultType = dyn_cast<StructType>(expectedReturnType);
+                if (!resultType) {
+                    throw std::runtime_error("Auto-wrap function must return result type");
+                }
+                
+                // Check if return value is already a Result struct (from explicit {err:x, val:y})
+                if (retVal->getType() == expectedReturnType) {
+                    // Already a Result - user provided explicit {err:x, val:y}, don't wrap again
+                    ctx.builder->CreateRet(retVal);
+                    return;
+                }
+                
+                // Get expected val field type
+                Type* expectedValType = resultType->getElementType(1);
+                
+                // Type check and cast if needed
+                if (retVal->getType() != expectedValType) {
+                    if (retVal->getType()->isIntegerTy() && expectedValType->isIntegerTy()) {
+                        retVal = ctx.builder->CreateIntCast(retVal, expectedValType, true, "auto_wrap_cast");
+                    } else {
+                        throw std::runtime_error(
+                            "Auto-wrap type mismatch: function declared return type '" + 
+                            ctx.currentFunctionReturnType + "' but return value has different type"
+                        );
+                    }
+                }
+                
+                // Create result struct: {err:0, val:retVal}
+                AllocaInst* resultAlloca = ctx.builder->CreateAlloca(resultType, nullptr, "auto_wrap_result");
+                
+                // Set err = 0 (success)
+                Value* errPtr = ctx.builder->CreateStructGEP(resultType, resultAlloca, 0, "err_ptr");
+                ctx.builder->CreateStore(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), errPtr);
+                
+                // Set val = retVal
+                Value* valPtr = ctx.builder->CreateStructGEP(resultType, resultAlloca, 1, "val_ptr");
+                ctx.builder->CreateStore(retVal, valPtr);
+                
+                // Load and return the struct
+                Value* resultVal = ctx.builder->CreateLoad(resultType, resultAlloca, "result_val");
+                ctx.builder->CreateRet(resultVal);
+            } else {
+                // NO AUTO-WRAP: Return value must already be a result struct
+                // OR function must return a non-result type (void, int, etc.)
+                
+                // Check if expected return type is a result struct
+                StructType* resultType = dyn_cast<StructType>(expectedReturnType);
+                bool expectingResult = resultType && resultType->getName().starts_with("result_");
+                
+                if (expectingResult) {
+                    // Function returns result<T> - return value MUST be a result struct
+                    if (retVal->getType() != expectedReturnType) {
+                        throw std::runtime_error(
+                            "Type error: Function '" + std::string(ctx.currentFunction->getName()) + 
+                            "' returns result<" + ctx.currentFunctionReturnType + 
+                            "> but 'return' statement provides a plain value.\n" +
+                            "Use 'pass(value)' for success or 'fail(errorCode)' for errors.\n" +
+                            "Example: pass(42) or fail(1)"
+                        );
+                    }
+                    // Correct - returning a result struct
+                    ctx.builder->CreateRet(retVal);
+                } else {
+                    // Function returns plain type (void, int, etc.) - allow plain return
+                    // Cast/truncate return value to match function return type if needed
+                    if (retVal->getType() != expectedReturnType) {
+                        if (retVal->getType()->isIntegerTy() && expectedReturnType->isIntegerTy()) {
+                            retVal = ctx.builder->CreateIntCast(retVal, expectedReturnType, true);
+                        }
+                        // If types still don't match, it's an error (should be caught by type checker)
+                    }
+                    ctx.builder->CreateRet(retVal);
+                }
+            }
+        }
+    } else {
+        // Return void
+        ctx.builder->CreateRetVoid();
+    }
+}
+
+// =============================================================================
+// Expression Statement
+// =============================================================================
+
+void StmtCodeGen::visitExpressionStmt(frontend::ExpressionStmt* node, ExprCodeGen& exprGen) {
+    if (node->expression) {
+        exprGen.generate(node->expression.get());
+    }
+}
+
+// =============================================================================
+// Defer Statement (execute before function returns)
+// =============================================================================
+
+void StmtCodeGen::visitDeferStmt(frontend::DeferStmt* node) {
+    // defer { body }
+    // Add the defer block to the stack - it will execute at scope exit
+    if (node->body) {
+        ctx.pushDefer(node->body.get());
+    }
+}
+
+// =============================================================================
+// Break Statement
+// =============================================================================
+
+void StmtCodeGen::visitBreakStmt(frontend::BreakStmt* node) {
+    (void)node;  // Unused parameter
+    if (ctx.currentLoopBreakTarget) {
+        ctx.builder->CreateBr(ctx.currentLoopBreakTarget);
+    }
+}
+
+// =============================================================================
+// Continue Statement
+// =============================================================================
+
+void StmtCodeGen::visitContinueStmt(frontend::ContinueStmt* node) {
+    (void)node;  // Unused parameter
+    if (ctx.currentLoopContinueTarget) {
+        ctx.builder->CreateBr(ctx.currentLoopContinueTarget);
+    }
+}
+
+// =============================================================================
+// Fall Statement (fallthrough in pick/match)
+// =============================================================================
+
+void StmtCodeGen::visitFallStmt(frontend::FallStmt* node) {
+    // fall(label) - explicit fallthrough to labeled case in pick
+    if (!ctx.pickLabelBlocks) {
+        throw std::runtime_error("fall() statement outside of pick statement");
+    }
+    
+    auto it = ctx.pickLabelBlocks->find(node->target_label);
+    if (it == ctx.pickLabelBlocks->end()) {
+        throw std::runtime_error("fall() target label not found: " + node->target_label);
+    }
+    
+    // Check if block is already terminated
+    // LLVM requires exactly one terminator per basic block
+    // If a terminator already exists, subsequent code is unreachable
+    if (ctx.builder->GetInsertBlock()->getTerminator()) {
+        // Block already terminated - create dead_code block for remaining AST
+        Function* func = ctx.builder->GetInsertBlock()->getParent();
+        BasicBlock* deadCode = BasicBlock::Create(ctx.llvmContext, "dead_code", func);
+        ctx.builder->SetInsertPoint(deadCode);
+        return;  // Don't emit branch - block was already sealed
+    }
+    
+    // Create branch to target label
+    ctx.builder->CreateBr(it->second);
+}
+
+} // namespace backend
+} // namespace aria
+
+
+
+--- src/backend/codegen_decl.h ---
+////////////////////////////////////////////////////////////////
+// FILE: src/backend/codegen_decl.h
+// STATUS: NEW (Refactor Task 10 - Gemini Audit #2)
+// PURPOSE: Declaration code generation (memory strategies, WildX security)
+////////////////////////////////////////////////////////////////
+#ifndef ARIA_BACKEND_CODEGEN_DECL_H
+#define ARIA_BACKEND_CODEGEN_DECL_H
+
+#include "codegen_fwd.h"
+#include "codegen_context.h"
+#include "../frontend/ast.h"
+
+#include <llvm/IR/Value.h>
+#include <llvm/IR/IRBuilder.h>
+
+namespace aria {
+namespace backend {
+
+// Forward declare ExprCodeGen to avoid circular dependency
+class ExprCodeGen;
+
+////////////////////////////////////////////////////////////////
+// Declaration Code Generator
+// Handles variable, function, and struct declarations
+////////////////////////////////////////////////////////////////
+class DeclCodeGen {
+    CodeGenContext& ctx;
+
+public:
+    explicit DeclCodeGen(CodeGenContext& context) : ctx(context) {}
+
+    // Declaration visitors
+    void visitVarDecl(frontend::VarDecl* node, ExprCodeGen& exprGen);
+    void visitFuncDecl(frontend::FuncDecl* node, frontend::AstVisitor* visitor);
+    void visitStructDecl(frontend::StructDecl* node, frontend::AstVisitor* visitor);
+    void visitUseStmt(frontend::UseStmt* node);
+    void visitModDef(frontend::ModDef* node, frontend::AstVisitor& visitor);
+    void visitExternBlock(frontend::ExternBlock* node, frontend::AstVisitor& visitor);
+    void visitBlock(frontend::Block* node, frontend::AstVisitor& visitor);
+
+    // Memory allocation strategies - CRITICAL for Appendage Theory
+    llvm::Value* allocateWild(llvm::Type* type, const std::string& name);
+    llvm::Value* allocateWildX(llvm::Type* type, const std::string& name);
+    
+    // WildX Security - CRITICAL FIX from Audit #2
+    void sealWildX(llvm::Value* ptr, llvm::Type* type);
+    
+    // Helper: Determine if type should be stack-allocated
+    bool shouldStackAllocate(const std::string& type, llvm::Type* llvmType);
+};
+
+} // namespace backend
+} // namespace aria
+
+#endif // ARIA_BACKEND_CODEGEN_DECL_H
+
+
+
+--- src/backend/codegen_decl.cpp ---
+////////////////////////////////////////////////////////////////
+// FILE: src/backend/codegen_decl.cpp
+// STATUS: NEW (Refactor Task 10 - Gemini Audit #2)
+// PURPOSE: Declaration code generation (memory strategies, WildX security)
+////////////////////////////////////////////////////////////////
+
+#include "codegen_decl.h"
+#include "codegen_expr.h"
+#include "../frontend/ast.h"
+#include "../frontend/ast/stmt.h"
+#include "../frontend/ast/expr.h"
+#include "../frontend/ast/module.h"
+#include <llvm/IR/DerivedTypes.h>
+
+using namespace llvm;
+
+namespace aria {
+namespace backend {
+
+// =============================================================================
+// Variable Declaration with Memory Strategy Support
+// =============================================================================
+
+void DeclCodeGen::visitVarDecl(frontend::VarDecl* node, ExprCodeGen& exprGen) {
+    // Early return if initializer is a function (for func pointer variables)
+    // This avoids allocating storage when we just want to store the Function* directly
+    if ((node->type == "func" || node->type.find("func<") == 0) && node->initializer) {
+        Value* initVal = exprGen.generate(node->initializer.get());
+        if (initVal && isa<Function>(initVal)) {
+            // Store function directly in symbol table (no memory allocation)
+            ctx.define(node->name, initVal, false, node->type, CodeGenContext::AllocStrategy::VALUE);
+            return;
+        }
+    }
+    
+    Type* llvmType = ctx.getLLVMType(node->type);
+    Value* storage = nullptr;
+    bool is_ref = true;
+
+    // Check if this is a module-level (global) variable
+    bool isModuleScope = (ctx.currentFunction && 
+                         ctx.currentFunction->getName() == "__aria_module_init");
+
+    // Module-level variables must be GlobalVariables for closure capture
+    if (isModuleScope && !node->is_wild && !node->is_stack) {
+        Constant* initializer = nullptr;
+        if (node->initializer) {
+            Value* initVal = exprGen.generate(node->initializer.get());
+            if (auto* constVal = dyn_cast<Constant>(initVal)) {
+                if (constVal->getType() != llvmType) {
+                    if (constVal->getType()->isIntegerTy() && llvmType->isIntegerTy()) {
+                        if (auto* constInt = dyn_cast<ConstantInt>(constVal)) {
+                            initializer = ConstantInt::get(llvmType, constInt->getZExtValue());
+                        } else {
+                            initializer = Constant::getNullValue(llvmType);
+                        }
+                    } else {
+                        initializer = Constant::getNullValue(llvmType);
+                    }
+                } else {
+                    initializer = constVal;
+                }
+            } else {
+                initializer = Constant::getNullValue(llvmType);
+            }
+        } else {
+            initializer = Constant::getNullValue(llvmType);
+        }
+        
+        GlobalVariable* global = new GlobalVariable(
+            *ctx.module,
+            llvmType,
+            false,
+            GlobalValue::InternalLinkage,
+            initializer,
+            node->name
+        );
+        
+        storage = global;
+        ctx.define(node->name, storage, is_ref, node->type, CodeGenContext::AllocStrategy::VALUE);
+        
+        if (node->initializer) {
+            Value* initVal = exprGen.generate(node->initializer.get());
+            if (!isa<Constant>(initVal)) {
+                if (initVal->getType() != llvmType) {
+                    if (initVal->getType()->isIntegerTy() && llvmType->isIntegerTy()) {
+                        initVal = ctx.builder->CreateTrunc(initVal, llvmType);
+                    }
+                }
+                ctx.builder->CreateStore(initVal, global);
+            }
+        }
+        return;
+    }
+
+    // Determine allocation strategy for local variables
+    bool use_stack = node->is_stack || (!node->is_wild && !node->is_wildx && 
+                                        shouldStackAllocate(node->type, llvmType));
+
+    CodeGenContext::AllocStrategy strategy;
+    
+    if (use_stack) {
+        BasicBlock* currentBB = ctx.builder->GetInsertBlock();
+        Function* func = currentBB->getParent();
+        IRBuilder<> tmpBuilder(&func->getEntryBlock(), func->getEntryBlock().begin());
+        storage = tmpBuilder.CreateAlloca(llvmType, nullptr, node->name);
+        strategy = CodeGenContext::AllocStrategy::STACK;
+    } 
+    else if (node->is_wild) {
+        storage = allocateWild(llvmType, node->name);
+        strategy = CodeGenContext::AllocStrategy::WILD;
+    }
+    else if (node->is_wildx) {
+        storage = allocateWildX(llvmType, node->name);
+        strategy = CodeGenContext::AllocStrategy::WILDX;
+    }
+    else {
+        // GC allocation
+        Function* getNursery = ctx.module->getFunction("aria_gc_get_nursery");
+        if (!getNursery) {
+            FunctionType* ft = FunctionType::get(
+                PointerType::getUnqual(ctx.llvmContext), {}, false);
+            getNursery = Function::Create(ft, Function::ExternalLinkage, 
+                                         "aria_gc_get_nursery", ctx.module.get());
+        }
+        Value* nursery = ctx.builder->CreateCall(getNursery, {});
+        
+        uint64_t size = ctx.module->getDataLayout().getTypeAllocSize(llvmType);
+        Value* sizeVal = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), size);
+        
+        Function* allocator = ctx.module->getFunction("aria_gc_alloc");
+        if (!allocator) {
+            FunctionType* ft = FunctionType::get(
+                PointerType::getUnqual(ctx.llvmContext),
+                {PointerType::getUnqual(ctx.llvmContext), Type::getInt64Ty(ctx.llvmContext)},
+                false);
+            allocator = Function::Create(ft, Function::ExternalLinkage,
+                                        "aria_gc_alloc", ctx.module.get());
+        }
+        Value* gcPtr = ctx.builder->CreateCall(allocator, {nursery, sizeVal});
+        
+        storage = ctx.builder->CreateAlloca(PointerType::getUnqual(ctx.llvmContext), nullptr, node->name);
+        ctx.builder->CreateStore(gcPtr, storage);
+        strategy = CodeGenContext::AllocStrategy::GC;
+    }
+
+    ctx.define(node->name, storage, is_ref, node->type, strategy);
+
+    // Initializer
+    if (node->initializer) {
+        Value* initVal = exprGen.generate(node->initializer.get());
+        if (!initVal) return;
+
+        if ((node->type == "func" || node->type.find("func<") == 0) && isa<Function>(initVal)) {
+            ctx.define(node->name, initVal, false, node->type, CodeGenContext::AllocStrategy::VALUE);
+            return;
+        }
+
+        if (initVal->getType() != llvmType) {
+            if (initVal->getType()->isIntegerTy() && llvmType->isIntegerTy()) {
+                initVal = ctx.builder->CreateIntCast(initVal, llvmType, true);
+            }
+        }
+
+        if (use_stack) {
+            ctx.builder->CreateStore(initVal, storage);
+        } else {
+            Value* heapPtr = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), storage);
+            ctx.builder->CreateStore(initVal, heapPtr);
+        }
+    }
+}
+
+// =============================================================================
+// WILD Memory Allocation (Manual Heap)
+// =============================================================================
+
+Value* DeclCodeGen::allocateWild(Type* type, const std::string& name) {
+    uint64_t size = ctx.module->getDataLayout().getTypeAllocSize(type);
+    Value* sizeVal = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), size);
+    
+    // Call runtime allocator: aria_alloc(size) -> void*
+    Function* allocator = ctx.module->getFunction("aria_alloc");
+    if (!allocator) {
+        FunctionType* ft = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext), 
+            {Type::getInt64Ty(ctx.llvmContext)}, 
+            false
+        );
+        allocator = Function::Create(
+            ft, 
+            Function::ExternalLinkage, 
+            "aria_alloc", 
+            ctx.module.get()
+        );
+    }
+
+    Value* rawPtr = ctx.builder->CreateCall(allocator, {sizeVal}, name + "_raw");
+    
+    // Create stack slot to hold the pointer (double-indirection pattern)
+    Value* ptrStorage = ctx.builder->CreateAlloca(
+        PointerType::getUnqual(ctx.llvmContext), 
+        nullptr, 
+        name + "_ptr_storage"
+    );
+    ctx.builder->CreateStore(rawPtr, ptrStorage);
+    
+    return ptrStorage;
+}
+
+// =============================================================================
+// Helper: Determine Stack Allocation Eligibility
+// =============================================================================
+
+bool DeclCodeGen::shouldStackAllocate(const std::string& type, Type* llvmType) {
+    // Primitives that fit in registers should be stack-allocated
+    if (type == "int8" || type == "int16" || type == "int32" || type == "int64" ||
+        type == "uint8" || type == "uint16" || type == "uint32" || type == "uint64" ||
+        type == "bool" || type == "trit" || type == "char") {
+        return true;
+    }
+    
+    // Floating point primitives
+    if (type == "float" || type == "double" || type == "float32" || type == "float64") {
+        return true;
+    }
+    
+    // Small aggregate types (< 128 bytes) can be stack-allocated
+    if (llvmType->isSized()) {
+        uint64_t size = ctx.module->getDataLayout().getTypeAllocSize(llvmType);
+        if (size > 0 && size <= 128) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+// =============================================================================
+// WILDX Memory Allocation - SECURITY CRITICAL
+// =============================================================================
+
+Value* DeclCodeGen::allocateWildX(Type* type, const std::string& name) {
+    // SECURITY CRITICAL: Allocates memory intended for execution
+    // Uses aria_alloc_exec() which maps as RW initially
+    // Memory MUST be sealed with sealWildX() after initialization
+    
+    uint64_t size = ctx.module->getDataLayout().getTypeAllocSize(type);
+    Value* sizeVal = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), size);
+    
+    // Call runtime allocator: aria_alloc_exec(size) -> void* (RW)
+    Function* allocator = ctx.module->getFunction("aria_alloc_exec");
+    if (!allocator) {
+        FunctionType* ft = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext), 
+            {Type::getInt64Ty(ctx.llvmContext)}, 
+            false
+        );
+        allocator = Function::Create(
+            ft, 
+            Function::ExternalLinkage, 
+            "aria_alloc_exec", 
+            ctx.module.get()
+        );
+    }
+
+    Value* rawPtr = ctx.builder->CreateCall(allocator, {sizeVal}, name + "_raw_exec");
+    
+    // Create stack slot to hold the pointer
+    Value* ptrStorage = ctx.builder->CreateAlloca(
+        PointerType::getUnqual(ctx.llvmContext), 
+        nullptr, 
+        name + "_ptr_storage"
+    );
+    ctx.builder->CreateStore(rawPtr, ptrStorage);
+    
+    return ptrStorage;
+}
+
+// =============================================================================
+// WILDX Memory Sealing - SECURITY FIX from Audit #2
+// =============================================================================
+
+void DeclCodeGen::sealWildX(Value* ptr, Type* type) {
+    // SECURITY FIX: Transition memory from RW to RX immediately after init
+    // This enforces Write-XOR-Execute (W^X) policy
+    // Memory is NEVER writable and executable simultaneously
+    
+    uint64_t size = ctx.module->getDataLayout().getTypeAllocSize(type);
+    Value* sizeVal = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), size);
+    
+    // Call runtime protector: aria_mem_protect_exec(ptr, size) -> void
+    // This wraps mprotect(ptr, size, PROT_READ | PROT_EXEC)
+    Function* protector = ctx.module->getFunction("aria_mem_protect_exec");
+    if (!protector) {
+        FunctionType* ft = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            {
+                PointerType::getUnqual(ctx.llvmContext), 
+                Type::getInt64Ty(ctx.llvmContext)
+            },
+            false
+        );
+        protector = Function::Create(
+            ft, 
+            Function::ExternalLinkage, 
+            "aria_mem_protect_exec", 
+            ctx.module.get()
+        );
+    }
+    
+    // Execute the protection transition
+    ctx.builder->CreateCall(protector, {ptr, sizeVal});
+}
+
+// =============================================================================
+// Function and Struct Declarations (Placeholders)
+// =============================================================================
+
+void DeclCodeGen::visitStructDecl(frontend::StructDecl* node, frontend::AstVisitor* visitor) {
+    // Register struct type in LLVM
+    // In Aria, structs are value types defined with: const StructName = struct { fields... };
+    // We create an LLVM StructType and register it for later use
+    
+    // Check if type already exists (avoid duplicates)
+    if (StructType::getTypeByName(ctx.llvmContext, node->name)) {
+        throw std::runtime_error("Struct type '" + node->name + "' already defined");
+    }
+    
+    // Create field types and store field name mappings
+    std::vector<Type*> fieldTypes;
+    std::map<std::string, unsigned> fieldMap;
+    unsigned fieldIndex = 0;
+    
+    for (const auto& field : node->fields) {
+        Type* fieldType = ctx.getLLVMType(field.type);
+        fieldTypes.push_back(fieldType);
+        fieldMap[field.name] = fieldIndex++;
+    }
+    
+    // Create named struct type
+    StructType::create(ctx.llvmContext, fieldTypes, node->name);
+    
+    // Store field mapping for later use in member access
+    ctx.structFieldMaps[node->name] = fieldMap;
+    
+    // Note: We don't need to add to symbol table - struct types are looked up by name
+    // The type system will resolve "Point" to the LLVM StructType when needed
+    
+    // =====================================================================
+    // STRUCT METHODS: Generate as mangled free functions
+    // =====================================================================
+    // Methods defined inside structs are transformed into free functions:
+    // Example: Point.distance(self) -> Point_distance(Point self)
+    // Methods are now stored as FuncDecl nodes
+    if (visitor) {
+        for (auto& methodDecl : node->methods) {
+            // Create mangled name: Point.distance -> Point_distance
+            std::string originalName = methodDecl->name;
+            std::string mangledName = ctx.currentModulePrefix + node->name + "_" + methodDecl->name;
+            
+            // Temporarily change the name for code generation
+            methodDecl->name = mangledName;
+            
+            // Visit the method FuncDecl to generate the function
+            methodDecl->accept(*visitor);
+            
+            // Restore original name
+            methodDecl->name = originalName;
+        }
+    }
+}
+
+// =============================================================================
+// Module Definition
+// =============================================================================
+
+void DeclCodeGen::visitModDef(frontend::ModDef* node, frontend::AstVisitor& visitor) {
+    // Module definition creates a namespace
+    // For LLVM IR, we prefix all symbols with the module name
+    
+    // Save current module prefix
+    std::string previousPrefix = ctx.currentModulePrefix;
+    
+    // Set new prefix: mod_name.
+    if (previousPrefix.empty()) {
+        ctx.currentModulePrefix = node->name + ".";
+    } else {
+        ctx.currentModulePrefix = previousPrefix + node->name + ".";
+    }
+    
+    // Visit module body (requires visitor for recursion)
+    if (node->body) {
+        node->body->accept(visitor);
+    }
+    
+    // Restore previous prefix
+    ctx.currentModulePrefix = previousPrefix;
+}
+
+// =============================================================================
+// Extern Block (C Function Declarations)
+// =============================================================================
+
+void DeclCodeGen::visitExternBlock(frontend::ExternBlock* node, frontend::AstVisitor& visitor) {
+    // Extern blocks declare C functions without generating definitions
+    // Just process the declarations (they should be function declarations)
+    for (auto& decl : node->declarations) {
+        decl->accept(visitor);
+    }
+}
+
+// =============================================================================
+// Block (Statement Sequence)
+// =============================================================================
+
+void DeclCodeGen::visitBlock(frontend::Block* node, frontend::AstVisitor& visitor) {
+    // Process each statement in the block
+    for(auto& s: node->statements) {
+        s->accept(visitor);
+    }
+}
+
+// =============================================================================
+// Use Statement (Module Import)
+// =============================================================================
+
+void DeclCodeGen::visitUseStmt(frontend::UseStmt* node) {
+    // Basic module import support - declare external symbols
+    // Full linking happens at link time with LLVM linker
+    
+    // Create a comment in the IR for documentation
+    std::string comment = "; use " + node->module_path;
+    if (!node->imports.empty()) {
+        comment += ".{";
+        for (size_t i = 0; i < node->imports.size(); ++i) {
+            if (i > 0) comment += ", ";
+            comment += node->imports[i];
+        }
+        comment += "}";
+    }
+    
+    // Add module to a list for later linking (stored in module metadata)
+    auto* stringType = llvm::ArrayType::get(Type::getInt8Ty(ctx.llvmContext), comment.size() + 1);
+    auto* commentGlobal = new GlobalVariable(
+        *ctx.module,
+        stringType,
+        true,  // isConstant
+        GlobalValue::PrivateLinkage,
+        ConstantDataArray::getString(ctx.llvmContext, comment, true),
+        ".use.comment"
+    );
+    commentGlobal->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+    
+    // Store module dependency metadata for linker
+    if (!node->module_path.empty()) {
+        NamedMDNode* moduleDepsMD = ctx.module->getOrInsertNamedMetadata("aria.module.deps");
+        Metadata* pathMD = MDString::get(ctx.llvmContext, node->module_path);
+        
+        // Create tuple with module path and optional import list
+        SmallVector<Metadata*, 2> mdValues;
+        mdValues.push_back(pathMD);
+        
+        if (!node->imports.empty()) {
+            SmallVector<Metadata*, 8> importMDs;
+            for (const auto& imp : node->imports) {
+                importMDs.push_back(MDString::get(ctx.llvmContext, imp));
+            }
+            mdValues.push_back(MDNode::get(ctx.llvmContext, importMDs));
+        }
+        
+        moduleDepsMD->addOperand(MDNode::get(ctx.llvmContext, mdValues));
+    }
+}
+
+////////////////////////////////////////////////////////////////
+// Function Declaration Generation
+////////////////////////////////////////////////////////////////
+
+void DeclCodeGen::visitFuncDecl(frontend::FuncDecl* node, frontend::AstVisitor* visitor) {
+    // Note: Generic function detection and monomorphization happens in CodeGenVisitor
+    // This method only handles concrete function generation
+    
+    // 1. Create function type with optimized parameter passing
+    std::vector<Type*> paramTypes;
+    std::vector<bool> shouldScalarize;  // Track which params to scalarize
+    std::vector<std::vector<Type*>> scalarizedTypes;  // Scalarized field types
+    
+    for (auto& param : node->parameters) {
+        Type* paramType = ctx.getLLVMType(param.type);
+        
+        // OPTIMIZATION: Small Struct Parameter Passing
+        // System V AMD64 ABI allows passing small structs in registers (≤16 bytes)
+        bool shouldOptimize = false;
+        std::vector<Type*> fieldTypes;
+        
+        if (paramType->isStructTy()) {
+            auto* structType = cast<StructType>(paramType);
+            
+            if (structType->isSized()) {
+                uint64_t structSize = ctx.module->getDataLayout().getTypeAllocSize(structType);
+                
+                if (structSize > 0 && structSize <= 16) {
+                    // Scalarize: pass each field as separate parameter
+                    for (unsigned i = 0; i < structType->getNumElements(); ++i) {
+                        Type* fieldType = structType->getElementType(i);
+                        fieldTypes.push_back(fieldType);
+                        paramTypes.push_back(fieldType);
+                    }
+                    shouldOptimize = true;
+                }
+            }
+        }
+        
+        if (!shouldOptimize) {
+            paramTypes.push_back(paramType);
+            shouldScalarize.push_back(false);
+            scalarizedTypes.push_back({});
+        } else {
+            shouldScalarize.push_back(true);
+            scalarizedTypes.push_back(fieldTypes);
+        }
+    }
+    
+    // Strip * prefix from return type if present (result wrapper syntax)
+    std::string returnTypeStr = node->return_type;
+    if (!returnTypeStr.empty() && returnTypeStr[0] == '*') {
+        returnTypeStr = returnTypeStr.substr(1);
+    }
+    
+    // ALL functions must return result types (TBB requirement)
+    Type* returnType = ctx.getResultType(returnTypeStr);
+    
+    // ASYNC FUNCTION SUPPORT: Return coroutine handle instead of declared type
+    if (node->is_async) {
+        returnType = PointerType::getUnqual(ctx.llvmContext);
+    }
+    
+    FunctionType* funcType = FunctionType::get(returnType, paramTypes, false);
+    
+    // 2. Create function with module prefix and mangled name
+    std::string funcName = ctx.currentModulePrefix;
+    if (!ctx.currentMangledName.empty()) {
+        funcName += ctx.currentMangledName;
+    } else {
+        funcName += node->name;
+    }
+    
+    Function* func = Function::Create(
+        funcType,
+        Function::ExternalLinkage,
+        funcName,
+        ctx.module.get()
+    );
+    
+    // Register function in symbol table
+    ctx.define(node->name, func, false);
+    
+    // 3. Set parameter names
+    unsigned idx = 0;
+    for (auto& arg : func->args()) {
+        arg.setName(node->parameters[idx++].name);
+    }
+    
+    // 4. Create entry basic block
+    BasicBlock* entry = BasicBlock::Create(ctx.llvmContext, "entry", func);
+    
+    // 5. Save and set function context
+    Function* prevFunc = ctx.currentFunction;
+    BasicBlock* prevBlock = ctx.builder->GetInsertBlock();
+    bool prevAutoWrap = ctx.currentFunctionAutoWrap;
+    std::string prevReturnType = ctx.currentFunctionReturnType;
+    
+    ctx.currentFunction = func;
+    ctx.builder->SetInsertPoint(entry);
+    
+    // Clear defer stacks for new function
+    ctx.deferStacks = std::vector<std::vector<frontend::Block*>>();
+    ctx.deferStacks.emplace_back();
+    
+    // Enable auto-wrap for Result types
+    ctx.currentFunctionAutoWrap = true;
+    
+    std::string returnTypeBase = node->return_type;
+    if (!returnTypeBase.empty() && returnTypeBase[0] == '*') {
+        returnTypeBase = returnTypeBase.substr(1);
+    }
+    ctx.currentFunctionReturnType = returnTypeBase;
+    
+    // ASYNC FUNCTION COROUTINE SETUP
+    if (node->is_async) {
+        Function* coroId = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_id);
+        Value* id = ctx.builder->CreateCall(coroId, {
+            ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0),
+            ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)),
+            ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)),
+            ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))
+        }, "coro_id");
+        
+        Function* coroSize = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_size, {Type::getInt64Ty(ctx.llvmContext)});
+        Value* frameSize = ctx.builder->CreateCall(coroSize, {}, "coro_size");
+        
+        Function* coroAlloc = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_alloc);
+        Value* needAlloc = ctx.builder->CreateCall(coroAlloc, {id}, "coro_need_alloc");
+        
+        BasicBlock* allocBB = BasicBlock::Create(ctx.llvmContext, "coro_alloc", func);
+        BasicBlock* beginBB = BasicBlock::Create(ctx.llvmContext, "coro_begin", func);
+        ctx.builder->CreateCondBr(needAlloc, allocBB, beginBB);
+        
+        ctx.builder->SetInsertPoint(allocBB);
+        // Note: getOrInsertAriaAlloc should be available via ctx or helper
+        Function* ariaAlloc = ctx.module->getFunction("aria.alloc");
+        if (!ariaAlloc) {
+            FunctionType* allocType = FunctionType::get(
+                PointerType::getUnqual(ctx.llvmContext),
+                {Type::getInt64Ty(ctx.llvmContext)},
+                false
+            );
+            ariaAlloc = Function::Create(allocType, Function::ExternalLinkage, "aria.alloc", ctx.module.get());
+        }
+        Value* allocMem = ctx.builder->CreateCall(ariaAlloc, {frameSize}, "coro_alloc_mem");
+        ctx.builder->CreateBr(beginBB);
+        
+        ctx.builder->SetInsertPoint(beginBB);
+        PHINode* framePhi = ctx.builder->CreatePHI(PointerType::getUnqual(ctx.llvmContext), 2, "coro_frame");
+        framePhi->addIncoming(allocMem, allocBB);
+        framePhi->addIncoming(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), entry);
+        
+        Function* coroBegin = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_begin);
+        Value* hdl = ctx.builder->CreateCall(coroBegin, {id, framePhi}, "coro_hdl");
+        
+        AllocaInst* coroHandleAlloca = ctx.builder->CreateAlloca(
+            PointerType::getUnqual(ctx.llvmContext), nullptr, "__coro_handle");
+        ctx.builder->CreateStore(hdl, coroHandleAlloca);
+        ctx.define("__coro_handle__", coroHandleAlloca, false, "void*");
+    }
+    
+    // 6. Create allocas for parameters (handle scalarization)
+    idx = 0;
+    size_t argIdx = 0;
+    
+    for (size_t paramIdx = 0; paramIdx < node->parameters.size(); ++paramIdx) {
+        auto& param = node->parameters[paramIdx];
+        
+        if (paramIdx < shouldScalarize.size() && shouldScalarize[paramIdx]) {
+            // SCALARIZED STRUCT PARAMETER - reconstruct from fields
+            Type* originalType = ctx.getLLVMType(param.type);
+            auto* structType = cast<StructType>(originalType);
+            
+            AllocaInst* structAlloca = ctx.builder->CreateAlloca(
+                structType, nullptr, param.name + "_reconstructed");
+            
+            for (unsigned fieldIdx = 0; fieldIdx < scalarizedTypes[paramIdx].size(); ++fieldIdx) {
+                auto argIter = func->arg_begin();
+                std::advance(argIter, argIdx + fieldIdx);
+                Value* fieldArg = &*argIter;
+                
+                fieldArg->setName(param.name + "_field" + std::to_string(fieldIdx));
+                
+                Value* fieldPtr = ctx.builder->CreateStructGEP(
+                    structType, structAlloca, fieldIdx,
+                    param.name + "_field" + std::to_string(fieldIdx) + "_ptr");
+                
+                ctx.builder->CreateStore(fieldArg, fieldPtr);
+            }
+            
+            ctx.define(param.name, structAlloca, true, param.type);
+            argIdx += scalarizedTypes[paramIdx].size();
+        } else {
+            // NORMAL PARAMETER
+            auto argIter = func->arg_begin();
+            std::advance(argIter, argIdx);
+            Value* arg = &*argIter;
+            
+            arg->setName(param.name);
+            
+            Type* argType = arg->getType();
+            AllocaInst* alloca = ctx.builder->CreateAlloca(argType, nullptr, param.name);
+            ctx.builder->CreateStore(arg, alloca);
+            ctx.define(param.name, alloca, true, param.type);
+            
+            argIdx++;
+        }
+    }
+    
+    // 7. Generate function body (if visitor provided)
+    if (visitor && node->body) {
+        node->body->accept(*visitor);
+    }
+    
+    // 8. Add missing return if needed
+    if (ctx.builder->GetInsertBlock() && !ctx.builder->GetInsertBlock()->getTerminator()) {
+        Type* returnType = ctx.currentFunction->getReturnType();
+        
+        if (node->is_async) {
+            // Async functions handled separately - will be called by visitor
+            // This ensures AsyncCodeGen module handles the complex coroutine cleanup
+        } else if (returnType->isVoidTy()) {
+            ctx.builder->CreateRetVoid();
+        } else {
+            ctx.builder->CreateRet(Constant::getNullValue(returnType));
+        }
+    }
+    
+    // 9. Restore previous context
+    ctx.currentFunction = prevFunc;
+    ctx.currentFunctionAutoWrap = prevAutoWrap;
+    ctx.currentFunctionReturnType = prevReturnType;
+    if (prevBlock) {
+        ctx.builder->SetInsertPoint(prevBlock);
+    }
+}
+
+} // namespace backend
+} // namespace aria

@@ -1,0 +1,962 @@
+===================================
+ARIA COMPILER SOURCE - PART 6a of 9
+Backend: Code Generation Headers & Context
+===================================
+
+--- src/backend/codegen_fwd.h ---
+////////////////////////////////////////////////////////////////
+// FILE: src/backend/codegen_fwd.h
+// STATUS: NEW (Refactor Task 10 - Gemini Audit #2)
+// PURPOSE: Forward declarations, enums, and shared types
+////////////////////////////////////////////////////////////////
+#ifndef ARIA_BACKEND_CODEGEN_FWD_H
+#define ARIA_BACKEND_CODEGEN_FWD_H
+
+#include <llvm/IR/Value.h>
+#include <llvm/IR/Type.h>
+#include <string>
+
+namespace aria {
+
+// Forward declare frontend AST types
+namespace frontend {
+    class Type;
+}
+
+namespace backend {
+
+// Forward declarations of code generation modules
+class CodeGenContext;
+class CodeGenVisitor;
+class ExprCodeGen;
+class DeclCodeGen;
+class StmtCodeGen;
+class FlowCodeGen;
+
+////////////////////////////////////////////////////////////////
+// Memory Allocation Strategy Enum
+// Implements "Appendage Theory" from Aria memory model
+////////////////////////////////////////////////////////////////
+enum class AllocStrategy {
+    STACK,   // Default: Auto-managed stack allocation
+    WILD,    // Wild pointer (heap, manual management)
+    WILDX,   // Wild executable (RW→RX transition)
+    GC,      // Garbage collected heap allocation
+    VALUE    // Direct value (no pointer)
+};
+
+////////////////////////////////////////////////////////////////
+// Symbol Table Entry
+// Tracks variable metadata for code generation
+////////////////////////////////////////////////////////////////
+struct Symbol {
+    llvm::Value* val;              // LLVM IR value (alloca or loaded value)
+    bool is_ref;                   // True if heap pointer (requires double-indirection)
+    std::string ariaType;          // Aria type metadata (string format)
+    AllocStrategy strategy;        // Memory allocation strategy
+
+    Symbol() 
+        : val(nullptr), is_ref(false), ariaType(""), strategy(AllocStrategy::STACK) {}
+    
+    Symbol(llvm::Value* v, bool ref, const std::string& t, AllocStrategy s)
+        : val(v), is_ref(ref), ariaType(t), strategy(s) {}
+};
+
+} // namespace backend
+} // namespace aria
+
+#endif // ARIA_BACKEND_CODEGEN_FWD_H
+
+
+
+--- src/backend/codegen_context.h ---
+/**
+ * src/backend/codegen_context.h
+ * 
+ * Aria Compiler - Code Generation Context
+ * Version: 0.0.7
+ * 
+ * This header contains the CodeGenContext class and supporting utilities
+ * for LLVM code generation. Extracted from monolithic codegen.cpp as part
+ * of refactoring initiative.
+ * 
+ * Dependencies:
+ * - LLVM 18 Core, IR, Support
+ * - Aria AST Headers
+ */
+
+#ifndef ARIA_BACKEND_CODEGEN_CONTEXT_H
+#define ARIA_BACKEND_CODEGEN_CONTEXT_H
+
+#include "../frontend/ast.h"
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/Function.h>
+#include <stack>
+
+#include <string>
+#include <vector>
+#include <map>
+#include <set>
+#include <memory>
+#include <stack>
+
+using namespace llvm;
+
+namespace aria {
+namespace backend {
+
+// Forward declarations
+class CodeGenVisitor;
+
+// =============================================================================
+// Code Generation Context
+// =============================================================================
+
+/**
+ * CodeGenContext: Central state for LLVM IR generation
+ * 
+ * Manages:
+ * - LLVM context, module, and IR builder
+ * - Symbol table with scoping
+ * - Type mappings (Aria → LLVM)
+ * - Compilation state (current function, return handling, etc.)
+ * - Control flow context (loops, pick statements)
+ * - Module system prefix
+ * - Fat pointer scope tracking (debug builds)
+ */
+class CodeGenContext {
+public:
+    LLVMContext llvmContext;
+    std::unique_ptr<Module> module;
+    std::unique_ptr<IRBuilder<>> builder;
+    
+    // Symbol Table: Maps variable names to LLVM Allocas or Values
+    enum class AllocStrategy { STACK, WILD, WILDX, GC, VALUE };
+    struct Symbol {
+        Value* val;
+        bool is_ref; // Is this a pointer to the value (alloca) or the value itself?
+        std::string ariaType; // Store the Aria type for proper loading
+        AllocStrategy strategy; // How was this allocated?
+    };
+    std::vector<std::map<std::string, Symbol>> scopeStack;
+    
+    // Expression type tracking: Maps LLVM Value* to its Aria type
+    // This is critical for TBB safety - we need to know if a value is TBB to apply sticky error propagation
+    std::map<Value*, std::string> exprTypeMap;
+    
+    // Struct metadata: Maps struct name to field name->index mapping
+    std::map<std::string, std::map<std::string, unsigned>> structFieldMaps;
+
+    // Current compilation state
+    Function* currentFunction = nullptr;
+    BasicBlock* returnBlock = nullptr;
+    Value* returnValue = nullptr; // Pointer to return value storage
+    
+    // Function return type tracking (for result type validation)
+    std::string currentFunctionReturnType = "";  // The VAL type (e.g., "int8")
+    bool currentFunctionAutoWrap = false;         // Whether function uses * auto-wrap
+    
+    // Pick statement context (for fall() statements)
+    std::map<std::string, BasicBlock*>* pickLabelBlocks = nullptr;
+    BasicBlock* pickDoneBlock = nullptr;
+    
+    // Loop context (for break/continue)
+    BasicBlock* currentLoopBreakTarget = nullptr;
+    BasicBlock* currentLoopContinueTarget = nullptr;
+    
+    struct LoopContext {
+        BasicBlock* breakBlock;
+        BasicBlock* continueBlock;
+    };
+    std::stack<LoopContext> loopStack;
+    
+    // Defer statement stack (LIFO execution on scope exit)
+    std::vector<std::vector<frontend::Block*>> deferStacks;  // Stack of defer blocks per scope
+    
+    // Module system
+    std::string currentModulePrefix = "";  // Current module namespace prefix (e.g., "math.")
+    
+    // Fat pointer support (debug builds) - WP 004.3
+    uint64_t current_scope_id = 0;  // Current scope ID for fat pointer generation
+    std::stack<uint64_t> scope_id_stack;  // Stack of scope IDs for proper nesting
+    StructType* fatPointerTy = nullptr;  // Cached fat pointer type (32-byte struct)
+    bool enableSafety = false;  // Runtime flag for safety mode (set from ARIA_ENABLE_SAFETY)
+    
+    // Generic function monomorphization support
+    std::map<std::string, std::string> typeSubstitution;  // Map generic type params to concrete types (T -> int8)
+    std::string currentMangledName = "";  // Current mangled name for specialized function
+    
+    // Module system support
+    std::set<std::string> loadedModules;  // Track which modules have been loaded (prevent circular imports)
+    std::vector<std::string> moduleSearchPaths;  // Directories to search for .aria modules
+    std::string currentSourceFile = "";  // Current file being compiled (for relative imports)
+
+    CodeGenContext(std::string moduleName) {
+        module = std::make_unique<Module>(moduleName, llvmContext);
+        builder = std::make_unique<IRBuilder<>>(llvmContext);
+        pushScope(); // Global scope
+        
+        // Check if safety mode is enabled at compile time
+        #ifdef ARIA_SAFETY_ENABLED
+        enableSafety = true;
+        #else
+        enableSafety = false;
+        #endif
+    }
+    
+    /**
+     * Get the Fat Pointer struct type for safety mode (WP 004.3)
+     * Layout: { i8* ptr, i8* base, i64 size, i64 alloc_id }
+     * Matches struct aria_fat_pointer in fat_pointer.h
+     */
+    StructType* getFatPointerType() {
+        if (fatPointerTy) return fatPointerTy;
+        
+        Type* voidPtr = PointerType::getUnqual(llvmContext);
+        Type* sizeTy = Type::getInt64Ty(llvmContext);
+        Type* idTy = Type::getInt64Ty(llvmContext);
+        
+        // { ptr, base, size, alloc_id }
+        std::vector<Type*> members = { voidPtr, voidPtr, sizeTy, idTy };
+        fatPointerTy = StructType::create(llvmContext, members, "struct.aria_fat_pointer");
+        return fatPointerTy;
+    }
+
+    void pushScope() { 
+        scopeStack.emplace_back(); 
+        deferStacks.emplace_back();  // New defer stack for this scope
+        
+        // For fat pointer support in debug builds
+        // Generate call to aria_scope_enter() and track scope ID
+        #ifdef ARIA_DEBUG
+        // In real implementation, we'd emit IR call to aria_scope_enter()
+        // For now, just increment a counter (placeholder)
+        static uint64_t scope_counter = 1;
+        current_scope_id = scope_counter++;
+        scope_id_stack.push(current_scope_id);
+        #endif
+    }
+    
+    void popScope() { 
+        scopeStack.pop_back(); 
+        if (!deferStacks.empty()) {
+            deferStacks.pop_back();  // Remove defer stack for this scope
+        }
+        
+        // For fat pointer support in debug builds
+        // Generate call to aria_scope_exit(scope_id)
+        #ifdef ARIA_DEBUG
+        if (!scope_id_stack.empty()) {
+            scope_id_stack.pop();
+            current_scope_id = scope_id_stack.empty() ? 0 : scope_id_stack.top();
+        }
+        #endif
+    }
+    
+    // Add a defer block to the current scope
+    void pushDefer(frontend::Block* deferBlock) {
+        if (!deferStacks.empty()) {
+            deferStacks.back().push_back(deferBlock);
+        }
+    }
+    
+    // Execute all defers for the current scope in LIFO order
+    void executeScopeDefers(CodeGenVisitor* visitor);  // Forward declare
+
+    void define(const std::string& name, Value* val, bool is_ref = true, const std::string& ariaType = "", AllocStrategy strategy = AllocStrategy::VALUE) {
+        scopeStack.back()[name] = {val, is_ref, ariaType, strategy};
+    }
+
+    Symbol* lookup(const std::string& name) {
+        for (auto it = scopeStack.rbegin(); it!= scopeStack.rend(); ++it) {
+            auto found = it->find(name);
+            if (found!= it->end()) return &found->second;
+        }
+        return nullptr;
+    }
+
+    // Helper: Map Aria Types to LLVM Types
+    llvm::Type* getLLVMType(const std::string& ariaType) {
+        // Check for generic type parameter substitution (T -> int8, etc.)
+        std::string actualType = ariaType;
+        if (typeSubstitution.count(ariaType) > 0) {
+            actualType = typeSubstitution[ariaType];
+        }
+        
+        // Check for array types: int8[256] or int8[]
+        size_t bracketPos = actualType.find('[');
+        if (bracketPos != std::string::npos) {
+            std::string elemType = actualType.substr(0, bracketPos);
+            std::string sizeStr = actualType.substr(bracketPos + 1);
+            sizeStr = sizeStr.substr(0, sizeStr.find(']'));
+            
+            Type* elementType = getLLVMType(elemType);
+            
+            if (sizeStr.empty()) {
+                // Dynamic array: int8[] - represented as pointer
+                return PointerType::getUnqual(llvmContext);
+            } else {
+                // Fixed-size array: int8[256] - represented as [256 x i8]
+                uint64_t arraySize = std::stoull(sizeStr);
+                return ArrayType::get(elementType, arraySize);
+            }
+        }
+        
+        // Integer types (all bit widths, signed and unsigned)
+        // Note: uint1, uint2, uint4 alias to int1, int2, int4 (not in spec, but user-friendly)
+        if (actualType == "int1" || actualType == "uint1") return Type::getInt1Ty(llvmContext);
+        if (actualType == "int2" || actualType == "uint2") return Type::getIntNTy(llvmContext, 2);
+        if (actualType == "int4" || actualType == "uint4" || actualType == "nit") return Type::getIntNTy(llvmContext, 4);
+        if (actualType == "int8" || actualType == "uint8" || actualType == "byte" || actualType == "trit") 
+            return Type::getInt8Ty(llvmContext);
+        if (actualType == "int16" || actualType == "uint16" || actualType == "tryte" || actualType == "nyte") 
+            return Type::getInt16Ty(llvmContext);
+        if (actualType == "int32" || actualType == "uint32") return Type::getInt32Ty(llvmContext);
+        if (actualType == "int64" || actualType == "uint64") return Type::getInt64Ty(llvmContext);
+        if (actualType == "int128" || actualType == "uint128") return Type::getInt128Ty(llvmContext);
+        if (actualType == "int256" || actualType == "uint256") return Type::getIntNTy(llvmContext, 256);
+        if (actualType == "int512" || actualType == "uint512") return Type::getIntNTy(llvmContext, 512);
+        
+        // Twisted Balanced Binary (TBB) types - symmetric range with error sentinel
+        // tbb8: [-127, +127] with -128 (0x80) as ERR
+        // tbb16: [-32767, +32767] with -32768 (0x8000) as ERR
+        // tbb32: [-2147483647, +2147483647] with -2147483648 (0x80000000) as ERR
+        // tbb64: [-9223372036854775807, +9223372036854775807] with min as ERR
+        // NOTE: Storage representation is identical to standard int types (two's complement)
+        // Semantic difference is in arithmetic operations and range validation
+        if (actualType == "tbb8") return Type::getInt8Ty(llvmContext);
+        if (actualType == "tbb16") return Type::getInt16Ty(llvmContext);
+        if (actualType == "tbb32") return Type::getInt32Ty(llvmContext);
+        if (actualType == "tbb64") return Type::getInt64Ty(llvmContext);
+        
+        // Float types (all bit widths)
+        if (actualType == "float" || actualType == "flt32") 
+            return Type::getFloatTy(llvmContext);
+        if (actualType == "double" || actualType == "flt64") 
+            return Type::getDoubleTy(llvmContext);
+        if (actualType == "flt128") return Type::getFP128Ty(llvmContext);
+        if (actualType == "flt256") return Type::getFP128Ty(llvmContext);  // LLVM max is fp128, use for now
+        if (actualType == "flt512") return Type::getFP128Ty(llvmContext);  // LLVM max is fp128, use for now
+        
+        // SIMD Vector types - map to LLVM fixed vector types for hardware acceleration
+        // vec2: 2-element float vector -> <2 x float>  (SSE, NEON compatible)
+        // vec3: 3-element float vector -> <4 x float>  (padded to 4 for alignment)
+        // vec4: 4-element float vector -> <4 x float>  (SSE, NEON, AVX compatible)
+        // These enable automatic vectorization and SIMD instruction generation
+        if (actualType == "vec2") return FixedVectorType::get(Type::getFloatTy(llvmContext), 2);
+        if (actualType == "vec3") return FixedVectorType::get(Type::getFloatTy(llvmContext), 4);  // Padded to 4
+        if (actualType == "vec4") return FixedVectorType::get(Type::getFloatTy(llvmContext), 4);
+        
+        // Double-precision vector types for high-precision scientific computing
+        if (actualType == "dvec2") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 2);
+        if (actualType == "dvec3") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 4);  // Padded to 4
+        if (actualType == "dvec4") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 4);
+        
+        // Integer vector types for data processing and bit manipulation
+        if (actualType == "ivec2") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 2);
+        if (actualType == "ivec3") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 4);  // Padded to 4
+        if (actualType == "ivec4") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 4);
+        
+        // Unsigned integer vector types
+        if (actualType == "uvec2") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 2);
+        if (actualType == "uvec3") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 4);  // Padded to 4
+        if (actualType == "uvec4") return FixedVectorType::get(Type::getInt32Ty(llvmContext), 4);
+        
+        // Boolean vector types
+        if (actualType == "bvec2") return FixedVectorType::get(Type::getInt1Ty(llvmContext), 2);
+        if (actualType == "bvec3") return FixedVectorType::get(Type::getInt1Ty(llvmContext), 4);  // Padded to 4
+        if (actualType == "bvec4") return FixedVectorType::get(Type::getInt1Ty(llvmContext), 4);
+        
+        // Matrix types (stored as vectors for SIMD efficiency)
+        // Square matrices
+        if (actualType == "mat2") return FixedVectorType::get(Type::getFloatTy(llvmContext), 4);   // 2x2 = 4 floats
+        if (actualType == "mat3") return FixedVectorType::get(Type::getFloatTy(llvmContext), 9);   // 3x3 = 9 floats
+        if (actualType == "mat4") return FixedVectorType::get(Type::getFloatTy(llvmContext), 16);  // 4x4 = 16 floats
+        
+        // Non-square matrices
+        if (actualType == "mat2x3") return FixedVectorType::get(Type::getFloatTy(llvmContext), 6);
+        if (actualType == "mat2x4") return FixedVectorType::get(Type::getFloatTy(llvmContext), 8);
+        if (actualType == "mat3x2") return FixedVectorType::get(Type::getFloatTy(llvmContext), 6);
+        if (actualType == "mat3x4") return FixedVectorType::get(Type::getFloatTy(llvmContext), 12);
+        if (actualType == "mat4x2") return FixedVectorType::get(Type::getFloatTy(llvmContext), 8);
+        if (actualType == "mat4x3") return FixedVectorType::get(Type::getFloatTy(llvmContext), 12);
+        
+        // Double-precision matrices
+        if (actualType == "dmat2") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 4);
+        if (actualType == "dmat3") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 9);
+        if (actualType == "dmat4") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 16);
+        
+        if (actualType == "dmat2x3") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 6);
+        if (actualType == "dmat2x4") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 8);
+        if (actualType == "dmat3x2") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 6);
+        if (actualType == "dmat3x4") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 12);
+        if (actualType == "dmat4x2") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 8);
+        if (actualType == "dmat4x3") return FixedVectorType::get(Type::getDoubleTy(llvmContext), 12);
+        
+        if (actualType == "void") return Type::getVoidTy(llvmContext);
+        
+        // Dynamic type (GC-allocated catch-all)
+        if (actualType == "dyn") return PointerType::getUnqual(llvmContext);
+        
+        // Result type: struct with err (ptr) and val (T) fields
+        // Generic result type without val type specified - use default i64
+        if (actualType == "result" || actualType == "Result") {
+            return getResultType("int64");
+        }
+        
+        // Pointers (opaque in LLVM 18)
+        // We return ptr for strings, arrays, objects
+        return PointerType::getUnqual(llvmContext);
+    }
+    
+    // Get or create parametric result type: result<valType>
+    // Creates a struct { i8 err, T val } where T is the val type
+    // err: uint8 semantics - 0 = success, 1-255 = error codes (C-style)
+    // Note: LLVM uses i8 for both signed/unsigned - semantics determined by operations
+    // Each unique val type gets its own struct: result_int8, result_int32, etc.
+    // Special case: result<void> is just i8 (error code only, no value)
+    Type* getResultType(const std::string& valTypeName) {
+        // Special case: void results are just the error code
+        if (valTypeName == "void") {
+            return Type::getInt8Ty(llvmContext);  // Just the error byte
+        }
+        
+        // Generate unique name for this result variant
+        std::string structName = "result_" + valTypeName;
+        
+        // Try to get existing type first (avoid duplicates)
+        if (auto* existing = StructType::getTypeByName(llvmContext, structName)) {
+            return existing;
+        }
+        
+        // Get the LLVM type for the val field
+        Type* valType = getLLVMType(valTypeName);
+        
+        // Create new named struct: { i8 err, T val }
+        std::vector<Type*> fields;
+        fields.push_back(Type::getInt8Ty(llvmContext));  // err field (always i8, 0=success)
+        fields.push_back(valType);                        // val field (type-specific)
+        
+        return StructType::create(llvmContext, fields, structName);
+    }
+    
+    // Parse function signature from type string
+    // Format: "func<returnType(param1Type,param2Type,...)>"
+    // Returns FunctionType, or nullptr if not a function signature
+    FunctionType* parseFunctionSignature(const std::string& typeStr) {
+        // Check if it's a function signature
+        if (typeStr.find("func<") != 0) {
+            return nullptr;  // Not a function signature
+        }
+        
+        // Find the return type (between < and ()
+        size_t ltPos = typeStr.find('<');
+        size_t parenPos = typeStr.find('(');
+        if (ltPos == std::string::npos || parenPos == std::string::npos) {
+            return nullptr;
+        }
+        
+        std::string returnTypeStr = typeStr.substr(ltPos + 1, parenPos - ltPos - 1);
+        Type* returnType = getLLVMType(returnTypeStr);
+        
+        // Parse parameter types (between ( and ))
+        size_t endParenPos = typeStr.find(')');
+        if (endParenPos == std::string::npos) {
+            return nullptr;
+        }
+        
+        std::string paramsStr = typeStr.substr(parenPos + 1, endParenPos - parenPos - 1);
+        std::vector<Type*> paramTypes;
+        
+        if (!paramsStr.empty()) {
+            // Split by comma
+            size_t start = 0;
+            while (start < paramsStr.length()) {
+                size_t comma = paramsStr.find(',', start);
+                if (comma == std::string::npos) {
+                    comma = paramsStr.length();
+                }
+                
+                std::string paramTypeStr = paramsStr.substr(start, comma - start);
+                paramTypes.push_back(getLLVMType(paramTypeStr));
+                
+                start = comma + 1;
+            }
+        }
+        
+        return FunctionType::get(returnType, paramTypes, false);
+    }
+};
+
+// =============================================================================
+// RAII Scope Guard for Symbol Table Management
+// =============================================================================
+
+/**
+ * ScopeGuard: RAII wrapper for scope management
+ * 
+ * Ensures popScope() is called even if exceptions occur or early returns happen.
+ * This prevents scope leaks in the symbol table.
+ * 
+ * Usage:
+ *   {
+ *       ScopeGuard guard(ctx);
+ *       // ... code that uses the scope ...
+ *   } // popScope() automatically called here
+ */
+class ScopeGuard {
+    CodeGenContext& ctx;
+public:
+    ScopeGuard(CodeGenContext& c) : ctx(c) { ctx.pushScope(); }
+    ~ScopeGuard() { ctx.popScope(); }
+    // Prevent copying to avoid double-pop
+    ScopeGuard(const ScopeGuard&) = delete;
+    ScopeGuard& operator=(const ScopeGuard&) = delete;
+};
+
+} // namespace backend
+} // namespace aria
+
+#endif // ARIA_BACKEND_CODEGEN_CONTEXT_H
+
+
+
+--- src/backend/codegen.h ---
+#ifndef ARIA_BACKEND_CODEGEN_H
+#define ARIA_BACKEND_CODEGEN_H
+
+#include "../frontend/ast.h"
+#include "../frontend/ast/stmt.h"
+#include <string>
+#include <vector>
+
+namespace aria {
+namespace backend {
+
+// Trait context for code generation
+struct TraitContext {
+    std::vector<frontend::TraitDecl*> traits;
+    std::vector<frontend::ImplDecl*> impls;
+};
+
+// Generate LLVM IR Code from AST
+// Outputs to the specified filename
+// Returns true if successful, false if verification fails
+bool generate_code(frontend::Block* root, const std::string& filename, bool verify = true);
+
+// Generate LLVM IR Code from AST with trait support
+// Outputs to the specified filename
+// Returns true if successful, false if verification fails
+bool generate_code(frontend::Block* root, const std::string& filename, const TraitContext& traitCtx, bool verify = true);
+
+} // namespace backend
+} // namespace aria
+
+#endif // ARIA_BACKEND_CODEGEN_H
+
+
+
+--- src/backend/codegen.cpp ---
+/**
+ * src/backend/codegen.cpp
+ * 
+ * Aria Compiler - LLVM Code Generation Backend
+ * Version: 0.0.9 (Clean Architecture)
+ * 
+ * This is the main dispatcher that coordinates specialized code generators.
+ * All heavy lifting is delegated to modular subsystems:
+ * - ExprCodeGen: Expression code generation
+ * - LambdaCodeGen: Lambda and closure handling
+ * - StmtCodeGen: Statement code generation
+ * - DeclCodeGen: Declaration code generation
+ * - ControlFlowCodeGen: Control flow constructs
+ * - AsyncCodeGen: Async/await and spawn
+ * 
+ * This file contains ONLY:
+ * 1. The CodeGenVisitor class (thin dispatcher)
+ * 2. Generic function monomorphization (unique feature)
+ * 3. Top-level code generation entry points
+ */
+
+#include "codegen.h"
+#include "codegen_context.h"
+#include "codegen_expr.h"
+#include "codegen_lambda.h"
+#include "codegen_stmt.h"
+#include "codegen_decl.h"
+#include "codegen_control_flow.h"
+#include "codegen_async.h"
+#include "codegen_flow.h"
+#include "codegen_tbb.h"
+#include "tbb_optimizer.h"
+#include "monomorphization.h"
+#include "vtable.h"
+#include "../frontend/ast.h"
+#include "../frontend/ast/stmt.h"
+#include "../frontend/ast/expr.h"
+#include "../frontend/ast/control_flow.h"
+#include "../frontend/ast/loops.h"
+#include "../frontend/ast/defer.h"
+#include "../frontend/ast/module.h"
+#include "../frontend/tokens.h"
+#include <iostream>
+
+// LLVM Includes
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/InlineAsm.h>
+#include <llvm/IR/Intrinsics.h>
+#include <llvm/IR/Metadata.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/Linker/Linker.h>
+#include <llvm/IRReader/IRReader.h>
+#include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetOptions.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Passes/PassBuilder.h>
+#include <llvm/Analysis/LoopAnalysisManager.h>
+#include <llvm/Analysis/CGSCCPassManager.h>
+
+#include <vector>
+#include <map>
+#include <stack>
+
+using namespace llvm;
+
+namespace aria {
+namespace backend {
+
+// Import frontend types
+using aria::frontend::AstVisitor;
+using aria::frontend::Block;
+using aria::frontend::VarDecl;
+using aria::frontend::StructDecl;
+using aria::frontend::FuncDecl;
+using aria::frontend::FuncParam;
+using aria::frontend::CallExpr;
+using aria::frontend::BinaryOp;
+
+// =============================================================================
+// Main Code Generator Visitor (Dispatcher Pattern)
+// =============================================================================
+
+class CodeGenVisitor : public AstVisitor {
+    CodeGenContext& ctx;
+    
+    // Modular code generators (delegated subsystems)
+    ExprCodeGen exprGen;
+    LambdaCodeGen lambdaGen;
+    StmtCodeGen stmtGen;
+    DeclCodeGen declGen;
+    ControlFlowCodeGen controlFlowGen;
+    FlowCodeGen flowGen;
+    AsyncCodeGen asyncGen;
+    
+    // -------------------------------------------------------------------------
+    // Generic Function Monomorphization Support
+    // -------------------------------------------------------------------------
+    struct GenericTemplate {
+        FuncDecl* funcDecl = nullptr;
+        VarDecl* varDecl = nullptr;
+        aria::frontend::LambdaExpr* lambda = nullptr;
+        std::vector<std::string> typeParams;
+        std::map<std::string, Function*> specializations;
+        
+        const std::vector<FuncParam>& getParameters() const {
+            if (funcDecl) return funcDecl->parameters;
+            if (lambda) return lambda->parameters;
+            throw std::runtime_error("Invalid GenericTemplate: no function or lambda");
+        }
+    };
+    
+    std::map<std::string, GenericTemplate> genericTemplates;
+    
+    std::string mangleGenericName(const std::string& funcName, const std::vector<std::string>& concreteTypes) {
+        std::string mangledName = funcName;
+        for (const auto& t : concreteTypes) {
+            mangledName += "_" + t;
+        }
+        return mangledName;
+    }
+    
+    std::vector<std::string> inferGenericTypes(const GenericTemplate& tmpl, CallExpr* call) {
+        // Type inference logic from old implementation
+        // TODO: Extract this from archive if needed
+        return {};
+    }
+    
+    Function* monomorphize(const std::string& funcName, const std::vector<std::string>& concreteTypes) {
+        auto it = genericTemplates.find(funcName);
+        if (it == genericTemplates.end()) {
+            return nullptr;
+        }
+        
+        GenericTemplate& tmpl = it->second;
+        
+        std::string typeKey = "";
+        for (const auto& t : concreteTypes) {
+            if (!typeKey.empty()) typeKey += "_";
+            typeKey += t;
+        }
+        
+        auto specIt = tmpl.specializations.find(typeKey);
+        if (specIt != tmpl.specializations.end()) {
+            return specIt->second;
+        }
+        
+        // Generate new specialization
+        const std::vector<FuncParam>& funcParams = tmpl.getParameters();
+        std::string funcReturnType = tmpl.lambda ? tmpl.lambda->return_type : tmpl.funcDecl->return_type;
+        
+        if (!funcReturnType.empty() && funcReturnType[0] == '*') {
+            funcReturnType = funcReturnType.substr(1);
+        }
+        
+        std::map<std::string, std::string> typeSubstitution;
+        for (size_t i = 0; i < tmpl.typeParams.size() && i < concreteTypes.size(); ++i) {
+            typeSubstitution[tmpl.typeParams[i]] = concreteTypes[i];
+        }
+        
+        std::vector<Type*> paramTypes;
+        for (auto& param : funcParams) {
+            std::string paramType = param.type;
+            if (!paramType.empty() && paramType[0] == '*') {
+                paramType = paramType.substr(1);
+            }
+            if (typeSubstitution.count(paramType) > 0) {
+                paramType = typeSubstitution[paramType];
+            }
+            paramTypes.push_back(ctx.getLLVMType(paramType));
+        }
+        
+        std::string returnType = funcReturnType;
+        if (typeSubstitution.count(returnType) > 0) {
+            returnType = typeSubstitution[returnType];
+        }
+        Type* returnLLVMType = ctx.getResultType(returnType);
+        
+        FunctionType* funcType = FunctionType::get(returnLLVMType, paramTypes, false);
+        
+        std::string mangledName = ctx.currentModulePrefix + funcName + "_" + typeKey;
+        Function* specializedFunc = Function::Create(
+            funcType,
+            Function::InternalLinkage,
+            mangledName,
+            ctx.module.get()
+        );
+        
+        auto prevSubstitution = ctx.typeSubstitution;
+        auto prevReturnType = ctx.currentFunctionReturnType;
+        
+        ctx.typeSubstitution = typeSubstitution;
+        ctx.currentFunctionReturnType = returnType;
+        
+        if (tmpl.lambda) {
+            lambdaGen.generateLambdaBody(tmpl.lambda, specializedFunc, nullptr);
+        } else {
+            throw std::runtime_error("FuncDecl-style generics not yet supported");
+        }
+        
+        ctx.typeSubstitution = prevSubstitution;
+        ctx.currentFunctionReturnType = prevReturnType;
+        
+        tmpl.specializations[typeKey] = specializedFunc;
+        
+        return specializedFunc;
+    }
+
+public:
+    CodeGenVisitor(CodeGenContext& context) 
+        : ctx(context),
+          exprGen(context),
+          lambdaGen(context, this),
+          stmtGen(context),
+          declGen(context),
+          controlFlowGen(context),
+          flowGen(context),
+          asyncGen(context) {}
+    
+    // -------------------------------------------------------------------------
+    // Visitor Methods (Thin Dispatchers to Modular Generators)
+    // -------------------------------------------------------------------------
+    
+    // Expressions - delegate to ExprCodeGen
+    Value* visitExpr(frontend::Expression* node) {
+        return exprGen.generate(node);
+    }
+    
+    // Declarations
+    void visit(VarDecl* node) override {
+        declGen.visitVarDecl(node, exprGen);
+    }
+    
+    void visit(StructDecl* node) override {
+        declGen.visitStructDecl(node, this);
+    }
+    
+    void visit(FuncDecl* node) override {
+        // Check if this is a generic function template
+        if (!node->generics.empty()) {
+            GenericTemplate tmpl;
+            tmpl.funcDecl = node;
+            tmpl.typeParams = node->generics;
+            genericTemplates[node->name] = tmpl;
+            return;
+        }
+        
+        // Regular function - delegate to DeclCodeGen
+        // TODO: Add DeclCodeGen::visitFuncDecl method
+        throw std::runtime_error("Non-generic FuncDecl needs implementation");
+    }
+    
+    void visit(frontend::ModDef* node) override {
+        declGen.visitModDef(node, *this);
+    }
+    
+    void visit(frontend::ExternBlock* node) override {
+        declGen.visitExternBlock(node, *this);
+    }
+    
+    // Statements
+    void visit(frontend::ReturnStmt* node) override {
+        stmtGen.visitReturnStmt(node, exprGen, *this);
+    }
+    
+    void visit(frontend::ExpressionStmt* node) override {
+        stmtGen.visitExpressionStmt(node, exprGen);
+    }
+    
+    void visit(frontend::DeferStmt* node) override {
+        stmtGen.visitDeferStmt(node);
+    }
+    
+    void visit(frontend::BreakStmt* node) override {
+        stmtGen.visitBreakStmt(node);
+    }
+    
+    void visit(frontend::ContinueStmt* node) override {
+        stmtGen.visitContinueStmt(node);
+    }
+    
+    // Control Flow
+    void visit(frontend::IfStmt* node) override {
+        flowGen.visitIfStmt(node, exprGen, *this);
+    }
+    
+    void visit(frontend::PickStmt* node) override {
+        controlFlowGen.visitPickStmt(node, this);
+    }
+    
+    void visit(frontend::TillLoop* node) override {
+        flowGen.visitTillLoop(node, exprGen, *this);
+    }
+    
+    void visit(frontend::WhenLoop* node) override {
+        controlFlowGen.visitWhenLoop(node, this);
+    }
+    
+    void visit(frontend::ForLoop* node) override {
+        flowGen.visitForLoop(node, exprGen, *this);
+    }
+    
+    void visit(frontend::WhileLoop* node) override {
+        flowGen.visitWhileLoop(node, exprGen, *this);
+    }
+    
+    // Async
+    void visit(frontend::AsyncBlock* node) override {
+        asyncGen.visitAsyncBlock(node, *this);
+    }
+    
+    void visit(frontend::AwaitExpr* node) override {
+        asyncGen.visitAwaitExpr(node, exprGen);
+    }
+    
+    void visit(frontend::SpawnExpr* node) override {
+        asyncGen.visitSpawnExpr(node, exprGen);
+    }
+    
+    // Block
+    void visit(Block* node) override {
+        flowGen.visitBlock(node, exprGen, stmtGen);
+    }
+    
+    // Stub methods for expressions (handled by visitExpr)
+    void visit(frontend::VarExpr* node) override {}
+    void visit(frontend::BinaryOp* node) override {}
+    void visit(frontend::IntLiteral* node) override {}
+    void visit(frontend::FloatLiteral* node) override {}
+    void visit(frontend::BoolLiteral* node) override {}
+    void visit(frontend::NullLiteral* node) override {}
+    void visit(frontend::StringLiteral* node) override {}
+    void visit(frontend::UnaryOp* node) override {}
+    void visit(frontend::MemberAccess* node) override {}
+    void visit(frontend::ArrayLiteral* node) override {}
+    void visit(frontend::IndexExpr* node) override {}
+    void visit(frontend::LambdaExpr* node) override {}
+    void visit(CallExpr* node) override {}
+    void visit(frontend::CastExpr* node) override {}
+    void visit(frontend::TernaryExpr* node) override {}
+    void visit(frontend::UnwrapExpr* node) override {}
+    void visit(frontend::TemplateString* node) override {}
+};
+
+// =============================================================================
+// Top-Level Code Generation Entry Points
+// =============================================================================
+
+bool generate_code(aria::frontend::Block* root, const std::string& filename, bool enableVerify) {
+    // Initialize code generation context
+    CodeGenContext ctx("aria_module");
+    CodeGenVisitor visitor(ctx);
+    
+    // Process AST
+    for (auto& stmt : root->statements) {
+        stmt->accept(visitor);
+    }
+    
+    // Verify module
+    if (enableVerify) {
+        std::string errorMsg;
+        raw_string_ostream errorStream(errorMsg);
+        if (verifyModule(*ctx.module, &errorStream)) {
+            std::cerr << "Module verification failed:\n" << errorMsg << "\n";
+            return false;
+        }
+    }
+    
+    // Write LLVM IR to file
+    std::error_code ec;
+    raw_fd_ostream outFile(filename, ec, sys::fs::OF_None);
+    if (ec) {
+        std::cerr << "Failed to open output file: " << ec.message() << "\n";
+        return false;
+    }
+    
+    ctx.module->print(outFile, nullptr);
+    return true;
+}
+
+bool generate_code(aria::frontend::Block* root, const std::string& filename, 
+                   const TraitContext& traitCtx, bool enableVerify) {
+    // Trait-aware version - delegates to monomorphizer if needed
+    if (traitCtx.traits.empty() && traitCtx.impls.empty()) {
+        return generate_code(root, filename, enableVerify);
+    }
+    
+    // TODO: Implement trait monomorphization integration
+    throw std::runtime_error("Trait monomorphization not yet implemented in clean architecture");
+}
+
+} // namespace backend
+} // namespace aria

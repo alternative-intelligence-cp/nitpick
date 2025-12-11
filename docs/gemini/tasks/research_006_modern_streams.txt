@@ -1,0 +1,133 @@
+# RESEARCH TASK: Modern I/O Streams Design
+
+**Task ID:** research_006_modern_streams
+**Priority:** HIGH
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Time:** 20-25 minutes
+
+---
+
+## PROBLEM STATEMENT
+
+Aria spec requires **four standard streams** (not just the traditional three):
+```
+stdin   - Standard input
+stdout  - Standard output
+stderr  - Standard error
+stddbg  - Standard debug (NEW!)
+stddati - Standard data in (NEW!)
+stddato - Standard data out (NEW!)
+```
+
+No research exists on:
+- Why these additional streams?
+- How to implement them cross-platform?
+- What's the use case differentiation?
+
+---
+
+## CONTEXT
+
+### Traditional Model (C/Unix)
+- stdin (fd 0)
+- stdout (fd 1)
+- stderr (fd 2)
+
+### Aria's Extended Model
+Adds three more streams for specialized purposes:
+- `stddbg` - Separate debug channel
+- `stddati` - Data input channel
+- `stddato` - Data output channel
+
+### Questions
+- How do these map to file descriptors?
+- Windows compatibility?
+- Redirection and piping behavior?
+
+---
+
+## DELIVERABLES
+
+### 1. Stream Purpose Analysis
+
+**Requirements:**
+- Clear use cases for each stream
+- Why separate stddbg from stderr?
+- What are stddati/stddato for?
+
+**Include:**
+- Usage examples
+- Comparison with traditional streams
+- Benefits of the extended model
+
+### 2. Implementation Strategy
+
+**Requirements:**
+- File descriptor assignments
+- Cross-platform abstraction
+- Buffering strategy
+
+**Include:**
+- Unix implementation (fds 3-5?)
+- Windows implementation
+- TTY vs pipe behavior
+
+### 3. API Design
+
+**Requirements:**
+- How to read/write each stream
+- Integration with print functions
+- Redirection support
+
+**Include:**
+- Function signatures
+- Usage examples
+- Error handling
+
+---
+
+## RELEVANT SPECIFICATIONS
+
+From aria_specs.txt:
+```
+I/O Streams:
+  stdin, stdout, stderr (traditional)
+  stddbg  - Standard debug output
+  stddati - Standard data input
+  stddato - Standard data output
+```
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Focus Areas:**
+1. Rationale for additional streams
+2. Cross-platform implementation
+3. Integration with existing tools (shells, IDEs)
+
+**Key Questions:**
+- What problem do stddati/stddato solve?
+- How should shells/OSes handle fd 3-5?
+- Any prior art for extended stream models?
+- How do other languages handle debug output?
+
+**Deliverable Format:**
+- Use case analysis
+- Implementation plan
+- API design examples
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we understand:
+1. Purpose of each stream
+2. How to implement cross-platform
+3. API design for stream access
+4. Integration with tooling
+
+---
+
+**PRIORITY:** Core I/O feature, spec requirement
