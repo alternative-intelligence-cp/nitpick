@@ -255,6 +255,12 @@ Currently preparing for expert review (Tsoding). After Phase 2 completion, contr
 
 ---
 
+## 💝 Support This Project
+
+If you find Aria useful, consider supporting its development! See [DONATIONS.md](DONATIONS.md) for cryptocurrency donation addresses.
+
+---
+
 ## Community & Contact
 
 - **GitHub Issues**: Bug reports

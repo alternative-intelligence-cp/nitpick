@@ -1,0 +1,1459 @@
+# ARIA COMPILER - PRODUCTION-READY BETA ROADMAP
+**Target**: Production-Quality Beta (Ready for Alpha Testing)  
+**Current Version**: v0.0.9 (Clean Architecture)  
+**Date Created**: December 11, 2025  
+**Estimated Timeline**: 6-12 months (with parallel research/implementation)
+
+---
+
+## 📋 TABLE OF CONTENTS
+
+1. [Phase 0: Research Foundation](#phase-0-research-foundation)
+2. [Phase 1: Core Type System Completion](#phase-1-core-type-system-completion)
+3. [Phase 2: Memory Safety & Borrow Checking](#phase-2-memory-safety--borrow-checking)
+4. [Phase 3: Module System & Visibility](#phase-3-module-system--visibility)
+5. [Phase 4: Generics & Monomorphization](#phase-4-generics--monomorphization)
+6. [Phase 5: Standard Library - Core](#phase-5-standard-library---core)
+7. [Phase 6: Standard Library - I/O](#phase-6-standard-library---io)
+8. [Phase 7: Standard Library - Concurrency](#phase-7-standard-library---concurrency)
+9. [Phase 8: Advanced Features](#phase-8-advanced-features)
+10. [Phase 9: Optimization & Polish](#phase-9-optimization--polish)
+11. [Phase 10: Testing & Validation](#phase-10-testing--validation)
+12. [Phase 11: Documentation & Release](#phase-11-documentation--release)
+
+---
+
+## PHASE 0: Research Foundation
+**Goal**: Fill critical knowledge gaps via Gemini research  
+**Timeline**: 1-2 weeks (parallel to Phase 1 implementation)  
+**Status**: Research system ready, tasks defined
+
+### 0.1 Critical Research (BLOCKING)
+- [ ] **research_001: Borrow Checker Implementation**
+  - [ ] Upload source compilations to Gemini (9 files)
+  - [ ] Review response document
+  - [ ] Extract lifetime analysis algorithm
+  - [ ] Extract borrow checking rules
+  - [ ] Extract integration strategy with Appendage Theory
+  - [ ] Document findings in `/docs/research/borrow_checker_design.md`
+
+- [ ] **research_002: Balanced Ternary Arithmetic**
+  - [ ] Upload source compilations to Gemini (7 files)
+  - [ ] Review response document
+  - [ ] Extract ternary arithmetic algorithms
+  - [ ] Extract trit/tryte packing strategy (10 trits in uint16)
+  - [ ] Extract binary↔ternary conversion algorithms
+  - [ ] Document in `/docs/research/balanced_ternary_arithmetic.md`
+
+- [ ] **research_003: Balanced Nonary Arithmetic**
+  - [ ] Upload source compilations to Gemini (7 files)
+  - [ ] Review response document
+  - [ ] Extract nonary arithmetic algorithms
+  - [ ] Extract nit/nyte packing strategy (5 nits in uint16)
+  - [ ] Extract binary↔nonary conversion algorithms
+  - [ ] Document in `/docs/research/balanced_nonary_arithmetic.md`
+
+### 0.2 High-Priority Research (Important but not blocking)
+- [ ] **research_004: File I/O Library Design**
+  - [ ] Upload compilations
+  - [ ] Extract API design
+  - [ ] Extract error handling patterns
+  - [ ] Extract async integration strategy
+
+- [ ] **research_005: Process Management Library**
+  - [ ] Upload compilations
+  - [ ] Extract process API design
+  - [ ] Extract IPC mechanisms
+  - [ ] Extract cross-platform strategy
+
+- [ ] **research_006: Modern I/O Streams (6-stream system)**
+  - [ ] Upload compilations
+  - [ ] Extract stream purpose analysis
+  - [ ] Extract implementation strategy
+  - [ ] Understand stddbg/stddati/stddato rationale
+
+- [ ] **research_007: Threading Library**
+  - [ ] Upload compilations
+  - [ ] Extract threading model design
+  - [ ] Extract synchronization primitives
+  - [ ] Extract async/thread integration strategy
+
+### 0.3 Medium-Priority Research (Nice to have)
+- [ ] research_008: Atomics library
+- [ ] research_009: Timer/clock library
+- [ ] research_010: Comptime system
+
+---
+
+## PHASE 1: Core Type System Completion
+**Goal**: Implement all spec-defined types with full codegen  
+**Dependencies**: Research 002, 003 for exotic types  
+**Timeline**: 3-4 weeks  
+**Priority**: CRITICAL (language syntax completion)
+
+### 1.1 TBB (Twisted Balanced Binary) Types - NON-NEGOTIABLE
+**Status**: Tokens/Parser done, need TypeChecker + CodeGen
+
+#### 1.1.1 TBB Type Checker Implementation
+- [ ] Create `TBBTypeChecker` class in `src/frontend/sema/tbb_checker.cpp`
+  - [ ] Implement symmetric range validation
+    - [ ] tbb8: [-127, +127], ERR = -128
+    - [ ] tbb16: [-32767, +32767], ERR = -32768
+    - [ ] tbb32: [-2147483647, +2147483647], ERR = INT32_MIN
+    - [ ] tbb64: symmetric range, ERR = INT64_MIN
+  - [ ] Implement literal validation (reject out-of-range constants)
+  - [ ] Implement ERR literal checking (context-dependent type)
+  - [ ] Add tests in `tests/type_checker/test_tbb_types.cpp`
+
+#### 1.1.2 TBB Arithmetic CodeGen - Sticky Error Propagation
+- [ ] Extend `ExprCodeGen` with TBB operation handling
+  - [ ] **Addition with overflow detection**
+    - [ ] Check if either operand is ERR → return ERR (sticky)
+    - [ ] Perform addition with LLVM overflow intrinsics
+    - [ ] Check if result exceeds symmetric range → return ERR
+    - [ ] Emit LLVM IR: `llvm.sadd.with.overflow`
+  - [ ] **Subtraction with overflow detection**
+    - [ ] Check ERR propagation
+    - [ ] Perform subtraction with overflow check
+    - [ ] Emit LLVM IR: `llvm.ssub.with.overflow`
+  - [ ] **Multiplication with overflow detection**
+    - [ ] Check ERR propagation
+    - [ ] Perform multiplication with overflow check
+    - [ ] Emit LLVM IR: `llvm.smul.with.overflow`
+  - [ ] **Division with error checking**
+    - [ ] Check ERR propagation
+    - [ ] Check division by zero → return ERR
+    - [ ] Handle ERR / anything = ERR
+  - [ ] **Modulo operation**
+    - [ ] Same error propagation rules
+  - [ ] **Negation safety**
+    - [ ] Special case: -ERR = ERR (sticky)
+    - [ ] Check if negation would overflow → ERR
+    - [ ] Example: tbb8(-127) negates to +127 (safe!)
+  - [ ] **Absolute value safety**
+    - [ ] abs(ERR) = ERR
+    - [ ] No overflow possible with symmetric range
+  - [ ] Add comprehensive tests in `tests/codegen/test_tbb_arithmetic.cpp`
+    - [ ] Test sticky error propagation: ERR + 5 = ERR
+    - [ ] Test overflow detection: tbb8(100) + tbb8(50) = ERR
+    - [ ] Test symmetric negation: -127 → +127
+    - [ ] Test chained operations: (ERR + 5) * 10 = ERR
+
+#### 1.1.3 TBB Comparison Operations
+- [ ] Implement TBB comparison in `ExprCodeGen`
+  - [ ] ERR comparisons: ERR == ERR → true, ERR != anything → true
+  - [ ] Normal comparisons work as expected
+  - [ ] Document comparison semantics
+
+#### 1.1.4 TBB-Regular Type Interactions
+- [ ] Define implicit/explicit conversion rules
+  - [ ] int32 → tbb32: check range, emit ERR if out of bounds
+  - [ ] tbb32 → int32: check for ERR, handle appropriately
+  - [ ] Document conversion semantics
+
+### 1.2 Exotic Types (Balanced Ternary/Nonary) - NON-NEGOTIABLE
+**Status**: Tokens/Parser done, waiting on research  
+**Dependencies**: research_002, research_003
+
+#### 1.2.1 Trit/Tryte Implementation (After research_002)
+- [ ] Review research findings from Gemini
+- [ ] Create `TernaryArithmetic` class in `src/backend/ternary_arithmetic.cpp`
+  - [ ] Implement ternary addition algorithm
+  - [ ] Implement ternary subtraction algorithm
+  - [ ] Implement ternary multiplication algorithm
+  - [ ] Implement ternary division algorithm
+  - [ ] Implement comparison operations
+- [ ] Create packing/unpacking functions
+  - [ ] `packTryte()`: Pack 10 trits into uint16
+  - [ ] `unpackTryte()`: Extract 10 trits from uint16
+  - [ ] Document bit layout
+- [ ] Implement binary↔ternary conversion
+  - [ ] `binaryToTernary()`: int → balanced ternary
+  - [ ] `ternaryToBinary()`: balanced ternary → int
+  - [ ] Handle negative numbers correctly
+- [ ] Extend `ExprCodeGen` for trit/tryte operations
+  - [ ] Map trit operations to LLVM IR
+  - [ ] Map tryte operations (packed representation)
+  - [ ] Optimize common operations
+- [ ] Add comprehensive tests
+  - [ ] Test arithmetic correctness
+  - [ ] Test packing/unpacking
+  - [ ] Test conversions
+  - [ ] Test edge cases
+
+#### 1.2.2 Nit/Nyte Implementation (After research_003)
+- [ ] Review research findings from Gemini
+- [ ] Create `NonaryArithmetic` class in `src/backend/nonary_arithmetic.cpp`
+  - [ ] Implement nonary addition algorithm
+  - [ ] Implement nonary subtraction algorithm
+  - [ ] Implement nonary multiplication algorithm
+  - [ ] Implement nonary division algorithm
+  - [ ] Implement comparison operations
+- [ ] Create packing/unpacking functions
+  - [ ] `packNyte()`: Pack 5 nits into uint16
+  - [ ] `unpackNyte()`: Extract 5 nits from uint16
+  - [ ] Document bit layout (9^5 = 59,049 < 65,536)
+- [ ] Implement binary↔nonary conversion
+  - [ ] `binaryToNonary()`: int → balanced nonary
+  - [ ] `nonaryToBinary()`: balanced nonary → int
+  - [ ] Handle negative numbers (digit range: -4 to +4)
+- [ ] Extend `ExprCodeGen` for nit/nyte operations
+- [ ] Add comprehensive tests
+
+### 1.3 Vector Types (vec2, vec3, vec4, vec9)
+**Status**: Partial implementation, needs SIMD
+
+#### 1.3.1 Vector Type Completion
+- [ ] Review existing research: `/docs/research/simd_vector_implementation.md`
+- [ ] Complete `VectorType` in `src/frontend/sema/types.h`
+  - [ ] Add proper type checking for vector operations
+  - [ ] Implement component access (vec.x, vec.y, vec.z, vec.w)
+  - [ ] Implement swizzling (vec.xyzw, vec.rgba, etc.)
+- [ ] Extend `ExprCodeGen` for vectors
+  - [ ] Vector arithmetic (+, -, *, /)
+  - [ ] Dot product
+  - [ ] Cross product (vec3 only)
+  - [ ] Vector length/normalization
+  - [ ] Component-wise operations
+- [ ] SIMD optimization
+  - [ ] Use LLVM vector intrinsics where possible
+  - [ ] Emit SIMD instructions (SSE, AVX, NEON)
+  - [ ] Add auto-vectorization hints
+- [ ] Add tests
+  - [ ] Test all arithmetic operations
+  - [ ] Test component access
+  - [ ] Test swizzling
+  - [ ] Benchmark SIMD performance
+
+### 1.4 Compound Types Completion
+
+#### 1.4.1 Tensor Type Implementation
+- [ ] Define `TensorType` in AST
+  - [ ] Support multi-dimensional arrays
+  - [ ] Support arbitrary rank tensors
+- [ ] Implement tensor operations
+  - [ ] Element access (tensor[i,j,k])
+  - [ ] Slicing
+  - [ ] Reshaping
+  - [ ] Broadcasting
+- [ ] CodeGen for tensors
+  - [ ] Memory layout (row-major vs column-major)
+  - [ ] Efficient indexing
+  - [ ] SIMD optimizations where applicable
+- [ ] Add tests
+
+#### 1.4.2 Matrix Type Implementation
+- [ ] Define `MatrixType` in AST
+  - [ ] Support NxM matrices
+  - [ ] Specialized 2D tensor representation
+- [ ] Implement matrix operations
+  - [ ] Matrix addition/subtraction
+  - [ ] Matrix multiplication (optimized)
+  - [ ] Transpose
+  - [ ] Determinant
+  - [ ] Inverse
+- [ ] CodeGen for matrices
+  - [ ] Use BLAS/LAPACK when available
+  - [ ] Optimize memory access patterns
+  - [ ] SIMD acceleration
+- [ ] Add tests
+
+### 1.5 System Types for Standard Library
+
+#### 1.5.1 Binary Type
+- [ ] Define `BinaryType` for raw byte data
+- [ ] Implement binary operations
+- [ ] Add serialization/deserialization
+- [ ] CodeGen and tests
+
+#### 1.5.2 Buffer Type
+- [ ] Define `BufferType` for memory buffers
+- [ ] Implement buffer operations (read, write, resize)
+- [ ] Add bounds checking
+- [ ] CodeGen and tests
+
+#### 1.5.3 Stream Type
+- [ ] Define `StreamType` for I/O streams
+- [ ] Implement stream operations (read, write, seek, close)
+- [ ] Add buffering support
+- [ ] CodeGen and tests
+
+#### 1.5.4 Process Type
+- [ ] Define `ProcessType` for OS processes
+- [ ] Implement process operations (spawn, wait, kill, communicate)
+- [ ] Add platform-specific implementations
+- [ ] CodeGen and tests
+
+#### 1.5.5 Pipe Type
+- [ ] Define `PipeType` for IPC
+- [ ] Implement pipe operations (read, write, close)
+- [ ] Add bidirectional pipe support
+- [ ] CodeGen and tests
+
+---
+
+## PHASE 2: Memory Safety & Borrow Checking
+**Goal**: Implement Rust-style borrow checker for wild memory safety  
+**Dependencies**: research_001 MUST be complete  
+**Timeline**: 4-6 weeks  
+**Priority**: CRITICAL (core safety feature)
+
+### 2.1 Lifetime Analysis System
+**Status**: Stubs exist, need full implementation  
+**Reference**: `/docs/research/wildx_memory_regions.md` (Appendage Theory)
+
+#### 2.1.1 Lifetime Annotation Framework
+- [ ] After receiving research_001 response, extract lifetime algorithm
+- [ ] Create `LifetimeAnalyzer` class in `src/frontend/sema/lifetime_analyzer.cpp`
+  - [ ] Define lifetime representation
+    - [ ] Named lifetimes: 'a, 'b, 'static
+    - [ ] Anonymous lifetimes (inferred)
+    - [ ] Lifetime bounds and constraints
+  - [ ] Implement lifetime inference
+    - [ ] Function parameter lifetimes
+    - [ ] Return value lifetime elision
+    - [ ] Struct field lifetimes
+  - [ ] Build lifetime dependency graph
+    - [ ] Track lifetime relationships
+    - [ ] Detect lifetime conflicts
+    - [ ] Validate lifetime hierarchies
+  - [ ] Add tests for lifetime inference
+
+#### 2.1.2 Borrow Checker Core
+- [ ] Implement `BorrowChecker` class (expand existing stub)
+  - [ ] **Borrow rules implementation**
+    - [ ] Rule 1: Multiple immutable borrows allowed
+    - [ ] Rule 2: Only one mutable borrow at a time
+    - [ ] Rule 3: No mutable borrow while immutable borrows exist
+    - [ ] Rule 4: Borrows must not outlive referent
+  - [ ] **Borrow tracking**
+    - [ ] Track active borrows per scope
+    - [ ] Track borrow kind (immutable vs mutable)
+    - [ ] Track borrow lifetime
+  - [ ] **Validation logic**
+    - [ ] Check for conflicting borrows
+    - [ ] Check for use-after-free
+    - [ ] Check for dangling references
+  - [ ] **Error reporting**
+    - [ ] Clear borrow conflict messages
+    - [ ] Show conflicting borrow locations
+    - [ ] Suggest fixes (e.g., scope reduction)
+  - [ ] Add comprehensive tests
+    - [ ] Test basic borrow rules
+    - [ ] Test complex borrowing patterns
+    - [ ] Test error messages
+
+#### 2.1.3 Pinning Operator (#) Implementation
+- [ ] Implement `#` (pin) operator semantics
+  - [ ] Parse pinning expressions
+  - [ ] Type check pinned values
+  - [ ] Generate pinning metadata
+- [ ] Integrate with GC
+  - [ ] Mark pinned objects in GC header
+  - [ ] Prevent GC from moving pinned objects
+  - [ ] Auto-unpin when scope ends
+- [ ] CodeGen for pinning
+  - [ ] Emit pin markers in LLVM IR
+  - [ ] Generate cleanup code (unpin on scope exit)
+  - [ ] Handle pinning errors
+- [ ] Add tests
+  - [ ] Test pinning GC objects
+  - [ ] Test pinning in closures
+  - [ ] Test pinning with async
+
+#### 2.1.4 Appendage Theory Integration
+- [ ] Review `/docs/research/wildx_memory_regions.md`
+- [ ] Implement GC body + wild appendages model
+  - [ ] Track appendages attached to GC objects
+  - [ ] Enforce borrow rules for appendages
+  - [ ] Cleanup appendages when body is collected
+- [ ] Add lifetime tracking for appendages
+  - [ ] Appendage lifetime tied to body lifetime
+  - [ ] Prevent dangling appendage references
+- [ ] CodeGen for appendages
+  - [ ] Emit appendage registration
+  - [ ] Emit cleanup code
+- [ ] Add tests
+
+### 2.2 Escape Analysis
+**Status**: Stub exists, needs implementation
+
+#### 2.2.1 Escape Analysis Pass
+- [ ] Expand `EscapeAnalyzer` class
+  - [ ] Implement control flow analysis
+  - [ ] Track value flow through program
+  - [ ] Identify values that escape function scope
+  - [ ] Identify values that escape to heap
+- [ ] Integration with memory allocation
+  - [ ] Auto-promote stack→heap when necessary
+  - [ ] Warn about unnecessary heap allocations
+  - [ ] Suggest stack allocation when safe
+- [ ] Add tests
+
+### 2.3 Safe Reference ($) Operator
+**Status**: Token exists, needs full implementation
+
+#### 2.3.1 Safe Reference Implementation
+- [ ] Implement `$` operator semantics
+  - [ ] Safe references can't dangle
+  - [ ] Enforced by borrow checker
+  - [ ] Used in till loops and safe contexts
+- [ ] Type checking for safe references
+- [ ] CodeGen for safe references
+- [ ] Add tests
+
+---
+
+## PHASE 3: Module System & Visibility
+**Goal**: Implement complete module system with imports and visibility  
+**Dependencies**: None (can run parallel to Phase 1/2)  
+**Timeline**: 3-4 weeks  
+**Priority**: HIGH (necessary for stdlib organization)
+
+### 3.1 Module Resolution
+
+#### 3.1.1 Module Path Resolution
+- [ ] Review existing research: `/docs/research/module_system_implementation.md`
+- [ ] Implement `ModuleResolver` class in `src/frontend/module_resolver.cpp`
+  - [ ] **Path resolution strategies**
+    - [ ] Relative imports: `use "./local.aria"`
+    - [ ] Absolute imports: `use "/usr/lib/aria/module"`
+    - [ ] Standard library imports: `use std.io`
+    - [ ] Selective imports: `use std.collections.{array, map}`
+    - [ ] Wildcard imports: `use math.*`
+  - [ ] **Module search paths**
+    - [ ] Current directory
+    - [ ] Project source directory
+    - [ ] Standard library path ($ARIA_LIB)
+    - [ ] User-defined paths (ARIA_PATH environment variable)
+  - [ ] **File resolution**
+    - [ ] .aria file extension handling
+    - [ ] Directory modules (module.aria or mod.aria in directory)
+    - [ ] Index file support
+  - [ ] Add tests for path resolution
+
+#### 3.1.2 Module Dependency Graph
+- [ ] Implement dependency tracking
+  - [ ] Build directed acyclic graph (DAG) of modules
+  - [ ] Detect circular dependencies → error
+  - [ ] Topological sort for compilation order
+- [ ] Handle module initialization order
+  - [ ] Ensure dependencies initialized before dependents
+  - [ ] Generate static initializer calls
+- [ ] Add tests
+  - [ ] Test simple dependencies
+  - [ ] Test complex dependency chains
+  - [ ] Test circular dependency detection
+
+### 3.2 Module Definition (mod keyword)
+
+#### 3.2.1 Module Declaration
+- [ ] Implement module declaration parsing (already done)
+- [ ] Type checking for modules
+  - [ ] Validate module names (no conflicts)
+  - [ ] Check for duplicate definitions
+  - [ ] Validate nested modules
+- [ ] CodeGen for modules
+  - [ ] Generate module namespace
+  - [ ] Emit module metadata
+  - [ ] Handle nested modules
+- [ ] Add tests
+
+### 3.3 Visibility Control (pub keyword)
+
+#### 3.3.1 Visibility Rules Implementation
+- [ ] Implement visibility checker in type checker
+  - [ ] Private by default (no `pub`)
+  - [ ] Public when `pub` specified
+  - [ ] Check access violations
+    - [ ] Can't access private items from outside module
+    - [ ] Can access public items from anywhere
+  - [ ] Nested module visibility rules
+    - [ ] Parent can access child's private items
+    - [ ] Child can access parent's private items
+    - [ ] Siblings need `pub` for access
+- [ ] Add visibility to all declarations
+  - [ ] Functions
+  - [ ] Structs
+  - [ ] Traits
+  - [ ] Impls
+  - [ ] Constants
+  - [ ] Type aliases
+- [ ] Generate clear error messages for visibility violations
+- [ ] Add tests
+
+### 3.4 Import System (use keyword)
+
+#### 3.4.1 Import Declaration Processing
+- [ ] Implement import resolution
+  - [ ] Simple imports: `use std.io`
+  - [ ] Selective imports: `use std.{io, fs}`
+  - [ ] Aliased imports: `use "./utils.aria" as utils`
+  - [ ] Wildcard imports: `use math.*`
+- [ ] Build import table for each module
+- [ ] Resolve imported symbols
+  - [ ] Map import names to module symbols
+  - [ ] Handle name conflicts → error
+  - [ ] Support nested imports
+- [ ] CodeGen for imports
+  - [ ] Link imported modules
+  - [ ] Generate import metadata
+- [ ] Add tests
+
+### 3.5 External C Integration (extern keyword)
+
+#### 3.5.1 C FFI Implementation
+- [ ] Implement `extern` block parsing (already done)
+- [ ] Type mapping: Aria ↔ C
+  - [ ] int8 ↔ int8_t
+  - [ ] int32 ↔ int32_t
+  - [ ] string ↔ char*
+  - [ ] pointers ↔ pointers
+  - [ ] arrays ↔ arrays
+- [ ] Call convention handling
+  - [ ] Default C calling convention
+  - [ ] Platform-specific conventions (cdecl, stdcall, etc.)
+- [ ] Symbol resolution
+  - [ ] Dynamic library loading
+  - [ ] Static library linking
+- [ ] CodeGen for extern functions
+  - [ ] Emit LLVM external declarations
+  - [ ] Generate wrapper functions if needed
+  - [ ] Handle varargs (printf, etc.)
+- [ ] Add tests
+  - [ ] Test calling libc functions
+  - [ ] Test external libraries
+
+### 3.6 Conditional Compilation
+
+#### 3.6.1 cfg() Attribute System
+- [ ] Implement conditional compilation attributes
+  - [ ] Platform detection: `cfg(target_os = "linux")`
+  - [ ] Feature flags: `cfg(feature = "networking")`
+  - [ ] Architecture: `cfg(target_arch = "x86_64")`
+- [ ] Parse cfg attributes
+- [ ] Evaluate cfg conditions at compile time
+- [ ] Remove disabled code from compilation
+- [ ] Add tests
+
+---
+
+## PHASE 4: Generics & Monomorphization
+**Goal**: Zero-cost generic programming via monomorphization  
+**Dependencies**: Type system complete (Phase 1)  
+**Timeline**: 4-5 weeks  
+**Priority**: HIGH (core abstraction mechanism)
+
+### 4.1 Generic Type Parameters
+
+#### 4.1.1 Type Parameter Parsing & Validation
+- [ ] Review existing research: `/docs/research/generics_monomorphization_implementation.md`
+- [ ] Enhance generic function parsing (basic parsing exists)
+  - [ ] Parse type parameter lists: `<T, U, V>`
+  - [ ] Parse type parameter constraints (bounds)
+  - [ ] Parse where clauses (if needed)
+- [ ] Type checking for generics
+  - [ ] Validate type parameter names (no conflicts)
+  - [ ] Check constraint satisfaction
+  - [ ] Validate generic function bodies
+    - [ ] Ensure `*T` used correctly
+    - [ ] Check operations valid for generic types
+  - [ ] Handle recursive generic definitions
+- [ ] Add tests
+
+#### 4.1.2 Type Inference System
+- [ ] Implement type inference for generic calls
+  - [ ] Infer type arguments from function arguments
+  - [ ] Infer from return type context
+  - [ ] Infer from multiple sources (unification)
+- [ ] Implement unification algorithm
+  - [ ] Unify type variables
+  - [ ] Detect unification failures → error
+  - [ ] Generate clear error messages
+- [ ] Add tests
+  - [ ] Test simple inference: `max(1, 2)` → `max<int32>`
+  - [ ] Test complex inference: nested generics
+  - [ ] Test inference failures
+
+### 4.2 Monomorphization Pass
+
+#### 4.2.1 Monomorphization Implementation
+- [ ] Create `MonomorphizationPass` in `src/backend/monomorphization.cpp` (stub exists)
+  - [ ] **Collect generic instantiations**
+    - [ ] Scan AST for generic function calls
+    - [ ] Record (function, type args) pairs
+    - [ ] Handle transitive instantiations (generic calls generic)
+  - [ ] **Generate specialized versions**
+    - [ ] Clone function AST
+    - [ ] Substitute type parameters with concrete types
+      - [ ] Replace `*T` with concrete type
+      - [ ] Update all type references
+    - [ ] Rename specialized function (mangling)
+      - [ ] Example: `max<int32>` → `max_int32`
+      - [ ] Handle multiple type parameters
+  - [ ] **Deduplication**
+    - [ ] Cache generated specializations
+    - [ ] Reuse existing specializations
+    - [ ] Avoid duplicate codegen
+  - [ ] **Update call sites**
+    - [ ] Replace generic calls with specialized calls
+    - [ ] Update function references
+- [ ] Add comprehensive tests
+  - [ ] Test simple generics: `identity<T>`
+  - [ ] Test multiple type parameters: `convert<T,U>`
+  - [ ] Test generic structs (if supported)
+  - [ ] Test transitive instantiation
+  - [ ] Test large-scale monomorphization (compile time impact)
+
+### 4.3 Generic Structs (if in spec)
+
+#### 4.3.1 Generic Struct Support
+- [ ] Check spec for generic struct syntax
+- [ ] If supported, implement:
+  - [ ] Parse generic struct definitions
+  - [ ] Type check generic structs
+  - [ ] Monomorphize struct definitions
+  - [ ] Generate specialized struct types
+  - [ ] Update field access codegen
+- [ ] Add tests
+
+### 4.4 Generic Traits (if in spec)
+
+#### 4.4.1 Generic Trait Support
+- [ ] Check spec for generic trait syntax
+- [ ] If supported, implement:
+  - [ ] Parse generic trait definitions
+  - [ ] Type check generic traits
+  - [ ] Monomorphize trait impls
+  - [ ] Update trait dispatch
+- [ ] Add tests
+
+---
+
+## PHASE 5: Standard Library - Core
+**Goal**: Implement essential stdlib functions per spec  
+**Dependencies**: Type system (Phase 1), Module system (Phase 3)  
+**Timeline**: 3-4 weeks  
+**Priority**: HIGH (basic functionality)
+
+### 5.1 Memory Management Functions
+
+#### 5.1.1 Allocator Functions
+- [ ] Implement in `stdlib/memory.aria` or `src/runtime/stdlib/memory.cpp`
+  - [ ] `aria.alloc(size: uint64) -> result<void*, string>`
+    - [ ] Wrapper around mimalloc
+    - [ ] Return error on allocation failure
+    - [ ] Add tests
+  - [ ] `aria.free(ptr: void*)`
+    - [ ] Wrapper around free
+    - [ ] Null pointer handling
+    - [ ] Add tests
+  - [ ] `aria.gc_alloc(size: uint64) -> result<void*, string>`
+    - [ ] Allocate in GC nursery
+    - [ ] Register with GC
+    - [ ] Add tests
+  - [ ] `aria.alloc_buffer(size: uint64) -> result<buffer, string>`
+    - [ ] Specialized buffer allocation
+    - [ ] Add metadata (size, capacity)
+    - [ ] Add tests
+  - [ ] `aria.alloc_string(size: uint64) -> result<string, string>`
+    - [ ] String-specific allocation
+    - [ ] UTF-8 handling
+    - [ ] Add tests
+  - [ ] `aria.alloc_array(elem_size: uint64, count: uint64) -> result<array, string>`
+    - [ ] Array allocation with size info
+    - [ ] Bounds checking metadata
+    - [ ] Add tests
+
+### 5.2 String Functions
+
+#### 5.2.1 Basic String Operations
+- [ ] Implement in `stdlib/string.aria`
+  - [ ] `string.length() -> int64`
+  - [ ] `string.concat(other: string) -> string`
+  - [ ] `string.substring(start: int64, end: int64) -> string`
+  - [ ] `string.indexOf(substr: string) -> int64`
+  - [ ] `string.split(delimiter: string) -> array<string>`
+  - [ ] `string.trim() -> string`
+  - [ ] `string.toUpper() -> string`
+  - [ ] `string.toLower() -> string`
+  - [ ] Add comprehensive tests
+
+### 5.3 Array Functions
+
+#### 5.3.1 Functional Array Operations
+- [ ] Implement in `stdlib/array.aria`
+  - [ ] `filter<T>(arr: *T[], pred: func(*T) -> bool) -> *T[]`
+    - [ ] Filter elements by predicate
+    - [ ] Use generics for type safety
+    - [ ] Add tests
+  - [ ] `transform<T,U>(arr: *T[], f: func(*T) -> *U) -> *U[]`
+    - [ ] Map function over array
+    - [ ] Support type transformation
+    - [ ] Add tests (also called `map`)
+  - [ ] `reduce<T,U>(arr: *T[], f: func(*U, *T) -> *U, init: *U) -> *U`
+    - [ ] Fold array into single value
+    - [ ] Generic accumulator type
+    - [ ] Add tests
+  - [ ] `sort<T>(arr: *T[], cmp: func(*T, *T) -> int) -> *T[]`
+    - [ ] Generic sorting with comparator
+    - [ ] Use quicksort or mergesort
+    - [ ] Add tests
+  - [ ] `reverse<T>(arr: *T[]) -> *T[]`
+    - [ ] Reverse array in-place or return new
+    - [ ] Add tests
+  - [ ] `unique<T>(arr: *T[]) -> *T[]`
+    - [ ] Remove duplicates
+    - [ ] Preserve order
+    - [ ] Add tests
+
+### 5.4 Math Functions
+
+#### 5.4.1 Basic Math Operations
+- [ ] Implement in `stdlib/math.aria`
+  - [ ] `Math.round(x: flt64) -> flt64`
+  - [ ] `Math.floor(x: flt64) -> flt64`
+  - [ ] `Math.ceil(x: flt64) -> flt64`
+  - [ ] `Math.abs(x: flt64) -> flt64`
+  - [ ] `Math.sqrt(x: flt64) -> flt64`
+  - [ ] `Math.pow(x: flt64, y: flt64) -> flt64`
+  - [ ] `Math.sin(x: flt64) -> flt64`
+  - [ ] `Math.cos(x: flt64) -> flt64`
+  - [ ] `Math.tan(x: flt64) -> flt64`
+  - [ ] Add comprehensive tests
+
+### 5.5 System Diagnostics
+
+#### 5.5.1 Diagnostic Functions
+- [ ] Implement in `stdlib/system.aria`
+  - [ ] `getMemoryUsage() -> obj`
+    - [ ] Return heap usage, GC stats, etc.
+    - [ ] Add tests
+  - [ ] `getActiveConnections() -> int64`
+    - [ ] Count active network connections
+    - [ ] Add tests
+
+---
+
+## PHASE 6: Standard Library - I/O
+**Goal**: Implement file I/O, streams, and process management  
+**Dependencies**: research_004, research_005, research_006  
+**Timeline**: 4-5 weeks  
+**Priority**: HIGH (critical for real applications)
+
+### 6.1 File I/O System
+**Status**: Awaiting research_004
+
+#### 6.1.1 Basic File Operations
+- [ ] After research_004 complete, review API design
+- [ ] Implement in `stdlib/io/file.aria` or `src/runtime/io/file.cpp`
+  - [ ] **readFile(path: string) -> result<string, string>**
+    - [ ] Open file (error handling)
+    - [ ] Read entire contents
+    - [ ] Return error result on failure
+    - [ ] Platform-specific implementations
+      - [ ] Linux: use open/read/close
+      - [ ] Windows: use CreateFile/ReadFile/CloseHandle
+    - [ ] Add tests
+      - [ ] Test successful reads
+      - [ ] Test file not found
+      - [ ] Test permission denied
+      - [ ] Test large files
+  - [ ] **writeFile(path: string, content: string) -> result<void, string>**
+    - [ ] Create/truncate file
+    - [ ] Write content
+    - [ ] Error handling (disk full, permissions, etc.)
+    - [ ] Add tests
+  - [ ] **readJSON(path: string) -> result<obj, string>**
+    - [ ] Read file
+    - [ ] Parse JSON
+    - [ ] Return structured object
+    - [ ] Add JSON parser if not exists
+    - [ ] Add tests
+  - [ ] **readCSV(path: string) -> result<array<array<string>>, string>**
+    - [ ] Read file
+    - [ ] Parse CSV
+    - [ ] Handle quoted fields, escaping
+    - [ ] Add tests
+
+#### 6.1.2 Stream-Based File I/O
+- [ ] **openFile(path: string, mode: string) -> result<stream, string>**
+  - [ ] Modes: "r" (read), "w" (write), "a" (append), "r+" (read/write)
+  - [ ] Return stream object
+  - [ ] Error handling
+  - [ ] Add tests
+- [ ] Implement `stream` type operations
+  - [ ] `stream.read(size: int64) -> result<string, string>`
+  - [ ] `stream.readLine() -> result<string, string>`
+  - [ ] `stream.write(data: string) -> result<void, string>`
+  - [ ] `stream.seek(offset: int64, whence: int) -> result<void, string>`
+  - [ ] `stream.tell() -> result<int64, string>`
+  - [ ] `stream.close() -> result<void, string>`
+  - [ ] Add tests for all operations
+
+### 6.2 Modern I/O Streams (6-Stream System)
+**Status**: Awaiting research_006
+
+#### 6.2.1 Standard Streams Implementation
+- [ ] After research_006 complete, review design
+- [ ] Implement 6 standard streams in `src/runtime/io/`
+  - [ ] **stdin** (text input)
+    - [ ] Platform-specific: fd 0 (Unix), GetStdHandle (Windows)
+    - [ ] Buffered reading
+    - [ ] UTF-8 decoding
+  - [ ] **stdout** (text output)
+    - [ ] Platform-specific: fd 1 (Unix), GetStdHandle (Windows)
+    - [ ] Buffered writing
+    - [ ] UTF-8 encoding
+  - [ ] **stderr** (error output)
+    - [ ] Platform-specific: fd 2 (Unix), GetStdHandle (Windows)
+    - [ ] Unbuffered for immediate errors
+  - [ ] **stddbg** (debug output) - NEW
+    - [ ] Research rationale from research_006
+    - [ ] Implementation strategy
+    - [ ] Platform mapping (fd 3? separate mechanism?)
+  - [ ] **stddati** (data input) - NEW
+    - [ ] Research rationale from research_006
+    - [ ] Implementation strategy
+    - [ ] Platform mapping
+  - [ ] **stddato** (data output) - NEW
+    - [ ] Research rationale from research_006
+    - [ ] Implementation strategy
+    - [ ] Platform mapping
+- [ ] Stream operations
+  - [ ] `.read()`, `.readLine()`, `.write()`, `.writeLine()`
+  - [ ] `.flush()` for buffered streams
+  - [ ] `.close()` (where applicable)
+- [ ] Add comprehensive tests
+  - [ ] Test each stream independently
+  - [ ] Test redirection behavior
+  - [ ] Test TTY vs pipe behavior
+
+### 6.3 Process Management
+**Status**: Awaiting research_005
+
+#### 6.3.1 Process Creation & Control
+- [ ] After research_005 complete, review API design
+- [ ] Implement in `stdlib/process.aria` or `src/runtime/process/`
+  - [ ] **spawn(command: string, args: array<string>) -> result<process, string>**
+    - [ ] Platform-specific implementations
+      - [ ] Unix: fork + exec
+      - [ ] Windows: CreateProcess
+    - [ ] Return process handle
+    - [ ] Error handling (command not found, permission denied)
+    - [ ] Add tests
+  - [ ] **fork() -> result<obj, string>**
+    - [ ] Unix-specific (stub on Windows)
+    - [ ] Return {is_child: bool, child_pid: int}
+    - [ ] Add tests
+  - [ ] **exec(command: string, args: array<string>) -> result<void, string>**
+    - [ ] Replace current process
+    - [ ] Platform-specific
+    - [ ] Add tests
+  - [ ] **wait(pid: int) -> result<int, string>**
+    - [ ] Wait for process completion
+    - [ ] Return exit code
+    - [ ] Add tests
+
+#### 6.3.2 Inter-Process Communication
+- [ ] **createPipe() -> result<pipe, string>**
+  - [ ] Create bidirectional pipe
+  - [ ] Platform-specific (pipe() on Unix, CreatePipe on Windows)
+  - [ ] Return pipe object with read/write ends
+  - [ ] Add tests
+- [ ] Implement `pipe` type operations
+  - [ ] `pipe.read() -> result<string, string>`
+  - [ ] `pipe.write(data: string) -> result<void, string>`
+  - [ ] `pipe.close()` - close both ends
+  - [ ] Add tests
+
+### 6.4 HTTP Client (if in spec)
+
+#### 6.4.1 Basic HTTP Support
+- [ ] Check if `httpGet()` is in spec
+- [ ] If yes, implement:
+  - [ ] `httpGet(url: string) -> result<obj, string>`
+    - [ ] Use libcurl or platform HTTP API
+    - [ ] Return response object {status, headers, body}
+    - [ ] Add tests
+
+---
+
+## PHASE 7: Standard Library - Concurrency
+**Goal**: Implement threading, async improvements, atomics  
+**Dependencies**: research_007, research_008, research_009  
+**Timeline**: 5-6 weeks  
+**Priority**: MEDIUM-HIGH (important for performance)
+
+### 7.1 Threading Library
+**Status**: Awaiting research_007
+
+#### 7.1.1 Thread Creation & Management
+- [ ] After research_007 complete, review threading model
+- [ ] Implement threading system in `stdlib/thread.aria` or `src/runtime/thread/`
+  - [ ] **Thread creation API**
+    - [ ] `thread.spawn(f: func() -> void) -> result<thread, string>`
+    - [ ] Platform-specific (pthread on Unix, CreateThread on Windows)
+    - [ ] Thread pool option (reuse threads)
+    - [ ] Add tests
+  - [ ] **Thread operations**
+    - [ ] `thread.join() -> result<void, string>` - wait for completion
+    - [ ] `thread.detach()` - detach thread
+    - [ ] `thread.id() -> int64` - get thread ID
+    - [ ] `thread.sleep(ms: int64)` - sleep current thread
+    - [ ] Add tests
+
+#### 7.1.2 Synchronization Primitives
+- [ ] Implement synchronization in `stdlib/sync.aria`
+  - [ ] **Mutex**
+    - [ ] `Mutex.new() -> mutex`
+    - [ ] `mutex.lock() -> result<void, string>`
+    - [ ] `mutex.unlock()`
+    - [ ] `mutex.tryLock() -> result<bool, string>`
+    - [ ] Platform-specific (pthread_mutex, CRITICAL_SECTION)
+    - [ ] Add tests (including deadlock detection tests)
+  - [ ] **RWLock (Reader-Writer Lock)**
+    - [ ] `RWLock.new() -> rwlock`
+    - [ ] `rwlock.readLock()` - multiple readers allowed
+    - [ ] `rwlock.writeLock()` - exclusive write
+    - [ ] `rwlock.unlock()`
+    - [ ] Add tests
+  - [ ] **Condition Variable**
+    - [ ] `CondVar.new() -> condvar`
+    - [ ] `condvar.wait(mutex: mutex)`
+    - [ ] `condvar.notify()` - wake one thread
+    - [ ] `condvar.notifyAll()` - wake all threads
+    - [ ] Add tests
+  - [ ] **Semaphore**
+    - [ ] `Semaphore.new(count: int) -> semaphore`
+    - [ ] `semaphore.acquire()`
+    - [ ] `semaphore.release()`
+    - [ ] Add tests
+  - [ ] **Barrier**
+    - [ ] `Barrier.new(count: int) -> barrier`
+    - [ ] `barrier.wait()` - block until all threads arrive
+    - [ ] Add tests
+
+#### 7.1.3 Channels (Go-style, if in research)
+- [ ] If recommended by research_007, implement channels
+  - [ ] `Channel<T>.new(capacity: int) -> channel<T>`
+  - [ ] `channel.send(value: T) -> result<void, string>`
+  - [ ] `channel.receive() -> result<T, string>`
+  - [ ] Bounded vs unbounded channels
+  - [ ] Add tests
+
+### 7.2 Async Runtime Improvements
+
+#### 7.2.1 Async Scheduler Enhancements
+- [ ] Review existing research: `/docs/research/async_await_implementation.md`
+- [ ] Enhance existing async scheduler in `src/runtime/concurrency/scheduler.cpp`
+  - [ ] Multi-threaded task scheduling (work-stealing)
+  - [ ] Priority-based task scheduling
+  - [ ] Task cancellation support
+  - [ ] Async timeouts
+  - [ ] Add benchmarks
+
+#### 7.2.2 Blocking Task Pool
+- [ ] Implement separate thread pool for blocking tasks
+  - [ ] Prevents blocking async tasks from starving event loop
+  - [ ] Research recommendation from research_007
+  - [ ] Add tests
+
+### 7.3 Atomics Library
+**Status**: Awaiting research_008
+
+#### 7.3.1 Atomic Types & Operations
+- [ ] After research_008 complete, review atomics API
+- [ ] Implement in `stdlib/atomic.aria` or `src/runtime/atomic/`
+  - [ ] **Atomic types**
+    - [ ] `AtomicInt32`, `AtomicInt64`, `AtomicBool`, `AtomicPtr<T>`
+  - [ ] **Atomic operations**
+    - [ ] `atomic.load(order: MemoryOrder) -> T`
+    - [ ] `atomic.store(value: T, order: MemoryOrder)`
+    - [ ] `atomic.exchange(value: T, order: MemoryOrder) -> T`
+    - [ ] `atomic.compareExchange(expected: T, desired: T, order: MemoryOrder) -> bool`
+    - [ ] `atomic.fetchAdd(value: T, order: MemoryOrder) -> T`
+    - [ ] `atomic.fetchSub(value: T, order: MemoryOrder) -> T`
+  - [ ] **Memory ordering**
+    - [ ] Define MemoryOrder enum: Relaxed, Acquire, Release, AcqRel, SeqCst
+    - [ ] Document when to use each
+  - [ ] **Lock-free data structures (examples)**
+    - [ ] Lock-free queue
+    - [ ] Lock-free stack
+  - [ ] Add comprehensive tests
+    - [ ] Test all operations
+    - [ ] Test memory orderings
+    - [ ] Stress tests for race conditions
+
+### 7.4 Timers & Clocks
+**Status**: Awaiting research_009
+
+#### 7.4.1 Time Abstractions
+- [ ] After research_009 complete, review timer API
+- [ ] Implement in `stdlib/time.aria` or `src/runtime/time/`
+  - [ ] **Clock types**
+    - [ ] `Clock.monotonic()` - monotonic time (unaffected by system clock changes)
+    - [ ] `Clock.system()` - wall-clock time
+    - [ ] `Clock.process()` - process CPU time
+  - [ ] **Duration type**
+    - [ ] Nanosecond precision
+    - [ ] Arithmetic operations (add, subtract, multiply, divide)
+  - [ ] **Instant type**
+    - [ ] Represents point in time
+    - [ ] Comparison operations
+    - [ ] Duration since epoch
+  - [ ] Add tests
+
+#### 7.4.2 Timers & Scheduling
+- [ ] **Timer API**
+  - [ ] `Timer.after(duration: Duration) -> future<void>`
+    - [ ] Async timer (integrates with event loop)
+  - [ ] `Timer.interval(duration: Duration, callback: func() -> void) -> timer`
+    - [ ] Periodic timer
+    - [ ] `timer.cancel()` - stop periodic timer
+  - [ ] Add tests
+- [ ] **Sleep functions**
+  - [ ] `thread.sleep(duration: Duration)` - blocking sleep
+  - [ ] `async sleep(duration: Duration)` - async sleep
+  - [ ] Add tests
+
+---
+
+## PHASE 8: Advanced Features
+**Goal**: Implement remaining advanced language features  
+**Dependencies**: Various phases complete  
+**Timeline**: 4-5 weeks  
+**Priority**: MEDIUM (nice to have, not blocking beta)
+
+### 8.1 Trait System Completion
+
+#### 8.1.1 Trait Implementation Improvements
+- [ ] Review existing research: `/docs/research/trait_system_implementation.md`
+- [ ] Enhance trait system (basic version exists)
+  - [ ] **Trait resolution improvements**
+    - [ ] Better error messages
+    - [ ] Overlapping impl detection
+    - [ ] Trait coherence checking
+  - [ ] **Default methods in traits**
+    - [ ] Parse default method implementations
+    - [ ] Allow overriding in impls
+    - [ ] CodeGen for default methods
+  - [ ] **Associated types (if in spec)**
+    - [ ] Check spec for associated type syntax
+    - [ ] Implement if present
+  - [ ] Add tests
+
+#### 8.1.2 Trait Objects (Dynamic Dispatch)
+- [ ] Implement trait objects for runtime polymorphism
+  - [ ] VTable generation (expand existing vtable.cpp)
+  - [ ] Fat pointer representation (trait object = data ptr + vtable ptr)
+  - [ ] Dynamic dispatch codegen
+  - [ ] Add tests
+
+### 8.2 Safe Navigation Operator (?.) Completion
+
+#### 8.2.1 Safe Navigation CodeGen
+- [ ] Complete codegen for `?.` operator (stub exists)
+  - [ ] Null check before member access
+  - [ ] Short-circuit evaluation
+  - [ ] Return null if any intermediate is null
+  - [ ] Optimize generated code (avoid redundant checks)
+- [ ] Add comprehensive tests
+  - [ ] `obj?.field`
+  - [ ] `obj?.method()`
+  - [ ] `obj?.field?.nested`
+  - [ ] Integration with null coalescing: `obj?.field ?? default`
+
+### 8.3 Metaprogramming & Macros
+
+#### 8.3.1 NASM-Style Macro System
+- [ ] Review existing research: `/docs/research/metaprogramming_macro_expansion.md`
+- [ ] Expand preprocessor for macros (basic preprocessor exists)
+  - [ ] Parse macro definitions
+  - [ ] Macro parameter substitution
+  - [ ] Macro expansion
+  - [ ] Nested macro support
+  - [ ] Recursive macro detection
+- [ ] Add macro standard library
+  - [ ] Common utility macros
+- [ ] Add tests
+
+### 8.4 Compile-Time Execution (comptime)
+**Status**: Awaiting research_010
+
+#### 8.4.1 Comptime System Implementation
+- [ ] After research_010 complete, review design
+- [ ] Implement comptime execution
+  - [ ] Parse `comptime` blocks
+  - [ ] Constant evaluation pass
+  - [ ] Comptime interpreter (for complex expressions)
+  - [ ] Comptime function execution
+  - [ ] Type reflection (if in spec)
+- [ ] Add tests
+
+### 8.5 Wildx Executable Memory
+
+#### 8.5.1 Wildx Improvements
+- [ ] Review existing research: `/docs/research/wildx_memory_regions.md`
+- [ ] Enhance wildx support (basic version exists)
+  - [ ] W^X enforcement (write XOR execute)
+  - [ ] Runtime code generation API
+  - [ ] JIT compilation support
+  - [ ] Code cache management
+- [ ] Add tests
+
+### 8.6 Runtime Assembler (if in spec)
+
+#### 8.6.1 Check Spec for Runtime Assembler
+- [ ] Determine if runtime assembler is in spec
+- [ ] If yes, implement:
+  - [ ] Assembly parsing at runtime
+  - [ ] Code generation to wildx memory
+  - [ ] Register allocation
+  - [ ] Add tests
+
+### 8.7 Enhanced Diagnostics
+
+#### 8.7.1 Error Message Improvements
+- [ ] Review existing research: `/docs/research/diagnostic_system_improvements.md`
+- [ ] Improve error messages throughout compiler
+  - [ ] Add source location highlighting
+  - [ ] Add suggestions for common mistakes
+  - [ ] Add "did you mean?" for typos
+  - [ ] Colorize output (when TTY)
+- [ ] Add warning system
+  - [ ] Unused variables
+  - [ ] Unreachable code
+  - [ ] Implicit conversions
+  - [ ] Deprecation warnings
+
+### 8.8 Struct Methods Completion
+
+#### 8.8.1 Method Implementation
+- [ ] Review existing research: `/docs/research/struct_methods_implementation.md`
+- [ ] Complete struct methods (basic version exists)
+  - [ ] Parse method syntax
+  - [ ] Type check methods
+  - [ ] CodeGen for methods (implicit self parameter)
+  - [ ] Method chaining support
+- [ ] Add tests
+
+---
+
+## PHASE 9: Optimization & Polish
+**Goal**: Optimize compiler and generated code  
+**Dependencies**: All core features complete  
+**Timeline**: 2-3 weeks  
+**Priority**: MEDIUM (performance improvements)
+
+### 9.1 Compiler Optimizations
+
+#### 9.1.1 Compilation Speed
+- [ ] Profile compiler to find bottlenecks
+- [ ] Optimize hot paths
+  - [ ] Lexer optimizations
+  - [ ] Parser optimizations
+  - [ ] Type checker caching
+- [ ] Parallel compilation (if not already)
+- [ ] Incremental compilation support
+- [ ] Add benchmarks
+
+#### 9.1.2 Memory Usage
+- [ ] Reduce compiler memory footprint
+  - [ ] AST node pooling
+  - [ ] String interning
+  - [ ] Symbol table optimizations
+- [ ] Add memory profiling
+
+### 9.2 Generated Code Optimizations
+
+#### 9.2.1 LLVM Optimization Passes
+- [ ] Enable aggressive LLVM optimizations
+  - [ ] Inlining
+  - [ ] Dead code elimination
+  - [ ] Constant propagation
+  - [ ] Loop optimizations
+  - [ ] Vectorization
+- [ ] Profile-guided optimization (PGO) support
+- [ ] Link-time optimization (LTO) support
+
+#### 9.2.2 Aria-Specific Optimizations
+- [ ] Review existing research:
+  - [ ] TBB optimization (`tbb_optimizer.cpp` exists)
+  - [ ] Loop optimization (`tbb_loop_optimizer.cpp` exists)
+  - [ ] Interprocedural optimization (`tbb_interprocedural.cpp` exists)
+- [ ] Enhance existing optimizations
+- [ ] Add new optimizations
+  - [ ] GC allocation elision
+  - [ ] Escape analysis optimizations
+  - [ ] Devirtualization (trait dispatch)
+- [ ] Add benchmarks
+
+### 9.3 GC Improvements
+
+#### 9.3.1 Generational GC Enhancement
+- [ ] Review existing research: `/docs/research/gc_nursery_implementation.md`
+- [ ] Complete generational GC (nursery exists)
+  - [ ] Implement generation 2 (tenured space)
+  - [ ] Implement promotion logic
+  - [ ] Add write barriers
+  - [ ] Tune GC parameters
+- [ ] Add GC profiling tools
+- [ ] Add benchmarks
+
+### 9.4 Binary Size Reduction
+
+#### 9.4.1 Size Optimizations
+- [ ] Strip unnecessary symbols
+- [ ] Remove dead code at link time
+- [ ] Compress static data
+- [ ] Add size benchmarks
+
+---
+
+## PHASE 10: Testing & Validation
+**Goal**: Comprehensive testing for production readiness  
+**Dependencies**: All features implemented  
+**Timeline**: 4-5 weeks  
+**Priority**: CRITICAL (must have for beta)
+
+### 10.1 Unit Test Expansion
+
+#### 10.1.1 Expand Test Coverage
+- [ ] Achieve >90% code coverage
+  - [ ] Add tests for all lexer tokens
+  - [ ] Add tests for all parser rules
+  - [ ] Add tests for all type checker rules
+  - [ ] Add tests for all codegen paths
+- [ ] Add edge case tests
+- [ ] Add error condition tests
+- [ ] Generate coverage reports
+
+### 10.2 Integration Tests
+
+#### 10.2.1 End-to-End Test Suite
+- [ ] Create comprehensive integration tests
+  - [ ] Test all language features together
+  - [ ] Test all stdlib functions
+  - [ ] Test module system
+  - [ ] Test async/concurrency
+  - [ ] Test interop with C libraries
+- [ ] Create realistic example programs
+  - [ ] Web server
+  - [ ] File processor
+  - [ ] Data analyzer
+  - [ ] Game engine
+- [ ] Run integration tests on all platforms
+
+### 10.3 Performance Benchmarks
+
+#### 10.3.1 Benchmark Suite
+- [ ] Create performance benchmarks
+  - [ ] Compilation speed
+  - [ ] Runtime performance
+  - [ ] Memory usage
+  - [ ] GC performance
+- [ ] Compare with other languages
+  - [ ] Rust, Go, C, C++, Zig
+- [ ] Identify performance bottlenecks
+- [ ] Optimize hot paths
+- [ ] Document performance characteristics
+
+### 10.4 Fuzzing & Stress Testing
+
+#### 10.4.1 Fuzzing Infrastructure
+- [ ] Set up fuzzing for:
+  - [ ] Lexer (random source input)
+  - [ ] Parser (malformed programs)
+  - [ ] Type checker (type errors)
+  - [ ] CodeGen (edge cases)
+- [ ] Run fuzzing continuously
+- [ ] Fix all crashes and hangs
+- [ ] Add regression tests for found bugs
+
+#### 10.4.2 Stress Testing
+- [ ] Large codebase compilation
+- [ ] Deep recursion tests
+- [ ] Memory stress tests
+- [ ] Concurrency stress tests
+- [ ] Long-running program tests
+
+### 10.5 Cross-Platform Testing
+
+#### 10.5.1 Platform Validation
+- [ ] Test on all target platforms
+  - [ ] Linux (x86_64, ARM64)
+  - [ ] Windows (x86_64)
+  - [ ] macOS (x86_64, ARM64)
+- [ ] Test on different architectures
+- [ ] Test with different LLVM versions
+- [ ] Fix platform-specific bugs
+
+### 10.6 Security Audit
+
+#### 10.6.1 Security Review
+- [ ] Review for security vulnerabilities
+  - [ ] Buffer overflows
+  - [ ] Use-after-free
+  - [ ] Race conditions
+  - [ ] Integer overflows
+- [ ] Static analysis tools
+- [ ] Third-party security audit (if budget allows)
+- [ ] Fix all security issues
+
+---
+
+## PHASE 11: Documentation & Release
+**Goal**: Complete documentation and prepare beta release  
+**Dependencies**: All features complete and tested  
+**Timeline**: 2-3 weeks  
+**Priority**: CRITICAL (required for beta release)
+
+### 11.1 Language Documentation
+
+#### 11.1.1 Language Reference Manual
+- [ ] Write comprehensive language reference
+  - [ ] Type system
+  - [ ] Operators
+  - [ ] Control flow
+  - [ ] Functions and closures
+  - [ ] Structs and traits
+  - [ ] Generics
+  - [ ] Module system
+  - [ ] Async/await
+  - [ ] Memory management
+- [ ] Include examples for every feature
+- [ ] Add cross-references
+- [ ] Generate HTML/PDF versions
+
+#### 11.1.2 Standard Library Documentation
+- [ ] Document all stdlib modules
+  - [ ] Function signatures
+  - [ ] Parameter descriptions
+  - [ ] Return values
+  - [ ] Error conditions
+  - [ ] Usage examples
+- [ ] Generate API documentation (auto-doc tool?)
+
+### 11.2 Tutorials & Guides
+
+#### 11.2.1 Getting Started Guide
+- [ ] Write installation guide
+- [ ] Write "Hello World" tutorial
+- [ ] Write basic language tutorial
+  - [ ] Variables and types
+  - [ ] Control flow
+  - [ ] Functions
+  - [ ] Modules
+- [ ] Add exercises
+
+#### 11.2.2 Advanced Guides
+- [ ] Write advanced topics guides
+  - [ ] Async programming
+  - [ ] Concurrency
+  - [ ] Memory management strategies
+  - [ ] Performance optimization
+  - [ ] Interfacing with C
+  - [ ] Metaprogramming
+- [ ] Add real-world examples
+
+### 11.3 Migration & Comparison Guides
+
+#### 11.3.1 For Developers Coming From...
+- [ ] Rust migration guide
+- [ ] Go migration guide
+- [ ] C++ migration guide
+- [ ] JavaScript/TypeScript migration guide
+
+#### 11.3.2 Language Comparison
+- [ ] Create comparison matrix
+  - [ ] Aria vs Rust
+  - [ ] Aria vs Go
+  - [ ] Aria vs Zig
+  - [ ] Aria vs C++
+- [ ] Highlight unique features
+- [ ] Explain design decisions
+
+### 11.4 Tooling Documentation
+
+#### 11.4.1 Compiler Documentation
+- [ ] Document compiler flags
+- [ ] Document build system integration
+- [ ] Document IDE integration (if any)
+- [ ] Document debugging tools
+
+### 11.5 Release Preparation
+
+#### 11.5.1 Beta Release Checklist
+- [ ] All CRITICAL and HIGH priority features complete
+- [ ] All tests passing
+- [ ] Documentation complete
+- [ ] Known issues documented
+- [ ] Release notes written
+- [ ] Version number finalized
+- [ ] Build artifacts generated
+  - [ ] Linux binaries
+  - [ ] Windows binaries
+  - [ ] macOS binaries
+  - [ ] Source tarball
+- [ ] Package for distribution
+  - [ ] .deb package (Linux)
+  - [ ] .rpm package (Linux)
+  - [ ] .msi installer (Windows)
+  - [ ] Homebrew formula (macOS)
+- [ ] Update website
+- [ ] Prepare announcement
+
+#### 11.5.2 Beta Release
+- [ ] Tag repository: `v0.1.0-beta.1`
+- [ ] Create GitHub release
+- [ ] Upload binaries
+- [ ] Announce on:
+  - [ ] Project website
+  - [ ] Social media
+  - [ ] Mailing lists
+  - [ ] Reddit (/r/ProgrammingLanguages)
+  - [ ] Hacker News
+  - [ ] Lobsters
+- [ ] Invite beta testers
+- [ ] Set up issue tracker for feedback
+- [ ] Prepare for alpha release (after beta testing)
+
+---
+
+## TRACKING & PROGRESS
+
+### Current Status (December 11, 2025)
+- **Phase 0**: 0% (research system ready, not started)
+- **Phase 1**: 45% (types mostly done, TBB/exotic types pending)
+- **Phase 2**: 10% (stubs exist, needs research_001)
+- **Phase 3**: 20% (parsing done, visibility/resolution pending)
+- **Phase 4**: 15% (parsing done, monomorphization pending)
+- **Phase 5**: 5% (some functions exist)
+- **Phase 6**: 0% (not started)
+- **Phase 7**: 20% (async exists, threading/atomics pending)
+- **Phase 8**: 30% (traits exist, other features partial)
+- **Phase 9**: 5% (some optimizations exist)
+- **Phase 10**: 10% (basic tests exist)
+- **Phase 11**: 5% (README exists)
+
+### Estimated Timeline
+- **Optimistic**: 6 months (with parallel work, aggressive schedule)
+- **Realistic**: 9-10 months (with research integration, testing)
+- **Conservative**: 12 months (with thorough testing, polish)
+
+### Parallel Tracks Possible
+1. **Research Track**: Run Gemini research tasks in background
+2. **Implementation Track**: Implement features with existing research
+3. **Testing Track**: Write tests as features are implemented
+4. **Documentation Track**: Document features as they stabilize
+
+### Critical Path
+Phase 0 → Phase 1 → Phase 2 → Phase 4 → Phase 6 → Phase 10 → Phase 11
+
+Phases 3, 5, 7, 8, 9 can run in parallel once dependencies are met.
+
+---
+
+**Last Updated**: December 11, 2025  
+**Next Review**: After research_001, research_002, research_003 complete
