@@ -628,14 +628,15 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
             continue;
         }
         
-        // Handle range operator: start..end or start...end
-        if (current.type == TOKEN_RANGE || current.type == TOKEN_RANGE_EXCLUSIVE) {
-            bool is_exclusive = (current.type == TOKEN_RANGE_EXCLUSIVE);
-            advance();  // consume .. or ...
-            auto end_expr = parsePrimary();
-            expr = std::make_unique<RangeExpr>(std::move(expr), std::move(end_expr), is_exclusive);
-            continue;
-        }
+        // TODO: Handle range operator: start..end or start...end
+        // Waiting for RangeExpr AST node implementation
+        // if (current.type == TOKEN_RANGE || current.type == TOKEN_RANGE_EXCLUSIVE) {
+        //     bool is_exclusive = (current.type == TOKEN_RANGE_EXCLUSIVE);
+        //     advance();  // consume .. or ...
+        //     auto end_expr = parsePrimary();
+        //     expr = std::make_unique<RangeExpr>(std::move(expr), std::move(end_expr), is_exclusive);
+        //     continue;
+        // }
         
         // Handle member access: obj.field or obj?.field (safe navigation)
         if (current.type == TOKEN_DOT || current.type == TOKEN_SAFE_NAV) {
@@ -778,7 +779,8 @@ std::unique_ptr<Expression> Parser::parseRelational() {
         else if (op == TOKEN_GT) binOp = BinaryOp::GT;
         else if (op == TOKEN_LE) binOp = BinaryOp::LE;
         else if (op == TOKEN_GE) binOp = BinaryOp::GE;
-        else if (op == TOKEN_SPACESHIP) binOp = BinaryOp::SPACESHIP;
+        // TODO: Spaceship operator - waiting for BinaryOp::SPACESHIP enum
+        // else if (op == TOKEN_SPACESHIP) binOp = BinaryOp::SPACESHIP;
         else binOp = BinaryOp::GE;
 
         left = std::make_unique<BinaryOp>(binOp, std::move(left), std::move(right));
@@ -887,7 +889,9 @@ std::unique_ptr<Expression> Parser::parseTernary() {
     return expr;
 }
 
-// Parse null coalescing expressions: ??
+// TODO: Parse null coalescing expressions: ??
+// Waiting for BinaryOp::NULL_COALESCE enum and proper integration
+/*
 std::unique_ptr<Expression> Parser::parseNullCoalesce() {
     auto left = parseTernary();
 
@@ -898,8 +902,11 @@ std::unique_ptr<Expression> Parser::parseNullCoalesce() {
 
     return left;
 }
+*/
 
-// Parse pipeline expressions: |> (forward) and <| (backward)
+// TODO: Parse pipeline expressions: |> (forward) and <| (backward)
+// Waiting for BinaryOp::PIPE_FORWARD/PIPE_BACKWARD enums
+/*
 std::unique_ptr<Expression> Parser::parsePipeline() {
     auto left = parseNullCoalesce();
 
@@ -921,11 +928,12 @@ std::unique_ptr<Expression> Parser::parsePipeline() {
 
     return left;
 }
+*/
 
 // Parse assignment expressions (lowest precedence, right-associative)
 // Handles: identifier = expr, identifier += expr, etc.
 std::unique_ptr<Expression> Parser::parseAssignment() {
-    auto left = parsePipeline();
+    auto left = parseTernary();  // TODO: Will be parsePipeline() when pipeline operators are implemented
     
     // Check for assignment operators
     if (match(TOKEN_ASSIGN)) {
@@ -988,7 +996,8 @@ std::unique_ptr<Expression> Parser::parseAssignment() {
 
 // Top-level expression parser
 std::unique_ptr<Expression> Parser::parseExpr() {
-    RecursionGuard guard(recursion_depth, MAX_RECURSION_DEPTH);
+    // TODO: Add recursion depth checking with RecursionGuard
+    // RecursionGuard guard(recursion_depth, MAX_RECURSION_DEPTH);
     return parseAssignment();
 }
 
@@ -1559,9 +1568,10 @@ std::unique_ptr<Statement> Parser::parseStmt() {
     }
     
     // Loop construct (start, stop, step) with $ iterator
-    if (current.type == TOKEN_KW_LOOP) {
-        return parseLoopStmt();
-    }
+    // TODO: Loop statement - waiting for LoopStmt AST node
+    // if (current.type == TOKEN_KW_LOOP) {
+    //     return parseLoopStmt();
+    // }
     
     // When loop (Spec 8.2: Loop with completion blocks)
     if (current.type == TOKEN_KW_WHEN) {
@@ -2029,9 +2039,11 @@ std::unique_ptr<Statement> Parser::parseTillLoop() {
     }
 }
 
-// Loop construct: loop(start, stop, step) with $ iterator variable
+// TODO: Loop construct: loop(start, stop, step) with $ iterator variable
+// Waiting for LoopStmt AST node implementation
 // Example: loop(1, 100, 1) { ... } counts from 1 to 100 by 1
 // Example: loop(100, 0, -2) { ... } counts from 100 to 0 by -2
+/*
 std::unique_ptr<Statement> Parser::parseLoopStmt() {
     expect(TOKEN_KW_LOOP);
     expect(TOKEN_LPAREN);
@@ -2054,6 +2066,7 @@ std::unique_ptr<Statement> Parser::parseLoopStmt() {
     
     return std::make_unique<LoopStmt>(std::move(start), std::move(stop), std::move(step), std::move(body));
 }
+*/
 
 // =============================================================================
 // Pattern Matching: pick/fall (Spec Section 8.3)
