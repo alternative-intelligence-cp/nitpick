@@ -40,6 +40,8 @@ std::shared_ptr<Type> parseType(const std::string& type_str) {
     if (type_str == "tbb16") return std::make_shared<Type>(TypeKind::TBB16, "tbb16");
     if (type_str == "tbb32") return std::make_shared<Type>(TypeKind::TBB32, "tbb32");
     if (type_str == "tbb64") return std::make_shared<Type>(TypeKind::TBB64, "tbb64");
+    if (type_str == "trit") return std::make_shared<Type>(TypeKind::TRIT, "trit");
+    if (type_str == "tryte") return std::make_shared<Type>(TypeKind::TRYTE, "tryte");
     if (type_str == "string") return makeStringType();
     if (type_str == "dyn") return makeDynType();
     if (type_str == "func") return makeFuncType();
