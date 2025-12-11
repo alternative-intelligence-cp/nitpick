@@ -1,0 +1,58 @@
+// TBB Arithmetic Test
+// Tests sticky error propagation for Twisted Balanced Binary types
+
+func:main = void() {
+    // Test 1: Basic addition
+    tbb8:a = 10;
+    tbb8:b = 20;
+    tbb8:c = a + b;  // Should be 30
+    
+    // Test 2: Overflow detection (100 + 50 = 150, exceeds tbb8 max of 127)
+    tbb8:x = 100;
+    tbb8:y = 50;
+    tbb8:overflow = x + y;  // Should be -128 (ERR sentinel)
+    
+    // Test 3: Sticky error propagation
+    tbb8:err_add = overflow + 5;   // ERR + anything → ERR (-128)
+    tbb8:err_mul = overflow * 10;  // ERR * anything → ERR (-128)
+    
+    // Test 4: Subtraction
+    tbb8:s1 = 30;
+    tbb8:s2 = 10;
+    tbb8:s3 = s1 - s2;  // Should be 20
+    
+    // Test 5: Multiplication
+    tbb8:m1 = 10;
+    tbb8:m2 = 5;
+    tbb8:m3 = m1 * m2;  // Should be 50
+    
+    // Test 6: Multiplication overflow
+    tbb8:m4 = 20;
+    tbb8:m5 = 10;
+    tbb8:m6 = m4 * m5;  // 200 exceeds range, should be ERR (-128)
+    
+    // Test 7: Division
+    tbb8:d1 = 100;
+    tbb8:d2 = 10;
+    tbb8:d3 = d1 / d2;  // Should be 10
+    
+    // Test 8: Division by zero
+    tbb8:d4 = 50;
+    tbb8:d5 = 0;
+    tbb8:d6 = d4 / d5;  // Should be ERR (-128)
+    
+    // Test 9: Modulo
+    tbb8:mod1 = 25;
+    tbb8:mod2 = 7;
+    tbb8:mod3 = mod1 % mod2;  // Should be 4
+    
+    // Test 10: Negation
+    tbb8:neg1 = 50;
+    tbb8:neg2 = -neg1;  // Should be -50
+    
+    // Test 11: Negation of ERR sentinel
+    tbb8:sentinel = -128;
+    tbb8:neg_err = -sentinel;  // Should remain -128 (ERR)
+    
+
+};

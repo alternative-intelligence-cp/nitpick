@@ -3548,8 +3548,24 @@ public:
             if (!operand) return nullptr;
             
             switch (unary->op) {
-                case aria::frontend::UnaryOp::NEG:
+                case aria::frontend::UnaryOp::NEG: {
+                    // Check if operand is a TBB type
+                    std::string operandType = "";
+                    if (ctx.exprTypeMap.count(operand)) {
+                        operandType = ctx.exprTypeMap[operand];
+                    }
+                    
+                    // TBB-aware negation with sticky error propagation
+                    if (TBBLowerer::isTBBType(operandType) && operand->getType()->isIntegerTy()) {
+                        TBBLowerer tbbLowerer(ctx.llvmContext, *ctx.builder, ctx.module.get());
+                        Value* result = tbbLowerer.createNeg(operand);
+                        ctx.exprTypeMap[result] = operandType;  // Preserve type
+                        return result;
+                    }
+                    
+                    // Standard negation for non-TBB types
                     return ctx.builder->CreateNeg(operand);
+                }
                 case aria::frontend::UnaryOp::LOGICAL_NOT:
                     return ctx.builder->CreateNot(operand);
                 case aria::frontend::UnaryOp::BITWISE_NOT:

@@ -25,6 +25,7 @@ enum class TypeKind {
     INT8, INT16, INT32, INT64, INT128, INT256, INT512,
     UINT8, UINT16, UINT32, UINT64,
     FLT32, FLT64,
+    TBB8, TBB16, TBB32, TBB64,  // Twisted Balanced Binary types with sticky error propagation
     TRIT, TRYTE,  // Ternary types
     NIT, NYTE,     // Nonary types
     STRING,
@@ -113,6 +114,10 @@ public:
             case TypeKind::INT512: return "int512";
             case TypeKind::FLT32: return "flt32";
             case TypeKind::FLT64: return "flt64";
+            case TypeKind::TBB8: return "tbb8";
+            case TypeKind::TBB16: return "tbb16";
+            case TypeKind::TBB32: return "tbb32";
+            case TypeKind::TBB64: return "tbb64";
             case TypeKind::STRING: return "string";
             case TypeKind::DYN: return "dyn";
             case TypeKind::TRIT: return "trit";
@@ -156,7 +161,10 @@ public:
                kind == TypeKind::INT32 || kind == TypeKind::INT64 ||
                kind == TypeKind::INT128 || kind == TypeKind::INT256 ||
                kind == TypeKind::INT512 || kind == TypeKind::FLT32 ||
-               kind == TypeKind::FLT64 || isVector();
+               kind == TypeKind::FLT64 || 
+               kind == TypeKind::TBB8 || kind == TypeKind::TBB16 ||
+               kind == TypeKind::TBB32 || kind == TypeKind::TBB64 ||
+               isVector();
     }
 
     // Check if type is a vector type
@@ -172,6 +180,8 @@ public:
                kind == TypeKind::INT32 || kind == TypeKind::INT64 ||
                kind == TypeKind::INT128 || kind == TypeKind::INT256 ||
                kind == TypeKind::INT512 ||
+               kind == TypeKind::TBB8 || kind == TypeKind::TBB16 ||
+               kind == TypeKind::TBB32 || kind == TypeKind::TBB64 ||
                kind == TypeKind::IVEC2 || kind == TypeKind::IVEC3 || kind == TypeKind::IVEC4;
     }
 
