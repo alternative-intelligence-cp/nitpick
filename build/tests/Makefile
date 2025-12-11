@@ -228,6 +228,34 @@ test_shadow_stack/fast:
 .PHONY : test_shadow_stack/fast
 
 # Convenience name for target.
+tests/CMakeFiles/test_wildx_guard.dir/rule:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/test_wildx_guard.dir/rule
+.PHONY : tests/CMakeFiles/test_wildx_guard.dir/rule
+
+# Convenience name for target.
+test_wildx_guard: tests/CMakeFiles/test_wildx_guard.dir/rule
+.PHONY : test_wildx_guard
+
+# fast build rule for target.
+test_wildx_guard/fast:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_wildx_guard.dir/build.make tests/CMakeFiles/test_wildx_guard.dir/build
+.PHONY : test_wildx_guard/fast
+
+# Convenience name for target.
+tests/CMakeFiles/test_diagnostic.dir/rule:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/test_diagnostic.dir/rule
+.PHONY : tests/CMakeFiles/test_diagnostic.dir/rule
+
+# Convenience name for target.
+test_diagnostic: tests/CMakeFiles/test_diagnostic.dir/rule
+.PHONY : test_diagnostic
+
+# fast build rule for target.
+test_diagnostic/fast:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_diagnostic.dir/build.make tests/CMakeFiles/test_diagnostic.dir/build
+.PHONY : test_diagnostic/fast
+
+# Convenience name for target.
 tests/CMakeFiles/run_tests.dir/rule:
 	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/run_tests.dir/rule
 .PHONY : tests/CMakeFiles/run_tests.dir/rule
@@ -240,6 +268,30 @@ run_tests: tests/CMakeFiles/run_tests.dir/rule
 run_tests/fast:
 	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/run_tests.dir/build.make tests/CMakeFiles/run_tests.dir/build
 .PHONY : run_tests/fast
+
+__/src/frontend/diagnostic.o: __/src/frontend/diagnostic.cpp.o
+.PHONY : __/src/frontend/diagnostic.o
+
+# target to build an object file
+__/src/frontend/diagnostic.cpp.o:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_diagnostic.dir/build.make tests/CMakeFiles/test_diagnostic.dir/__/src/frontend/diagnostic.cpp.o
+.PHONY : __/src/frontend/diagnostic.cpp.o
+
+__/src/frontend/diagnostic.i: __/src/frontend/diagnostic.cpp.i
+.PHONY : __/src/frontend/diagnostic.i
+
+# target to preprocess a source file
+__/src/frontend/diagnostic.cpp.i:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_diagnostic.dir/build.make tests/CMakeFiles/test_diagnostic.dir/__/src/frontend/diagnostic.cpp.i
+.PHONY : __/src/frontend/diagnostic.cpp.i
+
+__/src/frontend/diagnostic.s: __/src/frontend/diagnostic.cpp.s
+.PHONY : __/src/frontend/diagnostic.s
+
+# target to generate assembly for a file
+__/src/frontend/diagnostic.cpp.s:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_diagnostic.dir/build.make tests/CMakeFiles/test_diagnostic.dir/__/src/frontend/diagnostic.cpp.s
+.PHONY : __/src/frontend/diagnostic.cpp.s
 
 __/src/frontend/lexer.o: __/src/frontend/lexer.cpp.o
 .PHONY : __/src/frontend/lexer.o
@@ -409,6 +461,54 @@ __/src/runtime/memory/allocator.c.s:
 	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_allocator.dir/build.make tests/CMakeFiles/test_allocator.dir/__/src/runtime/memory/allocator.c.s
 .PHONY : __/src/runtime/memory/allocator.c.s
 
+__/src/runtime/memory/wildx_allocator.o: __/src/runtime/memory/wildx_allocator.c.o
+.PHONY : __/src/runtime/memory/wildx_allocator.o
+
+# target to build an object file
+__/src/runtime/memory/wildx_allocator.c.o:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_wildx_guard.dir/build.make tests/CMakeFiles/test_wildx_guard.dir/__/src/runtime/memory/wildx_allocator.c.o
+.PHONY : __/src/runtime/memory/wildx_allocator.c.o
+
+__/src/runtime/memory/wildx_allocator.i: __/src/runtime/memory/wildx_allocator.c.i
+.PHONY : __/src/runtime/memory/wildx_allocator.i
+
+# target to preprocess a source file
+__/src/runtime/memory/wildx_allocator.c.i:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_wildx_guard.dir/build.make tests/CMakeFiles/test_wildx_guard.dir/__/src/runtime/memory/wildx_allocator.c.i
+.PHONY : __/src/runtime/memory/wildx_allocator.c.i
+
+__/src/runtime/memory/wildx_allocator.s: __/src/runtime/memory/wildx_allocator.c.s
+.PHONY : __/src/runtime/memory/wildx_allocator.s
+
+# target to generate assembly for a file
+__/src/runtime/memory/wildx_allocator.c.s:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_wildx_guard.dir/build.make tests/CMakeFiles/test_wildx_guard.dir/__/src/runtime/memory/wildx_allocator.c.s
+.PHONY : __/src/runtime/memory/wildx_allocator.c.s
+
+__/src/runtime/memory/wildx_guard.o: __/src/runtime/memory/wildx_guard.c.o
+.PHONY : __/src/runtime/memory/wildx_guard.o
+
+# target to build an object file
+__/src/runtime/memory/wildx_guard.c.o:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_wildx_guard.dir/build.make tests/CMakeFiles/test_wildx_guard.dir/__/src/runtime/memory/wildx_guard.c.o
+.PHONY : __/src/runtime/memory/wildx_guard.c.o
+
+__/src/runtime/memory/wildx_guard.i: __/src/runtime/memory/wildx_guard.c.i
+.PHONY : __/src/runtime/memory/wildx_guard.i
+
+# target to preprocess a source file
+__/src/runtime/memory/wildx_guard.c.i:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_wildx_guard.dir/build.make tests/CMakeFiles/test_wildx_guard.dir/__/src/runtime/memory/wildx_guard.c.i
+.PHONY : __/src/runtime/memory/wildx_guard.c.i
+
+__/src/runtime/memory/wildx_guard.s: __/src/runtime/memory/wildx_guard.c.s
+.PHONY : __/src/runtime/memory/wildx_guard.s
+
+# target to generate assembly for a file
+__/src/runtime/memory/wildx_guard.c.s:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_wildx_guard.dir/build.make tests/CMakeFiles/test_wildx_guard.dir/__/src/runtime/memory/wildx_guard.c.s
+.PHONY : __/src/runtime/memory/wildx_guard.c.s
+
 test_allocator.o: test_allocator.cpp.o
 .PHONY : test_allocator.o
 
@@ -432,6 +532,30 @@ test_allocator.s: test_allocator.cpp.s
 test_allocator.cpp.s:
 	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_allocator.dir/build.make tests/CMakeFiles/test_allocator.dir/test_allocator.cpp.s
 .PHONY : test_allocator.cpp.s
+
+test_diagnostic.o: test_diagnostic.cpp.o
+.PHONY : test_diagnostic.o
+
+# target to build an object file
+test_diagnostic.cpp.o:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_diagnostic.dir/build.make tests/CMakeFiles/test_diagnostic.dir/test_diagnostic.cpp.o
+.PHONY : test_diagnostic.cpp.o
+
+test_diagnostic.i: test_diagnostic.cpp.i
+.PHONY : test_diagnostic.i
+
+# target to preprocess a source file
+test_diagnostic.cpp.i:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_diagnostic.dir/build.make tests/CMakeFiles/test_diagnostic.dir/test_diagnostic.cpp.i
+.PHONY : test_diagnostic.cpp.i
+
+test_diagnostic.s: test_diagnostic.cpp.s
+.PHONY : test_diagnostic.s
+
+# target to generate assembly for a file
+test_diagnostic.cpp.s:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_diagnostic.dir/build.make tests/CMakeFiles/test_diagnostic.dir/test_diagnostic.cpp.s
+.PHONY : test_diagnostic.cpp.s
 
 test_gc_header.o: test_gc_header.cpp.o
 .PHONY : test_gc_header.o
@@ -505,6 +629,30 @@ test_shadow_stack.cpp.s:
 	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_shadow_stack.dir/build.make tests/CMakeFiles/test_shadow_stack.dir/test_shadow_stack.cpp.s
 .PHONY : test_shadow_stack.cpp.s
 
+test_wildx_guard.o: test_wildx_guard.c.o
+.PHONY : test_wildx_guard.o
+
+# target to build an object file
+test_wildx_guard.c.o:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_wildx_guard.dir/build.make tests/CMakeFiles/test_wildx_guard.dir/test_wildx_guard.c.o
+.PHONY : test_wildx_guard.c.o
+
+test_wildx_guard.i: test_wildx_guard.c.i
+.PHONY : test_wildx_guard.i
+
+# target to preprocess a source file
+test_wildx_guard.c.i:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_wildx_guard.dir/build.make tests/CMakeFiles/test_wildx_guard.dir/test_wildx_guard.c.i
+.PHONY : test_wildx_guard.c.i
+
+test_wildx_guard.s: test_wildx_guard.c.s
+.PHONY : test_wildx_guard.s
+
+# target to generate assembly for a file
+test_wildx_guard.c.s:
+	cd /home/randy/._____RANDY_____/REPOS/aria/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_wildx_guard.dir/build.make tests/CMakeFiles/test_wildx_guard.dir/test_wildx_guard.c.s
+.PHONY : test_wildx_guard.c.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -520,9 +668,14 @@ help:
 	@echo "... test"
 	@echo "... run_tests"
 	@echo "... test_allocator"
+	@echo "... test_diagnostic"
 	@echo "... test_gc_header"
 	@echo "... test_parser"
 	@echo "... test_shadow_stack"
+	@echo "... test_wildx_guard"
+	@echo "... __/src/frontend/diagnostic.o"
+	@echo "... __/src/frontend/diagnostic.i"
+	@echo "... __/src/frontend/diagnostic.s"
 	@echo "... __/src/frontend/lexer.o"
 	@echo "... __/src/frontend/lexer.i"
 	@echo "... __/src/frontend/lexer.s"
@@ -544,9 +697,18 @@ help:
 	@echo "... __/src/runtime/memory/allocator.o"
 	@echo "... __/src/runtime/memory/allocator.i"
 	@echo "... __/src/runtime/memory/allocator.s"
+	@echo "... __/src/runtime/memory/wildx_allocator.o"
+	@echo "... __/src/runtime/memory/wildx_allocator.i"
+	@echo "... __/src/runtime/memory/wildx_allocator.s"
+	@echo "... __/src/runtime/memory/wildx_guard.o"
+	@echo "... __/src/runtime/memory/wildx_guard.i"
+	@echo "... __/src/runtime/memory/wildx_guard.s"
 	@echo "... test_allocator.o"
 	@echo "... test_allocator.i"
 	@echo "... test_allocator.s"
+	@echo "... test_diagnostic.o"
+	@echo "... test_diagnostic.i"
+	@echo "... test_diagnostic.s"
 	@echo "... test_gc_header.o"
 	@echo "... test_gc_header.i"
 	@echo "... test_gc_header.s"
@@ -556,6 +718,9 @@ help:
 	@echo "... test_shadow_stack.o"
 	@echo "... test_shadow_stack.i"
 	@echo "... test_shadow_stack.s"
+	@echo "... test_wildx_guard.o"
+	@echo "... test_wildx_guard.i"
+	@echo "... test_wildx_guard.s"
 .PHONY : help
 
 

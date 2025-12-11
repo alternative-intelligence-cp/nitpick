@@ -78,7 +78,7 @@ using aria::frontend::PickStmt;
 using aria::frontend::PickCase;
 using aria::frontend::FallStmt;
 using aria::frontend::TillLoop;
-using aria::frontend::LoopStmt;
+// TODO: using aria::frontend::LoopStmt; // Waiting for LoopStmt AST node
 using aria::frontend::WhenLoop;
 using aria::frontend::ForLoop;
 using aria::frontend::WhileLoop;
@@ -2370,6 +2370,8 @@ public:
         ctx.builder->CreateBr(it->second);
     }
 
+    // TODO: visit(LoopStmt) - waiting for LoopStmt AST node implementation
+    /*
     void visit(LoopStmt* node) override {
         // loop(start, stop, step) with '$' iterator
         // Dynamic direction: step >= 0 counts up, step < 0 counts down
@@ -2431,6 +2433,7 @@ public:
         // Exit block
         ctx.builder->SetInsertPoint(exitBB);
     }
+    */
 
     void visit(TillLoop* node) override {
         // Till(limit, step) with '$' iterator
@@ -3975,7 +3978,8 @@ public:
                         return ctx.builder->CreateFCmpOGE(L, R, "getmp");
                     }
                     return ctx.builder->CreateICmpSGE(L, R, "getmp");
-                case aria::frontend::BinaryOp::SPACESHIP: {
+                // TODO: Spaceship operator - waiting for BinaryOp::SPACESHIP enum
+                /* case aria::frontend::BinaryOp::SPACESHIP: {
                     // Three-way comparison: returns -1 if L < R, 0 if L == R, 1 if L > R
                     Type* resultType = Type::getInt8Ty(ctx.llvmContext);
                     Value* negOne = ConstantInt::get(resultType, -1, true);
@@ -3993,7 +3997,7 @@ public:
                         Value* ltResult = ctx.builder->CreateSelect(lt, negOne, zero, "lt_result");
                         return ctx.builder->CreateSelect(gt, one, ltResult, "spaceship");
                     }
-                }
+                } */
                 case aria::frontend::BinaryOp::LOGICAL_AND:
                     return ctx.builder->CreateAnd(L, R, "andtmp");
                 case aria::frontend::BinaryOp::LOGICAL_OR:
@@ -4008,7 +4012,8 @@ public:
                     return ctx.builder->CreateShl(L, R, "shltmp");
                 case aria::frontend::BinaryOp::RSHIFT:
                     return ctx.builder->CreateAShr(L, R, "ashrtmp");
-                case aria::frontend::BinaryOp::NULL_COALESCE: {
+                // TODO: Null coalesce and pipeline operators - waiting for enum additions
+                /* case aria::frontend::BinaryOp::NULL_COALESCE: {
                     // a ?? b: return a if not null/zero, otherwise b
                     // For pointers: check if null
                     // For integers: check if zero (since Aria uses 0 for null in some contexts)
@@ -4050,7 +4055,7 @@ public:
                         return ctx.builder->CreateCall(func, args, "pipe_bwd");
                     }
                     throw std::runtime_error("Pipeline backward requires function on left side");
-                }
+                } */
                 default:
                     // Assignment operators handled elsewhere
                     return nullptr;
@@ -5057,10 +5062,11 @@ public:
         // ================================================================
         // RANGE EXPRESSION CODE GENERATION
         // ================================================================
+        // TODO: Range expression - waiting for RangeExpr AST node
         // Handles: start..end (inclusive) and start...end (exclusive)
         // Creates a struct { start_value, end_value, step=1, is_exclusive }
         // ================================================================
-        if (auto* range = dynamic_cast<aria::frontend::RangeExpr*>(node)) {
+        /* if (auto* range = dynamic_cast<aria::frontend::RangeExpr*>(node)) {
             // Evaluate start and end expressions
             Value* startVal = visitExpr(range->start.get());
             Value* endVal = visitExpr(range->end.get());
@@ -5120,7 +5126,7 @@ public:
             
             // Load the struct value (for returning by value)
             return ctx.builder->CreateLoad(rangeType, rangePtr, "range.value");
-        }
+        } */
         
         // Handle AwaitExpr (async/await - coroutine suspension)
         if (auto* await = dynamic_cast<aria::frontend::AwaitExpr*>(node)) {
@@ -5285,7 +5291,8 @@ public:
             }
         }
         
-        //... Handle other ops...
+        // Fallthrough: unhandled expression type
+        std::cerr << "Warning: Unhandled expression type in visitExpr, returning nullptr\n";
         return nullptr;
     }
 
@@ -6048,7 +6055,7 @@ public:
     void visit(frontend::TernaryExpr* node) override {} // Handled by visitExpr()
     void visit(frontend::ObjectLiteral* node) override {} // Handled by visitExpr()
     void visit(frontend::MemberAccess* node) override {} // Handled by visitExpr()
-    void visit(frontend::RangeExpr* node) override {} // Handled by visitExpr()
+    // TODO: void visit(frontend::RangeExpr* node) override {} // Waiting for RangeExpr AST node
     void visit(frontend::ArrayLiteral* node) override {} // Handled by visitExpr()
     void visit(frontend::IndexExpr* node) override {} // Handled by visitExpr()
     void visit(frontend::LambdaExpr* node) override {} // Handled by visitExpr()
