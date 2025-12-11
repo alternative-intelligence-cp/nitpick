@@ -78,6 +78,7 @@ add_executable(ariac
  src/frontend/sema/borrow_checker.cpp  # Borrow Checker Implementation
  src/frontend/sema/escape_analysis.cpp # Escape Analysis Implementation
  src/frontend/sema/type_checker.cpp    # Type Checking Implementation
+ src/frontend/sema/tbb_checker.cpp     # TBB Type Validation (Phase 1.1.1)
  src/frontend/sema/trait_checker.cpp   # Trait Type Checking (WP 005.4)
  src/backend/codegen.cpp
  src/backend/codegen_tbb.cpp           # TBB Sticky Error Propagation (v0.0.7 Critical Fix)
