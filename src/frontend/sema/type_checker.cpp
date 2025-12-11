@@ -36,6 +36,10 @@ std::shared_ptr<Type> parseType(const std::string& type_str) {
     if (type_str == "int512") return makeIntType(512);
     if (type_str == "flt32") return makeFloatType(32);
     if (type_str == "flt64") return makeFloatType(64);
+    if (type_str == "tbb8") return std::make_shared<Type>(TypeKind::TBB8, "tbb8");
+    if (type_str == "tbb16") return std::make_shared<Type>(TypeKind::TBB16, "tbb16");
+    if (type_str == "tbb32") return std::make_shared<Type>(TypeKind::TBB32, "tbb32");
+    if (type_str == "tbb64") return std::make_shared<Type>(TypeKind::TBB64, "tbb64");
     if (type_str == "string") return makeStringType();
     if (type_str == "dyn") return makeDynType();
     if (type_str == "func") return makeFuncType();

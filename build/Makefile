@@ -380,6 +380,32 @@ test_shadow_stack/fast:
 .PHONY : test_shadow_stack/fast
 
 #=============================================================================
+# Target rules for targets named test_wildx_guard
+
+# Build rule for target.
+test_wildx_guard: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_wildx_guard
+.PHONY : test_wildx_guard
+
+# fast build rule for target.
+test_wildx_guard/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_wildx_guard.dir/build.make tests/CMakeFiles/test_wildx_guard.dir/build
+.PHONY : test_wildx_guard/fast
+
+#=============================================================================
+# Target rules for targets named test_diagnostic
+
+# Build rule for target.
+test_diagnostic: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_diagnostic
+.PHONY : test_diagnostic
+
+# fast build rule for target.
+test_diagnostic/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_diagnostic.dir/build.make tests/CMakeFiles/test_diagnostic.dir/build
+.PHONY : test_diagnostic/fast
+
+#=============================================================================
 # Target rules for targets named run_tests
 
 # Build rule for target.
@@ -608,6 +634,30 @@ src/driver/main.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/driver/main.cpp.s
 .PHONY : src/driver/main.cpp.s
 
+src/frontend/diagnostic.o: src/frontend/diagnostic.cpp.o
+.PHONY : src/frontend/diagnostic.o
+
+# target to build an object file
+src/frontend/diagnostic.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/diagnostic.cpp.o
+.PHONY : src/frontend/diagnostic.cpp.o
+
+src/frontend/diagnostic.i: src/frontend/diagnostic.cpp.i
+.PHONY : src/frontend/diagnostic.i
+
+# target to preprocess a source file
+src/frontend/diagnostic.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/diagnostic.cpp.i
+.PHONY : src/frontend/diagnostic.cpp.i
+
+src/frontend/diagnostic.s: src/frontend/diagnostic.cpp.s
+.PHONY : src/frontend/diagnostic.s
+
+# target to generate assembly for a file
+src/frontend/diagnostic.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/diagnostic.cpp.s
+.PHONY : src/frontend/diagnostic.cpp.s
+
 src/frontend/lexer.o: src/frontend/lexer.cpp.o
 .PHONY : src/frontend/lexer.o
 
@@ -751,6 +801,30 @@ src/frontend/sema/escape_analysis.s: src/frontend/sema/escape_analysis.cpp.s
 src/frontend/sema/escape_analysis.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.s
 .PHONY : src/frontend/sema/escape_analysis.cpp.s
+
+src/frontend/sema/tbb_checker.o: src/frontend/sema/tbb_checker.cpp.o
+.PHONY : src/frontend/sema/tbb_checker.o
+
+# target to build an object file
+src/frontend/sema/tbb_checker.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/tbb_checker.cpp.o
+.PHONY : src/frontend/sema/tbb_checker.cpp.o
+
+src/frontend/sema/tbb_checker.i: src/frontend/sema/tbb_checker.cpp.i
+.PHONY : src/frontend/sema/tbb_checker.i
+
+# target to preprocess a source file
+src/frontend/sema/tbb_checker.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/tbb_checker.cpp.i
+.PHONY : src/frontend/sema/tbb_checker.cpp.i
+
+src/frontend/sema/tbb_checker.s: src/frontend/sema/tbb_checker.cpp.s
+.PHONY : src/frontend/sema/tbb_checker.s
+
+# target to generate assembly for a file
+src/frontend/sema/tbb_checker.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/tbb_checker.cpp.s
+.PHONY : src/frontend/sema/tbb_checker.cpp.s
 
 src/frontend/sema/trait_checker.o: src/frontend/sema/trait_checker.cpp.o
 .PHONY : src/frontend/sema/trait_checker.o
@@ -1136,6 +1210,30 @@ src/runtime/memory/wildx_allocator.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.s
 .PHONY : src/runtime/memory/wildx_allocator.c.s
 
+src/runtime/memory/wildx_guard.o: src/runtime/memory/wildx_guard.c.o
+.PHONY : src/runtime/memory/wildx_guard.o
+
+# target to build an object file
+src/runtime/memory/wildx_guard.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_guard.c.o
+.PHONY : src/runtime/memory/wildx_guard.c.o
+
+src/runtime/memory/wildx_guard.i: src/runtime/memory/wildx_guard.c.i
+.PHONY : src/runtime/memory/wildx_guard.i
+
+# target to preprocess a source file
+src/runtime/memory/wildx_guard.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_guard.c.i
+.PHONY : src/runtime/memory/wildx_guard.c.i
+
+src/runtime/memory/wildx_guard.s: src/runtime/memory/wildx_guard.c.s
+.PHONY : src/runtime/memory/wildx_guard.s
+
+# target to generate assembly for a file
+src/runtime/memory/wildx_guard.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_guard.c.s
+.PHONY : src/runtime/memory/wildx_guard.c.s
+
 src/runtime/platform/platform.o: src/runtime/platform/platform.c.o
 .PHONY : src/runtime/platform/platform.o
 
@@ -1235,9 +1333,11 @@ help:
 	@echo "... mimalloc-obj"
 	@echo "... mimalloc-static"
 	@echo "... test_allocator"
+	@echo "... test_diagnostic"
 	@echo "... test_gc_header"
 	@echo "... test_parser"
 	@echo "... test_shadow_stack"
+	@echo "... test_wildx_guard"
 	@echo "... src/backend/codegen.o"
 	@echo "... src/backend/codegen.i"
 	@echo "... src/backend/codegen.s"
@@ -1265,6 +1365,9 @@ help:
 	@echo "... src/driver/main.o"
 	@echo "... src/driver/main.i"
 	@echo "... src/driver/main.s"
+	@echo "... src/frontend/diagnostic.o"
+	@echo "... src/frontend/diagnostic.i"
+	@echo "... src/frontend/diagnostic.s"
 	@echo "... src/frontend/lexer.o"
 	@echo "... src/frontend/lexer.i"
 	@echo "... src/frontend/lexer.s"
@@ -1283,6 +1386,9 @@ help:
 	@echo "... src/frontend/sema/escape_analysis.o"
 	@echo "... src/frontend/sema/escape_analysis.i"
 	@echo "... src/frontend/sema/escape_analysis.s"
+	@echo "... src/frontend/sema/tbb_checker.o"
+	@echo "... src/frontend/sema/tbb_checker.i"
+	@echo "... src/frontend/sema/tbb_checker.s"
 	@echo "... src/frontend/sema/trait_checker.o"
 	@echo "... src/frontend/sema/trait_checker.i"
 	@echo "... src/frontend/sema/trait_checker.s"
@@ -1331,6 +1437,9 @@ help:
 	@echo "... src/runtime/memory/wildx_allocator.o"
 	@echo "... src/runtime/memory/wildx_allocator.i"
 	@echo "... src/runtime/memory/wildx_allocator.s"
+	@echo "... src/runtime/memory/wildx_guard.o"
+	@echo "... src/runtime/memory/wildx_guard.i"
+	@echo "... src/runtime/memory/wildx_guard.s"
 	@echo "... src/runtime/platform/platform.o"
 	@echo "... src/runtime/platform/platform.i"
 	@echo "... src/runtime/platform/platform.s"

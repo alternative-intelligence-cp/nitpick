@@ -11,6 +11,7 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/debug/stacktrace.c" "CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/debug/stacktrace.c.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/memory/allocator.c" "CMakeFiles/aria_runtime.dir/src/runtime/memory/allocator.c.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/memory/allocator.c.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/memory/wildx_allocator.c" "CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_allocator.c.o.d"
+  "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/memory/wildx_guard.c" "CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_guard.c.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/memory/wildx_guard.c.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/platform/platform.c" "CMakeFiles/aria_runtime.dir/src/runtime/platform/platform.c.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/platform/platform.c.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/safety/fat_pointer.c" "CMakeFiles/aria_runtime.dir/src/runtime/safety/fat_pointer.c.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/safety/fat_pointer.c.o.d"
   "/home/randy/._____RANDY_____/REPOS/aria/src/runtime/concurrency/ramp.cpp" "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o" "gcc" "CMakeFiles/aria_runtime.dir/src/runtime/concurrency/ramp.cpp.o.d"

@@ -360,6 +360,7 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/lib/llvm-20/include/llvm/Support/KnownBits.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/monomorphization.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/vtable.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/platform_constants.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/expr.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/control_flow.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/../frontend/ast/stmt.h \

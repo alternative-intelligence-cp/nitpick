@@ -1,0 +1,407 @@
+﻿Architectural Specification for the Aria Borrow Checker and Hybrid Memory Model Implementation
+1. Introduction: The Convergence of Safety and Control
+The evolution of systems programming languages has historically been defined by a dichotomy: the choice between the granular control of manual memory management (typified by C and C++) and the safety and convenience of automatic garbage collection (typified by Java, Go, and Python). Aria, a novel systems language, attempts to dismantle this dichotomy by mandating a hybrid memory model. This model integrates a "Rust-style borrow checker" with an "OPT-OUT" garbage collector, necessitating a compiler infrastructure capable of reasoning about lifetimes across managed (gc), unmanaged (wild), and lexical (stack) boundaries.1
+This report provides the comprehensive architectural research and design for the Aria Borrow Checker (ABC). The ABC is not merely a static analysis pass; it is the enforcement engine for Aria's unique "Appendage Theory," a theoretical framework that ensures memory safety without determining runtime behavior via reference counting or ubiquitous tracing barriers. The primary challenge addressed herein is the synthesis of deterministic lifetime analysis with the non-deterministic nature of a moving garbage collector, bridged by the explicit pinning operator (#) and the safe reference operator ($).
+Current implementation stubs in the Aria compiler source 1 indicate a rudimentary awareness of these concepts but lack the algorithmic depth to enforce safety in complex control flows, loops, or closure captures. This document establishes the formal logic, algorithmic structures, and integration strategies required to elevate the borrow checker from a placeholder to a production-grade safety verifier. By leveraging flow-sensitive analysis, scope-weighted control flow graphs (SW-CFG), and rigorous typestate tracking, the proposed architecture resolves the critical dependencies identified in Task ID research_001_borrow_checker.
+1.1 The Hybrid Memory Paradigm
+Conventional memory models are generally monolithic. Rust, for instance, achieves memory safety through ownership and affine types, where every value has a single owner and memory is freed when the owner goes out of scope.2 This model, while powerful, imposes significant cognitive load and complicates patterns involving shared state or graph data structures. Conversely, garbage-collected languages employ a runtime supervisor that traces object graphs, abstracting away allocation and deallocation at the cost of non-deterministic pause times and memory overhead.4
+Aria's hybrid model introduces a tripartite segmentation of memory:
+1. The Stack: Fixed-size, LIFO, lexically scoped storage.
+2. The GC Heap: Managed, moveable, automatically reclaimed storage.
+3. The Wild Heap: Manually allocated, fixed-address, explicitly freed storage.
+The interaction between these regions is the locus of risk. A wild pointer referencing a gc object is inherently unsafe if the GC is compacting (moving objects to reduce fragmentation), as the wild pointer would become dangling after a collection cycle.6 Similarly, a stack reference to a wild object must ensure the wild memory is not freed while the stack reference remains active. The borrow checker's mandate is to statically verify these interactions, permitting the flexibility of mixed memory modes while mathematically proving the absence of undefined behavior such as use-after-free, double-free, or invalid pointer dereference.
+1.2 "Appendage Theory": A Novel Safety Construct
+The source code audit reveals that Aria relies on "Appendage Theory" as its foundational safety principle.1 This theory posits a hierarchical relationship between "Host" objects and "Appendage" references.
+* Host ($H$): An entity that possesses ownership semantics or physical stability. This includes pinned GC objects (#obj) and owning wild pointers.
+* Appendage ($A$): A dependent reference ($ref) that derives its validity from the Host.
+The central axiom of Appendage Theory is that the lifetime of the Host must strictly enclose the lifetime of the Appendage. In a flow-sensitive context, this means that for every program point $P$ where an Appendage is live, the Host must also be live and in a valid state. This report formalizes this theory into a computable algorithm based on scope depth comparisons ($D_H \le D_A$) and dominator tree analysis within the control flow graph.
+________________
+2. The Aria Memory Model & Theoretical Constraints
+To implement a robust borrow checker, we must first rigorously define the memory model it governs. The borrow checker does not manage memory itself; rather, it verifies that the programmer's management of memory adheres to the strictures of the language specification.1
+2.1 Memory Region Semantics
+2.1.1 The Stack Region (Lexical Scope)
+Stack allocation in Aria is explicit via the stack keyword or implicit for primitive types. Stack memory is governed by strict lexical scoping.
+* Allocation: Occurs at the point of declaration.
+* Deallocation: Occurs automatically at the end of the enclosing block (}).
+* Safety Invariant: A reference to a stack variable must not escape the scope of that variable. This prevents the classic "dangling pointer to stack frame" error. The borrow checker must track the "Scope Depth" of every stack variable and reject any attempt to return a reference to a depth shallower than the variable's origin.7
+2.1.2 The GC Heap (Managed & Moveable)
+The default allocation strategy for objects and strings in Aria is the GC heap.
+* Semantics: Objects are allocated via aria.gc_alloc 1 or high-level constructors. They are reclaimed when no longer reachable from the root set.
+* The Moving GC Problem: High-performance garbage collectors (e.g., Generational, Copying) often move objects to compact memory.6 This invalidates raw pointers.
+* Safety Invariant: Direct, untracked pointers (wild pointers) to GC memory are forbidden. Access is only permitted through:
+   1. GC References: Handles managed by the runtime (opaque to the user).
+   2. Pinned References: Raw pointers derived from an object that has been explicitly "pinned" (#), temporarily preventing the GC from moving it.8
+2.1.3 The Wild Heap (Manual & Fixed)
+The wild keyword introduces unmanaged memory, offering C-like control for performance-critical sections or interoperability.
+* Semantics: Allocation via aria.alloc returns a wild pointer. Deallocation must be explicit via aria.free or defer.1
+* Stability: Unlike GC memory, wild memory is stable; its address does not change until freed.
+* Safety Invariant: The borrow checker acts as a static leak detector. It must verify that:
+   1. Liveness: Every path through the CFG that allocates wild memory also frees it (or transfers ownership).
+   2. validity: No access occurs after free.
+   3. Isolation: wild pointers cannot hold references to gc objects unless those objects are pinned, as the wild heap is not traversed by the GC scanner (unless registered as a root, which Aria's model seems to avoid for wild regions).
+2.2 The Operator Semantics
+The language defines specific operators that trigger borrow checker transitions 1:
+* @ (Address-Of): Generates a raw pointer. In safe Aria, this is restricted. The borrow checker must ensure @ is only used in unsafe blocks or on pinned/wild memory where validity can be proven.
+* $ (Safe Reference): This is the primary borrow operator. let r = $x creates a loan. The borrow checker tracks r as an Appendage of x. The existence of r places restrictions on x (e.g., x cannot be mutated or moved while r is live).
+* # (Pin): The critical bridge operator. #x performs two logical operations:
+   1. Runtime: It sets a "pinned" bit in the object header or registers the object in the shadow stack 1, preventing the GC from moving it.
+   2. Static: It returns a wild pointer to the object's data. The borrow checker must enforce that the original object x remains pinned for the entire lifetime of this new pointer.
+________________
+3. Lifetime Analysis Algorithm
+The heart of the borrow checker is the Lifetime Analysis Algorithm. Unlike dynamic approaches (Reference Counting), this algorithm runs entirely at compile-time (Sema phase). It builds upon the "Appendage Theory" to verify safety through topological and depth-based analysis of the AST.
+3.1 Mathematical Formalism of Scope Depth
+We define a function $\text{Depth}(v)$ that maps every variable $v$ to an integer representing its nesting level.
+* Global Scope: $D = 0$.
+* Function Body: $D = 1$.
+* Nested Block: $D = N + 1$ (where $N$ is the parent scope depth).
+The Appendage Inequality:
+For a reference $R$ to be valid with respect to a host $H$, the following invariant must hold:
+
+
+
+
+$$\text{Depth}(H) \le \text{Depth}(R)$$
+
+
+This axiom asserts that the Host must originate in a scope outer (lower number) or equal to the Reference. If $\text{Depth}(H) > \text{Depth}(R)$, the Host is declared in an inner scope and will be destroyed while the Reference (in the outer scope) remains live—a fundamental violation.
+3.2 The Scope-Weighted Control Flow Graph (SW-CFG)
+Standard control flow graphs (CFG) track execution paths. For the Aria Borrow Checker, we augment the CFG with scope entry/exit events. This allows us to track the precise lifetime of loans across complex control structures like loops and branches.
+3.2.1 Data Structures
+We define the LifetimeContext structure, expanding upon the initial BorrowContext found in the source code 1:
+
+
+C++
+
+
+
+
+struct LifetimeContext {
+   // Maps variable ID -> Declaration Scope Depth
+   std::unordered_map<std::string, int> var_depths;
+
+   // Maps Reference -> Set of Origins (Hosts)
+   // A reference may point to different hosts depending on CFG path (phi nodes)
+   std::unordered_map<std::string, std::set<std::string>> loan_origins;
+
+   // Maps Host -> List of Active Loans
+   // Used to enforce Mutability XOR Aliasing rules
+   std::unordered_map<std::string, std::vector<Loan>> active_loans;
+
+   // Tracks variables currently pinned by the # operator
+   // Key: Host Variable, Value: Pinning Reference Name
+   std::unordered_map<std::string, std::string> active_pins;
+
+   // Tracks wild allocations requiring cleanup (for leak detection)
+   std::unordered_set<std::string> pending_wild_frees;
+
+   // Current traversal depth
+   int current_depth = 0;
+};
+
+struct Loan {
+   std::string borrower; // Name of the reference variable
+   bool is_mutable;      // Type of borrow ($ vs $mut)
+   int creation_line;    // For error reporting
+};
+
+3.3 The Algorithm Execution Flow
+Phase 1: Scope Ingress
+When the traversal enters a new Block (e.g., function body, if, while, defer), the algorithm:
+1. Increments current_depth.
+2. Pushes a new "Scope Frame" onto an internal stack to track variables declared specifically in this scope.
+Phase 2: Variable Declaration (VarDecl)
+Upon encountering a variable declaration Type:name = init:
+1. Registration: The variable is registered in var_depths with the current_depth.
+2. Wild Tracking: If the type is wild, add name to pending_wild_frees.
+3. Initializer Analysis: The algorithm recursively analyzes the initializer expression.
+   * If the initializer is a borrow ($x), a loan is recorded.
+   * If the initializer is a pin (#x), a pin is recorded.
+Phase 3: Reference Creation & Origin Inference
+This is the critical step for "Appendage Theory." When a reference R is created from a host H (e.g., wild int8*:u = #d or int8$:r = $x):
+1. Origin Lookup: Retrieve $\text{Depth}(H)$ from var_depths.
+2. Depth Validation: Assert $\text{Depth}(H) \le \text{current\_depth}$.
+   * Violation: If $\text{Depth}(H) > \text{current\_depth}$, the host is from a deeper (future/inner) scope, which is logically impossible for a declaration, but this check safeguards against logic errors in complex expressions.
+   * Note: The real check happens when R is assigned to a variable in an outer scope.
+3. Loan Recording: Update loan_origins to include H.
+4. Pinning Logic: If the operator was #:
+   * Mark H as pinned in active_pins.
+   * This state persists until R goes out of scope.
+Phase 4: Control Flow Merging (Phi Nodes)
+In conditional branches (if/else, pick), a variable R might be assigned $a in branch A and $b in branch B.
+* Merge Logic: At the convergence point, the origin of R is the union of origins from all predecessors: Origins(R) = {a, b}.
+* Conservative Liveness: For R to remain valid, all origins in its set ({a, b}) must remain valid. If either a or b goes out of scope, R becomes invalid. This is a conservative approximation that guarantees safety even if the runtime path is unknown.9
+Phase 5: Scope Egress (Cleanup & Validation)
+When exiting a block:
+1. Identify Dying Variables: Retrieve all variables declared at current_depth.
+2. Leak Check: For every dying variable V, if V is in pending_wild_frees, emit Error: Memory Leak. (Unless V was moved or explicitly freed).
+3. Dangling Reference Check: Check if any variable declared in an outer scope ($D < \text{current\_depth}$) has a dependency in loan_origins that includes a dying variable.
+   * Violation: If outer var R depends on inner var V, and V is dying, R becomes a dangling pointer. Emit Error: Appendage outlives Host.
+4. Pin Release: If a dying variable P was a pinning reference (from #), remove the pin status from its host. This "unlocks" the host for movement by the GC or mutation.
+5. Cleanup: Remove dying variables from var_depths and active_pins.
+6. Decrement current_depth.
+________________
+4. Borrow Checking Rules
+The algorithm described above provides the machinery for tracking. The Rules define the constraints enforced by that machinery. These rules ensure thread safety, memory consistency, and valid GC interaction.
+4.1 Rule Set 1: Mutability & Aliasing (The RW-Lock)
+Aria adopts the standard Rust-style exclusivity rule to prevent data races and iterator invalidation.
+The Law of Exclusivity:
+At any point in the control flow, for a specific Host $H$, one of the following conditions must hold:
+1. There are N active Immutable References ($).
+2. There is 1 active Mutable Reference ($mut).
+3. There are 0 active references.
+Enforcement Logic:
+* On Immutable Borrow ($H):
+   * Check active_loans[H].
+   * If any loan in the list is Mutable, Error: Cannot borrow immutable while mutable borrow exists.
+   * Otherwise, append new Immutable Loan.
+* On Mutable Borrow ($mut H):
+   * Check active_loans[H].
+   * If the list is not empty (contains any loans, mutable or immutable), Error: Cannot borrow mutable while other borrows exist.
+   * Otherwise, append new Mutable Loan.
+4.2 Rule Set 2: Wild Memory Hygiene
+Manual memory management requires strict discipline. The borrow checker enforces RAII-like behavior on wild pointers without requiring C++ style destructors.
+Leak Detection Rule:
+* Every allocation via aria.alloc must be structurally dominated by a corresponding aria.free or defer aria.free on every exit path from its scope.
+* Implementation: The pending_wild_frees set tracks allocations. When a defer containing free(V) is encountered, V is removed from the pending set. If V goes out of scope while still in the set, an error is raised.
+Use-After-Free Rule:
+* Once aria.free(P) is invoked, P (and any aliases tracking it) transitions to a Dead state.
+* Any subsequent read/write to a Dead variable triggers a Use-After-Free Error.
+* This requires flow-sensitive analysis to track the state of P through branches. If P is freed in the then block but used after the if, the usage is invalid.
+4.3 Rule Set 3: The Pinning Contract (#)
+Pinning is the mechanism that allows wild pointers to safely reference gc memory. It effectively temporarily "promotes" a GC object to have the stability properties of wild memory.
+The Pinning Invariant:
+An object $O$ pinned by reference $P$ cannot be Moved, Re-assigned, or Mutated (in a way that changes its address) as long as $P$ is alive.
+Enforcement Logic:
+* Setup: Statement wild int8:u = #d; marks d as PINNED_BY(u).
+* Constraint 1 (Reassignment): If the code attempts d = newValue, the checker sees d is pinned. Error: Cannot assign to pinned variable 'd'.
+* Constraint 2 (Move): If d is passed to a function that takes ownership (func take(obj:o)), the checker sees d is pinned. Error: Cannot move pinned variable 'd'.
+* Constraint 3 (Collection): The existence of the pin prevents the GC from collecting d. This is a runtime cooperation, but the borrow checker ensures the compile-time view is consistent (i.e., you cannot use d in a way that implies it was collected).
+4.4 Rule Set 4: The Wild/GC Boundary
+A critical safety rule prevents the GC from losing track of objects stored in unmanaged memory.
+The Invisible Root Rule:
+A wild pointer/struct cannot hold a reference to a gc object unless that object is Pinned or rooted elsewhere.
+* Rationale: The GC scanner does not scan wild memory segments. If a GC object's only reference is stored in a wild struct, the GC will think the object is unreachable and collect it, leaving the wild struct with a dangling pointer.
+* Enforcement:
+   * Statement: wild_ptr->field = gc_obj;
+   * Check: Is gc_obj pinned?
+   * If No: Error: Cannot store unpinned GC reference in wild memory.
+________________
+5. Integration Strategy
+The integration of the borrow checker into the Aria compiler pipeline is designed to be non-intrusive to the parser but authoritative over code generation. It functions as a gatekeeper: invalid code never reaches the LLVM backend.
+5.1 Compiler Pipeline Placement
+The optimal location for the borrow checker is Phase 5b, immediately following Type Checking (Phase 5a) and running concurrently with or preceding Trait Checking.
+Pipeline Flow:
+1. Lexer & Parser: Produces the raw AST.
+2. Type Checker (Part 5a): Resolves types, annotates nodes with Type metadata (e.g., is_wild, is_pinned). This is a prerequisite because the borrow checker rules depend on knowing whether a variable is gc or wild.
+3. Borrow Checker (Part 5b - NEW):
+   * Input: Type-annotated AST.
+   * Processing: Runs the Lifetime Analysis Algorithm.
+   * Output: Returns Success or a list of BorrowErrors.
+   * Side Effect: Annotates AST with lifetime-end markers (for optimization).
+4. Codegen (Part 6+): If Borrow Check passes, generates LLVM IR. It uses the annotations to emit llvm.lifetime.start/end intrinsics, aiding LLVM's own optimization passes.
+5.2 AST Annotations & Modifications
+To support this architecture, the C++ AST definitions in src/frontend/ast 1 require specific augmentations. These annotations allow the borrow checker to persist its analysis for the backend.
+Modifications to VarDecl:
+
+
+C++
+
+
+
+
+class VarDecl : public Statement {
+public:
+   //... existing fields...
+
+   // NEW: Lifetime tracking annotations
+   int scope_depth;           // Assigned by Borrow Checker
+   bool requires_drop;        // True if wild/stack needs explicit cleanup generation
+   bool is_pinned_shadow;     // True if this var acts as a pin for another
+   std::string pinned_target; // Name of the variable this one pins
+};
+
+Modifications to UnaryOp:
+
+
+C++
+
+
+
+
+class UnaryOp : public Expression {
+public:
+   //... existing fields...
+
+   // NEW: Borrow tracking
+   bool creates_loan;         // True for $, #, @
+   std::string loan_target;   // The variable being borrowed
+};
+
+5.3 Diagnostic Architecture & Error Messages
+Aria emphasizes developer experience. Error messages must be actionable and educational. The borrow checker should reconstruct the "chain of custody" for loans to explain why an error occurred.
+Data Structure for Diagnostics:
+
+
+C++
+
+
+
+
+struct BorrowError {
+   SourceLocation location;   // Where the error occurred
+   std::string message;       // "Cannot move 'x'..."
+   SourceLocation loan_loc;   // Where the blocking loan started
+   std::string loan_reason;   // "...because it is borrowed by 'r' here"
+};
+
+Example Error Scenario:
+User attempts to reassign a pinned variable.
+
+
+Code snippet
+
+
+
+
+wild int8*:ptr = #data;
+data = "new value"; // Error
+
+Generated Diagnostic:
+Error: Pinning Violation
+--> src/main.aria:12:5
+|
+10 | wild int8*:ptr = #data;
+| ----- 'data' is pinned here by reference 'ptr'
+...
+12 | data = "new value";
+| ^^^^ cannot assign to 'data' because it is currently pinned
+|
+= Help: The pin is released when 'ptr' goes out of scope at line 15.
+________________
+6. Implementation Details: Control Flow & Advanced Cases
+The current codebase contains stubs for checkStatement but lacks the logic for control flow.1 This section details the implementation of these missing visitors.
+6.1 Handling IfStmt (Branching)
+Branching creates divergent dataflow paths. The borrow checker must ensure safety along all paths and merge the state correctly at the convergence point.
+Algorithm:
+
+
+C++
+
+
+
+
+void BorrowChecker::visit(IfStmt* node) {
+   // 1. Check Condition (borrows here are temporary)
+   checkExpression(node->condition.get());
+
+   // 2. Snapshot State
+   auto pre_branch_state = ctx.snapshot();
+
+   // 3. Analyze THEN branch
+   ctx.enterScope();
+   node->then_block->accept(*this);
+   ctx.exitScope();
+   auto then_state = ctx.snapshot();
+
+   // 4. Restore & Analyze ELSE branch
+   ctx.restore(pre_branch_state);
+   if (node->else_block) {
+       ctx.enterScope();
+       node->else_block->accept(*this);
+       ctx.exitScope();
+   }
+   auto else_state = ctx.snapshot();
+
+   // 5. Merge States
+   // A variable is "moved" only if moved in BOTH branches (for initialization).
+   // A variable is "freed" only if freed in BOTH branches.
+   // A variable is "invalidated" if invalidated in EITHER branch (conservative safety).
+   ctx.merge(then_state, else_state);
+}
+
+6.2 Handling WhileLoop (Iteration)
+Loops introduce the complexity of loop invariants. A borrow created inside a loop must not be assumed to persist validly into the next iteration unless it is invariant.
+Algorithm:
+
+
+C++
+
+
+
+
+void BorrowChecker::visit(WhileLoop* node) {
+   checkExpression(node->condition.get());
+
+   ctx.enterScope(); // Loop scope
+
+   // 1. Pre-Loop Analysis
+   // Mark all external borrows as "locked" for the duration of the loop.
+
+   // 2. Body Analysis
+   node->body->accept(*this);
+
+   // 3. Loop Invariant Validation
+   // Check if any reference created in the loop relies on a value
+   // that is dropped/reset at the end of the iteration.
+   // If ref R borrows local V, and R escapes to an outer scope vector,
+   // this is an error because V dies at loop end.
+   for (auto& ref : ctx.getNewReferencesInCurrentScope()) {
+       if (ref.escapes_to_outer_scope()) {
+           ctx.reportError("Reference escapes loop iteration but referent does not.");
+       }
+   }
+
+   ctx.exitScope();
+}
+
+6.3 Handling WildX (Executable Memory)
+Aria supports wildx for JIT compilation.1 This requires specialized tracking for W^X (Write XOR Execute) security policies.1
+Security Rule: wildx memory transitions from RW (Read-Write) to RX (Read-Execute). Once it becomes RX, it cannot be written to.
+Implementation:
+* Track wildx variables in a separate set: wildx_state.
+* States: Mutable, Executable.
+* Transition: Detect calls to aria.protect_exec(ptr). Update state of ptr to Executable.
+* Check: On assignment *ptr = val:
+   * If wildx_state[ptr] == Executable, Error: Write to executable memory.
+________________
+7. Comparison: Aria vs. Rust Borrow Checking
+It is instructive to compare this architecture with Rust's to highlight Aria's specific innovations.
+Feature
+	Rust (NLL / Polonius)
+	Aria (Appendage Theory)
+	Analysis Basis
+	Control Flow Graph (MIR)
+	AST + Scope Depth (Sema)
+	GC Interaction
+	None (pure manual/RAII)
+	Core feature (Pinning bridge)
+	Pinning
+	Type-based (Pin<P>)
+	Operator-based (#var)
+	Wild Memory
+	unsafe raw pointers
+	First-class wild keyword
+	Complexity
+	High (Lifetime inference engine)
+	Medium (Depth checking + Rules)
+	Aria's approach is less theoretically pure than Rust's Polonius (which uses logic programming/Datalog), but it is arguably more pragmatic for a language that includes a GC. By using explicit Scope Depth rather than abstract lifetime regions, Aria simplifies the mental model for the programmer ("Host must be older than Appendage") while maintaining strong safety guarantees.
+________________
+8. Conclusion and Future Roadmap
+The research presented here transforms the high-level requirement of a "Rust-style borrow checker" into a concrete, implementable architectural specification. By adhering to the Appendage Theory, leveraging Flow-Sensitive Analysis, and rigorously enforcing Pinning Semantics, Aria can achieve a unique position in the language landscape: a system that offers the safety of Rust with the flexibility of a GC, without compromising the integrity of either.
+Immediate Action Items:
+1. Modify AST: Update src/frontend/ast.h with the annotations defined in Section 5.2.
+2. Implement Context: Complete the LifetimeContext struct in borrow_checker.cpp.
+3. Build Visitors: Implement the visit(IfStmt) and visit(WhileLoop) methods using the algorithms in Section 6.
+4. Enforce Pinning: Add the active_pins tracking logic to visit(UnaryOp) for the # operator.
+This architecture ensures that Aria's promise of safe, hybrid memory management is mathematically sound and practically achievable.
+Works cited
+1. aria_specs.txt
+2. Does Rust have the ultimate memory management solution? : r/ProgrammingLanguages, accessed December 11, 2025, https://www.reddit.com/r/ProgrammingLanguages/comments/102ugt7/does_rust_have_the_ultimate_memory_management/
+3. Understanding Rust's Ownership and Lifetime: An Introductory Guide | by Sae-Hwan Park, accessed December 11, 2025, https://medium.com/@saehwanpark/understanding-rusts-ownership-and-lifetime-an-introductory-guide-8cf22a9d9c8c
+4. The Magic of the Rust Borrow Checker | by Michael Hentges - Better Programming, accessed December 11, 2025, https://betterprogramming.pub/the-magic-of-borrow-checkers-in-rust-238a2a97bff2
+5. Fundamentals of garbage collection - .NET | Microsoft Learn, accessed December 11, 2025, https://learn.microsoft.com/en-us/dotnet/standard/garbage-collection/fundamentals
+6. Tracing garbage collection - Wikipedia, accessed December 11, 2025, https://en.wikipedia.org/wiki/Tracing_garbage_collection
+7. How to detect references to out-of-scope stack variables in C++?, accessed December 11, 2025, https://stackoverflow.com/questions/38862941/how-to-detect-references-to-out-of-scope-stack-variables-in-c
+8. Can you "pin" an object in memory with Go? - Stack Overflow, accessed December 11, 2025, https://stackoverflow.com/questions/12098435/can-you-pin-an-object-in-memory-with-go
+9. Data flow analysis: an informal introduction - Clang, accessed December 11, 2025, https://clang.llvm.org/docs/DataFlowAnalysisIntro.html
+10. The borrow checker - Rust Compiler Development Guide, accessed December 11, 2025, https://rustc-dev-guide.rust-lang.org/borrow_check.html
