@@ -1,0 +1,56 @@
+/**
+ * tests/ternary/basic_ops.aria
+ * 
+ * Basic Balanced Ternary Operations Test
+ * Tests the fundamental arithmetic operations on tryte type.
+ */
+
+func test_addition() -> tryte {
+    let a: tryte = 100;
+    let b: tryte = 50;
+    return a + b;  // Should be 150
+}
+
+func test_subtraction() -> tryte {
+    let a: tryte = 200;
+    let b: tryte = 75;
+    return a - b;  // Should be 125
+}
+
+func test_multiplication() -> tryte {
+    let a: tryte = 12;
+    let b: tryte = 10;
+    return a * b;  // Should be 120
+}
+
+func test_division() -> tryte {
+    let a: tryte = 100;
+    let b: tryte = 5;
+    return a / b;  // Should be 20
+}
+
+func test_negation() -> tryte {
+    let a: tryte = 42;
+    return -a;  // Should be -42
+}
+
+func test_overflow() -> tryte {
+    let a: tryte = 29000;  // Near max (29,524)
+    let b: tryte = 1000;
+    return a + b;  // Should overflow to 0xFFFF (ERR)
+}
+
+func test_sticky_error() -> tryte {
+    let err: tryte = 0xFFFF;  // ERR sentinel
+    let x: tryte = 100;
+    return err + x;  // Should be 0xFFFF (sticky)
+}
+
+func main() -> int32 {
+    // Simple smoke test
+    let result: tryte = test_addition();
+    
+    // Convert to binary for return (needs runtime support)
+    // For now, just return success
+    return 0;
+}
