@@ -8,6 +8,10 @@ All major loop constructs and control flow statements are complete!
 - **Syntax**: `till(limit, step) { $ }`
 - **Status**: Complete with `$` variable injection
 - **Tests**: `test_till_basic.aria`, `test_till_nested.aria`
+- **Behavior**:
+  - **Positive step**: Counts UP from 0 to limit by step
+  - **Negative step**: Counts DOWN from limit to 0 by abs(step)
+  - Examples: `till(100, 1)` → 0..100, `till(100, -1)` → 100..0
 - **Features**:
   - Automatic `$` iterator (type-inferred from limit)
   - Proper shadowing in nested loops
@@ -72,7 +76,9 @@ All major loop constructs and control flow statements are complete!
 - **Parser**: ⚠️ Code exists but commented (parseLoopStmt at parser.cpp:1994)
 - **AST**: ❌ LoopStmt class doesn't exist yet
 - **Status**: Parser ready, needs AST node creation
-- **Difference from till**: Explicit start value instead of implicit 0
+- **Difference from till**: Explicit start value (till uses 0 or limit based on step sign)
+  - `loop(1, 100, 1)` → 1..100 vs `till(100, 1)` → 0..100
+  - `loop(100, 0, -2)` → 100..0 by 2s vs `till(100, -2)` → 100..0 by 2s (same here)
 - **Implementation**: Parser code at lines 1518-1520, 1990-2014
 
 ## Technical Notes
