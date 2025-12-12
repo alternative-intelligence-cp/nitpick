@@ -221,17 +221,23 @@
   * **Reference**: `/docs/gemini/responses/research_010-011_macro_comptime.txt` (comprehensive 600+ line report)
 
 ### 0.4 Remaining Core Research (Pending)
-- [x] **research_012: Standard Integer and Unsigned Integer Types** ✅ COMPLETE (Dec 12, 2025)
+- [x] **research_012: Standard Integer and Unsigned Integer Types** ✅ COMPLETE + TYPE SYSTEM IMPLEMENTED (Dec 12, 2025)
   * **Document**: `/docs/gemini/responses/research_012_standard_integer_types.txt` (401 lines)
+  * **Status**: `/docs/STANDARD_INTEGER_TYPES_STATUS.md` (Commit 3f2634d)
   * **Key Findings**:
     - **Two's Complement** for all signed types (int1-512)
     - **Modular Arithmetic** (wrap-around, no trap) for hardware alignment
     - **Sub-byte types** (int1, int2, int4) with bit-packing in structs (@pack)
     - **Wide types** (256/512) as first-class for crypto (no BigInt needed)
-    - **LLVM Mapping**: i8-i64 native, i128/i256/i512 as aggregate types
+    - **LLVM Mapping**: i8-i64 native, i128/i256/i512 as arbitrary precision
     - **Read-Modify-Write** sequences for sub-byte field access
     - Asymmetric range (e.g., int8: -128 to +127, not symmetric like TBB)
-  * **TODO**: Implement lexer tokens, type system, codegen for all widths
+  * **IMPLEMENTATION COMPLETE**:
+    ✅ Type system: INT1, INT2, INT4, UINT128, UINT256, UINT512 added to TypeKind
+    ✅ LLVM codegen: All 23 integer types map correctly (i1-i512)
+    ✅ Tests: test_integers_simple.aria, test_standard_integers.aria
+    ✅ Compilation: Generates valid LLVM IR for all types
+  * **REMAINING**: Literal suffixes, @pack directive, checked intrinsics, SIMD opts
 - [x] **research_013: Floating-Point Types (Extended Precision)** ✅ COMPLETE (Dec 12, 2025)
   * **Document**: `/docs/gemini/responses/research_013_floating_point_types.txt` (640 lines)
   * **Key Findings**:
@@ -317,25 +323,31 @@
     - Fixed-size vs dynamic-size matrices
 
 ### 0.5 Control Flow Constructs Research
-- [ ] **research_018: Looping Constructs (while, for, loop, till)**
-  * **Scope**: Detailed semantics and codegen for loop types
-  * **while (condition) { body }**:
-    - Standard conditional loop
-    - Loop variable hoisting
-    - Optimization: loop invariant code motion
-  * **for (init; condition; update) { body }**:
-    - C-style three-part loop
-    - Scoping rules for loop variable
-    - Iterator protocol (for-each style: for (item in collection))
-  * **loop(start, stop, step) { body }**:
-    - Aria-specific counted loop
-    - Automatic $ iteration variable
-    - Step direction detection (positive vs negative)
-    - Optimization: loop unrolling thresholds
-  * **till(limit, step) { body }**:
-    - Simplified counted loop (start=0 or start=limit depending on step)
-    - $ variable semantics (0-based indexing)
-    - Comparison with loop construct
+- [x] **research_018: Looping Constructs (while, for, loop, till)** ✅ COMPLETE (Dec 12, 2025)
+  * **Document**: `/docs/gemini/responses/research_018_looping_constructs.txt` (509 lines)
+  * **Key Findings**:
+    - **Native Implementation**: Loops elevated from macros to first-class constructs
+    - **TBB Safety Integration**: Loop counters can be TBB types with automatic overflow termination
+    - **Automatic $ Variable**: Context-sensitive iteration variable with type inference
+      * Scope: Implicitly injected into SymbolTable for till/loop constructs
+      * Type: Inferred from loop bounds (till(100) → int, till(tbb64) → tbb64)
+      * Immutability: Read-only, assignment to $ is compile error
+      * Nesting: Inner loops shadow outer $ (automatic scope management)
+    - **Loop Types**:
+      * **while**: Standard conditional, TBB-aware condition checks
+      * **for Dual-Mode**: Parser discriminates TOKEN_KW_IN vs TOKEN_SEMICOLON
+        - Iterator: `for (x in iterable)` with range support (0..10, 0...10)
+        - C-Style: `for (init; cond; step)` with precise pointer control
+      * **loop**: Explicit bounds `loop(start, limit, step)`
+      * **till**: Zero-indexed `till(limit, step)` implicitly starts at 0
+      * **when**: Tri-state `when (cond) { } then { } end { }` for search patterns
+    - **TBB Loop Safety**:
+      * Increment i++ lowered to TBB-safe addition
+      * If counter reaches ERR, loop terminates (prevents infinite wrapping)
+      * Comparison i < limit checks for ERR state (ERR < value → false)
+    - **CFG Generation**: Header/Body/Latch/Exit blocks with PHI nodes for SSA
+    - **Async Integration**: await in loops splits state machine, $ promoted to coroutine frame
+  * **TODO**: Implement WhileLoop, ForLoop, TillLoop, LoopStmt, WhenLoop AST nodes
 - [ ] **research_019: Conditional Constructs (if/else, when/then/end, pick)**
   * **Scope**: Detailed semantics for conditionals and pattern matching
   * **if (cond) { } else { }**:
@@ -444,22 +456,58 @@
     - DSL interpreters
 
 ### 0.7 Operators Research
-- [ ] **research_024: Arithmetic and Bitwise Operators**
-  * **Scope**: All arithmetic, bitwise, and compound assignment operators
-  * **Arithmetic**: +, -, *, /, %, ++, --, unary -, unary +
-  * **Bitwise**: &, |, ^, ~, <<, >>
-  * **Compound Assignment**: +=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=
-  * **TBB Integration**: Sticky error propagation for all operations
-  * **Overflow Handling**: wrap vs trap vs saturate per type
-  * **Optimization**: Strength reduction, constant folding
-- [ ] **research_025: Comparison and Logical Operators**
-  * **Scope**: Comparison, logical, and short-circuit operators
-  * **Comparison**: ==, !=, <, >, <=, >=, <=> (spaceship)
-  * **Logical**: &&, ||, ! (short-circuit evaluation)
-  * **Ternary**: is cond : true_val : false_val
-  * **TBB Comparison**: How to compare ERR sentinel?
-  * **Ternary Logic**: Integration with trit type (3-valued logic)
-  * **Optimization**: Branch prediction, conditional move
+- [x] **research_024: Arithmetic and Bitwise Operators** ✅ COMPLETE (Dec 12, 2025)
+  * **Document**: `/docs/gemini/responses/research_024_arithmetic_bitwise_operators.txt` (408 lines)
+  * **Key Findings**:
+    - **Standard Integers**: Modular arithmetic (wrap-around), deterministic behavior
+      * Rationale: Cryptographic necessity (ChaCha20, SHA-256), hardware alignment
+      * Overflow: Valid wrap-around (modulo 2^N), NOT undefined behavior
+      * Division by zero: Hardware trap (SIGFPE), panic with stack unwind
+      * INT_MIN / -1: Hardware trap, consistent cross-platform
+    - **TBB Operators**: Sticky error propagation state machine
+      * Input Sticky: ERR in either operand → Result = ERR
+      * Overflow Check: Result exceeds range → ERR
+      * Sentinel Collision: Valid result matches ERR bit pattern → ERR
+      * Division: Never traps, division-by-zero returns ERR (safe)
+    - **Bitwise Unsigned Mandate**: &, |, ^, ~, <<, >> only on unsigned types
+      * Prevents sign-extension ambiguity in shifts
+      * Error: "Bitwise operator '&' not defined for 'int32', cast to 'uint32'"
+    - **Shift Safety**: Oversize shifts (n >= width) guaranteed to return 0
+      * x86 masks shift count, ARM saturates → Aria inserts explicit checks
+    - **TBBLowerer**: Branch-free lowering via select + overflow intrinsics
+      * llvm.sadd.with.overflow, llvm.smul.with.overflow
+      * CMOV instructions (non-branching, constant time)
+    - **SIMD**: AVX-512 masked operations for TBB arrays (4-6 cycles overhead)
+    - **Performance**: TBB 20-50% slower than standard (acceptable for safety)
+  * **TODO**: Implement TBBLowerer, bitwise type checks, shift safety
+- [x] **research_025: Comparison and Logical Operators** ✅ COMPLETE (Dec 12, 2025)
+  * **Document**: `/docs/gemini/responses/research_025_comparison_logical_operators.txt` (194 lines)
+  * **Key Findings**:
+    - **Strict Boolean Semantics**: Logical ops (&&, ||, !) only accept bool
+      * No truthiness (rejects implicit coercion from 0, null, etc.)
+      * Rationale: Prevents TBB 0 (Unknown) from being treated as false
+      * Example: `if (ptr)` is error, must write `if (ptr != null)`
+    - **Short-Circuit Guarantee**: && and || use conditional branches, not bitwise
+      * Safety pattern: `if (ptr != null && ptr->is_valid())` never segfaults
+      * LLVM: Entry → EvalB (if A true) → Merge with PHI node
+    - **Relational Operators**: ==, !=, <, <=, >, >= with TBB integration
+      * Standard ints: Direct icmp/fcmp mapping
+      * TBB: Comparisons act as "error sinks" (ERR → bool, loses stickiness)
+      * ERR == ERR → true (explicit error check)
+      * ERR < valid → treated as incomparable (may trap or special handling)
+    - **Spaceship Operator (<=>)**: Three-way comparison
+      * Returns: -1 (less), 0 (equal), 1 (greater)
+      * Use: Sorting, branchless algorithms (result = (a > b) - (a < b))
+      * Lexicographical for strings/vectors
+      * Defines total ordering on vec types (enables TreeMap keys)
+    - **Pointer Comparison**: Lifetime-checked equality
+      * GC pointer vs Wild pointer: Requires pinning (#) to stabilize address
+      * Prevents non-deterministic results from GC relocation
+    - **Dynamic Types (dyn)**: Runtime dispatch via type_id
+      * Fast path: Primitives use direct comparison
+      * Slow path: Objects use vtable Eq trait lookup
+      * Type mismatch: Returns false (no implicit coercion)
+  * **TODO**: Implement boolean type checking, TBB comparison logic, <=> lowering
 - [ ] **research_026: Special Operators (Memory, Safety, Pipeline)**
   * **Scope**: Aria-specific special operators
   * **Memory Operators**:

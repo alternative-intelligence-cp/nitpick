@@ -34,7 +34,9 @@ enum class TypeKind {
     TRIT, TRYTE,
     // Balanced nonary types
     NIT, NYTE,
+    // Composite types
     STRING,
+    OBJ,           // Object type (associative array, hash map)
     DYN,           // Dynamic type (GC-allocated catch-all)
     POINTER,       // Wild or pinned pointer
     ARRAY,
@@ -45,6 +47,7 @@ enum class TypeKind {
     VEC2, VEC3, VEC4,     // Float vectors (32-bit)
     DVEC2, DVEC3, DVEC4,  // Double vectors (64-bit)
     IVEC2, IVEC3, IVEC4,  // Integer vectors (32-bit)
+    VEC9,                 // Exotic: 9D-TWI (Twisted World Interface)
     UNKNOWN,       // For type inference errors
     ERROR          // Type error marker
 };
@@ -141,9 +144,11 @@ public:
             case TypeKind::TBB16: return "tbb16";
             case TypeKind::TBB32: return "tbb32";
             case TypeKind::TBB64: return "tbb64";
-            // Other types
+            // Composite types
             case TypeKind::STRING: return "string";
+            case TypeKind::OBJ: return "obj";
             case TypeKind::DYN: return "dyn";
+            // Exotic types
             case TypeKind::TRIT: return "trit";
             case TypeKind::TRYTE: return "tryte";
             case TypeKind::NIT: return "nit";
@@ -158,6 +163,7 @@ public:
             case TypeKind::IVEC2: return "ivec2";
             case TypeKind::IVEC3: return "ivec3";
             case TypeKind::IVEC4: return "ivec4";
+            case TypeKind::VEC9: return "vec9";
             case TypeKind::POINTER:
                 if (pointee) {
                     std::string prefix = is_wild ? "wild " : (is_pinned ? "pinned " : "");
