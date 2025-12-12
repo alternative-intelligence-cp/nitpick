@@ -559,6 +559,11 @@ void BorrowChecker::visit(frontend::TillLoop* node) {
     loop_depth_++;
     context_.enter_scope();
     
+    // Inject $ variable - it's an automatic stack-allocated integer counter
+    // This matches the behavior in type_checker.cpp where $ is defined before visiting the body
+    VarInfo* dollar_var = context_.declare_variable("$", MemoryRegion::STACK, nullptr);
+    context_.initialize_variable("$");  // $ is always initialized (it's the loop counter)
+    
     if (node->body) {
         node->body->accept(*this);
     }

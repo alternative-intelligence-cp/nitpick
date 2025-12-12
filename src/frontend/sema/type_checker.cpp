@@ -651,12 +651,14 @@ void TypeChecker::visit(frontend::PickStmt* node) {
 
 // Visit TillLoop
 void TypeChecker::visit(frontend::TillLoop* node) {
-    // Check limit is integer
+    // Check limit is integer and get its type
+    std::shared_ptr<Type> limit_type;
     if (node->limit) {
         node->limit->accept(*this);
         if (!current_expr_type->isInteger()) {
             addError("Till loop limit must be an integer");
         }
+        limit_type = current_expr_type;  // Capture the limit's type for $
     }
 
     // Check step is integer
@@ -667,9 +669,22 @@ void TypeChecker::visit(frontend::TillLoop* node) {
         }
     }
 
+    // Type check body with $ variable defined
+    // Per research_018: $ is automatically injected into the loop scope
+    // with the type inferred from the limit expression
+    //
+    // NOTE: We define $ in the current scope before the body creates its scope.
+    // This way $ is visible within the loop body's nested scope (via parent lookup).
+    if (limit_type && node->body) {
+        symbols->define("$", limit_type, false);  // name, type, is_mut=false (immutable)
+    }
+    
     if (node->body) {
         node->body->accept(*this);
     }
+    
+    // Note: $ naturally goes out of scope when the loop completes, since Block
+    // creates its own scope. If we need explicit cleanup, we'd track scope depth.
 }
 
 // Visit WhenLoop
