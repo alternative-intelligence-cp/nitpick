@@ -1,0 +1,117 @@
+# RESEARCH TASK: Composite Types Part 1 (obj, dyn, bool)
+
+**Task ID:** research_014_composite_types_part1
+**Priority:** HIGH
+**Category:** Type System
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** Medium
+
+---
+
+## PROBLEM STATEMENT
+
+Design specification for Aria's fundamental composite types: obj (object/dictionary), dyn (dynamic/variant), and bool (boolean).
+
+---
+
+## SCOPE
+
+- **Obj Type**: Key-value map with heterogeneous values (JSON-like)
+- **Dyn Type**: Tagged union holding any type (variant/any)
+- **Bool Type**: Boolean logic with potential ternary integration
+
+---
+
+## DEPENDENCIES
+
+- research_001_borrow_checker
+- research_021_gc_system
+
+---
+
+## KEY QUESTIONS
+
+
+**Obj:**
+- What is the memory layout (hash table, tree, inline small objects)?
+- Are keys/values typed or untyped?
+- How does GC track references in nested objects?
+- What is the JSON compatibility story (serialize/deserialize)?
+- What is the syntax (JS-like {key: value} or different)?
+- How do objects interact with the borrow checker (can wild pointers point to obj fields)?
+
+**Dyn:**
+- What is the tagged union representation (enum discriminant)?
+- How does pattern matching work (pick statement integration)?
+- Are there runtime type queries (@typeInfo at runtime)?
+- What is the performance cost vs static typing?
+- How does dyn interact with TBB types (can hold ERR)?
+- What is the memory model (always GC or support wild dyn)?
+
+**Bool:**
+- What is the representation (1-bit logical, 8-bit physical)?
+- What are the truthiness rules (only true/false, or 0/non-zero)?
+- How does bool integrate with ternary logic (trit type)?
+- How do TBB ERR sentinels convert to bool (ERR → false)?
+- What is the literal syntax (true/false, 1/0, or both)?
+
+---
+
+## DELIVERABLES
+
+1. obj type specification (150-200 lines)
+2. dyn type specification (150-200 lines)
+3. bool type specification (100-150 lines)
+4. Memory layout diagrams
+5. GC integration strategy
+6. Pattern matching examples
+7. JSON interop design
+8. Performance analysis
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (type definitions, object literals)
+- /docs/gemini/responses/research_001_borrow_checker.txt
+- /docs/gemini/responses/research_003_ternary_nonary_types.txt (trit integration)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

@@ -1,0 +1,123 @@
+# RESEARCH TASK: Comparison/Logical Operators (==, !=, <, <=, >, >=, <=>, &&, ||, !)
+
+**Task ID:** research_025_comparison_logical_operators
+**Priority:** HIGH
+**Category:** Operators
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** Medium
+
+---
+
+## PROBLEM STATEMENT
+
+Complete specification for comparison and logical operators, including the spaceship operator (<=>), short-circuit evaluation, and TBB ERR handling.
+
+---
+
+## SCOPE
+
+- **Comparison**: ==, !=, <, <=, >, >= with value semantics
+- **Spaceship**: <=>) three-way comparison returning ordering
+- **Logical**: &&, ||, ! with short-circuit evaluation
+- **Truthiness**: bool conversion rules
+
+---
+
+## DEPENDENCIES
+
+- research_001_tbb
+- research_014_composite_types_part1
+
+---
+
+## KEY QUESTIONS
+
+
+**Comparison Semantics:**
+- What equality semantics exist (value vs reference)?
+- How does comparison work on composite types (obj, struct)?
+- What NaN comparison semantics (flt32)?
+- How does comparison handle TBB ERR (ERR == ERR → true)?
+- What string comparison algorithm (lexicographic UTF-8)?
+- What derived operators exist (>= from < and ==)?
+
+**Spaceship Operator:**
+- What is <=> return type (ordering enum: less/equal/greater)?
+- How does <=> integrate with sorting algorithms?
+- What default <=> implementation exists (memberwise)?
+- How does <=> handle partial ordering (NaN)?
+- What optimization exists (compiler-generated)?
+
+**Logical Operators:**
+- What short-circuit semantics exist?
+- How do && and || differ from & and |?
+- What truthiness rules apply (0, NULL, ERR → false)?
+- How does ! (logical not) work on TBB ERR?
+- What optimization exists (branch elimination)?
+
+**Tbb Integration:**
+- How do comparisons propagate ERR (ERR < X → ERR)?
+- What logical operator ERR semantics (ERR && true → ERR)?
+- How does short-circuit interact with ERR (false && ERR → false)?
+- What recovery mechanisms exist?
+
+---
+
+## DELIVERABLES
+
+1. Comparison operator specification (250-300 lines)
+2. Spaceship operator specification (150-200 lines)
+3. Logical operator specification (200-250 lines)
+4. Truthiness rule table
+5. Short-circuit evaluation semantics
+6. TBB ERR propagation rules
+7. Code examples with error handling
+8. Performance analysis (branch prediction)
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (comparison examples)
+- /docs/gemini/responses/research_001_tbb.txt (ERR comparison)
+- /src/backend/codegen.cpp (comparison codegen)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

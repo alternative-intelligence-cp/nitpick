@@ -1,0 +1,111 @@
+# RESEARCH TASK: Advanced Mathematical Types (tensor, matrix)
+
+**Task ID:** research_017_mathematical_types
+**Priority:** MEDIUM
+**Category:** Type System
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** High
+
+---
+
+## PROBLEM STATEMENT
+
+Design specification for Aria's advanced mathematical types for scientific computing, machine learning, and linear algebra.
+
+---
+
+## SCOPE
+
+- **Tensor Type**: tensor<T, Shape> - N-dimensional arrays for ML/scientific computing
+- **Matrix Type**: matrix<T, Rows, Cols> - Specialized 2D tensors with linear algebra ops
+
+---
+
+## DEPENDENCIES
+
+- research_015_composite_types_part2
+- research_013_floating_point_types
+
+---
+
+## KEY QUESTIONS
+
+
+**Tensor:**
+- How are N-dimensional shapes encoded (compile-time or runtime)?
+- What is the stride calculation and memory layout (row-major, column-major, custom)?
+- What broadcasting rules apply (NumPy-style or custom)?
+- How do SIMD/GPU acceleration hooks work?
+- What integration exists with ML libraries (ONNX, TensorFlow, PyTorch)?
+- What element types are supported (flt32/64, int, tbb)?
+- How does the borrow checker handle tensor slicing?
+
+**Matrix:**
+- What matrix multiplication algorithms are used (naive, Strassen, BLAS)?
+- What decompositions are built-in (LU, QR, SVD, Cholesky)?
+- Is sparse matrix support included?
+- How does matrix relate to vec2/vec3 (matrix-vector multiplication)?
+- Are fixed-size and dynamic-size matrices different types?
+- What SIMD optimizations exist for matrix operations?
+- How do matrices integrate with GPU compute?
+
+---
+
+## DELIVERABLES
+
+1. Tensor type specification (300-350 lines)
+2. Matrix type specification (250-300 lines)
+3. Broadcasting rules specification
+4. Memory layout strategy
+5. BLAS integration design
+6. GPU acceleration hooks
+7. ML framework interop strategy
+8. Performance benchmarks
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (tensor, matrix types)
+- /src/backend/codegen_vector.cpp (SIMD patterns)
+- /stdlib/ (potential tensor/matrix implementations)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

@@ -1,0 +1,113 @@
+# RESEARCH TASK: Conditional Constructs (if/else, when/then/end, pick)
+
+**Task ID:** research_019_conditional_constructs
+**Priority:** HIGH
+**Category:** Control Flow
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** High
+
+---
+
+## PROBLEM STATEMENT
+
+Detailed specification for all conditional and pattern matching constructs in Aria, including standard if/else, completion-aware when loops, and advanced pick pattern matching.
+
+---
+
+## SCOPE
+
+- **If Else**: if (cond) { } else { } - Standard branching
+- **When Construct**: when (cond) { body } then { success } end { failure } - Completion-aware loop
+- **Pick Construct**: pick (value) { cases } - Advanced pattern matching switch
+
+---
+
+## DEPENDENCIES
+
+- research_010_macro_comptime
+
+---
+
+## KEY QUESTIONS
+
+
+**If Else:**
+- What short-circuit evaluation rules apply?
+- How does if integrate with safe navigation (?.)?
+- What branch prediction hints are available?
+- Can if be used as an expression (ternary-style)?
+
+**When Construct:**
+- How does when track completion state?
+- When does 'then' execute (normal loop completion)?
+- When does 'end' execute (break or no iterations)?
+- How do break/continue interact with when?
+
+**Pick Construct:**
+- What case types exist (exact, range, comparison, destructuring)?
+- How does fall(label) explicit fallthrough work?
+- What is the exhaustiveness checking algorithm?
+- How do destructuring patterns work ({ field: value }, [a, b, c])?
+- What is the wildcard (*) and unreachable (!) semantics?
+- How does pick integrate with TBB ERR sentinels?
+- What optimization exists (jump tables, binary search)?
+
+---
+
+## DELIVERABLES
+
+1. if/else specification (100-150 lines)
+2. when/then/end specification (150-200 lines)
+3. pick pattern matching specification (300-350 lines)
+4. Destructuring pattern grammar
+5. Exhaustiveness checking algorithm
+6. Optimization strategy guide
+7. Code examples for all constructs
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (pick examples, when examples)
+- /src/frontend/parser.cpp (pick parsing)
+- /src/backend/codegen.cpp (pick codegen with jump tables)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

@@ -1,0 +1,103 @@
+# RESEARCH TASK: Floating-Point Types (flt32, flt64, flt128, flt256, flt512)
+
+**Task ID:** research_013_floating_point_types
+**Priority:** HIGH
+**Category:** Type System
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** High
+
+---
+
+## PROBLEM STATEMENT
+
+Design comprehensive specification for Aria's floating-point types, from standard IEEE-754 to extended precision software-emulated types.
+
+---
+
+## SCOPE
+
+- **Types**: ['flt32 (IEEE-754 binary32, 32-bit single precision)', 'flt64 (IEEE-754 binary64, 64-bit double precision)', 'flt128 (IEEE-754 binary128, 128-bit quadruple precision)', 'flt256 (software-emulated extended precision)', 'flt512 (software-emulated ultra-extended precision)']
+
+---
+
+## DEPENDENCIES
+
+- research_002_tbb_types
+
+---
+
+## KEY QUESTIONS
+
+- What is the platform support for each type (hardware vs software)?
+- How should NaN and Infinity be handled (strict IEEE-754 or custom)?
+- What rounding modes are supported (nearest, toward zero, up, down)?
+- Should subnormal numbers be supported or flushed to zero?
+- What is the fast-math optimization strategy vs strict IEEE compliance?
+- How do TBB ERR sentinels convert to/from float types (ERR → NaN)?
+- What is the performance model (SIMD for 32/64, software for 128+)?
+- How do floats interact with the borrow checker and memory safety?
+- What is the literal syntax (3.14f32, 1.0e10f64)?
+- How do floats work in compile-time (comptime) constant evaluation?
+
+
+---
+
+## DELIVERABLES
+
+1. Comprehensive float specification (500-600 lines)
+2. IEEE-754 compliance matrix
+3. Hardware vs software implementation strategy
+4. NaN/Infinity/subnormal handling rules
+5. Rounding mode specification
+6. TBB ↔ float conversion semantics
+7. SIMD optimization guide (SSE, AVX, AVX-512)
+8. Software emulation design for flt256/512
+9. Fast-math vs strict-math tradeoff analysis
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (lines 1-50: type definitions)
+- /docs/gemini/responses/research_002_tbb_types.txt (ERR sentinel handling)
+- /src/backend/codegen.cpp (float codegen patterns)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

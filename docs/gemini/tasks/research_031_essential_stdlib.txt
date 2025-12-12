@@ -1,0 +1,184 @@
+# RESEARCH TASK: Essential Standard Library (Compiler Bootstrap Requirements)
+
+**Task ID:** research_031_essential_stdlib
+**Priority:** CRITICAL
+**Category:** Standard Library
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** Very_High
+
+---
+
+## PROBLEM STATEMENT
+
+Specification for the minimal standard library required to bootstrap the Aria compiler and write basic programs. Covers platform syscalls, memory allocation, string manipulation, formatted output, file I/O, and essential math functions.
+
+---
+
+## SCOPE
+
+- **Platform Syscalls**: Platform-specific system calls (Linux, Windows, macOS)
+- **Memory Functions**: aria.alloc, aria.free, aria.realloc, memcpy, memset
+- **String Library**: String manipulation, comparison, searching, UTF-8 operations
+- **Formatted Io**: print, printf-style formatting, string interpolation backend
+- **File Io**: readFile, writeFile, openFile with platform abstraction
+- **Math Library**: Essential math operations (sqrt, sin, cos, pow, abs, etc.)
+- **Error Handling**: Platform error code translation to Aria result types
+
+---
+
+## DEPENDENCIES
+
+- research_005_io_library
+- research_022_wild_wildx_memory
+
+---
+
+## KEY QUESTIONS
+
+
+**Platform Syscalls:**
+- What syscalls are absolutely required (read, write, open, close, mmap)?
+- How to abstract platform differences (Linux vs Windows vs macOS)?
+- What syscall wrapper design (inline asm vs C runtime)?
+- How to handle syscall errors (errno translation to TBB ERR)?
+- What platform detection at compile-time (cfg macros)?
+- Which syscalls for memory management (mmap, VirtualAlloc, vm_allocate)?
+- Which syscalls for file I/O (open/read/write vs CreateFile/ReadFile)?
+- Which syscalls for process management (fork, exec, spawn)?
+- How to handle platform-specific types (file descriptors, handles)?
+
+**Memory Functions:**
+- What is the complete aria.alloc API signature?
+- How does aria.alloc integrate with Mimalloc backend?
+- What alignment control exists (aria.alloc_aligned)?
+- How does aria.realloc preserve data during resize?
+- What aria.free semantics (immediate vs deferred)?
+- How to implement memcpy, memset, memmove efficiently?
+- What SIMD optimizations for bulk memory operations?
+- How to detect memory leaks in wild allocations?
+- What arena allocation helpers (aria.arena.new, aria.arena.reset)?
+
+**String Library:**
+- What string types (string for GC, wild string for manual)?
+- How to implement strlen, strcmp, strcpy for UTF-8?
+- What string searching (indexOf, lastIndexOf, contains)?
+- How to handle string concatenation (+ operator backend)?
+- What string slicing operations (substring, split)?
+- How to implement case conversion (toUpper, toLower) for UTF-8?
+- What string trimming (trim, trimStart, trimEnd)?
+- How to implement string interpolation for template literals?
+- What UTF-8 validation and character iteration?
+
+**Formatted Io:**
+- What is the print() implementation (stdout.write wrapper)?
+- How to implement printf-style formatting ('%d', '%s', '%x')?
+- What format specifiers are needed (int, flt, string, hex, binary)?
+- How does template literal interpolation work (&{expr} evaluation)?
+- What buffering strategy for stdout/stderr?
+- How to format TBB types (display ERR sentinel)?
+- What number formatting (decimal places, padding, alignment)?
+- How to handle format errors (invalid specifiers)?
+
+**File Io:**
+- What is the readFile() signature and implementation?
+- What is the writeFile() signature and implementation?
+- How to abstract file operations (FD on Unix, HANDLE on Windows)?
+- What error handling (file not found, permission denied)?
+- How to implement openFile, closeFile for streaming?
+- What buffering strategy for file reads/writes?
+- How to handle large files (streaming vs load entire)?
+- What path manipulation (join, normalize, relative)?
+- How to check file existence, get file size, stat info?
+
+**Math Library:**
+- What essential math functions (sqrt, pow, abs, min, max)?
+- What trigonometry (sin, cos, tan, asin, acos, atan, atan2)?
+- What logarithms (log, log2, log10, exp)?
+- What rounding (floor, ceil, round, trunc)?
+- What constants (PI, E, INFINITY, NAN)?
+- How to implement math for TBB types (overflow → ERR)?
+- What SIMD vectorization for math operations?
+- How to handle special values (NaN, Infinity) in floats?
+- What random number generation (rand, random_range)?
+
+**Error Handling:**
+- How to translate platform errors to result types?
+- What errno/GetLastError mapping to Aria error strings?
+- How to create structured error objects?
+- What error message formatting?
+- How to integrate platform errors with TBB ERR sentinels?
+
+**Bootstrap Dependencies:**
+- What minimal subset needed for 'hello world'?
+- What is required for basic file I/O programs?
+- What is needed to implement the compiler in Aria (self-hosting)?
+- What testing utilities are needed?
+- Can we bootstrap without full GC (wild-only initially)?
+
+---
+
+## DELIVERABLES
+
+1. Essential stdlib specification (1000-1200 lines)
+2. Platform syscall abstraction layer design
+3. Memory allocation API complete reference
+4. String library with UTF-8 support
+5. Printf-style formatting specification
+6. File I/O API with platform abstraction
+7. Math library function reference
+8. Error translation tables (errno → Aria errors)
+9. Bootstrap roadmap (minimal → full stdlib)
+10. Implementation priority ordering
+11. Platform compatibility matrix (Linux, Windows, macOS)
+12. Code examples for each subsystem
+13. Performance requirements
+14. Testing strategy
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (stdlib function list)
+- /docs/gemini/responses/research_005_io_library.txt (I/O integration)
+- /docs/gemini/responses/research_022_wild_wildx_memory.txt (allocation API)
+- /src/runtime/ (existing runtime stubs)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

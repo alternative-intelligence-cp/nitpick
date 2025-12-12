@@ -1,0 +1,117 @@
+# RESEARCH TASK: Composite Types Part 2 (vec2/vec3/vec9, struct, string)
+
+**Task ID:** research_015_composite_types_part2
+**Priority:** HIGH
+**Category:** Type System
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** High
+
+---
+
+## PROBLEM STATEMENT
+
+Design specification for SIMD vector types, user-defined structs, and the string type with SSO optimization.
+
+---
+
+## SCOPE
+
+- **Vector Types**: vec2, vec3, vec9 (SIMD-optimized vectors)
+- **Struct Type**: User-defined composite structures
+- **String Type**: UTF-8 strings with Small String Optimization
+
+---
+
+## DEPENDENCIES
+
+- research_013_floating_point_types
+- research_021_gc_system
+
+---
+
+## KEY QUESTIONS
+
+
+**Vectors:**
+- What element types are supported (int, uint, flt, tbb)?
+- How do these map to SIMD instructions (SSE, AVX, AVX-512, NEON)?
+- Is swizzling supported (vec3.xyz, vec3.yzx, vec3.xxy)?
+- What geometric operations are built-in (dot, cross, normalize)?
+- What is vec9 (balanced nonary 3×3 matrix or 9-element vector)?
+- How do vectors interact with the borrow checker?
+
+**Struct:**
+- What are the field alignment and padding rules?
+- Is there support for packed structs (#[packed])?
+- What is the memory model (always GC, support wild struct)?
+- Can structs have methods (associated functions)?
+- Is there inheritance or only composition?
+- How do generic structs work (struct<T>)?
+
+**String:**
+- What encoding (UTF-8 native, ASCII, UCS-2)?
+- What is the Small String Optimization (SSO) threshold?
+- Are strings immutable (Rust String vs &str)?
+- What is the concatenation strategy (operator+ vs builder)?
+- How do template literals integrate (`&{var}`)?
+- What is the memory model (GC vs wild string)?
+
+---
+
+## DELIVERABLES
+
+1. Vector types specification (200-250 lines)
+2. Struct type specification (200-250 lines)
+3. String type specification (250-300 lines)
+4. SIMD instruction mapping
+5. SSO implementation strategy
+6. UTF-8 handling design
+7. Memory layout diagrams
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (vec types, struct syntax, string usage)
+- /src/runtime/core/string_impl.cpp (existing SSO string)
+- /src/backend/codegen_vector.cpp (vector codegen)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

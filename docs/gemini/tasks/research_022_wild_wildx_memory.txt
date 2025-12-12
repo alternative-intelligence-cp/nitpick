@@ -1,0 +1,130 @@
+# RESEARCH TASK: Wild/Wildx Memory (@, *, #, $, ->, aria.alloc/free)
+
+**Task ID:** research_022_wild_wildx_memory
+**Priority:** CRITICAL
+**Category:** Memory Management
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** Very_High
+
+---
+
+## PROBLEM STATEMENT
+
+Comprehensive specification for Aria's unsafe manual memory management system (wild/wildx), including pointer syntax, allocation functions, and safety boundaries with GC memory.
+
+---
+
+## SCOPE
+
+- **Wild Memory**: Manual memory management outside GC (@, *, #, aria.alloc/free)
+- **Wildx Memory**: JIT-compiled machine code execution ($, runtime assembler)
+- **Pointer Operators**: Pointer syntax (@, *, #, ->) and dereferencing
+- **Allocation Api**: aria.alloc, aria.free, aria.realloc
+
+---
+
+## DEPENDENCIES
+
+- research_002_borrow_checker
+- research_021_garbage_collection
+
+---
+
+## KEY QUESTIONS
+
+
+**Wild Memory:**
+- What is the @ operator semantics (wild pointer)?
+- How does * dereference work with safety checks?
+- What is # operator (pointer arithmetic)?
+- How does -> struct member access work?
+- What safety boundaries exist between wild and GC memory?
+- How does borrow checker track wild pointers?
+- What use-after-free detection exists?
+- How do wild pointers interact with lifetimes?
+
+**Wildx Memory:**
+- What is $ operator semantics (wildx executable memory)?
+- How is JIT code generation performed?
+- What safety sandboxing exists (NX bit, ASLR)?
+- How does wildx integrate with runtime assembler?
+- What calling convention bridges exist (wildx → Aria)?
+- How are wildx functions garbage collected?
+
+**Allocation Api:**
+- What is aria.alloc signature and semantics?
+- How does aria.free work (immediate vs deferred)?
+- What aria.realloc strategy exists?
+- What alignment control exists (aria.alloc_aligned)?
+- How are allocation failures handled (result type)?
+- What memory tracking/profiling exists?
+- How does arena allocation work (aria.arena.new)?
+
+**Safety:**
+- What unsafe blocks are required?
+- How is wild↔GC boundary enforced (no GC refs in wild)?
+- What sanitizers exist (AddressSanitizer, MemorySanitizer)?
+- How does defer integrate with aria.free?
+- What runtime checks exist (bounds, null, use-after-free)?
+
+---
+
+## DELIVERABLES
+
+1. Wild memory specification (400-500 lines)
+2. Wildx memory specification (250-300 lines)
+3. Pointer operator semantics
+4. Allocation API complete reference
+5. Safety boundary enforcement
+6. Borrow checker integration
+7. Runtime sanitizer design
+8. Code examples with unsafe blocks
+9. Performance comparison (GC vs wild)
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (wild memory examples)
+- /docs/gemini/responses/research_002_borrow_checker.txt (wild pointer tracking)
+- /src/runtime/memory.cpp (aria.alloc implementation)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

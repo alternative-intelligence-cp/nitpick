@@ -1,0 +1,144 @@
+# RESEARCH TASK: Generics and Templates (Monomorphization System)
+
+**Task ID:** research_027_generics_templates
+**Priority:** CRITICAL
+**Category:** Type System
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** Very_High
+
+---
+
+## PROBLEM STATEMENT
+
+Complete specification for Aria's zero-cost generic programming system using monomorphization. Covers generic functions, generic types, type parameters, constraints, and compile-time instantiation.
+
+---
+
+## SCOPE
+
+- **Generic Functions**: func<T, U>:name = *T(*U:param) { body } - Type-parametric functions
+- **Generic Types**: Generic structs, arrays, and composite types
+- **Monomorphization**: Compile-time type instantiation (C++/Rust style, not Java/C# erasure)
+- **Type Constraints**: Trait bounds and type requirements
+- **Type Inference**: Automatic type parameter deduction
+
+---
+
+## DEPENDENCIES
+
+- research_010_macro_comptime
+- research_012_standard_integer_types
+
+---
+
+## KEY QUESTIONS
+
+
+**Syntax:**
+- What is the complete generic syntax (func<T>:name vs func:name<T>)?
+- How is the * prefix used to mark generic types in function bodies?
+- What is the distinction between declaration (*T:param) and usage (*T)?
+- How are multiple type parameters specified (func<T, U, V>)?
+- What naming conventions for type parameters (T, U, V vs descriptive names)?
+
+**Monomorphization:**
+- What is the instantiation strategy (eager vs lazy)?
+- How are duplicate instantiations detected and shared?
+- What mangling scheme for monomorphized function names?
+- How does monomorphization interact with separate compilation?
+- What limits exist on generic depth (nested generics)?
+- How are generic functions with identical instantiations deduplicated?
+
+**Type Inference:**
+- What inference algorithm (Hindley-Milner, local bidirectional)?
+- When can type parameters be inferred vs explicitly required?
+- How does inference work with multiple call sites?
+- What happens with ambiguous inference (compilation error)?
+- How do turbofish operators work for explicit instantiation (func::<i32>())?
+
+**Constraints:**
+- What trait/interface system exists for type bounds?
+- How are operator requirements specified (T must support +)?
+- What built-in traits exist (Copy, Send, Sync, Display)?
+- How does constraint checking work (at instantiation time)?
+- What error messages for constraint violations?
+
+**Integration:**
+- How do generics interact with wild vs gc memory?
+- How are generic TBB types handled (preserving ERR semantics)?
+- How do generics work with the borrow checker?
+- What comptime evaluation exists for generic constraints?
+- How do generics integrate with the module system?
+- Can macros generate generic code?
+
+**Advanced Features:**
+- What associated types exist (type aliases within traits)?
+- How do higher-kinded types work (generic over generics)?
+- What const generics exist (array<T, N> with N as const)?
+- How are variadic generics handled (func<...Ts>)?
+- What specialization exists (optimized impl for specific types)?
+
+---
+
+## DELIVERABLES
+
+1. Generics specification (700-800 lines)
+2. Complete syntax grammar
+3. Monomorphization algorithm design
+4. Type inference rules
+5. Constraint system design
+6. Integration with borrow checker
+7. Integration with memory models (wild/gc)
+8. Mangling scheme specification
+9. Error message templates
+10. Code examples (simple to advanced)
+11. Performance analysis (code bloat mitigation)
+12. Comparison with C++, Rust, Swift
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (generic examples)
+- /docs/research/generics_monomorphization_implementation.md (existing research)
+- /docs/gemini/responses/research_010-011_macro_comptime.txt (comptime integration)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

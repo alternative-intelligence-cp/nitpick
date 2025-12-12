@@ -1,0 +1,115 @@
+# RESEARCH TASK: Control Transfer (break, continue, return, defer)
+
+**Task ID:** research_020_control_transfer
+**Priority:** HIGH
+**Category:** Control Flow
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** Medium
+
+---
+
+## PROBLEM STATEMENT
+
+Complete specification for control transfer mechanisms: loop control (break/continue), function exits (return), and cleanup registration (defer).
+
+---
+
+## SCOPE
+
+- **Break Continue**: Loop exit and iteration skip with labeled support
+- **Return Statement**: Function exit with implicit result wrapping
+- **Defer Statement**: RAII-style cleanup registration (execute on scope exit)
+
+---
+
+## DEPENDENCIES
+
+- research_018_looping_constructs
+- research_022_wild_memory
+
+---
+
+## KEY QUESTIONS
+
+
+**Break Continue:**
+- How do labeled break/continue work for nested loops?
+- What happens to defer blocks when break executes?
+- Can break/continue be used in pick cases?
+- What error checking exists (break outside loop)?
+
+**Return:**
+- How does implicit result wrapping work ({err: NULL, val: X})?
+- What order do defer blocks execute before return?
+- Can return be used in defer blocks?
+- How does early return interact with the borrow checker?
+- What optimization exists (tail call, RVO)?
+
+**Defer:**
+- What is the LIFO execution order for multiple defer blocks?
+- How does defer integrate with wild memory (aria.free in defer)?
+- What happens to defer on panic/unwind?
+- Can defer capture variables (closure-like)?
+- How does defer interact with async functions?
+- What safety guarantees exist (defer always executes)?
+
+---
+
+## DELIVERABLES
+
+1. break/continue specification (100-150 lines)
+2. return statement specification (150-200 lines)
+3. defer statement specification (200-250 lines)
+4. Execution order guarantees
+5. Panic/unwind semantics
+6. Borrow checker integration
+7. Code examples for all constructs
+8. Comparison with Go (defer) and Rust (Drop)
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (defer examples, return wrapping)
+- /docs/gemini/responses/research_022_wild_memory.txt (defer + aria.free)
+- /src/frontend/parser.cpp (defer parsing)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

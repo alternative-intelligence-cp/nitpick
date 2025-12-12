@@ -1,0 +1,104 @@
+# RESEARCH TASK: Looping Constructs (while, for, loop, till)
+
+**Task ID:** research_018_looping_constructs
+**Priority:** HIGH
+**Category:** Control Flow
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** Medium
+
+---
+
+## PROBLEM STATEMENT
+
+Comprehensive specification for all looping constructs in Aria, including standard loops and Aria-specific counted loops with automatic iteration tracking.
+
+---
+
+## SCOPE
+
+- **While Loop**: while (condition) { body } - Standard conditional loop
+- **For Loop**: for (init; condition; update) { body } - C-style three-part loop
+- **Loop Construct**: loop(start, stop, step) { body } - Aria counted loop with $ variable
+- **Till Construct**: till(limit, step) { body } - Simplified counted loop with $ variable
+
+---
+
+## DEPENDENCIES
+
+- research_010_macro_comptime
+
+---
+
+## KEY QUESTIONS
+
+- What are the exact semantics of the $ iteration variable in loop/till?
+- How does step direction detection work (positive vs negative)?
+- What scoping rules apply to loop variables?
+- How do loops integrate with break/continue/defer?
+- What optimization opportunities exist (loop unrolling, invariant code motion)?
+- How do loops interact with the borrow checker (iterator lifetime)?
+- What is the for-each style iterator protocol (for (item in collection))?
+- How do infinite loops work (while(true), loop without stop)?
+- What compile-time loop unrolling exists (comptime loops)?
+
+
+---
+
+## DELIVERABLES
+
+1. Comprehensive looping specification (400-450 lines)
+2. $ variable semantics detailed
+3. Scoping and lifetime rules
+4. Iterator protocol design
+5. Optimization strategy guide
+6. Borrow checker integration
+7. Code examples for all loop types
+8. Comparison with other languages
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (lines 200-300: loop examples)
+- /src/frontend/parser.cpp (loop parsing)
+- /src/backend/codegen.cpp (loop codegen)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

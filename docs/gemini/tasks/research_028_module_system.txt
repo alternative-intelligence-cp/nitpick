@@ -1,0 +1,152 @@
+# RESEARCH TASK: Module System (use, mod, pub, extern)
+
+**Task ID:** research_028_module_system
+**Priority:** CRITICAL
+**Category:** Language Infrastructure
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** Very_High
+
+---
+
+## PROBLEM STATEMENT
+
+Complete specification for Aria's module system covering imports (use), module definitions (mod), visibility (pub), and external C integration (extern). Critical for code organization and reusability.
+
+---
+
+## SCOPE
+
+- **Use Imports**: use std.io, use math.*, use './file.aria' as alias
+- **Mod Definitions**: mod name { ... } for module hierarchies
+- **Pub Visibility**: pub func, pub const, pub struct for public APIs
+- **Extern Ffi**: extern 'libc' { func:malloc = void*(uint64:size); }
+- **Conditional Compilation**: use cfg(target_os = 'linux') std.os.linux
+
+---
+
+## DEPENDENCIES
+
+- research_010_macro_comptime
+
+---
+
+## KEY QUESTIONS
+
+
+**Use Keyword:**
+- What is the complete use syntax (paths, wildcards, aliases)?
+- How do absolute vs relative imports work (/usr/lib vs ./local)?
+- What is the search path algorithm (current dir, std lib, system)?
+- How are circular imports detected and prevented?
+- What is the selective import syntax ({ func1, func2 })?
+- How do glob imports work (* wildcard)?
+- What privacy rules apply to imports (pub use for re-exports)?
+
+**Mod Keyword:**
+- How are modules defined (mod name { body } vs mod name; + separate file)?
+- What is the module hierarchy (parent::child::item access)?
+- How do nested modules work?
+- What is the relationship between file structure and module tree?
+- How are module-level constants and statics handled?
+- What initialization order for module-level code?
+
+**Pub Keyword:**
+- What visibility levels exist (pub, pub(crate), pub(super), private)?
+- What items can be pub (functions, types, constants, modules)?
+- How does pub interact with nested modules?
+- What is the default visibility (private within module)?
+- How do pub use re-exports work?
+- What error checking for visibility violations?
+
+**Extern Keyword:**
+- What is the extern syntax for C libraries?
+- How are calling conventions specified (C, stdcall, fastcall)?
+- How do variadic functions work (printf-style)?
+- What type mappings exist (Aria types ↔ C types)?
+- How are header files parsed (manual declarations vs bindgen)?
+- What safety guarantees for extern functions (always unsafe)?
+- How do extern blocks interact with linking?
+
+**Conditional Compilation:**
+- What cfg predicates exist (os, arch, feature flags)?
+- How does use cfg(...) work for platform-specific imports?
+- What build system integration (feature flags)?
+- How are unused cfg branches optimized out?
+
+**Integration:**
+- How does the module system integrate with the compiler pipeline?
+- What caching exists for parsed modules?
+- How do generics work across module boundaries?
+- How are macros exported/imported between modules?
+- What symbol resolution algorithm?
+- How does incremental compilation work with modules?
+
+**File Organization:**
+- What file naming conventions (mod.aria, lib.aria, main.aria)?
+- How do directories map to modules?
+- What is the package structure (Cargo.toml equivalent)?
+- How are binary vs library crates distinguished?
+
+---
+
+## DELIVERABLES
+
+1. Module system specification (800-900 lines)
+2. Complete syntax grammar for use/mod/pub/extern
+3. Import resolution algorithm
+4. Visibility checking rules
+5. FFI type mapping table
+6. Symbol resolution algorithm
+7. File/directory structure conventions
+8. Package manifest format
+9. Error message templates
+10. Code examples (simple to complex hierarchies)
+11. Integration with build system
+12. Comparison with Rust, Python, C++
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (module examples)
+- /src/frontend/parser.cpp (module parsing)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

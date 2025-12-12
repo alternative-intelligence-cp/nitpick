@@ -1,0 +1,164 @@
+# RESEARCH TASK: Async/Await System (Coroutines and Futures)
+
+**Task ID:** research_029_async_await_system
+**Priority:** CRITICAL
+**Category:** Concurrency
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** Very_High
+
+---
+
+## PROBLEM STATEMENT
+
+Complete specification for Aria's async/await system, including stackless coroutines, Future types, async runtime integration, and zero-cost abstractions for asynchronous programming.
+
+---
+
+## SCOPE
+
+- **Async Functions**: async func:name = result(params) { await expr; }
+- **Await Keyword**: Suspend execution until Future completes
+- **Future Type**: Future<T> representing pending computation
+- **Async Runtime**: Work-stealing executor from research_007
+- **Io Integration**: Async I/O with research_005 (io_uring, IOCP)
+
+---
+
+## DEPENDENCIES
+
+- research_005_io_library
+- research_006_modern_io_streams
+- research_007_threading_library
+
+---
+
+## KEY QUESTIONS
+
+
+**Async Keyword:**
+- What is the async function syntax (async func vs func async)?
+- How do async functions differ from regular functions?
+- What return type do async functions have (Future<T>)?
+- Can lambdas be async?
+- How do async closures capture variables?
+
+**Await Keyword:**
+- What is the await syntax (await expr vs expr.await)?
+- What can be awaited (Future<T>, async functions)?
+- How does await suspend the coroutine?
+- What happens to local variables during suspension?
+- Can await be used outside async functions (compile error)?
+
+**Future Type:**
+- What is the Future<T> trait/interface?
+- What methods exist (poll, map, then, catch)?
+- How are Futures composed (chaining, joining)?
+- What is the relationship with result type?
+- How do Futures integrate with TBB error propagation?
+
+**Coroutine Implementation:**
+- What coroutine style (stackless state machines)?
+- How is the coroutine state stored (heap allocation, stack)?
+- What is the state machine transformation algorithm?
+- How are suspension points identified?
+- What optimizations exist (inline, elide heap allocation)?
+
+**Async Runtime:**
+- How does async integrate with research_007 threading?
+- What executor implementation (work-stealing from research_007)?
+- How are Futures scheduled (task queue, priority)?
+- What wakeup mechanism (reactor pattern)?
+- How does the runtime integrate with OS primitives (epoll, io_uring, IOCP)?
+
+**Io Integration:**
+- How do async I/O operations work (readFile, httpGet)?
+- What is the relationship with research_005 I/O library?
+- How are blocking operations converted to async?
+- What buffering strategy for async I/O?
+- How do async streams work (AsyncRead, AsyncWrite traits)?
+
+**Error Handling:**
+- How do async functions return errors (result type)?
+- How does ? operator work in async functions?
+- What happens when a Future panics?
+- How are async errors propagated across await points?
+
+**Advanced Features:**
+- What async blocks exist (async { body } expressions)?
+- How do select/join combinators work (wait on multiple Futures)?
+- What timeout support exists (Future with deadline)?
+- How does cancellation work (drop Future)?
+- What async iterators/streams exist (async for)?
+- How do async generators work (yield keyword)?
+
+**Memory Model:**
+- How do async functions interact with the borrow checker?
+- What lifetime constraints on captured variables?
+- How are wild pointers handled in async contexts?
+- What Send/Sync requirements for Futures?
+- How does pinning (# operator) work with async?
+
+---
+
+## DELIVERABLES
+
+1. Async/await specification (900-1000 lines)
+2. Complete syntax grammar
+3. State machine transformation algorithm
+4. Future trait design
+5. Executor integration with research_007
+6. I/O integration with research_005/006
+7. Error handling semantics
+8. Lifetime and borrow checking rules
+9. Cancellation semantics
+10. Performance optimization strategies
+11. Code examples (simple to complex)
+12. Comparison with JavaScript, Rust, C#, Python
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (async examples)
+- /docs/gemini/responses/research_005_io_library.txt (I/O integration)
+- /docs/gemini/responses/research_007_threading_library.txt (executor)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

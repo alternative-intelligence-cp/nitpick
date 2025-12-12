@@ -1,0 +1,154 @@
+# RESEARCH TASK: Const and Compile-Time Evaluation
+
+**Task ID:** research_030_const_compile_time
+**Priority:** HIGH
+**Category:** Metaprogramming
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** High
+
+---
+
+## PROBLEM STATEMENT
+
+Complete specification for Aria's const keyword and compile-time constant evaluation. Covers const variables, const functions, const generics, and integration with the comptime system from research_010.
+
+---
+
+## SCOPE
+
+- **Const Variables**: const int:VALUE = 42; - Compile-time constants
+- **Const Functions**: Const-evaluable functions (pure, deterministic)
+- **Const Generics**: Generic parameters as compile-time constants
+- **Const Expressions**: Expressions evaluated at compile-time
+- **Const Propagation**: Optimizer constant folding
+
+---
+
+## DEPENDENCIES
+
+- research_010_macro_comptime
+
+---
+
+## KEY QUESTIONS
+
+
+**Const Keyword:**
+- What is the const syntax (const type:name = value)?
+- What types can be const (primitives, structs, arrays)?
+- Are const variables truly immutable (can never change)?
+- How do const variables differ from regular variables?
+- What scope rules apply (module-level, function-level, block-level)?
+
+**Const Evaluation:**
+- What expressions can be evaluated at compile-time?
+- What operations are allowed (arithmetic, logical, bitwise)?
+- Can const expressions call functions (const functions)?
+- How are errors reported in const evaluation?
+- What limits exist on const evaluation complexity?
+
+**Const Functions:**
+- How are const functions declared?
+- What restrictions exist (no I/O, no mutation, deterministic)?
+- Can const functions be recursive?
+- How do const functions interact with generics?
+- What optimization exists (always inline, memoization)?
+
+**Const Generics:**
+- How are const generic parameters specified (func<const N: int>)?
+- What types can be const generic parameters (int, bool, string)?
+- How do const generics work with monomorphization?
+- What const expressions can be used as generic arguments?
+- How do const generics enable fixed-size arrays (array<T, N>)?
+
+**Integration With Comptime:**
+- How does const relate to comptime from research_010?
+- What is the difference between const and comptime?
+- Can const functions use comptime features?
+- How do const values work in comptime code?
+- What synergy exists between const and macros?
+
+**Const Propagation:**
+- What constant folding optimizations exist?
+- How are const values inlined?
+- What dead code elimination based on const conditions?
+- How does const affect codegen (no runtime storage)?
+- What debug info for const values?
+
+**Memory Model:**
+- Where are const values stored (data segment, inline)?
+- How do const pointers work (const ptr to mutable data)?
+- What is const* vs *const (pointer constness)?
+- Can const values reference wild memory?
+- How do const values interact with GC?
+
+**Advanced Features:**
+- What const assertions exist (static_assert equivalent)?
+- How do const type aliases work?
+- What const pattern matching exists?
+- Can const functions have side effects during compilation?
+- How do const slices/strings work?
+
+---
+
+## DELIVERABLES
+
+1. Const specification (500-600 lines)
+2. Complete syntax grammar
+3. Const evaluation rules and algorithm
+4. Const function restrictions
+5. Const generics design
+6. Integration with comptime system
+7. Constant folding optimization strategy
+8. Memory model for const values
+9. Error message templates
+10. Code examples (simple to advanced)
+11. Performance analysis
+12. Comparison with C++, Rust, Zig
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (const examples)
+- /docs/gemini/responses/research_010-011_macro_comptime.txt (comptime integration)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

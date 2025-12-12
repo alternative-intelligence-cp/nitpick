@@ -1,0 +1,128 @@
+# RESEARCH TASK: Runtime Assembler (x86-64 JIT, wildx code generation)
+
+**Task ID:** research_023_runtime_assembler
+**Priority:** HIGH
+**Category:** Memory Management
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** Very_High
+
+---
+
+## PROBLEM STATEMENT
+
+Complete specification for Aria's runtime x86-64 assembler, enabling JIT compilation and wildx executable memory generation at runtime.
+
+---
+
+## SCOPE
+
+- **Assembler Api**: Runtime x86-64 instruction encoding (mov, add, call, etc.)
+- **Wildx Generation**: Dynamic code generation for $ wildx pointers
+- **Register Allocation**: Runtime register allocation strategy
+- **Calling Convention**: System V AMD64 ABI compliance
+
+---
+
+## DEPENDENCIES
+
+- research_022_wild_wildx_memory
+- research_010_macro_comptime
+
+---
+
+## KEY QUESTIONS
+
+
+**Assembler Api:**
+- What instruction encoding API exists (asm.mov(reg, imm))?
+- How are registers represented (enum vs typed handles)?
+- What addressing modes are supported (immediate, register, memory)?
+- How are labels and jumps handled?
+- What SIMD instruction support exists (SSE, AVX, AVX-512)?
+- How is code buffer managed (growth, relocation)?
+- What disassembler exists for debugging?
+
+**Wildx Generation:**
+- How is wildx memory allocated (aria.alloc_exec)?
+- What code patching mechanisms exist?
+- How are wildx functions called from Aria?
+- What optimization passes exist (peephole, dead code)?
+- How are constants embedded (literal pool)?
+- What relocation strategy exists for position-independent code?
+
+**Register Allocation:**
+- What register allocation algorithm (linear scan, graph coloring)?
+- How are caller/callee-saved registers handled?
+- What spilling strategy exists?
+- How does register allocation integrate with calling convention?
+
+**Safety And Integration:**
+- What sandboxing exists (W^X, NX bit)?
+- How are assembly errors detected (invalid encoding)?
+- What debugging support exists (breakpoints, single-step)?
+- How does runtime assembler integrate with macros/comptime?
+- What performance profiling exists (cycle counts)?
+- How are external library calls handled (FFI)?
+
+---
+
+## DELIVERABLES
+
+1. Runtime assembler specification (600-700 lines)
+2. x86-64 instruction encoding API
+3. Wildx generation workflow
+4. Register allocation strategy
+5. Calling convention bridge design
+6. Safety sandboxing mechanisms
+7. Code examples (JIT math expression evaluator)
+8. Performance benchmarks (JIT vs interpreted)
+9. Comparison with DynASM, AsmJit
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (wildx examples)
+- /docs/gemini/responses/research_022_wild_wildx_memory.txt ($ operator)
+- /docs/gemini/responses/research_010-011_macro_comptime.txt (comptime asm generation)
+- External: System V AMD64 ABI specification
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

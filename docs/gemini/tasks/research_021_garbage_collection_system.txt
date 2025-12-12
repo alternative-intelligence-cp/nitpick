@@ -1,0 +1,124 @@
+# RESEARCH TASK: Garbage Collection System
+
+**Task ID:** research_021_garbage_collection_system
+**Priority:** CRITICAL
+**Category:** Memory Management
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** Very_High
+
+---
+
+## PROBLEM STATEMENT
+
+Complete specification for Aria's generational garbage collector with pinning support and shadow stack implementation. Critical for managed memory model.
+
+---
+
+## SCOPE
+
+- **Gc Algorithm**: Generational garbage collection with nursery/tenured generations
+- **Pinning**: GC pinning mechanism to prevent collection during unsafe operations
+- **Shadow Stack**: Separate stack for GC root tracking
+- **Write Barriers**: Incremental/concurrent GC write barrier implementation
+
+---
+
+## DEPENDENCIES
+
+- research_002_borrow_checker
+- research_014_composite_types_part1
+
+---
+
+## KEY QUESTIONS
+
+
+**Algorithm:**
+- What generational structure (number of generations, promotion policy)?
+- What collection algorithm (mark-sweep, copying, mark-compact)?
+- How are collection cycles triggered (heap threshold, allocation count)?
+- What concurrent/incremental strategies exist?
+- How are finalizers handled?
+
+**Pinning:**
+- What pinning API exists (gc.pin(obj), gc.unpin(obj))?
+- How does pinning interact with wild memory (@obj conversion)?
+- What safety guarantees exist (pinned objects can't move)?
+- How does pinning affect collection performance?
+- What RAII wrappers exist (auto-unpin on scope exit)?
+
+**Shadow Stack:**
+- What is the shadow stack implementation (separate vs inline)?
+- How are GC roots registered (function prologue/epilogue)?
+- What overhead does shadow stack add?
+- How does shadow stack integrate with LLVM codegen?
+- What alternatives exist (conservative stack scanning)?
+
+**Integration:**
+- How does GC integrate with borrow checker (no GC pointers in borrows)?
+- What obj/dyn/array GC semantics exist?
+- How does GC interact with wild memory boundaries?
+- What debugging/profiling tools exist?
+- How are large objects (LOH) handled?
+
+---
+
+## DELIVERABLES
+
+1. GC algorithm specification (500-600 lines)
+2. Generational design with promotion policy
+3. Pinning API and semantics
+4. Shadow stack implementation strategy
+5. Write barrier design
+6. Borrow checker integration
+7. Performance tuning parameters
+8. GC debugging/profiling tools
+9. Code examples and benchmarks
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (GC references)
+- /docs/gemini/responses/research_002_borrow_checker.txt (GC interaction)
+- /src/runtime/gc.cpp (GC implementation stub)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

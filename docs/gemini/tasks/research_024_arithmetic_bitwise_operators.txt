@@ -1,0 +1,125 @@
+# RESEARCH TASK: Arithmetic/Bitwise Operators (+, -, *, /, %, &, |, ^, <<, >>, TBB overflow)
+
+**Task ID:** research_024_arithmetic_bitwise_operators
+**Priority:** HIGH
+**Category:** Operators
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** Medium
+
+---
+
+## PROBLEM STATEMENT
+
+Complete specification for all arithmetic and bitwise operators in Aria, including TBB sticky error propagation for overflow/underflow conditions.
+
+---
+
+## SCOPE
+
+- **Arithmetic**: +, -, *, /, % (modulo) with TBB overflow handling
+- **Bitwise**: &, |, ^ (xor), ~ (not), <<, >> (shift)
+- **Compound Assignment**: +=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=
+- **Unary**: - (negation), ~ (bitwise not)
+
+---
+
+## DEPENDENCIES
+
+- research_001_tbb
+- research_012_standard_integer_types
+- research_013_floating_point_types
+
+---
+
+## KEY QUESTIONS
+
+
+**Arithmetic Semantics:**
+- What overflow behavior exists (wrap, trap, saturate, TBB ERR)?
+- How does TBB sticky error propagate (ERR + X → ERR)?
+- What checked arithmetic exists (aria.checked_add)?
+- How does division by zero behave (TBB ERR)?
+- What modulo semantics (floored vs truncated)?
+- How do mixed-type operations work (int + flt → flt)?
+- What operator precedence exists?
+
+**Bitwise Semantics:**
+- What shift semantics (logical vs arithmetic)?
+- How do shifts handle large counts (>= bit width)?
+- What rotation operations exist (rol, ror)?
+- How do bitwise ops work on TBB ERR?
+- What SIMD vectorization exists?
+
+**Tbb Integration:**
+- What operations trigger ERR (overflow, underflow, div-by-zero)?
+- How is ERR detected in codegen (flag checks)?
+- What performance overhead exists?
+- How does TBB interact with floating-point (flt32 + ERR)?
+- What recovery mechanisms exist (? operator)?
+
+**Optimization:**
+- What constant folding exists?
+- What strength reduction (mul by power-of-2 → shift)?
+- What SIMD autovectorization?
+- What unsafe unchecked variants exist?
+
+---
+
+## DELIVERABLES
+
+1. Arithmetic operator specification (300-350 lines)
+2. Bitwise operator specification (200-250 lines)
+3. TBB overflow/underflow semantics
+4. Type promotion rules
+5. Operator precedence table
+6. SIMD optimization strategy
+7. Code examples with TBB error handling
+8. Performance comparison (checked vs unchecked)
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (operator examples)
+- /docs/gemini/responses/research_001_tbb.txt (sticky error propagation)
+- /src/backend/codegen.cpp (operator codegen)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...

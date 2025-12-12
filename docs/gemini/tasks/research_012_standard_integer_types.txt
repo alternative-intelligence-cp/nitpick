@@ -1,0 +1,106 @@
+# RESEARCH TASK: Standard Integer and Unsigned Integer Types (int1-512, uint8-512)
+
+**Task ID:** research_012_standard_integer_types
+**Priority:** HIGH
+**Category:** Type System
+**Status:** PENDING
+**Created:** 2025-12-11
+**Estimated Complexity:** Medium
+
+---
+
+## PROBLEM STATEMENT
+
+Design comprehensive specification for Aria's standard signed and unsigned integer types, covering the full range from 1-bit to 512-bit integers.
+
+---
+
+## SCOPE
+
+- **Signed Types**: ['int1', 'int2', 'int4', 'int8', 'int16', 'int32', 'int64', 'int128', 'int256', 'int512']
+- **Unsigned Types**: ['uint8', 'uint16', 'uint32', 'uint64', 'uint128', 'uint256', 'uint512']
+- **Note**: These are standard two's complement integers, distinct from TBB types
+
+---
+
+## DEPENDENCIES
+
+- research_002_tbb_types
+
+---
+
+## KEY QUESTIONS
+
+- What is the memory layout and alignment for wide types (128/256/512-bit)?
+- How do these map to LLVM IR (native types vs multi-register representation)?
+- What is the overflow behavior (wrap, trap, or saturate)?
+- When should developers use standard int vs TBB types?
+- What literal syntax should be used (suffixes: i8, u16, i128)?
+- What are the conversion rules (implicit vs explicit casts)?
+- What SIMD opportunities exist for wide integer operations?
+- How do these integrate with the borrow checker and memory model?
+- What atomics support exists for wide integers (int128/256/512)?
+- How do these perform in compile-time (comptime) evaluation?
+
+
+---
+
+## DELIVERABLES
+
+1. Comprehensive type specification document (400-500 lines)
+2. Memory layout diagrams for all widths
+3. LLVM IR mapping strategy
+4. Literal syntax specification with examples
+5. Conversion matrix (implicit/explicit casts)
+6. Overflow behavior semantics
+7. Comparison with TBB types (decision tree)
+8. SIMD optimization opportunities
+9. Integration points: borrow checker, atomics, comptime
+
+---
+
+## CONTEXT FILES
+
+- /docs/info/aria_specs.txt (lines 1-50: type definitions)
+- /docs/gemini/responses/research_002_tbb_types.txt (TBB comparison)
+- /src/frontend/sema/type_checker.cpp (existing type validation)
+- /src/backend/codegen.cpp (current integer codegen)
+
+---
+
+## INSTRUCTIONS FOR GEMINI
+
+**Your Task:**
+Provide a comprehensive specification document covering all key questions and deliverables listed above.
+
+**Format:**
+- Clear section headings
+- Code examples where appropriate
+- Design rationale explanations
+- Platform-specific considerations (Linux, Windows, macOS)
+- Integration notes with existing research
+- Performance implications
+- Security/safety considerations
+
+**Style:**
+- Technical and precise
+- Include pseudo-code or actual Aria syntax examples
+- Reference relevant research papers or existing implementations
+- Provide comparison with similar features in other languages
+
+**Length:** Aim for {task.get('target_length', '500-800')} lines of detailed technical content.
+
+---
+
+## SUCCESS CRITERIA
+
+Research complete when we have:
+1. Complete specification covering all key questions
+2. Design decisions documented with rationale
+3. Integration strategy with existing compiler components
+4. Code examples demonstrating usage
+5. Implementation roadmap or guidance
+
+---
+
+**PRIORITY:** {task['priority'].upper()} - {task.get('description', '')[:100]}...
