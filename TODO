@@ -112,11 +112,26 @@
     * RAII Child struct (prevents zombie processes)
   - [x] Document: `/docs/gemini/responses/research_005_process_management.txt`
 
-- [ ] **research_006: Modern I/O Streams (6-stream system)**
-  - [ ] Upload compilations
-  - [ ] Extract stream purpose analysis
-  - [ ] Extract implementation strategy
-  - [ ] Understand stddbg/stddati/stddato rationale
+- [x] **research_006: Modern I/O Streams (6-stream system)** ✅ COMPLETE (Dec 11, 2025)
+  - [x] Upload compilations
+  - [x] Review response document (388 lines received)
+  - [x] Extract stream purpose analysis
+    * **Key Finding**: 6-stream topology replaces 3-stream Unix model
+    * stdin/stdout/stderr: Text (UTF-8) - line buffered
+    * stddbg (FD 3): Diagnostic telemetry - async ring buffered
+    * stddati (FD 4): Binary data in - block buffered
+    * stddato (FD 5): Binary data out - block buffered
+  - [x] Extract implementation strategy
+    * Linux: FDs 3-5 via fcntl + dup2 + process inheritance
+    * Windows: STARTUPINFOEX + env var passing (__ARIA_STREAMS)
+    * Named pipes for persistent IPC
+    * Zero-copy optimizations (splice() on Linux)
+  - [x] Understand stddbg/stddati/stddato rationale
+    * Separation of concerns: text vs binary, errors vs debug
+    * Prevents stdout corruption in pipelines
+    * Enables ML/blockchain apps (binary tensor streaming)
+    * 33% bandwidth savings (no Base64 encoding needed)
+  - [x] Document: `/docs/gemini/responses/research_006_modern_streams.txt`
 
 - [ ] **research_007: Threading Library**
   - [ ] Upload compilations
@@ -887,43 +902,126 @@
   - [ ] `stream.close() -> result<void, string>`
   - [ ] Add tests for all operations
 
-### 6.2 Modern I/O Streams (6-Stream System)
-**Status**: Awaiting research_006
+### 6.2 Modern I/O Streams (6-Stream System) ✅ RESEARCH COMPLETE
+**Status**: ✅ Research complete (research_006, 388 lines)
+**Reference**: `/docs/IO_STREAMS_IMPLEMENTATION_PLAN.md` (detailed 8-week plan)
+**Dependencies**: Phase 5 (file I/O), Phase 7 (async runtime)
+**Timeline**: 8 weeks
 
-#### 6.2.1 Standard Streams Implementation
-- [ ] After research_006 complete, review design
-- [ ] Implement 6 standard streams in `src/runtime/io/`
-  - [ ] **stdin** (text input)
-    - [ ] Platform-specific: fd 0 (Unix), GetStdHandle (Windows)
-    - [ ] Buffered reading
-    - [ ] UTF-8 decoding
-  - [ ] **stdout** (text output)
-    - [ ] Platform-specific: fd 1 (Unix), GetStdHandle (Windows)
-    - [ ] Buffered writing
-    - [ ] UTF-8 encoding
-  - [ ] **stderr** (error output)
-    - [ ] Platform-specific: fd 2 (Unix), GetStdHandle (Windows)
-    - [ ] Unbuffered for immediate errors
-  - [ ] **stddbg** (debug output) - NEW
-    - [ ] Research rationale from research_006
-    - [ ] Implementation strategy
-    - [ ] Platform mapping (fd 3? separate mechanism?)
-  - [ ] **stddati** (data input) - NEW
-    - [ ] Research rationale from research_006
-    - [ ] Implementation strategy
-    - [ ] Platform mapping
-  - [ ] **stddato** (data output) - NEW
-    - [ ] Research rationale from research_006
-    - [ ] Implementation strategy
-    - [ ] Platform mapping
-- [ ] Stream operations
-  - [ ] `.read()`, `.readLine()`, `.write()`, `.writeLine()`
-  - [ ] `.flush()` for buffered streams
-  - [ ] `.close()` (where applicable)
-- [ ] Add comprehensive tests
-  - [ ] Test each stream independently
-  - [ ] Test redirection behavior
-  - [ ] Test TTY vs pipe behavior
+**Key Design**: Replaces 3-stream Unix model with semantic separation:
+- **Text Plane** (stdin/stdout/stderr): Human interaction, line-buffered, UTF-8
+- **Data Plane** (stddati/stddato): Binary pipelines, block-buffered, zero-copy
+- **Observability** (stddbg): Diagnostics, async ring-buffered, drop-on-full
+
+#### 6.2.1 Runtime Stream Infrastructure (2 weeks)
+- [ ] Create `src/runtime/stream.cpp` with base Stream trait
+  - [ ] Text I/O: `write()`, `writeLine()`, `readLine()` (UTF-8 enforced)
+  - [ ] Binary I/O: `writeBytes()`, `readBytes()`, `readInto()` (wild buffers)
+  - [ ] TBB I/O: `writeTBB8/16/32/64()`, `readTBB8/16/32/64()` (sentinel-safe)
+  - [ ] Utility: `flush()`, `close()`, `isatty()`
+- [ ] Create DebugStream specialization for stddbg
+  - [ ] `log(level, msg, data)`, `warn()`, `error()` methods
+  - [ ] Structured logging (JSON lines or custom format)
+- [ ] Create DataStream specialization for stddati/stddato
+  - [ ] Binary protocol support
+  - [ ] Endianness handling (Network Byte Order default)
+- [ ] Create buffering implementations in `src/runtime/io_buffers.cpp`
+  - [ ] LineBuffer: 1-4KB, flush on newline (text streams)
+  - [ ] BlockBuffer: 64KB+, dynamic sizing (data streams)
+  - [ ] AsyncRingBuffer: SPSC lock-free, drop-on-full (stddbg)
+
+#### 6.2.2 Platform-Specific Backends (2 weeks)
+- [ ] Create `src/runtime/io_linux.cpp`
+  - [ ] Initialize FDs 3-5 using `fcntl(F_GETFD)` validation
+  - [ ] Default provisioning: stddbg→/dev/null or $ARIA_LOG_FILE
+  - [ ] Process spawning: `dup2()` for pipe wiring to FDs 3-5
+  - [ ] Zero-copy: `splice()` syscall for stddati→stddato
+  - [ ] Conditional compilation: `cfg(target_os = "linux")`
+- [ ] Create `src/runtime/io_windows.cpp`
+  - [ ] Initialize HANDLEs via `CreatePipe()` for anonymous pipes
+  - [ ] Handle passing: env var `__ARIA_STREAMS=DBG:<val>;IN:<val>;OUT:<val>`
+  - [ ] Runtime reconstruction: parse env var, cast to HANDLEs
+  - [ ] Named pipes: `\\.\pipe\aria-debug-*` for persistent IPC
+  - [ ] Conditional compilation: `cfg(target_os = "windows")`
+- [ ] Create `src/runtime/io_init.cpp`
+  - [ ] Global singleton initialization for all 6 streams
+  - [ ] Platform detection and backend selection
+  - [ ] Early runtime initialization (before main)
+
+#### 6.2.3 High-Level API (1 week)
+- [ ] Implement global stream objects in `std.io` module
+  - [ ] `io.stdin`: Stream (FD 0, text, line-buffered)
+  - [ ] `io.stdout`: Stream (FD 1, text, line-buffered)
+  - [ ] `io.stderr`: Stream (FD 2, text, line-buffered)
+  - [ ] `io.stddbg`: DebugStream (FD 3, structured, async ring)
+  - [ ] `io.stddati`: DataStream (FD 4, binary, block-buffered)
+  - [ ] `io.stddato`: DataStream (FD 5, binary, block-buffered)
+- [ ] Implement cross-platform normalization
+  - [ ] Line ending: `\r\n`→`\n` on input, `\n`→`\r\n` on Windows output
+  - [ ] UTF-8 validation: enforce on text streams, reject invalid sequences
+  - [ ] Binary streams: no normalization, raw bytes
+- [ ] Thread safety
+  - [ ] Mutex locking per stream (atomic writes)
+  - [ ] Buffer pinning: `#` operator for GC-managed buffers during syscalls
+  - [ ] Wild memory: zero-copy I/O without pinning overhead
+
+#### 6.2.4 Process Integration (1 week)
+- [ ] Enhance `spawn()` API in `src/runtime/process/`
+  - [ ] Stream redirection configuration:
+    ```aria
+    spawn("./processor", {
+      stdin: io.stdin,
+      stdout: io.stdout,
+      stderr: io.stderr,
+      stddbg: openFile("debug.log", "w"),
+      stddati: pipe_reader,
+      stddato: pipe_writer
+    });
+    ```
+  - [ ] Pipe wiring for FDs 3-5 (Linux: dup2, Windows: STARTUPINFOEX)
+  - [ ] Handle inheritance (Windows: bInheritHandle=TRUE)
+- [ ] Create `createPipe()` utility
+  - [ ] Return pipe with read/write ends
+  - [ ] Compatible with stream interface
+  - [ ] Support for complex pipelines
+
+#### 6.2.5 Async Integration (1 week)
+- [ ] Register FDs 3-5 with event loop
+  - [ ] Linux: `epoll` for all file descriptors
+  - [ ] macOS: `kqueue`
+  - [ ] Windows: `IOCP` for HANDLEs
+- [ ] Implement async methods on Stream trait
+  - [ ] `readAsync(size)`: suspend coroutine if no data
+  - [ ] `writeAsync(data)`: suspend if buffer full
+  - [ ] Coroutine resumption on data available (epoll signal)
+- [ ] Backpressure management
+  - [ ] Stop reading from FD if ring buffer fills
+  - [ ] Kernel pipe/socket buffer fills → sender throttles
+  - [ ] Automatic flow control prevents OOM
+
+#### 6.2.6 Testing & Documentation (1 week)
+- [ ] Unit tests in `tests/io/`
+  - [ ] `test_text_io.cpp`: line buffering, UTF-8 validation, newline normalization
+  - [ ] `test_binary_io.cpp`: zero-copy, raw bytes, no corruption
+  - [ ] `test_debug_stream.cpp`: structured logging, async buffering
+  - [ ] `test_tbb_serialization.cpp`: sentinel-safe TBB read/write
+  - [ ] `test_pipelines.cpp`: multi-process stddato→stddati chains
+- [ ] Integration tests
+  - [ ] ML pipeline simulation: binary tensors + text progress + debug logs
+  - [ ] Stress tests: async I/O with high concurrency
+  - [ ] Cross-platform: Ubuntu + Windows validation
+- [ ] Documentation
+  - [ ] API reference: `/docs/stdlib/io_streams.md`
+  - [ ] Usage examples: text I/O, binary pipelines, debug logging
+  - [ ] Migration guide: 3-stream → 6-stream transition
+
+#### 6.2.7 Security Hardening
+- [ ] Implement stddbg secure mode
+  - [ ] Environment variable: `ARIA_SECURE_MODE=1` → redirect to /dev/null
+  - [ ] Compile-time stripping: `cfg(release)` removes stddbg calls
+- [ ] WildX protection
+  - [ ] Type system: forbid passing `wildx` pointers to stream writes
+  - [ ] Compiler error: security violation at compile time
 
 ### 6.3 Process Management
 **Status**: Awaiting research_005
