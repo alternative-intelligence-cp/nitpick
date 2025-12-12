@@ -76,17 +76,41 @@
     * Timeline: 3.5 hours (as predicted)
 
 ### 0.2 High-Priority Research (Important but not blocking)
-- [ ] **research_004: File I/O Library Design**
-  - [ ] Upload compilations
-  - [ ] Extract API design
-  - [ ] Extract error handling patterns
-  - [ ] Extract async integration strategy
+- [x] **research_004: File I/O Library Design** ✅ COMPLETE (Dec 11, 2025)
+  - [x] Upload compilations (8 files)
+  - [x] Review response document (933 lines received)
+  - [x] Extract API design
+    * **Key Finding**: Multi-layered I/O with RAII-compliant File struct
+    * Builder pattern for file operations
+    * TBB-integrated error handling (sticky ERR propagation)
+    * Hybrid async runtime (io_uring on Linux, IOCP on Windows)
+  - [x] Extract error handling patterns
+    * Result types: {err, val} for all I/O operations
+    * TBB types for offsets/sizes (overflow → ERR)
+    * Structured error objects (not just error codes)
+  - [x] Extract async integration strategy
+    * Zero-copy optimizations with wild buffers
+    * Memory-mapped files for high-throughput
+    * defer for deterministic resource cleanup
+  - [x] Document: `/docs/gemini/responses/research_004_file_io_library.txt`
 
-- [ ] **research_005: Process Management Library**
-  - [ ] Upload compilations
-  - [ ] Extract process API design
-  - [ ] Extract IPC mechanisms
-  - [ ] Extract cross-platform strategy
+- [x] **research_005: Process Management Library** ✅ COMPLETE (Dec 11, 2025)
+  - [x] Upload compilations
+  - [x] Review response document (397 lines received)
+  - [x] Extract process API design
+    * **Key Finding**: Builder pattern (Command struct)
+    * Deprecate fork() for posix_spawn (thread-safe)
+    * Windows: CreateProcess + Job Objects + IOCP
+  - [x] Extract IPC mechanisms
+    * Stdio enum (Inherit, Null, Piped)
+    * Fluent API: cmd.arg().env().stdin(Piped)
+    * pidfd on Linux 5.3+ (stable, epoll-compatible)
+  - [x] Extract cross-platform strategy
+    * Unix: posix_spawn (avoids fork deadlocks)
+    * Linux: pidfd_open for stable process handles
+    * Windows: Job Objects for lifecycle management
+    * RAII Child struct (prevents zombie processes)
+  - [x] Document: `/docs/gemini/responses/research_005_process_management.txt`
 
 - [ ] **research_006: Modern I/O Streams (6-stream system)**
   - [ ] Upload compilations
