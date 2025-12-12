@@ -133,11 +133,26 @@
     * 33% bandwidth savings (no Base64 encoding needed)
   - [x] Document: `/docs/gemini/responses/research_006_modern_streams.txt`
 
-- [ ] **research_007: Threading Library**
-  - [ ] Upload compilations
-  - [ ] Extract threading model design
-  - [ ] Extract synchronization primitives
-  - [ ] Extract async/thread integration strategy
+- [x] **research_007: Threading Library** ✅ COMPLETE (Dec 11, 2025)
+  - [x] Upload compilations
+  - [x] Review response document (comprehensive design spec)
+  - [x] Extract threading model design
+    * **Key Finding**: Hybrid M:N + 1:1 threading model
+    * M:N: Task runtime with work-stealing scheduler (async/await)
+    * 1:1: Thread subsystem for CPU-bound work (aria.thread)
+    * Bridge: spawn_blocking prevents colored function problem
+  - [x] Extract synchronization primitives
+    * Async Mutex: Task-aware (suspends coroutine, not thread)
+    * Sync Mutex: Thread-blocking (pthread_mutex_t wrapper)
+    * Channels: Go-style MPSC with bounded/unbounded modes
+    * Semaphores: Both async and sync variants
+  - [x] Extract async/thread integration strategy
+    * Work-stealing: Chase-Lev lock-free deques
+    * Global injection queue for external tasks
+    * Fairness: Check global queue every 61 ticks
+    * Task: Stackless coroutines (~200-500 bytes)
+    * Thread: OS threads (pthread/CreateThread)
+  - [x] Document: `/docs/gemini/responses/research_007_threading_library.txt`
 
 ### 0.3 Medium-Priority Research (Nice to have)
 - [ ] research_008: Atomics library
@@ -1075,83 +1090,169 @@
 
 ## PHASE 7: Standard Library - Concurrency
 **Goal**: Implement threading, async improvements, atomics  
-**Dependencies**: research_007, research_008, research_009  
-**Timeline**: 5-6 weeks  
-**Priority**: MEDIUM-HIGH (important for performance)
+**Dependencies**: research_007 ✅, research_008, research_009, Phase 2 (borrow checker)  
+**Timeline**: 14 weeks (~3.5 months)  
+**Priority**: MEDIUM-HIGH (important for performance)  
+**Implementation Plan**: `/docs/THREADING_IMPLEMENTATION_PLAN.md` (755 lines)
 
-### 7.1 Threading Library
-**Status**: Awaiting research_007
+**Architecture Overview** (from research_007):
+- **Hybrid M:N + 1:1 Threading Model**: Explicit choice between lightweight async tasks and OS threads
+- **Work-Stealing Scheduler**: Chase-Lev lock-free deques, O(1) local operations
+- **Two-Layer API**:
+  - `aria.task` (M:N): Async/await with work-stealing (200-500 bytes/task, millions concurrent)
+  - `aria.thread` (1:1): Direct OS threads for CPU-bound work (~8MB/thread, ~10K max)
+- **Blocking Bridge**: `spawn_blocking()` offloads sync work to dedicated thread pool
+- **Thread Safety**: Enforced via Send/Sync traits integrated with Appendage Theory
 
-#### 7.1.1 Thread Creation & Management
-- [ ] After research_007 complete, review threading model
-- [ ] Implement threading system in `stdlib/thread.aria` or `src/runtime/thread/`
-  - [ ] **Thread creation API**
-    - [ ] `thread.spawn(f: func() -> void) -> result<thread, string>`
-    - [ ] Platform-specific (pthread on Unix, CreateThread on Windows)
-    - [ ] Thread pool option (reuse threads)
-    - [ ] Add tests
-  - [ ] **Thread operations**
-    - [ ] `thread.join() -> result<void, string>` - wait for completion
-    - [ ] `thread.detach()` - detach thread
-    - [ ] `thread.id() -> int64` - get thread ID
-    - [ ] `thread.sleep(ms: int64)` - sleep current thread
-    - [ ] Add tests
+### 7.1 Work-Stealing Scheduler (3 weeks)
+**Status**: Ready to implement (Phase 7.1 in plan)
 
-#### 7.1.2 Synchronization Primitives
-- [ ] Implement synchronization in `stdlib/sync.aria`
-  - [ ] **Mutex**
-    - [ ] `Mutex.new() -> mutex`
-    - [ ] `mutex.lock() -> result<void, string>`
-    - [ ] `mutex.unlock()`
-    - [ ] `mutex.tryLock() -> result<bool, string>`
-    - [ ] Platform-specific (pthread_mutex, CRITICAL_SECTION)
-    - [ ] Add tests (including deadlock detection tests)
-  - [ ] **RWLock (Reader-Writer Lock)**
-    - [ ] `RWLock.new() -> rwlock`
-    - [ ] `rwlock.readLock()` - multiple readers allowed
-    - [ ] `rwlock.writeLock()` - exclusive write
-    - [ ] `rwlock.unlock()`
-    - [ ] Add tests
-  - [ ] **Condition Variable**
-    - [ ] `CondVar.new() -> condvar`
-    - [ ] `condvar.wait(mutex: mutex)`
-    - [ ] `condvar.notify()` - wake one thread
-    - [ ] `condvar.notifyAll()` - wake all threads
-    - [ ] Add tests
-  - [ ] **Semaphore**
-    - [ ] `Semaphore.new(count: int) -> semaphore`
-    - [ ] `semaphore.acquire()`
-    - [ ] `semaphore.release()`
-    - [ ] Add tests
-  - [ ] **Barrier**
-    - [ ] `Barrier.new(count: int) -> barrier`
-    - [ ] `barrier.wait()` - block until all threads arrive
-    - [ ] Add tests
+- [ ] **Chase-Lev Deque** (`src/runtime/work_stealing_deque.{h,cpp}`)
+  - [ ] Implement lock-free deque (owner push/pop bottom, thieves steal top)
+  - [ ] Atomic operations: CAS on last item prevents ABA problem
+  - [ ] LIFO for owner (cache locality), FIFO for thieves (load balancing)
+  - [ ] Dynamic buffer resize (rare, grows 2x)
+  - [ ] Unit tests: push, pop, steal, concurrent stress test
+  - [ ] Validate with ThreadSanitizer (no data races)
 
-#### 7.1.3 Channels (Go-style, if in research)
-- [ ] If recommended by research_007, implement channels
-  - [ ] `Channel<T>.new(capacity: int) -> channel<T>`
-  - [ ] `channel.send(value: T) -> result<void, string>`
-  - [ ] `channel.receive() -> result<T, string>`
-  - [ ] Bounded vs unbounded channels
+- [ ] **Worker Threads** (`src/runtime/worker_thread.cpp`)
+  - [ ] Implement scheduler loop (spawn N workers, N = num_cores)
+  - [ ] Local deque per worker (hot path, cache-friendly)
+  - [ ] Steal logic: random victim selection (prevents pathological patterns)
+  - [ ] Check global queue every 61 ticks (fairness, borrowed from Go)
+  - [ ] Park/unpark mechanism (condvar, reduces CPU when idle)
+
+- [ ] **Global Injection Queue** (`src/runtime/global_queue.cpp`)
+  - [ ] MPMC lock-free queue (or mutex-based fallback)
+  - [ ] Integration with worker loop (checked periodically for fairness)
+  - [ ] Used for external task submission (spawn from non-worker threads)
+
+### 7.2 Task Runtime API (2 weeks)
+**Status**: Ready to implement (Phase 7.2 in plan)
+
+- [ ] **aria.task Module** (`stdlib/task.aria` + C++ runtime)
+  - [ ] `spawn<T>(async func:f) -> Future<T>`: Create task, push to local deque, eager execution
+  - [ ] `spawn_blocking<T>(func:f) -> Future<T>`: Offload to blocking pool, prevents worker stalling
+  - [ ] `yield_now()`: Cooperative yield, task suspended and re-enqueued
+  - [ ] `block_on<T>(Future<T>:fut) -> Result<T>`: Entry point, drives scheduler from sync code
+  - [ ] `id() -> uint64`: Get current task ID
+  - [ ] Add tests: 10K concurrent tasks, mixed CPU/IO workloads
+
+- [ ] **CoroutineFrame Layout** (LLVM backend integration)
+  - [ ] State machine for async functions (LLVM 20.1.2 already supports coroutines)
+  - [ ] Waker registration for resumption (when future resolves)
+  - [ ] Result storage for completed tasks
+  - [ ] Integration with work-stealing scheduler
+
+### 7.3 Blocking Thread Pool (1 week)
+**Status**: Ready to implement (Phase 7.3 in plan)
+
+- [ ] **BlockingPool Class** (`src/runtime/blocking_pool.cpp`)
+  - [ ] Dynamic thread pool: starts with N threads (num_cores)
+  - [ ] Grows on demand (max 512 threads), shrinks after idle timeout (60s)
+  - [ ] MPMC work queue (multi-producer multi-consumer)
+  - [ ] Isolation: never blocks M:N workers
+
+- [ ] **spawn_blocking API**
+  - [ ] Submit to blocking pool (FIFO queue)
+  - [ ] Return Future that resolves on completion
+  - [ ] Waker integration: notify async task when blocking work done
+  - [ ] Add tests: stress test with 100+ blocking tasks
+
+### 7.4 Thread Subsystem (1 week)
+**Status**: Ready to implement (Phase 7.4 in plan)
+
+- [ ] **aria.thread Module** (`stdlib/thread.aria` + C++ runtime)
+  - [ ] `spawn<T>(func:f) -> Result<JoinHandle<T>>`: Wrapper around pthread_create / CreateThread
+  - [ ] `JoinHandle.join() -> Result<T>`: Blocks until thread finishes, returns result
+  - [ ] `yield_now()`: sched_yield() or SwitchToThread()
+  - [ ] `sleep(int64:milliseconds)`: Sleep thread
+  - [ ] `id() -> uint64`: Get thread ID
+  - [ ] Platform-specific implementations (Linux pthread, Windows CreateThread)
+  - [ ] Add tests: parallel computation (4 threads, CPU-bound work)
+
+### 7.5 Synchronization Primitives (3 weeks)
+**Status**: Ready to implement (Phase 7.5 in plan)
+
+- [ ] **Async Mutex** (`src/runtime/async_mutex.cpp`)
+  - [ ] Atomic state + wait queue of Wakers (task-aware, never blocks worker thread)
+  - [ ] Fast path: Atomic CAS to acquire (spin briefly)
+  - [ ] Slow path: Suspend task, register Waker in wait queue
+  - [ ] Release: Wake oldest Waker from queue (FIFO fairness)
+  - [ ] RAII guard (MutexGuard) with automatic unlock on drop
+  - [ ] **Compiler warning**: Detect holding async mutex across await (deadlock risk)
+  - [ ] Add tests: fairness (no starvation), async mutex + channels
+
+- [ ] **Sync Mutex** (`src/runtime/sync_mutex.cpp`)
+  - [ ] Wrapper around pthread_mutex_t (Linux) / SRWLOCK (Windows)
+  - [ ] Blocks thread (not task) - for use in 1:1 threads only
+  - [ ] RAII guard with automatic unlock
+  - [ ] Add tests: basic locking, tryLock
+
+- [ ] **Channels** (`src/runtime/channel.cpp`)
+  - [ ] Go-style CSP (Communicating Sequential Processes)
+  - [ ] Lock-free ring buffer for data (bounded capacity)
+  - [ ] Send waiters queue (when channel full, backpressure)
+  - [ ] Recv waiters queue (when channel empty)
+  - [ ] CAS-based index management (top/bottom pointers)
+  - [ ] API: `channel<T>(capacity) -> (Sender<T>, Receiver<T>)`
+  - [ ] `Sender.send(T) -> Result<void>`: Suspends if full
+  - [ ] `Receiver.recv() -> Result<T>`: Suspends if empty
+  - [ ] Add tests: SPSC, MPSC, MPMC throughput, backpressure handling
+
+- [ ] **Semaphores** (if needed)
+  - [ ] Both async and sync variants
+  - [ ] Use cases: rate limiting, resource pools
   - [ ] Add tests
 
-### 7.2 Async Runtime Improvements
+### 7.6 Borrow Checker Integration (2 weeks)
+**Status**: Depends on Phase 2 (borrow checker)
 
-#### 7.2.1 Async Scheduler Enhancements
-- [ ] Review existing research: `/docs/research/async_await_implementation.md`
-- [ ] Enhance existing async scheduler in `src/runtime/concurrency/scheduler.cpp`
-  - [ ] Multi-threaded task scheduling (work-stealing)
-  - [ ] Priority-based task scheduling
-  - [ ] Task cancellation support
-  - [ ] Async timeouts
-  - [ ] Add benchmarks
+- [ ] **Send/Sync Traits** (thread safety enforcement)
+  - [ ] Define traits in type system (like Rust)
+  - [ ] **Send**: Type can be moved to another thread (TBB types ✓, wild pointers ✗)
+  - [ ] **Sync**: Type's immutable reference can be shared across threads (immutable primitives ✓)
+  - [ ] Implement for built-in types (TBB types, GC types, wild pointers)
+  - [ ] Enforce in spawn/spawn_blocking: `spawn<T: Send>(async func:f) -> Future<T>`
+  - [ ] Compiler errors for violating Send/Sync bounds
 
-#### 7.2.2 Blocking Task Pool
-- [ ] Implement separate thread pool for blocking tasks
-  - [ ] Prevents blocking async tasks from starving event loop
-  - [ ] Research recommendation from research_007
-  - [ ] Add tests
+- [ ] **Cross-await Mutex Check**
+  - [ ] Detect holding async mutex across await (static analysis)
+  - [ ] Emit compiler warning: "Holding async mutex across await may deadlock"
+  - [ ] Suggest alternatives: limit critical sections, use channels instead
+
+- [ ] **Pin Verification for Shared Data**
+  - [ ] Ensure GC objects are pinned (#) before sharing via wild pointers across threads
+  - [ ] Example: `wild string*:pinned = #shared_data;` then `Mutex::new(pinned)`
+  - [ ] Verify pins don't outlive data (borrow checker lifetime analysis)
+  - [ ] All checked at compile time (zero runtime cost)
+
+### 7.7 Testing & Optimization (2 weeks)
+**Status**: Final phase after all above complete
+
+- [ ] **Unit Tests**
+  - [ ] Work-stealing correctness: 1000 tasks, random work distribution
+  - [ ] Mutex fairness: 100 threads contending, no starvation
+  - [ ] Channel throughput: SPSC (10M msgs/sec target), MPSC, MPMC
+  - [ ] Blocking pool stress: 100+ concurrent blocking tasks
+
+- [ ] **Integration Tests**
+  - [ ] **C10K test**: 10,000 concurrent connections
+    - [ ] Target: <100MB memory (10KB/connection)
+    - [ ] Target: <1ms p99 latency
+  - [ ] **Mixed CPU/IO workload**: async I/O + spawn_blocking for CPU work
+  - [ ] **spawn_blocking stress**: Verify pool grows/shrinks correctly
+
+- [ ] **Benchmarks**
+  - [ ] Compare with Tokio (Rust): task creation, context switch, throughput
+  - [ ] Compare with Go goroutines: C10K test, mixed workload
+  - [ ] Latency histograms: p50, p99, p999 (use perf or similar)
+
+- [ ] **Optimization**
+  - [ ] Profile hot paths with perf (Linux) or Instruments (macOS)
+  - [ ] NUMA-aware worker placement (pin workers to CPU cores)
+  - [ ] Cache-line padding for atomics (prevent false sharing)
+  - [ ] Validate zero-cost abstractions (assembly inspection)
 
 ### 7.3 Atomics Library
 **Status**: Awaiting research_008
