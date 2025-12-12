@@ -559,6 +559,50 @@
     - Const pattern matching
     - Const slices/strings
 
+### 0.9 Essential Standard Library Research (Bootstrap Requirements)
+- [ ] **research_031: Essential Standard Library (Compiler Bootstrap)**
+  * **Scope**: Minimal stdlib required to bootstrap compiler and write basic programs
+  * **Platform Syscalls**:
+    - Linux: read, write, open, close, mmap, munmap, fork, exec
+    - Windows: CreateFile, ReadFile, WriteFile, VirtualAlloc, CreateProcess
+    - macOS: BSD syscalls + Mach VM APIs (vm_allocate, vm_deallocate)
+    - Error translation: errno/GetLastError → Aria result types
+  * **Memory Functions**:
+    - aria.alloc, aria.free, aria.realloc (Mimalloc integration)
+    - memcpy, memset, memmove (SIMD optimized)
+    - Arena allocators (aria.arena.new, aria.arena.reset)
+    - Memory leak detection for wild allocations
+  * **String Library**:
+    - UTF-8 operations: strlen, strcmp, strcpy, validation
+    - String searching: indexOf, lastIndexOf, contains
+    - String manipulation: concat, slice, substring, split
+    - Case conversion: toUpper, toLower (Unicode-aware)
+    - Template literal interpolation backend (&{expr})
+  * **Formatted I/O**:
+    - print() implementation (stdout.write wrapper)
+    - printf-style formatting (%d, %s, %x, %f, %b)
+    - Template literal evaluation
+    - TBB type formatting (display ERR sentinel)
+  * **File I/O**:
+    - readFile, writeFile (result type error handling)
+    - openFile, closeFile for streaming
+    - Platform abstraction (file descriptors vs HANDLEs)
+    - Path manipulation: join, normalize, relative
+    - File metadata: exists, size, stat
+  * **Math Library**:
+    - Essential: sqrt, pow, abs, min, max
+    - Trigonometry: sin, cos, tan, asin, acos, atan, atan2
+    - Logarithms: log, log2, log10, exp
+    - Rounding: floor, ceil, round, trunc
+    - Constants: PI, E, INFINITY, NAN
+    - TBB math (overflow → ERR)
+  * **Bootstrap Strategy**:
+    - Phase 1: Hello world (print, syscalls)
+    - Phase 2: File I/O programs (readFile, writeFile)
+    - Phase 3: Self-hosting requirements (full stdlib subset)
+  * **Critical Note**: Focus on ABSOLUTE MINIMUM for bootstrapping.
+    Advanced features (HTTP, JSON, crypto, blockchain, ML) come later.
+
 ---
 
 ## PHASE 1: Core Type System Completion
