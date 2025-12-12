@@ -1,0 +1,486 @@
+RESEARCH TASK: Macro Preprocessor & Comptime Metaprogramming System
+
+OBJECTIVE:
+Design a comprehensive macro preprocessor and compile-time execution (comptime) system for the Aria programming language that bridges the gap between low-level assembly control and high-level programming abstractions. This hybrid metaprogramming architecture must combine NASM-style text-substitution macros with Zig-style compile-time execution to enable zero-cost abstractions while maintaining full integration with Aria's exotic type system, hybrid memory model, and borrow checker.
+
+BACKGROUND:
+Aria currently lacks a formal metaprogramming system despite having specifications that mention "ZIG style comptime" (aria_specs.txt line 824). Previous research has explored various macro-based approaches for implementing classes, templates, control flow, and functional abstractions, but these proposals remain unintegrated. The language's unique features—TBB types with sticky error semantics, balanced ternary/nonary arithmetic, hybrid gc/wild memory model, and Appendage Theory borrow checking—require a metaprogramming system that is type-aware and memory-safety-conscious.
+
+CORE ARCHITECTURAL QUESTION:
+How can Aria implement a "Dual-Phase Metaprogramming" model where:
+1. **Phase 1 (Macro Preprocessor)**: Handles syntactic abstraction via NASM-style text substitution
+2. **Phase 2 (Comptime Execution)**: Handles semantic validation via Zig-style compile-time reflection
+
+And ensure these phases integrate seamlessly with:
+- Exotic types (TBB sticky errors, trit/tryte ternary, nit/nyte nonary)
+- Hybrid memory model (gc managed heap vs wild manual heap)
+- Borrow checker (Appendage Theory, pinning operator #, reference operator $)
+- Concurrency primitives (spawn, fork, async, actors)
+
+RESEARCH AREAS:
+
+═══════════════════════════════════════════════════════════════════════════════
+AREA 1: MACRO PREPROCESSOR ARCHITECTURE
+═══════════════════════════════════════════════════════════════════════════════
+
+**Objective**: Design the Phase 1 text-substitution engine that operates on token streams before the parser sees them.
+
+**Key Questions**:
+1. **Context Stack Management**:
+   - How to implement %push/%pop/%repl for maintaining "sense of place" (inside CLASS vs METHOD vs global)?
+   - How to generate context-local labels with %$ prefix to prevent name collisions in nested structures?
+   - How to implement %ifctx for context validation (e.g., ELSE verifying it's inside an IF)?
+
+2. **Token Stream Processing**:
+   - How to implement %rotate for sequential token consumption (needed for JSON-like syntax { name: type })?
+   - How to capture multi-line blocks as template bodies without premature expansion?
+   - How to handle variable-length argument lists in macros?
+
+3. **Macro Hygiene**:
+   - How to prevent variable capture when macros generate code with user-provided identifiers?
+   - How to implement name mangling for generated symbols (e.g., CLASS Player → Player_methodName)?
+   - How to preserve source location information for error messages after macro expansion?
+
+4. **Recursive Expansion**:
+   - How to implement %rmacro for nested constructs (CLASS inside CLASS, IF inside WHILE)?
+   - How to detect and prevent infinite macro recursion?
+   - How to manage expansion depth limits?
+
+**Expected Output**:
+- Complete specification of context stack API (push/pop/repl/ifctx)
+- Token rotation algorithm for parsing structured syntax
+- Hygiene strategy (name mangling rules, gensym implementation)
+- Recursive macro handling mechanism
+- Example: Full IF/ELIF/ELSE/END_IF implementation with context stack
+
+═══════════════════════════════════════════════════════════════════════════════
+AREA 2: COMPTIME EXECUTION ENGINE
+═══════════════════════════════════════════════════════════════════════════════
+
+**Objective**: Design the Phase 2 semantic validation engine that operates on AST after parsing but before codegen.
+
+**Key Questions**:
+1. **Types as First-Class Values**:
+   - How to represent types as runtime values during compilation (type: type construct)?
+   - How to implement type reflection (@typeInfo equivalent) to inspect struct fields, function signatures?
+   - How to pass types as arguments to functions (e.g., func make_vector(T: type))?
+
+2. **Compile-Time Execution**:
+   - Which Aria features are allowed in comptime blocks (pure functions only? I/O forbidden?)?
+   - How to implement comptime allocator (memory available during compilation)?
+   - How to handle comptime loops that generate code (e.g., unroll N iterations)?
+
+3. **Generic Specialization**:
+   - How to instantiate generic functions/types with concrete type arguments?
+   - How to cache specializations to avoid duplicate codegen?
+   - How to handle recursive generic types (e.g., Tree<T> contains Tree<T>)?
+
+4. **Validation & Constraints**:
+   - How to enforce interface compliance via structural typing (duck typing)?
+   - How to validate borrow checker rules in generated code (pinning, lifetimes)?
+   - How to emit comptime errors with clear source location (in original code, not expanded)?
+
+**Expected Output**:
+- Type-as-value representation (internal compiler data structure)
+- Comptime execution model (which operations are allowed, memory management)
+- Generic instantiation algorithm (template specialization strategy)
+- Validation framework (trait bounds, borrow checker integration)
+- Example: Generic Stack<T> with comptime validation of T's properties
+
+═══════════════════════════════════════════════════════════════════════════════
+AREA 3: HIGH-LEVEL CONTROL FLOW MACROS
+═══════════════════════════════════════════════════════════════════════════════
+
+**Objective**: Implement IF/ELIF/ELSE, WHILE, FOR, BREAK, CONTINUE as zero-cost macros that compile to optimal assembly.
+
+**Key Questions**:
+1. **Conditional Logic**:
+   - How to implement polymorphic comparison (int vs float vs trit vs wild pointer)?
+   - How to map high-level operators (==, !=, <, >, <=, >=) to x86-64 instructions (CMP + Jcc)?
+   - How to handle ternary logic (trit: -1, 0, 1) in IF statements (what does IF(trit_val) mean)?
+
+2. **Loop Constructs**:
+   - How to implement WHILE with condition checking at loop start (while vs do-while)?
+   - How to implement FOR with initialization, condition, increment (C-style for loop)?
+   - How to support BREAK (exit loop) and CONTINUE (skip to next iteration) via label generation?
+
+3. **Nested Control Flow**:
+   - How to handle IF inside WHILE inside IF (context stack must support arbitrary nesting)?
+   - How to ensure BREAK finds the nearest enclosing loop (not an enclosing IF)?
+   - How to generate unique labels for each nesting level?
+
+4. **ABI Compliance**:
+   - How to preserve caller-saved vs callee-saved registers (System V AMD64 ABI)?
+   - How to maintain stack alignment (16-byte boundary)?
+   - How to integrate with Aria's result type error handling?
+
+**Expected Output**:
+- Complete IF/ELIF/ELSE state machine (context transitions: ctx_if → ctx_else)
+- WHILE/FOR loop implementation with BREAK/CONTINUE support
+- Polymorphic comparison logic for all Aria types
+- ABI-compliant register preservation strategy
+- Example: Nested loops with early exit (for inside while with break)
+
+═══════════════════════════════════════════════════════════════════════════════
+AREA 4: CLASS & OBJECT SYSTEM
+═══════════════════════════════════════════════════════════════════════════════
+
+**Objective**: Implement a class system with encapsulation, lifecycle management, and polymorphism—without inheritance.
+
+**Key Questions**:
+1. **Class Definition**:
+   - How to parse JSON-like syntax CLASS ({ name: Player, fields: { id: int64, name: string } })?
+   - How to generate underlying struct definition from macro?
+   - How to handle visibility (private/public) via comptime validation?
+
+2. **Method Definition**:
+   - How to implement METHOD macro that automatically injects self pointer?
+   - How to perform name mangling (Player.init → Player_init)?
+   - How to support method chaining (return self)?
+
+3. **Lifecycle Management**:
+   - How to implement NEW operator that calls constructor and allocates memory?
+   - How to integrate with allocators (gc_alloc for managed, alloc for wild)?
+   - How to generate defer blocks for automatic cleanup (destructor calls)?
+
+4. **Polymorphism**:
+   - How to implement MIXIN for code reuse (composition, not inheritance)?
+   - How to implement structural typing (duck typing) for interface compliance?
+   - How to avoid vtable overhead (all dispatch resolved at comptime)?
+
+**Expected Output**:
+- CLASS macro specification with JSON-like syntax
+- METHOD macro with self pointer injection and name mangling
+- NEW operator implementation with allocator awareness
+- MIXIN pattern for compositional polymorphism
+- Example: Full class definition (Player with methods, lifecycle, mixins)
+
+═══════════════════════════════════════════════════════════════════════════════
+AREA 5: STRUCT-BASED TEMPLATE SYSTEM
+═══════════════════════════════════════════════════════════════════════════════
+
+**Objective**: Implement a "pretty" template system with named parameters and delayed expansion.
+
+**Key Questions**:
+1. **Template Definition**:
+   - How to support syntax: template:mul = { returntype: type, arg: a, arg: b, body: {pass(a*b);} }?
+   - How to capture template body without expanding it (delayed evaluation)?
+   - How to simulate associative arrays (key-value storage) in preprocessor?
+
+2. **Template Instantiation**:
+   - How to implement genFunc(template:mul, signature:{ name: mulI8, return: int8, a: int8, b: int8 })?
+   - How to bind concrete types from signature to abstract placeholders in template?
+   - How to generate function definition with correct type annotations?
+
+3. **Type Awareness**:
+   - How to inspect T in template and dispatch to gc_alloc vs alloc based on memory class?
+   - How to handle TBB types with sticky errors (generate CAS loops instead of hardware add)?
+   - How to support ternary/nonary types in templates?
+
+4. **Generic Constraints**:
+   - How to enforce trait bounds (e.g., T must support + operator)?
+   - How to validate constraints at comptime (before codegen)?
+   - How to emit clear errors when constraints are violated?
+
+**Expected Output**:
+- Template definition syntax (JSON-like with delayed body capture)
+- Template instantiation algorithm (signature binding to placeholders)
+- Associative array simulation (name mangling for key-value storage)
+- Type-aware code generation (gc vs wild, TBB vs standard)
+- Example: Generic container (Stack<T>) with push/pop methods
+
+═══════════════════════════════════════════════════════════════════════════════
+AREA 6: TYPE SYSTEM INTEGRATION
+═══════════════════════════════════════════════════════════════════════════════
+
+**Objective**: Ensure macros understand and correctly handle Aria's exotic type system.
+
+**Key Questions**:
+1. **TBB Types** (Twisted Balanced Binary):
+   - How to detect TBB type in macro (tbb8, tbb16, tbb32, tbb64)?
+   - How to enforce sticky error semantics (ERR + x = ERR, not wrapping)?
+   - How to generate CAS loops for atomic operations (hardware add doesn't preserve ERR)?
+
+2. **Ternary Types** (trit, tryte):
+   - How to implement ternary arithmetic in macros (balanced ternary emulation on binary CPU)?
+   - How to handle trit comparisons (IF(trit_val, IS, 1) vs IF(trit_val, IS, -1))?
+   - How to pack/unpack trytes (10 trits in uint16)?
+
+3. **Nonary Types** (nit, nyte):
+   - How to implement nonary arithmetic (balanced base-9)?
+   - How to pack/unpack nytes (5 nits in uint16)?
+   - How to optimize conversions (tryte ↔ nyte)?
+
+4. **Result Type**:
+   - How to handle result propagation in macro-generated code (error checking)?
+   - How to integrate with ? operator (early return on error)?
+   - How to generate defer blocks for cleanup on error paths?
+
+**Expected Output**:
+- TBB type detection and sticky error enforcement strategy
+- Ternary arithmetic emulation (software circuits for binary CPU)
+- Nonary arithmetic emulation and optimization
+- Result type integration (error propagation patterns)
+- Example: Generic arithmetic function handling all numeric types
+
+═══════════════════════════════════════════════════════════════════════════════
+AREA 7: MEMORY MODEL INTEGRATION
+═══════════════════════════════════════════════════════════════════════════════
+
+**Objective**: Ensure macros respect Aria's hybrid memory model (gc vs wild) and borrow checker rules.
+
+**Key Questions**:
+1. **Memory Class Detection**:
+   - How to determine if type T is gc-managed or wild in macro/comptime?
+   - How to automatically select allocator (gc_alloc vs alloc) based on type?
+   - How to generate write barriers for gc pointers in macro-generated code?
+
+2. **Pinning Operator (#)**:
+   - How to validate pinning semantics in macro-generated code?
+   - How to ensure pinned objects are not moved while wild pointers exist?
+   - How to integrate with comptime borrow checker validation?
+
+3. **Reference Operator ($)**:
+   - How to safely convert wild pointers to gc references in macros?
+   - How to generate runtime checks (null checks, bounds checks)?
+   - How to handle lifetime tracking?
+
+4. **Defer Blocks**:
+   - How to generate automatic defer blocks in macro-expanded code (RAII)?
+   - How to ensure cleanup happens on all exit paths (return, break, error)?
+   - How to order defer blocks (LIFO execution)?
+
+**Expected Output**:
+- Memory class detection algorithm (comptime type inspection)
+- Automatic allocator selection strategy
+- Pinning validation rules (comptime borrow checker integration)
+- Defer block generation pattern (RAII for macros)
+- Example: Generic container respecting memory model (gc Stack vs wild Stack)
+
+═══════════════════════════════════════════════════════════════════════════════
+AREA 8: CONCURRENCY INTEGRATION
+═══════════════════════════════════════════════════════════════════════════════
+
+**Objective**: Enable safe concurrent programming via macros (actors, channels, async/await).
+
+**Key Questions**:
+1. **Actor Model**:
+   - How to implement ACTOR macro (define actor class with message handlers)?
+   - How to generate message dispatch logic (pattern matching on message type)?
+   - How to ensure thread safety (message queues, mailbox isolation)?
+
+2. **Channels**:
+   - How to implement Go-style channels via macros (send/recv operations)?
+   - How to generate blocking/non-blocking variants?
+   - How to integrate with async/await?
+
+3. **Async/Await**:
+   - How to implement async functions via macro transformation (state machines)?
+   - How to generate await points (suspension points)?
+   - How to integrate with work-stealing scheduler (from research_007)?
+
+4. **Thread Safety**:
+   - How to enforce Send/Sync traits in macro-generated code?
+   - How to generate atomic operations and memory barriers?
+   - How to prevent data races via comptime analysis?
+
+**Expected Output**:
+- ACTOR macro specification (class-like but with message handlers)
+- Channel implementation (macro-generated queue with send/recv)
+- Async/await transformation (state machine generation)
+- Thread safety validation (comptime Send/Sync checks)
+- Example: Actor-based concurrent system (producer-consumer with channels)
+
+═══════════════════════════════════════════════════════════════════════════════
+AREA 9: ADVANCED METAPROGRAMMING
+═══════════════════════════════════════════════════════════════════════════════
+
+**Objective**: Enable advanced use cases (JIT compilation, reflection, automated testing).
+
+**Key Questions**:
+1. **Runtime Assembler** (wildx memory JIT):
+   - How to implement API for emitting x86-64 instructions at runtime?
+   - How to handle variable-length encoding (REX prefix, ModR/M, SIB bytes)?
+   - How to integrate with wildx memory lifecycle (mmap, mprotect, I-cache flush)?
+
+2. **Reflection API**:
+   - How to expose comptime type information at runtime (RTTI)?
+   - How to implement dynamic dispatch (function pointer tables)?
+   - How to serialize/deserialize objects (JSON, binary)?
+
+3. **Testing Framework**:
+   - How to implement TEST_CASE macro with auto-registration (linker sections)?
+   - How to implement property-based testing (FOR_ALL with type-aware generators)?
+   - How to generate assertions for exotic types (TBB, ternary, nonary)?
+
+4. **Code Generation Optimization**:
+   - How to ensure macros generate optimal code (no overhead vs hand-written)?
+   - How to enable inlining of macro-generated functions?
+   - How to optimize away comptime computations (constant folding)?
+
+**Expected Output**:
+- Runtime assembler API (emit x86-64 into wildx buffers)
+- Reflection API design (runtime type information)
+- Testing framework macros (TEST_CASE, FOR_ALL, assertions)
+- Optimization strategies (zero-cost abstractions validation)
+- Example: JIT-compiled expression evaluator, auto-registered test suite
+
+═══════════════════════════════════════════════════════════════════════════════
+INTEGRATION REQUIREMENTS
+═══════════════════════════════════════════════════════════════════════════════
+
+**Compiler Pipeline Integration**:
+1. **Lexer/Tokenizer**: Must handle macro directives before generating tokens for parser
+2. **Parser**: Must receive macro-expanded source, validate syntax of expanded code
+3. **Type Checker**: Must validate types in macro-generated code, enforce comptime constraints
+4. **Borrow Checker**: Must analyze macro-expanded code for memory safety (pinning, lifetimes)
+5. **Codegen**: Must optimize macro-generated patterns (inline, constant fold, dead code elim)
+6. **Runtime**: Must support wildx memory for JIT, provide reflection APIs
+
+**Standard Library Integration**:
+- Generic containers (Vector<T>, Stack<T>, HashMap<K,V>) must use template system
+- Algorithms (map, filter, reduce) must be zero-cost macro abstractions
+- I/O library must use macro-generated buffering and async wrappers
+- Concurrency library must use actor/channel macros
+
+**Borrow Checker Integration** (from research_001):
+- Macro-generated code must respect Appendage Theory (Depth(Host) ≤ Depth(Ref))
+- Comptime must validate pinning semantics (# operator)
+- Template instantiation must check lifetime constraints
+
+**Threading Integration** (from research_007):
+- Macro-generated code must be thread-safe (Send/Sync traits)
+- Actor macros must integrate with work-stealing scheduler
+- Async macros must generate state machines compatible with M:N runtime
+
+═══════════════════════════════════════════════════════════════════════════════
+DELIVERABLES
+═══════════════════════════════════════════════════════════════════════════════
+
+**Primary Document** (500-600 lines):
+1. **Executive Summary**:
+   - Dual-phase metaprogramming architecture overview
+   - Key innovations (macro + comptime hybrid)
+   - Comparison with other languages (C++ templates, Rust macros, Zig comptime)
+
+2. **Macro Preprocessor Specification**:
+   - Context stack API (push/pop/repl/ifctx semantics)
+   - Token rotation algorithm (parsing structured syntax)
+   - Hygiene strategy (name mangling, gensym)
+   - Recursive expansion rules
+
+3. **Comptime Execution Specification**:
+   - Types-as-values model (internal representation)
+   - Compile-time reflection API (@typeInfo equivalent)
+   - Generic instantiation algorithm
+   - Validation framework (traits, constraints)
+
+4. **High-Level Macro Library**:
+   - Control flow (IF/ELIF/ELSE, WHILE, FOR, BREAK, CONTINUE)
+   - Class system (CLASS, METHOD, NEW, MIXIN)
+   - Template system (template definition, instantiation)
+   - Functional abstractions (FUNCTION, pipeline operators)
+
+5. **Type System Integration**:
+   - TBB handling (sticky error enforcement)
+   - Ternary/nonary arithmetic emulation
+   - Result type integration (error propagation)
+
+6. **Memory Model Integration**:
+   - gc vs wild detection and allocator selection
+   - Pinning validation (# operator)
+   - Reference operator support ($ operator)
+   - Defer block generation (RAII)
+
+7. **Concurrency Integration**:
+   - Actor model macros
+   - Channel implementation
+   - Async/await transformation
+   - Thread safety validation
+
+8. **Advanced Features**:
+   - Runtime assembler (wildx JIT)
+   - Reflection API (RTTI)
+   - Testing framework (TEST_CASE, FOR_ALL)
+   - Optimization strategies
+
+9. **Implementation Roadmap**:
+   - Phase 1: Core macro preprocessor (3 weeks)
+   - Phase 2: Comptime engine (3 weeks)
+   - Phase 3: High-level macro library (2 weeks)
+   - Phase 4: Type/memory/concurrency integration (2 weeks)
+   - Phase 5: Advanced features (2 weeks)
+   - Phase 6: Testing and optimization (2 weeks)
+   - **Total: 14 weeks (~3.5 months)**
+
+10. **Success Criteria & Validation**:
+    - Zero-cost abstractions verified (benchmarks vs hand-written)
+    - Macro hygiene prevents variable capture
+    - Exotic types fully supported (TBB, ternary, nonary)
+    - Memory safety maintained (borrow checker integration)
+    - Concurrency patterns are safe (no data races)
+    - Error messages are clear (source location preservation)
+    - Standard library can be implemented using system
+
+═══════════════════════════════════════════════════════════════════════════════
+REFERENCE MATERIALS
+═══════════════════════════════════════════════════════════════════════════════
+
+**Existing Research** (analyze and synthesize):
+- /docs/gemini/responses/old_research/Aria Class System Design Discussion.txt
+- /docs/gemini/responses/old_research/Macro Implementation Proposal for Aria.txt
+- /docs/gemini/responses/old_research/Preprocessor Macro Enhancement Proposal.txt
+- /docs/gemini/responses/old_research/Designing a Metaprogramming Class Construct.txt
+- /docs/gemini/responses/old_research/Synthesizing Aria Metaprogramming Library.txt
+- /docs/gemini/responses/old_research/Aria Metaprogramming Library Enhancements.txt
+- /docs/gemini/responses/old_research/Runtime Assembler for Wildx Memory.txt
+
+**Aria Specifications**:
+- /docs/info/aria_specs.txt (especially line 824: "ZIG style comptime")
+- /docs/BORROW_CHECKER_IMPLEMENTATION_PLAN.md (Appendage Theory, pinning)
+- /docs/THREADING_IMPLEMENTATION_PLAN.md (concurrency integration)
+
+**External References**:
+- NASM Preprocessor Documentation (context stack, token rotation)
+- Zig Comptime Documentation (types as values, reflection)
+- C++ Template Metaprogramming (SFINAE, concepts)
+- Rust Macros 2.0 (hygiene, procedural macros)
+- Lisp Macros (homoiconicity, code-as-data)
+
+═══════════════════════════════════════════════════════════════════════════════
+CONSTRAINTS & REQUIREMENTS
+═══════════════════════════════════════════════════════════════════════════════
+
+**CRITICAL CONSTRAINTS**:
+1. **Zero-Cost Abstractions**: Macro-generated code must match hand-written assembly performance
+2. **Type Safety**: Comptime must catch errors before codegen (no runtime crashes from templates)
+3. **Memory Safety**: Borrow checker must analyze macro-expanded code (no safety holes)
+4. **TBB Semantics**: Sticky errors are NON-NEGOTIABLE (ERR + x = ERR)
+5. **Ternary/Nonary**: Support for exotic types is NON-NEGOTIABLE
+6. **Hygiene**: Macros must not accidentally capture user variables
+7. **Error Messages**: Must preserve source location (errors in original code, not expanded)
+
+**DESIGN PRINCIPLES**:
+1. **Separation of Concerns**: Macros handle syntax, comptime handles semantics
+2. **Composition Over Inheritance**: No vtables, all dispatch resolved at comptime
+3. **Explicit Over Implicit**: Type conversions, allocations must be visible
+4. **Safety Without Garbage Collection**: Borrow checker + comptime validation
+5. **Performance Without Compromise**: Zero overhead for high-level abstractions
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide a comprehensive research document (500-600 lines) that:
+1. Addresses all 9 research areas with detailed architectural designs
+2. Includes concrete code examples (pseudo-code or actual macro/Aria syntax)
+3. Analyzes integration points with existing compiler phases
+4. Provides implementation roadmap with time estimates
+5. Includes success criteria and validation strategies
+6. References existing research and external documentation
+
+Focus on:
+- **Feasibility**: Prove the designs can be implemented
+- **Integration**: Show how pieces fit together (macro ↔ comptime ↔ borrow checker)
+- **Practicality**: Provide examples developers would actually use
+- **Completeness**: Cover all edge cases (nested structures, exotic types, error handling)

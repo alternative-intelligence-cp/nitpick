@@ -1,0 +1,201 @@
+{
+    "task_id": "research_011_macro_comptime_system",
+    "title": "Macro Preprocessor & Comptime Metaprogramming System",
+    "description": "Design and specify the complete macro preprocessor and compile-time execution (comptime) system for Aria. This hybrid metaprogramming architecture combines NASM-style text-substitution macros for syntactic abstraction with Zig-style comptime for semantic type-level programming. The system must support class-like constructs, high-level control flow (IF/WHILE/FOR), struct-based templates, and zero-cost functional abstractions while integrating with Aria's exotic type system (TBB, ternary/nonary), hybrid memory model (gc vs wild), and borrow checker.",
+    "status": "pending",
+    "priority": "high",
+    "estimated_duration": "7-10 days",
+    "dependencies": [
+        "research_001 (borrow checker - for pinning semantics integration)",
+        "research_002 (balanced ternary - for macro type awareness)",
+        "research_003 (balanced nonary - for macro type awareness)",
+        "Phase 2 (borrow checker - for comptime validation)"
+    ],
+    "research_goals": [
+        "Define the two-phase metaprogramming pipeline (macro expansion → comptime execution)",
+        "Specify NASM-style macro system with context stack, token rotation, and conditional expansion",
+        "Design Zig-style comptime system with types-as-values and compile-time reflection",
+        "Create unified API for high-level constructs (classes, templates, control flow)",
+        "Ensure zero-cost abstractions (macros compile to optimal assembly)",
+        "Integrate with Aria's exotic types (TBB sticky errors, trit/tryte, nit/nyte)",
+        "Support hybrid memory model (gc vs wild pointer awareness in generated code)",
+        "Enable safe concurrent metaprogramming (actor model, spawn/fork integration)"
+    ],
+    "key_areas": [
+        {
+            "area": "Macro Preprocessor Architecture",
+            "topics": [
+                "Context stack management (%push, %pop, %repl, %ifctx)",
+                "Token stream processing and rotation (%rotate, multi-argument capture)",
+                "Label hygiene and name mangling (context-local labels with %$)",
+                "Multi-line block capture (for method bodies, code templates)",
+                "Conditional expansion and state machines (IF/ELIF/ELSE implementation)",
+                "Token concatenation and pasting (hygienic macro expansion)",
+                "Recursive macro expansion (%rmacro for nested constructs)"
+            ]
+        },
+        {
+            "area": "Comptime Execution Engine",
+            "topics": [
+                "Types as first-class values (type reflection, inspection)",
+                "Compile-time function execution (pure functions run during compilation)",
+                "AST introspection API (@typeInfo equivalent for Aria)",
+                "Compile-time allocator awareness (memory model selection at comptime)",
+                "Constant folding and propagation (TBB-aware constant evaluation)",
+                "Generic specialization (template instantiation with concrete types)",
+                "Comptime validation (interface compliance, borrow checker integration)"
+            ]
+        },
+        {
+            "area": "High-Level Control Flow Macros",
+            "topics": [
+                "IF/ELIF/ELSE state machine (context transitions, label generation)",
+                "WHILE/FOR loop constructs (BREAK/CONTINUE support via stack traversal)",
+                "Polymorphic comparison logic (int vs float vs trit vs wild pointer)",
+                "Register preservation (System V AMD64 ABI compliance)",
+                "Error handling integration (result type, defer blocks)",
+                "Nested control flow (reentrant context stack handling)"
+            ]
+        },
+        {
+            "area": "Class & Object System",
+            "topics": [
+                "CLASS macro with JSON-like syntax ({ name: type })",
+                "METHOD definition with automatic self pointer injection",
+                "Encapsulation (private/public fields via comptime validation)",
+                "Constructor/destructor lifecycle (NEW operator, defer integration)",
+                "Composition over inheritance (MIXIN macro for code reuse)",
+                "Memory layout control (struct packing, alignment)",
+                "Polymorphism via structural typing (duck typing at comptime)"
+            ]
+        },
+        {
+            "area": "Struct-Based Template System",
+            "topics": [
+                "Template definition syntax (template:name = { ... })",
+                "Template instantiation (genFunc with signature binding)",
+                "Associative array simulation (key-value storage via name mangling)",
+                "Delayed macro expansion (template body capture without evaluation)",
+                "Type-aware code generation (gc vs wild, TBB vs standard types)",
+                "Generic constraints (trait bounds via comptime checks)"
+            ]
+        },
+        {
+            "area": "Functional Abstractions",
+            "topics": [
+                "FUNCTION/INVOKE macros (ABI-compliant calling convention)",
+                "Pipeline operators integration (|> with macro-generated functions)",
+                "Lambda/closure support (capture list handling)",
+                "Partial application (currying via macro transformation)",
+                "Zero-cost functional patterns (map/filter/reduce as macros)"
+            ]
+        },
+        {
+            "area": "Type System Integration",
+            "topics": [
+                "TBB type awareness (sticky error propagation in macros)",
+                "Ternary logic control flow (trit/tryte comparison semantics)",
+                "Nonary type support (nit/nyte in macro conditionals)",
+                "Type coercion rules (automatic conversions in templates)",
+                "Result type handling (error propagation in generated code)",
+                "Tensor/matrix operations (macro-generated SIMD code)"
+            ]
+        },
+        {
+            "area": "Memory Model Integration",
+            "topics": [
+                "gc vs wild pointer detection (macro inspects memory class)",
+                "Automatic allocator selection (gc_alloc vs alloc based on type)",
+                "Pinning operator support (# in macro-generated code)",
+                "Reference operator integration ($ for safe wild references)",
+                "Defer block generation (RAII-style cleanup in macros)",
+                "Memory safety validation (comptime borrow checker integration)"
+            ]
+        },
+        {
+            "area": "Concurrency Integration",
+            "topics": [
+                "Actor model macros (ACTOR definition, MESSAGE handlers)",
+                "spawn/fork integration (task creation in macro-generated code)",
+                "Channel communication (Go-style channels via macros)",
+                "Async/await support (coroutine state machines)",
+                "Thread-safe code generation (atomic operations, memory barriers)",
+                "Race condition prevention (comptime concurrency analysis)"
+            ]
+        },
+        {
+            "area": "Advanced Metaprogramming",
+            "topics": [
+                "Runtime assembler (wildx memory JIT compilation)",
+                "Dynamic code generation (emit x86-64 instructions at runtime)",
+                "Property-based testing macros (FOR_ALL with type-aware generators)",
+                "Unit testing framework (TEST_CASE with auto-registration)",
+                "Reflection API (runtime type information for dynamic dispatch)",
+                "Serialization/deserialization (JSON/binary via comptime introspection)"
+            ]
+        }
+    ],
+    "technical_challenges": [
+        "Bridging text-substitution macros with semantic type checking",
+        "Handling Aria's exotic types (TBB, ternary, nonary) in macro logic",
+        "Ensuring zero-cost abstractions (macros must compile to optimal code)",
+        "Managing macro hygiene (avoiding variable capture, namespace pollution)",
+        "Supporting deep nesting (classes inside methods, loops inside conditionals)",
+        "Integrating with borrow checker (pinning semantics in generated code)",
+        "Preserving source location information (error messages in macro-expanded code)",
+        "Handling recursive macros (classes containing classes, nested templates)"
+    ],
+    "integration_points": [
+        "Frontend: Lexer/Parser must handle macro directives before AST construction",
+        "Type Checker: Must validate macro-generated code, enforce comptime constraints",
+        "Borrow Checker: Must analyze macro-expanded code for memory safety",
+        "Codegen: Must optimize macro-generated patterns (inline, constant fold)",
+        "Runtime: Must support wildx memory for JIT, provide reflection APIs",
+        "Standard Library: Must use macro system for generic containers, algorithms",
+        "Testing Framework: Must auto-register tests via macro section-based pattern"
+    ],
+    "deliverables": [
+        "Complete macro preprocessor specification (500+ lines)",
+        "Comptime execution model design (400+ lines)",
+        "High-level control flow macro library (IF/WHILE/FOR)",
+        "Class system macro implementation (CLASS/METHOD/NEW)",
+        "Struct-based template system design",
+        "Functional abstraction macro suite",
+        "Type-aware macro utilities (TBB, ternary, nonary support)",
+        "Memory model integration patterns (gc vs wild awareness)",
+        "Concurrency macro patterns (actors, channels, async)",
+        "Advanced metaprogramming examples (JIT, reflection, testing)",
+        "Integration roadmap with existing compiler phases",
+        "Performance analysis (macro expansion overhead, generated code quality)"
+    ],
+    "success_criteria": [
+        "Macro system supports all high-level constructs (classes, templates, control flow)",
+        "Comptime system can inspect and validate types at compile time",
+        "Generated code is zero-cost (matches hand-written assembly performance)",
+        "Macro hygiene prevents variable capture and namespace pollution",
+        "Deep nesting works correctly (nested classes, loops, conditionals)",
+        "Exotic types (TBB, ternary, nonary) are fully supported in macros",
+        "Memory model integration is seamless (gc vs wild pointer awareness)",
+        "Borrow checker integration prevents memory safety violations",
+        "Concurrency patterns are safe (no race conditions in generated code)",
+        "Error messages are clear (preserve source location through macro expansion)",
+        "Standard library can be implemented using macro system",
+        "Examples demonstrate practical usage (testing, serialization, JIT)"
+    ],
+    "references": [
+        "/docs/info/aria_specs.txt (language specification)",
+        "/docs/gemini/responses/old_research/Aria Class System Design Discussion.txt",
+        "/docs/gemini/responses/old_research/Macro Implementation Proposal for Aria.txt",
+        "/docs/gemini/responses/old_research/Preprocessor Macro Enhancement Proposal.txt",
+        "/docs/gemini/responses/old_research/Designing a Metaprogramming Class Construct.txt",
+        "/docs/gemini/responses/old_research/Synthesizing Aria Metaprogramming Library.txt",
+        "/docs/gemini/responses/old_research/Aria Metaprogramming Library Enhancements.txt",
+        "/docs/gemini/responses/old_research/Runtime Assembler for Wildx Memory.txt",
+        "/docs/BORROW_CHECKER_IMPLEMENTATION_PLAN.md (pinning semantics)",
+        "NASM Preprocessor Documentation (context stack, token rotation)",
+        "Zig Comptime Documentation (types as values, reflection)",
+        "C++ Template Metaprogramming (patterns, techniques)",
+        "Rust Macros 2.0 (hygiene, procedural macros)",
+        "Lisp Macros (homoiconicity, code-as-data)"
+    ]
+}
