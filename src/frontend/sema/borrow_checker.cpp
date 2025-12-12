@@ -291,16 +291,45 @@ void BorrowChecker::visit(frontend::BinaryOp* node) {
 void BorrowChecker::visit(frontend::UnaryOp* node) {
     if (!node) return;
     
-    // Handle special operators
-    // TODO: Add BORROW and BORROW_MUT to UnaryOp enum in expr.h
-    // For now, PIN and ADDRESS_OF are available
+    // Handle borrow operators (Phase 2.2 annotations)
+    if (node->op == frontend::UnaryOp::BORROW || node->op == frontend::UnaryOp::BORROW_MUT) {
+        node->creates_loan = true;
+        node->loan_depth = context_.current_depth();
+        
+        std::string var_name = get_var_name(node->operand.get());
+        if (!var_name.empty()) {
+            node->loan_target = var_name;
+        }
+        
+        bool is_mutable = (node->op == frontend::UnaryOp::BORROW_MUT);
+        handle_borrow_operator(node->operand.get(), is_mutable, node);
+        return;
+    }
     
+    // Handle PIN operator (Phase 2.2 annotations)
     if (node->op == frontend::UnaryOp::PIN) {
+        node->creates_loan = true;
+        node->loan_depth = context_.current_depth();
+        
+        std::string var_name = get_var_name(node->operand.get());
+        if (!var_name.empty()) {
+            node->loan_target = var_name;
+        }
+        
         handle_pin_operator(node->operand.get(), node);
         return;
     }
     
+    // Handle ADDRESS_OF operator (Phase 2.2 annotations)
     if (node->op == frontend::UnaryOp::ADDRESS_OF) {
+        node->creates_loan = true;
+        node->loan_depth = context_.current_depth();
+        
+        std::string var_name = get_var_name(node->operand.get());
+        if (!var_name.empty()) {
+            node->loan_target = var_name;
+        }
+        
         handle_address_operator(node->operand.get(), node);
         return;
     }
@@ -396,6 +425,10 @@ void BorrowChecker::visit(frontend::CastExpr* node) {
 
 void BorrowChecker::visit(frontend::VarDecl* node) {
     if (!node) return;
+    
+    // Populate AST annotations (Phase 2.2)
+    node->scope_depth = context_.current_depth();
+    node->requires_drop = (node->is_wild || node->is_stack);  // Wild/stack need explicit cleanup
     
     // Determine memory region based on declaration
     MemoryRegion region = MemoryRegion::GC_HEAP; // Default
@@ -495,6 +528,11 @@ void BorrowChecker::visit(frontend::IfStmt* node) {
 
 void BorrowChecker::visit(frontend::Block* node) {
     if (!node) return;
+    
+    // Populate AST annotations (Phase 2.2)
+    static int next_scope_id = 0;  // Generate unique scope IDs
+    node->scope_id = next_scope_id++;
+    node->scope_depth = context_.current_depth();
     
     for (auto& stmt : node->statements) {
         if (stmt) {
@@ -672,5 +710,18 @@ void BorrowChecker::check_wild_leaks(const std::string& scope_name) {
     // This requires tracking aria.alloc() calls and matching them with
     // aria.free() or defer statements
 }
+
+// ============================================================================
+// Convenience Functions (sema namespace)
+// ============================================================================
+
+namespace sema {
+
+bool check_borrow_rules(frontend::AstNode* root) {
+    BorrowChecker checker;
+    return checker.analyze(root);
+}
+
+} // namespace sema
 
 } // namespace aria

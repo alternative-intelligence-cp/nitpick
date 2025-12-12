@@ -1,0 +1,567 @@
+﻿Aria Standard Library Architecture: Comprehensive Design Report for Timer and Clock Systems
+1. Executive Summary
+The capability to measure time, schedule future execution, and manage timeouts is a fundamental requirement for any general-purpose systems programming language. For Aria, a language positioned at the intersection of high performance (leveraging LLVM 18) and high safety (via Twisted Balanced Binary arithmetic and Appendage Theory), the design of the standard timer library (std.time) is not merely a utility requirement but a critical architectural pillar.
+This report delivers an exhaustive architectural specification for the std.time library. It addresses the existing gap in the Aria runtime 1, which currently possesses a robust coroutine scheduler but lacks temporal primitives. The absence of these primitives prevents the development of network timeouts, rate limiters, and periodic background tasks, effectively limiting the language's utility for distributed systems and real-time applications.
+Our analysis, derived from a comparative study of Go, Rust (Tokio), and Node.js (libuv), concludes that Aria must reject simple heap-based timer management in favor of a Hierarchical Timing Wheel integrated directly into the runtime's reactor loop. This choice is dictated by the need for $O(1)$ insertion and cancellation complexity, which is essential for high-throughput network services.
+Furthermore, this report proposes a radical departure from standard integer arithmetic for time values. By enforcing the use of Aria's native Twisted Balanced Binary (TBB) types (tbb64) 1, we introduce a symmetric time model that mathematically eliminates the asymmetry bugs inherent in two's complement arithmetic (e.g., the inability to represent abs(INT64_MIN)). This TBB-based temporal calculus ensures sticky error propagation for overflows and invalid states, aligning std.time with the language's core safety philosophy.
+The proposed implementation strategy details cross-platform integration using timerfd on Linux, kqueue on macOS/BSD, and High-Resolution Waitable Timers on Windows, ensuring nanosecond-precision capability where hardware permits. Finally, we provide a rigorous analysis of the interaction between asynchronous timers and the Borrow Checker, ensuring that callback closures strictly adhere to Aria's Appendage Theory memory model.
+2. Introduction to Temporal Systems in Computing
+To design a robust clock library for a modern systems language, one must first deconstruct the underlying physics and OS abstractions that govern computer time. A naive wrapper around gettimeofday is insufficient for the strict latency and correctness requirements of modern infrastructure software.
+2.1 The Physics of Digital Timekeeping
+Time in a digital computer is derived from the oscillation of a quartz crystal. Typically running at frequencies such as 14.31818 MHz or 24 MHz, these crystals act as the heartbeat of the system. However, they are physical objects subject to environmental stress.
+Oscillator Drift and Skew:
+Crystal oscillators are imperfect. They suffer from manufacturing variances (static offset) and environmental drift. Temperature changes cause expansion or contraction of the quartz, altering its resonant frequency. A change of just a few degrees Celsius can introduce a clock skew of several parts per million (ppm). Over days, this accumulates into seconds of error relative to Coordinated Universal Time (UTC).
+The TSC (Time Stamp Counter):
+Modern CPUs provide a Time Stamp Counter (TSC), a register counting CPU cycles since reset. While initially linked to the core clock frequency (variable due to turbo boost and power saving), modern "Invariant TSC" implementations run at a constant rate regardless of P-states or C-states. Aria's std.time must leverage the Invariant TSC (via the rdtsc instruction on x86 or cntvct_el0 on ARM) for the lowest latency time queries, usually accessible via the OS's VDSO (Virtual Dynamic Shared Object) on Linux to avoid the overhead of a full kernel context switch.
+2.2 The Duality of Time: Wall-Clock vs. Monotonic
+A robust system library must strictly distinguish between two incompatible concepts of time. Failure to do so is the source of many "Heisenbugs" in distributed systems.
+Wall-Clock Time (Real-Time):
+This represents the absolute time, intended to be synchronized with UTC. It is subject to:
+* Discontinuities: The clock can jump forward or backward. If a user manually changes the date, or if the NTP (Network Time Protocol) daemon corrects a significant drift, the clock steps instantly.
+* Leap Seconds: The insertion of leap seconds to align UTC with Earth's rotation introduces irregularities (e.g., minutes with 61 seconds).
+Implication for Aria: Wall-Clock time (SystemTime) must never be used for measuring duration or scheduling timers. A timer set to expire in "5 minutes" based on Wall-Clock time might expire instantly or never if the system clock is adjusted.
+Monotonic Time:
+This represents a continuous, strictly non-decreasing count of ticks from an arbitrary epoch (such as system boot).
+* Guarantee: $t_{n+1} \geq t_n$ always holds.
+* Stability: The rate may be slewed (frequency corrected) by NTP to fix drift, but the value never steps backward.
+Implication for Aria: All internal timer logic, Duration calculations, and Instant measurements must rely exclusively on Monotonic Time.
+2.3 The "Year 2038" and Integer Asymmetry Problems
+The standard Unix time representation uses a signed 32-bit integer, which will overflow on January 19, 2038. While 64-bit systems push this horizon significantly, a more subtle arithmetic issue remains: Two's Complement Asymmetry.
+In standard int64:
+* Range: $[-2^{63}, 2^{63}-1]$.
+* The magnitude of the minimum value is 1 greater than the maximum value.
+* abs(INT64_MIN) causes an overflow/trap.
+* deadline - now arithmetic is prone to underflow if deadline is in the distant past, or overflow if deadline is in the distant future relative to now.
+Most languages (C, Go, Java) ignore this or panic. Aria, however, has a unique solution in its Twisted Balanced Binary (TBB) types.1 TBB integers are symmetric around zero, with the specific bit pattern of the "extra" negative number reserved as an ERR sentinel. This property is transformative for a time library, allowing "sticky error" propagation through time calculations rather than silent wrapping or panic.
+3. Comparative Landscape Analysis
+Before architecting Aria's solution, we must critique the approaches taken by incumbent systems languages. This analysis highlights the evolution of timer implementation from simple linked lists to hierarchical wheels.
+3.1 Go (Golang)
+Go's runtime scheduler is a close analogue to Aria's, as both use M:N scheduling (mapping M goroutines to N OS threads).
+* Early Implementation (< 1.14): Go originally used a single global min-heap protected by a mutex. This caused massive contention on high-core-count machines when many goroutines created timers (e.g., context.WithTimeout).
+* Modern Implementation (1.14+): Go moved to a distributed timer heap. Each P (Processor/logical core context) maintains its own 4-ary heap of timers. This eliminates lock contention during insertion.
+* Stealing: If a P goes idle, it can steal timers from other Ps, integrating timer execution with work stealing.
+* API: Go exposes time.After, time.Ticker, and time.Sleep. The channel-based API (<-time.After(d)) is elegant but prone to memory leaks if the timer is not stopped and the channel is never read.
+Takeaway for Aria: A global lock is a non-starter. Distributed or per-worker timer management is essential for scalability.
+3.2 Rust (Tokio & async-std)
+Rust does not have a runtime in the language core; it relies on ecosystem crates like tokio.
+* Tokio's Approach: Tokio implements a Hierarchical Timing Wheel (hashed wheel). This structure provides $O(1)$ insertion and cancellation.
+* Granularity: Tokio's wheel has a resolution (typically 1ms). Timers with finer granularity might be coalesced.
+* Integration: The timer driver is often a separate component or integrated into the I/O driver (reactor). When park() is called on the reactor, it calculates the time until the next timer expires and uses that as the timeout for epoll_wait.
+* Safety: Rust's borrow checker forces explicit handling of lifetimes in timer callbacks, often leading to Arc<Mutex<T>> patterns.
+Takeaway for Aria: The Hierarchical Timing Wheel is the superior data structure for high-performance network services where cancellations (timeouts) are frequent.
+3.3 Node.js (libuv)
+Node.js uses libuv, which implements a unified event loop.
+* Implementation: libuv uses a Min-Heap for timers.
+* Phase: The event loop has a dedicated "Timers" phase.
+* Optimization: Node.js manages a generic JS-side linked list for timers of the same duration (e.g., thousands of 1000ms timeouts) to avoid inserting thousands of nodes into the C++ heap. This is a specialized optimization for web server workloads.
+* API: setTimeout and setInterval are the standards. process.nextTick allows micro-task scheduling before the loop continues.
+Takeaway for Aria: While the Min-Heap is simple, it scales poorly ($O(\log N)$). Given Aria's focus on high performance, we should aim for the $O(1)$ characteristics of the Timing Wheel.
+3.4 Summary of Comparison
+Feature
+	Go
+	Rust (Tokio)
+	Node.js (libuv)
+	Aria (Proposed)
+	Data Structure
+	Distributed 4-ary Heap
+	Hierarchical Timing Wheel
+	Min-Heap
+	Hierarchical Timing Wheel
+	Insertion
+	$O(\log N)$
+	$O(1)$
+	$O(\log N)$
+	$O(1)$
+	Cancellation
+	$O(1)$ (Soft delete)
+	$O(1)$
+	$O(\log N)$
+	$O(1)$
+	Thread Model
+	Per-P Heaps
+	Driver-owned Wheel
+	Single Thread Loop
+	Per-Worker Wheel
+	Arithmetic
+	int64 (nanos)
+	u64 (secs) + u32 (nanos)
+	Double (millis)
+	tbb64 (nanos)
+	Safety
+	GC
+	Borrow Checker
+	GC
+	Appendage Theory
+	4. Theoretical Framework for Aria
+Aria's unique features—TBB arithmetic and Appendage Theory—require a tailored theoretical foundation for its time library.
+4.1 TBB Temporal Calculus
+We define the Aria time unit as the Nanosecond, stored in a tbb64.
+The TBB64 Specification:
+* Bits: 64
+* Representation: Two's Complement (mostly).
+* Range: $[-2^{63} + 1, 2^{63} - 1]$.
+* Sentinel: -2^{63} (0x8000000000000000) represents ERR.
+Arithmetic Rules:
+1. Identity: $t + 0 = t$.
+2. Symmetry: $-(t) = -t$ for all valid $t$. This is impossible in standard int64 (where -INT_MIN overflows).
+3. Propagation: $t + \text{ERR} = \text{ERR}$.
+4. Overflow: If $t_1 + t_2 > \text{MAX}$, result is $\text{ERR}$.
+Application to Time:
+Let Instant be a wrapper around tbb64.
+* Instant::MAX: The furthest representable future.
+* Instant::MIN: The furthest representable past.
+* Duration: A scalar tbb64.
+If a user requests sleep(Duration::MAX + 1), standard integers might wrap to negative (immediate return). TBB produces ERR. The runtime check if (duration <= 0) is insufficient; we must check if (duration == ERR) handle_error(). This explicit error state prevents logic bugs where extreme durations cause unexpected behavior.
+4.2 Appendage Theory and Callbacks
+Aria's memory model posits that an "Appendage" (a reference, marked $) cannot outlive its "Host" (the owner, marked #).
+The Async Problem:
+When async sleep(d) is called, the current stack frame is suspended. If we pass a closure to a timer:
+
+
+Code snippet
+
+
+
+
+int8#: data = 42;
+timer.after(1s, func() { print($data); });
+
+The closure captures $data (a reference). The timer implementation stores this closure in the heap (Wild memory). The Borrow Checker must guarantee that data is not dropped before the timer fires.
+Solution:
+1. Blocking sleep: The await keyword suspends the frame but keeps it alive. References to locals within the frame are valid because the frame cannot be destroyed until the await returns.
+2. Async/Background Timers: If a timer is "fire and forget" (non-blocking), the closure cannot capture stack references unless they are moved/pinned to the heap or are global. The Borrow Checker must reject captures of stack locals for non-awaited async timers.
+5. Architectural Design: The Hierarchical Timing Wheel
+To meet the requirement for high-resolution, high-performance timers, Aria will implement a Hierarchical Timing Wheel. This structure mimics a mechanical odometer.
+5.1 Structure and Algorithm
+The wheel is composed of multiple levels (arrays of buckets).
+* Level 1 (TV1): 256 slots ($2^8$). Resolution: 1ms. Range: 0-255ms.
+* Level 2 (TV2): 64 slots ($2^6$). Resolution: 256ms. Range: 256ms - 16s.
+* Level 3 (TV3): 64 slots. Resolution: 16s. Range: 16s - 17m.
+* Level 4 (TV4): 64 slots. Resolution: 17m. Range: 17m - 18h.
+* Level 5 (TV5): 64 slots. Resolution: 18h. Range: 18h - 48 days.
+Total Capacity: Handles timeouts up to ~48 days with millisecond precision. Longer timeouts (rare) can be handled by a secondary overflow list or a 6th level.
+5.2 Mechanics
+1. Insertion:
+   * Calculate deadline = now + delay.
+   * Calculate delta = deadline - last_processed_time.
+   * Based on the magnitude of delta, determine which Level (TV1..TV5) the timer belongs to.
+   * Index = (deadline >> shift) & mask.
+   * Add to the linked list at that index.
+   * Complexity: $O(1)$.
+2. Tick/Cascading:
+   * On every tick (e.g., 1ms), increment last_processed_time.
+   * Process the list at TV1[last_processed_time & 255].
+   * Cascading: If index == 0 (wrap around), we must look at the next level (TV2). We take the bucket from TV2, and re-insert all its timers into TV1.
+   * Complexity: Amortized $O(1)$.
+5.3 Memory and Locality
+The arrays (TV1..TV5) are small and cache-friendly. The timer nodes (TimerEntry) are allocated from a pool (slab allocator) to prevent fragmentation. This design ensures that timer operations do not pollute the CPU cache, preserving performance for the user's application logic.
+5.4 Integration with Aria Runtime
+We propose a Per-Worker Wheel.
+* Each Worker thread maintains its own Timing Wheel.
+* Timers created by a coroutine running on Worker A are inserted into Worker A's wheel.
+* Pros: Zero lock contention. Excellent NUMA locality.
+* Cons: Load balancing issues (if Worker A is idle but has timers, it must still wake up).
+* Mitigation: Work stealing handles task load. For timers, the reactor (epoll/kqueue) handles the wakeups. If Worker A has no runnable tasks but has a timer in 10ms, it enters the OS sleep state with a 10ms timeout.
+6. Operating System Primitives (Deep Dive)
+The std.time library must abstract the OS specifics. Here is the implementation strategy for the "Big Three" platforms.
+6.1 Linux: timerfd and epoll
+Linux offers the timerfd API, which creates a file descriptor that becomes readable when a timer expires. This is the gold standard for async integration.
+* Mechanism: Create a timerfd using CLOCK_MONOTONIC. Add it to the thread's epoll set alongside network sockets.
+* Scheduling: The Worker calculates the time to the next wheel event (next_expiry). It calls timerfd_settime with this duration.
+* Waiting: The Worker calls epoll_wait. This blocks until either I/O arrives or the timer expires.
+* Precision: Nanosecond precision is supported by the kernel.
+* Optimization: To avoid syscall overhead, we only update the timerfd if the new timer is sooner than the currently programmed one.
+6.2 Windows: Waitable Timers and IOCP
+Windows uses I/O Completion Ports (IOCP) for high-performance async I/O.
+* Mechanism: Use "Waitable Timers" (CreateWaitableTimerEx) with the CREATE_WAITABLE_TIMER_HIGH_RESOLUTION flag (available since Windows 8).
+* Integration: Unfortunately, Waitable Timers do not inherently post to IOCP.
+* Strategy: We use SetThreadpoolTimer which integrates with the Windows Threadpool (highly optimized) and can post callbacks. Alternatively, for strict control, the Aria worker thread can use GetQueuedCompletionStatusEx with a timeout parameter derived from the Timer Wheel's next expiry.
+* Clock Source: QueryPerformanceCounter (QPC) is mandatory for monotonic time. GetTickCount64 is too low resolution (10-16ms).
+6.3 macOS / BSD: kqueue and EVFILT_TIMER
+BSD systems use kqueue for event notification.
+* Mechanism: Register an event with filter EVFILT_TIMER.
+* Units: NOTE_NSECONDS allows nanosecond specification.
+* Behavior: When the timer expires, an event is generated in the kqueue.
+* Caveat: Historically, kqueue timers were slightly less precise than timerfd under heavy load, but recent macOS versions have improved this. mach_absolute_time provides the timebase.
+7. Aria std.time API Design
+This section presents the concrete API surface, adhering to Aria syntax and conventions.
+7.1 Data Types
+
+
+Code snippet
+
+
+
+
+// src/std/time.aria
+
+// Duration: A span of time. Symmetric TBB64 prevents underflow bugs.
+// Range: +/- 292 years.
+pub const struct Duration {
+   tbb64:nanos;
+}
+
+// Instant: A point in monotonic time. Opaque.
+pub const struct Instant {
+   tbb64:ticks; 
+}
+
+// SystemTime: A point in Wall-Clock time (UTC).
+// Not monotonic. Used for user-facing timestamps only.
+pub const struct SystemTime {
+   tbb64:unix_nanos; 
+}
+
+// Constants for convenience
+pub const Duration:NANOSECOND  = Duration{ nanos: 1 };
+pub const Duration:MICROSECOND = Duration{ nanos: 1000 };
+pub const Duration:MILLISECOND = Duration{ nanos: 1000000 };
+pub const Duration:SECOND      = Duration{ nanos: 1000000000 };
+pub const Duration:MINUTE      = Duration{ nanos: 60000000000 };
+pub const Duration:HOUR        = Duration{ nanos: 3600000000000 };
+
+7.2 Core Functions
+
+
+Code snippet
+
+
+
+
+// Monotonic clock access
+extern "C" func:aria_time_monotonic = tbb64();
+pub func:now = Instant() {
+   return Instant{ ticks: aria_time_monotonic() };
+};
+
+// Arithmetic
+// Note: Aria supports operator overloading via specific trait implementations
+impl:Add:for:Instant = {
+   func:add = Instant(self, Duration:d) {
+       // TBB automatically handles overflow -> ERR
+       return Instant{ ticks: self.ticks + d.nanos };
+   };
+};
+
+impl:Sub:for:Instant = {
+   func:sub = Duration(self, Instant:other) {
+       return Duration{ nanos: self.ticks - other.ticks };
+   };
+};
+
+7.3 Async Integration APIs
+1. Sleep (One-shot delay)
+
+
+Code snippet
+
+
+
+
+// Suspends the current coroutine for 'd' duration.
+pub async func:sleep = void(Duration:d) {
+   if (d.nanos <= 0) return;
+   // Lowered to runtime intrinsic that interacts with TimerWheel
+   await aria_runtime_sleep(d.nanos);
+};
+
+2. Timeout Wrapper
+This is a higher-order function that races a future against a timer.
+
+
+Code snippet
+
+
+
+
+// Returns result<T> or error if timeout occurs
+pub async func:timeout<T> = result<T>(Duration:d, func<T>:operation) {
+   // This implementation relies on the 'pick' (select) mechanism 
+   // for futures, which is part of the async runtime spec.
+   pick {
+       val = await operation() => { return { val: val, err: NULL }; },
+       await sleep(d) => { return { val: NULL, err: ERR_TIMEOUT }; }
+   }
+};
+
+3. Ticker (Periodic)
+
+
+Code snippet
+
+
+
+
+pub struct Ticker {
+   Duration:interval;
+   Instant:next_tick;
+   // Channel or Stream based mechanism
+}
+
+pub func:every = Ticker(Duration:interval) {
+   return Ticker{ interval: interval, next_tick: now() + interval };
+};
+
+impl:Stream:for:Ticker = {
+   async func:next = Instant(self) {
+       Instant:now_ts = now();
+       if (now_ts < self.next_tick) {
+           await sleep(self.next_tick - now_ts);
+       }
+       Instant:tick_time = self.next_tick;
+       self.next_tick = self.next_tick + self.interval;
+       return tick_time;
+   };
+};
+
+7.4 Usage Examples
+Example A: Simple Delay
+
+
+Code snippet
+
+
+
+
+async func:main = void() {
+   print("Starting...");
+   await std.time.sleep(2 * std.time.SECOND);
+   print("Done.");
+};
+
+Example B: Periodic Background Task
+
+
+Code snippet
+
+
+
+
+async func:heartbeat = void() {
+   auto:ticker = std.time.every(500 * std.time.MILLISECOND);
+   while (true) {
+       await ticker.next(); // Wait for next tick
+       send_heartbeat();
+   }
+};
+
+Example C: Timeout with TBB Safety
+
+
+Code snippet
+
+
+
+
+async func:fetch = void() {
+   // If calculate_timeout() returns ERR due to overflow, 
+   // timeout() receives ERR and handles it gracefully (immediate fail or infinite wait
+   // depending on policy - Aria defaults to safe failure for ERR).
+   Duration:limit = calculate_dynamic_timeout(); 
+   
+   auto:res = await std.time.timeout(limit, async func() {
+       return http.get("https://example.com");
+   });
+   
+   if (res.err == std.time.ERR_TIMEOUT) {
+       print("Request timed out");
+   }
+};
+
+8. Runtime Implementation Strategy
+This section provides the C++ implementation details for the Aria runtime.
+8.1 The Timer Wheel Structure (src/runtime/time/timer_wheel.h)
+We employ a 5-level hashed wheel.
+
+
+C++
+
+
+
+
+#include <vector>
+#include <list>
+
+struct TimerEntry {
+   uint64_t expiry_nanos;
+   void* coro_handle; // Opaque handle to suspended coroutine
+   TimerEntry* next;
+   TimerEntry* prev;
+};
+
+class HierarchicalTimerWheel {
+private:
+   // 5 levels, different bucket sizes
+   static const int TVR_BITS = 8; // Level 1 bits (256 slots)
+   static const int TVN_BITS = 6; // Other levels bits (64 slots)
+   static const int TVR_SIZE = 1 << TVR_BITS;
+   static const int TVN_SIZE = 1 << TVN_BITS;
+   static const int TVR_MASK = TVR_SIZE - 1;
+   static const int TVN_MASK = TVN_SIZE - 1;
+
+   std::list<TimerEntry*> tv1;
+   std::list<TimerEntry*> tv2;
+   std::list<TimerEntry*> tv3;
+   std::list<TimerEntry*> tv4;
+   std::list<TimerEntry*> tv5;
+
+   uint64_t last_processed_nanos;
+
+public:
+   HierarchicalTimerWheel() {
+       last_processed_nanos = get_monotonic_time();
+   }
+
+   // Insert a timer. Complexity: O(1)
+   void add_timer(TimerEntry* timer) {
+       uint64_t expiry = timer->expiry_nanos;
+       uint64_t idx = expiry - last_processed_nanos;
+       
+       if (idx < TVR_SIZE) {
+           int i = expiry & TVR_MASK;
+           tv1[i].push_back(timer);
+       } else if (idx < (1ULL << (TVR_BITS + TVN_BITS))) {
+           int i = (expiry >> TVR_BITS) & TVN_MASK;
+           tv2[i].push_back(timer);
+       } 
+       //... logic continues for tv3, tv4, tv5...
+   }
+
+   // Advance the wheel. Complexity: O(1) amortized
+   std::list<TimerEntry*> advance(uint64_t now_nanos) {
+       std::list<TimerEntry*> expired;
+       
+       while (last_processed_nanos < now_nanos) {
+           int idx = last_processed_nanos & TVR_MASK;
+           
+           // If wrapping around TV1, cascade TV2 -> TV1
+           if (idx == 0 && last_processed_nanos!= 0) {
+                cascade(tv2, (last_processed_nanos >> TVR_BITS) & TVN_MASK);
+           }
+           //... checks for other levels cascading...
+
+           // Collect expired timers from current slot
+           expired.splice(expired.end(), tv1[idx]);
+           
+           last_processed_nanos++; // In reality, we jump by MS, not NS
+       }
+       return expired;
+   }
+
+   void cascade(std::list<TimerEntry*>& bucket, int index) {
+       // Re-insert all items from bucket[index] into lower levels
+       std::list<TimerEntry*> items;
+       items.splice(items.end(), bucket); // Move efficiently
+       for (auto* t : items) {
+           add_timer(t);
+       }
+   }
+};
+
+8.2 The Reactor Integration (src/runtime/concurrency/worker.cpp)
+The Worker thread must alternate between processing compute tasks and processing I/O/Timer events.
+
+
+C++
+
+
+
+
+void Worker::run() {
+   while (running) {
+       // 1. Process local queue (Work Stealing)
+       Task* t = local_queue.pop();
+       if (!t) t = global_scheduler.steal();
+
+       if (t) {
+           t->run();
+           continue; // Keep crunching if work exists
+       }
+
+       // 2. If no work, check timers & IO (Reactor Phase)
+       // Calculate sleep time based on next timer
+       uint64_t next_timer = timer_wheel.next_expiry();
+       uint64_t now = get_monotonic_time();
+       int timeout_ms = (next_timer > now)? (next_timer - now) / 1000000 : 0;
+
+       // epoll_wait / kqueue / IOCP
+       // This puts the thread to sleep until IO happens or timeout expires
+       int events = reactor.wait(timeout_ms);
+       
+       // 3. Process Timer Wheel
+       now = get_monotonic_time();
+       auto expired = timer_wheel.advance(now);
+       for (auto* timer : expired) {
+           // Resuming a timer means pushing the coroutine back to ready queue
+           global_scheduler.schedule(timer->coro_handle);
+           delete timer; // Cleanup
+       }
+       
+       // 4. Process IO events
+       //...
+   }
+}
+
+9. Async Integration and Cancellation
+9.1 Cancellation Semantics
+Cancellation in Aria is implicit via the dropping of Futures.
+If a user writes:
+
+
+Code snippet
+
+
+
+
+auto:f = std.time.sleep(10s);
+//... logic...
+// 'f' goes out of scope without being awaited?
+
+Currently, if f is dropped, the timer remains in the wheel until expiry, then fires, sees the future is dead, and does nothing. This is safe but wasteful (Zombie Timers).
+Optimization: The Future object returned by sleep should hold a handle to the TimerEntry. The Future's destructor (~Future) should verify if the timer has fired. If not, it should flag the TimerEntry as CANCELLED. The Timing Wheel, upon encountering a CANCELLED entry during processing, simply discards it. This avoids the expensive $O(N)$ operation of searching and removing a node from the linked list mid-cycle.
+9.2 The "Thundering Herd" Mitigation
+If 10,000 timers expire at the exact same millisecond (e.g., a batch job timeout), waking 10,000 coroutines simultaneously can thrash the scheduler.
+Strategy:
+1. Timer Coalescing (Slack): The runtime aligns timer expiry to specific boundaries (e.g., 10ms). This groups wakeups, allowing the CPU to stay in low-power states longer.
+2. Staggered Wakeup: When a large batch expires, the Reactor inserts them into the Ready Queue. The Work Stealing algorithm naturally distributes this load across threads, as idle threads will steal the newly readied coroutines.
+10. Safety and Verification
+10.1 Borrow Checker Rules (Appendage Theory)
+Aria's memory model requires strict validation of callback lifetimes.
+Scenario:
+
+
+Code snippet
+
+
+
+
+func:broken = void() {
+   int8:x = 10;
+   // ERROR: closure captures reference to stack var 'x'
+   // but 'after' returns immediately, and 'broken' returns, destroying 'x'.
+   std.time.after(1s, func() { print(x); }); 
+}
+
+The Borrow Checker must detect that std.time.after takes a closure that escapes the current stack frame.
+1. Escape Analysis: The compiler sees the closure is passed to after.
+2. Lifetime Check: The closure captures x (depth: function). The closure's lifetime is effectively static (or indefinite, managed by the runtime).
+3. Violation: Lifetime(closure) > Lifetime(x).
+4. Error: "Appendage violation: Closure captures stack variable 'x' but escapes local scope."
+Fix: The user must either await (blocking the frame) or move x into the closure (copy/move semantics).
+10.2 TBB Safety Checks
+The runtime implementation of Duration addition must utilize the TBBLowerer logic described in Part 6 of the research.1
+* Inputs: tbb64.
+* Operations: llvm.sadd.with.overflow.
+* Sentinel Check: If result is 0x80...00, set to ERR.
+This ensures that time arithmetic never silently wraps, preventing security vulnerabilities related to timeout bypasses via overflow.
+11. Performance Engineering
+11.1 VDSO Usage
+On Linux, calling clock_gettime is a system call (context switch). This is too slow for high-frequency timing. Aria must link against the vDSO (Virtual Dynamic Shared Object), a shared library exported by the kernel into user space. This allows clock_gettime to read the TSC register directly in user space, reducing overhead from ~500ns to ~15ns.
+11.2 Cache Line Optimization
+TimerEntry structs should be aligned to 64 bytes to avoid false sharing if accessed by multiple threads (though our per-worker design minimizes this). More importantly, the TimerWheel bucket arrays (tv1...tv5) must be hot in L1/L2 cache. The cascade operation is the most expensive; minimizing its frequency by tuning the bucket sizes (e.g., larger TV1) can trade memory for speed.
+12. Conclusion
+The proposed std.time library transforms Aria from a language with raw potential into a viable tool for networked systems. By rejecting the simple heap-based timers of Node.js in favor of the Hierarchical Timing Wheel used by the Linux kernel and Rust's Tokio, Aria prioritizes scalability and deterministic latency ($O(1)$).
+Furthermore, the integration of TBB64 arithmetic for time represents a significant innovation over existing languages, mathematically eliminating an entire class of overflow and asymmetry bugs. Combined with the rigorous enforcement of Appendage Theory for async callbacks, Aria's timing subsystem promises to be not just fast, but uniquely safe.
+This architecture satisfies all stated requirements: nanosecond precision, monotonic guarantees, cross-platform reactor integration, and robust async support, laying the groundwork for the next generation of Aria applications.
+Works cited
+   1. aria_specs.txt

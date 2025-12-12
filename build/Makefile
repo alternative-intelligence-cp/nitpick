@@ -994,6 +994,30 @@ src/frontend/sema/escape_analysis.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/escape_analysis.cpp.s
 .PHONY : src/frontend/sema/escape_analysis.cpp.s
 
+src/frontend/sema/lifetime_context.o: src/frontend/sema/lifetime_context.cpp.o
+.PHONY : src/frontend/sema/lifetime_context.o
+
+# target to build an object file
+src/frontend/sema/lifetime_context.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/lifetime_context.cpp.o
+.PHONY : src/frontend/sema/lifetime_context.cpp.o
+
+src/frontend/sema/lifetime_context.i: src/frontend/sema/lifetime_context.cpp.i
+.PHONY : src/frontend/sema/lifetime_context.i
+
+# target to preprocess a source file
+src/frontend/sema/lifetime_context.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/lifetime_context.cpp.i
+.PHONY : src/frontend/sema/lifetime_context.cpp.i
+
+src/frontend/sema/lifetime_context.s: src/frontend/sema/lifetime_context.cpp.s
+.PHONY : src/frontend/sema/lifetime_context.s
+
+# target to generate assembly for a file
+src/frontend/sema/lifetime_context.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/lifetime_context.cpp.s
+.PHONY : src/frontend/sema/lifetime_context.cpp.s
+
 src/frontend/sema/tbb_checker.o: src/frontend/sema/tbb_checker.cpp.o
 .PHONY : src/frontend/sema/tbb_checker.o
 
@@ -1602,6 +1626,9 @@ help:
 	@echo "... src/frontend/sema/escape_analysis.o"
 	@echo "... src/frontend/sema/escape_analysis.i"
 	@echo "... src/frontend/sema/escape_analysis.s"
+	@echo "... src/frontend/sema/lifetime_context.o"
+	@echo "... src/frontend/sema/lifetime_context.i"
+	@echo "... src/frontend/sema/lifetime_context.s"
 	@echo "... src/frontend/sema/tbb_checker.o"
 	@echo "... src/frontend/sema/tbb_checker.i"
 	@echo "... src/frontend/sema/tbb_checker.s"

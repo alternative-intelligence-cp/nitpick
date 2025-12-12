@@ -5238,6 +5238,7 @@ CMakeFiles/ariac.dir/src/driver/main.cpp.o: /home/randy/._____RANDY_____/REPOS/a
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/stmt.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/borrow_checker.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/escape_analysis.h \
+  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/lifetime_context.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/type_checker.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/types.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/tokens.h \
@@ -6872,6 +6873,7 @@ CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o: /home/randy/._____R
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/loops.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/ast/stmt.h \
   /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/borrow_checker.h \
+  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/lifetime_context.h \
   /usr/include/alloca.h \
   /usr/include/asm-generic/errno-base.h \
   /usr/include/asm-generic/errno.h \
@@ -6895,7 +6897,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o: /home/randy/._____R
   /usr/include/c++/13/bits/cpp_type_traits.h \
   /usr/include/c++/13/bits/cxxabi_forced.h \
   /usr/include/c++/13/bits/cxxabi_init_exception.h \
-  /usr/include/c++/13/bits/enable_special_members.h \
   /usr/include/c++/13/bits/erase_if.h \
   /usr/include/c++/13/bits/exception.h \
   /usr/include/c++/13/bits/exception_defines.h \
@@ -6903,8 +6904,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o: /home/randy/._____R
   /usr/include/c++/13/bits/functexcept.h \
   /usr/include/c++/13/bits/functional_hash.h \
   /usr/include/c++/13/bits/hash_bytes.h \
-  /usr/include/c++/13/bits/hashtable.h \
-  /usr/include/c++/13/bits/hashtable_policy.h \
   /usr/include/c++/13/bits/invoke.h \
   /usr/include/c++/13/bits/ios_base.h \
   /usr/include/c++/13/bits/istream.tcc \
@@ -6937,6 +6936,7 @@ CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o: /home/randy/._____R
   /usr/include/c++/13/bits/shared_ptr.h \
   /usr/include/c++/13/bits/shared_ptr_atomic.h \
   /usr/include/c++/13/bits/shared_ptr_base.h \
+  /usr/include/c++/13/bits/sstream.tcc \
   /usr/include/c++/13/bits/std_abs.h \
   /usr/include/c++/13/bits/std_mutex.h \
   /usr/include/c++/13/bits/stl_algobase.h \
@@ -6946,9 +6946,14 @@ CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o: /home/randy/._____R
   /usr/include/c++/13/bits/stl_iterator.h \
   /usr/include/c++/13/bits/stl_iterator_base_funcs.h \
   /usr/include/c++/13/bits/stl_iterator_base_types.h \
+  /usr/include/c++/13/bits/stl_map.h \
+  /usr/include/c++/13/bits/stl_multimap.h \
+  /usr/include/c++/13/bits/stl_multiset.h \
   /usr/include/c++/13/bits/stl_pair.h \
   /usr/include/c++/13/bits/stl_raw_storage_iter.h \
+  /usr/include/c++/13/bits/stl_set.h \
   /usr/include/c++/13/bits/stl_tempbuf.h \
+  /usr/include/c++/13/bits/stl_tree.h \
   /usr/include/c++/13/bits/stl_uninitialized.h \
   /usr/include/c++/13/bits/stl_vector.h \
   /usr/include/c++/13/bits/streambuf.tcc \
@@ -6956,8 +6961,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o: /home/randy/._____R
   /usr/include/c++/13/bits/string_view.tcc \
   /usr/include/c++/13/bits/stringfwd.h \
   /usr/include/c++/13/bits/unique_ptr.h \
-  /usr/include/c++/13/bits/unordered_map.h \
-  /usr/include/c++/13/bits/unordered_set.h \
   /usr/include/c++/13/bits/uses_allocator.h \
   /usr/include/c++/13/bits/uses_allocator_args.h \
   /usr/include/c++/13/bits/utility.h \
@@ -6989,6 +6992,7 @@ CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o: /home/randy/._____R
   /usr/include/c++/13/iosfwd \
   /usr/include/c++/13/iostream \
   /usr/include/c++/13/istream \
+  /usr/include/c++/13/map \
   /usr/include/c++/13/memory \
   /usr/include/c++/13/new \
   /usr/include/c++/13/numbers \
@@ -6996,6 +7000,8 @@ CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o: /home/randy/._____R
   /usr/include/c++/13/pstl/execution_defs.h \
   /usr/include/c++/13/pstl/glue_memory_defs.h \
   /usr/include/c++/13/pstl/pstl_config.h \
+  /usr/include/c++/13/set \
+  /usr/include/c++/13/sstream \
   /usr/include/c++/13/stdexcept \
   /usr/include/c++/13/streambuf \
   /usr/include/c++/13/string \
@@ -7004,8 +7010,6 @@ CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o: /home/randy/._____R
   /usr/include/c++/13/tuple \
   /usr/include/c++/13/type_traits \
   /usr/include/c++/13/typeinfo \
-  /usr/include/c++/13/unordered_map \
-  /usr/include/c++/13/unordered_set \
   /usr/include/c++/13/vector \
   /usr/include/ctype.h \
   /usr/include/endian.h \
@@ -8255,6 +8259,8 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: /home/randy/._____RAN
 /usr/lib/llvm-20/include/llvm/Config/AsmParsers.def:
 
 /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/types.h:
+
+/home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/lifetime_context.h:
 
 /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/escape_analysis.h:
 
