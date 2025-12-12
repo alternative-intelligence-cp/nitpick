@@ -88,7 +88,7 @@ Array type already exists with:
 
 ## TEST SUITE
 
-**File:** `tests/test_functional_types.cpp`  
+**File:** `docs/examples/functional_types_example.cpp`  
 **Lines:** 178  
 **Status:** ✅ ALL TESTS PASSING
 
@@ -105,7 +105,7 @@ Array type already exists with:
 ### Running Tests:
 ```bash
 cd /home/randy/._____RANDY_____/REPOS/aria
-g++ -std=c++17 -I. tests/test_functional_types.cpp -o build/test_functional_types
+g++ -std=c++17 -I. docs/examples/functional_types_example.cpp -o build/test_functional_types
 build/test_functional_types
 ```
 
@@ -136,7 +136,7 @@ cmake --build .
    - Updated toString() for RESULT and FUNCTION
 
 ### Files Created:
-1. `tests/test_functional_types.cpp` (178 lines)
+1. `docs/examples/functional_types_example.cpp` (178 lines)
    - Comprehensive test suite for Result and Function types
    - 8 test cases covering creation, formatting, and comparison
 
@@ -318,7 +318,7 @@ Tests verify:
 
 Files changed:
 - src/frontend/sema/types.h (387 lines, +47)
-- tests/test_functional_types.cpp (178 lines, new)
+- docs/examples/functional_types_example.cpp (178 lines, new)
 
 Status: Type system ready, parser/semantic/codegen pending
 Awaiting: research_016 results for full specification
