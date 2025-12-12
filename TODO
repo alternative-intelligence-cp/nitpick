@@ -29,13 +29,14 @@
 **Status**: Research system ready, tasks defined
 
 ### 0.1 Critical Research (BLOCKING)
-- [ ] **research_001: Borrow Checker Implementation**
-  - [ ] Upload source compilations to Gemini (9 files)
-  - [ ] Review response document
-  - [ ] Extract lifetime analysis algorithm
-  - [ ] Extract borrow checking rules
-  - [ ] Extract integration strategy with Appendage Theory
-  - [ ] Document findings in `/docs/research/borrow_checker_design.md`
+- [x] **research_001: Borrow Checker Implementation** ✅ COMPLETE (406 lines)
+  - [x] Upload source compilations to Gemini (9 files)
+  - [x] Review response document
+  - [x] Extract lifetime analysis algorithm
+  - [x] Extract borrow checking rules
+  - [x] Extract integration strategy with Appendage Theory
+  - [x] Document: `/docs/gemini/responses/research_001_borrow_checker.txt`
+  - [ ] **TODO**: Extract implementation plan for Phase 2
 
 - [x] **research_002: Balanced Ternary Arithmetic** ✅ COMPLETE + IMPLEMENTED
   - [x] Upload source compilations to Gemini (7 files)
@@ -220,63 +221,57 @@
   * **Reference**: `/docs/gemini/responses/research_010-011_macro_comptime.txt` (comprehensive 600+ line report)
 
 ### 0.4 Remaining Core Research (Pending)
-- [ ] **research_012: Standard Integer and Unsigned Integer Types**
-  * **Scope**: Design int1-512 and uint8-512 types (non-TBB standard integers)
-  * **Coverage**:
-    - int1, int2, int4, int8, int16, int32, int64, int128, int256, int512
-    - uint8, uint16, uint32, uint64, uint128, uint256, uint512
-  * **Key Questions**:
-    - Memory layout and alignment for wide types (128/256/512-bit)
-    - LLVM IR mappings (native vs multi-register representation)
-    - Overflow behavior (wrap, trap, or saturate?)
-    - Comparison with TBB types (when to use which?)
-    - Literal syntax (suffixes: i8, u16, i128, etc.)
-    - Conversion rules (implicit vs explicit casts)
-    - SIMD opportunities for wide integer operations
-- [ ] **research_013: Floating-Point Types (Extended Precision)**
-  * **Scope**: Design flt32, flt64, flt128, flt256, flt512 types
-  * **Coverage**:
-    - flt32 (IEEE-754 binary32), flt64 (IEEE-754 binary64)
-    - flt128 (IEEE-754 binary128 / quadruple precision)
-    - flt256, flt512 (software-emulated extended precision)
-  * **Key Questions**:
-    - Platform support (hardware vs software implementation)
-    - NaN/Infinity handling (match IEEE-754 or custom?)
-    - Rounding modes (nearest, toward zero, up, down)
-    - Subnormal number support
-    - Fast-math optimizations vs strict IEEE compliance
-    - Conversion from/to TBB types (ERR → NaN mapping?)
-    - Performance: SIMD (AVX-512 for flt32/64), software for 128+
-- [ ] **research_014: Composite Types - Part 1 (Object, Dynamic, Boolean)**
-  * **Scope**: Design obj, dyn, and bool types
-  * **obj (Object/Dictionary)**:
-    - Key-value map with heterogeneous values
-    - Memory layout (hash table? tree? inline small objects?)
-    - Type safety (typed vs untyped keys/values)
-    - GC integration (reference tracking for nested objects)
-    - JSON compatibility (serialization/deserialization)
-  * **dyn (Dynamic/Variant)**:
-    - Tagged union holding any type
-    - Type tag storage (enum discriminant)
-    - Pattern matching integration (pick statement)
-    - Runtime type queries (@typeInfo at runtime?)
-    - Performance vs safety tradeoffs
-  * **bool (Boolean)**:
-    - Representation (1-bit logical, 8-bit physical?)
-    - Truthiness rules (only true/false, or 0/non-zero like C?)
-    - Integration with ternary logic (trit type)?
+- [x] **research_012: Standard Integer and Unsigned Integer Types** ✅ COMPLETE (Dec 12, 2025)
+  * **Document**: `/docs/gemini/responses/research_012_standard_integer_types.txt` (401 lines)
+  * **Key Findings**:
+    - **Two's Complement** for all signed types (int1-512)
+    - **Modular Arithmetic** (wrap-around, no trap) for hardware alignment
+    - **Sub-byte types** (int1, int2, int4) with bit-packing in structs (@pack)
+    - **Wide types** (256/512) as first-class for crypto (no BigInt needed)
+    - **LLVM Mapping**: i8-i64 native, i128/i256/i512 as aggregate types
+    - **Read-Modify-Write** sequences for sub-byte field access
+    - Asymmetric range (e.g., int8: -128 to +127, not symmetric like TBB)
+  * **TODO**: Implement lexer tokens, type system, codegen for all widths
+- [x] **research_013: Floating-Point Types (Extended Precision)** ✅ COMPLETE (Dec 12, 2025)
+  * **Document**: `/docs/gemini/responses/research_013_floating_point_types.txt` (640 lines)
+  * **Key Findings**:
+    - **Hybrid Model**: flt32/64 hardware (SSE/AVX), flt128 hybrid, flt256/512 software
+    - **IEEE 754-2019 Strict Compliance**: Full subnormal support, signed zero, deterministic NaN
+    - **TBB Interop**: ERR → NaN, NaN/Inf → ERR (strict semantic boundary)
+    - **Limb-based representation** for flt256/512 (arrays of uint64)
+    - **Precision**: flt256 ~71.3 decimal, flt512 ~147.2 decimal digits
+    - **Rounding**: All 4 IEEE modes (RNE, RTZ, RUP, RDN) via thread-local state
+    - **Frontend refactor needed**: Store literals as APFloat (not C++ double)
+  * **TODO**: Implement SoftFloat runtime, LLVM lowering, literal parsing
+- [x] **research_014: Composite Types - Part 1 (Object, Dynamic, Boolean)** ✅ COMPLETE (Dec 12, 2025)
+  * **Document**: `/docs/gemini/responses/research_014_composite_types_part1.txt` (262 lines)
+  * **Key Findings**:
+    - **bool**: Binary primitive (i1 LLVM), strictly separate from trit (no ternary ambiguity)
+      * Vector support: bvec2-4 for SIMD masking (AVX-512 k-masks)
+      * Physical storage: 8-bit padded for addressability
+    - **obj**: Universal associative array with hybrid storage
+      * **ObjHeader** (64-bit): mark/pin/forward/nursery/size_class/type_id bits
+      * **Hidden Classes** optimization (V8-style shapes for fixed keys)
+      * Dictionary fallback for dynamic property addition
+      * Pinning support via # operator (pinned_bit prevents GC move)
+    - **dyn**: Type-erased polymorphism container
+      * Small Object Optimization for primitives (avoid heap allocation)
+      * GC root tracking integration
+  * **TODO**: Implement ObjHeader, shape caching, GC integration
     - Conversion from TBB ERR (error → false?)
-- [ ] **research_015: Composite Types - Part 2 (Vectors, Structs, Strings)**
-  * **Scope**: Design vec2, vec3, vec9, struct, string types
-  * **vec2, vec3, vec9 (SIMD Vectors)**:
-    - Element type support (int, uint, flt, tbb?)
-    - SIMD instruction mapping (SSE, AVX, AVX-512, NEON)
-    - Swizzling support (vec3.xyz, vec3.yzx)
-    - Geometric operations (dot, cross, normalize)
-    - vec9 (balanced nonary 3×3 matrix? or 9-element vector?)
-  * **struct**:
-    - Field alignment and padding rules
-    - Packed vs aligned structs
+- [x] **research_015: Composite Types - Part 2 (Vectors, Structs, Strings)** ✅ COMPLETE (Dec 12, 2025)
+  * **Document**: `/docs/gemini/responses/research_015_composite_types_part2.txt` (253 lines)
+  * **Key Findings**:
+    - **Vector Types**: vec2-4 (flt32), dvec2-4 (flt64), ivec2-4 (int32)
+      * **Direct SIMD mapping**: vec4 → XMM (128-bit), dvec4 → YMM (256-bit)
+      * **vec9 (Exotic)**: 9D-TWI support, 288-bit for 3×3 matrix flattening
+      * AVX-512 ZMM registers for vec9 (writemask for 9 lanes)
+      * Geometric intrinsics: dot (horizontal add), cross (runtime call), normalize
+      * Swizzling via CreateShuffleVector (v.wzyx → single SHUFPS)
+    - **struct**: Natural alignment (no vtable), @pack for bit-level control
+      * Plain Old Data (POD) for C ABI compatibility
+    - **string**: Small String Optimization (SSO) to eliminate heap churn
+  * **TODO**: Implement VectorLowerer, struct layout engine, SSO runtime
     - Memory model (always GC? support wild struct?)
     - Method definitions (attached functions?)
     - Inheritance or composition model
@@ -287,27 +282,23 @@
     - String concatenation (operator+ vs builder pattern?)
     - Integration with template literals (`...`)
     - GC vs wild string allocation
-- [ ] **research_016: Functional Types (Result, Func, Array)**
-  * **Scope**: Design result, func, array types
-  * **result<T, E>**:
-    - Error handling model ({err, val} struct)
-    - Monadic operations (map, flatMap, unwrap_or)
-    - Integration with ? operator (unwrap shorthand)
-    - ERR sentinel propagation from TBB
-    - Pattern matching in pick statements
-  * **func (Function Pointers/Closures)**:
-    - Closure capture semantics (by-value, by-reference, wild pointers)
-    - Function signature representation in type system
-    - Calling convention (C ABI vs Aria native?)
-    - Async function representation (Future/Promise?)
-    - Integration with comptime (functions as values?)
-  * **array<T, N> and T[]**:
-    - Fixed-size (stack) vs dynamic (heap) arrays
-    - Bounds checking (always? debug-only? never?)
-    - Slicing syntax (arr[2..5], arr[...10])
-    - Memory model (GC vs wild arrays)
-    - Multi-dimensional arrays (arr[10][20] vs tensor?)
-    - Integration with SIMD (vectorized operations)
+- [x] **research_016: Functional Types (Result, Func, Array)** ✅ COMPLETE (Dec 12, 2025)
+  * **Document**: `/docs/gemini/responses/research_016_functional_types.txt` (250 lines)
+  * **Key Findings**:
+    - **result<T>**: Zero-cost monadic error propagation
+      * Binary layout: `{ i8 err, T val }` - fits in 2 registers (RAX+RDX)
+      * Discriminator: 0 = success, non-zero = error code (test against zero)
+      * ? operator: Early return via basic block split (flatMap/bind operation)
+      * Specialized layouts: result<void> = i8, result<int64> = 16 bytes
+      * TBB bridge: ERR → result error, separate data vs control failure
+      * Pattern matching: switch on err field (jump table optimization)
+    - **func**: Unified closure/function pointer representation
+      * Three models: static function pointer, stateful closure, async task
+      * Interchangeable in higher-order functions
+    - **array**: Dynamic collections with slice views
+      * Bounds checking configurable
+      * Integration with range operators (.., ...)
+  * **TODO**: Implement result lowering, monadic operators, func closure capture
 - [ ] **research_017: Advanced Mathematical Types (Tensor, Matrix)**
   * **Scope**: Design tensor and matrix types
   * **tensor<T, Shape>**:
@@ -560,48 +551,29 @@
     - Const slices/strings
 
 ### 0.9 Essential Standard Library Research (Bootstrap Requirements)
-- [ ] **research_031: Essential Standard Library (Compiler Bootstrap)**
-  * **Scope**: Minimal stdlib required to bootstrap compiler and write basic programs
-  * **Platform Syscalls**:
-    - Linux: read, write, open, close, mmap, munmap, fork, exec
-    - Windows: CreateFile, ReadFile, WriteFile, VirtualAlloc, CreateProcess
-    - macOS: BSD syscalls + Mach VM APIs (vm_allocate, vm_deallocate)
-    - Error translation: errno/GetLastError → Aria result types
-  * **Memory Functions**:
-    - aria.alloc, aria.free, aria.realloc (Mimalloc integration)
-    - memcpy, memset, memmove (SIMD optimized)
-    - Arena allocators (aria.arena.new, aria.arena.reset)
-    - Memory leak detection for wild allocations
-  * **String Library**:
-    - UTF-8 operations: strlen, strcmp, strcpy, validation
-    - String searching: indexOf, lastIndexOf, contains
-    - String manipulation: concat, slice, substring, split
-    - Case conversion: toUpper, toLower (Unicode-aware)
-    - Template literal interpolation backend (&{expr})
-  * **Formatted I/O**:
-    - print() implementation (stdout.write wrapper)
-    - printf-style formatting (%d, %s, %x, %f, %b)
-    - Template literal evaluation
-    - TBB type formatting (display ERR sentinel)
-  * **File I/O**:
-    - readFile, writeFile (result type error handling)
-    - openFile, closeFile for streaming
-    - Platform abstraction (file descriptors vs HANDLEs)
-    - Path manipulation: join, normalize, relative
-    - File metadata: exists, size, stat
-  * **Math Library**:
-    - Essential: sqrt, pow, abs, min, max
-    - Trigonometry: sin, cos, tan, asin, acos, atan, atan2
-    - Logarithms: log, log2, log10, exp
-    - Rounding: floor, ceil, round, trunc
-    - Constants: PI, E, INFINITY, NAN
-    - TBB math (overflow → ERR)
-  * **Bootstrap Strategy**:
-    - Phase 1: Hello world (print, syscalls)
-    - Phase 2: File I/O programs (readFile, writeFile)
-    - Phase 3: Self-hosting requirements (full stdlib subset)
-  * **Critical Note**: Focus on ABSOLUTE MINIMUM for bootstrapping.
-    Advanced features (HTTP, JSON, crypto, blockchain, ML) come later.
+- [x] **research_031: Essential Standard Library (Compiler Bootstrap)** ✅ COMPLETE (Dec 12, 2025) ⭐ CRITICAL
+  * **Document**: `/docs/gemini/responses/research_031_essential_stdlib.txt` (199 lines)
+  * **Key Findings**:
+    - **Platform Abstraction Layer (std.sys)**:
+      * Unified system interface via cfg conditional compilation
+      * **6-Channel I/O Model**: stdin/out/err (text) + stddbg (debug) + stddati/stddato (binary)
+      * Process management: spawn, wait, signal handling
+      * System diagnostics: getCPUCount(), getMemoryUsage(), getPageSize()
+      * Platform detection: ARIA_ARCH_*, ARIA_PLATFORM_* macros
+    - **Memory Management (std.mem)**:
+      * **Hybrid Allocator Strategy**: GC (aria.gc_alloc), Wild (aria.alloc), WildX (aria.alloc_exec)
+      * **Shadow Stack**: Root tracking for moving GC (aria_shadow_stack_push_frame)
+      * **Pinning Protocol**: # operator sets pinned_bit in ObjHeader (prevents GC move)
+      * **W^X Compliance**: aria.protect_exec transitions RW → RX for executable memory
+    - **Bootstrap Philosophy**:
+      * "Safety through Stickiness" - TBB sentinel propagation
+      * "Hybrid Memory Sovereignty" - Stack/GC/Wild unification
+      * "Observability by Default" - 6-channel separation of concerns
+    - **Three-Phase Bootstrap**:
+      1. Hello World (print + syscalls)
+      2. File I/O Programs (readFile/writeFile)
+      3. Self-Hosting (full stdlib subset for compiler)
+  * **TODO**: Implement std.sys (platform.h wrappers), std.mem (allocator interfaces), std.io (6-channel streams)
 
 ---
 
