@@ -1,22 +1,3 @@
-/**
- * src/frontend/sema/borrow_checker.cpp
- * 
- * Aria Compiler - Borrow Checker Implementation
- * Version: 0.0.7 (Enhanced with Flow-Sensitive Lifetime Analysis)
- * 
- * Implements Aria's "Appendage Theory" memory safety model:
- * - Wild pointers: Must be explicitly freed or deferred
- * - Pinned values (#): Cannot be moved once pinned
- * - Safe references ($): Must not outlive their pinned hosts
- * - Stack allocations: Proper lifetime tracking with scope depth
- * 
- * CRITICAL ENHANCEMENT (v0.0.7):
- * Flow-sensitive lifetime analysis prevents dangling references by tracking:
- * 1. Scope depth for every variable declaration
- * 2. Reference → host relationships with transitive tracking
- * 3. Lifetime rules: host.depth <= ref.depth (host must live longer)
- */
-
 #include "borrow_checker.h"
 #include "../ast.h"
 #include "../ast/stmt.h"
@@ -24,403 +5,672 @@
 #include "../ast/control_flow.h"
 #include "../ast/defer.h"
 #include "../ast/loops.h"
-#include <unordered_set>
-#include <unordered_map>
-#include <string>
 #include <iostream>
+#include <sstream>
 
 namespace aria {
-namespace sema {
 
-// Enhanced Borrow Checker Context with Flow-Sensitive Lifetime Analysis
-struct BorrowContext {
-    // Legacy tracking (maintained for compatibility)
-    std::unordered_set<std::string> wild_allocations;  // Track wild allocations needing free
-    std::unordered_set<std::string> pinned_values;     // Track pinned values (cannot move)
-    std::unordered_set<std::string> deferred_frees;    // Track deferred deallocations
-    
-    // FLOW-SENSITIVE LIFETIME TRACKING (v0.0.7)
-    // Maps variable name → scope depth where it was declared
-    // Depth 0 = global, 1 = function body, 2 = inner block, etc.
-    std::unordered_map<std::string, int> var_depths;
-    
-    // Maps safe reference ($) → host variable name
-    // Used to track reference origins for lifetime validation
-    std::unordered_map<std::string, std::string> reference_origins;
-    
-    // Current scope depth (incremented on enterScope, decremented on exitScope)
-    int current_depth = 0;
-    
-    // Error tracking
-    bool has_errors = false;
-    
-    void error(const std::string& msg) {
-        std::cerr << "Borrow Check Error: " << msg << std::endl;
-        has_errors = true;
-    }
-    
-    void warning(const std::string& msg) {
-        std::cerr << "Borrow Check Warning: " << msg << std::endl;
-    }
-    
-    // SCOPE MANAGEMENT
-    void enterScope() {
-        current_depth++;
-    }
-    
-    void exitScope() {
-        // Clean up variables declared at this depth
-        // They are going out of scope
-        for (auto it = var_depths.begin(); it != var_depths.end();) {
-            if (it->second == current_depth) {
-                // Remove from all tracking maps
-                wild_allocations.erase(it->first);
-                pinned_values.erase(it->first);
-                reference_origins.erase(it->first);
-                it = var_depths.erase(it);
-            } else {
-                ++it;
-            }
-        }
-        current_depth--;
-    }
-    
-    // VARIABLE DECLARATION TRACKING
-    void declare(const std::string& name) {
-        var_depths[name] = current_depth;
-    }
-    
-    // LIFETIME VALIDATION
-    // Check if 'ref' (a safe reference) can safely point to 'host'
-    // Rule: host must live at least as long as ref
-    // Implementation: host.depth <= ref.depth
-    void checkLifetime(const std::string& ref, const std::string& host) {
-        // If host is not tracked, it might be global or a parameter
-        if (var_depths.find(host) == var_depths.end()) {
-            // Assume it's safe (global or function parameter)
-            return;
-        }
-        
-        // If ref is not tracked, it's being declared now
-        int ref_depth = (var_depths.find(ref) != var_depths.end()) 
-                       ? var_depths[ref] 
-                       : current_depth;
-        
-        int host_depth = var_depths[host];
-        
-        // Appendage Theory Violation: Reference outlives host
-        if (host_depth > ref_depth) {
-            error("Appendage Theory Violation: Reference '" + ref + 
-                  "' (declared at depth " + std::to_string(ref_depth) + 
-                  ") refers to host '" + host + 
-                  "' (declared at depth " + std::to_string(host_depth) + 
-                  ") which has a shorter lifetime. " +
-                  "The reference would outlive its host, creating a dangling pointer.");
-        }
-    }
-};
+// ============================================================================
+// Constructor
+// ============================================================================
 
-// Forward declarations
-void checkStatement(frontend::Statement* stmt, BorrowContext& ctx);
-void checkExpression(frontend::Expression* expr, BorrowContext& ctx);
+BorrowChecker::BorrowChecker() 
+    : loop_depth_(0), in_defer_(false), temp_var_counter_(0) {
+}
 
-// Check if a variable declaration uses wild allocation
-void checkVarDecl(frontend::VarDecl* decl, BorrowContext& ctx) {
-    if (!decl) return;
-    
-    // Register this variable at the current scope depth
-    ctx.declare(decl->name);
-    
-    // Check for wild allocation modifier
-    if (decl->is_wild) {
-        ctx.wild_allocations.insert(decl->name);
-        // Wild allocations should have a corresponding free or defer
-        // We'll check this at function exit
+// ============================================================================
+// Main Analysis Entry Point
+// ============================================================================
+
+bool BorrowChecker::analyze(frontend::AstNode* root) {
+    if (!root) {
+        return true;
     }
+
+    errors_.clear();
+    context_ = LifetimeContext(); // Reset context
     
-    // Check for stack allocation
-    if (decl->is_stack) {
-        // Stack allocations are automatically freed
-        // Just verify they're not returned or escaped
+    // Visit the root node
+    root->accept(*this);
+    
+    return !has_errors();
+}
+
+// ============================================================================
+// Error Reporting
+// ============================================================================
+
+void BorrowChecker::report_error(const std::string& message, frontend::AstNode* node) {
+    std::ostringstream oss;
+    oss << "Borrow Check Error: " << message;
+    // TODO: Add line number from node when available
+    errors_.push_back(oss.str());
+    std::cerr << oss.str() << std::endl;
+}
+
+// ============================================================================
+// Helper Methods - Variable Name Extraction
+// ============================================================================
+
+std::string BorrowChecker::get_var_name(frontend::AstNode* node) {
+    if (auto* var_expr = dynamic_cast<frontend::VarExpr*>(node)) {
+        return var_expr->name;
     }
-    
-    // LIFETIME ANALYSIS: Check initializer for reference creation
-    if (decl->initializer) {
-        // Check if we're creating a safe reference ($) or pinned reference (#)
-        if (auto* unary = dynamic_cast<frontend::UnaryOp*>(decl->initializer.get())) {
-            // Case 1: Creating a safe reference: const int8$:ref = $var
-            // Case 2: Pinning a value: const int8#:pinned = #var
-            if (unary->op == frontend::UnaryOp::ADDRESS_OF || 
-                unary->op == frontend::UnaryOp::PIN) {
-                
-                if (auto* target = dynamic_cast<frontend::VarExpr*>(unary->operand.get())) {
-                    // Check lifetime: can 'decl->name' (the reference) point to 'target->name' (the host)?
-                    ctx.checkLifetime(decl->name, target->name);
-                    
-                    // Track the reference → host relationship
-                    ctx.reference_origins[decl->name] = target->name;
-                    
-                    // If it's a pin operation, mark the host as pinned
-                    if (unary->op == frontend::UnaryOp::PIN) {
-                        ctx.pinned_values.insert(target->name);
-                    }
-                }
-            }
-        }
-        
-        // Case 3: Reference assignment from another reference
-        // Example: const int8$:ref2 = ref1;
-        if (auto* var = dynamic_cast<frontend::VarExpr*>(decl->initializer.get())) {
-            // Check if the source is a tracked reference
-            if (ctx.reference_origins.count(var->name)) {
-                // Transitive dependency: ref2 -> ref1 -> host
-                // ref2 must not outlive the ultimate host
-                std::string ultimate_host = ctx.reference_origins[var->name];
-                ctx.checkLifetime(decl->name, ultimate_host);
-                
-                // Track the transitive reference
-                ctx.reference_origins[decl->name] = ultimate_host;
-            }
-        }
-        
-        // General expression checking
-        checkExpression(decl->initializer.get(), ctx);
+    return "";
+}
+
+// ============================================================================
+// Helper Methods - Borrow Operations
+// ============================================================================
+
+std::string BorrowChecker::handle_borrow_operator(frontend::AstNode* operand, 
+                                                  bool is_mutable, 
+                                                  frontend::AstNode* node) {
+    std::string host_name = get_var_name(operand);
+    if (host_name.empty()) {
+        report_error("Can only borrow variables (use $ on variable names)", node);
+        return "";
+    }
+
+    // Check if host exists
+    if (!context_.variable_exists(host_name)) {
+        report_error("Cannot borrow undefined variable '" + host_name + "'", node);
+        return "";
+    }
+
+    // Generate temporary reference variable name
+    std::ostringstream ref_name;
+    ref_name << "__ref_" << temp_var_counter_++;
+    std::string ref_var_name = ref_name.str();
+
+    // Get current depth (reference is at current scope)
+    int ref_depth = context_.current_depth();
+
+    // Create the borrow using LifetimeContext
+    BorrowKind kind = is_mutable ? BorrowKind::MUTABLE : BorrowKind::IMMUTABLE;
+    bool success = context_.create_borrow(host_name, kind, ref_var_name, ref_depth, nullptr);
+
+    if (!success) {
+        std::string error_msg = context_.get_borrow_error_message(host_name, kind);
+        report_error("Failed to create borrow: " + error_msg, node);
+        return "";
+    }
+
+    return ref_var_name;
+}
+
+std::string BorrowChecker::handle_pin_operator(frontend::AstNode* operand, 
+                                               frontend::AstNode* node) {
+    std::string var_name = get_var_name(operand);
+    if (var_name.empty()) {
+        report_error("Can only pin variables (use # on variable names)", node);
+        return "";
+    }
+
+    // Check if variable exists
+    if (!context_.variable_exists(var_name)) {
+        report_error("Cannot pin undefined variable '" + var_name + "'", node);
+        return "";
+    }
+
+    // Pin the variable
+    bool success = context_.pin_variable(var_name);
+    if (!success) {
+        report_error("Cannot pin variable '" + var_name + "' (must be GC heap object)", node);
+        return "";
+    }
+
+    // Generate temporary wild pointer variable name
+    std::ostringstream wild_name;
+    wild_name << "__wild_" << temp_var_counter_++;
+    return wild_name.str();
+}
+
+void BorrowChecker::handle_address_operator(frontend::AstNode* operand, 
+                                           frontend::AstNode* node) {
+    std::string var_name = get_var_name(operand);
+    if (var_name.empty()) {
+        report_error("Can only take address of variables", node);
+        return;
+    }
+
+    if (!context_.variable_exists(var_name)) {
+        report_error("Cannot take address of undefined variable '" + var_name + "'", node);
+        return;
+    }
+
+    // TODO: Track pointer creation for wild memory tracking
+}
+
+void BorrowChecker::handle_dereference_operator(frontend::AstNode* operand, 
+                                               frontend::AstNode* node) {
+    // Visit operand to ensure it's valid
+    if (operand) {
+        operand->accept(*this);
     }
 }
 
-// Check expressions for borrow violations
-void checkExpression(frontend::Expression* expr, BorrowContext& ctx) {
-    if (!expr) return;
+// ============================================================================
+// Helper Methods - Variable Access Validation
+// ============================================================================
+
+bool BorrowChecker::validate_read_access(const std::string& var_name, 
+                                        frontend::AstNode* node) {
+    if (!context_.variable_exists(var_name)) {
+        report_error("Cannot read undefined variable '" + var_name + "'", node);
+        return false;
+    }
+
+    if (!context_.is_valid_for_use(var_name)) {
+        report_error("Cannot read from variable '" + var_name + "' (moved or uninitialized)", node);
+        return false;
+    }
+
+    return true;
+}
+
+bool BorrowChecker::validate_write_access(const std::string& var_name, 
+                                         frontend::AstNode* node) {
+    if (!context_.variable_exists(var_name)) {
+        report_error("Cannot write to undefined variable '" + var_name + "'", node);
+        return false;
+    }
+
+    // Check if variable is pinned (cannot write to pinned variables)
+    if (context_.is_pinned(var_name)) {
+        report_error("Cannot write to pinned variable '" + var_name + "'", node);
+        return false;
+    }
+
+    // Check if variable is borrowed (cannot write if borrowed)
+    VarInfo* var = context_.lookup_variable(var_name);
+    if (var && !var->active_loans.empty()) {
+        std::string error_msg = context_.get_borrow_error_message(var_name, BorrowKind::MUTABLE);
+        report_error("Cannot write to borrowed variable: " + error_msg, node);
+        return false;
+    }
+
+    return true;
+}
+
+bool BorrowChecker::validate_move_access(const std::string& var_name, 
+                                        frontend::AstNode* node) {
+    if (!context_.variable_exists(var_name)) {
+        report_error("Cannot move undefined variable '" + var_name + "'", node);
+        return false;
+    }
+
+    VarInfo* var = context_.lookup_variable(var_name);
+    if (!var) {
+        return false;
+    }
+
+    // Cannot move if borrowed
+    if (!var->active_loans.empty()) {
+        std::string error_msg = context_.get_borrow_error_message(var_name, BorrowKind::MUTABLE);
+        report_error("Cannot move borrowed variable: " + error_msg, node);
+        return false;
+    }
+
+    // Cannot move if already moved
+    if (var->state == VarState::MOVED) {
+        report_error("Cannot move variable '" + var_name + "' (already moved)", node);
+        return false;
+    }
+
+    return true;
+}
+
+// ============================================================================
+// Visitor Methods - Expressions
+// ============================================================================
+
+void BorrowChecker::visit(frontend::VarExpr* node) {
+    if (node) {
+        validate_read_access(node->name, node);
+    }
+}
+
+void BorrowChecker::visit(frontend::IntLiteral* node) {
+    // Literals don't require borrow checking
+}
+
+void BorrowChecker::visit(frontend::FloatLiteral* node) {
+    // Literals don't require borrow checking
+}
+
+void BorrowChecker::visit(frontend::BoolLiteral* node) {
+    // Literals don't require borrow checking
+}
+
+void BorrowChecker::visit(frontend::NullLiteral* node) {
+    // Literals don't require borrow checking
+}
+
+void BorrowChecker::visit(frontend::StringLiteral* node) {
+    // Literals don't require borrow checking
+}
+
+void BorrowChecker::visit(frontend::TemplateString* node) {
+    // TODO: Check interpolated expressions
+}
+
+void BorrowChecker::visit(frontend::TernaryExpr* node) {
+    if (!node) return;
     
-    // Check for Lambda expressions (function bodies)
-    if (auto* lambda = dynamic_cast<frontend::LambdaExpr*>(expr)) {
-        // Create a new context for the lambda scope
-        BorrowContext lambda_ctx;
-        lambda_ctx.current_depth = ctx.current_depth + 1;  // Inherit parent depth
-        
-        for (auto& stmt : lambda->body->statements) {
-            auto* statement = dynamic_cast<frontend::Statement*>(stmt.get());
-            if (statement) {
-                checkStatement(statement, lambda_ctx);
-            }
-        }
-        
-        // Check for unfreed wild allocations in this lambda
-        for (const auto& wild_var : lambda_ctx.wild_allocations) {
-            if (lambda_ctx.deferred_frees.find(wild_var) == lambda_ctx.deferred_frees.end()) {
-                lambda_ctx.warning("Wild allocation '" + wild_var + "' may not be freed. " +
-                                 "Consider using 'defer aria.free(" + wild_var + ");'");
-            }
-        }
-        
-        // Propagate errors to parent context
-        if (lambda_ctx.has_errors) {
-            ctx.has_errors = true;
-        }
-        return;
+    if (node->condition) {
+        node->condition->accept(*this);
+    }
+    if (node->true_expr) {
+        node->true_expr->accept(*this);
+    }
+    if (node->false_expr) {
+        node->false_expr->accept(*this);
+    }
+}
+
+void BorrowChecker::visit(frontend::BinaryOp* node) {
+    if (!node) return;
+    
+    if (node->left) {
+        node->left->accept(*this);
+    }
+    if (node->right) {
+        node->right->accept(*this);
     }
     
-    // Check for pin operator usage
-    if (auto* unary = dynamic_cast<frontend::UnaryOp*>(expr)) {
-        if (unary->op == frontend::UnaryOp::PIN) {
-            // Pin operator creates a pinned reference
-            // Track the pinned value
-            if (auto* var = dynamic_cast<frontend::VarExpr*>(unary->operand.get())) {
-                ctx.pinned_values.insert(var->name);
-            }
-        }
-        checkExpression(unary->operand.get(), ctx);
-    }
-    
-    // Check binary operations
-    if (auto* binary = dynamic_cast<frontend::BinaryOp*>(expr)) {
-        checkExpression(binary->left.get(), ctx);
-        checkExpression(binary->right.get(), ctx);
-    }
-    
-    // Check ternary expressions
-    if (auto* ternary = dynamic_cast<frontend::TernaryExpr*>(expr)) {
-        checkExpression(ternary->condition.get(), ctx);
-        checkExpression(ternary->true_expr.get(), ctx);
-        checkExpression(ternary->false_expr.get(), ctx);
-    }
-    
-    // Check function calls - might free wild pointers
-    if (auto* call = dynamic_cast<frontend::CallExpr*>(expr)) {
-        // Check for aria.free() calls
-        if (call->function_name == "aria.free" || call->function_name == "free") {
-            // Mark wild allocation as freed
-            if (!call->arguments.empty()) {
-                if (auto* var = dynamic_cast<frontend::VarExpr*>(call->arguments[0].get())) {
-                    ctx.wild_allocations.erase(var->name);
-                }
-            }
-        }
-        
-        // Check arguments
-        for (auto& arg : call->arguments) {
-            checkExpression(arg.get(), ctx);
+    // Check for assignment operators
+    if (node->op == frontend::BinaryOp::ASSIGN) {
+        std::string lhs_name = get_var_name(node->left.get());
+        if (!lhs_name.empty()) {
+            validate_write_access(lhs_name, node);
         }
     }
 }
 
-// Check statements for borrow violations
-void checkStatement(frontend::Statement* stmt, BorrowContext& ctx) {
-    if (!stmt) return;
+void BorrowChecker::visit(frontend::UnaryOp* node) {
+    if (!node) return;
     
-    // Variable declarations
-    if (auto* decl = dynamic_cast<frontend::VarDecl*>(stmt)) {
-        checkVarDecl(decl, ctx);
+    // Handle special operators
+    // TODO: Add BORROW and BORROW_MUT to UnaryOp enum in expr.h
+    // For now, PIN and ADDRESS_OF are available
+    
+    if (node->op == frontend::UnaryOp::PIN) {
+        handle_pin_operator(node->operand.get(), node);
         return;
     }
     
-    // Function declarations - recursively check function body
-    if (auto* func = dynamic_cast<frontend::FuncDecl*>(stmt)) {
-        if (func->body) {
-            // Create a new context for the function scope
-            BorrowContext func_ctx;
-            func_ctx.enterScope();  // Function body is depth 1
-            
-            // Function parameters are at function scope (depth 1)
-            // We assume they're already tracked by the caller
-            
-            for (auto& s : func->body->statements) {
-                auto* statement = dynamic_cast<frontend::Statement*>(s.get());
-                if (statement) {
-                    checkStatement(statement, func_ctx);
-                }
-            }
-            
-            func_ctx.exitScope();  // Exit function body scope
-            
-            // Check for unfreed wild allocations in this function
-            for (const auto& wild_var : func_ctx.wild_allocations) {
-                if (func_ctx.deferred_frees.find(wild_var) == func_ctx.deferred_frees.end()) {
-                    func_ctx.warning("Wild allocation '" + wild_var + "' in function '" + 
-                                   func->name + "' may not be freed. " +
-                                   "Consider using 'defer aria.free(" + wild_var + ");'");
-                }
-            }
-            
-            // Propagate errors to parent context
-            if (func_ctx.has_errors) {
-                ctx.has_errors = true;
-            }
-        }
+    if (node->op == frontend::UnaryOp::ADDRESS_OF) {
+        handle_address_operator(node->operand.get(), node);
         return;
     }
     
-    // Expression statements
-    if (auto* expr_stmt = dynamic_cast<frontend::ExpressionStmt*>(stmt)) {
-        checkExpression(expr_stmt->expression.get(), ctx);
-        return;
-    }
-    
-    // Defer statements - register deferred cleanup
-    // 
-    // KNOWN LIMITATION (v0.0.7): Defer body is checked at declaration time,
-    // but executes at scope exit. This can miss borrow conflicts where:
-    // 1. Variable is borrowed immutably in outer scope
-    // 2. Defer block tries to mutate it (will execute after immutable borrow)
-    // 3. Current checker doesn't simulate deferred execution timing
-    // 
-    // FUTURE FIX: Implement deferred execution simulation pass that validates
-    // defer blocks as if they execute at exitScope(), checking for conflicts
-    // with active borrows at that point.
-    if (auto* defer = dynamic_cast<frontend::DeferStmt*>(stmt)) {
-        // Check if defer body contains a free call
-        if (defer->body) {
-            for (auto& s : defer->body->statements) {
-                if (auto* expr_stmt = dynamic_cast<frontend::ExpressionStmt*>(s.get())) {
-                    if (auto* call = dynamic_cast<frontend::CallExpr*>(expr_stmt->expression.get())) {
-                        if (call->function_name == "aria.free" || call->function_name == "free") {
-                            if (!call->arguments.empty()) {
-                                if (auto* var = dynamic_cast<frontend::VarExpr*>(call->arguments[0].get())) {
-                                    ctx.deferred_frees.insert(var->name);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return;
-    }
-    
-    // Return statements - check for escaping stack/wild values
-    if (auto* ret = dynamic_cast<frontend::ReturnStmt*>(stmt)) {
-        if (ret->value) {
-            checkExpression(ret->value.get(), ctx);
-        }
-        return;
-    }
-    
-    // If statements - scope management for block-local variables
-    if (auto* if_stmt = dynamic_cast<frontend::IfStmt*>(stmt)) {
-        checkExpression(if_stmt->condition.get(), ctx);
-        
-        if (if_stmt->then_block) {
-            ctx.enterScope();  // Enter 'then' block scope
-            for (auto& s : if_stmt->then_block->statements) {
-                checkStatement(dynamic_cast<frontend::Statement*>(s.get()), ctx);
-            }
-            ctx.exitScope();  // Exit 'then' block scope
-        }
-        
-        if (if_stmt->else_block) {
-            ctx.enterScope();  // Enter 'else' block scope
-            for (auto& s : if_stmt->else_block->statements) {
-                checkStatement(dynamic_cast<frontend::Statement*>(s.get()), ctx);
-            }
-            ctx.exitScope();  // Exit 'else' block scope
-        }
-        return;
-    }
-    
-    // While loops - scope management for loop-local variables
-    if (auto* while_loop = dynamic_cast<frontend::WhileLoop*>(stmt)) {
-        checkExpression(while_loop->condition.get(), ctx);
-        
-        if (while_loop->body) {
-            ctx.enterScope();  // Enter loop body scope
-            for (auto& s : while_loop->body->statements) {
-                checkStatement(dynamic_cast<frontend::Statement*>(s.get()), ctx);
-            }
-            ctx.exitScope();  // Exit loop body scope
-        }
-        return;
+    // For other operators, just visit operand
+    if (node->operand) {
+        node->operand->accept(*this);
     }
 }
 
-// Main borrow checking function
-bool check_borrow_rules(aria::frontend::Block* root) {
-    if (!root) return true;
+void BorrowChecker::visit(frontend::CallExpr* node) {
+    if (!node) return;
     
-    BorrowContext ctx;
-    
-    // Check all statements in the block
-    for (auto& stmt : root->statements) {
-        // Statements in Block are AstNode*, need to cast to Statement*
-        auto* statement = dynamic_cast<frontend::Statement*>(stmt.get());
-        if (statement) {
-            checkStatement(statement, ctx);
+    // Check for aria.free() calls
+    if (node->function_name == "aria.free" || node->function_name == "free") {
+        if (!node->arguments.empty()) {
+            std::string var_name = get_var_name(node->arguments[0].get());
+            if (!var_name.empty()) {
+                track_wild_free(var_name, node);
+            }
         }
     }
     
-    // After processing all statements, check for unfreed wild allocations
-    for (const auto& wild_var : ctx.wild_allocations) {
-        // Check if it has a deferred free
-        if (ctx.deferred_frees.find(wild_var) == ctx.deferred_frees.end()) {
-            ctx.warning("Wild allocation '" + wild_var + "' may not be freed. " +
-                       "Consider using 'defer aria.free(" + wild_var + ");'");
+    // Check all arguments
+    for (auto& arg : node->arguments) {
+        if (arg) {
+            arg->accept(*this);
         }
     }
-    
-    // Check for moved pinned values
-    // (Would require more sophisticated tracking to detect actual moves)
-    
-    return !ctx.has_errors;
 }
 
-} // namespace sema
+void BorrowChecker::visit(frontend::ObjectLiteral* node) {
+    // TODO: Check field initializers
+}
+
+void BorrowChecker::visit(frontend::MemberAccess* node) {
+    if (node && node->object) {
+        node->object->accept(*this);
+    }
+}
+
+void BorrowChecker::visit(frontend::VectorLiteral* node) {
+    // TODO: Check vector elements
+}
+
+void BorrowChecker::visit(frontend::ArrayLiteral* node) {
+    // TODO: Check array elements
+}
+
+void BorrowChecker::visit(frontend::IndexExpr* node) {
+    if (!node) return;
+    
+    if (node->array) {
+        node->array->accept(*this);
+    }
+    if (node->index) {
+        node->index->accept(*this);
+    }
+}
+
+void BorrowChecker::visit(frontend::UnwrapExpr* node) {
+    if (node && node->expression) {
+        node->expression->accept(*this);
+    }
+}
+
+void BorrowChecker::visit(frontend::LambdaExpr* node) {
+    if (!node) return;
+    
+    // Enter lambda scope
+    context_.enter_scope();
+    
+    // TODO: Track closure captures
+    
+    // Check lambda body
+    if (node->body) {
+        node->body->accept(*this);
+    }
+    
+    // Exit lambda scope
+    context_.exit_scope();
+}
+
+void BorrowChecker::visit(frontend::CastExpr* node) {
+    if (node && node->expression) {
+        node->expression->accept(*this);
+    }
+}
+
+// ============================================================================
+// Visitor Methods - Statements
+// ============================================================================
+
+void BorrowChecker::visit(frontend::VarDecl* node) {
+    if (!node) return;
+    
+    // Determine memory region based on declaration
+    MemoryRegion region = MemoryRegion::GC_HEAP; // Default
+    if (node->is_wild) {
+        region = MemoryRegion::WILD_HEAP;
+    } else if (node->is_stack) {
+        region = MemoryRegion::STACK;
+    }
+    
+    // Declare variable
+    VarInfo* var = context_.declare_variable(node->name, region, nullptr);
+    
+    // If there's an initializer, initialize the variable
+    if (node->initializer) {
+        node->initializer->accept(*this);
+        context_.initialize_variable(node->name);
+        
+        // Track wild allocations
+        if (region == MemoryRegion::WILD_HEAP) {
+            track_wild_allocation(node->name, node);
+        }
+    }
+}
+
+void BorrowChecker::visit(frontend::FuncDecl* node) {
+    if (!node) return;
+    
+    // Save current function name
+    std::string prev_function = current_function_;
+    current_function_ = node->name;
+    
+    // Enter function scope
+    context_.enter_scope();
+    
+    // TODO: Declare parameters
+    
+    // Check function body
+    if (node->body) {
+        node->body->accept(*this);
+    }
+    
+    // Check for wild memory leaks before exiting
+    check_wild_leaks(current_function_);
+    
+    // Exit function scope
+    context_.exit_scope();
+    
+    // Restore previous function name
+    current_function_ = prev_function;
+}
+
+void BorrowChecker::visit(frontend::StructDecl* node) {
+    // Struct declarations don't need borrow checking
+}
+
+void BorrowChecker::visit(frontend::ReturnStmt* node) {
+    if (!node) return;
+    
+    if (node->value) {
+        node->value->accept(*this);
+        
+        // TODO: Check if returning a borrow or reference
+        // that outlives its scope
+    }
+}
+
+void BorrowChecker::visit(frontend::ExpressionStmt* node) {
+    if (node && node->expression) {
+        node->expression->accept(*this);
+    }
+}
+
+void BorrowChecker::visit(frontend::IfStmt* node) {
+    if (!node) return;
+    
+    // Check condition
+    if (node->condition) {
+        node->condition->accept(*this);
+    }
+    
+    // Check then branch
+    if (node->then_block) {
+        context_.enter_scope();
+        node->then_block->accept(*this);
+        context_.exit_scope();
+    }
+    
+    // Check else branch
+    if (node->else_block) {
+        context_.enter_scope();
+        node->else_block->accept(*this);
+        context_.exit_scope();
+    }
+    
+    // TODO: Merge borrow states from branches
+}
+
+void BorrowChecker::visit(frontend::Block* node) {
+    if (!node) return;
+    
+    for (auto& stmt : node->statements) {
+        if (stmt) {
+            stmt->accept(*this);
+        }
+    }
+}
+
+// ============================================================================
+// Visitor Methods - Control Flow
+// ============================================================================
+
+void BorrowChecker::visit(frontend::PickStmt* node) {
+    // TODO: Implement pick statement checking
+}
+
+void BorrowChecker::visit(frontend::FallStmt* node) {
+    // Fall statements don't require checking
+}
+
+void BorrowChecker::visit(frontend::TillLoop* node) {
+    if (!node) return;
+    
+    loop_depth_++;
+    context_.enter_scope();
+    
+    if (node->body) {
+        node->body->accept(*this);
+    }
+    
+    context_.exit_scope();
+    loop_depth_--;
+}
+
+void BorrowChecker::visit(frontend::WhenLoop* node) {
+    if (!node) return;
+    
+    loop_depth_++;
+    
+    if (node->condition) {
+        node->condition->accept(*this);
+    }
+    
+    context_.enter_scope();
+    if (node->body) {
+        node->body->accept(*this);
+    }
+    context_.exit_scope();
+    
+    loop_depth_--;
+}
+
+void BorrowChecker::visit(frontend::DeferStmt* node) {
+    if (!node) return;
+    
+    bool prev_in_defer = in_defer_;
+    in_defer_ = true;
+    
+    if (node->body) {
+        node->body->accept(*this);
+    }
+    
+    in_defer_ = prev_in_defer;
+}
+
+void BorrowChecker::visit(frontend::ForLoop* node) {
+    if (!node) return;
+    
+    loop_depth_++;
+    context_.enter_scope();
+    
+    // TODO: Check ForLoop structure in loops.h for actual fields
+    // For now, just check the body
+    if (node->body) {
+        node->body->accept(*this);
+    }
+    
+    context_.exit_scope();
+    loop_depth_--;
+}
+
+void BorrowChecker::visit(frontend::WhileLoop* node) {
+    if (!node) return;
+    
+    loop_depth_++;
+    
+    if (node->condition) {
+        node->condition->accept(*this);
+    }
+    
+    context_.enter_scope();
+    if (node->body) {
+        node->body->accept(*this);
+    }
+    context_.exit_scope();
+    
+    loop_depth_--;
+}
+
+void BorrowChecker::visit(frontend::BreakStmt* node) {
+    if (loop_depth_ == 0) {
+        report_error("'break' outside loop", node);
+    }
+}
+
+void BorrowChecker::visit(frontend::ContinueStmt* node) {
+    if (loop_depth_ == 0) {
+        report_error("'continue' outside loop", node);
+    }
+}
+
+// ============================================================================
+// Visitor Methods - Async/Module System (Stubs)
+// ============================================================================
+
+void BorrowChecker::visit(frontend::WhenExpr* node) {
+    // TODO: Implement
+}
+
+void BorrowChecker::visit(frontend::AwaitExpr* node) {
+    // TODO: Implement
+}
+
+void BorrowChecker::visit(frontend::SpawnExpr* node) {
+    // TODO: Implement
+}
+
+void BorrowChecker::visit(frontend::AsyncBlock* node) {
+    // TODO: Implement
+}
+
+void BorrowChecker::visit(frontend::UseStmt* node) {
+    // No borrow checking needed
+}
+
+void BorrowChecker::visit(frontend::ModDef* node) {
+    // TODO: Implement
+}
+
+void BorrowChecker::visit(frontend::ExternBlock* node) {
+    // No borrow checking needed
+}
+
+void BorrowChecker::visit(frontend::TraitDecl* node) {
+    // No borrow checking needed
+}
+
+void BorrowChecker::visit(frontend::ImplDecl* node) {
+    // TODO: Implement
+}
+
+// ============================================================================
+// Helper Methods - Wild Memory Tracking
+// ============================================================================
+
+void BorrowChecker::track_wild_allocation(const std::string& var_name, 
+                                         frontend::AstNode* node) {
+    // Wild allocations are tracked via VarInfo in LifetimeContext
+    // Additional tracking can be added here if needed
+}
+
+void BorrowChecker::track_wild_free(const std::string& var_name, 
+                                   frontend::AstNode* node) {
+    if (!context_.variable_exists(var_name)) {
+        report_error("Cannot free undefined variable '" + var_name + "'", node);
+        return;
+    }
+    
+    // Mark as moved (wild pointers become invalid after free)
+    context_.move_variable(var_name);
+}
+
+void BorrowChecker::check_wild_leaks(const std::string& scope_name) {
+    // TODO: Check for wild allocations without corresponding frees/defers
+    // This requires tracking aria.alloc() calls and matching them with
+    // aria.free() or defer statements
+}
+
 } // namespace aria
