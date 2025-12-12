@@ -2,6 +2,8 @@
 
 ## ✅ Fully Working
 
+All major loop constructs and control flow statements are complete!
+
 ### 1. Till Loops (`till`)
 - **Syntax**: `till(limit, step) { $ }`
 - **Status**: Complete with `$` variable injection
@@ -30,19 +32,34 @@
   - `end` - Executes on break/early exit
   - Eliminates need for flag variables in search patterns
 
+### 4. Break Statement
+- **Syntax**: `break;` or `break label;`
+- **Status**: Fully functional
+- **Tests**: `test_break.aria`, `test_break_simple.aria`
+- **Features**:
+  - Exits innermost loop immediately
+  - Jumps to loop exit block
+  - Works with all loop types
+
+### 5. Continue Statement
+- **Syntax**: `continue;` or `continue label;`
+- **Status**: Fully functional
+- **Test**: `test_continue.aria`
+- **Features**:
+  - Skips rest of current iteration
+  - Jumps back to loop condition/increment
+  - Works with all loop types
+
 ## ⏳ Not Yet Implemented
 
-### 4. Loop Construct (`loop`)
+### Loop Construct (`loop`)
 - **Syntax**: `loop(start, limit, step) { $ }`
 - **Status**: Needs AST node (LoopStmt)
 - **Difference from till**: Explicit start value instead of implicit 0
 
-### 5. For-In Loops
+### For-In Loops
 - **Syntax**: `for (item in collection) { body }`
 - **Status**: Parser might support, needs testing
-
-### 6. Break/Continue Statements
-- **Status**: AST nodes exist, need testing with actual loops
 
 ## Technical Notes
 
