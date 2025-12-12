@@ -1,0 +1,250 @@
+﻿Architectural Specification and Design Definition for Aria Functional Types: Result, Func, and Array
+1. Introduction: The Systems-Functional Convergence in Aria
+The design of the Aria programming language represents a deliberate convergence of two historically distinct lineages in computer science: the rigorous, bare-metal control of systems programming (exemplified by C and Rust) and the expressive, compositional elegance of functional programming (typified by OCaml and Haskell). This convergence is not merely syntactic; it is structural, embedded deeply within the language's type system and memory model. This report provides a comprehensive architectural specification for the three foundational types that enable this synthesis: the result type, the func type, and the array type.
+The necessity for this deep specification arises from Aria's unique "Hybrid Memory Model," which rejects the dichotomy between managed and unmanaged languages. By integrating a "Rust-style borrow checker" with an "OPT-OUT" garbage collector 1, Aria creates a landscape where types must be agnostic to their allocation source yet strict about their lifetime provenance. The "Appendage Theory"—Aria’s governing safety axiom—dictates that the lifetime of any dependent object (the Appendage) must be strictly enclosed by the lifetime of its owner (the Host).1
+This theoretical constraint has profound implications for functional types. A closure (a func) is effectively an appendage of its captured environment. An array slice is an appendage of its underlying buffer. A result type is a monadic container that must propagate error states without incurring the indeterminate overhead of exception unwinding.
+The following sections detail the binary layouts, semantic rules, and compilation strategies for these types. This document is intended as the primary reference for compiler engineers implementing the Aria frontend and the LLVM-based backend, ensuring that high-level abstractions lower into machine code that respects the performance characteristics of modern superscalar architectures while enforcing the safety guarantees of the Aria specification.
+2. The Result Type: Deterministic Error Propagation
+The result type in Aria is the cornerstone of its reliability engineering. Unlike languages that rely on stack-unwinding exceptions (C++, Java) or heavy sum-types (Rust's Result<T, E> which can be bulky), Aria’s result is engineered for register-level efficiency and deterministic control flow. It bridges the gap between the logical failures of high-level applications and the arithmetic failures of the low-level hardware.
+2.1 Binary Layout and LLVM Lowering Strategy
+The standard representation of a result type in the Aria compiler is a specialized structure designed to maximize the probability of "happy path" optimization. While conceptually a discriminated union, the physical layout is monomorphized for each value type T.
+2.1.1 Structural Definition
+For a generic result result<T>, the backend lowers the type into the following LLVM IR structure, as identified in the compiler source analysis 1:
+
+
+C++
+
+
+
+
+struct result_T {
+   int8_t err;  // Discriminator and Error Code
+   // Padding for alignment
+   T val;       // Success Payload
+};
+
+This layout was selected for several critical reasons:
+1. Discriminator Efficiency: The err field serves simultaneously as the active variant tag (0 vs non-zero) and the error payload. By restricting standard errors to int8 (allowing 255 distinct error codes), the discriminator consumes minimal space.
+2. Sentinel Semantics: The value 0 (or NULL in Aria syntax tokens 1) is reserved strictly for success. Any non-zero value represents a specific error category. This allows the backend to emit test instructions against zero, which are highly optimized on x86-64 and ARM64 architectures.
+3. Register Passing: For primitive types T such as int64 or flt64, the total size of the struct is 128 bits (assuming 64-bit alignment padding). This fits perfectly into the System V ABI return registers (RAX and RDX on x86). Consequently, returning a result<int64> incurs zero stack allocation overhead, adhering to the "zero-cost abstraction" principle.1
+2.1.2 Specialized Layouts
+The compiler implements aggressive specialization for specific instantiations of result:
+Result Type
+	LLVM IR Layout
+	Size (bytes)
+	Rationale
+	result<void>
+	i8
+	1
+	No payload required; reduces to a C-style status code.
+	result<int64>
+	{ i8, [7 x i8], i64 }
+	16
+	Padding inserted to align the 64-bit integer payload.
+	result<bool>
+	{ i8, i8 }
+	2
+	Minimal size; usually packed into a single register.
+	result<ptr>
+	{ i8, [7 x i8], ptr }
+	16
+	Pointer payloads aligned to machine word boundary.
+	2.2 Semantics of the ? Operator and Monadic Binding
+Aria avoids the complexity of higher-kinded types but implements monadic behavior through the ? (unwrap) operator and the pipeline |> operator. The ? operator is not merely syntactic sugar; it is a control-flow operator that performs early return.
+2.2.1 The Unwrap Mechanism
+When the parser encounters an expression expr?, it generates an AST node of type UnwrapExpr.1 During code generation, this lowers to a basic block split:
+1. Evaluation: The result struct is evaluated.
+2. Branching: A conditional branch (br) is emitted checking result.err == 0.
+3. Success Block: If true, the val field is extracted and substitutes the expression.
+4. Failure Block: If false, the current function's stack frame is torn down, and the entire result struct is returned to the caller.
+This mechanism effectively implements the flatMap (or bind) operation found in Haskell, specifically:
+result >>= f is equivalent to f(result?).
+2.2.2 The Default Coalescing Variant
+The context analysis 1 reveals a binary variant of the operator: expr? default. This constructs a UnwrapExpr with a default value.
+* Semantics: val = func()? -1;
+* Lowering: Instead of returning early on error, the failure path jumps to a block that loads the default value (-1) into the target register. This is equivalent to unwrap_or in Rust.
+2.3 Interaction with Twisted Balanced Binary (TBB) Types
+One of Aria's most distinctive features is the Twisted Balanced Binary (TBB) integer system, which uses the minimum signed value as a sticky error sentinel (ERR). The interaction between TBB ERR and result errors is a critical design point.
+2.3.1 The Value-Level vs. Control-Level Dichotomy
+TBB types handle arithmetic failure (overflow, division by zero) by propagating a data value (ERR).1 The result type handles logical failure (file not found, permission denied) via control flow.
+* Scenario: A function returns result<tbb8>.
+* Case A (Success): err=0, val=42. The calculation succeeded.
+* Case B (Logical Error): err=ENOENT, val=undef. The file containing the number was not found.
+* Case C (Arithmetic Error): err=0, val=ERR (-128). The file was found, but the calculation overflowed.
+This distinction allows sophisticated error handling where data corruption (Case C) can be distinguished from systemic failure (Case B). However, allowing ERR values to escape into the wild can be dangerous.
+2.3.2 Propagation Bridges
+To bridge these worlds, standard library functions like check() consume a TBB value. If the value is ERR, check() returns a result with a non-zero error code. If the value is valid, it returns a success result. This forces the developer to acknowledge the transition from "sticky data error" to "control flow error."
+2.4 Pattern Matching on Results
+The pick statement 1 provides pattern matching capabilities for result types, allowing for destructuring bind.
+
+
+Code snippet
+
+
+
+
+pick (operation()) {
+   ({ err: 0, val: x }) {
+       process(x);
+   },
+   ({ err: 5, val: _ }) {
+       handle_io_error();
+   },
+   (*) {
+       crash();
+   }
+}
+
+The lowering of this construct is highly optimized. The compiler identifies that the err field acts as the discriminator. It generates a switch instruction (jump table) based on the err byte. This is significantly faster than a chain of if-else blocks. The destructuring { val: x } compiles to a direct load from the struct's second field offset, incurring no overhead compared to manual member access.1
+3. The Func Type: Closures, Environments, and Execution
+The func type in Aria abstracts over three distinct execution models: static function pointers, stateful closures, and asynchronous tasks. The unified representation allows these to be interchanged in high-order functions, provided the type signatures align.
+3.1 Function Signatures and the Fat Pointer Model
+In the type system, a function signature func<Ret(Args...)> is opaque. Under the hood, however, Aria implements func as a "Fat Pointer" (a struct of two pointers), distinct from the single instruction pointer of C.
+3.1.1 The Binary Representation
+The runtime representation of a func variable is:
+
+
+C++
+
+
+
+
+struct FuncFatPtr {
+   void* method_ptr;  // Pointer to the machine code
+   void* env_ptr;     // Pointer to the closure environment (Context)
+};
+
+This layout (16 bytes on 64-bit systems) is critical for the uniform handling of closures.
+* Static Functions: When a global function is assigned to a func variable, method_ptr points to the function address, and env_ptr is set to NULL.
+* Closures: method_ptr points to a specialized "trampoline" function or the closure body, and env_ptr points to the captured variables.
+3.1.2 Calling Convention
+Aria employs a modified fastcall convention for func invocations.
+1. The method_ptr is loaded into a temporary register (e.g., RAX).
+2. The env_ptr is loaded into a specific dedicated register (e.g., R10 on x86-64, x18 on ARM64), which is treated as a hidden first argument.
+3. The call instruction jumps to method_ptr.
+4. Inside the function, if it is a closure, the code accesses captured variables relative to the register holding env_ptr. If it is a static function, it simply ignores that register.
+This approach eliminates the need for "trampolines" generated at runtime (which requires executable stack permissions, a security risk), favoring a compile-time solution.
+3.2 Closure Capture Semantics and Memory Models
+The most complex aspect of the func type is the management of the env_ptr memory. This is where Aria’s Appendage Theory 1 imposes strict constraints to ensure memory safety without ubiquitous garbage collection.
+3.2.1 Capture Strategies
+The compiler supports three capture modes, determined by inference or explicit annotation:
+1. By-Value (Copy): Primitives (int, float) and immutable structs are copied directly into the environment struct. This is the default for immutable captures.
+2. By-Reference (Borrow): If a closure modifies a variable from the outer scope, it captures a pointer (T*) to that variable.
+3. By-Move (Ownership Transfer): For types like wild pointers or large buffers, the closure can take ownership. The value is bitwise-copied into the environment, and the original variable is invalidated (marked as dead by the compiler).
+3.2.2 Environment Layout and Appendage Theory
+The environment is a synthesized struct generated during the semantic analysis phase.
+
+
+C++
+
+
+
+
+struct ClosureEnv_1234 {
+   int64_t captured_var_a;
+   double* captured_ref_b;
+};
+
+The Appendage Theory dictates that a closure (the Appendage) cannot outlive its environment (the Host).
+* Stack Closures: If a closure captures stack variables by reference, the environment struct is allocated on the stack (alloca). The borrow checker assigns this closure a scope depth equal to the innermost captured variable. The compiler then forbids this closure from being returned or passed to a thread, as that would violate the scope depth invariant (Depth(Caller) < Depth(Closure)).
+* Heap Closures: To allow a closure to escape (e.g., return func), the environment must be promoted. Aria allocates "Wild" environments using aria.alloc. These are ref-counted or managed manually depending on the context. If the closure captures GC objects, the environment must be registered as a GC root (via the Shadow Stack 1) to prevent the captured objects from being collected while the closure is live.
+3.3 Async Functions and Coroutine Frames
+Async functions in Aria (async func) rely on a transformation similar to closures but specialized for suspension and resumption.
+3.3.1 Coroutine Frame Layout
+Instead of a simple closure environment, an async function allocates a Coroutine Frame.1 This is a heap-allocated structure (managed by the M:N scheduler) that stores:
+Offset
+	Field
+	Description
+	0x00
+	void* coro_handle
+	LLVM intrinsic handle for the state machine.
+	0x08
+	void* promise
+	The Future<T> object where the result is written.
+	0x10
+	int state
+	Current state index (0=Ready, 1=Suspended, etc.).
+	0x18
+	void* spill_slots
+	Storage for local variables live across await points.
+	0x...
+	Args...
+	Function arguments copied into the frame.
+	3.3.2 State Machine Lowering
+The LLVM backend lowers async func bodies into a state machine.
+1. Splitting: The function body is split into basic blocks at every await point.
+2. Dispatch: A switch statement is inserted at the entry point, branching on the state field of the frame.
+3. Spilling: Before an await, all live registers are spilled to the spill_slots in the frame.
+4. Resumption: Upon wake-up, the scheduler calls the function with the frame pointer. The switch jumps to the correct block, and registers are reloaded from the spill slots.1
+3.4 Comptime Functions
+Aria’s comptime capability allows functions to run during compilation. These functions are interpreted by the CTFE (Compile-Time Function Execution) engine.1
+* Virtual Heap: Since comptime functions cannot access the host machine's RAM safely, they operate on a "Virtual Heap" maintained by the compiler.
+* TBB Emulation: The interpreter includes a software ALU that faithfully emulates TBB sticky errors. If a comptime function performs tbb8(-127) - 1, the interpreter produces the ERR sentinel, allowing the compiler to catch arithmetic errors in constants at build time.
+4. The Array Type: Contiguous Memory and Slices
+The array type manages contiguous sequences of data. Aria distinguishes between owning arrays (array<T, N>) and non-owning slices (T), mirroring the distinction between std::array and std::span in C++, or arrays and slices in Go.
+4.1 Fixed-Size Arrays (array<T, N>)
+A fixed-size array is a value type. Its size N is part of the type signature, and it is allocated inline.
+4.1.1 Memory Model
+* Stack Allocation: stack int8:buffer; reserves 1024 bytes directly in the stack frame. No pointer indirection is involved.
+* Struct Embedding: When included in a struct, the array's bytes are embedded directly in the struct layout. This guarantees cache locality.
+4.1.2 Compiler Optimizations
+Since N is known at compile-time, the LLVM backend performs aggressive loop unrolling and bounds check elimination. For SIMD types like vec4, fixed-size arrays are automatically aligned to 16-byte or 32-byte boundaries to support aligned vector load/store instructions (vmovaps).1
+4.2 Dynamic Arrays and Slices (T)
+The dynamic array type T acts as a "Slice." It is a view into a block of memory that may be owned by the Stack, the Wild Heap, or the GC.
+4.2.1 The Slice Fat Pointer
+A slice is represented as a 3-word structure (24 bytes on 64-bit systems), identical to the Go slice layout 2:
+
+
+C++
+
+
+
+
+struct Slice_T {
+   T* ptr;       // Pointer to the first element
+   int64 len;    // Number of active elements
+   int64 cap;    // Capacity of the allocation
+};
+
+This representation allows slices to support O(1) length queries (arr.len) and capacity checks. It also enables safe subslicing without reallocating memory.
+4.2.2 Slicing Syntax and Semantics
+Aria supports Pythonic slicing syntax with specific range operators 1:
+* arr[2..5]: Inclusive range (elements 2, 3, 4, 5).
+* arr[2...5]: Exclusive range (elements 2, 3, 4).
+When a slice is created, the compiler generates code to:
+1. Check Bounds: Verify that the range is valid for the source array.
+2. Offset Pointer: Calculate new_ptr = old_ptr + start * sizeof(T).
+3. Adjust Length: Calculate new_len = end - start.
+4. Adjust Capacity: Calculate new_cap = old_cap - start.
+No data is copied. The new slice points to the same memory as the old one.
+4.2.3 Safety and Appendage Theory
+Since a slice is a non-owning reference, it is an Appendage. The Borrow Checker enforces strict lifetime rules:
+* A slice of a stack array cannot outlive the stack frame.
+* A slice of a GC array keeps the GC object alive (if managed).
+* Pinning: To create a "Wild" slice (a raw pointer view) of a GC array, the array must be pinned using the # operator. This prevents the moving garbage collector from invalidating the pointer while the slice exists.1
+4.3 Multi-Dimensional Arrays and Tensors
+Aria supports multi-dimensional arrays, but differentiates between "Arrays of Arrays" and "Tensors."
+* Jagged Arrays (T): This is an array of slices. It involves double indirection and is not cache-friendly.
+* Tensors (tensor<T, Rank>): This is a true multi-dimensional view over a single contiguous buffer.
+   * Layout: tensor adds a stride array to the slice structure.
+   * Indexing: t[x, y] computes ptr + x * stride_x + y * stride_y. This allows for zero-copy transposition and reshaping, critical for the machine learning workloads mentioned in the specs.1
+5. Bounds Checking Policy
+Safety is a core tenet of Aria, but so is performance. The language adopts a hybrid bounds-checking policy:
+1. Compile-Time: If indices are constant or can be proven safe via value-range analysis, bounds checks are elided.
+2. Runtime (Default): Variable indices are checked at runtime.
+   * Release Mode: Failed checks typically panic or return ERR if inside a TBB context.
+   * Unsafe Blocks: Inside wild blocks or specifically annotated @unsafe regions, bounds checks are omitted for maximum performance. This puts the burden of safety on the developer.
+6. Conclusion and Implementation Roadmap
+The specification of result, func, and array types reveals Aria's strategy for systems programming: expose the machine layout while constraining access via the type system.
+* The result type optimizes for the "happy path" using discriminator-based layouts that fit in registers.
+* The func type uses fat pointers to unify function pointers and closures, relying on "Appendage Theory" to prevent escaping references.
+* The array type prioritizes contiguous memory and slicing views, enabling high-performance data processing compatible with SIMD and Tensor operations.
+Implementation Roadmap:
+1. Phase 1: Update CodeGenContext to generate specialized result<T> structs and the 3-word Slice layout.
+2. Phase 2: Implement the UnwrapExpr lowering logic with branching for ?.
+3. Phase 3: Finalize the CoroutineFrame layout in the runtime library and link it to the LLVM coroutine intrinsics.
+4. Phase 4: Integrate the Borrow Checker's depth analysis with closure capture logic to enforce the Appendage Theory.
+This architecture ensures that Aria can compete with Rust in safety and C in performance, while offering the ergonomic benefits of modern functional languages.
+Works cited
+1. research_001_borrow_checker.txt
+2. Go Slices Demystified: A Deep Dive into Memory Layout and Behavior | by PhilBrainy, accessed December 12, 2025, https://medium.com/@philbrainy/go-slices-demystified-a-deep-dive-into-memory-layout-and-behavior-59cffd1a49ca

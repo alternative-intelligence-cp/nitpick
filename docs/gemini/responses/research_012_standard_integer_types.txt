@@ -1,0 +1,401 @@
+﻿ARIA COMPILER ARCHITECTURE: SPECIFICATION AND IMPLEMENTATION STRATEGY FOR STANDARD AND EXTENDED INTEGER TYPES
+1. Introduction and Architectural Philosophy
+The design of a systems programming language’s type system is the single most consequential decision in its architecture, dictating not only the syntax and semantics of the code but the fundamental limits of the software constructed with it. The Aria programming language, as defined by its specifications and source definitions 1, positions itself as a "batteries-included" yet "metal-accessible" language. This duality presents a unique engineering challenge: the language must provide high-level safety mechanisms—exemplified by the Twisted Balanced Binary (TBB) types and the Borrow Checker—while simultaneously exposing raw, unadulterated access to the machine's arithmetic logic units (ALUs) through standard integer types.
+This report serves as the comprehensive research and design specification for Aria’s standard integer types. Unlike the experimental TBB types which prioritize safety through saturation and error sentinels 1, the standard integer types (int1 through int512 and uint8 through uint512) are designed for performance, predictability, and direct mapping to hardware instruction sets. They implement standard two's complement arithmetic for signed values and pure binary representation for unsigned values, adhering to the modular arithmetic behaviors expected by systems programmers familiar with C, C++, and Rust.
+1.1 The Imperative of Fixed-Width Integers
+History has shown that ambiguity in type width is a source of perennial fragility in software systems. The C language standard’s definition of int and long as machine-dependent has caused decades of portability issues, commonly known as the LP64 vs. LLP64 data model confusion. Aria rejects this legacy ambiguity. In accordance with modern systems design principles, every integer type in Aria has a strictly defined bit width, regardless of the target architecture. An int32 is guaranteed to be 32 bits wide on a 16-bit microcontroller, a 32-bit embedded ARM core, and a 64-bit x86_64 server.
+Furthermore, Aria extends the standard set of widths significantly. While most contemporary languages stop native support at 64 bits (or occasionally 128 bits via compiler extensions), Aria treats int256 and int512 as first-class citizens. This decision is driven by the shifting landscape of computing tasks. Cryptographic operations (elliptic curve cryptography, hashing), storage addressing (ZFS dnodes, UUIDs), and high-performance computing (vectorized physics simulations) increasingly demand operand widths exceeding 64 bits. By handling these natively, Aria eliminates the need for slow, heap-allocated "BigInt" libraries for fixed-width problems, allowing the compiler to optimize these operations into efficient sequences of machine instructions.
+1.2 Scope of the Type System
+The scope of this specification covers the entire spectrum of standard integer types defined in the Aria frontend tokens :
+* Sub-Byte Signed Types: int1, int2, int4. These are essential for bit-packing, proprietary protocol implementation, and interacting with legacy hardware registers where individual bits carry signed semantic weight.
+* Standard Signed Types: int8, int16, int32, int64. The bread-and-butter types for general purpose computing, loop iteration, and array indexing.
+* Wide Signed Types: int128, int256, int512. The "Extended" set, enabling native cryptographic arithmetic and massive coordinate systems.
+* Unsigned Types: uint8 through uint512. Parallel to the signed types (excluding sub-byte unsigned types which are handled via uint8 masking or specialized bitfields, though uint1, uint2, uint4 are implied as storage classes).
+This report will analyze the memory layout, alignment requirements, LLVM Intermediate Representation (IR) mapping, syntactic integration, and runtime behavior for this hierarchy of types.
+________________
+2. Theoretical Foundations and Numeric Domains
+To implement these types correctly within the compiler backend (src/backend/codegen.cpp) and semantic analyzer (src/frontend/sema/type_checker.cpp), we must rigorously define their mathematical domains. Aria’s standard integers operate on the ring of integers modulo $2^N$ ($Z/2^NZ$).
+2.1 Two's Complement Representation
+For all signed types from int1 to int512, Aria mandates Two's Complement representation. This is the industry standard for binary arithmetic because it simplifies the hardware logic required for addition and subtraction—the same circuit can handle both positive and negative numbers without distinct logic paths for sign magnitudes.
+The value $V$ of an $N$-bit integer consisting of bits $b_{N-1} \dots b_0$ is defined as:
+
+
+$$V = -b_{N-1}2^{N-1} + \sum_{i=0}^{N-2} b_i 2^i$$
+This definition has profound implications for the extreme ranges of the types, particularly the asymmetry between positive and negative limits. In Two's Complement, there is always one more negative number than positive number. For example, an int8 ranges from $-128$ to $+127$. This asymmetry ($|Min| > |Max|$) is a critical distinction from the TBB types like tbb8 defined in aria_specs.txt , which explicitly sacrifice the minimum value (e.g., -128) to serve as an ERR sentinel, thereby creating a symmetric range $[-127, +127]$. Standard integers do not have sentinels; every bit pattern represents a valid numerical value.
+2.2 Unsigned Binary Representation
+For types uint8 through uint512, the representation is pure binary. The value $V$ is:
+
+
+$$V = \sum_{i=0}^{N-1} b_i 2^i$$
+The range is strictly $[0, 2^N - 1]$. The absence of a sign bit allows for a doubling of the positive magnitude compared to the signed equivalent. This makes unsigned types the mandatory choice for bitwise operations (&, |, ^, ~, <<, >>), as the sign extension behavior of right-shifting signed integers (arithmetic shift) often leads to subtle bugs in bit-manipulation code.
+2.3 Modular Arithmetic Behavior
+A definitive design decision for Aria's standard integers is the handling of overflow. Unlike TBB types which must saturate or trap , standard integers utilize modular arithmetic (wrap-around).
+* Addition: $(a + b) \pmod{2^N}$
+* Subtraction: $(a - b) \pmod{2^N}$
+* Multiplication: $(a \times b) \pmod{2^N}$
+Rationale:
+1. Hardware Alignment: Modern ALUs perform modular arithmetic by default. Enforcing wrap-around ensures that Aria code maps 1:1 to machine instructions (e.g., ADD on x86, ADD on ARM) without the pipeline-stalling overhead of conditional branches to check for overflow flags.
+2. Cryptographic Necessity: Algorithms like SHA-256, ChaCha20, and CRC32 rely mathematically on the properties of modular arithmetic. If uint32 were to trap on overflow, these algorithms would become impossible to implement efficiently.
+3. Systems Predictability: In ring buffers and sequence generators, wrapping behavior is a feature, not a bug.
+While safety is a core tenet of Aria (via the Borrow Checker), integer safety for standard types is enforced via explicit checks (optional checked_add intrinsics) rather than implicit runtime overhead, distinguishing it from the TBB strategy.
+________________
+3. Sub-Byte Integer Primitives (int1 - int4)
+The inclusion of int1, int2, and int4 in the token definition indicates a requirement for precise bit-level control. These types present unique implementation challenges because modern memory subsystems are byte-addressable, not bit-addressable.
+3.1 Memory Layout and Storage Strategies
+There is a fundamental tension between the logical width of a type and its physical storage.
+Standalone Variables:
+When a sub-byte type is declared as a local variable or a function argument, it cannot occupy less than one byte of memory or one register.
+* Rule: A standalone int1, int2, or int4 variable is stored in a uint8 container (or i8 in LLVM IR).
+* Value Invariant: The compiler must enforce that the high bits of the container are either zeroed (for unsigned types) or sign-extended (for signed types) at every store boundary.
+   * For int1 (range -1, 0), the bit pattern in the i8 container will be 00000000 (0) or 11111111 (-1).
+   * For uint1 (range 0, 1), the pattern is 00000000 (0) or 00000001 (1).
+Packed Structures:
+The primary utility of these types arises in struct definitions marked with the @pack directive.1 Here, the compiler acts as a bit-packer.
+
+
+Code snippet
+
+
+
+
+// Example of Aria Struct Definition
+type StatusFlags = struct @pack {
+   int1: enabled;      // 1 bit
+   uint2: mode;        // 2 bits
+   int4: priority;     // 4 bits
+   // Total: 7 bits, fits in 1 byte
+}
+
+The memory layout for this struct requires a specific bit-ordering standard. Aria adopts LSB-First (Least Significant Bit) packing within the byte to match Little-Endian philosophy.
+Bit 7
+	Bit 6
+	Bit 5
+	Bit 4
+	Bit 3
+	Bit 2
+	Bit 1
+	Bit 0
+	Pad
+	priority
+	priority
+	priority
+	priority
+	mode
+	mode
+	enabled
+	3.2 Code Generation for Sub-Byte Types
+Since the CPU cannot address bit 0 directly, the backend (src/backend/codegen.cpp) must emit "Read-Modify-Write" sequences.
+Load Operation (val = s.mode):
+To read the uint2 mode at offset 1:
+1. Load: Load the full byte from memory into a register.
+2. Shift: Right shift logically (SHR) by 1 bit.
+3. Mask: Bitwise AND with 0x03 (binary 11) to isolate the 2 bits.
+Store Operation (s.mode = 2):
+To write 2 (binary 10) to the mode field:
+1. Load: Load the full byte from memory.
+2. Mask Clear: AND with ~(0x03 << 1) (i.e., ~(0x06) or 0xF9) to clear the target bits.
+3. Shift New Value: Left shift the new value 2 by 1 (2 << 1 = 4).
+4. Mask New Value: AND the shifted value with the field mask (safety check).
+5. Merge: OR the cleared byte with the new shifted value.
+6. Store: Write the full byte back to memory.
+This complexity underscores why standard int8 is preferred for speed; sub-byte types sacrifice ALU cycles for memory density.
+3.3 Semantic Analysis of int1
+A common pitfall is the value domain of int1. Being a 1-bit signed integer, the high bit (bit 0) is the sign bit.
+* Bit 0: Value 0.
+* Bit 1: In two's complement, the value is $-2^0 = -1$.
+* Conclusion: int1 can only hold values 0 and -1. It cannot hold +1.
+* Compiler Warning: The type_checker.cpp must issue a warning if a user assigns literal 1 to an int1 variable, as it will wrap to -1. Users desiring 0 and 1 should use uint1 or bool.
+________________
+4. Standard Width Integers (int8 - int64)
+These types form the backbone of the Aria ecosystem. Their implementation is relatively straightforward as they map directly to CPU registers, but precise alignment and ABI definitions are required for interoperability.
+4.1 Native Type Mapping to LLVM IR
+Aria leverages the LLVM backend, and the mapping for these types is direct.
+Aria Type
+	LLVM IR Type
+	C++ Equivalent (LP64)
+	Notes
+	int8
+	i8
+	signed char
+	
+
+	uint8
+	i8
+	unsigned char
+	Differentiated only by operations (sdiv vs udiv)
+	int16
+	i16
+	short
+	
+
+	uint16
+	i16
+	unsigned short
+	
+
+	int32
+	i32
+	int
+	Guaranteed 32-bit
+	uint32
+	i32
+	unsigned int
+	
+
+	int64
+	i64
+	long (Linux), long long (Win)
+	Guaranteed 64-bit
+	uint64
+	i64
+	unsigned long / u.l.l
+	
+
+	4.2 Alignment Specifications
+Aria adheres to "Natural Alignment" rules to ensure atomic access and prevent misalignment faults (bus errors) on strict architectures like SPARC or older ARM.
+* Rule: An integer of width $W$ bytes must be stored at a memory address $A$ such that $A \pmod W = 0$.
+   * int8: Byte aligned (1).
+   * int16: 2-byte aligned.
+   * int32: 4-byte aligned.
+   * int64: 8-byte aligned.
+Padding Example:
+
+
+Code snippet
+
+
+
+
+struct Mixed {
+   int8: a;
+   // 7 bytes of implicit padding inserted here
+   int64: b;
+}
+
+This padding ensures b is loaded with a single 64-bit memory transaction. The Aria compiler provides the @pack directive 1 to disable this padding at the cost of performance (misaligned loads).
+4.3 Literal Syntax and Lexical Analysis
+The lexer code in src/frontend/lexer.cpp currently shows a basic implementation of number parsing that accumulates digits into a number string. To support strong typing, we define specific suffixes.
+Suffix Specification:
+* i8, u8
+* i16, u16
+* i32, u32
+* i64, u64
+Lexer Enhancement Strategy:
+The current Lexer::nextToken implementation identifies TOKEN_INT_LITERAL but stores the value as a string. The Semantic Analysis phase (sema) is responsible for parsing this string into the appropriate binary representation.
+* Implicit Typing: If a literal has no suffix (e.g., 42), the type checker infers it as int64 by default, unless constrained by context (e.g., assignment to int8).
+* Range Validation: The AST node IntLiteral defined in src/frontend/ast/expr.h 1 currently uses int64_t value. This is a critical deficiency. To support uint64 (which exceeds int64_t max) and wider types, the AST node must be refactored to use a custom BigInt or APIter structure capable of holding up to 512 bits.
+Recommendation for AST Refactoring:
+
+
+C++
+
+
+
+
+// src/frontend/ast/expr.h modification
+class IntLiteral : public Expression {
+public:
+   // Change from int64_t to a comprehensive storage
+   struct Value {
+       uint64_t low;
+       uint64_t high; // For up to 128
+       //... extendable or use std::vector<uint64_t> chunks
+   } value;
+   std::string raw_value; // Keep original string for precise parsing of 512-bit
+   //...
+};
+
+________________
+5. Extended Width Integers (int128 - int512)
+The "Extended" types distinguish Aria as a modern systems language. Most current languages delegate 128-bit+ math to libraries; Aria performs it via the compiler backend.
+5.1 int128 and uint128
+Architectural Support:
+* x86_64: Has no native general-purpose 128-bit registers, but pairs of 64-bit registers (RDX:RAX) are used for 128-bit operations like multiplication (MUL) and division (DIV).
+* LLVM IR: Supports i128 natively. The backend automatically lowers add i128 to ADD followed by ADC (Add with Carry).
+Alignment:
+* int128 is aligned to 16 bytes. This aligns with the SSE/NEON vector unit width, allowing the compiler to speculatively move 128-bit integers using vector load/store instructions (MOVAPS) which are faster than dual 64-bit scalar moves.
+5.2 int256 and uint256
+These types are the workhorses of modern cryptography (e.g., secp256k1 curves, SHA-256).
+LLVM IR Mapping:
+LLVM allows i256, but few backends support it natively. The Aria compiler backend must configure the DataLayout to explicitly define alignment.
+* Alignment: 32 bytes (256 bits). While 16-byte alignment is minimal for x86, 32-byte alignment allows for potential optimization using AVX YMM registers.
+Implementation Logic:
+Since no CPU has a scalar 256-bit ALU (AVX is for vectors, not scalar 256-bit big-nums), the compiler performs "Legalization."
+* Addition: Decomposed into four 64-bit additions chained with carry flags.
+Code snippet
+ADD result, a, b
+ADC result, a, b
+ADC result, a, b
+ADC result, a, b
+
+* Multiplication: Requires $O(N^2)$ complexity (schoolbook) or $O(N^{1.58})$ (Karatsuba). For int256, strict schoolbook expansion involves roughly 16 64-bit multiplications and extensive addition chaining.
+* Runtime Intrinsics: To avoid code bloat, int256 multiplication and division are compiled as calls to Aria runtime functions (__aria_mul_i256), implemented in highly optimized assembly.
+5.3 int512 and uint512
+The widest primitive, intended for post-quantum cryptography and massive-scale bloom filters.
+Memory Layout:
+Occupies 64 bytes.
+   * Alignment: 64 bytes. This matches the cache line size of most modern processors. Aligning to 64 bytes ensures that an int512 load never straddles two cache lines, preventing "split-load" penalties which can cost tens of cycles.
+Register Pressure Warning:
+Operations on int512 consume significant register resources. A single int512 variable consumes 8 general-purpose registers (GPRs) on a 64-bit machine. Since x86_64 only has 16 GPRs (and some are reserved), manipulating just two int512 values simultaneously forces "Register Spilling" to the stack.
+   * Compiler Strategy: The Aria compiler prefers to keep int512 values in memory (L1 Cache) and stream them through the CPU only when necessary, or utilize AVX-512 vector registers (ZMM) if the target architecture supports them and the operation is bitwise (AND, OR, XOR).
+________________
+6. Syntactic and Semantic Specifications
+Aria provides a unified syntax for all integer types, enforcing consistency across the width spectrum.
+6.1 Literal Syntax Specification
+The lexer in src/frontend/lexer.cpp is augmented to support the full range of suffixes.
+Table: Integer Literal Suffixes
+Suffix
+	Type
+	Example
+	i8 / u8
+	int8 / uint8
+	255u8
+	i16 / u16
+	int16 / uint16
+	32000i16
+	i32 / u32
+	int32 / uint32
+	100_000u32
+	i64 / u64
+	int64 / uint64
+	100i64
+	i128 / u128
+	int128 / uint128
+	0xFF...FFu128
+	i256 / u256
+	int256 / uint256
+	123i256
+	i512 / u512
+	int512 / uint512
+	123u512
+	Underscore Separators:
+As visible in lexer.cpp handling (`isdigit(peek()) |
+| peek() == '_'), underscores are permitted anywhere between digits for readability. 1_000_000u32` is legal.
+6.2 Casting and Conversion Rules
+Aria separates type conversion into Implicit Promotion (safe) and Explicit Casting (potentially unsafe).
+Implicit Promotion:
+A value can be implicitly converted to a destination type if and only if the destination type can represent every possible value of the source type.
+   * uint8 $\to$ uint16 (Zero Extension) $\to$ int16 (Zero Extension).
+   * int8 $\to$ int16 (Sign Extension).
+   * Prohibited: int8 $\to$ uint16. Although uint16 is wider, it cannot represent -1. This conversion requires an explicit cast.
+Explicit Casting (The cast Operator):
+Based on AST definitions 1, casting is an expression CastExpr.
+Syntax: dest_var = cast<type>(expression);
+This operator handles:
+   1. Truncation: cast<uint8>(256u16) results in 0. (Upper bits discarded).
+   2. Sign Reinterpretation: cast<int8>(255u8) results in -1. (Bit pattern preserved, semantic meaning changed).
+Conversion Matrix:
+Source / Target
+	int8
+	uint8
+	int16
+	uint16
+	int8
+	Identity
+	Cast (Reinterpret)
+	Implicit (Sign Ext)
+	Cast (Value Check)
+	uint8
+	Cast (Reinterpret)
+	Identity
+	Implicit (Zero Ext)
+	Implicit (Zero Ext)
+	int16
+	Cast (Truncate)
+	Cast (Truncate)
+	Identity
+	Cast (Reinterpret)
+	________________
+7. Operational Semantics and Overflow
+A crucial distinction in Aria is the behavior of standard integers versus TBB types.
+7.1 Overflow Behavior: Wrap-around
+Aria standard integers implement modular arithmetic.
+   * For an $N$-bit unsigned integer: result = $(a \text{ op } b) \pmod{2^N}$.
+   * For an $N$-bit signed integer: result is computed via two's complement binary addition, naturally wrapping from Max Positive to Min Negative.
+Example:
+
+
+Code snippet
+
+
+
+
+uint8:x = 255;
+x = x + 1; // x becomes 0
+int8:y = 127;
+y = y + 1; // y becomes -128
+
+This behavior is strictly defined and architecture-independent. It does not result in Undefined Behavior (UB) as it does in C/C++. It is deterministic wrapping.
+7.2 Division by Zero
+Division by zero using standard integers triggers a hardware exception (trap/fault).
+   * On Linux/x86: SIGFPE (Floating Point Exception - a misnomer, covers integer division too).
+   * Aria Runtime behavior: The signal is caught, the stack is unwound, and the process terminates with a panic message, unless caught by a spawn/catch boundary (if implemented).
+   * Contrast with TBB: TBB division by zero returns ERR sentinel and proceeds. Standard int division crashes the thread. This emphasizes the "Systems/Metal" nature of standard ints.
+________________
+8. Integration with Compiler Subsystems
+The type system is intertwined with the core mechanisms of the Aria compiler.
+8.1 Integration with the Borrow Checker
+Aria’s Borrow Checker (implied by memory pinning token_kw_pin and address operators in ) manages the lifecycle of data.
+   * Copy Semantics: All integer types, including int512, implement Copy semantics. When passed to a function, the value is bitwise copied.
+   * Performance Implication: Copying int512 (64 bytes) is equivalent to copying a cache line. Frequent passing of int512 by value can degrade performance.
+   * Pinning (#): Wide integers can be pinned using the # operator to prevent the GC (if active) from moving them, or to create a stable address for FFI (Foreign Function Interface) calls.
+Code snippet
+int512:key =...;
+// Pin key in memory to pass to C crypto library
+wild int512*:ptr = @(#key); 
+
+8.2 Atomics and Concurrency
+The tokens.h file includes TOKEN_KW_SPAWN, implying concurrency. Atomic access to integers is required for synchronization.
+      * Native Atomics: int8, int16, int32, int64 map to hardware atomic instructions (LOCK ADD, LDREX/STREX).
+      * int128 Atomics: Supported on modern x86_64 via CMPXCHG16B.
+      * Wide Atomics (int256/int512): Software Emulated. Hardware does not support atomic transactions of this width. The Aria runtime wraps these in a spinlock or hashed mutex array. Developers are warned that atomic<int512> is significantly slower than atomic<int64>.
+8.3 Compile-Time Evaluation (Comptime)
+Aria supports compile-time computation (implied by computeOptimalSize example in ).
+The compiler's internal Interpreter must support arbitrary precision arithmetic. Even if the target is 32-bit, the compiler (running on the host) must evaluate const int512:x =... correctly.
+      * Implementation: The compiler links against the GMP (GNU MP) library or uses LLVM's APInt to perform int512 math during the ConstantFolding pass.
+      * Result: The final binary contains the pre-calculated constant value, indistinguishable from a hardcoded literal.
+________________
+9. SIMD Optimization Opportunities
+The layout of int128, int256, and int512 creates high-value targets for SIMD (Single Instruction, Multiple Data) optimization.
+9.1 Vector Register Mapping
+      * int128 $\leftrightarrow$ SSE / NEON: Maps perfectly to 128-bit XMM registers. Bitwise operations are single-instruction. Arithmetic (add/sub) is native.
+      * int256 $\leftrightarrow$ AVX2: Maps to YMM registers. However, AVX2 treats YMM registers as vectors of numbers (e.g., 4x int64), not single large numbers.
+      * Optimization Strategy: The Aria backend emits specific shuffle sequences to propagate carries between the 64-bit lanes of an AVX register, effectively turning the vector unit into a scalar 256-bit ALU.
+      * int512 $\leftrightarrow$ AVX-512: Maps to ZMM registers. Similar to AVX2, carry propagation is required for addition/subtraction. However, logical operations (AND, OR, XOR) on int512 are perfectly mapped to VPANDQ, VPORQ, etc., offering 8x throughput compared to scalar int64 logic loops.
+________________
+10. Comparative Analysis: Standard vs. TBB Types
+The coexistence of Standard Integers and TBB types is a defining feature of Aria. A clear usage policy is required.
+Decision Matrix:
+Requirement
+	Use Standard Integer (int/uint)
+	Use TBB Type (tbb)
+	Logic Type
+	Control Logic (Indices, loops, sizes)
+	Data Logic (Money, Signals, Health)
+	Overflow
+	Wrap-around (Silent)
+	Error (Sentinel/Sticky)
+	Bitwise Ops
+	Native (Fast)
+	Complex (Error propagation logic)
+	Hardware I/O
+	Mandatory (Registers are binary)
+	Not suitable (Sentinel mismatch)
+	Performance
+	Maximal (Native CPU instructions)
+	Slower (Software checks involved)
+	Safety
+	Developer responsibility (Checks)
+	Type-system enforced
+	Conclusion: Use Standard Integers for interacting with the machine and managing program state. Use TBB types for modeling the domain data where the cost of an undetected overflow outweighs the cost of a CPU cycle.
+________________
+11. Implementation Roadmap
+To realize this specification within the Aria codebase:
+      1. AST Refactoring (High Priority): Modify IntLiteral in src/frontend/ast/expr.h to support arbitrary precision storage (replacing int64_t).
+      2. Lexer Upgrade: Update lexer.cpp to parse suffixes (u512) and populate the new AST node.
+      3. LLVM Backend: Implement the getLLVMIntegerType factory in codegen.cpp to map Aria widths to LLVM IntegerType::get(ctx, width).
+      4. Runtime Library: Implement src/runtime/aria_math.asm containing optimized assembly routines for mul512 and div512 for x86_64 and ARM64.
+      5. Type Checker: Implement the implicit promotion rules and the "cast" operator verification logic.
+This architecture ensures Aria possesses the most capable and flexible integer type system of any modern systems language, bridging the gap between hardware reality and algorithmic necessity.
+Works cited
+      1. aria_source_part1a_tokens_lexer.txt

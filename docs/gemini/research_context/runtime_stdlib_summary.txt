@@ -1,0 +1,723 @@
+# Runtime and Stdlib Context Summary
+# Generated: 2025-12-12
+# Purpose: Consolidated view of existing runtime and stdlib implementations for research_031
+
+## Directory Structure
+
+src/runtime/
+├── concurrency/     # Threading, async, scheduler
+├── core/            # String implementations
+├── debug/           # Debugging utilities, fat pointers
+├── gc/              # Garbage collector implementation
+├── io/              # I/O primitives (print, file)
+├── memory/          # Memory allocators (wild, wildx)
+├── platform/        # Platform abstraction layer
+├── safety/          # Safety checks, fat pointers
+└── types/           # Runtime type representations
+
+src/stdlib/
+├── io/              # Fast I/O implementations
+├── log/             # Logging utilities
+├── math/            # Math functions (ternary/nonary)
+└── io.aria          # High-level I/O interface
+
+## Key Runtime Files Summary
+
+
+### Platform Abstraction (platform/platform.h)
+```cpp
+/**
+ * src/runtime/platform/platform.h
+ * 
+ * Cross-Platform Abstraction Layer
+ * Aria Runtime Platform Interface
+ * 
+ * Provides unified interface for platform-specific operations across:
+ * - Linux (x86-64, ARM64)
+ * - macOS (x86-64, ARM64/Apple Silicon)
+ * - Windows (x86-64, ARM64)
+ * 
+ * This header defines the platform detection macros and common interfaces
+ * that abstract OS-specific functionality.
+ */
+
+#ifndef ARIA_RUNTIME_PLATFORM_H
+#define ARIA_RUNTIME_PLATFORM_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// =============================================================================
+// Platform Detection Macros
+// =============================================================================
+
+#if defined(_WIN32) || defined(_WIN64)
+    #define ARIA_PLATFORM_WINDOWS 1
+    #define ARIA_PLATFORM_POSIX 0
+    #define ARIA_PLATFORM_NAME "Windows"
+#elif defined(__APPLE__)
+    #define ARIA_PLATFORM_MACOS 1
+    #define ARIA_PLATFORM_POSIX 1
+    #define ARIA_PLATFORM_NAME "macOS"
+    #ifdef __aarch64__
+        #define ARIA_PLATFORM_APPLE_SILICON 1
+    #else
+        #define ARIA_PLATFORM_APPLE_SILICON 0
+    #endif
+#elif defined(__linux__)
+    #define ARIA_PLATFORM_LINUX 1
+    #define ARIA_PLATFORM_POSIX 1
+    #define ARIA_PLATFORM_NAME "Linux"
+#else
+    #define ARIA_PLATFORM_UNKNOWN 1
+    #define ARIA_PLATFORM_POSIX 0
+    #define ARIA_PLATFORM_NAME "Unknown"
+    #warning "Unknown platform - some features may not work"
+#endif
+
+// Architecture detection
+#if defined(__x86_64__) || defined(_M_X64)
+    #define ARIA_ARCH_X86_64 1
+    #define ARIA_ARCH_NAME "x86-64"
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    #define ARIA_ARCH_ARM64 1
+    #define ARIA_ARCH_NAME "ARM64"
+#else
+    #define ARIA_ARCH_UNKNOWN 1
+    #define ARIA_ARCH_NAME "Unknown"
+#endif
+
+// =============================================================================
+// Platform Constants
+// =============================================================================
+
+// Page size (typically 4096, but can be queried at runtime)
+#define ARIA_DEFAULT_PAGE_SIZE 4096
+
+// File descriptor constants (POSIX)
+#if ARIA_PLATFORM_POSIX
+    #define ARIA_STDIN_FD  0
+    #define ARIA_STDOUT_FD 1
+    #define ARIA_STDERR_FD 2
+    #define ARIA_STDDBG_FD 3
+    #define ARIA_DATI_FD   4
+    #define ARIA_DATO_FD   5
+#endif
+
+// =============================================================================
+// Platform-Agnostic Types
+// =============================================================================
+
+// Process handle (platform-specific implementation)
+#ifdef _WIN32
+    typedef void* aria_process_handle_t;  // HANDLE on Windows
+#else
+    typedef int aria_process_handle_t;    // pid_t on POSIX
+#endif
+
+// Thread handle (platform-specific implementation)
+#ifdef _WIN32
+    typedef void* aria_thread_handle_t;   // HANDLE on Windows
+#else
+    typedef unsigned long aria_thread_handle_t;  // pthread_t on POSIX
+#endif
+
+// =============================================================================
+// Memory Management (Cross-Platform)
+// =============================================================================
+
+/**
+ * Get system page size
+ * @return Page size in bytes (typically 4096)
+ */
+size_t aria_platform_get_page_size(void);
+
+/**
+ * Allocate page-aligned memory
+ * @param size Number of bytes to allocate
+ * @return Pointer to allocated memory, or NULL on failure
+ */
+void* aria_platform_alloc_pages(size_t size);
+
+/**
+ * Free page-aligned memory
+ * @param ptr Pointer returned by aria_platform_alloc_pages
+ * @param size Original size passed to aria_platform_alloc_pages
+ */
+void aria_platform_free_pages(void* ptr, size_t size);
+
+// =============================================================================
+// Executable Memory (Cross-Platform Wildx Support)
+// =============================================================================
+// Implemented in wildx_allocator.c - these are already cross-platform
+
+// aria_alloc_exec() - Allocate executable memory (RW initially)
+// aria_free_exec() - Free executable memory
+// aria_mem_protect_exec() - Transition to RX (executable)
+// aria_mem_protect_write() - Transition to RW (writable)
+
+// =============================================================================
+// Process and I/O (Cross-Platform)
+// =============================================================================
+
+/**
+ * Spawn child process with 6-channel I/O
+ * Channels: stdin, stdout, stderr, stddbg, dati, dato
+ * 
+ * Platform implementations:
+ * - Linux: io_linux.cpp (fork + exec + dup2)
+ * - Windows: io_windows.cpp (CreateProcess + lpReserved2)
+ * - macOS: Same as Linux (POSIX)
+ */
+int aria_platform_spawn_process(const char* cmd, const char* const* argv,
+                                 int fd_stdin, int fd_stdout, int fd_stderr,
+                                 int fd_dbg, int fd_dati, int fd_dato);
+```
+
+### Memory Allocation (memory/allocator.h)
+```cpp
+#ifndef ARIA_RUNTIME_ALLOCATOR_H
+#define ARIA_RUNTIME_ALLOCATOR_H
+
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Runtime Interface for Wild Allocations
+// These functions are linked directly to the 'aria.alloc' and 'aria.free' intrinsics.
+
+// Basic allocation mapping
+void* aria_alloc(size_t size);
+
+// Explicit deallocation
+void aria_free(void* ptr);
+
+// Reallocation
+void* aria_realloc(void* ptr, size_t size);
+
+// Aligned allocation for SIMD types (vec9, tensor)
+// Ensures pointers respect the 64-byte alignment required by AVX-512 ZMM registers
+void* aria_alloc_aligned(size_t size, size_t alignment);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // ARIA_RUNTIME_ALLOCATOR_H
+```
+
+### I/O Interface (io/io.h)
+```cpp
+/**
+ * src/runtime/io/io.h
+ *
+ * Aria Runtime I/O Library Header
+ * Declares all I/O functions available to Aria programs
+ */
+
+#ifndef ARIA_RUNTIME_IO_H
+#define ARIA_RUNTIME_IO_H
+
+#include <cstdint>
+#include <cstddef>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// ============================================================================
+// Print Functions
+// ============================================================================
+
+void aria_print_string(const char* str);
+void aria_println_string(const char* str);
+void aria_print_int64(int64_t value);
+void aria_println_int64(int64_t value);
+void aria_print_float64(double value);
+void aria_println_float64(double value);
+void aria_print_bool(bool value);
+void aria_println_bool(bool value);
+void aria_println();
+void aria_flush();
+
+// Error output
+void aria_eprint_string(const char* str);
+void aria_eprintln_string(const char* str);
+
+// Debug channel
+void aria_debug_print(const char* str);
+
+// ============================================================================
+// File I/O Functions
+// ============================================================================
+
+char* aria_read_file(const char* path);
+int64_t aria_write_file(const char* path, const char* content);
+int64_t aria_append_file(const char* path, const char* content);
+int64_t aria_file_exists(const char* path);
+int64_t aria_file_size(const char* path);
+int64_t aria_delete_file(const char* path);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // ARIA_RUNTIME_IO_H
+```
+
+### Print Implementation (io/print.cpp)
+```cpp
+/**
+ * src/runtime/io/print.cpp
+ *
+ * Aria Standard Library - Print and Output Functions
+ * Version: 0.0.6
+ *
+ * Provides print() and related output functions for Aria programs.
+ * These are extern "C" functions callable from LLVM IR.
+ */
+
+#include <cstdio>
+#include <cstdint>
+#include <cstring>
+#include <unistd.h>
+
+extern "C" {
+
+// Print a null-terminated string to stdout
+void aria_print_string(const char* str) {
+    if (str) {
+        fputs(str, stdout);
+    }
+}
+
+// Print a string with newline
+void aria_println_string(const char* str) {
+    if (str) {
+        fputs(str, stdout);
+        fputc('\n', stdout);
+    }
+}
+
+// Print an integer (int64)
+void aria_print_int64(int64_t value) {
+    printf("%lld", (long long)value);
+}
+
+// Print an integer with newline
+void aria_println_int64(int64_t value) {
+    printf("%lld\n", (long long)value);
+}
+
+// Print a floating-point number (double)
+void aria_print_float64(double value) {
+    printf("%g", value);
+}
+
+// Print a floating-point number with newline
+void aria_println_float64(double value) {
+    printf("%g\n", value);
+}
+
+// Print a boolean value
+void aria_print_bool(bool value) {
+    fputs(value ? "true" : "false", stdout);
+}
+
+// Print a boolean value with newline
+void aria_println_bool(bool value) {
+    printf("%s\n", value ? "true" : "false");
+}
+
+// Generic print with newline (calls flush)
+void aria_println() {
+    fputc('\n', stdout);
+    fflush(stdout);
+}
+
+// Flush stdout
+void aria_flush() {
+    fflush(stdout);
+}
+
+// Print to stderr
+void aria_eprint_string(const char* str) {
+    if (str) {
+        fputs(str, stderr);
+    }
+}
+
+void aria_eprintln_string(const char* str) {
+    if (str) {
+        fputs(str, stderr);
+        fputc('\n', stderr);
+    }
+}
+
+// Debug channel output (stddati - data in, channel 4)
+void aria_debug_print(const char* str) {
+    if (str) {
+        // Write to file descriptor 4 (stddati)
+        // Falls back to stderr if fd 4 not available
+        ssize_t result = write(4, str, strlen(str));
+        if (result < 0) {
+            fputs(str, stderr);
+        }
+    }
+}
+
+} // extern "C"
+```
+
+### File Operations (io/file.cpp)
+```cpp
+/**
+ * src/runtime/io/file.cpp
+ *
+ * Aria Standard Library - File I/O Functions
+ * Version: 0.0.6
+ *
+ * Provides basic file operations for Aria programs.
+ */
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+extern "C" {
+
+// Forward declaration for Aria allocator
+extern void* aria_alloc(size_t size);
+extern void aria_free(void* ptr);
+
+/**
+ * Read entire file into a null-terminated string
+ * Returns nullptr on error
+ *
+ * Usage in Aria:
+ *   wild string:content = readFile("data.txt");
+ *   if (content == null) {
+ *       println("Error reading file");
+ *   }
+ */
+char* aria_read_file(const char* path) {
+    if (!path) return nullptr;
+
+    // Open file
+    FILE* file = fopen(path, "rb");
+    if (!file) return nullptr;
+
+    // Get file size
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    if (size < 0) {
+        fclose(file);
+        return nullptr;
+    }
+
+    // Allocate buffer (using Aria's wild heap via mimalloc)
+    char* buffer = (char*)aria_alloc(size + 1);
+    if (!buffer) {
+        fclose(file);
+        return nullptr;
+    }
+
+    // Read file
+    size_t bytes_read = fread(buffer, 1, size, file);
+    fclose(file);
+
+    buffer[bytes_read] = '\0';
+    return buffer;
+}
+
+/**
+ * Write string to file
+ * Returns 0 on success, -1 on error
+ *
+ * Usage in Aria:
+ *   int64:result = writeFile("output.txt", "Hello, World!");
+ *   if (result != 0) {
+ *       println("Error writing file");
+ *   }
+ */
+int64_t aria_write_file(const char* path, const char* content) {
+    if (!path || !content) return -1;
+
+    FILE* file = fopen(path, "wb");
+    if (!file) return -1;
+
+    size_t len = strlen(content);
+    size_t written = fwrite(content, 1, len, file);
+    fclose(file);
+
+    return (written == len) ? 0 : -1;
+}
+
+/**
+ * Append string to file
+ * Returns 0 on success, -1 on error
+ */
+int64_t aria_append_file(const char* path, const char* content) {
+    if (!path || !content) return -1;
+
+    FILE* file = fopen(path, "ab");
+    if (!file) return -1;
+
+    size_t len = strlen(content);
+    size_t written = fwrite(content, 1, len, file);
+    fclose(file);
+
+    return (written == len) ? 0 : -1;
+}
+
+/**
+ * Check if file exists
+ * Returns 1 if exists, 0 if not
+ */
+int64_t aria_file_exists(const char* path) {
+    if (!path) return 0;
+
+    struct stat st;
+    return (stat(path, &st) == 0) ? 1 : 0;
+}
+
+/**
+ * Get file size in bytes
+ * Returns -1 on error
+ */
+int64_t aria_file_size(const char* path) {
+    if (!path) return -1;
+
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+
+    return (int64_t)st.st_size;
+}
+
+/**
+ * Delete a file
+ * Returns 0 on success, -1 on error
+ */
+int64_t aria_delete_file(const char* path) {
+    if (!path) return -1;
+    return unlink(path) == 0 ? 0 : -1;
+}
+
+/**
+ * Read file as lines (returns array of strings)
+ * This is a more complex function that would require
+ * dynamic array support. For now, it's a placeholder.
+ */
+// TODO: Implement aria_read_lines when array support is ready
+
+} // extern "C"
+```
+
+### Stdlib I/O Interface (stdlib/io.aria)
+```aria
+/**
+ * stdlib/io.aria
+ *
+ * Aria Standard Library - Input/Output Module
+ * Version: 0.0.6
+ *
+ * Provides convenient I/O functions for Aria programs.
+ * This module wraps the low-level C runtime functions.
+ */
+
+// ============================================================================
+// Print Functions
+// ============================================================================
+
+// Print a string without newline
+extern func print(string:msg) {
+    // Calls aria_print_string from runtime
+}
+
+// Print a string with newline
+extern func println(string:msg) {
+    // Calls aria_println_string from runtime
+}
+
+// Print just a newline
+extern func println() {
+    // Calls aria_println from runtime
+}
+
+// Print an integer
+extern func print_int(int64:value) {
+    // Calls aria_print_int64 from runtime
+}
+
+// Print an integer with newline
+extern func println_int(int64:value) {
+    // Calls aria_println_int64 from runtime
+}
+
+// Print a floating-point number
+extern func print_float(flt64:value) {
+    // Calls aria_print_float64 from runtime
+}
+
+// Print a floating-point number with newline
+extern func println_float(flt64:value) {
+    // Calls aria_println_float64 from runtime
+}
+
+// Print a boolean value
+extern func print_bool(bool:value) {
+    // Calls aria_print_bool from runtime
+}
+
+// Print a boolean value with newline
+extern func println_bool(bool:value) {
+    // Calls aria_println_bool from runtime
+}
+
+// Flush output buffer
+extern func flush() {
+    // Calls aria_flush from runtime
+}
+
+// ============================================================================
+// Error Output Functions
+// ============================================================================
+
+// Print to stderr
+extern func eprint(string:msg) {
+    // Calls aria_eprint_string from runtime
+}
+
+// Print to stderr with newline
+extern func eprintln(string:msg) {
+    // Calls aria_eprintln_string from runtime
+}
+
+// ============================================================================
+// Debug Channel Functions
+// ============================================================================
+
+// Print to debug channel (stddati - file descriptor 4)
+extern func debug(string:msg) {
+    // Calls aria_debug_print from runtime
+}
+
+// ============================================================================
+// File I/O Functions
+// ============================================================================
+
+// Read entire file into a string
+// Returns null on error
+extern func readFile(string:path) -> wild string {
+    // Calls aria_read_file from runtime
+    // Returns a wild pointer that must be explicitly freed
+}
+
+// Write content to file
+// Returns 0 on success, -1 on error
+extern func writeFile(string:path, string:content) -> int64 {
+    // Calls aria_write_file from runtime
+}
+
+// Append content to file
+// Returns 0 on success, -1 on error
+extern func appendFile(string:path, string:content) -> int64 {
+    // Calls aria_append_file from runtime
+}
+
+// Check if file exists
+// Returns 1 if exists, 0 otherwise
+extern func fileExists(string:path) -> int64 {
+    // Calls aria_file_exists from runtime
+}
+
+// Get file size in bytes
+// Returns -1 on error
+extern func fileSize(string:path) -> int64 {
+    // Calls aria_file_size from runtime
+}
+
+// Delete a file
+// Returns 0 on success, -1 on error
+extern func deleteFile(string:path) -> int64 {
+    // Calls aria_delete_file from runtime
+}
+
+// ============================================================================
+// Usage Examples
+// ============================================================================
+
+/*
+
+Example 1: Simple printing
+```aria
+import io;
+
+func main() -> int64 {
+    io::println("Hello, Aria!");
+    io::print_int(42);
+    io::println();
+    return 0;
+}
+```
+
+Example 2: File I/O
+```aria
+import io;
+
+func main() -> int64 {
+    // Write to file
+    int64:result = io::writeFile("test.txt", "Hello, World!");
+    if (result != 0) {
+        io::eprintln("Failed to write file");
+        return 1;
+    }
+
+    // Read from file
+    wild string:content = io::readFile("test.txt");
+    if (content == null) {
+        io::eprintln("Failed to read file");
+        return 1;
+    }
+
+    io::println(content);
+
+    // Must explicitly free wild pointers
+    free(content);
+
+    return 0;
+}
+```
+
+Example 3: File operations
+```aria
+import io;
+
+func main() -> int64 {
+    string:path = "data.txt";
+
+    if (io::fileExists(path)) {
+        int64:size = io::fileSize(path);
+        io::print("File size: ");
+        io::println_int(size);
+    } else {
+        io::println("File does not exist");
+    }
+
+    return 0;
+}
+```
+
+*/
+```

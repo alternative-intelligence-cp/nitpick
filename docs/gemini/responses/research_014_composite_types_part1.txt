@@ -1,0 +1,262 @@
+﻿Architectural Specification and Implementation Analysis of Composite Types in the Aria Compiler: obj, dyn, and bool
+1. Introduction: The Convergence of Static Safety and Dynamic Flexibility
+The design of the Aria programming language represents a significant departure from conventional systems programming paradigms by attempting to unify the deterministic memory safety of a borrow checker with the expressive, rapid-development capabilities of dynamic typing. This hybrid architecture, mandated by the project's core requirements 1, necessitates a rigorous re-evaluation of how composite and scalar types are implemented at the compiler frontend, semantic analysis, and runtime levels. This report provides an exhaustive architectural analysis of three critical types—bool, obj, and dyn—which serve as the linchpins of this convergence.
+In traditional compiler design, languages tend to bifurcate into two distinct lineages: statically typed languages (e.g., C++, Rust) that prioritize raw performance and zero-cost abstractions, and dynamically typed languages (e.g., Python, JavaScript) that prioritize developer velocity and flexibility at the cost of runtime overhead. Aria seeks to dismantle this dichotomy. It introduces a memory model that supports "wild" (manual/unsafe), "stack" (lexical), and "gc" (garbage collected) allocation strategies simultaneously.1 Within this ecosystem, bool serves as the fundamental unit of binary logic, distinct from the language's native ternary arithmetic; obj provides a ubiquitous, map-like composite structure for high-level data manipulation; and dyn offers a type-erased container for polymorphism.
+The implementation of these types is constrained by Aria's "NOT NEGOTIABLE" adherence to Twisted Balanced Binary (TBB) arithmetic and "Appendage Theory" for memory safety.1 This creates a complex engineering challenge: the runtime must support the "sticky error" propagation of TBB types even within dynamic objects, and the garbage collector must interact seamlessly with the borrow checker's pinning semantics to allow safe references to dynamic memory. This report dissects the architectural decisions required to satisfy these constraints, analyzing the Abstract Syntax Tree (AST) definitions, tokenization strategies, and backend Lowering Logic to LLVM Intermediate Representation (IR).
+1.1 The Theoretical Imperative of Hybrid Typing
+The inclusion of dyn and obj alongside a Rust-style borrow checker forces the compiler to maintain two distinct views of data: a compile-time static view where types, lifetimes, and ownership are proven, and a runtime dynamic view where types are inspected, checked, and dispatched. The dyn keyword is not merely a "void pointer" but a semantic contract that opts the variable out of static type checking while keeping it within the purview of the garbage collector's root tracking.1
+Conversely, bool represents the anchor of determinism. In a language that natively speaks balanced ternary ($-1, 0, 1$), the existence of a binary bool type is an architectural necessity to interface with the binary hardware of modern processors (x86-64, ARM64) and to provide familiar control flow semantics (if, while) that do not suffer from the ambiguity of a "maybe" state inherent in ternary logic.1
+The following sections will rigorously analyze the implementation of these types, moving from their lexical representation to their runtime memory layout and interaction with the Aria Garbage Collector (AGC).
+2. The Boolean Primitive (bool) in a Ternary Architecture
+The implementation of the bool type in Aria is uniquely complicated by the language's foundational commitment to balanced ternary arithmetic. While most languages treat boolean logic and integer arithmetic as separate domains that occasionally intersect (e.g., C's 0 is false), Aria's specification introduces trit (ternary digit) and tryte (ternary byte) as primitives with values $\{-1, 0, 1\}$.1 This necessitates a strict separation of concerns between logical truth and numerical value to prevent semantic bleed-over where the ternary "unknown" ($0$) state could corrupt binary control flow.
+2.1 Lexical and Syntactic Definition
+The Aria frontend defines bool as a core primitive type. The tokenization process, handled by src/frontend/lexer.cpp, identifies boolean literals via dedicated keywords. The tokens.h file explicitly reserves TOKEN_KW_TRUE and TOKEN_KW_FALSE.1 This reservation is critical; unlike some older language standards where true and false were preprocessor definitions, Aria integrates them as syntactic keywords, preventing redeclaration and ensuring they are treated as literals of type bool during the parsing phase.
+The AST representation for these literals is encapsulated in the BoolLiteral class defined in src/frontend/ast/expr.h.1 The structure is minimal but precise:
+
+
+C++
+
+
+
+
+class BoolLiteral : public Expression {
+public:
+   bool value;
+   BoolLiteral(bool v) : value(v) {}
+   void accept(AstVisitor& visitor) override { visitor.visit(this); }
+};
+
+This node stores the value as a C++ bool (1 byte), which aligns with the internal representation of the compiler's host language. However, the semantic analyzer (Sema) must enforce strict usage rules. Given the existence of TOKEN_TYPE_TRIT 1, the parser must disambiguate between boolean true and ternary 1 (positive).
+2.2 Semantic Constraints and Ternary Interop
+The relationship between bool and trit is a defining characteristic of Aria's type system. In standard boolean algebra, the domain is $\mathbb{B} = \{0, 1\}$. In balanced ternary logic, the domain is $\mathbb{T} = \{-1, 0, 1\}$, often mapped to False, Unknown/Neutral, and True.2
+Aria resolves the conflict between these domains by enforcing a strict type boundary. The specification does not provide for implicit casting between trit and bool 1, likely to avoid the "Kleene logic" ambiguity where the negation of "Unknown" ($0$) remains "Unknown" ($0$).4 If bool were merely an alias for trit, the logical NOT operator (!) would behave non-deterministically in binary control structures:
+* Binary NOT: !true $\to$ false; !false $\to$ true.
+* Ternary NOT: !-1 $\to$ 1; !1 $\to$ -1; !0 $\to$ 0.
+If a conditional statement if (condition) received a 0 (Unknown) result from a ternary calculation, the branch behavior would be undefined in a binary CPU context. Therefore, Aria forces bool to remain a strictly binary type. Control flow constructs (if, while, for) defined in tokens.h 1 typically expect bool expressions. To use a trit in a conditional, explicit comparison is required (e.g., trit_val!= 0), which resolves the ternary value to a binary bool.
+2.3 Vectorization and SIMD Implications
+The token definitions reveal a significant feature: bool is not just a scalar type but a vectorizable primitive. The presence of TOKEN_TYPE_BVEC2, TOKEN_TYPE_BVEC3, and TOKEN_TYPE_BVEC4 1 indicates support for Boolean Vectors.
+These types map directly to SIMD (Single Instruction, Multiple Data) execution masks. In modern backend architectures like LLVM, a bvec4 would typically lower to a <4 x i1> vector. This allows Aria to support predicated execution and masking operations common in graphics and scientific computing (e.g., GLSL compatibility 1).
+* Scalar Layout: bool maps to LLVM's i1 type. In memory, this is padded to i8 (byte-aligned) for addressability.5
+* Vector Layout: bvec4 maps to a packed vector register. On AVX-512 targets, this could map to k-mask registers, offering extreme efficiency for data-parallel logic.
+2.4 Backend Lowering and Storage
+In the CodeGenContext of the backend 1, the lowering strategy for bool follows standard LLVM conventions. While the specific implementation line for bool is truncated in the snippets 1, we can infer from the int1 mapping that bool lowers to Type::getInt1Ty(llvmContext).
+When stored in aggregate structures (like struct or obj), the compiler must adhere to alignment rules. Although i1 only requires a single bit, modern CPU addressing requires byte alignment. Therefore, a bool field in an object will consume 1 byte (8 bits) of storage. This has implications for the dyn type (discussed later), as a 1-byte boolean is small enough to be packed directly into a tagged pointer or "Any" container without heap allocation (Small Object Optimization).6
+3. The Object Type (obj): Dynamic Structure and Memory Layout
+The obj type functions as Aria's universal associative array and dynamic structure mechanism. It is designed to satisfy the "batteries included" philosophy 1 by providing a flexible, high-level data structure similar to JavaScript objects or Python dictionaries, but it must execute within a compiled, memory-safe environment.
+3.1 Syntactic Structure: The ObjectLiteral
+The creation of obj instances is handled via the ObjectLiteral AST node. The syntax obj:config = { version: "0.0.5",... } 1 is parsed into a structured representation defined in src/frontend/ast/expr.h.1
+
+
+C++
+
+
+
+
+class ObjectLiteral : public Expression {
+public:
+   struct Field {
+       std::string name;
+       std::unique_ptr<Expression> value;
+   };
+   std::vector<Field> fields;
+   std::string type_name;  // For struct constructors
+   //...
+};
+
+This definition highlights a dual role for the {} syntax.
+1. Anonymous Objects: When type_name is empty, the literal represents a dynamic obj. The fields are added to a heap-allocated hash map or dynamic lookup table.
+2. Struct Constructors: When type_name is populated (e.g., Point{ x:1, y:2 }), the literal initializes a fixed-layout struct.
+The parser must distinguish these cases. The ObjectLiteral node stores fields as a vector of name-value pairs. This indicates that at the parsing stage, the keys are treated as compile-time identifiers (strings), even though the underlying runtime map might support dynamic key insertion.
+3.2 Runtime Memory Layout: The ObjHeader
+To manage obj instances in a garbage-collected heap, Aria employs a standardized object header. The definition found in src/runtime/gc/header.h 1 provides the blueprint for how every obj is stored in memory.
+
+
+C++
+
+
+
+
+struct ObjHeader {
+  uint64_t mark_bit : 1;      // GC Mark-and-Sweep status
+  uint64_t pinned_bit : 1;    // Interaction with Borrow Checker (# operator)
+  uint64_t forwarded_bit : 1; // Copying GC relocation flag
+  uint64_t is_nursery : 1;    // Generational GC (Nursery vs Old Gen)
+  uint64_t size_class : 8;    // Allocator size bucket
+  uint64_t type_id : 16;      // Runtime Type Information (RTTI)
+  uint64_t padding : 36;      // Reserved (e.g., for Identity Hash Code)
+};
+
+Analysis of the Header:
+* Compactness: The header is exactly 64 bits (8 bytes). This ensures that object metadata introduces minimal overhead and maintains alignment on 64-bit architectures.
+* GC Integration: The mark_bit, forwarded_bit, and is_nursery flags confirm that Aria uses a Generational Copying Garbage Collector. New objects are allocated in a "nursery" (Eden space); survivors are promoted.
+* Pinning Support: The pinned_bit is the critical link to "Appendage Theory." When a user writes wild ptr = #my_obj, this bit is set. The GC checks this bit before attempting to move an object. If set, the object is effectively "frozen" in memory, allowing unsafe wild pointers to reference it without dangling.1
+* Type Identification: The type_id (16 bits) allows for 65,536 unique runtime types. For dynamic obj instances, this ID likely corresponds to a generic "Map" type or, in optimized scenarios, a specific "Hidden Class" (Shape) ID.
+3.3 Storage Strategy: Hash Map vs. Hidden Classes
+The internal storage of an obj (following the header) determines its performance characteristics. Dynamic languages like V8 (JavaScript) utilize "Hidden Classes" (Shapes) to optimize property access from $O(1)$ hash lookups to $O(1)$ offset loads.8
+Given Aria's goal of "high efficiency" 1 and the presence of type_id in the header, the architecture likely implements a Hybrid Storage Model:
+1. Fast Mode (Shapes): For objects created via literals with fixed keys (e.g., config objects), the compiler assigns a specific type_id. The runtime allocates a memory block where values are stored at fixed offsets, and the type_id acts as a pointer to a descriptor table (the Hidden Class) that maps field names to these offsets. This allows generated machine code to access properties directly, bypassing hash computations.
+2. Dictionary Mode: If properties are added dynamically or deleted, the object transitions to a "Dictionary Mode." The type_id changes to a generic TYPE_MAP, and the payload becomes a pointer to a generic Hash Table implementation.
+The MemberAccess AST node 1 supports this hybrid approach. If the compiler can deduce the shape (e.g., for a struct or stable obj), it emits a direct GEP (GetElementPtr) instruction. If not, it emits a call to aria_runtime_get_property(obj, "name"), which handles the hash lookup or shape transition logic.
+3.4 Interaction with AllocStrategy
+The code generation context 1 defines an AllocStrategy enum with values STACK, WILD, GC, and VALUE.
+* obj instances typically default to AllocStrategy::GC.
+* This triggers the generation of calls to aria_gc_alloc.
+* The CodeGenContext tracks these allocations. Upon function exit, or when the obj goes out of scope, no explicit free is generated (unlike WILD strategy), as the GC handles reclamation.
+* However, if an obj is allocated on the stack (using the stack keyword), the compiler must emit cleanup code (destructors) to release any internal heap resources (like the backing hash map buffer) without triggering the GC.
+4. The Dynamic Type (dyn): Polymorphism and Type Erasure
+The dyn keyword introduces true dynamic typing into Aria, allowing a variable to hold values of any type—integers, floats, strings, or complex objects—and changing types at runtime.
+4.1 Usage and Semantics
+As seen in the specification 1, dyn allows reassignment across types:
+
+
+Code snippet
+
+
+
+
+dyn:d = "bob";
+d = 4;
+d = true;
+
+This requires a memory representation capable of "Boxing" any value and carrying runtime type information.
+4.2 Implementation: Tagged Union vs. NaN Boxing
+There are two dominant strategies for implementing dynamic types in compiled languages 10:
+1. NaN Boxing: Storing value bits inside the mantissa of a 64-bit IEEE 754 NaN (Not-a-Number). This allows 64-bit floats to be stored natively, while pointers and integers are stuffed into the NaN space.
+2. Tagged Unions / Fat Pointers: A structure containing a type_tag and a value_payload (usually 64 or 128 bits total).
+Architectural Decision Analysis:
+Aria supports int64 and tbb64 (64-bit integers) as core primitives. NaN boxing only provides roughly 48-52 bits of payload space.12 It cannot store a full 64-bit integer or a full 64-bit pointer on systems with 57-bit addressing (like newer Intel chips) without boxing the integer on the heap.
+Since Aria aims for high-performance systems programming, allocating every 64-bit integer on the heap is unacceptable. Therefore, Aria likely employs a Tagged Union (128-bit) or a Tagged Pointer (64-bit with Alignment) strategy for dyn.
+Given the ObjHeader structure 1, the most consistent implementation is a Fat Pointer model on the stack:
+
+
+C++
+
+
+
+
+struct DynValue {
+   void* data;       // 64-bit pointer or immediate value
+   uint64_t type_id; // 64-bit type tag (matches ObjHeader::type_id)
+};
+
+* Immediate Values: Small types (bool, int32, flt32) are stored directly in the data field. The type_id indicates the type.
+* Heap Values: Large types (obj, string) are stored as pointers in data. The type_id matches the object's header.
+* TBB Integration: This model allows the runtime to detect TBB types (tbb8, tbb64) stored in dyn. When performing arithmetic on dyn variables, the runtime checks the type_id. If it corresponds to a TBB type, the runtime functions (aria_dyn_add) can inspect the value for the ERR sentinel (e.g., 0x80 for tbb8) and propagate sticky errors, maintaining the "Not Negotiable" safety guarantees even in dynamic code.1
+4.3 Runtime Dispatch and RTTI
+Operations on dyn types cannot be compiled to simple CPU instructions. dyn a + dyn b requires dynamic dispatch.
+The backend generates a call to a runtime intrinsic:
+
+
+Code snippet
+
+
+
+
+%res = call %struct.DynValue @aria_dyn_add(%struct.DynValue %a, %struct.DynValue %b)
+
+The aria_dyn_add function acts as a dispatcher:
+1. Check Types: It reads a.type_id and b.type_id.
+2. Fast Path: If both are TYPE_INT64, it performs an integer add.
+3. TBB Path: If types are TBB, it checks for ERR sentinels using TBBLowerer logic 1 re-implemented in the runtime.
+4. Slow Path: If types are obj, it looks for operator overloads (e.g., __add__ method).
+5. Failure: If types are incompatible, it returns a Result indicating a type error.
+4.4 Interaction with the Borrow Checker
+The interaction between dyn and the Borrow Checker is governed by Appendage Theory.
+* Problem: A dyn variable is a GC root. If code creates a wild pointer to the data inside a dyn variable, the GC might move the data (if it's heap-allocated), invalidating the pointer.
+* Solution (Pinning): The # operator is mandatory for taking wild references to dyn content.
+Code snippet
+dyn:d = "hello";
+wild char* ptr = #d; 
+
+This operation:
+   1. Checks if d holds a heap object.
+   2. If yes, sets the pinned_bit in the object's ObjHeader.
+   3. Returns the raw pointer.
+   4. The compiler's semantic analyzer marks d as "borrowed/pinned," preventing reassignment (d = 123) until ptr goes out of scope. This ensures type safety: the underlying memory cannot change type while a raw pointer expects it to be a string.1
+5. Memory Safety and Appendage Theory
+Aria's defining feature is the integration of these dynamic types into a strict safety model. This is achieved through "Appendage Theory," which formalizes the relationship between owners ("Hosts") and references ("Appendages").
+5.1 The Host-Appendage Hierarchy
+   * Host ($H$): obj and dyn variables are Hosts. They own memory. When an obj is pinned (#obj), the pinned instance acts as a stable Host.
+   * Appendage ($A$): Any reference ($ref) or wild pointer (wild ptr) derived from an object.
+The central axiom enforced by the compiler is $\text{Depth}(H) \le \text{Depth}(A)$. The Host must outlive the Appendage. For dyn, this implies that the dynamic container itself must live as long as any reference to its contents.
+5.2 The Invisible Root Rule
+A critical rule for obj and dyn is the Wild/GC Boundary Rule.1
+   * Constraint: A wild struct (unmanaged) cannot hold a reference to a GC-managed obj or dyn unless that object is Pinned.
+   * Reasoning: The Garbage Collector does not scan "wild" memory partitions. If a wild struct held the only reference to a GC object, the GC would fail to mark it, collecting the object and leaving a dangling pointer in the wild struct.
+   * Enforcement: The semantic analyzer checks all assignments to wild memory. If the RHS is a GC type (obj, dyn, string), it demands a pinned reference.
+5.3 Garbage Collection Mechanics
+The runtime employs a Shadow Stack 1 to manage roots for obj and dyn variables on the stack.
+   * Function Entry: aria_shadow_stack_push_frame() creates a new tracking frame.
+   * Variable Declaration: aria_shadow_stack_add_root(&var) registers the address of obj/dyn stack variables.
+   * GC Cycle: The collector traverses the shadow stack to find all reachable obj and dyn instances. It reads the ObjHeader to trace children (if the object contains other objects).
+   * Wild Exclusion: Variables marked with the wild keyword are not registered in the shadow stack, decoupling them from GC overhead but imposing manual management responsibility.
+6. Backend Lowering Strategy (LLVM Integration)
+The CodeGenContext 1 and ExprCodeGen modules translate these high-level types into LLVM IR.
+6.1 Data Structure Tables
+The following table summarizes the mapping from Aria types to LLVM IR types and their runtime strategies:
+Aria Type
+	LLVM IR Type
+	Runtime Storage
+	Allocation Strategy
+	bool
+	i1
+	i8 (padded)
+	STACK / Register
+	obj
+	ptr (opaque)
+	ObjHeader + Hash Map
+	GC (default)
+	dyn
+	ptr (opaque)
+	Fat Pointer / Boxed
+	GC
+	trit
+	i8
+	i8
+	STACK
+	tbb64
+	i64
+	i64
+	STACK
+	6.2 Lowering ObjectLiteral
+When the compiler encounters an object literal { k:v,... }:
+   1. Allocation: It emits a call to aria_gc_alloc(size). The size includes the ObjHeader and initial capacity.
+   2. Header Init: It emits stores to initialize the type_id and flags.
+   3. Field Population: It iterates through the fields in the AST. For each field, it evaluates the expression and emits a runtime call aria_obj_set(obj_ptr, key_string, value). This effectively constructs the hash map at runtime.
+6.3 Lowering PickStmt (Pattern Matching)
+The PickStmt node 1 is used to inspect dyn values.
+
+
+Code snippet
+
+
+
+
+pick (dyn_val) {
+   (int: x) => {... }
+   (obj: o) => {... }
+}
+
+This lowers to a series of type checks:
+   1. Load Tag: Extract type_id from dyn_val.
+   2. Switch/Branch: Generate LLVM switch instruction or icmp chain comparing the tag against known Type IDs (e.g., TYPE_INT, TYPE_OBJ).
+   3. Cast: In the matching block, bitcast the payload to the target type (e.g., int64) and bind it to the variable (x).
+7. Conclusion
+The implementation of bool, obj, and dyn in Aria is a sophisticated exercise in balancing competing requirements.
+   * bool remains a high-performance, hardware-native primitive, segregated from ternary logic to ensure deterministic control flow.
+   * obj leverages a header-based runtime model (ObjHeader) to support garbage collection and potential optimization into Hidden Classes, while defaulting to flexible hash maps for dynamic data.
+   * dyn acts as a polymorphic bridge, using tagged/fat pointers to safely encapsulate values, with deep integration into the GC via shadow stacks.
+The unifying force is the Borrow Checker and Appendage Theory. By enforcing strict rules on how dynamic types can be pinned and referenced by wild pointers, Aria succeeds in creating a hybrid language where "batteries included" dynamic scripting can coexist safely with high-performance, manual memory management. This architecture positions Aria as a unique solution for systems programming that requires both safety and flexibility.
+Works cited
+   1. aria_specs.txt
+   2. Douglas W. Jones on Ternary Logic, accessed December 12, 2025, https://homepage.cs.uiowa.edu/~jones/ternary/logic.shtml
+   3. Balanced ternary - Wikipedia, accessed December 12, 2025, https://en.wikipedia.org/wiki/Balanced_ternary
+   4. The new concept of ternary logic and the problems of its implementation, accessed December 12, 2025, https://aber.apacsci.com/index.php/MSS/article/viewFile/3089/3731
+   5. Is sizeof(bool) defined in the C++ language standard? - Stack Overflow, accessed December 12, 2025, https://stackoverflow.com/questions/4897844/is-sizeofbool-defined-in-the-c-language-standard
+   6. Does boost::any / std::any store small objects in-place? - Stack Overflow, accessed December 12, 2025, https://stackoverflow.com/questions/41878040/does-boostany-stdany-store-small-objects-in-place
+   7. std::any - cppreference.com - C++ Reference, accessed December 12, 2025, https://en.cppreference.com/w/cpp/utility/any.html
+   8. JavaScript Object Internals-From Hidden Classes to Hash Maps | by Berkay ÇIRAK, accessed December 12, 2025, https://medium.com/@berkaycrk/javascript-object-internals-from-hidden-classes-to-hash-maps-7d96e07feb1b
+   9. Hidden Classes: The JavaScript performance secret that changed everything, accessed December 12, 2025, https://dev.to/maxprilutskiy/hidden-classes-the-javascript-performance-secret-that-changed-everything-3p6c
+   10. Optimization - Crafting Interpreters, accessed December 12, 2025, https://craftinginterpreters.com/optimization.html
+   11. Exploring JavaScript - How JS Engines Store Values, Tagged Pointer and NaN Boxing, accessed December 12, 2025, https://witch.work/en/posts/javascript-trip-of-js-value-tagged-pointer-nan-boxing
+   12. Float Self-Tagging - arXiv, accessed December 12, 2025, https://arxiv.org/html/2411.16544v3

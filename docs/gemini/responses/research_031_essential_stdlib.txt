@@ -1,0 +1,199 @@
+﻿Architectural Specification for the Essential Standard Library of the Aria Compiler
+1. Executive Summary and Architectural Philosophy
+The development of the Essential Standard Library (ESL) for the Aria programming language represents a critical juncture in the language's evolution, marking the transition from a C++-hosted prototype to a self-hosting compiler ecosystem. This report provides an exhaustive specification for the ESL, derived from a rigorous analysis of the Aria language specification 1, runtime sources 1, and compiler architecture documents.1 The library is designed not merely as a collection of utilities, but as the foundational runtime layer that mediates between Aria’s high-level constructs—such as Twisted Balanced Binary (TBB) arithmetic and hybrid memory management—and the low-level platform primitives managed by the OS.
+The architectural philosophy of the Aria ESL is defined by three distinct imperatives derived from the language's core design goals: Safety through Stickiness, Hybrid Memory Sovereignty, and Observability by Default.
+First, the library enforces "Safety through Stickiness" by integrating TBB types into the core of all mathematical and I/O operations. Unlike traditional systems languages where integer overflows wrap silently, creating vulnerabilities, the ESL adopts a saturation model where errors propagate as sentinel values (ERR). This effectively eliminates a vast class of arithmetic underflow and overflow bugs often found in file parsing and buffer management.1
+Second, the library asserts "Hybrid Memory Sovereignty." Aria’s unique memory model, characterized by "Appendage Theory," requires the standard library to provide distinct, safe interfaces for three memory regions: the lexically scoped Stack, the managed Garbage Collected (GC) Heap, and the manual "Wild" Heap. The ESL bridges these worlds, utilizing shadow stacks and pinning mechanisms to allow safe interaction between moving GC objects and stable system calls.1
+Third, the library implements "Observability by Default" through a novel six-channel I/O system. Beyond the standard stdin, stdout, and stderr, the library exposes dedicated channels for debugging (stddbg), binary data input (stddati), and binary data output (stddato).1 This separation of concerns is critical for the compiler's bootstrap process, allowing it to emit diagnostics, generated code, and intermediate representations simultaneously without stream corruption.
+This report details the implementation strategies for platform abstraction, memory management, string processing, I/O, math, and error handling, providing a roadmap for achieving a self-hosting compiler capable of reproducing the logic currently embedded in the C++ frontend.1
+________________
+2. Platform Abstraction Layer (PAL): std.sys
+The bootstrapping process necessitates that the Aria compiler interact directly with the host operating system to spawn linkers, read source files, and manage system resources. The std.sys module serves as the Platform Abstraction Layer (PAL), encapsulating the divergences between Linux, Windows, and macOS behind a unified, safe API surface. This layer is crucial for maintaining the "write once, compile anywhere" promise of the Aria language.
+2.1 The Unified System Interface
+The PAL is designed around the principle of conditional compilation, utilizing the cfg attribute 1 to select the appropriate backend implementation at compile time. This ensures that while the high-level API remains consistent, the underlying mechanism is optimized for the target OS—utilizing fork/exec on POSIX systems and CreateProcess on Windows.1
+The analysis of src/runtime/platform/platform.h 1 reveals a set of required platform macros and constants that std.sys must expose. These include architecture detection (ARIA_ARCH_X86_64, ARIA_ARCH_ARM64) and platform identification (ARIA_PLATFORM_LINUX, ARIA_PLATFORM_WINDOWS). The standard library essentially wraps these C-level definitions into Aria const definitions, allowing user code (and the compiler itself) to perform platform-specific logic branching without resorting to external build tools.
+2.2 The Six-Channel I/O Model
+A distinguishing feature of the Aria runtime environment is its extended standard stream model. While traditional environments provide three streams, Aria provisions six file descriptors for every process spawned via std.sys. This design choice reflects a deep understanding of the needs of modern systems tooling, particularly compilers and language servers.
+The std.sys module manages the initialization and mapping of these channels. The following table details the specific role and file descriptor mapping for each channel as defined in the runtime specifications 1:
+Channel Name
+	Descriptor (POSIX)
+	Aria Stream Type
+	Primary Use Case in Compiler Bootstrap
+	stdin
+	0
+	Text Input
+	Reading source code from pipes or redirection.
+	stdout
+	1
+	Text Output
+	Emitting formatted assembly or human-readable reports.
+	stderr
+	2
+	Text Output
+	Reporting syntax errors and compilation warnings.
+	stddbg
+	3
+	Debug Output
+	Structured logging for compiler developer diagnostics.
+	stddati
+	4
+	Data Input
+	Ingesting pre-compiled binary modules or symbol tables.
+	stddato
+	5
+	Data Output
+	Emitting binary object files (.o) or bitcode.
+	This six-channel architecture allows the Aria compiler to separate its output cleanly. For instance, during a build, error messages go to stderr, the generated object code flows to stddato, and verbose debug traces (critical for debugging the self-hosted compiler) are routed to stddbg. The std.sys module ensures that when spawn is called, these pipes are correctly established and inherited by child processes, facilitating complex toolchain pipelines.
+2.3 Process Management and Signals
+The compiler must be capable of invoking external tools, such as the system linker (ld or link.exe) or the assembler (nasm). The std.sys module provides the spawn primitive to handle this.
+The spawn function signature in std.sys abstracts the complexity of argument marshaling. On POSIX systems, arguments must be converted to a null-terminated array of char* pointers. On Windows, they must be concatenated into a single command-line string with specific escaping rules. The library handles these conversions transparently. Furthermore, std.sys exposes process synchronization primitives like wait, which returns a result<int32> containing the exit code. This integration allows the Aria compiler to orchestrate the entire build lifecycle, checking for linker errors via the returned result object and halting the build process if a subprocess fails.
+2.4 System Diagnostics and Resource Monitoring
+Compiling large projects is resource-intensive. To enable the Aria compiler to schedule its workload effectively (e.g., determining how many parallel compilation units to spawn), std.sys exposes system diagnostic functions.
+The getCPUCount() function allows the scheduler to size its thread pool appropriately. More critically, getMemoryUsage() 1 allows the compiler to monitor its own Resident Set Size (RSS). This is particularly important during the bootstrap phase where memory leaks in the "Wild" heap might occur. By exposing this metric, the compiler can implement self-throttling or aggressive GC cycles if memory pressure exceeds safe thresholds. The getPageSize() function 1 is also exposed, enabling the memory allocator to perform page-aligned allocations for high-performance arenas.
+________________
+3. Memory Management: std.mem
+The std.mem module is arguably the most complex and critical component of the ESL. It acts as the interface to Aria's hybrid memory model, which combines a Garbage Collected (GC) heap for ease of use with a manual "Wild" heap for system-level performance. The design of std.mem is guided by "Appendage Theory" 1, which dictates that references ("appendages") must strictly obey the lifetime constraints of their owners ("hosts").
+3.1 The Hybrid Allocator Strategy
+Aria's memory model is not monolithic; it acknowledges that different phases of compilation have different memory requirements. The AST, being a complex graph with cyclic references and varying lifetimes, is best suited for the GC heap. However, the symbol table and intermediate code generation buffers, which require stable addresses and high locality, benefit from the "Wild" heap.
+The std.mem module exposes these capabilities through a set of distinct allocator functions, wrapping the runtime's underlying memory manager (likely mimalloc or similar, as referenced in allocator.h 1).
+Allocators defined in std.mem:
+Allocator Function
+	Return Type
+	Memory Region
+	Lifecycle Management
+	Use Case
+	aria.gc_alloc(size)
+	obj
+	GC Heap
+	Automatic (Tracing GC)
+	Dynamic usage, strings, AST nodes.
+	aria.alloc(size)
+	wild void*
+	Wild Heap
+	Manual (aria.free)
+	Buffers, persistent compiler state.
+	aria.alloc_exec(size)
+	wildx void*
+	Executable Heap
+	Manual (aria.free)
+	JIT compilation, thunks.
+	stack alloc
+	stack T
+	Stack
+	Scope-based (LIFO)
+	Local temporaries, high speed.
+	The distinction between wild and wildx is a security feature enforced by the type system. wildx memory represents pages that can be transitioned to executable status, essential for JIT capabilities, while standard wild memory is strictly Read-Write (RW), preventing code injection attacks.
+3.2 Shadow Stacks and Root Tracking
+One of the most sophisticated aspects of std.mem is its interaction with the Garbage Collector. Since Aria uses a moving GC (likely generational or copying) to reduce fragmentation 1, raw pointers to GC objects are unstable. However, the standard library implementation (written in C/C++ or Aria) often needs to hold pointers to objects while performing operations.
+To solve this, std.mem integrates with the runtime's Shadow Stack mechanism defined in src/runtime/gc/shadow_stack.h.1 When std.mem functions operate on GC objects, they effectively push a "shadow frame" onto a thread-local stack. This frame registers the active pointers as "roots," ensuring the GC scans them during a collection cycle. The aria_shadow_stack_push_frame and aria_shadow_stack_add_root intrinsics are invoked implicitly by the compiler or explicitly by low-level library code to guarantee that objects processed by the library are not prematurely collected or moved without the library's knowledge.
+3.3 The Pinning Bridge
+For operations that require absolute address stability—such as passing a buffer to a kernel syscall via read or write—the Shadow Stack is insufficient because the GC might still move the object if it compacts the heap. The std.mem module implements the Pinning Protocol via the # operator and the pin function.
+When a user writes #obj, std.mem invokes a runtime intrinsic that sets the pinned_bit in the object's header (src/runtime/gc/header.h 1). This bit acts as a signal to the GC's compaction phase to skip the object, leaving it in place. The pin function returns a wild pointer to the object's payload. The safety of this operation is paramount: the std.mem API ensures that the wild pointer returned by pin cannot outlive the scope of the pin, adhering to the strictures of Appendage Theory. This allows std.io to zero-copy data from managed strings directly to file descriptors, a critical performance optimization for the compiler's output generation.
+3.4 Executable Memory Management
+The bootstrapping of a compiler often involves not just generating files but potentially executing code in memory (e.g., for compile-time function evaluation). The std.mem module supports this via wildx allocations.
+The lifecycle managed by std.mem ensures W^X (Write XOR Execute) compliance:
+1. Allocation: aria.alloc_exec allocates memory mapped with PROT_READ | PROT_WRITE.
+2. Population: The compiler writes machine code into this buffer.
+3. Protection: The function aria.protect_exec transitions the page permissions to PROT_READ | PROT_EXEC.1
+4. Execution: The pointer is cast to a function type and invoked.
+This rigorous state transition prevents the memory from being writable once it is executable, mitigating security risks within the compiler infrastructure itself.
+________________
+4. Input/Output Subsystem: std.io
+The std.io module is the compiler's interface to the external world. It is designed to be robust against system failures and data corruption, leveraging Aria's result types and TBB arithmetic to provide a safer I/O experience than traditional C stdio.
+4.1 The File Object and RAII
+The core abstraction in std.io is the File struct. Unlike higher-level languages that might attach finalizers to file objects, Aria's explicit philosophy requires deterministic cleanup. The File struct wraps a wild int32 file descriptor. The library design enforces the Resource Acquisition Is Initialization (RAII) pattern via the defer keyword.
+When io.open is called, it returns a result<File>. The user handles the error or unwraps the file, and immediately schedules defer f.close(). This ensures that file descriptors are released deterministically at the end of the scope, preventing resource exhaustion during the compilation of large projects consisting of thousands of source files.
+4.2 TBB Integrated Seeking: A Security Innovation
+A subtle but prevalent vulnerability in C/C++ I/O libraries involves integer overflows during file offset calculations. If a program calculates a seek offset as base + (index * record_size), and an overflow occurs, the resulting value might wrap around to a small positive integer, causing the program to read from the wrong file location.
+Aria's std.io eliminates this class of bugs by integrating Twisted Balanced Binary (TBB) types into the API. The seek function signature is defined as:
+func seek(offset: tbb64, whence: int8) -> result<tbb64>
+Internally, std.io checks the offset parameter against the TBB error sentinel (ERR or -2^63). If the input offset is ERR—indicating that the calculation producing the offset failed due to an overflow—the seek function does not issue a system call. Instead, it immediately returns an error result.1 This "Sticky Error" propagation means that arithmetic safety checks are effectively built into the I/O layer, simplifying the compiler's logic for processing binary file formats (like reading object file headers).
+4.3 Asynchronous I/O and the Scheduler
+While the initial bootstrap compiler may operate synchronously, the architecture of std.io is built to support the high-concurrency needs of a production compiler server. The module bridges the gap between the synchronous file system API and Aria's asynchronous runtime.
+The readAsync and writeAsync functions in std.io do not block the OS thread. Instead, they interact with the runtime's I/O subsystem—likely based on io_uring on Linux or IOCP on Windows.1 These functions allocate a Future object and submit the I/O request to the kernel. They then yield control to the scheduler (std.async). The runtime ensures that while the operation is pending, the calling coroutine is suspended and the thread is free to execute other tasks.
+Crucially, the API mandates the use of wild buffers for asynchronous operations. Because the GC can move objects at any time, passing a managed buffer to an asynchronous kernel operation would be unsafe (the kernel might write to the old address after the GC has moved the object). By enforcing wild buffers, std.io guarantees address stability without requiring long-term pinning, which could fragment the GC heap.
+4.4 Buffering for Lexer Performance
+The compiler's lexer requires efficient character-by-character access to source files. System calls for every byte would be prohibitively slow. std.io implements BufReader and BufWriter types. These wrappers manage a generic wild buffer (typically 4KB or 8KB) and handle the interactions with the underlying File descriptor. This buffering layer is transparent to the user but critical for the performance of the std.string module's parsing functions.
+________________
+5. String Processing and Lexical Analysis: std.string
+Text processing is the primary workload of a compiler's frontend. The std.string module provides the high-level abstractions required to parse Aria source code, handle Unicode, and support the language's extensive string interpolation features.
+5.1 String Representation and Allocation
+In Aria, a string is an immutable view over a UTF-8 encoded byte sequence. The standard library manages the complexity of string allocation, offering two distinct paths:
+1. Managed Strings: Created via std.string.fromBytes or string literals. These reside on the GC heap and are deduplicated (interned) where possible to save memory.
+2. Wild Strings: The aria.alloc_string function 1 allows the creation of strings on the wild heap. This is particularly useful for the lexer, which may need to create millions of short-lived token strings that would otherwise overwhelm the garbage collector.
+5.2 Template Literals and Interpolation
+Aria's syntax supports advanced template literals (e.g., `Value: &{x}`). The std.string module provides the runtime backing for this feature. When the compiler encounters a template literal, it desugars it into a series of calls to std.string functions.
+The lexer state machine, as seen in src/frontend/lexer.cpp 1, handles complex nesting of templates (STATE_STRING_TEMPLATE vs STATE_INTERPOLATION). The standard library mirrors this complexity by providing efficient concatenation and formatting functions. The std.string.format function acts as a type-safe builder, capable of accepting dyn types and invoking their string conversion methods. This allows for the rich diagnostic messages required by the compiler (e.g., printing AST nodes or types in error messages).
+5.3 Lexer Integration
+The relationship between std.string and the compiler's lexer is symbiotic. The lexer 1 consumes the source code using std.io streams and produces Token objects. These tokens often contain string values (identifiers, literals). std.string optimizes this by implementing Small String Optimization (SSO) or string views (slices) into the source buffer, avoiding heap allocations for identifiers that appear repeatedly in the code. This optimization significantly reduces the memory footprint during the parsing phase.
+________________
+6. Mathematical Foundation: std.math and TBB
+The std.math module is not merely a wrapper for libm; it is the implementation ground for Aria's Twisted Balanced Binary arithmetic. This system defines the mathematical correctness of the compiler itself.
+6.1 TBB Types and Sentinel Semantics
+The std.math module formalizes the TBB type system required by the backend.1 It defines the exact ranges and sentinel values for each type, ensuring consistency between the compiler's internal logic and the generated code.
+TBB Type Specifications:
+Type
+	Bit Width
+	Range (Symmetric)
+	Sentinel Value (ERR)
+	Hex Representation
+	tbb8
+	8
+	-127 to +127
+	-128
+	0x80
+	tbb16
+	16
+	-32,767 to +32,767
+	-32,768
+	0x8000
+	tbb32
+	32
+	-2,147,483,647 to +2,147,483,647
+	-2,147,483,648
+	0x80000000
+	tbb64
+	64
+	-9.22e18 to +9.22e18
+	-9,223,372,036,854,775,808
+	0x8000000000000000
+	These sentinel values are architecturally significant. In std.math, operations are "sticky." If an operation like div(a, b) encounters a division by zero, it returns ERR. If add(a, b) overflows, it returns ERR. If any input to a function is ERR, the result is ERR. This propagates failure safely through complex calculations without requiring if checks at every step.
+6.2 Lowering to LLVM Intrinsics
+The std.math library works in tandem with the compiler backend's TBBLowerer.1 When the user writes a + b for TBB types, the compiler emits a call to llvm.sadd.with.overflow. The standard library provides the high-level wrapper functions that allow these operations to be performed in const contexts (compile-time evaluation) or interpreted mode.
+Specifically, std.math implements the fallback logic for operations like mod. In standard hardware, INT_MIN % -1 causes a CPU trap (SIGFPE). std.math detects this specific edge case and returns ERR instead of crashing, ensuring the robustness of the compiler when evaluating constant expressions provided by the user.
+6.3 Vector and Matrix Math
+To support Aria's graphics-oriented types (vec3, mat4), std.math provides optimized implementations of linear algebra primitives. These are not just for graphics; the compiler utilizes them for data flow analysis and graph layout algorithms. The implementation leverages SIMD intrinsics where possible, aligning with the aria_alloc_aligned allocator in std.mem to ensure high performance on modern CPUs.
+________________
+7. Error Handling: std.error
+Aria eschews exceptions in favor of explicit value-based error handling. std.error provides the infrastructure for the result<T> type and the machinery to bridge the gap between operational errors (I/O) and computational errors (TBB).
+7.1 The Result Type Architecture
+The result<T> type is a discriminated union (or struct) holding either a value or an error object. std.error defines the canonical structure of the error object, which includes an error code, a message string, and optionally a stack trace or context.
+The interaction with the ? (unwrap) operator is central to std.error. The library defines the semantics of unwrap: if the result is an error, the current function immediately returns the error. This is implemented via a combination of compiler sugar and library helper functions (result.is_err, result.unwrap_or).
+7.2 Bridging Error Domains
+A unique responsibility of std.error is unifying the disparate error models of the underlying systems.
+1. OS Errors: std.sys returns raw errno codes. std.error maps these to standardized Aria error enums (e.g., error.NotFound, error.PermissionDenied).
+2. TBB Errors: Math operations return ERR sentinels. std.error provides tbb_to_result(val) which converts a sentinel into a result containing a "Computation Failed" error.
+This unification allows the compiler developer to treat a failed file open and an integer overflow uniformly, simplifying the error reporting logic in the main compiler loop.
+________________
+8. Concurrency and Async: std.async
+The bootstrapping of the Aria compiler requires it to be performant, often implying parallel compilation of source modules. std.async provides the runtime support for Aria's concurrency model, built on top of the scheduler defined in scheduler.h.1
+8.1 Coroutines and Futures
+The library exposes Future<T> as the primary synchronization primitive. A Future represents a value that is being computed by another coroutine. std.async manages the lifecycle of these futures, including the mutexes and condition variables required to wait for them.
+When the spawn keyword is used, std.async interacts with the runtime to allocate a CoroutineFrame. This frame stores the suspended state of the function. The library provides the await function, which interfaces with the scheduler to park the current coroutine if the future is not ready, allowing the thread to steal work from other queues.
+8.2 Work-Stealing Integration
+The implementation of std.async relies on a work-stealing scheduler.1 The library initializes the scheduler with a thread pool matching the system's CPU count (via std.sys.getCPUCount). It then manages the global and local task queues. The spawn function pushes tasks to the local queue, while idle threads steal from the tail of other threads' queues. This architecture ensures that the massive parallelism available in a compiler workload (compiling thousands of independent functions) is efficiently mapped to the available hardware resources.
+________________
+9. Runtime Integration: Traits and Preprocessor
+To support the sophisticated features of the Aria language, the standard library must provide runtime backing for traits and the preprocessor.
+9.1 Trait Objects and VTables
+Aria supports dynamic dispatch via traits. The backend generates VTables 1—structures containing function pointers for each method in a trait. std.runtime (a submodule of the standard library) provides the types necessary to represent these "fat pointers."
+A trait object in Aria is represented at runtime as a struct { data: wild void*, vtable: wild Vtable* }. The standard library provides the casting mechanics to convert a concrete type (like struct File) into a trait object (like trait Reader). This involves constructing the fat pointer by looking up the appropriate VTable global symbol generated by the compiler.
+9.2 Preprocessor Runtime Support
+The Aria preprocessor supports directives like %include and %define.1 While much of this is handled at compile time, the standard library supports the evaluation of constant expressions in preprocessor conditions (%if). The std.math and std.string modules are designed to be "const-eval" compatible, meaning their logic can be executed by the compiler's interpreter during the preprocessing phase to resolve conditional logic.
+________________
+10. Conclusion
+The Essential Standard Library for Aria is a masterclass in integrated systems design. It does not exist in isolation but is tightly coupled to the language's unique features—Appendage Theory, TBB arithmetic, and Result-based errors.
+By enforcing the use of TBB sentinels in std.io and std.math, the library eliminates a broad category of safety bugs. By providing distinct gc and wild allocators in std.mem, it enables the performance necessary for a self-hosting compiler. By exposing a six-channel I/O system in std.sys, it caters specifically to the observability needs of toolchain developers.
+This specification provides the complete blueprint for implementing the library layers required to bootstrap Aria. It transforms the raw capabilities of the C++ runtime into a safe, expressive, and high-performance toolkit, laying the groundwork for the next generation of the Aria compiler.
+Works cited
+1. aria_specs.txt

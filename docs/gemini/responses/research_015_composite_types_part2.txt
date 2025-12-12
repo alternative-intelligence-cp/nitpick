@@ -1,0 +1,253 @@
+﻿Specification for Composite Types Part 2: Vector, Struct, and String Architectures
+1. Executive Summary and Architectural Vision
+This comprehensive research report constitutes the second part of the "Specification for Composite Types" for the Aria programming language architecture. Building upon the foundational scalar definitions established in Part 1, this document provides an exhaustive technical specification for the second-tier composite types: Vector Types (vec2 through vec9), Structure Types (struct), and String Types (string). The analysis presented herein is derived from a rigorous examination of the Aria compiler source code, specifically the frontend tokenization logic 1, the Abstract Syntax Tree (AST) definitions 1, the Type Checker mechanisms 1, and the backend code generation strategies.1
+The primary objective of the Aria composite type system is to bridge the historical schism between high-level abstraction and low-level hardware control. Traditional systems languages often force a choice between ergonomic data structures (which incur hidden performance penalties via virtual tables and pointer indirection) and raw memory mapping (which sacrifices safety and expressiveness). Aria’s architecture rejects this dichotomy by introducing a bifurcated memory model—distinguishing between "Garbage Collected" (GC) and "Wild" (manual) storage classes—and by treating linear algebra primitives as first-class citizens rather than library additions.
+A central theme of this report is the "Zero-Overhead" philosophy applied to complex data layouts. For instance, the implementation of polymorphism via Traits and impl blocks eliminates the need for embedded virtual pointers (vptr) within structure data, ensuring that Aria structs remain Plain Old Data (POD) compatible with hardware interfaces and C ABIs. Similarly, the String architecture employs a Small String Optimization (SSO) strategy that fundamentally alters the allocation profile of text-heavy applications, eliminating heap churn for the vast majority of identifiers and short messages.
+Furthermore, this report delves into the "Exotic" type tier, specifically the vec9 vector type. Unique to Aria, this type is architected to support 9-Dimensional Twisted World Interfaces (9D-TWI), a feature hinted at in the token definitions 1 and deeply integrated with the language's "Twisted Balanced Binary" (TBB) error propagation logic. The analysis provided here explores the theoretical underpinnings of this type, postulating its role in non-Euclidean geometry and robust error handling in high-dimensional simulations.
+By rigorously defining the memory layout, alignment requirements, SIMD (Single Instruction, Multiple Data) mapping strategies, and runtime behaviors of these types, this document serves as the definitive reference for compiler engineers, standard library authors, and systems architects implementing the Aria specification. The following sections dismantle each type category, reconstructing them from the bit-level up to their integration in the semantic analysis and code generation phases.
+________________
+2. Vector Types: SIMD Architecture and Geometric Primitives
+The Aria vector system is designed not merely as a convenience for graphics programming, but as a fundamental computational primitive deeply integrated into the compiler's backend lowering logic. Unlike C++ templates or external libraries where vectors are user-defined aggregates, Aria vectors are primitive types known to the compiler frontend 1, enabling aggressive optimizations such as scalarization, register allocation, and instruction fusion at the Intermediate Representation (IR) level.
+2.1 Taxonomy and Hardware mapping
+Aria defines a strict, multi-tiered taxonomy of vector types, categorized by bit-width and elemental interpretation. This taxonomy ensures that every vector type maps deterministically to specific hardware registers (SSE, AVX, NEON) and instruction sets.
+2.1.1 The Floating-Point Family (32-bit Elements)
+This family represents the workhorse of real-time graphics, physics simulations, and signal processing. The elements are IEEE-754 binary32 floats (flt32).
+* vec2 (64-bit): Composed of two 32-bit floats $\langle x, y \rangle$.
+   * Hardware Mapping: On x86-64 architectures, this maps to the lower half of an XMM register (SSE). The compiler backend creates a generic fixed vector type vec2_type 1 which LLVM lowers to <2 x float>.
+   * Usage: Primary uses include 2D coordinate systems, UV texture mapping, and complex number representation where $x$ is real and $y$ is imaginary.
+* vec3 (96-bit / 128-bit Padded): Composed of three 32-bit floats $\langle x, y, z \rangle$.
+   * Alignment Issues: While physically 96 bits, standard alignment rules often pad this to 128 bits to prevent cache line straddling. The VectorLowerer implementation 1 indicates specific handling for vec3 cross products via runtime calls, acknowledging the distinct geometric properties of 3-space.
+   * Usage: 3D positional data, surface normals, and RGB color data.
+* vec4 (128-bit): Composed of four 32-bit floats $\langle x, y, z, w \rangle$.
+   * Hardware Mapping: This is the "Golden Type" of SIMD computing. It maps perfectly to a single 128-bit XMM register. Code generation for vec4 1 is highly optimized, often resulting in a one-to-one mapping between Aria operators and assembly instructions (e.g., ADDPS, MULPS).
+   * Usage: Homogeneous coordinates (where $w$ is the projection divisor), RGBA color channels, and quaternions.
+2.1.2 The Double-Precision Family (64-bit Elements)
+Designed for scientific computing, financial modeling, and orbital mechanics where single-precision error accumulation leads to catastrophic failure.
+* dvec2 (128-bit): Maps to a full XMM register holding two double values.
+* dvec3 (192-bit / 256-bit Padded): Similar alignment challenges as vec3, often padded to 256 bits in memory to align with AVX boundaries.
+* dvec4 (256-bit): Maps naturally to AVX (YMM) registers. This type allows for high-precision batch processing, executing four double-precision operations per cycle.
+2.1.3 The Integer Family (32-bit Elements)
+These vectors utilize 32-bit signed integers (int32) and are critical for discrete grid logic, voxel traversal, and loop indexing.
+* ivec2, ivec3, ivec4: These map to integer SIMD instructions (e.g., PADDD, PMULLD). The backend explicitly distinguishes between floating-point and integer arithmetic logic 1, creating CreateFAdd for vec types and CreateAdd for ivec types.
+2.1.4 The Exotic Tier: vec9 and 9D-TWI
+A unique and significant deviation from standard shading languages is Aria's inclusion of the vec9 type.1 While standard hardware operates on powers of two (2, 4, 8, 16), vec9 represents a deliberate architectural choice to support specific high-dimensional or matrix-flattening workloads.
+Architectural Definition:
+* Composition: 9 $\times$ 32-bit floats. Total payload: 288 bits.
+* 9D-TWI (Twisted World Interface): The Lexer comments explicitly link vec9 to "9D-TWI".1 Based on the "Twisted Balanced Binary" (TBB) context found in the runtime 1, which deals with symmetric error propagation, 9D-TWI likely refers to a specialized coordinate system for robust error handling or non-Euclidean geometry. In TBB systems, error sentinels propagate "stickily." A vec9 in this context acts as a monolithic state vector where if any of the 9 dimensions encounters a TBB error sentinel, the entire vector state transitions to an error state.
+* Matrix Flattening: The most practical architectural application of vec9 is the representation of $3 \times 3$ matrices (Rotation, Stress Tensors). Passing a $3 \times 3$ matrix as a single vec9 value (register-allocated) rather than a pointer to memory allows for extreme performance gains in physics engines.
+Hardware Mapping Challenges:
+* Storage: 288 bits does not fit into 256-bit AVX registers (YMM). It requires AVX-512 (ZMM, 512 bits) support.
+* Mapping Strategy: On AVX-512 hardware, a vec9 occupies the lower 288 bits of a ZMM register, leaving the upper 224 bits as padding/undefined. Operations use writemasks ($k$-masks) to limit execution to the first 9 lanes, preventing floating-point exceptions from processing garbage data in the upper lanes.
+* Legacy Fallback: On hardware lacking AVX-512, vec9 is split into a vec8 (occupying one YMM register) and a scalar float (scalar register), or three vec3s. This split imposes a latency penalty, motivating the "Aria-specific" designation—it is optimized for next-generation hardware.
+2.2 Backend Lowering and SIMD Strategy
+The translation from high-level vector operations to machine code is handled by the VectorLowerer class in the backend.1 This class abstracts the LLVM IR generation, ensuring that the compiler produces optimal SIMD instructions.
+2.2.1 Arithmetic Lowering
+Aria vectors support standard arithmetic operators (+, -, *, /). The lowering strategy leverages LLVM's FixedVectorType to enable "Auto-Vectorization Guidance." Rather than relying on the LLVM optimizer to find vectorizable loops, Aria explicitly generates vector IR.
+Operational Lowering Table:
+Operator
+	Aria Type
+	LLVM Instruction
+	Assembly Target (x86)
+	Notes
+	+
+	vec4
+	fadd <4 x float>
+	ADDPS
+	Single cycle throughput.
+	*
+	ivec4
+	mul <4 x i32>
+	PMULLD
+	Integer multiplication.
+	/
+	vec4
+	fdiv <4 x float>
+	DIVPS
+	High latency (~14 cycles).
+	/
+	ivec4
+	sdiv <4 x i32>
+	Software Sequence
+	Integer division is rarely supported natively in SIMD; usually expanded to sequence.
+	The Splat Optimization:
+Scalar-Vector operations (e.g., vec4 * float) require the scalar to be broadcast across a register. The VectorLowerer::createVectorSplat method 1 handles this by creating an undef vector and inserting the scalar into all indices. Modern CPUs handle this via broadcast loads (e.g., VBROADCASTSS), avoiding explicit shuffle instructions.
+2.2.2 Geometric Intrinsics
+Geometric operations are more complex than lane-wise arithmetic. The VectorLowerer provides specific implementations for these.1
+* Dot Product: Defined as $a \cdot b = \sum a_i b_i$.
+   * Implementation: The backend generates a component-wise multiplication (fmul) followed by a horizontal reduction (createHorizontalAdd).
+   * Reduction Complexity: Horizontal addition is expensive because it requires data movement between lanes. The implementation utilizes shuffle-add chains (logarithmic depth) rather than sequential addition to minimize dependency chains.
+* Cross Product: Uniquely defined for vec3 to produce a vector perpendicular to the input two.
+   * Implementation: The formula $(a_y b_z - a_z b_y, \dots)$ involves a specific permutation of inputs. The compiler lowers this to a call to _aria_vec3_cross, a dedicated runtime function. This decision suggests that the code size overhead of inlining cross-products was deemed too high, or the runtime implementation utilizes specific hardware permutations (like _mm_permute_ps) that are tedious to express in generic IR.
+* Normalization: $\hat{v} = v / \|v\|$.
+   * Mechanism: Requires a square root (llvm::Intrinsic::sqrt) and division. The compiler supports "Fast Math" modes where this is lowered to a Reciprocal Square Root Estimate (rsqrtps) followed by a Newton-Raphson refinement step, trading 1-2 bits of precision for a 10x speedup.
+2.3 Swizzling Support
+Swizzling is the ability to rearrange vector components using letter notation (e.g., v.zyx). Aria supports this directly in the syntax, mapping it to low-level shuffles.
+Implementation Logic:
+The VectorLowerer::createVectorSwizzle method 1 accepts a source vector and a list of indices.
+1. Mask Generation: The frontend converts .wzyx into a mask ``.
+2. IR Generation: This lowers to builder.CreateShuffleVector(v, undef, mask).
+3. Hardware Realization:
+   * Identity: v.xyzw becomes a no-op.
+   * Broadcast: v.xxxx uses a mask ``, compiling to SHUFPS.
+   * Permutation: v.wzyx compiles to a single shuffle instruction.
+L-Value Restrictions:
+While R-value swizzling (reading) allows duplication (v.xxxx), L-value swizzling (writing) must be a distinct permutation. v.xy =... is valid; v.xx =... is a compile-time error because the assignment to x is ambiguous. This validation occurs in the Semantic Analysis phase.1
+________________
+3. Structure Types: Memory Layout and Object Model
+The struct in Aria is a fundamental departure from the "Object" of object-oriented languages. It is designed as a data-layout description language, strictly decoupled from behavior. This separation enables Aria to support a dual memory model—Garbage Collected (GC) and Manual (Wild)—using the same type definitions, a capability rare in modern languages.
+3.1 Memory Layout, Alignment, and Padding
+Aria's struct layout engine prioritizes hardware efficiency (Natural Alignment) by default but offers overrides for systems programming.
+3.1.1 Natural Alignment Rules
+By default, Aria structs follow the "Natural Alignment" strategy.2 This strategy ensures that every field is accessed at a memory address that is a multiple of its size, minimizing CPU fetch cycles and preventing bus errors on strict architectures (like ARM).
+Alignment Algorithm:
+1. Field Alignment:
+   * int8 / bool: 1 byte.
+   * int16: 2 bytes.
+   * int32 / flt32: 4 bytes.
+   * int64 / flt64 / pointers: 8 bytes (on 64-bit systems).
+   * vec4 / dvec2: 16 bytes (Strict requirement for SSE loads).
+   * vec9 / dvec4: 32 or 64 bytes (AVX/AVX-512 alignment).
+2. Structure Alignment: The alignment of the struct itself is equal to the largest alignment requirement of any of its fields.
+3. Padding: The compiler inserts "padding bytes" between fields to satisfy these rules.
+Scenario Analysis:
+Consider the following struct:
+
+
+Code snippet
+
+
+
+
+struct Data {
+   int8  flag;   // 1 byte
+   vec4  vector; // 16 bytes (needs 16-byte alignment)
+   int32 count;  // 4 bytes
+}
+
+* Layout:
+   * Offset 0x00: flag (1 byte)
+   * Offset 0x01: Padding (15 bytes) to align vector to 0x10.
+   * Offset 0x10: vector (16 bytes).
+   * Offset 0x20: count (4 bytes).
+   * Offset 0x24: Padding (12 bytes) to pad struct size to multiple of 16.
+* Total Size: 48 bytes. Efficiency: 21 bytes data, 27 bytes padding (~43% efficient).
+3.1.2 Packed Support (@pack)
+To combat padding overhead, Aria supports packing directives. Although not explicitly tokenized as a keyword, the TOKEN_DIRECTIVE (@) mechanism 1 allows for attributes like @pack.
+* Mechanism: @pack forces the alignment of all fields to 1 byte.
+* Result: In the example above, vector would start at Offset 0x01.
+* Consequences:
+   * Space: Size reduces to 21 bytes.
+   * Performance: Accessing vector at 0x01 requires unaligned loads (MOVUPS vs MOVAPS). On some architectures, this causes a hardware trap handled by the OS, incurring massive latency. On modern x86, it is merely slower.
+   * Safety: Passing a reference to a packed field to a function expecting an aligned reference is undefined behavior.
+3.2 The Dual Memory Model: GC vs. Wild
+Aria's type system is unique in that a struct definition does not dictate its memory lifecycle. The lifecycle is determined at the point of instantiation via keywords wild and gc.1
+3.2.1 The Garbage Collected (GC) Model
+This is the default for application logic.
+* Allocation: new Point(...).
+* Tracing: The runtime's GC scans these objects. The Shadow Stack 1 explicitly tracks roots for these objects during execution.
+* Reference Semantics: Variables are references. Point a = b aliases the same object.
+3.2.2 The Wild Model (wild)
+This mode exposes raw memory for systems programming.
+* Declaration: wild Point* p.
+* Allocation: Uses aria_alloc 1, which wraps malloc or a custom slab allocator.
+* Semantics: These are raw C-style pointers. The GC ignores them.
+* Interoperability: A wild struct typically cannot hold gc references, as the GC cannot trace through "invisible" memory regions. If a wild struct must hold a GC object, that object must be Pinned (using the pin keyword/operator 1) to prevent the moving collector from invalidating the pointer.
+3.3 Methods, Composition, and Polymorphism
+Aria rejects class-based inheritance (extends) in favor of a Composition and Trait implementation model (impl).
+3.3.1 The impl Block Separation
+Structs define data. impl blocks define behavior.
+
+
+Code snippet
+
+
+
+
+struct Circle { flt32 radius; }
+
+impl Circle {
+   func area(self) -> flt32 {... }
+}
+
+This decoupling allows methods to be attached to structs defined in other modules (extension methods), fostering a more modular architecture than traditional OOP.
+3.3.2 Monomorphization vs. Dynamic Dispatch
+Aria supports both static and dynamic polymorphism.
+1. Static (Generics): func foo<T>(T item). The compiler generates specialized copies of the function for each concrete type T (Monomorphization).1 This results in zero runtime overhead but increases binary size.
+2. Dynamic (Trait Objects): func bar(dyn Drawable item).
+   * The Fat Pointer: A reference to a dynamic trait object is not a simple pointer. It is a "Fat Pointer" consisting of { data_ptr, vtable_ptr }.1
+   * VTables: The compiler generates a virtual table (vtable) for every implementation of a trait.1
+   * Structure: The vtable contains function pointers to the concrete methods.
+   * Advantage: Since the vtable pointer is carried with the reference, not embedded in the struct, any struct (even wild ones) can satisfy a trait interface without changing its memory layout. This enables "Retroactive Polymorphism."
+________________
+4. String Types: SSO, Encoding, and Immutability
+String handling in Aria addresses the primary performance bottleneck of modern applications: memory allocation churn caused by short, temporary strings. The implementation combines a rigorous UTF-8 specification with a highly optimized storage layout.
+4.1 Small String Optimization (SSO) Strategy
+Aria's string type is a smart handle, not a simple pointer. The implementation utilizes Small String Optimization (SSO) to store short strings directly within the handle, bypassing the heap entirely.
+4.1.1 Memory Layout
+The AriaString structure typically occupies 24 bytes (on 64-bit systems).1 It is defined as a union of two structs: the Heap view and the Stack (SSO) view.
+Layout Diagram:
+Byte Offset
+	Stack View (SSO)
+	Heap View
+	0 - 7
+	Characters 0..7
+	char* ptr (Heap Address)
+	8 - 15
+	Characters 8..15
+	size_t size (Length)
+	16 - 22
+	Characters 16..22
+	size_t capacity (Bits 0-55)
+	23
+	Metadata Byte
+	Flag Byte
+	The Discriminator: The last byte (byte 23) is the control center.
+* Heap Flag: If specific bits (usually the LSB) are set, the runtime treats the structure as the Heap view. ptr points to allocated memory; size is the length.
+* SSO Flag: If the flag indicates Stack mode, the remaining bits of the metadata byte store the length of the small string.
+* Capacity: In SSO mode, the string can hold up to 23 bytes of data (24 bytes total - 1 metadata byte). This covers the vast majority of variable names, log levels ("INFO", "ERROR"), and numeric formatting.
+4.1.2 Operational Mechanics
+* Allocation: When aria_string_from_literal 1 is called, the runtime checks the literal length.
+   * If len < 23: It memcpys the data into the stack buffer and sets the metadata byte. No malloc is called.
+   * If len >= 23: It calls aria_alloc, stores the pointer in heap.ptr, and sets the heap flag.
+* Access: Reading the string involves a bitwise check on byte 23. This check is extremely fast and branch-predictor friendly.
+4.2 UTF-8 Encoding and Validation
+Aria mandates that all string types contain valid UTF-8 sequences. However, the internal implementation exposes a tension between correctness and performance.
+* Internal Storage: Internally, data is stored as char (bytes).1
+* The Validation Boundary: Validation is enforced at the "Edges" of the system.
+   * Literals: Source code is parsed as UTF-8; string literals are validated at compile time.
+   * IO: Reading from files/sockets validates or sanitizes input before creating a string.
+* Trusted Domain: Once a string is created, internal operations (concatenation, slicing) assume the data is valid.
+* Indexing vs. Iteration:
+   * str[i] returns a byte (uint8), not a character. This avoids the $O(N)$ scan required to find the $i$-th UTF-8 code point.
+   * Iteration (for c in str) uses a decoder to yield Unicode Scalar Values (32-bit char), ensuring correctness when processing text.
+4.3 Concatenation and Template Interpolation
+4.3.1 Concatenation Logic
+Concatenation (+) creates a new immutable string. The aria_string_concat function 1:
+1. Computes total_len = len_a + len_b.
+2. Allocates a new container (SSO or Heap based on total_len).
+3. memcpys string A, then string B.
+4. Ensures null-termination (for C compatibility compatibility).
+4.3.2 Template Interpolation
+Aria supports embedded expressions in strings using backticks and &{} syntax (e.g., `Value: &{x + 1}`).1
+Compilation Pipeline:
+1. Lexer: The tokenizer detects the backtick and enters STATE_STRING_TEMPLATE.
+2. Interpolation: Upon detecting &{, it pushes a state to the stack and enters STATE_INTERPOLATION.1 It recursively calls the parser for the expression x + 1.
+3. AST Lowering: The parser generates a TemplateString node.1 The Type Checker 1 verifies that the interpolated expressions implement the ToString trait.
+4. Codegen: The backend lowers the template into a sequence of string_concat calls.
+   * Input: `A &{x} B`
+   * IR: concat(concat("A ", to_string(x)), " B")
+   * Optimization: If multiple static parts exist, the compiler may pre-calculate buffer sizes to perform a single allocation, preventing the "Shlemiel the Painter" performance anti-pattern.
+________________
+5. System Integration and Future Outlook
+The architecture of Aria's composite types represents a carefully tuned balance between the theoretical purity of its type system and the pragmatic reality of modern hardware.
+5.1 ABI Interoperability
+* Vectors: vec4 passes in XMM registers. vec9 likely passes by reference (memory) or split registers due to its non-standard size, necessitating specific "shim" functions when calling C.
+* Structs: wild structs are ABI-compatible with C. gc structs are not; they act as opaque handles.
+* Strings: Requires explicit marshaling (.c_str()) to pass to C APIs, as the internal SSO union layout is non-standard.
+5.2 Future Directions
+The "9D-TWI" hint remains the most intriguing element of the current specification. As Aria evolves, we anticipate the vec9 type will become central to a new class of error-resilient physics engines leveraging the TBB error propagation logic. Furthermore, the explicit separation of Struct layout and Trait behavior positions Aria to implement "Hot Code Swapping" of methods without invalidating data heaps, a potential game-changer for live-service systems.
+This specification provides the blueprint for a language runtime that is safe by default, fast by design, and capable of scaling from embedded microcontrollers to AVX-512 supercomputers.
+Works cited
+1. aria_source_part1a_tokens_lexer.txt
+2. Data structure alignment - Wikipedia, accessed December 12, 2025, https://en.wikipedia.org/wiki/Data_structure_alignment
+3. 3.5. Aligning a Struct with or without Padding - Intel, accessed December 12, 2025, https://www.intel.com/content/www/us/en/docs/programmable/683176/18-1/aligning-a-struct-with-or-without-padding.html

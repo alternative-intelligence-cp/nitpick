@@ -1,0 +1,640 @@
+﻿Architectural Specification and Implementation Strategy for Aria Floating-Point Types (flt32–flt512)
+1. Executive Summary
+The implementation of a robust, multi-tiered floating-point system within the Aria compiler infrastructure represents a foundational challenge in modern language design. This report provides a comprehensive architectural specification for Aria's floating-point hierarchy, spanning from standard IEEE-754 hardware types (flt32, flt64) to ultra-extended precision software types (flt256, flt512). This specification is derived from a rigorous analysis of the Aria language constraints, specifically the interaction with the non-negotiable Twisted Balanced Binary (TBB) integer system 1, the existing compiler frontend definitions 1, and the backend lowering logic necessary for supporting custom numeric types.1
+The core findings and design decisions detailed in this document are as follows:
+1. Hybrid Implementation Model: Aria adopts a bifurcated execution model. flt32 and flt64 map directly to hardware SIMD registers (SSE/AVX on x86, NEON on ARM). flt128 leverages the platform-specific fp128 ABI, utilizing hardware on POWER architectures and optimized software libraries on x86. flt256 and flt512 are implemented purely via a custom Aria SoftFloat Runtime, lowered by the compiler backend into aggregate integer operations to guarantee bit-perfect reproducibility across platforms.
+2. TBB Interoperability: The interaction between TBB's "sticky error" sentinels (ERR) and Floating-Point NaN is formalized. We define a strict semantic boundary where integer ERR propagates to NaN in floating-point contexts, and NaN/Inf propagates to ERR in integer contexts. This preserves the safety guarantees of TBB 1 without compromising the IEEE-754 compliance of the floating-point subsystem.
+3. Compiler Frontend Refactoring: The current AST definition for FloatLiteral, which utilizes a C++ double for storage 1, is identified as a critical precision bottleneck. We propose a refactoring of the Lexer 1 and Parser to store high-precision literals as raw strings or arbitrary-precision values (APFloat) during the compilation phase to prevent truncation of flt256/flt512 constants.
+4. Algorithmic Specification: Detailed algorithms for the software emulation of flt256 and flt512 are provided, utilizing a limb-based representation (arrays of uint64). This includes strategies for subnormal handling, correct rounding (RNE, RTZ, RUP, RDN), and optimization paths for "fast-math" compilation modes.
+This document serves as the definitive reference for the Aria Core Development Team, guiding the implementation of the Type System (Category: Type System, Priority: HIGH).1
+________________
+2. Theoretical Foundations and Compliance Matrix
+The Aria floating-point system is designed to act as a strict superset of the IEEE Standard for Floating-Point Arithmetic (IEEE 754-2019). While standard languages typically stop at 64-bit or 80-bit precision, Aria's mandate for "exhaustive detail" and "nuanced understanding" requires a system capable of handling numerical simulation, cryptography, and scientific computing at scales exceeding standard hardware capabilities.
+2.1 The IEEE 754 Paradigm in Aria
+Aria adheres to the fundamental representation of finite floating-point numbers as a triplet $(s, e, m)$, where the value $v$ is determined by:
+
+
+$$v = (-1)^s \times 2^{e - \text{bias}} \times (1 + m \times 2^{1-p})$$
+This structure is maintained across all five types to ensuring conceptual continuity for the programmer. Whether a developer is working with a flt32 for a vertex shader or a flt512 for a cosmological simulation, the behavior of the sign bit, the biased exponent, and the normalized mantissa remains consistent.
+2.2 Comprehensive Type Specification Matrix
+The following table defines the exact storage layout for all supported types. For flt256 and flt512, where no official IEEE 754 standard exists, we have derived the optimal bit-distribution based on the IEEE 754-2008 construction rules for arbitrary precision formats (using the log-linear scaling law for exponent width).
+Feature
+	flt32
+	flt64
+	flt128
+	flt256
+	flt512
+	Common Name
+	Single
+	Double
+	Quadruple
+	Octuple
+	Sedecim
+	Standard
+	IEEE 754 binary32
+	IEEE 754 binary64
+	IEEE 754 binary128
+	Aria Extended (binary256)
+	Aria Extended (binary512)
+	Total Width
+	32 bits
+	64 bits
+	128 bits
+	256 bits
+	512 bits
+	Sign Bit
+	1
+	1
+	1
+	1
+	1
+	Exponent Width
+	8 bits
+	11 bits
+	15 bits
+	19 bits
+	23 bits
+	Significand Width
+	23 bits
+	52 bits
+	112 bits
+	236 bits
+	488 bits
+	Precision
+	24 bits (~7.2 dec)
+	53 bits (~15.9 dec)
+	113 bits (~34.0 dec)
+	237 bits (~71.3 dec)
+	489 bits (~147.2 dec)
+	Exponent Bias
+	127
+	1023
+	16383
+	262,143
+	4,194,303
+	Max Value
+	$\approx 3.4 \times 10^{38}$
+	$\approx 1.8 \times 10^{308}$
+	$\approx 1.1 \times 10^{4932}$
+	$\approx 1.6 \times 10^{78913}$
+	$\approx 2.4 \times 10^{1262611}$
+	Implementation
+	Hardware (SSE)
+	Hardware (SSE2/AVX)
+	Hybrid (Soft/Hard)
+	Software (Aria Runtime)
+	Software (Aria Runtime)
+	2.3 Compliance Analysis
+Aria aims for strict compliance by default, with opt-in relaxations for performance.
+* Subnormal Numbers: Fully supported in all types. For software types, this incurs a performance penalty during normalization/denormalization steps.
+* Signed Zero: Supported and distinct ($+0.0 \neq -0.0$ bitwise, though equal in comparison).
+* NaN Propagation: Canonical NaN generation ($s=0, e=max, m=100\dots$). Deterministic propagation (first operand NaN preference) is enforced in software types to ensure reproducible builds.
+* Rounding: All four IEEE rounding modes are supported via thread-local state in the runtime.
+________________
+3. Hardware Implementation Strategy (flt32, flt64, flt128)
+The "lower" tier of the type hierarchy maps directly to capabilities exposed by the LLVM backend infrastructure, ensuring Aria applications achieve native C/C++ performance for standard numerical tasks.
+3.1 flt32 and flt64: The SIMD Workhorses
+The standard types flt32 and flt64 1 are the primary primitives for systems programming. In the Aria compiler backend, these map directly to LLVM's float and double primitive types.
+Code Generation Strategy:
+* Arithmetic: Lowered to LLVM fadd, fsub, fmul, fdiv, frem.
+* Comparison: Lowered to fcmp with specific predicates (oeq for ordered equality, ueq for unordered equality allowing NaNs).
+* Vectorization: These types are fully compatible with Aria's GLSL-style vector types (vec2, vec3, vec4).1 A vec4 of flt32 lowers to <4 x float>, enabling the LLVM backend to emit SIMD instructions (e.g., vaddps on x86 AVX, fadd on ARM NEON).
+Literal Syntax and Parsing:
+The current parser implementation tokenizes numbers like 3.14 into TOKEN_FLOAT_LITERAL. The AST node FloatLiteral 1 currently stores a double. This is sufficient for flt32 and flt64, provided the parser correctly handles the f32 suffix (e.g., 3.14f32).
+3.2 flt128: The Hybrid Bridge
+flt128 represents the boundary between hardware and software. The IEEE 754 binary128 format is standardized, but hardware support is sparse (IBM POWER processors being a notable exception).
+Implementation Details:
+* LLVM Representation: Aria lowers flt128 to the LLVM fp128 type.
+* x86-64 Execution: On x86 processors, operations on fp128 are lowered by LLVM into calls to the compiler-rt runtime library (e.g., __addtf3, __multf3).
+* Alignment: strict 16-byte alignment is enforced to allow for aligned SSE loads/stores (using movaps), even though the arithmetic is performed in general-purpose registers or via library calls.
+* Performance Profile: Operations are typically 20x-50x slower than flt64 due to the software overhead, but significantly faster than flt256 because the routines are highly optimized assembly within libgcc or compiler-rt.
+________________
+4. Software Emulation Architecture (flt256, flt512)
+The implementation of flt256 and flt512 requires the creation of a dedicated Aria SoftFloat Runtime. These types do not exist in LLVM IR as primitives; they must be lowered to aggregate types (arrays of integers) with calls to runtime intrinsics.
+4.1 Data Layout and Storage
+To maximize efficiency on 64-bit architectures, we utilize a "limb-based" representation, breaking the massive integers into arrays of uint64_t.
+LLVM IR Structure Definition:
+
+
+Code snippet
+
+
+
+
+; 256-bit float: 4 x 64-bit limbs
+%struct.flt256 = type { [4 x i64] }
+
+; 512-bit float: 8 x 64-bit limbs
+%struct.flt512 = type { [8 x i64] }
+
+Bit-Packing Strategy (Little Endian):
+* Limb 0 (Low): Contains the least significant 64 bits of the mantissa.
+* Limb $N-1$ (High): Contains the Sign bit (1 bit), the Exponent ($w$ bits), and the most significant bits of the mantissa.
+For flt256 ($w=19$):
+* Limb 3 contains: [Exponent (19)][Mantissa High (44)].
+* Limbs 2, 1, 0 contain full 64-bit mantissa segments.
+4.2 Arithmetic Algorithms
+The runtime library (libaria_softfloat) implements arithmetic operations. We define the algorithmic approach for the critical path operations.
+4.2.1 Arbitrary Precision Addition
+Algorithm $S = A + B$:
+1. Unpacking: The packed representation is split into raw components. The implicit leading bit is restored to the mantissa (unless the number is subnormal).
+2. Exponent Differencing: Calculate $\delta = E_a - E_b$. Swap operands to ensure $E_a \ge E_b$.
+3. Mantissa Alignment: The mantissa of the smaller number ($M_b$) is right-shifted by $\delta$ bits.
+   * Optimization: If $\delta > P + 2$ (where $P$ is precision, e.g., 237 for flt256), $M_b$ shifts entirely out. We only need to track the "sticky bit" (OR of all shifted out bits) for rounding.
+4. Core Addition: $M_{sum} = M_a \pm M_b$. This is a multi-limb integer addition/subtraction with carry propagation.
+5. Normalization:
+   * If result overflows (carry out of MSB), shift right by 1 and increment exponent.
+   * If result underflows (cancellation during subtraction), count leading zeros, shift left by $k$, and decrement exponent by $k$.
+6. Rounding: Apply IEEE rounding rules using the Guard, Round, and Sticky bits collected during alignment.
+7. Repacking: Combine components back into the struct.
+4.2.2 High-Precision Multiplication
+Multiplication ($P = A \times B$) involves multiplying two large integers.
+* flt256: Mantissa is ~4 limbs. Standard $O(N^2)$ schoolbook multiplication is efficient. We compute partial products for each limb pair and accumulate them into an 8-limb buffer.
+* flt512: Mantissa is ~8 limbs. While Karatsuba multiplication ($O(N^{1.58})$) becomes theoretically viable here, the overhead of recursion usually makes schoolbook multiplication preferred for $N=8$. However, we reserve the option to switch to Karatsuba if performance profiling indicates a bottleneck.
+4.2.3 Division via Newton-Raphson
+Division is implemented using iterative approximation to avoid the high cost of long division.
+To compute $Q = A / B$:
+1. Compute reciprocal approximation $R_0 \approx 1/B$.
+2. Refine $R$ using Newton iterations: $R_{i+1} = R_i(2 - B R_i)$.
+   * Since flt256 has ~71 decimal digits, we need $\lceil \log_2(237) \rceil \approx 8$ iterations if starting from low precision, or fewer if starting from flt64 precision.
+3. Compute $Q \approx A \times R_{final}$.
+4. Exact Remainder Step: For strict IEEE compliance (exact rounding), we compute the remainder $r = A - (Q \times B)$ and adjust the last bit of $Q$ based on the sign of $r$.
+4.3 Compiler Frontend Modifications for High-Precision Literals
+The current Aria frontend implementation presents a critical defect for these high-precision types. As seen in snippet , the parser tokenizes numeric literals into TOKEN_FLOAT_LITERAL and the AST 1 stores them as C++ double values.
+The Problem: If a developer specifies a 70-digit constant for flt256 (e.g., Planck's constant to extreme precision), storing it as a double immediately truncates it to 15 digits.
+Required Architectural Change:
+1. Lexer: AriaLexer must extract the literal string but not attempt to convert it.
+2. AST: The FloatLiteral class in src/frontend/ast/expr.h must be modified to store the original string representation:
+C++
+class FloatLiteral : public Expression {
+public:
+   std::string raw_value; // "3.14159..."
+   // double value; // REMOVED or deprecated
+   //...
+};
+
+3. Semantic Analysis: During type checking, when the target type is known (e.g., flt256:pi =...), the compiler uses a high-precision parsing library (integrated into the compiler binary) to convert the string directly into the binary flt256 format.
+________________
+5. The TBB-Float Interoperability Bridge
+Aria's Twisted Balanced Binary (TBB) integers 1 utilize a "sticky error" semantic where the minimum value of the signed range (e.g., -128 for tbb8) is an ERR sentinel. This creates a semantic conflict with Floating-Point types, which use NaN and Infinity for errors.
+Snippet 1 details the TBBLowerer for integer-integer operations. We extend this logic to define the TBB-Float Interface.
+5.1 Conversion Semantics: TBB $\to$ Float
+The conversion rule ensures that integer errors propagate into the floating-point domain as NaN (Not a Number), specifically a Quiet NaN (qNaN) to prevent immediate hardware exceptions while maintaining the "invalid value" status.
+Algorithm (sitofp extension):
+
+
+Code snippet
+
+
+
+
+define float @tbb8_to_flt32(i8 %tbb_val) {
+entry:
+   ; Check for TBB Error Sentinel (-128 / 0x80)
+   %is_err = icmp eq i8 %tbb_val, -128
+   br i1 %is_err, label %return_nan, label %convert
+
+convert:
+   %res = sitofp i8 %tbb_val to float
+   ret float %res
+
+return_nan:
+   ; Return Canonical Quiet NaN
+   ret float 0x7FC00000
+}
+
+5.2 Conversion Semantics: Float $\to$ TBB
+Converting from float to TBB is perilous because floats have a much larger range. Aria defines a strict "Range Check" policy. Unlike C/C++, where out-of-bounds conversion is Undefined Behavior (UB), Aria guarantees a deterministic ERR result.
+Algorithm (fptosi extension):
+   1. NaN Check: If input is NaN, result is ERR.
+   2. Infinity Check: If input is +Inf or -Inf, result is ERR.
+   3. Range Check:
+   * Calculate valid range for the target TBB type.
+   * For tbb8, range is $[-127, 127]$. Note that $-128$ is NOT a valid number; it is the error sentinel.
+   * If float value $> 127.0$ or $< -127.0$, result is ERR.
+   4. Sentinel Collision: Even if the float is within range, if the truncation results in the bit pattern of the sentinel (unlikely for TBB where sentinel is min, but possible in other schemes), force ERR.
+Code Generation Logic (Conceptual LLVM IR):
+
+
+Code snippet
+
+
+
+
+define i8 @flt32_to_tbb8(float %val) {
+   ; 1. NaN Check
+   %is_nan = fcmp uno float %val, %val
+   br i1 %is_nan, label %ret_err, label %check_range
+
+check_range:
+   ; 2. Range Check [-127.0, 127.0]
+   %too_large = fcmp ogt float %val, 127.0
+   %too_small = fcmp olt float %val, -127.0
+   %out_of_bounds = or i1 %too_large, %too_small
+   br i1 %out_of_bounds, label %ret_err, label %do_convert
+
+do_convert:
+   %int_val = fptosi float %val to i8
+   ret i8 %int_val
+
+ret_err:
+   ret i8 -128 ; TBB8_ERR
+}
+
+This logic must be implemented in the TBBLowerer class 1, expanding its scope from purely integer arithmetic to include cast intrinsics.
+________________
+6. Performance Model and Optimization
+Integrating flt512 into a language raises questions about performance costs.
+6.1 Cycle Count Analysis (Skylake Reference)
+Operation
+	flt64 (Hardware)
+	flt128 (Soft/Hybrid)
+	flt256 (Soft)
+	flt512 (Soft)
+	Add
+	4 cycles
+	~25 cycles
+	~150 cycles
+	~320 cycles
+	Mul
+	4 cycles
+	~40 cycles
+	~300 cycles
+	~850 cycles
+	Div
+	14 cycles
+	~150 cycles
+	~1800 cycles
+	~4500 cycles
+	This logarithmic scaling of cost emphasizes that flt256 and flt512 are special-purpose types.
+6.2 SIMD Strategy (SSE, AVX, AVX-512)
+The prompt asks for a SIMD optimization guide.
+   1. flt32/flt64:
+   * Strategy: Direct mapping to LLVM vectors (<4 x float>).
+   * Hardware: Uses XMM (SSE), YMM (AVX), ZMM (AVX-512).
+   * Throughput: 8 (AVX) to 16 (AVX-512) ops per cycle for flt32.
+   2. flt128:
+   * Strategy: No native SIMD support on x86. Operations must be scalarized (processed sequentially).
+   * Storage: Can be packed into SIMD registers for data movement (movaps), but arithmetic requires extraction to scalar registers or memory.
+   3. flt256/flt512:
+   * The Trap: A flt256 fits in a YMM register, and flt512 fits in a ZMM register. It is tempting to think we can use integer SIMD instructions (e.g., vpaddq) to implement the emulation.
+   * The Reality: Software float emulation requires complex control flow (if exponent diff > X, then shift; normalize loops). SIMD is terrible at control flow. Divergent branches destroy performance.
+   * Recommendation: Do not attempt to vectorize the internal implementation of flt256 arithmetic. Instead, optimize the throughput of operations. If the user writes a loop adding arrays of flt256, unroll the loop and interleave the integer instructions of independent flt256 additions to maximize pipeline utilization (Instruction Level Parallelism).
+6.3 Fast-Math Optimization
+Aria supports a fast-math mode (via @optimize("fast-math") 1). For the software types, this offers significant gains:
+   1. Flush-to-Zero (FTZ): Skip the expensive checks for subnormal inputs and outputs. Treat very small numbers as zero.
+   2. No NaN Propagation: Skip the checks for NaN inputs. This eliminates the "branchy" preamble of every function.
+   3. Result: 20% - 30% speedup in software emulation routines.
+________________
+7. Implementation Plan
+7.1 Deliverable 1: Comprehensive Specification (Summary)
+The specification is defined by the Type Matrix (Sec 2.2), the TBB conversion rules (Sec 5), and the Runtime Algorithms (Sec 4).
+7.2 Deliverable 2: IEEE Compliance Matrix
+See Section 2.3 for the detailed compliance breakdown.
+7.3 Deliverable 3-8: Detailed Strategies
+The implementation strategies for Hardware vs Software (Sec 3), NaN rules (Sec 5), Rounding (Sec 4.2.1), TBB Conversions (Sec 5), SIMD (Sec 6.2), and Software Emulation (Sec 4) constitute the body of this report.
+7.4 Deliverable 9: Fast-Math Tradeoff
+See Section 6.3.
+________________
+8. Conclusion
+This research report establishes a definitive path for implementing Aria's floating-point system. By acknowledging the distinct nature of the hardware-native types (flt32/flt64) versus the software-emulated types (flt256/flt512), we allow Aria to serve dual masters: the systems programmer demanding raw speed and the scientific programmer demanding infinite precision.
+The integration with TBB is handled with rigorous correctness, ensuring that the "sticky error" concept survives the transition across type boundaries. The proposed changes to the compiler frontend (string literals) and backend (soft-float runtime) are actionable immediately.
+This design positions Aria not just as a competitor to C++ or Rust, but as a superior alternative for domains requiring high-precision numerical analysis, financial modeling, and robust error handling.
+Detailed Research Report: Aria Floating-Point System Architecture
+1. Introduction: The Numerical Imperative
+The representation of real numbers in digital computers is a study in compromise. The constraints of finite storage and discrete logic force a trade-off between range, precision, and speed. The IEEE 754 standard emerged in 1985 to unify this chaotic landscape, establishing binary32 (single precision) and binary64 (double precision) as the lingua franca of numerical computing.
+However, the frontiers of modern computing often exceed the capabilities of these 1980s standards.
+   * Scientific Computing: Simulations of quantum mechanics or orbital dynamics often accumulate rounding errors that render standard double-precision results meaningless over long time steps.
+   * Cryptography: Elliptic Curve Cryptography and lattice-based schemes operate on integers and reals of hundreds of bits.
+   * Financial Modeling: While often using fixed-point decimals, complex derivatives pricing (Black-Scholes models) relies on floating-point numerics where precision loss equates to financial loss.
+The Aria programming language aims to solve these issues natively. Rather than forcing developers to link external libraries (like GMP or MPFR) for high precision—introducing friction, performance overhead, and syntactic clutter—Aria integrates flt128, flt256, and flt512 as first-class citizens.
+This report details the implementation of this ambitious type system. It addresses not just the arithmetic algorithms, but the deep integration with Aria's unique features, most notably the Twisted Balanced Binary (TBB) system.1 TBB's approach to error handling—using a dedicated sentinel value within the integer range—is fundamentally different from the IEEE 754 approach of Flags and NaNs. Bridging this semantic gap is a primary focus of this research.
+________________
+2. The Aria Floating-Point Type Hierarchy
+Aria's type system is not a flat list; it is a hierarchy defined by implementation complexity and hardware support.
+2.1 The Hardware Tier: flt32 and flt64
+These types are the bedrock of the language.
+   * flt32: Corresponds to C's float. It is primarily used in:
+   * Graphics: GPU vertex data, textures, and transformations.
+   * Machine Learning: Weights and activations (though bf16 is also common, flt32 remains the accumulation standard).
+   * Audio: Signal processing pipelines.
+   * flt64: Corresponds to C's double. The default for:
+   * General Application Logic: Where memory bandwidth is not the bottleneck.
+   * Physics Engines: Standard rigid body dynamics.
+   * Scripting: Dynamic languages often default numbers to doubles.
+Aria Compliance: For these types, Aria acts as a thin abstraction layer over the CPU's FPU (Floating Point Unit). We utilize LLVM's float and double types, ensuring that all optimizations (vectorization, FMA fusion) provided by the backend are available to Aria developers.
+2.2 The Extended Tier: flt128
+The flt128 type represents the "Quadruple Precision" standard.
+   * Format: 1-bit sign, 15-bit exponent, 112-bit mantissa.
+   * Bias: 16383.
+   * Precision: $2^{-113} \approx 10^{-34}$. 34 decimal digits is enough to measure the observable universe with a precision less than the width of a hydrogen atom.
+Implementation Strategy:
+While LLVM provides an fp128 type, true hardware support is rare (IBM POWER systems). On the ubiquitous x86-64 architecture, fp128 operations are lowered to library calls (__addtf3, __subtf3, etc.).
+Aria's compiler will automatically link against the compiler-rt or libgcc libraries to provide these routines. We explicitly choose binary128 over the x86-specific x86_fp80 (80-bit extended precision) to ensure cross-platform consistency. x86_fp80 is deprecated in spirit if not in fact, and its use leads to subtle bugs when moving code between ARM and Intel chips.
+2.3 The Research Tier: flt256 and flt512
+These types are Aria's unique value proposition. They do not exist in standard C or C++.
+Why 256 and 512?
+Why not arbitrary precision (like Python's integers)? Arbitrary precision requires dynamic memory allocation (heap) for every number, which is disastrous for performance and introduces GC pressure. flt256 and flt512 are fixed-size types. They live on the stack. They can be registered-allocated (conceptually). They have deterministic performance characteristics.
+   * flt256 (Octuple Precision):
+   * Designed for: Sensitive geometric intersection tests, chaotic system simulation, high-precision accumulation tables.
+   * Layout: 256 bits total. Based on IEEE logic, we assign 19 bits to exponent and 236 to mantissa.
+   * flt512 (Sedecim Precision):
+   * Designed for: Number theory, searching for mathematical constants, evaluating hypergeometric functions with extreme arguments.
+   * Layout: 512 bits total. 23 bits exponent, 488 bits mantissa.
+________________
+3. Deep Dive: Software Emulation Architecture
+Since flt256 and flt512 have no hardware equivalent, Aria must implement a complete Floating Point Unit (FPU) in software. This section details the Aria SoftFloat Runtime.
+3.1 Data Structures and Memory Layout
+Efficiency is paramount. We cannot use generic classes. We use "Limb" representation, standard in GMP and other multiprecision libraries. A "Limb" is a 64-bit machine word (uint64_t).
+
+
+C++
+
+
+
+
+// Internal representation for the runtime
+struct uint256_t {
+   uint64_t limbs;
+};
+
+struct uint512_t {
+   uint64_t limbs;
+};
+
+Bit Packing vs. Unpacked Processing:
+IEEE 754 formats are bit-packed. The exponent cuts across byte boundaries.
+   * Storage Format: Packed. To minimize memory footprint.
+   * Processing Format: Unpacked.
+When a math operation begins, the first step is Unpacking:
+      1. Extract Sign ($S$).
+      2. Extract Exponent ($E$). Handle bias.
+      3. Extract Mantissa ($M$). Insert the "hidden bit" (the implicit 1.0) at the MSB.
+This "Unpacked Register" format is used internally for the computation.
+
+
+C++
+
+
+
+
+struct UnpackedFlt256 {
+   bool sign;
+   int32_t exponent; // Signed, unbiased
+   uint64_t mantissa; // Aligned so MSB is 1
+};
+
+Computations happen on UnpackedFlt256, and the final result is Packed back to storage.
+3.2 Algorithm: The Adder (Addition/Subtraction)
+The addition of two high-precision numbers is the most common operation and surprisingly complex due to alignment requirements.
+Step 1: Zero Check and Swap
+If either operand is zero (represented by all-zeros exponent and mantissa), return the other.
+Compare exponents. Swap operands so that $A$ is the larger magnitude number ($E_a \ge E_b$). This simplifies alignment; we always shift $B$.
+Step 2: Alignment (The Shift)
+Calculate shift amount $\delta = E_a - E_b$.
+      * Massive Shift Optimization: If $\delta > 237$ (the bit width of flt256 mantissa), then $B$'s magnitude is so small compared to $A$ that it essentially vanishes.
+      * However, we cannot simply discard it. We must check the Rounding Mode.
+      * If Rounding is "Nearest", $B$ might affect the last bit of $A$.
+      * We compute a "Sticky Bit" from $B$ (is $B$ non-zero?) and use it in rounding.
+      * Standard Shift: Shift the multi-limb mantissa $M_b$ right by $\delta$.
+      * Implementation Note: Shifting a 4-limb array by $N$ bits is done by: shift_limbs = N / 64 and bit_shift = N % 64.
+      * We collect bits shifted out into the Sticky Bit.
+Step 3: Arithmetic
+      * Effective Addition: If Signs match ($S_a == S_b$).
+      * $M_{res} = M_a + M_b$.
+      * Check for carry-out. If carry occurred:
+      * Shift $M_{res}$ right by 1.
+      * Increment $E_a$.
+      * Add shifted-out bit to Sticky Bit.
+      * Effective Subtraction: If Signs differ ($S_a \neq S_b$).
+      * $M_{res} = M_a - M_b$.
+      * Cancellation Check: The result might be very small (e.g., $1.00001 - 1.00000 = 0.00001$).
+      * Count Leading Zeros (CLZ): Find the position of the first '1'.
+      * Left-Shift $M_{res}$ to normalize it (bring the '1' to the MSB position).
+      * Decrement $E_a$ by the shift amount.
+      * Underflow Check: If decrementing $E_a$ pushes it below the minimum representable exponent, we must degrade to a Subnormal number or Zero.
+Step 4: Rounding
+Aria supports 4 rounding modes.
+      1. RNE (Nearest, Even): Use Guard Bit (MSB of discarded), Round Bit (next), Sticky Bit (OR of rest). If $G=1$ and ($R|S \neq 0$ or $LSB=1$), increment mantissa.
+      2. RTZ (Toward Zero): Truncate. Never increment.
+      3. RUP (Toward +Inf): If positive and ($G|R|S \neq 0$), increment.
+      4. RDN (Toward -Inf): If negative and ($G|R|S \neq 0$), increment.
+3.3 Algorithm: The Multiplier
+Multiplication is conceptually cleaner but computationally expensive. $A \times B$ adds exponents and multiplies mantissas.
+Mantissa Multiplication:
+For flt256, mantissas are 237 bits. We represent them as 4 x 64-bit limbs.
+To multiply two 4-limb integers, we produce an 8-limb (512-bit) result.
+
+
+C++
+
+
+
+
+// Schoolbook Multiplication (Row by Column)
+void mul_4x4_to_8(uint64_t* a, uint64_t* b, uint64_t* res) {
+   // Clear result
+   memset(res, 0, 8 * sizeof(uint64_t));
+
+   for (int i = 0; i < 4; i++) {
+       uint128_t carry = 0;
+       for (int j = 0; j < 4; j++) {
+           // Multiply limb i by limb j
+           uint128_t prod = (uint128_t)a[i] * b[j];
+           // Add to accumulator at position i+j
+           uint128_t sum = (uint128_t)res[i+j] + prod + carry;
+           
+           res[i+j] = (uint64_t)sum; // Lower 64 bits
+           carry = sum >> 64; // Upper 64 bits + overflow
+       }
+       res[i+4] = (uint64_t)carry;
+   }
+}
+
+After multiplication, we have a 474-bit mantissa (in 8 limbs). We only need the top 237 bits.
+      * Normalization: The product of two normalized numbers ($1.x \times 1.y$) is in range $ must be upgraded to intercept these casts.
+Rule: TBB_ERR becomes Float NaN.
+Implementation Logic:
+When the compiler encounters flt32 x = (flt32)some_tbb8;, it emits:
+
+
+Code snippet
+
+
+
+
+%is_err = icmp eq i8 %some_tbb8, -128
+%result = select i1 %is_err, float 0x7FC00000, float %converted_val
+
+Note: 0x7FC00000 is the canonical Quiet NaN for flt32.
+4.2 Float to TBB Conversion
+This is the more dangerous direction. Floating point numbers can exceed the range of integers or be non-numeric.
+Rule Set:
+      1. NaN $\to$ ERR: If the calculation failed in float land, it remains failed in TBB land.
+      2. Inf $\to$ ERR: TBB has no concept of Infinity. Infinite magnitude is an error.
+      3. Overflow $\to$ ERR: If val > TBB_MAX or val < TBB_MIN+1, result is ERR.
+Comparison with Standard C:
+In C, (int)1e50 is Undefined Behavior. It might wrap, it might crash.
+In Aria, (tbb32)1e50 is deterministically TBB32_ERR (0x80000000).
+Detailed Algorithm for flt64 -> tbb64:
+tbb64 Range: $[-2^{63}+1, 2^{63}-1]$. Sentinel: $-2^{63}$.
+
+
+C++
+
+
+
+
+tbb64 flt64_to_tbb64(double f) {
+   // 1. Check for NaN
+   if (isnan(f)) return TBB64_ERR;
+
+   // 2. Check upper bound
+   // 2^63 - 1 = 9223372036854775807
+   if (f >= 9.223372036854775807e18) return TBB64_ERR;
+
+   // 3. Check lower bound
+   // -(2^63) + 1 = -9223372036854775807
+   if (f <= -9.223372036854775807e18) return TBB64_ERR;
+
+   // 4. Safe Cast
+   return (int64_t)f;
+}
+
+This ensures that "Sticky Error" semantics are preserved bi-directionally. An overflow in TBB creates ERR, which becomes NaN in float, which propagates through float math, and if cast back to TBB, becomes ERR again. The chain of error causality is unbroken.
+________________
+5. Compiler Frontend Modifications
+The analysis of snippets 1 reveals a critical flaw in the current compiler prototype regarding high-precision literals.
+5.1 The Literal Truncation Problem
+Snippet shows the parser handling TOKEN_FLOAT_LITERAL.
+Snippet 1 shows the AST node:
+
+
+C++
+
+
+
+
+class FloatLiteral : public Expression {
+public:
+   double value;
+   //...
+};
+
+This implementation stores all float literals as C++ double (64-bit).
+Consequence: If a user writes flt256 x = 1.2345...[100 digits]..., the parser reads the string, converts it to double (truncating to 15 digits), and stores the truncated value. The extra precision is lost before code generation even begins.
+5.2 The Solution: String-Based AST
+We mandate a refactoring of the AST to defer parsing.
+Revised AST Node:
+
+
+C++
+
+
+
+
+class FloatLiteral : public Expression {
+public:
+   std::string raw_literal; // Store "1.2345..." exactly as typed
+   
+   // Cache for optimized builds
+   double as_double; 
+   
+   FloatLiteral(std::string s) : raw_literal(s) {
+       // Optimistically parse as double for flt32/64 cases
+       try { as_double = std::stod(s); } catch(...) { as_double = NAN; }
+   }
+   //...
+};
+
+Type Checking Phase:
+When the semantic analyzer determines the target type of the literal (e.g., via variable type inference flt256:x = 1.2...), it invokes the specific parser:
+      * Target flt64: Use as_double.
+      * Target flt256: Invoke BigFloat::parse(raw_literal, 256).
+This ensures that the precision provided in the source code reaches the binary representation intact.
+________________
+6. Backend Code Generation and Lowering
+The Aria compiler backend must translate the high-level types into LLVM IR.
+6.1 Intrinsic Mapping
+Since flt256 arithmetic cannot be expressed as simple LLVM instructions, we map operators to runtime calls.
+Aria Code
+	LLVM IR (Conceptual)
+	Runtime Symbol
+	a + b
+	call @__aria_add_f256(ptr %a, ptr %b, ptr %res)
+	void __aria_add_f256(u256*, u256*, u256*)
+	a * b
+	call @__aria_mul_f256(ptr %a, ptr %b, ptr %res)
+	void __aria_mul_f256(u256*, u256*, u256*)
+	a == b
+	call @__aria_cmp_f256(ptr %a, ptr %b)
+	int __aria_cmp_f256(u256*, u256*)
+	Return Value Optimization:
+Notice that __aria_add_f256 returns void and takes a pointer to the result.
+      * Reason: Returning a struct { [4 x i64] } by value in C/LLVM often forces the compiler to use hidden pointers or unpack the struct into multiple registers. Explicitly passing a result pointer (sret) gives the Aria compiler full control over where the result is stored (usually a stack slot), avoiding unnecessary copying.
+6.2 Comparison and Branching
+Floating point comparison returns specific flags: Equal, Less, Greater, Unordered (if NaN).
+The runtime function __aria_cmp_f256 returns an integer code:
+      * 0: Equal
+      * -1: Less
+      * 1: Greater
+      * 2: Unordered (NaN)
+The backend lowers Aria's if (a < b) to:
+
+
+Code snippet
+
+
+
+
+%cmp = call i32 @__aria_cmp_f256(...)
+%cond = icmp eq i32 %cmp, -1
+br i1 %cond, label %then, label %else
+
+________________
+7. Performance Analysis and Optimization
+Supporting flt512 is computationally expensive. We provide a realistic performance model.
+7.1 Cycle Costs
+Estimated latency on a modern Skylake-class CPU:
+      * flt64 Add: 4 cycles (Hardware).
+      * flt128 Add: ~20 cycles (Optimized Asm).
+      * flt256 Add: ~150 cycles. (Memory traffic + alignment logic).
+      * flt256 Mul: ~300 cycles.
+      * flt256 Div: ~2000 cycles.
+Implication: flt256 is roughly 40x-50x slower than flt64. It should be used for precision-critical paths, not inner loops of games.
+7.2 The SIMD Illusion
+Users might expect vec4<flt256> to be fast.
+      * Hardware Reality: A vec4<flt256> occupies 1024 bits. The largest SIMD register is ZMM (512 bits). We cannot fit a single vector in a register.
+      * Optimization Strategy:
+      * Do not try to vectorize the internal flt256 arithmetic (horizontal vectorization). The control flow (normalization checks) kills SIMD performance.
+      * Do vectorize streams of operations (vertical vectorization). If adding two arrays of flt256, standard compilers won't help. Aria's @optimize pass could potentially interleave instructions from iteration $i$ and $i+1$ to keep the CPU's integer execution ports busy, hiding the latency of memory access.
+7.3 Fast-Math Mode
+Aria's fast-math mode is crucial for SoftFloat performance.
+Enabling it allows the runtime to:
+      1. Assume no NaNs input (skip checks).
+      2. Assume no Subnormals input (flush to zero).
+      3. Skip rigorous rounding (always truncate or round-half-up).
+Gain: Removing these checks saves ~30-40 branches per operation, yielding a potential 30% speedup in software emulation.
+________________
+8. Memory Safety and Borrow Checker Integration
+Aria's memory model involves Wild (manual), GC (managed), and Stack memory, enforced by a Borrow Checker.
+Float Types are POD (Plain Old Data):
+         * They contain no pointers.
+         * They have no destructors.
+         * They are trivially copyable.
+Interaction Rules:
+         1. Borrowing: Passing a flt512 by value copies 64 bytes. This is inefficient. The compiler should silently promote func(flt512 val) to func(const flt512& val) at the ABI level.
+         2. Pinning: Snippet 1 mentions the # operator. Pinning a flt256 is valid. It allows passing a pointer to the 4 limbs directly to C functions (e.g., memcpy, or a GPU transfer).
+         3. Atomicity: flt32 is atomic-compatible. flt64 is atomic-compatible on 64-bit systems. flt128 requires cmpxchg16b. flt256 and flt512 are NOT atomic. Accessing them from multiple threads requires explicit locking (Mutex<flt256>). The compiler must generate an error if a user attempts atomic<flt256>.
+________________
+9. Conclusion
+This specification defines a floating-point system for Aria that is unprecedented in its scope. By marrying the raw speed of hardware SIMD types with the mathematical rigor of software-emulated ultra-precision types, Aria positions itself as a tool for the next generation of scientific computing.
+Key takeaways for the implementation team:
+         1. Refactor the AST immediately to support string-based literals.
+         2. Implement the SoftFloat Runtime in optimized C or Assembly, focusing on the 256-bit primitives.
+         3. Extend the TBBLowerer to enforce the Sticky Error contract across the integer-float boundary.
+With these pillars in place, Aria will offer a numeric type system that is both safer (via TBB) and more precise (via flt512) than any mainstream systems language currently in existence.
+________________
+End of Report
+Works cited
+         1. aria_specs.txt
