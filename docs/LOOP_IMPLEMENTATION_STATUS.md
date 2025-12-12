@@ -50,16 +50,30 @@ All major loop constructs and control flow statements are complete!
   - Jumps back to loop condition/increment
   - Works with all loop types
 
+## ⏳ Partially Implemented
+
+### For-In Loops (`for x in collection`)
+- **Syntax**: `for x in collection { body }`
+- **AST**: ✅ Complete (ForLoop class at src/frontend/ast/loops.h:28)
+- **Parser**: ✅ Complete (parseForLoop at src/frontend/parser.cpp:1887)
+- **Type Checker**: ✅ Complete (visit at src/frontend/sema/type_checker.cpp:723)
+- **Borrow Checker**: ✅ Complete (visit at src/frontend/sema/borrow_checker.cpp:606)
+- **Codegen**: ✅ Complete (visit at src/backend/codegen.cpp:2556)
+- **Status**: Infrastructure complete, waiting on:
+  - Collection types (arrays, lists, etc.)
+  - Range types (`1..10`)
+  - Iterator protocol
+- **Test**: `test_for_in_basic.aria` (commented until collections work)
+
 ## ⏳ Not Yet Implemented
 
 ### Loop Construct (`loop`)
 - **Syntax**: `loop(start, limit, step) { $ }`
-- **Status**: Needs AST node (LoopStmt)
+- **Parser**: ⚠️ Code exists but commented (parseLoopStmt at parser.cpp:1994)
+- **AST**: ❌ LoopStmt class doesn't exist yet
+- **Status**: Parser ready, needs AST node creation
 - **Difference from till**: Explicit start value instead of implicit 0
-
-### For-In Loops
-- **Syntax**: `for (item in collection) { body }`
-- **Status**: Parser might support, needs testing
+- **Implementation**: Parser code at lines 1518-1520, 1990-2014
 
 ## Technical Notes
 

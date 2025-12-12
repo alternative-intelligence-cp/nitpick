@@ -186,13 +186,18 @@ public:
 };
 
 // Unwrap Expression (? operator)
-// Example: test2(3,5) ? -1  // If test2 returns error, use -1 as default
+// Two variants:
+//   1. Early return: expr?  (returns from function if error)
+//   2. Default coalescing: expr? default  (uses default if error)
+// Examples: 
+//   val = func()? -1;     // Use -1 if func returns error
+//   val = func()?;        // Return from current function if error
 class UnwrapExpr : public Expression {
 public:
     std::unique_ptr<Expression> expression;   // Expression that might fail
-    std::unique_ptr<Expression> default_value;  // Default if error
+    std::unique_ptr<Expression> default_value;  // Optional: default if error (nullptr = early return)
 
-    UnwrapExpr(std::unique_ptr<Expression> expr, std::unique_ptr<Expression> def)
+    UnwrapExpr(std::unique_ptr<Expression> expr, std::unique_ptr<Expression> def = nullptr)
         : expression(std::move(expr)), default_value(std::move(def)) {}
 
     void accept(AstVisitor& visitor) override {

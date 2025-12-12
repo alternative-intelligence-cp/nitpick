@@ -59,6 +59,8 @@ private:
     std::unique_ptr<Expression> parseLogicalAnd();
     std::unique_ptr<Expression> parseLogicalOr();
     std::unique_ptr<Expression> parseTernary();
+    std::unique_ptr<Expression> parseNullCoalesce();
+    std::unique_ptr<Expression> parsePipeline();
     std::unique_ptr<Expression> parseAssignment();
     
     // Pratt parsing (used by parser_expr.cpp)
