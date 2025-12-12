@@ -41,6 +41,7 @@ enum class TypeKind {
     POINTER,       // Wild or pinned pointer
     ARRAY,
     FUNCTION,
+    RESULT,        // Result<T, E> - deterministic error handling
     STRUCT,
     FUTURE,        // Future<T> - async result handle
     // SIMD Vector types for hardware-accelerated operations
@@ -71,6 +72,10 @@ public:
     std::shared_ptr<Type> return_type = nullptr;
     std::vector<std::shared_ptr<Type>> param_types;
     
+    // For Result<T, E>
+    std::shared_ptr<Type> result_value_type = nullptr;
+    std::shared_ptr<Type> result_error_type = nullptr;
+    
     // For Future<T>
     std::shared_ptr<Type> future_value_type = nullptr;
 
@@ -95,6 +100,46 @@ public:
                 return element_type->equals(*other.element_type);
             }
             return element_type == other.element_type;
+        }
+        
+        if (kind == TypeKind::RESULT) {
+            bool value_match = true;
+            bool error_match = true;
+            if (result_value_type && other.result_value_type) {
+                value_match = result_value_type->equals(*other.result_value_type);
+            } else {
+                value_match = (result_value_type == other.result_value_type);
+            }
+            if (result_error_type && other.result_error_type) {
+                error_match = result_error_type->equals(*other.result_error_type);
+            } else {
+                error_match = (result_error_type == other.result_error_type);
+            }
+            return value_match && error_match;
+        }
+        
+        if (kind == TypeKind::FUNCTION) {
+            // Check return types match
+            bool return_match = true;
+            if (return_type && other.return_type) {
+                return_match = return_type->equals(*other.return_type);
+            } else {
+                return_match = (return_type == other.return_type);
+            }
+            
+            // Check parameter count matches
+            if (param_types.size() != other.param_types.size()) return false;
+            
+            // Check each parameter type matches
+            for (size_t i = 0; i < param_types.size(); i++) {
+                if (param_types[i] && other.param_types[i]) {
+                    if (!param_types[i]->equals(*other.param_types[i])) return false;
+                } else if (param_types[i] != other.param_types[i]) {
+                    return false;
+                }
+            }
+            
+            return return_match;
         }
         
         if (kind == TypeKind::FUTURE) {
@@ -176,12 +221,29 @@ public:
                            (array_size >= 0 ? std::to_string(array_size) : "") + "]";
                 }
                 return "array";
+            case TypeKind::RESULT:
+                if (result_value_type && result_error_type) {
+                    return "Result<" + result_value_type->toString() + ", " + 
+                           result_error_type->toString() + ">";
+                }
+                return "Result";
             case TypeKind::FUTURE:
                 if (future_value_type) {
                     return "Future<" + future_value_type->toString() + ">";
                 }
                 return "Future";
-            case TypeKind::FUNCTION: return "func";
+            case TypeKind::FUNCTION: {
+                std::string sig = "func(";
+                for (size_t i = 0; i < param_types.size(); i++) {
+                    if (i > 0) sig += ", ";
+                    sig += param_types[i] ? param_types[i]->toString() : "?";
+                }
+                sig += ")";
+                if (return_type) {
+                    sig += " -> " + return_type->toString();
+                }
+                return sig;
+            }
             case TypeKind::UNKNOWN: return "unknown";
             case TypeKind::ERROR: return "<error>";
             default: return "<type>";

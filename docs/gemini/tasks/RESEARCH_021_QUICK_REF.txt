@@ -1,0 +1,86 @@
+# Research 021 - Quick Upload Reference
+
+## Upload These 10 Files (In Order):
+
+### Required Context (3 files):
+1. `docs/info/aria_specs.txt`
+2. `docs/gemini/responses/research_001_borrow_checker.txt`
+3. `docs/gemini/responses/research_014_composite_types_part1.txt`
+
+### Runtime GC Files (7 files):
+4. `src/runtime/gc/header.h` ⭐
+5. `src/runtime/gc/shadow_stack.h` ⭐
+6. `src/runtime/gc/gc_impl.h` ⭐
+7. `src/runtime/gc/gc_impl.cpp`
+8. `src/runtime/gc/shadow_stack.cpp`
+9. `src/runtime/gc/nursery.cpp`
+10. `src/runtime/memory/allocator.h`
+
+## Add to Prompt:
+
+```
+The runtime/ directory contains 1,614 lines across 14 files. I've uploaded the 7 most critical GC implementation files (655 lines):
+
+Core GC Headers (134 lines):
+- header.h: ObjHeader structure (mark_bit, pinned_bit, forwarded_bit, is_nursery, type_id)
+- shadow_stack.h: GC root tracking API (push/pop frames, add/remove roots)
+- gc_impl.h: Public interface (aria_gc_alloc, aria_gc_collect_minor/major)
+
+Implementation (491 lines):
+- gc_impl.cpp: Mark-sweep-compact algorithm with generational nursery collection
+- shadow_stack.cpp: Frame and root management using std::vector
+- nursery.cpp: Bump pointer allocation with fragment management
+
+Memory Boundary (30 lines):
+- allocator.h: Wild memory allocation interface (aria_alloc/aria_free)
+
+Not uploaded (space constraints):
+- fat_pointer.c/h (427 lines): Wild pointer bounds checking
+- wildx_allocator.c/h (240 lines): WildX region allocation with guard pages
+- wildx_guard.c/h (260 lines): RAII scope guards for WildX
+
+Key visible features:
+✅ ObjHeader with pinning bit (# operator support)
+✅ Shadow stack for precise root tracking
+✅ Generational GC (2 generations: nursery + old)
+✅ Mark-sweep-compact with copying collector for nursery
+✅ Explicit GC/wild memory boundary
+
+Questions to focus on:
+- RAII wrappers for auto-unpin (not currently visible)
+- Write barriers for concurrent GC (not implemented yet)
+- Large object heap handling (not visible)
+- GC debugging/profiling tools (design needed)
+- Finalizer handling (not visible)
+```
+
+## File Paths (Copy-Paste Ready):
+
+```
+docs/info/aria_specs.txt
+docs/gemini/responses/research_001_borrow_checker.txt
+docs/gemini/responses/research_014_composite_types_part1.txt
+src/runtime/gc/header.h
+src/runtime/gc/shadow_stack.h
+src/runtime/gc/gc_impl.h
+src/runtime/gc/gc_impl.cpp
+src/runtime/gc/shadow_stack.cpp
+src/runtime/gc/nursery.cpp
+src/runtime/memory/allocator.h
+```
+
+## Task Focus:
+
+This selection provides complete answers for:
+- GC algorithm structure ✅
+- Pinning mechanism ✅
+- Shadow stack implementation ✅
+- ObjHeader memory layout ✅
+- Nursery generational design ✅
+
+Design/specification needed for:
+- RAII pinning wrappers ⚠️
+- Write barriers (concurrent GC) ⚠️
+- LOH (large object heap) ⚠️
+- Debugging tools ⚠️
+- Finalizers ⚠️

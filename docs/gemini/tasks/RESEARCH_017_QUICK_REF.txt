@@ -1,0 +1,84 @@
+# Research 017 - Quick Upload Reference
+
+## Upload These 10 Files (In Order):
+
+### Required Context (5 files):
+1. `docs/info/aria_specs.txt`
+2. `docs/gemini/responses/research_015_composite_types_part2.txt`
+3. `docs/gemini/responses/research_013_floating_point_types.txt`
+4. `src/backend/codegen_vector.cpp`
+5. `src/backend/codegen_vector.h`
+
+### Tensor/Matrix Files (5 files):
+6. `src/backend/tensor_ops.h` ⭐ CRITICAL
+7. `src/runtime/types/tensor.h` ⭐ CRITICAL
+8. `tests/tensor/test_tensor_ops.cpp`
+9. `tests/demo_matrix.aria`
+10. `src/stdlib/math/ternary.aria`
+
+## File Paths (Copy-Paste Ready):
+
+```
+docs/info/aria_specs.txt
+docs/gemini/responses/research_015_composite_types_part2.txt
+docs/gemini/responses/research_013_floating_point_types.txt
+src/backend/codegen_vector.cpp
+src/backend/codegen_vector.h
+src/backend/tensor_ops.h
+src/runtime/types/tensor.h
+tests/tensor/test_tensor_ops.cpp
+tests/demo_matrix.aria
+src/stdlib/math/ternary.aria
+```
+
+## Add to Prompt:
+
+```
+Stdlib note: The stdlib/ directory is mostly I/O and logging (480 lines), not math operations. I've uploaded the 5 most critical tensor/matrix files (879 lines):
+
+Tensor Implementation (299 lines):
+- tensor_ops.h: Tensor<T> template - shape/stride/broadcasting/slicing (287 lines)
+- tensor.h: Runtime descriptor - dtype/rank/shape/strides (12 lines)
+
+Tests & Examples (514 lines):
+- test_tensor_ops.cpp: Comprehensive tensor operation tests (346 lines)
+- demo_matrix.aria: Matrix operations in Aria syntax (168 lines)
+
+Stdlib Context (66 lines):
+- math/ternary.aria: Mathematical stdlib design patterns
+
+Not uploaded: stdlib/io.aria (194), io/fast_read.cpp (149), log/logger.aria (137) - irrelevant to math types.
+
+Visible features:
+✅ Row-major Tensor<T> with dynamic shapes
+✅ Stride-based multi-dimensional indexing
+✅ Runtime Tensor descriptor struct
+✅ Broadcasting and slicing examples
+✅ Matrix operation syntax
+
+Design needed:
+- BLAS/LAPACK integration
+- GPU acceleration hooks
+- ML framework interop
+- Sparse matrices
+- Matrix decompositions
+- Compile-time shapes
+```
+
+## Verification Command:
+
+```bash
+cd /home/randy/._____RANDY_____/REPOS/aria
+for f in "docs/info/aria_specs.txt" \
+         "docs/gemini/responses/research_015_composite_types_part2.txt" \
+         "docs/gemini/responses/research_013_floating_point_types.txt" \
+         "src/backend/codegen_vector.cpp" \
+         "src/backend/codegen_vector.h" \
+         "src/backend/tensor_ops.h" \
+         "src/runtime/types/tensor.h" \
+         "tests/tensor/test_tensor_ops.cpp" \
+         "tests/demo_matrix.aria" \
+         "src/stdlib/math/ternary.aria"; do
+  [ -f "$f" ] && printf "✅ $f\n" || printf "❌ $f MISSING\n"
+done
+```
