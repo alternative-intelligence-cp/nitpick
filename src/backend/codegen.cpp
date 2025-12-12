@@ -100,6 +100,7 @@ using aria::frontend::VectorLiteral;
 using aria::frontend::IndexExpr;
 using aria::frontend::BinaryOp;
 using aria::frontend::UnaryOp;
+using aria::frontend::UnwrapExpr;
 using aria::frontend::ReturnStmt;
 using aria::frontend::UseStmt;
 using aria::frontend::ModDef;
@@ -2723,6 +2724,126 @@ public:
             // NULL is represented as a null pointer constant
             return ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext));
         }
+        if (auto* unwrap = dynamic_cast<aria::frontend::UnwrapExpr*>(node)) {
+            // Unwrap operator: expr? or expr? default
+            // All functions return result<T> = { i8 err, T val }
+            // This operator checks err and either:
+            //   1. Early return: return {err, val} if err != 0
+            //   2. Default coalescing: use default value if err != 0
+            
+            // Evaluate the expression that returns result<T>
+            Value* resultStruct = visitExpr(unwrap->expression.get());
+            if (!resultStruct) {
+                throw std::runtime_error("Unwrap operator: expression evaluated to null");
+            }
+            
+            // Result type must be a struct with {err, val} fields
+            Type* resultType = resultStruct->getType();
+            if (!resultType->isStructTy()) {
+                throw std::runtime_error("Unwrap operator can only be applied to result types (functions)");
+            }
+            
+            StructType* resultStructType = cast<StructType>(resultType);
+            if (resultStructType->getNumElements() != 2) {
+                throw std::runtime_error("Unwrap operator requires result<T> type with {err, val} fields");
+            }
+            
+            // Allocate space to store the result struct temporarily
+            AllocaInst* resultAlloca = ctx.builder->CreateAlloca(resultStructType, nullptr, "result_tmp");
+            ctx.builder->CreateStore(resultStruct, resultAlloca);
+            
+            // Extract err field (index 0)
+            Value* errPtr = ctx.builder->CreateStructGEP(resultStructType, resultAlloca, 0, "err_ptr");
+            Value* errValue = ctx.builder->CreateLoad(Type::getInt8Ty(ctx.llvmContext), errPtr, "err");
+            
+            // Check if err == 0 (success)
+            Value* isSuccess = ctx.builder->CreateICmpEQ(
+                errValue,
+                ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0),
+                "is_success"
+            );
+            
+            // Create basic blocks for branching
+            Function* func = ctx.builder->GetInsertBlock()->getParent();
+            BasicBlock* successBB = BasicBlock::Create(ctx.llvmContext, "unwrap_success", func);
+            BasicBlock* failureBB = BasicBlock::Create(ctx.llvmContext, "unwrap_failure", func);
+            BasicBlock* mergeBB = BasicBlock::Create(ctx.llvmContext, "unwrap_merge");
+            
+            ctx.builder->CreateCondBr(isSuccess, successBB, failureBB);
+            
+            // ============================================================
+            // SUCCESS PATH: Extract and return val
+            // ============================================================
+            ctx.builder->SetInsertPoint(successBB);
+            Value* valPtr = ctx.builder->CreateStructGEP(resultStructType, resultAlloca, 1, "val_ptr");
+            Type* valType = resultStructType->getElementType(1);
+            Value* valValue = ctx.builder->CreateLoad(valType, valPtr, "val");
+            ctx.builder->CreateBr(mergeBB);
+            BasicBlock* successEndBB = ctx.builder->GetInsertBlock();
+            
+            // ============================================================
+            // FAILURE PATH: Early return OR default value
+            // ============================================================
+            ctx.builder->SetInsertPoint(failureBB);
+            Value* failureValue = nullptr;
+            
+            if (unwrap->default_value) {
+                // DEFAULT COALESCING: expr? default
+                // Evaluate default expression
+                failureValue = visitExpr(unwrap->default_value.get());
+                
+                if (!failureValue) {
+                    throw std::runtime_error("Unwrap operator: default expression evaluated to null");
+                }
+                
+                // Type check: default must match val type
+                if (failureValue->getType() != valType) {
+                    // Try to cast if both are integers
+                    if (failureValue->getType()->isIntegerTy() && valType->isIntegerTy()) {
+                        failureValue = ctx.builder->CreateIntCast(failureValue, valType, true, "default_cast");
+                    } else {
+                        throw std::runtime_error(
+                            "Unwrap operator: default value type doesn't match function return type"
+                        );
+                    }
+                }
+                
+                ctx.builder->CreateBr(mergeBB);
+            } else {
+                // EARLY RETURN: expr?
+                // Return the entire result struct {err, val} from current function
+                
+                if (!ctx.currentFunction) {
+                    throw std::runtime_error("Unwrap operator with early return used outside function context");
+                }
+                
+                // The result struct is already in resultStruct - just return it
+                ctx.builder->CreateRet(resultStruct);
+                
+                // After return, we don't need merge block for this path
+                // But we still need failureValue for PHI (won't be reached)
+                failureValue = Constant::getNullValue(valType);
+            }
+            BasicBlock* failureEndBB = ctx.builder->GetInsertBlock();
+            
+            // ============================================================
+            // MERGE: Combine success and failure paths
+            // ============================================================
+            func->insert(func->end(), mergeBB);
+            ctx.builder->SetInsertPoint(mergeBB);
+            
+            // If early return path, PHI only has one incoming edge (success)
+            // If default coalescing, PHI has two incoming edges
+            PHINode* phi = ctx.builder->CreatePHI(valType, 2, "unwrap_result");
+            phi->addIncoming(valValue, successEndBB);
+            
+            // Only add failure path if not early return
+            if (unwrap->default_value) {
+                phi->addIncoming(failureValue, failureEndBB);
+            }
+            
+            return phi;
+        }
         if (auto* slit = dynamic_cast<aria::frontend::StringLiteral*>(node)) {
             // Create global string constant
             return ctx.builder->CreateGlobalStringPtr(slit->value);
@@ -3659,6 +3780,29 @@ public:
                     if (callFuncType && paramTypeIdx < callFuncType->getNumParams()) {
                         Type* expectedType = callFuncType->getParamType(paramTypeIdx);
                         if (argVal->getType() != expectedType) {
+                            // ================================================================
+                            // AUTO-UNWRAP RESULT TYPES
+                            // ================================================================
+                            // If argVal is a Result<T> struct and expectedType is T,
+                            // automatically extract the 'val' field (index 1)
+                            // This allows pipelines to work seamlessly:
+                            //   pass(f <| 5)  where f returns Result<int32>
+                            // ================================================================
+                            if (argVal->getType()->isStructTy()) {
+                                auto* argStructType = cast<StructType>(argVal->getType());
+                                // Check if this is a Result struct: {i8, T}
+                                if (argStructType->getNumElements() == 2 &&
+                                    argStructType->getElementType(0)->isIntegerTy(8)) {
+                                    // This looks like a Result<T> - check if val field matches expected
+                                    Type* valFieldType = argStructType->getElementType(1);
+                                    if (valFieldType == expectedType) {
+                                        // Auto-unwrap: extract the val field (index 1)
+                                        argVal = ctx.builder->CreateExtractValue(
+                                            argVal, 1, "auto_unwrap_val");
+                                    }
+                                }
+                            }
+                            
                             // If both are integers, perform cast
                             if (argVal->getType()->isIntegerTy() && expectedType->isIntegerTy()) {
                                 argVal = ctx.builder->CreateIntCast(argVal, expectedType, true);
@@ -4448,10 +4592,35 @@ public:
                 if (valField) {
                     // TYPE VALIDATION: Check if val type matches declared return type
                     if (valField->getType() != expectedValType) {
+                        // ================================================================
+                        // AUTO-UNWRAP RESULT TYPES IN RESULT OBJECTS
+                        // ================================================================
+                        // If valField is a Result<T> struct and expectedValType is T,
+                        // automatically extract the nested 'val' field.
+                        // This handles: pass(f())  where f returns Result<int32>
+                        // Expands to: return {err:0, val:f()}
+                        // And f() returns {err:X, val:Y}, so we want Y not the whole struct
+                        // ================================================================
+                        if (valField->getType()->isStructTy()) {
+                            auto* valStructType = cast<StructType>(valField->getType());
+                            // Check if this is a Result struct: {i8, T}
+                            if (valStructType->getNumElements() == 2 &&
+                                valStructType->getElementType(0)->isIntegerTy(8)) {
+                                // This looks like a Result<T> - check if inner val field matches expected
+                                Type* innerValType = valStructType->getElementType(1);
+                                if (innerValType == expectedValType) {
+                                    // Auto-unwrap: extract the inner val field (index 1)
+                                    valField = ctx.builder->CreateExtractValue(
+                                        valField, 1, "auto_unwrap_result_val");
+                                }
+                            }
+                        }
+                        
                         // Allow integer type conversions
                         if (valField->getType()->isIntegerTy() && expectedValType->isIntegerTy()) {
                             valField = ctx.builder->CreateIntCast(valField, expectedValType, true, "val_cast");
-                        } else {
+                        } else if (valField->getType() != expectedValType) {
+                            // Type still doesn't match after unwrap attempts
                             throw std::runtime_error(
                                 "Type mismatch in result object: function declared return type '" + 
                                 ctx.currentFunctionReturnType + "' but val field has different type"
