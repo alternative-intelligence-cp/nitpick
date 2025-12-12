@@ -1,0 +1,353 @@
+﻿A Comprehensive Design and Implementation Report on the Aria Hybrid Metaprogramming Architecture and Compile-Time Execution System
+Task ID: research_011_macro_comptime_system
+Date: December 12, 2025
+Subject: Architectural Specification for Aria’s Two-Phase Metaprogramming System (Preprocessor & Comptime)
+________________
+1. Executive Summary
+This report provides an exhaustive technical specification and strategic analysis for the implementation of the Aria programming language's metaprogramming subsystem. Aria presents a unique challenge in language design: it requires the raw, syntactic flexibility of a NASM-style textual preprocessor to handle its distinct lexical requirements while simultaneously demanding the semantic safety and type-awareness of a Zig-style compile-time execution (comptime) environment to manage its exotic type system. The proposed architecture addresses this by establishing a rigorous Two-Phase Metaprogramming Pipeline.
+Phase One leverages an enhanced textual preprocessor to handle syntactic abstraction, token stream manipulation, and code templating before the Abstract Syntax Tree (AST) is constructed. This phase is critical for implementing high-level constructs like classes and control flow, which Aria delegates to macros rather than core language keywords. Phase Two introduces a semantic Compile-Time Function Execution (CTFE) engine—the comptime interpreter—which operates on the typed AST. This engine is responsible for type reflection, generic specialization, and complex constant evaluation involving Aria’s signature Twisted Balanced Binary (TBB) arithmetic and hybrid memory models.
+Key architectural imperatives identified in this report include:
+1. Strict Phase Separation: The compiler pipeline must explicitly enforce the boundary between textual expansion and semantic evaluation to prevent hygiene leaks and ensure deterministic builds.
+2. TBB-Native Interpretation: The CTFE interpreter must natively emulate the "sticky error" propagation semantics of TBB types. Using host-machine arithmetic for compile-time constants is insufficient and dangerous, as it would lead to divergence between compile-time and run-time behavior.
+3. Virtual Memory Abstraction: To support Aria’s wild (manual) and gc (managed) memory models during compile-time, the interpreter must implement a sandboxed Virtual Heap. This allows pointer arithmetic and manual allocation logic to be verified at build time without compromising the host compiler's stability.
+4. Hybrid Bridge: The introduction of a mixin mechanism is essential to allow the semantic layer (comptime) to inject generated code back into the parsing stream, effectively closing the loop between the two phases.
+This document serves as the implementation blueprint for the compiler engineering team, detailing data structures, execution flows, and integration points for the complete system.
+________________
+2. Theoretical Framework and Architectural Vision
+2.1 The Necessity of a Hybrid Model
+Modern language design typically gravitates toward one of two poles in metaprogramming: textual substitution (C/C++ Preprocessor, NASM) or semantic generation (C++ Templates, Rust Macros, Zig Comptime). Textual systems offer unparalleled flexibility, allowing developers to invent new syntax and reduce boilerplate without adhering to the language's grammar rules during the expansion phase. However, they are historically plagued by "hygiene" issues—accidental variable capture—and a complete lack of type awareness.1 Semantic systems, conversely, are safe and type-aware but often rigid, requiring complex syntax to manipulate the AST and struggling to introduce fundamental control structures or domain-specific languages (DSLs).
+Aria's specific requirements 1 necessitate a hybrid approach. The language specification mandates support for high-level constructs like CLASS, IF/ELSE state machines, and ACTOR models, yet the core language definition is intentionally minimal. These high-level features are to be implemented via the macro system. A purely semantic system would struggle to define syntax as fundamental as a class definition block, while a purely textual system would fail to safely handle the exotic arithmetic of TBB types or the memory safety constraints of the borrow checker. Thus, Aria adopts a Two-Phase Pipeline:
+1. Syntactic Phase: A powerful macro preprocessor performs text substitution to shape the code structure.
+2. Semantic Phase: A comptime interpreter evaluates types and constants to shape the code logic.
+2.2 The Two-Phase Pipeline Architecture
+The compilation process is reimagined as a linear flow with distinct transformation stages.
+Stage
+	Component
+	Input
+	Operation
+	Output
+	1. Lexical Analysis
+	Lexer
+	Source Code (.aria)
+	Tokenization
+	Raw Token Stream
+	2. Syntactic Phase
+	Preprocessor
+	Raw Token Stream
+	Macro Expansion, Context Stack Ops, Token Rotation
+	Expanded Token Stream
+	3. Parsing
+	Parser
+	Expanded Token Stream
+	Grammatical Analysis
+	Raw AST
+	4. Semantic Phase
+	CTFE Interpreter
+	Raw AST
+	Type Resolution, Constant Folding, Reflection
+	Decorator/Optimized AST
+	5. Code Generation
+	LLVM Backend
+	Optimized AST
+	IR Translation, TBB Lowering
+	Machine Code / Binary
+	Table 1: The Aria Compilation Pipeline
+This architecture ensures that macros can generate comptime blocks, but comptime blocks operate on code that has already been syntactically stabilized. This unidirectional flow simplifies debugging and implementation.
+________________
+3. Phase One: The Macro Preprocessor Architecture
+The first pillar of Aria's metaprogramming system is the NASM-style preprocessor. Unlike the C preprocessor, which is line-based and relatively limited, the Aria preprocessor operates on a token stream and maintains complex internal state, including context stacks and loop counters.1
+3.1 Context Stack Management
+To support complex, nested structures like classes within modules or loops within conditionals, the preprocessor must maintain a context stack. This allows macros to be "context-aware"—changing their behavior based on whether they are inside a function, a class, or a loop.
+The system utilizes the following directives, inspired by NASM but adapted for Aria’s token stream 1:
+* %push <context_name>: Pushes a new context onto the stack. This creates a new namespace for local labels and can trigger context-specific macro overrides.
+* %pop: Removes the top context.
+* %repl <new_context_name>: Replaces the top context, useful for state transitions (e.g., moving from IF to ELSE state).
+* %ifctx <context_name>: Conditional compilation based on the active context.
+Implementation Strategy:
+The Preprocessor class 1 must be augmented with a std::stack<MacroContext> structure. Each MacroContext holds not just a name, but also a symbol table for context-local labels (%$label). This ensures label hygiene. When a macro generates a jump label for a WHILE loop, it uses %$loop_start. The preprocessor mangles this to contextID_loop_start, guaranteeing uniqueness even in deeply nested loops.
+3.2 Token Stream Processing and Rotation
+Aria macros require the ability to manipulate variable argument lists, particularly for functional abstractions like map or filter which might take varying numbers of arguments. The preprocessor implements token rotation directives:
+* %rotate <count>: Rotates the macro parameters. %1 becomes the last parameter, %2 becomes %1, etc. This facilitates recursive processing of argument lists.
+Recursive Macro Expansion Pattern:
+To implement a list definition macro LIST(a, b, c):
+1. The macro captures the first argument %1.
+2. It generates code for %1.
+3. It invokes %rotate 1.
+4. It checks if more arguments exist; if so, it recursively calls itself.
+This logic requires the preprocessor to support rep (repeat) blocks and recursive expansion limits to prevent infinite loops.1
+3.3 Label Hygiene and Name Mangling
+One of the most critical challenges in textual macros is "variable capture" or pollution of the user's namespace. Aria solves this via context-local labels.
+   * User Labels: Standard identifiers (myVar).
+   * Local Labels: Identifiers prefixed with %$ (%$temp).
+   * Mechanism: When the preprocessor encounters a %$ token, it looks up the current context ID on the stack. It replaces %$ with __ctx_0x1234_.
+   * Result: A macro can define wild int8: %$i = 0; safely. If the user invokes the macro twice, two distinct variables __ctx_A_i and __ctx_B_i are created, preventing symbol collision errors in the subsequent Semantic Phase.
+3.4 Multi-line Block Capture
+To support DSL-like constructs (e.g., an ACTOR definition block), the preprocessor requires the ability to capture arbitrary blocks of code as arguments.
+Proposed Syntax:
+
+
+Code snippet
+
+
+
+
+%macro ACTOR 1
+   %push actor_ctx
+   struct %1 {
+       %body
+   }
+   %pop
+%endmacro
+
+The specialized token %body or a multi-line parameter capture mechanism allows the macro to wrap user code in setup/teardown logic (like memory pinning or mutex locking) transparently.
+________________
+4. Phase Two: The Comptime Execution Engine
+Once the preprocessor has expanded the textual macros into a linear stream of Aria tokens, the Parser constructs the AST. The second phase of metaprogramming, the Comptime Execution Engine (CTFE), operates on this AST. This system is responsible for semantic correctness, type introspection, and ensuring that the exotic properties of Aria's type system are respected.1
+4.1 Architecture of the CTFE Interpreter
+The CTFE Interpreter is a tree-walking virtual machine integrated between the Semantic Analysis and Code Generation phases. It does not emit machine code; it evaluates AST nodes to produce ComptimeValues, which are then folded back into the AST.
+Core Components:
+   1. The Evaluator: A recursive visitor that processes Expression and Statement nodes.
+   2. The Virtual Environment: A stack of symbol tables mapping identifiers to ComptimeValues. This isolates compile-time variables from runtime logic.
+   3. The Virtual Heap: A managed memory arena that simulates Aria's hybrid memory model. It tracks allocations made during compile-time, allowing pointer arithmetic and structural mutations.
+   4. The Type Registry: A system for representing Aria types (including TBB, Ternary, and Structs) as first-class values.
+4.2 Handling Exotic Types: TBB Integration
+Aria's Twisted Balanced Binary (TBB) types introduce a "sticky error" semantic that essentially redefines arithmetic.1 Standard constant folding (using host CPU arithmetic) is insufficient because it would not propagate the ERR sentinel correctly.
+The Sticky Error Requirement:
+In tbb8, the value -128 (0x80) is ERR.
+   * Runtime: -127 - 1 results in -128 (ERR).
+   * Standard Compiler: -127 - 1 results in -128.
+   * Problem: If the compiler treats this as a valid -128 and uses it for array sizing or logic, it diverges from runtime behavior where that value represents an error state.
+Solution: The TBB-Aware ALU
+The CTFE Interpreter must include a software Arithmetic Logic Unit (ALU) specifically for TBB.
+
+
+C++
+
+
+
+
+// Pseudocode for CTFE TBB Addition
+ComptimeValue evalTBBAdd(Value a, Value b, Type t) {
+   if (a.isERR() |
+
+| b.isERR()) return Value::ERR(t);
+   
+   int result = a.intVal + b.intVal;
+   
+   // Check for overflow relative to TBB symmetric range
+   if (result > t.max |
+
+| result < t.min) return Value::ERR(t);
+   
+   // Check for sentinel collision
+   if (result == t.sentinel) return Value::ERR(t);
+   
+   return Value(result);
+}
+
+This ensures that const tbb8:x = 120 + 20; evaluates to ERR at compile time, allowing the compiler to emit a static error immediately rather than generating broken code.
+4.3 Ternary and Nonary Logic Support
+The interpreter must also natively support trit (base-3) and nit (base-9) types.1 Since host architectures are binary, these types are packed into tryte (uint16) or nyte (uint16) containers.
+   * Compile-Time Simulation: The interpreter implements functions to unpack these containers into vectors of values {-1, 0, 1} for trits or {-4..4} for nits, perform the logic operations (e.g., ternary MIN/MAX logic), and repack them.
+   * Conditional Logic: The comptime system must support the is operator and ternary/nonary specific control flow, evaluating them statically to prune dead code branches based on exotic truth values.
+4.4 Types as First-Class Values
+To replace C++ templates, Aria treats type as a primitive value kind.1
+   * Reflection: The interpreter exposes a builtin function @typeInfo(T). This function accepts a type value and returns a comptime struct describing it (fields, alignment, signedness, TBB status).
+   * Generics: A generic function is simply a function that accepts a comptime type parameter.
+Code snippet
+func:List = type(comptime type:T) {... }
+
+When called, the interpreter executes this function, generating a new StructDecl AST node tailored to type T.
+________________
+5. Bridging the Gap: Integrating Preprocessor and Comptime
+The primary technical challenge identified in the research task is bridging the text-substitution world of macros with the semantic world of types.
+5.1 The mixin Operator
+The bridge mechanism is the @mixin operator. This comptime function accepts a string (which can be constructed via string manipulation logic) and feeds it back into the Parser.
+      * Workflow:
+      1. Macro expands to code containing a comptime block.
+      2. comptime block performs reflection on a type T.
+      3. comptime block generates a string of Aria source code based on that reflection (e.g., a serialization method).
+      4. @mixin parses this string and injects the resulting AST nodes into the current scope.
+This effectively closes the loop: Text -> AST -> Execution -> Text -> AST.
+5.2 Source Location and Error Tracking
+A major risk with hybrid systems is unreadable error messages ("Error in macro expansion...").
+Traceability Strategy:
+         1. Source Maps: The preprocessor generates a source map associating every token in the expanded stream with its original file, line, and macro invocation stack.
+         2. AST Annotation: When the Parser consumes tokens, it attaches this provenance data to the AST nodes.
+         3. Comptime Errors: If the CTFE Interpreter encounters an error (e.g., TBB overflow), it uses the AST annotation to print:
+         * "Error at line 20: TBB Overflow."
+         * "Expanded from Macro 'SAFE_ADD' at line 10."
+         * "Included from 'math.aria' at line 5."
+________________
+6. High-Level Control Flow Library
+Aria relies on macros to implement high-level control flow structures that are not keywords in the core language but are required for developer ergonomics.
+6.1 The IF/ELIF/ELSE State Machine
+Using the context stack, we can implement a robust conditional system without core language support for elif chains if necessary, or augment the existing core if with compile-time features.
+Macro Design:
+
+
+Code snippet
+
+
+
+
+%macro IF 1
+   %push ctx_if
+   if (%1) {
+%endmacro
+
+%macro ELSE 0
+   %ifctx ctx_if
+       } else {
+       %repl ctx_else
+   %else
+       %error "ELSE without matching IF"
+   %endif
+%endmacro
+
+%macro ENDIF 0
+   %ifctx ctx_if
+       }
+       %pop
+   %elifctx ctx_else
+       }
+       %pop
+   %else
+       %error "ENDIF without IF"
+   %endif
+%endmacro
+
+This ensures balanced braces and correct scoping at the preprocessor level, preventing syntax errors before parsing even begins.
+6.2 Iteration Constructs (WHILE/FOR)
+Loops require label generation for BREAK and CONTINUE.
+Macro Design:
+
+
+Code snippet
+
+
+
+
+%macro WHILE 1
+   %push ctx_while
+   %$start_label:
+   while (%1) {
+%endmacro
+
+%macro BREAK 0
+   goto %$end_label; // Context-local label resolution
+%endmacro
+
+The preprocessor resolves %$end_label to the unique identifier for the current loop context, allowing nested loops to break correctly without ambiguity.
+________________
+7. Memory Model Integration
+Aria's hybrid memory model (GC vs Wild) presents specific challenges for metaprogramming.
+7.1 Compile-Time Allocator Awareness
+The comptime environment must be memory-safe, even when simulating wild pointers.
+         * Virtual Addresses: The interpreter uses handles (e.g., 0xCAFEBABE + index) rather than real pointers.
+         * Model Detection: Macros can inspect the memory model of a type using @typeInfo(T).is_wild.
+         * Code Generation: A generic data structure macro can generate two versions of code:
+         * If T is wild, generate aria.alloc and manual free calls.
+         * If T is gc, generate aria.gc_alloc and omit free calls.
+This allows the standard library to define a single Vector<T> that adapts to the memory semantics of the contained type automatically.
+7.2 Integration with the Borrow Checker
+The comptime system must respect pinning semantics.1
+            * Pinning Operator (#): If a macro generates code involving the # operator, the Semantic Phase validates that the operand is a valid GC object.
+            * Safe References ($): Macros generating loops with the till construct must utilize the $ iteration variable correctly. The preprocessor ensures that $ tokens are not accidentally substituted if they appear inside macro arguments intended for verbatim output.
+________________
+8. Concurrency Patterns and Macros
+Aria supports an Actor model and Go-style coroutines. Metaprogramming aids in defining these safe concurrent structures.
+8.1 The ACTOR Macro
+An Actor macro abstracts the boilerplate of defining a struct, a message enum, and a mailbox loop.
+
+
+Code snippet
+
+
+
+
+ACTOR(MyActor) {
+   STATE {
+       int:count = 0;
+   }
+   MESSAGE(increment) {
+       state.count++;
+   }
+}
+
+Expansion:
+            1. Preprocessor: Expands to a struct MyActor, an enum MyActor_Messages, and a func:run loop containing a pick statement switching on the message type.
+            2. Comptime: The MESSAGE macro registers the handler signature in a compile-time list.
+            3. Code Gen: Generates the switch cases for the message loop.
+8.2 Safe Spawn/Fork Integration
+Macros for SPAWN can perform compile-time checks on the arguments.
+            * Argument Safety: Ensure arguments passed to SPAWN are "sendable" (deeply copyable or wild pointers with ownership transfer). The comptime check @typeInfo(Arg).is_sendable prevents data races at compile time by rejecting shared mutable GC references across threads.
+________________
+9. Implementation Roadmap
+9.1 Phase 1: Infrastructure (Weeks 1-3)
+            * Task: Extend Preprocessor 1 to support context stacks (%push, %pop) and local labels (%$).
+            * Task: Implement token rotation and recursive macro support.
+            * Verification: Unit tests with nested macros ensuring label uniqueness.
+9.2 Phase 2: The CTFE Interpreter (Weeks 4-6)
+            * Task: Scaffold Interpreter class and ComptimeValue variant.
+            * Task: Implement TBB-aware arithmetic ALU.1
+            * Task: Integrate Interpreter hook into TypeChecker.1
+9.3 Phase 3: Reflection & Mixins (Weeks 7-8)
+            * Task: Implement @typeInfo intrinsic returning structural data.
+            * Task: Implement @mixin to feed string data back to the Lexer/Parser.
+            * Verification: Implement a basic json_serialize generic using the system.
+9.4 Phase 4: Standard Library Macros (Weeks 9-10)
+            * Task: Implement IF/WHILE control flow macros.
+            * Task: Implement Vector<T> template adaptable to memory models.
+            * Verification: Port existing standard library prototypes to use the new system.
+________________
+10. Conclusion
+The architecture defined herein provides a robust solution to Aria's complex metaprogramming needs. By decoupling the syntactic power of textual macros from the semantic safety of compile-time execution, we create a system that is both flexible and safe. The strict adherence to TBB semantics in the interpreter ensures that Aria's unique value proposition—arithmetic safety—extends to the build process itself. This Hybrid Model enables high-level abstractions without runtime cost, fulfilling the zero-cost abstraction promise essential for a modern systems language.
+This system will allow Aria to maintain a minimal core while offering a rich, developer-friendly feature set through its standard library, powered entirely by user-accessible metaprogramming tools.
+________________
+11. Appendix: Comparison of Metaprogramming Models
+Feature
+	C Preprocessor
+	C++ Templates
+	Rust Macros
+	Zig Comptime
+	Aria Hybrid
+	Expansion Phase
+	Textual (Early)
+	Semantic (Late)
+	AST (Mid)
+	Semantic (Late)
+	Textual + Semantic
+	Hygiene
+	None
+	High
+	High
+	High
+	Context-Local Labels
+	Type Awareness
+	None
+	High
+	Low (declarative)
+	High
+	High (Phase 2)
+	Syntax Creation
+	Limited
+	None
+	Moderate
+	None
+	High (Phase 1)
+	Execution
+	None
+	Constant Folding
+	AST Trans.
+	CTFE Interpreter
+	CTFE Interpreter
+	TBB Support
+	N/A
+	N/A
+	N/A
+	N/A
+	Native (Sticky Error)
+	End of Report
+Works cited
+            1. aria_source_part1b_preprocessor.txt
