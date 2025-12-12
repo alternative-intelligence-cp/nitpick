@@ -174,8 +174,24 @@
     - ARMv8: LDAR/STLR for acquire/release, DMB/DSB for full barriers
   * **Testing Strategy**: ThreadSanitizer integration, torture tests, model checking
   * **Reference**: `/docs/gemini/responses/research_008_atomics_library.txt` (417 lines)
-- [ ] research_009: Timer/clock library
-- [ ] research_010: Comptime system
+- [x] **research_009: Timer/Clock Library** ✅ COMPLETE (Dec 11, 2025)
+  * **Core Design**: Hierarchical Timing Wheel (5-level hashed wheel, O(1) insert/cancel)
+  * **Key Innovations**:
+    - TBB64 temporal calculus: Symmetric time arithmetic eliminates overflow bugs
+    - Duration/Instant types with ERR sentinel for safe time math
+    - Monotonic time enforcement (never use wall-clock for durations)
+    - Per-worker wheels (zero lock contention, NUMA-friendly)
+  * **Platform Integration**:
+    - Linux: timerfd + epoll (nanosecond precision via VDSO)
+    - Windows: Waitable Timers + IOCP (QueryPerformanceCounter)
+    - macOS/BSD: kqueue EVFILT_TIMER (mach_absolute_time)
+  * **Async Support**:
+    - sleep(), timeout(), Ticker (periodic events)
+    - Appendage Theory enforcement for timer callbacks
+    - Cancellation via Future drop (zombie timer mitigation)
+  * **Performance**: VDSO usage (15ns clock reads), cache-friendly wheel structure
+  * **Reference**: `/docs/gemini/responses/research_009_timer_clock_library.txt` (502 lines)
+- [ ] research_010: Comptime system (COMBINED with research_011)
 - [ ] **research_011: Macro Preprocessor & Comptime Metaprogramming System** (NEW)
   * **Scope**: Complete design of dual-phase metaprogramming (NASM-style macros + Zig-style comptime)
   * **Key Features**:
@@ -1395,36 +1411,72 @@
   - [ ] Integrate loom-style tool (permute thread schedules, exhaustive state space)
 
 ### 7.4 Timers & Clocks
-**Status**: Awaiting research_009
+**Status**: Design complete (research_009 ✅), ready for implementation  
+**Timeline**: 3 weeks (data structures, OS integration, async runtime)
 
-#### 7.4.1 Time Abstractions
-- [ ] After research_009 complete, review timer API
-- [ ] Implement in `stdlib/time.aria` or `src/runtime/time/`
-  - [ ] **Clock types**
-    - [ ] `Clock.monotonic()` - monotonic time (unaffected by system clock changes)
-    - [ ] `Clock.system()` - wall-clock time
-    - [ ] `Clock.process()` - process CPU time
-  - [ ] **Duration type**
-    - [ ] Nanosecond precision
-    - [ ] Arithmetic operations (add, subtract, multiply, divide)
-  - [ ] **Instant type**
-    - [ ] Represents point in time
-    - [ ] Comparison operations
-    - [ ] Duration since epoch
-  - [ ] Add tests
+#### 7.4.1 Core Data Structures (`src/runtime/time/`)
+- [ ] **Hierarchical Timing Wheel** (timer_wheel.h/cpp)
+  - [ ] 5-level hashed wheel (TV1-TV5): 256, 64, 64, 64, 64 slots
+  - [ ] TimerEntry struct: expiry_nanos (tbb64), coro_handle, prev/next pointers
+  - [ ] O(1) insert: Calculate level based on expiry delta, add to linked list
+  - [ ] O(1) advance: Process current slot, cascade on wraparound
+  - [ ] Per-worker wheels (zero lock contention)
+  - [ ] Tests: Insert 10K timers, verify O(1) complexity
 
-#### 7.4.2 Timers & Scheduling
-- [ ] **Timer API**
-  - [ ] `Timer.after(duration: Duration) -> future<void>`
-    - [ ] Async timer (integrates with event loop)
-  - [ ] `Timer.interval(duration: Duration, callback: func() -> void) -> timer`
-    - [ ] Periodic timer
-    - [ ] `timer.cancel()` - stop periodic timer
-  - [ ] Add tests
-- [ ] **Sleep functions**
-  - [ ] `thread.sleep(duration: Duration)` - blocking sleep
-  - [ ] `async sleep(duration: Duration)` - async sleep
-  - [ ] Add tests
+- [ ] **Platform Abstractions** (time_platform.h/cpp)
+  - [ ] Linux: timerfd_create(CLOCK_MONOTONIC), epoll integration
+  - [ ] Windows: CreateWaitableTimerEx(HIGH_RESOLUTION), IOCP integration  
+  - [ ] macOS/BSD: kqueue EVFILT_TIMER(NOTE_NSECONDS)
+  - [ ] VDSO optimization: Direct TSC/QPC reads (15ns latency)
+  - [ ] Tests: Verify nanosecond precision on each platform
+
+#### 7.4.2 Time Types (`stdlib/time.aria`)
+- [ ] **Duration struct** (TBB64-based)
+  - [ ] Field: tbb64:nanos (symmetric range ±292 years)
+  - [ ] Constants: NANOSECOND, MICROSECOND, MILLISECOND, SECOND, MINUTE, HOUR
+  - [ ] Arithmetic: Add/Sub/Mul/Div with ERR propagation
+  - [ ] Tests: Verify overflow → ERR (not wrap or panic)
+
+- [ ] **Instant struct** (monotonic time point)
+  - [ ] Field: tbb64:ticks (opaque, relative to boot)
+  - [ ] now() -> Instant: Read monotonic clock
+  - [ ] Instant + Duration -> Instant, Instant - Instant -> Duration
+  - [ ] Tests: Verify monotonic guarantee (t2 >= t1 always)
+
+- [ ] **SystemTime struct** (wall-clock, UTC)
+  - [ ] Field: tbb64:unix_nanos (since Unix epoch)
+  - [ ] now() -> SystemTime: Read system clock
+  - [ ] Warning: Never use for durations/timeouts
+  - [ ] Tests: Verify distinct from Instant
+
+#### 7.4.3 Async Timer API
+- [ ] **sleep(Duration) -> Future<void>**
+  - [ ] Insert timer into wheel, suspend coroutine
+  - [ ] On expiry: Resume coroutine
+  - [ ] Cancellation: Drop Future → mark TimerEntry CANCELLED
+  - [ ] Tests: sleep(1s), verify 1000-1010ms elapsed
+
+- [ ] **timeout<T>(Duration, Future<T>) -> Result<T>**
+  - [ ] Race operation against timer using pick (select)
+  - [ ] Return ERR_TIMEOUT if timer wins
+  - [ ] Tests: timeout(100ms, slow_op()) verifies timeout, timeout(10s, fast_op()) verifies success
+
+- [ ] **Ticker struct** (periodic events)
+  - [ ] every(Duration) -> Ticker: Create periodic timer
+  - [ ] next() -> Future<Instant>: Wait for next tick
+  - [ ] Tests: Ticker at 100ms, verify 10 ticks in ~1000ms
+
+#### 7.4.4 Reactor Integration
+- [ ] **Worker::run() modification** (src/runtime/concurrency/worker.cpp)
+  - [ ] Calculate next_timer_expiry from wheel
+  - [ ] Pass to epoll_wait/GetQueuedCompletionStatusEx as timeout
+  - [ ] On wakeup: Call wheel.advance(now), resume expired coroutines
+  - [ ] Tests: 1000 concurrent sleeps, verify all wake correctly
+
+- [ ] **Thundering Herd Mitigation**
+  - [ ] Timer coalescing: Align to 10ms boundaries (configurable)
+  - [ ] Staggered wakeup: Feed work stealing scheduler gradually
+  - [ ] Tests: 10K timers at same expiry, verify CPU doesn't thrash
 
 ---
 
