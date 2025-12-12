@@ -492,6 +492,73 @@
   * **Template Interpolation**:
     - &{ } (interpolation): Inside ` backtick strings
 
+### 0.8 Language Infrastructure Research
+- [ ] **research_027: Generics and Templates (Monomorphization System)**
+  * **Scope**: Zero-cost generic programming via monomorphization (C++/Rust style)
+  * **Generic Functions**: func<T, U>:name = *T(*U:param) { body }
+  * **Monomorphization**: Compile-time type instantiation (no erasure)
+  * **Type Inference**: Automatic type parameter deduction
+  * **Constraints**: Trait bounds and type requirements
+  * **Integration**:
+    - Interaction with wild vs gc memory
+    - TBB types in generic contexts (preserving ERR)
+    - Borrow checker compatibility
+    - Comptime evaluation for constraints
+  * **Advanced Features**:
+    - Associated types
+    - Higher-kinded types
+    - Const generics (array<T, N>)
+    - Variadic generics
+    - Specialization
+- [ ] **research_028: Module System (use, mod, pub, extern)**
+  * **Scope**: Complete module system for code organization
+  * **use (Imports)**: use std.io, use math.*, use "./file.aria" as alias
+  * **mod (Module Definitions)**: mod name { ... } and nested hierarchies
+  * **pub (Visibility)**: pub func, pub const, pub struct
+  * **extern (FFI)**: extern "libc" { func:malloc = void*(uint64:size); }
+  * **Key Features**:
+    - Import resolution algorithm (absolute, relative, search paths)
+    - Circular import detection
+    - Visibility levels (pub, pub(crate), pub(super), private)
+    - FFI type mappings (Aria ↔ C types)
+    - Conditional compilation (use cfg(target_os = "linux"))
+  * **Integration**:
+    - File/directory structure conventions
+    - Package manifest format
+    - Symbol resolution
+    - Incremental compilation with modules
+- [ ] **research_029: Async/Await System (Coroutines and Futures)**
+  * **Scope**: Zero-cost async/await with stackless coroutines
+  * **async Functions**: async func:name = result(params) { await expr; }
+  * **await Keyword**: Suspend execution until Future completes
+  * **Future<T>**: Type representing pending computation
+  * **Coroutines**: Stackless state machine transformation
+  * **Integration**:
+    - Async runtime using research_007 work-stealing executor
+    - I/O integration with research_005 (io_uring, IOCP)
+    - Borrow checker lifetime constraints
+    - Error handling with result type
+  * **Advanced Features**:
+    - Async blocks and closures
+    - Select/join combinators
+    - Cancellation semantics (drop Future)
+    - Async iterators/streams
+    - Timeout support
+- [ ] **research_030: Const and Compile-Time Evaluation**
+  * **Scope**: Compile-time constants and const evaluation
+  * **const Variables**: const int:VALUE = 42;
+  * **const Functions**: Pure, deterministic functions evaluated at compile-time
+  * **const Generics**: Generic parameters as compile-time constants
+  * **const Expressions**: Arithmetic, logical, function calls at compile-time
+  * **Integration**:
+    - Relationship with comptime from research_010
+    - Const propagation optimization
+    - Memory model (data segment, inlining)
+  * **Advanced Features**:
+    - Const assertions (static_assert)
+    - Const pattern matching
+    - Const slices/strings
+
 ---
 
 ## PHASE 1: Core Type System Completion
