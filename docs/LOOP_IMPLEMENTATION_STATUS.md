@@ -76,9 +76,15 @@ All major loop constructs and control flow statements are complete!
 - **Parser**: ⚠️ Code exists but commented (parseLoopStmt at parser.cpp:1994)
 - **AST**: ❌ LoopStmt class doesn't exist yet
 - **Status**: Parser ready, needs AST node creation
-- **Difference from till**: Explicit start value (till uses 0 or limit based on step sign)
-  - `loop(1, 100, 1)` → 1..100 vs `till(100, 1)` → 0..100
-  - `loop(100, 0, -2)` → 100..0 by 2s vs `till(100, -2)` → 100..0 by 2s (same here)
+- **Behavior**:
+  - **Step is always positive** (magnitude only, not direction)
+  - **Direction determined by start vs limit**:
+    - `start < limit` → counts UP by step
+    - `start > limit` → counts DOWN by step
+  - Examples: `loop(1, 100, 2)` → 1,3,5,...,99 | `loop(100, 0, 2)` → 100,98,...,2,0
+- **Difference from till**: 
+  - `loop`: Explicit start, step is magnitude
+  - `till`: Implicit start (0 or limit), step sign determines direction
 - **Implementation**: Parser code at lines 1518-1520, 1990-2014
 
 ## Technical Notes
