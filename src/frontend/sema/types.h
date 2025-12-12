@@ -164,6 +164,7 @@ public:
                kind == TypeKind::FLT64 || 
                kind == TypeKind::TBB8 || kind == TypeKind::TBB16 ||
                kind == TypeKind::TBB32 || kind == TypeKind::TBB64 ||
+               kind == TypeKind::TRIT || kind == TypeKind::TRYTE ||
                isVector();
     }
 
@@ -182,6 +183,7 @@ public:
                kind == TypeKind::INT512 ||
                kind == TypeKind::TBB8 || kind == TypeKind::TBB16 ||
                kind == TypeKind::TBB32 || kind == TypeKind::TBB64 ||
+               kind == TypeKind::TRIT || kind == TypeKind::TRYTE ||
                kind == TypeKind::IVEC2 || kind == TypeKind::IVEC3 || kind == TypeKind::IVEC4;
     }
 
