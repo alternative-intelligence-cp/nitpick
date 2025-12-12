@@ -253,14 +253,34 @@ public:
         if (actualType == "tbb32") return Type::getInt32Ty(llvmContext);
         if (actualType == "tbb64") return Type::getInt64Ty(llvmContext);
         
-        // Float types (all bit widths)
+        // Float types - IEEE 754 compliance (research_013)
+        // flt32/flt64: Hardware SIMD types (SSE/AVX on x86, NEON on ARM)
+        // flt128: Hybrid (hardware on POWER, software on x86 via compiler-rt)
+        // flt256/flt512: Software emulation (limb-based representation)
         if (actualType == "float" || actualType == "flt32") 
             return Type::getFloatTy(llvmContext);
         if (actualType == "double" || actualType == "flt64") 
             return Type::getDoubleTy(llvmContext);
-        if (actualType == "flt128") return Type::getFP128Ty(llvmContext);
-        if (actualType == "flt256") return Type::getFP128Ty(llvmContext);  // LLVM max is fp128, use for now
-        if (actualType == "flt512") return Type::getFP128Ty(llvmContext);  // LLVM max is fp128, use for now
+        if (actualType == "flt128") 
+            return Type::getFP128Ty(llvmContext);  // IEEE 754 binary128
+        
+        // flt256: Software type as struct with 4 x i64 limbs (256 bits total)
+        // Layout: { [4 x i64] } - limb-based representation per research_013
+        // Limb 0-2: Mantissa low bits, Limb 3: Sign (1) + Exponent (19) + Mantissa high (44)
+        if (actualType == "flt256") {
+            Type* i64Ty = Type::getInt64Ty(llvmContext);
+            ArrayType* limbsType = ArrayType::get(i64Ty, 4);  // 4 limbs
+            return StructType::get(llvmContext, {limbsType});
+        }
+        
+        // flt512: Software type as struct with 8 x i64 limbs (512 bits total)
+        // Layout: { [8 x i64] } - limb-based representation per research_013
+        // Limb 0-6: Mantissa low bits, Limb 7: Sign (1) + Exponent (23) + Mantissa high (40)
+        if (actualType == "flt512") {
+            Type* i64Ty = Type::getInt64Ty(llvmContext);
+            ArrayType* limbsType = ArrayType::get(i64Ty, 8);  // 8 limbs
+            return StructType::get(llvmContext, {limbsType});
+        }
         
         // SIMD Vector types - map to LLVM fixed vector types for hardware acceleration
         // vec2: 2-element float vector -> <2 x float>  (SSE, NEON compatible)
