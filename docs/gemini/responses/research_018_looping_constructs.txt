@@ -1,0 +1,510 @@
+﻿Architectural Specification: Native Looping Constructs and Iteration Semantics in the Aria Language
+1. Executive Summary
+This architectural specification defines the implementation strategy for the looping constructs within the Aria programming language, specifically the while, for, loop, till, and when statements. While initial language prototyping utilized textual macros to implement control flow 1, the maturation of the language specification—particularly the integration of Twisted Balanced Binary (TBB) arithmetic 1 and the hybrid memory model—mandates that these constructs be elevated to first-class, native citizens of the language core.
+The decision to implement these constructs natively is driven by three critical architectural requirements that a macro-based system cannot satisfy:
+1. Semantic Integration of TBB Arithmetic: Loop counters in Aria are frequently TBB types (tbb8, tbb64) which possess unique "sticky error" semantics. A native implementation allows the compiler to inject specialized Lowering logic that terminates loops deterministically upon arithmetic overflow, rather than permitting undefined behavior.1
+2. Automatic Iteration Variable ($): The till and loop constructs utilize a context-sensitive, implicitly defined iteration variable $. Implementing this via macros introduces severe hygiene issues and prevents the static analyzer from correctly inferring types and lifetimes.1
+3. Dual-Mode for Loop Parsing: Aria supports both C-style for loops and iterator-based for-in loops within a single keyword. Resolving the syntactic ambiguity between these forms requires a recursive descent parser with lookahead capabilities, which is beyond the scope of a textual preprocessor.1
+This document serves as the implementation blueprint for the compiler engineering team. It details the syntactic structures, Abstract Syntax Tree (AST) definitions, Semantic Analysis (Sema) rules, and Backend Code Generation (CodeGen) logic required to lower these high-level constructs into optimized LLVM Intermediate Representation (IR).
+________________
+2. Theoretical Framework and Design Philosophy
+The iteration subsystem of Aria is designed to bridge the gap between low-level systems programming and high-level functional abstractions. Unlike C, where integer overflow in loops is undefined behavior, or Rust, where iterators are the primary abstraction, Aria hybridizes these approaches to accommodate its unique type system.
+2.1 The Imperative of TBB Safety in Iteration
+Aria’s arithmetic is founded on Twisted Balanced Binary (TBB) types, where the minimum signed value functions as an error sentinel (e.g., -128 for tbb8).1 This design choice has profound implications for iteration. In a standard language, a loop for (int8 i = 0; i < 127; i++) might wrap around to -128 and continue executing indefinitely or cause memory corruption.
+In Aria, the increment operation i++ is lowered to a TBB-safe addition. If i reaches 127 and is incremented, the result is ERR (-128). A native loop implementation monitors this state. The loop condition check i < limit is generated not as a simple CPU comparison, but as a TBB-aware check where ERR < value evaluates to FALSE (or triggers a defined error path), forcing the loop to terminate. This guarantees that finite loops over TBB types are mathematically incapable of infinite wrapping, a safety property that macros could not enforce.
+2.2 The Automatic Iteration Variable ($)
+Aria introduces a dedicated syntactic element for iteration: the $ symbol.
+* Semantics: $ represents the current index or element of the innermost active counted loop (till or loop).
+* Type Inference: The type of $ is not fixed; it is inferred from the loop bounds. For till(100), $ is an integer. For loop(0.0, 1.0, 0.1), $ is a float.
+* Scope: The symbol is implicitly injected into the SymbolTable 1 at the start of the loop block and shadowed by nested loops. This provides a "zero-boilerplate" iteration mechanism for simple counting tasks, reducing the visual noise of int i = 0 declarations.
+2.3 Zero-Cost Abstraction
+Despite the safety checks, the design goal is zero-cost abstraction. The semantic analyzer must prove, wherever possible, that a loop cannot overflow (e.g., iterating till(10) on a tbb64) to elide the TBB safety checks during code generation. Furthermore, the $ variable must map directly to a machine register (via LLVM SSA PHI nodes) rather than a memory location, ensuring that the convenience of implicit iteration does not incur a performance penalty.
+________________
+3. The while Construct: Conditional Iteration
+The while loop is the foundational control flow mechanism in Aria, serving as the compilation target for more complex loops and providing indefinite iteration capabilities.
+3.1 Syntax and AST Structure
+The syntax follows the C-family tradition but is distinguished by its interaction with Aria's expression evaluation rules.
+Syntax Specification:
+
+
+Code snippet
+
+
+
+
+while ( <expression> ) {
+   <block>
+}
+
+AST Node Definition:
+The WhileLoop node handles standard conditional iteration. It is defined in src/frontend/ast/loops.h and integrated into the AstVisitor pattern.1
+
+
+C++
+
+
+
+
+class WhileLoop : public Statement {
+public:
+   std::unique_ptr<Expression> condition;
+   std::unique_ptr<Block> body;
+   
+   WhileLoop(std::unique_ptr<Expression> cond, std::unique_ptr<Block> b)
+       : condition(std::move(cond)), body(std::move(b)) {}
+
+   void accept(AstVisitor& visitor) override {
+       visitor.visit(this);
+   }
+};
+
+3.2 Semantic Analysis
+The TypeChecker must enforce specific constraints on the WhileLoop 1:
+1. Condition Type: The condition expression must evaluate to TypeKind::BOOL or a numeric type (isNumeric()). Aria permits numeric types to function as booleans (where non-zero/non-null implies true) to facilitate systems programming patterns.
+2. Scope Management: A new SymbolTable scope is pushed before entering the body block and popped upon exit. This ensures that variables declared inside the loop do not leak into the enclosing scope.
+3. Control Flow Analysis: The analyzer checks for unreachable code. If the condition is a compile-time constant false, the body is marked as dead code (though not necessarily an error).
+3.3 Backend Lowering (LLVM IR)
+The compilation of a WhileLoop involves generating a Control Flow Graph (CFG) with three primary blocks.
+Block Name
+	Function
+	Header
+	The entry point of the loop. Evaluates the condition. Contains a conditional branch (br i1).
+	Body
+	Contains the lowered code for the statements within the loop. Ends with an unconditional branch back to the Header.
+	Exit
+	The destination when the condition evaluates to false or a break is executed.
+	TBB Integration Logic:
+If the condition involves TBB types (e.g., while (tbb_val > 0)), the comparison is not a simple integer comparison. The TBBLowerer is invoked to generate the comparison logic. Crucially, if tbb_val is ERR (the sentinel), the comparison logic must evaluate to false to prevent infinite loops on corrupted data. This "fail-safe" behavior is a core tenet of Aria's safety model.
+________________
+4. The when Loop: Tri-State Conditional Iteration
+The when loop is a distinct construct in Aria, separate from the while loop and the when expression used for pattern matching.1 It implements a "search and completion" pattern often found in algorithms where distinct actions are required based on whether the loop completed naturally or was terminated early.
+4.1 Syntax and Semantics
+The when loop introduces a then block and an end block, creating a tri-state control flow.1
+Syntax Specification:
+
+
+Code snippet
+
+
+
+
+when ( <expression> ) {
+   <loop_body>
+} then {
+   <success_block>
+} end {
+   <failure_block>
+}
+
+Execution Logic:
+1. Loop Body: Executes repeatedly as long as <expression> is true.
+2. Then Block: Executes only if the loop terminates naturally because the condition became false. This implies the loop "completed" its task.
+3. End Block: Executes if the loop was terminated prematurely via a break statement, or if the loop body was never entered (condition initially false). This serves as a "failure" or "interrupted" handler.
+Use Case:
+This construct is designed to replace the common "flag variable" pattern used in searching:
+* Old Way: Declare found = false, loop, if found set true and break, check found after loop.
+* Aria Way: Use when. If found, break. The end block handles the "found" logic (or "not found" depending on semantic mapping), while then handles the exhaustive search completion.
+4.2 AST Structure
+The WhenLoop node extends the standard loop structure with two additional block pointers.1
+
+
+C++
+
+
+
+
+class WhenLoop : public Statement {
+public:
+   std::unique_ptr<Expression> condition;
+   std::unique_ptr<Block> body;
+   std::unique_ptr<Block> then_block; // Executed on natural termination
+   std::unique_ptr<Block> end_block;  // Executed on break or initial false
+   
+   // Constructor...
+};
+
+4.3 Code Generation Strategy
+Compiling the WhenLoop requires maintaining runtime state to track the exit reason. Since LLVM IR is SSA, we cannot simply toggle a mutable flag variable efficiently without relying on alloca/load/store optimization. Instead, we utilize the CFG structure and PHI nodes.
+CFG Layout:
+1. Entry Block: Initialize a PHI node value did_break = false.
+2. Header Block: Evaluate condition.
+   * If true: Branch to Body Block.
+   * If false: Branch to Decision Block.
+3. Body Block: Execute statements.
+   * If break encountered: Update PHI value to did_break = true, Branch to Decision Block.
+   * End of body: Branch to Header Block.
+4. Decision Block: Check did_break.
+   * If true: Branch to End Block.
+   * If false: Check if loop ran at least once (if required by spec semantics). Branch to Then Block.
+5. Then Block: Execute success logic. Branch to Exit.
+6. End Block: Execute failure logic. Branch to Exit.
+This logic eliminates the need for user-managed boolean flags, pushing the complexity into the compiler where it can be optimized away if the blocks are empty.
+________________
+5. The Counted Family: till and loop
+The till and loop constructs represent the "counted" iteration family in Aria. They are distinguished by their implicit management of the loop counter via the $ variable and their strict adherence to TBB safety protocols.
+5.1 The till Construct
+till is a syntactic sugar for zero-indexed iteration, optimized for the common case of iterating N times.
+Syntax:
+
+
+Code snippet
+
+
+
+
+till ( <limit_expr>, <step_expr> ) {
+   <block>
+}
+
+* Start: Implicitly 0.
+* Limit: The iteration continues while $!= limit.
+* Step: Added to $ each iteration.
+Semantic Rules:
+1. Directionality: The TypeChecker attempts to verify at compile time that the step moves 0 towards limit. If limit is negative, step must be negative.1
+2. Type Inference: The type of $ is inferred from limit. If limit is a literal 100, $ is inferred as int8 (or tbb8 if strict). If limit is a variable of type tbb64, $ becomes tbb64.
+5.2 The loop Construct
+loop provides fully explicit control over the iteration bounds.
+Syntax:
+
+
+Code snippet
+
+
+
+
+loop ( <start_expr>, <limit_expr>, <step_expr> ) {
+   <block>
+}
+
+5.3 The Automatic Iteration Variable ($)
+The $ variable is a unique feature that requires deep integration into the frontend.
+Symbol Table Integration:
+When the TypeChecker visits a TillLoop or LoopStmt, it performs the following 1:
+1. Scope Entry: A new scope is pushed.
+2. Symbol Injection: A special symbol named $ is programmatically defined in this scope.
+3. Type Assignment: The type of $ is resolved from the arguments (start/limit).
+4. Immutability: $ is marked as const or read-only. User attempts to assign to $ ($ = 5;) are rejected by the semantic analyzer.
+Nested Loops:
+Because SymbolTable lookups proceed from inner to outer scopes, a nested loop automatically shadows the outer $.
+
+
+Code snippet
+
+
+
+
+till (10, 1) {
+   print($); // Prints 0..9
+   till (5, 1) {
+       print($); // Prints 0..4 (inner $)
+   }
+   print($); // Prints 0..9 (outer $ restored by scope pop)
+}
+
+5.4 Backend Lowering: SSA and TBB
+The generation of code for till and loop relies on Static Single Assignment (SSA) form.
+SSA Construction:
+The CodeGenVisitor creates a PHI node in the loop header to represent $.
+* Incoming 1 (Pre-header): The initial value (0 for till, start for loop).
+* Incoming 2 (Latch): The next_val calculated in the body.
+TBB Safety Injection:
+The calculation of next_val is the critical safety point.
+
+
+C++
+
+
+
+
+// Pseudocode for CodeGenVisitor::visit(TillLoop)
+Value* current_val = builder.CreatePHI(type, 2, "$");
+Value* step_val =...; // Load step
+
+// Use TBBLowerer to generate safe addition
+// If current_val + step overflows, result is ERR sentinel
+Value* next_val = tbb_lowerer.createAdd(current_val, step_val);
+
+// Update PHI node
+phi_node->addIncoming(next_val, body_block);
+
+// Comparison for Loop Termination
+// If next_val is ERR, the comparison must fail.
+// CodeGen generates explicit check: is_err(next_val)? break : continue
+
+This lowering strategy ensures that a till loop over a TBB type is incapable of infinite wrapping, a guarantee provided by the runtime architecture.1
+________________
+6. The for Construct: Dual-Mode Iteration
+Aria’s for loop is designed to support two disparate paradigms: the traditional C-style loop for low-level control, and the modern iterator-based loop for collection traversal. Resolving this duality requires sophisticated parsing and lowering strategies.
+6.1 Syntactic Ambiguity and Resolution
+Both modes begin with for (.... The parser must discriminate between them based on the internal structure of the parentheses.1
+Mode A: Iterator (for-in)
+for ( <identifier> in <iterable> )
+Mode B: C-Style
+for ( <init_stmt> ; <condition_expr> ; <step_expr> )
+Parsing Logic:
+The Parser::parseForLoop method implements a lookahead strategy:
+1. Consume TOKEN_KW_FOR and LEFT_PAREN.
+2. Attempt to parse the first segment. This is ambiguous; it could be a variable declaration (int:i=0) or just an identifier (x).
+3. Check the token immediately following the first segment:
+   * Case IN: If the token is TOKEN_KW_IN, the construct is identified as an Iterator Loop. The first segment is interpreted as the iterator variable name.
+   * Case SEMICOLON: If the token is TOKEN_SEMICOLON, the construct is identified as a C-Style Loop. The first segment is interpreted as the initialization statement.
+6.2 Mode A: Iterator-Based (for-in)
+This mode abstracts the complexity of traversing collections.
+AST Node:
+
+
+C++
+
+
+
+
+class ForLoop : public Statement {
+public:
+   std::string iterator_name;
+   std::unique_ptr<Expression> iterable;
+   std::unique_ptr<Block> body;
+};
+
+Semantic Analysis:
+The TypeChecker validates that the iterable expression yields a type that implements the Iterable trait (or satisfies the structural requirements of iteration, i.e., has a next() method).
+* Range Literals: Aria supports range operators .. (inclusive) and ... (exclusive).1 These desugar into range objects. for (i in 0..10) is lowered to an iteration over a Range struct.
+* Safety: The iterator variable (identifier) is defined in the loop scope. For collections like arrays, the compiler attempts to optimize away bounds checks if the range is known at compile time.
+6.3 Mode B: C-Style (for)
+This mode provides raw access to the iteration mechanics, essential for pointer arithmetic and complex TBB operations.
+AST Structure:
+To support this natively, the AST requires a dedicated node, distinct from the iterator ForLoop.
+
+
+C++
+
+
+
+
+class CStyleForLoop : public Statement {
+public:
+   std::unique_ptr<Statement> init;
+   std::unique_ptr<Expression> condition;
+   std::unique_ptr<Expression> step;
+   std::unique_ptr<Block> body;
+};
+
+Lowering Strategy:
+The lowering mimics the WhileLoop but includes the initialization and step logic.
+1. Scope Entry: A new scope is opened before the init statement is compiled, ensuring loop variables don't leak.
+2. Init: The initialization statement is executed.
+3. Header: Condition checked.
+4. Body: Statements executed.
+5. Latch: Step expression executed (e.g., i++). Note: The step is an expression, not a statement, allowing for operations like i++ or ptr += 4.
+6. Loop: Jump to Header.
+7. Exit: Scope popped.
+This implementation allows precise manipulation of wild pointers (e.g., for (wild int8* p = start; p < end; p++)) which is critical for the "opt-out GC" philosophy of Aria.1
+________________
+7. Memory Model and Concurrency Interactions
+Aria’s iteration constructs do not exist in a vacuum; they interact deeply with the memory management and concurrency subsystems.
+7.1 Interaction with the Borrow Checker
+Aria employs a Region-Based Borrow Checker with explicit pinning (#).1 Loops present specific challenges for borrow checking.
+Iterator Invalidation:
+When iterating via for-in, the collection is implicitly borrowed.
+* Immutable Borrow: By default, for (item in list) borrows list immutably. The loop body is prohibited from calling mutating methods (e.g., list.add()) on the collection.
+* Mutable Borrow: Syntax like for (mut item in list) allows mutation of elements but still locks the structure of the collection.
+Pinning and Wild Pointers:
+Loops are the primary context for wild pointer arithmetic.
+
+
+Code snippet
+
+
+
+
+wild int64* ptr = aria.alloc(1024);
+// The # operator pins the memory, ensuring GC doesn't move it (if it were managed)
+// For wild memory, it acts as a semantic marker for unsafe access.
+till (1024, 1) {
+   // Implicit $ used as offset
+   *(ptr + $) = 0; 
+}
+
+The compiler ensures that any variable derived from a pinned reference stays within the scope of the pin.
+7.2 Concurrency: async and spawn inside Loops
+Loops frequently host concurrent operations.
+Async/Await:
+await calls inside loops (while, for) are transformed by the compiler into state machine transitions.
+* State Machine Explosion: A loop containing await effectively splits the function's state machine into a re-entrant cycle. The CoroutineFrame 1 must preserve the loop counters ($, i) across suspension points. This requires promoting these loop variables from LLVM registers to the heap-allocated coroutine frame.
+Spawn:
+Spawning tasks inside a loop (spawn worker()) creates a "fire-and-forget" pattern. The compiler must verify that loop variables captured by the spawned task satisfy the "Send" trait (thread-safe transfer).
+* Capture by Value: Primitive types (int, tbb) are copied.
+* Capture by Reference: If a loop variable is captured by reference, the compiler enforces that the task's lifetime is bounded by the loop, or forces a clone() operation.
+________________
+8. Compiler Implementation Pipeline
+The realization of these constructs spans the entire compiler infrastructure.
+8.1 Lexer (src/frontend/lexer.cpp)
+* Tokenization: Recognition of keywords while, for, loop, till, when, then, end, in.
+* Operators: Recognition of $ (TOKEN_ITERATION) and range operators .., ....
+8.2 Parser (src/frontend/parser.cpp)
+* Ambiguity Resolution: Implementation of lookahead in parseForLoop to distinguish TOKEN_KW_IN from TOKEN_SEMICOLON.
+* Structural Parsing: Recursive descent functions parseWhileLoop, parseTillLoop, parseWhenLoop that build specific AST nodes.
+* Error Recovery: Robust handling of malformed loops (e.g., missing end in when loop) to provide meaningful diagnostics.
+8.3 Semantic Analysis (src/frontend/sema/type_checker.cpp)
+* Symbol Injection: The TypeChecker injects the $ symbol into the scopes of TillLoop and LoopStmt.
+* Type Inference: Deriving the type of $ from loop bounds (e.g., inferring tbb8 vs int64).
+* Safety Checks: Verifying TBB compatibility in loop conditions. Enforcing boolean/numeric constraints on conditions.
+* Borrow Checking: Validating lifetime constraints of variables captured or borrowed within loop bodies.
+8.4 IR Generation (src/backend/codegen.cpp)
+* CFG Construction: Generating Basic Blocks (Header, Body, Latch, Exit) for all loop types.
+* SSA Formation: constructing PHI nodes for loop induction variables ($, i).
+* TBB Lowering: Injecting calls to TBBLowerer intrinsics for all arithmetic and comparison operations involving TBB types.
+* Metadata: Attaching debug information to loop instructions to support source-level debugging of native loops.
+________________
+9. Comparison and Future Outlook
+9.1 Comparison with Other Languages
+Feature
+	Aria
+	C/C++
+	Rust
+	Go
+	C-Style for
+	Native (Mode B)
+	Native
+	Removed
+	Removed
+	Iterator for
+	Native (Mode A)
+	Native (C++11)
+	Native
+	Native (range)
+	Implicit $
+	Native (till/loop)
+	No
+	No
+	No
+	Overflow Safety
+	Defined (TBB Error)
+	Undefined
+	Panic (Debug) / Wrap
+	Wrap
+	Tri-State Loop
+	when
+	No
+	No
+	No
+	Aria’s approach is maximalist, offering the specific tools (C-style) for systems programmers while introducing high-level conveniences ($, when) found in scripting languages, all underpinned by the unique safety guarantees of TBB.
+9.2 Optimization Opportunities
+* Loop Unrolling: The semantic knowledge of till(10, 1) allows the backend to fully unroll short loops, eliminating branch prediction costs.
+* Vectorization: The explicit nature of Aria’s loops facilitates auto-vectorization. However, TBB's "sticky error" logic presents a challenge for SIMD; the team must investigate masked vector instructions to handle the ERR state in parallel lanes efficiently.
+* Bounds Check Elimination: For till loops iterating over arrays (e.g., till(arr.len, 1)), the compiler can prove that access arr[$] is always safe, eliding runtime bounds checks.
+________________
+10. Conclusion
+The specification of native looping constructs for Aria represents a critical evolution in the language's design. By moving beyond textual macros, we secure the semantic integrity of the TBB type system, enable powerful compile-time optimizations, and provide a developer experience that balances syntactic brevity with systems-level control.
+The implementation of while, when, for (dual-mode), loop, and till, along with the automatic $ variable, creates a control flow system that is both familiar to C++ developers and uniquely adapted to the safety and expressiveness goals of Aria. The detailed AST structures, parsing logic, and TBB-aware lowering strategies defined herein ensure that these constructs will serve as a robust foundation for the Aria ecosystem.
+________________
+Appendix A: AST Node Definitions
+A.1 ForLoop (Iterator Mode)
+
+
+C++
+
+
+
+
+// src/frontend/ast/loops.h
+class ForLoop : public Statement {
+public:
+   std::string iterator_name;
+   std::unique_ptr<Expression> iterable;
+   std::unique_ptr<Block> body;
+   
+   //... Constructor and visit method
+};
+
+A.2 CStyleForLoop (New Node)
+
+
+C++
+
+
+
+
+// src/frontend/ast/loops.h
+class CStyleForLoop : public Statement {
+public:
+   std::unique_ptr<Statement> init;      // e.g., VarDecl
+   std::unique_ptr<Expression> condition;
+   std::unique_ptr<Expression> step;
+   std::unique_ptr<Block> body;
+   
+   //... Constructor and visit method
+};
+
+A.3 TillLoop
+
+
+C++
+
+
+
+
+// src/frontend/ast/loops.h
+class TillLoop : public Statement {
+public:
+   std::unique_ptr<Expression> limit;
+   std::unique_ptr<Expression> step;
+   std::unique_ptr<Block> body;
+   
+   //... Constructor and visit method
+};
+
+A.4 LoopStmt
+
+
+C++
+
+
+
+
+// src/frontend/ast/loops.h
+class LoopStmt : public Statement {
+public:
+   std::unique_ptr<Expression> start;
+   std::unique_ptr<Expression> limit;
+   std::unique_ptr<Expression> step;
+   std::unique_ptr<Block> body;
+   
+   //... Constructor and visit method
+};
+
+Appendix B: Lowering Logic Pseudocode
+B.1 TBBLowerer Interaction
+
+
+C++
+
+
+
+
+// Inside CodeGenVisitor::visit(TillLoop)
+
+// 1. Create PHI for $
+PHINode* phi_dollar = builder.CreatePHI(tbb_type, 2, "$");
+phi_dollar->addIncoming(start_val, pre_header_block);
+
+// 2. Generate Body
+//... visit body...
+
+// 3. Generate Step (Latch Block)
+// Use TBBLowerer for safe addition
+Value* next_val = tbb_lowerer.createAdd(phi_dollar, step_val);
+
+// 4. Generate Condition
+// Check if next_val!= limit AND next_val!= ERR
+Value* is_err = builder.CreateICmpEQ(next_val, tbb_sentinel);
+Value* not_err = builder.CreateNot(is_err);
+Value* not_limit = builder.CreateICmpNE(next_val, limit_val);
+Value* continue_loop = builder.CreateAnd(not_err, not_limit);
+
+builder.CreateCondBr(continue_loop, header_block, exit_block);
+
+// 5. Close loop
+phi_dollar->addIncoming(next_val, latch_block);
+
+Works cited
+1. research_010-011_macro_comptime.txt

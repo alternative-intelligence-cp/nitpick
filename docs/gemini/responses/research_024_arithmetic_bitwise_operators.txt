@@ -1,0 +1,409 @@
+﻿Aria Compiler Architecture: Definitive Specification for Arithmetic and Bitwise Operators
+1. Executive Summary
+The design of numeric operators within a systems programming language serves as the fundamental interface between abstract algorithmic logic and the concrete reality of the underlying hardware. For the Aria programming language, this interface is characterized by a deliberate bifurcation: the raw, unmediated access to the machine provided by Standard Integers, and the robust, mathematically symmetric safety guarantees provided by Twisted Balanced Binary (TBB) types. This report constitutes the exhaustive specification for the implementation, semantics, and optimization of all arithmetic and bitwise operators within the Aria compiler infrastructure.
+The arithmetic model for standard integers (int8–int512, uint8–uint512) adheres to modular arithmetic semantics, rejecting the "undefined behavior" trap of signed overflow common in C/C++ in favor of deterministic two’s complement wrap-around. This decision aligns Aria with the requirements of modern cryptography and low-level systems programming, where modulo $2^N$ behavior is often a functional requirement rather than an error condition. Conversely, division by zero and specific signed division edge cases retain hardware-trapping behavior to prevent logical catastrophic failure.
+In contrast, the TBB system (tbb8–tbb64) introduces a novel "Sticky Error" paradigm. By reserving the minimum representable value of the two's complement range as a sentinel (ERR), TBB arithmetic eliminates valid-range asymmetry and ensures that any operation encountering an invalid input or exceeding the representable range collapses the calculation state to ERR. This report details the TBBLowerer backend component, which lowers these high-level semantics into branch-free LLVM IR sequences using select instructions and overflow intrinsics, ensuring that safety incurs a deterministic and minimal performance cost.
+Bitwise operations in Aria are subject to a strict "Unsigned Mandate." To eliminate the ambiguity of sign-extension during shifts and the conceptual incoherence of bit-masking signed values, bitwise operators (&, |, ^, ~, <<, >>) are natively restricted to unsigned standard integers. Operations on TBB types or signed standard integers require explicit casting, enforcing programmer intent and type safety.
+This document also addresses the integration of these operators with the broader compiler ecosystem, including the interaction with floating-point types (NaN propagation), the parsing precedence hierarchy derived from Pratt parsing principles, and the autovectorization strategies for SIMD architectures (AVX-512, NEON). The result is a comprehensive blueprint for a numeric system that is both "metal-accessible" for performance and "safety-critical" for correctness.
+________________
+2. Architectural Philosophy and Numeric Domains
+The foundational philosophy of Aria's operator system is the recognition that "numbers" in computing are not monolithic. They serve distinct roles: counting and indexing (Standard Integers), modeling physical or financial quantities (TBB), and bit-level manipulation (Unsigned Integers). The operator specification is designed to respect and enforce these distinctions.
+2.1 The Standard Integer Domain
+Standard integers in Aria are direct abstractions of the CPU's general-purpose registers (GPRs). Their design prioritizes predictability and performance.
+* Representation: Two's Complement for signed types, pure binary for unsigned types.
+* Widths: Native support from 8-bit (int8) up to 512-bit (int512), leveraging SIMD registers for widths exceeding the native pointer size.
+* Philosophy: The programmer is the ultimate arbiter of correctness. The compiler does not insert hidden branches to check for overflow, as these can disrupt the instruction pipeline and prevent vectorization. Instead, overflow is defined as a valid modular operation.
+2.2 The Twisted Balanced Binary (TBB) Domain
+TBB types represent a departure from traditional systems languages. They are designed for correctness and safety.
+* Representation: Modified Two's Complement. The bit pattern 100...0 (usually INT_MIN) is redefined as the ERR sentinel.
+* Symmetry: The valid range is $[- (2^{N-1}-1), + (2^{N-1}-1)]$. This symmetry simplifies mathematical reasoning; unlike standard int8 where abs(-128) is impossible, TBB tbb8 simply does not contain -128.
+* Philosophy: Implicit failure propagation. In complex calculations (e.g., signal processing pipelines or financial ledgers), checking for error codes after every addition is cumbersome and error-prone. TBB moves this check to the end of the computation chain.
+________________
+3. Arithmetic Operator Specification
+This section details the semantic behavior, implementation logic, and edge cases for the five core arithmetic operators: Addition (+), Subtraction (-), Multiplication (*), Division (/), and Modulo (%).
+3.1 Standard Integer Arithmetic Semantics
+3.1.1 Modular Arithmetic (Overflow Behavior)
+For all standard types, arithmetic operations utilize modular semantics.
+* Definition: For a type of width $N$, operations are performed modulo $2^N$.
+* Rationale: This behavior is critical for:
+   * Cryptography: Algorithms like ChaCha20, SHA-256, and Poly1305 rely on predictable overflow wrapping.
+   * Sequence Generation: Ring buffers and linear congruential generators require wrapping indices.
+   * Hardware Mapping: Modern ALUs (x86, ARM, RISC-V) implement modular arithmetic by default. Mapping high-level operators to these instructions without conditional checks ensures zero-overhead abstraction.
+Example Implementation (LLVM IR):
+For an addition a + b of type int32:
+
+
+Code snippet
+
+
+
+
+%res = add i32 %a, %b
+
+The compiler does not use the nsw (No Signed Wrap) or nuw (No Unsigned Wrap) flags, which would mark overflow as undefined behavior (poison values) in LLVM. By omitting these flags, we instruct the backend to treat overflow as valid wraparound.
+3.1.2 Division and Modulo semantics
+Unlike addition and multiplication, division does not have a mathematically sound "wrap-around" definition for all cases.
+* Division by Zero:
+   * Behavior: Hardware Trap / Operating System Signal.
+   * Mechanism: On x86, the IDIV instruction generates a #DE (Divide Error) exception. On Linux, this is delivered as SIGFPE (Floating Point Exception).
+   * Aria Runtime Handling: The Aria runtime registers a signal handler for SIGFPE. Upon detection, it unwinds the stack and terminates the faulty thread (green thread or OS thread) with a panic message: "Integer division by zero". This is preferred over returning a "poison" result because division by zero typically indicates a logic error that renders further computation meaningless.
+* Signed Overflow (The INT_MIN / -1 Case):
+   * Problem: In Two's Complement, dividing the minimum value (e.g., -128 for int8) by -1 should yield 128, which is not representable.
+   * Behavior: Hardware Trap.
+   * Mechanism: x86 IDIV traps on this condition. ARM instructions generally do not trap but return the original value; however, to ensure cross-platform consistency, Aria mandates a check or relies on LLVM's sdiv semantics which treats this as UB (allowing the compiler to optimize assuming it doesn't happen, or insert checks).
+   * Specification: Aria defines this as a panic condition, consistent with division by zero.
+* Modulo Semantics (%):
+   * Aria adopts Truncated Division semantics (matching C99 and Rust).
+   * The result of a % b has the same sign as the dividend a.
+   * Formula: a % b == a - (a / b) * b (where / is truncated integer division).
+   * Examples:
+      * 7 % 3 $\rightarrow$ 1
+      * 7 % -3 $\rightarrow$ 1
+      * -7 % 3 $\rightarrow$ -1
+      * -7 % -3 $\rightarrow$ -1
+   * Note: This differs from Euclidean modulo (always positive) or Floored modulo (sign of divisor), which are common in Python. The truncated choice is made for performance, as it maps directly to hardware instructions.
+3.2 Twisted Balanced Binary (TBB) Arithmetic Semantics
+The TBB operators represent a state machine where ERR is an absorbing state.
+3.2.1 Sticky Error Propagation Logic
+The TBBLowerer enforces the following axioms for any binary operator $\odot$:
+1. Input Stickiness: If lhs == ERR OR rhs == ERR, then Result = ERR.
+2. Calculation: Attempt temp = lhs \odot rhs.
+3. Overflow Check: If the operation overflows the signed range $[- (2^{N-1}-1), + (2^{N-1}-1)]$, then Result = ERR.
+4. Sentinel Collision: If temp (the valid mathematical result) happens to have the bit pattern of ERR (e.g., 100...0), then Result = ERR. This resolves the ambiguity where a valid result looks like an error.
+5. Success: Otherwise, Result = temp.
+3.2.2 TBB Addition and Subtraction
+* Mechanism: Lowered to llvm.sadd.with.overflow and llvm.ssub.with.overflow.
+* Logic: The overflow bit returned by these intrinsics covers standard signed overflow. The TBBLowerer adds additional logic to check input validity and sentinel collision.
+* Example:
+   * tbb8: 100 + 50 $\rightarrow$ Mathematical 150. int8 range is [-128, 127]. 150 wraps to -106. Overflow flag is set. Result $\rightarrow$ ERR.
+   * tbb8: 127 + 1 $\rightarrow$ Mathematical 128. int8 wraps to -128 (which is the ERR bit pattern). Result $\rightarrow$ ERR (Collision).
+3.2.3 TBB Multiplication
+* Mechanism: Lowered to llvm.smul.with.overflow.
+* Optimization: Strength reduction (e.g., x * 2 $\rightarrow$ x << 1) is strictly disabled for TBB types unless the compiler can prove that x is small enough that the shift will not overflow or collide with ERR. In general, the mul instruction is preserved to maintain the integrity of the overflow flags.
+3.2.4 TBB Division and Modulo (The Non-Trapping Exception)
+TBB aims for robustness in streaming data applications. Therefore, TBB division never traps.
+* Division by Zero: Returns ERR.
+* Overflow (ERR / -1): Returns ERR (Input Sticky rule applies first).
+* Code Generation Strategy:
+To implement safe division without trapping, the backend must emit a conditional branch or select logic before the division instruction.
+Code snippet
+; Safe TBB Division Logic
+%is_zero = icmp eq %rhs, 0
+%is_overflow =... (check INT_MIN / -1)
+%unsafe = or %is_zero, %is_overflow
+; Select a safe divisor (1) if unsafe, to prevent hardware trap
+%safe_rhs = select %unsafe, 1, %rhs
+%raw_div = sdiv %lhs, %safe_rhs
+; If unsafe was true, override result with ERR
+%result = select %unsafe, ERR, %raw_div
+
+This ensures the CPU never executes a division-by-zero, preventing the SIGFPE signal and allowing the application to handle the ERR result gracefully later in the pipeline.
+3.3 Compound Assignment Operators
+Operators such as +=, -=, *=, /=, %= combine arithmetic with assignment.
+   * Semantics: a op= b is semantically equivalent to a = a op b, except that a is evaluated only once (relevant for expressions with side effects, e.g., arr[i++] += 5).
+   * TBB Behavior: The assignment is updated with the result of the TBB arithmetic. If a becomes ERR due to the operation, a simply holds ERR.
+Code snippet
+tbb8:acc = 100;
+acc += 50; // acc becomes ERR
+acc += 10; // acc remains ERR (Sticky)
+
+________________
+4. Bitwise Operator Specification
+Bitwise operations provide the mechanism for dissecting and reconstructing data at the fundamental level of binary representation.
+4.1 The Unsigned Mandate
+Aria enforces a strict separation of concerns: Arithmetic types (int, tbb) are for math; Unsigned types (uint) are for bits.
+      * Constraint: Bitwise operators (&, |, ^, ~, <<, >>, >>>) accept only unsigned operands.
+      * Compiler Error: Error: Bitwise operator '&' is not defined for type 'int32'. Cast to 'uint32' to perform bit manipulation.
+      * Rationale: This prevents the class of bugs related to undefined behavior in signed shifts and ambiguity in the meaning of the sign bit during masking operations.
+4.2 Shift Operators (<<, >>)
+      * Logical Left Shift (<<): Shifts bits toward the MSB. Zero-fill.
+      * x << n computes $x \times 2^n$ (modulo $2^{\text{width}}$).
+      * Logical Right Shift (>>): Shifts bits toward the LSB. Zero-fill.
+      * Since operands are mandatory unsigned, arithmetic right shift (sign-extension) is not accessible via this operator. This ensures >> always behaves as a logical shift.
+      * Shift Count Semantics:
+      * Large Counts: If the shift count n is greater than or equal to the bit width $W$ of the type (n >= W), the result is guaranteed to be 0.
+      * Architecture Variance: x86 architectures mask the shift count (effectively n % W), while ARM architectures typically saturate or return 0. C/C++ leave this as Undefined Behavior.
+      * Aria Safety: To guarantee deterministic behavior across platforms, the Aria compiler backend emits explicit checks or masking instructions for shift counts if the target architecture does not natively support the "zero on oversize" semantic.
+Code snippet
+; Aria Safe Shift Implementation
+%width = 32
+%is_oversize = icmp uge %shift_amt, %width
+%raw_shift = shl %val, %shift_amt
+%safe_shift = select %is_oversize, 0, %raw_shift
+
+4.3 Rotation Operations (rol, ror)
+While Aria does not have dedicated operators (like <<< or >>>) for bitwise rotation, it provides compiler intrinsics in the std.bits module which map to hardware rotation instructions.
+         * std.bits.rol(x, n): Rotate Left. Bits shifted out of the MSB are re-inserted at the LSB.
+         * std.bits.ror(x, n): Rotate Right. Bits shifted out of the LSB are re-inserted at the MSB.
+         * Optimization: The compiler backend recognizes the specific pattern (x << n) | (x >> (W - n)) during AST analysis and lowers it to the llvm.fshl (Funnel Shift Left) or llvm.fshr intrinsics, which usually compile to a single ROL or ROR machine instruction on x86/ARM.
+4.4 Bitwise Logic (&, |, ^, ~)
+         * AND (&): Intersection of bits. Used for masking.
+         * OR (|): Union of bits. Used for setting flags.
+         * XOR (^): Symmetric difference. Used for toggling bits and cryptography.
+         * NOT (~): Ones' complement (inversion).
+         * TBB Interaction: As per the Unsigned Mandate, these are illegal on TBB types.
+         * Workaround: tbb8:x =...; tbb8:y = cast<tbb8>(cast<uint8>(x) & 0x0F);
+         * Note: The final cast back to tbb8 triggers the TBB validation logic. If the bitwise operation resulted in the bit pattern 10000000, the value of y will be interpreted as ERR.
+________________
+5. TBB Integration and Runtime Semantics
+The integration of TBB types requires a pervasive "Sentinel Awareness" throughout the compiler backend.
+5.1 Trigger Conditions for ERR
+The ERR state is triggered by three distinct classes of events:
+         1. Input Propagation: If any operand is already ERR.
+         2. Arithmetic Failure: Signed integer overflow/underflow, or division by zero.
+         3. Sentinel Collision: A valid result that coincidentally matches the ERR bit pattern.
+5.2 Codegen Detection Strategy
+The TBBLowerer emits a specific sequence of IR instructions for every TBB operation. To minimize the performance impact (avoiding branch misprediction penalties), the logic relies exclusively on data-flow selection rather than control-flow branching.
+         * Flag Checks: The backend uses LLVM's with.overflow intrinsics which return a {result, overflow_bit} structure.
+         * Select Instruction: The select instruction (equivalent to the C ternary operator ? :) compiles to the CMOV (Conditional Move) instruction on x86 or conditional selection instructions on ARM. These are non-branching instructions that execute in constant time in the pipeline.
+Performance Overhead Analysis:
+         * Standard Add: ADD (1 cycle).
+         * TBB Add: ADD + CMP (Check ERR) + CMP (Check Collision) + OR (Combine flags) + CMOV (Select Result).
+         * Latency: Estimated 3-5 cycles.
+         * Throughput: Due to superscalar execution, independent TBB operations can still achieve high throughput, but dependency chains will be slower than standard integers.
+5.3 Interaction with Floating Point
+The boundary between TBB (integers with sentinels) and Floating Point (reals with NaNs) requires precise semantic mapping.
+         * TBB $\to$ Float (flt32/flt64):
+         * ERR $\to$ NaN (Quiet NaN).
+         * Valid values convert using standard integer-to-float conversion (sitofp).
+         * Float $\to$ TBB:
+         * NaN $\to$ ERR.
+         * Infinity ($\pm \infty$) $\to$ ERR.
+         * Range Check: If the float value is outside the representable range of the target TBB type (e.g., > 127.0 for tbb8), the result is ERR. This prevents the "undefined behavior" of fptosi in LLVM/C when the float is too large.
+         * Mechanism: The backend inserts fcmp instructions to validate the range before the fptosi instruction.
+5.4 Recovery Mechanisms
+Aria provides mechanisms to recover from the ERR state, bridging TBB types back to standard logic flow.
+         * The Unwrap Operator (?):
+         * Syntax: val? default
+         * Semantics: If val is ERR, return default. Otherwise return val.
+         * Example: tbb8:count =...; int8:safe_count = (count? 0);
+         * Equality Check:
+         * Users can explicitly check if (val == ERR).
+         * Safe Navigation (?.):
+         * While typically for pointers/objects, TBB types can support a form of safe chaining where a method call on an ERR value returns ERR (or None) immediately.
+________________
+6. Optimization Strategy
+The Aria compiler employs a multi-stage optimization pipeline designed to maximize performance while respecting the safety invariants of TBB.
+6.1 Constant Folding (Comptime)
+The compiler's ConstFolder pass executes arithmetic on constant literals during compilation.
+         * TBB Awareness: The ConstFolder must implement the exact TBB logic. const tbb8:x = 127 + 1; must evaluate to ERR at compile time, not wrap to -128.
+         * Implementation: The compiler uses an internal APInt (Arbitrary Precision Integer) representation. For TBB types, it performs the math, checks the bounds, and stores the sentinel value if bounds are exceeded.
+6.2 Strength Reduction
+Strength reduction replaces expensive operations (like multiplication) with cheaper ones (like shifts).
+         * Standard Integers:
+         * x * 8 $\to$ x << 3.
+         * x / 4 $\to$ x >> 2.
+         * TBB Types (Safe Reduction):
+         * Challenge: x << 1 (shift) does not set overflow flags in the same way mul does.
+         * Strategy: The compiler generally disables strength reduction for TBB arithmetic to ensure safety. However, if the compiler's range analysis pass can prove that x is within a safe bound (e.g., 0 <= x <= 10), it may promote the TBB operation to a standard integer operation, apply strength reduction, and then cast back, optimizing away the checks.
+6.3 SIMD Autovectorization
+SIMD (Single Instruction, Multiple Data) allows processing multiple data points in a single instruction.
+         * Standard Integers:
+         * Loops iterating over arrays of int32/float are lowered to vector instructions (<4 x i32> on SSE, <8 x i32> on AVX).
+         * Bitwise operations on int128/int512 utilize the full width of XMM/ZMM registers.
+         * TBB Vectorization:
+         * Challenge: The conditional logic (select) for TBB checks makes vectorization non-trivial.
+         * Solution: Use Masked Vectorization (AVX-512).
+         * Algorithm:
+         1. Load vector of inputs V_a, V_b.
+         2. Create mask M_err where elements are ERR.
+         3. Perform vector add V_res.
+         4. Compare input vectors with ERR to update M_err.
+         5. Use vector compare to detect overflows/sentinel collisions, updating M_err.
+         6. Merge V_res with ERR vector using M_err as the selector mask (vblendv or vpblendvb).
+         * This allows TBB arrays to be processed at near-native SIMD speeds on supported hardware.
+6.4 Unsafe Unchecked Variants
+For extreme performance critical sections where the developer guarantees validity, Aria exposes unsafe intrinsics.
+         * unsafe {... } Block: Inside an unsafe block, the compiler allows calling intrinsics like aria.unsafe.add_tbb(a, b).
+         * Semantics: This bypasses the sticky error logic and performs a raw hardware add.
+         * Risk: If an overflow occurs, the result wraps. If the result collides with the sentinel, it becomes ERR without the "sticky" context. This is highly discouraged except in the inner loops of verified algorithms.
+________________
+7. Type Promotion and Conversion Rules
+Aria's type system is designed to prevent data loss. Therefore, implicit promotion is strictly hierarchical.
+7.1 Implicit Promotion (Widening)
+Conversion is implicit only if the target domain is a superset of the source domain.
+         * uint8 $\to$ uint16, uint32, uint64, int16, int32, int64. (Zero-extension is safe).
+         * int8 $\to$ int16, int32, int64. (Sign-extension is safe).
+         * Prohibited: int8 $\to$ uint16. (Negative numbers cannot be represented).
+         * Prohibited: int64 $\to$ flt32. (Precision loss is possible for large integers).
+7.2 Explicit Casting
+The cast<T> operator forces conversion.
+         * Standard Types: Performs truncation (keeping LSBs) or reinterpretation of bits.
+         * TBB Casts:
+         * cast<tbb8>(int8): Bitwise copy. Note that if int8 was -128, it becomes ERR.
+         * cast<int8>(tbb8): Bitwise copy. ERR becomes -128.
+7.3 Binary Operation Promotion
+Aria does not support implicit "Usual Arithmetic Conversions" (like C's promotion to int).
+         * Rule: Operands to a binary operator must be of the exact same type.
+         * Example: int8 + int16 is a compile-time error.
+         * Resolution: The user must explicitly cast: cast<int16>(a) + b. This makes the performance cost of widening explicit.
+________________
+8. Operator Precedence Table
+The following table defines the binding order of operators in Aria, derived from the parser's precedence climbing implementation.
+Level
+	Operator Category
+	Operators
+	Associativity
+	15
+	Primary / Access
+	(), ``, ., ?., ->
+	Left-to-Right
+	14
+	Unary / Postfix
+	!, ~, -, @, #, ++, --, ? (unwrap)
+	Right-to-Left
+	13
+	Multiplicative
+	*, /, %
+	Left-to-Right
+	12
+	Additive
+	+, -
+	Left-to-Right
+	11
+	Shift
+	<<, >>
+	Left-to-Right
+	10
+	Relational
+	<=>, <, <=, >, >=
+	Left-to-Right
+	9
+	Equality
+	==, !=
+	Left-to-Right
+	8
+	Bitwise AND
+	&
+	Left-to-Right
+	7
+	Bitwise XOR
+	^
+	Left-to-Right
+	6
+	Bitwise OR
+	`
+	`
+	5
+	Logical AND
+	&&
+	Left-to-Right
+	4
+	Logical OR
+	`
+	
+
+	3
+	Ternary
+	is... :...
+	Right-to-Left
+	2
+	Coalescing
+	??
+	Right-to-Left
+	1
+	Pipeline
+	`
+	>, <
+	0
+	Assignment
+	=, +=, -=, etc.
+	Right-to-Left
+	Note: Pipeline operators are intentionally low precedence to allow them to chain the results of complex expressions.
+________________
+9. Implementation Code Examples
+9.1 TBB Error Handling Example
+
+
+Code snippet
+
+
+
+
+// TBB arithmetic with recovery
+func:calculate_risk = tbb8(tbb8:exposure, tbb8:volatility) {
+   // Operations might overflow or stick to ERR
+   tbb8:risk = (exposure * volatility) + 10;
+   
+   // Check for error state explicitly
+   if (risk == ERR) {
+       // Log error and return safe default
+       print("Risk calculation overflowed!");
+       return 0; // cast<tbb8>(0)
+   }
+   
+   return risk;
+};
+
+9.2 Bitwise Packing (Standard Integers)
+
+
+Code snippet
+
+
+
+
+// Bitwise operations require unsigned types
+func:pack_rgba = uint32(uint8:r, uint8:g, uint8:b, uint8:a) {
+   // Explicit casts are required for promotion
+   uint32:pixel = (cast<uint32>(r) << 24) |
+                  (cast<uint32>(g) << 16) |
+                  (cast<uint32>(b) << 8) |
+                  cast<uint32>(a);
+   return pixel;
+};
+
+9.3 Safe Division (TBB)
+
+
+Code snippet
+
+
+
+
+func:safe_divide = tbb32(tbb32:numerator, tbb32:denominator) {
+   // TBB division never traps
+   // Returns ERR if denominator is 0
+   tbb32:result = numerator / denominator;
+   
+   // Unwrap operator provides default if result is ERR
+   return result? -1; 
+};
+
+________________
+10. Performance Comparison and Cost Model
+10.1 Checked (Standard) vs. Unchecked vs. TBB
+Metric
+	Unchecked (C-style)
+	Checked (aria.checked)
+	TBB (Sticky)
+	Safety
+	None (Overflow wraps)
+	High (Returns Result/Option)
+	High (Sentinel State)
+	Branching
+	None (Linear)
+	Branching (Jump on overflow)
+	Branchless (Select/CMOV)
+	Latency
+	1 cycle (Add)
+	~3 cycles (Add + Branch)
+	~3-5 cycles (Add + Select)
+	Instruction Count
+	1 (ADD)
+	~3 (ADD, JO, JMP)
+	~6 (ADD, CMPx3, OR, CMOV)
+	Pipeline Impact
+	Minimal
+	Pipeline Flush on Error
+	No Flush (Data Dependency)
+	Vectorization
+	Trivial
+	Difficult (Control flow)
+	Possible (Masked)
+	10.2 Analysis
+         * Unchecked Standard Integers are the fastest, ideal for inner loops where validity is pre-calculated.
+         * TBB types offer a unique trade-off: they are safer than unchecked math but friendlier to the CPU pipeline than exception-throwing or branching checked arithmetic because they maintain a linear instruction stream. This makes TBB highly suitable for real-time systems and audio/video processing where constant-time execution is preferred over fail-fast branching.
+________________
+11. Conclusion
+The specification of Arithmetic and Bitwise operators in Aria represents a sophisticated synthesis of performance engineering and safety theory. By strictly segregating the domains of calculation (Standard Integers), robust modeling (TBB), and bit manipulation (Unsigned Only), Aria forces the programmer to be explicit about intent, eliminating entire categories of bugs related to sign extension, undefined behavior, and silent overflow. The compiler backend's extensive use of branch-free lowering for TBB ensures that this safety is delivered with a predictable and acceptable performance profile, making Aria a viable candidate for the next generation of high-reliability systems software.
