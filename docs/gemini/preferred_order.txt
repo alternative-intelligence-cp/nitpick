@@ -1,0 +1,253 @@
+# PREFERRED RESEARCH ORDER FOR GEMINI
+# Goal: Prioritize research to unblock implementation work
+# Date: December 12, 2025
+
+## RATIONALE
+
+The ordering prioritizes:
+1. **Blocking dependencies** - What's needed for current Phase 2 work
+2. **Foundational features** - Types and operators needed everywhere
+3. **Implementation dependencies** - Features that depend on each other
+4. **Bootstrap path** - Minimal viable compiler capability
+
+---
+
+## TIER 1: CRITICAL BLOCKERS (Do These First)
+
+### 1. research_031 - Essential Standard Library
+**Why first:** Needed for ANY program to run, including tests. Bootstrap foundation.
+- print(), readFile(), writeFile()
+- aria.alloc/free for wild memory
+- Basic string operations
+- Platform syscalls
+- Math functions
+
+### 2. research_012 - Standard Integer Types (int1-512, uint8-512)
+**Why second:** Most basic types, used in literally everything.
+- Required for: loops, arrays, indexing, sizes, counts
+- Blocks: All other type work, operators, control flow
+
+### 3. research_013 - Floating Point Types (flt32-512)
+**Why third:** Second most common type family.
+- Required for: Math operations, vector types, scientific computing
+- Blocks: Mathematical types (tensor/matrix), vector operations
+
+---
+
+## TIER 2: FOUNDATIONAL TYPES (Do Next)
+
+### 4. research_016 - Functional Types (result, func, array)
+**Why fourth:** Critical for language usability.
+- **result<T>:** Error handling EVERYWHERE (replaces exceptions)
+- **func:** Function pointers, closures, callbacks, async
+- **array:** Collections, data structures, algorithms
+- Blocks: Everything that returns errors or uses collections
+
+### 5. research_014 - Composite Types Part 1 (obj, dyn, bool)
+**Why fifth:** Essential language building blocks.
+- **bool:** Conditional logic, comparisons
+- **obj:** Key-value data, JSON, config
+- **dyn:** Runtime polymorphism, variant types
+- Blocks: Control flow, pattern matching, data structures
+
+### 6. research_015 - Composite Types Part 2 (vec2/3/9, struct, string)
+**Why sixth:** User-defined data and common utilities.
+- **string:** Text processing, I/O, debugging
+- **struct:** User-defined types, data structures
+- **vec2/3/9:** Graphics, physics, SIMD operations
+- Blocks: Real programs, template literals, struct layout
+
+---
+
+## TIER 3: CONTROL FLOW & OPERATORS (Enable Complex Logic)
+
+### 7. research_024 - Arithmetic/Bitwise Operators
+**Why seventh:** Can't write algorithms without math.
+- +, -, *, /, %, &, |, ^, <<, >>
+- TBB sticky error propagation
+- Required for: ALL numeric computation
+
+### 8. research_025 - Comparison/Logical Operators
+**Why eighth:** Can't write conditionals without comparisons.
+- ==, !=, <, >, <=, >=, <=>
+- &&, ||, !
+- Required for: if/while/for logic
+
+### 9. research_018 - Looping Constructs
+**Why ninth:** Now we can write loops with types + operators.
+- while, for, loop, till
+- $ iteration variable
+- Required for: Algorithms, iteration, bulk operations
+
+### 10. research_019 - Conditional Constructs
+**Why tenth:** Now we can write branching logic.
+- if/else, when/then/end
+- pick pattern matching
+- Required for: Decision logic, control flow
+
+### 11. research_020 - Control Transfer (break, continue, return, defer)
+**Why eleventh:** Complete control flow primitives.
+- Early exit, cleanup, RAII patterns
+- Required for: Resource management, error handling
+
+### 12. research_026 - Special Operators
+**Why twelfth:** Advanced operators for safety and convenience.
+- ?, ?., ?? (safe navigation, null coalescing)
+- |>, <| (pipeline operators)
+- .., ... (range operators)
+- Required for: Ergonomic code, functional patterns
+
+---
+
+## TIER 4: MEMORY MANAGEMENT (Enable Low-Level Control)
+
+### 13. research_022 - Wild/Wildx Memory
+**Why thirteenth:** Manual memory management for performance.
+- wild (aria.alloc/free)
+- wildx (JIT executable memory)
+- @, *, #, $ operators
+- Required for: Zero-cost abstractions, JIT, performance-critical code
+- Blocks: Runtime assembler, borrow checker integration
+
+### 14. research_021 - Garbage Collection System
+**Why fourteenth:** Automatic memory management for default case.
+- Generational GC algorithm
+- Pinning integration (#)
+- Shadow stack, write barriers
+- Required for: Default memory model, obj/array/string types
+- Can implement in parallel with research_022
+
+### 15. research_023 - Runtime Assembler
+**Why fifteenth:** JIT compilation for advanced use cases.
+- x86-64 instruction encoding
+- Register allocation
+- Wildx integration
+- Required for: JIT compilers, DSL engines, regex optimization
+- Depends on: research_022 (wildx memory)
+
+---
+
+## TIER 5: ADVANCED TYPES (Complete Type System)
+
+### 16. research_017 - Mathematical Types (tensor, matrix)
+**Why sixteenth:** Specialized types for numerical computing.
+- Depends on: Standard types, arrays, operators
+- Required for: ML, scientific computing, linear algebra
+- Lower priority for bootstrap
+
+---
+
+## TIER 6: LANGUAGE INFRASTRUCTURE (Enable Large Projects)
+
+### 17. research_027 - Generics/Templates
+**Why seventeenth:** Zero-cost abstractions, code reuse.
+- Monomorphization system
+- Type inference
+- Trait bounds
+- Required for: Generic containers, algorithms, stdlib
+- HIGH PRIORITY but can wait until types are stable
+
+### 18. research_028 - Module System
+**Why eighteenth:** Code organization for large projects.
+- use, mod, pub, extern
+- Import resolution
+- FFI
+- Required for: Multi-file projects, stdlib organization
+- Can implement in parallel with other work
+
+### 19. research_030 - Const & Compile-Time Evaluation
+**Why nineteenth:** Compile-time optimization.
+- const variables, functions
+- const generics
+- Integration with comptime
+- Required for: Optimization, zero-cost abstractions
+- Depends on: Basic type system
+
+### 20. research_029 - Async/Await System
+**Why twentieth:** Asynchronous programming model.
+- Coroutines, Futures
+- State machine transformation
+- Async runtime integration
+- Required for: Async I/O, concurrent programming
+- Depends on: Many other systems (types, closures, control flow)
+- Can be done later as it's a complete subsystem
+
+---
+
+## SUMMARY: EXECUTE IN THIS ORDER
+
+**Batch 1 (Immediate - Bootstrap Foundation):**
+1. research_031 (Essential Stdlib)
+2. research_012 (Standard Integers)
+3. research_013 (Floats)
+
+**Batch 2 (Core Types):**
+4. research_016 (result, func, array)
+5. research_014 (obj, dyn, bool)
+6. research_015 (vec2/3/9, struct, string)
+
+**Batch 3 (Control Flow):**
+7. research_024 (Arithmetic/Bitwise Ops)
+8. research_025 (Comparison/Logical Ops)
+9. research_018 (Loops)
+10. research_019 (Conditionals)
+11. research_020 (Control Transfer)
+12. research_026 (Special Operators)
+
+**Batch 4 (Memory Management):**
+13. research_022 (Wild/Wildx)
+14. research_021 (GC) - can parallel with 022
+15. research_023 (Runtime Assembler)
+
+**Batch 5 (Advanced Types):**
+16. research_017 (tensor, matrix)
+
+**Batch 6 (Language Infrastructure):**
+17. research_027 (Generics) - HIGH PRIORITY
+18. research_028 (Modules) - can parallel
+19. research_030 (Const)
+20. research_029 (Async)
+
+---
+
+## PARALLEL OPPORTUNITIES
+
+These can be researched/implemented in parallel:
+- research_021 (GC) + research_022 (Wild) - different memory models
+- research_027 (Generics) + research_028 (Modules) - different systems
+- research_017 (Math types) + research_030 (Const) - independent features
+
+---
+
+## IMPLEMENTATION NOTES
+
+**After Batch 1-2 (research 031,012,013,016,014,015):**
+- Can write simple programs with types, arrays, I/O
+- Can implement and test basic operators
+- Can bootstrap minimal compiler functionality
+
+**After Batch 3 (research 024,025,018,019,020,026):**
+- Complete control flow
+- Can write real algorithms
+- Can implement stdlib functions
+
+**After Batch 4 (research 022,021,023):**
+- Complete memory model
+- Can implement GC and manual memory management
+- Can write performance-critical code
+
+**After Batch 5-6 (research 017,027,028,030,029):**
+- Complete language feature set
+- Can write large-scale projects
+- Self-hosting becomes feasible
+
+---
+
+## DEVIATION NOTES
+
+If you find a research task is blocking you during implementation:
+- Jump to that task immediately
+- Update this file with the reason
+- Mark the interruption in git commit
+
+The goal is to keep you productive, not to follow this order rigidly.
