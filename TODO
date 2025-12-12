@@ -37,21 +37,36 @@
   - [ ] Extract integration strategy with Appendage Theory
   - [ ] Document findings in `/docs/research/borrow_checker_design.md`
 
-- [ ] **research_002: Balanced Ternary Arithmetic**
-  - [ ] Upload source compilations to Gemini (7 files)
-  - [ ] Review response document
-  - [ ] Extract ternary arithmetic algorithms
-  - [ ] Extract trit/tryte packing strategy (10 trits in uint16)
-  - [ ] Extract binary↔ternary conversion algorithms
-  - [ ] Document in `/docs/research/balanced_ternary_arithmetic.md`
+- [x] **research_002: Balanced Ternary Arithmetic** ✅ COMPLETE + IMPLEMENTED
+  - [x] Upload source compilations to Gemini (7 files)
+  - [x] Review response document (54KB received)
+  - [x] Extract ternary arithmetic algorithms
+  - [x] Extract trit/tryte packing strategy (10 trits in uint16)
+  - [x] Extract binary↔ternary conversion algorithms
+  - [x] Document: `/docs/gemini/responses/research_002_balanced_ternary_arithmetic.txt`
+  - [x] **IMPLEMENTATION**: Phases 1-6 complete on `dev/balanced-ternary` branch
+    * Phase 1: Type system (TypeKind::TRIT, TRYTE)
+    * Phase 2: Runtime (561 lines) - TernaryOps class, packing/unpacking
+    * Phase 3: LLVM codegen (456 lines) - TernaryLowerer class
+    * Phase 4: Testing (20/20 passing) - Full arithmetic validation
+    * Phase 5: Documentation (640 lines) - STATUS.md + FINAL_REPORT.md
+    * Phase 6: Partial (backend done, BLOCKED on parser expression support)
 
-- [ ] **research_003: Balanced Nonary Arithmetic**
-  - [ ] Upload source compilations to Gemini (7 files)
-  - [ ] Review response document
-  - [ ] Extract nonary arithmetic algorithms
-  - [ ] Extract nit/nyte packing strategy (5 nits in uint16)
-  - [ ] Extract binary↔nonary conversion algorithms
-  - [ ] Document in `/docs/research/balanced_nonary_arithmetic.md`
+- [x] **research_003: Balanced Nonary Arithmetic** ✅ COMPLETE (Dec 11, 2025)
+  - [x] Upload source compilations to Gemini (7 files)
+  - [x] Review response document (59KB received)
+  - [x] Extract nonary arithmetic algorithms
+    * **Key Finding**: Biased-Radix Packing (value + 29524)
+    * Addition: `A + B - bias` (3-5 cycles)
+    * Comparison: Works directly on packed values (monotonic!)
+    * Performance: 50-70% of native int16 with safety
+  - [x] Extract nit/nyte packing strategy (5 nits in uint16)
+    * 9^5 = 59,049 values → 90.1% efficiency in uint16
+    * 6,487 spare code points → ERR sentinel for free!
+    * Zero = 0x7354, ERR = 0xFFFF
+  - [x] Extract binary↔nonary conversion algorithms
+    * SIMD-friendly operations (8 nytes per SSE register)
+  - [x] Document findings: `/docs/gemini/responses/research_003_balanced_nonary_arithmetic.txt`
 
 ### 0.2 High-Priority Research (Important but not blocking)
 - [ ] **research_004: File I/O Library Design**
@@ -181,24 +196,43 @@
   - [ ] Test conversions
   - [ ] Test edge cases
 
-#### 1.2.2 Nit/Nyte Implementation (After research_003)
-- [ ] Review research findings from Gemini
-- [ ] Create `NonaryArithmetic` class in `src/backend/nonary_arithmetic.cpp`
-  - [ ] Implement nonary addition algorithm
-  - [ ] Implement nonary subtraction algorithm
-  - [ ] Implement nonary multiplication algorithm
-  - [ ] Implement nonary division algorithm
-  - [ ] Implement comparison operations
+#### 1.2.2 Nit/Nyte Implementation ✅ RESEARCH COMPLETE (After research_003)
+**Research Status**: ✅ Received Dec 11, 2025 (59KB report)
+**Key Insights**:
+- Biased-Radix Packing: `stored = value + 29524`
+- Zero = 0x7354, Min = 0x0000, Max = 0xE6A8, ERR = 0xFFFF
+- Optimized arithmetic: `A + B - bias` (3-5 cycles)
+- Comparison works directly on packed form (monotonic!)
+- Performance: 50-70% of native int16 with safety guarantees
+- SIMD-ready: 8 nytes per SSE register
+
+**Implementation Plan** (Following Gemini's recommendations):
+- [ ] Create runtime library in `src/runtime/nyte/nyte_runtime.cpp`
+  - [ ] Implement `aria_nyte_add(uint16_t a, uint16_t b)` with bias logic
+  - [ ] Implement `aria_nyte_sub(uint16_t a, uint16_t b)`
+  - [ ] Implement `aria_nyte_mul(uint16_t a, uint16_t b)` with 64-bit intermediate
+  - [ ] Implement `aria_nyte_div(uint16_t a, uint16_t b)` with zero check
+  - [ ] Implement `aria_nyte_neg(uint16_t a)` (efficient: just flip value around bias)
+  - [ ] Add sticky ERR propagation to all operations
 - [ ] Create packing/unpacking functions
-  - [ ] `packNyte()`: Pack 5 nits into uint16
-  - [ ] `unpackNyte()`: Extract 5 nits from uint16
-  - [ ] Document bit layout (9^5 = 59,049 < 65,536)
-- [ ] Implement binary↔nonary conversion
-  - [ ] `binaryToNonary()`: int → balanced nonary
-  - [ ] `nonaryToBinary()`: balanced nonary → int
-  - [ ] Handle negative numbers (digit range: -4 to +4)
+  - [ ] `packNyte()`: Pack value into biased uint16 (value + 29524)
+  - [ ] `unpackNyte()`: Extract value from biased uint16 (stored - 29524)
+  - [ ] `validateNyte()`: Check if uint16 is valid nyte (≤ 0xE6A8)
+  - [ ] Document bias = 29524, range [-29524, +29524]
+- [ ] Implement binary↔nonary string conversion
+  - [ ] `nyteToBinary()`: Extract int32 value (stored - 29524)
+  - [ ] `binaryToNyte()`: Pack int32 with range check
+  - [ ] `nyteToString()`: Convert to balanced nonary digits (-4..+4)
+  - [ ] `stringToNyte()`: Parse nonary string representation
 - [ ] Extend `ExprCodeGen` for nit/nyte operations
+  - [ ] Inject runtime calls (not inline) to avoid code bloat
+  - [ ] Map nit to i8 (native), nyte to i16 (packed)
+  - [ ] Use optimized comparison (direct uint16 compare)
 - [ ] Add comprehensive tests
+  - [ ] Test biased arithmetic correctness
+  - [ ] Test ERR sentinel propagation (sticky errors)
+  - [ ] Test edge cases (min/max values, overflow → ERR)
+  - [ ] Benchmark vs native int16 (target: 50-70% speed)
 
 ### 1.3 Vector Types (vec2, vec3, vec4, vec9)
 **Status**: Partial implementation, needs SIMD

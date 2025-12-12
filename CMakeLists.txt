@@ -82,12 +82,14 @@ add_executable(ariac
  src/frontend/sema/trait_checker.cpp   # Trait Type Checking (WP 005.4)
  src/backend/codegen.cpp
  src/backend/codegen_tbb.cpp           # TBB Sticky Error Propagation (v0.0.7 Critical Fix)
+ src/backend/codegen_ternary.cpp       # Balanced Ternary LLVM Lowering (v0.0.11)
+ src/backend/ternary_ops.cpp           # Balanced Ternary Runtime Operations (v0.0.11)
  src/backend/tbb_optimizer.cpp         # TBB Optimization Pass (Value Range Propagation)
  src/backend/tbb_loop_optimizer.cpp    # TBB Loop Optimizer (WP 005.1)
  src/backend/tbb_interprocedural.cpp   # TBB Interprocedural Analysis (WP 005.2)
  src/backend/monomorphization.cpp      # Trait Monomorphization Engine (WP 005.4)
  src/backend/vtable.cpp                # Trait Vtable Generation (WP 005.4)
- src/backend/lowering_ternary.cpp  # AVX-512 Lowering Logic
+ src/backend/lowering_ternary.cpp      # AVX-512 Lowering Logic
 )
 
 # Link against LLVM and Mimalloc

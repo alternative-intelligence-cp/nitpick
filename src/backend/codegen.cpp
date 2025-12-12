@@ -21,6 +21,8 @@
 #include "codegen.h"
 #include "codegen_context.h"
 #include "codegen_tbb.h"
+#include "codegen_ternary.h"
+#include "ternary_ops.h"
 #include "tbb_optimizer.h"
 #include "monomorphization.h"
 #include "vtable.h"
@@ -2847,6 +2849,251 @@ public:
             }
             
             return ctx.builder->CreateSelect(cond, true_val, false_val);
+        }
+        if (auto* binop = dynamic_cast<aria::frontend::BinaryOp*>(node)) {
+            // Binary arithmetic and logical operations
+            Value* L = visitExpr(binop->left.get());
+            Value* R = visitExpr(binop->right.get());
+            
+            if (!L || !R) return nullptr;
+            
+            // Check if operands are tryte types
+            bool leftIsTryte = (ctx.exprTypeMap.count(L) > 0 && ctx.exprTypeMap[L] == "tryte");
+            bool rightIsTryte = (ctx.exprTypeMap.count(R) > 0 && ctx.exprTypeMap[R] == "tryte");
+            
+            // If either operand is tryte, use ternary lowerer
+            if (leftIsTryte || rightIsTryte) {
+                TernaryLowerer ternaryLowerer(ctx.llvmContext, *ctx.builder, ctx.module.get());
+                Value* result = nullptr;
+                
+                switch (binop->op) {
+                    case aria::frontend::BinaryOp::ADD:
+                        result = ternaryLowerer.createTryteAdd(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::SUB:
+                        result = ternaryLowerer.createTryteSub(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::MUL:
+                        result = ternaryLowerer.createTryteMul(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::DIV:
+                        result = ternaryLowerer.createTryteDiv(L, R);
+                        break;
+                    default:
+                        throw std::runtime_error("Unsupported tryte operation");
+                }
+                
+                if (result) {
+                    ctx.exprTypeMap[result] = "tryte";
+                }
+                return result;
+            }
+            
+            // Standard binary/integer arithmetic
+            Type* LType = L->getType();
+            Type* RType = R->getType();
+            
+            // Handle type promotion/conversion
+            if (LType != RType) {
+                if (LType->isFloatingPointTy() || RType->isFloatingPointTy()) {
+                    // Promote to floating point
+                    if (LType->isIntegerTy()) {
+                        L = ctx.builder->CreateSIToFP(L, Type::getDoubleTy(ctx.llvmContext));
+                        LType = L->getType();
+                    }
+                    if (RType->isIntegerTy()) {
+                        R = ctx.builder->CreateSIToFP(R, Type::getDoubleTy(ctx.llvmContext));
+                        RType = R->getType();
+                    }
+                } else if (LType->isIntegerTy() && RType->isIntegerTy()) {
+                    // Promote to wider integer type
+                    unsigned LWidth = LType->getIntegerBitWidth();
+                    unsigned RWidth = RType->getIntegerBitWidth();
+                    if (LWidth < RWidth) {
+                        L = ctx.builder->CreateSExtOrBitCast(L, RType);
+                        LType = RType;
+                    } else if (RWidth < LWidth) {
+                        R = ctx.builder->CreateSExtOrBitCast(R, LType);
+                        RType = LType;
+                    }
+                }
+            }
+            
+            // Generate appropriate operation
+            switch (binop->op) {
+                // Arithmetic
+                case aria::frontend::BinaryOp::ADD:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFAdd(L, R, "fadd");
+                    }
+                    return ctx.builder->CreateAdd(L, R, "add");
+                    
+                case aria::frontend::BinaryOp::SUB:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFSub(L, R, "fsub");
+                    }
+                    return ctx.builder->CreateSub(L, R, "sub");
+                    
+                case aria::frontend::BinaryOp::MUL:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFMul(L, R, "fmul");
+                    }
+                    return ctx.builder->CreateMul(L, R, "mul");
+                    
+                case aria::frontend::BinaryOp::DIV:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFDiv(L, R, "fdiv");
+                    }
+                    return ctx.builder->CreateSDiv(L, R, "sdiv");
+                    
+                case aria::frontend::BinaryOp::MOD:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFRem(L, R, "frem");
+                    }
+                    return ctx.builder->CreateSRem(L, R, "srem");
+                    
+                // Comparison
+                case aria::frontend::BinaryOp::EQ:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOEQ(L, R, "feq");
+                    }
+                    return ctx.builder->CreateICmpEQ(L, R, "eq");
+                    
+                case aria::frontend::BinaryOp::NE:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpONE(L, R, "fne");
+                    }
+                    return ctx.builder->CreateICmpNE(L, R, "ne");
+                    
+                case aria::frontend::BinaryOp::LT:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOLT(L, R, "flt");
+                    }
+                    return ctx.builder->CreateICmpSLT(L, R, "lt");
+                    
+                case aria::frontend::BinaryOp::GT:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOGT(L, R, "fgt");
+                    }
+                    return ctx.builder->CreateICmpSGT(L, R, "gt");
+                    
+                case aria::frontend::BinaryOp::LE:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOLE(L, R, "fle");
+                    }
+                    return ctx.builder->CreateICmpSLE(L, R, "le");
+                    
+                case aria::frontend::BinaryOp::GE:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOGE(L, R, "fge");
+                    }
+                    return ctx.builder->CreateICmpSGE(L, R, "ge");
+                    
+                // Logical
+                case aria::frontend::BinaryOp::LOGICAL_AND: {
+                    // Convert to i1 if needed
+                    if (L->getType()->getIntegerBitWidth() != 1) {
+                        L = ctx.builder->CreateICmpNE(L, ConstantInt::get(L->getType(), 0));
+                    }
+                    if (R->getType()->getIntegerBitWidth() != 1) {
+                        R = ctx.builder->CreateICmpNE(R, ConstantInt::get(R->getType(), 0));
+                    }
+                    return ctx.builder->CreateAnd(L, R, "and");
+                }
+                    
+                case aria::frontend::BinaryOp::LOGICAL_OR: {
+                    // Convert to i1 if needed
+                    if (L->getType()->getIntegerBitWidth() != 1) {
+                        L = ctx.builder->CreateICmpNE(L, ConstantInt::get(L->getType(), 0));
+                    }
+                    if (R->getType()->getIntegerBitWidth() != 1) {
+                        R = ctx.builder->CreateICmpNE(R, ConstantInt::get(R->getType(), 0));
+                    }
+                    return ctx.builder->CreateOr(L, R, "or");
+                }
+                    
+                // Bitwise
+                case aria::frontend::BinaryOp::BITWISE_AND:
+                    return ctx.builder->CreateAnd(L, R, "bitand");
+                    
+                case aria::frontend::BinaryOp::BITWISE_OR:
+                    return ctx.builder->CreateOr(L, R, "bitor");
+                    
+                case aria::frontend::BinaryOp::BITWISE_XOR:
+                    return ctx.builder->CreateXor(L, R, "bitxor");
+                    
+                case aria::frontend::BinaryOp::LSHIFT:
+                    return ctx.builder->CreateShl(L, R, "shl");
+                    
+                case aria::frontend::BinaryOp::RSHIFT:
+                    return ctx.builder->CreateAShr(L, R, "ashr");
+                    
+                // Assignment (handled elsewhere, but included for completeness)
+                case aria::frontend::BinaryOp::ASSIGN:
+                case aria::frontend::BinaryOp::PLUS_ASSIGN:
+                case aria::frontend::BinaryOp::MINUS_ASSIGN:
+                case aria::frontend::BinaryOp::STAR_ASSIGN:
+                case aria::frontend::BinaryOp::SLASH_ASSIGN:
+                case aria::frontend::BinaryOp::MOD_ASSIGN:
+                case aria::frontend::BinaryOp::AND_ASSIGN:
+                case aria::frontend::BinaryOp::OR_ASSIGN:
+                case aria::frontend::BinaryOp::XOR_ASSIGN:
+                case aria::frontend::BinaryOp::LSHIFT_ASSIGN:
+                case aria::frontend::BinaryOp::RSHIFT_ASSIGN:
+                    throw std::runtime_error("Assignment operations should be handled in statement context");
+                    
+                default:
+                    throw std::runtime_error("Unknown binary operation");
+            }
+        }
+        if (auto* unop = dynamic_cast<aria::frontend::UnaryOp*>(node)) {
+            // Unary operations
+            Value* operand = visitExpr(unop->operand.get());
+            if (!operand) return nullptr;
+            
+            // Check if operand is tryte type
+            bool isTryte = (ctx.exprTypeMap.count(operand) > 0 && ctx.exprTypeMap[operand] == "tryte");
+            
+            switch (unop->op) {
+                case aria::frontend::UnaryOp::NEG:
+                    if (isTryte) {
+                        // Use ternary negation
+                        TernaryLowerer ternaryLowerer(ctx.llvmContext, *ctx.builder, ctx.module.get());
+                        Value* result = ternaryLowerer.createTryteNeg(operand);
+                        if (result) {
+                            ctx.exprTypeMap[result] = "tryte";
+                        }
+                        return result;
+                    }
+                    // Standard negation
+                    if (operand->getType()->isFloatingPointTy()) {
+                        return ctx.builder->CreateFNeg(operand, "fneg");
+                    }
+                    return ctx.builder->CreateNeg(operand, "neg");
+                    
+                case aria::frontend::UnaryOp::LOGICAL_NOT: {
+                    // Convert to boolean if needed
+                    Value* boolVal = operand;
+                    if (operand->getType()->isIntegerTy() && operand->getType()->getIntegerBitWidth() != 1) {
+                        boolVal = ctx.builder->CreateICmpNE(operand, ConstantInt::get(operand->getType(), 0));
+                    }
+                    return ctx.builder->CreateNot(boolVal, "not");
+                }
+                    
+                case aria::frontend::UnaryOp::BITWISE_NOT:
+                    return ctx.builder->CreateNot(operand, "bitnot");
+                    
+                case aria::frontend::UnaryOp::POST_INC:
+                case aria::frontend::UnaryOp::POST_DEC:
+                    throw std::runtime_error("Post-increment/decrement requires lvalue handling");
+                    
+                case aria::frontend::UnaryOp::ADDRESS_OF:
+                case aria::frontend::UnaryOp::PIN:
+                    throw std::runtime_error("Address-of and pin operators not yet implemented");
+                    
+                default:
+                    throw std::runtime_error("Unknown unary operation");
+            }
         }
         if (auto* var = dynamic_cast<aria::frontend::VarExpr*>(node)) {
             auto* sym = ctx.lookup(var->name);
@@ -6712,6 +6959,21 @@ bool generate_code(aria::frontend::Block* root, const std::string& filename, boo
     ctx.builder->CreateCall(schedulerInit, {
         ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0)  // 0 = use hardware_concurrency
     });
+    
+    // =========================================================================
+    // Initialize balanced ternary operations (lookup tables)
+    // =========================================================================
+    FunctionType* ternaryInitType = FunctionType::get(
+        Type::getVoidTy(ctx.llvmContext),
+        false
+    );
+    Function* ternaryInit = Function::Create(
+        ternaryInitType,
+        Function::ExternalLinkage,
+        "_ZN4aria7backend10TernaryOps10initializeEv",  // Mangled name
+        ctx.module.get()
+    );
+    ctx.builder->CreateCall(ternaryInit);
     
     // Call module initializer
     ctx.builder->CreateCall(moduleInit);
