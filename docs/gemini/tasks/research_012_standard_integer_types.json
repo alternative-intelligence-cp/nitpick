@@ -1,0 +1,72 @@
+{
+    "task_id": "research_012_standard_integer_types",
+    "title": "Standard Integer and Unsigned Integer Types (int1-512, uint8-512)",
+    "priority": "high",
+    "category": "type_system",
+    "dependencies": [
+        "research_002_tbb_types"
+    ],
+    "estimated_complexity": "medium",
+    "description": "Design comprehensive specification for Aria's standard signed and unsigned integer types, covering the full range from 1-bit to 512-bit integers.",
+    "scope": {
+        "signed_types": [
+            "int1",
+            "int2",
+            "int4",
+            "int8",
+            "int16",
+            "int32",
+            "int64",
+            "int128",
+            "int256",
+            "int512"
+        ],
+        "unsigned_types": [
+            "uint8",
+            "uint16",
+            "uint32",
+            "uint64",
+            "uint128",
+            "uint256",
+            "uint512"
+        ],
+        "note": "These are standard two's complement integers, distinct from TBB types"
+    },
+    "key_questions": [
+        "What is the memory layout and alignment for wide types (128/256/512-bit)?",
+        "How do these map to LLVM IR (native types vs multi-register representation)?",
+        "What is the overflow behavior (wrap, trap, or saturate)?",
+        "When should developers use standard int vs TBB types?",
+        "What literal syntax should be used (suffixes: i8, u16, i128)?",
+        "What are the conversion rules (implicit vs explicit casts)?",
+        "What SIMD opportunities exist for wide integer operations?",
+        "How do these integrate with the borrow checker and memory model?",
+        "What atomics support exists for wide integers (int128/256/512)?",
+        "How do these perform in compile-time (comptime) evaluation?"
+    ],
+    "deliverables": [
+        "Comprehensive type specification document (400-500 lines)",
+        "Memory layout diagrams for all widths",
+        "LLVM IR mapping strategy",
+        "Literal syntax specification with examples",
+        "Conversion matrix (implicit/explicit casts)",
+        "Overflow behavior semantics",
+        "Comparison with TBB types (decision tree)",
+        "SIMD optimization opportunities",
+        "Integration points: borrow checker, atomics, comptime"
+    ],
+    "context_files": [
+        "/docs/info/aria_specs.txt (lines 1-50: type definitions)",
+        "/docs/gemini/responses/research_002_tbb_types.txt (TBB comparison)",
+        "/src/frontend/sema/type_checker.cpp (existing type validation)",
+        "/src/backend/codegen.cpp (current integer codegen)"
+    ],
+    "example_code_needed": [
+        "Basic arithmetic with overflow detection",
+        "Wide integer (128/256/512) usage patterns",
+        "Conversion between int, uint, and TBB types",
+        "Literal syntax examples for all widths",
+        "SIMD usage with standard integers",
+        "Atomic operations on standard integers"
+    ]
+}

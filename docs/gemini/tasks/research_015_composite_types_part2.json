@@ -1,0 +1,57 @@
+{
+    "task_id": "research_015_composite_types_part2",
+    "title": "Composite Types Part 2 (vec2/vec3/vec9, struct, string)",
+    "priority": "high",
+    "category": "type_system",
+    "dependencies": [
+        "research_013_floating_point_types",
+        "research_021_gc_system"
+    ],
+    "estimated_complexity": "high",
+    "description": "Design specification for SIMD vector types, user-defined structs, and the string type with SSO optimization.",
+    "scope": {
+        "vector_types": "vec2, vec3, vec9 (SIMD-optimized vectors)",
+        "struct_type": "User-defined composite structures",
+        "string_type": "UTF-8 strings with Small String Optimization"
+    },
+    "key_questions": {
+        "vectors": [
+            "What element types are supported (int, uint, flt, tbb)?",
+            "How do these map to SIMD instructions (SSE, AVX, AVX-512, NEON)?",
+            "Is swizzling supported (vec3.xyz, vec3.yzx, vec3.xxy)?",
+            "What geometric operations are built-in (dot, cross, normalize)?",
+            "What is vec9 (balanced nonary 3×3 matrix or 9-element vector)?",
+            "How do vectors interact with the borrow checker?"
+        ],
+        "struct": [
+            "What are the field alignment and padding rules?",
+            "Is there support for packed structs (#[packed])?",
+            "What is the memory model (always GC, support wild struct)?",
+            "Can structs have methods (associated functions)?",
+            "Is there inheritance or only composition?",
+            "How do generic structs work (struct<T>)?"
+        ],
+        "string": [
+            "What encoding (UTF-8 native, ASCII, UCS-2)?",
+            "What is the Small String Optimization (SSO) threshold?",
+            "Are strings immutable (Rust String vs &str)?",
+            "What is the concatenation strategy (operator+ vs builder)?",
+            "How do template literals integrate (`&{var}`)?",
+            "What is the memory model (GC vs wild string)?"
+        ]
+    },
+    "deliverables": [
+        "Vector types specification (200-250 lines)",
+        "Struct type specification (200-250 lines)",
+        "String type specification (250-300 lines)",
+        "SIMD instruction mapping",
+        "SSO implementation strategy",
+        "UTF-8 handling design",
+        "Memory layout diagrams"
+    ],
+    "context_files": [
+        "/docs/info/aria_specs.txt (vec types, struct syntax, string usage)",
+        "/src/runtime/core/string_impl.cpp (existing SSO string)",
+        "/src/backend/codegen_vector.cpp (vector codegen)"
+    ]
+}

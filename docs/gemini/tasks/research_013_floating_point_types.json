@@ -1,0 +1,56 @@
+{
+    "task_id": "research_013_floating_point_types",
+    "title": "Floating-Point Types (flt32, flt64, flt128, flt256, flt512)",
+    "priority": "high",
+    "category": "type_system",
+    "dependencies": [
+        "research_002_tbb_types"
+    ],
+    "estimated_complexity": "high",
+    "description": "Design comprehensive specification for Aria's floating-point types, from standard IEEE-754 to extended precision software-emulated types.",
+    "scope": {
+        "types": [
+            "flt32 (IEEE-754 binary32, 32-bit single precision)",
+            "flt64 (IEEE-754 binary64, 64-bit double precision)",
+            "flt128 (IEEE-754 binary128, 128-bit quadruple precision)",
+            "flt256 (software-emulated extended precision)",
+            "flt512 (software-emulated ultra-extended precision)"
+        ]
+    },
+    "key_questions": [
+        "What is the platform support for each type (hardware vs software)?",
+        "How should NaN and Infinity be handled (strict IEEE-754 or custom)?",
+        "What rounding modes are supported (nearest, toward zero, up, down)?",
+        "Should subnormal numbers be supported or flushed to zero?",
+        "What is the fast-math optimization strategy vs strict IEEE compliance?",
+        "How do TBB ERR sentinels convert to/from float types (ERR → NaN)?",
+        "What is the performance model (SIMD for 32/64, software for 128+)?",
+        "How do floats interact with the borrow checker and memory safety?",
+        "What is the literal syntax (3.14f32, 1.0e10f64)?",
+        "How do floats work in compile-time (comptime) constant evaluation?"
+    ],
+    "deliverables": [
+        "Comprehensive float specification (500-600 lines)",
+        "IEEE-754 compliance matrix",
+        "Hardware vs software implementation strategy",
+        "NaN/Infinity/subnormal handling rules",
+        "Rounding mode specification",
+        "TBB ↔ float conversion semantics",
+        "SIMD optimization guide (SSE, AVX, AVX-512)",
+        "Software emulation design for flt256/512",
+        "Fast-math vs strict-math tradeoff analysis"
+    ],
+    "context_files": [
+        "/docs/info/aria_specs.txt (lines 1-50: type definitions)",
+        "/docs/gemini/responses/research_002_tbb_types.txt (ERR sentinel handling)",
+        "/src/backend/codegen.cpp (float codegen patterns)"
+    ],
+    "example_code_needed": [
+        "Basic float arithmetic with NaN handling",
+        "TBB to float conversion (ERR → NaN)",
+        "Extended precision (flt128/256/512) usage",
+        "SIMD vector operations (vec3<flt32>)",
+        "Rounding mode control",
+        "Fast-math optimizations"
+    ]
+}

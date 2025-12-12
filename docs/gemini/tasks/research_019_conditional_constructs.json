@@ -1,0 +1,53 @@
+{
+    "task_id": "research_019_conditional_constructs",
+    "title": "Conditional Constructs (if/else, when/then/end, pick)",
+    "priority": "high",
+    "category": "control_flow",
+    "dependencies": [
+        "research_010_macro_comptime"
+    ],
+    "estimated_complexity": "high",
+    "description": "Detailed specification for all conditional and pattern matching constructs in Aria, including standard if/else, completion-aware when loops, and advanced pick pattern matching.",
+    "scope": {
+        "if_else": "if (cond) { } else { } - Standard branching",
+        "when_construct": "when (cond) { body } then { success } end { failure } - Completion-aware loop",
+        "pick_construct": "pick (value) { cases } - Advanced pattern matching switch"
+    },
+    "key_questions": {
+        "if_else": [
+            "What short-circuit evaluation rules apply?",
+            "How does if integrate with safe navigation (?.)?",
+            "What branch prediction hints are available?",
+            "Can if be used as an expression (ternary-style)?"
+        ],
+        "when_construct": [
+            "How does when track completion state?",
+            "When does 'then' execute (normal loop completion)?",
+            "When does 'end' execute (break or no iterations)?",
+            "How do break/continue interact with when?"
+        ],
+        "pick_construct": [
+            "What case types exist (exact, range, comparison, destructuring)?",
+            "How does fall(label) explicit fallthrough work?",
+            "What is the exhaustiveness checking algorithm?",
+            "How do destructuring patterns work ({ field: value }, [a, b, c])?",
+            "What is the wildcard (*) and unreachable (!) semantics?",
+            "How does pick integrate with TBB ERR sentinels?",
+            "What optimization exists (jump tables, binary search)?"
+        ]
+    },
+    "deliverables": [
+        "if/else specification (100-150 lines)",
+        "when/then/end specification (150-200 lines)",
+        "pick pattern matching specification (300-350 lines)",
+        "Destructuring pattern grammar",
+        "Exhaustiveness checking algorithm",
+        "Optimization strategy guide",
+        "Code examples for all constructs"
+    ],
+    "context_files": [
+        "/docs/info/aria_specs.txt (pick examples, when examples)",
+        "/src/frontend/parser.cpp (pick parsing)",
+        "/src/backend/codegen.cpp (pick codegen with jump tables)"
+    ]
+}

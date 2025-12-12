@@ -1,0 +1,75 @@
+{
+    "task_id": "research_026_special_operators",
+    "title": "Special Operators (@, #, $, ?, ?., ??, |>, <|, .., &{ })",
+    "priority": "medium",
+    "category": "operators",
+    "dependencies": [
+        "research_022_wild_wildx_memory",
+        "research_016_functional_types"
+    ],
+    "estimated_complexity": "high",
+    "description": "Complete specification for Aria's unique special-purpose operators: memory operators (@, #, $), error handling (?, ?., ??), pipeline (|>, <|), range (..), and closures (&{ }).",
+    "scope": {
+        "memory_operators": "@ (wild ptr), # (ptr arithmetic), $ (wildx ptr)",
+        "error_handling": "? (propagate), ?. (safe navigation), ?? (null coalescing)",
+        "pipeline": "|> (forward pipe), <| (reverse pipe)",
+        "range": ".. (range creation)",
+        "closure": "&{ } (anonymous function syntax)"
+    },
+    "key_questions": {
+        "memory_operators": [
+            "What is @ operator precedence and associativity?",
+            "How does # pointer arithmetic work (# + offset)?",
+            "What is $ wildx pointer calling syntax?",
+            "How do these interact with borrow checker?",
+            "What safety checks exist?"
+        ],
+        "error_handling": [
+            "What is ? operator desugaring (early return on ERR)?",
+            "How does ?. safe navigation work (obj?.field)?",
+            "What is ?? null coalescing semantics (val ?? default)?",
+            "How do these compose (??.?)?",
+            "What short-circuit behavior exists?",
+            "How does ? integrate with result type?"
+        ],
+        "pipeline": [
+            "What is |> forward pipe desugaring (x |> f → f(x))?",
+            "What is <| reverse pipe desugaring (f <| x → f(x))?",
+            "How do pipelines chain (x |> f |> g |> h)?",
+            "What operator precedence (|> vs +)?",
+            "How does pipeline work with methods (x |> .method())?",
+            "What optimization exists (inline entire chain)?"
+        ],
+        "range_operator": [
+            "What is .. semantics (inclusive vs exclusive)?",
+            "What types support ranges (int, char)?",
+            "How do ranges work in loops (for i in 0..10)?",
+            "What range types exist (Range, RangeInclusive)?",
+            "How are infinite ranges represented (0..)?",
+            "What step control exists (0..10:2 for even numbers)?"
+        ],
+        "closure_syntax": [
+            "What is &{ } closure syntax (&{|x| x + 1})?",
+            "How are captures specified (by-value, by-ref)?",
+            "What closure type inference exists?",
+            "How do closures integrate with func type?",
+            "What optimization exists (inline, devirtualize)?"
+        ]
+    },
+    "deliverables": [
+        "Memory operator specification (200-250 lines)",
+        "Error handling operator specification (250-300 lines)",
+        "Pipeline operator specification (150-200 lines)",
+        "Range operator specification (150-200 lines)",
+        "Closure syntax specification (200-250 lines)",
+        "Operator precedence integration",
+        "Code examples for all operators",
+        "Performance analysis and optimization"
+    ],
+    "context_files": [
+        "/docs/info/aria_specs.txt (special operator examples)",
+        "/docs/gemini/responses/research_022_wild_wildx_memory.txt (@ # $ operators)",
+        "/docs/gemini/responses/research_016_functional_types.txt (closure captures)",
+        "/src/frontend/parser.cpp (operator parsing)"
+    ]
+}

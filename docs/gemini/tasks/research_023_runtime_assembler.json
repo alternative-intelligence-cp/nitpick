@@ -1,0 +1,68 @@
+{
+    "task_id": "research_023_runtime_assembler",
+    "title": "Runtime Assembler (x86-64 JIT, wildx code generation)",
+    "priority": "high",
+    "category": "memory_management",
+    "dependencies": [
+        "research_022_wild_wildx_memory",
+        "research_010_macro_comptime"
+    ],
+    "estimated_complexity": "very_high",
+    "description": "Complete specification for Aria's runtime x86-64 assembler, enabling JIT compilation and wildx executable memory generation at runtime.",
+    "scope": {
+        "assembler_api": "Runtime x86-64 instruction encoding (mov, add, call, etc.)",
+        "wildx_generation": "Dynamic code generation for $ wildx pointers",
+        "register_allocation": "Runtime register allocation strategy",
+        "calling_convention": "System V AMD64 ABI compliance"
+    },
+    "key_questions": {
+        "assembler_api": [
+            "What instruction encoding API exists (asm.mov(reg, imm))?",
+            "How are registers represented (enum vs typed handles)?",
+            "What addressing modes are supported (immediate, register, memory)?",
+            "How are labels and jumps handled?",
+            "What SIMD instruction support exists (SSE, AVX, AVX-512)?",
+            "How is code buffer managed (growth, relocation)?",
+            "What disassembler exists for debugging?"
+        ],
+        "wildx_generation": [
+            "How is wildx memory allocated (aria.alloc_exec)?",
+            "What code patching mechanisms exist?",
+            "How are wildx functions called from Aria?",
+            "What optimization passes exist (peephole, dead code)?",
+            "How are constants embedded (literal pool)?",
+            "What relocation strategy exists for position-independent code?"
+        ],
+        "register_allocation": [
+            "What register allocation algorithm (linear scan, graph coloring)?",
+            "How are caller/callee-saved registers handled?",
+            "What spilling strategy exists?",
+            "How does register allocation integrate with calling convention?"
+        ],
+        "safety_and_integration": [
+            "What sandboxing exists (W^X, NX bit)?",
+            "How are assembly errors detected (invalid encoding)?",
+            "What debugging support exists (breakpoints, single-step)?",
+            "How does runtime assembler integrate with macros/comptime?",
+            "What performance profiling exists (cycle counts)?",
+            "How are external library calls handled (FFI)?"
+        ]
+    },
+    "deliverables": [
+        "Runtime assembler specification (600-700 lines)",
+        "x86-64 instruction encoding API",
+        "Wildx generation workflow",
+        "Register allocation strategy",
+        "Calling convention bridge design",
+        "Safety sandboxing mechanisms",
+        "Code examples (JIT math expression evaluator)",
+        "Performance benchmarks (JIT vs interpreted)",
+        "Comparison with DynASM, AsmJit"
+    ],
+    "context_files": [
+        "/docs/info/aria_specs.txt (wildx examples)",
+        "/docs/gemini/responses/research_022_wild_wildx_memory.txt ($ operator)",
+        "/docs/gemini/responses/research_010-011_macro_comptime.txt (comptime asm generation)",
+        "External: System V AMD64 ABI specification"
+    ]
+}

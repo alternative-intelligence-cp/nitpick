@@ -1,0 +1,51 @@
+{
+    "task_id": "research_017_mathematical_types",
+    "title": "Advanced Mathematical Types (tensor, matrix)",
+    "priority": "medium",
+    "category": "type_system",
+    "dependencies": [
+        "research_015_composite_types_part2",
+        "research_013_floating_point_types"
+    ],
+    "estimated_complexity": "high",
+    "description": "Design specification for Aria's advanced mathematical types for scientific computing, machine learning, and linear algebra.",
+    "scope": {
+        "tensor_type": "tensor<T, Shape> - N-dimensional arrays for ML/scientific computing",
+        "matrix_type": "matrix<T, Rows, Cols> - Specialized 2D tensors with linear algebra ops"
+    },
+    "key_questions": {
+        "tensor": [
+            "How are N-dimensional shapes encoded (compile-time or runtime)?",
+            "What is the stride calculation and memory layout (row-major, column-major, custom)?",
+            "What broadcasting rules apply (NumPy-style or custom)?",
+            "How do SIMD/GPU acceleration hooks work?",
+            "What integration exists with ML libraries (ONNX, TensorFlow, PyTorch)?",
+            "What element types are supported (flt32/64, int, tbb)?",
+            "How does the borrow checker handle tensor slicing?"
+        ],
+        "matrix": [
+            "What matrix multiplication algorithms are used (naive, Strassen, BLAS)?",
+            "What decompositions are built-in (LU, QR, SVD, Cholesky)?",
+            "Is sparse matrix support included?",
+            "How does matrix relate to vec2/vec3 (matrix-vector multiplication)?",
+            "Are fixed-size and dynamic-size matrices different types?",
+            "What SIMD optimizations exist for matrix operations?",
+            "How do matrices integrate with GPU compute?"
+        ]
+    },
+    "deliverables": [
+        "Tensor type specification (300-350 lines)",
+        "Matrix type specification (250-300 lines)",
+        "Broadcasting rules specification",
+        "Memory layout strategy",
+        "BLAS integration design",
+        "GPU acceleration hooks",
+        "ML framework interop strategy",
+        "Performance benchmarks"
+    ],
+    "context_files": [
+        "/docs/info/aria_specs.txt (tensor, matrix types)",
+        "/src/backend/codegen_vector.cpp (SIMD patterns)",
+        "/stdlib/ (potential tensor/matrix implementations)"
+    ]
+}

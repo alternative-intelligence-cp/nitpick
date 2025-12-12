@@ -1,0 +1,56 @@
+{
+  "task_id": "research_020_control_transfer",
+  "title": "Control Transfer (break, continue, return, defer)",
+  "priority": "high",
+  "category": "control_flow",
+  "dependencies": ["research_018_looping_constructs", "research_022_wild_memory"],
+  "estimated_complexity": "medium",
+  "description": "Complete specification for control transfer mechanisms: loop control (break/continue), function exits (return), and cleanup registration (defer).",
+  
+  "scope": {
+    "break_continue": "Loop exit and iteration skip with labeled support",
+    "return_statement": "Function exit with implicit result wrapping",
+    "defer_statement": "RAII-style cleanup registration (execute on scope exit)"
+  },
+  
+  "key_questions": {
+    "break_continue": [
+      "How do labeled break/continue work for nested loops?",
+      "What happens to defer blocks when break executes?",
+      "Can break/continue be used in pick cases?",
+      "What error checking exists (break outside loop)?"
+    ],
+    "return": [
+      "How does implicit result wrapping work ({err: NULL, val: X})?",
+      "What order do defer blocks execute before return?",
+      "Can return be used in defer blocks?",
+      "How does early return interact with the borrow checker?",
+      "What optimization exists (tail call, RVO)?"
+    ],
+    "defer": [
+      "What is the LIFO execution order for multiple defer blocks?",
+      "How does defer integrate with wild memory (aria.free in defer)?",
+      "What happens to defer on panic/unwind?",
+      "Can defer capture variables (closure-like)?",
+      "How does defer interact with async functions?",
+      "What safety guarantees exist (defer always executes)?"
+    ]
+  },
+  
+  "deliverables": [
+    "break/continue specification (100-150 lines)",
+    "return statement specification (150-200 lines)",
+    "defer statement specification (200-250 lines)",
+    "Execution order guarantees",
+    "Panic/unwind semantics",
+    "Borrow checker integration",
+    "Code examples for all constructs",
+    "Comparison with Go (defer) and Rust (Drop)"
+  ],
+  
+  "context_files": [
+    "/docs/info/aria_specs.txt (defer examples, return wrapping)",
+    "/docs/gemini/responses/research_022_wild_memory.txt (defer + aria.free)",
+    "/src/frontend/parser.cpp (defer parsing)"
+  ]
+}

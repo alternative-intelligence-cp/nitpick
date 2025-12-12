@@ -1,0 +1,65 @@
+{
+    "task_id": "research_024_arithmetic_bitwise_operators",
+    "title": "Arithmetic/Bitwise Operators (+, -, *, /, %, &, |, ^, <<, >>, TBB overflow)",
+    "priority": "high",
+    "category": "operators",
+    "dependencies": [
+        "research_001_tbb",
+        "research_012_standard_integer_types",
+        "research_013_floating_point_types"
+    ],
+    "estimated_complexity": "medium",
+    "description": "Complete specification for all arithmetic and bitwise operators in Aria, including TBB sticky error propagation for overflow/underflow conditions.",
+    "scope": {
+        "arithmetic": "+, -, *, /, % (modulo) with TBB overflow handling",
+        "bitwise": "&, |, ^ (xor), ~ (not), <<, >> (shift)",
+        "compound_assignment": "+=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=",
+        "unary": "- (negation), ~ (bitwise not)"
+    },
+    "key_questions": {
+        "arithmetic_semantics": [
+            "What overflow behavior exists (wrap, trap, saturate, TBB ERR)?",
+            "How does TBB sticky error propagate (ERR + X → ERR)?",
+            "What checked arithmetic exists (aria.checked_add)?",
+            "How does division by zero behave (TBB ERR)?",
+            "What modulo semantics (floored vs truncated)?",
+            "How do mixed-type operations work (int + flt → flt)?",
+            "What operator precedence exists?"
+        ],
+        "bitwise_semantics": [
+            "What shift semantics (logical vs arithmetic)?",
+            "How do shifts handle large counts (>= bit width)?",
+            "What rotation operations exist (rol, ror)?",
+            "How do bitwise ops work on TBB ERR?",
+            "What SIMD vectorization exists?"
+        ],
+        "tbb_integration": [
+            "What operations trigger ERR (overflow, underflow, div-by-zero)?",
+            "How is ERR detected in codegen (flag checks)?",
+            "What performance overhead exists?",
+            "How does TBB interact with floating-point (flt32 + ERR)?",
+            "What recovery mechanisms exist (? operator)?"
+        ],
+        "optimization": [
+            "What constant folding exists?",
+            "What strength reduction (mul by power-of-2 → shift)?",
+            "What SIMD autovectorization?",
+            "What unsafe unchecked variants exist?"
+        ]
+    },
+    "deliverables": [
+        "Arithmetic operator specification (300-350 lines)",
+        "Bitwise operator specification (200-250 lines)",
+        "TBB overflow/underflow semantics",
+        "Type promotion rules",
+        "Operator precedence table",
+        "SIMD optimization strategy",
+        "Code examples with TBB error handling",
+        "Performance comparison (checked vs unchecked)"
+    ],
+    "context_files": [
+        "/docs/info/aria_specs.txt (operator examples)",
+        "/docs/gemini/responses/research_001_tbb.txt (sticky error propagation)",
+        "/src/backend/codegen.cpp (operator codegen)"
+    ]
+}

@@ -1,0 +1,57 @@
+{
+    "task_id": "research_014_composite_types_part1",
+    "title": "Composite Types Part 1 (obj, dyn, bool)",
+    "priority": "high",
+    "category": "type_system",
+    "dependencies": [
+        "research_001_borrow_checker",
+        "research_021_gc_system"
+    ],
+    "estimated_complexity": "medium",
+    "description": "Design specification for Aria's fundamental composite types: obj (object/dictionary), dyn (dynamic/variant), and bool (boolean).",
+    "scope": {
+        "obj_type": "Key-value map with heterogeneous values (JSON-like)",
+        "dyn_type": "Tagged union holding any type (variant/any)",
+        "bool_type": "Boolean logic with potential ternary integration"
+    },
+    "key_questions": {
+        "obj": [
+            "What is the memory layout (hash table, tree, inline small objects)?",
+            "Are keys/values typed or untyped?",
+            "How does GC track references in nested objects?",
+            "What is the JSON compatibility story (serialize/deserialize)?",
+            "What is the syntax (JS-like {key: value} or different)?",
+            "How do objects interact with the borrow checker (can wild pointers point to obj fields)?"
+        ],
+        "dyn": [
+            "What is the tagged union representation (enum discriminant)?",
+            "How does pattern matching work (pick statement integration)?",
+            "Are there runtime type queries (@typeInfo at runtime)?",
+            "What is the performance cost vs static typing?",
+            "How does dyn interact with TBB types (can hold ERR)?",
+            "What is the memory model (always GC or support wild dyn)?"
+        ],
+        "bool": [
+            "What is the representation (1-bit logical, 8-bit physical)?",
+            "What are the truthiness rules (only true/false, or 0/non-zero)?",
+            "How does bool integrate with ternary logic (trit type)?",
+            "How do TBB ERR sentinels convert to bool (ERR → false)?",
+            "What is the literal syntax (true/false, 1/0, or both)?"
+        ]
+    },
+    "deliverables": [
+        "obj type specification (150-200 lines)",
+        "dyn type specification (150-200 lines)",
+        "bool type specification (100-150 lines)",
+        "Memory layout diagrams",
+        "GC integration strategy",
+        "Pattern matching examples",
+        "JSON interop design",
+        "Performance analysis"
+    ],
+    "context_files": [
+        "/docs/info/aria_specs.txt (type definitions, object literals)",
+        "/docs/gemini/responses/research_001_borrow_checker.txt",
+        "/docs/gemini/responses/research_003_ternary_nonary_types.txt (trit integration)"
+    ]
+}

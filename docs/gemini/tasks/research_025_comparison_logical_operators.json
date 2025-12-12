@@ -1,0 +1,63 @@
+{
+    "task_id": "research_025_comparison_logical_operators",
+    "title": "Comparison/Logical Operators (==, !=, <, <=, >, >=, <=>, &&, ||, !)",
+    "priority": "high",
+    "category": "operators",
+    "dependencies": [
+        "research_001_tbb",
+        "research_014_composite_types_part1"
+    ],
+    "estimated_complexity": "medium",
+    "description": "Complete specification for comparison and logical operators, including the spaceship operator (<=>), short-circuit evaluation, and TBB ERR handling.",
+    "scope": {
+        "comparison": "==, !=, <, <=, >, >= with value semantics",
+        "spaceship": "<=>) three-way comparison returning ordering",
+        "logical": "&&, ||, ! with short-circuit evaluation",
+        "truthiness": "bool conversion rules"
+    },
+    "key_questions": {
+        "comparison_semantics": [
+            "What equality semantics exist (value vs reference)?",
+            "How does comparison work on composite types (obj, struct)?",
+            "What NaN comparison semantics (flt32)?",
+            "How does comparison handle TBB ERR (ERR == ERR → true)?",
+            "What string comparison algorithm (lexicographic UTF-8)?",
+            "What derived operators exist (>= from < and ==)?"
+        ],
+        "spaceship_operator": [
+            "What is <=> return type (ordering enum: less/equal/greater)?",
+            "How does <=> integrate with sorting algorithms?",
+            "What default <=> implementation exists (memberwise)?",
+            "How does <=> handle partial ordering (NaN)?",
+            "What optimization exists (compiler-generated)?"
+        ],
+        "logical_operators": [
+            "What short-circuit semantics exist?",
+            "How do && and || differ from & and |?",
+            "What truthiness rules apply (0, NULL, ERR → false)?",
+            "How does ! (logical not) work on TBB ERR?",
+            "What optimization exists (branch elimination)?"
+        ],
+        "tbb_integration": [
+            "How do comparisons propagate ERR (ERR < X → ERR)?",
+            "What logical operator ERR semantics (ERR && true → ERR)?",
+            "How does short-circuit interact with ERR (false && ERR → false)?",
+            "What recovery mechanisms exist?"
+        ]
+    },
+    "deliverables": [
+        "Comparison operator specification (250-300 lines)",
+        "Spaceship operator specification (150-200 lines)",
+        "Logical operator specification (200-250 lines)",
+        "Truthiness rule table",
+        "Short-circuit evaluation semantics",
+        "TBB ERR propagation rules",
+        "Code examples with error handling",
+        "Performance analysis (branch prediction)"
+    ],
+    "context_files": [
+        "/docs/info/aria_specs.txt (comparison examples)",
+        "/docs/gemini/responses/research_001_tbb.txt (ERR comparison)",
+        "/src/backend/codegen.cpp (comparison codegen)"
+    ]
+}

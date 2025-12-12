@@ -1,0 +1,57 @@
+{
+    "task_id": "research_016_functional_types",
+    "title": "Functional Types (result, func, array)",
+    "priority": "high",
+    "category": "type_system",
+    "dependencies": [
+        "research_001_borrow_checker",
+        "research_010_macro_comptime"
+    ],
+    "estimated_complexity": "high",
+    "description": "Design specification for Aria's functional programming types: result (error handling), func (functions/closures), and array (dynamic collections).",
+    "scope": {
+        "result_type": "result<T, E> for error handling with {err, val} struct",
+        "func_type": "Function pointers, closures, and async functions",
+        "array_type": "Fixed-size array<T, N> and dynamic T[] arrays"
+    },
+    "key_questions": {
+        "result": [
+            "What is the exact {err, val} struct layout?",
+            "What monadic operations are built-in (map, flatMap, and_then)?",
+            "How does the ? operator work (unwrap with default)?",
+            "How do TBB ERR sentinels propagate through result?",
+            "How does pattern matching work in pick statements?",
+            "What is the memory model (how are errors stored)?"
+        ],
+        "func": [
+            "What are the closure capture semantics (by-value, by-reference, wild)?",
+            "How are function signatures represented in the type system?",
+            "What calling convention (C ABI vs Aria native)?",
+            "How are async functions represented (Future/Promise)?",
+            "How do functions work in comptime (functions as first-class values)?",
+            "What is the memory model for closures (GC heap for captures)?"
+        ],
+        "array": [
+            "How do fixed-size (stack) vs dynamic (heap) arrays differ?",
+            "Is bounds checking always on, debug-only, or never?",
+            "What is the slicing syntax (arr[2..5], arr[...10])?",
+            "What is the memory model (GC vs wild arrays)?",
+            "Are multi-dimensional arrays supported (arr[10][20] vs tensor)?",
+            "What SIMD integration exists (vectorized operations)?"
+        ]
+    },
+    "deliverables": [
+        "result type specification (200-250 lines)",
+        "func type specification (250-300 lines)",
+        "array type specification (200-250 lines)",
+        "Monadic operation semantics",
+        "Closure capture strategy",
+        "Bounds checking implementation",
+        "Memory layout diagrams"
+    ],
+    "context_files": [
+        "/docs/info/aria_specs.txt (result type, func syntax, array usage)",
+        "/docs/gemini/responses/research_001_borrow_checker.txt (closure captures)",
+        "/docs/gemini/responses/research_007_threading_library.txt (async functions)"
+    ]
+}

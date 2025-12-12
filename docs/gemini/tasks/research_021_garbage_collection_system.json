@@ -1,0 +1,64 @@
+{
+    "task_id": "research_021_garbage_collection_system",
+    "title": "Garbage Collection System",
+    "priority": "critical",
+    "category": "memory_management",
+    "dependencies": [
+        "research_002_borrow_checker",
+        "research_014_composite_types_part1"
+    ],
+    "estimated_complexity": "very_high",
+    "description": "Complete specification for Aria's generational garbage collector with pinning support and shadow stack implementation. Critical for managed memory model.",
+    "scope": {
+        "gc_algorithm": "Generational garbage collection with nursery/tenured generations",
+        "pinning": "GC pinning mechanism to prevent collection during unsafe operations",
+        "shadow_stack": "Separate stack for GC root tracking",
+        "write_barriers": "Incremental/concurrent GC write barrier implementation"
+    },
+    "key_questions": {
+        "algorithm": [
+            "What generational structure (number of generations, promotion policy)?",
+            "What collection algorithm (mark-sweep, copying, mark-compact)?",
+            "How are collection cycles triggered (heap threshold, allocation count)?",
+            "What concurrent/incremental strategies exist?",
+            "How are finalizers handled?"
+        ],
+        "pinning": [
+            "What pinning API exists (gc.pin(obj), gc.unpin(obj))?",
+            "How does pinning interact with wild memory (@obj conversion)?",
+            "What safety guarantees exist (pinned objects can't move)?",
+            "How does pinning affect collection performance?",
+            "What RAII wrappers exist (auto-unpin on scope exit)?"
+        ],
+        "shadow_stack": [
+            "What is the shadow stack implementation (separate vs inline)?",
+            "How are GC roots registered (function prologue/epilogue)?",
+            "What overhead does shadow stack add?",
+            "How does shadow stack integrate with LLVM codegen?",
+            "What alternatives exist (conservative stack scanning)?"
+        ],
+        "integration": [
+            "How does GC integrate with borrow checker (no GC pointers in borrows)?",
+            "What obj/dyn/array GC semantics exist?",
+            "How does GC interact with wild memory boundaries?",
+            "What debugging/profiling tools exist?",
+            "How are large objects (LOH) handled?"
+        ]
+    },
+    "deliverables": [
+        "GC algorithm specification (500-600 lines)",
+        "Generational design with promotion policy",
+        "Pinning API and semantics",
+        "Shadow stack implementation strategy",
+        "Write barrier design",
+        "Borrow checker integration",
+        "Performance tuning parameters",
+        "GC debugging/profiling tools",
+        "Code examples and benchmarks"
+    ],
+    "context_files": [
+        "/docs/info/aria_specs.txt (GC references)",
+        "/docs/gemini/responses/research_002_borrow_checker.txt (GC interaction)",
+        "/src/runtime/gc.cpp (GC implementation stub)"
+    ]
+}

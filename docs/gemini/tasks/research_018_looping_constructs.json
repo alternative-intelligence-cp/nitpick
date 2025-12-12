@@ -1,0 +1,43 @@
+{
+    "task_id": "research_018_looping_constructs",
+    "title": "Looping Constructs (while, for, loop, till)",
+    "priority": "high",
+    "category": "control_flow",
+    "dependencies": [
+        "research_010_macro_comptime"
+    ],
+    "estimated_complexity": "medium",
+    "description": "Comprehensive specification for all looping constructs in Aria, including standard loops and Aria-specific counted loops with automatic iteration tracking.",
+    "scope": {
+        "while_loop": "while (condition) { body } - Standard conditional loop",
+        "for_loop": "for (init; condition; update) { body } - C-style three-part loop",
+        "loop_construct": "loop(start, stop, step) { body } - Aria counted loop with $ variable",
+        "till_construct": "till(limit, step) { body } - Simplified counted loop with $ variable"
+    },
+    "key_questions": [
+        "What are the exact semantics of the $ iteration variable in loop/till?",
+        "How does step direction detection work (positive vs negative)?",
+        "What scoping rules apply to loop variables?",
+        "How do loops integrate with break/continue/defer?",
+        "What optimization opportunities exist (loop unrolling, invariant code motion)?",
+        "How do loops interact with the borrow checker (iterator lifetime)?",
+        "What is the for-each style iterator protocol (for (item in collection))?",
+        "How do infinite loops work (while(true), loop without stop)?",
+        "What compile-time loop unrolling exists (comptime loops)?"
+    ],
+    "deliverables": [
+        "Comprehensive looping specification (400-450 lines)",
+        "$ variable semantics detailed",
+        "Scoping and lifetime rules",
+        "Iterator protocol design",
+        "Optimization strategy guide",
+        "Borrow checker integration",
+        "Code examples for all loop types",
+        "Comparison with other languages"
+    ],
+    "context_files": [
+        "/docs/info/aria_specs.txt (lines 200-300: loop examples)",
+        "/src/frontend/parser.cpp (loop parsing)",
+        "/src/backend/codegen.cpp (loop codegen)"
+    ]
+}
