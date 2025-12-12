@@ -29,6 +29,12 @@ public:
     bool is_wild = false;
     bool is_wildx = false;  // Executable memory for JIT compilation
     bool is_const = false;  // Bug #72: compile-time constant
+    
+    // Borrow checker annotations (Phase 2.2)
+    int scope_depth = -1;              // Scope depth where variable is declared (-1 = unset)
+    bool requires_drop = false;        // true if wild/stack needs explicit cleanup
+    bool is_pinned_shadow = false;     // true if this variable pins another
+    std::string pinned_target;         // Name of variable this one pins (for # operator)
 
     VarDecl(const std::string& t, const std::string& n, std::unique_ptr<Expression> init = nullptr)
         : name(n), type(t), initializer(std::move(init)) {}

@@ -3906,6 +3906,19 @@ public:
                     // 3. Extract/cast to specific type
                     return operand;
                 }
+                case aria::frontend::UnaryOp::BORROW:
+                case aria::frontend::UnaryOp::BORROW_MUT: {
+                    // $ and $mut operators: create safe references (Appendage Theory)
+                    // For now, simplified: return operand (borrow checking done at semantic level)
+                    // Full implementation will integrate with borrow checker annotations
+                    return operand;
+                }
+                case aria::frontend::UnaryOp::DEREF: {
+                    // * operator: dereference pointer
+                    // For now, simplified: assume operand is pointer-sized int, return as-is
+                    // Full implementation will handle fat pointers in debug builds
+                    return operand;
+                }
             }
         }
         if (auto* binop = dynamic_cast<aria::frontend::BinaryOp*>(node)) {

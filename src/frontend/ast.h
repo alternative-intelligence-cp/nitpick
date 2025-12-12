@@ -139,6 +139,10 @@ public:
 class Block : public AstNode {
 public:
     std::vector<std::unique_ptr<AstNode>> statements;
+    
+    // Borrow checker annotations (Phase 2.2)
+    int scope_id = -1;        // Unique identifier for this scope (-1 = unset)
+    int scope_depth = -1;     // Nesting level in scope hierarchy (-1 = unset)
 
     void accept(AstVisitor& visitor) override {
         visitor.visit(this);

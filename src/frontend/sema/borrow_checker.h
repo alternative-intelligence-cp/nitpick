@@ -280,6 +280,19 @@ private:
     int temp_var_counter_;
 };
 
+// ============================================================================
+// Convenience Functions (sema namespace)
+// ============================================================================
+
+namespace sema {
+    /**
+     * Check borrow rules for an AST (wrapper around BorrowChecker)
+     * @param root Root AST node
+     * @return true if no borrow errors, false if violations found
+     */
+    bool check_borrow_rules(frontend::AstNode* root);
+}
+
 } // namespace aria
 
 #endif // ARIA_FRONTEND_SEMA_BORROW_CHECKER_H

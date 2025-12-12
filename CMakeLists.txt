@@ -75,6 +75,7 @@ add_executable(ariac
  # src/frontend/parser_stmt.cpp    # EXCLUDED: Duplicates with parser.cpp
  # src/frontend/parser_struct.cpp  # EXCLUDED: Duplicates with parser.cpp
  src/frontend/parser_trait.cpp     # Trait declarations (WP 005.4)
+ src/frontend/sema/lifetime_context.cpp # Lifetime Tracking for Borrow Checker (Phase 2.1)
  src/frontend/sema/borrow_checker.cpp  # Borrow Checker Implementation
  src/frontend/sema/escape_analysis.cpp # Escape Analysis Implementation
  src/frontend/sema/type_checker.cpp    # Type Checking Implementation

@@ -237,11 +237,19 @@ public:
         POST_INC,       // x++
         POST_DEC,       // x--
         ADDRESS_OF,     // @ (address/pointer operator)
-        PIN             // # (memory pinning operator)
+        PIN,            // # (memory pinning operator)
+        BORROW,         // $ (safe reference - immutable borrow)
+        BORROW_MUT,     // $mut (safe reference - mutable borrow)
+        DEREF           // * (dereference pointer)
     };
 
     OpType op;
     std::unique_ptr<Expression> operand;
+    
+    // Borrow checker annotations (Phase 2.2)
+    bool creates_loan = false;         // true for $, $mut, #, @
+    std::string loan_target;           // Name of variable being borrowed/pinned
+    int loan_depth = -1;               // Scope depth where borrow was created
 
     UnaryOp(OpType o, std::unique_ptr<Expression> opnd)
         : op(o), operand(std::move(opnd)) {}
