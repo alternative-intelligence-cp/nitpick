@@ -1,0 +1,14 @@
+// Test nested till loops to verify $ shadowing works correctly
+func:sum = int32(int32:a, int32:b) { 
+    pass(a + b);
+};
+
+func:main = int32() {
+    // Simple nested loop - $ should be shadowed in inner loop
+    till(3, 1) {
+        till(2, 1) {
+            sum($, $);  // Inner $ used twice
+        }
+    }
+    pass(0);
+};
