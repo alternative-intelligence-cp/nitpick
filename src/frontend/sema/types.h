@@ -22,12 +22,18 @@ namespace sema {
 enum class TypeKind {
     VOID,
     BOOL,
-    INT8, INT16, INT32, INT64, INT128, INT256, INT512,
-    UINT8, UINT16, UINT32, UINT64,
+    // Standard integer types (signed) - two's complement, modular arithmetic
+    INT1, INT2, INT4, INT8, INT16, INT32, INT64, INT128, INT256, INT512,
+    // Standard integer types (unsigned) - pure binary, modular arithmetic
+    UINT8, UINT16, UINT32, UINT64, UINT128, UINT256, UINT512,
+    // Floating-point types
     FLT32, FLT64,
-    TBB8, TBB16, TBB32, TBB64,  // Twisted Balanced Binary types with sticky error propagation
-    TRIT, TRYTE,  // Ternary types
-    NIT, NYTE,     // Nonary types
+    // Twisted Balanced Binary types with sticky error propagation
+    TBB8, TBB16, TBB32, TBB64,
+    // Balanced ternary types
+    TRIT, TRYTE,
+    // Balanced nonary types
+    NIT, NYTE,
     STRING,
     DYN,           // Dynamic type (GC-allocated catch-all)
     POINTER,       // Wild or pinned pointer
@@ -105,6 +111,10 @@ public:
         switch (kind) {
             case TypeKind::VOID: return "void";
             case TypeKind::BOOL: return "bool";
+            // Signed integers
+            case TypeKind::INT1: return "int1";
+            case TypeKind::INT2: return "int2";
+            case TypeKind::INT4: return "int4";
             case TypeKind::INT8: return "int8";
             case TypeKind::INT16: return "int16";
             case TypeKind::INT32: return "int32";
@@ -112,16 +122,30 @@ public:
             case TypeKind::INT128: return "int128";
             case TypeKind::INT256: return "int256";
             case TypeKind::INT512: return "int512";
+            // Unsigned integers
+            case TypeKind::UINT8: return "uint8";
+            case TypeKind::UINT16: return "uint16";
+            case TypeKind::UINT32: return "uint32";
+            case TypeKind::UINT64: return "uint64";
+            case TypeKind::UINT128: return "uint128";
+            case TypeKind::UINT256: return "uint256";
+            case TypeKind::UINT512: return "uint512";
+            // Floating-point
             case TypeKind::FLT32: return "flt32";
             case TypeKind::FLT64: return "flt64";
+            // TBB types
             case TypeKind::TBB8: return "tbb8";
             case TypeKind::TBB16: return "tbb16";
             case TypeKind::TBB32: return "tbb32";
             case TypeKind::TBB64: return "tbb64";
+            // Other types
             case TypeKind::STRING: return "string";
             case TypeKind::DYN: return "dyn";
             case TypeKind::TRIT: return "trit";
             case TypeKind::TRYTE: return "tryte";
+            case TypeKind::NIT: return "nit";
+            case TypeKind::NYTE: return "nyte";
+            // Vector types
             case TypeKind::VEC2: return "vec2";
             case TypeKind::VEC3: return "vec3";
             case TypeKind::VEC4: return "vec4";
