@@ -1,0 +1,305 @@
+﻿Technical Specification: Aria Conditional Constructs, Pattern Matching, and TBB-Integrated Control Flow Architecture
+1. Architectural Executive Summary
+The Aria programming language represents a distinct evolution in systems programming language design, characterized by a rigorous adherence to memory safety, explicit state transition, and a novel arithmetic type system known as Twisted Balanced Binary (TBB). This specification document provides a comprehensive technical analysis of Aria's control flow architecture, detailing the syntactic structures, semantic behaviors, abstract syntax tree (AST) representations, and compilation strategies for its conditional constructs.
+Aria's control flow is not merely a mechanism for branching execution; it is deeply intertwined with the language's safety guarantees. The integration of TBB types necessitates a control flow model that is fundamentally aware of "sticky error" propagation, ensuring that arithmetic faults do not silently corrupt logic paths. Furthermore, the language introduces specialized constructs such as the when/then/end loop and the pick pattern matching statement, which elevate state management and data destructuring to first-class syntactic concerns.
+This report is structured to guide compiler engineers, language implementers, and systems architects through the implementation details of Aria's frontend (Parsing and AST), middle-end (Type Checking and Semantics), and backend (LLVM Lowering and TBB Integration).
+2. Twisted Balanced Binary (TBB) and Control Flow Integration
+2.1 Theoretical Foundations of TBB
+The core differentiator of Aria's control flow logic is its dependency on Twisted Balanced Binary (TBB) types. Unlike standard two's complement integers found in C or Rust, which exhibit asymmetry in their signed ranges (e.g., an 8-bit integer ranges from -128 to +127), TBB types enforce perfect symmetry around zero.
+* Symmetry Principle: For every positive integer $N$ representable in a TBB type, its negation $-N$ is also representable.
+* The Sentinel: The bit pattern corresponding to the minimum signed value in a standard representation (e.g., -128 for tbb8, -32768 for tbb16) is reserved exclusively as the ERR sentinel.
+This design eliminates asymmetry bugs (such as abs(INT_MIN) causing overflow) but introduces a critical requirement for control flow: Sentinel Awareness. A conditional statement cannot simply evaluate a register's value; it must first validate that the register does not contain the ERR sentinel.
+2.2 Sticky Error Semantics in Branching Logic
+Aria employs "sticky error" semantics, meaning that any operation involving an ERR value produces an ERR result. This propagation rule must extend to boolean logic and conditional evaluation to prevent "Phantom Branching"—the execution of code paths based on corrupted data.
+The Boolean Lowering Contract:
+When the compiler encounters a TBB value in a boolean context (e.g., if (val)), it does not generate a simple "branch if non-zero" instruction. Instead, the backend must generate a composite check:
+1. Validity Check: Verify val!= TBB_SENTINEL.
+2. Truthiness Check: Verify val!= 0 (or val == TRUE depending on the context).
+3. Composite Logic: The effective condition is (!is_err(val) && is_true(val)).
+If a TBB value is ERR, it evaluates to false in a standard conditional context, failing safe. This prevents an arithmetic overflow from accidentally satisfying a true condition.
+2.3 TBB Arithmetic and Conditional Thresholds
+Control flow often relies on arithmetic thresholds (e.g., if (x + y > threshold)). In Aria, the TBBLowerer backend component ensures that the addition x + y respects sticky error mechanics before the comparison occurs.
+Operation Phase
+	Standard Integer Behavior
+	Aria TBB Behavior
+	Control Flow Implication
+	Input
+	x = 100, y = 50 (int8)
+	x = 100, y = 50 (tbb8)
+	Inputs verified against Sentinel.
+	Arithmetic
+	100 + 50 = -106 (Overflow/Wrap)
+	100 + 50 = ERR (Sentinel)
+	Wrapping creates valid but wrong numbers; TBB creates explicit errors.
+	Comparison
+	-106 > 20 is False
+	ERR > 20 is Undefined/Error
+	Standard wrap might accidentally pass checks (e.g., < 0).
+	Branching
+	Branch taken based on wrapped value.
+	Comparison yields false; else block taken.
+	TBB prevents logic injection via overflow.
+	The TBBLowerer implements this via LLVM intrinsics (e.g., llvm.sadd.with.overflow). The generated IR for a comparison involves checking the overflow flag and the result bit pattern. If the result collides with the sentinel, the value is forced to ERR, and the subsequent conditional jump treats it as a failure state.
+________________
+3. The if/else and Ternary Constructs
+3.1 The Core if/else Statement
+The IfStmt in Aria is a fundamental control structure defined in the AST (src/frontend/ast/stmt.h). It supports standard branching but is integrated with the type system to handle Aria's specific types like result and tbb.
+AST Structure:
+The IfStmt class is composed of three primary components managed via unique pointers to ensure ownership semantics:
+* condition: An Expression node representing the boolean test.
+* then_block: A Block node containing the statements to execute on success.
+* else_block: An optional Block node for the alternative path.
+Semantic Analysis:
+The TypeChecker (src/frontend/sema/type_checker.cpp) enforces strict boolean typing for the condition. Unlike languages that allow "truthy" evaluation of arbitrary types (pointers, integers, objects), Aria requires an explicit boolean expression.
+* Correction: While explicit booleans are preferred, the TBBLowerer implies mechanisms to handle numeric types by checking against zero and the sentinel. The type checker enforces that current_expr_type->kind == TypeKind::BOOL. This suggests that developers must write if (val!= 0) rather than if (val) for integers, promoting clarity.
+3.2 The is Ternary Operator
+Aria introduces the is keyword as a dedicated ternary operator, distinct from the C-style ? : syntax. This syntactic choice improves readability and avoids parsing ambiguities with the unwrap operator (?).
+Syntax Definition:
+
+
+Code snippet
+
+
+
+
+variable = is condition : value_if_true : value_if_false;
+
+AST Representation:
+The TernaryExpr node encapsulates the logic:
+* condition: The boolean test.
+* true_expr: The value yielded if the condition meets validity and truth criteria.
+* false_expr: The value yielded otherwise.
+Type Checking Semantics:
+The semantic analyzer verifies that true_expr and false_expr resolve to compatible types. If one branch returns a tbb8 and the other a flt32, the compiler attempts to unify them (likely to flt32 or producing a type error if strictness is enabled).
+Use Case in Error Handling:
+The is operator is frequently coupled with the result type pattern:
+
+
+Code snippet
+
+
+
+
+t = is r.err == NULL : r.val : -1;
+
+This idiom replaces the verbose if/else pattern for simple assignments, allowing succinct default value provision.
+3.3 The Unwrap Operator (?)
+The unwrap operator ? is a specialized control flow mechanism designed for the result type ({val, err}). It functions as a "short-circuiting default" operator.
+Syntax: expression? default_value
+Operational Semantics:
+1. Evaluation: The left-hand expression is evaluated.
+2. Inspection: The runtime checks the err field of the result.
+3. Unwrap:
+   * If err is NULL, the val field is extracted and returned.
+   * If err is present, the default_value is evaluated and returned.
+This operator is critical for ergonomic error handling in Aria, effectively acting as a compact if (err) { return default; } else { return val; } block. It prevents the nesting of conditional logic associated with error checks.
+________________
+4. The when Loop: State-Aware Iteration
+4.1 Conceptual Framework
+The when loop is a distinct contribution of Aria to control flow theory. It addresses a common deficiency in while loops: the inability to distinguish between "the loop never ran" and "the loop ran and finished." In traditional languages, this requires external state variables (flags). Aria internalizes this state.
+4.2 Syntactic Structure
+The construct is composed of three blocks:
+
+
+Code snippet
+
+
+
+
+when(condition) {
+   // Body: Executes repeatedly while condition is true
+} then {
+   // Then: Executes ONLY if the loop completed naturally
+} end {
+   // End: Executes if the loop never ran or broke early
+}
+
+4.3 AST Representation
+The WhenLoop node in the AST (src/frontend/ast/control_flow.h) is a heavyweight statement node:
+* condition: The driving expression.
+* body: The recurring block.
+* then_block: The success completion handler.
+* end_block: The failure/skip handler.
+4.4 State Machine Semantics
+The when loop operates as a finite state machine during execution:
+State
+	Transition Trigger
+	Next State
+	Action
+	Start
+	condition == false
+	End Block
+	Execute end_block, terminate.
+	Start
+	condition == true
+	Body
+	Execute body.
+	Body
+	condition == true
+	Body
+	Repeat body.
+	Body
+	condition == false
+	Then Block
+	Loop finished naturally. Execute then_block, terminate.
+	Body
+	break statement
+	End Block
+	Forced exit. Execute end_block, terminate.
+	Body
+	continue statement
+	Body
+	Re-evaluate condition.
+	4.5 Compilation Strategy
+To implement this semantics, the compiler lowers the WhenLoop into a control flow graph (CFG) involving implicit flags.
+Pseudocode Lowering:
+
+
+C++
+
+
+
+
+bool run_once = false;
+bool broke_early = false;
+
+if (condition) {
+   run_once = true;
+   while (condition) {
+       // Body Code
+       if (break_encountered) {
+           broke_early = true;
+           goto END_BLOCK;
+       }
+   }
+   // Loop terminated naturally
+   goto THEN_BLOCK;
+} else {
+   // Condition failed initially
+   goto END_BLOCK;
+}
+
+THEN_BLOCK:
+   // Execute then_block code
+   goto EXIT;
+
+END_BLOCK:
+   // Execute end_block code
+   goto EXIT;
+
+EXIT:
+   // Continue execution
+
+This structure ensures that the then block is protected and only reachable via the "natural exhaustion" of the loop condition, signifying successful processing of the iterables.
+________________
+5. The pick Construct: Advanced Pattern Matching
+5.1 Overview
+The pick statement serves as Aria's generalized pattern matching facility. It supersedes the traditional C switch statement by supporting range matching, boolean conditions, structural destructuring, and explicit fallthrough semantics. It acts as a compiled decision tree rather than a simple jump table.
+5.2 Syntax and AST
+Syntax:
+
+
+Code snippet
+
+
+
+
+pick(selector) {
+   (< 10) {... },
+   (10..20) {... },
+   ({ status: 200 }) {... },
+   (*) {... }
+}
+
+AST Definition:
+The PickStmt (src/frontend/ast/control_flow.h) aggregates a list of PickCase nodes. Each PickCase contains:
+* type: The matching strategy (EXACT, RANGE, DESTRUCTURE, WILDCARD).
+* value_start / value_end: Boundaries for range matches.
+* pattern: A DestructurePattern node for structural matching.
+* body: The code block to execute upon a match.
+5.3 Matching Logics
+5.3.1 Range Matching
+Aria supports inclusive (..) and exclusive (...) ranges.
+* Compilation: The backend compiles range matches into comparison chains.
+   * (1..10) becomes if (val >= 1 && val <= 10).
+   * (< 5) becomes if (val < 5).
+* Optimization: For dense integer ranges, the backend optimization pass (codegen.cpp) can aggregate these into a jump table (using LLVM's SwitchInst), provided the TBB sentinel checks are handled first.
+5.3.2 Destructuring Patterns
+The DestructurePattern allows pick to look inside complex types.
+* Object Destructuring: ({ x: var_x, y: 0 })
+   * This pattern checks if the selector is an object with fields x and y.
+   * It verifies y == 0.
+   * It binds the value of field x to a new local variable var_x.
+* Array Destructuring: ([h,...t])
+   * Matches an array.
+   * Binds the head to h and the rest to t (if rest patterns are supported).
+* Recursive Parsing: The parser (src/frontend/parser.cpp) recursively constructs the DestructurePattern tree, allowing nested patterns like ({ data: [first, second] }).
+5.3.3 The Wildcard (*)
+The (*) case acts as the default block. It is semantically required for exhaustiveness if the selector type (like tbb8) has values not covered by other cases (e.g., the ERR sentinel or integers outside the specified ranges).
+5.4 Explicit Fallthrough: The fall Keyword
+Aria removes implicit fallthrough to prevent bugs. Control flow only passes to another case if explicitly directed via fall().
+Syntax: fall(label)
+AST and Semantics:
+* The FallStmt node contains the target_label.
+* Labeling: Cases in a pick statement can be labeled (e.g., success: (200)).
+* Behavior: When fall(success) is encountered, control jumps directly to the body of the success case, bypassing its matching condition.
+* State Machines: This feature enables pick to function as a compact Finite State Machine (FSM), where cases represent states and fall statements represent transitions.
+________________
+6. Iterative Control Constructs
+6.1 The till Loop
+The till loop is a specialized counting loop designed for safety and ease of use with TBB types.
+Syntax: till(limit, step) {... }
+AST Representation:
+The TillLoop node holds:
+* limit: The target value.
+* step: The increment/decrement value.
+* body: The execution block.
+The Safe Iterator ($):
+The till loop implicitly defines a safe iteration variable, denoted by the token $.
+* Scope: $ is visible only within the body.
+* Safety: The user cannot modify $; it is managed by the loop logic.
+* Direction: The compiler infers direction. If step is positive, it counts up from 0 to limit. If negative, it counts down.
+6.2 The for Loop
+Aria's for loop implements the iterator pattern.
+* Syntax: for(var in iterable).
+* AST: ForLoop includes the iterator name and the iterable expression.
+* Polymorphism: The TypeChecker validates that the iterable implements the necessary protocol (e.g., has a next() method or is an array/range).
+6.3 The while Loop
+The while construct provides standard indefinite iteration.
+* Syntax: while(condition).
+* TBB Safety: As with if, the condition is subject to strict TBB validity checks.
+________________
+7. Metaprogramming and Control Flow Extension
+7.1 The Two-Phase Control Architecture
+Aria utilizes a powerful macro system (Phase 1) that runs before Semantic Analysis (Phase 2). This allows for the definition of custom control flow constructs or Domain Specific Languages (DSLs).
+Macro Capabilities:
+* Context Stack: Macros can push/pop contexts (%push, %pop), allowing for state-aware expansion (e.g., ensuring an ELSE macro is only used inside an IF context).
+* Hygiene: Macros use scoped labels (%$label) to prevent variable capture, ensuring that generated control flow code does not interfere with user variables.
+Standard Library Extensions:
+While if, when, and pick are core language constructs (AST nodes), the macro system allows the standard library to define higher-level abstractions, such as retry blocks or transaction wrappers, which expand into combinations of core when loops and pick statements.
+________________
+8. Compiler Pipeline and Implementation Details
+8.1 Frontend: Parsing Strategy
+The Aria parser (src/frontend/parser.cpp) employs a recursive descent algorithm.
+* Dispatching: The parseStmt() method inspects the current token.
+   * TOKEN_KW_IF -> calls parseIfStmt.
+   * TOKEN_KW_PICK -> calls parsePickStmt.
+   * TOKEN_KW_WHEN -> calls parseWhenLoop.
+* Parsing pick: The parsePickStmt method is complex. It must handle the parenthesized selector, the opening brace, and then iterate through case definitions. It employs lookahead to distinguish between range matches (starting with (, <, >) and destructuring patterns (starting with ({ or ([).
+* Parsing fall: The parser recognizes fall as a statement keyword, parsing the target label and creating a FallStmt node.
+8.2 Middle-end: Semantic Analysis
+The TypeChecker (src/frontend/sema/type_checker.cpp) validates the logical integrity of the control flow.
+* Condition Checking: For IfStmt, WhileLoop, and WhenLoop, the visitor ensures the condition expression resolves to TypeKind::BOOL.
+* Pattern Exhaustiveness: For PickStmt, the analyzer checks if the cases cover the domain of the selector. For TBB types, it warns if the ERR sentinel is not implicitly or explicitly handled.
+* Destructuring Validation: The analyzer verifies that the DestructurePattern matches the type definition of the selector. For example, trying to destructure field z from a vec2 (which only has x, y) triggers a compile-time error.
+8.3 Backend: Code Generation
+The CodeGenVisitor (src/backend/codegen.cpp) translates the verified AST into LLVM IR.
+* Branch Optimization: PickStmt nodes are analyzed.
+   * Dense Ranges: If cases cover a contiguous range of integers (e.g., 0..10), the backend generates an llvm::SwitchInst, which LLVM lowers to a jump table.
+   * Sparse/Complex: For non-contiguous values or destructuring, the backend generates a "branch chain" (a series of if/else if blocks).
+* Loop Lowering:
+   * WhenLoop is lowered to the control flow graph described in Section 4.5, using phi nodes or stack allocations to track the run_once state.
+   * TillLoop is lowered to a canonical loop structure, with the $ variable mapped to an LLVM register (SSA value) that increments per iteration.
+________________
+9. Conclusion
+Aria's control flow architecture provides a sophisticated set of tools designed for modern systems programming. By integrating TBB error semantics directly into the branching logic, Aria prevents the subtle arithmetic bugs that plague other low-level languages. The pick statement offers a type-safe, expressive alternative to switch, unifying control flow with data structure introspection. The when loop codifies a common iteration pattern into the language, reducing boilerplate and error-prone state management. Finally, the macro system ensures that this rigorous core can be extended, balancing strict safety guarantees with developer ergonomics. This specification provides the necessary blueprint for verifying and maintaining the Aria compiler's control flow subsystem.
