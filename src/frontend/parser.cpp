@@ -660,11 +660,27 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
             continue;
         }
         
-        // Handle unwrap operator (?): result ? default_value
-        // Example: test2(3,5) ? -1  // If test2 returns error, use -1 as default
+        // Handle unwrap operator (?): 
+        //   1. expr? default  (default coalescing)
+        //   2. expr?          (early return)
+        // Examples:
+        //   val = test(3,5)? -1;  // Use -1 if error
+        //   val = test(3,5)?;     // Return from function if error
         if (current.type == TOKEN_UNWRAP || current.type == TOKEN_QUESTION) {
             advance();  // consume ?
-            auto default_value = parseUnary();  // Parse the default value
+            
+            // Check if there's a default value (not followed by semicolon, comma, etc.)
+            std::unique_ptr<Expression> default_value = nullptr;
+            if (current.type != TOKEN_SEMICOLON && 
+                current.type != TOKEN_COMMA &&
+                current.type != TOKEN_RPAREN &&
+                current.type != TOKEN_RBRACE &&
+                current.type != TOKEN_RIGHT_BRACKET) {
+                // Has default value
+                default_value = parseUnary();
+            }
+            // else: early return variant (no default)
+            
             expr = std::make_unique<UnwrapExpr>(std::move(expr), std::move(default_value));
             continue;
         }
@@ -891,49 +907,91 @@ std::unique_ptr<Expression> Parser::parseTernary() {
 
 // TODO: Parse null coalescing expressions: ??
 // Waiting for BinaryOp::NULL_COALESCE enum and proper integration
-/*
+// Parse null coalescing operator (??)
+// expr1 ?? expr2  returns expr1 if non-null, otherwise expr2
+// TODO: Implement null coalescing - need to add NULL_COALESCE to BinaryOp enum first
 std::unique_ptr<Expression> Parser::parseNullCoalesce() {
+    // For now, just pass through to ternary until NULL_COALESCE BinaryOp is added
+    return parseTernary();
+    
+    /* Future implementation when NULL_COALESCE is added:
     auto left = parseTernary();
-
     while (match(TOKEN_NULL_COALESCE)) {
         auto right = parseTernary();
         left = std::make_unique<BinaryOp>(BinaryOp::NULL_COALESCE, std::move(left), std::move(right));
     }
-
     return left;
+    */
 }
-*/
 
-// TODO: Parse pipeline expressions: |> (forward) and <| (backward)
-// Waiting for BinaryOp::PIPE_FORWARD/PIPE_BACKWARD enums
-/*
+// Parse pipeline expressions: |> (forward) and <| (backward)
+// Transforms pipeline operators into function calls:
+//   x |> f  becomes  f(x)
+//   f <| x  becomes  f(x)
 std::unique_ptr<Expression> Parser::parsePipeline() {
     auto left = parseNullCoalesce();
-
     while (true) {
         if (match(TOKEN_PIPE_FORWARD)) {
             // x |> f means f(x)
-            auto right = parseTernary();
-            left = std::make_unique<BinaryOp>(BinaryOp::PIPE_FORWARD, std::move(left), std::move(right));
-        }
-        else if (match(TOKEN_PIPE_BACKWARD)) {
+            // Parse the function expression (right side)
+            auto func_expr = parseNullCoalesce();
+            
+            // Transform: x |> f(args) becomes f(x, args)
+            // If func_expr is already a CallExpr, prepend left as first argument
+            // Otherwise, create new CallExpr with left as only argument
+            
+            if (auto* call = dynamic_cast<CallExpr*>(func_expr.get())) {
+                // f(a, b) so x |> f(a, b) becomes f(x, a, b)
+                call->arguments.insert(call->arguments.begin(), std::move(left));
+                left = std::move(func_expr);
+            } else if (auto* var = dynamic_cast<VarExpr*>(func_expr.get())) {
+                // Simple function name: x |> f becomes f(x)
+                auto call = std::make_unique<CallExpr>(var->name);
+                call->arguments.push_back(std::move(left));
+                left = std::move(call);
+            } else {
+                // Complex expression - wrap in call
+                auto call = std::make_unique<CallExpr>(std::move(func_expr));
+                call->arguments.push_back(std::move(left));
+                left = std::move(call);
+            }
+        } else if (match(TOKEN_PIPE_BACKWARD)) {
             // f <| x means f(x)
-            auto right = parseTernary();
-            left = std::make_unique<BinaryOp>(BinaryOp::PIPE_BACKWARD, std::move(left), std::move(right));
-        }
-        else {
+            // NOTE: Backward pipeline is RIGHT-ASSOCIATIVE
+            // So f <| g <| x parses as f <| (g <| x) = f(g(x))
+            // We parse the right side at the same precedence to capture chaining
+            auto arg_expr = parsePipeline();
+            
+            // Transform: f <| x becomes f(x)
+            // Left should be the function, right is the argument
+            
+            if (auto* var = dynamic_cast<VarExpr*>(left.get())) {
+                // Simple function name: f <| x becomes f(x)
+                auto call = std::make_unique<CallExpr>(var->name);
+                call->arguments.push_back(std::move(arg_expr));
+                return call;  // Return immediately to maintain right-associativity
+            } else if (auto* callExpr = dynamic_cast<CallExpr*>(left.get())) {
+                // f(a) <| x becomes f(a, x) - append argument
+                callExpr->arguments.push_back(std::move(arg_expr));
+                return std::move(left);  // Return immediately
+            } else {
+                // Complex expression on left - wrap in call
+                auto newCall = std::make_unique<CallExpr>(std::move(left));
+                newCall->arguments.push_back(std::move(arg_expr));
+                return newCall;  // Return immediately
+            }
+        } else {
             break;
         }
     }
 
     return left;
 }
-*/
 
 // Parse assignment expressions (lowest precedence, right-associative)
 // Handles: identifier = expr, identifier += expr, etc.
 std::unique_ptr<Expression> Parser::parseAssignment() {
-    auto left = parseTernary();  // TODO: Will be parsePipeline() when pipeline operators are implemented
+    auto left = parsePipeline();  // Parse pipelines, which calls down through parseNullCoalesce() to parseTernary()
     
     // Check for assignment operators
     if (match(TOKEN_ASSIGN)) {
@@ -1063,6 +1121,7 @@ std::unique_ptr<Block> Parser::parseProgram() {
         }
         
         // Type token - variable declaration (including func-type for lambdas)
+        // Note: isTypeToken now excludes TOKEN_IDENTIFIER to avoid conflicts with expressions
         if (isTypeToken(current.type)) {
             block->statements.push_back(parseVarDecl());
             continue;
@@ -1076,7 +1135,7 @@ std::unique_ptr<Block> Parser::parseProgram() {
                 block->statements.push_back(std::move(stmt));
                 continue;
             }
-        } catch (...) {
+        } catch (const std::exception& e) {
             // If parseStmt fails, fall through to error
         }
         
@@ -1203,42 +1262,34 @@ std::unique_ptr<Statement> Parser::parseStmt() {
     
     // Check for type:name variable declaration
     // This includes both user-defined types (identifier) and built-in types (uint8, int64, etc.)
-    if (current.type == TOKEN_IDENTIFIER || 
-        (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING)) {
-        // Lookahead to distinguish variable declaration from expression statement
+    // Handle type keywords (not identifiers) with potential type:name declaration pattern
+    if (current.type >= TOKEN_TYPE_VOID && current.type <= TOKEN_TYPE_STRING) {
+        // This is a built-in type keyword - do lookahead for type:name pattern
         Token saved = current;
         advance();
         
-        // Parse type suffixes (arrays [], pointers @) before checking for colon
-        // We need to check if current is @ or [ BEFORE checking for :
+        // Check for type suffixes or colon
         bool has_type_suffix = (current.type == TOKEN_LBRACKET || current.type == TOKEN_AT);
-        bool is_var_decl = has_type_suffix;
-        
-        // Also check for direct colon (no suffix case)
-        if (!has_type_suffix && current.type == TOKEN_COLON) {
-            is_var_decl = true;
-        }
+        bool is_var_decl = has_type_suffix || (current.type == TOKEN_COLON);
         
         if (is_var_decl) {
-            // This is a variable declaration with type:name pattern
-            // Build the full type with suffixes
-            std::string type_name = saved.value;
+            // Variable declaration: type:name or type@:name or type[]:name
+            current = saved;  // Restore for parseVarDecl to handle properly
+            
+            std::string type_name = current.value;
+            advance();
             type_name = parseTypeSuffixes(type_name);
             
             expect(TOKEN_COLON);
-            
             Token name_tok = expect(TOKEN_IDENTIFIER);
             
             // Check for array size syntax: name[size]
             if (current.type == TOKEN_LBRACKET) {
-                advance();  // consume [
-                // Parse array size
+                advance();
                 auto size_expr = parseExpr();
                 expect(TOKEN_RBRACKET);
                 
-                // Extract size if it's an integer literal
                 if (auto* lit = dynamic_cast<IntLiteral*>(size_expr.get())) {
-                    // Append array size to type: "uint8" -> "uint8[10]"
                     type_name += "[" + std::to_string(lit->value) + "]";
                 } else {
                     throw std::runtime_error("Array size must be a constant integer");
@@ -1251,127 +1302,23 @@ std::unique_ptr<Statement> Parser::parseStmt() {
             }
             
             expect(TOKEN_SEMICOLON);
-            
             return std::make_unique<VarDecl>(type_name, name_tok.value, std::move(init));
         } else {
-            // Not a type:name pattern - this is an expression statement
-            // We've consumed the identifier (saved) and are now at the next token
-            // We need to parse this as a complete expression, which may include:
-            // - Assignment: x = value
-            // - Compound assignment: x += value  
-            // - Function call: func()
-            // - Member access: obj.field
-            // - Array indexing: arr[i]
-            // etc.
-            
-            // Problem: We've already consumed the identifier, but parseExpr() 
-            // expects to start from the current token. We need to reconstruct
-            // the expression starting from the identifier we already consumed.
-            
-            // Solution: Create the base expression (VarExpr) and then manually
-            // continue parsing postfix operations and assignments
-            
-            std::unique_ptr<Expression> expr = std::make_unique<VarExpr>(saved.value);
-            
-            // Handle postfix operations (function calls, member access, array indexing)
-            while (true) {
-                if (current.type == TOKEN_LT || current.type == TOKEN_LPAREN) {
-                    // Function call with optional generic type arguments
-                    
-                    std::vector<std::string> typeArgs;
-                    
-                    // Parse generic type arguments if present
-                    if (current.type == TOKEN_LT) {
-                        advance(); // consume <
-                        
-                        while (current.type != TOKEN_GT && current.type != TOKEN_EOF) {
-                            std::string typeArg = parseTypeName();
-                            typeArgs.push_back(typeArg);
-                            
-                            if (!match(TOKEN_COMMA)) {
-                                break;
-                            }
-                        }
-                        
-                        expect(TOKEN_GT);
-                        expect(TOKEN_LPAREN);  // Now expect (
-                    } else {
-                        advance(); // consume (
-                    }
-                    
-                    // If expr is just a VarExpr, use function name directly
-                    // Otherwise use expr as the callee (for member access, etc.)
-                    std::unique_ptr<CallExpr> call;
-                    if (auto* varExpr = dynamic_cast<VarExpr*>(expr.get())) {
-                        call = std::make_unique<CallExpr>(varExpr->name);
-                    } else {
-                        call = std::make_unique<CallExpr>(std::move(expr));
-                    }
-                    
-                    if (!typeArgs.empty()) {
-                        call->type_arguments = typeArgs;
-                    }
-                    
-                    while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
-                        call->arguments.push_back(parseExpr());
-                        if (!match(TOKEN_COMMA)) break;
-                    }
-                    expect(TOKEN_RPAREN);
-                    expr = std::move(call);
-                } else if (current.type == TOKEN_DOT || current.type == TOKEN_SAFE_NAV) {
-                    // Member access
-                    bool is_safe = (current.type == TOKEN_SAFE_NAV);
-                    advance();
-                    Token member_tok = expect(TOKEN_IDENTIFIER);
-                    auto member_access = std::make_unique<MemberAccess>(std::move(expr), member_tok.value, is_safe);
-                    expr = std::move(member_access);
-                } else if (current.type == TOKEN_LBRACKET) {
-                    // Array indexing
-                    advance();
-                    auto index = parseExpr();
-                    expect(TOKEN_RBRACKET);
-                    expr = std::make_unique<IndexExpr>(std::move(expr), std::move(index));
-                } else {
-                    // No more postfix operators
-                    break;
-                }
-            }
-            
-            // Handle assignment operators
-            if (current.type == TOKEN_ASSIGN || 
-                current.type == TOKEN_PLUS_ASSIGN ||
-                current.type == TOKEN_MINUS_ASSIGN ||
-                current.type == TOKEN_STAR_ASSIGN ||
-                current.type == TOKEN_SLASH_ASSIGN ||
-                current.type == TOKEN_MOD_ASSIGN ||
-                current.type == TOKEN_AND_ASSIGN ||
-                current.type == TOKEN_OR_ASSIGN ||
-                current.type == TOKEN_XOR_ASSIGN) {
-                
-                // Convert token type to BinaryOp::OpType
-                BinaryOp::OpType op;
-                switch (current.type) {
-                    case TOKEN_ASSIGN: op = BinaryOp::ASSIGN; break;
-                    case TOKEN_PLUS_ASSIGN: op = BinaryOp::PLUS_ASSIGN; break;
-                    case TOKEN_MINUS_ASSIGN: op = BinaryOp::MINUS_ASSIGN; break;
-                    case TOKEN_STAR_ASSIGN: op = BinaryOp::STAR_ASSIGN; break;
-                    case TOKEN_SLASH_ASSIGN: op = BinaryOp::SLASH_ASSIGN; break;
-                    case TOKEN_MOD_ASSIGN: op = BinaryOp::MOD_ASSIGN; break;
-                    case TOKEN_AND_ASSIGN: op = BinaryOp::AND_ASSIGN; break;
-                    case TOKEN_OR_ASSIGN: op = BinaryOp::OR_ASSIGN; break;
-                    case TOKEN_XOR_ASSIGN: op = BinaryOp::XOR_ASSIGN; break;
-                    default: 
-                        throw std::runtime_error("Unexpected assignment operator");
-                }
-                
-                advance();
-                auto rhs = parseExpr();
-                expr = std::make_unique<BinaryOp>(op, std::move(expr), std::move(rhs));
-            }
-            
-            expect(TOKEN_SEMICOLON);
-            return std::make_unique<ExpressionStmt>(std::move(expr));
+            // Not a declaration - restore and parse as expression
+            // BUG: This causes lexer desync! We've consumed a token but can't push it back
+            // WORKAROUND: Create a token buffer to handle this case
+            // For now, just accept that type keywords at statement level are declarations
+            throw std::runtime_error("Type keyword at statement level must be followed by : for declaration");
         }
+    }
+    
+    // Handle identifiers - assume they're expressions, NOT type declarations
+    // User-defined types as declarations must use explicit type:name syntax at top level (parseProgram)
+    // At statement level inside functions, identifiers are always expressions
+    if (current.type == TOKEN_IDENTIFIER) {
+        auto expr = parseExpr();
+        expect(TOKEN_SEMICOLON);
+        return std::make_unique<ExpressionStmt>(std::move(expr));
     }
     
     // Check for * prefix - now means "generic type follows" not autowrap
@@ -2333,8 +2280,9 @@ bool Parser::isTypeToken(TokenType type) {
     // Check if token is a primitive or compound type
     // Types are in the range TOKEN_TYPE_VOID to TOKEN_TYPE_STRING
     // Also include TOKEN_KW_FUNC and TOKEN_TYPE_FUNC for function types (func:name = ...)
+    // NOTE: TOKEN_IDENTIFIER is explicitly EXCLUDED to avoid treating all identifiers as types
+    // in statement context. parseStmt() handles identifier:type patterns separately.
     return (type >= TOKEN_TYPE_VOID && type <= TOKEN_TYPE_STRING) || 
-           type == TOKEN_IDENTIFIER ||   // user-defined types
            type == TOKEN_KW_FUNC ||      // function type keyword
            type == TOKEN_TYPE_FUNC;      // function type token (lexer maps "func" to this)
 }
