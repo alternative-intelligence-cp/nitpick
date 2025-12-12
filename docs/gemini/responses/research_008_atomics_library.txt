@@ -1,0 +1,417 @@
+﻿Architectural Specification and Implementation Strategy for the Aria Atomics Library
+1. Executive Summary
+This comprehensive research report serves as the foundational architectural document for the design, implementation, and integration of the Atomics Library within the Aria programming language. As Aria targets high-performance systems programming—occupying a niche similar to Rust and C++ regarding control over memory layout and execution—the absence of a rigorously defined memory model and a suite of atomic primitives represents a significant capability gap.1 The necessity for this library is underscored by the language's explicit support for concurrency features such as spawn, async, and process management 1, all of which require robust synchronization mechanisms to function correctly in a multi-core environment.
+The research presented herein establishes that Aria must adopt a memory model congruent with the C++11/LLVM standard to ensure compatibility with modern hardware architectures and the LLVM backend upon which Aria is built.2 However, a critical divergence is identified regarding Aria’s unique "Twisted Balanced Binary" (TBB) types. While standard integer atomics can map directly to hardware instructions via LLVM intrinsics, TBB types impose a "sticky error" propagation semantic that hardware does not natively support.1 Consequently, this report prescribes a divergent implementation strategy: standard types will utilize efficient hardware fetch-and-add instructions, while TBB types must rely on compiler-synthesized Compare-and-Swap (CAS) loops to enforce error sentinels during concurrent modification.
+Furthermore, the proposed API design favors the explicitness of Rust’s std::sync::atomic model over the operator overloading often found in C++. This decision is driven by the philosophy that atomic operations incur significant synchronization overhead—flushing store buffers, locking cache lines, or stalling pipelines—and therefore should be syntactically distinct from regular variable assignments.4 The report details a comprehensive API surface, memory ordering specifications tailored for x86-64 and ARMv8, and a catalog of lock-free patterns adapted for Aria’s memory safety features.
+2. Theoretical Framework: The Memory Model
+To design a robust atomics library, one must first define the rules of engagement for concurrent memory access. In the absence of a defined memory model, the behavior of multi-threaded programs is undefined, as both compilers and processors are free to reorder memory operations for performance.
+2.1 The Necessity of Formal Constraints
+In single-threaded execution, the "as-if" rule allows compilers to perform aggressive optimizations—reordering instructions, eliminating dead stores, and keeping variables in registers—provided the observable behavior matches the program order. However, in a multi-threaded context, these local optimizations can break the causal links expected by the programmer. For instance, if a flag is set to indicate data readiness, the write to the data must occur before the write to the flag. Without a formal model, a compiler might reorder these writes, or a CPU might execute them out of order, leading to a race condition where a consumer thread sees the flag set but reads stale or corrupt data.
+Aria, by virtue of compiling to LLVM IR, inherently inherits the semantics of the LLVM memory model, which is heavily inspired by the C++11 standard.3 Adopting this model is not merely a convenience but a necessity for correctness; attempting to define a stronger model (like sequential consistency for all operations) would prohibit essential compiler optimizations, while a weaker model would render the language unsuitable for systems programming.
+2.2 Core Concepts: Ordering and Visibility
+The Aria memory model relies on three fundamental concepts to define the behavior of concurrent operations:
+1. Sequenced-Before: This relationship describes the order of evaluation within a single thread. If statement A appears before statement B in the source code, A is sequenced-before B. This is the intuitive flow of control that programmers rely on.
+2. Synchronizes-With: This is the bridge between threads. An atomic operation that performs a release (e.g., writing to a mutex or a flag) synchronizes-with an atomic operation that performs an acquire (e.g., reading that mutex or flag) on the same variable. This relationship establishes a synchronization point in the execution timeline.
+3. Happens-Before: This is the transitive closure of the previous two relationships. If operation A is sequenced-before B, and B synchronizes-with C, then A happens-before C. This guarantee allows the compiler and hardware to ensure that all memory effects of A are visible to the thread executing C.
+Any memory access that is not ordered by a happens-before relationship relative to a conflicting write constitutes a data race. In Aria's wild (unsafe) memory segments, a data race results in undefined behavior (UB).5 In managed gc segments, while memory safety prevents segmentation faults, data races can still lead to logical corruption and invariant violations.
+2.3 Atomicity vs. Ordering
+It is crucial to distinguish between atomicity and ordering.
+* Atomicity guarantees that a modification to a variable occurs indivisibly. A thread reading the variable will see either the old value or the new value, never a "torn" value (partial bits of the old and partial bits of the new). For example, on a 32-bit architecture, a 64-bit write might be split into two instructions; atomicity ensures this does not happen or is mediated by locks.
+* Ordering constrains when the effects of that atomic operation become visible relative to other memory operations. An operation can be atomic (indivisible) but relaxed (unordered), meaning it creates no synchronization edges with other data.
+3. Architectural Considerations and Hardware Reality
+The design of the Aria Atomics Library must abstract over the divergent behaviors of the underlying hardware architectures, specifically x86-64 (Total Store Order) and ARMv8/AArch64 (Weakly Ordered).
+3.1 x86-64: Total Store Order (TSO)
+The x86-64 architecture employs a relatively strong memory model known as Total Store Order. In TSO:
+* Loads are not reordered with other loads.
+* Stores are not reordered with other stores.
+* Stores are effectively First-In-First-Out (FIFO) via a store buffer.
+* The only reordering allowed is a Load passing a Store to a different address.
+This implies that for x86-64, many atomic constraints are "free" in terms of instructions. A standard MOV instruction often suffices for Load-Acquire or Store-Release semantics because the hardware naturally enforces ordering. However, the compiler must still be prevented from reordering instructions across these boundaries. For SeqCst (Sequential Consistency), x86 requires explicit MFENCE instructions or locked instructions (like LOCK XCHG) to flush the store buffer effectively.6
+3.2 ARMv8: Weak Memory Model
+ARM processors generally use a weaker memory model where the CPU has significant latitude to reorder memory operations to optimize pipeline throughput and power consumption.2
+* Loads and stores can be reordered freely unless dependencies exist.
+* Store buffers are not necessarily FIFO.
+* Explicit memory barrier instructions (DMB, DSB, ISB) are required to enforce ordering.
+With ARMv8 (AArch64), specialized instructions LDAR (Load-Acquire Register) and STLR (Store-Release Register) were introduced. These instructions provide one-way barriers: LDAR prevents subsequent accesses from hoisting above the load, and STLR prevents prior accesses from sinking below the store. These are more efficient than full memory barriers but still impose a performance cost compared to relaxed access.7 The Aria backend must leverage these instructions to generate optimal code for ARM targets.
+4. Aria Atomics API Design Specification
+The proposed API design for Aria centers on the std.sync.atomic module. Following the precedent set by Rust and modern C++, Aria will treat atomic variables as distinct types rather than using a volatile qualifier or generic modifier on standard types. This distinction allows the type system to enforce usage patterns and prevents accidental non-atomic access to shared data.
+4.1 Type Hierarchy and Definitions
+The atomics library will introduce a generic Atomic<T> structure as the primitive building block, along with specialized aliases for improved ergonomics and documentation.
+Generic Definition
+The generic Atomic<T> serves as a wrapper that ensures proper alignment and prevents direct access to the inner value.
+
+
+Code snippet
+
+
+
+
+// std/sync/atomic.aria
+
+// Generic atomic wrapper. T must be a type that fits in a machine word
+// (1, 8, 16, 32, or 64 bits) and supports bitwise copying.
+struct Atomic<T> {
+   // Internal opaque storage. The compiler ensures this field
+   // has the natural alignment of T (or greater).
+   wild T: _val; 
+}
+
+Specialized Type Aliases
+To align with Aria's primitive types defined in the specification 1, the library provides the following aliases. These are not merely typedefs; in the compiler backend, they may map to specific intrinsic handling logic (especially for TBB types).
+Aria Type
+	Atomic Alias
+	Underlying Width
+	Notes
+	bool
+	AtomicBool
+	8-bit
+	Used for flags, locks.
+	int8
+	AtomicInt8
+	8-bit
+	Standard signed integer.
+	uint8
+	AtomicUint8
+	8-bit
+	Standard unsigned integer.
+	int16
+	AtomicInt16
+	16-bit
+	
+
+	uint16
+	AtomicUint16
+	16-bit
+	
+
+	int32
+	AtomicInt32
+	32-bit
+	
+
+	uint32
+	AtomicUint32
+	32-bit
+	
+
+	int64
+	AtomicInt64
+	64-bit
+	Standard workhorse for counters.
+	uint64
+	AtomicUint64
+	64-bit
+	
+
+	tbb8
+	AtomicTBB8
+	8-bit
+	Special Handling: Sticky error semantics.
+	tbb16
+	AtomicTBB16
+	16-bit
+	Special Handling: Sticky error semantics.
+	tbb32
+	AtomicTBB32
+	32-bit
+	Special Handling: Sticky error semantics.
+	tbb64
+	AtomicTBB64
+	64-bit
+	Special Handling: Sticky error semantics.
+	void*
+	AtomicPtr
+	64-bit (arch dep)
+	Atomic operations on addresses.
+	Note on Large Integers: Aria specs include int128, int256, and int512.1 Standard hardware atomics do not support 256-bit or 512-bit operations directly. While cmpxchg16b exists on x86-64 for 128-bit atomics, strictly portable lock-free support for these large types is complex. The initial implementation should restrict hardware atomics to types ≤ 64 bits (or 128 bits on supported platforms) and potentially provide software-locked fallbacks for larger types if necessary, though explicit compilation errors for unsupported widths are often preferred in systems programming.
+4.2 Memory Ordering Enumeration
+Explicit ordering is mandatory. Aria avoids default arguments for ordering to force the developer to consider the synchronization requirements of their code.
+
+
+Code snippet
+
+
+
+
+// std/sync/atomic.aria
+
+enum Ordering {
+   Relaxed,    // No synchronization, only atomicity.
+   Acquire,    // Read synchronization: prevents subsequent ops from hoisting.
+   Release,    // Write synchronization: prevents prior ops from sinking.
+   AcqRel,     // Read-Modify-Write: Acquire on read, Release on write.
+   SeqCst      // Sequential Consistency: Global total ordering.
+}
+
+4.3 Core Methods
+The following methods define the interface for Atomic<T>.
+Load and Store
+The fundamental operations for reading and writing.
+
+
+Code snippet
+
+
+
+
+impl Atomic<T> {
+   // Atomically reads the value from the stored memory.
+   // Valid Orderings: Relaxed, Acquire, SeqCst.
+   // Panics if Release or AcqRel is passed (semantic violation).
+   pub func:load = T(Ordering:order);
+
+   // Atomically writes a new value to the stored memory.
+   // Valid Orderings: Relaxed, Release, SeqCst.
+   // Panics if Acquire or AcqRel is passed.
+   pub func:store = void(T:val, Ordering:order);
+}
+
+Exchange (Swap)
+Atomically replaces the value and returns the old value. This is an RMW (Read-Modify-Write) operation.
+
+
+Code snippet
+
+
+
+
+impl Atomic<T> {
+   // Swaps the current value with `new_val`.
+   // Valid Orderings: All.
+   pub func:swap = T(T:new_val, Ordering:order);
+}
+
+Compare and Exchange (CAS)
+The CAS operation is the cornerstone of lock-free algorithms. It conditionally updates the value only if it matches an expected value.
+
+
+Code snippet
+
+
+
+
+impl Atomic<T> {
+   // Strong CAS: Loops internally until spurious failures are resolved.
+   // returns: { success: bool, val: T } (where val is the witness/old value)
+   pub func:compare_exchange = result(
+       T:current,          // Expected value
+       T:new_val,          // Desired value
+       Ordering:success,   // Ordering if swap occurs
+       Ordering:failure    // Ordering if swap fails (load only)
+   );
+
+   // Weak CAS: May fail spuriously (return false even if values match).
+   // Often more efficient on ARM/LL/SC architectures for loop constructs.
+   pub func:compare_exchange_weak = result(
+       T:current, 
+       T:new_val, 
+       Ordering:success, 
+       Ordering:failure
+   );
+}
+
+Arithmetic Operations
+For integer types (AtomicInt, AtomicUint, AtomicTBB), arithmetic helpers are provided.
+
+
+Code snippet
+
+
+
+
+impl AtomicInt64 {
+   // Adds `val` to current, returning the PREVIOUS value.
+   pub func:fetch_add = int64(int64:val, Ordering:order);
+   
+   // Subtracts `val` from current, returning the PREVIOUS value.
+   pub func:fetch_sub = int64(int64:val, Ordering:order);
+   
+   // Bitwise AND, OR, XOR
+   pub func:fetch_and = int64(int64:val, Ordering:order);
+   pub func:fetch_or  = int64(int64:val, Ordering:order);
+   pub func:fetch_xor = int64(int64:val, Ordering:order);
+}
+
+5. Memory Ordering Semantics and Guide
+This section provides the detailed semantics required for the documentation deliverables, explaining precisely what guarantees each ordering provides.
+5.1 Relaxed (Ordering.Relaxed)
+* Definition: Provides the weakest consistency guarantee. It ensures that the operation is atomic (indivisible) but imposes no synchronization constraints on other memory operations.
+* Implication: Modifications made by a thread before a Relaxed store may not be visible to another thread that reads the atomic variable via a Relaxed load. The hardware is free to reorder surrounding instructions.
+* Use Case: Incrementing a global statistics counter (e.g., packets_received). The exact order in which increments become visible doesn't matter, only that no increments are lost.
+* Cost: Lowest. Often compiles to simple MOV, LDR, or STR instructions.
+5.2 Acquire (Ordering.Acquire)
+* Definition: Applicable only to load operations. It acts as a one-way barrier: no memory access (read or write) occurring after the Acquire load in program order can be reordered to happen before it.
+* Synchronization: When a thread performs an Acquire load that observes a value written by a Release store, a synchronizes-with relationship is established. The loading thread is guaranteed to see all memory writes that happened before the Release store in the writing thread.
+* Use Case: Taking a lock (reading the lock state) or checking a "data ready" flag.
+5.3 Release (Ordering.Release)
+* Definition: Applicable only to store operations. It acts as a one-way barrier: no memory access occurring before the Release store in program order can be reordered to happen after it.
+* Synchronization: Ensures that all writes performed by the current thread before this operation are visible to any thread that performs an Acquire load on the same variable.
+* Use Case: Releasing a lock or publishing data (setting a "data ready" flag after populating a buffer).
+5.4 Acquire-Release (Ordering.AcqRel)
+* Definition: Applicable to Read-Modify-Write (RMW) operations (swap, CAS, fetch_add). It combines the effects of both Acquire and Release.
+* Semantics: The read portion of the operation performs an Acquire (seeing prior writes), and the write portion performs a Release (publishing prior writes).
+* Use Case: Reference counting. When decrementing a refcount (fetch_sub), you need Release semantics to ensure your access to the data happens before the counter drops. If the counter hits zero, you need Acquire semantics to ensure you see all other threads' modifications before you deallocate the object.
+5.5 Sequentially Consistent (Ordering.SeqCst)
+* Definition: The strongest ordering. In addition to the guarantees of Acquire/Release, it enforces a single, global total order for all SeqCst operations.
+* Implication: If x and y are both SeqCst atomics, and Thread A sets x=1 then y=1, it is impossible for Thread B to see y=1 but x=0. Under weaker orderings, this non-intuitive behavior is possible due to store buffering.
+* Use Case: Algorithms relying on global state consistency or when reasoning about complex interleavings is too difficult with weaker models.
+* Cost: Highest. Typically requires full memory fences (MFENCE on x86, DMB ISH on ARM), stalling the CPU pipeline.
+6. Specialized Implementation: TBB and Sticky Errors
+A major finding of this research is the incompatibility of standard hardware atomic instructions with Aria's Twisted Balanced Binary (TBB) types. As defined in 1 and 1, TBB types utilize a "sticky error" propagation model where the minimum integer value serves as an ERR sentinel.
+6.1 The TBB Challenge
+Standard hardware instructions like LOCK XADD (x86) or LDADD (ARMv8.1) perform modular arithmetic (2's complement wrapping) on overflow. They do not check for sentinel values.
+* Scenario: A tbb8 counter is at 127 (max value).
+* Standard Atomic Add(1): Result is -128 (0x80).
+* TBB Requirement: Result should be ERR (-128). This seems compatible.
+* Scenario: A tbb8 counter is at ERR (-128).
+* Standard Atomic Add(1): Result is -127.
+* TBB Requirement: Result must remain ERR (-128). Stickiness violation!
+Since hardware atomics cannot implement the logic "if operand is ERR, result is ERR," Aria cannot use standard atomicrmw instructions for TBB types.
+6.2 The Solution: CAS Loop Generation
+For all atomic arithmetic operations on TBB types (fetch_add, fetch_sub, etc.), the compiler backend must synthesize a Compare-and-Swap (CAS) loop. This allows the sophisticated TBB arithmetic logic (implemented in TBBLowerer 1) to be applied between the read and the write.
+Implementation Strategy for AtomicTBB.fetch_add(delta):
+1. Load: Emit a load atomic to get the current value old_val.
+2. Loop Label: Start a basic block for the CAS loop.
+3. Calculation: Generate the new value new_val using the TBBLowerer::createAdd logic. This logic:
+   * Checks if old_val is ERR -> result ERR.
+   * Checks if delta is ERR -> result ERR.
+   * Checks for overflow -> result ERR.
+   * Otherwise -> standard addition.
+4. CAS: Emit a cmpxchg instruction:
+   * success = cmpxchg(ptr, old_val, new_val, ordering, ordering)
+5. Branch:
+   * If success: Break loop, return old_val.
+   * If failure: The cmpxchg instruction updates old_val with the current value in memory. Jump back to Calculation.
+This approach ensures that TBB invariants are strictly preserved, trading raw throughput for correctness and safety—a tradeoff consistent with Aria's design philosophy.
+7. Advanced Lock-Free Patterns
+To demonstrate the utility of the library and guide users, this section outlines the implementation of critical lock-free data structures using Aria's atomics.
+7.1 Reference Counting (Arc)
+The Arc (Atomically Reference Counted) smart pointer is essential for shared ownership. It relies on fetch_add for cloning and fetch_sub for dropping.
+
+
+Code snippet
+
+
+
+
+// Concept code for Arc<T>
+struct ArcInner<T> {
+   AtomicUint64:strong;
+   AtomicUint64:weak;
+   T:data;
+}
+
+struct Arc<T> {
+   wild ArcInner<T>@:ptr; // Pointer to heap allocation
+
+   func:clone = Arc<T>(self) {
+       // Relaxed ordering is sufficient for increment.
+       // As long as we hold a reference, the count is > 0, so no one can free it.
+       // We don't need to synchronize reads/writes to data here.
+       self.ptr->strong.fetch_add(1, Ordering.Relaxed);
+       return Arc { ptr: self.ptr };
+   }
+
+   func:drop = void(self) {
+       // Release ordering is critical.
+       // We must ensure that our access to the data happens-before the decrement.
+       // If we are the last one (count becomes 0), we destroy the object.
+       uint64:prev = self.ptr->strong.fetch_sub(1, Ordering.Release);
+       
+       if (prev == 1) {
+           // Acquire fence is needed here.
+           // We need to ensure that all Release operations from other threads 
+           // (who decremented the count) are visible to us before we free memory.
+           atomic.fence(Ordering.Acquire);
+           
+           // Safe to destroy
+           aria.free(self.ptr);
+       }
+   }
+}
+
+7.2 The ABA Problem and Mitigation
+In lock-free stacks and queues, the ABA problem occurs when a thread reads a value A, gets preempted, and when it wakes up, the value has changed to B and back to A. The thread's CAS succeeds (since A == A), but the underlying state has changed (e.g., the node A was freed and re-allocated).
+Aria's Mitigation Strategy:
+1. Tagged Pointers: Use AtomicUint128 (if available) or AtomicUint64 with packed pointers. Store { pointer (48 bits), tag (16 bits) }. Increment the tag on every modification. This makes A_v1 distinguishable from A_v2.
+2. Epoch-Based Reclamation (EBR): Instead of freeing nodes immediately, add them to a "limbo" list associated with the current global epoch. Only free the nodes when all threads have moved their local epochs forward, ensuring no thread can possibly hold a reference to the node. This is the preferred solution for robust system libraries.
+7.3 Lock-Free Stack (Treiber Stack)
+A simple implementation using compare_exchange_weak.
+
+
+Code snippet
+
+
+
+
+struct Node<T> {
+   T:data;
+   Node<T>@:next;
+}
+
+struct LockFreeStack<T> {
+   AtomicPtr:head; // Points to Node<T>
+}
+
+impl LockFreeStack<T> {
+   func:push = void(T:val) {
+       wild Node<T>@:new_node = aria.alloc(Node);
+       new_node->data = val;
+       
+       // Load current head (Relaxed is okay for the initial guess)
+       wild void*:old_head = self.head.load(Ordering.Relaxed);
+       
+       while (true) {
+           new_node->next = old_head;
+           
+           // Try to swap head to new_node
+           result:res = self.head.compare_exchange_weak(
+               old_head,
+               new_node,
+               Ordering.Release, // Success: Publish the new node
+               Ordering.Relaxed  // Failure: Just update old_head
+           );
+           
+           if (res.success) { break; }
+           old_head = res.val; // Retry with fresh head
+       }
+   }
+   
+   // Note: pop requires complex memory reclamation (EBR or Hazard Pointers)
+   // to be truly safe in a wild memory environment.
+}
+
+8. Comparative Analysis
+To contextualize the design, we compare Aria's atomics with those of C++ and Rust.
+8.1 Comparison with C++ (std::atomic)
+* Design: C++ uses operator overloading (e.g., atomic++).
+   * Critique: This hides the cost of the operation. A developer might write idx++ in a hot loop without realizing it triggers a locked bus cycle.
+* Ordering: C++ defaults to memory_order_seq_cst.
+   * Critique: While safe, it is often inefficient. Aria follows Rust's approach of explicit ordering to encourage performance-aware programming.
+* Safety: C++ allows easy misuse of pointers and undefined behavior with relaxed orderings. Aria's borrow checker (in gc mode) provides stronger guarantees around the validity of the data being protected.
+8.2 Comparison with Rust (std::sync::atomic)
+* Design: Rust uses named methods (load, store) and an Ordering enum.
+   * Adoption: Aria adopts this model almost identically. It is clear, explicit, and self-documenting.
+* Safety: Rust relies on ownership to prevent data races on non-atomic data. Aria employs similar borrow checking mechanisms 1 to ensure that non-atomic data protected by atomic primitives (like a Mutex) cannot be accessed without the lock.
+* Differences: Aria's TBB atomics are a distinct innovation not present in Rust. Rust's atomics panic or wrap on overflow; Aria's TBB atomics saturate at error boundaries.
+9. Verification and Testing Strategy
+Given the subtle nature of concurrency bugs, a robust verification strategy is essential.
+9.1 ThreadSanitizer (TSan) Integration
+The LLVM backend supports ThreadSanitizer instrumentation. Aria should expose a compiler flag (e.g., --sanitize=thread) that instruments all atomic loads and stores. This allows the runtime to detect data races (concurrent R/W or W/W without happens-before) and report them with stack traces.
+9.2 Stress Testing
+The standard library test suite must include "torture tests" for atomics:
+* Hammer Test: Spawn 100 threads, each incrementing a counter 1,000,000 times. Verify the final count is exactly 100,000,000.
+* Ping-Pong Test: Two threads toggling a flag back and forth, validating visibility latency and correctness of Acquire/Release pairs.
+9.3 Model Checking (Future Work)
+Integrate with a permutation-based model checker (similar to Rust's loom). This tool would permute the scheduling of threads and the reordering of atomic operations to exhaustively explore the state space and find theoretical race conditions that might only occur rarely in hardware.
+10. Conclusion
+The specification of the std.sync.atomic library marks a pivotal maturity point for the Aria language. By adopting the robust C++11/LLVM memory model, Aria ensures broad platform compatibility and defined behavior. By enforcing explicit memory ordering and diverging from standard implementation patterns to support TBB sticky errors, Aria prioritizes safety and correctness over syntactical brevity.
+This design provides the necessary primitives for developers to build high-performance, lock-free data structures and efficient synchronization mechanisms, enabling Aria to fulfill its promise as a modern, safe, systems programming language. The immediate next steps involve the backend implementation of the AtomicTBBLowerer and the exposure of the Atomic<T> intrinsics in the frontend compiler.
+Works cited
+1. aria_specs.txt
+2. Lowering C11 Atomics for ARM in LLVM, accessed December 11, 2025, https://llvm.org/devmtg/2014-04/PDFs/Talks/Reinoud-report.pdf
+3. LLVM Atomic Instructions and Concurrency Guide, accessed December 11, 2025, https://releases.llvm.org/11.0.0/docs/Atomics.html
+4. std::sync::atomic - Rust, accessed December 11, 2025, https://doc.rust-lang.org/std/sync/atomic/
+5. LLVM Language Reference Manual — LLVM 22.0.0git documentation, accessed December 11, 2025, https://llvm.org/docs/LangRef.html
+6. LLVM Atomic Instructions and Concurrency Guide, accessed December 11, 2025, https://llvm.org/docs/Atomics.html
+7. C/C++11 mappings to processors, accessed December 11, 2025, https://www.cl.cam.ac.uk/~pes20/cpp/cpp0xmappings.html

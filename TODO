@@ -155,7 +155,25 @@
   - [x] Document: `/docs/gemini/responses/research_007_threading_library.txt`
 
 ### 0.3 Medium-Priority Research (Nice to have)
-- [ ] research_008: Atomics library
+- [x] **research_008: Atomics library** ✅ COMPLETE (Dec 11, 2025)
+  * **Memory Model**: Adopts C++11/LLVM standard for compatibility
+    - Sequenced-before, Synchronizes-with, Happens-before relationships
+    - Data races in wild memory = UB, in gc memory = logical corruption
+  * **Five Memory Orderings**: Relaxed, Acquire, Release, AcqRel, SeqCst
+    - Explicit ordering required (no defaults, forces consideration)
+    - Maps to x86-64 TSO and ARMv8 weak memory model instructions
+  * **API Design**: Based on Rust's std::sync::atomic (explicit methods, not operators)
+    - `Atomic<T>`, specialized aliases (AtomicInt64, AtomicBool, AtomicPtr, etc.)
+    - Core methods: load, store, swap, compare_exchange, fetch_add/sub/and/or/xor
+  * **TBB Challenge**: Hardware atomics incompatible with sticky error semantics
+    - Standard types (int/uint): Use hardware fetch-and-add (LOCK XADD, LDADD)
+    - TBB types (tbb8/16/32/64): Compiler-synthesized CAS loops to preserve ERR stickiness
+  * **Lock-Free Patterns**: Arc (reference counting), Treiber Stack, ABA mitigation
+  * **Platform Specifics**:
+    - x86-64 TSO: Many atomics "free" (MOV sufficient), SeqCst needs MFENCE
+    - ARMv8: LDAR/STLR for acquire/release, DMB/DSB for full barriers
+  * **Testing Strategy**: ThreadSanitizer integration, torture tests, model checking
+  * **Reference**: `/docs/gemini/responses/research_008_atomics_library.txt` (417 lines)
 - [ ] research_009: Timer/clock library
 - [ ] research_010: Comptime system
 
@@ -1254,31 +1272,105 @@
   - [ ] Cache-line padding for atomics (prevent false sharing)
   - [ ] Validate zero-cost abstractions (assembly inspection)
 
-### 7.3 Atomics Library
-**Status**: Awaiting research_008
+### 7.3 Atomics Library (2-3 weeks)
+**Status**: Research complete ✅ (research_008), ready to implement  
+**Reference**: `/docs/gemini/responses/research_008_atomics_library.txt` (417 lines)
 
-#### 7.3.1 Atomic Types & Operations
-- [ ] After research_008 complete, review atomics API
-- [ ] Implement in `stdlib/atomic.aria` or `src/runtime/atomic/`
-  - [ ] **Atomic types**
-    - [ ] `AtomicInt32`, `AtomicInt64`, `AtomicBool`, `AtomicPtr<T>`
-  - [ ] **Atomic operations**
-    - [ ] `atomic.load(order: MemoryOrder) -> T`
-    - [ ] `atomic.store(value: T, order: MemoryOrder)`
-    - [ ] `atomic.exchange(value: T, order: MemoryOrder) -> T`
-    - [ ] `atomic.compareExchange(expected: T, desired: T, order: MemoryOrder) -> bool`
-    - [ ] `atomic.fetchAdd(value: T, order: MemoryOrder) -> T`
-    - [ ] `atomic.fetchSub(value: T, order: MemoryOrder) -> T`
-  - [ ] **Memory ordering**
-    - [ ] Define MemoryOrder enum: Relaxed, Acquire, Release, AcqRel, SeqCst
-    - [ ] Document when to use each
-  - [ ] **Lock-free data structures (examples)**
-    - [ ] Lock-free queue
-    - [ ] Lock-free stack
-  - [ ] Add comprehensive tests
-    - [ ] Test all operations
-    - [ ] Test memory orderings
-    - [ ] Stress tests for race conditions
+#### 7.3.1 Memory Model Foundation
+- [ ] **Adopt C++11/LLVM Memory Model** (`src/runtime/memory_model.md` documentation)
+  - [ ] Document happens-before relationships (sequenced-before + synchronizes-with)
+  - [ ] Define data race semantics (wild memory = UB, gc memory = logical corruption)
+  - [ ] Platform mapping: x86-64 TSO vs ARMv8 weak memory model
+
+- [ ] **Ordering Enum** (`stdlib/sync/atomic.aria`)
+  ```aria
+  enum Ordering {
+      Relaxed,    // No sync, only atomicity (cheapest)
+      Acquire,    // Load barrier: subsequent ops can't hoist above
+      Release,    // Store barrier: prior ops can't sink below
+      AcqRel,     // RMW: Acquire on read, Release on write
+      SeqCst      // Global total order (most expensive)
+  }
+  ```
+  - [ ] Validation: Loads can't use Release/AcqRel, Stores can't use Acquire/AcqRel
+  - [ ] Documentation: When to use each (counter=Relaxed, flag=Acquire/Release, refcount=AcqRel)
+
+#### 7.3.2 Atomic Types (Standard Integers)
+- [ ] **Atomic<T> Generic** (`src/runtime/atomic/atomic.cpp`)
+  - [ ] Core methods:
+    - [ ] `load(Ordering) -> T`: Atomic read
+    - [ ] `store(T, Ordering)`: Atomic write
+    - [ ] `swap(T, Ordering) -> T`: Atomic exchange (RMW)
+    - [ ] `compare_exchange(current: T, new: T, success: Ordering, failure: Ordering) -> result`
+    - [ ] `compare_exchange_weak(...)`: May spuriously fail (efficient for loops)
+  - [ ] Arithmetic (for integer types):
+    - [ ] `fetch_add(T, Ordering) -> T`: Returns **previous** value
+    - [ ] `fetch_sub(T, Ordering) -> T`
+    - [ ] `fetch_and/or/xor(T, Ordering) -> T`: Bitwise ops
+
+- [ ] **Specialized Type Aliases** (`stdlib/sync/atomic.aria`)
+  ```aria
+  type AtomicBool = Atomic<bool>;
+  type AtomicInt8 = Atomic<int8>;
+  type AtomicInt16 = Atomic<int16>;
+  type AtomicInt32 = Atomic<int32>;
+  type AtomicInt64 = Atomic<int64>;
+  type AtomicUint8 = Atomic<uint8>;
+  type AtomicUint16 = Atomic<uint16>;
+  type AtomicUint32 = Atomic<uint32>;
+  type AtomicUint64 = Atomic<uint64>;
+  type AtomicPtr<T> = Atomic<wild T*>;
+  ```
+  - [ ] Backend: Map to LLVM `atomicrmw` for standard types (efficient hardware paths)
+
+#### 7.3.3 TBB Atomics (Special Handling)
+- [ ] **Problem**: Hardware atomics can't enforce sticky error semantics (ERR must stick)
+  - [ ] Example: `tbb8` at ERR (-128) + 1 = ERR (not -127)
+  - [ ] Hardware LOCK XADD would produce -127 (wrong!)
+
+- [ ] **Solution**: Compiler-Synthesized CAS Loops (`src/backend/codegen_tbb_atomic.cpp`)
+  - [ ] `AtomicTBB<T>.fetch_add(delta)` implementation:
+    1. Load current value (atomic load)
+    2. **Loop**: Calculate new value using TBBLowerer logic (checks ERR, overflow)
+    3. CAS: Try to swap old → new (compare_exchange_weak)
+    4. If CAS fails: Reload and retry (loop)
+    5. If CAS succeeds: Return old value
+  - [ ] Trade throughput for correctness (consistent with Aria's safety philosophy)
+
+- [ ] **TBB Atomic Aliases**
+  ```aria
+  type AtomicTBB8 = Atomic<tbb8>;
+  type AtomicTBB16 = Atomic<tbb16>;
+  type AtomicTBB32 = Atomic<tbb32>;
+  type AtomicTBB64 = Atomic<tbb64>;
+  ```
+
+#### 7.3.4 Lock-Free Patterns
+- [ ] **Arc (Atomically Reference Counted)** (`stdlib/sync/arc.aria`)
+  - [ ] `clone()`: `fetch_add(1, Ordering.Relaxed)` (no sync needed while holding ref)
+  - [ ] `drop()`: `fetch_sub(1, Ordering.Release)`, if last ref: `fence(Ordering.Acquire)` then free
+  - [ ] Integration with borrow checker (ensure data outlives Arc)
+
+- [ ] **Treiber Stack** (lock-free stack example in docs)
+  - [ ] Push: CAS loop to update head pointer
+  - [ ] Pop: Requires epoch-based reclamation (EBR) or hazard pointers (complex!)
+  - [ ] ABA problem mitigation: Tagged pointers (use AtomicUint128 or pack tag in low bits)
+
+- [ ] **Lock-Free Queue** (MPSC or MPMC, if needed)
+  - [ ] Options: Ring buffer (bounded), linked list (unbounded)
+
+#### 7.3.5 Testing & Verification
+- [ ] **ThreadSanitizer Integration** (`--sanitize=thread` compiler flag)
+  - [ ] Instrument all atomic loads/stores (LLVM TSan support)
+  - [ ] Detect data races (concurrent R/W or W/W without happens-before)
+
+- [ ] **Stress Tests** (`tests/concurrency/atomics_stress.aria`)
+  - [ ] Hammer test: 100 threads, each increment counter 1M times, verify sum = 100M
+  - [ ] Ping-pong test: Two threads toggling flag, validate visibility
+  - [ ] Arc stress: 1000 clones/drops in parallel, verify refcount correctness
+
+- [ ] **Model Checking** (future work)
+  - [ ] Integrate loom-style tool (permute thread schedules, exhaustive state space)
 
 ### 7.4 Timers & Clocks
 **Status**: Awaiting research_009
