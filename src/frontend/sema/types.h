@@ -26,8 +26,8 @@ enum class TypeKind {
     INT1, INT2, INT4, INT8, INT16, INT32, INT64, INT128, INT256, INT512,
     // Standard integer types (unsigned) - pure binary, modular arithmetic
     UINT8, UINT16, UINT32, UINT64, UINT128, UINT256, UINT512,
-    // Floating-point types
-    FLT32, FLT64,
+    // Floating-point types - IEEE 754 compliance
+    FLT32, FLT64, FLT128, FLT256, FLT512,
     // Twisted Balanced Binary types with sticky error propagation
     TBB8, TBB16, TBB32, TBB64,
     // Balanced ternary types
@@ -133,6 +133,9 @@ public:
             // Floating-point
             case TypeKind::FLT32: return "flt32";
             case TypeKind::FLT64: return "flt64";
+            case TypeKind::FLT128: return "flt128";
+            case TypeKind::FLT256: return "flt256";
+            case TypeKind::FLT512: return "flt512";
             // TBB types
             case TypeKind::TBB8: return "tbb8";
             case TypeKind::TBB16: return "tbb16";
