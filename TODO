@@ -191,29 +191,306 @@
     - Cancellation via Future drop (zombie timer mitigation)
   * **Performance**: VDSO usage (15ns clock reads), cache-friendly wheel structure
   * **Reference**: `/docs/gemini/responses/research_009_timer_clock_library.txt` (502 lines)
-- [ ] research_010: Comptime system (COMBINED with research_011)
-- [ ] **research_011: Macro Preprocessor & Comptime Metaprogramming System** (NEW)
-  * **Scope**: Complete design of dual-phase metaprogramming (NASM-style macros + Zig-style comptime)
-  * **Key Features**:
-    - Context stack API (push/pop/repl/ifctx) for maintaining parse state
-    - Token rotation and structured syntax parsing (JSON-like { key: value })
-    - Types-as-values and compile-time reflection (@typeInfo equivalent)
-    - High-level macro library (IF/WHILE/FOR, CLASS/METHOD, templates)
-  * **Integration Points**:
-    - TBB sticky error enforcement in macros
-    - Ternary/nonary arithmetic emulation (software circuits)
-    - Hybrid memory model (gc vs wild allocator selection)
-    - Borrow checker (pinning # validation, Appendage Theory)
-    - Threading (actor macros, async/await transformation)
-  * **Advanced Features**:
-    - Runtime assembler (wildx JIT, x86-64 code emission)
-    - Reflection API (RTTI for dynamic dispatch)
-    - Testing framework (TEST_CASE auto-registration, property-based testing)
-  * **Deliverables**: Complete specification (500-600 lines), implementation roadmap (14 weeks)
-  * **References**: 
-    - `/docs/gemini/tasks/research_011_macro_comptime_system.{json,txt}`
-    - 7 old research documents (class system, control flow, templates, JIT)
-    - `/docs/info/aria_specs.txt` line 824 ("ZIG style comptime")
+- [x] **research_010+011: Macro Preprocessor & Comptime Metaprogramming System** ✅ COMPLETE (Dec 12, 2025)
+  * **Scope**: Two-phase metaprogramming architecture (NASM-style textual macros + Zig-style semantic comptime)
+  * **Phase 1 - Macro Preprocessor** (Textual/Syntactic):
+    - **Context Stack Management**: %push/%pop/%repl/%ifctx for nested macro states
+    - **Label Hygiene**: Context-local labels (%$label) prevent symbol collision
+    - **Token Manipulation**: %rotate for variadic argument processing
+    - **Multi-line Capture**: %body directive for DSL block capture
+    - **Recursive Expansion**: Support for self-referential macros with depth limits
+  * **Phase 2 - Comptime Execution Engine** (Semantic):
+    - **CTFE Interpreter**: Tree-walking VM operating on typed AST
+    - **TBB-Aware ALU**: Native sticky error propagation for compile-time TBB arithmetic
+    - **Exotic Type Support**: Ternary/nonary unpacking and logic emulation
+    - **Types as Values**: @typeInfo() reflection, type:T first-class parameter
+    - **Virtual Heap**: Sandboxed memory arena simulating wild/gc allocation at compile-time
+  * **Bridge Mechanism**:
+    - **@mixin Operator**: Injects generated code strings back into parser
+    - **Source Maps**: Full provenance tracking for error messages (file/line/macro stack)
+  * **High-Level Library** (Macro-Implemented):
+    - Control flow: IF/ELIF/ELSE/ENDIF, WHILE/ENDWHILE with BREAK/CONTINUE
+    - ACTOR macro: Generates struct + message enum + mailbox loop
+    - Memory-aware generics: Vector<T> adapts to wild vs gc allocation
+  * **Integration**:
+    - Borrow checker: Validates # pinning, $ safe references in macro output
+    - Threading: SPAWN safety checks (@typeInfo(T).is_sendable)
+    - Atomics: Macro-generated CAS loops for TBB types
+  * **Timeline**: 14-week implementation roadmap detailed
+  * **Reference**: `/docs/gemini/responses/research_010-011_macro_comptime.txt` (comprehensive 600+ line report)
+
+### 0.4 Remaining Core Research (Pending)
+- [ ] **research_012: Standard Integer and Unsigned Integer Types**
+  * **Scope**: Design int1-512 and uint8-512 types (non-TBB standard integers)
+  * **Coverage**:
+    - int1, int2, int4, int8, int16, int32, int64, int128, int256, int512
+    - uint8, uint16, uint32, uint64, uint128, uint256, uint512
+  * **Key Questions**:
+    - Memory layout and alignment for wide types (128/256/512-bit)
+    - LLVM IR mappings (native vs multi-register representation)
+    - Overflow behavior (wrap, trap, or saturate?)
+    - Comparison with TBB types (when to use which?)
+    - Literal syntax (suffixes: i8, u16, i128, etc.)
+    - Conversion rules (implicit vs explicit casts)
+    - SIMD opportunities for wide integer operations
+- [ ] **research_013: Floating-Point Types (Extended Precision)**
+  * **Scope**: Design flt32, flt64, flt128, flt256, flt512 types
+  * **Coverage**:
+    - flt32 (IEEE-754 binary32), flt64 (IEEE-754 binary64)
+    - flt128 (IEEE-754 binary128 / quadruple precision)
+    - flt256, flt512 (software-emulated extended precision)
+  * **Key Questions**:
+    - Platform support (hardware vs software implementation)
+    - NaN/Infinity handling (match IEEE-754 or custom?)
+    - Rounding modes (nearest, toward zero, up, down)
+    - Subnormal number support
+    - Fast-math optimizations vs strict IEEE compliance
+    - Conversion from/to TBB types (ERR → NaN mapping?)
+    - Performance: SIMD (AVX-512 for flt32/64), software for 128+
+- [ ] **research_014: Composite Types - Part 1 (Object, Dynamic, Boolean)**
+  * **Scope**: Design obj, dyn, and bool types
+  * **obj (Object/Dictionary)**:
+    - Key-value map with heterogeneous values
+    - Memory layout (hash table? tree? inline small objects?)
+    - Type safety (typed vs untyped keys/values)
+    - GC integration (reference tracking for nested objects)
+    - JSON compatibility (serialization/deserialization)
+  * **dyn (Dynamic/Variant)**:
+    - Tagged union holding any type
+    - Type tag storage (enum discriminant)
+    - Pattern matching integration (pick statement)
+    - Runtime type queries (@typeInfo at runtime?)
+    - Performance vs safety tradeoffs
+  * **bool (Boolean)**:
+    - Representation (1-bit logical, 8-bit physical?)
+    - Truthiness rules (only true/false, or 0/non-zero like C?)
+    - Integration with ternary logic (trit type)?
+    - Conversion from TBB ERR (error → false?)
+- [ ] **research_015: Composite Types - Part 2 (Vectors, Structs, Strings)**
+  * **Scope**: Design vec2, vec3, vec9, struct, string types
+  * **vec2, vec3, vec9 (SIMD Vectors)**:
+    - Element type support (int, uint, flt, tbb?)
+    - SIMD instruction mapping (SSE, AVX, AVX-512, NEON)
+    - Swizzling support (vec3.xyz, vec3.yzx)
+    - Geometric operations (dot, cross, normalize)
+    - vec9 (balanced nonary 3×3 matrix? or 9-element vector?)
+  * **struct**:
+    - Field alignment and padding rules
+    - Packed vs aligned structs
+    - Memory model (always GC? support wild struct?)
+    - Method definitions (attached functions?)
+    - Inheritance or composition model
+  * **string**:
+    - Encoding (UTF-8 native? ASCII? UCS-2?)
+    - Small String Optimization (SSO) threshold
+    - Immutability (Rust String vs &str model?)
+    - String concatenation (operator+ vs builder pattern?)
+    - Integration with template literals (`...`)
+    - GC vs wild string allocation
+- [ ] **research_016: Functional Types (Result, Func, Array)**
+  * **Scope**: Design result, func, array types
+  * **result<T, E>**:
+    - Error handling model ({err, val} struct)
+    - Monadic operations (map, flatMap, unwrap_or)
+    - Integration with ? operator (unwrap shorthand)
+    - ERR sentinel propagation from TBB
+    - Pattern matching in pick statements
+  * **func (Function Pointers/Closures)**:
+    - Closure capture semantics (by-value, by-reference, wild pointers)
+    - Function signature representation in type system
+    - Calling convention (C ABI vs Aria native?)
+    - Async function representation (Future/Promise?)
+    - Integration with comptime (functions as values?)
+  * **array<T, N> and T[]**:
+    - Fixed-size (stack) vs dynamic (heap) arrays
+    - Bounds checking (always? debug-only? never?)
+    - Slicing syntax (arr[2..5], arr[...10])
+    - Memory model (GC vs wild arrays)
+    - Multi-dimensional arrays (arr[10][20] vs tensor?)
+    - Integration with SIMD (vectorized operations)
+- [ ] **research_017: Advanced Mathematical Types (Tensor, Matrix)**
+  * **Scope**: Design tensor and matrix types
+  * **tensor<T, Shape>**:
+    - N-dimensional array representation
+    - Shape encoding (compile-time or runtime dimensions?)
+    - Stride calculation and memory layout (row-major, column-major, custom)
+    - Broadcasting rules (NumPy-style or custom?)
+    - SIMD/GPU acceleration hooks
+    - Integration with ML libraries
+  * **matrix<T, Rows, Cols>**:
+    - Specialized 2D tensor with linear algebra operations
+    - Matrix multiplication (naive, Strassen, BLAS integration)
+    - Decomposition (LU, QR, SVD)
+    - Sparse matrix support
+    - Relationship to vec2/vec3 (matrix-vector multiplication)
+    - Fixed-size vs dynamic-size matrices
+
+### 0.5 Control Flow Constructs Research
+- [ ] **research_018: Looping Constructs (while, for, loop, till)**
+  * **Scope**: Detailed semantics and codegen for loop types
+  * **while (condition) { body }**:
+    - Standard conditional loop
+    - Loop variable hoisting
+    - Optimization: loop invariant code motion
+  * **for (init; condition; update) { body }**:
+    - C-style three-part loop
+    - Scoping rules for loop variable
+    - Iterator protocol (for-each style: for (item in collection))
+  * **loop(start, stop, step) { body }**:
+    - Aria-specific counted loop
+    - Automatic $ iteration variable
+    - Step direction detection (positive vs negative)
+    - Optimization: loop unrolling thresholds
+  * **till(limit, step) { body }**:
+    - Simplified counted loop (start=0 or start=limit depending on step)
+    - $ variable semantics (0-based indexing)
+    - Comparison with loop construct
+- [ ] **research_019: Conditional Constructs (if/else, when/then/end, pick)**
+  * **Scope**: Detailed semantics for conditionals and pattern matching
+  * **if (cond) { } else { }**:
+    - Standard branching
+    - Short-circuit evaluation
+    - Integration with safe navigation (?.)
+    - Optimization: branch prediction hints
+  * **when (cond) { body } then { success } end { failure }**:
+    - Completion-aware loop with handlers
+    - 'then' runs after normal completion
+    - 'end' runs if loop never executed or broke early
+    - State tracking mechanism
+  * **pick (value) { cases }**:
+    - Pattern matching switch
+    - Case types: exact, range (.., ...), comparison (<, >, <=, >=)
+    - Destructuring patterns ({ field: value }, [a, b, c])
+    - Wildcard (*) and unreachable (!)
+    - fall(label) explicit fallthrough
+    - Exhaustiveness checking
+- [ ] **research_020: Control Transfer (break, continue, return, defer)**
+  * **Scope**: Jump semantics and cleanup handling
+  * **break / continue**:
+    - Loop exit and iteration skip
+    - Labeled break/continue (for nested loops)
+    - Interaction with defer blocks
+  * **return**:
+    - Early function exit
+    - Implicit result wrapping ({err: NULL, val: X})
+    - Defer execution before return
+  * **defer**:
+    - RAII-style cleanup registration
+    - Execution order (LIFO stack)
+    - Interaction with wild memory (aria.free in defer)
+    - Panic/unwind safety
+
+### 0.6 Memory Management Research
+- [ ] **research_021: Garbage Collection System**
+  * **Scope**: Complete GC architecture and integration
+  * **GC Algorithm**:
+    - Generational design (nursery + mature space)
+    - Minor GC (young generation, copying collector)
+    - Major GC (full heap, mark-sweep-compact or mark-region)
+    - Fragmented nursery design (per-worker arenas)
+  * **Root Tracking**:
+    - Shadow stack implementation
+    - Conservative stack scanning fallback
+    - Global roots and static data
+  * **Write Barriers**:
+    - Incremental/concurrent GC support
+    - Remembered set for cross-generation pointers
+  * **Pinning Integration**:
+    - # operator marks objects non-movable
+    - Pin counting mechanism
+    - Interaction with compaction
+  * **Performance**:
+    - Allocation fast path (bump pointer in nursery)
+    - GC pause time targets (sub-millisecond minor, <10ms major)
+    - Throughput optimization
+  * **Platform Specifics**:
+    - Linux: mmap/madvise for memory management
+    - Windows: VirtualAlloc/VirtualFree
+    - macOS: vm_allocate/vm_deallocate
+- [ ] **research_022: Wild and Wildx Memory (Manual Management)**
+  * **Scope**: Manual memory allocation and executable memory
+  * **wild (Manual Heap)**:
+    - Opt-out of GC via wild keyword
+    - aria.alloc() / aria.free() API
+    - Integration with Mimalloc allocator
+    - Leak detection (static analysis + runtime tracking)
+    - Pointer arithmetic with @ operator
+    - Appendage Theory (wild ptrs to GC objects require pinning)
+  * **wildx (Executable Memory)**:
+    - JIT code generation target
+    - W^X enforcement (write XOR execute)
+    - Temporal window: allocate → write → seal → execute
+    - RAII guard for security (wildx_guard.c)
+    - Platform syscalls: mprotect, VirtualProtect, mach_vm_protect
+    - Integration with runtime assembler
+  * **Operators**:
+    - @ (address-of): Get raw pointer to variable
+    - * (dereference): Read value from pointer
+    - -> (member access): Pointer member dereference
+    - # (pin): Prevent GC movement of target object
+    - $ (safe reference): Borrow checker safe reference (immutable or mutable $mut)
+- [ ] **research_023: Runtime Assembler (Wildx Code Generation)**
+  * **Scope**: JIT compilation and x86-64 code emission
+  * **Architecture**:
+    - Assembler DSL in Aria (macro-based or comptime-based?)
+    - Instruction encoding (x86-64 machine code generation)
+    - Register allocation (simple or full coloring?)
+    - Label resolution and relocation
+  * **Instruction Set**:
+    - Basic arithmetic (ADD, SUB, MUL, DIV, IMUL, IDIV)
+    - Bitwise (AND, OR, XOR, NOT, SHL, SHR, SAR)
+    - Control flow (JMP, JZ, JNZ, CALL, RET)
+    - Memory (MOV, LEA, PUSH, POP)
+    - SIMD (SSE, AVX, AVX-512 for vector operations)
+  * **Safety**:
+    - Wildx guard integration (automatic sealing)
+    - Bounds checking (prevent writing outside allocated region)
+    - Control flow integrity (no arbitrary jumps outside function)
+  * **Use Cases**:
+    - Regex engine compilation
+    - Expression evaluators
+    - High-performance parsers
+    - DSL interpreters
+
+### 0.7 Operators Research
+- [ ] **research_024: Arithmetic and Bitwise Operators**
+  * **Scope**: All arithmetic, bitwise, and compound assignment operators
+  * **Arithmetic**: +, -, *, /, %, ++, --, unary -, unary +
+  * **Bitwise**: &, |, ^, ~, <<, >>
+  * **Compound Assignment**: +=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=
+  * **TBB Integration**: Sticky error propagation for all operations
+  * **Overflow Handling**: wrap vs trap vs saturate per type
+  * **Optimization**: Strength reduction, constant folding
+- [ ] **research_025: Comparison and Logical Operators**
+  * **Scope**: Comparison, logical, and short-circuit operators
+  * **Comparison**: ==, !=, <, >, <=, >=, <=> (spaceship)
+  * **Logical**: &&, ||, ! (short-circuit evaluation)
+  * **Ternary**: is cond : true_val : false_val
+  * **TBB Comparison**: How to compare ERR sentinel?
+  * **Ternary Logic**: Integration with trit type (3-valued logic)
+  * **Optimization**: Branch prediction, conditional move
+- [ ] **research_026: Special Operators (Memory, Safety, Pipeline)**
+  * **Scope**: Aria-specific special operators
+  * **Memory Operators**:
+    - @ (address-of): &x in C, but for wild pointers
+    - * (dereference): *ptr, read from pointer
+    - -> (member access): ptr->field
+    - # (pin): Prevent GC movement (#gc_obj)
+    - $ (safe reference): Borrow checker reference ($x or $mut x)
+  * **Safety Operators**:
+    - ? (unwrap): Extract value from result, or use default
+    - ?. (safe navigation): Short-circuit on null
+    - ?? (null coalesce): Provide default for null
+  * **Pipeline Operators**:
+    - |> (forward pipeline): data |> transform
+    - <| (backward pipeline): transform <| data
+  * **Range Operators**:
+    - .. (inclusive range): 0..10 (0 to 10)
+    - ... (exclusive range): 0...10 (0 to 9)
+  * **Iteration**:
+    - $ (iteration variable): Automatic in till/loop constructs
+  * **Template Interpolation**:
+    - &{ } (interpolation): Inside ` backtick strings
 
 ---
 
@@ -1526,31 +1803,81 @@
   - [ ] Integration with null coalescing: `obj?.field ?? default`
 
 ### 8.3 Metaprogramming & Macros
+**Status**: Design complete (research_010+011), ready for implementation
+**Timeline**: 14 weeks (per research roadmap)
 
-#### 8.3.1 NASM-Style Macro System
-- [ ] Review existing research: `/docs/research/metaprogramming_macro_expansion.md`
-- [ ] Expand preprocessor for macros (basic preprocessor exists)
-  - [ ] Parse macro definitions
-  - [ ] Macro parameter substitution
-  - [ ] Macro expansion
-  - [ ] Nested macro support
-  - [ ] Recursive macro detection
-- [ ] Add macro standard library
-  - [ ] Common utility macros
-- [ ] Add tests
+#### 8.3.1 Phase 1: Macro Preprocessor Infrastructure (Weeks 1-3)
+- [ ] Extend Preprocessor class with context stack
+  - [ ] Implement %push/%pop/%repl directives
+  - [ ] Add MacroContext struct (name + symbol table)
+  - [ ] Context-local label support (%$label → __ctx_ID_label)
+  - [ ] %ifctx conditional compilation
+- [ ] Token stream manipulation
+  - [ ] %rotate directive for argument rotation
+  - [ ] Recursive macro expansion with depth limits
+  - [ ] Multi-line block capture (%body directive)
+- [ ] Verification: Unit tests for nested macros, label uniqueness
 
-### 8.4 Compile-Time Execution (comptime)
-**Status**: Awaiting research_010
+#### 8.3.2 Phase 2: CTFE Interpreter Core (Weeks 4-6)
+- [ ] Scaffold ComptimeInterpreter class
+  - [ ] ComptimeValue variant (int/float/string/type/error)
+  - [ ] Virtual Environment (stack of symbol tables)
+  - [ ] Evaluator (recursive AST visitor)
+- [ ] TBB-Aware Arithmetic
+  - [ ] Software ALU for TBB addition/subtraction/multiplication
+  - [ ] Sticky error propagation (ERR + X → ERR)
+  - [ ] Overflow detection for symmetric ranges
+  - [ ] Sentinel collision detection
+- [ ] Exotic type support
+  - [ ] Ternary (trit/tryte) unpacking/logic/repacking
+  - [ ] Nonary (nit/nyte) unpacking/logic/repacking
+- [ ] Integrate CTFE hook into TypeChecker
+- [ ] Verification: TBB constant folding tests
 
-#### 8.4.1 Comptime System Implementation
-- [ ] After research_010 complete, review design
-- [ ] Implement comptime execution
-  - [ ] Parse `comptime` blocks
-  - [ ] Constant evaluation pass
-  - [ ] Comptime interpreter (for complex expressions)
-  - [ ] Comptime function execution
-  - [ ] Type reflection (if in spec)
-- [ ] Add tests
+#### 8.3.3 Phase 3: Reflection & Mixins (Weeks 7-8)
+- [ ] Type reflection system
+  - [ ] Implement @typeInfo(T) intrinsic
+  - [ ] Return struct with: fields, size, alignment, is_wild, is_sendable
+  - [ ] Support for TBB/ternary/nonary type queries
+- [ ] Mixin operator
+  - [ ] @mixin(string) feeds code back to Parser
+  - [ ] Source map generation for error tracking
+  - [ ] AST node provenance annotation
+- [ ] Virtual Heap for compile-time allocations
+  - [ ] Handle-based memory (not real pointers)
+  - [ ] Track wild vs gc allocations
+  - [ ] Simulate pointer arithmetic safely
+- [ ] Verification: Implement json_serialize<T> generic
+
+#### 8.3.4 Phase 4: High-Level Macro Library (Weeks 9-10)
+- [ ] Control flow macros
+  - [ ] IF/ELIF/ELSE/ENDIF with context validation
+  - [ ] WHILE/ENDWHILE with BREAK/CONTINUE label generation
+  - [ ] FOR macro with iteration tracking
+- [ ] Data structure templates
+  - [ ] Vector<T> adapting to wild vs gc memory
+  - [ ] HashMap<K,V> with memory model awareness
+  - [ ] Optional<T> and Result<T,E> types
+- [ ] Concurrency macros
+  - [ ] ACTOR(name) { STATE/MESSAGE } expansion
+  - [ ] SPAWN safety checks (@typeInfo(T).is_sendable)
+- [ ] Standard library port to use new system
+
+#### 8.3.5 Phase 5: Integration & Testing (Weeks 11-14)
+- [ ] Borrow checker integration
+  - [ ] Validate # pinning in macro output
+  - [ ] Verify $ safe reference usage
+- [ ] Threading integration
+  - [ ] Actor mailbox generation
+  - [ ] Message dispatch switch cases
+- [ ] Wildx JIT support
+  - [ ] Runtime assembler macros for x86-64 code emission
+  - [ ] W^X enforcement in generated code
+- [ ] Comprehensive test suite
+  - [ ] Macro hygiene tests (label collision prevention)
+  - [ ] TBB compile-time arithmetic correctness
+  - [ ] Generic specialization tests
+  - [ ] Error message provenance verification
 
 ### 8.5 Wildx Executable Memory
 
