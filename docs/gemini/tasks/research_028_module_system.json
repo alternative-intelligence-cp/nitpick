@@ -1,94 +1,92 @@
 {
-  "task_id": "research_028_module_system",
-  "title": "Module System (use, mod, pub, extern)",
-  "priority": "critical",
-  "category": "language_infrastructure",
-  "dependencies": ["research_010_macro_comptime"],
-  "estimated_complexity": "very_high",
-  "description": "Complete specification for Aria's module system covering imports (use), module definitions (mod), visibility (pub), and external C integration (extern). Critical for code organization and reusability.",
-  
-  "scope": {
-    "use_imports": "use std.io, use math.*, use './file.aria' as alias",
-    "mod_definitions": "mod name { ... } for module hierarchies",
-    "pub_visibility": "pub func, pub const, pub struct for public APIs",
-    "extern_ffi": "extern 'libc' { func:malloc = void*(uint64:size); }",
-    "conditional_compilation": "use cfg(target_os = 'linux') std.os.linux"
-  },
-  
-  "key_questions": {
-    "use_keyword": [
-      "What is the complete use syntax (paths, wildcards, aliases)?",
-      "How do absolute vs relative imports work (/usr/lib vs ./local)?",
-      "What is the search path algorithm (current dir, std lib, system)?",
-      "How are circular imports detected and prevented?",
-      "What is the selective import syntax ({ func1, func2 })?",
-      "How do glob imports work (* wildcard)?",
-      "What privacy rules apply to imports (pub use for re-exports)?"
+    "task_id": "research_028_module_system",
+    "title": "Module System (use, mod, pub, extern)",
+    "priority": "critical",
+    "category": "language_infrastructure",
+    "dependencies": [
+        "research_010_macro_comptime"
     ],
-    "mod_keyword": [
-      "How are modules defined (mod name { body } vs mod name; + separate file)?",
-      "What is the module hierarchy (parent::child::item access)?",
-      "How do nested modules work?",
-      "What is the relationship between file structure and module tree?",
-      "How are module-level constants and statics handled?",
-      "What initialization order for module-level code?"
+    "estimated_complexity": "very_high",
+    "description": "Complete specification for Aria's module system covering imports (use), module definitions (mod), visibility (pub), and external C integration (extern). Critical for code organization and reusability.",
+    "scope": {
+        "use_imports": "use std.io, use math.*, use './file.aria' as alias",
+        "mod_definitions": "mod name { ... } for module hierarchies",
+        "pub_visibility": "pub func, pub const, pub struct for public APIs",
+        "extern_ffi": "extern 'libc' { func:malloc = void*(uint64:size); }",
+        "conditional_compilation": "use cfg(target_os = 'linux') std.os.linux"
+    },
+    "key_questions": {
+        "use_keyword": [
+            "What is the complete use syntax (paths, wildcards, aliases)?",
+            "How do absolute vs relative imports work (/usr/lib vs ./local)?",
+            "What is the search path algorithm (current dir, std lib, system)?",
+            "How are circular imports detected and prevented?",
+            "What is the selective import syntax ({ func1, func2 })?",
+            "How do glob imports work (* wildcard)?",
+            "What privacy rules apply to imports (pub use for re-exports)?"
+        ],
+        "mod_keyword": [
+            "How are modules defined (mod name { body } vs mod name; + separate file)?",
+            "What is the module hierarchy (parent::child::item access)?",
+            "How do nested modules work?",
+            "What is the relationship between file structure and module tree?",
+            "How are module-level constants and statics handled?",
+            "What initialization order for module-level code?"
+        ],
+        "pub_keyword": [
+            "What visibility levels exist (pub, pub(crate), pub(super), private)?",
+            "What items can be pub (functions, types, constants, modules)?",
+            "How does pub interact with nested modules?",
+            "What is the default visibility (private within module)?",
+            "How do pub use re-exports work?",
+            "What error checking for visibility violations?"
+        ],
+        "extern_keyword": [
+            "What is the extern syntax for C libraries?",
+            "How are calling conventions specified (C, stdcall, fastcall)?",
+            "How do variadic functions work (printf-style)?",
+            "What type mappings exist (Aria types ↔ C types)?",
+            "How are header files parsed (manual declarations vs bindgen)?",
+            "What safety guarantees for extern functions (always unsafe)?",
+            "How do extern blocks interact with linking?"
+        ],
+        "conditional_compilation": [
+            "What cfg predicates exist (os, arch, feature flags)?",
+            "How does use cfg(...) work for platform-specific imports?",
+            "What build system integration (feature flags)?",
+            "How are unused cfg branches optimized out?"
+        ],
+        "integration": [
+            "How does the module system integrate with the compiler pipeline?",
+            "What caching exists for parsed modules?",
+            "How do generics work across module boundaries?",
+            "How are macros exported/imported between modules?",
+            "What symbol resolution algorithm?",
+            "How does incremental compilation work with modules?"
+        ],
+        "file_organization": [
+            "What file naming conventions (mod.aria, lib.aria, main.aria)?",
+            "How do directories map to modules?",
+            "What is the package structure (Cargo.toml equivalent)?",
+            "How are binary vs library crates distinguished?"
+        ]
+    },
+    "deliverables": [
+        "Module system specification (800-900 lines)",
+        "Complete syntax grammar for use/mod/pub/extern",
+        "Import resolution algorithm",
+        "Visibility checking rules",
+        "FFI type mapping table",
+        "Symbol resolution algorithm",
+        "File/directory structure conventions",
+        "Package manifest format",
+        "Error message templates",
+        "Code examples (simple to complex hierarchies)",
+        "Integration with build system",
+        "Comparison with Rust, Python, C++"
     ],
-    "pub_keyword": [
-      "What visibility levels exist (pub, pub(crate), pub(super), private)?",
-      "What items can be pub (functions, types, constants, modules)?",
-      "How does pub interact with nested modules?",
-      "What is the default visibility (private within module)?",
-      "How do pub use re-exports work?",
-      "What error checking for visibility violations?"
-    ],
-    "extern_keyword": [
-      "What is the extern syntax for C libraries?",
-      "How are calling conventions specified (C, stdcall, fastcall)?",
-      "How do variadic functions work (printf-style)?",
-      "What type mappings exist (Aria types ↔ C types)?",
-      "How are header files parsed (manual declarations vs bindgen)?",
-      "What safety guarantees for extern functions (always unsafe)?",
-      "How do extern blocks interact with linking?"
-    ],
-    "conditional_compilation": [
-      "What cfg predicates exist (os, arch, feature flags)?",
-      "How does use cfg(...) work for platform-specific imports?",
-      "What build system integration (feature flags)?",
-      "How are unused cfg branches optimized out?"
-    ],
-    "integration": [
-      "How does the module system integrate with the compiler pipeline?",
-      "What caching exists for parsed modules?",
-      "How do generics work across module boundaries?",
-      "How are macros exported/imported between modules?",
-      "What symbol resolution algorithm?",
-      "How does incremental compilation work with modules?"
-    ],
-    "file_organization": [
-      "What file naming conventions (mod.aria, lib.aria, main.aria)?",
-      "How do directories map to modules?",
-      "What is the package structure (Cargo.toml equivalent)?",
-      "How are binary vs library crates distinguished?"
+    "context_files": [
+        "/docs/info/aria_specs.txt (module examples)",
+        "/src/frontend/parser.cpp (module parsing)"
     ]
-  },
-  
-  "deliverables": [
-    "Module system specification (800-900 lines)",
-    "Complete syntax grammar for use/mod/pub/extern",
-    "Import resolution algorithm",
-    "Visibility checking rules",
-    "FFI type mapping table",
-    "Symbol resolution algorithm",
-    "File/directory structure conventions",
-    "Package manifest format",
-    "Error message templates",
-    "Code examples (simple to complex hierarchies)",
-    "Integration with build system",
-    "Comparison with Rust, Python, C++"
-  ],
-  
-  "context_files": [
-    "/docs/info/aria_specs.txt (module examples)",
-    "/src/frontend/parser.cpp (module parsing)"
-  ]
 }

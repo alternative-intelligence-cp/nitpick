@@ -1,85 +1,84 @@
 {
-  "task_id": "research_027_generics_templates",
-  "title": "Generics and Templates (Monomorphization System)",
-  "priority": "critical",
-  "category": "type_system",
-  "dependencies": ["research_010_macro_comptime", "research_012_standard_integer_types"],
-  "estimated_complexity": "very_high",
-  "description": "Complete specification for Aria's zero-cost generic programming system using monomorphization. Covers generic functions, generic types, type parameters, constraints, and compile-time instantiation.",
-  
-  "scope": {
-    "generic_functions": "func<T, U>:name = *T(*U:param) { body } - Type-parametric functions",
-    "generic_types": "Generic structs, arrays, and composite types",
-    "monomorphization": "Compile-time type instantiation (C++/Rust style, not Java/C# erasure)",
-    "type_constraints": "Trait bounds and type requirements",
-    "type_inference": "Automatic type parameter deduction"
-  },
-  
-  "key_questions": {
-    "syntax": [
-      "What is the complete generic syntax (func<T>:name vs func:name<T>)?",
-      "How is the * prefix used to mark generic types in function bodies?",
-      "What is the distinction between declaration (*T:param) and usage (*T)?",
-      "How are multiple type parameters specified (func<T, U, V>)?",
-      "What naming conventions for type parameters (T, U, V vs descriptive names)?"
+    "task_id": "research_027_generics_templates",
+    "title": "Generics and Templates (Monomorphization System)",
+    "priority": "critical",
+    "category": "type_system",
+    "dependencies": [
+        "research_010_macro_comptime",
+        "research_012_standard_integer_types"
     ],
-    "monomorphization": [
-      "What is the instantiation strategy (eager vs lazy)?",
-      "How are duplicate instantiations detected and shared?",
-      "What mangling scheme for monomorphized function names?",
-      "How does monomorphization interact with separate compilation?",
-      "What limits exist on generic depth (nested generics)?",
-      "How are generic functions with identical instantiations deduplicated?"
+    "estimated_complexity": "very_high",
+    "description": "Complete specification for Aria's zero-cost generic programming system using monomorphization. Covers generic functions, generic types, type parameters, constraints, and compile-time instantiation.",
+    "scope": {
+        "generic_functions": "func<T, U>:name = *T(*U:param) { body } - Type-parametric functions",
+        "generic_types": "Generic structs, arrays, and composite types",
+        "monomorphization": "Compile-time type instantiation (C++/Rust style, not Java/C# erasure)",
+        "type_constraints": "Trait bounds and type requirements",
+        "type_inference": "Automatic type parameter deduction"
+    },
+    "key_questions": {
+        "syntax": [
+            "What is the complete generic syntax (func<T>:name vs func:name<T>)?",
+            "How is the * prefix used to mark generic types in function bodies?",
+            "What is the distinction between declaration (*T:param) and usage (*T)?",
+            "How are multiple type parameters specified (func<T, U, V>)?",
+            "What naming conventions for type parameters (T, U, V vs descriptive names)?"
+        ],
+        "monomorphization": [
+            "What is the instantiation strategy (eager vs lazy)?",
+            "How are duplicate instantiations detected and shared?",
+            "What mangling scheme for monomorphized function names?",
+            "How does monomorphization interact with separate compilation?",
+            "What limits exist on generic depth (nested generics)?",
+            "How are generic functions with identical instantiations deduplicated?"
+        ],
+        "type_inference": [
+            "What inference algorithm (Hindley-Milner, local bidirectional)?",
+            "When can type parameters be inferred vs explicitly required?",
+            "How does inference work with multiple call sites?",
+            "What happens with ambiguous inference (compilation error)?",
+            "How do turbofish operators work for explicit instantiation (func::<i32>())?"
+        ],
+        "constraints": [
+            "What trait/interface system exists for type bounds?",
+            "How are operator requirements specified (T must support +)?",
+            "What built-in traits exist (Copy, Send, Sync, Display)?",
+            "How does constraint checking work (at instantiation time)?",
+            "What error messages for constraint violations?"
+        ],
+        "integration": [
+            "How do generics interact with wild vs gc memory?",
+            "How are generic TBB types handled (preserving ERR semantics)?",
+            "How do generics work with the borrow checker?",
+            "What comptime evaluation exists for generic constraints?",
+            "How do generics integrate with the module system?",
+            "Can macros generate generic code?"
+        ],
+        "advanced_features": [
+            "What associated types exist (type aliases within traits)?",
+            "How do higher-kinded types work (generic over generics)?",
+            "What const generics exist (array<T, N> with N as const)?",
+            "How are variadic generics handled (func<...Ts>)?",
+            "What specialization exists (optimized impl for specific types)?"
+        ]
+    },
+    "deliverables": [
+        "Generics specification (700-800 lines)",
+        "Complete syntax grammar",
+        "Monomorphization algorithm design",
+        "Type inference rules",
+        "Constraint system design",
+        "Integration with borrow checker",
+        "Integration with memory models (wild/gc)",
+        "Mangling scheme specification",
+        "Error message templates",
+        "Code examples (simple to advanced)",
+        "Performance analysis (code bloat mitigation)",
+        "Comparison with C++, Rust, Swift"
     ],
-    "type_inference": [
-      "What inference algorithm (Hindley-Milner, local bidirectional)?",
-      "When can type parameters be inferred vs explicitly required?",
-      "How does inference work with multiple call sites?",
-      "What happens with ambiguous inference (compilation error)?",
-      "How do turbofish operators work for explicit instantiation (func::<i32>())?"
-    ],
-    "constraints": [
-      "What trait/interface system exists for type bounds?",
-      "How are operator requirements specified (T must support +)?",
-      "What built-in traits exist (Copy, Send, Sync, Display)?",
-      "How does constraint checking work (at instantiation time)?",
-      "What error messages for constraint violations?"
-    ],
-    "integration": [
-      "How do generics interact with wild vs gc memory?",
-      "How are generic TBB types handled (preserving ERR semantics)?",
-      "How do generics work with the borrow checker?",
-      "What comptime evaluation exists for generic constraints?",
-      "How do generics integrate with the module system?",
-      "Can macros generate generic code?"
-    ],
-    "advanced_features": [
-      "What associated types exist (type aliases within traits)?",
-      "How do higher-kinded types work (generic over generics)?",
-      "What const generics exist (array<T, N> with N as const)?",
-      "How are variadic generics handled (func<...Ts>)?",
-      "What specialization exists (optimized impl for specific types)?"
+    "context_files": [
+        "/docs/info/aria_specs.txt (generic examples)",
+        "/docs/research/generics_monomorphization_implementation.md (existing research)",
+        "/docs/gemini/responses/research_010-011_macro_comptime.txt (comptime integration)"
     ]
-  },
-  
-  "deliverables": [
-    "Generics specification (700-800 lines)",
-    "Complete syntax grammar",
-    "Monomorphization algorithm design",
-    "Type inference rules",
-    "Constraint system design",
-    "Integration with borrow checker",
-    "Integration with memory models (wild/gc)",
-    "Mangling scheme specification",
-    "Error message templates",
-    "Code examples (simple to advanced)",
-    "Performance analysis (code bloat mitigation)",
-    "Comparison with C++, Rust, Swift"
-  ],
-  
-  "context_files": [
-    "/docs/info/aria_specs.txt (generic examples)",
-    "/docs/research/generics_monomorphization_implementation.md (existing research)",
-    "/docs/gemini/responses/research_010-011_macro_comptime.txt (comptime integration)"
-  ]
 }
