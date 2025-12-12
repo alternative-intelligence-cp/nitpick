@@ -442,6 +442,30 @@ src/backend/codegen.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen.cpp.s
 .PHONY : src/backend/codegen.cpp.s
 
+src/backend/codegen_nonary.o: src/backend/codegen_nonary.cpp.o
+.PHONY : src/backend/codegen_nonary.o
+
+# target to build an object file
+src/backend/codegen_nonary.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.o
+.PHONY : src/backend/codegen_nonary.cpp.o
+
+src/backend/codegen_nonary.i: src/backend/codegen_nonary.cpp.i
+.PHONY : src/backend/codegen_nonary.i
+
+# target to preprocess a source file
+src/backend/codegen_nonary.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.i
+.PHONY : src/backend/codegen_nonary.cpp.i
+
+src/backend/codegen_nonary.s: src/backend/codegen_nonary.cpp.s
+.PHONY : src/backend/codegen_nonary.s
+
+# target to generate assembly for a file
+src/backend/codegen_nonary.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.s
+.PHONY : src/backend/codegen_nonary.cpp.s
+
 src/backend/codegen_tbb.o: src/backend/codegen_tbb.cpp.o
 .PHONY : src/backend/codegen_tbb.o
 
@@ -465,6 +489,54 @@ src/backend/codegen_tbb.s: src/backend/codegen_tbb.cpp.s
 src/backend/codegen_tbb.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.s
 .PHONY : src/backend/codegen_tbb.cpp.s
+
+src/backend/codegen_ternary.o: src/backend/codegen_ternary.cpp.o
+.PHONY : src/backend/codegen_ternary.o
+
+# target to build an object file
+src/backend/codegen_ternary.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.o
+.PHONY : src/backend/codegen_ternary.cpp.o
+
+src/backend/codegen_ternary.i: src/backend/codegen_ternary.cpp.i
+.PHONY : src/backend/codegen_ternary.i
+
+# target to preprocess a source file
+src/backend/codegen_ternary.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.i
+.PHONY : src/backend/codegen_ternary.cpp.i
+
+src/backend/codegen_ternary.s: src/backend/codegen_ternary.cpp.s
+.PHONY : src/backend/codegen_ternary.s
+
+# target to generate assembly for a file
+src/backend/codegen_ternary.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.s
+.PHONY : src/backend/codegen_ternary.cpp.s
+
+src/backend/codegen_vector.o: src/backend/codegen_vector.cpp.o
+.PHONY : src/backend/codegen_vector.o
+
+# target to build an object file
+src/backend/codegen_vector.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.o
+.PHONY : src/backend/codegen_vector.cpp.o
+
+src/backend/codegen_vector.i: src/backend/codegen_vector.cpp.i
+.PHONY : src/backend/codegen_vector.i
+
+# target to preprocess a source file
+src/backend/codegen_vector.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.i
+.PHONY : src/backend/codegen_vector.cpp.i
+
+src/backend/codegen_vector.s: src/backend/codegen_vector.cpp.s
+.PHONY : src/backend/codegen_vector.s
+
+# target to generate assembly for a file
+src/backend/codegen_vector.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.s
+.PHONY : src/backend/codegen_vector.cpp.s
 
 src/backend/lowering_ternary.o: src/backend/lowering_ternary.cpp.o
 .PHONY : src/backend/lowering_ternary.o
@@ -513,6 +585,54 @@ src/backend/monomorphization.s: src/backend/monomorphization.cpp.s
 src/backend/monomorphization.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.s
 .PHONY : src/backend/monomorphization.cpp.s
+
+src/backend/nonary_ops.o: src/backend/nonary_ops.cpp.o
+.PHONY : src/backend/nonary_ops.o
+
+# target to build an object file
+src/backend/nonary_ops.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.o
+.PHONY : src/backend/nonary_ops.cpp.o
+
+src/backend/nonary_ops.i: src/backend/nonary_ops.cpp.i
+.PHONY : src/backend/nonary_ops.i
+
+# target to preprocess a source file
+src/backend/nonary_ops.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.i
+.PHONY : src/backend/nonary_ops.cpp.i
+
+src/backend/nonary_ops.s: src/backend/nonary_ops.cpp.s
+.PHONY : src/backend/nonary_ops.s
+
+# target to generate assembly for a file
+src/backend/nonary_ops.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.s
+.PHONY : src/backend/nonary_ops.cpp.s
+
+src/backend/nonary_runtime.o: src/backend/nonary_runtime.cpp.o
+.PHONY : src/backend/nonary_runtime.o
+
+# target to build an object file
+src/backend/nonary_runtime.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.o
+.PHONY : src/backend/nonary_runtime.cpp.o
+
+src/backend/nonary_runtime.i: src/backend/nonary_runtime.cpp.i
+.PHONY : src/backend/nonary_runtime.i
+
+# target to preprocess a source file
+src/backend/nonary_runtime.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.i
+.PHONY : src/backend/nonary_runtime.cpp.i
+
+src/backend/nonary_runtime.s: src/backend/nonary_runtime.cpp.s
+.PHONY : src/backend/nonary_runtime.s
+
+# target to generate assembly for a file
+src/backend/nonary_runtime.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.s
+.PHONY : src/backend/nonary_runtime.cpp.s
 
 src/backend/tbb_interprocedural.o: src/backend/tbb_interprocedural.cpp.o
 .PHONY : src/backend/tbb_interprocedural.o
@@ -585,6 +705,78 @@ src/backend/tbb_optimizer.s: src/backend/tbb_optimizer.cpp.s
 src/backend/tbb_optimizer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.s
 .PHONY : src/backend/tbb_optimizer.cpp.s
+
+src/backend/ternary_ops.o: src/backend/ternary_ops.cpp.o
+.PHONY : src/backend/ternary_ops.o
+
+# target to build an object file
+src/backend/ternary_ops.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.o
+.PHONY : src/backend/ternary_ops.cpp.o
+
+src/backend/ternary_ops.i: src/backend/ternary_ops.cpp.i
+.PHONY : src/backend/ternary_ops.i
+
+# target to preprocess a source file
+src/backend/ternary_ops.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.i
+.PHONY : src/backend/ternary_ops.cpp.i
+
+src/backend/ternary_ops.s: src/backend/ternary_ops.cpp.s
+.PHONY : src/backend/ternary_ops.s
+
+# target to generate assembly for a file
+src/backend/ternary_ops.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.s
+.PHONY : src/backend/ternary_ops.cpp.s
+
+src/backend/vector_ops.o: src/backend/vector_ops.cpp.o
+.PHONY : src/backend/vector_ops.o
+
+# target to build an object file
+src/backend/vector_ops.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.o
+.PHONY : src/backend/vector_ops.cpp.o
+
+src/backend/vector_ops.i: src/backend/vector_ops.cpp.i
+.PHONY : src/backend/vector_ops.i
+
+# target to preprocess a source file
+src/backend/vector_ops.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.i
+.PHONY : src/backend/vector_ops.cpp.i
+
+src/backend/vector_ops.s: src/backend/vector_ops.cpp.s
+.PHONY : src/backend/vector_ops.s
+
+# target to generate assembly for a file
+src/backend/vector_ops.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.s
+.PHONY : src/backend/vector_ops.cpp.s
+
+src/backend/vector_runtime.o: src/backend/vector_runtime.cpp.o
+.PHONY : src/backend/vector_runtime.o
+
+# target to build an object file
+src/backend/vector_runtime.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.o
+.PHONY : src/backend/vector_runtime.cpp.o
+
+src/backend/vector_runtime.i: src/backend/vector_runtime.cpp.i
+.PHONY : src/backend/vector_runtime.i
+
+# target to preprocess a source file
+src/backend/vector_runtime.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.i
+.PHONY : src/backend/vector_runtime.cpp.i
+
+src/backend/vector_runtime.s: src/backend/vector_runtime.cpp.s
+.PHONY : src/backend/vector_runtime.s
+
+# target to generate assembly for a file
+src/backend/vector_runtime.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.s
+.PHONY : src/backend/vector_runtime.cpp.s
 
 src/backend/vtable.o: src/backend/vtable.cpp.o
 .PHONY : src/backend/vtable.o
@@ -1341,15 +1533,30 @@ help:
 	@echo "... src/backend/codegen.o"
 	@echo "... src/backend/codegen.i"
 	@echo "... src/backend/codegen.s"
+	@echo "... src/backend/codegen_nonary.o"
+	@echo "... src/backend/codegen_nonary.i"
+	@echo "... src/backend/codegen_nonary.s"
 	@echo "... src/backend/codegen_tbb.o"
 	@echo "... src/backend/codegen_tbb.i"
 	@echo "... src/backend/codegen_tbb.s"
+	@echo "... src/backend/codegen_ternary.o"
+	@echo "... src/backend/codegen_ternary.i"
+	@echo "... src/backend/codegen_ternary.s"
+	@echo "... src/backend/codegen_vector.o"
+	@echo "... src/backend/codegen_vector.i"
+	@echo "... src/backend/codegen_vector.s"
 	@echo "... src/backend/lowering_ternary.o"
 	@echo "... src/backend/lowering_ternary.i"
 	@echo "... src/backend/lowering_ternary.s"
 	@echo "... src/backend/monomorphization.o"
 	@echo "... src/backend/monomorphization.i"
 	@echo "... src/backend/monomorphization.s"
+	@echo "... src/backend/nonary_ops.o"
+	@echo "... src/backend/nonary_ops.i"
+	@echo "... src/backend/nonary_ops.s"
+	@echo "... src/backend/nonary_runtime.o"
+	@echo "... src/backend/nonary_runtime.i"
+	@echo "... src/backend/nonary_runtime.s"
 	@echo "... src/backend/tbb_interprocedural.o"
 	@echo "... src/backend/tbb_interprocedural.i"
 	@echo "... src/backend/tbb_interprocedural.s"
@@ -1359,6 +1566,15 @@ help:
 	@echo "... src/backend/tbb_optimizer.o"
 	@echo "... src/backend/tbb_optimizer.i"
 	@echo "... src/backend/tbb_optimizer.s"
+	@echo "... src/backend/ternary_ops.o"
+	@echo "... src/backend/ternary_ops.i"
+	@echo "... src/backend/ternary_ops.s"
+	@echo "... src/backend/vector_ops.o"
+	@echo "... src/backend/vector_ops.i"
+	@echo "... src/backend/vector_ops.s"
+	@echo "... src/backend/vector_runtime.o"
+	@echo "... src/backend/vector_runtime.i"
+	@echo "... src/backend/vector_runtime.s"
 	@echo "... src/backend/vtable.o"
 	@echo "... src/backend/vtable.i"
 	@echo "... src/backend/vtable.s"

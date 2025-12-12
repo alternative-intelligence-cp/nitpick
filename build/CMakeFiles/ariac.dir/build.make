@@ -251,10 +251,122 @@ CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_tbb.cpp -o CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.s
 
+CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.o: CMakeFiles/ariac.dir/flags.make
+CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_ternary.cpp
+CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Building CXX object CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.o -MF CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_ternary.cpp
+
+CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_ternary.cpp > CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.i
+
+CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_ternary.cpp -o CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.s
+
+CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.o: CMakeFiles/ariac.dir/flags.make
+CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/ternary_ops.cpp
+CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_15) "Building CXX object CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.o -MF CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/ternary_ops.cpp
+
+CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/randy/._____RANDY_____/REPOS/aria/src/backend/ternary_ops.cpp > CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.i
+
+CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/backend/ternary_ops.cpp -o CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.s
+
+CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.o: CMakeFiles/ariac.dir/flags.make
+CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_nonary.cpp
+CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Building CXX object CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.o -MF CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_nonary.cpp
+
+CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_nonary.cpp > CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.i
+
+CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_nonary.cpp -o CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.s
+
+CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.o: CMakeFiles/ariac.dir/flags.make
+CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/nonary_ops.cpp
+CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_17) "Building CXX object CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.o -MF CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/nonary_ops.cpp
+
+CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/randy/._____RANDY_____/REPOS/aria/src/backend/nonary_ops.cpp > CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.i
+
+CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/backend/nonary_ops.cpp -o CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.s
+
+CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.o: CMakeFiles/ariac.dir/flags.make
+CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/nonary_runtime.cpp
+CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_18) "Building CXX object CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.o -MF CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/nonary_runtime.cpp
+
+CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/randy/._____RANDY_____/REPOS/aria/src/backend/nonary_runtime.cpp > CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.i
+
+CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/backend/nonary_runtime.cpp -o CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.s
+
+CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.o: CMakeFiles/ariac.dir/flags.make
+CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_vector.cpp
+CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_19) "Building CXX object CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.o -MF CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_vector.cpp
+
+CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_vector.cpp > CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.i
+
+CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_vector.cpp -o CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.s
+
+CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.o: CMakeFiles/ariac.dir/flags.make
+CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/vector_ops.cpp
+CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_20) "Building CXX object CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.o -MF CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/vector_ops.cpp
+
+CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/randy/._____RANDY_____/REPOS/aria/src/backend/vector_ops.cpp > CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.i
+
+CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/backend/vector_ops.cpp -o CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.s
+
+CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.o: CMakeFiles/ariac.dir/flags.make
+CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/vector_runtime.cpp
+CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_21) "Building CXX object CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.o -MF CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/vector_runtime.cpp
+
+CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/randy/._____RANDY_____/REPOS/aria/src/backend/vector_runtime.cpp > CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.i
+
+CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/randy/._____RANDY_____/REPOS/aria/src/backend/vector_runtime.cpp -o CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.s
+
 CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o: CMakeFiles/ariac.dir/flags.make
 CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/tbb_optimizer.cpp
 CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Building CXX object CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_22) "Building CXX object CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o -MF CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/tbb_optimizer.cpp
 
 CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.i: cmake_force
@@ -268,7 +380,7 @@ CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.s: cmake_force
 CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.o: CMakeFiles/ariac.dir/flags.make
 CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/tbb_loop_optimizer.cpp
 CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_15) "Building CXX object CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_23) "Building CXX object CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.o -MF CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/tbb_loop_optimizer.cpp
 
 CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.i: cmake_force
@@ -282,7 +394,7 @@ CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.s: cmake_force
 CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.o: CMakeFiles/ariac.dir/flags.make
 CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/tbb_interprocedural.cpp
 CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Building CXX object CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_24) "Building CXX object CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.o -MF CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/tbb_interprocedural.cpp
 
 CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.i: cmake_force
@@ -296,7 +408,7 @@ CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.s: cmake_force
 CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.o: CMakeFiles/ariac.dir/flags.make
 CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/monomorphization.cpp
 CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_17) "Building CXX object CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_25) "Building CXX object CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.o -MF CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/monomorphization.cpp
 
 CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.i: cmake_force
@@ -310,7 +422,7 @@ CMakeFiles/ariac.dir/src/backend/monomorphization.cpp.s: cmake_force
 CMakeFiles/ariac.dir/src/backend/vtable.cpp.o: CMakeFiles/ariac.dir/flags.make
 CMakeFiles/ariac.dir/src/backend/vtable.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/vtable.cpp
 CMakeFiles/ariac.dir/src/backend/vtable.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_18) "Building CXX object CMakeFiles/ariac.dir/src/backend/vtable.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_26) "Building CXX object CMakeFiles/ariac.dir/src/backend/vtable.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/vtable.cpp.o -MF CMakeFiles/ariac.dir/src/backend/vtable.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/vtable.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/vtable.cpp
 
 CMakeFiles/ariac.dir/src/backend/vtable.cpp.i: cmake_force
@@ -324,7 +436,7 @@ CMakeFiles/ariac.dir/src/backend/vtable.cpp.s: cmake_force
 CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o: CMakeFiles/ariac.dir/flags.make
 CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o: /home/randy/._____RANDY_____/REPOS/aria/src/backend/lowering_ternary.cpp
 CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o: CMakeFiles/ariac.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_19) "Building CXX object CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_27) "Building CXX object CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o -MF CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o.d -o CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.o -c /home/randy/._____RANDY_____/REPOS/aria/src/backend/lowering_ternary.cpp
 
 CMakeFiles/ariac.dir/src/backend/lowering_ternary.cpp.i: cmake_force
@@ -350,6 +462,14 @@ ariac_OBJECTS = \
 "CMakeFiles/ariac.dir/src/frontend/sema/trait_checker.cpp.o" \
 "CMakeFiles/ariac.dir/src/backend/codegen.cpp.o" \
 "CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.o" \
+"CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.o" \
+"CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.o" \
+"CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.o" \
+"CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.o" \
+"CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.o" \
+"CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.o" \
+"CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.o" \
+"CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.o" \
 "CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o" \
 "CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.o" \
 "CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.o" \
@@ -373,6 +493,14 @@ ariac: CMakeFiles/ariac.dir/src/frontend/sema/tbb_checker.cpp.o
 ariac: CMakeFiles/ariac.dir/src/frontend/sema/trait_checker.cpp.o
 ariac: CMakeFiles/ariac.dir/src/backend/codegen.cpp.o
 ariac: CMakeFiles/ariac.dir/src/backend/codegen_tbb.cpp.o
+ariac: CMakeFiles/ariac.dir/src/backend/codegen_ternary.cpp.o
+ariac: CMakeFiles/ariac.dir/src/backend/ternary_ops.cpp.o
+ariac: CMakeFiles/ariac.dir/src/backend/codegen_nonary.cpp.o
+ariac: CMakeFiles/ariac.dir/src/backend/nonary_ops.cpp.o
+ariac: CMakeFiles/ariac.dir/src/backend/nonary_runtime.cpp.o
+ariac: CMakeFiles/ariac.dir/src/backend/codegen_vector.cpp.o
+ariac: CMakeFiles/ariac.dir/src/backend/vector_ops.cpp.o
+ariac: CMakeFiles/ariac.dir/src/backend/vector_runtime.cpp.o
 ariac: CMakeFiles/ariac.dir/src/backend/tbb_optimizer.cpp.o
 ariac: CMakeFiles/ariac.dir/src/backend/tbb_loop_optimizer.cpp.o
 ariac: CMakeFiles/ariac.dir/src/backend/tbb_interprocedural.cpp.o
@@ -459,7 +587,7 @@ ariac: /usr/lib/llvm-20/lib/libLLVMDemangle.a
 ariac: /usr/lib/x86_64-linux-gnu/libz.so
 ariac: /usr/lib/x86_64-linux-gnu/libzstd.so
 ariac: CMakeFiles/ariac.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_20) "Linking CXX executable ariac"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_28) "Linking CXX executable ariac"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/ariac.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

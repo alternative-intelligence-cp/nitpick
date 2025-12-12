@@ -346,6 +346,8 @@ CMakeFiles/ariac.dir/src/backend/codegen.cpp.o: \
  /usr/include/c++/13/deque /usr/include/c++/13/bits/stl_deque.h \
  /usr/include/c++/13/bits/deque.tcc /usr/include/c++/13/bits/stl_stack.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_tbb.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/codegen_ternary.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/backend/ternary_ops.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/backend/tbb_optimizer.h \
  /usr/lib/llvm-20/include/llvm/IR/PassManager.h \
  /usr/lib/llvm-20/include/llvm/ADT/TinyPtrVector.h \

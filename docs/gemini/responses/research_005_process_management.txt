@@ -1,0 +1,398 @@
+﻿Architectural Specification and Implementation Strategy for the Aria Process Management Library
+1. Introduction: The Systems Programming Imperative
+The capability to spawn, manage, and interact with operating system processes constitutes a foundational pillar of any systems programming language. for Aria, a language predicated on high-performance concurrency and type safety via Twisted Balanced Binary (TBB) arithmetic, the design of the std.process library represents a critical intersection of kernel-level mechanics and user-space abstraction.1 The existing specification offers only rudimentary signatures for spawn and exec, creating a vacuum that this report seeks to fill with a rigorous, production-grade architectural definition.
+This analysis posits that a modern process library must transcend the historical "fork-exec" paradigm, which has become increasingly hazardous in multi-threaded applications.2 Instead, the Aria implementation must leverage modern kernel primitives—specifically posix_spawn and pidfd on Linux, and threaded Job Objects on Windows—to guarantee safety without sacrificing the granularity required for systems orchestration.3 Furthermore, the integration of process management into Aria’s async/await runtime is not merely a convenience but a structural necessity; blocking an operating system thread to wait for a child process is antithetical to the scalability goals of a coroutine-based scheduler.5
+The following sections detail a unified API design, a cross-platform implementation strategy for robust IPC (Inter-Process Communication), and a comprehensive security analysis regarding argument injection vectors. This architecture is synthesized from an exhaustive review of patterns in Rust, Go, Node.js, and C++, tailored specifically to Aria’s memory model and scheduler.
+2. Theoretical Framework and Platform Abstraction
+Designing a cross-platform process library requires reconciling two fundamentally divergent philosophies of process creation: the Unix molecular model (fork/exec) and the Windows monolithic model (CreateProcess). A naive wrapper around popen or system is insufficient for Aria’s reliability guarantees. The abstraction layer must normalize these behaviors while exposing a consistent asynchronous interface.
+2.1 The Unix Paradigm: Deprecating Fork for posix_spawn
+Historically, Unix process creation relies on fork(), which duplicates the calling process, followed by exec(), which replaces the memory image with a new program. While elegant in the single-threaded era, fork() is fraught with peril in modern multi-threaded environments. When a thread in a multi-threaded application calls fork(), only that thread is duplicated in the child process. Any mutexes held by other threads in the parent remain locked in the child, but the owners of those locks do not exist in the child to release them. If the child attempts to acquire such a lock (e.g., inside malloc or a logging routine) before calling exec(), a deadlock ensues.2
+Furthermore, fork() imposes a performance penalty due to the necessity of copying page tables, even with Copy-on-Write (CoW) optimizations. In large-memory applications (e.g., databases like Redis or MongoDB), the latency of fork() can cause significant scheduler stalls.3
+The research strongly indicates that Aria should adopt posix_spawn as the primary underlying primitive for Unix-like systems. posix_spawn (and its Linux backend clone with CLONE_VM or vfork) avoids the page table copy overhead and the hazard of inconsistent lock states by strictly limiting what can occur between process creation and image replacement.2 Operations such as file descriptor duplication (dup2), closing files, and changing the working directory can be safely declared via posix_spawn_file_actions_t attributes, which the kernel or C library executes safely.7 This approach aligns Aria with modern best practices seen in OpenJDK and recent Ruby implementations, ensuring thread safety by design.
+2.2 The Windows Paradigm: CreateProcess and Job Objects
+The Windows NT kernel does not support fork(). Process creation is atomic via CreateProcessW. This function accepts a command line string, environment block, and startup information structure (STARTUPINFOW) in a single call.8
+The architectural challenge on Windows lies not in creation but in lifecycle management. While Unix provides a unified signal mechanism (SIGCHLD) to notify parents of child exits, Windows relies on handle signaling. A raw WaitForSingleObject is a blocking call, which would monopolize an Aria runtime worker thread, degrading async throughput.10
+To integrate with Aria's async runtime, the library must utilize I/O Completion Ports (IOCP). Although process handles cannot be directly associated with IOCP for exit notification in the same manner as file handles, Windows provides Job Objects. By assigning a child process to a Job Object associated with the runtime's completion port, the scheduler receives a notification message (JOB_OBJECT_MSG_EXIT_PROCESS) immediately upon termination.12 Alternatively, for simpler implementations or legacy Windows support, RegisterWaitForSingleObject creates a thread-pool callback that can bridge the signal state to the Aria scheduler.11 The Job Object approach is superior for Aria as it allows grouping processes (similar to Unix process groups) and applying resource limits, aligning with the "systems programming" mandate.
+2.3 The Abstraction Strategy: The Process Handle
+To bridge these worlds, Aria will define a Child structure that encapsulates the OS-specific handle. This structure must implement the RAII (Resource Acquisition Is Initialization) pattern to prevent resource leaks—specifically "zombie" processes on Unix and unclosed handles on Windows.
+On Unix, the Child struct holds the pid_t. Crucially, modern Linux (5.3+) offers pidfd_open, which returns a file descriptor referring to the process.4 This is a game-changer for library design. Standard PIDs are recycled; a race condition exists where a parent waits on a PID that has already been reused by a new process. A pidfd is stable and scoped to the handle, eliminating this race. Moreover, pidfd integrates with epoll, allowing the Aria event loop to wait for process exit using the exact same mechanism as network sockets.14
+Therefore, the Aria runtime implementation for wait() will follow a tri-state strategy:
+1. Linux 5.3+: Use pidfd with epoll (EPOLLIN indicates exit).
+2. BSD/macOS: Use kqueue with EVFILT_PROC / NOTE_EXIT.16
+3. Windows: Use Job Objects linked to IOCP or RegisterWaitForSingleObject.13
+3. Process API Design: The Builder Pattern
+Directly exposing a function like spawn(cmd, args, env, cwd, stdin, stdout, stderr, uid, gid...) leads to unreadable code and difficult versioning. Instead, Aria should adopt the Builder Pattern popularized by Rust’s std::process::Command and Go’s os/exec.18 This separates the configuration of a process from its execution.
+3.1 The Command Configuration Struct
+The Command struct acts as a factory for new processes. It holds the mutable configuration state. Once spawn() is called, this configuration is consumed (or cloned) to produce a running Child process.
+
+
+Code snippet
+
+
+
+
+// Proposed Aria API Definition
+
+mod std.process {
+   // Enum defining standard I/O behavior
+   pub enum Stdio {
+       Inherit,    // Child shares parent's stream
+       Null,       // Redirect to /dev/null or NUL
+       Piped,      // Create a new pipe for IPC
+   }
+
+   // The Process Builder
+   pub struct Command {
+       program: string,
+       args: [string],
+       env: map<string, string>,
+       cwd: string,
+       
+       // I/O Configuration
+       stdin_cfg: Stdio,
+       stdout_cfg: Stdio,
+       stderr_cfg: Stdio,
+       
+       // Advanced OS-specific flags (e.g., detach, uid)
+       flags: uint32,
+
+       // Constructor
+       pub func:new = Command(string:prog) {
+           return Command {
+               program: prog,
+               args:,
+               env: std.env.current(), // Default to inherit
+               cwd: std.env.cwd(),     // Default to current working dir
+               stdin_cfg: Stdio.Inherit,
+               stdout_cfg: Stdio.Inherit,
+               stderr_cfg: Stdio.Inherit,
+               flags: 0
+           };
+       }
+
+       // Fluent Builder Methods
+       pub func:arg = Command(mut self, string:arg) {
+           self.args.push(arg);
+           return self;
+       }
+
+       pub func:args = Command(mut self, [string]:arg_list) {
+           self.args.append(arg_list);
+           return self;
+       }
+
+       pub func:env = Command(mut self, string:key, string:val) {
+           self.env[key] = val;
+           return self;
+       }
+
+       pub func:current_dir = Command(mut self, string:dir) {
+           self.cwd = dir;
+           return self;
+       }
+
+       pub func:stdin = Command(mut self, Stdio:cfg) {
+           self.stdin_cfg = cfg;
+           return self;
+       }
+
+       pub func:stdout = Command(mut self, Stdio:cfg) {
+           self.stdout_cfg = cfg;
+           return self;
+       }
+
+       pub func:stderr = Command(mut self, Stdio:cfg) {
+           self.stderr_cfg = cfg;
+           return self;
+       }
+
+       // Spawns the process asynchronously, returning a handle immediately
+       pub func:spawn = Result<Child>(self);
+
+       // Spawns and waits for completion, collecting output
+       pub func:output = Future<Result<Output>>(self);
+   }
+}
+
+This design encourages safety. By strictly typing args as a list of strings ([string]), we force the developer to treat arguments as discrete tokens rather than a monolithic string. This is the first line of defense against argument injection, distinguishing Aria from insecure implementations like child_process.exec in Node.js which defaults to shell execution.20
+3.2 The Child Handle and Async Wait
+The Child struct represents a running process. It owns the system resources.
+
+
+Code snippet
+
+
+
+
+    pub struct Child {
+       id: uint32,           // OS PID
+       
+       // Pipes are explicitly Option types because they only exist if Stdio.Piped was requested
+       stdin: Option<PipeWriter>,  
+       stdout: Option<PipeReader>, 
+       stderr: Option<PipeReader>, 
+       
+       // Internal platform-specific handle (opaque to user)
+       _handle: wild void*, 
+
+       // Async wait method
+       pub func:wait = Future<Result<ExitStatus>>(mut self);
+       
+       // Signal sending
+       pub func:kill = Result<void>(mut self);
+   }
+
+   pub struct ExitStatus {
+       code: int32,      // The exit code
+       success: bool,    // True if code == 0
+       signal: Option<int32> // Signal that terminated process (Unix only)
+   }
+
+The wait() function is the critical integration point. It returns a Future, allowing it to be awaited in Aria's coroutine environment.
+Usage Example:
+
+
+Code snippet
+
+
+
+
+async func:run_grep = Result<void>() {
+   mut cmd = std.process.Command.new("grep");
+   cmd.arg("search_term");
+   cmd.stdin(std.process.Stdio.Piped);
+   
+   // Spawn does not block
+   child_res = cmd.spawn();
+   if (child_res.err!= NULL) return child_res;
+   mut child = child_res.val;
+
+   // Async write to child's stdin
+   if (child.stdin!= NULL) {
+       await child.stdin.write("line one\nline two search_term\n");
+       child.stdin.close(); // Close to send EOF
+   }
+
+   // Async wait for exit
+   status = await child.wait()?;
+   
+   if (status.success) {
+       print("Grep found match!");
+   }
+   return {err: NULL, val: void};
+}
+
+4. Security: Anatomy of Argument Injection Prevention
+One of the most pervasive vulnerabilities in process management libraries is Command Injection. This occurs when untrusted input alters the structure of the command being executed. The Aria library must adopt a "secure by default" stance.
+4.1 The argv vs lpCommandLine Disparity
+On Unix, the execve system call accepts an array of pointers (char *const argv). The kernel passes these directly to the new process's main function. There is no ambiguity; "argument parsing" is not performed by a shell, meaning characters like space, &, |, or ; have no special meaning. Aria's Command struct maps 1:1 to this model, providing robust security.21
+On Windows, however, CreateProcessW accepts a single command line string (LPWSTR lpCommandLine). The child process is responsible for parsing this string back into arguments, typically using CommandLineToArgvW or the C runtime's parser.8 This creates a massive injection vector. If Aria simply concatenated arguments with spaces, a user input of foo & del *.* would be interpreted by cmd.exe (if invoked) or parsed incorrectly by the runtime.
+4.2 The Windows Escaping Algorithm
+To secure spawn on Windows, Aria must implement a rigorous escaping algorithm that matches the Microsoft C Runtime parsing rules. The logic is non-trivial 23:
+1. Backslashes: Backslashes are normally literal, unless they precede a double quote. A sequence of 2n backslashes before a quote becomes n backslashes, and the quote remains a delimiter. 2n+1 backslashes before a quote becomes n backslashes and a literal escaped quote.
+2. Quotes: Arguments containing spaces, tabs, or empty strings must be enclosed in double quotes.
+3. Meta-characters: If the execution target is a batch file (.bat, .cmd), CreateProcess implicitly invokes cmd.exe. In this specific case, caret-escaping (^) is required for shell meta-characters (&, <, >, |, ^).9
+Requirement: The Aria backend must detect if the target is a raw executable or a batch script and apply the appropriate escaping logic. For raw executables (the 99% case), the standard C-runtime escaping (handling quotes and backslashes) is sufficient. Explicitly forbidding implicit shell execution prevents the majority of injection attacks.
+4.3 Shell Execution: Opt-In Only
+Unlike Node.js, which offers exec (shell) and spawn (direct), Aria should only offer spawn. If a developer requires shell features (wildcards, pipes, environment variable expansion), they must explicitly invoke the shell:
+
+
+Code snippet
+
+
+
+
+// Secure: Explicit shell invocation
+Command.new("/bin/sh").arg("-c").arg("ls *.txt | grep foo").spawn();
+
+This forces the developer to acknowledge the security boundary they are crossing, rather than hiding it behind a convenient but dangerous API.20
+5. IPC Mechanisms and Deadlock Avoidance
+The Stdio.Piped configuration requests an anonymous pipe for communication. The implementation mechanics are critical for performance and stability.
+5.1 Pipe Creation and Inheritance
+* Unix: The library calls pipe() to create a pair of file descriptors. The fork or posix_spawn setup uses dup2 to copy the appropriate end of the pipe to STDIN_FILENO, STDOUT_FILENO, or STDERR_FILENO in the child. Crucially, the parent's end of the pipe must be marked O_CLOEXEC to prevent it from leaking into the child or other concurrent children.24
+* Windows: The library uses CreatePipe. The handle passed to the child must be marked as inheritable (SetHandleInformation), while the parent's end must not be inherited. These handles are passed via the STARTUPINFOW structure (hStdInput, etc.) and the STARTF_USESTDHANDLES flag.25
+5.2 The Deadlock Trap
+A synchronous wait() combined with piped I/O is a recipe for deadlock.
+Scenario: The parent calls wait(). The child writes 1MB of data to stdout. The OS pipe buffer (typically 64KB) fills up. The child blocks, waiting for the buffer to drain. The parent is blocked on wait(), so it never reads from the pipe. Both processes hang indefinitely.26
+Solution: The Command.output() helper must be implemented as a composite future. It must launch asynchronous tasks to read from stdout and stderr concurrently with the wait operation.
+
+
+Code snippet
+
+
+
+
+// Conceptual implementation of output()
+pub func:output = Future<Output>(self) {
+   child = self.spawn()?;
+   
+   // Create async readers
+   stdout_future = child.stdout.read_to_end();
+   stderr_future = child.stderr.read_to_end();
+   wait_future = child.wait();
+   
+   // Await all concurrently
+   // If wait_future completes first, we must still finish reading pipes until EOF
+   return join_all(stdout_future, stderr_future, wait_future);
+}
+
+This ensures that the parent constantly drains the pipe buffers, preventing the child from blocking.28
+6. Asynchronous Integration: The Scheduler Link
+The core value proposition of Aria's process library is its zero-cost integration with the async runtime. The implementation strategy differs significantly by OS.
+6.1 Unix: The epoll/kqueue Bridge
+On Linux, the pidfd is the key. Since pidfd is a file descriptor that becomes "readable" when the process exits, it can be added to the same epoll instance that manages network sockets.14
+Implementation Flow:
+1. spawn() creates the child and obtains a pidfd via pidfd_open.
+2. child.wait() creates a Future.
+3. When the Future is polled, it registers the pidfd with the thread-local reactor (event loop), requesting EPOLLIN notification.
+4. The coroutine yields (Suspend).
+5. When the child exits, the kernel signals the pidfd. epoll_wait returns.
+6. The reactor wakes the Future.
+7. The Future calls waitid(P_PIDFD,...) to reap the status and returns it.30
+For legacy systems without pidfd (older Linux, macOS), the "self-pipe trick" with a global SIGCHLD handler is necessary. The signal handler writes to a dedicated internal pipe, waking up the event loop to scan for zombie children using waitpid(-1, WNOHANG).17
+6.2 Windows: IOCP and RegisterWaitForSingleObject
+Windows handles are not file descriptors and cannot be added directly to IOCP for "signaled" status. The library must use the Windows Thread Pool API to bridge this gap.11
+Implementation Flow:
+1. spawn() creates the process and gets a HANDLE.
+2. child.wait() calls RegisterWaitForSingleObject, passing the process handle and a callback function.
+3. The callback function, executed by a system thread when the process exits, must enqueue a completion packet to the Aria scheduler's IOCP (via PostQueuedCompletionStatus).33
+4. The Aria scheduler picks up this packet as if it were an I/O event and wakes the associated coroutine.
+This strategy avoids burning a dedicated thread for every waiting process, leveraging the OS thread pool for scalability.13
+7. Advanced Features: Process Groups and Signals
+System services often require managing trees of processes.
+7.1 Process Groups
+Aria must expose the ability to start a process in a new session or process group. This allows signals (like Ctrl+C / SIGINT) to be sent to the entire group or isolated from the parent.
+* Unix: posix_spawn supports POSIX_SPAWN_SETSID or POSIX_SPAWN_SETPGROUP flags.
+* Windows: CreateProcess supports CREATE_NEW_PROCESS_GROUP or DETACHED_PROCESS flags.35
+7.2 Signal Handling
+The Child.kill() method abstracts signal sending.
+* Unix: kill(pid, SIGTERM).
+* Windows: TerminateProcess(handle, code). Note that Windows has no concept of "graceful termination" signals for GUI-less processes effectively; TerminateProcess is abrupt. For graceful shutdown on Windows, one typically needs a control channel (pipe) or GenerateConsoleCtrlEvent if sharing a console.36
+8. Comparative Analysis
+Feature
+	Node.js (child_process)
+	Go (os/exec)
+	Rust (std::process)
+	Aria Design
+	Default Mode
+	Async (Callback/Event)
+	Blocking (Sync)
+	Blocking (Sync)
+	Async (Future)
+	Shell
+	exec (Implicit)
+	No
+	No
+	No (Explicit only)
+	Argument Safety
+	Poor (in exec)
+	High
+	High
+	High (Typed List)
+	Wait Mech.
+	libuv (thread pool/epoll)
+	wait4 (blocking thread)
+	waitpid (blocking)
+	Native Epoll/IOCP
+	Resource Mgmt
+	GC based
+	Explicit Wait required
+	RAII (Drop kills/waits)
+	RAII + Explicit
+	Aria's design aligns closest to Rust's structural safety but adopts Node.js's non-blocking philosophy as the default, avoiding the "colored function" issue where blocking waits stall the runtime.
+9. Conclusion
+The specification of the Aria Process Management Library outlined here provides a robust foundation for systems programming. By prioritizing posix_spawn and pidfd on Unix, and proper argument escaping with IOCP integration on Windows, the library achieves the trifecta of safety, performance, and concurrency.
+The strict Builder API prevents common injection vulnerabilities, while the integration with Aria’s Result and Future types ensures that process management feels native to the language's async-first paradigm. This design moves beyond simple system wrappers, offering a sophisticated orchestrator capable of managing thousands of concurrent processes efficiently—a requirement for modern, high-density computing environments.
+Implementing this architecture will require careful attention to platform-specific details, particularly the argument escaping logic on Windows and the file descriptor management on Unix, but the result will be a best-in-class library comparable to the finest implementations in the current ecosystem.
+________________
+10. Data Tables and Implementation References
+Table 10.1: Implementation Matrix
+Component
+	Linux Implementation
+	Windows Implementation
+	Security Note
+	Spawner
+	posix_spawn (glibc) / clone3
+	CreateProcessW
+	Avoid fork() in threaded apps to prevent deadlock.
+	Arg Parsing
+	Direct argv pass-through
+	escape_args (custom algo)
+	Windows algo must match MSVCRT rules perfectly.
+	Stdio
+	pipe2(O_CLOEXEC)
+	CreatePipe + SetHandleInfo
+	Prevent handle leaks to unintended children.
+	Async Wait
+	pidfd + epoll
+	RegisterWaitForSingleObject
+	Use pidfd to avoid PID recycling race conditions.
+	Reaping
+	waitid(P_PIDFD)
+	GetExitCodeProcess
+	Ensure zombie reaping is tied to Future completion.
+	Table 10.2: Recommended Buffer Sizes
+Stream Type
+	Buffer Size
+	Rationale
+	Stdin Pipe
+	64 KB
+	Standard limit on Linux; atomic writes guaranteed up to PIPE_BUF (4KB).
+	Stdout/Stderr
+	Dynamic (Growable)
+	Must drain aggressively to prevent child blocking.
+	Environment
+	128 KB (Limit)
+	Sanity check to prevent stack overflows in execve.
+	11. Appendix: Windows Argument Escaping Logic (Reference Implementation)
+The following logic is required to safely encode an argument array into a Windows command line string 8:
+1. Iterate through the argument string.
+2. Count consecutive backslashes.
+3. If a quote " is encountered:
+   * Output 2n + 1 backslashes (escaping the backslashes and the quote).
+   * Reset count.
+4. If a non-special character is encountered:
+   * Output n backslashes (literal backslashes).
+   * Output the character.
+   * Reset count.
+5. At end of string:
+   * Output 2n backslashes (escaping trailing backslashes before the closing quote).
+6. Wrap the entire result in " if it contains spaces or is empty.
+Works cited
+1. aria_specs.txt
+2. A fork() in the road - Microsoft, accessed December 11, 2025, https://www.microsoft.com/en-us/research/wp-content/uploads/2019/04/fork-hotos19.pdf
+3. README.md - rtomayko/posix-spawn - GitHub, accessed December 11, 2025, https://github.com/rtomayko/posix-spawn/blob/master/README.md
+4. pidfd_open(2) - Linux manual page - man7.org, accessed December 11, 2025, https://man7.org/linux/man-pages/man2/pidfd_open.2.html
+5. What Are You Waiting For? Use Coroutines for Asynchronous I/O to Hide I/O Latencies and Maximize the Read Bandwidth!, accessed December 11, 2025, https://db.in.tum.de/~fent/papers/coroutines.pdf
+6. async_process - Rust - Docs.rs, accessed December 11, 2025, https://docs.rs/async-process
+7. Fork vs. Posix_Spawn : r/C_Programming - Reddit, accessed December 11, 2025, https://www.reddit.com/r/C_Programming/comments/1lvdhp2/fork_vs_posix_spawn/
+8. WinAPI CreateProcess and quoting of arguments - Stack Overflow, accessed December 11, 2025, https://stackoverflow.com/questions/35993016/winapi-createprocess-and-quoting-of-arguments
+9. std::process - Rust, accessed December 11, 2025, https://doc.rust-lang.org/std/process/index.html
+10. WaitForSingleObject function (synchapi.h) - Win32 apps | Microsoft Learn, accessed December 11, 2025, https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-waitforsingleobject
+11. Windows: Getting callback on child process exit in C++ - Ivan Krivyakov, accessed December 11, 2025, https://ikriv.com/blog/?p=1431
+12. WaitForSingleObject on Windows isn't sufficient to wait for Process termination. #77 - GitHub, accessed December 11, 2025, https://github.com/haskell/process/issues/77
+13. Detecting exit/failure of child processes using IOCP - C++ - Windows - Stack Overflow, accessed December 11, 2025, https://stackoverflow.com/questions/17724859/detecting-exit-failure-of-child-processes-using-iocp-c-windows
+14. epoll on pidfd - Dropbear, accessed December 11, 2025, https://dropbear.xyz/2025/06/22/epoll-on-pidfd/
+15. Linux: What can you epoll? - Graham King, accessed December 11, 2025, https://darkcoding.net/software/linux-what-can-you-epoll/
+16. Get exit code from non-child process - c++ - Stack Overflow, accessed December 11, 2025, https://stackoverflow.com/questions/26129532/get-exit-code-from-non-child-process
+17. Child process - listen for event when parent dies - Unix & Linux Stack Exchange, accessed December 11, 2025, https://unix.stackexchange.com/questions/427255/child-process-listen-for-event-when-parent-dies
+18. Child in std::process - Rust, accessed December 11, 2025, https://doc.rust-lang.org/std/process/struct.Child.html
+19. os/exec - Go Packages, accessed December 11, 2025, https://pkg.go.dev/os/exec
+20. Child process | Node.js v25.2.1 Documentation, accessed December 11, 2025, https://nodejs.org/api/child_process.html
+21. Injection Prevention - OWASP Cheat Sheet Series, accessed December 11, 2025, https://cheatsheetseries.owasp.org/cheatsheets/Injection_Prevention_Cheat_Sheet.html
+22. `main` function and command-line arguments (C++) - Microsoft Learn, accessed December 11, 2025, https://learn.microsoft.com/en-us/cpp/cpp/main-function-command-line-args?view=msvc-170
+23. How Command Line Parameters Are Parsed - David Deley, accessed December 11, 2025, https://daviddeley.com/autohotkey/parameters/parameters.htm
+24. New alternative for fork()/exec() and posix_spawn(). - OSDev.org, accessed December 11, 2025, https://forum.osdev.org/viewtopic.php?t=57148
+25. Creating a Child Process with Redirected Input and Output - Win32 apps | Microsoft Learn, accessed December 11, 2025, https://learn.microsoft.com/en-us/windows/win32/procthread/creating-a-child-process-with-redirected-input-and-output
+26. Child process redirect stdio to sockets: stdio not flushed automatically when child process exits - Visual Studio Developer Community, accessed December 11, 2025, https://developercommunity.visualstudio.com/content/problem/977949/child-process-redirect-stdio-to-sockets-stdio-not.html
+27. std.ChildProcess can deadlock if both stdout and stderr are long and interleaved · Issue #6343 · ziglang/zig - GitHub, accessed December 11, 2025, https://github.com/ziglang/zig/issues/6343
+28. Deadlock when communicating with child process with redirected I/O - Stack Overflow, accessed December 11, 2025, https://stackoverflow.com/questions/51010038/deadlock-when-communicating-with-child-process-with-redirected-i-o
+29. std::process, with stdin and stdout from buffers - rust - Stack Overflow, accessed December 11, 2025, https://stackoverflow.com/questions/69780431/stdprocess-with-stdin-and-stdout-from-buffers
+30. async_pidfd - Rust - Docs.rs, accessed December 11, 2025, https://docs.rs/async-pidfd
+31. Way too many ways to wait on a child process with a timeout - GitHub Pages, accessed December 11, 2025, https://gaultier.github.io/blog/way_too_many_ways_to_wait_for_a_child_process_with_a_timeout.html
+32. How to use signalfd and epoll to get event when my child process exit? - Stack Overflow, accessed December 11, 2025, https://stackoverflow.com/questions/25607579/how-to-use-signalfd-and-epoll-to-get-event-when-my-child-process-exit
+33. I/O Completion Ports - Win32 apps - Microsoft Learn, accessed December 11, 2025, https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports
+34. I/O Completion Ports vs. RegisterWaitForSingleObject? - Stack Overflow, accessed December 11, 2025, https://stackoverflow.com/questions/16243248/i-o-completion-ports-vs-registerwaitforsingleobject
+35. Starting new processes with exec.Command - Getting Help - Go Forum, accessed December 11, 2025, https://forum.golangbridge.org/t/starting-new-processes-with-exec-command/24956
+36. rust - Kill child process while waiting for it - Stack Overflow, accessed December 11, 2025, https://stackoverflow.com/questions/35093869/kill-child-process-while-waiting-for-it
+37. Using Boost's ASIO, how can I wait on a Windows Event? - Stack Overflow, accessed December 11, 2025, https://stackoverflow.com/questions/7602507/using-boosts-asio-how-can-i-wait-on-a-windows-event
