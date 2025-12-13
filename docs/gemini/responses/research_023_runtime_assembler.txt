@@ -1,0 +1,545 @@
+﻿Comprehensive Specification and Architectural Analysis of the Aria Runtime Assembler and WildX JIT Environment
+1. Executive Summary
+This report presents a definitive technical specification and research analysis for the Aria programming language's Runtime Assembler (ARA) and its associated Just-In-Time (JIT) compilation infrastructure. As modern systems programming languages evolve, the dichotomy between static, Ahead-of-Time (AOT) compilation and dynamic interpretation has become increasingly blurred. Aria, with its hybrid memory model and sophisticated type system involving Twisted Balanced Binary (TBB) arithmetic, requires a runtime code generation capability that bridges this gap without compromising the language's strict safety invariants.
+The ARA is engineered not merely as a utility for emitting machine code, but as a foundational component of the Aria runtime environment. It enables high-performance meta-programming, dynamic foreign function interface (FFI) construction, and hot-code patching by generating x86-64 machine code directly into memory. This capability is underpinned by the wildx memory allocation strategy, which enforces a rigorous Write-XOR-Execute ($W \oplus X$) security model through Resource Acquisition Is Initialization (RAII) guards. This ensures that at no point in the execution lifecycle is memory simultaneously writable and executable, mitigating a vast class of code-injection vulnerabilities common in dynamic runtimes.1
+The architectural decisions detailed herein prioritize a balance between compilation latency and code quality. Unlike the static Aria compiler which leverages the LLVM backend for global optimization 3, the ARA employs a Linear Scan Register Allocation algorithm. This choice sacrifices the optimality of Graph Coloring for the linear-time performance required by a JIT compiler that may run during program execution.4 Furthermore, the assembler exposes a fluent interface API designed for ergonomics and type safety, abstracting the notorious complexity of the x86-64 variable-length instruction set while maintaining full compliance with the System V AMD64 Application Binary Interface (ABI).6
+This document provides an exhaustive breakdown of the ARA's design, including the bitwise mechanics of instruction encoding (REX prefixes, ModR/M bytes, SIB addressing), the operational workflow of the wildx memory allocator, and the precise algorithms used for register allocation and label backpatching. It concludes with a comparative analysis against existing libraries such as DynASM and AsmJit, positioning the ARA as a specialized, safety-conscious solution uniquely tailored to the Aria ecosystem.
+________________
+2. Architectural Vision and System Design
+2.1 The Strategic Necessity of a Runtime Assembler
+In the landscape of systems programming, the ability to generate executable code at runtime is a defining feature of high-performance engines. While Aria's primary compilation pipeline utilizes LLVM for static analysis and optimization, there exists a class of problems where static compilation is insufficient. These include the evaluation of user-defined mathematical expressions, the generation of specialized serialization routines based on runtime type reflection, and the creation of "trampolines" or "thunks" to bridge calls between the Aria runtime and external C libraries with dynamic signatures.8
+The Aria Runtime Assembler serves as the engine for these dynamic capabilities. It acts as a lightweight, low-latency compiler backend that exists within the compiled binary itself. By bypassing the heavy machinery of LLVM for these specific use cases, the ARA allows Aria programs to adapt and specialize themselves during execution. For instance, a regular expression engine written in Aria can compile a user's regex pattern into a specialized machine code function using the ARA, achieving matching speeds orders of magnitude faster than an interpreted approach.10
+2.2 Integration with the Aria Memory Model
+Aria's distinct memory model, which separates managed Garbage Collected (GC) memory from unmanaged "Wild" memory, dictates the design of the JIT system. Code generation effectively creates a new category of memory usage that straddles these domains. The generated code resides in wildx memory—a specialized subset of unmanaged memory that requires manual lifetime management but interacts intimately with the OS kernel's memory protection facilities.3
+The integration follows strict principles derived from Aria's "Appendage Theory," which governs pointer lifetimes.
+* The Code Buffer: The initial storage for generated instructions is a standard wild byte array. This buffer is mutable and grows dynamically as instructions are emitted. It is fundamentally treated as data.
+* The WildX Transition: Upon completion of code generation, this buffer undergoes a state transition. It is effectively "frozen" and promoted to wildx status. This transition involves flushing CPU caches and updating page table entries to revoke write permissions and grant execute permissions.
+* GC Interaction and Pinning: The generated machine code often needs to access objects residing in the GC heap. Because the Aria GC is compacting and moving, raw pointers embedded in JIT code would become dangling references if the objects moved. The ARA therefore relies on the # pinning operator. The assembler's API is designed to accept "safe references" ($) derived from pinned objects, ensuring that the JIT code only accesses GC memory that is guaranteed to be stationary during the JIT function's lifetime.3
+2.3 Design Philosophy: The Fluent Interface
+To mitigate the complexity inherent in x86-64 assembly, the ARA adopts a Fluent Interface design pattern for its C++ and Aria APIs.7 This approach eschews the traditional procedural style (e.g., emit_mov(buffer, reg1, reg2)) in favor of an object-oriented, method-chaining style (e.g., asm.mov(rax, rbx).add(rax, 10)).
+This design choice offers several advantages:
+1. Contextual Awareness: The assembler object maintains internal state regarding the current instruction pointer, formatting flags, and active labels. This reduces the number of parameters passed to each method.
+2. Type Safety: By using distinct types for registers, immediates, and memory operands, the API prevents invalid combinations (such as moving memory to memory, which is illegal in x86-64) at compile time.13
+3. Readability: The resulting code closely resembles the assembly language mnemonics it generates, lowering the cognitive barrier for developers debugging the JIT generator.
+________________
+3. The WildX Generation Workflow and Security Architecture
+The core differentiator of the Aria JIT is its uncompromising stance on security. In an era where JIT compilers are frequent targets for exploitation via techniques like JIT-spraying and heap grooming, the ARA implements a defense-in-depth strategy anchored in the wildx memory lifecycle.
+3.1 The $W \oplus X$ Security Invariant
+The central security tenet is "Write XOR Execute" ($W \oplus X$), also known as Data Execution Prevention (DEP) or the NX (No-Execute) bit.1 This policy dictates that a memory page may be writable (to allow code generation) or executable (to allow running code), but never both simultaneously. Violating this rule creates a window of opportunity for attackers to inject malicious shellcode into a running process.2
+Aria enforces this invariant through a mandatory state machine managed by the WildXGuard RAII structure.3 The runtime does not expose raw, unprotected function pointers to the user. Instead, it exposes a handle to a WildXGuard which manages the underlying memory permissions transparently.
+3.2 Allocation: The aria_alloc_exec Primitive
+The lifecycle begins with memory allocation. The runtime provides a specialized allocator, aria_alloc_exec, distinct from the standard malloc or aria.alloc.
+
+
+C
+
+
+
+
+// Runtime Signature 
+void* aria_alloc_exec(size_t size);
+
+Implementation Analysis:
+The allocator must guarantee page alignment. The NX bit is a property of page table entries, which operate on 4KB (or larger) boundaries on x86-64. An allocation that straddles a page boundary or shares a page with data could inadvertently make that data executable or the code writable. Therefore, aria_alloc_exec typically wraps mmap (on POSIX) or VirtualAlloc (on Windows) to request anonymous, private pages.15
+Crucially, the initial protection flags set by aria_alloc_exec are PROT_READ | PROT_WRITE. The PROT_EXEC flag is explicitly omitted. This creates a "safe construction zone" where the assembler can write opcodes without the risk of the CPU attempting to execute incomplete instructions.
+3.3 The Sealing Process: Transition to Immutable Code
+Once the assembler has finished emitting instructions, the memory must be "sealed" to become executable. This is the irreversible transition point in the wildx lifecycle.
+
+
+C
+
+
+
+
+// Runtime Signature 
+int aria_mem_protect_exec(void* ptr, size_t size);
+
+The Sealing Sequence:
+1. Serialization and Cache Flushing: Before permissions are changed, the runtime ensures that the instructions written to the Data Cache (D-Cache) are visible to the Instruction Cache (I-Cache). On strongly-ordered x86-64 implementations, hardware cache coherency handles this automatically (snooping). However, to support cross-architecture compatibility (e.g., if Aria is ported to ARM64) and to ensure strict ordering, the runtime may execute a serializing instruction like CPUID or use explicit cache flush system calls (__builtin___clear_cache or sys_cacheflush).15
+2. Permission Flip: The runtime invokes the OS kernel to modify the page table entries.
+   * Linux/macOS: mprotect(ptr, size, PROT_READ | PROT_EXEC).1
+   * Windows: VirtualProtect(ptr, size, PAGE_EXECUTE_READ, &old_protect).15
+   * Failure Handling: If the OS refuses the transition (e.g., due to hardened security policies like SELinux or PaX MPROTECT), the function fails gracefully. The Aria runtime captures this failure and propagates it as a Result.Err, preventing the potentially unsafe code from being executed.
+3. State Update: The WildXGuard updates its internal state tracking to WILDX_STATE_EXECUTABLE and sets a sealed flag. Subsequent attempts to write to this memory via the Assembler API will trigger a runtime panic or assertion failure before even attempting the memory access, providing a second layer of safety above the hardware trap.3
+3.4 The RAII Guard Pattern
+The WildXGuard serves as the user-facing abstraction for this entire workflow. It creates a robust "scope of unsafety" that is contained and managed.
+
+
+C++
+
+
+
+
+// C++ Representation of the Guard Pattern
+class WildXGuard {
+   void* ptr;
+   size_t size;
+   State state; // UNINITIALIZED, WRITABLE, EXECUTABLE, FREED
+
+public:
+   WildXGuard(size_t sz) {
+       ptr = aria_alloc_exec(sz);
+       state = ptr? WRITABLE : UNINITIALIZED;
+   }
+
+   ~WildXGuard() {
+       if (state!= FREED && ptr) {
+           aria_free_exec(ptr, size);
+       }
+   }
+
+   void seal() {
+       if (state!= WRITABLE) throw RuntimeError("Invalid state for sealing");
+       if (aria_mem_protect_exec(ptr, size)!= 0) throw SystemError("mprotect failed");
+       state = EXECUTABLE;
+   }
+};
+
+By coupling the memory lifetime to the object lifetime, Aria prevents memory leaks of executable pages, which are a valuable system resource. The seal() method is the explicit "commit" point for the generated code.
+________________
+4. x86-64 Instruction Encoding Engine Specification
+The heart of the ARA is the instruction encoding engine. The x86-64 instruction set architecture (ISA) is a complex, Variable Length Instruction (VLI) system where instructions can range from 1 to 15 bytes in length.16 The engine must navigate a maze of legacy prefixes, opcode maps, addressing mode bytes, and immediate encoding rules to produce valid machine code.
+4.1 Instruction Format Taxonomy
+Every instruction emitted by the ARA conforms to the standard Intel x86-64 instruction format, which consists of up to six distinct fields 17:
+1. Legacy Prefixes (0-4 bytes): These modify the instruction's behavior. Common prefixes used by the ARA include:
+   * 0x66: Operand Size Override (switches between 16-bit and 32-bit/default operands).
+   * 0xF0: LOCK prefix for atomic operations.
+   * 0xF2/0xF3: REP prefixes for string operations (MOVSB/STOSB).
+2. REX Prefix (0-1 bytes): The 64-bit mode extension prefix (0x40-0x4F).
+3. Opcode (1-3 bytes): The primary identifier of the operation.
+4. ModR/M (0-1 bytes): Defines the addressing mode and operands (Register vs. Memory).
+5. SIB (0-1 bytes): Scale-Index-Base byte for complex memory addressing.
+6. Displacement (0, 1, 4, or 8 bytes): Offset added to the memory address.
+7. Immediate (0, 1, 2, 4, or 8 bytes): Constant value embedded in the instruction.
+4.2 The REX Prefix Generation Logic
+The REX prefix is the mechanism that allows x86-64 to access 16 general-purpose registers (GPRs) instead of the legacy 8, and to operate on 64-bit data widths.17 It occupies the range 0x40 through 0x4F and contains four bit-fields: 0100WRXB [Appendix A].
+* W (Bit 3): Width. Setting W=1 promotes the operand size to 64 bits.
+   * Constraint: The default operand size is usually 32 bits. MOV EAX, EBX requires no REX prefix. MOV RAX, RBX requires REX.W=1.
+   * Optimization: The ARA automatically determines the need for W=1 based on the register types passed (Reg64 vs Reg32).
+* R (Bit 2): Reg. Extends the ModR/M.reg field.
+   * Logic: R = (reg_index >> 3) & 1. It is set if the register encoded in the reg field is R8 through R15.
+* X (Bit 1): Index. Extends the SIB.index field.
+   * Logic: X = (index_index >> 3) & 1. It is set if the index register in an SIB memory operand is R8 through R15.
+* B (Bit 0): Base. Extends the ModR/M.rm or SIB.base field.
+   * Logic: B = (base_index >> 3) & 1. It is set if the base register (or destination in R/M) is R8 through R15.
+Implementation Requirement: The ARA's emit function must logically OR these bits and only emit the byte if the result is non-zero (i.e., greater than 0x40) or if the instruction mandates a REX prefix (like byte operations on SPL, BPL, SIL, DIL).16
+4.3 ModR/M and SIB Byte Construction
+The ModR/M byte is the nexus of x86 addressing. It contains three fields: Mod (2 bits), Reg/Opcode (3 bits), and R/M (3 bits).19
+* Mod Field (Mode):
+   * 00: Register Indirect Addressing (e.g., ``). No displacement follows, unless R/M=101 (RBP/R13), which signifies RIP-relative addressing.
+   * 01: Register Indirect + 8-bit Displacement (e.g., ``). Followed by 1 byte.
+   * 10: Register Indirect + 32-bit Displacement (e.g., ``). Followed by 4 bytes.
+   * 11: Register Direct Addressing (e.g., RAX). The R/M field encodes a register, not memory.
+* Reg/Opcode Field:
+   * If the instruction has two register operands (e.g., MOV), this encodes the source register.
+   * If the instruction has one operand (e.g., INC), this acts as an Opcode Extension. For example, FF /0 is INC, while FF /1 is DEC.17
+* SIB Byte Necessity:
+   * The SIB byte is triggered when ModR/M.rm is 100 (4 in decimal, mapping to RSP or R12). This escape mechanism allows encoding ``.
+   * The SIB fields are: Scale (2 bits for multiplier 1, 2, 4, 8), Index (3 bits for register), Base (3 bits for register).
+   * Edge Case: RSP cannot be an index register. R12 as base usually requires SIB.
+Encoding Heuristic: The ARA implements a "shortest encoding" heuristic. When a memory operand is provided:
+1. Check if displacement is zero. If so, try Mod=00. (Exception: RBP/R13 base requires Mod=01 with zero displacement).
+2. Check if displacement fits in a signed 8-bit integer (-128 to 127). If so, use Mod=01.
+3. Otherwise, use Mod=10 with a 32-bit displacement.
+4.4 Immediate Value Encoding and Optimization
+Handling constants (immediates) requires careful selection of opcodes to minimize code size.
+* Sign Extension: Most x86-64 instructions accepting 64-bit operands still take only 32-bit immediates, which are sign-extended to 64 bits.
+   * ADD RAX, 0xFF is encoded as 48 83 C0 FF (ADD r/m64, imm8).
+   * ADD RAX, 0x12345678 is encoded as 48 81 C0 78 56 34 12 (ADD r/m64, imm32).
+* The MOVABS Exception: The MOV instruction is unique. It has a special form MOV r64, imm64 (Opcode 0xB8 + reg) that accepts a full 64-bit immediate.21
+   * The ARA mov(Reg, int64_t) method checks the value of the immediate.
+   * If value fits in 32 bits (signed), it emits MOV r/m64, imm32 (C7 /0) to save 3 bytes.
+   * If value exceeds 32 bits, it emits MOVABS (B8+rd) consuming 10 bytes.21
+________________
+5. Register Allocation Strategy: Linear Scan
+While static compilers typically employ Graph Coloring register allocation for optimal code density, JIT compilers operate under strict time constraints. The overhead of building an interference graph ($O(N^2)$) is unacceptable for runtime generation. Therefore, the ARA implements a Linear Scan Register Allocation algorithm, which operates in roughly linear time ($O(N)$) relative to the number of variables.4
+5.1 The Linear Scan Algorithm
+The allocator treats the function body as a linear sequence of instruction indices.
+Phase 1: Liveness Analysis
+The assembler first performs a backward pass over the intermediate representation (IR) or the recorded instruction stream to calculate Live Intervals for every virtual register. A live interval is defined by [start_index, end_index], representing the range of instructions where a variable holds a value that will be read later.
+Phase 2: Allocation Walk
+The core allocation loop proceeds as follows 4:
+1. Initialize: Sort all live intervals by their start_index. Maintain a list of active intervals (variables currently assigned to physical registers).
+2. Iterate: For each interval current in the sorted list:
+   * Expire Old Intervals: Check the active list. If an interval j in active has an end_index less than current.start_index, it has expired. Remove j from active and return its physical register to the free pool.
+   * Allocate: Check the free pool.
+      * If a physical register is available, assign it to current and add current to active.
+      * If no register is available, perform Spilling.
+Phase 3: Spilling Heuristic
+When register pressure is high, the allocator must choose a victim to spill to the stack. The standard heuristic is:
+* Compare current.end_index with the end_index of all intervals in active.
+* The interval that ends furthest in the future is the best candidate to spill, as this delays the need for a reload the longest.
+* If current ends latest, spill current. Otherwise, spill the existing active interval with the latest end point and assign its register to current.
+5.2 Register Constraints and Classes
+The allocator must respect the x86-64 and System V ABI constraints:
+* Caller-Saved (Volatile): RAX, RCX, RDX, RSI, RDI, R8-R11. These are preferred for short-lived temporaries as they do not require preservation in the function prologue.22
+* Callee-Saved (Non-Volatile): RBX, RBP, R12-R15. Using these requires emitting PUSH reg / POP reg in the prologue/epilogue. The allocator applies a cost penalty to these registers to discourage their use unless necessary.
+* Fixed Constraints: Certain instructions mandate specific registers.
+   * IDIV (Integer Division) requires the dividend in RDX:RAX and the quotient/remainder returned in RAX and RDX.23
+   * RCX is implicitly used by shift instructions (SHL, SAR) if the shift count is variable.
+   * The allocator supports "pre-coloring," where an interval is forced to a specific physical register for the duration of such instructions.
+5.3 Stack Slot Management
+Spilled variables are assigned 8-byte slots in the stack frame. The allocator tracks the maximum number of simultaneous spill slots required (the "high water mark").
+* Prologue Generation: SUB RSP, stack_size.
+* Alignment: The calculated stack_size is rounded up to the nearest multiple of 16 to ensure RSP alignment at call sites, satisfying ABI requirements.24
+________________
+6. Calling Convention and ABI Bridge Design
+The ARA enforces strict compliance with the System V AMD64 ABI (standard on Linux, macOS, BSD). This ensures that JIT-compiled code can seamlessly call host C functions and be called by the Aria runtime.6
+6.1 Parameter Passing Protocol
+The ABI dictates the passing of arguments via registers to minimize stack traffic 25:
+1. Integer/Pointer Arguments: The first six arguments are passed in RDI, RSI, RDX, RCX, R8, R9.
+2. Floating-Point Arguments: The first eight floating-point arguments are passed in XMM0 through XMM7.
+3. Stack Arguments: Any arguments beyond these limits are pushed onto the stack in reverse order (right-to-left).
+4. Return Values: Integers return in RAX (and RDX for 128-bit values). Floats return in XMM0 (and XMM1).
+6.2 The "Result" Struct Bridge
+Aria functions implicitly return a result struct containing {err, val} fields. Mapping this to the System V ABI requires special handling based on the size of val:
+* Small Return (< 16 bytes): If the result struct fits in two registers (e.g., result<int64>), it is returned in RAX and RDX.6 RAX typically holds the err descriptor, and RDX holds the val.
+* Large Return: If the result is larger (e.g., result<vec9>), the ABI requires a "Hidden Pointer" approach. The caller allocates stack space for the result and passes a pointer to this space as the first argument (in RDI). The actual function arguments are shifted: the first logical argument moves to RSI, the second to RDX, and so on. The JIT assembler must automatically detect this case based on the return type's size and generate the appropriate prologue to map logical arguments to shifted physical registers.
+6.3 Trampolines for FFI
+To call external C functions (FFI) whose addresses are known only at runtime, the ARA generates "Trampolines."
+* Address Loading: Since CALL takes a relative offset, and external libraries may be loaded far away in the 64-bit address space (> 2GB), the trampoline loads the absolute function address into a register (e.g., RAX or R11) using MOVABS.27
+* Indirect Call: It then executes CALL RAX.
+* Stack Alignment: Before the call, the trampoline checks or enforces 16-byte stack alignment. If the stack is misaligned, it adjusts RSP, calls the function, and then restores RSP, preventing crashes in SIMD-heavy external libraries.6
+________________
+7. Implementation Specification: The Assembler API
+The implementation of the ARA is realized through a set of C++ classes that expose the Fluent API. This section specifies the core components.
+7.1 Class Structure and Core Components
+* CodeBuffer: A low-level dynamic array wrapper. It manages a uint8_t* cursor, handles resizing (geometric growth), and interfaces with the WildXGuard for finalization.
+* Assembler: The public-facing class. It contains the instruction generation methods (mov, add, ret) and holds the state of the register allocator and label manager.
+* Label: A lightweight structure representing a code location. It can be in one of two states:
+   * Bound: The offset within the buffer is known.
+   * Unbound: The offset is unknown (forward reference). It maintains a linked list of "patch sites" within the code buffer where instructions have tentatively referenced this label.
+7.2 Label Resolution and Backpatching
+Forward jumps (e.g., JMP target where target is defined later) pose a challenge for single-pass assemblers. The ARA solves this via Backpatching.28
+Algorithm:
+1. Emission: When asm.jmp(label) is called and label is unbound:
+   * Emit the opcode 0xE9 (JMP rel32).
+   * Record the current buffer offset in the label's patch_list.
+   * Emit a placeholder 0x00000000 as the relative offset.
+2. Binding: When asm.bind(label) is called:
+   * The label's position is set to the current buffer offset.
+   * The assembler iterates through the patch_list. For each recorded site, it calculates offset = label.pos - (site + 4) and overwrites the placeholder bytes with this value.
+3. Short Jumps: Optimization for short jumps (0xEB, rel8) is difficult in a single pass without potentially resizing code. The ARA defaults to 32-bit jumps (rel32) for forward references to guarantee reachability, reserving short jumps for backward references where the distance is known immediately.30
+7.3 Literal Pool Management
+SIMD operations often require loading 128-bit or 256-bit constants. These cannot be embedded as immediates. The ARA manages a Literal Pool.32
+* Accumulation: When the user requests a constant load (e.g., asm.load_const(xmm0, 1.234)), the value 1.234 is added to a std::vector of literals, and the instruction uses a RIP-relative load MOVSD xmm0,.
+* Finalization: At the end of the function (after ret), the assembler flushes the literal pool into the code buffer.
+* Patching: The displacements in the load instructions are patched to point to the now-known locations of the constants in the footer of the function.
+________________
+8. Safety, Sandboxing, and Debugging
+8.1 Runtime Verification
+Beyond the hardware W^X protection, the ARA includes software verification in debug builds.
+* Stack Consistency Check: The assembler tracks the stack pointer depth. If a RET is emitted while the simulated stack depth is not equal to the entry depth (indicating unbalanced pushes/pops), a compilation error is raised.
+* Instruction Boundary Verification: During backpatching, the assembler verifies that jump targets land on valid instruction boundaries, mitigating accidental jumps into the middle of instructions (a common ROP gadget technique).14
+8.2 Disassembly Integration
+To aid debugging, the ARA integrates a lightweight disassembler (leveraging the Zydis library, known for its zero-dependency, high-performance C implementation).33
+* JIT Dump: When the ARIA_JIT_DEBUG environment variable is set, the finalize() method automatically disassembles the newly generated machine code and prints it to stderr.
+* Symbol Resolution: The disassembler output is annotated with label names and literal pool values, transforming opaque hex bytes into readable assembly listings like:
+Code snippet
+0x7f...000:  push   rbp
+0x7f...001:  mov    rbp, rsp
+0x7f...004:  mov    rax, 0x2A  ; 42
+
+________________
+9. Deliverables
+9.1 Runtime Assembler Specification (C++ Pseudo-code)
+
+
+C++
+
+
+
+
+// Runtime Assembler Class Definition
+class Assembler {
+   CodeBuffer buffer;
+   WildXGuard guard; // Manages W^X state via RAII
+   LinearScanAllocator allocator;
+   vector<Label> labels;
+   LiteralPool literals;
+
+public:
+   // Initialize with estimated capacity (e.g., 1024 bytes)
+   Assembler(size_t initial_size = 1024) : guard(initial_size) {
+       buffer.attach(guard.ptr, guard.size);
+   }
+
+   // --- Instruction Emitters (Fluent Interface) ---
+   
+   // MOV r64, r64
+   Assembler& mov(Reg dst, Reg src) {
+       emit_rex(dst, src, 64); // Logic for REX.W/R/X/B
+       emit_byte(0x89);        // Opcode for MOV r/m64, r64
+       emit_modrm(3, src, dst); // Mod=11 (Reg), Reg=src, RM=dst
+       return *this;
+   }
+
+   // MOV r64, imm64 (Optimized)
+   Assembler& mov(Reg dst, int64_t imm) {
+       if (fits_int32(imm)) {
+           // Optimization: MOV r/m64, imm32 (sign extended)
+           emit_rex(dst, 0, 64);
+           emit_byte(0xC7);
+           emit_modrm(3, 0, dst); // Mod=11, Opcode ext /0
+           emit_imm32((int32_t)imm);
+       } else {
+           // Full 64-bit load: MOVABS r64, imm64
+           // Note: No REX.W needed for B8+rd unless accessing R8-R15
+           emit_rex(dst, 0, 64); 
+           emit_byte(0xB8 + (dst & 7)); // Opcode embeds reg index
+           emit_imm64(imm);
+       }
+       return *this;
+   }
+
+   // ADD r64, r64
+   Assembler& add(Reg dst, Reg src) {
+       emit_rex(dst, src, 64);
+       emit_byte(0x01); // ADD r/m64, r64
+       emit_modrm(3, src, dst);
+       return *this;
+   }
+
+   // Control Flow: JMP Label
+   Assembler& jmp(Label& label) {
+       emit_byte(0xE9); // JMP rel32
+       if (label.is_bound()) {
+           int32_t offset = label.pos - (buffer.cursor + 4);
+           emit_imm32(offset);
+       } else {
+           record_relocation(label, buffer.cursor); // Record for backpatch
+           emit_imm32(0); // Placeholder
+       }
+       return *this;
+   }
+
+   // --- Lifecycle ---
+
+   // Finalize: Flush literals, Backpatch, Seal memory
+   void* finalize() {
+       emit_literals();
+       backpatch_labels();
+       guard.seal(); // Transitions memory from RW to RX
+       return guard.ptr;
+   }
+   
+private:
+   void emit_rex(Reg reg, Reg rm, int size) {
+       uint8_t rex = 0x40;
+       if (size == 64) rex |= 0x08; // W bit
+       if (reg > 7)    rex |= 0x04; // R bit
+       if (rm > 7)     rex |= 0x01; // B bit
+       if (rex!= 0x40) emit_byte(rex);
+   }
+   
+   void emit_modrm(int mod, int reg, int rm) {
+       uint8_t byte = (mod << 6) | ((reg & 7) << 3) | (rm & 7);
+       emit_byte(byte);
+   }
+};
+
+9.2 Code Example: JIT Math Expression Evaluator
+Scenario: Compile a function f(a, b) = (a + b) * 10 at runtime.
+
+
+Code snippet
+
+
+
+
+// Aria Code Example
+use std.jit;
+
+func compile_math_op() -> func(int, int) {
+   // 1. Initialize Assembler (Allocates RW memory)
+   wildx jit.Assembler:asm = jit.Assembler.new();
+   
+   // 2. Function Prologue (Optional for leaf functions, but good practice)
+   asm.push(jit.Reg.RBP)
+     .mov(jit.Reg.RBP, jit.Reg.RSP);
+
+   // ABI: First arg 'a' in RDI, Second arg 'b' in RSI.
+   // We will compute result in RAX.
+   
+   // 3. Emit Body
+   asm.mov(jit.Reg.RAX, jit.Reg.RDI)  // RAX = a
+     .add(jit.Reg.RAX, jit.Reg.RSI)  // RAX = a + b
+     .imul(jit.Reg.RAX, 10);         // RAX = (a + b) * 10
+      
+   // 4. Function Epilogue
+   asm.pop(jit.Reg.RBP)
+     .ret();
+      
+   // 5. Seal and Cast (RW -> RX transition happens here)
+   // The returned function pointer is safe to call.
+   return (func(int, int))asm.finalize(); 
+}
+
+func main() {
+   auto jit_fn = compile_math_op();
+   int result = jit_fn(10, 20); // Executes generated machine code
+   print(result); // Output: 300
+}
+
+9.3 Performance Comparison
+The following table projects the performance characteristics of the Aria ARA compared to standard interpretation and full AOT compilation.
+Metric
+	Aria Interpreter
+	Aria JIT (ARA)
+	LLVM AOT
+	Startup Latency
+	Instant (<0.1ms)
+	Fast (1-5ms)
+	Slow (100ms+)
+	Throughput (Ops/s)
+	1x (Baseline)
+	5x - 12x
+	10x - 15x
+	Code Quality
+	N/A
+	Good (Linear Scan)
+	Excellent (Graph Coloring + Vectorization)
+	Memory Overhead
+	Low (AST only)
+	Moderate (Code Buffer)
+	High (IR + Optimization structures)
+	Use Case
+	Scripts, Config
+	Regex, Math, Hot-Patching
+	Static Application Build
+	Analysis: The ARA occupies a critical "sweet spot." It offers order-of-magnitude speedups over interpretation for compute-bound tasks without incurring the massive startup penalty of the LLVM backend. The Linear Scan allocator produces code that is sufficiently efficient for most runtime tasks (minimizing spills) without the computational cost of global optimization.
+9.4 Comparison with Existing Libraries
+Feature
+	Aria Runtime Assembler
+	DynASM (LuaJIT)
+	AsmJit (C++)
+	Language
+	C++ / Aria
+	C (Preprocessor)
+	C++
+	API Style
+	Fluent Interface
+	Embedded Template
+	Fluent Builder
+	Memory Safety
+	WildX Guard (RAII)
+	Manual mmap
+	VirtualMemory Helper
+	Register Alloc
+	Integrated Linear Scan
+	None (Manual)
+	Manual / Complex Graph
+	Dependencies
+	None (Core Runtime)
+	Lua (build-time)
+	None
+	Focus
+	Safety & TBB Types
+	Speed & Portability
+	Feature Completeness
+	Differentiation:
+   * Vs. DynASM: DynASM 35 requires a build-time preprocessor (Lua), adding complexity to the toolchain. It provides no register allocation logic. The ARA is self-contained and includes a runtime allocator tailored for JIT speed.
+   * Vs. AsmJit: AsmJit 37 is a comprehensive C++ library but is generic. The ARA is specialized for Aria's memory model (WildX/GC pinning) and calling conventions (TBB error propagation), offering safer integration at the cost of being less general-purpose.
+________________
+10. Conclusion
+The specification provided in this report defines a robust, secure, and performant Runtime Assembler for the Aria programming language. By rigorously adhering to the System V AMD64 ABI and implementing the Linear Scan register allocation algorithm, the ARA ensures that dynamically generated code is both interoperable and efficient. Crucially, the integration of the wildx memory model with WildXGuard RAII patterns enforces the $W \oplus X$ security invariant, mitigating the risks inherent in runtime code generation. This infrastructure empowers Aria developers to build high-performance, adaptive systems that can modify their own behavior at runtime while maintaining the language's safety guarantees.
+________________
+11. Appendices
+Appendix A: x86-64 REX Prefix Bitfields
+Bit
+	Name
+	Description
+	3
+	W (Width)
+	1 = 64-bit Operand Size. 0 = Default (usually 32-bit).
+	2
+	R (Reg)
+	Extension of ModR/M Reg field. Set if Reg index is 8-15.
+	1
+	X (Index)
+	Extension of SIB Index field. Set if Index register is 8-15.
+	0
+	B (Base)
+	Extension of ModR/M R/M or SIB Base field. Set if Base is 8-15.
+	Appendix B: System V AMD64 Register Usage Table
+Register
+	Use Case
+	Preserved By
+	RAX
+	Return Value 1 / Accumulator
+	Caller
+	RBX
+	Base Pointer (Optional)
+	Callee
+	RCX
+	4th Argument
+	Caller
+	RDX
+	3rd Argument / Return Value 2
+	Caller
+	RSI
+	2nd Argument
+	Caller
+	RDI
+	1st Argument
+	Caller
+	RBP
+	Frame Pointer
+	Callee
+	RSP
+	Stack Pointer
+	Callee
+	R8
+	5th Argument
+	Caller
+	R9
+	6th Argument
+	Caller
+	R10
+	Scratch (Static Chain)
+	Caller
+	R11
+	Scratch
+	Caller
+	R12-R15
+	Scratch / Locals
+	Callee
+	Works cited
+   1. NX bit - Grokipedia, accessed December 13, 2025, https://grokipedia.com/page/NX_bit
+   2. Can Just-In-Time compilation be considered a secure feature?, accessed December 13, 2025, https://softwareengineering.stackexchange.com/questions/429081/can-just-in-time-compilation-be-considered-a-secure-feature
+   3. aria_source_part6a_codegen_headers.txt
+   4. Linear Scan Register Allocation - UCLA Computer Science, accessed December 13, 2025, https://web.cs.ucla.edu/~palsberg/course/cs132/linearscan.pdf
+   5. accessed December 13, 2025, https://dash.harvard.edu/bitstreams/7312037d-c641-6bd4-e053-0100007fdf3b/download#:~:text=Experimental%20results%20show%20that%20linear,pro%2D%20duced%20by%20graph%20coloring.
+   6. System V ABI - OSDev Wiki, accessed December 13, 2025, https://wiki.osdev.org/System_V_ABI
+   7. How to Create a Fluent API in C# | Mitesh Shah's Blog, accessed December 13, 2025, https://mitesh1612.github.io/blog/2021/08/11/how-to-design-fluent-api
+   8. Experiments In NES JIT Compilation | bheisler.github.io, accessed December 13, 2025, https://bheisler.github.io/post/experiments-in-nes-jit-compilation/
+   9. infix: A JIT-powered FFI library for C - Sanko Robinson, accessed December 13, 2025, https://sankorobinson.com/infix/
+   10. Have tracing JIT compilers won? - Lambda the Ultimate, accessed December 13, 2025, http://lambda-the-ultimate.org/node/3851?a=1
+   11. Question about efficient just-in-time register allocation : r/Compilers - Reddit, accessed December 13, 2025, https://www.reddit.com/r/Compilers/comments/1aqqrw8/question_about_efficient_justintime_register/
+   12. Fluent Interface - Martin Fowler, accessed December 13, 2025, https://martinfowler.com/bliki/FluentInterface.html
+   13. Building an x86_64 Instruction Encoder from Scratch - DEV Community, accessed December 13, 2025, https://dev.to/chrischtel/building-an-x8664-instruction-encoder-from-scratch-1in7
+   14. What Cannot Be Read, Cannot Be Leveraged? Revisiting Assumptions of JIT-ROP Defenses - USENIX, accessed December 13, 2025, https://www.usenix.org/system/files/conference/usenixsecurity16/sec16_paper_maisuradze.pdf
+   15. A Basic Just-In-Time Compiler - null program, accessed December 13, 2025, https://nullprogram.com/blog/2015/03/19/
+   16. X86-64 Instruction Encoding - OSDev Wiki - TU Chemnitz, accessed December 13, 2025, https://www-user.tu-chemnitz.de/~heha/hs/chm/x86.chm/x64.htm
+   17. X86-64 Instruction Encoding - OSDev Wiki, accessed December 13, 2025, http://wiki.osdev.org/X86-64_Instruction_Encoding
+   18. Learning x86–64 Machine Language and Assembly by Implementing a Disassembler, accessed December 13, 2025, https://medium.com/@Koukyosyumei/learning-x86-64-machine-language-and-assembly-by-implementing-a-disassembler-dccc736ae85f
+   19. ModR/M - Wikipedia, accessed December 13, 2025, https://en.wikipedia.org/wiki/ModR/M
+   20. x86 instruction listings - Wikipedia, accessed December 13, 2025, https://en.wikipedia.org/wiki/X86_instruction_listings
+   21. why we can't move a 64-bit immediate value to memory? - Stack Overflow, accessed December 13, 2025, https://stackoverflow.com/questions/62771323/why-we-cant-move-a-64-bit-immediate-value-to-memory
+   22. Overview of x64 ABI conventions - Microsoft Learn, accessed December 13, 2025, https://learn.microsoft.com/en-us/cpp/build/x64-software-conventions?view=msvc-170
+   23. Why is the dividend 64 bits in x86 assembly? - Stack Overflow, accessed December 13, 2025, https://stackoverflow.com/questions/12586232/why-is-the-dividend-64-bits-in-x86-assembly
+   24. Let's Learn x86-64 Assembly! Part 0 - Setup and First Steps, accessed December 13, 2025, https://gpfault.net/posts/asm-tut-0.txt.html
+   25. x86 calling conventions - Wikipedia, accessed December 13, 2025, https://en.wikipedia.org/wiki/X86_calling_conventions
+   26. Assembly 2: Calling convention – CS 61 2018, accessed December 13, 2025, https://cs61.seas.harvard.edu/site/2018/Asm2/
+   27. CALL — Call Procedure, accessed December 13, 2025, https://www.felixcloutier.com/x86/call
+   28. Laxmi Institute Technology, Sarigam: Algorithm of Single Pass Assembler AND Concept of Backpatching | PDF - Scribd, accessed December 13, 2025, https://www.scribd.com/presentation/562303165/Sp-Singlepassassembler-35-37
+   29. Backpatching in Compiler Design - GeeksforGeeks, accessed December 13, 2025, https://www.geeksforgeeks.org/compiler-design/backpatching-in-compiler-design/
+   30. Let's Learn x86-64 Assembly! Part 4 - More About Jumps Than You Wanted To Know, accessed December 13, 2025, https://gpfault.net/posts/asm-tut-4.html
+   31. JMP — Jump, accessed December 13, 2025, https://www.felixcloutier.com/x86/jmp
+   32. Low-Level Software Security for Compiler Developers, accessed December 13, 2025, https://llsoftsec.github.io/
+   33. zydis | The ultimate X86 & X86-64 disassembler library, accessed December 13, 2025, https://zydis.re/
+   34. zyantific/zydis: Fast and lightweight x86/x86-64 disassembler and code generation library - GitHub, accessed December 13, 2025, https://github.com/zyantific/zydis
+   35. DynASM Examples - LuaJIT, accessed December 13, 2025, https://luajit.org/dynasm_examples.html
+   36. Cross architecture, dynamic ASM generator : r/programming - Reddit, accessed December 13, 2025, https://www.reddit.com/r/programming/comments/ger73/cross_architecture_dynamic_asm_generator/
+   37. asmjit/asmjit: Low-latency machine code generation - GitHub, accessed December 13, 2025, https://github.com/asmjit/asmjit
+   38. Adventures in JIT compilation: Part 2 - an x64 JIT - Eli Bendersky's website, accessed December 13, 2025, https://eli.thegreenplace.net/2017/adventures-in-jit-compilation-part-2-an-x64-jit/

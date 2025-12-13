@@ -367,22 +367,33 @@
     - Wildcard (*) and unreachable (!)
     - fall(label) explicit fallthrough
     - Exhaustiveness checking
-- [ ] **research_020: Control Transfer (break, continue, return, defer)** [UNBLOCKED by research_022]
-  * **Scope**: Jump semantics and cleanup handling
-  * **Status**: ✨ UNBLOCKED - research_022 completed defer RAII semantics
-  * **break / continue**:
-    - Loop exit and iteration skip
-    - Labeled break/continue (for nested loops)
-    - Interaction with defer blocks
-  * **return**:
-    - Early function exit
-    - Implicit result wrapping ({err: NULL, val: X})
-    - Defer execution before return
-  * **defer**:
-    - RAII-style cleanup registration (research_022: guarantees execution at scope exit)
-    - Execution order (LIFO stack)
-    - Interaction with wild memory (aria.free in defer) - research_022 defines pattern
-    - Panic/unwind safety
+- [x] **research_020: Control Transfer (break, continue, return, defer)** ✅ COMPLETE (Dec 13, 2025)
+  * **Document**: `/docs/gemini/responses/research_020_control_transfer.txt` (410 lines)
+  * **Key Findings**:
+    - **Result Monad Integration**: Implicit result<T> wrapping for all functions
+    - **pass/fail Syntax Sugar**: Simplified error propagation
+      * pass(expr) → return {err: 0, val: expr}
+      * fail(error_code) → return {err: error_code, val: 0}
+    - **defer (Block-Scoped RAII)**: Unlike Go (function-scoped), Aria's defer is block-scoped
+      * Execution: LIFO stack within block, runs at } or return/break/continue
+      * Wild Memory: Essential pattern for aria.free cleanup
+      * Borrow Checker: Verifies defer dominates all exit points (prevents leaks)
+      * No Unwind: defer does NOT execute on panic/trap (corrupted state = unsafe cleanup)
+    - **Labeled Control Flow**:
+      * break(label), continue(label) for nested loops
+      * Target validation: Label must refer to loop construct
+      * Scope exit: defer blocks execute for all exited scopes (inside-out)
+    - **when Loop Tri-State Logic**:
+      * did_break flag (PHI node): Routes to then (natural exit) vs end (break exit)
+      * break promotes from jump to state-carrying signal
+      * Eliminates bool found flags
+    - **TBB Safety**: Implicit break on overflow ($ reaches ERR in loops)
+    - **pick Statement**: Explicit fall(label) for case fallthrough (no implicit)
+    - **Result Struct ABI**:
+      * Small (<16 bytes): Returns in RAX+RDX (System V)
+      * Large: Hidden pointer first argument (sret calling convention)
+    - **Async Integration**: defer blocks part of coroutine frame, execute on true exit
+  * **TODO**: Implement ReturnStmt/PassStmt/FailStmt, defer stack management, when loop state machine
 
 ### 0.6 Memory Management Research
 - [ ] **research_021: Garbage Collection System**
@@ -446,28 +457,42 @@
       * GC maps adapt based on struct contents (Vector<wild int*> vs Vector<string>)
     - **Performance**: Wild alloc O(log n) vs GC bump-pointer O(1), but zero pause times (deterministic)
   * **TODO**: Implement Wild allocator wrapper, WildX state machine, fat pointer debug mode
-- [ ] **research_023: Runtime Assembler (Wildx Code Generation)**
-  * **Scope**: JIT compilation and x86-64 code emission
-  * **Architecture**:
-    - Assembler DSL in Aria (macro-based or comptime-based?)
-    - Instruction encoding (x86-64 machine code generation)
-    - Register allocation (simple or full coloring?)
-    - Label resolution and relocation
-  * **Instruction Set**:
-    - Basic arithmetic (ADD, SUB, MUL, DIV, IMUL, IDIV)
-    - Bitwise (AND, OR, XOR, NOT, SHL, SHR, SAR)
-    - Control flow (JMP, JZ, JNZ, CALL, RET)
-    - Memory (MOV, LEA, PUSH, POP)
-    - SIMD (SSE, AVX, AVX-512 for vector operations)
-  * **Safety**:
-    - Wildx guard integration (automatic sealing)
-    - Bounds checking (prevent writing outside allocated region)
-    - Control flow integrity (no arbitrary jumps outside function)
-  * **Use Cases**:
-    - Regex engine compilation
-    - Expression evaluators
-    - High-performance parsers
-    - DSL interpreters
+- [x] **research_023: Runtime Assembler (Wildx Code Generation)** ✅ COMPLETE (Dec 13, 2025)
+  * **Document**: `/docs/gemini/responses/research_023_runtime_assembler.txt` (544 lines)
+  * **Key Findings**:
+    - **Aria Runtime Assembler (ARA)**: Fluent interface API for x86-64 JIT compilation
+    - **WildX Integration**: Enforces W⊕X security through RAII state machine
+      * Allocation: aria_alloc_exec(size) → RW memory (page-aligned)
+      * Sealing: aria_mem_protect_exec(ptr, size) → RW→RX (flush I-cache, mprotect/VirtualProtect)
+      * WildXGuard: RAII wrapper (allocate → write → seal → execute → free)
+    - **x86-64 Instruction Encoding**:
+      * Variable length (1-15 bytes): Legacy Prefixes + REX + Opcode + ModR/M + SIB + Disp + Imm
+      * REX Prefix (0x40-0x4F): 0100WRXB bits for 64-bit ops and R8-R15 access
+      * ModR/M: Mod(2) + Reg/Opcode(3) + R/M(3) bits for addressing modes
+      * SIB: Scale(2) + Index(3) + Base(3) for complex memory operands
+      * Shortest encoding heuristic: Sign-extension, immediate optimization
+    - **Register Allocation**: Linear Scan (O(N) vs Graph Coloring O(N²))
+      * Live interval analysis (backward pass)
+      * Allocation walk: Expire old, allocate new, spill when pressure high
+      * Spill heuristic: Interval with furthest end point
+      * Register constraints: Caller-saved (RAX, RCX, RDX, R8-R11), callee-saved (RBX, RBP, R12-R15)
+      * Pre-coloring: Fixed registers for IDIV (RDX:RAX), shifts (RCX)
+    - **System V ABI Compliance**:
+      * Integer args: RDI, RSI, RDX, RCX, R8, R9 (stack for 7+)
+      * Float args: XMM0-XMM7
+      * Returns: RAX (int), XMM0 (float), RAX+RDX (128-bit)
+      * Result struct bridge: Small (<16B) in RAX+RDX, large via hidden pointer (sret)
+    - **Fluent API**: Method chaining (asm.mov(rax, rbx).add(rax, 10).ret())
+      * Type safety: Distinct types for Reg, Imm, Mem prevent invalid combos
+      * CodeBuffer: Dynamic growth (geometric)
+      * Label: Backpatching for forward jumps (unbound → emit placeholder → bind → patch)
+    - **Literal Pool**: SIMD constants appended after ret, RIP-relative loads
+    - **Safety Features**:
+      * Stack consistency check (simulated depth)
+      * Instruction boundary verification (prevents ROP gadgets)
+      * Disassembly integration (Zydis library, ARIA_JIT_DEBUG)
+    - **Performance**: 5-12x speedup vs interpreter, 50-70% of LLVM AOT
+  * **TODO**: Implement Assembler class, x86-64 encoder, Linear Scan allocator, WildXGuard RAII
 
 ### 0.7 Operators Research
 - [x] **research_024: Arithmetic and Bitwise Operators** ✅ COMPLETE (Dec 12, 2025)
@@ -522,28 +547,61 @@
       * Slow path: Objects use vtable Eq trait lookup
       * Type mismatch: Returns false (no implicit coercion)
   * **TODO**: Implement boolean type checking, TBB comparison logic, <=> lowering
-- [ ] **research_026: Special Operators (Memory, Safety, Pipeline)**
-  * **Scope**: Aria-specific special operators
-  * **Memory Operators**:
-    - @ (address-of): &x in C, but for wild pointers
-    - * (dereference): *ptr, read from pointer
-    - -> (member access): ptr->field
-    - # (pin): Prevent GC movement (#gc_obj)
-    - $ (safe reference): Borrow checker reference ($x or $mut x)
-  * **Safety Operators**:
-    - ? (unwrap): Extract value from result, or use default
-    - ?. (safe navigation): Short-circuit on null
-    - ?? (null coalesce): Provide default for null
-  * **Pipeline Operators**:
-    - |> (forward pipeline): data |> transform
-    - <| (backward pipeline): transform <| data
-  * **Range Operators**:
-    - .. (inclusive range): 0..10 (0 to 10)
-    - ... (exclusive range): 0...10 (0 to 9)
-  * **Iteration**:
-    - $ (iteration variable): Automatic in till/loop constructs
-  * **Template Interpolation**:
-    - &{ } (interpolation): Inside ` backtick strings
+- [x] **research_026: Special Operators (Memory, Safety, Pipeline)** ✅ COMPLETE (Dec 13, 2025)
+  * **Document**: `/docs/gemini/responses/research_026_special_operators.txt` (475 lines)
+  * **Key Findings**:
+    - **Memory Operators**:
+      * **@ (address-of)**: wild T@ = @variable (like C &)
+        - Stack: ABC tracks lifetime, prevents escape
+        - GC objects: FORBIDDEN (must use # to pin first)
+        - LLVM: alloca pointer or getelementptr
+      * **# (pinning)**: wild T@ = #gc_obj
+        - Sets pinned_bit in object header (GC won't relocate)
+        - Returns raw pointer to payload
+        - Appendage Theory: Lifetime(Appendage) ⊆ Lifetime(PinScope)
+        - Enables pointer arithmetic (#obj + n)
+        - Invisible Root Rule: Wild struct can't hold GC ref unless pinned
+      * **$ (safe reference / iteration)**:
+        - $var: Immutable borrow (Rust-like &)
+        - Loop context: Implicit iteration variable
+        - WildX context: Instruction pointer in assembler macros
+      * **-> (member access)**: ONLY syntax for pointer deref (no standalone *ptr)
+      * **wildx**: W⊕X state machine (RW → RX via aria.mem_protect_exec)
+    - **Error Handling Operators**:
+      * **? (propagate)**: Monadic bind for result<T>
+        - expr? → if err, early return
+        - TBB integration: Checks for ERR sentinel, propagates
+      * **?. (safe navigation)**: obj?.member
+        - Short-circuit on null/ERR
+        - LLVM: Branch structure with phi node
+      * **?? (null coalescing)**: expr1 ?? expr2
+        - Returns expr1 if not null/ERR, else expr2
+        - Lazy evaluation (expr2 only if needed)
+        - Composition: user?.profile?.getName() ?? \"Guest\"
+    - **Pipeline Operators**:
+      * **|> (forward)**: data |> func
+        - Desugaring: x |> f → f(x), x |> f(y) → f(x, y)
+        - Subject-first insertion
+        - Precedence: PREC_PIPELINE (4), left-associative
+        - Chaining: data |> filter(p) |> map(f) |> reduce(sum)
+      * **<| (backward)**: f <| x → f(x) (apply operator, avoids parens)
+    - **Range Operators**:
+      * **.. (inclusive)**: 0..10 is [0, 10] (11 elements)
+      * **... (exclusive)**: 0...10 is [0, 10) (10 elements)
+      * Infinite: 0.. (TYPE_MAX)
+      * Steps: Via loop(start, end, step) or range.step(2)
+    - **String Interpolation** (NOT closures):
+      * &{expr} inside backtick strings: `Value: &{x + 1}`
+      * Closures use func keyword or => lambda syntax
+      * Capture semantics: By-value (copy), by-reference (Stack Closure), move (ownership)
+      * Inline optimization: Devirtualization via monomorphization
+    - **Operator Precedence Table**: 17 levels (Primary to Comma)
+      * Primary (17): (), [], ., ?. (highest)
+      * Unary (16): !, -, @, #, $, ?
+      * Pipeline (4): |>, <|
+      * Assignment (2): =, +=, ??=
+      * Comma (1): , (lowest)
+  * **TODO**: Implement all operators in parser, precedence climbing, ABC integration for @ and #
 
 ### 0.8 Language Infrastructure Research
 - [x] **research_027: Generics and Templates (Monomorphization System)** ✅ COMPLETE (Dec 13, 2025)
