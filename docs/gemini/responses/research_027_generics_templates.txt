@@ -1,0 +1,386 @@
+﻿Architectural Specification: Aria Generics and Monomorphization System
+Task ID: research_027_generics_templates
+Document Status: Final Specification
+Author: Lead Compiler Architect, Aria Infrastructure Team
+Date: December 13, 2025
+Subject: Comprehensive Design and Implementation Strategy for Zero-Cost Abstractions via Compile-Time Monomorphization
+________________
+1. Executive Summary and Architectural Philosophy
+The Aria programming language is engineered to occupy a specific, demanding niche in the systems programming landscape: it must offer the high-level safety guarantees of managed languages while retaining the raw, bit-level control of low-level systems languages. This duality presents a profound challenge for the design of a generic programming system. The system must accommodate Aria's unique "bifurcated" nature—specifically, the coexistence of standard modular arithmetic with Twisted Balanced Binary (TBB) saturation arithmetic, and the interplay between Garbage Collected (GC) and Wild (manual) memory models.
+This specification details the architecture of Aria's generics system, which is founded on the principle of compile-time monomorphization. Unlike the type-erasure models utilized by Java or the dynamic dispatch mechanisms of Swift, Aria's approach instantiates a specialized copy of generic code for every unique combination of concrete type arguments. This strategy is chosen to guarantee Zero-Cost Abstractions at runtime, ensuring that a generic sorting algorithm performs identically to one hand-optimized for a specific type.
+The core architectural imperatives driving this design are:
+1. Semantic Polymorphism: A generic function add<T>(a, b) must be capable of lowering to efficient, single-cycle CPU instructions when T is int32, while simultaneously injecting complex, sticky-error propagation logic and sentinel checks when T is tbb32.1 This requirement effectively rules out runtime dispatch, as the control flow graph itself must change based on the type parameter.
+2. Memory Model Agnosticism: Generic data structures must adapt their internal layouts and metadata (specifically Garbage Collection stack maps) based on whether they hold managed or unmanaged types. A Vector<wild int*> must behave as a trivial struct, while a Vector<string> must register with the GC runtime.
+3. Syntactic Explicitness: To avoid the parsing ambiguities that plague C++ templates (the "angle bracket soup" problem), Aria introduces the explicit sigil * to distinguish type parameters from concrete types within generic scopes.1
+This document serves as the authoritative blueprint for the implementation of the generics subsystem, covering the frontend syntax, the backend monomorphization engine, the type inference algorithm, and the integration with Aria's runtime systems.
+________________
+2. Syntactic Specification and Grammar
+The syntax of Aria generics is designed to be context-free and easily parseable, prioritizing readability and explicit scoping over brevity. A critical innovation in Aria’s syntax is the mandatory usage of the * sigil to reference generic type parameters within a function or struct body. This resolves symbol shadowing issues and makes generic code immediately distinguishable from concrete code.
+2.1 Generic Function Definition
+A generic function allows the definition of algorithms that can operate on abstract types, constrained by traits. The type parameters are declared in angle brackets immediately following the func keyword.
+Grammar Specification:
+
+
+EBNF
+
+
+
+
+FunctionDefinition ::= "func" GenericParams? ":" Identifier "=" ReturnType "(" ParameterList ")" Block
+GenericParams      ::= "<" TypeParamList ">"
+TypeParamList      ::= TypeParam ("," TypeParam)*
+TypeParam          ::= Identifier ConstraintClause?
+ConstraintClause   ::= ":" TraitBound ("&" TraitBound)*
+TypeUsage          ::= "*" Identifier
+
+The Sigil Rule (*T):
+In C++ or Rust, seeing T in a function body requires semantic analysis to determine if T is a type parameter or a concrete type defined elsewhere. In Aria, this ambiguity is resolved syntactically.
+* Declaration: Inside the angle brackets <T>, the identifier T declares the parameter name.
+* Usage: Everywhere else (signatures, bodies, return types), the parameter must be referenced as *T.
+This explicit dereference syntax *T semantically suggests "the type pointed to by the parameter T".
+Examples:
+Basic Identity Function:
+
+
+Code snippet
+
+
+
+
+// Declaration of T inside <...>
+func<T>:identity = *T(*T:value) {
+   // Usage of *T to denote the type
+   return value;
+}
+
+Multiple Parameters with Constraints:
+
+
+Code snippet
+
+
+
+
+// T must be Addable, U has no constraints
+func<T: Addable, U>:pair_add = *T(*T:a, *T:b, *U:meta) {
+   log(meta);
+   return a + b; // Valid because T is Addable
+}
+
+2.2 Generic Data Structures
+Generic structs enable the creation of reusable data containers. The syntax mirrors function definitions, with the generic parameters attached to the struct keyword.
+Grammar Specification:
+
+
+EBNF
+
+
+
+
+StructDefinition ::= "struct" GenericParams? ":" Identifier "{" FieldList "}"
+
+Example: A Generic Result Type
+This example demonstrates how generics interact with Aria's value-based error handling philosophy.
+
+
+Code snippet
+
+
+
+
+struct<T, E>:Result {
+   *T:value;
+   *E:error;
+   bool:is_ok;
+}
+
+2.3 Declaration vs. Usage Distinction
+The rigorous distinction between the declaration of a type parameter and its usage is a key feature of Aria's grammar. This table clarifies the distinction:
+Context
+	Syntax
+	Semantics
+	Parameter List
+	func<T, U>
+	Declares T and U as valid type handles within this scope.
+	Argument Type
+	(*T: arg)
+	Declares an argument arg of the type currently bound to T.
+	Return Type
+	= *T
+	Specifies that the function returns a value of type T.
+	Local Variable
+	*T: temp
+	Allocates stack space sufficient to hold type T.
+	Type Instantiation
+	Vector<int32>
+	Concrete instantiation. No * is used because int32 is not a parameter.
+	Nested Generic
+	Vector<*T>
+	Instantiating a generic type with the generic parameter T.
+	2.4 The "Turbofish" Operator and Instantiation
+Aria supports both implicit type inference and explicit instantiation. When explicit instantiation is required (e.g., when the type cannot be inferred from arguments), Aria adopts a syntax similar to Rust's "turbofish" (::<>) to disambiguate the less-than operator from generic instantiation in expressions.
+Syntax: identifier::<TypeArgs>
+* Implicit (Preferred): identity(10) -> Compiler infers T = int32.
+* Explicit (Turbofish): identity::<int32>(10) -> Forces T = int32.
+This distinction is crucial for the parser. Consider the expression f<a,b>(c).
+* Without turbofish: Is this calling function f with generic args a and b? Or is it comparing f < a, then b > (c)?
+* With turbofish: f::<a,b>(c) is unambiguously a function call. (f < a), (b > c) is unambiguously a comparison.
+________________
+3. The Monomorphization Engine
+The Monomorphization Engine is the heart of Aria's generic system. Located in the compiler backend (src/backend/monomorphization.cpp 1), it is responsible for transforming the high-level generic AST into concrete, type-specific functions that can be compiled to machine code.
+3.1 Instantiation Strategy: Lazy and Demand-Driven
+Aria utilizes a Lazy Instantiation strategy. Generic functions are not compiled when defined; they are essentially "templates" or AST macros that sit dormant until a call site requires them.
+1. Registration Phase:
+When the parser processes a func<T>:name, it creates a FuncDecl node but flags it as Generic. This node is stored in a GenericRegistry but is not passed to the backend for code generation.
+2. Discovery Phase:
+During semantic analysis of a regular function, the compiler encounters a call site: identity(42).
+   * The TypeChecker infers the argument type int32.
+   * It requests an instantiation of identity with T=int32.
+   3. Cache Lookup:
+The Monomorphizer maintains a specialization_map.1 It constructs a lookup key: (identity, [int32]).
+      * Hit: If this specialization exists, the mangled name (e.g., _Aria_M_identity_int32) is returned.
+      * Miss: The instantiation pipeline is triggered.
+      4. Instantiation Pipeline:
+      * Cloning: The Monomorphizer calls cloneFuncDecl 1, creating a deep copy of the generic AST.
+      * Substitution: It traverses the cloned AST. Every instance of *T is replaced with the concrete type node for int32.
+      * Registration: The new, concrete function identity_int32 is added to the compilation unit.
+      * Recursive Analysis: The new function is sent back to the TypeChecker. This ensures that int32 satisfies any constraints and that the operations inside the function (like + or .toString()) are valid for int32.
+3.2 Detection of Duplicate Instantiations
+To prevent code bloat—a common criticism of monomorphization—Aria employs aggressive deduplication at two levels.
+      1. Frontend Canonicalization:
+Before requesting an instantiation, types are canonicalized. Type aliases (type MyInt = int32) are resolved to their underlying primitive (int32). This ensures that identity<MyInt> and identity<int32> map to the exact same cache key, preventing duplicate machine code generation.
+      2. Link-Time Merging (LTO):
+For instantiations that occur across module boundaries (e.g., Module A uses Vector<int> and Module B uses Vector<int>), the compiler relies on the linker. By using a deterministic mangling scheme (see Section 3.3) and marking these symbols as linkonce_odr (in LLVM terms), the linker can discard duplicate definitions, keeping only one copy of the machine code in the final binary.
+3.3 Name Mangling Specification
+A rigorous mangling scheme is essential for linker-based deduplication and debugging. Aria's scheme encodes the function name, the hash of the type parameters, and a readable description.
+Format: _Aria_M_<FuncName>_<TypeHash>_<TypeDesc>
+         * _Aria_M_: Prefix identifying a Monomorphized Aria symbol.
+         * <FuncName>: The identifier of the generic function.
+         * <TypeHash>: A 64-bit FNV-1a hash of the canonical type signatures. This ensures uniqueness even for complex nested types (e.g., Map<String, Vector<int>>) where a simple string concatenation would be unwieldy.
+         * <TypeDesc>: A simplified string representation (e.g., int32_flt64) included for human readability in stack traces and debuggers.
+Example:
+func<T>:max instantiated with tbb8 results in:
+_Aria_M_max_F4A19C88_tbb8
+3.4 Depth Limits and Cycle Detection
+Because generic instantiation can be recursive (e.g., a function foo<T> calling foo<Vector<T>>), there is a risk of infinite expansion loops during compilation.
+Mechanism:
+The Monomorphizer maintains an instantiation_stack tracking the chain of generic expansions.
+         * Limit: A hard limit of 64 nested instantiations is enforced (configurable via compiler flag --max-generic-depth).
+         * Cycle Detection: If the compiler detects that it is instantiating foo<T> inside a pending instantiation of foo<T>, it halts with a "Recursive Instantiation Error," forcing the user to use a pointer or referencing mechanism to break the infinite type size.
+________________
+4. Type Inference Algorithm
+Aria uses a Local Bidirectional Type Inference algorithm. Unlike global unification algorithms (like Hindley-Milner) which can produce confusing error messages effectively "at a distance" from the actual error, bidirectional inference checks types against expectations locally. This fits Aria's philosophy of explicitness and distinct error reporting.
+4.1 The Algorithm Phases
+         1. Constraint Generation (Top-Down):
+When a generic function is called, the compiler examines the arguments provided.
+            * Call: swap(x, y) where x: int32 and y: int32.
+            * Signature: swap<T>(*T, *T).
+            * Constraints Generated: T must be type(x) (int32) AND T must be type(y) (int32).
+            2. Unification (Bottom-Up):
+The compiler attempts to solve for T.
+               * Unify int32 and int32 -> Success. T = int32.
+               * Conflict Case: swap(x, z) where z: int64.
+               * Unify int32 and int64.
+               * Failure. Aria does not implicitly promote types during generic inference. This is a safety feature to prevent accidental precision loss or mismatch. The user must cast explicitly: swap(cast<int64>(x), z).
+               3. Substitution:
+Once T is solved, it is substituted into the return type and the rest of the function signature to continue type checking the surrounding expression.
+4.2 Ambiguous Inference and Resolution
+There are cases where inference is impossible.
+                  * Example: func<T>:default = *T() {... }
+                  * Call: val x = default();
+Here, there are no arguments to deduce T from. The compiler will issue an error: "Unable to infer type parameter T for function default."
+Resolution: The user must use the Turbofish syntax to supply the type explicitly:
+val x = default::<int64>();
+________________
+5. Constraint System: Traits and Bounds
+A generic system without constraints is equivalent to untyped templates (like C++ before Concepts), leading to verbose and confusing errors inside library code. Aria uses a Trait system 1 to define bounds on type parameters.
+5.1 Trait Definition
+Traits define a contract of behavior—a set of function signatures that a type must implement.
+
+
+Code snippet
+
+
+
+
+trait Hashable {
+   func:hash = uint64();
+}
+
+trait Display {
+   func:toString = string();
+}
+
+5.2 Specifying Bounds
+Bounds are specified in the generic definition using the colon : operator. Multiple bounds can be combined with the ampersand &.
+
+
+Code snippet
+
+
+
+
+// T must implement BOTH Hashable and Display
+func<T: Hashable & Display>:printHash = void(*T:item) {
+   // Because of the bound, the compiler allows these calls:
+   print(`&{item.toString()} -> &{item.hash()}`);
+}
+
+5.3 Constraint Checking Logic
+Constraint checking happens at two distinct times:
+                  1. Definition Time (Generics Check):
+When defining printHash, the compiler verifies that the body only calls methods declared in Hashable or Display. If the body attempted item.explode(), the compiler would error immediately, even before the function is ever used, because explode is not part of the contract.
+                  2. Instantiation Time (Satisfaction Check):
+When printHash(myObj) is called, the compiler verifies that myObj actually implements Hashable and Display. It performs a lookup in the impl_table.1
+                     * If the implementation exists, instantiation proceeds.
+                     * If not, a clear error is generated at the call site: "Type 'myObj' does not satisfy trait bound 'Hashable'".
+5.4 Built-in Traits
+Aria provides a set of built-in traits that map to core language capabilities:
+                     * Copy: Marker trait. If implemented, the type has copy semantics (memcpy). If not, it has move semantics.
+                     * Drop: Defines a destructor (func:drop()).
+                     * Add, Sub, Mul, Div: Operator overloading traits. a + b is syntactic sugar for Add.add(a, b).
+                     * Send: Marker trait indicating the type is safe to transfer between threads (critical for the Actor model).
+________________
+6. Integration with Memory Models and TBB
+The integration of generics with Aria's TBB (Twisted Balanced Binary) types and Hybrid Memory Model is the most technically novel aspect of the system. This requires the Monomorphizer to be "semantically aware"—it does not just replace types; it alters code generation strategies.
+6.1 TBB-Aware Monomorphization
+Standard integers (int32) overflow via modular wrap-around. TBB types (tbb32) must overflow to a sticky ERR sentinel.1 A generic function add<T>(a, b) must behave radically differently depending on T.
+The Transformation Process:
+                     1. Generic Definition:
+Code snippet
+func<T>:math_op = *T(*T:a, *T:b) { return a + b; }
+
+                     2. Instantiation A: T = int32
+                        * The backend recognizes int32 as a standard type.
+                        * It emits a standard LLVM add instruction.
+                        * Performance: Single cycle, standard CPU behavior.
+                        3. Instantiation B: T = tbb32
+                        * The backend recognizes tbb32 as a TBB type.
+                        * It intercepts the + operator.
+                        * It delegates to TBBLowerer::createAdd.1
+                        * Injected Logic: The backend generates a complex sequence of IR:
+Code snippet
+%lhs_err = icmp eq i32 %a, -2147483648
+%rhs_err = icmp eq i32 %b, -2147483648
+%res = call {i32, i1} @llvm.sadd.with.overflow.i32(%a, %b)
+//... sticky error and sentinel checks...
+
+                        * Result: The generic function has been "specialized" not just in type, but in logic. It now safely handles the unique error propagation semantics of TBB without imposing that overhead on the standard integer instantiation.
+6.2 Wild vs. GC Memory Integration
+Aria's structs change their memory management characteristics based on their contents. This has profound implications for generic containers like Vector<T>.
+                           * Case 1: Vector<wild int*>
+                           * T is an unmanaged pointer.
+                           * The generated Vector struct contains raw pointers.
+                           * GC Metadata: The compiler generates a "null" GC map for this struct. The Garbage Collector will treat this vector as opaque data and will not scan it. This is crucial for high-performance interaction with manual memory.
+                           * Case 2: Vector<string>
+                           * T is a managed string.
+                           * GC Metadata: The compiler generates a GC map indicating that the data array inside the vector contains pointers that must be traced.
+                           * Write Barriers: When code assigns to Vector<string>, the backend emits GC write barriers to maintain heap invariants. When assigning to Vector<wild int*>, these barriers are omitted.
+This mechanism allows Aria's standard library to be "memory-model agnostic." A single Vector implementation serves both the high-level, GC-reliant application code and the low-level, manual-memory systems code, with the compiler handling the bridging details automatically during monomorphization.
+6.3 Borrow Checker Integration
+Generic parameters act as "transparency layers" for the borrow checker.
+                           * If a generic function func<T>(*T: x) is instantiated with a reference int32& (borrowed pointer), the borrow checker tracks the lifetime of that reference through the function.
+                           * Lifetime Elision: Aria uses lifetime elision rules similar to Rust. For a generic function func<T>(*T: x) -> *T, the compiler infers that the lifetime of the return value is tied to the lifetime of the argument x.
+________________
+7. Advanced Features and Future Directions
+7.1 Const Generics (Planned)
+Const generics allow types to be parameterized by values, not just other types. This is essential for fixed-size arrays and linear algebra types.
+Proposed Syntax:
+
+
+Code snippet
+
+
+
+
+struct<T, const N: int>:Matrix {
+   *T[N * N]:data;
+}
+
+Implementation Strategy: The value N would be evaluated by the Comptime Interpreter 1 during the parsing/instantiation phase. The Monomorphizer would then treat Matrix<float, 4> and Matrix<float, 3> as completely distinct types with different internal layouts.
+7.2 Variadic Generics
+To support tuples and type-safe formatted I/O, Aria will eventually require variadic generics.
+Proposed Syntax:
+
+
+Code snippet
+
+
+
+
+func<...Ts>:tuple(*Ts...:args) {... }
+
+Currently, this is a research topic (Research_030). The implementation will likely rely on recursive expansion or tuple-flattening strategies during monomorphization.
+________________
+8. Implementation Roadmap
+This specification entails a multi-phase implementation plan for the Aria compiler team.
+Phase 1: Frontend Syntax & Parsing
+                           * Task: Update src/frontend/parser.h and parser.cpp to recognize the <...> generic parameter syntax and the * sigil.
+                           * Task: Extend FuncDecl and StructDecl AST nodes to store GenericParams.
+                           * Verification: Parser tests confirming correct construction of Generic AST nodes.
+Phase 2: The Monomorphizer
+                           * Task: Implement src/backend/monomorphization.cpp.1
+                           * Task: Build the GenericRegistry and SpecializationCache.
+                           * Task: Implement the deep AST cloning and type substitution logic.
+                           * Verification: Ability to compile identity<int>(5) and inspect the generated symbol _Aria_M_identity_int.
+Phase 3: TBB & Memory Integration
+                           * Task: Connect the Monomorphizer to the TBBLowerer.1 Ensure that when the substituted type is a TBB type, the BinaryOp AST nodes are lowered via TBBLowerer::createOp instead of standard generation.
+                           * Task: Implement GC map generation logic in the backend that inspects the concrete types of generic struct fields.
+Phase 4: Constraint System
+                           * Task: Implement trait resolution logic in TypeChecker.
+                           * Task: Implement the impl_table lookup to validate constraints at instantiation time.
+________________
+9. Conclusion
+The Aria generic system represents a rigorous synthesis of modern compiler theory and systems programming pragmatism. By committing to monomorphization, Aria ensures that the "zero-cost" promise is mathematically guaranteed—generic code is indistinguishable from hand-written specific code. Furthermore, the deep integration with TBB types and the Hybrid Memory Model turns generics into a powerful semantic tool, allowing a single codebase to adapt safe error propagation and memory management strategies automatically based on the types it processes. This system provides the foundation for a rich, high-performance standard library that does not compromise on safety or control.
+10. Comparison Table: Aria vs. Peers
+Feature
+	Aria
+	Rust
+	C++
+	Swift
+	Java
+	Instantiation Strategy
+	Monomorphization
+	Monomorphization
+	Monomorphization
+	Dynamic Dispatch (Witness Tables)
+	Type Erasure
+	Runtime Overhead
+	Zero
+	Zero
+	Zero
+	Low/Moderate
+	Moderate (Boxing/Casting)
+	Arithmetic Safety
+	Polymorphic (TBB vs Standard)
+	Uniform
+	Uniform
+	Uniform
+	Uniform
+	Syntax
+	Explicit (func<T>... *T)
+	Implicit (fn<T>... T)
+	Implicit (template<T>)
+	Implicit (func<T>)
+	Implicit (class<T>)
+	Memory Integration
+	Hybrid (GC/Wild aware)
+	Ownership/Borrowing
+	Manual
+	ARC (Ref Counting)
+	GC Only
+	Constraint System
+	Traits (:)
+	Traits (:)
+	Concepts (C++20)
+	Protocols (:)
+	Interfaces (extends)
+	Compilation Speed
+	Moderate (Deduplication)
+	Slow
+	Slow
+	Fast
+	Fast
+	This comparison highlights Aria's unique position: it matches the performance profile of C++ and Rust but introduces novel "semantic polymorphism" regarding arithmetic safety and memory management that no other major systems language currently offers.
+Works cited
+                           1. aria_source_part8_tbb_runtime.txt

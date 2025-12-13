@@ -1,0 +1,380 @@
+﻿Technical Specification: The Aria Unsafe Memory Model (Wild & WildX)
+1. Executive Summary
+The memory management landscape in systems programming has traditionally been polarized between manual memory management—exemplified by C and C++—and automatic garbage collection (GC), typified by Java, Go, and Python. The former offers deterministic performance and granular control over memory layout at the cost of memory safety vulnerabilities, such as buffer overflows and use-after-free errors. The latter prioritizes safety and developer productivity but introduces non-deterministic latency through "stop-the-world" pause times and often precludes the low-level optimizations required for operating systems, game engines, and high-frequency trading platforms.
+The Aria programming language introduces a paradigm-shifting "Hybrid Memory Model" designed to reconcile these competing philosophies. This architecture is predicated on the rigorous segmentation of the address space into three distinct regions: the Stack (lexically scoped, LIFO), the GC Heap (managed, generational, relocatable), and the Wild Heap (manual, fixed-address, unmanaged). This report provides a comprehensive technical specification for the "Wild" and "WildX" memory subsystems, which constitute the language's unsafe capabilities.
+The "Wild" subsystem grants developers direct, bare-metal control over memory allocation, layout, and lifetime, bypassing the GC entirely for performance-critical logic. The "WildX" subsystem extends this control to executable memory, facilitating Just-In-Time (JIT) compilation through a rigorous $W \oplus X$ (Write XOR Execute) security model enforced via RAII (Resource Acquisition Is Initialization) guards.
+This specification details the syntactic and semantic rules governing the pointer operators (@, *, #, ->, $), the operational logic of the wild and wildx allocation strategies, and the critical safety boundaries enforced by the Aria Borrow Checker (ABC) and the Aria Garbage Collection System (AGCS). Specifically, it formalizes the "Appendage Theory" and the "Invisible Root Rule," which mathematically constrain the interaction between managed and unmanaged memory to prevent undefined behavior.
+2. Architectural Overview of Memory Regions
+To strictly define the semantics of wild pointers, one must first establish the theoretical and practical framework of the memory model in which they operate. Aria divides the process address space into logically distinct regions, each governed by a specific AllocStrategy.1 This tripartite division is not merely a convention but a core compiler invariant used to determine code generation paths, barrier insertion, and safety checks.
+2.1 The Tripartite Memory Model
+The three primary allocation strategies defined in the compiler backend (codegen_fwd.h) are STACK, GC, and WILD.1
+2.1.1 The Stack (AllocStrategy::STACK)
+The stack represents the most fundamental memory region, governed by the rigid LIFO (Last-In, First-Out) semantics of function activation records.
+* Semantics: Memory is allocated when a function is called and the stack pointer is decremented (on typical downward-growing stack architectures).
+* Management: Automatic. Deallocation occurs at the closing brace } of the block, coincident with the destruction of the stack frame.
+* Safety: Safety is enforced by scope depth analysis. The Aria Borrow Checker calculates the Depth(v) of every stack variable. References to stack variables are forbidden from outliving the stack frame, preventing dangling pointers.1
+* Implications: Stack allocation is zero-cost in terms of allocator overhead but limited in size and lifetime.
+2.1.2 The GC Heap (AllocStrategy::GC)
+The managed heap is the domain of the Aria Garbage Collection System (AGCS).
+* Semantics: A generational heap comprising a Nursery (Eden space) and an Old Generation.1
+* Management: Automatic via tracing. The AGCS uses a Shadow Stack to identify roots and employs a copying collector for the nursery. Objects are moveable (relocatable) to reduce fragmentation.
+* Safety: The runtime guarantees strict object liveness. However, because objects can move during collection cycles, raw pointers to GC memory are unstable and inherently unsafe unless explicitly "pinned."
+2.1.3 The Wild Heap (AllocStrategy::WILD)
+The focus of this report, the Wild Heap, represents unmanaged, fixed-address memory.
+* Semantics: Arbitrary lifetime memory with fixed addresses. It roughly corresponds to the C heap managed by malloc/free.
+* Management: Manual. Allocation is triggered via aria.alloc, and deallocation must be explicitly requested via aria.free or managed via defer.1
+* Safety: Safety is not guaranteed by the runtime. Instead, it is enforced via RAII patterns, static leak detection analysis in the Borrow Checker, and strict boundary checks with the GC (the Invisible Root Rule).
+2.2 The WildX Extension (AllocStrategy::WILDX)
+The WildX region is a specialized subset of unmanaged memory designed for dynamic code generation.1 It addresses the specific security risks associated with JIT compilers, where memory must effectively change types from data (writable opcodes) to instructions (executable code).
+* Security Model: WildX imposes hardware-level protection flags via the NX (No-Execute) bit. It enforces a transition from Writable (RW) to Executable (RX), ensuring that memory is never simultaneously writable and executable.1
+* Usage: This region is distinct from standard Wild memory because the allocator must request page-aligned memory suitable for mprotect calls, and the lifecycle involves a distinct state machine absent in standard allocation.
+________________
+3. Wild Memory Specification
+The wild keyword serves as the primary gateway to unmanaged memory. It acts as both a storage class specifier and a declarative intent that the developer is "opting out" of the garbage collector for a specific variable or allocation.1
+3.1 Syntax and Declaration
+The wild keyword modifies a type declaration to indicate that the storage for the variable lies outside the GC's purview. It changes the backend code generation path from aria_gc_alloc to aria_alloc.
+
+
+Code snippet
+
+
+
+
+// Example: Basic Wild Declaration
+wild int64:s = 100000;
+
+// Example: Wild Pointer Declaration
+wild int64@:ptr = @s;
+
+In the example above 1:
+1. wild int64:s declares an integer s. While scalar types like int64 are typically allocated on the stack, the wild prefix explicitly tags this variable. In the context of a struct field or a heap allocation, this ensures the data resides in the unmanaged heap.
+2. wild int64@:ptr declares a pointer variable ptr. The type syntax Type@ denotes a pointer to Type. This variable is initialized with the address of s using the @ operator.
+3.2 Allocation Semantics (aria.alloc)
+The primary mechanism for requesting wild memory is the aria.alloc function family. Unlike the GC allocator, which uses a bump-pointer mechanism in a nursery, aria.alloc interacts with a general-purpose allocator (typically wrapping malloc or a custom slab allocator).1
+3.2.1 aria.alloc
+* Signature: func aria.alloc(size: uint64) -> result<wild void@>
+* Semantics:
+   * Requests a contiguous block of memory of at least size bytes from the operating system or the underlying allocator.
+   * The memory is uninitialized, containing indeterminate values (garbage). This is a crucial difference from aria.gc_alloc, which typically zero-initializes memory to ensure type safety.
+   * Return Type: Returns a result type.1 The val field contains the wild void@ pointer if successful. The err field contains a non-null error code if the allocation fails (e.g., Out of Memory).
+* Safety Constraints:
+   * The returned pointer is a "Wild Pointer." It is opaque to the GC.
+   * The memory remains allocated indefinitely until explicitly freed, creating a potential for memory leaks if not managed correctly.
+3.2.2 aria.free
+* Signature: func aria.free(ptr: wild void@) -> void
+* Semantics:
+   * Releases the memory block pointed to by ptr back to the pool.
+   * If ptr is NULL, the operation is a no-op (safe).
+   * If ptr was not returned by a matching aria allocation function, behavior is undefined.
+* Safety Constraints:
+   * Double Free: Invoking aria.free twice on the same address results in heap corruption. The Borrow Checker attempts to mitigate this via linear type analysis, marking the variable as "consumed" after the first free.
+   * Use-After-Free: Accessing the memory referenced by ptr after the call to aria.free is strictly forbidden. The compiler enforces this by marking the symbol as Dead in the flow-sensitive analysis pass.1
+3.3 Deferred Deallocation (RAII)
+To mitigate the risk of memory leaks in the manual Wild Heap, Aria leverages the defer keyword. This construct guarantees the execution of a statement at the exit of the current scope, regardless of how the scope is exited (return, break, or error).1 This provides RAII (Resource Acquisition Is Initialization) semantics for C-style pointers.
+
+
+Code snippet
+
+
+
+
+func process_data() {
+   // Allocation
+   wild buffer@:buf = aria.alloc_buffer(1024);
+   
+   // RAII Registration
+   defer aria.free(buf); 
+
+   // Operations on buf...
+   // If an error occurs here, 'defer' ensures aria.free(buf) is called.
+} 
+
+The Aria Borrow Checker validates this pattern. It verifies that every code path exiting the scope of buf is structurally dominated by the deferred aria.free call. If a path exists where the allocation leaks, the compiler emits a "Memory Leak" error.1
+3.4 Reallocation (aria.realloc)
+* Signature: func aria.realloc(ptr: wild void@, new_size: uint64) -> wild void@.1
+* Semantics:
+   * Resizes the memory block pointed to by ptr to new_size.
+   * If expansion is possible in-place, the address remains the same.
+   * If in-place expansion is impossible, a new block is allocated, data is copied (up to the minimum of old and new sizes), and the old block is freed.
+   * Critical Safety Note: aria.realloc invalidates the old pointer ptr. Using ptr after a realloc call is a Use-After-Free error. The developer must update the pointer variable with the return value: ptr = aria.realloc(ptr, new_size).
+3.5 Arena Allocation Status
+Current documentation confirms the existence of specialized allocators like aria.alloc_buffer, aria.alloc_string, and aria.alloc_array.1 However, specific documentation for an aria.arena.new API is explicitly marked as unavailable.1
+Inferred Architecture: While a specific aria.arena namespace is not documented, arena-style allocation is a standard pattern in systems languages. It is highly probable that aria.alloc_buffer serves as the primitive for arena construction. A developer would allocate a large raw buffer using aria.alloc_buffer, and then implement a simple bump-pointer allocator within that wild buffer to create a custom arena. This aligns with Aria's philosophy of providing low-level building blocks.
+________________
+4. WildX Memory Specification
+The WildX subsystem is Aria's solution for secure runtime code generation. In an era where JIT compilers are prime targets for exploitation, WildX implements a secure state machine that enforces $W \oplus X$ protection—memory pages may be Writable or Executable, but never both simultaneously.1
+4.1 The WildX State Machine
+WildX memory transitions through four strictly defined states, enforced by the WildXGuard runtime mechanism.1 This state machine prevents the "temporal window" vulnerability where JIT memory sits in a Read-Write-Execute (RWX) state.
+State Value
+	State Name
+	Properties
+	Allowed Operations
+	0
+	WILDX_STATE_UNINITIALIZED
+	Invalid / Null
+	None
+	1
+	WILDX_STATE_WRITABLE
+	Read/Write (RW), No Execute (NX)
+	Code generation, memcpy, seal
+	2
+	WILDX_STATE_EXECUTABLE
+	Read/Execute (RX), No Write (RO)
+	Execution, destroy
+	3
+	WILDX_STATE_FREED
+	Invalid
+	None
+	4.2 Allocation and Lifecycle
+The lifecycle of WildX memory is strictly controlled to ensure security invariants.
+4.2.1 Allocation (aria_alloc_exec)
+* Function: aria.alloc_exec(size: uint64).1
+* Initial State: WILDX_STATE_WRITABLE.
+* Semantics: Allocates page-aligned memory. This alignment is strictly required because hardware memory protection flags (like the NX bit) operate at the granularity of memory pages (typically 4KB).
+* Permissions: The memory is mapped with PROT_READ | PROT_WRITE. It is explicitly not executable.
+4.2.2 Code Generation Phase
+During the WILDX_STATE_WRITABLE phase, the application acts as a compiler. It writes machine code opcodes into the buffer. This is the only phase where mutation is permitted. The $ operator (discussed in Section 5) is used here to reference instruction pointers or iteration steps in code generation loops.
+4.2.3 Sealing (aria_mem_protect_exec)
+* Function: aria.mem_protect_exec(ptr: wildx void@, size: uint64).1
+* Transition: RW $\rightarrow$ RX.
+* Semantics:
+   1. Cache Flushing: The runtime must flush the CPU's Instruction Cache (I-Cache) and synchronize it with the Data Cache (D-Cache). On architectures like ARM, this is mandatory; otherwise, the CPU might execute stale garbage instead of the newly written instructions.
+   2. Protection Flip: The runtime calls the OS primitive (e.g., mprotect on POSIX, VirtualProtect on Windows) to change page permissions to PROT_READ | PROT_EXEC.
+   3. State Update: The internal guard state updates to WILDX_STATE_EXECUTABLE.
+* Security Guarantee: Once sealed, the hardware enforces immutability. Any attempt to write to this memory triggers a hardware segmentation fault (SIGSEGV), preventing attackers from modifying the code after verification.
+4.2.4 Execution and Deallocation
+* Execution: The pointer is cast to a func type and invoked.
+* Deallocation: aria.free_exec 1 releases the pages.
+4.3 The WildXGuard RAII Wrapper
+To prevent state management errors (e.g., forgetting to seal memory or forgetting to free it), Aria provides the WildXGuard structure.1 This struct wraps the pointer and state, automatically sealing memory or freeing it when the guard goes out of scope.
+
+
+Code snippet
+
+
+
+
+// Pseudo-code implementation of WildXGuard usage
+wildx_guard:g = wildx_guard_create(4096);
+// g.ptr is RW. Write opcodes here.
+// memcpy(g.ptr, opcodes, size);
+
+// Seal the memory. State becomes RX.
+wildx_guard_seal(&g);
+
+// Execute the code
+//...
+
+// wildx_guard_destroy called automatically at scope exit
+
+________________
+5. Pointer Operator Semantics
+Aria's pointer syntax diverges significantly from C/C++ to accommodate its hybrid safety model and generic system. The operators @, *, #, and -> have distinct roles that do not overlap with their C equivalents.1
+5.1 The Address Operator (@)
+* Syntax: @variable
+* Semantics: Returns the raw memory address of variable.
+* Return Type: wild T@ (where T is the type of variable).
+* Context:
+   * This is the equivalent of the & operator in C.
+   * It is the primary method for creating a wild pointer from a stack or heap variable.
+   * Restriction: Taking the address of a GC object is only permitted if that object is pinned (see # operator).
+5.2 The Generic Type Prefix (*)
+* Crucial Distinction: The * symbol is NOT a dereference operator in Aria.1
+* Semantics: It is exclusively used to denote Generic Type Parameters in function signatures and bodies.
+* Usage:
+   * func<T>:identity = *T(*T:val) defines a generic function.
+   * *T refers to the "Type T" parameter.
+* Implication: There is no unary *ptr syntax to read the value at an address. Aria forces developers to use specific access patterns (see below).
+5.3 The Pointer Member Access Operator (->)
+* Syntax: ptr->member
+* Semantics: Performs simultaneous dereference and member access.
+* Restriction: This is the ONLY syntactic mechanism for accessing fields of a struct through a pointer.1
+* The "Semantic Gap" of Dereferencing:
+   * Because *ptr does not exist, Aria discourages "pointer soup" where scalars are passed by reference and dereferenced arbitrarily.
+   * To access a scalar value pointed to by ptr, a developer must likely treat the pointer as an array (ptr) or wrap the scalar in a struct accessed via ->. This enforces structured data access.
+5.4 The Pinning Operator (#)
+* Syntax: #variable
+* Target: Applies to GC-managed objects (e.g., obj, dyn).
+* Semantics: The # operator is the critical bridge between the managed and unmanaged worlds.
+   1. Runtime Action: It sets the pinned_bit in the object header.1 This flag informs the Garbage Collector's compaction phase that this specific object must not be moved.
+   2. Compiler Action: It returns a wild T@ pointer to the object's data payload.
+* Safety Invariant:
+   * The returned pointer is valid only as long as the pin is active.
+   * Appendage Theory: The pin (Host) must outlive the usage of the raw pointer (Appendage).1
+5.5 The Safe Reference / Iteration Operator ($)
+* Syntax: $var or $ (in loops).
+* Semantics:
+   1. Borrowing: $var creates a safe, immutable reference (borrow) to var. It is tracked by the Borrow Checker to ensure Shared XOR Mutable access rules.1 This is equivalent to Rust's &var.
+   2. Iteration: In loop and till constructs, $ serves as the implicit iteration variable (the counter).1
+   3. WildX Context: In runtime assembler macros (often used with WildX), $ represents the current instruction pointer or label reference.
+________________
+6. Allocation API Reference
+The Aria Standard Library provides a comprehensive suite of allocation functions.
+6.1 aria.alloc
+* Signature: func aria.alloc(size: uint64) -> wild void@.1
+* Description: Allocates a raw memory block of size bytes.
+* Return: A generic wild pointer.
+* Behavior: Similar to malloc. Memory is uninitialized.
+6.2 aria.free
+* Signature: func aria.free(ptr: wild void@) -> void.1
+* Description: Returns memory to the wild heap.
+* Behavior: Similar to free. Must match a previous aria.alloc.
+6.3 aria.realloc
+* Signature: func aria.realloc(ptr: wild void@, new_size: uint64) -> wild void@.1
+* Description: Resizes an existing wild allocation.
+* Behavior: May move the block to a new address. Invalidates the old pointer ptr.
+6.4 aria.alloc_aligned
+* Signature: func aria.alloc_aligned(size: uint64, alignment: uint64) -> wild void@.1
+* Description: Allocates memory with strict alignment requirements.
+* Use Case: Essential for SIMD types (vec9, tensor) which require 64-byte alignment for AVX-512 ZMM registers.
+6.5 aria.alloc_exec and aria.free_exec
+* Signature: func aria.alloc_exec(size: uint64) -> wildx void@.1
+* Description: Allocates/frees memory in the WildX region (initially RW).
+________________
+7. Safety Boundary Enforcement
+The core innovation of Aria is the ability to mix these memory types safely. This is achieved through strict enforcement rules implemented in the compiler's semantic analysis phase.
+7.1 The Invisible Root Rule
+The Problem: The Garbage Collector scans the Shadow Stack and the GC Heap to find live objects. It does not scan the Wild Heap.
+The Risk: Consider a scenario where a GC object A is allocated. A wild struct W is allocated, and W.field is set to point to A. If the stack reference to A is dropped, the GC—unable to see the reference inside W—will assume A is dead and collect it. W.field becomes a dangling pointer, leading to a crash or heap corruption.
+The Rule:
+"A wild pointer/struct cannot hold a reference to a GC object unless that object is Pinned or rooted elsewhere."
+Enforcement:
+Code generation emits a compile-time error if a direct assignment wild_ptr->field = gc_obj is attempted without the # operator. This forces the developer to make the reference "Visible" (Pinned) whenever it crosses the boundary into the "Invisible" (Wild) world.
+7.2 Appendage Theory and Scope Depth
+Aria uses a formal system called "Appendage Theory" to reason about lifetimes.1
+* Host ($H$): The owner of the memory (e.g., a pinned GC object).
+* Appendage ($A$): The reference to it (e.g., the wild pointer returned by #).
+Invariant: $\text{Depth}(H) \le \text{Depth}(A)$.
+The Host must live in a scope strictly equal to or outer than the Appendage. The compiler calculates the scope depth Depth(var) for every variable. If a wild pointer (Appendage) tries to escape the scope of its Pinned Host, the Borrow Checker rejects the code with an "Appendage outlives Host" error.
+7.3 Use-After-Free Detection
+For wild memory, the Borrow Checker performs flow-sensitive data-flow analysis 1:
+1. State Tracking: Every wild allocation is tracked in a AllocatedSet and FreedSet.
+2. Transition: A call to aria.free(p) transitions pointer p to the Dead state.
+3. Check: Any subsequent read/write to p where State(p) == Dead triggers a compile-time error.
+4. Branch Merging: If p is freed in one branch of an if/else but used in the join block, the compiler conservatively marks it as potentially invalid and issues an error.
+7.4 "Unsafe Blocks" vs. Unsafe Contexts
+Research indicates that Aria does not have an explicit unsafe {... } block keyword like Rust.1 Instead, safety is managed through:
+1. Type Safety: The distinction between wild and gc types.
+2. Explicit Operators: The use of @ and # acts as a syntactic marker for unsafe operations.
+3. Extern Blocks: The extern block defines a context where foreign function interface (FFI) calls occur, which are implicitly unsafe.
+The compiler treats any function utilizing wild pointers or pinning as an "Unsafe Context" requiring stricter scrutiny by the Borrow Checker.
+________________
+8. Runtime Sanitizer and Debugging
+To support the development of safe code, Aria includes runtime instrumentation modes enabled via the ARIA_SAFETY_ENABLED flag.1
+8.1 Fat Pointers (Debug Mode)
+In debug builds, standard pointers are promoted to "Fat Pointers" to track bounds and provenance.
+Structure (struct aria_fat_pointer):
+
+
+C++
+
+
+
+
+struct aria_fat_pointer {
+   void* ptr;       // The actual pointer value
+   void* base;      // Base address of the allocation
+   uint64_t size;   // Size of the allocation
+   uint64_t alloc_id; // Unique ID for tracking use-after-free
+};
+
+Semantics:
+   * Bounds Checking: Every pointer access checks if base <= ptr < base + size.
+   * Use-After-Free: The alloc_id is checked against a global generation counter for that memory slot. If the generations do not match (meaning the slot was freed and reallocated), the runtime traps.
+8.2 TBB Safety Integration
+Aria's Twisted Balanced Binary (TBB) types use specific bit patterns (e.g., 0x80 for tbb8) as sticky error sentinels. When TBB values are stored in wild memory, the sanitizer ensures that the sentinel bit patterns are preserved and that any arithmetic operations propagate the error state correctly.1
+________________
+9. Code Examples
+9.1 Safe Interaction with Wild Memory
+
+
+Code snippet
+
+
+
+
+func main() {
+   // 1. Allocate wild memory
+   wild int64@:buffer = aria.alloc(1024);
+   
+   // 2. Register cleanup (RAII - Essential for leak prevention)
+   defer aria.free(buffer);
+
+   // 3. Pointer Arithmetic (using hypothetical array syntax due to lack of *ptr)
+   // buffer = 42; 
+   
+   // 4. Pinning a GC object to use with wild memory
+   obj:data = { val: 100 };
+   
+   // #data returns a wild pointer to the object payload.
+   // The GC is now blocked from moving 'data'.
+   wild int64@:pinned_ptr = #data; 
+   
+   // We can now safely pass pinned_ptr to an external C function
+   extern_c_process(pinned_ptr);
+   
+   // Scope exit: 
+   // - pinned_ptr dies (Pin released, GC can now move 'data')
+   // - defer aria.free(buffer) executes
+}
+
+9.2 WildX JIT Compilation
+
+
+Code snippet
+
+
+
+
+func jit_compile() {
+   // 1. Allocate RW executable memory using the Guard
+   wildx_guard:g = wildx_guard_create(4096);
+   
+   if (g.ptr!= NULL) {
+       // 2. Write machine code (RW phase)
+       // memcpy(g.ptr, opcodes, size);
+       
+       // 3. Seal (Transition to RX)
+       // Flushes I-Cache and sets NX bit to false
+       wildx_guard_seal(&g);
+       
+       // 4. Cast to function and execute
+       // func:jit_func = (func)g.ptr;
+       // jit_func();
+       
+       // 5. Cleanup is automatic via RAII when 'g' goes out of scope
+   }
+}
+
+________________
+10. Performance Comparison (GC vs Wild)
+The choice between GC and Wild memory in Aria is a trade-off between throughput, latency, and fragmentation.
+Feature
+	GC Heap (aria.gc_alloc)
+	Wild Heap (aria.alloc)
+	Allocation Cost
+	Ultra-Fast ($O(1)$ Bump Pointer in Nursery)
+	Moderate ($O(\log n)$ Free-list search / Syscall)
+	Deallocation Cost
+	Zero (Implicit in Copying GC)
+	Moderate (Free-list insertion / coalescing)
+	Fragmentation
+	Low (Compaction handles it)
+	High (Depends on allocator algorithm)
+	Determinism
+	Low (Stop-the-world pauses possible)
+	High (Deterministic latency, no pauses)
+	Safety
+	High (Managed, Type-safe)
+	Low (Manual, prone to leaks/UAF)
+	Use Case
+	General application logic, UI, Web
+	Audio processing, Physics engines, OS kernels
+	Analysis:
+The AGCS Nursery allocator typically executes in extremely few instructions. In contrast, aria.alloc (malloc) involves lock contention and complex data structure traversals. However, the GC incurs eventual pause times for scanning roots and copying survivors. Wild memory pays a higher upfront cost for allocation but guarantees zero pause times, making it indispensable for real-time constraints.
+________________
+11. Conclusion
+The Aria memory model successfully integrates the rigorous safety of a Borrow Checker with the flexibility of manual memory management. By formally defining the syntactic boundaries (@, #) and the semantic constraints ("Invisible Root Rule"), Aria allows systems programmers to optimize critical paths without sacrificing the safety of the broader application.
+The absence of a standard dereference operator forces a structured approach to memory access, while the WildX subsystem provides a secure foundation for dynamic code generation that mitigates modern exploit techniques. This hybrid architecture positions Aria as a unique tool in the systems programming landscape, offering the control of C with safety guarantees approaching those of Rust.
+Works cited
+   1. wildx_allocator.h

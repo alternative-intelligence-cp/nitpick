@@ -367,8 +367,9 @@
     - Wildcard (*) and unreachable (!)
     - fall(label) explicit fallthrough
     - Exhaustiveness checking
-- [ ] **research_020: Control Transfer (break, continue, return, defer)**
+- [ ] **research_020: Control Transfer (break, continue, return, defer)** [UNBLOCKED by research_022]
   * **Scope**: Jump semantics and cleanup handling
+  * **Status**: ✨ UNBLOCKED - research_022 completed defer RAII semantics
   * **break / continue**:
     - Loop exit and iteration skip
     - Labeled break/continue (for nested loops)
@@ -378,9 +379,9 @@
     - Implicit result wrapping ({err: NULL, val: X})
     - Defer execution before return
   * **defer**:
-    - RAII-style cleanup registration
+    - RAII-style cleanup registration (research_022: guarantees execution at scope exit)
     - Execution order (LIFO stack)
-    - Interaction with wild memory (aria.free in defer)
+    - Interaction with wild memory (aria.free in defer) - research_022 defines pattern
     - Panic/unwind safety
 
 ### 0.6 Memory Management Research
@@ -410,28 +411,41 @@
     - Linux: mmap/madvise for memory management
     - Windows: VirtualAlloc/VirtualFree
     - macOS: vm_allocate/vm_deallocate
-- [ ] **research_022: Wild and Wildx Memory (Manual Management)**
-  * **Scope**: Manual memory allocation and executable memory
-  * **wild (Manual Heap)**:
-    - Opt-out of GC via wild keyword
-    - aria.alloc() / aria.free() API
-    - Integration with Mimalloc allocator
-    - Leak detection (static analysis + runtime tracking)
-    - Pointer arithmetic with @ operator
-    - Appendage Theory (wild ptrs to GC objects require pinning)
-  * **wildx (Executable Memory)**:
-    - JIT code generation target
-    - W^X enforcement (write XOR execute)
-    - Temporal window: allocate → write → seal → execute
-    - RAII guard for security (wildx_guard.c)
-    - Platform syscalls: mprotect, VirtualProtect, mach_vm_protect
-    - Integration with runtime assembler
-  * **Operators**:
-    - @ (address-of): Get raw pointer to variable
-    - * (dereference): Read value from pointer
-    - -> (member access): Pointer member dereference
-    - # (pin): Prevent GC movement of target object
-    - $ (safe reference): Borrow checker safe reference (immutable or mutable $mut)
+- [x] **research_022: Wild and Wildx Memory (Manual Management)** ✅ COMPLETE (Dec 13, 2025)
+  * **Document**: `/docs/gemini/responses/research_022_wild_wildx_memory.txt` (379 lines)
+  * **Key Findings**:
+    - **Tripartite Memory Model**: Stack (LIFO) + GC Heap (generational) + Wild Heap (manual)
+    - **Allocation Strategy Enum**: AllocStrategy::STACK, ::GC, ::WILD, ::WILDX
+    - **Wild Memory API**:
+      * aria.alloc(size) → wild void@ (uninitialized, malloc-like)
+      * aria.free(ptr) → void (matches allocation)
+      * aria.realloc(ptr, new_size) → wild void@ (invalidates old pointer)
+      * aria.alloc_aligned(size, alignment) → wild void@ (for SIMD types)
+      * defer aria.free(ptr) for RAII cleanup (scope exit guarantee)
+    - **WildX (Executable Memory)**:
+      * W⊕X enforcement: Never RWX, transition RW → RX only
+      * State machine: UNINITIALIZED → WRITABLE → EXECUTABLE → FREED
+      * aria.alloc_exec(size) → wildx void@ (page-aligned RW)
+      * aria.mem_protect_exec(ptr, size) → Seal RW → RX (flush I-cache)
+      * WildXGuard RAII: Automatic sealing + cleanup on scope exit
+      * Security: Hardware NX bit prevents writes after sealing (SIGSEGV)
+    - **Pointer Operators**: 
+      * @ (address-of): Returns wild T@ pointer to variable
+      * # (pin): Pins GC object, returns wild T@ (prevents GC relocation)
+      * -> (member access): ONLY syntax for pointer dereference (no standalone *)
+      * * (NOT dereference): Generic type prefix only (func<T> uses *T)
+      * $ (safe reference): Borrow checker reference (borrowing), also iteration variable
+    - **Safety Boundaries**:
+      * Invisible Root Rule: GC doesn't scan wild memory, prevents wild → GC dangling pointers
+      * Appendage Theory: Depth(Host) ≤ Depth(Appendage), pin (Host) must outlive pointer (Appendage)
+      * Use-After-Free Detection: Flow-sensitive tracking, State(ptr) == Dead triggers compile error
+      * Fat Pointers (debug mode): {ptr, base, size, alloc_id} for bounds checking
+    - **GC Integration**:
+      * pinned_bit in object header (marks object as non-relocatable)
+      * Wild structs holding GC refs require # operator to make reference "visible"
+      * GC maps adapt based on struct contents (Vector<wild int*> vs Vector<string>)
+    - **Performance**: Wild alloc O(log n) vs GC bump-pointer O(1), but zero pause times (deterministic)
+  * **TODO**: Implement Wild allocator wrapper, WildX state machine, fat pointer debug mode
 - [ ] **research_023: Runtime Assembler (Wildx Code Generation)**
   * **Scope**: JIT compilation and x86-64 code emission
   * **Architecture**:
@@ -532,32 +546,117 @@
     - &{ } (interpolation): Inside ` backtick strings
 
 ### 0.8 Language Infrastructure Research
-- [ ] **research_027: Generics and Templates (Monomorphization System)**
-  * **Scope**: Zero-cost generic programming via monomorphization (C++/Rust style)
-  * **Generic Functions**: func<T, U>:name = *T(*U:param) { body }
-  * **Monomorphization**: Compile-time type instantiation (no erasure)
-  * **Type Inference**: Automatic type parameter deduction
-  * **Constraints**: Trait bounds and type requirements
-  * **Integration**:
-    - Interaction with wild vs gc memory
-    - TBB types in generic contexts (preserving ERR)
-    - Borrow checker compatibility
-    - Comptime evaluation for constraints
-  * **Advanced Features**:
-    - Associated types
-    - Higher-kinded types
-    - Const generics (array<T, N>)
-    - Variadic generics
-    - Specialization
-- [ ] **research_028: Module System (use, mod, pub, extern)**
-  * **Scope**: Complete module system for code organization
-  * **use (Imports)**: use std.io, use math.*, use "./file.aria" as alias
-  * **mod (Module Definitions)**: mod name { ... } and nested hierarchies
-  * **pub (Visibility)**: pub func, pub const, pub struct
-  * **extern (FFI)**: extern "libc" { func:malloc = void*(uint64:size); }
-  * **Key Features**:
-    - Import resolution algorithm (absolute, relative, search paths)
-    - Circular import detection
+- [x] **research_027: Generics and Templates (Monomorphization System)** ✅ COMPLETE (Dec 13, 2025)
+  * **Document**: `/docs/gemini/responses/research_027_generics_templates.txt` (385 lines)
+  * **Key Findings**:
+    - **Zero-Cost Abstractions**: Compile-time monomorphization (instantiate specialized copy per type combo)
+    - **Syntax Philosophy**: func<T> declares, *T references (explicit sigil prevents C++ ambiguity)
+      * In angle brackets <T>: Declares type parameter
+      * Everywhere else: Must use *T (marks generic usage syntactically)
+      * Example: func<T>:identity = *T(*T:value) { return value; }
+    - **Instantiation Strategy**: Lazy, demand-driven
+      * Registration: func<T> stored as generic AST (not compiled)
+      * Discovery: Call site identity(42) triggers inference (T = int32)
+      * Cache Lookup: specialization_map[(identity, [int32])]
+      * Pipeline: Clone AST → Substitute *T with int32 → Re-analyze → Codegen
+    - **Deduplication**:
+      * Frontend: Type aliases canonicalized (MyInt = int32 → same cache key)
+      * Linker: Deterministic mangling + linkonce_odr → discard duplicates across modules
+    - **Name Mangling**: _Aria_M_<FuncName>_<TypeHash>_<TypeDesc>
+      * Example: func<T>:max with tbb8 → _Aria_M_max_F4A19C88_tbb8
+      * TypeHash: 64-bit FNV-1a for uniqueness
+      * TypeDesc: Human-readable (debugger/stack traces)
+    - **Depth Limits**: 64 nested instantiations max, cycle detection prevents infinite expansion
+    - **Type Inference**: Local bidirectional (constraint generation → unification → substitution)
+      * No implicit coercion: swap(int32, int64) fails (must cast explicitly)
+      * Ambiguous cases require Turbofish: default::<int64>()
+    - **Constraint System**: Trait bounds checked at instantiation
+      * func<T: Hashable & Display> (multiple bounds with &)
+      * Definition-time: Body only calls methods in traits
+      * Instantiation-time: Type must implement traits (checked via impl_table)
+      * Built-in traits: Copy, Drop, Add, Sub, Mul, Div, Send
+    - **TBB Integration**: Semantic polymorphism
+      * func<T>(a + b) with T=int32 → single CPU add instruction
+      * Same function with T=tbb32 → complex sticky error propagation logic
+      * Backend recognizes TBB, intercepts +, delegates to TBBLowerer::createAdd
+    - **Memory Model Integration**:
+      * Vector<wild int*>: Null GC map (opaque to GC, no write barriers)
+      * Vector<string>: GC map marks pointer array, emits write barriers
+      * Single Vector implementation serves both via monomorphization
+    - **Borrow Checker**: Generic parameters transparent to lifetime tracking
+      * func<T>(*T:x) → *T infers return lifetime tied to argument lifetime
+    - **Advanced Features (Planned)**:
+      * Const generics: struct<T, const N: int>:Matrix { *T[N * N]:data; }
+      * Variadic generics: func<...Ts>:tuple(*Ts...:args) (Research_030)
+    - **Performance**: Compilation speed moderate (deduplication cost), zero runtime overhead
+  * **TODO**: Implement Monomorphizer (src/backend/monomorphization.cpp), TBB lowering integration, GC map generation
+- [x] **research_028: Module System (use, mod, pub, extern)** ✅ COMPLETE (Dec 13, 2025)
+  * **Document**: `/docs/gemini/responses/research_028_module_system.txt` (510 lines)
+  * **Key Findings**:
+    - **Keywords**: use (import), mod (define), pub (export), extern (FFI)
+    - **use (Import Syntax)**:
+      * Canonical: use std.io, use std.collections.map
+      * Selective: use std.collections.{array, map, Vector}
+      * Wildcard: use math.* (not recommended, forward compat hazard)
+      * Aliasing: use "./utils.aria" as utils, use std.network.http.client as HttpClient
+      * Path-based: use "../shared/crypto.aria", use "/usr/lib/aria/graphics"
+    - **Import Resolution Algorithm**:
+      * Normalization: String literals resolved relative to current file
+      * Root Resolution: Check package manifest → dependency map
+      * Directory Traversal: a.b → <root>/a/b.aria OR <root>/a/b/mod.aria
+      * Failure: Scan ARIA_PATH → Fatal E001: Module not found
+    - **Circular Dependency Management**:
+      * DAG Requirement: Cycles banned (compile-time error E003)
+      * Detection: LoadingStack tracks parsing chain, push/pop/check
+      * Resolution: Interface Extraction pattern (move shared to Module C) or Trait abstraction
+    - **mod (Module Definition)**:
+      * Inline: mod internal_logic { func:helper = void() {... } }
+      * External: mod network; (looks for network.aria or network/mod.aria)
+      * Hierarchical: mod acts as mount point, separates declaration from implementation
+    - **Directory Structure**:
+      * Standard layout: src/{main.aria, lib.aria, utils.aria, net/{mod.aria, http.aria}}
+      * mod.aria: Directory module marker (like Python __init__.py, Rust mod.rs)
+    - **Visibility System (Private-by-Default)**:
+      * Private (default): Visible only in defining module + submodules
+      * pub: Visible to any importer
+      * pub(package): Visible within compilation unit (crate), not external
+      * pub(super): Visible to parent module (sibling sharing)
+    - **pub use Re-exports**: Facade pattern for clean APIs
+      * Internal: std.internal.collections.hashmap
+      * Public: pub use internal.collections.hashmap.HashMap → std.collections.HashMap
+    - **Visibility Enforcement**: Semantic analyzer checks access during symbol resolution
+    - **extern (FFI)**:
+      * Syntax: extern "libc" { func:malloc = void*(uint64:size); func:free = void(void*:ptr); }
+      * Linkage: String literal specifies library (instructs linker)
+      * Safety: All extern items implicitly unsafe
+    - **Type Mapping (C FFI)**:
+      * Integers: int8-int64 → int8_t-int64_t (direct binary compat)
+      * Floats: flt32/64 → float/double (IEEE 754)
+      * Pointers: void*, @type → void*, type*
+      * Strings: string → struct {char* ptr; size_t len;} (auto-marshal to null-terminated)
+      * TBB: tbb8 → int8_t (hazard: -128 is ERR in Aria, valid in C)
+      * Structs: Only compatible if #[repr(C)] (disables field reordering)
+    - **WildX Security**: Exporting wildx pointers requires unsafe marker (prevents code injection via C)
+    - **Calling Conventions**: Default cdecl, #[call_conv("stdcall")] for Windows APIs
+    - **Symbol Resolution**: Hierarchical SymbolTable (Level 0: universe, Level 1: module, Level 2+: local)
+    - **Two-Pass Compilation**:
+      * Pass 1: Interface discovery (scan declarations, skip bodies) → Build SymbolTable skeleton
+      * Pass 2: Semantic analysis (bodies) → All interfaces known, no forward decls needed
+    - **Generic Monomorphization**: Generic ASTs serialized in module metadata (.lib/.mod files)
+    - **Build System**: aria.toml package manifest
+      * [package]: name, version, authors, edition
+      * [dependencies]: std = {version}, json = {git}, shared_utils = {path}
+      * [build]: optimize, output_dir
+    - **Incremental Compilation**:
+      * Hash modules (source + config), compare to target/incremental/
+      * Interface hashing: Body changes don't force dependent re-type-check (only re-link)
+    - **Conditional Compilation**: cfg(target_os = "linux") evaluated at parse time (AST erasure)
+    - **Error Diagnostics**:
+      * E001: Module not found (with search paths)
+      * E002: Visibility violation (symbol private in module X)
+      * E003: Circular dependency (refactor suggestion)
+      * E004: FFI safety (TBB to C, wildx export)
+  * **TODO**: Implement module resolver, SymbolTable hierarchy, two-pass compiler, aria.toml parser
     - Visibility levels (pub, pub(crate), pub(super), private)
     - FFI type mappings (Aria ↔ C types)
     - Conditional compilation (use cfg(target_os = "linux"))
