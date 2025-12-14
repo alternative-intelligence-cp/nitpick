@@ -298,15 +298,14 @@ void analyzeStatement(frontend::Statement* stmt, EscapeContext& ctx) {
     
     // If statements
     if (auto* if_stmt = dynamic_cast<frontend::IfStmt*>(stmt)) {
-        analyzeExpression(if_stmt->condition.get(), ctx, false);
-        if (if_stmt->then_block) {
-            for (auto& s : if_stmt->then_block->statements) {
-                analyzeStatement(dynamic_cast<frontend::Statement*>(s.get()), ctx);
+        for (auto& branch : if_stmt->branches) {
+            if (branch.condition) {
+                analyzeExpression(branch.condition.get(), ctx, false);
             }
-        }
-        if (if_stmt->else_block) {
-            for (auto& s : if_stmt->else_block->statements) {
-                analyzeStatement(dynamic_cast<frontend::Statement*>(s.get()), ctx);
+            if (branch.body) {
+                for (auto& s : branch.body->statements) {
+                    analyzeStatement(dynamic_cast<frontend::Statement*>(s.get()), ctx);
+                }
             }
         }
         return;

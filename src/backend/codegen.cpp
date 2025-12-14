@@ -470,10 +470,13 @@ public:
         
         // If statements
         if (auto* ifStmt = dynamic_cast<frontend::IfStmt*>(stmt)) {
-            analyzeExprForCaptures(ifStmt->condition.get(), captured, visited, localVars);
-            analyzeBlockForCaptures(ifStmt->then_block.get(), captured, visited, localVars);
-            if (ifStmt->else_block) {
-                analyzeBlockForCaptures(ifStmt->else_block.get(), captured, visited, localVars);
+            for (auto& branch : ifStmt->branches) {
+                if (branch.condition) {
+                    analyzeExprForCaptures(branch.condition.get(), captured, visited, localVars);
+                }
+                if (branch.body) {
+                    analyzeBlockForCaptures(branch.body.get(), captured, visited, localVars);
+                }
             }
             return;
         }
@@ -5815,54 +5818,67 @@ public:
     }
     
     void visit(IfStmt* node) override {
-        // Generate if-then-else control flow
-        Value* condVal = visitExpr(node->condition.get());
-        if (!condVal) return;
-        
-        // Convert condition to bool (i1)
-        if (condVal->getType() != Type::getInt1Ty(ctx.llvmContext)) {
-            // Compare to zero (false if zero, true otherwise)
-            condVal = ctx.builder->CreateICmpNE(
-                condVal,
-                Constant::getNullValue(condVal->getType()),
-                "ifcond"
-            );
-        }
+        // Generate if-elif-else control flow with branches vector
+        if (node->branches.empty()) return;
         
         Function* func = ctx.builder->GetInsertBlock()->getParent();
-        
-        // Create blocks for then, else, and merge
-        BasicBlock* thenBB = BasicBlock::Create(ctx.llvmContext, "then", func);
-        BasicBlock* elseBB = node->else_block ? 
-            BasicBlock::Create(ctx.llvmContext, "else") : nullptr;
         BasicBlock* mergeBB = BasicBlock::Create(ctx.llvmContext, "ifcont");
         
-        // Branch based on condition
-        if (elseBB) {
-            ctx.builder->CreateCondBr(condVal, thenBB, elseBB);
-        } else {
-            ctx.builder->CreateCondBr(condVal, thenBB, mergeBB);
-        }
-        
-        // Emit then block
-        ctx.builder->SetInsertPoint(thenBB);
-        if (node->then_block) {
-            node->then_block->accept(*this);
-        }
-        // Branch to merge if no terminator
-        if (!ctx.builder->GetInsertBlock()->getTerminator()) {
-            ctx.builder->CreateBr(mergeBB);
-        }
-        
-        // Emit else block if present
-        if (elseBB) {
-            func->insert(func->end(), elseBB);
-            ctx.builder->SetInsertPoint(elseBB);
-            if (node->else_block) {
-                node->else_block->accept(*this);
-            }
-            if (!ctx.builder->GetInsertBlock()->getTerminator()) {
-                ctx.builder->CreateBr(mergeBB);
+        // Process each branch
+        for (size_t i = 0; i < node->branches.size(); i++) {
+            auto& branch = node->branches[i];
+            
+            if (branch.condition) {
+                // if or elif branch - has a condition
+                Value* condVal = visitExpr(branch.condition.get());
+                if (!condVal) return;
+                
+                // Convert condition to bool (i1)
+                if (condVal->getType() != Type::getInt1Ty(ctx.llvmContext)) {
+                    condVal = ctx.builder->CreateICmpNE(
+                        condVal,
+                        Constant::getNullValue(condVal->getType()),
+                        "ifcond"
+                    );
+                }
+                
+                // Create then block for this branch
+                BasicBlock* thenBB = BasicBlock::Create(ctx.llvmContext, 
+                    i == 0 ? "then" : "elif", func);
+                
+                // Create else/elif block for next condition (or merge if this is last)
+                BasicBlock* elseBB = (i + 1 < node->branches.size()) ?
+                    BasicBlock::Create(ctx.llvmContext, "elifcond") : mergeBB;
+                
+                // Branch based on condition
+                ctx.builder->CreateCondBr(condVal, thenBB, elseBB);
+                
+                // Emit then block
+                ctx.builder->SetInsertPoint(thenBB);
+                if (branch.body) {
+                    branch.body->accept(*this);
+                }
+                if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                    ctx.builder->CreateBr(mergeBB);
+                }
+                
+                // Set up for next branch
+                if (i + 1 < node->branches.size()) {
+                    func->insert(func->end(), elseBB);
+                    ctx.builder->SetInsertPoint(elseBB);
+                }
+            } else {
+                // final else branch - no condition
+                BasicBlock* elseBB = BasicBlock::Create(ctx.llvmContext, "else", func);
+                ctx.builder->CreateBr(elseBB);  // unconditional branch
+                
+                ctx.builder->SetInsertPoint(elseBB);
+                if (branch.body) {
+                    branch.body->accept(*this);
+                }
+                if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                    ctx.builder->CreateBr(mergeBB);
+                }
             }
         }
         

@@ -129,11 +129,14 @@ std::unique_ptr<frontend::Statement> Monomorphizer::cloneStmt(frontend::Statemen
     
     // If statement
     if (auto* ifStmt = dynamic_cast<frontend::IfStmt*>(stmt)) {
-        return std::make_unique<frontend::IfStmt>(
-            cloneExpr(ifStmt->condition.get()),
-            cloneBlock(ifStmt->then_block.get()),
-            cloneBlock(ifStmt->else_block.get())
-        );
+        auto newIf = std::make_unique<frontend::IfStmt>();
+        for (auto& branch : ifStmt->branches) {
+            newIf->branches.emplace_back(
+                branch.condition ? cloneExpr(branch.condition.get()) : nullptr,
+                branch.body ? cloneBlock(branch.body.get()) : nullptr
+            );
+        }
+        return newIf;
     }
     
     // Block
