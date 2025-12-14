@@ -723,37 +723,88 @@
     - Package manifest format
     - Symbol resolution
     - Incremental compilation with modules
-- [ ] **research_029: Async/Await System (Coroutines and Futures)**
-  * **Scope**: Zero-cost async/await with stackless coroutines
-  * **async Functions**: async func:name = result(params) { await expr; }
-  * **await Keyword**: Suspend execution until Future completes
-  * **Future<T>**: Type representing pending computation
-  * **Coroutines**: Stackless state machine transformation
+- [x] **research_029: Async/Await System** ✅ COMPLETE (Dec 13, 2025) ⭐ CRITICAL
+  * **Document**: `/docs/gemini/responses/research_029_async_await_system.txt` (823 lines)
+  * **Key Findings**:
+    - **Hybrid M:N Threading Model**: Maps M lightweight tasks onto N OS threads
+    - **RAMP Optimization**: Zero-alloc fast path for synchronous completion
+      * RampResult ABI: Union of {direct value} | {coroutine pointer}
+      * Heap promotion only on first suspension (__aria_ramp_promote intrinsic)
+      * Optimistic execution on caller's stack
+    - **Wild Affinity Scheduling**: Thread-pinning for tasks with wild pointers
+      * has_wild_affinity flag prevents cross-thread stealing
+      * Solves Send/Sync without requiring Arc/Mutex wrappers
+      * affinity_thread_id tracks owning worker
+    - **Stackless Coroutines**: State machine transformation
+      * CoroutineFrame struct (state, waker, spilled variables)
+      * LLVM coroutine intrinsics for lowering
+      * 64-byte alignment for AVX-512 support
+    - **Future Trait**: poll(Context) → Ready(T) | PENDING | ERROR
+      * TBB sticky error propagation across await boundaries
+      * No exception handling overhead
+      * Waker for task resumption
+    - **Chase-Lev Work-Stealing**: Lock-free scheduler
+      * Local LIFO pop (cache locality)
+      * Remote FIFO steal (fairness)
+      * Global queue for external tasks (every 61 ticks)
+    - **Six-Stream Reactor Integration**:
+      * io_uring (Linux) / IOCP (Windows) for true async I/O
+      * AsyncRead/AsyncWrite traits for stddati/stddato
+      * Zero-copy with wild memory + pinning (#)
+    - **Cancellation**: Drop-based with defer cleanup (RAII)
+    - **Advanced Features**:
+      * Async generators (yield)
+      * Combinators (then, map, join, select)
+      * spawn_blocking for CPU-bound work
+      * Timeout via select + Timer
   * **Integration**:
-    - Async runtime using research_007 work-stealing executor
-    - I/O integration with research_005 (io_uring, IOCP)
-    - Borrow checker lifetime constraints
-    - Error handling with result type
-  * **Advanced Features**:
-    - Async blocks and closures
-    - Select/join combinators
-    - Cancellation semantics (drop Future)
-    - Async iterators/streams
-    - Timeout support
-- [ ] **research_030: Const and Compile-Time Evaluation**
-  * **Scope**: Compile-time constants and const evaluation
-  * **const Variables**: const int:VALUE = 42;
-  * **const Functions**: Pure, deterministic functions evaluated at compile-time
-  * **const Generics**: Generic parameters as compile-time constants
-  * **const Expressions**: Arithmetic, logical, function calls at compile-time
+    - Works with research_007 threading primitives
+    - Uses research_005 I/O with io_uring/IOCP
+    - Respects research_001 borrow checker ($ lifetimes)
+    - TBB arithmetic from research_002
+    - Wild/WildX from research_022
+
+- [x] **research_030: Const/Compile-Time Evaluation** ✅ COMPLETE (Dec 13, 2025) ⭐ CRITICAL
+  * **Document**: `/docs/gemini/responses/research_030_const_compile_time.txt` (864 lines)
+  * **Key Findings**:
+    - **Two-Phase Metaprogramming Model**:
+      * Phase 1: Preprocessor (syntactic expansion, macros)
+      * Phase 2: Semantic CTFE (type-checked execution)
+      * const resolved after macros, before codegen
+    - **Virtual Heap**: Sandboxed compile-time memory
+      * Pointer handles: {AllocID, Offset} (not raw addresses)
+      * Prevents host memory access (security)
+      * 1GB cap, 1M instruction budget, 512 frame depth
+    - **TBB Arithmetic Emulation**: Host ALU enforces TBB semantics
+      * Sticky error propagation in CTFE
+      * const tbb8:x = 127 + 1; → ERR (not -128)
+      * Prevents divergence between compile-time and runtime
+    - **Const Functions**: Auto-detection of purity
+      * Deterministic, no side effects, no WildX
+      * Memoization for recursive calls (factorial example)
+      * Optional const modifier for API stability
+    - **Const Generics**: Monomorphization pipeline
+      * Name mangling: _Aria_Inst_Matrix_int32_4_4
+      * Cache lookup prevents duplicate instantiation
+      * Fixed-size arrays: int[N], Matrix<T, Rows, Cols>
+      * Supported types: integers, booleans, types, enums
+    - **Hybrid Const Correctness**: Integrates with Wild/GC memory
+      * # pinning for const I/O operations
+      * Appendage Theory: const cannot hold dangling references
+      * WildX banned from CTFE (security)
+    - **Optimization**: Constant folding → DCE → .rodata
+      * Dead code elimination for const bool branches
+      * LLVM linkonce_odr for aggregate constants
+      * Debug info (DW_TAG_const_type) for symbolic debugging
+  * **Synergy with comptime**:
+    - comptime (imperative): "Do this calculation now"
+    - const (declarative): "This name = this immutable value"
+    - Pattern: const TABLE = comptime { /* loop logic */ };
   * **Integration**:
-    - Relationship with comptime from research_010
-    - Const propagation optimization
-    - Memory model (data segment, inlining)
-  * **Advanced Features**:
-    - Const assertions (static_assert)
-    - Const pattern matching
-    - Const slices/strings
+    - Works with research_010 comptime/macro system
+    - Uses research_001 Appendage Theory (lifetime safety)
+    - TBB emulation from research_002
+    - Reflection via @typeInfo for generic constraints
 
 ### 0.9 Essential Standard Library Research (Bootstrap Requirements)
 - [x] **research_031: Essential Standard Library (Compiler Bootstrap)** ✅ COMPLETE (Dec 12, 2025) ⭐ CRITICAL
