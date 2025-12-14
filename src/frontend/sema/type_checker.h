@@ -83,6 +83,7 @@ public:
 
     // Control flow
     void visit(frontend::PickStmt* node) override;
+    void visit(frontend::LoopStmt* node) override;
     void visit(frontend::TillLoop* node) override;
     void visit(frontend::WhenLoop* node) override;
     void visit(frontend::DeferStmt* node) override;

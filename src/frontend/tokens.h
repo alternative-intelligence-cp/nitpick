@@ -34,6 +34,7 @@ enum TokenType {
     TOKEN_KW_WHEN,          // When loop/expression
     TOKEN_KW_THEN,          // Then clause for when
     TOKEN_KW_END,           // End clause for when
+    TOKEN_KW_LOOP,          // Loop with start/limit/step
     TOKEN_KW_TILL,          // Till loop
     TOKEN_KW_FOR,           // For loop
     TOKEN_KW_WHILE,         // While loop

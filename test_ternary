@@ -1,0 +1,60 @@
+; ModuleID = 'aria_module'
+source_filename = "aria_module"
+
+%result_int8 = type { i8, i8 }
+
+declare void @puts(ptr)
+
+declare void @print(ptr)
+
+declare void @llvm.coro.resume(ptr)
+
+define void @aria_coro_resume_bridge(ptr %0) {
+entry:
+  call void @llvm.coro.resume(ptr %0)
+  ret void
+}
+
+define internal void @__aria_module_init() {
+entry:
+  ret void
+}
+
+define internal %result_int8 @__user_main() {
+entry:
+  %y = alloca i8, align 1
+  %x = alloca i8, align 1
+  call void @aria_shadow_stack_push_frame()
+  store i8 11, ptr %x, align 1
+  %0 = load i8, ptr %x, align 1
+  %1 = sext i8 %0 to i64
+  %eq = icmp eq i64 %1, 11
+  %2 = select i1 %eq, i64 100, i64 200
+  %3 = trunc i64 %2 to i8
+  store i8 %3, ptr %y, align 1
+  call void @aria_shadow_stack_pop_frame()
+  %result = alloca %result_int8, align 8
+  %err_ptr = getelementptr inbounds nuw %result_int8, ptr %result, i32 0, i32 0
+  store i8 0, ptr %err_ptr, align 1
+  %val_ptr = getelementptr inbounds nuw %result_int8, ptr %result, i32 0, i32 1
+  store i8 0, ptr %val_ptr, align 1
+  %result_val = load %result_int8, ptr %result, align 1
+  ret %result_int8 %result_val
+}
+
+declare void @aria_shadow_stack_push_frame()
+
+declare void @aria_shadow_stack_pop_frame()
+
+define i64 @main() {
+entry:
+  call void @aria_scheduler_init(i32 0)
+  call void @_ZN4aria7backend10TernaryOps10initializeEv()
+  call void @__aria_module_init()
+  %0 = call %result_int8 @__user_main()
+  ret i64 0
+}
+
+declare void @aria_scheduler_init(i32)
+
+declare void @_ZN4aria7backend10TernaryOps10initializeEv()

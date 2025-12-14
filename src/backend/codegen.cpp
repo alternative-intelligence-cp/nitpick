@@ -79,8 +79,8 @@ using aria::frontend::ExpressionStmt;
 using aria::frontend::PickStmt;
 using aria::frontend::PickCase;
 using aria::frontend::FallStmt;
+using aria::frontend::LoopStmt;
 using aria::frontend::TillLoop;
-// TODO: using aria::frontend::LoopStmt; // Waiting for LoopStmt AST node
 using aria::frontend::WhenLoop;
 using aria::frontend::ForLoop;
 using aria::frontend::WhileLoop;
@@ -479,6 +479,20 @@ public:
         }
         
         // Loops
+        if (auto* loopStmt = dynamic_cast<frontend::LoopStmt*>(stmt)) {
+            if (loopStmt->start) {
+                analyzeExprForCaptures(loopStmt->start.get(), captured, visited, localVars);
+            }
+            if (loopStmt->limit) {
+                analyzeExprForCaptures(loopStmt->limit.get(), captured, visited, localVars);
+            }
+            if (loopStmt->step) {
+                analyzeExprForCaptures(loopStmt->step.get(), captured, visited, localVars);
+            }
+            analyzeBlockForCaptures(loopStmt->body.get(), captured, visited, localVars);
+            return;
+        }
+        
         if (auto* tillLoop = dynamic_cast<frontend::TillLoop*>(stmt)) {
             if (tillLoop->limit) {
                 analyzeExprForCaptures(tillLoop->limit.get(), captured, visited, localVars);
@@ -2437,6 +2451,58 @@ public:
         ctx.builder->SetInsertPoint(exitBB);
     }
     */
+
+    void visit(LoopStmt* node) override {
+        // loop(start, limit, step) with '$' iterator
+        // Direction determined by start vs limit comparison
+        // Step is ALWAYS positive (magnitude only)
+        Value* start = visitExpr(node->start.get());
+        Value* limit = visitExpr(node->limit.get());
+        Value* step = visitExpr(node->step.get());
+
+        Function* func = ctx.builder->GetInsertBlock()->getParent();
+        BasicBlock* preheader = ctx.builder->GetInsertBlock();
+        BasicBlock* loopBB = BasicBlock::Create(ctx.llvmContext, "loop_body", func);
+        BasicBlock* exitBB = BasicBlock::Create(ctx.llvmContext, "loop_exit", func);
+
+        // Determine direction: if start < limit, count up; if start > limit, count down
+        Value* countUp = ctx.builder->CreateICmpSLT(start, limit, "count_up");
+        
+        // For counting down, we need negative step
+        Value* negStep = ctx.builder->CreateNeg(step, "neg_step");
+        Value* actualStep = ctx.builder->CreateSelect(countUp, step, negStep, "actual_step");
+
+        ctx.builder->CreateBr(loopBB);
+        ctx.builder->SetInsertPoint(loopBB);
+
+        // PHI Node for '$' iterator
+        PHINode* iterVar = ctx.builder->CreatePHI(Type::getInt64Ty(ctx.llvmContext), 2, "$");
+        iterVar->addIncoming(start, preheader);
+
+        // Define '$' in scope and generate body
+        {
+            ScopeGuard guard(ctx);
+            ctx.define("$", iterVar, false); // False = Value itself, not ref
+            node->body->accept(*this);
+        }
+
+        // Increment or decrement based on direction
+        Value* nextVal = ctx.builder->CreateAdd(iterVar, actualStep, "next_val");
+        iterVar->addIncoming(nextVal, ctx.builder->GetInsertBlock());
+
+        // Termination condition depends on direction:
+        // - Counting up: nextVal <= limit (use SGE for limit check, then negate)
+        // - Counting down: nextVal >= limit
+        Value* reachedLimit = ctx.builder->CreateICmpSLE(limit, nextVal, "up_done");  // For counting up
+        Value* belowStart = ctx.builder->CreateICmpSGE(nextVal, limit, "down_done"); // For counting down
+        Value* shouldExit = ctx.builder->CreateSelect(countUp, reachedLimit, 
+                                                       ctx.builder->CreateNot(belowStart), "should_exit");
+        Value* shouldContinue = ctx.builder->CreateNot(shouldExit, "should_continue");
+        
+        ctx.builder->CreateCondBr(shouldContinue, loopBB, exitBB);
+
+        ctx.builder->SetInsertPoint(exitBB);
+    }
 
     void visit(TillLoop* node) override {
         // Till(limit, step) with '$' iterator

@@ -410,6 +410,12 @@ public:
         if (node->false_expr) node->false_expr->accept(*this);
     }
     void visit(frontend::PickStmt*) override {}
+    void visit(frontend::LoopStmt* node) override {
+        if (node->start) node->start->accept(*this);
+        if (node->limit) node->limit->accept(*this);
+        if (node->step) node->step->accept(*this);
+        if (node->body) node->body->accept(*this);
+    }
     void visit(frontend::TillLoop* node) override {
         if (node->limit) node->limit->accept(*this);
         if (node->step) node->step->accept(*this);
@@ -646,6 +652,46 @@ void TypeChecker::visit(frontend::PickStmt* node) {
         if (case_node.body) {
             case_node.body->accept(*this);
         }
+    }
+}
+
+// Visit LoopStmt
+void TypeChecker::visit(frontend::LoopStmt* node) {
+    // Check start is integer and get its type
+    std::shared_ptr<Type> start_type;
+    if (node->start) {
+        node->start->accept(*this);
+        if (!current_expr_type->isInteger()) {
+            addError("Loop start must be an integer");
+        }
+        start_type = current_expr_type;  // Capture the start's type for $
+    }
+    
+    // Check limit is integer
+    if (node->limit) {
+        node->limit->accept(*this);
+        if (!current_expr_type->isInteger()) {
+            addError("Loop limit must be an integer");
+        }
+    }
+
+    // Check step is integer
+    if (node->step) {
+        node->step->accept(*this);
+        if (!current_expr_type->isInteger()) {
+            addError("Loop step must be an integer");
+        }
+    }
+
+    // Type check body with $ variable defined
+    // $ is automatically injected into the loop scope
+    // with the type inferred from the start expression
+    if (start_type && node->body) {
+        symbols->define("$", start_type, false);  // name, type, is_mut=false (immutable)
+    }
+    
+    if (node->body) {
+        node->body->accept(*this);
     }
 }
 

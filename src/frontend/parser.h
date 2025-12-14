@@ -94,6 +94,7 @@ public:
     // Control flow (Bug #67-71)
     std::unique_ptr<Statement> parseForLoop();
     std::unique_ptr<Statement> parseWhileLoop();
+    std::unique_ptr<Statement> parseLoopStmt();  // loop(start, limit, step) { ... }
     std::unique_ptr<Statement> parseTillLoop();
     std::unique_ptr<Statement> parseWhenLoop();  // Changed: when is a loop, not expression
     std::unique_ptr<Statement> parseBreak();
