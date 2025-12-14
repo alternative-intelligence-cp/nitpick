@@ -1,0 +1,535 @@
+﻿Specification and Architectural Design for the Aria Async/Await System
+1. Executive Summary
+The Aria programming language aims to occupy a unique niche in the systems programming landscape: providing the raw, bare-metal performance of C and the safety guarantees of modern type systems, while introducing a concurrency model that scales to millions of lightweight tasks. This report presents the comprehensive specification for the Aria Async/Await System, a design that reconciles the conflicting demands of zero-cost abstractions and ergonomic asynchronous control flow.
+The architecture defined herein departs from traditional binary choices—stackful vs. stackless, green threads vs. OS threads—by synthesizing a Hybrid M:N Threading Model 1 with a novel RAMP (Resource Allocation for Minimal Pause) optimization strategy.1 This approach allows Aria to support high-throughput network services and low-latency system components within the same runtime, without the garbage collection pauses associated with Go or the rigid "colored function" friction often attributed to Rust's initial async implementations.
+Key architectural innovations detailed in this specification include:
+1. RAMP Optimization: An ABI-level contract that eliminates heap allocation for asynchronous functions that complete synchronously, optimizing the "fast path" for buffered I/O and cached operations.1
+2. Wild Affinity Scheduling: A scheduler modification that respects Aria's "Appendage Theory" memory model, allowing tasks holding "wild" (unmanaged) pointers to be safely scheduled by pinning them to specific worker threads dynamically, thus avoiding the need for Send/Sync constraints on all data.1
+3. Twisted Balanced Binary (TBB) Integration: Native compiler lowering that propagates TBB "sticky errors" (sentinels) across asynchronous boundaries, ensuring numerical safety without the overhead of exception handling tables.1
+4. Six-Stream Reactor Integration: A deep coupling between the async runtime and Aria's six-stream I/O topology (stddati/stddato), allowing for specialized zero-copy data pipelines separate from control flow logging.1
+This document serves as the authoritative reference for the implementation of the compiler frontend (syntax and parsing), the backend (state machine lowering and LLVM IR generation), and the runtime library (scheduler and reactor).
+________________
+2. Theoretical Framework and Design Philosophy
+2.1 The Concurrency Imperative
+Modern hardware scaling relies on increasing core counts rather than clock speeds. Consequently, software efficiency is determined by its ability to keep these cores saturated. Traditional blocking I/O models, where one OS thread waits for one I/O operation, are strictly limited by memory overhead (stack size) and context-switching latency. The "C10k problem" has evolved into the "C10M problem"—handling ten million concurrent connections.
+Aria's design philosophy rejects the "Green Thread" model used by Go and Java (Project Loom) because the requisite runtime (segmented stacks, garbage collection) hides the machine's reality, preventing the low-level optimizations required for systems programming (e.g., SIMD usage, manual memory control). Conversely, Aria rejects the raw callback model of C/C++ (pre-C++20) due to its inversion of control and "callback hell."
+Instead, Aria adopts Stackless Coroutines transformed into state machines. This model reifies the execution state into a compact struct, decoupling the logical task from the OS thread stack.
+2.2 Addressing the "Colored Function" Problem
+A common criticism of explicit async/await (as seen in JavaScript, Python, and Rust) is the "colored function" problem, where synchronous and asynchronous functions do not compose. Aria addresses this through ABI Uniformity via RAMP. By making the RampResult (a union of value or future) the standard return type for async functions, synchronous and asynchronous callers can interact with reduced friction. The runtime provides explicit bridges (spawn_blocking) to integrate legacy synchronous code without stalling the async executor.1
+2.3 Integration with Aria’s Memory Model
+Aria’s "Appendage Theory" differentiates between Host (#, pinned/owned) and Appendage ($, dependent/borrowed) references. This creates a specific challenge for async programming:
+* Borrowing across await: If a coroutine suspends, its stack frame moves to the heap. References to variables within that frame must remain valid.
+* Wild Memory: Aria allows unmanaged wild pointers. These are generally not thread-safe.
+The system described here utilizes Pinning (#) to ensure that self-referential structures in the coroutine frame are safe, and Wild Affinity to ensure that tasks holding wild pointers are effectively thread-local, solving the safety vs. flexibility dilemma unique to Aria.
+________________
+3. Syntax and Semantics
+The syntactic surface of Aria’s async system is designed for familiarity while strictly enforcing the underlying semantics of the Future trait and memory model.
+3.1 Async Function Declarations
+Asynchronous functions are declared using the async modifier. This modifier instructs the compiler to perform a comprehensive transformation of the function body into a state machine.
+Grammar Specification:
+
+
+EBNF
+
+
+
+
+AsyncFuncDecl ::= "async" "func" ":" Identifier GenericParams? "=" ResultType "(" Params ")" Block
+
+Syntactic Rules:
+1. Placement: The async keyword must precede the func keyword. This ensures purely lexical parsing distinction before the function signature is processed.
+2. Return Type: The syntax result<T> specifies the logical return value. The actual return type generated by the compiler is an opaque type implementing Future<result<T>> (or RampResult at the ABI level).
+3. Generics: Async functions fully support generics, including monomorphization of the state machine for each concrete type instantiation.1
+Example:
+
+
+Code snippet
+
+
+
+
+async func:fetch_user = result<User>(int:id) {
+   // Logic here
+   await db.query(id);
+}
+
+3.2 The Await Operator
+The await operator is a unary prefix operator. It is the only mechanism to suspend execution within an async function.
+Grammar Specification:
+
+
+EBNF
+
+
+
+
+AwaitExpr ::= "await" Expression
+
+Semantics:
+* Operand: The expression following await must evaluate to a type that implements the Future trait.
+* Suspension: If the Future is not ready (returns PENDING), the current function suspends. Control returns to the caller (or the executor).
+* Resumption: Execution resumes at the point immediately following the await when the Future becomes Ready.
+* Context: await is only valid within an async function or async block. Usage elsewhere results in a compile-time error (E_ASYNC_OUTSIDE_CONTEXT).
+Postfix await Consideration:
+While Rust adopted .await (postfix) to aid method chaining, Aria retains the prefix await to maintain consistency with standard operator precedence and to align with the visual weight of other control flow keywords like return or yield. Method chaining is supported via the pipeline operator |> 1, which effectively mitigates the nesting issues of prefix await.
+Example with Pipeline:
+
+
+Code snippet
+
+
+
+
+// Instead of x.await.process(), Aria uses:
+val = await (x |> process()); 
+// Or strictly:
+val = await x;
+processed = val |> process();
+
+3.3 Async Lambdas and Closures
+Aria supports anonymous asynchronous functions, which are essential for functional patterns like map, filter, or spawning background tasks.
+Syntax:
+
+
+Code snippet
+
+
+
+
+func:handler = async func(int:x) {
+   await process(x);
+};
+
+Capture Semantics:
+* By Reference ($): By default, closures capture the environment by reference. For async closures, this is dangerous because the closure (the Future) might outlive the scope where the variables are defined.
+* By Value/Move: If the async closure is passed to a function requiring 'static lifetime (like aria.task.spawn), the compiler enforces that captured variables must be moved or copied.
+* Explicit Capture: Users can use the copy or move keywords (if defined in broader spec) or rely on Aria's distinct wild vs. gc rules. For wild pointers, the capture makes the resulting Future !Send, restricting it to the current thread (Wild Affinity).
+________________
+4. The Future Type and Trait System
+The core abstraction of the async system is the Future. Unlike the simplified C-style struct used in the bootstrap spawn library 1, the full system uses a trait-based approach enabling zero-cost composition and state machine compilation.
+4.1 The Future Trait
+The Future trait defines the interface for asynchronous computation. It is a "poll-based" model (similar to Rust) rather than a "completion-based" model (like C# or JS Promises). This allows the state machine to be driven externally without allocating callbacks for every step.
+Trait Definition (Pseudo-code):
+
+
+Code snippet
+
+
+
+
+trait Future<Output> {
+   // The core method driven by the executor.
+   // ctx: Contains the Waker and allocator context.
+   // Returns:
+   //   Result.val: Ready(Output) - The computation finished.
+   //   Result.err: PENDING - The computation is waiting.
+   //   Result.err: ERROR - A fatal error occurred (e.g., TBB sentinel).
+   func:poll = Result<Output>(Context$:ctx);
+}
+
+Key Components:
+* Output: The type of data yielded upon completion.
+* Context: An opaque structure wrapping the Waker.
+* Waker: A handle used to notify the executor that the task is ready to be polled again.
+4.2 Twisted Balanced Binary (TBB) Integration
+Aria's unique scalar types (TBB) necessitate a specialized Future design. TBB types use specific bit patterns (e.g., 0x80 for tbb8) as error sentinels.1
+The "Sticky Error" Propagation:
+In a standard synchronous function, a TBB error propagates via arithmetic logic. In an async state machine, this propagation must be preserved across await points without exception handling.
+* Logic: If an async function performs a calculation that results in ERR, the state machine transitions immediately to a Completed state, returning ERR.
+* Sentinel Handling: The poll method does not use a separate Result enum for TBB types. Instead, it returns the raw TBB value. If the value is ERR, the runtime interprets this as a completed computation that failed, not a runtime error.
+Design Rationale:
+This avoids the overhead of wrapping every numeric result in a Result<T, E> enum, preserving the zero-cost nature of TBB arithmetic even in async contexts.
+4.3 Combinators and Composition
+Futures are composed using combinators, which are themselves state machines wrapping other futures.
+Common Combinators:
+Combinator
+	Behavior
+	Semantics
+	then(f)
+	Chaining
+	Executes f with the result of the previous future.
+	map(f)
+	Transformation
+	Applies f to the result synchronous.
+	join(f1, f2)
+	Concurrency
+	Polls both f1 and f2 until both are Ready.
+	select(f1, f2)
+	Race
+	Polls both. Returns the result of the first to complete; cancels the other.
+	Implementation of select:
+The select combinator relies on the fact that Aria futures are cancelled by dropping. When select returns the winner's result, the loser's Future goes out of scope. Its destructor is called, triggering cleanup (see Section 9.2).
+________________
+5. Compiler Lowering & State Machine Transformation
+This section details the algorithm used by the compiler backend (LLVM) to transform synchronous-looking async code into asynchronous state machines. This process is transparent to the developer but critical for performance.
+5.1 The Coroutine Frame
+Every async function is associated with a generated struct called the CoroutineFrame. This struct acts as the stack frame for the suspended function.1
+Structure Layout:
+
+
+C++
+
+
+
+
+struct CoroutineFrame {
+   // ABI: LLVM Coroutine Handle (Instruction Pointer for resume)
+   void* coro_handle; 
+   
+   // ABI: State of the coroutine (SUSPENDED, RUNNING, COMPLETE)
+   int state;
+   
+   // Scheduler: Dependency graph pointer (Who is waiting for me?)
+   CoroutineFrame* waiting_on;
+   
+   // Scheduler: Wild Affinity tracking (See Section 6.2)
+   int affinity_thread_id;
+   bool has_wild_affinity;
+   
+   // Data: Union of spilled variables (The "Stack")
+   alignas(64) char data; 
+};
+
+Note: The 64-byte alignment is enforced to support Aria's AVX-512 types (vec9, tensor).1
+5.2 The Transformation Algorithm
+The compiler follows a multi-pass lowering process 2:
+Step 1: Spill Analysis
+The compiler builds a Control Flow Graph (CFG) and identifies all await points.
+* Start-Only Variables: Variables used strictly before the first await are allocated on the physical stack.
+* Cross-Await Variables: Variables defined before an await and used after it are marked for "spilling." These are added as fields to the CoroutineFrame struct.
+Step 2: State Machine Generation
+The function body is rewritten into a "step" function (the poll implementation) containing a giant switch statement.
+* Entry: case 0. Execution starts.
+* Await: case N.
+   * Call future.poll().
+   * If PENDING: Save state N, return PENDING.
+   * If READY: Extract value, jump to case N+1.
+* Return: Set state to COMPLETE, return READY.
+Step 3: RAMP Integration (The "Ramp" Function)
+Aria generates a "ramp" function (the initial entry point) separate from the resume function. This implements the RAMP optimization.1
+* Optimistic Execution: The ramp function begins execution on the caller's stack.
+* Synchronous Completion: If the function reaches return without suspending, it returns a RampResult containing the value directly. No heap allocation occurs.
+* Suspension (Promotion): If an await returns PENDING, the intrinsic __aria_ramp_promote is triggered.
+   1. Allocates CoroutineFrame on the heap via aria_alloc_aligned.
+   2. memcpy the spilled variables from the stack to the frame.
+   3. Sets the resume pointer.
+   4. Returns a RampResult containing the frame pointer.
+5.3 The RampResult ABI
+The RampResult serves as the universal ABI for async functions, allowing the caller to distinguish between a fast-path value and a slow-path future.1
+
+
+C++
+
+
+
+
+struct RampResult {
+   enum State { RAMP_COMPLETE, RAMP_PENDING } state;
+   union Payload {
+       void* value;          // Direct result
+       CoroutineFrame* coro; // Heap pointer
+   } payload;
+};
+
+This optimization is critical for Aria's goal of high-performance networking, where buffered reads often complete immediately.
+________________
+6. The Async Runtime: Executor and Scheduler
+The Aria runtime employs a Hybrid M:N Work-Stealing Scheduler. It maps $M$ lightweight tasks (coroutines) onto $N$ OS threads (workers).
+6.1 The Chase-Lev Work-Stealing Algorithm
+The scheduler uses a standardized Chase-Lev deque for task management, optimizing for cache locality.1
+Data Structures:
+* Local Queue: Each worker thread has a lock-free deque.
+* Global Queue: A mutex-protected queue for tasks spawned from outside the runtime (e.g., FFI callbacks).
+Execution Loop (Per Worker):
+1. Local Pop (LIFO): The worker attempts to pop a task from the bottom of its own deque. This ensures that the most recently spawned task (likely sharing cache lines with the parent) is executed first.
+2. Global Poll: Periodically (every 61 ticks), the worker checks the global queue to prevent starvation of external tasks.
+3. Steal (FIFO): If the local queue is empty, the worker becomes a "thief." It selects a random victim and attempts to steal from the top (oldest) of their deque.
+6.2 Wild Affinity: Thread Safety for Unmanaged Memory
+Aria allows wild pointers (raw, unmanaged memory addresses). Passing a wild pointer between threads is inherently unsafe because it might point to thread-local storage (TLS) or a thread-specific memory arena.
+The Solution: Wild Affinity 1
+Aria introduces a novel scheduling constraint called "Wild Affinity."
+1. Compiler Analysis: The compiler detects if a wild pointer is captured in a CoroutineFrame and live across an await.
+2. Flagging: If detected, the Task struct's has_wild_affinity flag is set to true.
+3. Runtime Logic:
+   * When the task suspends, it records the current worker_id in affinity_thread_id.
+   * Stealing Restriction: In the steal loop, a thief checks:
+C++
+if (candidate.has_wild_affinity && candidate.affinity_thread_id!= this.id) {
+   continue; // Skip this task; it is pinned to the victim.
+}
+
+   * Result: The task is effectively pinned to the thread that owns the wild memory, preventing segfaults or data corruption without requiring expensive Arc or Mutex wrappers.
+6.3 Task and Waker Implementation
+The Task Struct:
+
+
+C++
+
+
+
+
+struct Task {
+   CoroutineFrame* frame;
+   //... metadata...
+};
+
+The Waker:
+The Waker is the callback mechanism. When a Future is not ready, it registers a Waker with the event source (e.g., the Reactor).
+   * Wake(): When the event occurs, the source calls Wake().
+   * Action: Wake() pushes the associated Task back into the Scheduler's queues. If has_wild_affinity is true, it pushes to the specific worker's incoming queue; otherwise, it pushes to the local or global queue.
+________________
+7. I/O Integration: The Reactor
+Aria's async system is useless without I/O. The integration relies on the Reactor Pattern, interfacing with Aria's "Modern I/O Streams" topology.1
+7.1 The I/O Driver (Reactor)
+The Reactor runs alongside the scheduler. It multiplexes OS I/O events.
+   * Linux: Uses io_uring for asynchronous submission and completion. io_uring is preferred over epoll because it supports true async file I/O (not just network) and zero-copy operations.
+   * Windows: Uses I/O Completion Ports (IOCP).
+7.2 Mapping Streams to Async
+Aria's 6-stream topology (stdin, stdout, stderr, stddbg, stddati, stddato) is mapped to async traits.
+AsyncRead / AsyncWrite Traits:
+These traits allow non-blocking interaction with the streams.
+Implementation of stddati (Binary Input):
+   1. Call: await stddati.readAsync(buffer).
+   2. Fast Path: Checks the user-space ring buffer. If data exists, copies it and returns Ready.
+   3. Slow Path:
+   * Constructs an io_uring Submission Queue Entry (SQE) for a read operation.
+   * If the buffer is wild (unmanaged), passes the physical address directly (Zero-Copy).
+   * Registers the current Waker with the operation ID.
+   * Returns PENDING.
+   4. Completion: When io_uring produces a Completion Queue Entry (CQE), the Reactor locates the Waker and wakes the task.
+7.3 Zero-Copy Optimizations
+The combination of wild memory and io_uring allows Aria to achieve true zero-copy networking.
+   * Pinning: Managed (GC) buffers must be pinned using the # operator before being passed to readAsync.
+   * Wild: Wild buffers are manually managed and inherently pinned. The runtime passes these pointers directly to the kernel, bypassing intermediate copies.
+________________
+8. Memory Model and Safety
+8.1 The Appendage Theory in Async
+Aria's memory model distinguishes between Host (#) and Appendage ($) references.
+   * Constraint: An appendage ($) cannot outlive its host (#).
+   * Async Implications: If an async function captures an appendage ($ref), the compiler must prove that the future itself does not outlive the host.
+   * Common Case: await inside a scope. The future dies before the scope ends. Safe.
+   * Spawn Case: Spawning a future that holds an appendage to a stack variable is a compile error (E_LIFETIME_ESCAPE), similar to Rust. The user must copy the data or move ownership.
+8.2 Pinning (#) and Re-entrancy
+The # operator is critical for async I/O.
+   * Problem: If a buffer is moved (e.g., by a compacting GC) while the kernel is writing to it, data corruption occurs.
+   * Aria Solution: The # operator creates a Pinned<T> reference. The compiler forbids moving the referent of a Pinned<T>.
+   * Usage: await socket.read(#buffer). The compiler guarantees buffer is pinned for the duration of the await.
+8.3 Send and Sync Requirements
+To be thread-safe (moveable between workers), a Future must be Send.
+   * Derivation: A Future is Send if and only if all variables captured in its CoroutineFrame are Send.
+   * TBB Types: All TBB scalars are Send.
+   * Wild Pointers: Are !Send.
+   * Impact: A Future capturing a wild pointer is !Send. It cannot be passed to the generic aria.task.spawn. It must be handled by aria.task.spawn_local or rely on the "Wild Affinity" mechanism which effectively makes the scheduler treat it as thread-bound.
+________________
+9. Error Handling
+Aria uses Result types for error handling, avoiding the hidden control flow of exceptions.
+9.1 The ? Operator
+The ? operator is strictly defined for Result types. In an async function returning result<T>, ? behaves as follows:
+
+
+Code snippet
+
+
+
+
+val = await foo()?;
+
+Desugars to:
+
+
+Code snippet
+
+
+
+
+temp = await foo();
+if (temp.err!= NULL) {
+   return {err: temp.err, val: NULL}; // Early return from async state machine
+}
+val = temp.val;
+
+9.2 Panics
+If a task panics (e.g., division by zero, explicit fail()):
+   1. The panic is caught at the task boundary (the top-level poll call in the worker).
+   2. The stack is unwound (running destructors).
+   3. The task is marked as Failed with a PanicError.
+   4. Any task awaiting this task receives the PanicError.
+   5. No Crash: The worker thread survives and continues processing other tasks.
+9.3 TBB Sentinel Propagation
+As described in Section 4.2, TBB types utilize ERR sentinels.
+   * Propagation: If a tbb64 calculation in an async block overflows, the value becomes ERR.
+   * Completion: The Future completes successfully. The payload is ERR.
+   * Safety: This prevents the async state machine from crashing or needing complex exception tables for arithmetic errors.
+________________
+10. Advanced Features
+10.1 Async Generators (yield)
+Aria supports async generators, which are state machines that can yield multiple values.
+Syntax:
+
+
+Code snippet
+
+
+
+
+async func:stream_numbers = stream<int>(int:max) {
+   for (i in 0..max) {
+       await sleep(10);
+       yield i;
+   }
+}
+
+Implementation:
+   * Interface: Implements AsyncIterator.
+   * State Machine: yield saves the state N and returns Ready(Some(value)).
+   * Resume: The next call to poll_next() resumes at case N+1.
+10.2 Cancellation
+Cancellation in Aria is performed by dropping the Future.
+   * Mechanism: When a Future is no longer polled and is destructed (e.g., select picks a different branch), its destructor runs.
+   * Cleanup: The CoroutineFrame destructor executes any defer blocks active at the suspension point.
+   * Safety: Because defer is guaranteed to run on drop, resources like file handles or wild memory allocations are correctly freed even if the task never completes.
+10.3 Timeouts
+Timeouts are implemented via the select combinator and a Timer Future.
+
+
+Code snippet
+
+
+
+
+result:val = await select {
+   (res = await fetch()) { res }
+   timeout(5000) { ERR } // TBB ERR sentinel used as timeout indicator
+};
+
+________________
+11. Code Examples
+11.1 Simple HTTP Fetch
+
+
+Code snippet
+
+
+
+
+use std.net.http;
+use std.io;
+
+async func:get_data = result<string>(string:url) {
+   // 1. Initiate Request
+   // RAMP: If DNS is cached and socket ready, this might not allocate!
+   auto:response = await http.get(url)?;
+   
+   // 2. Buffer for reading
+   // Managed buffer, automatically pinned by readAsync if needed
+   buffer:buf = aria.alloc_buffer(4096);
+   
+   // 3. Read loop
+   string:data = "";
+   while (true) {
+       int:count = await response.body.readAsync(buf)?;
+       if (count == 0) break; // EOF
+       data = data + buf.toString(0, count);
+   }
+   
+   return {val: data, err: NULL};
+}
+
+11.2 High-Performance Wild Memory Processing
+
+
+Code snippet
+
+
+
+
+use aria.task;
+
+async func:process_image = void() {
+   // 1. Alloc Wild Memory (AVX-512 aligned)
+   wild buffer:img_data = aria.alloc_aligned(1024*1024, 64);
+   defer aria.free(img_data); // Ensures cleanup on cancellation
+
+   // 2. Async Read (Zero-Copy)
+   // Wild Affinity pins this task to the current thread
+   await io.stddati.readAsync(img_data);
+
+   // 3. CPU Intensive Processing (Offload)
+   // We pass the wild pointer. This is unsafe! 
+   // But spawn_blocking waits, keeping the frame alive.
+   await task.spawn_blocking(func() {
+       // Run SIMD filters on img_data
+       apply_filters(img_data);
+   });
+
+   // 4. Async Write
+   await io.stddato.writeAsync(img_data);
+}
+
+________________
+12. Comparison with Other Languages
+Feature
+	Aria
+	Rust
+	Go
+	C#
+	Coroutine Style
+	Stackless (State Machine)
+	Stackless (State Machine)
+	Stackful (Segmented)
+	Stackless (State Machine)
+	Allocation Strategy
+	Lazy (RAMP optimized)
+	Lazy (Compiler inlined)
+	Heap (Initial 2KB)
+	Heap (Task object)
+	Scheduling
+	M:N + Wild Affinity
+	M:N Work-Stealing
+	M:N Work-Stealing
+	Thread Pool
+	Async Traits
+	Native
+	Requires strict pinning
+	N/A (Implicit)
+	Interfaces
+	Cancellation
+	Drop-based (RAII)
+	Drop-based (RAII)
+	Context-based
+	CancellationToken
+	Zero-Copy I/O
+	Native (Wild pointers)
+	Possible (unsafe/complex)
+	Difficult (GC)
+	Possible (Memory)
+	Error Propagation
+	Result + TBB Sticky
+	Result
+	Multiple Returns
+	Exceptions
+	Key Differentiator: Aria uniquely combines the zero-overhead of stackless coroutines with the ease of use of M:N scheduling, solved via Wild Affinity for unmanaged memory scenarios, and optimized for latency via RAMP.
+________________
+13. Implementation Roadmap
+Phase 1: Frontend and AST (Weeks 1-4)
+   * Update Grammar to support async, await, yield.
+   * Implement parsing for async closures.
+   * Update Type Checker to validate Future<T> return types.
+Phase 2: Backend and RAMP (Weeks 5-10)
+   * Implement CoroutineFrame struct generation in LLVM IR.
+   * Implement __aria_ramp_promote intrinsic (stack-to-heap copy).
+   * Implement state machine lowering (switch generation).
+Phase 3: Runtime and Scheduler (Weeks 11-16)
+   * Implement Chase-Lev deque.1
+   * Implement Wild Affinity logic in stealing loop.
+   * Implement spawn_blocking thread pool.
+Phase 4: Reactor and I/O (Weeks 17-24)
+   * Integrate io_uring (Linux) and IOCP (Windows).
+   * Implement AsyncRead/AsyncWrite for stddati/stddato.
+   * Verify Zero-Copy paths with wild memory.
+This specification provides a complete, robust foundation for Aria's asynchronous capabilities, ensuring it meets the high standards of modern systems programming.
+________________
+Works cited
+   1. research_007_threading_library.txt
+   2. Coroutines in LLVM — LLVM 22.0.0git documentation, accessed December 13, 2025, https://llvm.org/docs/Coroutines.html
+   3. llvm-project/llvm/lib/Transforms/Coroutines/CoroSplit.cpp at main - GitHub, accessed December 13, 2025, https://github.com/llvm/llvm-project/blob/main/llvm/lib/Transforms/Coroutines/CoroSplit.cpp

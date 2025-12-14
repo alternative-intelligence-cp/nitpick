@@ -1,0 +1,545 @@
+﻿Specification and Architectural Design Report: Aria Const Semantics and Compile-Time Evaluation Infrastructure
+1. Executive Summary and Strategic Vision
+This report serves as the definitive technical specification and implementation blueprint for the const keyword, Compile-Time Function Evaluation (CTFE), and const-generics within the Aria programming language. As Aria aims to occupy a unique niche in the systems programming landscape—bridging the low-level manual control of C with the ergonomic safety and metaprogramming capabilities of modern languages like Zig and Rust—the design of its constant evaluation system is not merely an optimization feature but a foundational architectural pillar.
+The proposed architecture situates const evaluation within Phase 2 (The Semantic Phase) of Aria's Two-Phase Metaprogramming Pipeline.1 While the preprocessor handles syntactic expansion, the const system acts as the semantic engine that resolves static logic, enforces invariants, and prepares the Abstract Syntax Tree (AST) for code generation. This separation ensures that complex compile-time logic remains deterministic and type-safe, addressing common pitfalls found in purely textual metaprogramming systems.
+A central tenet of this design is "Hybrid Const Correctness." Aria's dual memory model—supporting both Managed Garbage Collection (GC) and Wild Manual Memory management—presents unique challenges for compile-time evaluation.1 The system defined herein introduces a "Virtual Heap" concept, allowing the compiler to safely simulate pointer arithmetic and memory allocation during compilation without exposing the host environment to undefined behavior or security vulnerabilities associated with "WildX" (executable) memory.1
+Furthermore, this specification rigorously integrates Aria's signature Twisted Balanced Binary (TBB) arithmetic into the compile-time environment. Unlike standard compilers that rely on the host CPU's ALU for constant folding, Aria's CTFE engine must strictly emulate TBB's "sticky error" propagation semantics.1 This ensures that arithmetic errors detected at compile time perfectly mirror runtime behavior, preventing the "divergence" bugs that plague cross-compilation scenarios in other languages.
+By standardizing const generics, Aria eliminates the runtime overhead of generic programming through aggressive monomorphization, adhering to the "Zero-Cost Abstraction" principle. This enables the creation of high-performance, fixed-size data structures and mathematical primitives (vectors, matrices) essential for Aria's target domains in systems programming, graphics, and high-frequency trading.
+________________
+2. Theoretical Framework and Compilation Pipeline Integration
+To understand the role of const in Aria, one must contextualize it within the broader compilation pipeline. Aria employs a distinct multi-stage architecture designed to separate syntactic sugar from semantic truth.
+2.1 The Two-Phase Metaprogramming Model
+Modern language design often struggles to reconcile the flexibility of macros with the safety of type systems. Aria resolves this via a strict separation of concerns 1:
+1. Phase 1: Syntactic Expansion (The Preprocessor): This phase operates on the raw token stream.1 It handles text substitution, macro expansion, and lexical scoping via context stacks.1 At this stage, the code is untyped; constructs like const are merely tokens.
+2. Phase 2: Semantic Resolution (The Compiler Core): This is where const evaluation occurs. The parser constructs an AST 1, and the Semantic Analyzer (Sema) performs type checking.1 The CTFE engine runs as a sub-routine of the Semantic Analyzer, reducing sub-trees of the AST to static values.
+This architecture dictates that const values are fully resolved after macro expansion but before code generation. This allows const generics to drive code generation decisions (e.g., loop unrolling based on a const size) while ensuring that macros can generate const declarations.
+2.2 The Role of CTFE in Semantic Analysis
+Compile-Time Function Evaluation (CTFE) is the mechanism by which the compiler executes Aria code during the build process. In Aria, this is not a separate scripting language (like Lua in some game engines) but a secure interpreter for a subset of Aria itself.
+The integration points are specific:
+* Type Checking: When the type checker encounters a fixed-size array declaration int8[N], it invokes the CTFE engine to resolve N.
+* Generic Instantiation: When a generic function func<const N: int> is called, the CTFE engine resolves the argument to generate the specific instance name (Monomorphization).2
+* Static Assertions: The static_assert construct relies entirely on the CTFE engine to verify conditions before allowing compilation to proceed.
+2.3 Distinction from Comptime
+It is crucial to distinguish const from comptime.1
+* const defines Immutable Data. It declares a named value that exists statically. It is declarative.
+* comptime defines Execution Blocks. It is an imperative scope where arbitrary logic runs to generate code or values.
+A comptime block often produces a const value. For example:
+
+
+Code snippet
+
+
+
+
+const int:BUFFER_SIZE = comptime {
+   if (target_os == "windows") return 512;
+   return 1024;
+};
+
+Here, comptime provides the logic branching, while const captures the result. This synergy allows Aria to avoid the complexity of C++ template metaprogramming 3 in favor of straightforward imperative logic.
+________________
+3. Lexical and Syntactic Specification
+The syntax for const is designed to be consistent with Aria's type-first declaration style type:name = value.1
+3.1 Keyword and Tokenization
+The lexer identifies const as TOKEN_KW_CONST.1 It is a reserved keyword that cannot be used as an identifier.
+Contexts for const:
+1. Global/Local Variable Declaration: const type:name = value;
+2. Function Parameter Modifier: func(const type:name) (implies immutability of argument).
+3. Generic Parameter: func<const Name: type> (implies compile-time value).
+4. Pointer Qualification: type const* (pointer to const data) vs const type* (const pointer).
+3.2 Formal Grammar (EBNF)
+The following Extended Backus-Naur Form (EBNF) defines the grammar for const declarations and expressions.
+
+
+EBNF
+
+
+
+
+DeclarationStatement ::= VarDeclaration | ConstDeclaration |...
+
+ConstDeclaration ::= 'const' (TypeAnnotation ':')? Identifier '=' Expression ';'
+
+TypeAnnotation   ::= TypeIdentifier | ArrayType | PointerType | GenericInstantiation
+
+ConstGenericParam ::= 'const' Identifier ':' TypeIdentifier
+
+/* Pointer Semantics */
+PointerType      ::= 'const'? TypeIdentifier '*'  /* Const pointer */
+
+| TypeIdentifier 'const' '*'  /* Pointer to const */
+
+/* Expression contexts where const evaluation is forced */
+ConstExpression  ::= Literal
+
+| Identifier /* Must resolve to a const */
+| BinaryOp<ConstExpression, ConstExpression>
+| UnaryOp<ConstExpression>
+| FunctionCall /* Must be a const-qualified function */
+| BlockExpression /* Must evaluate to a value */
+
+3.3 Declaration Semantics and Type Inference
+3.3.1 Explicit Typing
+Aria encourages explicit typing for constants to ensure precision, particularly with TBB types where bit-width dictates overflow behavior.
+
+
+Code snippet
+
+
+
+
+const int32:MAX_CONNECTIONS = 1000;
+const tbb16:ERROR_SENTINEL = ERR; // -32768
+const flt64:PI = 3.14159265359;
+
+3.3.2 Type Inference
+To improve ergonomics, Aria supports type inference for const declarations when the type is unambiguous.
+* Integer literals default to int64 unless suffixed.
+* Float literals default to flt64.
+* String literals default to string (immutable slice).
+
+
+Code snippet
+
+
+
+
+const TIMEOUT = 5000; // Inferred as int64
+const GREETING = "Hello"; // Inferred as string
+
+Note: Inference is dangerous with TBB types. const val = 128; infers int64. If the user intended tbb8, this is a semantic mismatch. Therefore, TBB constants must be explicitly typed or cast: const val = tbb8(127);.
+3.4 Immutability and L-Value Rules
+A const variable in Aria is deeply immutable.
+* It does not represent a memory location at compile time; it represents a value.
+* You cannot take a mutable reference (&mut) to a constant.
+* You cannot take the address (@) of a constant unless it is promoted to static storage (see Section 8: Memory Model).
+* Shadowing is permitted but discouraged with a warning in strict mode.
+________________
+4. The Compile-Time Evaluation (CTFE) Engine
+The CTFE engine is the core component responsible for reducing constant expressions. It is implemented as an AST-walking interpreter within the compiler's frontend.1
+4.1 Architecture of the Interpreter
+The interpreter follows a standard recursive evaluation model but is augmented with specific handling for Aria's exotic types.
+4.1.1 The Evaluation Loop
+1. Input: An AST node (Expression*).
+2. Context: A SymbolTable containing currently resolved constants and comptime variables.
+3. Process:
+   * Literals: Return the immediate value (ComptimeValue).
+   * Identifiers: Look up in the Symbol Table. If the symbol is not const or comptime, raise Error: Non-const value accessed in const context.
+   * Operators: Recursively evaluate operands. Apply the operator logic (ALU simulation).
+   * Function Calls: Look up the function body. Create a new stack frame. Execute statements. Return result.
+4. Output: A ComptimeValue union (Integer, Float, Struct, Array, Pointer).
+4.2 TBB Arithmetic and Sticky Errors
+A critical requirement is the correct emulation of Twisted Balanced Binary (TBB) arithmetic.1 The host machine (the computer running the compiler) likely uses standard two's complement arithmetic. The CTFE engine must impose TBB semantics on top of this.
+The Sticky Error Invariant:
+In TBB, the minimum representable value is the Error Sentinel (ERR). Any operation involving ERR, or any operation that overflows, results in ERR.
+CTFE Algorithm for TBB Addition:
+
+
+C++
+
+
+
+
+// C++ Implementation within the CTFE Engine
+ComptimeValue evaluateTBBAdd(ComptimeValue a, ComptimeValue b, TBBType type) {
+   // 1. Check for Sticky Error Propagation
+   if (a.isERR() |
+
+| b.isERR()) {
+       return ComptimeValue::createERR(type);
+   }
+
+   // 2. Perform arithmetic in higher precision (e.g., int64 for tbb32)
+   int64_t val_a = a.asInt();
+   int64_t val_b = b.asInt();
+   int64_t result = val_a + val_b;
+
+   // 3. Check for Overflow relative to TBB Symmetric Range
+   // tbb8 range: [-127, +127]. -128 is ERR.
+   int64_t max = type.maxPositive();
+   int64_t min = -max; // Symmetric!
+
+   if (result > max |
+
+| result < min) {
+       // TBB defines overflow as producing the ERR sentinel
+       return ComptimeValue::createERR(type);
+   }
+
+   // 4. Return valid result
+   return ComptimeValue::createTBB(result, type);
+}
+
+This logic ensures that const tbb8:x = 127 + 1; results in x holding ERR, not -128. This is vital for safety-critical systems where ERR triggers fault handling paths.
+4.3 Complexity Limits and Halting
+To prevent the compiler from hanging on infinite loops defined in const blocks, the CTFE engine enforces strict resource limits 4:
+1. Instruction Budget: A default limit of 1,000,000 logical operations per constant evaluation.
+2. Stack Depth: A recursion limit of 512 frames.
+3. Memory Cap: The Virtual Heap (Section 8) is capped at 1GB.
+Developers can override these limits via compiler flags (e.g., --const-limit=5000000), but the defaults ensure responsiveness.
+________________
+5. Const Functions
+Const functions are regular Aria functions that can be evaluated at compile time. Unlike Rust's const fn, which is a distinct declaration 5, Aria adopts a model closer to Zig's implicit capability detection, but with optional enforcement.
+5.1 Declaration and Purity
+Any function can be called in a const context if it satisfies the Purity Constraints:
+   1. Deterministic: The output depends solely on inputs.
+   2. No Side Effects: No I/O, no modification of global mutable state.
+   3. No WildX: No execution of dynamically generated code (WildX memory).1
+
+
+Code snippet
+
+
+
+
+// Implicitly const-evaluable
+func:add = int(int:a, int:b) {
+   return a + b;
+};
+
+// Explicitly marked (Optional, for API stability)
+func:factorial = const int(int:n) {
+   if (n <= 1) return 1;
+   return n * factorial(n - 1);
+};
+
+Using the const modifier on the return type (const int) explicitly contracts that this function must be usable in constant expressions. This prevents API authors from accidentally introducing side effects that break downstream const usage.
+5.2 Recursion and Memoization
+The CTFE engine supports recursion. To optimize performance, the engine implements Memoization for pure functions.
+   * Key: (FunctionID, ArgumentValues...)
+   * Value: ComptimeValue
+If factorial(10) is used in multiple constant definitions, it is computed only once. This is critical for template metaprogramming where type characteristics are often re-calculated.
+________________
+6. Const Generics and Monomorphization
+Const generics allow values to serve as parameters for types and functions. This feature is the bedrock of Aria's zero-cost abstraction philosophy, enabling fixed-size arrays and unrolled loops.2
+6.1 Generic Specification
+Generic parameters are defined in angle brackets. Const parameters are distinguished by the const keyword.
+Syntax:
+
+
+Code snippet
+
+
+
+
+// Generic Struct
+const Matrix = struct<T, const Rows: int, const Cols: int> {
+   data: T
+};
+
+// Generic Function
+func<const N: int>:sum_array = int(int[N]:arr) {
+   var int:s = 0;
+   // 'till' loop with const bound is unrolled by optimizer
+   till(N, 1) {
+       s += arr[$];
+   }
+   return s;
+};
+
+6.2 Implementation: The Monomorphization Pipeline
+Aria implements generics via Monomorphization (template instantiation), similar to C++ and Rust.2 This avoids the runtime overhead of boxing (Java) or dictionary passing (Swift).
+Step-by-Step Resolution:
+   1. Call Site Detection: The compiler encounters Matrix<int32, 4, 4>.
+   2. Argument Resolution: The CTFE engine evaluates the arguments. int32 resolves to a Type ID. 4 resolves to a literal Integer.
+   3. Name Mangling: A unique symbol name is generated to identify this specialization.
+   * Format: _Aria_Inst_Matrix_int32_4_4
+   * This ensures linker uniqueness.
+   4. Cache Lookup: The compiler checks the GenericsCache to see if this specialization already exists.
+   5. Instantiation: If not found, the AST for Matrix is cloned.
+   * Every occurrence of T is replaced with int32.
+   * Every occurrence of Rows is replaced with 4.
+   * Every occurrence of Cols is replaced with 4.
+   * Expressions like Rows * Cols are constant-folded to 16.
+   6. Type Checking: The newly generated AST is passed to the Type Checker.1
+6.3 Supported Const Types
+Aria initially supports the following types for const generics:
+   * Integers (all widths, including TBB)
+   * Booleans
+   * Types (the type keyword)
+   * Enums
+Limitations: Floating-point numbers and strings are currently excluded from const generic parameters due to the complexity of defining canonical equality (NaN issues for floats, interning variance for strings).
+________________
+7. Memory Model: The Virtual Heap and Safety
+Handling pointers in const evaluation is notoriously difficult. Aria must prevent "dangling pointers" in the constant segment and ensure that compile-time memory operations respect the borrow checker's rules.1
+7.1 The Virtual Heap
+The CTFE engine simulates memory using a "Virtual Heap."
+   * Allocations: When a const function creates an array or struct, it is allocated in the Virtual Heap, not the host machine's RAM.
+   * Handles: Compile-time pointers are opaque handles {AllocID, Offset}, not raw 64-bit addresses.
+   * Sandboxing: This prevents compile-time code from reading arbitrary host memory (segfault protection).
+7.2 Pointer Safety and "Appendage Theory"
+Aria's borrow checker implements "Appendage Theory" 1, which mandates that references ($) must not outlive their hosts. This applies strictly to const evaluation.
+   * Rule: A const value cannot contain a reference to a temporary value created inside a comptime block unless that value is promoted to global static storage.
+   * Validation: When a const evaluation finishes, the CTFE engine traverses the result. If it finds a Pointer Handle that refers to a stack frame that has popped (a temporary), it raises a compilation error: Error: Const value contains dangling reference.
+7.3 WildX Security Considerations
+Aria supports "WildX" (Executable Memory) for JIT compilation.
+   * Security Invariant: const evaluation must never generate or execute WildX memory.1
+   * Enforcement: The CTFE engine strictly bans the wildx allocator. Any attempt to cast a const pointer to a function pointer and call it triggers an immediate security violation error. This prevents malicious code execution during the build process (e.g., from a compromised dependency).
+________________
+8. Integration with the Comptime System
+The const system is the data-storage counterpart to the comptime execution engine.
+8.1 Const vs. Comptime
+   * comptime is imperative: "Do this calculation now."
+   * const is declarative: "This name refers to this immutable value."
+Synergy Pattern:
+
+
+Code snippet
+
+
+
+
+const int:LOOKUP_TABLE = comptime {
+   var int:table;
+   till(256, 1) {
+       table[$] = compute_value($);
+   }
+   return table;
+};
+
+The comptime block executes loop logic (which const declaration syntax doesn't allow directly) and returns the fully populated array. The const keyword then binds this array to LOOKUP_TABLE and promotes it to the .rodata section.
+8.2 Reflection and Const Generics
+const generics rely on comptime reflection to inspect their parameters.
+
+
+Code snippet
+
+
+
+
+func<T>:serialize = string(T:obj) {
+   comptime {
+       const info = @typeInfo(T);
+       if (!info.is_struct) @compileError("Can only serialize structs");
+   }
+   //... generation logic...
+}
+
+Here, @typeInfo(T) returns a const struct describing the type, which the comptime logic inspects to generate the serialization code.
+________________
+9. Optimization and Code Generation
+The ultimate goal of const evaluation is to produce efficient machine code.
+9.1 Constant Folding and Propagation
+The Aria compiler performs constant folding in multiple passes:
+   1. Semantic Folding: Immediate folding of literals (1 + 2 -> 3) during the AST build.
+   2. Comptime Folding: Execution of const functions and blocks.
+   3. LLVM Folding: The LLVM backend 1 performs aggressive inter-procedural constant propagation on the generated IR.
+9.2 Dead Code Elimination (DCE)
+const booleans allow for semantic conditional compilation.
+
+
+Code snippet
+
+
+
+
+const bool:ENABLE_DEBUG = false;
+
+if (ENABLE_DEBUG) {
+   // Complex logging logic
+}
+
+The Semantic Analyzer evaluates ENABLE_DEBUG. Finding it false, it prunes the entire if block from the AST. The code inside is type-checked but never emitted to LLVM IR, ensuring zero binary bloat.
+9.3 Lowering to LLVM IR
+When lowering const values to LLVM 1:
+   1. Scalars: Lowered as immediate operands (e.g., i32 42).
+   2. Aggregates: Lowered as linkonce_odr or internal constant globals in the LLVM module.
+   3. Arrays: Large arrays are emitted to the .rodata section to avoid stack overflows at runtime.
+Debug Info: const values retain debug information (DW_TAG_const_type) so debuggers can inspect them, even if they have no runtime memory address (symbolic debugging).
+________________
+10. Comparative Analysis
+To justify Aria's design choices, we compare them with established systems.
+10.1 Comparison Table
+Feature
+	Aria
+	Rust
+	Zig
+	C++ (C++20)
+	Declaration
+	const, comptime
+	const, static
+	const, comptime
+	constexpr, consteval
+	Generics
+	Const Generics (Strong)
+	Const Generics (Limited)
+	Comptime Parameters
+	Non-type Templates
+	Arithmetic
+	TBB (Sticky Errors)
+	Checked/Wrapping
+	Checked/Wrapping
+	Standard (UB on overflow)
+	Safety
+	Virtual Heap + Appendage
+	MIRI (Abstract Machine)
+	Safety Checks
+	Undefined Behavior risk
+	Execution
+	Semantic Interpreter
+	Interpreter (MIRI)
+	Interpreter
+	Interpreter
+	Memory
+	Hybrid (GC/Wild) Aware
+	Borrow Checker
+	Manual
+	RAII / Manual
+	10.2 Detailed Insights
+   * Vs. Rust: Rust's const fn is conservative. It has taken years to stabilize features like loops or trait bounds in const contexts.3 Aria, learning from this, makes the CTFE engine a full interpreter from day one, allowing complex logic (loops, branches) immediately. Aria's TBB arithmetic is also a distinct differentiator; Rust has no equivalent for "sticky error" types at compile time.
+   * Vs. Zig: Zig's comptime is extremely powerful but "lazy" and duck-typed.7 A generic function in Zig is checked only when instantiated. Aria enforces stronger typing at declaration time (Parametricity), providing better error messages for library authors before the library is consumed.
+   * Vs. C++: C++ constexpr allows std::vector and dynamic allocation (transiently) in C++20. Aria's Virtual Heap mimics this capability, allowing "wild" memory patterns during compilation that are safely erased or promoted to static data, avoiding C++'s SFINAE complexity.
+________________
+11. Implementation Roadmap
+Phase 1: The Core Interpreter (Weeks 1-4)
+   * Implement ComptimeValue variant (Int, Float, Bool, Err).
+   * Build the AST-walking interpreter loop.
+   * Implement standard ALU operations.
+Phase 2: TBB Integration (Weeks 5-6)
+   * Implement the TBB ALU with sticky error logic.1
+   * Integrate TBB types into the ComptimeValue.
+   * Add unit tests for boundary conditions (overflow/underflow/ERR propagation).
+Phase 3: The Virtual Heap (Weeks 7-9)
+   * Implement the Virtual Heap memory manager.
+   * Implement pointer handles and arithmetic logic.
+   * Integrate with the Borrow Checker to enforce "Appendage Theory" on const pointers.1
+Phase 4: Generics & Monomorphization (Weeks 10-12)
+   * Extend the Symbol Table to handle generic templates.
+   * Implement the instantiation/mangling pipeline.
+   * Implement the cache for specialized instances.
+Phase 5: Codegen & Optimization (Weeks 13-14)
+   * Implement lowering of ComptimeValue to LLVM Constant*.1
+   * Implement Dead Code Elimination for const branches.
+________________
+12. Conclusion
+The specification presented here describes a robust, safe, and high-performance const system for Aria. By anchoring the design in the Semantic Phase, separating it from textual macros, and integrating it deeply with the TBB type system and Borrow Checker, Aria avoids the pitfalls of its predecessors. This system empowers developers to write expressive, zero-cost abstractions that are verified at compile time, fulfilling Aria's promise of being a modern, safe systems language. The "Hybrid Const Correctness" model ensures that even manual memory management patterns can be verified statically, a significant advancement in compiler technology.
+________________
+Detailed Technical Specification: Algorithms and Structures
+13. Data Structures
+To support the CTFE engine, the following C++ structures are required in the compiler frontend.
+13.1 ComptimeValue
+
+
+C++
+
+
+
+
+struct ComptimeValue {
+   enum Kind {
+       VOID, BOOL, INT, FLOAT, TBB_ERR, 
+       POINTER, ARRAY, STRUCT, TUPLE
+   };
+   Kind kind;
+   
+   // Type metadata for width/signedness
+   std::shared_ptr<Type> type; 
+
+   union {
+       bool b_val;
+       int64_t i_val;    // Stores int and TBB values
+       double f_val;
+       struct {          // For pointers
+           uint32_t alloc_id;
+           uint32_t offset;
+       } ptr_val;
+   };
+   
+   // For aggregates (Arrays/Structs)
+   std::vector<ComptimeValue> elements; 
+
+   // TBB Error Factory
+   static ComptimeValue makeERR(std::shared_ptr<Type> t) {
+       ComptimeValue v;
+       v.kind = TBB_ERR;
+       v.type = t;
+       return v;
+   }
+};
+
+13.2 The Virtual Heap
+
+
+C++
+
+
+
+
+class VirtualHeap {
+   struct Allocation {
+       std::vector<uint8_t> data;
+       bool is_mutable;
+       bool is_static_promotable; // Can this move to.rodata?
+   };
+   
+   std::unordered_map<uint32_t, Allocation> heap;
+   uint32_t next_id = 1;
+
+public:
+   uint32_t malloc(size_t size) {
+       heap[next_id] = Allocation{std::vector<uint8_t>(size), true, true};
+       return next_id++;
+   }
+   
+   // Safety: Throws if OOB or Use-After-Free
+   uint8_t read(uint32_t id, uint32_t offset);
+   void write(uint32_t id, uint32_t offset, uint8_t byte);
+};
+
+________________
+14. Error Handling and Templates
+Aria's const system must provide actionable error messages.
+Template 1: TBB Sticky Error
+Error: Const evaluation resulted in TBB Error Sentinel.
+--> src/math.aria:12:20
+|
+12 | const tbb8:X = 127 + 1;
+| ^^^^^^^
+|
+= Note: TBB arithmetic wraps to ERR (-128) on overflow.
+= Context: This value is used as an array size, which requires a valid integer.
+Template 2: Purity Violation
+Error: Impure operation in const context.
+--> src/logger.aria:5:5
+|
+5 | print("Log");
+| ^^^^^
+|
+= Note: Const functions cannot perform I/O.
+= Suggestion: Use 'comptime' block if build-time logging is intended.
+Template 3: Pointer Safety (Appendage Theory)
+Error: Const pointer refers to a temporary value.
+--> src/config.aria:10:24
+|
+10 | const int*:PTR = &local_var;
+| ^^^^^^^^^
+|
+= Safety: 'local_var' ceases to exist after the const block evaluates.
+= Rule: Const pointers must point to static data or compile-time constants.
+________________
+15. Platform-Specific Considerations
+const evaluation interacts with the platform via the cfg attribute.
+   * Word Size: usize and isize constants resolve to the target platform's width, not the host's. The CTFE engine must query the target architecture backend 1 for pointer widths.
+   * Endianness: const binary serialization uses the target's endianness.
+   * OS Primitives: const functions cannot call OS APIs (e.g., CreateFile). They must use cfg to select appropriate constant values for the OS.
+
+
+Code snippet
+
+
+
+
+const int:PATH_SEP = comptime {
+   if (cfg(target_os = "windows")) return '\\';
+   return '/';
+};
+
+This comprehensive specification ensures that Aria's const system supports the language's goals of safety, performance, and expressiveness, providing a solid foundation for the compiler's semantic phase.
+Works cited
+   1. research_010-011_macro_comptime.txt
+   2. How are generics implemented in a modern compiler? - Software Engineering Stack Exchange, accessed December 13, 2025, https://softwareengineering.stackexchange.com/questions/334167/how-are-generics-implemented-in-a-modern-compiler
+   3. Const Generics in Rust | Hacker News, accessed December 13, 2025, https://news.ycombinator.com/item?id=29131624
+   4. Compile-Time Analysis of Compiler Frameworks for Query Compilation - Home-Pages an der School of Computation, Information and Technology, accessed December 13, 2025, https://home.cit.tum.de/~engelke/pubs/2403-cgo.pdf
+   5. Will the Rust developers do something about macros?, accessed December 13, 2025, https://users.rust-lang.org/t/will-the-rust-developers-do-something-about-macros/124203
+   6. Const Generics and the Compile Time Spread Operator - Evan Ovadia, accessed December 13, 2025, https://verdagon.dev/blog/const-generics-spread
+   7. Const generics and compile time code : r/ProgrammingLanguages - Reddit, accessed December 13, 2025, https://www.reddit.com/r/ProgrammingLanguages/comments/mkjz1r/const_generics_and_compile_time_code/
