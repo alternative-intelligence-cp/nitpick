@@ -1224,6 +1224,40 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         return std::make_unique<ContinueStmt>();
     }
 
+    // If statement: if (cond) { body } else if (cond) { body } else { body }
+    if (match(TOKEN_KW_IF)) {
+        auto ifStmt = std::make_unique<IfStmt>();
+        
+        // Parse first if branch
+        expect(TOKEN_LPAREN);
+        auto condition = parseExpr();
+        expect(TOKEN_RPAREN);
+        auto body = parseBlockOrStatement();
+        
+        ifStmt->branches.emplace_back(std::move(condition), std::move(body));
+        
+        // Parse elif/else branches
+        while (match(TOKEN_KW_ELSE)) {
+            if (match(TOKEN_KW_IF)) {
+                // else if branch
+                expect(TOKEN_LPAREN);
+                auto elif_cond = parseExpr();
+                expect(TOKEN_RPAREN);
+                auto elif_body = parseBlockOrStatement();
+                
+                ifStmt->branches.emplace_back(std::move(elif_cond), std::move(elif_body));
+            } else {
+                // final else branch (no condition)
+                auto else_body = parseBlockOrStatement();
+                
+                ifStmt->branches.emplace_back(nullptr, std::move(else_body));
+                break;  // else must be last
+            }
+        }
+        
+        return ifStmt;
+    }
+
     // Async function declaration: async func:name = returnType(params) { body };
     if (current.type == TOKEN_KW_ASYNC) {
         advance(); // consume 'async'
@@ -1479,19 +1513,6 @@ std::unique_ptr<Statement> Parser::parseStmt() {
     // Defer statement
     if (current.type == TOKEN_KW_DEFER) {
         return parseDeferStmt();
-    }
-
-    // If statement
-    if (match(TOKEN_KW_IF)) {
-        expect(TOKEN_LPAREN);
-        auto condition = parseExpr();
-        expect(TOKEN_RPAREN);
-        auto thenBranch = parseBlockOrStatement();
-        std::unique_ptr<Block> elseBranch = nullptr;
-        if (match(TOKEN_KW_ELSE)) {
-            elseBranch = parseBlockOrStatement();
-        }
-        return std::make_unique<IfStmt>(std::move(condition), std::move(thenBranch), std::move(elseBranch));
     }
 
     // Pick statement

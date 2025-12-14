@@ -504,23 +504,19 @@ void BorrowChecker::visit(frontend::ExpressionStmt* node) {
 void BorrowChecker::visit(frontend::IfStmt* node) {
     if (!node) return;
     
-    // Check condition
-    if (node->condition) {
-        node->condition->accept(*this);
-    }
-    
-    // Check then branch
-    if (node->then_block) {
-        context_.enter_scope();
-        node->then_block->accept(*this);
-        context_.exit_scope();
-    }
-    
-    // Check else branch
-    if (node->else_block) {
-        context_.enter_scope();
-        node->else_block->accept(*this);
-        context_.exit_scope();
+    // Check all branches (if/elif/else)
+    for (auto& branch : node->branches) {
+        // Check condition (null for final else)
+        if (branch.condition) {
+            branch.condition->accept(*this);
+        }
+        
+        // Check branch body
+        if (branch.body) {
+            context_.enter_scope();
+            branch.body->accept(*this);
+            context_.exit_scope();
+        }
     }
     
     // TODO: Merge borrow states from branches

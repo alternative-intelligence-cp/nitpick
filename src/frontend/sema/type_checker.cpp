@@ -377,9 +377,10 @@ public:
     }
     
     void visit(frontend::IfStmt* node) override {
-        if (node->condition) node->condition->accept(*this);
-        if (node->then_block) node->then_block->accept(*this);
-        if (node->else_block) node->else_block->accept(*this);
+        for (auto& branch : node->branches) {
+            if (branch.condition) branch.condition->accept(*this);
+            if (branch.body) branch.body->accept(*this);
+        }
     }
     
     void visit(frontend::Block* node) override {
@@ -605,20 +606,19 @@ void TypeChecker::visit(frontend::ReturnStmt* node) {
 
 // Visit IfStmt
 void TypeChecker::visit(frontend::IfStmt* node) {
-    // Check condition is boolean
-    node->condition->accept(*this);
-    if (current_expr_type->kind != TypeKind::BOOL) {
-        addError("If condition must be boolean, got " + current_expr_type->toString());
-    }
-
-    // Check then branch
-    if (node->then_block) {
-        node->then_block->accept(*this);
-    }
-
-    // Check else branch if present
-    if (node->else_block) {
-        node->else_block->accept(*this);
+    for (auto& branch : node->branches) {
+        // Check condition is boolean (null for final else)
+        if (branch.condition) {
+            branch.condition->accept(*this);
+            if (current_expr_type->kind != TypeKind::BOOL) {
+                addError("If condition must be boolean, got " + current_expr_type->toString());
+            }
+        }
+        
+        // Check branch body
+        if (branch.body) {
+            branch.body->accept(*this);
+        }
     }
 }
 

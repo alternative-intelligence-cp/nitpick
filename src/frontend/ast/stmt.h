@@ -58,16 +58,21 @@ public:
     }
 };
 
-// If Statement
-// Example: if (cond) { ... } else { ... }
+// If Statement (if/elif/else)
+// Example: if (cond) { ... } else if (cond) { ... } else { ... }
 class IfStmt : public Statement {
 public:
-    std::unique_ptr<Expression> condition;
-    std::unique_ptr<Block> then_block;
-    std::unique_ptr<Block> else_block;  // May be nullptr
+    struct Branch {
+        std::unique_ptr<Expression> condition;  // null for final else
+        std::unique_ptr<Block> body;
+        
+        Branch(std::unique_ptr<Expression> cond, std::unique_ptr<Block> b)
+            : condition(std::move(cond)), body(std::move(b)) {}
+    };
 
-    IfStmt(std::unique_ptr<Expression> cond, std::unique_ptr<Block> then_b, std::unique_ptr<Block> else_b = nullptr)
-        : condition(std::move(cond)), then_block(std::move(then_b)), else_block(std::move(else_b)) {}
+    std::vector<Branch> branches;  // First is if, rest are elif/else
+
+    IfStmt() = default;
 
     void accept(AstVisitor& visitor) override {
         visitor.visit(this);
