@@ -2701,17 +2701,27 @@ public:
         
         // Loop body
         ctx.builder->SetInsertPoint(loopBodyBB);
+        
+        // Save loop context for break/continue
+        BasicBlock* prevBreakTarget = ctx.currentLoopBreakTarget;
+        BasicBlock* prevContinueTarget = ctx.currentLoopContinueTarget;
+        ctx.currentLoopBreakTarget = exitBB;
+        ctx.currentLoopContinueTarget = loopCondBB;
+        
         {
             ScopeGuard guard(ctx);
             ctx.define(node->iterator_name, iterVar, false);
             node->body->accept(*this);
         }
         
-        // Increment iterator
-        Value* nextIter = ctx.builder->CreateAdd(iterVar, stepVal, "next_iter");
-        iterVar->addIncoming(nextIter, ctx.builder->GetInsertBlock());
+        // Restore previous loop context
+        ctx.currentLoopBreakTarget = prevBreakTarget;
+        ctx.currentLoopContinueTarget = prevContinueTarget;
         
+        // Increment iterator (only if block not terminated by break/continue)
         if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+            Value* nextIter = ctx.builder->CreateAdd(iterVar, stepVal, "next_iter");
+            iterVar->addIncoming(nextIter, ctx.builder->GetInsertBlock());
             ctx.builder->CreateBr(loopCondBB);
         }
         
