@@ -54,6 +54,30 @@ std::unique_ptr<Statement> Parser::parseForLoop() {
     return std::make_unique<ForLoop>(iterator_name, std::move(iterable), std::move(body));
 }
 
+// Parse loop statement: loop(start, limit, step) { ... }
+// Direction is determined by start vs limit comparison
+// Step is ALWAYS positive (magnitude only)
+std::unique_ptr<Statement> Parser::parseLoopStmt() {
+    expect(TOKEN_KW_LOOP);
+    expect(TOKEN_LPAREN);
+    
+    auto start = parseExpr();
+    expect(TOKEN_COMMA);
+    auto limit = parseExpr();
+    
+    // Step is optional, defaults to 1
+    std::unique_ptr<Expression> step = std::make_unique<IntLiteral>(1);
+    if (match(TOKEN_COMMA)) {
+        step = parseExpr();
+    }
+    
+    expect(TOKEN_RPAREN);
+    auto body = parseBlockOrStatement();
+    
+    return std::make_unique<LoopStmt>(std::move(start), std::move(limit), 
+                                       std::move(step), std::move(body));
+}
+
 // Parse till loop: till(limit, step) { ... }
 std::unique_ptr<Statement> Parser::parseTillLoop() {
     expect(TOKEN_KW_TILL);

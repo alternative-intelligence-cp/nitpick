@@ -8,9 +8,32 @@
 namespace aria {
 namespace frontend {
 
+// Loop Statement (Range Loop with explicit start)
+// Example: loop(1, 100, 1) { ... } or loop(100, 0, 2) { ... }
+// Direction determined by start vs limit comparison
+// Step is ALWAYS positive (magnitude only)
+// Uses $ as iterator variable
+class LoopStmt : public Statement {
+public:
+    std::unique_ptr<Expression> start;
+    std::unique_ptr<Expression> limit;
+    std::unique_ptr<Expression> step;
+    std::unique_ptr<Block> body;
+
+    LoopStmt(std::unique_ptr<Expression> st, std::unique_ptr<Expression> lim, 
+             std::unique_ptr<Expression> stp, std::unique_ptr<Block> b)
+        : start(std::move(st)), limit(std::move(lim)), 
+          step(std::move(stp)), body(std::move(b)) {}
+
+    void accept(AstVisitor& visitor) override {
+        visitor.visit(this);
+    }
+};
+
 // Till Loop (Iteration Loop)
 // Example: till(100, 1) { ... }
-// Iterates from 0 to limit with step, using $ as iterator variable
+// Direction determined by step sign (positive = up from 0, negative = down from limit)
+// Uses $ as iterator variable
 class TillLoop : public Statement {
 public:
     std::unique_ptr<Expression> limit;

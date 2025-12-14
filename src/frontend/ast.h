@@ -36,6 +36,7 @@ class PickStmt;
 class PickCase;
 class FallStmt;
 class WhenLoop;
+class LoopStmt;
 class TillLoop;
 class DeferStmt;
 class ForLoop;
@@ -106,6 +107,7 @@ public:
     // Control Flow
     virtual void visit(PickStmt* node) = 0;
     virtual void visit(FallStmt* node) { /* default: do nothing */ }
+    virtual void visit(LoopStmt* node) = 0;
     virtual void visit(TillLoop* node) = 0;
     virtual void visit(WhenLoop* node) = 0;
     virtual void visit(DeferStmt* node) = 0;

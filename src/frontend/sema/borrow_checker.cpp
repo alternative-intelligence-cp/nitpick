@@ -553,6 +553,25 @@ void BorrowChecker::visit(frontend::FallStmt* node) {
     // Fall statements don't require checking
 }
 
+void BorrowChecker::visit(frontend::LoopStmt* node) {
+    if (!node) return;
+    
+    loop_depth_++;
+    context_.enter_scope();
+    
+    // Inject $ variable - it's an automatic stack-allocated integer counter
+    // $ is the iterator variable for loop (start, limit, step)
+    VarInfo* dollar_var = context_.declare_variable("$", MemoryRegion::STACK, nullptr);
+    context_.initialize_variable("$");  // $ is always initialized (it's the loop counter)
+    
+    if (node->body) {
+        node->body->accept(*this);
+    }
+    
+    context_.exit_scope();
+    loop_depth_--;
+}
+
 void BorrowChecker::visit(frontend::TillLoop* node) {
     if (!node) return;
     

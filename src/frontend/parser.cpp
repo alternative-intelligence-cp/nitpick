@@ -1274,11 +1274,11 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         
         if (is_var_decl) {
             // Variable declaration: type:name or type@:name or type[]:name
-            current = saved;  // Restore for parseVarDecl to handle properly
+            // saved contains the type token, current is now at ':' or '[' or '@' (after lookahead advance)
             
-            std::string type_name = current.value;
-            advance();
-            type_name = parseTypeSuffixes(type_name);
+            std::string type_name = saved.value;  // Get type name from saved token
+            // current is already positioned after the type, no need to restore+advance
+            type_name = parseTypeSuffixes(type_name);  // Handle [] or @ if present
             
             expect(TOKEN_COLON);
             Token name_tok = expect(TOKEN_IDENTIFIER);
@@ -1509,16 +1509,17 @@ std::unique_ptr<Statement> Parser::parseStmt() {
         return parseWhileLoop();
     }
     
+    // Loop statement (start, limit, step) with $ iterator
+    // Direction determined by start vs limit comparison
+    // Step is ALWAYS positive (magnitude only)
+    if (current.type == TOKEN_KW_LOOP) {
+        return parseLoopStmt();
+    }
+    
     // Till loop (Spec 8.2: Automatic iterator with $)
     if (current.type == TOKEN_KW_TILL) {
         return parseTillLoop();
     }
-    
-    // Loop construct (start, stop, step) with $ iterator
-    // TODO: Loop statement - waiting for LoopStmt AST node
-    // if (current.type == TOKEN_KW_LOOP) {
-    //     return parseLoopStmt();
-    // }
     
     // When loop (Spec 8.2: Loop with completion blocks)
     if (current.type == TOKEN_KW_WHEN) {
@@ -1986,11 +1987,11 @@ std::unique_ptr<Statement> Parser::parseTillLoop() {
     }
 }
 
-// TODO: Loop construct: loop(start, stop, step) with $ iterator variable
-// Waiting for LoopStmt AST node implementation
-// Example: loop(1, 100, 1) { ... } counts from 1 to 100 by 1
-// Example: loop(100, 0, -2) { ... } counts from 100 to 0 by -2
-/*
+// Loop construct: loop(start, limit, step) with $ iterator variable
+// Direction determined by start vs limit comparison
+// Step is ALWAYS positive (magnitude only)
+// Example: loop(1, 100, 1) { ... } counts UP from 1 to 100 by 1
+// Example: loop(100, 0, 2) { ... } counts DOWN from 100 to 0 by 2
 std::unique_ptr<Statement> Parser::parseLoopStmt() {
     expect(TOKEN_KW_LOOP);
     expect(TOKEN_LPAREN);
@@ -1999,21 +2000,22 @@ std::unique_ptr<Statement> Parser::parseLoopStmt() {
     auto start = parseExpr();
     expect(TOKEN_COMMA);
     
-    // Parse stop expression
-    auto stop = parseExpr();
-    expect(TOKEN_COMMA);
+    // Parse limit expression
+    auto limit = parseExpr();
     
-    // Parse step expression
-    auto step = parseExpr();
+    // Step is optional, defaults to 1
+    std::unique_ptr<Expression> step = std::make_unique<IntLiteral>(1);
+    if (match(TOKEN_COMMA)) {
+        step = parseExpr();
+    }
     
     expect(TOKEN_RPAREN);
     
     // Parse loop body ($ variable is automatically available)
-    auto body = parseBlock();
+    auto body = parseBlockOrStatement();
     
-    return std::make_unique<LoopStmt>(std::move(start), std::move(stop), std::move(step), std::move(body));
+    return std::make_unique<LoopStmt>(std::move(start), std::move(limit), std::move(step), std::move(body));
 }
-*/
 
 // =============================================================================
 // Pattern Matching: pick/fall (Spec Section 8.3)

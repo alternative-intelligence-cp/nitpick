@@ -250,6 +250,7 @@ Token AriaLexer::nextToken() {
                {"else", TOKEN_KW_ELSE},
                {"pick", TOKEN_KW_PICK},
                {"when", TOKEN_KW_WHEN},
+               {"loop", TOKEN_KW_LOOP},
                {"till", TOKEN_KW_TILL},
                {"defer", TOKEN_KW_DEFER},
                {"for", TOKEN_KW_FOR},

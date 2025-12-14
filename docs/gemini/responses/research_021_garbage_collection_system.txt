@@ -1,0 +1,334 @@
+﻿Architectural Analysis of the Aria Garbage Collection System
+1. Introduction: The Convergence of Safety and Control
+The landscape of systems programming languages has historically been bifurcated by a fundamental design choice: the management of memory. On one side stand languages like C and C++, offering the programmer absolute control over the heap at the cost of safety, demanding manual allocation and deallocation that often leads to vulnerabilities such as use-after-free errors and memory leaks. On the other side are managed languages like Java, Python, and Go, which employ Garbage Collection (GC) to automate memory management, ensuring safety and ease of use but often imposing nondeterministic latency and reduced control over memory layout.
+The Aria programming language represents a distinct paradigm in system architecture by attempting to bridge this historical schism. It introduces a hybrid memory model that mandates the coexistence of manual memory management, typified by "wild" pointers, and automatic garbage collection, typified by a generational managed heap.1 This unification is not merely a juxtaposition of two separate allocators but a tightly integrated system where the two worlds must interact safely. The core of this unification is the Aria Garbage Collection System (AGCS), a hybrid, opt-out, generational memory manager designed to interoperate seamlessly with a static Borrow Checker and a novel "Appendage Theory" of lifetime management.1
+This report provides an exhaustive technical analysis of the AGCS. It dissects the runtime object model, the precise mechanics of the generational heap, the novel implementation of "sticky" error propagation in Twisted Balanced Binary (TBB) types, and the shadow stack mechanism used for root tracking. The analysis reveals that Aria’s GC is not merely a background utility but an active participant in the language's safety guarantees, specifically utilizing object pinning to facilitate safe zero-copy interactions between managed and unmanaged domains. By rigorously examining the source code specifications, compiler headers, and implementation stubs, this report reconstructs the architectural decisions that define Aria's runtime, placing them in the context of broader computer science research on memory management.
+1.1 The Philosophical Imperative: "Not Negotiable" Constraints
+Aria's design is heavily influenced by a set of "NOT NEGOTIABLE" constraints outlined in its core specification.1 These constraints serve as the axioms from which the garbage collector's design must be derived. Specifically, the requirement for Twisted Balanced Binary (TBB) arithmetic, which utilizes the minimum signed value as a sticky error sentinel, imposes a unique burden on the runtime to ensure that mathematical correctness is preserved even within dynamically typed managed objects. Furthermore, the requirement for an "OPT-OUT" garbage collector via the wild keyword necessitates a runtime that can handle a heap where references may be held by unmanaged entities, provided strict safety invariants are met.
+The AGCS is thus tasked with a complex objective: it must provide the high throughput of a generational copying collector for standard application logic while degrading gracefully into a fragmentation-tolerant collector when "wild" pointers pin objects in place. This dynamic adaptability is the defining characteristic of the system.
+________________
+2. Theoretical Foundations and Memory Model
+The Aria memory model differs fundamentally from pure GC languages by acknowledging three distinct storage classes: Stack, Wild, and GC.1 The AGCS is responsible only for the third class but must respect boundaries imposed by the others. Understanding these regions is prerequisite to analyzing the collector itself.
+2.1 The Hybrid Tripartite Memory Layout
+The compiler creates a rigid separation of concerns regarding object lifetime, which the runtime must enforce. This tripartite division allows the developer to choose the exact performance profile required for a given task, but it complicates the garbage collector's view of the world.
+2.1.1 The Stack (Lexical Scope)
+Memory managed via LIFO (Last-In, First-Out) semantics is the fastest form of allocation. In Aria, stack allocation is explicit via the stack keyword or implicit for primitive types. Crucially, the AGCS does not trace the machine stack implicitly via stack maps or conservative scanning. Instead, it relies on an explicit Shadow Stack mechanism to identify roots residing in stack frames.1 This design choice prioritizes portability and precise collection over the throughput optimizations possible with register-map-based stack scanning, a trade-off that will be analyzed in depth in Section 4.
+2.1.2 The Wild Heap (Manual/Unsafe)
+The wild keyword introduces unmanaged memory, offering C-like control for performance-critical sections or interoperability. Allocation via aria.alloc() returns a wild pointer, and deallocation must be explicit via aria.free().1 The AGCS largely ignores this memory; it does not trace wild segments for roots. However, the system imposes a critical safety invariant known as the "Invisible Root Rule".1 This rule dictates that a wild pointer cannot act as the sole reference to a GC object unless that object is pinned. This prevents the collector from moving or reclaiming objects referenced only by opaque wild pointers, essentially forcing the developer to "lock" GC objects in memory if they wish to access them from the wild heap.
+2.1.3 The GC Heap (Managed)
+The domain of the AGCS is the managed heap. It uses a generational hypothesis, dividing objects into a Nursery (Young Generation) and an Old Generation (Tenured).1 This heap must support relocation (for compaction and defragmentation) but must also support pinning (for interoperability with wild pointers). The interaction between relocatability and immovability is the central tension in the AGCS design.
+2.2 Appendage Theory: A Novel Safety Construct
+The central theoretical construct governing the interaction between these memory regions is Appendage Theory.1 This theory posits a hierarchical relationship between "Host" objects and "Appendage" references.
+* Host ($H$): An entity that possesses ownership semantics or physical stability. This includes pinned GC objects (#obj) and owning wild pointers.
+* Appendage ($A$): A dependent reference ($ref) that derives its validity from the Host.
+The central axiom of Appendage Theory is that the lifetime of the Host must strictly enclose the lifetime of the Appendage: $\text{Depth}(H) \le \text{Depth}(A)$.
+In a flow-sensitive context, this means that for every program point $P$ where an Appendage is live, the Host must also be live and in a valid state. In a pure GC system, this is implicit, as the GC graph guarantees liveness. In Aria, where wild pointers (Appendages) can reference GC objects (Hosts), the GC must guarantee address stability.
+This is achieved through Pinning (# operator). When a GC object is pinned:
+1. The compiler treats the resulting reference as a wild pointer.1
+2. The runtime sets the pinned_bit in the object header.1
+3. The AGCS is contractually obligated not to move this object during compaction or evacuation phases.1
+This interaction defines the complexity of the Aria Nursery. Unlike standard copying collectors (like the standard Cheney algorithm) that assume total relocatability, the Aria Nursery must handle immovable islands of pinned objects. This necessitates a fragmentation-tolerant allocation algorithm akin to the Mono SGen collector or the Immix mark-region collector 2, rather than a simple semi-space copy.
+________________
+3. Runtime Object Architecture
+The efficiency of any garbage collector is predicated on its object representation. The metadata carried by each object determines how quickly the collector can scan, mark, and move memory. Aria employs a uniform, 64-bit object header for all managed allocations, optimized for alignment and state tracking.
+3.1 The Object Header (ObjHeader)
+Defined in src/runtime/gc/header.h 1 and referenced in composite type research 1, the header is a packed 64-bit structure. This compactness is essential for minimizing heap overhead, particularly for small objects.
+Table 1: Analysis of the Aria Object Header (ObjHeader)
+
+
+Field
+	Width (Bits)
+	Function
+	Architectural Implications & Insights
+	mark_bit
+	1
+	Mark-Sweep Status
+	Used during Major GC to identify reachable objects in the Old Gen. Toggled during the marking phase.1 Its presence implies a mark-sweep or mark-compact algorithm for the old generation.
+	pinned_bit
+	1
+	Address Stability
+	The critical flag for Borrow Checker integration via the # operator. If set, the minor collector must skip evacuation and the major collector must skip compaction. This bit bridges the compile-time safety check and runtime behavior.
+	forwarded_bit
+	1
+	Relocation Flag
+	Used during Minor GC (Copying). If set, the object payload has been replaced by a forwarding address to the Old Gen. This confirms the use of a Copying Collector for the nursery.
+	is_nursery
+	1
+	Generational Tag
+	Distinguishes between Young and Old generation objects. This allows for a fast write barrier; if a pointer is written to an object where !is_nursery, the barrier logic is triggered.1
+	size_class
+	8
+	Allocator Bucket
+	Facilitates fast size lookups for the allocator. This suggests a segregated free list approach for the Old Gen or specific size buckets for pooling, common in allocators like jemalloc or tcmalloc.
+	type_id
+	16
+	RTTI / Dispatch
+	Supports dynamic typing (dyn) and precise scanning. 16 bits allow for 65,536 unique runtime types. This ID allows the GC to look up the object's layout map to find internal pointers.
+	padding
+	36
+	Reserved
+	Currently unused. In many runtimes (e.g., HotSpot), bits are reserved for identity hash codes (usually 31 or 32 bits) or thin lock synchronization primitives. Aria likely reserves this for future concurrency features.
+	Architectural Insight: The header design is strictly 64-bit aligned. This is critical for performance on x86-64 and ARM64 architectures, ensuring that object payloads are also aligned. The explicit pinned_bit confirms that the runtime supports Object Pinning rather than just Handle Pinning. Handle pinning (used in some early JVMs) uses a double-indirection lookup table, which is slower for access but simpler for GC. Aria's choice of direct object pinning favors the performance of the unmanaged code (direct pointer access) at the cost of complicating the heap layout during collection.
+3.2 Composite and Dynamic Types
+The AGCS must handle complex composite types, specifically obj (dynamic dictionaries) and dyn (polymorphic containers).
+* obj Structure: These are allocated with AllocStrategy::GC.1 The header is followed immediately by the hash map payload or hidden class storage. The type_id is critical here; it allows the GC to invoke the correct scanning procedure (visitor) to trace outgoing references from the object. If type_id indicates a dynamic map, the scanner knows to iterate the hash buckets. If it indicates a compiled struct, the scanner uses a fixed offset map.
+* dyn Structure: Implemented as a fat pointer or tagged union. If the dyn value holds a reference type, that reference is a root. The "Invisible Root Rule" implies that if a dyn value is stored in a wild struct, the programmer must pin the underlying value. If not pinned, the GC would be unaware of the wild reference, move the object, and leave the wild struct with a dangling pointer.1
+3.3 Twisted Balanced Binary (TBB) Integration
+Aria's unique scalar types, TBB (tbb8, tbb64, etc.), pose a unique challenge to the runtime object model. These types use the minimum signed value (e.g., -128 for int8) as a sticky ERR sentinel.1
+From the GC's perspective, TBB types are scalar primitives. They do not require tracing because they cannot hold pointers. However, their integration into dyn types requires the runtime to distinguish between a standard integer and a TBB integer. If a dyn variable holding a tbb64 is used in an arithmetic operation, the runtime must dispatch to the TBB-aware arithmetic functions rather than standard CPU instructions.
+The TBBLowerer 1 handles the arithmetic logic (injecting intrinsics like llvm.sadd.with.overflow), but the GC simply treats them as opaque data bytes. This decoupling is a significant architectural strength. By handling TBB logic entirely in the compiler backend (via intrinsics) and the dynamic dispatch layer, the GC scanning loop remains tight and unburdened by error propagation logic. The GC only cares about liveness; the TBB logic cares about correctness.
+________________
+4. Root Tracking: The Shadow Stack Architecture
+Precise garbage collection requires exact knowledge of all active pointers (roots) on the execution stack. If the collector misidentifies an integer as a pointer (conservative collection), it retains memory unnecessarily. If it misses a pointer, it frees live memory, causing crashes. Aria rejects the LLVM gcroot intrinsic (which is legacy) and stack maps (which are complex to implement and maintain) in favor of an explicit Shadow Stack.1
+4.1 Mechanism of Action
+The Shadow Stack maintains a secondary stack structure in parallel with the machine stack (the stack used for return addresses and local variables).
+1. Frame Entry: Upon entering a function that uses GC-managed variables, the compiled code calls aria_shadow_stack_push_frame(). This allocates a node in the shadow stack linked list or, more efficiently, bumps a pointer in a pre-allocated thread-local shadow region.
+2. Root Registration: When a GC-managed variable (e.g., obj:x) is declared, its address on the machine stack is registered via aria_shadow_stack_add_root(&x). This stores the pointer &x in the current shadow frame.
+3. Root Deregistration: Upon scope exit, the roots are effectively popped. Because the shadow frame tracks roots for the entire function scope, aria_shadow_stack_pop_frame() is called at function exit to discard all roots associated with that activation record.
+4.2 Performance Analysis and Trade-offs
+The choice of a Shadow Stack is a significant architectural decision with distinct performance characteristics compared to other methods.
+* Overhead: Research indicates that traditional shadow stacks incur a performance overhead of roughly 10%.4 This overhead stems from the additional memory operations required to push/pop frames and register roots. Parallel shadow stack designs can reduce this to ~3.5% 4, but it remains non-zero. In contrast, stack maps (used by Java HotSpot and Go) have zero runtime overhead during normal execution; the cost is paid only during GC pauses when the stack is walked.
+* Security (ROP): Shadow stacks are also a security mechanism. By separating control flow information (or in this case, root information) from the machine stack, they make Return-Oriented Programming (ROP) attacks significantly harder.5 While Aria's primary use is GC rooting, the infrastructure could potentially be leveraged for control-flow integrity (CFI) in the future.
+* Portability vs. Performance: Stack maps require deep integration with the backend code generator (LLVM) to emit precise tables mapping program counters to stack offsets. This is complex and brittle. By using a Shadow Stack, Aria decouples its GC rooting logic from the backend. The compiler simply emits calls to the runtime API. This makes porting Aria to new architectures (e.g., RISC-V or WebAssembly) significantly easier, as the backend does not need to support complex stack map generation.
+Architectural Insight: Aria's choice of a Shadow Stack implies a prioritization of safety, simplicity, and portability over raw function-call micro-performance. It also provides a robust mechanism for handling dyn variables. Since a dyn variable's type can change at runtime (from int to obj), its status as a root changes. The shadow stack allows the runtime to dynamically register/deregister these roots, whereas static stack maps struggle with slots that change type.
+________________
+5. The Generational Heap Architecture
+The AGCS divides the managed heap into two primary spaces: the Nursery (Young Generation) and the Old Generation (Tenured). This aligns with the "Weak Generational Hypothesis" that most objects die young.6 The handling of these generations, particularly in the presence of pinning, is where Aria's implementation details become most intricate.
+5.1 The Nursery (Eden Space)
+The Nursery is designed for high-throughput allocation, catering to the rapid creation and destruction of temporary objects.
+* Allocation Strategy: Typically, a nursery uses a Bump Pointer (or Next Fit) allocator. The allocator maintains three pointers: start_addr, bump_ptr, and end_addr.1 Allocation is reduced to a simple pointer increment: ptr = bump_ptr; bump_ptr += size. This is an O(1) operation, often compiling down to just a few assembly instructions.
+* Capacity: The nursery typically has a fixed size, often related to the CPU cache size (e.g., 4MB as seen in Mono SGen defaults 7).
+* Collection Trigger: When bump_ptr + size > end_addr, the nursery is full, and a Minor GC is triggered.
+5.1.1 The Pinning Problem in the Nursery
+The collision of "Bump Allocation" and "Object Pinning" is the defining architectural challenge of Aria's GC. In a standard copying collector, the nursery is evacuated entirely; live objects move to the Old Gen, and the nursery is reset (i.e., bump_ptr is moved back to start_addr).
+However, consider the following scenario:
+1. A user allocates obj:a, obj:b, and obj:c in the nursery.
+2. The user pins obj:b using a wild pointer: wild p = #b.
+3. A Minor GC occurs. a and c are either dead or evacuated to the Old Gen.
+4. b is live and pinned. It cannot move.
+Consequence: The nursery cannot be simply reset. The memory address occupied by b is still in use and must be preserved. If bump_ptr were reset to start_addr, the next allocation would overwrite b, causing memory corruption.
+5.1.2 Aria's Solution: Fragment Reconstruction
+Based on the provided implementation stubs 1 and referencing similar systems like Mono SGen 2 and Immix 3, Aria employs a Fragmented Nursery approach to solve this problem.
+Algorithm: Fragmented Nursery Reset
+1. Identification: During Minor GC, pinned objects are identified via the pinned_bit in the header.
+2. Evacuation: Unpinned survivors are moved to the Old Gen.
+3. Preservation: Pinned objects remain in place.
+4. Reconstruction: Instead of wiping the nursery, the collector scans the address space to find the gaps (free memory) between the pinned objects.
+5. Free List: These gaps are linked into a Fragment List.
+6. Allocation Fallback: Subsequent allocations occur from these fragments. The allocator checks the fragment list first. If a fragment is large enough, it bump-allocates within that fragment.
+Architectural Insight: This transforms the Nursery from a pure contiguous space into a freelist-backed space when pinning is active. This represents a dynamic degradation of allocator performance. When no objects are pinned, allocation is O(1). When objects are pinned, allocation becomes O(N) (searching the fragment list) or O(1) relative to the current fragment. This design explicitly trades off worst-case performance for the flexibility of supporting the # operator. It necessitates that developers use pinning judiciously to avoid "swiss-cheesing" the nursery, which would lead to severe fragmentation and reduced effective nursery size.
+5.2 The Old Generation
+Objects that survive a Minor GC are promoted (tenured) to the Old Generation. The Old Generation is expected to be stable, containing long-lived data.
+* Structure: The implementation stub uses std::vector<ObjHeader*> old_gen_objects to track these.1 In a production scenario, this would likely map to a Mark-Sweep space backed by malloc or a segregated free list allocator. The use of malloc for Old Gen objects suggests that Aria relies on the system allocator to handle fragmentation in the Old Gen, simplifying the GC's own logic.
+* Collection: Triggered when the Old Gen exceeds a certain threshold or when malloc fails.1
+________________
+6. Garbage Collection Algorithms
+The AGCS employs distinct algorithms for the two generations, optimized for their respective usage patterns.
+6.1 Minor Collection: Copying/Evacuation
+The Minor GC focuses strictly on the Nursery. The algorithm proceeds as follows 1:
+1. Root Identification: get_thread_roots() scans the Shadow Stack to find pointers into the heap.
+2. Transitive Closure: The collector traces references from roots.
+   * Old Gen Reference: If a reference points to the Old Gen, it is generally ignored during traversal (unless it is part of a remembered set, discussed in Section 7).
+   * Nursery Reference:
+      * If Pinned: The object is marked as "Found" but remains in place. Its memory region is recorded in a pinned_regions list.
+      * If Unpinned: The object is Evacuated.
+         1. Space is allocated in the Old Gen (via malloc or free list).
+         2. Data is memcpy'd from the Nursery to the Old Gen.
+         3. The old object header's forwarded_bit is set.
+         4. The old payload is overwritten with the forwarding address (the new Old Gen location).
+         5. The reference in the root or parent object is updated to point to the new address.
+3. Forwarding Resolution: If the collector encounters an object with the forwarded_bit set during traversal, it knows the object has already been moved. It simply reads the forwarding address from the payload and updates the reference, ensuring graph integrity without re-copying or infinite loops.
+4. Nursery Reconstruction: As described in Section 5.1.2, the pinned_regions list is sorted. The collector iterates through the nursery address space, creating Fragment structs for the free ranges between pinned objects. The bump_ptr is reset to the start of the first fragment.
+6.2 Major Collection: Mark-Sweep
+The Major GC cleans the Old Generation. It is a classic Stop-The-World (STW) Mark-Sweep collector.1
+1. Mark Phase:
+   * Starts from all Roots (Shadow Stack + Global Variables).
+   * Performs a full Depth-First Search (DFS) or Breadth-First Search (BFS) traversal using the mark_object helper.
+   * Sets mark_bit = 1 in the ObjHeader of every visited object.
+   * Uses type_id to dispatch the correct scanning logic. For example, if type_id indicates an array of objects, it iterates the array elements.
+2. Sweep Phase:
+   * Iterates through the global list of Old Gen objects (old_gen_objects).
+   * Live Objects: If mark_bit == 1, the object is alive. The mark_bit is reset to 0 to prepare for the next GC cycle.
+   * Dead Objects: If mark_bit == 0, the object is unreachable. The runtime calls free() (or returns the block to the allocator pool). The pointer is removed from the tracking list.
+Optimization Insight: The reference implementation uses an O(1) deletion technique for the old_gen_objects vector.1 Instead of shifting all subsequent elements down (O(N)), it swaps the dead object's pointer with the last element in the vector and then pops the back. This is a standard "swap-remove" optimization for unordered lists.
+________________
+7. Write Barriers and Inter-Generational References
+A critical component of any generational GC is handling Old-to-Young references. If an object in the Old Gen is mutated to point to a new object in the Nursery, the Minor GC must know about this link. Otherwise, since the Minor GC only scans roots and the Nursery itself, it might incorrectly conclude that the Nursery object has no references and collect it, leaving the Old Gen object with a dangling pointer.
+7.1 The Card Table Mechanism
+Aria employs a Card Table write barrier 2 to track these references efficiently.
+* Concept: The heap memory is divided into logical "cards" of a fixed size (e.g., 512 bytes). A separate byte array, called the Card Table, maps each card to a status byte.
+* The Barrier: When the compiler generates code for a pointer store (e.g., object.field = value), it emits a "Post-Write Barrier". This is a small snippet of code injected after the write instruction.
+Generated Code Logic:
+
+
+C
+
+
+
+
+// object.field = value
+*field_addr = value; 
+
+// Post-Write Barrier
+// 1. Calculate the card index for the object being written to
+size_t card_index = ((uintptr_t)object) >> CARD_SHIFT;
+
+// 2. Mark the card as DIRTY
+// Note: We don't check if 'value' is actually in the nursery here.
+// Doing so would require an extra check. Unconditionally dirtying
+// is faster (blind store) and safe, though slightly less precise.
+card_table[card_index] = DIRTY;
+
+* Integration: During a Minor GC, the collector scans the Card Table. For every card marked DIRTY, it identifies the corresponding memory block in the Old Gen. It scans that block for pointers that point into the Nursery. These pointers are treated as additional roots for the Minor GC.
+7.2 Optimization: The "Sticky" Card and Refinement
+Research snippets suggest Aria might utilize optimizations where cards for the Young Generation are implicitly handled or ignored 12, as the entire Young Gen is scanned anyway. The primary overhead is the "check" in the barrier. By using a byte map (card table) rather than a bit map, the runtime avoids read-modify-write atomicity issues on byte-addressable architectures, allowing for faster barrier execution.
+Safety Implication: The Write Barrier logic must be atomic or thread-local buffered if Aria supports concurrent mutators. The current spec implies a STW approach, simplifying this to a simple memory write. However, if Aria moves to concurrent marking in the future, the barrier logic would need to be upgraded to a Snapshot-At-The-Beginning (SATB) barrier 11 or similar concurrent mechanism.
+________________
+8. Threading and Concurrency
+Aria supports advanced threading and Go-style coroutines (spawn, async).1 This has profound implications for the AGCS, as concurrency introduces non-determinism and resource contention to the memory manager.
+8.1 Coroutines and Roots
+The spawn keyword creates a SpawnTask or initializes a CoroutineFrame.1
+* The Heap-Stack: Unlike OS threads which have their own kernel-managed stacks, coroutines often have stack frames that are stored on the heap.
+* Scanning: These frames contain local variables that may point to GC objects. Therefore, all active CoroutineFrames are GC roots.
+* Implementation: The Scheduler 1 tracks active and suspended tasks. During the Mark phase of the GC, the collector iterates through the Scheduler's task queues. It scans each CoroutineFrame, identifying the data pointer (captured state) as a structure that must be traced.
+8.2 Thread-Local Allocation Buffers (TLABs)
+To prevent locking contention on the Nursery's global bump_ptr during multi-threaded allocation, Aria likely employs Thread-Local Allocation Buffers (TLABs). This is inferred from standard high-performance GC practices like those in SGen and Java HotSpot 13, which are referenced in the research material.
+* Mechanism: Each thread requests a chunk (e.g., 4KB) of the global Nursery.
+* Local Allocation: The thread maintains its own local bump_ptr and end_ptr for that chunk. Allocation within the TLAB is lock-free and purely local.
+* Synchronization: Locks are only required when the TLAB is exhausted and the thread needs to request a new chunk from the global Nursery.
+* Fragmentation: TLABs can increase fragmentation if threads die with unused space in their buffers, but the performance gain from eliminating lock contention usually outweighs this cost.
+8.3 Stop-The-World (STW) Coordination
+The AGCS appears to use a global Stop-The-World (STW) approach for collection. This requires a Safepoint mechanism.
+* Safepoints: The compiler inserts safepoint polls at key locations in the generated code: loop back-edges and function returns. These are checks to see if a global "GC Requested" flag is set.
+* Coordination: When the heap is full, the allocating thread sets the GC flag. All other threads, upon hitting their next safepoint, will pause execution.
+* Collection: Once all threads are paused (verified via a thread barrier), the GC proceeds. After collection, the flag is cleared, and threads resume.
+________________
+9. TBB and Type System Integration
+Aria's specific requirement for Twisted Balanced Binary (TBB) types creates a unique interaction between the type system and the runtime. TBB types use specific bit patterns (minimum signed integer) as sticky error sentinels.
+Table 2: TBB Types and Sentinel Values
+Type
+	Bit Width
+	Sentinel Value (Decimal)
+	Sentinel Value (Hex)
+	Semantics
+	tbb8
+	8
+	-128
+	0x80
+	ERR
+	tbb16
+	16
+	-32,768
+	0x8000
+	ERR
+	tbb32
+	32
+	-2,147,483,648
+	0x80000000
+	ERR
+	tbb64
+	64
+	-9,223,372,036,854,775,808
+	0x8000000000000000
+	ERR
+	9.1 Decoupling Error Logic from GC
+From the GC's perspective, a tbb64 is indistinguishable from an int64. It is scalar data, not a pointer. Therefore, the GC does not need to understand TBB semantics. It simply copies the bits.
+However, for dyn types (dynamic containers), the runtime must preserve the type information. If a tbb64 containing ERR is boxed into a dyn variable, the type_id in the object header must reflect that it is a TBB type, not a standard integer. This allows the runtime's dynamic dispatch system (used for operators like + or - on dyn variables) to invoke the correct TBBLowerer intrinsics 1 that handle sticky error propagation.
+9.2 Zero-Cost Abstraction
+Because the TBB logic is handled via compiler intrinsics (llvm.sadd.with.overflow, etc.) and the GC treats the data as opaque, the overhead of TBB safety is strictly limited to the arithmetic operations themselves. There is no "GC tax" for using TBB types. This decoupling is a significant architectural strength, ensuring that the safety features of the language do not degrade the performance of the memory manager.
+________________
+10. Compiler Integration and Lowering
+The bridge between the abstract GC algorithms and the executable code is the CodeGenContext and the Lowering phase of the compiler.1
+10.1 AllocStrategy and Lowering
+The compiler assigns an AllocStrategy to every variable declaration, determining how it is lowered to LLVM IR 1:
+* STACK: Lowers to LLVM alloca. Memory is managed by the stack frame.
+* GC: Lowers to aria_gc_alloc. The compiler injects calls to aria_shadow_stack_add_root to register the variable.
+* WILD: Lowers to aria_alloc (which wraps malloc). No Shadow Stack registration is performed.
+* WILDX: Lowers to executable memory allocation (used for JIT compilation).
+10.2 Intrinsic Injection
+The backend (codegen_tbb.cpp, codegen_expr.cpp) is responsible for injecting the necessary runtime calls to support the GC.
+* Write Barriers: Every assignment to a field of a class marked AllocStrategy::GC is wrapped in barrier logic. The compiler checks if the base object is in the GC heap and, if so, emits the Card Table update code.
+* Shadow Stack Management: The compiler identifies functions that declare GC strategy variables. For these functions, it injects aria_shadow_stack_push_frame at the entry block and aria_shadow_stack_pop_frame at all exit blocks (return statements).
+10.3 Monomorphization and GC
+Aria supports generic functions via monomorphization.1 This creates specialized copies of functions for concrete types (e.g., func<int>, func<obj>).
+GC Impact:
+* If func<T> is instantiated as func<obj>, the generated code includes GC barriers and shadow stack registration, as obj is a GC type.
+* If func<T> is instantiated as func<int>, the generated code omits these overheads.
+This "zero-cost abstraction" ensures that primitive-only code paths do not pay the penalty of GC checks, adhering to the systems programming philosophy of "you only pay for what you use."
+________________
+11. Comparative Analysis
+To contextualize Aria's GC, it is instructive to compare it against established systems.
+Table 3: Comparative Analysis of GC Architectures
+Feature
+	Aria AGCS
+	Java HotSpot (G1/Parallel)
+	Go (Golang)
+	Mono SGen
+	Generational
+	Yes (Young/Old)
+	Yes
+	No (Single Gen)
+	Yes
+	Compaction
+	Yes (Copying)
+	Yes
+	No (Mark-Sweep)
+	Yes
+	Pinning
+	First-Class (#)
+	JNI Critical Sections
+	unsafe
+	Pinned Objects
+	Nursery
+	Fragmented (if pinned)
+	Contiguous
+	N/A
+	Fragmented
+	Rooting
+	Shadow Stack
+	Stack Maps
+	Stack Maps
+	Stack Maps/Shadow
+	Barriers
+	Card Table
+	Card Table + SATB
+	Write Barrier (Dijkstra)
+	Card Table
+	Target Use
+	Systems/Hybrid
+	Enterprise Server
+	Microservices
+	Desktop/Mobile
+	Analysis:
+* Vs. Go: Go uses a non-generational concurrent collector to minimize pause times, sacrificing throughput. Aria chooses a generational approach, favoring throughput (fast allocation in nursery) but accepting STW pauses.
+* Vs. Java: Java's collectors are highly sophisticated but assume full control over memory. Aria's support for "wild" pointers necessitates a more flexible, albeit potentially fragmented, nursery strategy similar to Mono's SGen.
+* Vs. Rust: Rust has no GC. Aria's hybrid model attempts to offer "Rust-like" safety via the borrow checker while falling back to GC for ease of use, a unique middle ground.
+________________
+12. Conclusion
+The Aria Garbage Collection System is a sophisticated runtime artifact designed to satisfy two seemingly contradictory goals: the safety and convenience of managed memory, and the precise control required for systems programming. By implementing a Generational Copying Nursery that degrades gracefully into a Mark-Region allocator under pressure from pinned objects, Aria successfully supports its novel "Appendage Theory" and the interaction with "wild" pointers.
+The reliance on a Shadow Stack for rooting imposes a fixed performance overhead but grants the language significant portability and simplicity, decoupling the compiler backend from platform-specific stack frame layouts. The integration of Card Table write barriers and TBB safe arithmetic further demonstrates a holistic design where the type system, compiler, and runtime cooperate to enforce safety.
+Ultimately, the AGCS defines Aria's identity. It shifts the complexity burden from the programmer—who simply uses # to pin objects when interoperating with unmanaged code—to the runtime, which must handle the resulting heap fragmentation. This architecture enables a coding style that is high-level by default but capable of low-level precision when necessary, fulfilling the language's promise of a unified programming model.
+13. References
+This report synthesizes data from the following source documents:
+* 1 aria_specs.txt - Core language specification.
+* 1 research_001_borrow_checker.txt - Memory model and pinning theory.
+* 1 research_014_composite_types_part1.txt - Composite types and object headers.
+* 1 aria_source_part6a_codegen_headers.txt - Runtime headers and backend logic.
+* 1 aria_source_part8_tbb_runtime.txt - TBB type implementation.
+* 1 gc_impl.cpp - GC implementation details.
+* Various external research snippets regarding GC theory (Immix, SGen, Card Tables).
+Works cited
+1. aria_specs.txt
+2. Generational GC - garbage collector - Mono Project, accessed December 12, 2025, https://www.mono-project.com/docs/advanced/garbage-collector/sgen/
+3. Immix: a Mark-Region Garbage Collector with Space Efficiency, Fast Collection, and Mutator Performance - CS@Cornell, accessed December 12, 2025, https://www.cs.cornell.edu/courses/cs6120/2019fa/blog/immix/
+4. The Performance Cost of Shadow Stacks and Stack Canaries - ResearchGate, accessed December 12, 2025, https://www.researchgate.net/publication/283098135_The_Performance_Cost_of_Shadow_Stacks_and_Stack_Canaries
+5. The Performance Cost of Shadow Stacks and Stack Canaries - Google Research, accessed December 12, 2025, https://research.google.com/pubs/archive/43809.pdf
+6. Garbage Collector-Agnostic Barriers for Ahead-of-Time Compilation - uu .diva, accessed December 12, 2025, https://uu.diva-portal.org/smash/get/diva2:1991503/FULLTEXT01.pdf
+7. December | 2010 | Mostly Software, accessed December 12, 2025, https://schani.wordpress.com/2010/12/
+8. Immix: A Mark-Region Garbage Collector with Space Efficiency, Fast Collection, and Mutator Performance - Steve Blackburn, accessed December 12, 2025, https://www.steveblackburn.org/pubs/papers/immix-pldi-2008.pdf
+9. Tracing garbage collection - Wikipedia, accessed December 12, 2025, https://en.wikipedia.org/wiki/Tracing_garbage_collection
+10. How actually card table and writer barrier work? - Stack Overflow, accessed December 12, 2025, https://stackoverflow.com/questions/19154607/how-actually-card-table-and-writer-barrier-work
+11. A Detailed Explanation of JVM Garbage Collector G1&ZGC - Alibaba Cloud Community, accessed December 12, 2025, https://www.alibabacloud.com/blog/601536
+12. New Write Barriers for G1 - tschatzl @ github, accessed December 12, 2025, https://tschatzl.github.io/2025/02/21/new-write-barriers.html
+13. SGen – The Nursery | Mostly Software - WordPress.com, accessed December 12, 2025, https://schani.wordpress.com/2010/12/29/sgen-the-nursery/
+14. Not all JVMS are created equal - Dynatrace, accessed December 12, 2025, https://www.dynatrace.com/resources/ebooks/javabook/the-three-jvms/

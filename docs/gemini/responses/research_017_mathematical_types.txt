@@ -1,0 +1,435 @@
+﻿RESEARCH_017: Architectural Specification for Advanced Mathematical Types (Tensor and Matrix)
+1. Executive Summary
+This document serves as the definitive architectural specification for the "Advanced Mathematical Types" tier within the Aria programming language. Following the foundational work established in the scalar floating-point research 1 and the composite type specifications 1, this report addresses the high-priority requirement for a rigorous, high-performance linear algebra system. The mandate for this system is twofold: it must satisfy the raw throughput demands of modern machine learning and scientific computing workloads, and it must integrate seamlessly with Aria’s unique safety features—specifically the Borrow Checker and the Twisted Balanced Binary (TBB) error propagation logic.1
+The design challenge is significant. Modern systems languages often force a dichotomy between "safe" high-level abstractions (which incur runtime overhead) and "unsafe" low-level pointers (which risk memory corruption). Aria rejects this trade-off. By leveraging the language's dual memory model (Garbage Collected vs. Wild) and its sophisticated compile-time generics, we propose a bifurcated mathematical type system. This system distinguishes between Matrix Types—fixed-size, stack-allocated primitives optimized for computer graphics and rigid-body physics—and Tensor Types—dynamic-rank, heap-allocated hypercubes designed for deep learning and massive dataset manipulation.
+A central theme of this specification is the rigorous formalization of "Error Connectivity" in linear algebra. Aria’s TBB types introduce a "sticky error" sentinel that replaces traditional NaN/Exception handling.1 In scalar arithmetic, an error poisons the result. In tensor calculus, this concept evolves into "Region Infection," where a single error in a matrix multiplication input deterministically corrupts specific rows or columns of the output, creating a traceable "cone of error" that aids in debugging complex simulations. This report details the algorithmic modifications required to support this behavior across Basic Linear Algebra Subprograms (BLAS), including the handling of flt256 and flt512 software-emulated types where standard hardware acceleration is unavailable.
+Furthermore, this report provides exhaustive detail on memory layouts, striding strategies, and the integration of these types with the Aria Borrow Checker. We introduce the concept of "Disjoint Slicing Views" to allow parallel mutation of tensors without violating memory safety, and we define the Foreign Function Interface (FFI) strategies required to bridge Aria tensors with established ML frameworks like PyTorch and ONNX. The resulting architecture positions Aria not merely as a consumer of mathematical libraries, but as a robust host for the next generation of numerical software.
+________________
+2. Theoretical Foundations and Architectural constraints
+The design of Aria’s mathematical types is constrained by three dominant architectural pillars: the hardware reality of SIMD execution, the safety guarantees of the Borrow Checker, and the semantic requirements of the TBB integer system. Understanding these foundations is prerequisite to defining the types themselves.
+2.1 The Dimensional Abstraction Hierarchy
+Aria’s type system is not a flat collection of primitives but a strict hierarchy of dimensional abstraction. This hierarchy allows the compiler to apply different optimization strategies based on the compile-time knowledge of shape and size.
+At the base of the hierarchy lies the Scalar Tier (0-D), comprising the fundamental numeric types defined in the standard library 1: int, flt, and tbb. These types live in general-purpose registers and form the atomic units of computation. Above this is the Vector Tier (1-D Fixed), detailed in previous research 1, which includes types like vec4 and dvec2. These are strictly hardware-mapped types; a vec4 corresponds directly to a 128-bit XMM register. They are not general-purpose arrays but geometric primitives.
+The Matrix Tier (2-D Fixed), the focus of this report, represents the first leap into multi-dimensional aggregation. However, crucially, it remains a "Register-Equivalent" tier. A matrix<flt32, 4, 4> is logically a 2D array, but physically, the compiler treats it as a collection of four vec4 registers. This allows operations to be fully unrolled and fused at compile time, avoiding loop overhead entirely.
+Finally, the Tensor Tier (N-D Dynamic) represents the "Memory-Dominant" tier. Here, data exceeds register capacity. The shape may be unknown until runtime (e.g., loading an image), requiring dynamic allocation and sophisticated indexing arithmetic. The optimization strategy shifts from instruction fusion to cache management and memory bandwidth maximization.
+2.2 The "Infected Hypercube" Theory: TBB in Linear Algebra
+A unique constraint of Aria is the mandatory support for Twisted Balanced Binary (TBB) types, such as tbb8 and tbb64.1 These types utilize a specific bit pattern (e.g., -128 for tbb8) as a "Sticky Error" sentinel (ERR). The 1 research established that ERR + N = ERR. This simple scalar rule has profound implications when applied to linear algebra, which consists of massive aggregations of scalar operations.
+We introduce the "Infected Hypercube" theory to formalize this behavior. In a standard dot product $v \cdot w = \sum v_i w_i$, if a single element $v_k$ is ERR, the term $v_k w_k$ becomes ERR. Since the summation accumulates this error, the final result of the dot product is ERR. This means TBB errors are viral in reduction operations.
+In Matrix Multiplication ($C = A \times B$), the element $C_{ij}$ is the dot product of Row $i$ of $A$ and Column $j$ of $B$.
+* If $A_{ik}$ is ERR, then $C_{ij}$ becomes ERR for all $j$. The error in a single cell of $A$ propagates to infect the entire $i$-th row of $C$.
+* Conversely, an error in $B$ propagates to infect a column of $C$.
+This deterministic propagation is a feature, not a bug. It allows a developer running a fluid dynamics simulation to inspect the final state tensor. If a region of the grid contains ERR values, the geometry of that region points directly back to the source of the instability. Standard floating-point NaNs often propagate similarly, but TBB enforces this at the integer level, allowing for robust discrete mathematics and graph theory operations (adjacency matrices) to share this safety net.
+2.3 The Exotic Precision constraint
+Aria includes "Exotic" floating-point types flt256 and flt512 which are implemented in software.1 A matrix multiplication of flt512 cannot use standard hardware FMA (Fused Multiply-Add) instructions. The cost of a single multiplication is roughly 850 cycles 1, compared to 4 cycles for hardware flt64.
+This massive disparity dictates that the Matrix and Tensor implementations must be polymorphic not just in type, but in algorithm. A matrix<flt64> multiplication can effectively use a naive $O(N^3)$ algorithm for small sizes because the constant factor is tiny. A matrix<flt512> of the same size would be prohibitively slow with the same algorithm. Therefore, the specification requires the runtime to switch to asymptotically superior algorithms (like Strassen’s Algorithm) much earlier for exotic types to mitigate the cost of the software emulation.
+________________
+3. Matrix Type Specification (Fixed-Size)
+The matrix type is the workhorse of the Aria type system for control theory, physics, and computer graphics. It is distinct from the dynamic tensor type to ensure zero-overhead abstraction for small, compile-time-known dimensions.
+3.1 Type Syntax and Definition
+The matrix type is a generic primitive built into the compiler. Its definition relies on const generics (compile-time constants).
+
+
+Code snippet
+
+
+
+
+// Formal Type Definition
+type matrix<T, const R: int, const C: int>
+
+// Examples
+matrix<flt32, 4, 4>: projection;    // Standard 3D graphics projection
+matrix<flt64, 3, 3>: rotation;      // High-precision rotation
+matrix<tbb16, 8, 8>: quant_block;   // JPEG-style quantization block
+
+Constraints:
+* Type T: Must be a numeric primitive (int, uint, flt, tbb).1 Complex types are not supported directly; users must use matrix<flt32, R, C> for the real part and another for the imaginary, or a struct of two matrices, as Aria does not have a native complex scalar type in the core spec (though vec2 often serves this role).
+* Dimensions R, C: Must be positive integers known at compile time.
+* Total Size: The total size in bytes ($R \times C \times sizeof(T)$) must be typically small enough to fit on the stack. The compiler emits a warning if a matrix exceeds 4KB, suggesting the use of tensor instead.
+3.2 Memory Layout and Storage Strategy
+The memory layout of the matrix type is a critical decision point that affects interoperability and performance.
+3.2.1 Column-Major Dominance
+Aria adopts a Column-Major layout for all fixed-size matrix types.
+* Rationale: This decision aligns Aria with the dominant standards in Graphics Processing Units (GPU) and Shading Languages (GLSL/HLSL). Since one of Aria's primary use cases is high-performance computing and graphics 1, seamless interoperability with GPU buffers is paramount.
+* Vector Integration: In a column-major layout, a matrix<flt32, 4, 4> is physically stored as four sequential vec4 columns. This allows the compiler to treat column extraction—a very common operation in basis transformations—as a zero-cost register rename or a simple 128-bit load.
+3.2.2 Alignment and Padding
+To maximize SIMD throughput, matrix columns are heavily aligned.
+* Alignment Rule: The alignment of a matrix is equal to the alignment of its column vector type.
+   * matrix<flt32, 4, 4> is aligned to 16 bytes (size of vec4).
+   * matrix<flt64, 4, 4> is aligned to 32 bytes (AVX2 YMM alignment).
+* Padding: Columns are padded to ensure striding alignment.
+   * Consider matrix<flt32, 3, 3>. A naive packing would take $9 \times 4 = 36$ bytes. However, this implies that Column 1 starts at offset 12, which is not 16-byte aligned. Loading it would require slower unaligned load instructions or masking.
+   * Aria Approach: matrix<flt32, 3, 3> is internally represented as three vec4s (48 bytes). The 4th element of each column is padding (undefined or zero). This wastes 12 bytes of memory but allows operations to use full 4-wide SIMD instructions, providing a speedup that vastly outweighs the storage cost for stack-allocated variables.
+3.2.3 Interaction with vec9
+The vec9 type 1 is a special architectural optimization in Aria. It is a 9-element vector explicitly designed to hold flattened 3x3 matrices (rotation matrices or stress tensors).
+* Conversion: The compiler provides intrinsic casting between matrix<flt32, 3, 3> and vec9.
+   * matrix -> vec9: The padding is stripped. The 9 useful floats are packed into a 288-bit structure (fitting in a ZMM register lower half).
+   * vec9 -> matrix: The values are scattered back into the padded columns.
+* Use Case: vec9 is preferred for storage and transmission (dense packing), while matrix is preferred for arithmetic (aligned computation).
+3.3 SIMD Optimization Hooks
+The Aria compiler backend (built on LLVM) lowers matrix operations to specialized instruction sequences.
+3.3.1 Matrix-Vector Multiplication ($M \times v$)
+Since the matrix is column-major ($C_0, C_1, C_2, C_3$), the multiplication $y = M \times v$ is calculated as a linear combination of columns:
+
+
+
+
+$$y = (v_x \cdot C_0) + (v_y \cdot C_1) + (v_z \cdot C_2) + (v_w \cdot C_3)$$
+
+
+This structure is ideal for FMA (Fused Multiply-Add) pipelines.
+1. Broadcast $v_x$ to all 4 lanes: v_x_splat.
+2. Multiply v_x_splat by C_0.
+3. Accumulate into result.
+This avoids the need for horizontal reductions (adding elements within a register) until the very end, keeping the pipeline fully saturated.
+3.3.2 Matrix-Matrix Multiplication (Small GEMM)
+For matrices up to 8x8, the compiler fully unrolls the multiplication loops.
+   * Register Tiling: The compiler allocates a block of logical registers to hold the result matrix. It then streams the inputs through the ALU.
+   * Reduction of Loads: By keeping the result in registers, memory traffic is eliminated during the computation. This is only possible because the size is fixed and known at compile time.
+3.4 GPU Integration for Matrices
+While matrix types usually live on the CPU stack, they are the primitive unit for GPU Uniform Buffers (UBOs).
+   * Layout Compatibility: Because Aria enforces column-major padding (std140 layout compatibility), a matrix struct can be memcpy'd directly into a mapped GPU buffer without marshaling.
+   * Intrinsic Mapping: Aria’s GPU backend maps matrix types directly to HLSL/GLSL float4x4 types in shader code.
+________________
+4. Tensor Type Specification (Dynamic-Rank)
+While matrices handle geometric primitives, the Tensor type is designed for data. It supports arbitrary dimensionality (Rank) and dynamic runtime sizes (Shape), making it the foundation for image processing, scientific simulation, and machine learning.
+4.1 Type Syntax and Semantics
+
+
+Code snippet
+
+
+
+
+// Generic Definition
+type tensor<T, const Rank: int>
+
+// Usage
+tensor<flt32, 4>: batch_images; // Shape might be (64, 3, 224, 224)
+tensor<tbb8, 2>: sparse_weights;
+tensor<int64, 1>: time_series;
+
+The Rank Constraint:
+Unlike Python's NumPy where rank can be dynamic (though usually implicit), Aria requires Rank to be a compile-time constant.
+   * Reasoning: Knowing the rank allows the compiler to unroll index calculation loops. Calculating the offset for a 4D tensor idx = i*S1 + j*S2 + k*S3 + l*S4 is significantly faster if the number of terms is constant.
+   * Dynamic Rank: For cases where rank is truly unknown (e.g., reading a generic HDF5 file), Aria provides a dyn_tensor<T> type which uses a heap-allocated shape vector, incurring a slight performance penalty for indexing.
+4.2 The Tensor Header Design
+A tensor variable in Aria is a "Fat Handle" (Smart Pointer) stored on the stack, pointing to data on the heap. Its layout is carefully designed to support zero-copy slicing.
+4.2.1 Internal Structure (C++ Representation)
+
+
+C++
+
+
+
+
+template<typename T, int Rank>
+struct TensorHeader {
+   T* data_ptr;              // Pointer to the first element of the *view*
+   T* storage_root;          // Pointer to the actual allocation (for GC/Free)
+   int64_t shape;      // Dimensions
+   int64_t strides;    // Step size per dimension (in elements)
+   AtomicRef* ref_count;     // For shared ownership
+   uint32_t flags;           // Read-only, Pinned, Sparse-Format bits
+};
+
+   * Dual Pointers: We maintain data_ptr (current view start) and storage_root (allocation start). This allows a slice t[100:] to simply increment data_ptr without reallocating. The ref_count ensures the underlying storage is not freed while a view exists.
+   * Strides: Aria supports Arbitrary Striding.
+   * Unit Stride: Contiguous memory.
+   * Non-Unit Stride: Slicing every Nth element.
+   * Negative Stride: Reversing a dimension [::-1] involves setting a negative stride and adjusting the data_ptr to the end. This is an $O(1)$ operation.
+4.2.2 Memory Layout Strategies
+Aria supports multiple memory layouts, configurable via the flags field or compile-time policies.
+   1. Row-Major (C-Contiguous):
+   * The last dimension changes fastest. stride = 1.
+   * Aligned with C, Python (NumPy default), and CPU cache prefetchers.
+   2. Column-Major (F-Contiguous):
+   * The first dimension changes fastest. stride = 1.
+   * Used for compatibility with Fortran legacy code and specific GPU kernels.
+   3. Tiled (Morton Z-Curve):
+   * Used for texture data where 2D locality is required. Memory is organized in recursive Z-shapes.
+   * Note: Arithmetic on tiled tensors usually requires a "Layout Transformation" pass or specialized iterators.
+4.3 Sparse Matrix Support
+The prompt explicitly queries sparse matrix support. In Aria, sparsity is not a distinct type but a storage policy within the tensor system.
+The sparse Encoding:
+Sparsity is handled via a specialized encoding flag in the tensor header. When a tensor is marked sparse, the storage_root does not point to a dense array of T. Instead, it points to a Compressed Storage Block.
+   * Supported Formats:
+   1. CSR (Compressed Sparse Row): Optimized for arithmetic and row slicing. Stores three arrays: values, column_indices, and row_offsets.
+   2. COO (Coordinate List): Optimized for construction and manipulation. Stores a list of (row, col, value) tuples.
+   * TBB Interaction:
+   * In standard sparse matrices, "missing" values are implicit zeros.
+   * In Aria TBB tensors, missing values are still implicit zeros. However, the ERR sentinel is treated as a Non-Zero Value. If an operation results in ERR, it must be explicitly stored. An ERR cannot be implicit; it represents a data corruption event, not an empty space. This prevents errors from vanishing into the void of sparsity.
+4.4 The Borrow Checker and Tensor Slicing
+Aria’s Borrow Checker 1 enforces that a value can have either multiple immutable borrows OR one mutable borrow. This creates a classic problem for tensor processing: Parallel Disjoint Mutation.
+   * The Problem:
+Code snippet
+// Hypothetical code
+tensor<f32, 1>: data =...;
+// We want to process the first and second halves in parallel threads
+slice1 = &mut data[0..N/2];
+slice2 = &mut data[N/2..N]; // ERROR: 'data' is already mutably borrowed by slice1
+
+The borrow checker is not smart enough to prove strictly that the ranges 0..N/2 and N/2..N do not overlap.
+   * The Solution: split_at_mut:
+The tensor type exposes a trusted primitive:
+Code snippet
+func split_at_mut(self, axis: int, index: int) -> (tensor_view<T>, tensor_view<T>)
+
+Internally, this function uses unsafe (wild) pointers to create two new headers. The library author manually verifies the ranges are disjoint and marks the function as trusted. To the user, it safely returns two mutable views that own non-overlapping regions of the original memory. This allows the Borrow Checker to bless the parallel operation.
+________________
+5. Arithmetic and Broadcasting Rules
+Aria standardizes the behavior of operations between tensors of differing shapes, ensuring consistency with the ecosystem (NumPy/PyTorch) while enforcing strict typing.
+5.1 Broadcasting Specification
+When operating on two tensors $A$ and $B$, the result shape is determined by the following algorithm:
+      1. Rank Normalization: If ranks differ, prepend dimensions of size 1 to the smaller tensor until ranks match.
+      2. Dimension Matching: Iterate from the last dimension to the first.
+      * If dimensions are equal: usage is direct.
+      * If one dimension is 1: that tensor is broadcast (virtually repeated) along that axis to match the other.
+      * If dimensions differ and neither is 1: Error.
+      3. Error Handling:
+      * Compile-Time: If shapes are const-generic, mismatches raise compilation errors.
+      * Runtime: Mismatches raise a ShapeMismatch panic (or return an Error Result in safe mode).
+5.2 TBB "Viral" Error Propagation Rules
+The interaction of broadcasting and TBB sentinels produces the "Infected Hypercube" effect.
+Scenario: $C = A + B$.
+$A$ is shape (4, 4). $B$ is shape (4, 1) (column vector).
+$B$ contains an ERR at index ``.
+Propagation Logic:
+      1. Broadcasting: $B$ is virtually replicated across the columns to match $A$. The ERR at B is conceptually replicated to (2,0), (2,1), (2,2), (2,3).
+      2. Arithmetic: The addition happens element-wise.
+      * Row 0 and 1 are unaffected.
+      * Row 2: $C[2, i] = A[2, i] + B$. Since $B$ is ERR, the result is ERR.
+      * Row 3 is unaffected.
+      3. Result: The entire Row 2 of the output tensor $C$ is ERR.
+This logic is implemented in the lowest-level arithmetic kernels. The kernel loads vector registers. It checks if any element in the input vector is ERR (using SIMD comparison). If so, it masks the output based on the broadcast pattern. This ensures that the error shape in the output accurately reflects the dependency graph of the calculation.
+________________
+6. Algorithmic Implementations
+Because Aria supports both hardware-native types (flt64) and software-emulated types (flt512), the algorithmic backend is polymorphic.
+6.1 Matrix Multiplication (GEMM) Strategies
+The runtime selects the multiplication algorithm based on Type, Size, and Hardware capabilities.
+Type
+	Dimensions
+	Algorithm
+	Justification
+	matrix (Fixed)
+	< 16x16
+	Unrolled FMA
+	Zero loop overhead, max instruction throughput.
+	tensor<flt32>
+	Small/Medium
+	Blocked/Tiled GEMM
+	Optimization for L1/L2 cache locality.
+	tensor<flt32>
+	Large
+	BLAS Call
+	Defers to vendor-optimized (MKL/OpenBLAS) backend.
+	tensor<tbb>
+	Any
+	Integer GEMM + Checks
+	Custom kernel required to handle Sticky Errors.
+	tensor<flt512>
+	> 64x64
+	Strassen’s Algorithm
+	Reduces multiplication count from $N^3$ to $N^{2.8}$, offsetting the high cost of software-float multiplication.
+	Strassen Implementation for flt512:
+The high cost of flt512 multiplication (software limb-mul) makes Strassen's algorithm highly effective even for moderate sizes. While Strassen is numerically less stable than naive multiplication, the extreme precision of 512-bit floats (approx. 150 decimal digits) renders this instability negligible for practical purposes. The recursion depth is tuned dynamically; once sub-matrices drop below size 64, the system reverts to the standard blocked algorithm to avoid recursion overhead.
+6.2 Decompositions and Solvers
+Aria includes a standard math.linalg module providing essential decompositions.
+      1. LU Decomposition:
+      * Used for solving linear systems $Ax=B$.
+      * TBB Behavior: If a pivot element is ERR (or effectively zero in the integer representation), the decomposition returns a generic Result::Err.
+      2. Cholesky Decomposition:
+      * Used for symmetric positive-definite matrices (common in covariance estimation).
+      * Implementation: Optimized using blocking to maximize cache reuse.
+      * Failure Mode: If the matrix is not positive definite (e.g., negative eigenvalues), it returns an error.
+      3. QR Decomposition:
+      * Implemented via Householder reflections for numerical stability.
+      4. SVD (Singular Value Decomposition):
+      * Algorithm: For flt32/64, Aria uses the "Divide and Conquer" method (LAPACK gesdd equivalent) for speed.
+      * Exotic Support: For flt512, SVD is implemented using the Jacobi Eigenvalue Algorithm. While slower (iterative), Jacobi is inherently more parallelizable and easier to implement correctly for arbitrary-precision software types than bidiagonalization methods.
+________________
+7. Sparse Matrix Support Details
+As requested, this section expands on the specifics of sparse matrix support.
+7.1 Storage Formats
+Aria standardizes on CSR (Compressed Sparse Row) for read-heavy linear algebra operations.
+      * Structure:
+      * vals: Array of non-zero values.
+      * cols: Array of column indices for each value.
+      * row_ptr: Array of indices into vals where each row starts.
+      * Construction: Users typically build sparse matrices using COO (Coordinate) format (list of row, col, val tuples) and then call .compress() to convert to CSR for computation.
+7.2 Sparse Arithmetic
+Sparse matrix multiplication (SpMM) is implemented using a "Gustavson's Algorithm" approach, which iterates over rows of the sparse matrix and accumulates linear combinations of the dense matrix rows.
+      * SIMD Challenges: Sparse operations are memory-bound and branch-heavy. Aria’s compiler attempts to vectorize the accumulation phase if the sparsity pattern allows (e.g., block-sparse matrices).
+________________
+8. Hardware Acceleration and GPU Integration
+Aria treats the GPU not as a mystical coprocessor but as a memory space with specific properties.
+8.1 Memory Spaces and Pinning
+      * Unified Memory: On architectures like Apple Silicon or integrated APUs, Aria uses unified memory. Tensors are allocated in "Shared" mode, allowing both CPU and GPU to access data without copying. Synchronization primitives (barriers) are exposed to the user.
+      * Discrete Memory: On dedicated GPUs (NVIDIA/AMD), explicit transfer is required.
+      * The # Operator: Aria uses the pinning operator # 1 to lock host memory pages.
+      * wild flt32* pinned_ptr = #my_tensor;
+      * This prevents the OS/GC from paging out or moving the memory, allowing the DMA engine to perform maximum-speed transfers (PCIe saturation).
+8.2 GPU Compute Hooks
+Aria exposes two levels of GPU access:
+      1. High-Level: tensor<T, GPU> implies storage on the device. Arithmetic on these tensors automatically launches pre-compiled compute kernels (SPIR-V or CUDA PTX) corresponding to the operation.
+      2. Low-Level: Users can write "Kernel Functions" in a restricted subset of Aria (scalar/vector types only, no GC). The compiler lowers these functions directly to SPIR-V/PTX.
+Code snippet
+@kernel
+func my_shader(device_ptr<flt32> data, int id) {... }
+
+This allows custom scientific kernels to be written without leaving the language.
+8.3 SIMD Strategy for CPUs
+For CPU execution, Aria leverages the VectorLowerer logic described in.1
+         * Autovectorization: The layout of matrix and dense tensor is designed to be friendly to LLVM's loop vectorizer.
+         * Intrinsic Dispatch: Critical ops (Dot Product, MatMul) dispatch to architecture-specific intrinsics.
+         * x86: AVX2 / AVX-512 (_mm512_fmadd_ps).
+         * ARM: NEON / SVE.
+         * RISC-V: V-Extension.
+________________
+9. Machine Learning Framework Interoperability
+To serve as a viable language for AI infrastructure, Aria must talk to the existing ecosystem.
+9.1 The "Zero-Copy" Bridge: DLPack
+Aria implements the DLPack standard, a stable in-memory tensor interface used by PyTorch, TensorFlow, MXNet, and JAX.
+         * Mechanism: A tensor can be converted to a DLManagedTensor* struct. This struct contains a pointer to the raw data, shape, stride, and a context (device ID).
+         * Benefit: A tensor allocated in Aria can be passed to a PyTorch function (via FFI) without copying the data. PyTorch reads the memory directly. This enables Aria to be used for high-performance data loading and preprocessing pipelines feeding into Python training loops.
+9.2 ONNX Integration
+Aria includes a native ONNX (Open Neural Network Exchange) loader aria.ml.onnx.
+         * Inference: It can load a .onnx model file and execute it using Aria’s tensor engine.
+         * Compilation: More importantly, Aria can transpile an ONNX graph into native Aria code. This "Model Freezing" compiles the neural network topology into a static binary, allowing for extremely fast inference with zero framework overhead—ideal for edge deployment.
+9.3 Autograd Support (Differentiation)
+For training support, the tensor type supports an optional gradient tape.
+         * Enablement: tensor.requires_grad = true.
+         * Tape Mechanism: Operations on such tensors emit "Nodes" into a thread-local Wengert List. Each node stores wild pointers to inputs and a function pointer to the backward pass kernel.
+         * Memory Safety: The tape creates a reference cycle (Graph holds Tensor, Tensor holds Graph). Aria handles this by treating the computational graph as a wild (manually managed) pool that is explicitly flushed after the .backward() call.
+________________
+10. Performance Benchmarks (Projected)
+The following performance characteristics are projected based on the architectural decisions (SIMD usage, algorithms) and the costs of the underlying types.1
+10.1 Throughput Comparison
+Operation
+	Type
+	Size
+	Hardware
+	Est. Throughput
+	Notes
+	GEMM
+	flt32
+	4096²
+	AVX-512
+	~90% Peak FLOPS
+	Via OpenBLAS/MKL linkage.
+	GEMM
+	flt32
+	4096²
+	Soft-Impl
+	~5% Peak FLOPS
+	Fallback if no BLAS.
+	GEMM
+	tbb8
+	4096²
+	AVX-512
+	~75% INT8 Peak
+	Overhead of checking Sticky Errors.
+	GEMM
+	flt512
+	256²
+	CPU
+	~100 MFLOPs
+	Strictly bottlenecked by software emulation.
+	10.2 Latency and Overhead
+         * Matrix (Stack) Overhead: Near zero. Passing matrix<f32,4,4> to a function is as fast as passing 4 pointers (passed in registers).
+         * Tensor (Heap) Allocation: Allocating a new tensor involves a malloc call. For small temporary tensors, this is costly.
+         * Optimization: The compiler employs "Escape Analysis" to promote small, short-lived tensors to stack allocations (using alloca), effectively turning them into fixed matrices for performance where possible.
+________________
+11. Conclusion
+The specification for Aria's Advanced Mathematical Types represents a significant evolution in systems programming design. By explicitly acknowledging the divergent needs of fixed-size geometry (matrix) and dynamic data analysis (tensor), Aria provides optimized paths for both domains without compromising on safety.
+The integration of TBB types into linear algebra is a standout feature. It transforms the "silent corruption" problem of numerical computing into a deterministic, traceable phenomenon ("Infected Hypercubes"). While this introduces some computational overhead, the use of speculative vectorization techniques minimizes the impact on the "happy path."
+Furthermore, the support for Exotic Precision (flt512) via specialized algorithms like Strassen’s multiplication ensures that Aria is uniquely capable of handling high-precision scientific workloads that are currently underserved by mainstream languages. Combined with robust Sparse Matrix support and "Zero-Copy" ML Interoperability, Aria is positioned to become a foundational language for the next era of reliable, high-performance computing.
+________________
+12. Detailed API Reference and Layouts
+12.1 Tensor Header Layout (Memory)
+
+
+C++
+
+
+
+
+// Internal C++ Representation of the Aria Tensor Handle
+template <typename T, int Rank>
+struct TensorHandle {
+   // 0x00: Data Pointer (Current View)
+   T* data_ptr; 
+   
+   // 0x08: Storage Root (Allocation Base for Freeing)
+   T* storage_root;
+   
+   // 0x10: Shape Array (Inline for Rank <= 4, Ptr otherwise)
+   int64_t shape;
+   
+   // 0x??: Stride Array
+   int64_t strides;
+   
+   // Ownership & Flags
+   AtomicRef* ref_count; // For GC/Shared ownership
+   uint32_t flags;       // Bit 0: Is_Sparse, Bit 1: Is_View, Bit 2: Device(GPU/CPU)
+};
+
+12.2 Matrix Multiplication Algorithm Selection Logic
+
+
+Code snippet
+
+
+
+
+// Pseudocode for internal dispatch
+func matmul(A, B) {
+   if A.type == flt32 or A.type == flt64:
+       if size(A) > BLAS_THRESHOLD:
+           return cblas_gemm(A, B) // Hardware Optimized
+       else:
+           return blocked_gemm(A, B) // Cache Optimized
+   
+   else if A.type == flt512:
+       if size(A) > 64:
+           return strassen_mul(A, B) // Algorithmic Optimization
+       else:
+           return naive_mul(A, B) // Minimize Overhead
+           
+   else if A.type == tbb:
+       return tbb_sticky_gemm(A, B) // Safety Logic
+}
+
+12.3 The split_at_mut Implementation
+The safe wrapper around unsafe slicing logic:
+
+
+Code snippet
+
+
+
+
+// aria/std/tensor.aria
+impl tensor<T, Rank> {
+   pub func split_at_mut(self, axis: int, idx: int) -> (tensor_view<T>, tensor_view<T>) {
+       // 1. Bounds Check
+       if idx >= self.shape[axis] { panic("Index out of bounds"); }
+       
+       // 2. Unsafe Pointer Arithmetic
+       unsafe {
+           wild T* ptr1 = self.data_ptr;
+           wild T* ptr2 = self.data_ptr + (idx * self.strides[axis]);
+           
+           // 3. Create Headers
+           // Note: These views share 'storage_root' but have disjoint 'data_ptr' ranges
+           // and modified shapes.
+           return (
+               tensor_view::new(ptr1,...), 
+               tensor_view::new(ptr2,...)
+           );
+       }
+   }
+}
+
+Works cited
+         1. research_013_floating_point_types.txt

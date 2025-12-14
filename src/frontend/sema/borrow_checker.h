@@ -18,6 +18,7 @@ namespace frontend {
     class IfStmt;
     class WhileLoop;
     class ForLoop;
+    class LoopStmt;
     class TillLoop;
     class WhenLoop;
     class Block;
@@ -107,6 +108,7 @@ public:
 
     void visit(frontend::PickStmt* node) override;
     void visit(frontend::FallStmt* node) override;
+    void visit(frontend::LoopStmt* node) override;
     void visit(frontend::TillLoop* node) override;
     void visit(frontend::WhenLoop* node) override;
     void visit(frontend::DeferStmt* node) override;
