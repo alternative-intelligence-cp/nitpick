@@ -87,6 +87,28 @@ research_031 - Essential Stdlib - Standard library bootstrap
 Goal: Clean slate with proper build system and directory structure.
 
 ═══════════════════════════════════════════════════════════════════════
+0.0: Repository Cleanup
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 0.0.1: Remove build artifacts from root
+    Location: ./
+    Action: Remove all .o files from repository root
+    Command: find . -maxdepth 1 -name "*.o" -delete
+    Reason: Keep root clean before starting fresh implementation
+    Files to remove: test_*.o (17 files)
+    Test: ls *.o returns "No such file or directory"
+    
+[ ] 0.0.2: Verify archive is complete
+    Location: archive/v0.0.17_20251214_215757/
+    Action: Verify all old source code is safely archived
+    Test: Directory exists and contains previous implementation
+    
+[ ] 0.0.3: Verify .gitignore is current
+    File: .gitignore
+    Action: Ensure *.o files are ignored
+    Test: git check-ignore test.o returns positive result
+
+═══════════════════════════════════════════════════════════════════════
 0.1: Build System Setup
 ═══════════════════════════════════════════════════════════════════════
 
@@ -179,6 +201,99 @@ Goal: Clean slate with proper build system and directory structure.
     - Link with testing framework
     - Enable CTest integration
     Test: ctest runs (even if no tests yet)
+    
+[ ] 0.2.6: Setup memory leak detection
+    File: tests/test_helpers.h
+    Action: Configure AddressSanitizer (ASAN) and Valgrind support
+    Add to CMakeLists.txt: -fsanitize=address for debug builds
+    Purpose: Catch memory leaks during development
+    Test: Build with ASAN, run simple test
+    
+[ ] 0.2.7: Setup code coverage
+    File: CMakeLists.txt
+    Action: Add --coverage flag for GCC/Clang
+    Create: tools/coverage.sh script to generate coverage reports
+    Purpose: Track test coverage
+    Test: Run coverage script, generates report
+    
+[ ] 0.2.8: Setup fuzzing infrastructure (optional, future)
+    File: tests/fuzz/README.md
+    Document: How to add fuzz tests later
+    Note: Will use with libFuzzer or AFL++ in Phase 1-2 testing
+
+═══════════════════════════════════════════════════════════════════════
+0.3: Example Files (Test Cases)
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 0.3.1: Create examples directory structure
+    mkdir -p examples/basic
+    mkdir -p examples/advanced
+    mkdir -p examples/stdlib
+    mkdir -p examples/features
+    Test: Directories exist
+    
+[ ] 0.3.2: examples/basic/01_hello_world.aria
+    Content: Basic print statement
+    ```aria
+    print("Hello, World!");
+    ```
+    
+[ ] 0.3.3: examples/basic/02_variables.aria
+    Content: All type declarations
+    ```aria
+    int8:x = 42;
+    string:name = "Aria";
+    bool:flag = true;
+    flt32:pi = 3.14;
+    tbb8:safe = 100;
+    ```
+    
+[ ] 0.3.4: examples/basic/03_functions.aria
+    Content: Function definitions, calls
+    ```aria
+    func:add = int8(int8:a, int8:b) {
+        return a + b;
+    };
+    int8:result = add(3, 4) ? 0;
+    ```
+    
+[ ] 0.3.5: examples/basic/04_control_flow.aria
+    Content: if, while, for, loop, till, when, pick
+    Reference all control flow constructs [research_018, research_019]
+    
+[ ] 0.3.6: examples/basic/05_memory.aria
+    Content: gc (default), wild, stack allocations
+    ```aria
+    int8:gc_var = 100;  // GC managed (default)
+    wild int8:wild_var = 200;  // Manual memory
+    stack int8[100]:buffer;  // Stack allocated
+    ```
+    
+[ ] 0.3.7: examples/features/06_modules.aria
+    Content: use statements, mod definitions, pub, extern
+    Reference: [research_028]
+    
+[ ] 0.3.8: examples/features/07_generics.aria
+    Content: Generic functions, type inference
+    Reference: [research_027]
+    
+[ ] 0.3.9: examples/features/08_async.aria
+    Content: async functions, await
+    Reference: [research_029]
+    
+[ ] 0.3.10: examples/features/09_tbb_arithmetic.aria
+    Content: TBB types, ERR handling, sticky error propagation
+    Reference: [research_002]
+    
+[ ] 0.3.11: examples/advanced/10_complete_app.aria
+    Content: Full application with:
+    - File I/O [research_004]
+    - Process management [research_005]
+    - Modern streams [research_006]
+    - Error handling
+    - Multiple functions
+    - Module system
+    Purpose: Integration test for complete compiler
 
 COMMIT CHECKPOINT: Phase 0 - Build infrastructure ready
 Tag: v0.1.0-phase0-complete
@@ -214,10 +329,12 @@ Reference: [research_012] for type tokens, aria_specs.txt for all tokens
     TOKEN_KW_LOOP, TOKEN_KW_TILL, TOKEN_KW_WHEN, TOKEN_KW_THEN, TOKEN_KW_END,
     TOKEN_KW_PICK, TOKEN_KW_BREAK, TOKEN_KW_CONTINUE, TOKEN_KW_RETURN,
     TOKEN_KW_DEFER, TOKEN_KW_FALL,
+    TOKEN_KW_ASYNC, TOKEN_KW_AWAIT, TOKEN_KW_CATCH,
     
     // Declarations
     TOKEN_KW_FUNC, TOKEN_KW_TYPE, TOKEN_KW_STRUCT, TOKEN_KW_USE,
     TOKEN_KW_MOD, TOKEN_KW_PUB, TOKEN_KW_EXTERN, TOKEN_KW_CONST,
+    TOKEN_KW_CFG,
     
     // Types - Integers
     TOKEN_KW_INT1, TOKEN_KW_INT2, TOKEN_KW_INT4, TOKEN_KW_INT8,
@@ -245,8 +362,12 @@ Reference: [research_012] for type tokens, aria_specs.txt for all tokens
     TOKEN_KW_VEC2, TOKEN_KW_VEC3, TOKEN_KW_VEC9,
     TOKEN_KW_MATRIX, TOKEN_KW_TENSOR,
     
+    // Types - I/O and System
+    TOKEN_KW_BINARY, TOKEN_KW_BUFFER, TOKEN_KW_STREAM,
+    TOKEN_KW_PROCESS, TOKEN_KW_PIPE, TOKEN_KW_DEBUG, TOKEN_KW_LOG,
+    
     // Special keywords
-    TOKEN_KW_ASYNC, TOKEN_KW_IS, TOKEN_KW_NULL,
+    TOKEN_KW_IS, TOKEN_KW_NULL,
     
     // Literals
     TOKEN_KW_TRUE, TOKEN_KW_FALSE, TOKEN_KW_ERR,
@@ -279,12 +400,22 @@ Reference: [research_012] for type tokens, aria_specs.txt for all tokens
     TOKEN_QUESTION, TOKEN_PIPE_RIGHT, TOKEN_PIPE_LEFT,
     TOKEN_DOT_DOT, TOKEN_DOT_DOT_DOT,
     
+    // Template literal tokens
+    TOKEN_BACKTICK_START,    // ` (start of template)
+    TOKEN_BACKTICK_END,      // ` (end of template)
+    TOKEN_TEMPLATE_TEXT,     // text between interpolations
+    TOKEN_INTERP_START,      // &{ (interpolation start)
+    TOKEN_INTERP_END,        // } (interpolation end, contextual)
+    
     // Punctuation
     TOKEN_DOT, TOKEN_COMMA, TOKEN_COLON, TOKEN_SEMICOLON,
     TOKEN_LEFT_PAREN, TOKEN_RIGHT_PAREN,
     TOKEN_LEFT_BRACE, TOKEN_RIGHT_BRACE,
     TOKEN_LEFT_BRACKET, TOKEN_RIGHT_BRACKET,
-    TOKEN_BACKTICK,
+    TOKEN_BACKTICK,          // ` (standalone backtick)
+    
+    // Special tokens
+    TOKEN_EOF, TOKEN_ERROR, TOKEN_IDENTIFIER,
     
     Test: Enum compiles, all values unique
     
@@ -458,24 +589,61 @@ Reference: [research_012], [research_002], [research_003]
     File: src/frontend/lexer/lexer.cpp
     Function: Token scanTemplateLiteral()
     Strategy: Lex `backtick strings` with &{interpolation}
-    Approach: Return multiple tokens:
-    - TOKEN_BACKTICK_START: `
-    - TOKEN_TEMPLATE_TEXT: text parts
-    - TOKEN_INTERP_START: &{
-    - (nested expression tokens)
-    - TOKEN_INTERP_END: }
-    - TOKEN_BACKTICK_END: `
+    
+    STATE MACHINE SPECIFICATION:
+    Add lexer state tracking:
+    ```cpp
+    enum LexerState {
+        NORMAL,           // Normal lexing
+        IN_TEMPLATE,      // Inside `...` template
+        IN_INTERPOLATION  // Inside &{...} interpolation
+    };
+    std::vector<LexerState> state_stack; // Stack for nested states
+    int brace_depth;      // Track {} nesting in interpolations
+    ```
+    
+    TOKEN SEQUENCE:
+    - TOKEN_BACKTICK_START: ` (enter IN_TEMPLATE)
+    - TOKEN_TEMPLATE_TEXT: text parts (accumulate until &{ or `)
+    - TOKEN_INTERP_START: &{ (push IN_INTERPOLATION, track brace_depth)
+    - (lex expression tokens normally, tracking {} depth)
+    - TOKEN_INTERP_END: } (at depth 0, pop to IN_TEMPLATE)
+    - TOKEN_BACKTICK_END: ` (pop to NORMAL)
+    
+    ALGORITHM:
+    1. When see `, push IN_TEMPLATE, return TOKEN_BACKTICK_START
+    2. In IN_TEMPLATE:
+       - If see &{ -> push IN_INTERPOLATION, brace_depth=0, return TOKEN_INTERP_START
+       - If see ` -> pop to NORMAL, return TOKEN_BACKTICK_END
+       - If see \` -> add ` to text (escaped)
+       - Otherwise accumulate text, return TOKEN_TEMPLATE_TEXT when done
+    3. In IN_INTERPOLATION:
+       - Lex tokens normally
+       - If see { -> increment brace_depth
+       - If see } -> if brace_depth > 0, decrement; else pop state, return TOKEN_INTERP_END
+    
+    NESTED INTERPOLATION EXAMPLE:
+    `value: &{obj.get("key")}`
+    Tokens: BACKTICK_START, TEMPLATE_TEXT("value: "), INTERP_START,
+            IDENTIFIER(obj), DOT, IDENTIFIER(get), LEFT_PAREN,
+            STRING("key"), RIGHT_PAREN, INTERP_END, BACKTICK_END
     
     Handle:
-    - Nested expressions
-    - Escape sequences including \`
-    - Multiple interpolations
+    - Multiple interpolations: `&{a} + &{b}` 
+    - Nested braces: `&{arr[i + (j * 2)]}`
+    - Escape sequences: \`, \n, \t, \\
+    - Empty interpolations: `&{}`
+    - Adjacent interpolations: `&{a}&{b}`
     
     Test cases:
-    - Simple templates
-    - Interpolations
-    - Nested expressions
-    - Escape sequences
+    - Simple: `hello world`
+    - Single interpolation: `value: &{x}`
+    - Multiple: `&{a} + &{b} = &{a+b}`
+    - Nested braces: `&{arr[i]}`
+    - Function calls: `&{func(1, 2)}`
+    - Object access: `&{obj.prop.nested}`
+    - Escaped backtick: `backtick: \` here`
+    - Mixed: `text &{expr} more &{expr2} end`
     
 [ ] 1.2.8: Implement operator lexing
     File: src/frontend/lexer/lexer.cpp
@@ -597,5 +765,1528 @@ Tag: v0.1.0-phase1-lexer-complete
 All tests pass
 Merge to main: YES (lexer is foundation)
 
-(To be continued in next response due to length...)
+███████████████████████████████████████████████████████████████████████
+██ PHASE 2: PARSER & AST - SYNTAX TREE CONSTRUCTION                   ██
+███████████████████████████████████████████████████████████████████████
+
+Goal: Parse token stream into Abstract Syntax Tree (AST).
+Reference: [research_014-020, research_024-028]
+
+═══════════════════════════════════════════════════════════════════════
+2.1: AST Node Definitions
+═══════════════════════════════════════════════════════════════════════
+Reference: All research docs for complete language constructs
+
+[ ] 2.1.1: Create base AST node interface
+    File: include/frontend/ast/ast_node.h
+    Content: Base class for all AST nodes
+    ```cpp
+    class ASTNode {
+    public:
+        enum NodeType {
+            // Expressions
+            LITERAL, IDENTIFIER, BINARY_OP, UNARY_OP, CALL, INDEX,
+            MEMBER_ACCESS, LAMBDA, TEMPLATE_LITERAL, RANGE,
+            // Statements
+            VAR_DECL, FUNC_DECL, RETURN, IF, WHILE, FOR, LOOP, TILL,
+            WHEN, PICK, BREAK, CONTINUE, DEFER, BLOCK,
+            // Types
+            TYPE_ANNOTATION, GENERIC_TYPE,
+            // Modules
+            USE, MOD, EXTERN
+        };
+        
+        NodeType type;
+        int line, column;
+        
+        virtual ~ASTNode() = default;
+        virtual std::string toString() const = 0;
+    };
+    ```
+    Test: Base class compiles
+    
+[ ] 2.1.2: Create expression AST nodes
+    File: include/frontend/ast/expr.h
+    Node types:
+    - LiteralExpr (int, float, string, bool, null)
+    - IdentifierExpr (variable/function names)
+    - BinaryExpr (left op right) [research_024, research_025]
+    - UnaryExpr (op expr) [research_024, research_025]
+    - CallExpr (callee, args)
+    - IndexExpr (array[index])
+    - MemberExpr (obj.member, ptr->member)
+    - LambdaExpr (params, body) [research_016]
+    - TemplateExpr (parts, interpolations) [research_026]
+    - RangeExpr (start..end, start...end) [research_026]
+    - TernaryExpr (is cond : true_val : false_val)
+    - SafeNavExpr (?.)  [research_026]
+    - NullCoalesceExpr (??)  [research_026]
+    - PipelineExpr (|>, <|)  [research_026]
+    Test: All expression nodes compile
+    
+[ ] 2.1.3: Create statement AST nodes
+    File: include/frontend/ast/stmt.h
+    Node types:
+    - VarDeclStmt (type, name, initializer) [research_012-017]
+    - FuncDeclStmt (name, params, return_type, body) [research_016]
+    - ReturnStmt (expr)
+    - IfStmt (condition, then_block, else_block) [research_019]
+    - WhileStmt (condition, body) [research_018]
+    - ForStmt (init, condition, increment, body) [research_018]
+    - LoopStmt (start, limit, step, body) [research_018]
+    - TillStmt (limit, step, body) [research_018]
+    - WhenStmt (condition, body, then_block, end_block) [research_018]
+    - PickStmt (expr, cases, default) [research_019]
+    - BreakStmt, ContinueStmt [research_020]
+    - DeferStmt (stmt) [research_020]
+    - BlockStmt (stmts[])
+    Test: All statement nodes compile
+    
+[ ] 2.1.4: Create type annotation nodes
+    File: include/frontend/ast/type.h
+    Node types:
+    - SimpleType (int8, string, etc.)
+    - PointerType (T*)
+    - ArrayType (T[], T[N])
+    - FuncType (params -> return) [research_016]
+    - GenericType (T<U, V>) [research_027]
+    - ResultType (result) [research_016]
+    Test: Type nodes compile
+    
+[ ] 2.1.5: Create module/import nodes
+    File: include/frontend/ast/module.h
+    Reference: [research_028]
+    Node types:
+    - UseStmt (path, items, alias, conditional)
+    - ModStmt (name, body)
+    - ExternStmt (lib, declarations)
+    Test: Module nodes compile
+
+═══════════════════════════════════════════════════════════════════════
+2.2: Parser Infrastructure
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 2.2.1: Define operator precedence table
+    File: include/frontend/parser/precedence.h
+    Reference: [research_024], [research_025], [research_026]
+    
+    Precedence levels (lowest to highest):
+    1. Pipeline: |>, <|
+    2. Ternary: is ? :
+    3. Null coalescing: ??
+    4. Logical OR: ||
+    5. Logical AND: &&
+    6. Comparison: ==, !=, <, >, <=, >=, <=>
+    7. Range: .., ...
+    8. Bitwise OR: |
+    9. Bitwise XOR: ^
+    10. Bitwise AND: &
+    11. Shift: <<, >>
+    12. Addition: +, -
+    13. Multiplication: *, /, %
+    14. Unary: -, !, ~, @, #, $
+    15. Postfix: ++, --, ., ->, ?., [], (), ?
+    16. Primary: literals, identifiers, (expr)
+    
+    Test: Precedence table is correct
+    
+[ ] 2.2.2: Create Parser class
+    File: include/frontend/parser/parser.h
+    ```cpp
+    class Parser {
+    private:
+        std::vector<Token> tokens;
+        size_t current;
+        std::vector<std::string> errors;
+        
+        // Helpers
+        Token peek() const;
+        Token previous() const;
+        Token advance();
+        bool check(TokenType type) const;
+        bool match(std::initializer_list<TokenType> types);
+        Token consume(TokenType type, const std::string& message);
+        void synchronize();  // Error recovery
+        
+        // Parsing methods (recursive descent)
+        ASTNode* parseProgram();
+        ASTNode* parseDeclaration();
+        ASTNode* parseStatement();
+        ASTNode* parseExpression();
+        ASTNode* parsePrimary();
+        // ... (many more parse methods)
+        
+    public:
+        Parser(const std::vector<Token>& toks);
+        ASTNode* parse();
+        const std::vector<std::string>& getErrors() const;
+        bool hasErrors() const;
+    };
+    ```
+    Test: Parser class compiles
+    
+[ ] 2.2.3: Implement parser utilities
+    File: src/frontend/parser/parser.cpp
+    Implement:
+    - Constructor
+    - peek(), previous(), advance()
+    - check(), match(), consume()
+    - synchronize() for error recovery
+    Test: Utilities work correctly
+
+═══════════════════════════════════════════════════════════════════════
+2.3: Expression Parsing
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 2.3.1: Implement primary expression parsing
+    File: src/frontend/parser/parse_expr.cpp
+    Function: ASTNode* parsePrimary()
+    Handle:
+    - Literals (int, float, string, bool, null, true, false, ERR)
+    - Identifiers
+    - Parenthesized expressions
+    - Lambda expressions [research_016]
+    - Template literals [research_026]
+    Test: Parse all primary expressions
+    
+[ ] 2.3.2: Implement precedence climbing for binary ops
+    File: src/frontend/parser/parse_expr.cpp
+    Function: ASTNode* parseExpression(int precedence = 0)
+    Algorithm: Precedence climbing (Pratt parsing)
+    Reference: [research_024], [research_025], [research_026]
+    Handle all binary operators with correct precedence
+    Test: Parse complex expressions with mixed operators
+    
+[ ] 2.3.3: Implement unary expression parsing
+    File: src/frontend/parser/parse_expr.cpp
+    Function: ASTNode* parseUnary()
+    Handle: -, !, ~, @, #, $ operators [research_024-026]
+    Test: Parse unary expressions
+    
+[ ] 2.3.4: Implement postfix expression parsing
+    File: src/frontend/parser/parse_expr.cpp
+    Function: ASTNode* parsePostfix()
+    Handle:
+    - Function calls: func(args)
+    - Array indexing: arr[index]
+    - Member access: obj.member
+    - Pointer member: ptr->member
+    - Safe navigation: obj?.member [research_026]
+    - Postfix increment/decrement: x++, x--
+    - Unwrap operator: result? [research_026]
+    Test: Parse all postfix expressions
+    
+[ ] 2.3.5: Implement special operator parsing
+    File: src/frontend/parser/parse_expr.cpp
+    Functions:
+    - parseTernary() - is cond : true : false
+    - parseRange() - start..end, start...end
+    - parsePipeline() - |>, <|
+    - parseNullCoalesce() - ??
+    Reference: [research_026]
+    Test: Parse special operators
+
+═══════════════════════════════════════════════════════════════════════
+2.4: Statement Parsing
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 2.4.1: Implement variable declaration parsing
+    File: src/frontend/parser/parse_stmt.cpp
+    Function: ASTNode* parseVarDecl()
+    Syntax: type:name = expr;
+    Handle: All type qualifiers (wild, gc, stack, const)
+    Reference: [research_012-017]
+    Test: Parse variable declarations
+    
+[ ] 2.4.2: Implement function declaration parsing
+    File: src/frontend/parser/parse_stmt.cpp
+    Function: ASTNode* parseFuncDecl()
+    Syntax: func:name = returnType(params) { body };
+    Handle: Generics, closures, lambdas
+    Reference: [research_016], [research_027]
+    Test: Parse function declarations
+    
+[ ] 2.4.3: Implement control flow parsing - if/else
+    File: src/frontend/parser/parse_stmt.cpp
+    Function: ASTNode* parseIf()
+    Reference: [research_019]
+    Test: Parse if statements
+    
+[ ] 2.4.4: Implement loop parsing - while, for
+    File: src/frontend/parser/parse_stmt.cpp
+    Functions: parseWhile(), parseFor()
+    Reference: [research_018]
+    Test: Parse traditional loops
+    
+[ ] 2.4.5: Implement loop parsing - loop, till
+    File: src/frontend/parser/parse_stmt.cpp
+    Functions: parseLoop(), parseTill()
+    Reference: [research_018]
+    Test: Parse Aria-specific loops
+    
+[ ] 2.4.6: Implement loop parsing - when/then/end
+    File: src/frontend/parser/parse_stmt.cpp
+    Function: parseWhen()
+    Reference: [research_018]
+    Test: Parse when loops
+    
+[ ] 2.4.7: Implement pick (pattern matching)
+    File: src/frontend/parser/parse_stmt.cpp
+    Function: parsePick()
+    Reference: [research_019]
+    Handle: Cases, wildcard (*), unreachable (!), fall()
+    Test: Parse pick statements
+    
+[ ] 2.4.8: Implement return, break, continue, defer
+    File: src/frontend/parser/parse_stmt.cpp
+    Functions: parseReturn(), parseBreak(), parseContinue(), parseDefer()
+    Reference: [research_020]
+    Test: Parse control transfer statements
+
+═══════════════════════════════════════════════════════════════════════
+2.5: Type and Module Parsing
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 2.5.1: Implement type annotation parsing
+    File: src/frontend/parser/parse_type.cpp
+    Function: ASTNode* parseType()
+    Handle:
+    - Simple types: int8, string, etc.
+    - Pointer types: int8*, string*
+    - Array types: int8[], int8[100]
+    - Function types: func
+    - Generic types: Array<int8> [research_027]
+    Test: Parse all type annotations
+    
+[ ] 2.5.2: Implement use statement parsing
+    File: src/frontend/parser/parse_module.cpp
+    Function: ASTNode* parseUse()
+    Reference: [research_028]
+    Handle:
+    - Simple: use std.io;
+    - Selective: use std.{array, map};
+    - Wildcard: use math.*;
+    - Alias: use "./file.aria" as name;
+    - Relative/absolute paths
+    - Conditional: use cfg(target_os = "linux") std.os.linux;
+    Test: Parse all use statement forms
+    
+[ ] 2.5.3: Implement mod statement parsing
+    File: src/frontend/parser/parse_module.cpp
+    Function: ASTNode* parseMod()
+    Reference: [research_028]
+    Test: Parse module definitions
+    
+[ ] 2.5.4: Implement extern statement parsing
+    File: src/frontend/parser/parse_module.cpp
+    Function: ASTNode* parseExtern()
+    Syntax: extern "libname" { declarations }
+    Reference: [research_028]
+    Test: Parse extern blocks
+
+═══════════════════════════════════════════════════════════════════════
+2.6: Parser Error Handling
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 2.6.1: Implement error recovery - synchronization
+    File: src/frontend/parser/parser.cpp
+    Function: void synchronize()
+    Strategy: Skip tokens until next statement boundary
+    Boundaries: semicolon, keywords (func, if, while, etc.)
+    Test: Parser recovers from errors, continues parsing
+    
+[ ] 2.6.2: Implement helpful error messages
+    File: src/frontend/parser/parser.cpp
+    Function: void error(const std::string& message)
+    Include: Line, column, context, suggestion
+    Test: Error messages are clear and helpful
+    
+[ ] 2.6.3: Implement panic mode for cascading errors
+    File: src/frontend/parser/parser.cpp
+    Strategy: After error, skip to safe point
+    Prevents: Hundreds of errors from single mistake
+    Test: Single error doesn't cause error cascade
+
+═══════════════════════════════════════════════════════════════════════
+2.7: Parser Testing
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 2.7.1: Unit test - Expression parsing
+    File: tests/unit/test_parser_expr.cpp
+    Test: All expression types parse correctly
+    Test: Operator precedence is correct
+    Test: Complex nested expressions work
+    
+[ ] 2.7.2: Unit test - Statement parsing
+    File: tests/unit/test_parser_stmt.cpp
+    Test: All statement types parse correctly
+    Test: Nested statements work
+    
+[ ] 2.7.3: Unit test - Type parsing
+    File: tests/unit/test_parser_type.cpp
+    Test: All type annotations parse correctly
+    
+[ ] 2.7.4: Unit test - Module parsing
+    File: tests/unit/test_parser_module.cpp
+    Test: use, mod, extern parse correctly
+    
+[ ] 2.7.5: Unit test - Error recovery
+    File: tests/unit/test_parser_errors.cpp
+    Test: Parser recovers from syntax errors
+    Test: Error messages are helpful
+    
+[ ] 2.7.6: Integration test - Parse example files
+    File: tests/integration/test_parser_examples.cpp
+    Test: Parse all files in examples/ directory
+    Verify: AST structure is correct
+    
+[ ] 2.7.7: Integration test - Parse invalid files
+    File: tests/integration/test_parser_invalid.cpp
+    Test: Parser correctly rejects invalid syntax
+    Test: Error messages point to problems
+
+COMMIT CHECKPOINT: Phase 2 - Parser complete
+Tag: v0.1.0-phase2-parser-complete
+All tests pass
+Merge to main: YES (parser enables semantic analysis)
+
+
+███████████████████████████████████████████████████████████████████████
+██ PHASE 3: SEMANTIC ANALYSIS - TYPE CHECKING & VALIDATION            ██
+███████████████████████████████████████████████████████████████████████
+
+Goal: Validate AST semantics, type check, resolve symbols.
+Reference: [research_001, research_012-017, research_027-028]
+
+═══════════════════════════════════════════════════════════════════════
+3.1: Symbol Table Implementation
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 3.1.1: Create symbol table data structures
+    File: include/frontend/sema/symbol_table.h
+    Content:
+    - Symbol struct (name, type, scope, location)
+    - Scope class (parent scope, symbols map)
+    - SymbolTable class (root scope, current scope)
+    Methods:
+    - enterScope(), exitScope()
+    - define(name, type), lookup(name)
+    - isInCurrentScope(name)
+    Test: Symbol table operations work
+    
+[ ] 3.1.2: Implement scoped symbol resolution
+    File: src/frontend/sema/symbol_table.cpp
+    Function: lookup() searches current then parent scopes
+    Handle: Nested scopes (functions, blocks)
+    Test: Symbols resolve correctly in nested scopes
+    
+[ ] 3.1.3: Implement module-level symbol table
+    File: src/frontend/sema/module_table.cpp
+    Purpose: Track symbols across modules
+    Handle: Public vs private symbols
+    Reference: [research_028]
+    Test: Module symbols resolve correctly
+
+═══════════════════════════════════════════════════════════════════════
+3.2: Type System Implementation
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_012-017]
+
+[ ] 3.2.1: Create type representation
+    File: include/frontend/sema/type.h
+    Classes:
+    - Type (base class)
+    - PrimitiveType (int8, flt32, bool, etc.)
+    - PointerType (T*)
+    - ArrayType (T[], T[N])
+    - FuncType (params, return)
+    - GenericType (T, U, V)
+    - StructType, UnionType
+    Methods:
+    - equals(Type*), isAssignableTo(Type*)
+    - toString()
+    Test: Type classes work
+    
+[ ] 3.2.2: Implement type checking for expressions
+    File: src/frontend/sema/type_checker.cpp
+    Function: Type* inferType(ASTNode* expr)
+    Handle:
+    - Literals: int, float, string, bool
+    - Identifiers: lookup in symbol table
+    - Binary ops: type compatibility [research_024-025]
+    - Unary ops: type rules [research_024]
+    - Function calls: check args match params
+    Test: Expression types inferred correctly
+    
+[ ] 3.2.3: Implement type checking for statements
+    File: src/frontend/sema/type_checker.cpp
+    Function: void checkStatement(ASTNode* stmt)
+    Handle:
+    - Variable declarations: check initializer type
+    - Assignments: check type compatibility
+    - Return statements: match function return type
+    - Control flow: check condition types
+    Test: Statement type checking works
+    
+[ ] 3.2.4: Implement TBB type validation
+    File: src/frontend/sema/tbb_checker.cpp
+    Reference: [research_002]
+    Validate:
+    - tbb8: range [-127, +127], ERR = -128
+    - tbb16: range [-32767, +32767], ERR = -32768
+    - tbb32, tbb64: symmetric ranges with ERR sentinels
+    - Operations produce ERR on overflow
+    - ERR is sticky (propagates through operations)
+    Test: TBB semantics enforced
+    
+[ ] 3.2.5: Implement balanced ternary/nonary validation
+    File: src/frontend/sema/balanced_checker.cpp
+    Reference: [research_003]
+    Validate:
+    - trit: values {-1, 0, 1}
+    - tryte: 10 trits stored in uint16
+    - nit: values {-4, -3, -2, -1, 0, 1, 2, 3, 4}
+    - nyte: 5 nits stored in uint16
+    Test: Balanced type semantics enforced
+
+═══════════════════════════════════════════════════════════════════════
+3.3: Borrow Checker Integration
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_001]
+
+[ ] 3.3.1: Implement lifetime tracking
+    File: src/frontend/sema/borrow_checker.cpp
+    Track:
+    - Variable lifetimes (scope-based)
+    - Reference lifetimes
+    - Borrow relationships
+    Reference: [research_001] for complete algorithm
+    Test: Lifetimes tracked correctly
+    
+[ ] 3.3.2: Implement borrow rules
+    File: src/frontend/sema/borrow_checker.cpp
+    Rules:
+    - At most one mutable reference OR any number of immutable references
+    - References must not outlive referent
+    - Wild memory opts out of borrow checker
+    Test: Borrow rules enforced
+    
+[ ] 3.3.3: Implement memory safety validation
+    File: src/frontend/sema/borrow_checker.cpp
+    Check:
+    - No use after free
+    - No double free
+    - No dangling pointers (GC memory exempt)
+    - Wild memory: full manual control
+    Test: Memory safety errors caught
+
+═══════════════════════════════════════════════════════════════════════
+3.4: Generic Type Resolution
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_027]
+
+[ ] 3.4.1: Implement generic type inference
+    File: src/frontend/sema/generic_resolver.cpp
+    Function: resolveGenericType(FuncDecl*, CallExpr*)
+    Strategy: Unification algorithm
+    Handle: Type parameter inference from call site
+    Test: Generic types inferred correctly
+    
+[ ] 3.4.2: Implement monomorphization
+    File: src/frontend/sema/monomorphization.cpp
+    Function: monomorphize(FuncDecl*, TypeArgs[])
+    Strategy: Create specialized version for each type combination
+    Purpose: Zero-cost generics (like C++ templates, Rust)
+    Test: Specialized functions generated correctly
+    
+[ ] 3.4.3: Implement generic constraints
+    File: src/frontend/sema/generic_resolver.cpp
+    Function: checkConstraints(Type*, Constraints[])
+    Handle: Type bounds (e.g., T must support operator+)
+    Test: Constraints enforced
+
+═══════════════════════════════════════════════════════════════════════
+3.5: Module System Semantic Analysis
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_028]
+
+[ ] 3.5.1: Implement module resolution
+    File: src/frontend/sema/module_resolver.cpp
+    Function: resolveModule(UseStmt*)
+    Handle:
+    - Find module file from use path
+    - Resolve relative paths: ./file.aria
+    - Resolve absolute paths: /usr/lib/aria/
+    - Handle selective imports: use std.{a, b}
+    - Handle aliases: use file as name
+    Test: Modules resolve correctly
+    
+[ ] 3.5.2: Implement visibility checking
+    File: src/frontend/sema/visibility_checker.cpp
+    Function: checkVisibility(Symbol*)
+    Rules:
+    - pub symbols accessible from other modules
+    - Non-pub symbols only in same module
+    - Respect module boundaries
+    Test: Visibility rules enforced
+    
+[ ] 3.5.3: Implement circular dependency detection
+    File: src/frontend/sema/module_resolver.cpp
+    Function: detectCycle(Module[])
+    Algorithm: Tarjan's strongly connected components
+    Error: Report circular dependencies
+    Test: Cycles detected and reported
+    
+[ ] 3.5.4: Implement extern validation
+    File: src/frontend/sema/extern_checker.cpp
+    Validate:
+    - extern "libname" { ... } syntax
+    - C function declarations
+    - Type compatibility with C
+    Test: Extern declarations validated
+
+═══════════════════════════════════════════════════════════════════════
+3.6: Semantic Analysis Testing
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 3.6.1: Unit test - Symbol table
+    File: tests/unit/test_symbol_table.cpp
+    Test: Symbol definition, lookup, scoping
+    
+[ ] 3.6.2: Unit test - Type checking
+    File: tests/unit/test_type_checker.cpp
+    Test: All type rules enforced
+    Test: Type inference works
+    
+[ ] 3.6.3: Unit test - TBB semantics
+    File: tests/unit/test_tbb_sema.cpp
+    Test: TBB range validation
+    Test: ERR sentinel handling
+    
+[ ] 3.6.4: Unit test - Borrow checker
+    File: tests/unit/test_borrow_checker.cpp
+    Test: Borrow rules enforced
+    Test: Lifetime errors caught
+    
+[ ] 3.6.5: Unit test - Generics
+    File: tests/unit/test_generics.cpp
+    Test: Type inference works
+    Test: Monomorphization generates correct code
+    
+[ ] 3.6.6: Unit test - Module system
+    File: tests/unit/test_module_sema.cpp
+    Test: Module resolution works
+    Test: Visibility rules enforced
+    Test: Circular dependencies detected
+    
+[ ] 3.6.7: Integration test - Semantic analysis on examples
+    File: tests/integration/test_sema_examples.cpp
+    Test: All example files pass semantic analysis
+    Test: Invalid examples caught
+
+COMMIT CHECKPOINT: Phase 3 - Semantic analysis complete
+Tag: v0.1.0-phase3-sema-complete
+All tests pass
+Merge to main: YES (semantic analysis enables IR generation)
+
+
+███████████████████████████████████████████████████████████████████████
+██ PHASE 4: IR GENERATION - LLVM BACKEND                               ██
+███████████████████████████████████████████████████████████████████████
+
+Goal: Generate LLVM IR from validated AST.
+Reference: All research docs + LLVM 20.1.2 documentation
+
+═══════════════════════════════════════════════════════════════════════
+4.1: LLVM Infrastructure Setup
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 4.1.1: Create IR generator class
+    File: include/backend/ir/ir_generator.h
+    ```cpp
+    class IRGenerator {
+    private:
+        llvm::LLVMContext context;
+        llvm::Module* module;
+        llvm::IRBuilder<> builder;
+        std::map<std::string, llvm::Value*> named_values;
+        std::map<std::string, llvm::Type*> type_map;
+        
+    public:
+        IRGenerator(const std::string& module_name);
+        llvm::Value* codegen(ASTNode* node);
+        llvm::Module* getModule();
+        void dump();  // Debug output
+    };
+    ```
+    Test: Class compiles, LLVM links correctly
+    
+[ ] 4.1.2: Implement Aria type to LLVM type mapping
+    File: src/backend/ir/type_mapper.cpp
+    Reference: [research_012-017]
+    Mappings:
+    - int8 -> i8, int16 -> i16, int32 -> i32, int64 -> i64
+    - int128 -> i128, int256 -> i256, int512 -> i512
+    - uint8-512 -> equivalent LLVM types
+    - flt32 -> float, flt64 -> double, flt128 -> fp128
+    - tbb8-64 -> same as int types (semantic difference only)
+    - bool -> i1
+    - Pointers -> LLVM pointer types
+    - Arrays -> LLVM array types
+    - Structs -> LLVM struct types
+    Test: All Aria types map correctly
+    
+[ ] 4.1.3: Implement TBB arithmetic code generation
+    File: src/backend/ir/tbb_codegen.cpp
+    Reference: [research_002]
+    Generate:
+    - Range validation for tbb types
+    - ERR sentinel checks (min value of type)
+    - Overflow detection (result > max or < -max)
+    - Sticky ERR propagation (if input is ERR, output is ERR)
+    Example for tbb8 add:
+    ```llvm
+    %is_err_a = icmp eq i8 %a, -128
+    %is_err_b = icmp eq i8 %b, -128
+    br i1 %is_err_a, label %return_err, label %check_b
+    ; ... overflow checking ...
+    ```
+    Test: TBB operations generate correct IR
+
+═══════════════════════════════════════════════════════════════════════
+4.2: Expression Code Generation
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 4.2.1: Implement literal code generation
+    File: src/backend/ir/codegen_expr.cpp
+    Function: llvm::Value* codegenLiteral(LiteralExpr*)
+    Handle: int, float, string, bool, null literals
+    Test: Literals generate correct constants
+    
+[ ] 4.2.2: Implement variable reference code generation
+    File: src/backend/ir/codegen_expr.cpp
+    Function: llvm::Value* codegenIdentifier(IdentifierExpr*)
+    Lookup: Variable in symbol table
+    Generate: Load instruction
+    Test: Variable loads work
+    
+[ ] 4.2.3: Implement binary operator code generation
+    File: src/backend/ir/codegen_expr.cpp
+    Function: llvm::Value* codegenBinary(BinaryExpr*)
+    Reference: [research_024-025]
+    Handle:
+    - Arithmetic: add, sub, mul, div, mod
+    - Comparison: eq, ne, lt, le, gt, ge
+    - Logical: and, or
+    - Bitwise: and, or, xor, shl, shr
+    Test: Binary operations work
+    
+[ ] 4.2.4: Implement unary operator code generation
+    File: src/backend/ir/codegen_expr.cpp
+    Function: llvm::Value* codegenUnary(UnaryExpr*)
+    Handle: neg, not, address (@), deref (*)
+    Test: Unary operations work
+    
+[ ] 4.2.5: Implement function call code generation
+    File: src/backend/ir/codegen_expr.cpp
+    Function: llvm::Value* codegenCall(CallExpr*)
+    Generate: Call instruction with arguments
+    Handle: Return value
+    Test: Function calls work
+    
+[ ] 4.2.6: Implement special operator code generation
+    File: src/backend/ir/codegen_expr.cpp
+    Reference: [research_026]
+    Functions:
+    - codegenTernary() - is ? : operator
+    - codegenNullCoalesce() - ?? operator
+    - codegenSafeNav() - ?. operator
+    - codegenUnwrap() - ? operator
+    - codegenPipeline() - |>, <| operators
+    Test: Special operators work
+
+═══════════════════════════════════════════════════════════════════════
+4.3: Statement Code Generation
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 4.3.1: Implement variable declaration code generation
+    File: src/backend/ir/codegen_stmt.cpp
+    Function: void codegenVarDecl(VarDeclStmt*)
+    Generate: Alloca + store instructions
+    Handle: Stack vs wild vs GC allocation
+    Test: Variable declarations work
+    
+[ ] 4.3.2: Implement function declaration code generation
+    File: src/backend/ir/codegen_stmt.cpp
+    Function: llvm::Function* codegenFuncDecl(FuncDeclStmt*)
+    Generate: Function with parameters, body
+    Handle: Return type, closures
+    Test: Function declarations work
+    
+[ ] 4.3.3: Implement if/else code generation
+    File: src/backend/ir/codegen_stmt.cpp
+    Function: void codegenIf(IfStmt*)
+    Generate: Branch instructions, basic blocks
+    Test: If statements work
+    
+[ ] 4.3.4: Implement loop code generation
+    File: src/backend/ir/codegen_stmt.cpp
+    Functions:
+    - codegenWhile(), codegenFor() [research_018]
+    - codegenLoop(), codegenTill() [research_018]
+    - codegenWhen() [research_018]
+    Generate: Loop basic blocks, phi nodes
+    Test: All loop constructs work
+    
+[ ] 4.3.5: Implement pick (pattern matching) code generation
+    File: src/backend/ir/codegen_stmt.cpp
+    Function: void codegenPick(PickStmt*)
+    Reference: [research_019]
+    Generate: Switch or cascading comparisons
+    Handle: Wildcard, fall() explicit fallthrough
+    Test: Pick statements work
+    
+[ ] 4.3.6: Implement control flow code generation
+    File: src/backend/ir/codegen_stmt.cpp
+    Functions:
+    - codegenReturn() - return statement
+    - codegenBreak() - break from loop
+    - codegenContinue() - continue loop
+    - codegenDefer() - RAII cleanup
+    Reference: [research_020]
+    Test: Control transfer works
+
+═══════════════════════════════════════════════════════════════════════
+4.4: Memory Model Implementation
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 4.4.1: Implement GC allocation code generation
+    File: src/backend/ir/memory_codegen.cpp
+    Function: llvm::Value* codegenGCAlloc(Type*, size_t)
+    Generate: Call to runtime GC allocator
+    Default: All non-wild, non-stack allocations use GC
+    Reference: [research_021]
+    Test: GC allocations work
+    
+[ ] 4.4.2: Implement wild allocation code generation
+    File: src/backend/ir/memory_codegen.cpp
+    Function: llvm::Value* codegenWildAlloc(Type*, size_t)
+    Generate: Call to aria.alloc() (manual memory)
+    Reference: [research_022]
+    Test: Wild allocations work
+    
+[ ] 4.4.3: Implement wildx allocation code generation
+    File: src/backend/ir/memory_codegen.cpp
+    Function: llvm::Value* codegenWildxAlloc(size_t)
+    Generate: Call to aria.alloc_wildx() (executable memory)
+    Reference: [research_022, research_023]
+    Purpose: JIT code generation at runtime
+    Test: WildX allocations work
+    
+[ ] 4.4.4: Implement stack allocation code generation
+    File: src/backend/ir/memory_codegen.cpp
+    Function: llvm::Value* codegenStackAlloc(Type*, size_t)
+    Generate: Alloca instruction
+    Purpose: Fast, automatic cleanup
+    Test: Stack allocations work
+    
+[ ] 4.4.5: Implement defer code generation
+    File: src/backend/ir/memory_codegen.cpp
+    Function: void codegenDefer(DeferStmt*)
+    Strategy: Register cleanup handlers
+    Execute: At scope exit (RAII pattern)
+    Reference: [research_020]
+    Test: Defer executes at scope exit
+
+═══════════════════════════════════════════════════════════════════════
+4.5: Advanced Features Code Generation
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 4.5.1: Implement generic instantiation
+    File: src/backend/ir/generic_codegen.cpp
+    Function: llvm::Function* instantiateGeneric(FuncDecl*, TypeArgs[])
+    Strategy: Generate separate function for each type combination
+    Reference: [research_027]
+    Test: Generic functions work with multiple types
+    
+[ ] 4.5.2: Implement closure code generation
+    File: src/backend/ir/closure_codegen.cpp
+    Function: llvm::Value* codegenClosure(LambdaExpr*)
+    Strategy: Capture environment, create function pointer
+    Reference: [research_016]
+    Test: Closures capture variables correctly
+    
+[ ] 4.5.3: Implement async/await code generation
+    File: src/backend/ir/async_codegen.cpp
+    Reference: [research_029]
+    Functions:
+    - codegenAsync() - Create coroutine
+    - codegenAwait() - Suspend/resume points
+    Strategy: LLVM coroutine intrinsics
+    Test: Async functions work
+    
+[ ] 4.5.4: Implement compile-time evaluation
+    File: src/backend/ir/comptime_codegen.cpp
+    Reference: [research_030]
+    Function: llvm::Constant* evalConstExpr(ASTNode*)
+    Strategy: Evaluate at compile time, emit constant
+    Test: Const expressions evaluated at compile time
+
+═══════════════════════════════════════════════════════════════════════
+4.6: IR Generation Testing
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 4.6.1: Unit test - Type mapping
+    File: tests/unit/test_type_mapper.cpp
+    Test: All Aria types map to correct LLVM types
+    
+[ ] 4.6.2: Unit test - Expression codegen
+    File: tests/unit/test_codegen_expr.cpp
+    Test: All expression types generate correct IR
+    
+[ ] 4.6.3: Unit test - Statement codegen
+    File: tests/unit/test_codegen_stmt.cpp
+    Test: All statement types generate correct IR
+    
+[ ] 4.6.4: Unit test - TBB codegen
+    File: tests/unit/test_tbb_codegen.cpp
+    Test: TBB operations generate overflow checks
+    Test: ERR propagation works
+    
+[ ] 4.6.5: Unit test - Memory model codegen
+    File: tests/unit/test_memory_codegen.cpp
+    Test: GC, wild, stack allocations work
+    
+[ ] 4.6.6: Integration test - Compile and run examples
+    File: tests/integration/test_compile_examples.cpp
+    Test: Compile all example files to executables
+    Test: Run executables, verify output
+    
+[ ] 4.6.7: Integration test - Optimization
+    File: tests/integration/test_optimization.cpp
+    Test: LLVM optimization passes work
+    Test: Generated code is efficient
+
+COMMIT CHECKPOINT: Phase 4 - IR generation complete
+Tag: v0.1.0-phase4-ir-complete
+All tests pass
+Merge to main: YES (can now compile to executables)
+
+███████████████████████████████████████████████████████████████████████
+██ PHASE 5: RUNTIME IMPLEMENTATION - GC, I/O, PROCESSES                ██
+███████████████████████████████████████████████████████████████████████
+
+Goal: Implement runtime support libraries.
+Reference: [research_004-009, research_021-023]
+
+═══════════════════════════════════════════════════════════════════════
+5.1: Garbage Collector Implementation
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_021]
+
+[ ] 5.1.1: Implement GC allocator
+    File: src/runtime/gc/allocator.cpp
+    Function: void* gc_alloc(size_t size)
+    Strategy: Bump allocator with freelist
+    Test: Can allocate memory
+    
+[ ] 5.1.2: Implement mark phase
+    File: src/runtime/gc/mark.cpp
+    Function: void gc_mark()
+    Strategy: Mark reachable objects from roots
+    Roots: Stack, globals, registers
+    Test: Marks reachable objects
+    
+[ ] 5.1.3: Implement sweep phase
+    File: src/runtime/gc/sweep.cpp
+    Function: void gc_sweep()
+    Strategy: Free unmarked objects
+    Test: Reclaims unreachable memory
+    
+[ ] 5.1.4: Implement GC trigger
+    File: src/runtime/gc/gc.cpp
+    Function: void gc_collect()
+    Trigger: Allocation threshold, explicit call
+    Test: GC runs automatically
+    
+[ ] 5.1.5: Implement write barrier (for generational GC)
+    File: src/runtime/gc/write_barrier.cpp
+    Function: void gc_write_barrier(void* obj, void* ref)
+    Purpose: Track intergenerational pointers
+    Test: Write barrier works
+
+═══════════════════════════════════════════════════════════════════════
+5.2: Wild/WildX Memory Allocators
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_022]
+
+[ ] 5.2.1: Implement wild allocator
+    File: src/runtime/allocators/wild_alloc.cpp
+    Functions:
+    - aria_alloc(size) - Manual allocation
+    - aria_free(ptr) - Manual deallocation
+    Strategy: Simple malloc/free wrapper or custom allocator
+    Test: Manual memory management works
+    
+[ ] 5.2.2: Implement wildx allocator
+    File: src/runtime/allocators/wildx_alloc.cpp
+    Function: void* aria_alloc_wildx(size_t size)
+    Strategy: Allocate RWX memory (mmap on Unix, VirtualAlloc on Windows)
+    Reference: [research_023]
+    Purpose: JIT code generation
+    Test: Executable memory allocation works
+    
+[ ] 5.2.3: Implement specialized allocators
+    File: src/runtime/allocators/specialized.cpp
+    Functions:
+    - aria_alloc_buffer(size) - Buffer allocation
+    - aria_alloc_string(size) - String allocation
+    - aria_alloc_array(elem_size, count) - Array allocation
+    Test: Specialized allocators work
+
+═══════════════════════════════════════════════════════════════════════
+5.3: Runtime Assembler (for WildX)
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_023]
+
+[ ] 5.3.1: Implement runtime assembler API
+    File: include/runtime/assembler.h
+    ```cpp
+    class RuntimeAssembler {
+    public:
+        void* assemble(const std::string& asm_code);
+        void execute(void* code);
+        void free(void* code);
+    };
+    ```
+    Purpose: JIT compilation for wildx memory
+    Test: Can assemble and execute code at runtime
+    
+[ ] 5.3.2: Integrate LLVM JIT
+    File: src/runtime/assembler/jit.cpp
+    Strategy: Use LLVM ORC JIT
+    Test: JIT compilation works
+    
+[ ] 5.3.3: Implement code cache
+    File: src/runtime/assembler/cache.cpp
+    Purpose: Cache compiled code for reuse
+    Test: Code caching improves performance
+
+═══════════════════════════════════════════════════════════════════════
+5.4: File I/O Implementation
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_004]
+
+[ ] 5.4.1: Implement file operations
+    File: src/runtime/io/file.cpp
+    Functions:
+    - readFile(path) -> result<string>
+    - writeFile(path, content) -> result<void>
+    - openFile(path, mode) -> result<stream>
+    Test: File operations work
+    
+[ ] 5.4.2: Implement stream operations
+    File: src/runtime/io/stream.cpp
+    Functions:
+    - stream.readLine() -> string
+    - stream.write(data) -> result<void>
+    - stream.close()
+    Test: Stream operations work
+    
+[ ] 5.4.3: Implement structured file reading
+    File: src/runtime/io/structured.cpp
+    Functions:
+    - readJSON(path) -> result<obj>
+    - readCSV(path) -> result<array>
+    Reference: [research_004]
+    Test: Structured reading works
+
+═══════════════════════════════════════════════════════════════════════
+5.5: Modern Streams (Six Channels)
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_006]
+
+[ ] 5.5.1: Implement stream system
+    File: src/runtime/io/modern_streams.cpp
+    Streams:
+    - stdin: text input
+    - stdout: text output
+    - stderr: error output
+    - stddbg: debug output
+    - stddati: binary data input
+    - stddato: binary data output
+    Test: All six streams work
+    
+[ ] 5.5.2: Implement buffering
+    File: src/runtime/io/buffer.cpp
+    Strategy: Buffer writes, flush automatically
+    Test: Buffering improves performance
+
+═══════════════════════════════════════════════════════════════════════
+5.6: Process Management
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_005]
+
+[ ] 5.6.1: Implement process operations
+    File: src/runtime/process/process.cpp
+    Functions:
+    - spawn(cmd, args) -> result<process>
+    - fork() -> result<pid>
+    - exec(cmd, args) -> result<void>
+    - wait(pid) -> result<exit_code>
+    Test: Process operations work
+    
+[ ] 5.6.2: Implement pipe communication
+    File: src/runtime/process/pipe.cpp
+    Functions:
+    - createPipe() -> pipe
+    - pipe.read() -> data
+    - pipe.write(data)
+    Test: IPC via pipes works
+
+═══════════════════════════════════════════════════════════════════════
+5.7: Threading Library
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_007]
+
+[ ] 5.7.1: Implement thread operations
+    File: src/runtime/threading/thread.cpp
+    Functions:
+    - thread_create(func, arg) -> thread_id
+    - thread_join(thread_id)
+    - thread_detach(thread_id)
+    Test: Thread creation and joining work
+    
+[ ] 5.7.2: Implement synchronization primitives
+    File: src/runtime/threading/sync.cpp
+    Types:
+    - Mutex, RWLock
+    - Semaphore
+    - Condition variable
+    Test: Synchronization works
+
+═══════════════════════════════════════════════════════════════════════
+5.8: Atomics Library
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_008]
+
+[ ] 5.8.1: Implement atomic operations
+    File: src/runtime/atomics/atomics.cpp
+    Operations:
+    - atomic_load, atomic_store
+    - atomic_add, atomic_sub
+    - atomic_compare_exchange
+    - Memory orderings: relaxed, acquire, release, seq_cst
+    Test: Atomic operations work
+
+═══════════════════════════════════════════════════════════════════════
+5.9: Timer/Clock Library
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_009]
+
+[ ] 5.9.1: Implement time operations
+    File: src/runtime/time/time.cpp
+    Functions:
+    - now() -> timestamp
+    - sleep(duration)
+    - timer_create(duration, callback)
+    Test: Time operations work
+
+═══════════════════════════════════════════════════════════════════════
+5.10: Async Runtime
+═══════════════════════════════════════════════════════════════════════
+Reference: [research_029]
+
+[ ] 5.10.1: Implement async executor
+    File: src/runtime/async/executor.cpp
+    Functions:
+    - spawn_task(async_func)
+    - await_task(task_id)
+    Strategy: Work-stealing task scheduler
+    Test: Async tasks execute concurrently
+    
+[ ] 5.10.2: Implement future/promise
+    File: src/runtime/async/future.cpp
+    Types: Future<T>, Promise<T>
+    Test: Futures and promises work
+
+═══════════════════════════════════════════════════════════════════════
+5.11: Runtime Testing
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 5.11.1: Unit test - GC
+    File: tests/unit/test_gc.cpp
+    Test: GC collects garbage, doesn't collect live objects
+    
+[ ] 5.11.2: Unit test - Wild/WildX allocators
+    File: tests/unit/test_wild_alloc.cpp
+    Test: Manual memory management works
+    
+[ ] 5.11.3: Unit test - File I/O
+    File: tests/unit/test_file_io.cpp
+    Test: File operations work correctly
+    
+[ ] 5.11.4: Unit test - Streams
+    File: tests/unit/test_streams.cpp
+    Test: All six streams work
+    
+[ ] 5.11.5: Unit test - Process management
+    File: tests/unit/test_process.cpp
+    Test: Process operations work
+    
+[ ] 5.11.6: Unit test - Threading
+    File: tests/unit/test_threading.cpp
+    Test: Threads and synchronization work
+    
+[ ] 5.11.7: Unit test - Atomics
+    File: tests/unit/test_atomics.cpp
+    Test: Atomic operations are correct
+    
+[ ] 5.11.8: Integration test - Runtime stress test
+    File: tests/integration/test_runtime_stress.cpp
+    Test: Runtime handles heavy load
+
+COMMIT CHECKPOINT: Phase 5 - Runtime complete
+Tag: v0.1.0-phase5-runtime-complete
+All tests pass
+Merge to main: YES (runtime enables full language features)
+
+███████████████████████████████████████████████████████████████████████
+██ PHASE 6: STANDARD LIBRARY - CORE FUNCTIONALITY                      ██
+███████████████████████████████████████████████████████████████████████
+
+Goal: Implement essential standard library.
+Reference: [research_031]
+
+═══════════════════════════════════════════════════════════════════════
+6.1: Core Types and Functions
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 6.1.1: Implement print function
+    File: lib/std/io.aria
+    Function: print(string:msg)
+    Implementation: Write to stdout
+    Test: print() outputs correctly
+    
+[ ] 6.1.2: Implement aria allocator wrappers
+    File: lib/std/memory.aria
+    Functions:
+    - aria.alloc<T>(count)
+    - aria.free(ptr)
+    - aria.gc_alloc<T>(count)
+    - aria.alloc_buffer(size)
+    - aria.alloc_string(size)
+    - aria.alloc_array<T>(count)
+    Test: Allocator functions work
+    
+[ ] 6.1.3: Implement result type utilities
+    File: lib/std/result.aria
+    Functions:
+    - result.isOk(), result.isErr()
+    - result.unwrap(), result.unwrapOr(default)
+    Test: Result utilities work
+
+═══════════════════════════════════════════════════════════════════════
+6.2: Collections
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 6.2.1: Implement array utilities
+    File: lib/std/array.aria
+    Functions:
+    - Array.push(elem)
+    - Array.pop() -> elem
+    - Array.length()
+    - Array.slice(start, end)
+    Test: Array operations work
+    
+[ ] 6.2.2: Implement functional operations
+    File: lib/std/functional.aria
+    Functions:
+    - filter(array, predicate)
+    - transform(array, mapper) // map
+    - reduce(array, reducer, initial)
+    - sort(array, comparator)
+    - reverse(array)
+    - unique(array)
+    Test: Functional operations work
+
+═══════════════════════════════════════════════════════════════════════
+6.3: String Library
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 6.3.1: Implement string operations
+    File: lib/std/string.aria
+    Functions:
+    - String.length()
+    - String.substring(start, end)
+    - String.indexOf(substr)
+    - String.split(delimiter)
+    - String.join(array, delimiter)
+    - String.trim()
+    - String.toUpper(), String.toLower()
+    Test: String operations work
+
+═══════════════════════════════════════════════════════════════════════
+6.4: Math Library
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 6.4.1: Implement math functions
+    File: lib/std/math.aria
+    Functions:
+    - Math.abs(x)
+    - Math.sqrt(x)
+    - Math.pow(x, y)
+    - Math.sin(x), Math.cos(x), Math.tan(x)
+    - Math.log(x), Math.exp(x)
+    - Math.floor(x), Math.ceil(x), Math.round(x)
+    - Math.min(a, b), Math.max(a, b)
+    Test: Math functions work
+    
+[ ] 6.4.2: Implement math constants
+    File: lib/std/math.aria
+    Constants:
+    - Math.PI, Math.E
+    - Math.INFINITY, Math.NAN
+    Test: Constants accessible
+
+═══════════════════════════════════════════════════════════════════════
+6.5: Network Library (Basic)
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 6.5.1: Implement HTTP client
+    File: lib/std/http.aria
+    Functions:
+    - httpGet(url) -> result<string>
+    - httpPost(url, data) -> result<string>
+    Test: HTTP requests work
+
+═══════════════════════════════════════════════════════════════════════
+6.6: Standard Library Testing
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 6.6.1: Unit test - Core functions
+    File: tests/unit/test_std_core.cpp
+    Test: print, allocators work
+    
+[ ] 6.6.2: Unit test - Collections
+    File: tests/unit/test_std_collections.cpp
+    Test: Array and functional operations work
+    
+[ ] 6.6.3: Unit test - Strings
+    File: tests/unit/test_std_string.cpp
+    Test: String operations work
+    
+[ ] 6.6.4: Unit test - Math
+    File: tests/unit/test_std_math.cpp
+    Test: Math functions and constants work
+    
+[ ] 6.6.5: Integration test - Use stdlib in examples
+    File: tests/integration/test_stdlib_integration.cpp
+    Test: Stdlib works with compiled programs
+
+COMMIT CHECKPOINT: Phase 6 - Standard library complete
+Tag: v0.1.0-phase6-stdlib-complete
+All tests pass
+Merge to main: YES (stdlib enables practical programming)
+
+███████████████████████████████████████████████████████████████████████
+██ PHASE 7: COMPILER DRIVER & TOOLING                                  ██
+███████████████████████████████████████████████████████████████████████
+
+Goal: Complete compiler with CLI and tooling.
+
+═══════════════════════════════════════════════════════════════════════
+7.1: Compiler Driver
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 7.1.1: Implement command-line interface
+    File: src/main.cpp
+    Arguments:
+    - ariac input.aria -o output
+    - ariac input.aria --emit-llvm
+    - ariac input.aria --ast-dump
+    - ariac --version, --help
+    Test: CLI works
+    
+[ ] 7.1.2: Implement multi-file compilation
+    File: src/compiler_driver.cpp
+    Function: compile(files[])
+    Strategy: Compile all files, link together
+    Test: Multi-file projects compile
+    
+[ ] 7.1.3: Implement incremental compilation
+    File: src/incremental.cpp
+    Strategy: Cache compiled modules, recompile only changed files
+    Test: Incremental builds are faster
+    
+[ ] 7.1.4: Integrate linker
+    File: src/linker.cpp
+    Strategy: Use system linker (ld, lld)
+    Test: Produces executable binaries
+
+═══════════════════════════════════════════════════════════════════════
+7.2: Error Reporting and Diagnostics
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 7.2.1: Implement pretty error messages
+    File: src/diagnostics/error_reporter.cpp
+    Format:
+    - File, line, column
+    - Source context (show line)
+    - Helpful suggestions
+    - Color coding (red for errors, yellow for warnings)
+    Test: Error messages are clear
+    
+[ ] 7.2.2: Implement warning system
+    File: src/diagnostics/warnings.cpp
+    Warnings:
+    - Unused variables
+    - Type mismatches (implicit conversions)
+    - Dead code
+    Test: Warnings work
+    
+[ ] 7.2.3: Implement diagnostic levels
+    Arguments:
+    - -Werror: Treat warnings as errors
+    - -W<warning>: Enable specific warning
+    - -Wno-<warning>: Disable specific warning
+    Test: Diagnostic control works
+
+═══════════════════════════════════════════════════════════════════════
+7.3: Language Server Protocol (LSP) Basics
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 7.3.1: Implement LSP server skeleton
+    File: tools/lsp/server.cpp
+    Protocol: Language Server Protocol
+    Purpose: IDE integration (for vscode-aria)
+    Features:
+    - Syntax highlighting
+    - Error checking
+    - Go to definition (basic)
+    Test: LSP server responds to requests
+    
+[ ] 7.3.2: Integrate with vscode-aria extension
+    Directory: vscode-aria/
+    Test: VS Code extension uses LSP server
+
+═══════════════════════════════════════════════════════════════════════
+7.4: Build System Integration
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 7.4.1: Create aria.toml project file format
+    File: docs/aria_toml_spec.md
+    Content:
+    ```toml
+    [package]
+    name = "myproject"
+    version = "0.1.0"
+    
+    [dependencies]
+    std = "0.1"
+    
+    [build]
+    target = "executable"
+    ```
+    Test: Project file parses correctly
+    
+[ ] 7.4.2: Implement project builder
+    File: tools/builder/builder.cpp
+    Function: buildProject(aria_toml_path)
+    Strategy: Read config, compile files, link
+    Test: Projects build from config
+
+═══════════════════════════════════════════════════════════════════════
+7.5: Package Manager Foundations
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 7.5.1: Design package format
+    File: docs/package_format.md
+    Format: .aria-pkg (tarball with metadata)
+    Test: Package format documented
+    
+[ ] 7.5.2: Implement package installer (basic)
+    File: tools/pkg/installer.cpp
+    Function: installPackage(pkg_path)
+    Strategy: Extract to ~/.aria/packages/
+    Test: Packages install correctly
+
+═══════════════════════════════════════════════════════════════════════
+7.6: Documentation Generator
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 7.6.1: Implement doc comment parser
+    File: tools/doc/parser.cpp
+    Syntax: /// Doc comment or /** Doc block */
+    Test: Doc comments parse correctly
+    
+[ ] 7.6.2: Implement HTML doc generator
+    File: tools/doc/generator.cpp
+    Function: generateDocs(source_files[])
+    Output: HTML documentation
+    Test: Docs generate correctly
+
+═══════════════════════════════════════════════════════════════════════
+7.7: Tooling Testing
+═══════════════════════════════════════════════════════════════════════
+
+[ ] 7.7.1: Integration test - Compile full projects
+    File: tests/integration/test_full_compilation.cpp
+    Test: Compile multi-file projects
+    Test: Run executables
+    
+[ ] 7.7.2: Integration test - Error reporting
+    File: tests/integration/test_error_reporting.cpp
+    Test: Error messages are helpful
+    
+[ ] 7.7.3: Integration test - LSP server
+    File: tests/integration/test_lsp.cpp
+    Test: LSP server responds correctly
+    
+[ ] 7.7.4: End-to-end test - Complete workflow
+    File: tests/e2e/test_complete_workflow.sh
+    Test: Create project, write code, compile, run
+
+COMMIT CHECKPOINT: Phase 7 - Compiler driver complete
+Tag: v0.1.0-phase7-complete
+All tests pass
+Merge to main: YES (compiler is feature-complete)
+
+███████████████████████████████████████████████████████████████████████
+██ FINAL MILESTONE: v0.1.0 RELEASE                                    ██
+███████████████████████████████████████████████████████████████████████
+
+[ ] Create release notes
+    File: RELEASE_NOTES_v0.1.0.md
+    Content: Features, known issues, roadmap
+    
+[ ] Create user documentation
+    Files:
+    - docs/user_guide.md
+    - docs/language_reference.md
+    - docs/stdlib_reference.md
+    
+[ ] Create developer documentation
+    Files:
+    - docs/architecture.md
+    - docs/contributing.md
+    - docs/compiler_internals.md
+    
+[ ] Tag release
+    Command: git tag -a v0.1.0 -m "First feature-complete release"
+    
+[ ] Package distribution
+    Create: aria-0.1.0-linux-x86_64.tar.gz
+    
+[ ] Celebrate! 🎉
+    You've built a compiler from scratch!
+
+███████████████████████████████████████████████████████████████████████
+██ END OF ROADMAP                                                     ██
+███████████████████████████████████████████████████████████████████████
+
+Total phases: 8 (Phase 0-7 + Release)
+Total tasks: ~300+
+Estimated time: 6-12 months of focused development
+Result: Feature-complete, self-hosting compiler
 
