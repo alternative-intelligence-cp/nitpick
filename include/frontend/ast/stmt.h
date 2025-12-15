@@ -172,26 +172,30 @@ public:
 
 /**
  * Break statement node
- * Represents: break;
+ * Represents: break; or break(label);
  */
 class BreakStmt : public ASTNode {
 public:
-    BreakStmt(int line = 0, int column = 0)
-        : ASTNode(NodeType::BREAK, line, column) {}
+    std::string label;  // Empty string if unlabeled
     
-    std::string toString() const override { return "Break"; }
+    BreakStmt(const std::string& lbl = "", int line = 0, int column = 0)
+        : ASTNode(NodeType::BREAK, line, column), label(lbl) {}
+    
+    std::string toString() const override;
 };
 
 /**
  * Continue statement node
- * Represents: continue;
+ * Represents: continue; or continue(label);
  */
 class ContinueStmt : public ASTNode {
 public:
-    ContinueStmt(int line = 0, int column = 0)
-        : ASTNode(NodeType::CONTINUE, line, column) {}
+    std::string label;  // Empty string if unlabeled
     
-    std::string toString() const override { return "Continue"; }
+    ContinueStmt(const std::string& lbl = "", int line = 0, int column = 0)
+        : ASTNode(NodeType::CONTINUE, line, column), label(lbl) {}
+    
+    std::string toString() const override;
 };
 
 /**

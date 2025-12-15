@@ -102,6 +102,20 @@ std::string DeferStmt::toString() const {
     return "Defer(" + expression->toString() + ")";
 }
 
+std::string BreakStmt::toString() const {
+    if (!label.empty()) {
+        return "Break(" + label + ")";
+    }
+    return "Break";
+}
+
+std::string ContinueStmt::toString() const {
+    if (!label.empty()) {
+        return "Continue(" + label + ")";
+    }
+    return "Continue";
+}
+
 std::string ProgramNode::toString() const {
     std::ostringstream oss;
     oss << "Program([";
