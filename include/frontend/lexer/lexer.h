@@ -102,6 +102,9 @@ private:
     // Scan character literal (single quotes)
     void scanCharacter();
     
+    // Scan template literal (backticks with &{} interpolation)
+    void scanTemplateLiteral();
+    
     // Check if identifier is a keyword and return appropriate token type
     TokenType identifierType();
     

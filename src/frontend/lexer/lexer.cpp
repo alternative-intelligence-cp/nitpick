@@ -276,7 +276,7 @@ void Lexer::scanToken() {
         case '@': addToken(TokenType::TOKEN_AT); break;
         case '$': addToken(TokenType::TOKEN_DOLLAR); break;
         case '#': addToken(TokenType::TOKEN_HASH); break;
-        case '`': addToken(TokenType::TOKEN_BACKTICK); break;
+        case '`': scanTemplateLiteral(); break; // Template literals
         
         // String and character literals
         case '"': scanString(); break;
@@ -748,6 +748,101 @@ void Lexer::scanCharacter() {
     // Store as string since Token doesn't have a char constructor
     std::string charStr(1, value);
     addToken(TokenType::TOKEN_CHAR, charStr);
+}
+
+// ============================================================================
+// Template Literal Scanning
+// ============================================================================
+
+void Lexer::scanTemplateLiteral() {
+    int startLine = line;
+    std::string value;
+    
+    // Opening backtick already consumed by scanToken()
+    
+    while (!isAtEnd() && peek() != '`') {
+        // Handle escape sequences
+        if (peek() == '\\') {
+            advance(); // consume backslash
+            
+            if (isAtEnd()) {
+                error("Unterminated template literal");
+                return;
+            }
+            
+            char escaped = advance();
+            switch (escaped) {
+                case 'n': value += '\n'; break;
+                case 't': value += '\t'; break;
+                case 'r': value += '\r'; break;
+                case '\\': value += '\\'; break;
+                case '`': value += '`'; break;  // Escaped backtick
+                case '0': value += '\0'; break;
+                default:
+                    std::ostringstream oss;
+                    oss << "Unknown escape sequence: \\" << escaped;
+                    error(oss.str());
+                    value += escaped; // Include the character anyway
+                    break;
+            }
+        }
+        // Handle interpolation syntax &{expression}
+        else if (peek() == '&' && peekNext() == '{') {
+            advance(); // consume '&'
+            advance(); // consume '{'
+            
+            // For now, we'll store the interpolation markers in the string
+            // The parser will need to handle the actual expression parsing
+            // This is a simplified approach - a full implementation would
+            // need to recursively tokenize the expression inside &{}
+            
+            value += "${"; // Convert &{ to ${ for easier processing later
+            
+            int braceDepth = 1;
+            while (!isAtEnd() && braceDepth > 0) {
+                char c = peek();
+                if (c == '{') {
+                    braceDepth++;
+                } else if (c == '}') {
+                    braceDepth--;
+                    if (braceDepth == 0) {
+                        value += '}';
+                        advance(); // consume closing '}'
+                        break;
+                    }
+                }
+                value += advance();
+            }
+            
+            if (braceDepth > 0) {
+                error("Unterminated interpolation expression in template literal");
+                return;
+            }
+        }
+        // Handle newlines (templates can be multi-line)
+        else if (peek() == '\n') {
+            value += advance();
+            // Note: line tracking already handled in advance()
+        }
+        else {
+            value += advance();
+        }
+    }
+    
+    if (isAtEnd()) {
+        std::ostringstream oss;
+        oss << "Unterminated template literal starting at line " << startLine;
+        error(oss.str());
+        return;
+    }
+    
+    // Consume closing backtick
+    advance();
+    
+    // For now, we use TOKEN_STRING to store template literals
+    // A more sophisticated approach would use a dedicated TOKEN_TEMPLATE type
+    // and parse interpolations into separate tokens
+    addToken(TokenType::TOKEN_STRING, value);
 }
 
 // ============================================================================
