@@ -62,6 +62,7 @@ private:
     ASTNodePtr parseBlock();
     ASTNodePtr parseExpressionStmt();
     ASTNodePtr parseReturn();
+    ASTNodePtr parseIfStatement();
     bool isTypeKeyword(frontend::TokenType type) const;
     
 public:
