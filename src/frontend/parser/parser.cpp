@@ -594,6 +594,14 @@ ASTNodePtr Parser::parseStatement() {
         return parseForStatement();
     }
     
+    if (match(TokenType::TOKEN_KW_BREAK)) {
+        return parseBreakStatement();
+    }
+    
+    if (match(TokenType::TOKEN_KW_CONTINUE)) {
+        return parseContinueStatement();
+    }
+    
     // Check for block
     if (match(TokenType::TOKEN_LEFT_BRACE)) {
         return parseBlock();
@@ -864,6 +872,44 @@ ASTNodePtr Parser::parseForStatement() {
     }
     
     return std::make_shared<ForStmt>(initializer, condition, update, body, forToken.line, forToken.column);
+}
+
+ASTNodePtr Parser::parseBreakStatement() {
+    using namespace frontend;
+    
+    Token breakToken = previous(); // We already consumed 'break'
+    
+    std::string label = "";
+    
+    // Check for optional label: break(identifier)
+    if (match(TokenType::TOKEN_LEFT_PAREN)) {
+        Token labelToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected identifier after '(' in break statement");
+        label = labelToken.lexeme;
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after break label");
+    }
+    
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after break statement");
+    
+    return std::make_shared<BreakStmt>(label, breakToken.line, breakToken.column);
+}
+
+ASTNodePtr Parser::parseContinueStatement() {
+    using namespace frontend;
+    
+    Token continueToken = previous(); // We already consumed 'continue'
+    
+    std::string label = "";
+    
+    // Check for optional label: continue(identifier)
+    if (match(TokenType::TOKEN_LEFT_PAREN)) {
+        Token labelToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected identifier after '(' in continue statement");
+        label = labelToken.lexeme;
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after continue label");
+    }
+    
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after continue statement");
+    
+    return std::make_shared<ContinueStmt>(label, continueToken.line, continueToken.column);
 }
 
 ASTNodePtr Parser::parse() {
