@@ -1,0 +1,7425 @@
+/**
+ * src/backend/codegen.cpp
+ * 
+ * Aria Compiler - LLVM Code Generation Backend
+ * Version: 0.0.6
+ * 
+ * This file implements the translation of the Aria Abstract Syntax Tree (AST)
+ * into LLVM Intermediate Representation (IR).
+ * 
+ * Features:
+ * - Hybrid Memory Support: Distinguishes between Stack, Wild (mimalloc), and GC allocations.
+ * - Exotic Type Lowering: Handles int512, trit, and tryte types.
+ * - Pattern Matching: Compiles 'pick' statements into optimized branch chains.
+ * - Loops: Implements 'till' loops with SSA-based iteration variables.
+ * 
+ * Dependencies:
+ * - LLVM 18 Core, IR, Support
+ * - Aria AST Headers
+ */
+
+#include "codegen.h"
+#include "codegen_context.h"
+#include "codegen_tbb.h"
+#include "codegen_ternary.h"
+#include "ternary_ops.h"
+#include "tbb_optimizer.h"
+#include "monomorphization.h"
+#include "vtable.h"
+#include "platform_constants.h"
+#include "../frontend/ast.h"
+#include "../frontend/ast/stmt.h"
+#include "../frontend/ast/expr.h"
+#include "../frontend/ast/control_flow.h"
+#include "../frontend/ast/loops.h"
+#include "../frontend/ast/defer.h"
+#include "../frontend/ast/module.h"
+#include "../frontend/tokens.h"
+#include <iostream>
+
+// LLVM Includes
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/InlineAsm.h>
+#include <llvm/IR/Intrinsics.h>
+#include <llvm/IR/Metadata.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/Linker/Linker.h>
+#include <llvm/IRReader/IRReader.h>
+#include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetOptions.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Passes/PassBuilder.h>
+#include <llvm/Analysis/LoopAnalysisManager.h>
+#include <llvm/Analysis/CGSCCPassManager.h>
+
+#include <vector>
+#include <map>
+#include <stack>
+
+using namespace llvm;
+
+namespace aria {
+namespace backend {
+
+// Import frontend types for use in this file
+using aria::frontend::AstVisitor;
+using aria::frontend::Block;
+using aria::frontend::VarDecl;
+using aria::frontend::StructDecl;
+using aria::frontend::FuncDecl;
+using aria::frontend::ExpressionStmt;
+using aria::frontend::PickStmt;
+using aria::frontend::PickCase;
+using aria::frontend::FallStmt;
+using aria::frontend::LoopStmt;
+using aria::frontend::TillLoop;
+using aria::frontend::WhenLoop;
+using aria::frontend::ForLoop;
+using aria::frontend::WhileLoop;
+using aria::frontend::BreakStmt;
+using aria::frontend::ContinueStmt;
+using aria::frontend::IfStmt;
+using aria::frontend::DeferStmt;
+using aria::frontend::Expression;
+using aria::frontend::IntLiteral;
+using aria::frontend::FloatLiteral;
+using aria::frontend::BoolLiteral;
+using aria::frontend::NullLiteral;
+using aria::frontend::VarExpr;
+using aria::frontend::CallExpr;
+using aria::frontend::ArrayLiteral;
+using aria::frontend::VectorLiteral;
+using aria::frontend::IndexExpr;
+using aria::frontend::BinaryOp;
+using aria::frontend::UnaryOp;
+using aria::frontend::UnwrapExpr;
+using aria::frontend::ReturnStmt;
+using aria::frontend::UseStmt;
+using aria::frontend::ModDef;
+using aria::frontend::ExternBlock;
+using aria::frontend::FuncParam;
+
+// Bring CodeGenContext and ScopeGuard from extracted header
+using aria::backend::CodeGenContext;
+using aria::backend::ScopeGuard;
+
+// =============================================================================
+// The Code Generator Visitor
+// =============================================================================
+
+class CodeGenVisitor : public AstVisitor {
+    CodeGenContext& ctx;
+    
+    // Future handle for spawn expressions (set by visit(SpawnExpr), retrieved by visitExpr)
+    Value* currentSpawnFuture = nullptr;
+    
+    // -------------------------------------------------------------------------
+    // Generic Function Monomorphization Support
+    // -------------------------------------------------------------------------
+    // Generic functions are stored as templates and instantiated on demand
+    // when used with concrete type arguments
+    struct GenericTemplate {
+        // Support both FuncDecl (old syntax) and VarDecl+Lambda (new syntax)
+        FuncDecl* funcDecl = nullptr;                // For func<T>:name(T:x) { } syntax
+        VarDecl* varDecl = nullptr;                  // For func<T>:name = T(T:x) { } syntax
+        aria::frontend::LambdaExpr* lambda = nullptr; // The lambda expression (for VarDecl style)
+        std::vector<std::string> typeParams;         // Type parameter names (e.g., ["T", "U"])
+        std::map<std::string, Function*> specializations;  // Map type args -> LLVM function
+        
+        // Get parameters (works for both styles)
+        const std::vector<FuncParam>& getParameters() const {
+            if (funcDecl) return funcDecl->parameters;
+            if (lambda) return lambda->parameters;
+            throw std::runtime_error("Invalid GenericTemplate: no function or lambda");
+        }
+    };
+    
+    std::map<std::string, GenericTemplate> genericTemplates;  // funcName -> template
+    
+    // Generate mangled name for generic specialization
+    // Example: identity<int8> -> "identity_int8"
+    std::string mangleGenericName(const std::string& funcName, const std::vector<std::string>& concreteTypes) {
+        std::string mangledName = funcName;
+        for (const auto& t : concreteTypes) {
+            mangledName += "_" + t;
+        }
+        return mangledName;
+    }
+    
+    // Generate specialized version of generic function for concrete types
+    // Example: identity<int8> generates "identity_int8" function
+    Function* monomorphize(const std::string& funcName, const std::vector<std::string>& concreteTypes) {
+        auto it = genericTemplates.find(funcName);
+        if (it == genericTemplates.end()) {
+            return nullptr;  // Not a generic function
+        }
+        
+        GenericTemplate& tmpl = it->second;
+        
+        // Check if this specialization already exists
+        std::string typeKey = "";
+        for (const auto& t : concreteTypes) {
+            if (!typeKey.empty()) typeKey += "_";
+            typeKey += t;
+        }
+        
+        auto specIt = tmpl.specializations.find(typeKey);
+        if (specIt != tmpl.specializations.end()) {
+            return specIt->second;  // Already generated
+        }
+        
+        // Generate new specialization
+        // Check which style of generic function we have
+        aria::frontend::LambdaExpr* originalLambda = nullptr;
+        const std::vector<FuncParam>* funcParamsPtr = nullptr;
+        std::string funcReturnType;
+        
+        if (tmpl.funcDecl) {
+            funcParamsPtr = &(tmpl.funcDecl->parameters);
+            funcReturnType = tmpl.funcDecl->return_type;
+        } else if (tmpl.lambda) {
+            originalLambda = tmpl.lambda;
+            funcParamsPtr = &(originalLambda->parameters);
+            funcReturnType = originalLambda->return_type;
+        } else {
+            throw std::runtime_error("Invalid GenericTemplate");
+        }
+        
+        const std::vector<FuncParam>& funcParams = *funcParamsPtr;
+        
+        // Strip generic type marker (*) from return type if present
+        // *T becomes T,  which will then be substituted
+        if (!funcReturnType.empty() && funcReturnType[0] == '*') {
+            funcReturnType = funcReturnType.substr(1);
+        }
+        
+        // Create type substitution map: T -> int8, U -> float32, etc.
+        std::map<std::string, std::string> typeSubstitution;
+        for (size_t i = 0; i < tmpl.typeParams.size() && i < concreteTypes.size(); ++i) {
+            typeSubstitution[tmpl.typeParams[i]] = concreteTypes[i];
+        }
+        
+        // Create specialized function type
+        std::vector<Type*> paramTypes;
+        for (auto& param : funcParams) {
+            // Strip generic type marker (*) from parameter type if present
+            // *T:x becomes T:x, then T gets substituted
+            std::string paramType = param.type;
+            if (!paramType.empty() && paramType[0] == '*') {
+                paramType = paramType.substr(1);
+            }
+            
+            // Substitute generic types in parameters
+            if (typeSubstitution.count(paramType) > 0) {
+                paramType = typeSubstitution[paramType];
+            }
+            paramTypes.push_back(ctx.getLLVMType(paramType));
+        }
+        
+        // Substitute generic type in return type
+        std::string returnType = funcReturnType;
+        if (typeSubstitution.count(returnType) > 0) {
+            returnType = typeSubstitution[returnType];
+        }
+        Type* returnLLVMType = ctx.getResultType(returnType);
+        
+        FunctionType* funcType = FunctionType::get(returnLLVMType, paramTypes, false);
+        
+        // Create specialized function with mangled name
+        std::string mangledName = ctx.currentModulePrefix + funcName + "_" + typeKey;
+        Function* specializedFunc = Function::Create(
+            funcType,
+            Function::InternalLinkage,
+            mangledName,
+            ctx.module.get()
+        );
+        
+        // Save current type substitution state
+        auto prevSubstitution = ctx.typeSubstitution;
+        auto prevReturnType = ctx.currentFunctionReturnType;
+        
+        // Set up substitution context
+        ctx.typeSubstitution = typeSubstitution;
+        ctx.currentFunctionReturnType = returnType;  // Set substituted return type for validation
+        
+        // Generate the function body based on which style we have
+        if (tmpl.funcDecl) {
+            // TODO: Implement FuncDecl monomorphization
+            throw std::runtime_error("FuncDecl-style generic functions not yet supported for monomorphization");
+        } else {
+            // Lambda style (VarDecl) - use generateLambdaBody
+            // TODO: Add closure support for generic functions
+            generateLambdaBody(originalLambda, specializedFunc, nullptr);
+        }
+        
+        // Restore state
+        ctx.typeSubstitution = prevSubstitution;
+        ctx.currentFunctionReturnType = prevReturnType;
+        
+        // Cache the specialized function
+        tmpl.specializations[typeKey] = specializedFunc;
+        
+        return specializedFunc;
+    }
+
+public:
+    CodeGenVisitor(CodeGenContext& context) : ctx(context) {}
+
+    // -------------------------------------------------------------------------
+    // Helper: Generic Type Inference
+    // -------------------------------------------------------------------------
+    
+    // Infer concrete types for generic parameters from call arguments
+    // Example: max(5, 10) -> infer T=int8 from both arguments
+    std::vector<std::string> inferGenericTypes(const GenericTemplate& tmpl, CallExpr* call) {
+        const auto& params = tmpl.getParameters();
+        if (call->arguments.size() != params.size()) {
+            return {};  // Argument count mismatch, can't infer
+        }
+        
+        // Map: generic param name -> inferred type
+        std::map<std::string, std::string> inferredTypes;
+        
+        // Analyze each argument to infer types
+        for (size_t i = 0; i < call->arguments.size(); ++i) {
+            const auto& param = params[i];
+            Expression* argExpr = call->arguments[i].get();
+            
+            // Get the Aria type of the argument
+            std::string argType = inferExpressionType(argExpr);
+            if (argType.empty()) {
+                return {};  // Can't determine argument type
+            }
+            
+            // Check if parameter type is a generic type parameter
+            std::string paramType = param.type;
+            bool isGenericParam = false;
+            for (const auto& typeParam : tmpl.typeParams) {
+                if (paramType == typeParam) {
+                    isGenericParam = true;
+                    
+                    // Check for conflicting inferences
+                    if (inferredTypes.count(typeParam) > 0) {
+                        if (inferredTypes[typeParam] != argType) {
+                            throw std::runtime_error(
+                                "Type inference conflict for parameter '" + typeParam + "': " +
+                                "inferred both '" + inferredTypes[typeParam] + "' and '" + argType + "'"
+                            );
+                        }
+                    } else {
+                        inferredTypes[typeParam] = argType;
+                    }
+                    break;
+                }
+            }
+        }
+        
+        // Build result vector in the same order as typeParams
+        std::vector<std::string> result;
+        for (const auto& typeParam : tmpl.typeParams) {
+            if (inferredTypes.count(typeParam) == 0) {
+                return {};  // Couldn't infer this type parameter
+            }
+            result.push_back(inferredTypes[typeParam]);
+        }
+        
+        return result;
+    }
+    
+    // Infer the Aria type of an expression (simplified version)
+    std::string inferExpressionType(Expression* expr) {
+        // Integer literals
+        if (auto* intLit = dynamic_cast<IntLiteral*>(expr)) {
+            // Default to int32 for literals without suffix
+            return "int32";
+        }
+        
+        // Float literals
+        if (auto* floatLit = dynamic_cast<FloatLiteral*>(expr)) {
+            return "flt64";
+        }
+        
+        // Boolean literals
+        if (auto* boolLit = dynamic_cast<BoolLiteral*>(expr)) {
+            return "bool";
+        }
+        
+        // Variable references - look up in symbol table
+        if (auto* varExpr = dynamic_cast<VarExpr*>(expr)) {
+            auto* sym = ctx.lookup(varExpr->name);
+            if (sym) {
+                return sym->ariaType;
+            }
+        }
+        
+        // Binary operations - infer from operands
+        if (auto* binOp = dynamic_cast<BinaryOp*>(expr)) {
+            // For now, assume both operands have the same type
+            return inferExpressionType(binOp->left.get());
+        }
+        
+        // For other expression types, we'd need more sophisticated analysis
+        // This is a simplified implementation - full type inference would be more complex
+        return "";
+    }
+
+    // -------------------------------------------------------------------------
+    // Helper: Closure Fat Pointer Creation
+    // -------------------------------------------------------------------------
+    
+    // Create a closure struct (fat pointer) containing function pointer and environment
+    // Closure representation: { ptr function, ptr environment }
+    Value* createClosureStruct(Function* func, Value* envPtr) {
+        // Define closure struct type if not already defined
+        // %closure = type { ptr, ptr }  (function pointer, environment pointer)
+        StructType* closureType = StructType::get(
+            ctx.llvmContext,
+            {
+                PointerType::getUnqual(ctx.llvmContext),  // function pointer
+                PointerType::getUnqual(ctx.llvmContext)   // environment pointer
+            }
+        );
+        
+        // Allocate closure struct on stack
+        AllocaInst* closureAlloca = ctx.builder->CreateAlloca(closureType, nullptr, "closure");
+        
+        // Store function pointer
+        Value* funcPtrField = ctx.builder->CreateStructGEP(closureType, closureAlloca, 0, "closure_func_ptr");
+        ctx.builder->CreateStore(func, funcPtrField);
+        
+        // Store environment pointer (or null if no captures)
+        Value* envPtrField = ctx.builder->CreateStructGEP(closureType, closureAlloca, 1, "closure_env_ptr");
+        if (envPtr) {
+            ctx.builder->CreateStore(envPtr, envPtrField);
+        } else {
+            // No environment - store null pointer
+            Value* nullPtr = ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext));
+            ctx.builder->CreateStore(nullPtr, envPtrField);
+        }
+        
+        // Load and return the closure struct value
+        return ctx.builder->CreateLoad(closureType, closureAlloca, "closure_val");
+    }
+    
+    // -------------------------------------------------------------------------
+    // Helper: Closure Capture Analysis
+    // -------------------------------------------------------------------------
+    
+    // Analyze which variables from enclosing scope are captured by lambda
+    std::vector<std::string> analyzeCapturedVariables(aria::frontend::LambdaExpr* lambda) {
+        std::vector<std::string> captured;
+        std::set<std::string> visited;
+        
+        // Get parameter names (these are NOT captures)
+        std::set<std::string> paramNames;
+        for (const auto& param : lambda->parameters) {
+            paramNames.insert(param.name);
+        }
+        
+        // Recursively scan lambda body for variable references
+        analyzeBlockForCaptures(lambda->body.get(), captured, visited, paramNames);
+        
+        return captured;
+    }
+    
+    void analyzeBlockForCaptures(frontend::Block* block, std::vector<std::string>& captured,
+                                  std::set<std::string>& visited, const std::set<std::string>& localVars) {
+        if (!block) return;
+        
+        for (auto& stmt : block->statements) {
+            auto* statement = dynamic_cast<frontend::Statement*>(stmt.get());
+            if (statement) {
+                analyzeStmtForCaptures(statement, captured, visited, localVars);
+            }
+        }
+    }    void analyzeStmtForCaptures(frontend::Statement* stmt, std::vector<std::string>& captured,
+                                 std::set<std::string>& visited, const std::set<std::string>& localVars) {
+        if (!stmt) return;
+        
+        // Variable declarations add to local scope
+        if (auto* varDecl = dynamic_cast<frontend::VarDecl*>(stmt)) {
+            // Don't capture variables declared inside the lambda
+            const_cast<std::set<std::string>&>(localVars).insert(varDecl->name);
+            if (varDecl->initializer) {
+                analyzeExprForCaptures(varDecl->initializer.get(), captured, visited, localVars);
+            }
+            return;
+        }
+        
+        // Expression statements
+        if (auto* exprStmt = dynamic_cast<frontend::ExpressionStmt*>(stmt)) {
+            analyzeExprForCaptures(exprStmt->expression.get(), captured, visited, localVars);
+            return;
+        }
+        
+        // Return statements
+        if (auto* retStmt = dynamic_cast<frontend::ReturnStmt*>(stmt)) {
+            if (retStmt->value) {
+                analyzeExprForCaptures(retStmt->value.get(), captured, visited, localVars);
+            }
+            return;
+        }
+        
+        // If statements
+        if (auto* ifStmt = dynamic_cast<frontend::IfStmt*>(stmt)) {
+            for (auto& branch : ifStmt->branches) {
+                if (branch.condition) {
+                    analyzeExprForCaptures(branch.condition.get(), captured, visited, localVars);
+                }
+                if (branch.body) {
+                    analyzeBlockForCaptures(branch.body.get(), captured, visited, localVars);
+                }
+            }
+            return;
+        }
+        
+        // Loops
+        if (auto* loopStmt = dynamic_cast<frontend::LoopStmt*>(stmt)) {
+            if (loopStmt->start) {
+                analyzeExprForCaptures(loopStmt->start.get(), captured, visited, localVars);
+            }
+            if (loopStmt->limit) {
+                analyzeExprForCaptures(loopStmt->limit.get(), captured, visited, localVars);
+            }
+            if (loopStmt->step) {
+                analyzeExprForCaptures(loopStmt->step.get(), captured, visited, localVars);
+            }
+            analyzeBlockForCaptures(loopStmt->body.get(), captured, visited, localVars);
+            return;
+        }
+        
+        if (auto* tillLoop = dynamic_cast<frontend::TillLoop*>(stmt)) {
+            if (tillLoop->limit) {
+                analyzeExprForCaptures(tillLoop->limit.get(), captured, visited, localVars);
+            }
+            if (tillLoop->step) {
+                analyzeExprForCaptures(tillLoop->step.get(), captured, visited, localVars);
+            }
+            analyzeBlockForCaptures(tillLoop->body.get(), captured, visited, localVars);
+            return;
+        }
+        
+        if (auto* whileLoop = dynamic_cast<frontend::WhileLoop*>(stmt)) {
+            analyzeExprForCaptures(whileLoop->condition.get(), captured, visited, localVars);
+            analyzeBlockForCaptures(whileLoop->body.get(), captured, visited, localVars);
+            return;
+        }
+    }
+    
+    void analyzeExprForCaptures(frontend::Expression* expr, std::vector<std::string>& captured,
+                                 std::set<std::string>& visited, const std::set<std::string>& localVars) {
+        if (!expr) return;
+        
+        // Variable references - the key capture point
+        if (auto* varExpr = dynamic_cast<frontend::VarExpr*>(expr)) {
+            const std::string& varName = varExpr->name;
+            
+            // Skip if it's a local variable or parameter
+            if (localVars.count(varName) > 0) return;
+            
+            // Skip if already visited
+            if (visited.count(varName) > 0) return;
+            
+            // Check if it exists in an enclosing scope
+            auto* sym = ctx.lookup(varName);
+            if (sym && sym->strategy != CodeGenContext::AllocStrategy::VALUE) {
+                // This is a capture! Add it if not already in list
+                if (std::find(captured.begin(), captured.end(), varName) == captured.end()) {
+                    captured.push_back(varName);
+                    visited.insert(varName);
+                }
+            }
+            return;
+        }
+        
+        // Binary operations
+        if (auto* binOp = dynamic_cast<frontend::BinaryOp*>(expr)) {
+            analyzeExprForCaptures(binOp->left.get(), captured, visited, localVars);
+            analyzeExprForCaptures(binOp->right.get(), captured, visited, localVars);
+            return;
+        }
+        
+        // Unary operations
+        if (auto* unOp = dynamic_cast<frontend::UnaryOp*>(expr)) {
+            analyzeExprForCaptures(unOp->operand.get(), captured, visited, localVars);
+            return;
+        }
+        
+        // Call expressions
+        if (auto* call = dynamic_cast<frontend::CallExpr*>(expr)) {
+            for (auto& arg : call->arguments) {
+                analyzeExprForCaptures(arg.get(), captured, visited, localVars);
+            }
+            return;
+        }
+        
+        // Array indexing
+        if (auto* index = dynamic_cast<frontend::IndexExpr*>(expr)) {
+            analyzeExprForCaptures(index->array.get(), captured, visited, localVars);
+            analyzeExprForCaptures(index->index.get(), captured, visited, localVars);
+            return;
+        }
+        
+        // Note: Nested lambdas would need special handling - for now we skip them
+        // as they create their own capture scope
+    }
+
+    // -------------------------------------------------------------------------
+    // Helper: Runtime Function Declarations (Allocators, Syscalls)
+    // -------------------------------------------------------------------------
+    
+    // createSyscall - Generate x86-64 Linux syscall using inline assembly
+    // Register mapping per x86-64 ABI:
+    //   rax = syscall number
+    //   rdi, rsi, rdx, r10 (NOT rcx!), r8, r9 = args 1-6
+    //   Clobbers: rcx (replaced by r10), r11 (used by kernel)
+    Value* createSyscall(uint64_t syscallNum, const std::vector<Value*>& args, Type* returnType = nullptr) {
+        // Syscall arguments (max 6)
+        if (args.size() > 6) {
+            throw std::runtime_error("Syscalls support max 6 arguments");
+        }
+        
+        // Default return type is i64 (syscalls always return i64)
+        if (returnType == nullptr) {
+            returnType = Type::getInt64Ty(ctx.llvmContext);
+        }
+        
+        // Register constraints for inline assembly
+        // Input constraints: rdi, rsi, rdx, r10 (arg4 uses r10 NOT rcx!), r8, r9
+        static const char* registerConstraints[] = {"{rdi}", "{rsi}", "{rdx}", "{r10}", "{r8}", "{r9}"};
+        
+        // Build inline asm operand type list
+        std::vector<Type*> asmArgTypes;
+        for (auto* arg : args) {
+            asmArgTypes.push_back(arg->getType());
+        }
+        
+        // Function type: (syscall_args...) -> i64
+        FunctionType* asmFuncType = FunctionType::get(
+            Type::getInt64Ty(ctx.llvmContext),
+            asmArgTypes,
+            false
+        );
+        
+        // Build constraint string: "={rax},0,1,2,3,4,5,~{rcx},~{r11},~{memory}"
+        std::string constraints = "={rax}";  // Output: rax (syscall return value)
+        for (size_t i = 0; i < args.size(); ++i) {
+            constraints += ",";
+            constraints += registerConstraints[i];
+        }
+        // Clobbers: rcx, r11 (kernel uses these), memory (syscalls can modify memory)
+        constraints += ",~{rcx},~{r11},~{memory}";
+        
+        // Assembly template: load syscall number into rax, then syscall instruction
+        std::string asmTemplate = "movq $" + std::to_string(syscallNum) + ", %rax\\n\\tsyscall";
+        
+        // Create inline assembly
+        InlineAsm* inlineAsm = InlineAsm::get(
+            asmFuncType,
+            asmTemplate,
+            constraints,
+            true,  // hasSideEffects
+            false, // isAlignStack
+            InlineAsm::AD_ATT  // AT&T syntax
+        );
+        
+        // Call inline assembly with arguments
+        Value* result = ctx.builder->CreateCall(inlineAsm, args, "syscall_result");
+        
+        // Cast result to expected return type if needed
+        if (returnType->isIntegerTy() && returnType != Type::getInt64Ty(ctx.llvmContext)) {
+            result = ctx.builder->CreateIntCast(result, returnType, true, "syscall_cast");
+        }
+        
+        return result;
+    }
+    
+    // emitAllocExec - Allocate executable memory using mmap syscall
+    // Syscall: mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
+    // Returns i8* to RW memory (caller transitions to RX later via emitProtectExec)
+    Value* emitAllocExec(Value* size) {
+        // Use platform-specific constants
+        using namespace aria::backend::platform;
+        
+        // Build syscall arguments
+        std::vector<Value*> mmapArgs;
+        mmapArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));  // addr = NULL
+        mmapArgs.push_back(size);  // length = size
+        mmapArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), PROT_READ | PROT_WRITE));
+        mmapArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), MAP_PRIVATE | MAP_ANONYMOUS));
+        mmapArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), (uint64_t)-1));  // fd = -1
+        mmapArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));  // offset = 0
+        
+        // Invoke mmap syscall
+        Value* result = createSyscall(SYSCALL_MMAP, mmapArgs);
+        
+        // mmap returns i64, convert to i8* (opaque pointer in LLVM 18)
+        return ctx.builder->CreateIntToPtr(result, PointerType::getUnqual(ctx.llvmContext), "alloc_exec_ptr");
+    }
+    
+    // emitProtectExec - Transition memory from RW to RX using mprotect syscall
+    // Syscall: mprotect(addr, size, PROT_READ|PROT_EXEC)
+    // Used to finalize wildx memory after JIT compilation
+    void emitProtectExec(Value* addr, Value* size) {
+        // Use platform-specific constants
+        using namespace aria::backend::platform;
+        
+        // Convert pointer to i64 for syscall
+        Value* addrInt = ctx.builder->CreatePtrToInt(addr, Type::getInt64Ty(ctx.llvmContext));
+        
+        // Build syscall arguments
+        std::vector<Value*> mprotectArgs;
+        mprotectArgs.push_back(addrInt);  // addr
+        mprotectArgs.push_back(size);     // length
+        mprotectArgs.push_back(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), PROT_READ | PROT_EXEC));
+        
+        // Invoke mprotect syscall (return value ignored - would be 0 on success, -1 on error)
+        createSyscall(SYSCALL_MPROTECT, mprotectArgs);
+    }
+    
+    // getOrInsertAriaAlloc - Declare aria.alloc (standard heap via mimalloc)
+    Function* getOrInsertAriaAlloc() {
+        if (Function* existing = ctx.module->getFunction("aria.alloc")) {
+            return existing;
+        }
+        
+        FunctionType* allocType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),  // returns ptr
+            {Type::getInt64Ty(ctx.llvmContext)},       // size argument
+            false
+        );
+        
+        return Function::Create(allocType, Function::ExternalLinkage, "aria.alloc", ctx.module.get());
+    }
+    
+    // getOrInsertAriaAllocExec - Declare aria.alloc_exec (executable heap for wildx)
+    // NOW IMPLEMENTED: Uses mmap syscall to allocate RW memory
+    Function* getOrInsertAriaAllocExec() {
+        if (Function* existing = ctx.module->getFunction("aria.alloc_exec")) {
+            return existing;
+        }
+        
+        // Create function signature: i8* aria.alloc_exec(i64 size)
+        FunctionType* allocExecType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),
+            {Type::getInt64Ty(ctx.llvmContext)},
+            false
+        );
+        
+        Function* func = Function::Create(
+            allocExecType,
+            Function::InternalLinkage,  // Internal - we define it here
+            "aria.alloc_exec",
+            ctx.module.get()
+        );
+        
+        // Generate function body using emitAllocExec
+        BasicBlock* entry = BasicBlock::Create(ctx.llvmContext, "entry", func);
+        IRBuilder<> tmpBuilder(entry);
+        
+        // Get size parameter
+        Value* size = func->getArg(0);
+        
+        // Call emitAllocExec (uses mmap syscall)
+        // Temporarily swap builder for syscall generation
+        std::unique_ptr<IRBuilder<>> savedBuilder = std::move(ctx.builder);
+        ctx.builder = std::make_unique<IRBuilder<>>(entry);
+        Value* ptr = emitAllocExec(size);
+        ctx.builder = std::move(savedBuilder);
+        
+        tmpBuilder.CreateRet(ptr);
+        
+        return func;
+    }
+    
+    // getOrInsertGetNursery - Declare get_current_thread_nursery (GC arena)
+    Function* getOrInsertGetNursery() {
+        if (Function* existing = ctx.module->getFunction("get_current_thread_nursery")) {
+            return existing;
+        }
+        
+        FunctionType* nurseryType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),
+            {},
+            false
+        );
+        
+        return Function::Create(nurseryType, Function::ExternalLinkage, "get_current_thread_nursery", ctx.module.get());
+    }
+    
+    // getOrInsertGCAlloc - Declare aria_gc_alloc (GC allocation)
+    Function* getOrInsertGCAlloc() {
+        if (Function* existing = ctx.module->getFunction("aria_gc_alloc")) {
+            return existing;
+        }
+        
+        FunctionType* gcAllocType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),
+            {PointerType::getUnqual(ctx.llvmContext), Type::getInt64Ty(ctx.llvmContext)},
+            false
+        );
+        
+        return Function::Create(gcAllocType, Function::ExternalLinkage, "aria_gc_alloc", ctx.module.get());
+    }
+    
+    // getOrInsertAriaMemProtectExec - Declare aria_mem_protect_exec (make memory executable)
+    Function* getOrInsertAriaMemProtectExec() {
+        if (Function* existing = ctx.module->getFunction("aria_mem_protect_exec")) {
+            return existing;
+        }
+        
+        FunctionType* protectType = FunctionType::get(
+            Type::getInt32Ty(ctx.llvmContext),  // Returns 0 on success
+            {PointerType::getUnqual(ctx.llvmContext), Type::getInt64Ty(ctx.llvmContext)},
+            false
+        );
+        
+        return Function::Create(protectType, Function::ExternalLinkage, "aria_mem_protect_exec", ctx.module.get());
+    }
+    
+    // getOrInsertAriaMemProtectWrite - Declare aria_mem_protect_write (make memory writable)
+    Function* getOrInsertAriaMemProtectWrite() {
+        if (Function* existing = ctx.module->getFunction("aria_mem_protect_write")) {
+            return existing;
+        }
+        
+        FunctionType* protectType = FunctionType::get(
+            Type::getInt32Ty(ctx.llvmContext),  // Returns 0 on success
+            {PointerType::getUnqual(ctx.llvmContext), Type::getInt64Ty(ctx.llvmContext)},
+            false
+        );
+        
+        return Function::Create(protectType, Function::ExternalLinkage, "aria_mem_protect_write", ctx.module.get());
+    }
+    
+    // getOrInsertAriaFreeExec - Declare aria_free_exec (free executable memory)
+    Function* getOrInsertAriaFreeExec() {
+        if (Function* existing = ctx.module->getFunction("aria_free_exec")) {
+            return existing;
+        }
+        
+        FunctionType* freeType = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            {PointerType::getUnqual(ctx.llvmContext)},
+            false
+        );
+        
+        return Function::Create(freeType, Function::ExternalLinkage, "aria_free_exec", ctx.module.get());
+    }
+    
+    // declareLLVMIntrinsic - Declare LLVM math intrinsics (llvm.sin.f32, etc.)
+    Function* declareLLVMIntrinsic(const std::string& name) {
+        // Parse intrinsic name: llvm_<name>_<type>
+        std::string intrName;
+        Type* argType = nullptr;
+        
+        if (name.find("_f32") != std::string::npos) {
+            argType = Type::getFloatTy(ctx.llvmContext);
+            intrName = name.substr(5, name.length() - 9); // Remove "llvm_" prefix and "_f32" suffix
+        } else if (name.find("_f64") != std::string::npos) {
+            argType = Type::getDoubleTy(ctx.llvmContext);
+            intrName = name.substr(5, name.length() - 9); // Remove "llvm_" prefix and "_f64" suffix
+        } else {
+            return nullptr;  // Unknown type
+        }
+        
+        // Map intrinsic names to LLVM Intrinsic IDs
+        Intrinsic::ID intrID = Intrinsic::not_intrinsic;
+        
+        if (intrName == "sin") intrID = Intrinsic::sin;
+        else if (intrName == "cos") intrID = Intrinsic::cos;
+        else if (intrName == "exp") intrID = Intrinsic::exp;
+        else if (intrName == "exp2") intrID = Intrinsic::exp2;
+        else if (intrName == "log") intrID = Intrinsic::log;
+        else if (intrName == "log2") intrID = Intrinsic::log2;
+        else if (intrName == "log10") intrID = Intrinsic::log10;
+        else if (intrName == "sqrt") intrID = Intrinsic::sqrt;
+        else if (intrName == "ceil") intrID = Intrinsic::ceil;
+        else if (intrName == "floor") intrID = Intrinsic::floor;
+        else if (intrName == "round") intrID = Intrinsic::round;
+        else if (intrName == "trunc") intrID = Intrinsic::trunc;
+        else if (intrName == "fabs") intrID = Intrinsic::fabs;
+        else if (intrName == "minnum") intrID = Intrinsic::minnum;
+        else if (intrName == "maxnum") intrID = Intrinsic::maxnum;
+        else if (intrName == "copysign") intrID = Intrinsic::copysign;
+        else if (intrName == "pow") intrID = Intrinsic::pow;
+        else if (intrName == "fma") intrID = Intrinsic::fma;
+        else {
+            return nullptr;  // Unknown intrinsic
+        }
+        
+        // Declare the intrinsic
+        return Intrinsic::getDeclaration(ctx.module.get(), intrID, {argType});
+    }
+
+    // -------------------------------------------------------------------------
+    // 1. Variable Declarations
+    // -------------------------------------------------------------------------
+    
+    // Helper: Generate environment struct type for closure captures
+    StructType* generateClosureEnvType(aria::frontend::LambdaExpr* lambda, const std::string& envName) {
+        if (!lambda->needs_heap_environment || lambda->captured_variables.empty()) {
+            return nullptr;
+        }
+        
+        std::vector<Type*> fieldTypes;
+        for (const auto& captured : lambda->captured_variables) {
+            if (!captured.is_global) {  // Only include local captures in environment
+                Type* fieldType = ctx.getLLVMType(captured.type);
+                fieldTypes.push_back(fieldType);
+            }
+        }
+        
+        if (fieldTypes.empty()) {
+            return nullptr;
+        }
+        
+        return StructType::create(ctx.llvmContext, fieldTypes, envName);
+    }
+    
+    // Helper: Allocate closure environment on heap
+    Value* allocateClosureEnv(StructType* envType) {
+        if (!envType) return nullptr;
+        
+        // Get or declare malloc
+        FunctionType* mallocType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),
+            {Type::getInt64Ty(ctx.llvmContext)},
+            false
+        );
+        FunctionCallee mallocFunc = ctx.module->getOrInsertFunction("malloc", mallocType);
+        
+        // Calculate size of environment struct
+        const DataLayout& DL = ctx.module->getDataLayout();
+        uint64_t envSize = DL.getTypeAllocSize(envType);
+        Value* size = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), envSize);
+        
+        // Allocate environment
+        Value* envPtr = ctx.builder->CreateCall(mallocFunc, {size}, "closure_env");
+        
+        return envPtr;
+    }
+    
+    // Helper: Store captured values into environment
+    void populateClosureEnv(Value* envPtr, StructType* envType, aria::frontend::LambdaExpr* lambda) {
+        if (!envPtr || !envType) return;
+        
+        unsigned fieldIdx = 0;
+        for (const auto& captured : lambda->captured_variables) {
+            if (!captured.is_global) {  // Only populate local captures
+                // Look up the captured variable in current scope
+                auto* sym = ctx.lookup(captured.name);
+                if (sym && sym->val) {
+                    // Load the value if it's a reference
+                    Value* valueToStore = sym->val;
+                    if (sym->is_ref) {
+                        valueToStore = ctx.builder->CreateLoad(
+                            ctx.getLLVMType(captured.type),
+                            sym->val,
+                            captured.name + ".val"
+                        );
+                    }
+                    
+                    // Get pointer to environment field
+                    Value* fieldPtr = ctx.builder->CreateStructGEP(
+                        envType,
+                        envPtr,
+                        fieldIdx,
+                        "env." + captured.name
+                    );
+                    
+                    // Store the value
+                    ctx.builder->CreateStore(valueToStore, fieldPtr);
+                }
+                fieldIdx++;
+            }
+        }
+    }
+    
+    // Helper: Generate lambda function body (for recursive function support)
+    void generateLambdaBody(aria::frontend::LambdaExpr* lambda, Function* func, StructType* envType = nullptr) {
+        // Set parameter names
+        unsigned idx = 0;
+        unsigned argIdx = 0;
+        
+        // If we have an environment, first arg is __env (already named)
+        if (lambda->needs_heap_environment && envType) {
+            argIdx = 1;  // Skip environment parameter when naming user parameters
+        }
+        
+        for (auto argIt = func->arg_begin() + argIdx; argIt != func->arg_end(); ++argIt) {
+            if (idx < lambda->parameters.size()) {
+                argIt->setName(lambda->parameters[idx++].name);
+            }
+        }
+        
+        // Create entry basic block
+        BasicBlock* entry = BasicBlock::Create(ctx.llvmContext, "entry", func);
+        
+        // Save previous state
+        Function* prevFunc = ctx.currentFunction;
+        BasicBlock* prevBlock = ctx.builder->GetInsertBlock();
+        std::string prevReturnType = ctx.currentFunctionReturnType;
+        bool prevAutoWrap = ctx.currentFunctionAutoWrap;
+        
+        ctx.currentFunction = func;
+        
+        // If we're in a generic monomorphization context (typeSubstitution is not empty),
+        // currentFunctionReturnType has already been set to the substituted type.
+        // Don't overwrite it with the lambda's original generic type.
+        if (ctx.typeSubstitution.empty()) {
+            ctx.currentFunctionReturnType = lambda->return_type;
+        }
+        // Otherwise, keep the already-set substituted return type
+        
+        ctx.currentFunctionAutoWrap = lambda->auto_wrap;
+        ctx.builder->SetInsertPoint(entry);
+        
+        // ASYNC COROUTINE SETUP (if lambda is marked async)
+        if (lambda->is_async) {
+            // Get LLVM coroutine intrinsics
+            Function* coroId = Intrinsic::getDeclaration(
+                ctx.module.get(), 
+                Intrinsic::coro_id
+            );
+            Function* coroBegin = Intrinsic::getDeclaration(
+                ctx.module.get(), 
+                Intrinsic::coro_begin
+            );
+            Function* coroSize = Intrinsic::getDeclaration(
+                ctx.module.get(), 
+                Intrinsic::coro_size, 
+                {Type::getInt32Ty(ctx.llvmContext)}
+            );
+            Function* coroAlloc = Intrinsic::getDeclaration(
+                ctx.module.get(), 
+                Intrinsic::coro_alloc
+            );
+            
+            // Create coroutine ID token
+            Value* nullPtr = ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext));
+            Value* coroIdVal = ctx.builder->CreateCall(
+                coroId,
+                {
+                    ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0),  // alignment
+                    nullPtr,  // promise
+                    nullPtr,  // coroaddr
+                    nullPtr   // fnaddr
+                },
+                "coro.id"
+            );
+            
+            // Get coroutine frame size
+            Value* size = ctx.builder->CreateCall(coroSize, {}, "coro.size");
+            
+            // Check if we need to allocate
+            Value* needAlloc = ctx.builder->CreateCall(coroAlloc, {coroIdVal}, "coro.alloc");
+            
+            // Allocate coroutine frame using malloc
+            // Get or declare malloc
+            FunctionType* mallocType = FunctionType::get(
+                PointerType::getUnqual(ctx.llvmContext),
+                {Type::getInt32Ty(ctx.llvmContext)},
+                false
+            );
+            FunctionCallee mallocFunc = ctx.module->getOrInsertFunction("malloc", mallocType);
+            
+            // Allocate frame
+            Value* frame = ctx.builder->CreateCall(mallocFunc, {size}, "coro.frame");
+            
+            // Begin coroutine
+            Value* hdl = ctx.builder->CreateCall(
+                coroBegin,
+                {coroIdVal, frame},
+                "coro.handle"
+            );
+            
+            // Store handle in a variable for later use
+            AllocaInst* hdlAlloca = ctx.builder->CreateAlloca(
+                hdl->getType(), 
+                nullptr, 
+                "coro.handle.addr"
+            );
+            ctx.builder->CreateStore(hdl, hdlAlloca);
+            ctx.define("__coro_handle__", hdlAlloca, false, "void*");
+        }
+        
+        // Clear defer stacks for new function
+        ctx.deferStacks = std::vector<std::vector<Block*>>();
+        ctx.deferStacks.emplace_back();
+        
+        // SHADOW STACK: Push frame for GC root tracking
+        // Get or declare aria_shadow_stack_push_frame()
+        FunctionType* pushFrameType = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            {},
+            false
+        );
+        FunctionCallee pushFrameFunc = ctx.module->getOrInsertFunction(
+            "aria_shadow_stack_push_frame",
+            pushFrameType
+        );
+        ctx.builder->CreateCall(pushFrameFunc);
+        
+        // CLOSURE SUPPORT: Extract captured variables from environment
+        if (lambda->needs_heap_environment && envType) {
+            // First parameter is environment pointer
+            Argument* envArg = func->arg_begin();
+            
+            // Extract each captured variable from environment
+            unsigned fieldIdx = 0;
+            for (const auto& captured : lambda->captured_variables) {
+                if (!captured.is_global) {
+                    // Get pointer to environment field
+                    Value* fieldPtr = ctx.builder->CreateStructGEP(
+                        envType,
+                        envArg,
+                        fieldIdx,
+                        "env." + captured.name
+                    );
+                    
+                    // Load the captured value
+                    Type* fieldType = ctx.getLLVMType(captured.type);
+                    Value* capturedValue = ctx.builder->CreateLoad(
+                        fieldType,
+                        fieldPtr,
+                        captured.name
+                    );
+                    
+                    // Store in alloca so it can be referenced in lambda body
+                    AllocaInst* alloca = ctx.builder->CreateAlloca(
+                        fieldType,
+                        nullptr,
+                        captured.name + ".addr"
+                    );
+                    ctx.builder->CreateStore(capturedValue, alloca);
+                    
+                    // Register in symbol table
+                    ctx.define(captured.name, alloca, true, captured.type);
+                    
+                    fieldIdx++;
+                }
+            }
+        }
+        
+        // Create allocas for parameters
+        std::vector<std::pair<std::string, CodeGenContext::Symbol*>> savedSymbols;
+        
+        idx = 0;
+        argIdx = 0;
+        
+        // Skip environment parameter if present
+        if (lambda->needs_heap_environment && envType) {
+            argIdx = 1;
+        }
+        
+        for (auto argIt = func->arg_begin() + argIdx; argIt != func->arg_end(); ++argIt) {
+            Type* argType = argIt->getType();
+            AllocaInst* alloca = ctx.builder->CreateAlloca(argType, nullptr, argIt->getName());
+            ctx.builder->CreateStore(&(*argIt), alloca);
+            
+            std::string argName = std::string(argIt->getName());
+            auto* existingSym = ctx.lookup(argName);
+            if (existingSym) {
+                savedSymbols.push_back({argName, existingSym});
+            }
+            
+            // Store parameter with its Aria type from the lambda parameter list
+            std::string paramAriaType = lambda->parameters[idx].type;
+            ctx.define(argName, alloca, true, paramAriaType);
+            idx++; // Increment for next parameter
+        }
+        
+        // Generate lambda body
+        if (lambda->body) {
+            lambda->body->accept(*this);
+        }
+        
+        // Add return if missing
+        if (ctx.builder->GetInsertBlock()->getTerminator() == nullptr) {
+            // Execute all defers before implicit return (LIFO order)
+            if (!ctx.deferStacks.empty() && !ctx.deferStacks[0].empty()) {
+                for (auto it = ctx.deferStacks[0].rbegin(); it != ctx.deferStacks[0].rend(); ++it) {
+                    (*it)->accept(*this);
+                }
+            }
+            
+            // SHADOW STACK: Pop frame before return
+            FunctionType* popFrameType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {},
+                false
+            );
+            FunctionCallee popFrameFunc = ctx.module->getOrInsertFunction(
+                "aria_shadow_stack_pop_frame",
+                popFrameType
+            );
+            ctx.builder->CreateCall(popFrameFunc);
+            
+            Type* returnType = func->getReturnType();
+            if (returnType->isVoidTy()) {
+                ctx.builder->CreateRetVoid();
+            } else {
+                ctx.builder->CreateRet(Constant::getNullValue(returnType));
+            }
+        }
+        
+        // Restore previous symbols
+        for (auto& pair : savedSymbols) {
+            ctx.define(pair.first, pair.second->val, pair.second->is_ref);
+        }
+        
+        // Generate resume wrapper for async functions
+        // This bridges LLVM coroutines with the Aria scheduler's function-pointer model
+        if (lambda->is_async) {
+            // Create the resume wrapper function: void funcName_resume(void* handle)
+            std::string resumeName = std::string(func->getName()) + "_resume";
+            
+            FunctionType* resumeType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {PointerType::getUnqual(ctx.llvmContext)},  // void* handle parameter
+                false
+            );
+            
+            Function* resumeFunc = Function::Create(
+                resumeType,
+                Function::ExternalLinkage,  // External so scheduler can call it
+                resumeName,
+                ctx.module.get()
+            );
+            
+            // Generate the resume wrapper body
+            BasicBlock* resumeEntry = BasicBlock::Create(ctx.llvmContext, "entry", resumeFunc);
+            IRBuilder<> resumeBuilder(resumeEntry);
+            
+            // Get the handle parameter
+            Value* handle = resumeFunc->arg_begin();
+            handle->setName("handle");
+            
+            // Get llvm.coro.resume intrinsic
+            Function* coroResume = Intrinsic::getDeclaration(
+                ctx.module.get(),
+                Intrinsic::coro_resume
+            );
+            
+            // Call llvm.coro.resume(handle)
+            resumeBuilder.CreateCall(coroResume, {handle});
+            
+            // Return void
+            resumeBuilder.CreateRetVoid();
+            
+            // Store the resume function pointer in a global variable
+            // so the scheduler can find it when setting up the CoroutineFrame
+            std::string resumePtrName = std::string(func->getName()) + "_resume_ptr";
+            GlobalVariable* resumePtr = new GlobalVariable(
+                *ctx.module,
+                resumeFunc->getType(),
+                true,  // constant
+                GlobalValue::ExternalLinkage,
+                resumeFunc,
+                resumePtrName
+            );
+        }
+        
+        // Restore previous function context
+        ctx.currentFunction = prevFunc;
+        ctx.currentFunctionReturnType = prevReturnType;
+        ctx.currentFunctionAutoWrap = prevAutoWrap;
+        if (prevBlock) {
+            ctx.builder->SetInsertPoint(prevBlock);
+        }
+    }
+    
+    // Helper: Determine if a type should be stack-allocated by default
+    bool shouldStackAllocate(const std::string& type, llvm::Type* llvmType) {
+        // Primitives that fit in registers should be stack-allocated
+        if (type == "int8" || type == "int16" || type == "int32" || type == "int64" ||
+            type == "uint8" || type == "uint16" || type == "uint32" || type == "uint64" ||
+            type == "bool" || type == "trit" || type == "char") {
+            return true;
+        }
+        
+        // Floating point primitives
+        if (type == "float" || type == "double" || type == "float32" || type == "float64") {
+            return true;
+        }
+        
+        // Small aggregate types (< 128 bytes) can be stack-allocated
+        if (llvmType->isSized()) {
+            uint64_t size = ctx.module->getDataLayout().getTypeAllocSize(llvmType);
+            if (size > 0 && size <= 128) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    void visit(VarDecl* node) override {
+        // SPECIAL CASE: Generic function template (has generic_params)
+        // Don't generate code immediately - store as template for monomorphization
+        if (!node->generic_params.empty() && 
+            (node->type == "func" || node->type.find("func<") == 0) && 
+            node->initializer) {
+            
+            if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node->initializer.get())) {
+                // Register the generic function template
+                GenericTemplate tmpl;
+                tmpl.varDecl = node;
+                tmpl.lambda = lambda;
+                tmpl.typeParams = node->generic_params;
+                
+                genericTemplates[node->name] = tmpl;
+                
+                // Skip code generation - will instantiate at call sites
+                return;
+            }
+        }
+        
+        // Special case: Function variables (type="func" or "func<signature>" with Lambda initializer)
+        if ((node->type == "func" || node->type.find("func<") == 0) && node->initializer) {
+            if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node->initializer.get())) {
+                // IMPORTANT: We need to pre-declare the function in the symbol table
+                // BEFORE generating the lambda body, so recursive calls can find it.
+                
+                // Create function type
+                std::vector<Type*> paramTypes;
+                
+                // CLOSURE SUPPORT: Add hidden environment pointer parameter if needed
+                StructType* envType = nullptr;
+                if (lambda->needs_heap_environment) {
+                    envType = generateClosureEnvType(lambda, node->name + "_env");
+                    if (envType) {
+                        // Add ptr as first parameter
+                        paramTypes.push_back(PointerType::getUnqual(ctx.llvmContext));
+                    }
+                }
+                
+                for (auto& param : lambda->parameters) {
+                    paramTypes.push_back(ctx.getLLVMType(param.type));
+                }
+                
+                // ASYNC FUNCTIONS: Return coroutine handle (ptr) instead of declared type
+                Type* returnType;
+                if (lambda->is_async) {
+                    returnType = PointerType::getUnqual(ctx.llvmContext);  // i8* coroutine handle
+                } else {
+                    returnType = ctx.getResultType(lambda->return_type);
+                }
+                
+                FunctionType* funcType = FunctionType::get(returnType, paramTypes, false);
+                
+                // Create function with module prefix if in a module
+                std::string funcName = ctx.currentModulePrefix + node->name;
+                
+                // Create function with the FINAL name (not lambda_N)
+                Function* func = Function::Create(
+                    funcType,
+                    Function::InternalLinkage,
+                    funcName,
+                    ctx.module.get()
+                );
+                
+                // Set name for environment parameter if present
+                if (lambda->needs_heap_environment && envType) {
+                    func->arg_begin()->setName("__env");
+                }
+                
+                // CLOSURE SUPPORT: If we need heap environment, create and populate it
+                Value* closureValue = nullptr;
+                if (lambda->needs_heap_environment && envType) {
+                    // Allocate environment on heap
+                    Value* envPtr = allocateClosureEnv(envType);
+                    
+                    // Populate environment with captured values
+                    populateClosureEnv(envPtr, envType, lambda);
+                    
+                    // Create fat pointer structure {func_ptr, env_ptr}
+                    // For now, we'll store this as a struct in memory
+                    Type* fatPtrFields[] = {
+                        PointerType::getUnqual(ctx.llvmContext),  // func ptr
+                        PointerType::getUnqual(ctx.llvmContext)   // env ptr
+                    };
+                    StructType* fatPtrType = StructType::create(ctx.llvmContext, fatPtrFields, node->name + "_closure_t");
+                    
+                    // Allocate fat pointer on stack
+                    AllocaInst* fatPtrAlloca = ctx.builder->CreateAlloca(fatPtrType, nullptr, node->name + ".closure");
+                    
+                    // Store function pointer
+                    Value* funcPtrField = ctx.builder->CreateStructGEP(fatPtrType, fatPtrAlloca, 0);
+                    ctx.builder->CreateStore(func, funcPtrField);
+                    
+                    // Store environment pointer
+                    Value* envPtrField = ctx.builder->CreateStructGEP(fatPtrType, fatPtrAlloca, 1);
+                    ctx.builder->CreateStore(envPtr, envPtrField);
+                    
+                    closureValue = fatPtrAlloca;
+                    
+                    // Register closure (fat pointer) in symbol table
+                    ctx.define(node->name, closureValue, true, node->type, CodeGenContext::AllocStrategy::STACK);
+                } else {
+                    // No captures, just register function directly
+                    ctx.define(node->name, func, false, node->type);
+                }
+                
+                // Now generate the lambda body (visitExpr will fill in the function)
+                // We pass the pre-created function to be filled
+                // Also pass the environment type so lambda body can extract captured variables
+                generateLambdaBody(lambda, func, envType);
+                
+                return;
+            }
+        }
+        
+        // Early return if initializer is a function (for func pointer variables)
+        // This avoids allocating storage when we just want to store the Function* directly
+        if ((node->type == "func" || node->type.find("func<") == 0) && node->initializer) {
+            Value* initVal = visitExpr(node->initializer.get());
+            if (initVal && isa<Function>(initVal)) {
+                // Store function directly in symbol table (no memory allocation)
+                ctx.define(node->name, initVal, false, node->type, CodeGenContext::AllocStrategy::VALUE);
+                return;
+            }
+        }
+        
+        llvm::Type* varType = ctx.getLLVMType(node->type);
+        Value* storage = nullptr;
+        bool is_ref = true; // Whether we need to load from storage
+
+        // Check if this is a module-level (global) variable
+        bool isModuleScope = (ctx.currentFunction && 
+                             ctx.currentFunction->getName() == "__aria_module_init");
+
+        // Module-level variables must be GlobalVariables for closure capture
+        if (isModuleScope && !node->is_wild && !node->is_stack) {
+            // Create a GlobalVariable instead of alloca
+            Constant* initializer = nullptr;
+            if (node->initializer) {
+                // Evaluate constant initializer if possible
+                Value* initVal = visitExpr(node->initializer.get());
+                if (auto* constVal = dyn_cast<Constant>(initVal)) {
+                    // Convert constant to correct type if needed
+                    if (constVal->getType() != varType) {
+                        // Try to convert via truncation/extension
+                        if (constVal->getType()->isIntegerTy() && varType->isIntegerTy()) {
+                            if (auto* constInt = dyn_cast<ConstantInt>(constVal)) {
+                                initializer = ConstantInt::get(varType, constInt->getZExtValue());
+                            } else {
+                                initializer = Constant::getNullValue(varType);
+                            }
+                        } else {
+                            initializer = Constant::getNullValue(varType);
+                        }
+                    } else {
+                        initializer = constVal;
+                    }
+                } else {
+                    // Non-constant initializer - use zero init then assign
+                    initializer = Constant::getNullValue(varType);
+                }
+            } else {
+                initializer = Constant::getNullValue(varType);
+            }
+            
+            GlobalVariable* global = new GlobalVariable(
+                *ctx.module,
+                varType,
+                false, // not constant
+                GlobalValue::InternalLinkage,
+                initializer,
+                node->name
+            );
+            
+            storage = global;
+            ctx.define(node->name, storage, is_ref, node->type, CodeGenContext::AllocStrategy::VALUE);
+            
+            // If initializer was non-constant, store it now
+            if (node->initializer) {
+                Value* initVal = visitExpr(node->initializer.get());
+                if (!isa<Constant>(initVal)) {
+                    // Convert type if needed
+                    if (initVal->getType() != varType) {
+                        if (initVal->getType()->isIntegerTy() && varType->isIntegerTy()) {
+                            initVal = ctx.builder->CreateTrunc(initVal, varType);
+                        }
+                    }
+                    ctx.builder->CreateStore(initVal, global);
+                }
+            }
+            return;
+        }
+
+        // Determine allocation strategy for local variables
+        bool use_stack = node->is_stack || (!node->is_wild && !node->is_wildx && shouldStackAllocate(node->type, varType));
+
+        CodeGenContext::AllocStrategy strategy;
+        
+        if (use_stack) {
+            // Stack: Simple Alloca (for explicit `stack` keyword or auto-promoted primitives)
+            // Insert at entry block for efficiency
+            BasicBlock* currentBB = ctx.builder->GetInsertBlock();
+            Function* func = currentBB->getParent();
+            IRBuilder<> tmpBuilder(&func->getEntryBlock(), func->getEntryBlock().begin());
+            storage = tmpBuilder.CreateAlloca(varType, nullptr, node->name);
+            strategy = CodeGenContext::AllocStrategy::STACK;
+        } 
+        else if (node->is_wild) {
+            // Wild: aria_alloc (standard heap allocation via mimalloc)
+            uint64_t size = ctx.module->getDataLayout().getTypeAllocSize(varType);
+            Value* sizeVal = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), size);
+            
+            Function* allocator = getOrInsertAriaAlloc();
+            Value* rawPtr = ctx.builder->CreateCall(allocator, sizeVal);
+            
+            // We need a stack slot to hold the pointer itself (lvalue)
+            storage = ctx.builder->CreateAlloca(PointerType::getUnqual(ctx.llvmContext), nullptr, node->name);
+            ctx.builder->CreateStore(rawPtr, storage);
+            strategy = CodeGenContext::AllocStrategy::WILD;
+        }
+        else if (node->is_wildx) {
+            // Wildx: aria_alloc_exec (executable memory via mmap)
+            // Allocates RW memory that can be transitioned to RX for JIT compilation
+            uint64_t size = ctx.module->getDataLayout().getTypeAllocSize(varType);
+            Value* sizeVal = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), size);
+            
+            Function* allocator = getOrInsertAriaAllocExec();
+            Value* rawPtr = ctx.builder->CreateCall(allocator, sizeVal);
+            
+            // We need a stack slot to hold the pointer itself (lvalue)
+            storage = ctx.builder->CreateAlloca(PointerType::getUnqual(ctx.llvmContext), nullptr, node->name);
+            ctx.builder->CreateStore(rawPtr, storage);
+            strategy = CodeGenContext::AllocStrategy::WILDX; // WILDX strategy for executable memory
+        }
+        else {
+            // GC: aria_gc_alloc (for non-primitives or explicitly marked gc)
+            // 1. Get Nursery
+            Function* getNursery = getOrInsertGetNursery();
+            Value* nursery = ctx.builder->CreateCall(getNursery, {});
+            
+            // 2. Alloc
+            uint64_t size = ctx.module->getDataLayout().getTypeAllocSize(varType);
+            Value* sizeVal = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), size);
+            
+            Function* allocator = getOrInsertGCAlloc();
+            Value* gcPtr = ctx.builder->CreateCall(allocator, {nursery, sizeVal});
+            
+            // Store pointer
+            storage = ctx.builder->CreateAlloca(PointerType::getUnqual(ctx.llvmContext), nullptr, node->name);
+            ctx.builder->CreateStore(gcPtr, storage);
+            strategy = CodeGenContext::AllocStrategy::GC;
+        }
+
+        ctx.define(node->name, storage, is_ref, node->type, strategy);
+
+        // Initializer
+        if (node->initializer) {
+            Value* initVal = visitExpr(node->initializer.get());
+            if (!initVal) return;
+
+            // Special case: func type variables store Function* directly, not in memory
+            // This includes both "func" and "func<signature>" types
+            if ((node->type == "func" || node->type.find("func<") == 0) && isa<Function>(initVal)) {
+                // Update symbol table to store function directly (not as a reference)
+                ctx.define(node->name, initVal, false, node->type, CodeGenContext::AllocStrategy::VALUE);
+                return;  // Don't store to memory
+            }
+
+            // Convert initVal to match variable type if needed
+            if (initVal->getType() != varType) {
+                if (initVal->getType()->isIntegerTy() && varType->isIntegerTy()) {
+                    // Truncate or extend to match variable type
+                    initVal = ctx.builder->CreateIntCast(initVal, varType, true);
+                }
+            }
+
+            if (use_stack) {
+                // Direct store for stack-allocated variables
+                ctx.builder->CreateStore(initVal, storage);
+            } else {
+                // For heap vars, 'storage' is `ptr*`, we load the `ptr` then store to it
+                Value* heapPtr = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), storage);
+                // Cast heapPtr if necessary (though LLVM 18 ptr is opaque)
+                ctx.builder->CreateStore(initVal, heapPtr);
+            }
+        }
+    }
+
+    void visit(StructDecl* node) override {
+        // Register struct type in LLVM
+        // In Aria, structs are value types defined with: const StructName = struct { fields... };
+        // We create an LLVM StructType and register it for later use
+        
+        // Check if type already exists (avoid duplicates)
+        if (StructType::getTypeByName(ctx.llvmContext, node->name)) {
+            throw std::runtime_error("Struct type '" + node->name + "' already defined");
+        }
+        
+        // Create field types and store field name mappings
+        std::vector<Type*> fieldTypes;
+        std::map<std::string, unsigned> fieldMap;
+        unsigned fieldIndex = 0;
+        
+        for (const auto& field : node->fields) {
+            Type* fieldType = ctx.getLLVMType(field.type);
+            fieldTypes.push_back(fieldType);
+            fieldMap[field.name] = fieldIndex++;
+        }
+        
+        // Create named struct type
+        StructType::create(ctx.llvmContext, fieldTypes, node->name);
+        
+        // Store field mapping for later use in member access
+        ctx.structFieldMaps[node->name] = fieldMap;
+        
+        // Note: We don't need to add to symbol table - struct types are looked up by name
+        // The type system will resolve "Point" to the LLVM StructType when needed
+        
+        // =====================================================================
+        // STRUCT METHODS: Generate as mangled free functions
+        // =====================================================================
+        // Methods defined inside structs are transformed into free functions:
+        // Example: Point.distance(self) -> Point_distance(Point self)
+        // Methods are now stored as FuncDecl nodes
+        for (auto& methodDecl : node->methods) {
+            // Create mangled name: Point.distance -> Point_distance
+            std::string originalName = methodDecl->name;
+            std::string mangledName = ctx.currentModulePrefix + node->name + "_" + methodDecl->name;
+            
+            // Temporarily change the name for code generation
+            methodDecl->name = mangledName;
+            
+            // Visit the method FuncDecl to generate the function
+            visit(methodDecl.get());
+            
+            // Restore original name
+            methodDecl->name = originalName;
+        }
+    }
+
+    void visit(ExpressionStmt* node) override {
+        // Execute expression for side effects (e.g., function call)
+        visitExpr(node->expression.get());
+    }
+
+    void visit(FuncDecl* node) override {
+        // =====================================================================
+        // GENERIC FUNCTION DETECTION
+        // =====================================================================
+        // If function has generic type parameters (func<T>:name), don't generate
+        // code immediately. Instead, store as template for later monomorphization.
+        if (!node->generics.empty()) {
+            GenericTemplate tmpl;
+            tmpl.funcDecl = node;  // Store pointer to FuncDecl
+            tmpl.typeParams = node->generics;
+            genericTemplates[node->name] = tmpl;
+            
+            // Don't generate code yet - will be instantiated when called with concrete types
+            return;
+        }
+        
+        // 1. Create function type with optimized parameter passing
+        std::vector<Type*> paramTypes;
+        std::vector<bool> shouldScalarize;  // Track which params to scalarize
+        std::vector<std::vector<Type*>> scalarizedTypes;  // Scalarized field types
+        
+        for (auto& param : node->parameters) {
+            Type* paramType = ctx.getLLVMType(param.type);
+            
+            // ================================================================
+            // OPTIMIZATION: Small Struct Parameter Passing
+            // ================================================================
+            // System V AMD64 ABI allows passing small structs in registers:
+            // - Structs ≤ 16 bytes can be passed in up to 2 registers
+            // - We scalarize structs into individual fields for optimal codegen
+            //
+            // Example: struct Vec3 { float x, y, z; }  (12 bytes)
+            // Before: Pass pointer, load 3 floats from memory (L1 cache miss)
+            // After: Pass x, y, z in XMM0, XMM1, XMM2 registers directly
+            // ================================================================
+            
+            bool shouldOptimize = false;
+            std::vector<Type*> fieldTypes;
+            
+            if (paramType->isStructTy()) {
+                auto* structType = cast<StructType>(paramType);
+                
+                // Check if struct is small enough to optimize
+                if (structType->isSized()) {
+                    uint64_t structSize = ctx.module->getDataLayout().getTypeAllocSize(structType);
+                    
+                    // Optimize structs ≤ 16 bytes (fits in 2 registers)
+                    if (structSize > 0 && structSize <= 16) {
+                        // Scalarize: pass each field as separate parameter
+                        for (unsigned i = 0; i < structType->getNumElements(); ++i) {
+                            Type* fieldType = structType->getElementType(i);
+                            fieldTypes.push_back(fieldType);
+                            paramTypes.push_back(fieldType);
+                        }
+                        shouldOptimize = true;
+                    }
+                }
+            }
+            
+            if (!shouldOptimize) {
+                // Standard parameter: pass as-is
+                paramTypes.push_back(paramType);
+                shouldScalarize.push_back(false);
+                scalarizedTypes.push_back({});
+            } else {
+                // Optimized parameter: scalarized
+                shouldScalarize.push_back(true);
+                scalarizedTypes.push_back(fieldTypes);
+            }
+        }
+        
+        // Strip * prefix from return type if present (result wrapper syntax)
+        std::string returnTypeStr = node->return_type;
+        if (!returnTypeStr.empty() && returnTypeStr[0] == '*') {
+            returnTypeStr = returnTypeStr.substr(1);  // Remove leading *
+        }
+        
+        // ALL functions must return result types (TBB requirement)
+        Type* returnType = ctx.getResultType(returnTypeStr);
+        
+        // ASYNC FUNCTION SUPPORT (Bug #70)
+        // Async functions return a coroutine handle (i8*) instead of their declared type
+        if (node->is_async) {
+            returnType = PointerType::getUnqual(ctx.llvmContext);  // i8* for coroutine handle
+        }
+        
+        FunctionType* funcType = FunctionType::get(returnType, paramTypes, false);
+        
+        // 2. Create function with module prefix and mangled name (for generic specializations)
+        std::string funcName = ctx.currentModulePrefix;
+        if (!ctx.currentMangledName.empty()) {
+            // Generic specialization - use mangled name
+            funcName += ctx.currentMangledName;
+        } else {
+            // Regular function
+            funcName += node->name;
+        }
+        
+        Function* func = Function::Create(
+            funcType,
+            Function::ExternalLinkage,
+            funcName,
+            ctx.module.get()
+        );
+        
+        // Register function in symbol table so it can be found later
+        // Use original name (not mangled) for lookup
+        ctx.define(node->name, func, false);  // false = not a reference/pointer
+        
+        // 3. Set parameter names
+        unsigned idx = 0;
+        for (auto& arg : func->args()) {
+            arg.setName(node->parameters[idx++].name);
+        }
+        
+        // 4. Create entry basic block
+        BasicBlock* entry = BasicBlock::Create(ctx.llvmContext, "entry", func);
+        
+        // 5. Save previous state and set new function context
+        Function* prevFunc = ctx.currentFunction;
+        BasicBlock* prevBlock = ctx.builder->GetInsertBlock();
+        bool prevAutoWrap = ctx.currentFunctionAutoWrap;
+        std::string prevReturnType = ctx.currentFunctionReturnType;
+        
+        ctx.currentFunction = func;
+        ctx.builder->SetInsertPoint(entry);
+        
+        // Clear defer stacks for new function (defers don't persist across functions)
+        ctx.deferStacks = std::vector<std::vector<Block*>>();
+        ctx.deferStacks.emplace_back();  // Start with one scope for the function
+        
+        // SPEC REQUIREMENT: ALL functions return Result objects - enable auto-wrap by default
+        // "NO BYPASSING THIS!!! NO REGULAR VALUE RETURNS ALLOWED!!!!" - Section 8.4
+        ctx.currentFunctionAutoWrap = true;
+        
+        // Strip * prefix if present (result type wrapper syntax)
+        std::string returnTypeBase = node->return_type;
+        if (!returnTypeBase.empty() && returnTypeBase[0] == '*') {
+            returnTypeBase = returnTypeBase.substr(1);  // Remove leading *
+        }
+        ctx.currentFunctionReturnType = returnTypeBase;
+        
+        // ASYNC FUNCTION COROUTINE SETUP
+        if (node->is_async) {
+            // Step 1: Generate coroutine ID
+            Function* coroId = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_id);
+            Value* id = ctx.builder->CreateCall(coroId, {
+                ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0),
+                ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)),
+                ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)),
+                ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))
+            }, "coro_id");
+            
+            // Step 2: Get coroutine frame size
+            Function* coroSize = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_size, {Type::getInt64Ty(ctx.llvmContext)});
+            Value* frameSize = ctx.builder->CreateCall(coroSize, {}, "coro_size");
+            
+            // Step 3: Check if heap allocation is needed (coro.alloc intrinsic)
+            Function* coroAlloc = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_alloc);
+            Value* needAlloc = ctx.builder->CreateCall(coroAlloc, {id}, "coro_need_alloc");
+            
+            // Step 4: Conditionally allocate frame memory via aria.alloc
+            BasicBlock* allocBB = BasicBlock::Create(ctx.llvmContext, "coro_alloc", func);
+            BasicBlock* beginBB = BasicBlock::Create(ctx.llvmContext, "coro_begin", func);
+            ctx.builder->CreateCondBr(needAlloc, allocBB, beginBB);
+            
+            // Allocation branch
+            ctx.builder->SetInsertPoint(allocBB);
+            Function* ariaAlloc = getOrInsertAriaAlloc();
+            Value* allocMem = ctx.builder->CreateCall(ariaAlloc, {frameSize}, "coro_alloc_mem");
+            ctx.builder->CreateBr(beginBB);
+            
+            // Begin coroutine with allocated frame (or NULL if elided)
+            ctx.builder->SetInsertPoint(beginBB);
+            PHINode* framePhi = ctx.builder->CreatePHI(PointerType::getUnqual(ctx.llvmContext), 2, "coro_frame");
+            framePhi->addIncoming(allocMem, allocBB);
+            framePhi->addIncoming(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), entry);
+            
+            Function* coroBegin = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_begin);
+            Value* hdl = ctx.builder->CreateCall(coroBegin, {id, framePhi}, "coro_hdl");
+            
+            // Store handle for use in return statements
+            AllocaInst* coroHandleAlloca = ctx.builder->CreateAlloca(
+                PointerType::getUnqual(ctx.llvmContext), nullptr, "__coro_handle");
+            ctx.builder->CreateStore(hdl, coroHandleAlloca);
+            ctx.define("__coro_handle__", coroHandleAlloca, false, "void*");
+        }
+        
+        // 6. Create allocas for parameters (to allow taking addresses)
+        // For scalarized struct parameters, reconstruct the struct from individual fields
+        idx = 0;
+        size_t argIdx = 0;  // Track position in func->args() (may not match param index due to scalarization)
+        
+        for (size_t paramIdx = 0; paramIdx < node->parameters.size(); ++paramIdx) {
+            auto& param = node->parameters[paramIdx];
+            
+            if (paramIdx < shouldScalarize.size() && shouldScalarize[paramIdx]) {
+                // ============================================================
+                // SCALARIZED STRUCT PARAMETER
+                // ============================================================
+                // This parameter was scalarized into multiple arguments
+                // Reconstruct the original struct from the fields
+                
+                Type* originalType = ctx.getLLVMType(param.type);
+                auto* structType = cast<StructType>(originalType);
+                
+                // Create alloca for the reconstructed struct
+                AllocaInst* structAlloca = ctx.builder->CreateAlloca(
+                    structType, nullptr, param.name + "_reconstructed");
+                
+                // Copy each field from the scalarized arguments into the struct
+                for (unsigned fieldIdx = 0; fieldIdx < scalarizedTypes[paramIdx].size(); ++fieldIdx) {
+                    // Get the scalarized argument
+                    auto argIter = func->arg_begin();
+                    std::advance(argIter, argIdx + fieldIdx);
+                    Value* fieldArg = &*argIter;
+                    
+                    // Set argument name for debugging
+                    fieldArg->setName(param.name + "_field" + std::to_string(fieldIdx));
+                    
+                    // Get pointer to struct field
+                    Value* fieldPtr = ctx.builder->CreateStructGEP(
+                        structType, structAlloca, fieldIdx,
+                        param.name + "_field" + std::to_string(fieldIdx) + "_ptr");
+                    
+                    // Store the argument value into the struct field
+                    ctx.builder->CreateStore(fieldArg, fieldPtr);
+                }
+                
+                // Register the reconstructed struct in symbol table
+                ctx.define(param.name, structAlloca, true, param.type);
+                
+                // Advance argument index by number of fields
+                argIdx += scalarizedTypes[paramIdx].size();
+            } else {
+                // ============================================================
+                // NORMAL PARAMETER (not scalarized)
+                // ============================================================
+                auto argIter = func->arg_begin();
+                std::advance(argIter, argIdx);
+                Value* arg = &*argIter;
+                
+                arg->setName(param.name);
+                
+                Type* argType = arg->getType();
+                AllocaInst* alloca = ctx.builder->CreateAlloca(argType, nullptr, param.name);
+                ctx.builder->CreateStore(arg, alloca);
+                ctx.define(param.name, alloca, true, param.type);
+                
+                argIdx++;
+            }
+        }
+        
+        // 7. Generate function body
+        if (node->body) {
+            node->body->accept(*this);
+        }
+        
+        // 8. Add return if missing (for void functions)
+        if (ctx.builder->GetInsertBlock()->getTerminator() == nullptr) {
+            if (node->is_async) {
+                // Async functions: emit final suspend and return handle
+                Function* coroSuspend = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_suspend);
+                Value* suspendResult = ctx.builder->CreateCall(coroSuspend, {
+                    ConstantTokenNone::get(ctx.llvmContext),
+                    ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 1)  // Final suspend
+                }, "final_suspend");
+                
+                // Create suspend switch
+                BasicBlock* suspendBB = BasicBlock::Create(ctx.llvmContext, "suspend", func);
+                BasicBlock* destroyBB = BasicBlock::Create(ctx.llvmContext, "destroy", func);
+                SwitchInst* suspendSwitch = ctx.builder->CreateSwitch(suspendResult, suspendBB, 2);
+                suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), destroyBB);
+                
+                // Destroy path
+                ctx.builder->SetInsertPoint(destroyBB);
+                Function* coroEnd = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_end);
+                Value* hdl = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext),
+                    func->getEntryBlock().getTerminator()->getPrevNode(), "coro_hdl");
+                ctx.builder->CreateCall(coroEnd, {
+                    hdl,
+                    ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 0)
+                });
+                ctx.builder->CreateRet(hdl);
+                
+                // Suspend path (unreachable)
+                ctx.builder->SetInsertPoint(suspendBB);
+                ctx.builder->CreateUnreachable();
+            } else if (returnType->isVoidTy()) {
+                ctx.builder->CreateRetVoid();
+            } else {
+                // Return default value (0 or nullptr)
+                ctx.builder->CreateRet(Constant::getNullValue(returnType));
+            }
+        }
+        
+        // 9. Restore previous function context and insertion point
+        ctx.currentFunction = prevFunc;
+        ctx.currentFunctionAutoWrap = prevAutoWrap;
+        ctx.currentFunctionReturnType = prevReturnType;
+        if (prevBlock) {
+            ctx.builder->SetInsertPoint(prevBlock);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. Control Flow: Pick & Loops
+    // -------------------------------------------------------------------------
+
+    void visit(PickStmt* node) override {
+        Value* selector = visitExpr(node->selector.get());
+        Function* func = ctx.builder->GetInsertBlock()->getParent();
+        BasicBlock* doneBB = BasicBlock::Create(ctx.llvmContext, "pick_done");
+        
+        // Build label map for fall() targets
+        std::map<std::string, BasicBlock*> labelBlocks;
+        
+        // First pass: create labeled blocks
+        for (size_t i = 0; i < node->cases.size(); ++i) {
+            auto& pcase = node->cases[i];
+            if (!pcase.label.empty()) {
+                BasicBlock* labelBB = BasicBlock::Create(ctx.llvmContext, "pick_label_" + pcase.label, func);
+                labelBlocks[pcase.label] = labelBB;
+            }
+        }
+        
+        // Store label blocks in context for fall statements
+        ctx.pickLabelBlocks = &labelBlocks;
+        ctx.pickDoneBlock = doneBB;
+        
+        // =====================================================================
+        // OPTIMIZATION: Group consecutive EXACT integer cases into SwitchInst
+        // This converts O(N) linear search into O(1) jump table
+        // =====================================================================
+        
+        // Check if we can use switch optimization
+        bool canUseSwitch = selector->getType()->isIntegerTy();
+        
+        // Scan for consecutive EXACT cases at the start
+        size_t exactCaseCount = 0;
+        if (canUseSwitch) {
+            for (size_t i = 0; i < node->cases.size(); ++i) {
+                auto& pcase = node->cases[i];
+                if (pcase.type == PickCase::EXACT && pcase.label.empty()) {
+                    // Check if value is a constant (required for switch)
+                    Value* caseVal = visitExpr(pcase.value_start.get());
+                    if (isa<ConstantInt>(caseVal)) {
+                        exactCaseCount = i + 1;
+                    } else {
+                        // Non-constant value - cannot use switch for remaining cases
+                        break;
+                    }
+                } else {
+                    // Different case type - stop grouping
+                    break;
+                }
+            }
+        }
+        
+        // If we have 3+ consecutive EXACT constant cases, use SwitchInst
+        if (exactCaseCount >= 3) {
+            // Create switch instruction
+            BasicBlock* defaultBB = BasicBlock::Create(ctx.llvmContext, "switch_default", func);
+            SwitchInst* switchInst = ctx.builder->CreateSwitch(selector, defaultBB, exactCaseCount);
+            
+            // Add each exact case to the switch
+            for (size_t i = 0; i < exactCaseCount; ++i) {
+                auto& pcase = node->cases[i];
+                Value* caseVal = visitExpr(pcase.value_start.get());
+                auto* caseConst = cast<ConstantInt>(caseVal);
+                
+                // Create case body block
+                BasicBlock* caseBodyBB = BasicBlock::Create(
+                    ctx.llvmContext, 
+                    "switch_case_" + std::to_string(i), 
+                    func
+                );
+                
+                // Add to switch
+                switchInst->addCase(caseConst, caseBodyBB);
+                
+                // Generate case body
+                ctx.builder->SetInsertPoint(caseBodyBB);
+                {
+                    ScopeGuard guard(ctx);
+                    pcase.body->accept(*this);
+                }
+                
+                // Auto-break unless terminated
+                if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                    ctx.builder->CreateBr(doneBB);
+                }
+            }
+            
+            // Continue with remaining cases (if any) using linear chain
+            ctx.builder->SetInsertPoint(defaultBB);
+            
+            // Process remaining cases (starting from exactCaseCount)
+            size_t remainingStart = exactCaseCount;
+            if (remainingStart < node->cases.size()) {
+                // Fall through to linear case chain for remaining cases
+                generateLinearCaseChain(node, remainingStart, func, doneBB, labelBlocks);
+            } else {
+                // All cases were handled by switch - jump to done
+                ctx.builder->CreateBr(doneBB);
+            }
+            
+        } else {
+            // Use traditional linear if-else chain (original implementation)
+            generateLinearCaseChain(node, 0, func, doneBB, labelBlocks);
+        }
+        
+        func->insert(func->end(), doneBB);
+        ctx.builder->SetInsertPoint(doneBB);
+        
+        // Clear pick context
+        ctx.pickLabelBlocks = nullptr;
+        ctx.pickDoneBlock = nullptr;
+    }
+    
+    // Helper: Generate traditional linear if-else case chain
+    void generateLinearCaseChain(PickStmt* node, size_t startIdx, Function* func, 
+                                 BasicBlock* doneBB, std::map<std::string, BasicBlock*>& labelBlocks) {
+        BasicBlock* nextCaseBB = nullptr;
+        Value* selector = visitExpr(node->selector.get());
+        
+        // Second pass: generate case logic
+        for (size_t i = startIdx; i < node->cases.size(); ++i) {
+            auto& pcase = node->cases[i];
+            
+            // For labeled cases, jump directly to their block
+            if (!pcase.label.empty()) {
+                // Create unconditional branch to labeled block
+                if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                    ctx.builder->CreateBr(labelBlocks[pcase.label]);
+                }
+                
+                // Set insert point to the labeled block
+                ctx.builder->SetInsertPoint(labelBlocks[pcase.label]);
+                
+                // Generate body
+                {
+                    ScopeGuard guard(ctx);
+                    pcase.body->accept(*this);
+                }
+                
+                // Auto-break if no terminator
+                if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                    ctx.builder->CreateBr(doneBB);
+                }
+                
+                // Create a new block for next case
+                nextCaseBB = BasicBlock::Create(ctx.llvmContext, "case_next_" + std::to_string(i), func);
+                ctx.builder->SetInsertPoint(nextCaseBB);
+                continue;
+            }
+            
+            // Regular case (not labeled)
+            BasicBlock* caseBodyBB = BasicBlock::Create(ctx.llvmContext, "case_body_" + std::to_string(i), func);
+            nextCaseBB = BasicBlock::Create(ctx.llvmContext, "case_next_" + std::to_string(i));
+            
+            // Generate condition based on case type
+            Value* match = nullptr;
+            
+            switch (pcase.type) {
+                case PickCase::WILDCARD:
+                    // (*) - always matches
+                    match = ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 1);
+                    break;
+                    
+                case PickCase::EXACT: {
+                    // (value) - exact match
+                    Value* val = visitExpr(pcase.value_start.get());
+                    // Cast val to match selector type for comparison
+                    if (val->getType() != selector->getType()) {
+                        if (val->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            val = ctx.builder->CreateIntCast(val, selector->getType(), true);
+                        }
+                    }
+                    match = ctx.builder->CreateICmpEQ(selector, val, "pick_eq");
+                    break;
+                }
+                
+                case PickCase::LESS_THAN: {
+                    // (<value) - less than
+                    Value* val = visitExpr(pcase.value_start.get());
+                    // Cast val to match selector type for comparison
+                    if (val->getType() != selector->getType()) {
+                        if (val->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            val = ctx.builder->CreateIntCast(val, selector->getType(), true);
+                        }
+                    }
+                    match = ctx.builder->CreateICmpSLT(selector, val, "pick_lt");
+                    break;
+                }
+                
+                case PickCase::GREATER_THAN: {
+                    // (>value) - greater than
+                    Value* val = visitExpr(pcase.value_start.get());
+                    // Cast val to match selector type for comparison
+                    if (val->getType() != selector->getType()) {
+                        if (val->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            val = ctx.builder->CreateIntCast(val, selector->getType(), true);
+                        }
+                    }
+                    match = ctx.builder->CreateICmpSGT(selector, val, "pick_gt");
+                    break;
+                }
+                
+                case PickCase::LESS_EQUAL: {
+                    // (<=value) - less or equal
+                    Value* val = visitExpr(pcase.value_start.get());
+                    // Cast val to match selector type for comparison
+                    if (val->getType() != selector->getType()) {
+                        if (val->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            val = ctx.builder->CreateIntCast(val, selector->getType(), true);
+                        }
+                    }
+                    match = ctx.builder->CreateICmpSLE(selector, val, "pick_le");
+                    break;
+                }
+                
+                case PickCase::GREATER_EQUAL: {
+                    // (>=value) - greater or equal
+                    Value* val = visitExpr(pcase.value_start.get());
+                    // Cast val to match selector type for comparison
+                    if (val->getType() != selector->getType()) {
+                        if (val->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            val = ctx.builder->CreateIntCast(val, selector->getType(), true);
+                        }
+                    }
+                    match = ctx.builder->CreateICmpSGE(selector, val, "pick_ge");
+                    break;
+                }
+                
+                case PickCase::RANGE: {
+                    // (start..end) or (start...end) - range match
+                    Value* start = visitExpr(pcase.value_start.get());
+                    Value* end = visitExpr(pcase.value_end.get());
+                    
+                    // Cast to match selector type for comparison
+                    if (start->getType() != selector->getType()) {
+                        if (start->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            start = ctx.builder->CreateIntCast(start, selector->getType(), true);
+                        }
+                    }
+                    if (end->getType() != selector->getType()) {
+                        if (end->getType()->isIntegerTy() && selector->getType()->isIntegerTy()) {
+                            end = ctx.builder->CreateIntCast(end, selector->getType(), true);
+                        }
+                    }
+                    
+                    // selector >= start
+                    Value* ge_start = ctx.builder->CreateICmpSGE(selector, start, "range_ge");
+                    
+                    // selector <= end (inclusive) or selector < end (exclusive)
+                    Value* le_end;
+                    if (pcase.is_range_exclusive) {
+                        le_end = ctx.builder->CreateICmpSLT(selector, end, "range_lt");
+                    } else {
+                        le_end = ctx.builder->CreateICmpSLE(selector, end, "range_le");
+                    }
+                    
+                    // Combined: ge_start && le_end
+                    match = ctx.builder->CreateAnd(ge_start, le_end, "range_match");
+                    break;
+                }
+                
+                case PickCase::DESTRUCTURE_OBJ: {
+                    // Object destructuring: pick point { { x, y } => ... }
+                    // Match is implicitly true if types align (type checker validated)
+                    if (!selector->getType()->isStructTy() && !selector->getType()->isPointerTy()) {
+                        throw std::runtime_error("Cannot destructure non-struct type in pick pattern");
+                    }
+                    
+                    match = ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 1);
+                    
+                    // Create conditional branch to the body
+                    ctx.builder->CreateCondBr(match, caseBodyBB, nextCaseBB);
+                    
+                    // Generate Case Body with Variable Bindings
+                    ctx.builder->SetInsertPoint(caseBodyBB);
+                    {
+                        ScopeGuard guard(ctx); // New scope for the bindings
+                        
+                        // Get struct type from selector
+                        // Note: Semantic analyzer ensures selector is struct or pointer-to-struct
+                        StructType* structType = nullptr;
+                        Value* structPtr = selector;
+                        
+                        if (selector->getType()->isStructTy()) {
+                            // Value type - need to create a temporary and get pointer
+                            structType = cast<StructType>(selector->getType());
+                            AllocaInst* tempAlloca = ctx.builder->CreateAlloca(structType, nullptr, "destruct_temp");
+                            ctx.builder->CreateStore(selector, tempAlloca);
+                            structPtr = tempAlloca;
+                        } else if (selector->getType()->isPointerTy()) {
+                            // Already a pointer - assume it points to a struct (validated by sema)
+                            // With LLVM 18 opaque pointers, we need type info from AST
+                            // For now, we'll need to get struct type from context/symbol table
+                            // TODO: Pass struct type through from semantic analysis
+                            throw std::runtime_error("Destructuring pointer-to-struct requires type metadata (LLVM 18 opaque pointers)");
+                        }
+                        
+                        if (!structType) {
+                            throw std::runtime_error("Failed to extract struct type for destructuring");
+                        }
+                        
+                        // Get struct name for field mapping
+                        std::string structName = structType->hasName() ? structType->getName().str() : "";
+                        
+                        // Process destructuring pattern bindings
+                        // Note: The pattern should be stored in pcase - this assumes parser provides it
+                        // For now, implement basic field extraction by index
+                        // TODO: Match by field name using ctx.structFieldMaps
+                        
+                        // Extract fields sequentially (simplified version)
+                        // In full implementation, would match pattern field names to struct fields
+                        for (unsigned idx = 0; idx < structType->getNumElements(); ++idx) {
+                            // Generate binding name (e.g., field_0, field_1)
+                            std::string bindName = "field_" + std::to_string(idx);
+                            
+                            // Extract field value
+                            Value* fieldPtr = ctx.builder->CreateStructGEP(structType, structPtr, idx, bindName + "_ptr");
+                            Type* fieldType = structType->getElementType(idx);
+                            Value* fieldVal = ctx.builder->CreateLoad(fieldType, fieldPtr, bindName);
+                            
+                            // Register in local scope (simplified - real version uses pattern names)
+                            // ctx.define(bindName, fieldVal, false);
+                        }
+                        
+                        // Generate the actual body code
+                        pcase.body->accept(*this);
+                    }
+                    
+                    // Handle fallthrough/break
+                    if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                        ctx.builder->CreateBr(doneBB);
+                    }
+                    
+                    // Setup for next case
+                    func->insert(func->end(), nextCaseBB);
+                    ctx.builder->SetInsertPoint(nextCaseBB);
+                    continue; // Skip the normal flow below
+                }
+                
+                case PickCase::DESTRUCTURE_ARR: {
+                    // Array destructuring: pick arr { [a, b, c] => ... }
+                    if (!selector->getType()->isArrayTy() && !selector->getType()->isPointerTy()) {
+                        throw std::runtime_error("Cannot destructure non-array type in pick pattern");
+                    }
+                    
+                    match = ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 1);
+                    
+                    // Create conditional branch to the body
+                    ctx.builder->CreateCondBr(match, caseBodyBB, nextCaseBB);
+                    
+                    // Generate Case Body with Variable Bindings  
+                    ctx.builder->SetInsertPoint(caseBodyBB);
+                    {
+                        ScopeGuard guard(ctx); // New scope for the bindings
+                        
+                        // Get array type from selector
+                        // Note: Semantic analyzer ensures selector is array or pointer-to-array
+                        ArrayType* arrayType = nullptr;
+                        Value* arrayPtr = selector;
+                        
+                        if (selector->getType()->isArrayTy()) {
+                            // Value type - create temporary and get pointer
+                            arrayType = cast<ArrayType>(selector->getType());
+                            AllocaInst* tempAlloca = ctx.builder->CreateAlloca(arrayType, nullptr, "arr_destruct_temp");
+                            ctx.builder->CreateStore(selector, tempAlloca);
+                            arrayPtr = tempAlloca;
+                        } else if (selector->getType()->isPointerTy()) {
+                            // Already a pointer - assume it points to an array (validated by sema)
+                            // With LLVM 18 opaque pointers, we need type info from AST
+                            // TODO: Pass array type through from semantic analysis
+                            throw std::runtime_error("Destructuring pointer-to-array requires type metadata (LLVM 18 opaque pointers)");
+                        }
+                        
+                        if (!arrayType) {
+                            throw std::runtime_error("Failed to extract array type for destructuring");
+                        }                        Type* elemType = arrayType->getElementType();
+                        uint64_t arraySize = arrayType->getNumElements();
+                        
+                        // Extract array elements and bind to pattern variables
+                        // Simplified version: bind to elem_0, elem_1, etc.
+                        for (uint64_t idx = 0; idx < arraySize; ++idx) {
+                            std::string bindName = "elem_" + std::to_string(idx);
+                            
+                            // GEP to array element
+                            Value* indices[] = {
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0),
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), idx)
+                            };
+                            Value* elemPtr = ctx.builder->CreateGEP(arrayType, arrayPtr, indices, bindName + "_ptr");
+                            Value* elemVal = ctx.builder->CreateLoad(elemType, elemPtr, bindName);
+                            
+                            // Register in local scope
+                            // ctx.define(bindName, elemVal, false);
+                        }
+                        
+                        // Generate the actual body code
+                        pcase.body->accept(*this);
+                    }
+                    
+                    // Handle fallthrough/break
+                    if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                        ctx.builder->CreateBr(doneBB);
+                    }
+                    
+                    // Setup for next case
+                    func->insert(func->end(), nextCaseBB);
+                    ctx.builder->SetInsertPoint(nextCaseBB);
+                    continue; // Skip the normal flow below
+                }
+                
+                case PickCase::UNREACHABLE:
+                    // Labeled case - already handled above
+                    continue;
+                    
+                default:
+                    match = ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 0);
+                    break;
+            }
+            
+            // Create conditional branch
+            ctx.builder->CreateCondBr(match, caseBodyBB, nextCaseBB);
+            
+            // Generate case body
+            ctx.builder->SetInsertPoint(caseBodyBB);
+            {
+                ScopeGuard guard(ctx);
+                pcase.body->accept(*this);
+            }
+            
+            // Auto-break (unless fallthrough via fall())
+            if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                ctx.builder->CreateBr(doneBB);
+            }
+            
+            // Move to next case check
+            func->insert(func->end(), nextCaseBB);
+            ctx.builder->SetInsertPoint(nextCaseBB);
+        }
+        
+        // Final fallthrough to done if no case matched
+        if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+            ctx.builder->CreateBr(doneBB);
+        }
+    }
+    
+    // End of visit(PickStmt) - helper function above
+
+    
+    void visit(FallStmt* node) override {
+        // fall(label) - explicit fallthrough to labeled case in pick
+        if (!ctx.pickLabelBlocks) {
+            throw std::runtime_error("fall() statement outside of pick statement");
+        }
+        
+        auto it = ctx.pickLabelBlocks->find(node->target_label);
+        if (it == ctx.pickLabelBlocks->end()) {
+            throw std::runtime_error("fall() target label not found: " + node->target_label);
+        }
+        
+        // Check if block is already terminated
+        // LLVM requires exactly one terminator per basic block
+        // If a terminator already exists, subsequent code is unreachable
+        if (ctx.builder->GetInsertBlock()->getTerminator()) {
+            // Block already terminated - create dead_code block for remaining AST
+            Function* func = ctx.builder->GetInsertBlock()->getParent();
+            BasicBlock* deadCode = BasicBlock::Create(ctx.llvmContext, "dead_code", func);
+            ctx.builder->SetInsertPoint(deadCode);
+            return;  // Don't emit branch - block was already sealed
+        }
+        
+        // Create branch to target label
+        ctx.builder->CreateBr(it->second);
+    }
+
+    // TODO: visit(LoopStmt) - waiting for LoopStmt AST node implementation
+    /*
+    void visit(LoopStmt* node) override {
+        // loop(start, stop, step) with '$' iterator
+        // Dynamic direction: step >= 0 counts up, step < 0 counts down
+        Value* startVal = visitExpr(node->start.get());
+        Value* stopVal = visitExpr(node->stop.get());
+        Value* stepVal = visitExpr(node->step.get());
+
+        Function* func = ctx.builder->GetInsertBlock()->getParent();
+        BasicBlock* preheader = ctx.builder->GetInsertBlock();
+        BasicBlock* headerBB = BasicBlock::Create(ctx.llvmContext, "loop_header", func);
+        BasicBlock* bodyBB = BasicBlock::Create(ctx.llvmContext, "loop_body", func);
+        BasicBlock* latchBB = BasicBlock::Create(ctx.llvmContext, "loop_latch", func);
+        BasicBlock* exitBB = BasicBlock::Create(ctx.llvmContext, "loop_exit", func);
+
+        // Jump to header
+        ctx.builder->CreateBr(headerBB);
+        ctx.builder->SetInsertPoint(headerBB);
+
+        // PHI node for '$' iterator
+        PHINode* iterVar = ctx.builder->CreatePHI(Type::getInt64Ty(ctx.llvmContext), 2, "$");
+        iterVar->addIncoming(startVal, preheader);
+
+        // Dynamic direction check: step >= 0 means forward (iter <= stop), step < 0 means backward (iter >= stop)
+        Value* stepIsNegative = ctx.builder->CreateICmpSLT(stepVal, ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0), "step_neg");
+        Value* condForward = ctx.builder->CreateICmpSLE(iterVar, stopVal, "cond_fwd");
+        Value* condBackward = ctx.builder->CreateICmpSGE(iterVar, stopVal, "cond_bwd");
+        Value* loopCond = ctx.builder->CreateSelect(stepIsNegative, condBackward, condForward, "loop_cond");
+        
+        ctx.builder->CreateCondBr(loopCond, bodyBB, exitBB);
+
+        // Save loop context for break/continue
+        BasicBlock* prevBreakTarget = ctx.currentLoopBreakTarget;
+        BasicBlock* prevContinueTarget = ctx.currentLoopContinueTarget;
+        ctx.currentLoopBreakTarget = exitBB;
+        ctx.currentLoopContinueTarget = latchBB;
+
+        // Loop body
+        ctx.builder->SetInsertPoint(bodyBB);
+        {
+            ScopeGuard guard(ctx);
+            ctx.define("$", iterVar, false);  // Register $ in symbol table
+            node->body->accept(*this);
+        }
+        
+        if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+            ctx.builder->CreateBr(latchBB);
+        }
+
+        // Latch: increment and loop back
+        ctx.builder->SetInsertPoint(latchBB);
+        Value* nextVal = ctx.builder->CreateAdd(iterVar, stepVal, "next_iter");
+        iterVar->addIncoming(nextVal, latchBB);
+        ctx.builder->CreateBr(headerBB);
+
+        // Restore loop context
+        ctx.currentLoopBreakTarget = prevBreakTarget;
+        ctx.currentLoopContinueTarget = prevContinueTarget;
+
+        // Exit block
+        ctx.builder->SetInsertPoint(exitBB);
+    }
+    */
+
+    void visit(LoopStmt* node) override {
+        // loop(start, limit, step) with '$' iterator
+        // Direction determined by start vs limit comparison
+        // Step is ALWAYS positive (magnitude only)
+        Value* start = visitExpr(node->start.get());
+        Value* limit = visitExpr(node->limit.get());
+        Value* step = visitExpr(node->step.get());
+
+        Function* func = ctx.builder->GetInsertBlock()->getParent();
+        BasicBlock* preheader = ctx.builder->GetInsertBlock();
+        BasicBlock* loopBB = BasicBlock::Create(ctx.llvmContext, "loop_body", func);
+        BasicBlock* exitBB = BasicBlock::Create(ctx.llvmContext, "loop_exit", func);
+
+        // Determine direction: if start < limit, count up; if start > limit, count down
+        Value* countUp = ctx.builder->CreateICmpSLT(start, limit, "count_up");
+        
+        // For counting down, we need negative step
+        Value* negStep = ctx.builder->CreateNeg(step, "neg_step");
+        Value* actualStep = ctx.builder->CreateSelect(countUp, step, negStep, "actual_step");
+
+        ctx.builder->CreateBr(loopBB);
+        ctx.builder->SetInsertPoint(loopBB);
+
+        // PHI Node for '$' iterator
+        PHINode* iterVar = ctx.builder->CreatePHI(Type::getInt64Ty(ctx.llvmContext), 2, "$");
+        iterVar->addIncoming(start, preheader);
+
+        // Define '$' in scope and generate body
+        {
+            ScopeGuard guard(ctx);
+            ctx.define("$", iterVar, false); // False = Value itself, not ref
+            node->body->accept(*this);
+        }
+
+        // Increment or decrement based on direction
+        Value* nextVal = ctx.builder->CreateAdd(iterVar, actualStep, "next_val");
+        iterVar->addIncoming(nextVal, ctx.builder->GetInsertBlock());
+
+        // Termination condition depends on direction:
+        // - Counting up: nextVal <= limit (use SGE for limit check, then negate)
+        // - Counting down: nextVal >= limit
+        Value* reachedLimit = ctx.builder->CreateICmpSLE(limit, nextVal, "up_done");  // For counting up
+        Value* belowStart = ctx.builder->CreateICmpSGE(nextVal, limit, "down_done"); // For counting down
+        Value* shouldExit = ctx.builder->CreateSelect(countUp, reachedLimit, 
+                                                       ctx.builder->CreateNot(belowStart), "should_exit");
+        Value* shouldContinue = ctx.builder->CreateNot(shouldExit, "should_continue");
+        
+        ctx.builder->CreateCondBr(shouldContinue, loopBB, exitBB);
+
+        ctx.builder->SetInsertPoint(exitBB);
+    }
+
+    void visit(TillLoop* node) override {
+        // Till(limit, step) with '$' iterator
+        // Positive step: counts from 0 to limit
+        // Negative step: counts from limit to 0
+        Value* limit = visitExpr(node->limit.get());
+        Value* step = visitExpr(node->step.get());
+
+        Function* func = ctx.builder->GetInsertBlock()->getParent();
+        BasicBlock* preheader = ctx.builder->GetInsertBlock();
+        BasicBlock* loopBB = BasicBlock::Create(ctx.llvmContext, "loop_body", func);
+        BasicBlock* exitBB = BasicBlock::Create(ctx.llvmContext, "loop_exit", func);
+
+        // Determine start value based on step sign
+        // For positive step: start = 0, for negative step: start = limit
+        Value* stepIsNegative = ctx.builder->CreateICmpSLT(step, ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));
+        Value* startVal = ctx.builder->CreateSelect(stepIsNegative, limit, ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));
+
+        ctx.builder->CreateBr(loopBB);
+        ctx.builder->SetInsertPoint(loopBB);
+
+        // PHI Node for '$'
+        PHINode* iterVar = ctx.builder->CreatePHI(Type::getInt64Ty(ctx.llvmContext), 2, "$");
+        iterVar->addIncoming(startVal, preheader);
+
+        // Define '$' in scope and generate body
+        {
+            ScopeGuard guard(ctx);
+            ctx.define("$", iterVar, false); // False = Value itself, not ref
+            node->body->accept(*this);
+        }
+
+        // Increment (or decrement for negative step)
+        Value* nextVal = ctx.builder->CreateAdd(iterVar, step, "next_val");
+        iterVar->addIncoming(nextVal, ctx.builder->GetInsertBlock());
+
+        // Condition: for positive step: nextVal < limit, for negative step: nextVal >= 0
+        Value* condPos = ctx.builder->CreateICmpSLT(nextVal, limit, "cond_pos");
+        Value* condNeg = ctx.builder->CreateICmpSGE(nextVal, ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0), "cond_neg");
+        Value* cond = ctx.builder->CreateSelect(stepIsNegative, condNeg, condPos, "loop_cond");
+        
+        ctx.builder->CreateCondBr(cond, loopBB, exitBB);
+
+        ctx.builder->SetInsertPoint(exitBB);
+    }
+    
+    void visit(WhenLoop* node) override {
+        // When loop: when(condition) { body } then { success } end { failure }
+        Function* func = ctx.builder->GetInsertBlock()->getParent();
+        BasicBlock* loopCondBB = BasicBlock::Create(ctx.llvmContext, "when_cond", func);
+        BasicBlock* loopBodyBB = BasicBlock::Create(ctx.llvmContext, "when_body", func);
+        BasicBlock* thenBB = node->then_block ? BasicBlock::Create(ctx.llvmContext, "when_then") : nullptr;
+        BasicBlock* endBB = node->end_block ? BasicBlock::Create(ctx.llvmContext, "when_end") : nullptr;
+        BasicBlock* exitBB = BasicBlock::Create(ctx.llvmContext, "when_exit");
+        
+        // Jump to condition check
+        ctx.builder->CreateBr(loopCondBB);
+        ctx.builder->SetInsertPoint(loopCondBB);
+        
+        // Evaluate condition
+        Value* cond = visitExpr(node->condition.get());
+        ctx.builder->CreateCondBr(cond, loopBodyBB, thenBB ? thenBB : (endBB ? endBB : exitBB));
+        
+        // Save loop context for break/continue
+        // For when loops: break jumps to end block (early exit), continue jumps to condition
+        BasicBlock* prevBreakTarget = ctx.currentLoopBreakTarget;
+        BasicBlock* prevContinueTarget = ctx.currentLoopContinueTarget;
+        ctx.currentLoopBreakTarget = endBB ? endBB : exitBB;  // Break goes to end block if present
+        ctx.currentLoopContinueTarget = loopCondBB;
+        
+        // Loop body
+        ctx.builder->SetInsertPoint(loopBodyBB);
+        if (node->body) {
+            ScopeGuard guard(ctx);
+            node->body->accept(*this);
+        }
+        
+        // Restore previous loop context
+        ctx.currentLoopBreakTarget = prevBreakTarget;
+        ctx.currentLoopContinueTarget = prevContinueTarget;
+        
+        if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+            ctx.builder->CreateBr(loopCondBB);  // Back to condition
+        }
+        
+        // Then block (successful completion)
+        if (thenBB) {
+            func->insert(func->end(), thenBB);
+            ctx.builder->SetInsertPoint(thenBB);
+            if (node->then_block) {
+                ScopeGuard guard(ctx);
+                node->then_block->accept(*this);
+            }
+            if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                ctx.builder->CreateBr(exitBB);
+            }
+        }
+        
+        // End block (early exit or no execution)
+        if (endBB) {
+            func->insert(func->end(), endBB);
+            ctx.builder->SetInsertPoint(endBB);
+            if (node->end_block) {
+                ScopeGuard guard(ctx);
+                node->end_block->accept(*this);
+            }
+            if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                ctx.builder->CreateBr(exitBB);
+            }
+        }
+        
+        // Exit
+        func->insert(func->end(), exitBB);
+        ctx.builder->SetInsertPoint(exitBB);
+    }
+
+    void visit(ForLoop* node) override {
+        // For loop: for iter in iterable { body }
+        // Handles Range expressions (1..10) and arrays
+        
+        Function* func = ctx.builder->GetInsertBlock()->getParent();
+        BasicBlock* loopCondBB = BasicBlock::Create(ctx.llvmContext, "for_cond", func);
+        BasicBlock* loopBodyBB = BasicBlock::Create(ctx.llvmContext, "for_body", func);
+        BasicBlock* exitBB = BasicBlock::Create(ctx.llvmContext, "for_exit");
+        
+        Value* iterable = visitExpr(node->iterable.get());
+        if (!iterable) {
+            throw std::runtime_error("For loop: iterable expression evaluated to null");
+        }
+        
+        // Check if iterable is a Range struct
+        Value* startVal = nullptr;
+        Value* endVal = nullptr;
+        Value* stepVal = nullptr;
+        bool isExclusive = false;
+        Type* iterType = nullptr;
+        
+        if (auto* rangeStructTy = dyn_cast<StructType>(iterable->getType())) {
+            if (rangeStructTy->getName().starts_with("Range")) {
+                // Unpack Range struct: { start, end, step, is_exclusive }
+                Value* rangeAlloca = ctx.builder->CreateAlloca(rangeStructTy, nullptr, "range_temp");
+                ctx.builder->CreateStore(iterable, rangeAlloca);
+                
+                // Extract fields
+                Value* startPtr = ctx.builder->CreateStructGEP(rangeStructTy, rangeAlloca, 0, "start_ptr");
+                startVal = ctx.builder->CreateLoad(rangeStructTy->getElementType(0), startPtr, "range_start");
+                
+                Value* endPtr = ctx.builder->CreateStructGEP(rangeStructTy, rangeAlloca, 1, "end_ptr");
+                endVal = ctx.builder->CreateLoad(rangeStructTy->getElementType(1), endPtr, "range_end");
+                
+                Value* stepPtr = ctx.builder->CreateStructGEP(rangeStructTy, rangeAlloca, 2, "step_ptr");
+                stepVal = ctx.builder->CreateLoad(rangeStructTy->getElementType(2), stepPtr, "range_step");
+                
+                Value* exclusivePtr = ctx.builder->CreateStructGEP(rangeStructTy, rangeAlloca, 3, "exclusive_ptr");
+                Value* exclusiveFlag = ctx.builder->CreateLoad(Type::getInt8Ty(ctx.llvmContext), exclusivePtr, "range_exclusive");
+                Value* exclusiveBool = ctx.builder->CreateICmpNE(exclusiveFlag, ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0));
+                
+                iterType = rangeStructTy->getElementType(0);
+                isExclusive = true;  // Will be handled dynamically
+                
+                // Adjust end value if exclusive
+                endVal = ctx.builder->CreateSelect(exclusiveBool, endVal,
+                    ctx.builder->CreateAdd(endVal, ConstantInt::get(iterType, 1)), "adjusted_end");
+            }
+        }
+        
+        // If not a Range, fall back to simple iteration (0..iterable)
+        if (!startVal) {
+            iterType = Type::getInt64Ty(ctx.llvmContext);
+            startVal = ConstantInt::get(iterType, 0);
+            
+            // Treat iterable as upper bound
+            if (iterable->getType()->isIntegerTy()) {
+                endVal = ctx.builder->CreateIntCast(iterable, iterType, true, "end_cast");
+            } else {
+                throw std::runtime_error("For loop: non-range iterable must be integer type");
+            }
+            
+            stepVal = ConstantInt::get(iterType, 1);
+        }
+        
+        // Create increment block for continue support
+        BasicBlock* incrementBB = BasicBlock::Create(ctx.llvmContext, "for_inc");
+        
+        // Create loop
+        ctx.builder->CreateBr(loopCondBB);
+        ctx.builder->SetInsertPoint(loopCondBB);
+        
+        // PHI node for iterator
+        PHINode* iterVar = ctx.builder->CreatePHI(iterType, 2, node->iterator_name.c_str());
+        iterVar->addIncoming(startVal, ctx.builder->GetInsertBlock()->getSinglePredecessor());
+        
+        // Condition: iter < end
+        Value* cond = ctx.builder->CreateICmpSLT(iterVar, endVal, "for_cond");
+        ctx.builder->CreateCondBr(cond, loopBodyBB, exitBB);
+        
+        // Loop body
+        ctx.builder->SetInsertPoint(loopBodyBB);
+        
+        // Save loop context for break/continue
+        BasicBlock* prevBreakTarget = ctx.currentLoopBreakTarget;
+        BasicBlock* prevContinueTarget = ctx.currentLoopContinueTarget;
+        ctx.currentLoopBreakTarget = exitBB;
+        ctx.currentLoopContinueTarget = incrementBB;  // Continue goes to increment block
+        
+        {
+            ScopeGuard guard(ctx);
+            ctx.define(node->iterator_name, iterVar, false);
+            node->body->accept(*this);
+        }
+        
+        // Restore previous loop context
+        ctx.currentLoopBreakTarget = prevBreakTarget;
+        ctx.currentLoopContinueTarget = prevContinueTarget;
+        
+        // Branch to increment block (only if block not terminated by break)
+        if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+            ctx.builder->CreateBr(incrementBB);
+        }
+        
+        // Increment block
+        func->insert(func->end(), incrementBB);
+        ctx.builder->SetInsertPoint(incrementBB);
+        Value* nextIter = ctx.builder->CreateAdd(iterVar, stepVal, "next_iter");
+        iterVar->addIncoming(nextIter, incrementBB);
+        ctx.builder->CreateBr(loopCondBB);
+        
+        // Exit
+        func->insert(func->end(), exitBB);
+        ctx.builder->SetInsertPoint(exitBB);
+    }
+
+    void visit(WhileLoop* node) override {
+        // While loop: while condition { body }
+        Function* func = ctx.builder->GetInsertBlock()->getParent();
+        BasicBlock* loopCondBB = BasicBlock::Create(ctx.llvmContext, "while_cond", func);
+        BasicBlock* loopBodyBB = BasicBlock::Create(ctx.llvmContext, "while_body", func);
+        BasicBlock* exitBB = BasicBlock::Create(ctx.llvmContext, "while_exit");
+        
+        // Jump to condition check
+        ctx.builder->CreateBr(loopCondBB);
+        ctx.builder->SetInsertPoint(loopCondBB);
+        
+        // Evaluate condition
+        Value* cond = visitExpr(node->condition.get());
+        
+        // Convert condition to bool (i1) if needed
+        if (cond && cond->getType() != Type::getInt1Ty(ctx.llvmContext)) {
+            // Compare to zero (false if zero, true otherwise)
+            cond = ctx.builder->CreateICmpNE(
+                cond,
+                Constant::getNullValue(cond->getType()),
+                "whilecond"
+            );
+        }
+        
+        ctx.builder->CreateCondBr(cond, loopBodyBB, exitBB);
+        
+        // Loop body
+        ctx.builder->SetInsertPoint(loopBodyBB);
+        
+        // Save loop context for break/continue
+        BasicBlock* prevBreakTarget = ctx.currentLoopBreakTarget;
+        BasicBlock* prevContinueTarget = ctx.currentLoopContinueTarget;
+        ctx.currentLoopBreakTarget = exitBB;
+        ctx.currentLoopContinueTarget = loopCondBB;
+        
+        {
+            ScopeGuard guard(ctx);
+            node->body->accept(*this);
+        }
+        
+        // Restore previous loop context
+        ctx.currentLoopBreakTarget = prevBreakTarget;
+        ctx.currentLoopContinueTarget = prevContinueTarget;
+        
+        // Jump back to condition (if no explicit control flow)
+        if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+            ctx.builder->CreateBr(loopCondBB);
+        }
+        
+        // Exit
+        func->insert(func->end(), exitBB);
+        ctx.builder->SetInsertPoint(exitBB);
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. Expressions (Helper)
+    // -------------------------------------------------------------------------
+
+    Value* visitExpr(Expression* node) {
+        // Simplified Dispatcher
+        if (auto* lit = dynamic_cast<aria::frontend::IntLiteral*>(node)) {
+            return ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), lit->value);
+        }
+        if (auto* flit = dynamic_cast<aria::frontend::FloatLiteral*>(node)) {
+            return ConstantFP::get(Type::getDoubleTy(ctx.llvmContext), flit->value);
+        }
+        if (auto* blit = dynamic_cast<aria::frontend::BoolLiteral*>(node)) {
+            return ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), blit->value ? 1 : 0);
+        }
+        if (auto* nlit = dynamic_cast<aria::frontend::NullLiteral*>(node)) {
+            // NULL is represented as a null pointer constant
+            return ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext));
+        }
+        if (auto* unwrap = dynamic_cast<aria::frontend::UnwrapExpr*>(node)) {
+            // Unwrap operator: expr? or expr? default
+            // All functions return result<T> = { i8 err, T val }
+            // This operator checks err and either:
+            //   1. Early return: return {err, val} if err != 0
+            //   2. Default coalescing: use default value if err != 0
+            
+            // Evaluate the expression that returns result<T>
+            Value* resultStruct = visitExpr(unwrap->expression.get());
+            if (!resultStruct) {
+                throw std::runtime_error("Unwrap operator: expression evaluated to null");
+            }
+            
+            // Result type must be a struct with {err, val} fields
+            Type* resultType = resultStruct->getType();
+            if (!resultType->isStructTy()) {
+                throw std::runtime_error("Unwrap operator can only be applied to result types (functions)");
+            }
+            
+            StructType* resultStructType = cast<StructType>(resultType);
+            if (resultStructType->getNumElements() != 2) {
+                throw std::runtime_error("Unwrap operator requires result<T> type with {err, val} fields");
+            }
+            
+            // Allocate space to store the result struct temporarily
+            AllocaInst* resultAlloca = ctx.builder->CreateAlloca(resultStructType, nullptr, "result_tmp");
+            ctx.builder->CreateStore(resultStruct, resultAlloca);
+            
+            // Extract err field (index 0)
+            Value* errPtr = ctx.builder->CreateStructGEP(resultStructType, resultAlloca, 0, "err_ptr");
+            Value* errValue = ctx.builder->CreateLoad(Type::getInt8Ty(ctx.llvmContext), errPtr, "err");
+            
+            // Check if err == 0 (success)
+            Value* isSuccess = ctx.builder->CreateICmpEQ(
+                errValue,
+                ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0),
+                "is_success"
+            );
+            
+            // Create basic blocks for branching
+            Function* func = ctx.builder->GetInsertBlock()->getParent();
+            BasicBlock* successBB = BasicBlock::Create(ctx.llvmContext, "unwrap_success", func);
+            BasicBlock* failureBB = BasicBlock::Create(ctx.llvmContext, "unwrap_failure", func);
+            BasicBlock* mergeBB = BasicBlock::Create(ctx.llvmContext, "unwrap_merge");
+            
+            ctx.builder->CreateCondBr(isSuccess, successBB, failureBB);
+            
+            // ============================================================
+            // SUCCESS PATH: Extract and return val
+            // ============================================================
+            ctx.builder->SetInsertPoint(successBB);
+            Value* valPtr = ctx.builder->CreateStructGEP(resultStructType, resultAlloca, 1, "val_ptr");
+            Type* valType = resultStructType->getElementType(1);
+            Value* valValue = ctx.builder->CreateLoad(valType, valPtr, "val");
+            ctx.builder->CreateBr(mergeBB);
+            BasicBlock* successEndBB = ctx.builder->GetInsertBlock();
+            
+            // ============================================================
+            // FAILURE PATH: Early return OR default value
+            // ============================================================
+            ctx.builder->SetInsertPoint(failureBB);
+            Value* failureValue = nullptr;
+            
+            if (unwrap->default_value) {
+                // DEFAULT COALESCING: expr? default
+                // Evaluate default expression
+                failureValue = visitExpr(unwrap->default_value.get());
+                
+                if (!failureValue) {
+                    throw std::runtime_error("Unwrap operator: default expression evaluated to null");
+                }
+                
+                // Type check: default must match val type
+                if (failureValue->getType() != valType) {
+                    // Try to cast if both are integers
+                    if (failureValue->getType()->isIntegerTy() && valType->isIntegerTy()) {
+                        failureValue = ctx.builder->CreateIntCast(failureValue, valType, true, "default_cast");
+                    } else {
+                        throw std::runtime_error(
+                            "Unwrap operator: default value type doesn't match function return type"
+                        );
+                    }
+                }
+                
+                ctx.builder->CreateBr(mergeBB);
+            } else {
+                // EARLY RETURN: expr?
+                // Return the entire result struct {err, val} from current function
+                
+                if (!ctx.currentFunction) {
+                    throw std::runtime_error("Unwrap operator with early return used outside function context");
+                }
+                
+                // The result struct is already in resultStruct - just return it
+                ctx.builder->CreateRet(resultStruct);
+                
+                // After return, we don't need merge block for this path
+                // But we still need failureValue for PHI (won't be reached)
+                failureValue = Constant::getNullValue(valType);
+            }
+            BasicBlock* failureEndBB = ctx.builder->GetInsertBlock();
+            
+            // ============================================================
+            // MERGE: Combine success and failure paths
+            // ============================================================
+            func->insert(func->end(), mergeBB);
+            ctx.builder->SetInsertPoint(mergeBB);
+            
+            // If early return path, PHI only has one incoming edge (success)
+            // If default coalescing, PHI has two incoming edges
+            PHINode* phi = ctx.builder->CreatePHI(valType, 2, "unwrap_result");
+            phi->addIncoming(valValue, successEndBB);
+            
+            // Only add failure path if not early return
+            if (unwrap->default_value) {
+                phi->addIncoming(failureValue, failureEndBB);
+            }
+            
+            return phi;
+        }
+        if (auto* slit = dynamic_cast<aria::frontend::StringLiteral*>(node)) {
+            // Create global string constant
+            return ctx.builder->CreateGlobalStringPtr(slit->value);
+        }
+        if (auto* tstr = dynamic_cast<aria::frontend::TemplateString*>(node)) {
+            // Build template string by concatenating parts at runtime
+            // Strategy: Build string dynamically by concatenating each part
+            
+            // Helper: Declare sprintf if not already present
+            Function* sprintfFunc = ctx.module->getFunction("sprintf");
+            if (!sprintfFunc) {
+                std::vector<Type*> sprintfParams = {
+                    PointerType::getUnqual(ctx.llvmContext),  // char* buffer
+                    PointerType::getUnqual(ctx.llvmContext)   // const char* format
+                };
+                FunctionType* sprintfType = FunctionType::get(
+                    Type::getInt32Ty(ctx.llvmContext),
+                    sprintfParams,
+                    true  // vararg
+                );
+                sprintfFunc = Function::Create(sprintfType, Function::ExternalLinkage, "sprintf", ctx.module.get());
+            }
+            
+            // Allocate buffer for result string (1024 bytes should be enough for most cases)
+            Value* buffer = ctx.builder->CreateAlloca(
+                Type::getInt8Ty(ctx.llvmContext),
+                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 1024),
+                "str_buffer"
+            );
+            
+            // Track current position in buffer
+            Value* bufferPos = buffer;
+            
+            for (auto& part : tstr->parts) {
+                if (part.type == aria::frontend::TemplatePart::STRING) {
+                    // Static string part - use sprintf with "%s"
+                    Value* formatStr = ctx.builder->CreateGlobalStringPtr("%s");
+                    Value* strVal = ctx.builder->CreateGlobalStringPtr(part.string_value);
+                    
+                    std::vector<Value*> sprintfArgs = {bufferPos, formatStr, strVal};
+                    Value* written = ctx.builder->CreateCall(sprintfFunc, sprintfArgs);
+                    
+                    // Advance buffer position by number of characters written
+                    bufferPos = ctx.builder->CreateGEP(
+                        Type::getInt8Ty(ctx.llvmContext),
+                        bufferPos,
+                        written,
+                        "next_pos"
+                    );
+                } else {
+                    // Expression part - evaluate and convert to string
+                    Value* exprVal = visitExpr(part.expr_value.get());
+                    
+                    if (exprVal) {
+                        // Determine format string based on type
+                        Value* formatStr = nullptr;
+                        std::vector<Value*> sprintfArgs = {bufferPos};
+                        
+                        if (exprVal->getType()->isIntegerTy()) {
+                            // Integer types - use appropriate format
+                            if (exprVal->getType()->getIntegerBitWidth() == 1) {
+                                // Boolean - convert to "true"/"false"
+                                formatStr = ctx.builder->CreateGlobalStringPtr("%s");
+                                Value* trueStr = ctx.builder->CreateGlobalStringPtr("true");
+                                Value* falseStr = ctx.builder->CreateGlobalStringPtr("false");
+                                Value* boolStr = ctx.builder->CreateSelect(exprVal, trueStr, falseStr);
+                                sprintfArgs.push_back(formatStr);
+                                sprintfArgs.push_back(boolStr);
+                            } else {
+                                // Extend/truncate to i64 for sprintf %ld
+                                Value* i64Val = ctx.builder->CreateIntCast(
+                                    exprVal,
+                                    Type::getInt64Ty(ctx.llvmContext),
+                                    true,  // sign extend
+                                    "to_i64"
+                                );
+                                formatStr = ctx.builder->CreateGlobalStringPtr("%ld");
+                                sprintfArgs.push_back(formatStr);
+                                sprintfArgs.push_back(i64Val);
+                            }
+                        } else if (exprVal->getType()->isFloatingPointTy()) {
+                            // Float/double - use %f
+                            formatStr = ctx.builder->CreateGlobalStringPtr("%f");
+                            sprintfArgs.push_back(formatStr);
+                            sprintfArgs.push_back(exprVal);
+                        } else if (exprVal->getType()->isPointerTy()) {
+                            // Assume it's a string pointer
+                            formatStr = ctx.builder->CreateGlobalStringPtr("%s");
+                            sprintfArgs.push_back(formatStr);
+                            sprintfArgs.push_back(exprVal);
+                        } else {
+                            // Unknown type - just print address
+                            formatStr = ctx.builder->CreateGlobalStringPtr("<unknown>");
+                            sprintfArgs.push_back(formatStr);
+                        }
+                        
+                        Value* written = ctx.builder->CreateCall(sprintfFunc, sprintfArgs);
+                        
+                        // Advance buffer position
+                        bufferPos = ctx.builder->CreateGEP(
+                            Type::getInt8Ty(ctx.llvmContext),
+                            bufferPos,
+                            written,
+                            "next_pos"
+                        );
+                    }
+                }
+            }
+            
+            // Return pointer to the complete string
+            return buffer;
+        }
+        if (auto* ternary = dynamic_cast<aria::frontend::TernaryExpr*>(node)) {
+            // Generate LLVM select: select i1 %cond, type %true_val, type %false_val
+            Value* cond = visitExpr(ternary->condition.get());
+            Value* true_val = visitExpr(ternary->true_expr.get());
+            Value* false_val = visitExpr(ternary->false_expr.get());
+            
+            if (!cond || !true_val || !false_val) return nullptr;
+            
+            // LLVM select requires i1 condition
+            if (cond->getType()->isIntegerTy() && cond->getType()->getIntegerBitWidth() != 1) {
+                cond = ctx.builder->CreateICmpNE(cond, ConstantInt::get(cond->getType(), 0));
+            }
+            
+            return ctx.builder->CreateSelect(cond, true_val, false_val);
+        }
+        if (auto* binop = dynamic_cast<aria::frontend::BinaryOp*>(node)) {
+            // Binary arithmetic and logical operations
+            Value* L = visitExpr(binop->left.get());
+            Value* R = visitExpr(binop->right.get());
+            
+            if (!L || !R) return nullptr;
+            
+            // Check if operands are tryte types
+            bool leftIsTryte = (ctx.exprTypeMap.count(L) > 0 && ctx.exprTypeMap[L] == "tryte");
+            bool rightIsTryte = (ctx.exprTypeMap.count(R) > 0 && ctx.exprTypeMap[R] == "tryte");
+            
+            // If either operand is tryte, use ternary lowerer
+            if (leftIsTryte || rightIsTryte) {
+                TernaryLowerer ternaryLowerer(ctx.llvmContext, *ctx.builder, ctx.module.get());
+                Value* result = nullptr;
+                
+                switch (binop->op) {
+                    case aria::frontend::BinaryOp::ADD:
+                        result = ternaryLowerer.createTryteAdd(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::SUB:
+                        result = ternaryLowerer.createTryteSub(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::MUL:
+                        result = ternaryLowerer.createTryteMul(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::DIV:
+                        result = ternaryLowerer.createTryteDiv(L, R);
+                        break;
+                    default:
+                        throw std::runtime_error("Unsupported tryte operation");
+                }
+                
+                if (result) {
+                    ctx.exprTypeMap[result] = "tryte";
+                }
+                return result;
+            }
+            
+            // Standard binary/integer arithmetic
+            Type* LType = L->getType();
+            Type* RType = R->getType();
+            
+            // Handle type promotion/conversion
+            if (LType != RType) {
+                if (LType->isFloatingPointTy() || RType->isFloatingPointTy()) {
+                    // Promote to floating point
+                    if (LType->isIntegerTy()) {
+                        L = ctx.builder->CreateSIToFP(L, Type::getDoubleTy(ctx.llvmContext));
+                        LType = L->getType();
+                    }
+                    if (RType->isIntegerTy()) {
+                        R = ctx.builder->CreateSIToFP(R, Type::getDoubleTy(ctx.llvmContext));
+                        RType = R->getType();
+                    }
+                } else if (LType->isIntegerTy() && RType->isIntegerTy()) {
+                    // Promote to wider integer type
+                    unsigned LWidth = LType->getIntegerBitWidth();
+                    unsigned RWidth = RType->getIntegerBitWidth();
+                    if (LWidth < RWidth) {
+                        L = ctx.builder->CreateSExtOrBitCast(L, RType);
+                        LType = RType;
+                    } else if (RWidth < LWidth) {
+                        R = ctx.builder->CreateSExtOrBitCast(R, LType);
+                        RType = LType;
+                    }
+                }
+            }
+            
+            // Generate appropriate operation
+            switch (binop->op) {
+                // Arithmetic
+                case aria::frontend::BinaryOp::ADD:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFAdd(L, R, "fadd");
+                    }
+                    return ctx.builder->CreateAdd(L, R, "add");
+                    
+                case aria::frontend::BinaryOp::SUB:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFSub(L, R, "fsub");
+                    }
+                    return ctx.builder->CreateSub(L, R, "sub");
+                    
+                case aria::frontend::BinaryOp::MUL:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFMul(L, R, "fmul");
+                    }
+                    return ctx.builder->CreateMul(L, R, "mul");
+                    
+                case aria::frontend::BinaryOp::DIV:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFDiv(L, R, "fdiv");
+                    }
+                    return ctx.builder->CreateSDiv(L, R, "sdiv");
+                    
+                case aria::frontend::BinaryOp::MOD:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFRem(L, R, "frem");
+                    }
+                    return ctx.builder->CreateSRem(L, R, "srem");
+                    
+                // Comparison
+                case aria::frontend::BinaryOp::EQ:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOEQ(L, R, "feq");
+                    }
+                    return ctx.builder->CreateICmpEQ(L, R, "eq");
+                    
+                case aria::frontend::BinaryOp::NE:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpONE(L, R, "fne");
+                    }
+                    return ctx.builder->CreateICmpNE(L, R, "ne");
+                    
+                case aria::frontend::BinaryOp::LT:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOLT(L, R, "flt");
+                    }
+                    return ctx.builder->CreateICmpSLT(L, R, "lt");
+                    
+                case aria::frontend::BinaryOp::GT:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOGT(L, R, "fgt");
+                    }
+                    return ctx.builder->CreateICmpSGT(L, R, "gt");
+                    
+                case aria::frontend::BinaryOp::LE:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOLE(L, R, "fle");
+                    }
+                    return ctx.builder->CreateICmpSLE(L, R, "le");
+                    
+                case aria::frontend::BinaryOp::GE:
+                    if (LType->isFloatingPointTy()) {
+                        return ctx.builder->CreateFCmpOGE(L, R, "fge");
+                    }
+                    return ctx.builder->CreateICmpSGE(L, R, "ge");
+                    
+                // Logical
+                case aria::frontend::BinaryOp::LOGICAL_AND: {
+                    // Convert to i1 if needed
+                    if (L->getType()->getIntegerBitWidth() != 1) {
+                        L = ctx.builder->CreateICmpNE(L, ConstantInt::get(L->getType(), 0));
+                    }
+                    if (R->getType()->getIntegerBitWidth() != 1) {
+                        R = ctx.builder->CreateICmpNE(R, ConstantInt::get(R->getType(), 0));
+                    }
+                    return ctx.builder->CreateAnd(L, R, "and");
+                }
+                    
+                case aria::frontend::BinaryOp::LOGICAL_OR: {
+                    // Convert to i1 if needed
+                    if (L->getType()->getIntegerBitWidth() != 1) {
+                        L = ctx.builder->CreateICmpNE(L, ConstantInt::get(L->getType(), 0));
+                    }
+                    if (R->getType()->getIntegerBitWidth() != 1) {
+                        R = ctx.builder->CreateICmpNE(R, ConstantInt::get(R->getType(), 0));
+                    }
+                    return ctx.builder->CreateOr(L, R, "or");
+                }
+                    
+                // Bitwise
+                case aria::frontend::BinaryOp::BITWISE_AND:
+                    return ctx.builder->CreateAnd(L, R, "bitand");
+                    
+                case aria::frontend::BinaryOp::BITWISE_OR:
+                    return ctx.builder->CreateOr(L, R, "bitor");
+                    
+                case aria::frontend::BinaryOp::BITWISE_XOR:
+                    return ctx.builder->CreateXor(L, R, "bitxor");
+                    
+                case aria::frontend::BinaryOp::LSHIFT:
+                    return ctx.builder->CreateShl(L, R, "shl");
+                    
+                case aria::frontend::BinaryOp::RSHIFT:
+                    return ctx.builder->CreateAShr(L, R, "ashr");
+                    
+                // Assignment (handled elsewhere, but included for completeness)
+                case aria::frontend::BinaryOp::ASSIGN:
+                case aria::frontend::BinaryOp::PLUS_ASSIGN:
+                case aria::frontend::BinaryOp::MINUS_ASSIGN:
+                case aria::frontend::BinaryOp::STAR_ASSIGN:
+                case aria::frontend::BinaryOp::SLASH_ASSIGN:
+                case aria::frontend::BinaryOp::MOD_ASSIGN:
+                case aria::frontend::BinaryOp::AND_ASSIGN:
+                case aria::frontend::BinaryOp::OR_ASSIGN:
+                case aria::frontend::BinaryOp::XOR_ASSIGN:
+                case aria::frontend::BinaryOp::LSHIFT_ASSIGN:
+                case aria::frontend::BinaryOp::RSHIFT_ASSIGN:
+                    throw std::runtime_error("Assignment operations should be handled in statement context");
+                    
+                default:
+                    throw std::runtime_error("Unknown binary operation");
+            }
+        }
+        if (auto* unop = dynamic_cast<aria::frontend::UnaryOp*>(node)) {
+            // Unary operations
+            Value* operand = visitExpr(unop->operand.get());
+            if (!operand) return nullptr;
+            
+            // Check if operand is tryte type
+            bool isTryte = (ctx.exprTypeMap.count(operand) > 0 && ctx.exprTypeMap[operand] == "tryte");
+            
+            switch (unop->op) {
+                case aria::frontend::UnaryOp::NEG:
+                    if (isTryte) {
+                        // Use ternary negation
+                        TernaryLowerer ternaryLowerer(ctx.llvmContext, *ctx.builder, ctx.module.get());
+                        Value* result = ternaryLowerer.createTryteNeg(operand);
+                        if (result) {
+                            ctx.exprTypeMap[result] = "tryte";
+                        }
+                        return result;
+                    }
+                    // Standard negation
+                    if (operand->getType()->isFloatingPointTy()) {
+                        return ctx.builder->CreateFNeg(operand, "fneg");
+                    }
+                    return ctx.builder->CreateNeg(operand, "neg");
+                    
+                case aria::frontend::UnaryOp::LOGICAL_NOT: {
+                    // Convert to boolean if needed
+                    Value* boolVal = operand;
+                    if (operand->getType()->isIntegerTy() && operand->getType()->getIntegerBitWidth() != 1) {
+                        boolVal = ctx.builder->CreateICmpNE(operand, ConstantInt::get(operand->getType(), 0));
+                    }
+                    return ctx.builder->CreateNot(boolVal, "not");
+                }
+                    
+                case aria::frontend::UnaryOp::BITWISE_NOT:
+                    return ctx.builder->CreateNot(operand, "bitnot");
+                    
+                case aria::frontend::UnaryOp::POST_INC:
+                case aria::frontend::UnaryOp::POST_DEC:
+                    throw std::runtime_error("Post-increment/decrement requires lvalue handling");
+                    
+                case aria::frontend::UnaryOp::ADDRESS_OF:
+                case aria::frontend::UnaryOp::PIN:
+                    throw std::runtime_error("Address-of and pin operators not yet implemented");
+                    
+                default:
+                    throw std::runtime_error("Unknown unary operation");
+            }
+        }
+        if (auto* var = dynamic_cast<aria::frontend::VarExpr*>(node)) {
+            auto* sym = ctx.lookup(var->name);
+            if (!sym) return nullptr;
+            
+            if (sym->is_ref) {
+                // Use allocation strategy to determine loading pattern
+                if (!sym->ariaType.empty()) {
+                    Type* loadType = ctx.getLLVMType(sym->ariaType);
+                    
+                    // For dynamic array parameters (uint8[], int64[], etc.), load the pointer value
+                    // These are represented as pointers in LLVM, not array types
+                    // Check this FIRST before isArrayTy() to handle parameter arrays correctly
+                    size_t bracketPos = sym->ariaType.find("[]");
+                    if (bracketPos != std::string::npos) {
+                        // This is a dynamic array parameter - load the pointer
+                        return ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), sym->val, var->name + "_ptr");
+                    } 
+                    // For array types, return pointer to first element instead of loading the array
+                    else if (loadType->isArrayTy()) {
+                        // For heap allocations, we need to load the heap pointer first
+                        // sym->val is a stack location holding a pointer to the heap data
+                        if (sym->strategy == CodeGenContext::AllocStrategy::WILD || 
+                            sym->strategy == CodeGenContext::AllocStrategy::GC) {
+                            // Load the heap pointer from the stack slot
+                            Value* heapPtr = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), sym->val, var->name + "_heap");
+                            // Now get pointer to first element of the heap-allocated array
+                            Value* indices[] = {
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0)
+                            };
+                            return ctx.builder->CreateGEP(loadType, heapPtr, indices, var->name + "_ptr");
+                        } else {
+                            // For stack allocations, GEP directly on the alloca
+                            Value* indices[] = {
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0),
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0)
+                            };
+                            return ctx.builder->CreateGEP(loadType, sym->val, indices, var->name + "_ptr");
+                        }
+                    }
+                    
+                    // For heap allocations (wild/gc), load pointer first, then value
+                    if (sym->strategy == CodeGenContext::AllocStrategy::WILD || 
+                        sym->strategy == CodeGenContext::AllocStrategy::GC) {
+                        Value* heapPtr = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), sym->val);
+                        return ctx.builder->CreateLoad(loadType, heapPtr);
+                    }
+                    
+                    // For wildx allocations (executable memory), return the pointer itself
+                    // Wildx pointers are used directly for memory operations (protect_exec, etc.)
+                    if (sym->strategy == CodeGenContext::AllocStrategy::WILDX) {
+                        // Return the pointer value (don't dereference)
+                        return ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), sym->val);
+                    }
+                    
+                    // For stack allocations, direct load from alloca
+                    if (sym->strategy == CodeGenContext::AllocStrategy::STACK) {
+                        Value* loaded = ctx.builder->CreateLoad(loadType, sym->val);
+                        // Track the type for TBB safety
+                        if (!sym->ariaType.empty()) {
+                            ctx.exprTypeMap[loaded] = sym->ariaType;
+                        }
+                        return loaded;
+                    }
+                    
+                    // Fallback: use loadType from ariaType if available
+                    // This handles parameters and other allocations
+                    Value* loaded = ctx.builder->CreateLoad(loadType, sym->val);
+                    // Track the type for TBB safety
+                    if (!sym->ariaType.empty()) {
+                        ctx.exprTypeMap[loaded] = sym->ariaType;
+                    }
+                    return loaded;
+                }
+                
+                // Ultimate fallback if no ariaType is set (shouldn't happen)
+                return ctx.builder->CreateLoad(Type::getInt64Ty(ctx.llvmContext), sym->val);
+            }
+            return sym->val; // PHI or direct value
+        }
+        if (auto* call = dynamic_cast<aria::frontend::CallExpr*>(node)) {
+            // ================================================================
+            // GENERIC TEMPLATE MONOMORPHIZATION
+            // ================================================================
+            // Check if this is a call to a generic function that needs to be
+            // instantiated with concrete types at the call site.
+            // ================================================================
+            
+            bool isGenericCall = !call->type_arguments.empty();
+            auto templateIt = genericTemplates.find(call->function_name);
+            
+            if (templateIt != genericTemplates.end()) {
+                const GenericTemplate& tmpl = templateIt->second;
+                
+                // Determine the concrete type arguments
+                std::vector<std::string> concreteTypes;
+                
+                if (isGenericCall) {
+                    // Explicit type arguments: identity<int8>(42)
+                    concreteTypes = call->type_arguments;
+                } else {
+                    // Type inference: identity(42)
+                    concreteTypes = inferGenericTypes(tmpl, call);
+                }
+                
+                // Check if we already have a specialization for these types
+                std::string mangledName = mangleGenericName(call->function_name, concreteTypes);
+                
+                if (tmpl.specializations.find(mangledName) == tmpl.specializations.end()) {
+                    // Need to instantiate a new specialization
+                    monomorphize(call->function_name, concreteTypes);
+                }
+                
+                // Redirect the call to the specialized version
+                call->function_name = mangledName;
+            }
+            
+            // ================================================================
+            // END GENERIC TEMPLATE MONOMORPHIZATION
+            // ================================================================
+            
+            // ================================================================
+            // MEMBER ACCESS METHOD CALLS
+            // ================================================================
+            // Transform p.method() → StructName_method(p)
+            // Transform Type.method() → StructName_method()
+            // ================================================================
+            
+            if (call->callee) {
+                // Complex callee expression (member access, etc.)
+                if (auto* memberAccess = dynamic_cast<aria::frontend::MemberAccess*>(call->callee.get())) {
+                    // This is a method call: p.method() or Type.method()
+                    
+                    // Determine the struct type
+                    std::string structTypeName;
+                    bool isStaticCall = memberAccess->is_static;
+                    
+                    if (isStaticCall) {
+                        // Static call: Type.method()
+                        // The object is a VarExpr with the type name
+                        if (auto* typeIdent = dynamic_cast<aria::frontend::VarExpr*>(memberAccess->object.get())) {
+                            structTypeName = typeIdent->name;
+                        }
+                    } else {
+                        // Instance call: p.method()
+                        // Need to get the type of the object expression
+                        Value* objValue = visitExpr(memberAccess->object.get());
+                        
+                        // Lookup the object's Aria type from exprTypeMap
+                        if (ctx.exprTypeMap.count(objValue) > 0) {
+                            structTypeName = ctx.exprTypeMap[objValue];
+                        } else {
+                            // Fallback: try to infer from object if it's a VarExpr
+                            if (auto* objIdent = dynamic_cast<aria::frontend::VarExpr*>(memberAccess->object.get())) {
+                                auto* sym = ctx.lookup(objIdent->name);
+                                if (sym) {
+                                    structTypeName = sym->ariaType;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (!structTypeName.empty()) {
+                        // Build mangled method name: StructName_methodName
+                        std::string mangledMethodName = ctx.currentModulePrefix + structTypeName + "_" + memberAccess->member_name;
+                        
+                        // Find the method function
+                        Function* methodFunc = ctx.module->getFunction(mangledMethodName);
+                        
+                        if (methodFunc) {
+                            // Build argument list
+                            std::vector<Value*> args;
+                            
+                            if (!isStaticCall) {
+                                // Instance method: pass object as first argument (self)
+                                Value* objPtr = visitExpr(memberAccess->object.get());
+                                args.push_back(objPtr);
+                            }
+                            
+                            // Add remaining arguments
+                            for (auto& arg : call->arguments) {
+                                args.push_back(visitExpr(arg.get()));
+                            }
+                            
+                            // Generate the call
+                            return ctx.builder->CreateCall(methodFunc, args, "method_call");
+                        } else {
+                            throw std::runtime_error("Method '" + memberAccess->member_name + 
+                                                   "' not found on type '" + structTypeName + "'");
+                        }
+                    } else {
+                        throw std::runtime_error("Unable to determine type for method call '" + memberAccess->member_name + "'");
+                    }
+                } else {
+                    // callee exists but isn't a MemberAccess - might be function pointer, etc.
+                    // For now, just evaluate the callee and try to call it
+                    // This path isn't fully implemented yet
+                    throw std::runtime_error("Complex callee expressions (function pointers, etc.) not yet implemented");
+                }
+            }
+            
+            // ================================================================
+            // END MEMBER ACCESS METHOD CALLS
+            // ================================================================
+            
+            // Handle simple function call by name
+            // First check if it's a known builtin mapping
+            std::string funcName = call->function_name;
+            
+            // If we have a callee but got here, something went wrong
+            if (call->callee) {
+                throw std::runtime_error("Internal error: CallExpr has callee but it wasn't handled");
+            }
+            if (funcName == "print") {
+                funcName = "puts";
+            }
+            
+            // Check for syscall intrinsics (file I/O operations)
+            // These generate direct syscalls via inline assembly on Linux
+            if (funcName == "intrinsic_open") {
+                // open syscall
+                std::vector<Value*> args;
+                for (auto& arg : call->arguments) {
+                    args.push_back(visitExpr(arg.get()));
+                }
+                return createSyscall(aria::backend::platform::SYSCALL_OPEN, args, Type::getInt32Ty(ctx.llvmContext));
+            } else if (funcName == "intrinsic_close") {
+                // close syscall
+                std::vector<Value*> args;
+                for (auto& arg : call->arguments) {
+                    args.push_back(visitExpr(arg.get()));
+                }
+                return createSyscall(aria::backend::platform::SYSCALL_CLOSE, args, Type::getInt32Ty(ctx.llvmContext));
+            } else if (funcName == "intrinsic_read") {
+                // read syscall
+                std::vector<Value*> args;
+                for (auto& arg : call->arguments) {
+                    args.push_back(visitExpr(arg.get()));
+                }
+                return createSyscall(aria::backend::platform::SYSCALL_READ, args, Type::getInt64Ty(ctx.llvmContext));
+            } else if (funcName == "intrinsic_write") {
+                // write syscall
+                std::vector<Value*> args;
+                for (auto& arg : call->arguments) {
+                    args.push_back(visitExpr(arg.get()));
+                }
+                return createSyscall(aria::backend::platform::SYSCALL_WRITE, args, Type::getInt64Ty(ctx.llvmContext));
+            } else if (funcName == "intrinsic_lseek") {
+                // lseek syscall
+                std::vector<Value*> args;
+                for (auto& arg : call->arguments) {
+                    args.push_back(visitExpr(arg.get()));
+                }
+                return createSyscall(aria::backend::platform::SYSCALL_LSEEK, args, Type::getInt64Ty(ctx.llvmContext));
+            }
+            
+            // ================================================================
+            // SIMD VECTOR INTRINSICS
+            // ================================================================
+            // Check for SIMD intrinsic functions (dot, cross, normalize, length)
+            if (funcName == "dot" && call->arguments.size() == 2) {
+                // Dot product: dot(vec, vec) -> scalar
+                Value* v1 = visitExpr(call->arguments[0].get());
+                Value* v2 = visitExpr(call->arguments[1].get());
+                
+                if (v1 && v2 && v1->getType()->isVectorTy() && v2->getType()->isVectorTy()) {
+                    auto* vecType = cast<FixedVectorType>(v1->getType());
+                    Type* elemType = vecType->getElementType();
+                    unsigned numElems = vecType->getNumElements();
+                    
+                    // Component-wise multiply
+                    Value* product = ctx.builder->CreateFMul(v1, v2, "dot_mul");
+                    
+                    // Horizontal sum using vector reduction
+                    // Extract and accumulate all elements
+                    Value* sum = Constant::getNullValue(elemType);
+                    for (unsigned i = 0; i < numElems; i++) {
+                        Value* elem = ctx.builder->CreateExtractElement(
+                            product, ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), i), "dot_elem");
+                        sum = ctx.builder->CreateFAdd(sum, elem, "dot_sum");
+                    }
+                    return sum;
+                }
+            } else if (funcName == "cross" && call->arguments.size() == 2) {
+                // Cross product: cross(vec3, vec3) -> vec3 (only for 3D vectors)
+                Value* v1 = visitExpr(call->arguments[0].get());
+                Value* v2 = visitExpr(call->arguments[1].get());
+                
+                if (v1 && v2 && v1->getType()->isVectorTy() && v2->getType()->isVectorTy()) {
+                    auto* vecType = cast<FixedVectorType>(v1->getType());
+                    // Note: vec3 is actually stored as vec4 (SIMD alignment), so check for >= 3
+                    if (vecType->getNumElements() >= 3) {
+                        // Cross product formula: (a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x)
+                        Type* i32 = Type::getInt32Ty(ctx.llvmContext);
+                        
+                        Value* ax = ctx.builder->CreateExtractElement(v1, ConstantInt::get(i32, 0), "ax");
+                        Value* ay = ctx.builder->CreateExtractElement(v1, ConstantInt::get(i32, 1), "ay");
+                        Value* az = ctx.builder->CreateExtractElement(v1, ConstantInt::get(i32, 2), "az");
+                        
+                        Value* bx = ctx.builder->CreateExtractElement(v2, ConstantInt::get(i32, 0), "bx");
+                        Value* by = ctx.builder->CreateExtractElement(v2, ConstantInt::get(i32, 1), "by");
+                        Value* bz = ctx.builder->CreateExtractElement(v2, ConstantInt::get(i32, 2), "bz");
+                        
+                        // X component: ay*bz - az*by
+                        Value* cx = ctx.builder->CreateFSub(
+                            ctx.builder->CreateFMul(ay, bz, "ay_bz"),
+                            ctx.builder->CreateFMul(az, by, "az_by"),
+                            "cross_x"
+                        );
+                        
+                        // Y component: az*bx - ax*bz
+                        Value* cy = ctx.builder->CreateFSub(
+                            ctx.builder->CreateFMul(az, bx, "az_bx"),
+                            ctx.builder->CreateFMul(ax, bz, "ax_bz"),
+                            "cross_y"
+                        );
+                        
+                        // Z component: ax*by - ay*bx
+                        Value* cz = ctx.builder->CreateFSub(
+                            ctx.builder->CreateFMul(ax, by, "ax_by"),
+                            ctx.builder->CreateFMul(ay, bx, "ay_bx"),
+                            "cross_z"
+                        );
+                        
+                        // Build result vector
+                        Value* result = UndefValue::get(vecType);
+                        result = ctx.builder->CreateInsertElement(result, cx, ConstantInt::get(i32, 0), "cross_0");
+                        result = ctx.builder->CreateInsertElement(result, cy, ConstantInt::get(i32, 1), "cross_1");
+                        result = ctx.builder->CreateInsertElement(result, cz, ConstantInt::get(i32, 2), "cross_2");
+                        return result;
+                    }
+                }
+            } else if (funcName == "length" && call->arguments.size() == 1) {
+                // Length (magnitude): length(vec) -> scalar = sqrt(dot(vec, vec))
+                Value* v = visitExpr(call->arguments[0].get());
+                
+                if (v && v->getType()->isVectorTy()) {
+                    auto* vecType = cast<FixedVectorType>(v->getType());
+                    Type* elemType = vecType->getElementType();
+                    unsigned numElems = vecType->getNumElements();
+                    
+                    // Compute dot product with itself
+                    Value* product = ctx.builder->CreateFMul(v, v, "len_sq");
+                    Value* sum = Constant::getNullValue(elemType);
+                    for (unsigned i = 0; i < numElems; i++) {
+                        Value* elem = ctx.builder->CreateExtractElement(
+                            product, ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), i), "len_elem");
+                        sum = ctx.builder->CreateFAdd(sum, elem, "len_sum");
+                    }
+                    
+                    // sqrt(sum)
+                    Function* sqrtFn = Intrinsic::getDeclaration(
+                        ctx.module.get(),
+                        elemType->isFloatTy() ? Intrinsic::sqrt : Intrinsic::sqrt,
+                        {elemType}
+                    );
+                    return ctx.builder->CreateCall(sqrtFn, {sum}, "length");
+                }
+            } else if (funcName == "normalize" && call->arguments.size() == 1) {
+                // Normalize: normalize(vec) -> vec / length(vec)
+                Value* v = visitExpr(call->arguments[0].get());
+                
+                if (v && v->getType()->isVectorTy()) {
+                    auto* vecType = cast<FixedVectorType>(v->getType());
+                    Type* elemType = vecType->getElementType();
+                    unsigned numElems = vecType->getNumElements();
+                    
+                    // Compute length
+                    Value* product = ctx.builder->CreateFMul(v, v, "norm_sq");
+                    Value* sum = Constant::getNullValue(elemType);
+                    for (unsigned i = 0; i < numElems; i++) {
+                        Value* elem = ctx.builder->CreateExtractElement(
+                            product, ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), i), "norm_elem");
+                        sum = ctx.builder->CreateFAdd(sum, elem, "norm_sum");
+                    }
+                    
+                    Function* sqrtFn = Intrinsic::getDeclaration(
+                        ctx.module.get(),
+                        elemType->isFloatTy() ? Intrinsic::sqrt : Intrinsic::sqrt,
+                        {elemType}
+                    );
+                    Value* len = ctx.builder->CreateCall(sqrtFn, {sum}, "norm_len");
+                    
+                    // Broadcast scalar to vector
+                    Value* lenVec = UndefValue::get(vecType);
+                    for (unsigned i = 0; i < numElems; i++) {
+                        lenVec = ctx.builder->CreateInsertElement(
+                            lenVec, len,
+                            ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), i),
+                            "norm_broadcast"
+                        );
+                    }
+                    
+                    // Divide vector by length vector
+                    return ctx.builder->CreateFDiv(v, lenVec, "normalized");
+                }
+            }
+            // ================================================================
+            // END SIMD VECTOR INTRINSICS
+            // ================================================================
+            
+            // Check for wildx memory protection intrinsics
+            // These map to the runtime functions directly
+            bool is_wildx_intrinsic = false;
+            if (funcName == "aria.mem.protect_exec" || funcName == "protect_exec") {
+                funcName = "aria_mem_protect_exec";
+                is_wildx_intrinsic = true;
+            } else if (funcName == "aria.mem.protect_write" || funcName == "protect_write") {
+                funcName = "aria_mem_protect_write";
+                is_wildx_intrinsic = true;
+            } else if (funcName == "aria.mem.free_exec" || funcName == "free_exec") {
+                funcName = "aria_free_exec";
+                is_wildx_intrinsic = true;
+            }
+            
+            // Try to find function in symbol table (for Aria functions)
+            Function* callee = nullptr;
+            Value* calleePtr = nullptr;  // For indirect calls through func variables
+            FunctionType* funcType = nullptr;  // For indirect calls with signature
+            
+            auto* sym = ctx.lookup(call->function_name);
+            if (sym) {
+                // Check if this is a closure variable (stored as reference to fat pointer struct)
+                // Closures have is_ref=true and type is "func" or starts with "func<"
+                if (sym->is_ref && (sym->ariaType == "func" || sym->ariaType.find("func<") == 0)) {
+                    // The closure is stored as a pointer to the fat pointer struct
+                    calleePtr = sym->val;
+                    
+                    // Get the function type from the actual function
+                    // The function should be in the module with the same name
+                    Function* lambdaFunc = ctx.module->getFunction(call->function_name);
+                    if (lambdaFunc) {
+                        // The lambda function has signature (ptr %env, ...args) -> result
+                        // We need to build funcType for the user-visible signature (...args) -> result
+                        FunctionType* lambdaFuncType = lambdaFunc->getFunctionType();
+                        std::vector<Type*> userParamTypes;
+                        
+                        // Skip first parameter (environment) if present
+                        unsigned startParam = (lambdaFuncType->getNumParams() > 0) ? 1 : 0;
+                        for (unsigned i = startParam; i < lambdaFuncType->getNumParams(); ++i) {
+                            userParamTypes.push_back(lambdaFuncType->getParamType(i));
+                        }
+                        
+                        funcType = FunctionType::get(
+                            lambdaFuncType->getReturnType(),
+                            userParamTypes,
+                            false
+                        );
+                    } else {
+                        throw std::runtime_error("Cannot find lambda function for closure '" + call->function_name + "'");
+                    }
+                }
+                // If is_ref is false, check if it's a direct function
+                else if (!sym->is_ref) {
+                    callee = dyn_cast_or_null<Function>(sym->val);
+                }
+            }
+            
+            // If not in symbol table, try module (for external functions)
+            if (!callee && !calleePtr) {
+                callee = ctx.module->getFunction(funcName);
+            }
+            
+            // If wildx intrinsic and not found, declare it now
+            if (!callee && is_wildx_intrinsic) {
+                if (funcName == "aria_mem_protect_exec") {
+                    callee = getOrInsertAriaMemProtectExec();
+                } else if (funcName == "aria_mem_protect_write") {
+                    callee = getOrInsertAriaMemProtectWrite();
+                } else if (funcName == "aria_free_exec") {
+                    callee = getOrInsertAriaFreeExec();
+                }
+            }
+            
+            // If LLVM intrinsic (llvm_*), declare it now
+            if (!callee && funcName.substr(0, 5) == "llvm_") {
+                callee = declareLLVMIntrinsic(funcName);
+            }
+            
+            if (!callee && !calleePtr) {
+                std::string errorMsg = "Undefined function '" + call->function_name + "'";
+                
+                // Check if it's a common typo or forgotten function
+                if (call->function_name == "println") {
+                    errorMsg += "\n\nDid you mean 'print'?";
+                } else if (call->function_name == "malloc" || call->function_name == "free") {
+                    errorMsg += "\n\nAria uses 'aria.alloc' and 'aria.free' instead of malloc/free";
+                } else {
+                    errorMsg += "\n\nMake sure the function is declared before it's called.";
+                }
+                
+                throw std::runtime_error(errorMsg);
+            }
+            
+            // Build argument list
+            std::vector<Value*> args;
+            
+            // Get the function type for parameter type checking
+            FunctionType* callFuncType = nullptr;
+            if (callee) {
+                callFuncType = callee->getFunctionType();
+            } else if (funcType) {
+                callFuncType = funcType;
+            }
+            
+            // Track which parameters are scalarized (for struct optimization)
+            // We need to match against the original function declaration to know
+            // which parameters were scalarized
+            size_t paramTypeIdx = 0;
+            
+            for (size_t i = 0; i < call->arguments.size(); i++) {
+                Value* argVal = visitExpr(call->arguments[i].get());
+                
+                // ================================================================
+                // OPTIMIZATION: Scalarize struct arguments for optimized functions
+                // ================================================================
+                // If the argument is a struct and fits the optimization criteria,
+                // extract individual fields and pass them as separate arguments
+                // ================================================================
+                
+                bool scalarized = false;
+                
+                if (argVal->getType()->isStructTy() && callFuncType) {
+                    auto* structType = cast<StructType>(argVal->getType());
+                    
+                    // Check if this parameter was scalarized in the function declaration
+                    // (This happens if struct size ≤ 16 bytes)
+                    if (structType->isSized()) {
+                        uint64_t structSize = ctx.module->getDataLayout().getTypeAllocSize(structType);
+                        
+                        if (structSize > 0 && structSize <= 16) {
+                            // Check if we have enough parameter slots for all fields
+                            if (paramTypeIdx + structType->getNumElements() <= callFuncType->getNumParams()) {
+                                // Verify types match (scalarized)
+                                bool typesMatch = true;
+                                for (unsigned fieldIdx = 0; fieldIdx < structType->getNumElements(); ++fieldIdx) {
+                                    if (callFuncType->getParamType(paramTypeIdx + fieldIdx) != 
+                                        structType->getElementType(fieldIdx)) {
+                                        typesMatch = false;
+                                        break;
+                                    }
+                                }
+                                
+                                if (typesMatch) {
+                                    // Scalarize: extract and pass each field separately
+                                    for (unsigned fieldIdx = 0; fieldIdx < structType->getNumElements(); ++fieldIdx) {
+                                        Value* fieldVal = ctx.builder->CreateExtractValue(
+                                            argVal, fieldIdx,
+                                            "arg_field" + std::to_string(fieldIdx));
+                                        args.push_back(fieldVal);
+                                    }
+                                    paramTypeIdx += structType->getNumElements();
+                                    scalarized = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if (!scalarized) {
+                    // Standard argument passing (no scalarization)
+                    // Cast argument to match parameter type if needed
+                    if (callFuncType && paramTypeIdx < callFuncType->getNumParams()) {
+                        Type* expectedType = callFuncType->getParamType(paramTypeIdx);
+                        if (argVal->getType() != expectedType) {
+                            // ================================================================
+                            // AUTO-UNWRAP RESULT TYPES
+                            // ================================================================
+                            // If argVal is a Result<T> struct and expectedType is T,
+                            // automatically extract the 'val' field (index 1)
+                            // This allows pipelines to work seamlessly:
+                            //   pass(f <| 5)  where f returns Result<int32>
+                            // ================================================================
+                            if (argVal->getType()->isStructTy()) {
+                                auto* argStructType = cast<StructType>(argVal->getType());
+                                // Check if this is a Result struct: {i8, T}
+                                if (argStructType->getNumElements() == 2 &&
+                                    argStructType->getElementType(0)->isIntegerTy(8)) {
+                                    // This looks like a Result<T> - check if val field matches expected
+                                    Type* valFieldType = argStructType->getElementType(1);
+                                    if (valFieldType == expectedType) {
+                                        // Auto-unwrap: extract the val field (index 1)
+                                        argVal = ctx.builder->CreateExtractValue(
+                                            argVal, 1, "auto_unwrap_val");
+                                    }
+                                }
+                            }
+                            
+                            // If both are integers, perform cast
+                            if (argVal->getType()->isIntegerTy() && expectedType->isIntegerTy()) {
+                                argVal = ctx.builder->CreateIntCast(argVal, expectedType, true);
+                            }
+                        }
+                    }
+                    
+                    args.push_back(argVal);
+                    paramTypeIdx++;
+                }
+            }
+            
+            // Generate the call
+            if (calleePtr) {
+                // Indirect call through function pointer or closure
+                Type* calleePtrType = calleePtr->getType();
+                
+                // Check if this is a closure struct {ptr, ptr}
+                // calleePtr might be a pointer to the struct (alloca) or the struct itself
+                bool isClosure = false;
+                Value* closureStruct = calleePtr;
+                
+                // If it's a pointer, we need to check what it points to
+                // In opaque pointer world, we can't directly inspect, so we use context
+                // We know closures are registered with is_ref=true
+                if (calleePtrType->isPointerTy()) {
+                    // This is a pointer to the closure struct
+                    isClosure = true;
+                } else if (calleePtrType->isStructTy()) {
+                    StructType* structType = cast<StructType>(calleePtrType);
+                    if (structType->getNumElements() == 2 &&
+                        structType->getElementType(0)->isPointerTy() &&
+                        structType->getElementType(1)->isPointerTy()) {
+                        isClosure = true;
+                    }
+                }
+                
+                if (isClosure) {
+                    // Extract function pointer from closure (field 0)
+                    // For pointers, use GEP; for values, use ExtractValue
+                    Value* funcPtr;
+                    Value* envPtr;
+                    
+                    if (calleePtrType->isPointerTy()) {
+                        // For opaque pointers, we need to know the struct type
+                        // We can get it from the fat pointer alloca instruction
+                        StructType* fatPtrType = nullptr;
+                        if (auto* allocaInst = dyn_cast<AllocaInst>(closureStruct)) {
+                            fatPtrType = dyn_cast<StructType>(allocaInst->getAllocatedType());
+                        }
+                        
+                        if (!fatPtrType) {
+                            throw std::runtime_error("Cannot determine closure struct type for '" + call->function_name + "'");
+                        }
+                        
+                        // Use GEP to get pointers to fields, then load
+                        Value* funcPtrPtr = ctx.builder->CreateStructGEP(
+                            fatPtrType,
+                            closureStruct, 
+                            0, 
+                            "closure_func_ptr_ptr"
+                        );
+                        funcPtr = ctx.builder->CreateLoad(
+                            PointerType::getUnqual(ctx.llvmContext),
+                            funcPtrPtr,
+                            "closure_func_ptr"
+                        );
+                        
+                        Value* envPtrPtr = ctx.builder->CreateStructGEP(
+                            fatPtrType,
+                            closureStruct,
+                            1,
+                            "closure_env_ptr_ptr"
+                        );
+                        envPtr = ctx.builder->CreateLoad(
+                            PointerType::getUnqual(ctx.llvmContext),
+                            envPtrPtr,
+                            "closure_env_ptr"
+                        );
+                    } else {
+                        // Struct value - use ExtractValue
+                        funcPtr = ctx.builder->CreateExtractValue(
+                            closureStruct, 0, "closure_func_ptr"
+                        );
+                        envPtr = ctx.builder->CreateExtractValue(
+                            closureStruct, 1, "closure_env_ptr"
+                        );
+                    }
+                    
+                    // Prepend environment pointer to arguments
+                    std::vector<Value*> closureArgs;
+                    closureArgs.push_back(envPtr);
+                    closureArgs.insert(closureArgs.end(), args.begin(), args.end());
+                    
+                    // Cast function pointer to correct type
+                    // The function type has environment as first parameter
+                    std::vector<Type*> paramTypes;
+                    paramTypes.push_back(PointerType::getUnqual(ctx.llvmContext)); // env
+                    if (funcType) {
+                        for (unsigned i = 0; i < funcType->getNumParams(); ++i) {
+                            paramTypes.push_back(funcType->getParamType(i));
+                        }
+                    }
+                    Type* returnType = funcType ? funcType->getReturnType() : Type::getVoidTy(ctx.llvmContext);
+                    FunctionType* closureFuncType = FunctionType::get(returnType, paramTypes, false);
+                    
+                    // Call through extracted function pointer
+                    if (closureFuncType->getReturnType()->isVoidTy()) {
+                        return ctx.builder->CreateCall(closureFuncType, funcPtr, closureArgs);
+                    }
+                    return ctx.builder->CreateCall(closureFuncType, funcPtr, closureArgs, "closure_call");
+                } else {
+                    // Regular indirect call through function pointer
+                    // Cast the pointer to the correct function type
+                    Value* funcPtr = ctx.builder->CreateBitCast(calleePtr, PointerType::getUnqual(funcType));
+                    
+                    // Void functions shouldn't have result names
+                    if (funcType->getReturnType()->isVoidTy()) {
+                        return ctx.builder->CreateCall(funcType, funcPtr, args);
+                    }
+                    return ctx.builder->CreateCall(funcType, funcPtr, args, "calltmp");
+                }
+            } else {
+                // Direct call
+                // Void functions shouldn't have result names
+                if (callee->getReturnType()->isVoidTy()) {
+                    return ctx.builder->CreateCall(callee, args);
+                }
+                return ctx.builder->CreateCall(callee, args, "calltmp");
+            }
+        }
+        if (auto* unary = dynamic_cast<aria::frontend::UnaryOp*>(node)) {
+            Value* operand = visitExpr(unary->operand.get());
+            if (!operand) return nullptr;
+            
+            switch (unary->op) {
+                case aria::frontend::UnaryOp::NEG: {
+                    // Check if operand is a TBB type
+                    std::string operandType = "";
+                    if (ctx.exprTypeMap.count(operand)) {
+                        operandType = ctx.exprTypeMap[operand];
+                    }
+                    
+                    // TBB-aware negation with sticky error propagation
+                    if (TBBLowerer::isTBBType(operandType) && operand->getType()->isIntegerTy()) {
+                        TBBLowerer tbbLowerer(ctx.llvmContext, *ctx.builder, ctx.module.get());
+                        Value* result = tbbLowerer.createNeg(operand);
+                        ctx.exprTypeMap[result] = operandType;  // Preserve type
+                        return result;
+                    }
+                    
+                    // Standard negation for non-TBB types
+                    return ctx.builder->CreateNeg(operand);
+                }
+                case aria::frontend::UnaryOp::LOGICAL_NOT:
+                    return ctx.builder->CreateNot(operand);
+                case aria::frontend::UnaryOp::BITWISE_NOT:
+                    return ctx.builder->CreateNot(operand);
+                case aria::frontend::UnaryOp::POST_INC:
+                case aria::frontend::UnaryOp::POST_DEC: {
+                    // For x++ or x--, we need to:
+                    // 1. Load current value
+                    // 2. Increment/decrement
+                    // 3. Store back
+                    // 4. Return original value (for x++) or new value (simplified: return new)
+                    if (auto* varExpr = dynamic_cast<aria::frontend::VarExpr*>(unary->operand.get())) {
+                        auto* sym = ctx.lookup(varExpr->name);
+                        if (!sym || !sym->is_ref) return nullptr;
+                        
+                        Value* currentVal = ctx.builder->CreateLoad(ctx.getLLVMType("int64"), sym->val);
+                        Value* one = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 1);
+                        Value* newVal = (unary->op == aria::frontend::UnaryOp::POST_INC) 
+                            ? ctx.builder->CreateAdd(currentVal, one)
+                            : ctx.builder->CreateSub(currentVal, one);
+                        ctx.builder->CreateStore(newVal, sym->val);
+                        return newVal;  // Simplified: return new value
+                    }
+                    return nullptr;
+                }
+                case aria::frontend::UnaryOp::ADDRESS_OF: {
+                    // @ operator: get address of a variable (like C's &)
+                    // 
+                    // DEBUG BUILDS: Generate fat pointer with scope ID
+                    // RELEASE BUILDS: Generate raw pointer (zero overhead)
+                    //
+                    // Fat Pointer Structure (debug):
+                    //   { i8* ptr, i64 scope_id, i64 timestamp }
+                    // 
+                    // This enables runtime detection of use-after-scope bugs
+                    
+                    if (auto* varExpr = dynamic_cast<aria::frontend::VarExpr*>(unary->operand.get())) {
+                        auto* sym = ctx.lookup(varExpr->name);
+                        if (!sym || !sym->is_ref) return nullptr;
+                        
+                        #ifdef ARIA_DEBUG
+                        // === DEBUG BUILD: Generate fat pointer ===
+                        
+                        // 1. Get or declare aria_fat_ptr_create function
+                        Function* createFatPtr = ctx.module->getFunction("aria_fat_ptr_create");
+                        if (!createFatPtr) {
+                            // aria_fat_pointer_t aria_fat_ptr_create(void* raw_ptr, uint64_t scope_id)
+                            std::vector<Type*> paramTypes = {
+                                PointerType::getUnqual(ctx.llvmContext),  // void* raw_ptr
+                                Type::getInt64Ty(ctx.llvmContext)         // uint64_t scope_id
+                            };
+                            
+                            // Return type: { i8*, i64, i64 } (fat pointer struct)
+                            std::vector<Type*> fatPtrFields = {
+                                PointerType::getUnqual(ctx.llvmContext),  // ptr
+                                Type::getInt64Ty(ctx.llvmContext),        // scope_id
+                                Type::getInt64Ty(ctx.llvmContext)         // alloc_timestamp
+                            };
+                            StructType* fatPtrType = StructType::get(ctx.llvmContext, fatPtrFields);
+                            
+                            FunctionType* funcType = FunctionType::get(fatPtrType, paramTypes, false);
+                            createFatPtr = Function::Create(funcType, Function::ExternalLinkage,
+                                                          "aria_fat_ptr_create", ctx.module.get());
+                        }
+                        
+                        // 2. Generate call: aria_fat_ptr_create(sym->val, current_scope_id)
+                        std::vector<Value*> args = {
+                            sym->val,  // Raw pointer (alloca address)
+                            ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), ctx.current_scope_id)
+                        };
+                        
+                        return ctx.builder->CreateCall(createFatPtr, args, "fat_ptr");
+                        
+                        #else
+                        // === RELEASE BUILD: Generate raw pointer (zero overhead) ===
+                        
+                        // Return the pointer (alloca address) as an integer
+                        // PtrToInt converts pointer to integer representation
+                        return ctx.builder->CreatePtrToInt(sym->val, Type::getInt64Ty(ctx.llvmContext));
+                        
+                        #endif
+                    }
+                    return nullptr;
+                }
+                case aria::frontend::UnaryOp::PIN: {
+                    // # operator: pin dynamic value to specific type
+                    // For now, simplified: just return the operand
+                    // In full implementation, would:
+                    // 1. Check operand is dyn type
+                    // 2. Perform runtime type check
+                    // 3. Extract/cast to specific type
+                    return operand;
+                }
+                case aria::frontend::UnaryOp::BORROW:
+                case aria::frontend::UnaryOp::BORROW_MUT: {
+                    // $ and $mut operators: create safe references (Appendage Theory)
+                    // For now, simplified: return operand (borrow checking done at semantic level)
+                    // Full implementation will integrate with borrow checker annotations
+                    return operand;
+                }
+                case aria::frontend::UnaryOp::DEREF: {
+                    // * operator: dereference pointer
+                    // For now, simplified: assume operand is pointer-sized int, return as-is
+                    // Full implementation will handle fat pointers in debug builds
+                    return operand;
+                }
+            }
+        }
+        if (auto* binop = dynamic_cast<aria::frontend::BinaryOp*>(node)) {
+            // Handle assignment operators specially - need LHS address, not value
+            if (binop->op == aria::frontend::BinaryOp::ASSIGN ||
+                binop->op == aria::frontend::BinaryOp::PLUS_ASSIGN ||
+                binop->op == aria::frontend::BinaryOp::MINUS_ASSIGN ||
+                binop->op == aria::frontend::BinaryOp::STAR_ASSIGN ||
+                binop->op == aria::frontend::BinaryOp::SLASH_ASSIGN ||
+                binop->op == aria::frontend::BinaryOp::MOD_ASSIGN) {
+                
+                // Check if LHS is array indexing
+                if (auto* indexExpr = dynamic_cast<aria::frontend::IndexExpr*>(binop->left.get())) {
+                    // Assignment to array element: arr[i] = value
+                    
+                    // For array indexing assignment, we need the POINTER not the loaded value
+                    // Get the array variable directly from symbol table
+                    Value* arrayPtr = nullptr;
+                    Type* elementType = nullptr;
+                    
+                    if (auto* varRef = dynamic_cast<aria::frontend::VarExpr*>(indexExpr->array.get())) {
+                        // Look up the variable to get its alloca (which holds a pointer)
+                        auto* sym = ctx.lookup(varRef->name);
+                        if (!sym) {
+                            throw std::runtime_error("Undefined variable: " + varRef->name);
+                        }
+                        
+                        // Get element type from Aria type string
+                        std::string ariaType = sym->ariaType;
+                        size_t bracketPos = ariaType.find('[');
+                        if (bracketPos != std::string::npos) {
+                            std::string elemTypeName = ariaType.substr(0, bracketPos);
+                            elementType = ctx.getLLVMType(elemTypeName);
+                        } else {
+                            // Not an array type? Default to i8
+                            elementType = Type::getInt8Ty(ctx.llvmContext);
+                        }
+                        
+                        // Get array pointer - strategy determines how
+                        // Check for dynamic array parameters (T[]) first
+                        if (ariaType.find("[]") != std::string::npos) {
+                            // Dynamic array parameter: sym->val is alloca holding pointer
+                            // Load the pointer value
+                            arrayPtr = ctx.builder->CreateLoad(
+                                PointerType::getUnqual(ctx.llvmContext),
+                                sym->val,
+                                varRef->name + "_ptr"
+                            );
+                        } else if (sym->strategy == CodeGenContext::AllocStrategy::WILD || 
+                            sym->strategy == CodeGenContext::AllocStrategy::GC) {
+                            // Heap allocated: sym->val is ptr to ptr, need to load heap pointer
+                            arrayPtr = ctx.builder->CreateLoad(
+                                PointerType::getUnqual(ctx.llvmContext),
+                                sym->val,
+                                varRef->name + "_ptr"
+                            );
+                        } else {
+                            // Stack allocated: sym->val is ptr to array, use directly
+                            Type* arrayType = ctx.getLLVMType(ariaType);
+                            Value* indices[] = {
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0),
+                                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0)
+                            };
+                            arrayPtr = ctx.builder->CreateGEP(arrayType, sym->val, indices, varRef->name + "_ptr");
+                        }
+                    } else {
+                        throw std::runtime_error("Array assignment requires variable reference");
+                    }
+                    
+                    if (!arrayPtr || !elementType) {
+                        throw std::runtime_error("Failed to resolve array pointer or element type");
+                    }
+                    
+                    // Get index and RHS value
+                    Value* index = visitExpr(indexExpr->index.get());
+                    Value* rhs = visitExpr(binop->right.get());
+                    
+                    if (!index || !rhs) return nullptr;
+                    
+                    // Cast RHS to element type if needed
+                    if (rhs->getType() != elementType) {
+                        if (rhs->getType()->isIntegerTy() && elementType->isIntegerTy()) {
+                            rhs = ctx.builder->CreateIntCast(rhs, elementType, false, "cast");
+                        }
+                    }
+                    
+                    // Generate GEP to element
+                    Value* elemPtr = ctx.builder->CreateGEP(
+                        elementType,
+                        arrayPtr,
+                        index,
+                        "elem_ptr"
+                    );
+                    
+                    // Store value to element
+                    ctx.builder->CreateStore(rhs, elemPtr);
+                    return rhs;  // Return the assigned value
+                }
+                
+                // Get LHS variable address (simple variable assignment)
+                auto* varExpr = dynamic_cast<aria::frontend::VarExpr*>(binop->left.get());
+                if (!varExpr) return nullptr;
+                
+                auto* sym = ctx.lookup(varExpr->name);
+                if (!sym || !sym->is_ref) return nullptr;
+                
+                Value* lhsAddr = sym->val;  // This is the address/alloca
+                
+                // For compound assignments, load current value first
+                Value* R = visitExpr(binop->right.get());
+                if (!R) return nullptr;
+                
+                Value* result = R;
+                if (binop->op != aria::frontend::BinaryOp::ASSIGN) {
+                    // Load current value for compound assignment
+                    Type* loadType = ctx.getLLVMType(sym->ariaType);
+                    Value* currentVal;
+                    
+                    // For heap allocations, load pointer first
+                    if (sym->val->getName().contains("_heap") || isa<CallInst>(sym->val)) {
+                        Value* heapPtr = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), lhsAddr);
+                        currentVal = ctx.builder->CreateLoad(loadType, heapPtr);
+                    } else {
+                        // For stack allocations, direct load
+                        currentVal = ctx.builder->CreateLoad(loadType, lhsAddr);
+                    }
+                    
+                    // Type promotion: ensure both operands have same type
+                    if (currentVal->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
+                        Type* currentType = currentVal->getType();
+                        Type* rType = R->getType();
+                        unsigned currentBits = currentType->getIntegerBitWidth();
+                        unsigned rBits = rType->getIntegerBitWidth();
+                        
+                        if (currentBits != rBits) {
+                            // Promote to larger type
+                            if (currentBits < rBits) {
+                                currentVal = ctx.builder->CreateSExtOrTrunc(currentVal, rType);
+                            } else {
+                                R = ctx.builder->CreateSExtOrTrunc(R, currentType);
+                            }
+                        }
+                    }
+                    
+                    // Perform operation with type-matched operands
+                    switch (binop->op) {
+                        case aria::frontend::BinaryOp::PLUS_ASSIGN:
+                            result = ctx.builder->CreateAdd(currentVal, R, "addtmp");
+                            break;
+                        case aria::frontend::BinaryOp::MINUS_ASSIGN:
+                            result = ctx.builder->CreateSub(currentVal, R, "subtmp");
+                            break;
+                        case aria::frontend::BinaryOp::STAR_ASSIGN:
+                            result = ctx.builder->CreateMul(currentVal, R, "multmp");
+                            break;
+                        case aria::frontend::BinaryOp::SLASH_ASSIGN:
+                            result = ctx.builder->CreateSDiv(currentVal, R, "divtmp");
+                            break;
+                        case aria::frontend::BinaryOp::MOD_ASSIGN:
+                            result = ctx.builder->CreateSRem(currentVal, R, "modtmp");
+                            break;
+                        case aria::frontend::BinaryOp::AND_ASSIGN:
+                            result = ctx.builder->CreateAnd(currentVal, R, "andassigntmp");
+                            break;
+                        case aria::frontend::BinaryOp::OR_ASSIGN:
+                            result = ctx.builder->CreateOr(currentVal, R, "orassigntmp");
+                            break;
+                        case aria::frontend::BinaryOp::XOR_ASSIGN:
+                            result = ctx.builder->CreateXor(currentVal, R, "xorassigntmp");
+                            break;
+                        case aria::frontend::BinaryOp::LSHIFT_ASSIGN:
+                            result = ctx.builder->CreateShl(currentVal, R, "lshiftassigntmp");
+                            break;
+                        case aria::frontend::BinaryOp::RSHIFT_ASSIGN:
+                            result = ctx.builder->CreateAShr(currentVal, R, "rshiftassigntmp");
+                            break;
+                        default:
+                            break;
+                    }
+                }
+                
+                // Convert result to match variable type before storing
+                Type* varType = ctx.getLLVMType(sym->ariaType);
+                if (result->getType() != varType) {
+                    if (result->getType()->isIntegerTy() && varType->isIntegerTy()) {
+                        result = ctx.builder->CreateIntCast(result, varType, true);
+                    }
+                }
+                
+                // Store result back to LHS
+                // For heap allocations, get the heap pointer first
+                if (sym->val->getName().contains("_heap") || isa<CallInst>(sym->val)) {
+                    Value* heapPtr = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), lhsAddr);
+                    ctx.builder->CreateStore(result, heapPtr);
+                } else {
+                    // For stack allocations, direct store
+                    ctx.builder->CreateStore(result, lhsAddr);
+                }
+                
+                return result;  // Return the assigned value
+            }
+            
+            // Regular binary operations (not assignments)
+            Value* L = visitExpr(binop->left.get());
+            Value* R = visitExpr(binop->right.get());
+            
+            if (!L || !R) return nullptr;
+            
+            // Determine if we're working with TBB types
+            // Check the expression type map first, then fall back to introspection
+            std::string leftType = "";
+            std::string rightType = "";
+            
+            if (ctx.exprTypeMap.count(L)) {
+                leftType = ctx.exprTypeMap[L];
+            }
+            if (ctx.exprTypeMap.count(R)) {
+                rightType = ctx.exprTypeMap[R];
+            }
+            
+            bool isTBBOperation = TBBLowerer::isTBBType(leftType) || TBBLowerer::isTBBType(rightType);
+            
+            // Type promotion: if operands have different integer types, promote to larger type
+            if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
+                Type* LType = L->getType();
+                Type* RType = R->getType();
+                unsigned LBits = LType->getIntegerBitWidth();
+                unsigned RBits = RType->getIntegerBitWidth();
+                
+                if (LBits != RBits) {
+                    // Promote smaller type to larger type
+                    if (LBits < RBits) {
+                        L = ctx.builder->CreateSExtOrTrunc(L, RType);
+                        leftType = rightType;  // Update type after promotion
+                    } else {
+                        R = ctx.builder->CreateSExtOrTrunc(R, LType);
+                        rightType = leftType;  // Update type after promotion
+                    }
+                }
+            }
+            
+            // TBB-aware arithmetic operations
+            // If either operand is a TBB type, use TBBLowerer for sticky error propagation
+            if (isTBBOperation && L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
+                TBBLowerer tbbLowerer(ctx.llvmContext, *ctx.builder, ctx.module.get());
+                Value* result = nullptr;
+                
+                switch (binop->op) {
+                    case aria::frontend::BinaryOp::ADD:
+                        result = tbbLowerer.createAdd(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::SUB:
+                        result = tbbLowerer.createSub(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::MUL:
+                        result = tbbLowerer.createMul(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::DIV:
+                        result = tbbLowerer.createDiv(L, R);
+                        break;
+                    case aria::frontend::BinaryOp::MOD:
+                        result = tbbLowerer.createMod(L, R);
+                        break;
+                    default:
+                        // For non-arithmetic operations (comparisons, bitwise, etc.),
+                        // fall through to standard handling below
+                        isTBBOperation = false;  // Not an arithmetic op
+                        break;
+                }
+                
+                if (result) {
+                    // Track the result type
+                    ctx.exprTypeMap[result] = leftType.empty() ? rightType : leftType;
+                    return result;
+                }
+            }
+            
+            // Standard operations (non-TBB or comparison/logical operations)
+            switch (binop->op) {
+                case aria::frontend::BinaryOp::ADD:
+                    // Check if operand is floating-point (scalar or vector)
+                    if (L->getType()->isFPOrFPVectorTy()) {
+                        return ctx.builder->CreateFAdd(L, R, "addtmp");
+                    }
+                    return ctx.builder->CreateAdd(L, R, "addtmp");
+                case aria::frontend::BinaryOp::SUB:
+                    if (L->getType()->isFPOrFPVectorTy()) {
+                        return ctx.builder->CreateFSub(L, R, "subtmp");
+                    }
+                    return ctx.builder->CreateSub(L, R, "subtmp");
+                case aria::frontend::BinaryOp::MUL:
+                    if (L->getType()->isFPOrFPVectorTy()) {
+                        return ctx.builder->CreateFMul(L, R, "multmp");
+                    }
+                    return ctx.builder->CreateMul(L, R, "multmp");
+                case aria::frontend::BinaryOp::DIV:
+                    if (L->getType()->isFPOrFPVectorTy()) {
+                        return ctx.builder->CreateFDiv(L, R, "divtmp");
+                    }
+                    return ctx.builder->CreateSDiv(L, R, "divtmp");
+                case aria::frontend::BinaryOp::MOD:
+                    if (L->getType()->isFPOrFPVectorTy()) {
+                        return ctx.builder->CreateFRem(L, R, "modtmp");
+                    }
+                    return ctx.builder->CreateSRem(L, R, "modtmp");
+                case aria::frontend::BinaryOp::EQ:
+                    if (L->getType()->isFPOrFPVectorTy()) {
+                        return ctx.builder->CreateFCmpOEQ(L, R, "eqtmp");
+                    }
+                    return ctx.builder->CreateICmpEQ(L, R, "eqtmp");
+                case aria::frontend::BinaryOp::NE:
+                    if (L->getType()->isFPOrFPVectorTy()) {
+                        return ctx.builder->CreateFCmpONE(L, R, "netmp");
+                    }
+                    return ctx.builder->CreateICmpNE(L, R, "netmp");
+                case aria::frontend::BinaryOp::LT:
+                    if (L->getType()->isFPOrFPVectorTy()) {
+                        return ctx.builder->CreateFCmpOLT(L, R, "lttmp");
+                    }
+                    return ctx.builder->CreateICmpSLT(L, R, "lttmp");
+                case aria::frontend::BinaryOp::GT:
+                    if (L->getType()->isFPOrFPVectorTy()) {
+                        return ctx.builder->CreateFCmpOGT(L, R, "gttmp");
+                    }
+                    return ctx.builder->CreateICmpSGT(L, R, "gttmp");
+                case aria::frontend::BinaryOp::LE:
+                    if (L->getType()->isFPOrFPVectorTy()) {
+                        return ctx.builder->CreateFCmpOLE(L, R, "letmp");
+                    }
+                    return ctx.builder->CreateICmpSLE(L, R, "letmp");
+                case aria::frontend::BinaryOp::GE:
+                    if (L->getType()->isFPOrFPVectorTy()) {
+                        return ctx.builder->CreateFCmpOGE(L, R, "getmp");
+                    }
+                    return ctx.builder->CreateICmpSGE(L, R, "getmp");
+                // TODO: Spaceship operator - waiting for BinaryOp::SPACESHIP enum
+                /* case aria::frontend::BinaryOp::SPACESHIP: {
+                    // Three-way comparison: returns -1 if L < R, 0 if L == R, 1 if L > R
+                    Type* resultType = Type::getInt8Ty(ctx.llvmContext);
+                    Value* negOne = ConstantInt::get(resultType, -1, true);
+                    Value* zero = ConstantInt::get(resultType, 0);
+                    Value* one = ConstantInt::get(resultType, 1);
+                    
+                    if (L->getType()->isFPOrFPVectorTy()) {
+                        Value* lt = ctx.builder->CreateFCmpOLT(L, R, "lt");
+                        Value* gt = ctx.builder->CreateFCmpOGT(L, R, "gt");
+                        Value* ltResult = ctx.builder->CreateSelect(lt, negOne, zero, "lt_result");
+                        return ctx.builder->CreateSelect(gt, one, ltResult, "spaceship");
+                    } else {
+                        Value* lt = ctx.builder->CreateICmpSLT(L, R, "lt");
+                        Value* gt = ctx.builder->CreateICmpSGT(L, R, "gt");
+                        Value* ltResult = ctx.builder->CreateSelect(lt, negOne, zero, "lt_result");
+                        return ctx.builder->CreateSelect(gt, one, ltResult, "spaceship");
+                    }
+                } */
+                case aria::frontend::BinaryOp::LOGICAL_AND:
+                    return ctx.builder->CreateAnd(L, R, "andtmp");
+                case aria::frontend::BinaryOp::LOGICAL_OR:
+                    return ctx.builder->CreateOr(L, R, "ortmp");
+                case aria::frontend::BinaryOp::BITWISE_AND:
+                    return ctx.builder->CreateAnd(L, R, "bandtmp");
+                case aria::frontend::BinaryOp::BITWISE_OR:
+                    return ctx.builder->CreateOr(L, R, "bortmp");
+                case aria::frontend::BinaryOp::BITWISE_XOR:
+                    return ctx.builder->CreateXor(L, R, "xortmp");
+                case aria::frontend::BinaryOp::LSHIFT:
+                    return ctx.builder->CreateShl(L, R, "shltmp");
+                case aria::frontend::BinaryOp::RSHIFT:
+                    return ctx.builder->CreateAShr(L, R, "ashrtmp");
+                // TODO: Null coalesce and pipeline operators - waiting for enum additions
+                /* case aria::frontend::BinaryOp::NULL_COALESCE: {
+                    // a ?? b: return a if not null/zero, otherwise b
+                    // For pointers: check if null
+                    // For integers: check if zero (since Aria uses 0 for null in some contexts)
+                    if (L->getType()->isPointerTy()) {
+                        Value* isNull = ctx.builder->CreateIsNull(L, "is_null");
+                        return ctx.builder->CreateSelect(isNull, R, L, "null_coalesce");
+                    } else if (L->getType()->isIntegerTy()) {
+                        Value* zero = ConstantInt::get(L->getType(), 0);
+                        Value* isZero = ctx.builder->CreateICmpEQ(L, zero, "is_zero");
+                        return ctx.builder->CreateSelect(isZero, R, L, "null_coalesce");
+                    }
+                    // For other types, just return L (no null concept)
+                    return L;
+                }
+                case aria::frontend::BinaryOp::PIPE_FORWARD: {
+                    // x |> f means f(x)
+                    // R should be a function, L is the argument
+                    if (auto* varExpr = dynamic_cast<aria::frontend::VarExpr*>(binop->right.get())) {
+                        // Simple function name
+                        Function* func = ctx.module->getFunction(varExpr->name);
+                        if (!func) {
+                            throw std::runtime_error("Pipeline forward: undefined function '" + varExpr->name + "'");
+                        }
+                        std::vector<Value*> args = {L};
+                        return ctx.builder->CreateCall(func, args, "pipe_fwd");
+                    }
+                    throw std::runtime_error("Pipeline forward requires function on right side");
+                }
+                case aria::frontend::BinaryOp::PIPE_BACKWARD: {
+                    // f <| x means f(x)
+                    // L should be a function, R is the argument
+                    if (auto* varExpr = dynamic_cast<aria::frontend::VarExpr*>(binop->left.get())) {
+                        // Simple function name
+                        Function* func = ctx.module->getFunction(varExpr->name);
+                        if (!func) {
+                            throw std::runtime_error("Pipeline backward: undefined function '" + varExpr->name + "'");
+                        }
+                        std::vector<Value*> args = {R};
+                        return ctx.builder->CreateCall(func, args, "pipe_bwd");
+                    }
+                    throw std::runtime_error("Pipeline backward requires function on left side");
+                } */
+                default:
+                    // Assignment operators handled elsewhere
+                    return nullptr;
+            }
+        }
+        if (auto* obj = dynamic_cast<aria::frontend::ObjectLiteral*>(node)) {
+            // Check if this is a struct constructor (has type_name) or a result object
+            if (!obj->type_name.empty()) {
+                // This is a struct constructor: Point{x: 10, y: 20}
+                std::string structName = obj->type_name;
+                
+                // Get the struct type from LLVM
+                StructType* structType = StructType::getTypeByName(ctx.llvmContext, structName);
+                if (!structType) {
+                    throw std::runtime_error("Unknown struct type: " + structName);
+                }
+                
+                // Allocate struct on stack
+                AllocaInst* structAlloca = ctx.builder->CreateAlloca(structType, nullptr, structName + "_instance");
+                
+                // Initialize fields by name
+                // TODO: For now, assume fields are in order. Later, match by name.
+                unsigned fieldIdx = 0;
+                for (auto& field : obj->fields) {
+                    Value* fieldValue = visitExpr(field.value.get());
+                    if (!fieldValue) {
+                        throw std::runtime_error("Failed to evaluate field initializer for: " + field.name);
+                    }
+                    
+                    // Get pointer to field
+                    Value* fieldPtr = ctx.builder->CreateStructGEP(structType, structAlloca, fieldIdx, field.name + "_ptr");
+                    
+                    // Store value
+                    Type* fieldType = structType->getElementType(fieldIdx);
+                    if (fieldValue->getType() != fieldType) {
+                        // Try to cast to match field type
+                        if (fieldValue->getType()->isIntegerTy() && fieldType->isIntegerTy()) {
+                            // Integer to integer cast
+                            fieldValue = ctx.builder->CreateIntCast(fieldValue, fieldType, true);
+                        } else if (fieldValue->getType()->isFloatingPointTy() && fieldType->isFloatingPointTy()) {
+                            // Float to float cast
+                            fieldValue = ctx.builder->CreateFPCast(fieldValue, fieldType);
+                        } else if (fieldValue->getType()->isIntegerTy() && fieldType->isFloatingPointTy()) {
+                            // Integer to float cast
+                            fieldValue = ctx.builder->CreateSIToFP(fieldValue, fieldType);
+                        } else if (fieldValue->getType()->isFloatingPointTy() && fieldType->isIntegerTy()) {
+                            // Float to integer cast
+                            fieldValue = ctx.builder->CreateFPToSI(fieldValue, fieldType);
+                        } else {
+                            throw std::runtime_error("Type mismatch for field: " + field.name + 
+                                " (expected " + std::string(fieldType->isFloatingPointTy() ? "float" : "non-float") +
+                                ", got " + std::string(fieldValue->getType()->isFloatingPointTy() ? "float" : "non-float") + ")");
+                        }
+                    }
+                    ctx.builder->CreateStore(fieldValue, fieldPtr);
+                    fieldIdx++;
+                }
+                
+                // Load and return the struct value
+                return ctx.builder->CreateLoad(structType, structAlloca, structName + "_value");
+            }
+            
+            // Otherwise, check if this is a result object (has err and/or val fields)
+            bool isResultObject = false;
+            Value* valField = nullptr;
+            Value* errField = nullptr;
+            
+            for (auto& field : obj->fields) {
+                if (field.name == "err") {
+                    isResultObject = true;
+                    errField = visitExpr(field.value.get());
+                } else if (field.name == "val") {
+                    isResultObject = true;  // Recognize {val:x} as Result object
+                    valField = visitExpr(field.value.get());
+                }
+            }
+            
+            if (isResultObject) {
+                // This is a result object - create result<T> based on current function's return type
+                if (ctx.currentFunctionReturnType.empty()) {
+                    throw std::runtime_error("Result object used outside of function context");
+                }
+                
+                // Get the correct result type for this function
+                Type* resultTypeLLVM = ctx.getResultType(ctx.currentFunctionReturnType);
+                StructType* resultType = dyn_cast<StructType>(resultTypeLLVM);
+                
+                if (!resultType) {
+                    throw std::runtime_error("Failed to create result type for: " + ctx.currentFunctionReturnType);
+                }
+                
+                // Get expected val field type
+                Type* expectedValType = resultType->getElementType(1);  // val is field index 1
+                
+                // Allocate struct on stack
+                AllocaInst* resultAlloca = ctx.builder->CreateAlloca(resultType, nullptr, "result");
+                
+                // Store err field (index 0) - default to 0 (success) if not provided
+                Value* errValue = errField ? errField : ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0);
+                
+                // Type check err field - must be i8
+                if (errValue->getType() != Type::getInt8Ty(ctx.llvmContext)) {
+                    if (errValue->getType()->isIntegerTy()) {
+                        errValue = ctx.builder->CreateIntCast(errValue, Type::getInt8Ty(ctx.llvmContext), true, "err_cast");
+                    } else {
+                        throw std::runtime_error("err field must be int8 (error code: 0=success, 1-255=error)");
+                    }
+                }
+                
+                Value* errPtr = ctx.builder->CreateStructGEP(resultType, resultAlloca, 0, "err_ptr");
+                ctx.builder->CreateStore(errValue, errPtr);
+                
+                // Store val field (index 1) with type checking
+                if (valField) {
+                    // TYPE VALIDATION: Check if val type matches declared return type
+                    if (valField->getType() != expectedValType) {
+                        // ================================================================
+                        // AUTO-UNWRAP RESULT TYPES IN RESULT OBJECTS
+                        // ================================================================
+                        // If valField is a Result<T> struct and expectedValType is T,
+                        // automatically extract the nested 'val' field.
+                        // This handles: pass(f())  where f returns Result<int32>
+                        // Expands to: return {err:0, val:f()}
+                        // And f() returns {err:X, val:Y}, so we want Y not the whole struct
+                        // ================================================================
+                        if (valField->getType()->isStructTy()) {
+                            auto* valStructType = cast<StructType>(valField->getType());
+                            // Check if this is a Result struct: {i8, T}
+                            if (valStructType->getNumElements() == 2 &&
+                                valStructType->getElementType(0)->isIntegerTy(8)) {
+                                // This looks like a Result<T> - check if inner val field matches expected
+                                Type* innerValType = valStructType->getElementType(1);
+                                if (innerValType == expectedValType) {
+                                    // Auto-unwrap: extract the inner val field (index 1)
+                                    valField = ctx.builder->CreateExtractValue(
+                                        valField, 1, "auto_unwrap_result_val");
+                                }
+                            }
+                        }
+                        
+                        // Allow integer type conversions
+                        if (valField->getType()->isIntegerTy() && expectedValType->isIntegerTy()) {
+                            valField = ctx.builder->CreateIntCast(valField, expectedValType, true, "val_cast");
+                        } else if (valField->getType() != expectedValType) {
+                            // Type still doesn't match after unwrap attempts
+                            throw std::runtime_error(
+                                "Type mismatch in result object: function declared return type '" + 
+                                ctx.currentFunctionReturnType + "' but val field has different type"
+                            );
+                        }
+                    }
+                    
+                    Value* valPtr = ctx.builder->CreateStructGEP(resultType, resultAlloca, 1, "val_ptr");
+                    ctx.builder->CreateStore(valField, valPtr);
+                } else {
+                    // Val field is required in result objects
+                    throw std::runtime_error("Result object missing 'val' field");
+                }
+                
+                // Load and return the struct
+                return ctx.builder->CreateLoad(resultType, resultAlloca, "result_val");
+            } else {
+                // Generic object literal: { x: 10, y: 20 }
+                // Create anonymous struct type on the fly
+                
+                std::vector<Type*> fieldTypes;
+                std::vector<Value*> fieldValues;
+                std::vector<std::string> fieldNames;
+                
+                // 1. Evaluate all fields to determine types
+                for (auto& field : obj->fields) {
+                    Value* val = visitExpr(field.value.get());
+                    if (!val) {
+                        throw std::runtime_error("Invalid field value in object literal for field: " + field.name);
+                    }
+                    
+                    fieldTypes.push_back(val->getType());
+                    fieldValues.push_back(val);
+                    fieldNames.push_back(field.name);
+                }
+                
+                // 2. Create Anonymous Struct Type (not packed to allow natural alignment)
+                StructType* anonType = StructType::get(ctx.llvmContext, fieldTypes, /*isPacked=*/false);
+                
+                // 3. Allocate storage for the struct
+                AllocaInst* objAlloca = ctx.builder->CreateAlloca(anonType, nullptr, "anon_obj");
+                
+                // 4. Store each field value
+                for (size_t i = 0; i < fieldValues.size(); ++i) {
+                    // GEP to get pointer to field index i
+                    Value* fieldPtr = ctx.builder->CreateStructGEP(anonType, objAlloca, i, fieldNames[i] + "_ptr");
+                    ctx.builder->CreateStore(fieldValues[i], fieldPtr);
+                }
+                
+                // 5. Return the loaded struct value
+                // Note: In LLVM, structs are first-class values
+                return ctx.builder->CreateLoad(anonType, objAlloca, "anon_val");
+            }
+        }
+        if (auto* arr = dynamic_cast<aria::frontend::ArrayLiteral*>(node)) {
+            // Array literal: [1, 2, 3, 4, 5]
+            if (arr->elements.empty()) {
+                throw std::runtime_error("Empty array literals not yet supported");
+            }
+            
+            // Evaluate all elements
+            std::vector<Value*> values;
+            Type* elemType = nullptr;
+            for (auto& elem : arr->elements) {
+                Value* val = visitExpr(elem.get());
+                values.push_back(val);
+                if (!elemType) {
+                    elemType = val->getType();
+                } else if (val->getType() != elemType) {
+                    throw std::runtime_error("Array literal elements must have same type");
+                }
+            }
+            
+            // Create array type
+            uint64_t arraySize = values.size();
+            ArrayType* arrayType = ArrayType::get(elemType, arraySize);
+            
+            // Allocate array on stack
+            AllocaInst* arrayAlloca = ctx.builder->CreateAlloca(arrayType, nullptr, "array_lit");
+            
+            // Store each element
+            for (uint64_t i = 0; i < arraySize; i++) {
+                Value* indices[] = {
+                    ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0),
+                    ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), i)
+                };
+                Value* elemPtr = ctx.builder->CreateGEP(arrayType, arrayAlloca, indices, "elem_ptr");
+                ctx.builder->CreateStore(values[i], elemPtr);
+            }
+            
+            // Return pointer to array (decays to pointer)
+            Value* indices[] = {
+                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0),
+                ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0)
+            };
+            return ctx.builder->CreateGEP(arrayType, arrayAlloca, indices, "array_ptr");
+        }
+        if (auto* idx = dynamic_cast<aria::frontend::IndexExpr*>(node)) {
+            // Array indexing: arr[i]
+            Value* arrayPtr = visitExpr(idx->array.get());
+            Value* index = visitExpr(idx->index.get());
+            
+            if (!arrayPtr || !index) return nullptr;
+            
+            Type* arrayPtrType = arrayPtr->getType();
+            
+            // We need to determine the element type
+            // First, try to get it from the identifier's Aria type
+            Type* elementType = nullptr;
+            std::string ariaElementType = "";
+            
+            // Try to find the array variable in symbol table to get its Aria type
+            if (auto* varRef = dynamic_cast<aria::frontend::VarExpr*>(idx->array.get())) {
+                auto* sym = ctx.lookup(varRef->name);
+                if (sym && !sym->ariaType.empty()) {
+                    // Found the variable, parse its Aria type to get element type
+                    std::string ariaType = sym->ariaType;
+                    
+                    // Parse array type: "int64[5]" or "int64[]" -> element type is "int64"
+                    size_t bracketPos = ariaType.find('[');
+                    if (bracketPos != std::string::npos) {
+                        ariaElementType = ariaType.substr(0, bracketPos);
+                        elementType = ctx.getLLVMType(ariaElementType);
+                    }
+                }
+            }
+            
+            // If we still don't have element type, try to infer from pointer type
+            if (!elementType && arrayPtrType->isPointerTy()) {
+                // For array literals, the pointer points to the first element already
+                // We need to look at what the pointer points to
+                // This is a fallback - prefer the symbol table approach above
+                elementType = Type::getInt64Ty(ctx.llvmContext); // Default fallback
+            }
+            
+            if (!elementType) {
+                throw std::runtime_error("Array indexing requires pointer or array type");
+            }
+            
+            // Handle pointer to array element
+            if (arrayPtrType->isPointerTy()) {
+                // Get element pointer
+                Value* elemPtr = ctx.builder->CreateGEP(
+                    elementType,
+                    arrayPtr,
+                    index,
+                    "elem_ptr"
+                );
+                // Load element
+                return ctx.builder->CreateLoad(elementType, elemPtr, "elem");
+            }
+            
+            throw std::runtime_error("Array indexing requires pointer or array type");
+        }
+        if (auto* member = dynamic_cast<aria::frontend::MemberAccess*>(node)) {
+            // Access struct member: obj.field or obj?.field (safe navigation)
+            Value* obj = visitExpr(member->object.get());
+            if (!obj) return nullptr;
+            
+            // Safe navigation: check if object is null before accessing member
+            if (member->is_safe && obj->getType()->isPointerTy()) {
+                // Implement safe navigation: obj?.field
+                // Strategy: Generate conditional branch to check for null
+                
+                BasicBlock* currentBB = ctx.builder->GetInsertBlock();
+                Function* func = currentBB->getParent();
+                BasicBlock* accessBB = BasicBlock::Create(ctx.llvmContext, "safe_access", func);
+                BasicBlock* nullBB = BasicBlock::Create(ctx.llvmContext, "safe_null", func);
+                BasicBlock* mergeBB = BasicBlock::Create(ctx.llvmContext, "safe_merge", func);
+                
+                // Check if pointer is null
+                Value* isNotNull = ctx.builder->CreateIsNotNull(obj, "safe_check");
+                ctx.builder->CreateCondBr(isNotNull, accessBB, nullBB);
+                
+                // Access Block: pointer is not null, perform member access
+                ctx.builder->SetInsertPoint(accessBB);
+                // Recursively handle the member access with is_safe=false
+                member->is_safe = false;  // Temporarily disable to avoid infinite recursion
+                Value* accessResult = visitExpr(member);
+                member->is_safe = true;  // Restore flag
+                BasicBlock* accessEndBB = ctx.builder->GetInsertBlock();  // May have changed
+                ctx.builder->CreateBr(mergeBB);
+                
+                // Null Block: pointer is null, return null/zero value
+                ctx.builder->SetInsertPoint(nullBB);
+                Type* resultType = accessResult ? accessResult->getType() : Type::getInt64Ty(ctx.llvmContext);
+                Value* nullValue = Constant::getNullValue(resultType);
+                ctx.builder->CreateBr(mergeBB);
+                
+                // Merge Block: combine results with PHI node
+                ctx.builder->SetInsertPoint(mergeBB);
+                PHINode* phi = ctx.builder->CreatePHI(resultType, 2, "safe_result");
+                phi->addIncoming(accessResult, accessEndBB);
+                phi->addIncoming(nullValue, nullBB);
+                
+                return phi;
+            }
+            
+            // Special handling for Future<T>.get() - call aria_future_get()
+            if (member->member_name == "get") {
+                // Check if this is a Future pointer
+                // Future pointers are opaque i8* from aria_future_create
+                Type* objType = obj->getType();
+                if (objType->isPointerTy()) {
+                    // Declare or get aria_future_get function
+                    Function* futureGetFn = ctx.module->getFunction("aria_future_get");
+                    if (!futureGetFn) {
+                        FunctionType* futureGetType = FunctionType::get(
+                            PointerType::getUnqual(ctx.llvmContext),  // returns void*
+                            {PointerType::getUnqual(ctx.llvmContext)}, // takes void* (future)
+                            false
+                        );
+                        futureGetFn = Function::Create(
+                            futureGetType,
+                            Function::ExternalLinkage,
+                            "aria_future_get",
+                            ctx.module.get()
+                        );
+                    }
+                    
+                    // Call aria_future_get(future) -> void* result
+                    Value* resultPtr = ctx.builder->CreateCall(futureGetFn, {obj}, "future_result");
+                    
+                    // Cast void* back to result<T>* and load it
+                    // For now, assume result<int8> - in full implementation would use type info
+                    Type* resultType = ctx.getResultType("int8");
+                    Type* resultPtrType = PointerType::getUnqual(ctx.llvmContext);
+                    Value* typedPtr = ctx.builder->CreateBitCast(resultPtr, resultPtrType, "typed_result_ptr");
+                    return ctx.builder->CreateLoad(resultType, typedPtr, "result_val");
+                }
+            }
+            
+            // Handle both direct struct values and pointers to structs
+            Type* objType = obj->getType();
+            StructType* structType = nullptr;
+            Value* structPtr = nullptr;
+            std::string structName;
+            
+            if (auto* st = dyn_cast<StructType>(objType)) {
+                // Direct struct value - allocate temp and store
+                structType = st;
+                structName = structType->getName().str();
+                structPtr = ctx.builder->CreateAlloca(structType, nullptr, "temp");
+                ctx.builder->CreateStore(obj, structPtr);
+            } else if (objType->isPointerTy()) {
+                // Could be a pointer to a struct - load it
+                Value* loaded = ctx.builder->CreateLoad(PointerType::getUnqual(ctx.llvmContext), obj);
+                if (auto* st = dyn_cast<StructType>(loaded->getType())) {
+                    structType = st;
+                    structName = structType->getName().str();
+                    structPtr = ctx.builder->CreateAlloca(structType, nullptr, "temp");
+                    ctx.builder->CreateStore(loaded, structPtr);
+                }
+            }
+            
+            if (!structType || !structPtr) {
+                throw std::runtime_error("Member access on non-struct type");
+            }
+            
+            // Get field index by name
+            unsigned fieldIndex = 0;
+            
+            // Check if this is a result type (special handling for err/val)
+            if (member->member_name == "err") {
+                fieldIndex = 0;
+            } else if (member->member_name == "val") {
+                fieldIndex = 1;
+            } else {
+                // User-defined struct - look up field in metadata
+                auto structIt = ctx.structFieldMaps.find(structName);
+                if (structIt == ctx.structFieldMaps.end()) {
+                    throw std::runtime_error("No field metadata found for struct: " + structName);
+                }
+                
+                auto fieldIt = structIt->second.find(member->member_name);
+                if (fieldIt == structIt->second.end()) {
+                    throw std::runtime_error("Unknown field '" + member->member_name + "' in struct " + structName);
+                }
+                
+                fieldIndex = fieldIt->second;
+            }
+            
+            // Extract field
+            Value* fieldPtr = ctx.builder->CreateStructGEP(structType, structPtr, fieldIndex, member->member_name + "_ptr");
+            Type* fieldType = structType->getElementType(fieldIndex);
+            return ctx.builder->CreateLoad(fieldType, fieldPtr, member->member_name);
+        }
+        if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node)) {
+            // Generate anonymous function for lambda with closure support
+            static int lambdaCounter = 0;
+            std::string lambdaName = "lambda_" + std::to_string(lambdaCounter++);
+            
+            // 1. Analyze which variables are captured from enclosing scope
+            std::vector<std::string> capturedVars = analyzeCapturedVariables(lambda);
+            
+            // 2. Create function type
+            std::vector<Type*> paramTypes;
+            
+            // If we have captured variables, add hidden environment parameter as first arg
+            StructType* envType = nullptr;
+            if (!capturedVars.empty()) {
+                std::vector<Type*> envFields;
+                for (const auto& varName : capturedVars) {
+                    auto* sym = ctx.lookup(varName);
+                    if (sym) {
+                        // Store pointer to the captured variable
+                        Type* varType = sym->val->getType();
+                        if (!varType->isPointerTy()) {
+                            varType = PointerType::getUnqual(ctx.llvmContext);
+                        }
+                        envFields.push_back(varType);
+                    }
+                }
+                
+                // Create environment struct type
+                std::string envTypeName = lambdaName + "_env";
+                envType = StructType::create(ctx.llvmContext, envFields, envTypeName);
+                
+                // Add environment pointer as first parameter
+                paramTypes.push_back(PointerType::getUnqual(ctx.llvmContext));
+            }
+            
+            // Add regular parameters
+            for (auto& param : lambda->parameters) {
+                paramTypes.push_back(ctx.getLLVMType(param.type));
+            }
+            
+            // Functions ALWAYS return result<T> where T is the declared return type
+            // The return type in lambda->return_type is the VAL type, not the full result type
+            Type* returnType = ctx.getResultType(lambda->return_type);
+            FunctionType* funcType = FunctionType::get(returnType, paramTypes, false);
+            
+            // 2. Create function
+            Function* func = Function::Create(
+                funcType,
+                Function::InternalLinkage,  // Internal linkage for lambdas
+                lambdaName,
+                ctx.module.get()
+            );
+            
+            // 3. Set parameter names
+            unsigned idx = 0;
+            
+            // If we have an environment, first parameter is the env pointer
+            Value* envParam = nullptr;
+            if (envType) {
+                auto argIt = func->arg_begin();
+                envParam = &(*argIt);
+                envParam->setName("env");
+                ++argIt;
+                // Now set names for regular parameters
+                for (unsigned i = 0; i < lambda->parameters.size(); ++i, ++argIt) {
+                    argIt->setName(lambda->parameters[i].name);
+                }
+            } else {
+                // No environment, just set parameter names normally
+                for (auto& arg : func->args()) {
+                    arg.setName(lambda->parameters[idx++].name);
+                }
+            }
+            
+            // 4. Create entry basic block
+            BasicBlock* entry = BasicBlock::Create(ctx.llvmContext, "entry", func);
+            
+            // 5. Save previous state and set new function context
+            Function* prevFunc = ctx.currentFunction;
+            BasicBlock* prevBlock = ctx.builder->GetInsertBlock();
+            std::string prevReturnType = ctx.currentFunctionReturnType;
+            bool prevAutoWrap = ctx.currentFunctionAutoWrap;
+            
+            ctx.currentFunction = func;
+            ctx.currentFunctionReturnType = lambda->return_type;  // Store VAL type for validation
+            ctx.currentFunctionAutoWrap = lambda->auto_wrap;       // Store auto-wrap flag
+            ctx.builder->SetInsertPoint(entry);
+            
+            // ASYNC COROUTINE SETUP (if lambda is marked async)
+            if (lambda->is_async) {
+                // Get LLVM coroutine intrinsics
+                Function* coroId = Intrinsic::getDeclaration(
+                    ctx.module.get(), 
+                    Intrinsic::coro_id
+                );
+                Function* coroBegin = Intrinsic::getDeclaration(
+                    ctx.module.get(), 
+                    Intrinsic::coro_begin
+                );
+                Function* coroSize = Intrinsic::getDeclaration(
+                    ctx.module.get(), 
+                    Intrinsic::coro_size, 
+                    {Type::getInt32Ty(ctx.llvmContext)}
+                );
+                Function* coroAlloc = Intrinsic::getDeclaration(
+                    ctx.module.get(), 
+                    Intrinsic::coro_alloc
+                );
+                
+                // Create coroutine ID token
+                Value* nullPtr = ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext));
+                Value* coroIdVal = ctx.builder->CreateCall(
+                    coroId,
+                    {
+                        ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0),  // alignment
+                        nullPtr,  // promise
+                        nullPtr,  // coroaddr
+                        nullPtr   // fnaddr
+                    },
+                    "coro.id"
+                );
+                
+                // Get coroutine frame size
+                Value* size = ctx.builder->CreateCall(coroSize, {}, "coro.size");
+                
+                // Check if we need to allocate
+                Value* needAlloc = ctx.builder->CreateCall(coroAlloc, {coroIdVal}, "coro.alloc");
+                
+                // Allocate coroutine frame using malloc
+                // Get or declare malloc
+                FunctionType* mallocType = FunctionType::get(
+                    PointerType::getUnqual(ctx.llvmContext),
+                    {Type::getInt32Ty(ctx.llvmContext)},
+                    false
+                );
+                FunctionCallee mallocFunc = ctx.module->getOrInsertFunction("malloc", mallocType);
+                
+                // Allocate frame
+                Value* frame = ctx.builder->CreateCall(mallocFunc, {size}, "coro.frame");
+                
+                // Begin coroutine
+                Value* hdl = ctx.builder->CreateCall(
+                    coroBegin,
+                    {coroIdVal, frame},
+                    "coro.handle"
+                );
+                
+                // Store handle in a variable for later use
+                // (This will be needed for suspend/resume operations)
+                AllocaInst* hdlAlloca = ctx.builder->CreateAlloca(
+                    hdl->getType(), 
+                    nullptr, 
+                    "coro.handle.addr"
+                );
+                ctx.builder->CreateStore(hdl, hdlAlloca);
+                ctx.define("__coro_handle__", hdlAlloca, false, "void*");
+            }
+            
+            // CRITICAL: Clear defer stacks for new function (defers don't persist across functions)
+            ctx.deferStacks = std::vector<std::vector<Block*>>();
+            ctx.deferStacks.emplace_back();  // Start with one scope for the function
+            
+            // 6. Set up captured variables from environment
+            std::vector<std::pair<std::string, CodeGenContext::Symbol*>> savedSymbols;
+            
+            if (envParam && envType) {
+                // Extract captured variables from environment struct
+                for (unsigned i = 0; i < capturedVars.size(); ++i) {
+                    const std::string& varName = capturedVars[i];
+                    
+                    // Get pointer to field in environment struct
+                    Value* fieldPtr = ctx.builder->CreateStructGEP(
+                        envType, 
+                        envParam, 
+                        i, 
+                        varName + "_captured_ptr"
+                    );
+                    
+                    // Load the pointer to the captured variable
+                    Type* capturedPtrType = envType->getElementType(i);
+                    Value* capturedVarPtr = ctx.builder->CreateLoad(
+                        capturedPtrType,
+                        fieldPtr,
+                        varName + "_captured"
+                    );
+                    
+                    // Save existing symbol if any
+                    auto* existingSym = ctx.lookup(varName);
+                    if (existingSym) {
+                        savedSymbols.push_back({varName, existingSym});
+                    }
+                    
+                    // Define captured variable in lambda scope
+                    // Get the original Aria type from the symbol table
+                    auto* originalSym = ctx.lookup(varName);
+                    std::string ariaType = originalSym ? originalSym->ariaType : "";
+                    ctx.define(varName, capturedVarPtr, true, ariaType);
+                }
+            }
+            
+            // 7. Create allocas for regular parameters
+            idx = 0;
+            auto argIt = func->arg_begin();
+            
+            // Skip environment parameter if present
+            if (envParam) ++argIt;
+            
+            for (unsigned i = 0; i < lambda->parameters.size(); ++i, ++argIt) {
+                Value* arg = &(*argIt);
+                Type* argType = arg->getType();
+                AllocaInst* alloca = ctx.builder->CreateAlloca(argType, nullptr, arg->getName());
+                ctx.builder->CreateStore(arg, alloca);
+                
+                // Save any existing symbol with this name
+                std::string argName = std::string(arg->getName());
+                auto* existingSym = ctx.lookup(argName);
+                if (existingSym) {
+                    savedSymbols.push_back({argName, existingSym});
+                }
+                
+                // Store parameter with its Aria type from the lambda parameter list
+                std::string paramAriaType = lambda->parameters[i].type;
+                ctx.define(argName, alloca, true, paramAriaType);
+            }
+            
+            // 8. Generate lambda body
+            if (lambda->body) {
+                lambda->body->accept(*this);
+            }
+            
+            // 9. Add return if missing
+            if (ctx.builder->GetInsertBlock()->getTerminator() == nullptr) {
+                if (returnType->isVoidTy()) {
+                    ctx.builder->CreateRetVoid();
+                } else {
+                    ctx.builder->CreateRet(Constant::getNullValue(returnType));
+                }
+            }
+            
+            // 9. Restore previous symbols
+            for (auto& pair : savedSymbols) {
+                ctx.define(pair.first, pair.second->val, pair.second->is_ref);
+            }
+            
+            // 10. Restore previous function context
+            ctx.currentFunction = prevFunc;
+            ctx.currentFunctionReturnType = prevReturnType;
+            ctx.currentFunctionAutoWrap = prevAutoWrap;
+            if (prevBlock) {
+                ctx.builder->SetInsertPoint(prevBlock);
+            }
+            
+            // 11. Create environment struct if we have captures
+            Value* envStruct = nullptr;
+            if (envType && !capturedVars.empty()) {
+                // Allocate environment struct on stack
+                envStruct = ctx.builder->CreateAlloca(envType, nullptr, lambdaName + "_env_alloca");
+                
+                // Populate environment with pointers to captured variables
+                for (unsigned i = 0; i < capturedVars.size(); ++i) {
+                    const std::string& varName = capturedVars[i];
+                    auto* sym = ctx.lookup(varName);
+                    if (sym) {
+                        // Get field pointer in environment struct
+                        Value* fieldPtr = ctx.builder->CreateStructGEP(
+                            envType,
+                            envStruct,
+                            i,
+                            varName + "_env_field_ptr"
+                        );
+                        
+                        // Store pointer to captured variable
+                        ctx.builder->CreateStore(sym->val, fieldPtr);
+                    }
+                }
+            }
+            
+            // 12. If immediately invoked, call the lambda
+            if (lambda->is_immediately_invoked) {
+                // Build arguments list
+                std::vector<Value*> args;
+                
+                // First argument is environment if present
+                if (envStruct) {
+                    args.push_back(envStruct);
+                }
+                
+                // Then evaluate and add regular arguments
+                unsigned paramOffset = envStruct ? 1 : 0;
+                for (size_t i = 0; i < lambda->call_arguments.size(); i++) {
+                    Value* argVal = visitExpr(lambda->call_arguments[i].get());
+                    if (!argVal) {
+                        throw std::runtime_error("Failed to evaluate lambda argument");
+                    }
+                    
+                    // Cast argument to match parameter type if needed
+                    if ((i + paramOffset) < func->arg_size()) {
+                        Type* expectedType = func->getFunctionType()->getParamType(i + paramOffset);
+                        if (argVal->getType() != expectedType) {
+                            // If both are integers, perform cast
+                            if (argVal->getType()->isIntegerTy() && expectedType->isIntegerTy()) {
+                                argVal = ctx.builder->CreateIntCast(argVal, expectedType, true);
+                            }
+                        }
+                    }
+                    
+                    args.push_back(argVal);
+                }
+                
+                // Call the lambda and return its result
+                return ctx.builder->CreateCall(func, args, "lambda_result");
+            } else {
+                // Non-immediately-invoked lambda: Return as closure (fat pointer)
+                // Closures with captures need heap-allocated environment
+                Value* heapEnv = nullptr;
+                
+                if (!capturedVars.empty()) {
+                    // Allocate environment on heap (for escaping closures)
+                    // Calculate size of environment struct
+                    const DataLayout& DL = ctx.module->getDataLayout();
+                    uint64_t envSize = DL.getTypeAllocSize(envType);
+                    
+                    // Call aria.alloc to allocate heap memory
+                    Function* ariaAlloc = ctx.module->getFunction("aria.alloc");
+                    if (!ariaAlloc) {
+                        // Declare aria.alloc if not already declared
+                        FunctionType* allocType = FunctionType::get(
+                            PointerType::getUnqual(ctx.llvmContext),
+                            {Type::getInt64Ty(ctx.llvmContext)},
+                            false
+                        );
+                        ariaAlloc = Function::Create(
+                            allocType,
+                            Function::ExternalLinkage,
+                            "aria.alloc",
+                            ctx.module.get()
+                        );
+                    }
+                    
+                    Value* sizeVal = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), envSize);
+                    heapEnv = ctx.builder->CreateCall(ariaAlloc, {sizeVal}, "closure_env_heap");
+                    
+                    // Cast to environment struct type
+                    Value* typedHeapEnv = ctx.builder->CreateBitCast(
+                        heapEnv,
+                        PointerType::get(envType, 0),
+                        "closure_env_typed"
+                    );
+                    
+                    // Copy environment data from stack to heap
+                    if (envStruct) {
+                        for (unsigned i = 0; i < capturedVars.size(); ++i) {
+                            // Load from stack environment
+                            Value* stackFieldPtr = ctx.builder->CreateStructGEP(
+                                envType, envStruct, i, "stack_field_ptr"
+                            );
+                            Type* fieldType = envType->getElementType(i);
+                            Value* fieldValue = ctx.builder->CreateLoad(
+                                fieldType, stackFieldPtr, "field_value"
+                            );
+                            
+                            // Store to heap environment
+                            Value* heapFieldPtr = ctx.builder->CreateStructGEP(
+                                envType, typedHeapEnv, i, "heap_field_ptr"
+                            );
+                            ctx.builder->CreateStore(fieldValue, heapFieldPtr);
+                        }
+                    }
+                    
+                    // Use heap environment for closure
+                    heapEnv = typedHeapEnv;
+                }
+                
+                // Create and return closure struct (fat pointer)
+                return createClosureStruct(func, heapEnv);
+            }
+        }
+        if (auto* unwrap = dynamic_cast<aria::frontend::UnwrapExpr*>(node)) {
+            // ? operator: unwrap Result/output type
+            // Syntax: result ? default
+            // If result.err is 0 (success), return result.val
+            // If result.err is not 0 (error), return default value
+            
+            Value* resultVal = visitExpr(unwrap->expression.get());
+            if (!resultVal) return nullptr;
+            
+            Value* defaultVal = visitExpr(unwrap->default_value.get());
+            if (!defaultVal) return nullptr;
+            
+            // Assume Result/output is a struct with err (i8) and val fields
+            if (auto* structType = dyn_cast<StructType>(resultVal->getType())) {
+                Function* func = ctx.builder->GetInsertBlock()->getParent();
+                
+                // Extract err field (index 0)
+                AllocaInst* tempAlloca = ctx.builder->CreateAlloca(structType, nullptr, "result_temp");
+                ctx.builder->CreateStore(resultVal, tempAlloca);
+                
+                Value* errPtr = ctx.builder->CreateStructGEP(structType, tempAlloca, 0, "err_ptr");
+                Type* errType = structType->getElementType(0);
+                Value* errVal = ctx.builder->CreateLoad(errType, errPtr, "err");
+                
+                // Check if err is 0 (success)
+                Value* isSuccess = ctx.builder->CreateICmpEQ(
+                    errVal, 
+                    ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0),
+                    "is_success"
+                );
+                
+                // Extract val field (index 1)
+                Value* valPtr = ctx.builder->CreateStructGEP(structType, tempAlloca, 1, "val_ptr");
+                Type* valType = structType->getElementType(1);
+                Value* valVal = ctx.builder->CreateLoad(valType, valPtr, "val");
+                
+                // If val and default have different types, cast default to match val type
+                if (defaultVal->getType() != valType) {
+                    if (defaultVal->getType()->isIntegerTy() && valType->isIntegerTy()) {
+                        defaultVal = ctx.builder->CreateIntCast(defaultVal, valType, true);
+                    }
+                }
+                
+                // Use select: if err == 0, return val, else return default
+                return ctx.builder->CreateSelect(isSuccess, valVal, defaultVal, "unwrap_result");
+            }
+            
+            // If not a struct, just return the value
+            return resultVal;
+        }
+        if (auto* cast = dynamic_cast<aria::frontend::CastExpr*>(node)) {
+            // Cast expression: (Type)expr
+            // For wildx → func pointer casts, we need special handling
+            
+            Value* sourceValue = visitExpr(cast->expression.get());
+            if (!sourceValue) return nullptr;
+            
+            // Check if this is a function pointer cast (wildx → func)
+            // Target type will be something like "BinaryFunc" or "func"
+            if (cast->target_type.find("Func") != std::string::npos || cast->target_type == "func") {
+                // This is a function pointer cast
+                // The source should be a wildx pointer (ptr type)
+                
+                // For now, we'll use bitcast to convert the wildx pointer to a function pointer
+                // In a full implementation, we'd:
+                // 1. Verify source is from wildx allocation
+                // 2. Look up the function signature for the target type
+                // 3. Create appropriate function pointer type
+                
+                // Simple approach: treat as opaque pointer that can be called
+                // The actual function signature will be resolved at call site
+                return sourceValue;  // Pointer is already correct type
+            }
+            
+            // Handle integer casts
+            Type* targetType = ctx.getLLVMType(cast->target_type);
+            if (sourceValue->getType()->isIntegerTy() && targetType->isIntegerTy()) {
+                return ctx.builder->CreateIntCast(sourceValue, targetType, true, "cast");
+            }
+            
+            // Handle pointer casts
+            if (sourceValue->getType()->isPointerTy() && targetType->isPointerTy()) {
+                return ctx.builder->CreateBitCast(sourceValue, targetType, "ptrcast");
+            }
+            
+            // If types match, no cast needed
+            if (sourceValue->getType() == targetType) {
+                return sourceValue;
+            }
+            
+            // For other cases, try bitcast as fallback
+            return ctx.builder->CreateBitCast(sourceValue, targetType, "cast");
+        }
+        if (auto* vecLit = dynamic_cast<aria::frontend::VectorLiteral*>(node)) {
+            // ================================================================
+            // VECTOR LITERAL CODE GENERATION (GLSL-style vectors/matrices)
+            // ================================================================
+            // Supports: vec2-4, dvec2-4, ivec2-4, uvec2-4, bvec2-4, mat2-4, etc.
+            // Three construction modes:
+            // 1. Empty: vec4() → zero-initialize all components
+            // 2. Broadcasting: vec4(1.0) → replicate scalar to all components
+            // 3. Component-wise: vec4(1.0, 2.0, 3.0, 4.0) → direct assignment
+            // ================================================================
+            
+            // Get LLVM vector type from Aria type name
+            Type* vectorType = ctx.getLLVMType(vecLit->vector_type);
+            if (!vectorType || !vectorType->isVectorTy()) {
+                throw std::runtime_error("Invalid vector type: " + vecLit->vector_type);
+            }
+            
+            FixedVectorType* fixedVecType = cast<FixedVectorType>(vectorType);
+            unsigned numElements = fixedVecType->getNumElements();
+            Type* elementType = fixedVecType->getElementType();
+            
+            // ============================================================
+            // CASE 1: Empty constructor → Zero-initialization
+            // ============================================================
+            if (vecLit->elements.empty()) {
+                return Constant::getNullValue(vectorType);
+            }
+            
+            // ============================================================
+            // CASE 2: Single argument → Broadcasting
+            // ============================================================
+            if (vecLit->elements.size() == 1) {
+                Value* scalarVal = visitExpr(vecLit->elements[0].get());
+                if (!scalarVal) return nullptr;
+                
+                // Cast scalar to element type if needed
+                if (scalarVal->getType() != elementType) {
+                    if (scalarVal->getType()->isIntegerTy() && elementType->isIntegerTy()) {
+                        scalarVal = ctx.builder->CreateIntCast(scalarVal, elementType, true);
+                    } else if (scalarVal->getType()->isIntegerTy() && elementType->isFloatingPointTy()) {
+                        scalarVal = ctx.builder->CreateSIToFP(scalarVal, elementType);
+                    } else if (scalarVal->getType()->isFloatingPointTy() && elementType->isFloatingPointTy()) {
+                        scalarVal = ctx.builder->CreateFPCast(scalarVal, elementType);
+                    }
+                }
+                
+                // Create undef vector and broadcast scalar to all lanes
+                Value* result = UndefValue::get(vectorType);
+                for (unsigned i = 0; i < numElements; ++i) {
+                    result = ctx.builder->CreateInsertElement(
+                        result,
+                        scalarVal,
+                        ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), i)
+                    );
+                }
+                return result;
+            }
+            
+            // ============================================================
+            // CASE 3: Multiple arguments → Component-wise construction
+            // ============================================================
+            // Supports composition: vec4(vec2(x,y), z, w) → vec4(x, y, z, w)
+            // ============================================================
+            
+            Value* result = UndefValue::get(vectorType);
+            unsigned currentIndex = 0;
+            
+            for (auto& elem : vecLit->elements) {
+                Value* elemVal = visitExpr(elem.get());
+                if (!elemVal) return nullptr;
+                
+                // Check if element is itself a vector (composition)
+                if (elemVal->getType()->isVectorTy()) {
+                    FixedVectorType* elemVecType = cast<FixedVectorType>(elemVal->getType());
+                    unsigned elemCount = elemVecType->getNumElements();
+                    
+                    // Extract each component from the nested vector
+                    for (unsigned i = 0; i < elemCount; ++i) {
+                        Value* component = ctx.builder->CreateExtractElement(
+                            elemVal,
+                            ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), i)
+                        );
+                        
+                        // Cast to target element type if needed
+                        if (component->getType() != elementType) {
+                            if (component->getType()->isIntegerTy() && elementType->isIntegerTy()) {
+                                component = ctx.builder->CreateIntCast(component, elementType, true);
+                            } else if (component->getType()->isIntegerTy() && elementType->isFloatingPointTy()) {
+                                component = ctx.builder->CreateSIToFP(component, elementType);
+                            } else if (component->getType()->isFloatingPointTy() && elementType->isFloatingPointTy()) {
+                                component = ctx.builder->CreateFPCast(component, elementType);
+                            }
+                        }
+                        
+                        result = ctx.builder->CreateInsertElement(
+                            result,
+                            component,
+                            ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), currentIndex++)
+                        );
+                    }
+                } else {
+                    // Scalar element
+                    Value* scalarVal = elemVal;
+                    
+                    // Cast to element type if needed
+                    if (scalarVal->getType() != elementType) {
+                        if (scalarVal->getType()->isIntegerTy() && elementType->isIntegerTy()) {
+                            scalarVal = ctx.builder->CreateIntCast(scalarVal, elementType, true);
+                        } else if (scalarVal->getType()->isIntegerTy() && elementType->isFloatingPointTy()) {
+                            scalarVal = ctx.builder->CreateSIToFP(scalarVal, elementType);
+                        } else if (scalarVal->getType()->isFloatingPointTy() && elementType->isFloatingPointTy()) {
+                            scalarVal = ctx.builder->CreateFPCast(scalarVal, elementType);
+                        }
+                    }
+                    
+                    result = ctx.builder->CreateInsertElement(
+                        result,
+                        scalarVal,
+                        ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), currentIndex++)
+                    );
+                }
+            }
+            
+            return result;
+        }
+        
+        // ================================================================
+        // RANGE EXPRESSION CODE GENERATION
+        // ================================================================
+        // TODO: Range expression - waiting for RangeExpr AST node
+        // Handles: start..end (inclusive) and start...end (exclusive)
+        // Creates a struct { start_value, end_value, step=1, is_exclusive }
+        // ================================================================
+        /* if (auto* range = dynamic_cast<aria::frontend::RangeExpr*>(node)) {
+            // Evaluate start and end expressions
+            Value* startVal = visitExpr(range->start.get());
+            Value* endVal = visitExpr(range->end.get());
+            
+            if (!startVal || !endVal) {
+                throw std::runtime_error("Invalid range expression: start or end is null");
+            }
+            
+            // Ensure start and end have the same type
+            Type* commonType = startVal->getType();
+            if (endVal->getType() != commonType) {
+                if (commonType->isIntegerTy() && endVal->getType()->isIntegerTy()) {
+                    endVal = ctx.builder->CreateIntCast(endVal, commonType, true, "range.end.cast");
+                } else if (commonType->isFloatingPointTy() && endVal->getType()->isFloatingPointTy()) {
+                    endVal = ctx.builder->CreateFPCast(endVal, commonType, "range.end.cast");
+                } else {
+                    throw std::runtime_error("Range start and end must have compatible types");
+                }
+            }
+            
+            // Create range struct: { start, end, step, is_exclusive }
+            // struct Range { T start; T end; T step; i8 is_exclusive; }
+            StructType* rangeType = StructType::create(ctx.llvmContext, {
+                commonType,                          // start
+                commonType,                          // end
+                commonType,                          // step
+                Type::getInt8Ty(ctx.llvmContext)     // is_exclusive flag
+            }, "Range");
+            
+            // Allocate struct on stack
+            Value* rangePtr = ctx.builder->CreateAlloca(rangeType, nullptr, "range");
+            
+            // Store start value
+            Value* startFieldPtr = ctx.builder->CreateStructGEP(rangeType, rangePtr, 0, "range.start.ptr");
+            ctx.builder->CreateStore(startVal, startFieldPtr);
+            
+            // Store end value
+            Value* endFieldPtr = ctx.builder->CreateStructGEP(rangeType, rangePtr, 1, "range.end.ptr");
+            ctx.builder->CreateStore(endVal, endFieldPtr);
+            
+            // Store step value (default to 1)
+            Value* stepVal;
+            if (commonType->isIntegerTy()) {
+                stepVal = ConstantInt::get(commonType, 1);
+            } else if (commonType->isFloatingPointTy()) {
+                stepVal = ConstantFP::get(commonType, 1.0);
+            } else {
+                throw std::runtime_error("Range expressions only support integer or float types");
+            }
+            Value* stepFieldPtr = ctx.builder->CreateStructGEP(rangeType, rangePtr, 2, "range.step.ptr");
+            ctx.builder->CreateStore(stepVal, stepFieldPtr);
+            
+            // Store is_exclusive flag
+            Value* exclusiveFlag = ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), range->is_exclusive ? 1 : 0);
+            Value* flagFieldPtr = ctx.builder->CreateStructGEP(rangeType, rangePtr, 3, "range.exclusive.ptr");
+            ctx.builder->CreateStore(exclusiveFlag, flagFieldPtr);
+            
+            // Load the struct value (for returning by value)
+            return ctx.builder->CreateLoad(rangeType, rangePtr, "range.value");
+        } */
+        
+        // Handle AwaitExpr (async/await - coroutine suspension)
+        if (auto* await = dynamic_cast<aria::frontend::AwaitExpr*>(node)) {
+            // First, check if we're in an async function
+            if (!ctx.currentFunction) {
+                throw std::runtime_error("await can only be used inside functions");
+            }
+            
+            // Check if we have the coroutine handle variable (set during async function setup)
+            auto* coroHandleSym = ctx.lookup("__coro_handle__");
+            if (!coroHandleSym) {
+                throw std::runtime_error("await can only be used inside async functions - function must be marked with 'async' keyword");
+            }
+            
+            // FULL COROUTINE SUSPENSION IMPLEMENTATION
+            // Step 1: Evaluate the awaited expression
+            Value* awaitedValue = visitExpr(await->expression.get());
+            
+            // Step 2: Get coroutine intrinsics
+            Function* coroSave = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_save);
+            Function* coroSuspend = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_suspend);
+            
+            // Load the coroutine handle
+            Value* coroHandle = ctx.builder->CreateLoad(
+                PointerType::getUnqual(ctx.llvmContext),
+                coroHandleSym->val,
+                "coro.handle.load"
+            );
+            
+            // Step 3: Save suspension point
+            Value* saveToken = ctx.builder->CreateCall(coroSave, {coroHandle}, "save_point");
+            
+            // Step 4: Suspend coroutine
+            Value* suspendResult = ctx.builder->CreateCall(coroSuspend, {
+                saveToken,
+                ConstantInt::getFalse(ctx.llvmContext)  // final = false
+            }, "suspend_result");
+            
+            // Step 5: Create state machine basic blocks
+            BasicBlock* suspendBB = BasicBlock::Create(ctx.llvmContext, "await.suspend", ctx.currentFunction);
+            BasicBlock* resumeBB = BasicBlock::Create(ctx.llvmContext, "await.resume", ctx.currentFunction);
+            BasicBlock* cleanupBB = BasicBlock::Create(ctx.llvmContext, "await.cleanup", ctx.currentFunction);
+            
+            // Switch on suspend result
+            SwitchInst* suspendSwitch = ctx.builder->CreateSwitch(suspendResult, suspendBB, 2);
+            suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), resumeBB);
+            suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), cleanupBB);
+            
+            // SUSPEND PATH - Schedule coroutine for resumption and return to caller
+            ctx.builder->SetInsertPoint(suspendBB);
+            
+            // Reload the coroutine handle in this block (can't use value from previous block)
+            Value* coroHandleSuspend = ctx.builder->CreateLoad(
+                PointerType::getUnqual(ctx.llvmContext),
+                coroHandleSym->val,
+                "coro.handle.suspend"
+            );
+            
+            // We need to allocate a CoroutineFrame struct and fill it in before scheduling
+            // The scheduler expects: struct CoroutineFrame { void* coro_handle; void* data; CoroutineFrame* waiting_on; int state; char padding; }
+            
+            // Declare aria_frame_alloc if not present (allocates CoroutineFrame on heap)
+            Function* frameAlloc = ctx.module->getFunction("aria_frame_alloc");
+            if (!frameAlloc) {
+                FunctionType* allocType = FunctionType::get(
+                    PointerType::getUnqual(ctx.llvmContext),  // Returns CoroutineFrame*
+                    {},
+                    false
+                );
+                frameAlloc = Function::Create(
+                    allocType,
+                    Function::ExternalLinkage,
+                    "aria_frame_alloc",
+                    ctx.module.get()
+                );
+            }
+            
+            // Allocate the CoroutineFrame
+            Value* frame = ctx.builder->CreateCall(frameAlloc, {}, "coro_frame_alloc");
+            
+            // Now set frame->coro_handle = coroHandleSuspend
+            // CoroutineFrame struct layout: { void* coro_handle; void* data; CoroutineFrame* waiting_on; int state; char padding; }
+            // Field 0 is coro_handle
+            Value* handleFieldPtr = ctx.builder->CreateStructGEP(
+                StructType::get(ctx.llvmContext, {
+                    PointerType::getUnqual(ctx.llvmContext),  // coro_handle
+                    PointerType::getUnqual(ctx.llvmContext),  // data
+                    PointerType::getUnqual(ctx.llvmContext),  // waiting_on
+                    Type::getInt32Ty(ctx.llvmContext),        // state
+                    Type::getInt8Ty(ctx.llvmContext)          // padding
+                }),
+                frame,
+                0,  // Field index 0 = coro_handle
+                "frame_handle_ptr"
+            );
+            ctx.builder->CreateStore(coroHandleSuspend, handleFieldPtr);
+            
+            // Set frame->state = CORO_SUSPENDED (value 1)
+            Value* stateFieldPtr = ctx.builder->CreateStructGEP(
+                StructType::get(ctx.llvmContext, {
+                    PointerType::getUnqual(ctx.llvmContext),
+                    PointerType::getUnqual(ctx.llvmContext),
+                    PointerType::getUnqual(ctx.llvmContext),
+                    Type::getInt32Ty(ctx.llvmContext),
+                    Type::getInt8Ty(ctx.llvmContext)
+                }),
+                frame,
+                3,  // Field index 3 = state
+                "frame_state_ptr"
+            );
+            ctx.builder->CreateStore(
+                ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 1),  // CORO_SUSPENDED = 1
+                stateFieldPtr
+            );
+            
+            // Declare aria_scheduler_schedule if not already present
+            Function* schedulerSchedule = ctx.module->getFunction("aria_scheduler_schedule");
+            if (!schedulerSchedule) {
+                FunctionType* schedFuncType = FunctionType::get(
+                    Type::getVoidTy(ctx.llvmContext),
+                    {PointerType::getUnqual(ctx.llvmContext)},  // CoroutineFrame* parameter
+                    false
+                );
+                schedulerSchedule = Function::Create(
+                    schedFuncType,
+                    Function::ExternalLinkage,
+                    "aria_scheduler_schedule",
+                    ctx.module.get()
+                );
+            }
+            
+            // Schedule the coroutine for resumption (pass the CoroutineFrame*)
+            // The scheduler will call aria_coro_resume_bridge(frame->coro_handle)
+            ctx.builder->CreateCall(schedulerSchedule, {frame});
+            
+            // Return to caller (control goes back to scheduler)
+            ctx.builder->CreateRet(Constant::getNullValue(ctx.currentFunction->getReturnType()));
+            
+            // CLEANUP PATH - Coroutine destroyed
+            ctx.builder->SetInsertPoint(cleanupBB);
+            // Just return - cleanup will happen when the coroutine frame is freed
+            ctx.builder->CreateRet(Constant::getNullValue(ctx.currentFunction->getReturnType()));
+            
+            // RESUME PATH - Continue after await
+            ctx.builder->SetInsertPoint(resumeBB);
+            
+            // Return the awaited value (it's available after resumption)
+            return awaitedValue;
+        }
+        
+        // Handle SpawnExpr (spawn-based concurrency - Go-style)
+        if (auto* spawn = dynamic_cast<aria::frontend::SpawnExpr*>(node)) {
+            // Call the visit method which handles all the logic
+            visit(spawn);
+            
+            // Return the Future handle (or null if void return type)
+            if (currentSpawnFuture) {
+                return currentSpawnFuture;
+            } else {
+                // For void returns, return null pointer
+                return ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext));
+            }
+        }
+        
+        // Fallthrough: unhandled expression type
+        std::cerr << "Warning: Unhandled expression type in visitExpr, returning nullptr\n";
+        return nullptr;
+    }
+
+    // AST Visitor Stubs
+    void visit(Block* node) override { 
+        for(auto& s: node->statements) {
+            s->accept(*this);
+        }
+    }
+    
+    void visit(IfStmt* node) override {
+        // Generate if-elif-else control flow with branches vector
+        if (node->branches.empty()) return;
+        
+        Function* func = ctx.builder->GetInsertBlock()->getParent();
+        BasicBlock* mergeBB = BasicBlock::Create(ctx.llvmContext, "ifcont");
+        
+        // Process each branch
+        for (size_t i = 0; i < node->branches.size(); i++) {
+            auto& branch = node->branches[i];
+            
+            if (branch.condition) {
+                // if or elif branch - has a condition
+                Value* condVal = visitExpr(branch.condition.get());
+                if (!condVal) return;
+                
+                // Convert condition to bool (i1)
+                if (condVal->getType() != Type::getInt1Ty(ctx.llvmContext)) {
+                    condVal = ctx.builder->CreateICmpNE(
+                        condVal,
+                        Constant::getNullValue(condVal->getType()),
+                        "ifcond"
+                    );
+                }
+                
+                // Create then block for this branch
+                BasicBlock* thenBB = BasicBlock::Create(ctx.llvmContext, 
+                    i == 0 ? "then" : "elif", func);
+                
+                // Create else/elif block for next condition (or merge if this is last)
+                BasicBlock* elseBB = (i + 1 < node->branches.size()) ?
+                    BasicBlock::Create(ctx.llvmContext, "elifcond") : mergeBB;
+                
+                // Branch based on condition
+                ctx.builder->CreateCondBr(condVal, thenBB, elseBB);
+                
+                // Emit then block
+                ctx.builder->SetInsertPoint(thenBB);
+                if (branch.body) {
+                    branch.body->accept(*this);
+                }
+                if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                    ctx.builder->CreateBr(mergeBB);
+                }
+                
+                // Set up for next branch
+                if (i + 1 < node->branches.size()) {
+                    func->insert(func->end(), elseBB);
+                    ctx.builder->SetInsertPoint(elseBB);
+                }
+            } else {
+                // final else branch - no condition
+                BasicBlock* elseBB = BasicBlock::Create(ctx.llvmContext, "else", func);
+                ctx.builder->CreateBr(elseBB);  // unconditional branch
+                
+                ctx.builder->SetInsertPoint(elseBB);
+                if (branch.body) {
+                    branch.body->accept(*this);
+                }
+                if (!ctx.builder->GetInsertBlock()->getTerminator()) {
+                    ctx.builder->CreateBr(mergeBB);
+                }
+            }
+        }
+        
+        // Emit merge block
+        func->insert(func->end(), mergeBB);
+        ctx.builder->SetInsertPoint(mergeBB);
+    }
+    
+    void visit(BreakStmt* node) override {
+        if (ctx.currentLoopBreakTarget) {
+            ctx.builder->CreateBr(ctx.currentLoopBreakTarget);
+        }
+    }
+    
+    void visit(ContinueStmt* node) override {
+        if (ctx.currentLoopContinueTarget) {
+            ctx.builder->CreateBr(ctx.currentLoopContinueTarget);
+        }
+    }
+    
+    void visit(DeferStmt* node) override {
+        // defer { body }
+        // Add the defer block to the stack - it will execute at scope exit
+        if (node->body) {
+            ctx.pushDefer(node->body.get());
+        }
+    }
+    
+    void visit(frontend::AsyncBlock* node) override {
+        // async { body } catch (err:e) { catch_body }
+        // Implements LLVM coroutine lowering for async/await support
+        
+        // 1. Create async function wrapper
+        std::string asyncName = "__async_" + std::to_string(reinterpret_cast<uintptr_t>(node));
+        
+        // Async functions return an i8* handle (the coroutine handle)
+        FunctionType* asyncFuncType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),  // Returns i8* handle
+            {},  // No parameters (TODO: capture variables from outer scope)
+            false
+        );
+        
+        Function* asyncFn = Function::Create(
+            asyncFuncType,
+            Function::InternalLinkage,
+            asyncName,
+            ctx.module.get()
+        );
+        
+        // 2. Save current context
+        BasicBlock* callerBlock = ctx.builder->GetInsertBlock();
+        Function* prevFunc = ctx.currentFunction;
+        
+        // 3. Setup async function entry block
+        BasicBlock* entry = BasicBlock::Create(ctx.llvmContext, "entry", asyncFn);
+        ctx.builder->SetInsertPoint(entry);
+        ctx.currentFunction = asyncFn;
+        
+        // 4. Emit LLVM coroutine intrinsics
+        // llvm.coro.id - Identifies this function as a coroutine
+        Function* coroId = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_id);
+        Value* id = ctx.builder->CreateCall(coroId, {
+            ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0),  // Alignment
+            ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)),  // Promise
+            ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)),  // Corofn
+            ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))   // Data
+        }, "id");
+        
+        // llvm.coro.begin - Allocate coroutine frame
+        Function* coroBegin = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_begin);
+        Value* hdl = ctx.builder->CreateCall(coroBegin, {
+            id,
+            ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext))  // Allocfn result
+        }, "hdl");
+        
+        // 5. Generate async body
+        if (node->body) {
+            node->body->accept(*this);
+        }
+        
+        // 6. Final suspend point
+        // llvm.coro.suspend - Suspend execution
+        Function* coroSuspend = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_suspend);
+        Value* suspendResult = ctx.builder->CreateCall(coroSuspend, {
+            ConstantTokenNone::get(ctx.llvmContext),  // Token
+            ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 1)  // Final suspend = true
+        }, "suspend");
+        
+        // Create switch on suspend result
+        // 0 = resume, 1 = destroy, -1 = suspend
+        SwitchInst* suspendSwitch = ctx.builder->CreateSwitch(suspendResult, 
+            BasicBlock::Create(ctx.llvmContext, "suspend_unreachable", asyncFn), 2);
+        
+        // Case 0: Resume (should not happen for final suspend)
+        BasicBlock* resumeBB = BasicBlock::Create(ctx.llvmContext, "resume", asyncFn);
+        suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), resumeBB);
+        ctx.builder->SetInsertPoint(resumeBB);
+        ctx.builder->CreateUnreachable();
+        
+        // Case 1: Destroy
+        BasicBlock* destroyBB = BasicBlock::Create(ctx.llvmContext, "destroy", asyncFn);
+        suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), destroyBB);
+        ctx.builder->SetInsertPoint(destroyBB);
+        
+        // llvm.coro.end - Finalize coroutine
+        Function* coroEnd = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_end);
+        ctx.builder->CreateCall(coroEnd, {
+            hdl,
+            ConstantInt::get(Type::getInt1Ty(ctx.llvmContext), 0)  // Unwind = false
+        });
+        ctx.builder->CreateRet(hdl);
+        
+        // Unreachable block for -1 case
+        ctx.builder->SetInsertPoint(suspendSwitch->getDefaultDest());
+        ctx.builder->CreateUnreachable();
+        
+        // 7. Restore context and call async function from caller
+        ctx.builder->SetInsertPoint(callerBlock);
+        ctx.currentFunction = prevFunc;
+        
+        // Call the async function (returns coroutine handle)
+        Value* coroHandle = ctx.builder->CreateCall(asyncFn, {}, "async_handle");
+        
+        // TODO: Store handle for later resumption
+        // For now, async blocks execute but don't integrate with a scheduler
+        
+        // 8. Handle catch block if present
+        if (node->catch_block) {
+            // TODO: Implement error handling for async exceptions
+            // This requires wrapping the async body in try/catch logic
+            // For v0.0.7, we'll leave this as a placeholder
+        }
+    }
+    
+    void visit(frontend::AwaitExpr* node) override {
+        // await <expression>
+        // Suspends current coroutine until the awaited expression completes
+        
+        if (!node->expression) {
+            throw std::runtime_error("await expression requires an operand");
+        }
+        
+        // Verify we're inside an async function
+        if (!ctx.currentFunction) {
+            throw std::runtime_error("await can only be used inside async functions");
+        }
+        
+        // Check if this function was marked async (has coroutine setup)
+        // Note: We detect this by checking for coro_id call in entry block
+        bool isAsync = false;
+        if (ctx.currentFunction) {
+            for (auto& BB : *ctx.currentFunction) {
+                for (auto& I : BB) {
+                    if (auto* call = dyn_cast<CallInst>(&I)) {
+                        if (call->getCalledFunction() && 
+                            call->getCalledFunction()->getName() == "llvm.coro.id") {
+                            isAsync = true;
+                            break;
+                        }
+                    }
+                }
+                if (isAsync) break;
+            }
+        }
+        
+        if (!isAsync) {
+            throw std::runtime_error("await can only be used inside async functions (use 'async func' keyword)");
+        }
+        
+        // =====================================================================
+        // COROUTINE SUSPENSION IMPLEMENTATION
+        // =====================================================================
+        // LLVM coroutines use a state machine approach:
+        // 1. Save coroutine state before suspension
+        // 2. Suspend execution (returns to caller)
+        // 3. Resume when awaited operation completes
+        
+        // Step 1: Evaluate the awaited expression (should return a coroutine handle or result)
+        Value* awaitedValue = visitExpr(node->expression.get());
+        
+        // Step 2: Save coroutine state
+        // llvm.coro.save returns a token representing the suspension point
+        Function* coroSave = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_save);
+        
+        // Get current coroutine handle (stored during async function setup)
+        // We need to retrieve the handle from the coroutine frame
+        Function* coroFrame = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_frame);
+        Value* framePtr = ctx.builder->CreateCall(coroFrame, {}, "coro_frame");
+        
+        // Save suspension point
+        Value* saveToken = ctx.builder->CreateCall(coroSave, {framePtr}, "save_point");
+        
+        // Step 3: Suspend coroutine execution
+        // llvm.coro.suspend returns:
+        //   -1: coroutine suspended (normal case)
+        //    0: resume from suspension
+        //    1: cleanup/destroy path
+        Function* coroSuspend = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_suspend);
+        Value* suspendResult = ctx.builder->CreateCall(coroSuspend, {
+            saveToken,
+            ConstantInt::getFalse(ctx.llvmContext)  // final = false (not a final suspend)
+        }, "suspend_result");
+        
+        // Step 4: Create basic blocks for the state machine
+        BasicBlock* suspendBB = BasicBlock::Create(ctx.llvmContext, "await_suspend", ctx.currentFunction);
+        BasicBlock* resumeBB = BasicBlock::Create(ctx.llvmContext, "await_resume", ctx.currentFunction);
+        BasicBlock* cleanupBB = BasicBlock::Create(ctx.llvmContext, "await_cleanup", ctx.currentFunction);
+        
+        // Switch on suspend result:
+        // case -1: goto suspend (return to caller)
+        // case  0: goto resume (continue after await)
+        // case  1: goto cleanup (coroutine destroyed)
+        SwitchInst* suspendSwitch = ctx.builder->CreateSwitch(suspendResult, suspendBB, 2);
+        suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), resumeBB);
+        suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), cleanupBB);
+        
+        // ========== SUSPEND PATH ==========
+        // Coroutine yields control back to caller
+        ctx.builder->SetInsertPoint(suspendBB);
+        
+        // =====================================================================
+        // SCHEDULER INTEGRATION
+        // =====================================================================
+        // Wrap LLVM coroutine handle in CoroutineFrame for scheduler
+        // The scheduler expects a CoroutineFrame* with coro_handle field
+        
+        // Define CoroutineFrame struct type if not already defined
+        StructType* coroFrameType = StructType::getTypeByName(ctx.llvmContext, "CoroutineFrame");
+        if (!coroFrameType) {
+            // struct CoroutineFrame { void* coro_handle; void* data; CoroutineFrame* waiting_on; int state; char padding; }
+            std::vector<Type*> frameFields = {
+                PointerType::getUnqual(ctx.llvmContext),  // coro_handle
+                PointerType::getUnqual(ctx.llvmContext),  // data
+                PointerType::getUnqual(ctx.llvmContext),  // waiting_on (CoroutineFrame*)
+                Type::getInt32Ty(ctx.llvmContext),        // state
+                Type::getInt8Ty(ctx.llvmContext)          // padding
+            };
+            coroFrameType = StructType::create(ctx.llvmContext, frameFields, "CoroutineFrame");
+        }
+        
+        // Allocate CoroutineFrame on heap
+        Function* mallocFn = ctx.module->getFunction("malloc");
+        if (!mallocFn) {
+            FunctionType* mallocType = FunctionType::get(
+                PointerType::getUnqual(ctx.llvmContext),
+                {Type::getInt64Ty(ctx.llvmContext)},
+                false
+            );
+            mallocFn = Function::Create(mallocType, Function::ExternalLinkage, "malloc", ctx.module.get());
+        }
+        
+        Value* frameSize = ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 
+            ctx.module->getDataLayout().getTypeAllocSize(coroFrameType));
+        Value* frameAlloc = ctx.builder->CreateCall(mallocFn, {frameSize}, "coro_frame_alloc");
+        
+        // Store LLVM coroutine handle in CoroutineFrame.coro_handle
+        Value* handleField = ctx.builder->CreateStructGEP(coroFrameType, frameAlloc, 0, "coro_handle_ptr");
+        ctx.builder->CreateStore(framePtr, handleField);
+        
+        // Initialize state to SUSPENDED (1)
+        Value* stateField = ctx.builder->CreateStructGEP(coroFrameType, frameAlloc, 3, "state_ptr");
+        ctx.builder->CreateStore(ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 1), stateField);
+        
+        // Declare aria_scheduler_schedule if not already declared
+        Function* schedulerSchedule = ctx.module->getFunction("aria_scheduler_schedule");
+        if (!schedulerSchedule) {
+            FunctionType* schedFuncType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {PointerType::getUnqual(ctx.llvmContext)},  // CoroutineFrame*
+                false
+            );
+            schedulerSchedule = Function::Create(
+                schedFuncType,
+                Function::ExternalLinkage,
+                "aria_scheduler_schedule",
+                ctx.module.get()
+            );
+        }
+        
+        // Schedule the CoroutineFrame (not raw LLVM handle)
+        ctx.builder->CreateCall(schedulerSchedule, {frameAlloc});
+        
+        // Return coroutine handle to caller (allows direct resumption if needed)
+        Function* coroBegin = nullptr;
+        for (auto& BB : *ctx.currentFunction) {
+            for (auto& I : BB) {
+                if (auto* call = dyn_cast<CallInst>(&I)) {
+                    if (call->getCalledFunction() && 
+                        call->getCalledFunction()->getName() == "llvm.coro.begin") {
+                        // Found the coroutine handle from coro.begin
+                        coroBegin = call->getCalledFunction();
+                        break;
+                    }
+                }
+            }
+            if (coroBegin) break;
+        }
+        
+        // Use the frame pointer as the return value (coroutine handle)
+        ctx.builder->CreateRet(framePtr);
+        
+        // ========== RESUME PATH ==========
+        // Execution continues here after coroutine is resumed
+        ctx.builder->SetInsertPoint(resumeBB);
+        
+        // The awaited value is now available (conceptually)
+        // Store it for later use if needed
+        // For now, we just continue execution
+        // (In a full implementation, we'd extract the result from the awaited coroutine)
+        
+        // ========== CLEANUP PATH ==========
+        // Coroutine is being destroyed before completion
+        ctx.builder->SetInsertPoint(cleanupBB);
+        
+        // Call coro.free to check if we need to free memory
+        Function* coroFree = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_free);
+        Function* coroId = nullptr;
+        for (auto& BB : *ctx.currentFunction) {
+            for (auto& I : BB) {
+                if (auto* call = dyn_cast<CallInst>(&I)) {
+                    if (call->getCalledFunction() && 
+                        call->getCalledFunction()->getName() == "llvm.coro.id") {
+                        coroId = call->getCalledFunction();
+                        break;
+                    }
+                }
+            }
+            if (coroId) break;
+        }
+        
+        // Placeholder: In full implementation, we'd free the coroutine frame if needed
+        // For now, just end the coroutine
+        Function* coroEnd = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_end);
+        ctx.builder->CreateCall(coroEnd, {
+            framePtr,
+            ConstantInt::getFalse(ctx.llvmContext)  // unwind = false
+        });
+        ctx.builder->CreateRetVoid();
+        
+        // Continue insertion at resume point for subsequent code
+        ctx.builder->SetInsertPoint(resumeBB);
+    }
+    
+    void visit(frontend::WhenExpr* node) override {
+        // when { case1 then result1; case2 then result2; end }
+        // Pattern matching expression - returns a value
+        
+        // TODO: Implement when expression lowering
+        // This is similar to pick but returns a value instead of jumping
+        // For v0.0.7, this is a placeholder
+    }
+    
+    void visit(frontend::SpawnExpr* node) override {
+        // spawn <expression>
+        // Spawns expression (usually function call) on scheduler
+        // Returns void for now (Future<T> in next iteration)
+        
+        // For v1: Just spawn without Future return
+        // This requires the spawn runtime (spawn.h/spawn.cpp)
+        
+        if (!node->expression) {
+            return;
+        }
+        
+        // Currently, we only support spawning function calls
+        // TODO: Support spawning lambdas and other expressions
+        auto* call = dynamic_cast<aria::frontend::CallExpr*>(node->expression.get());
+        if (!call) {
+            throw std::runtime_error("spawn currently only supports function calls");
+        }
+        
+        // Get the function being called
+        std::string funcName = call->function_name;
+        Function* targetFunc = ctx.module->getFunction(funcName);
+        if (!targetFunc) {
+            auto* sym = ctx.lookup(funcName);
+            if (sym && !sym->is_ref) {
+                targetFunc = dyn_cast_or_null<Function>(sym->val);
+            }
+        }
+        
+        if (!targetFunc) {
+            throw std::runtime_error("spawn: cannot find function '" + funcName + "'");
+        }
+        
+        // Generate wrapper function that captures the call
+        // The wrapper has signature: void wrapper_N(void* task_ptr)
+        // It casts to SpawnTask*, unpacks args, calls function, stores result
+        
+        static int wrapperCount = 0;
+        std::string wrapperName = "spawn_wrapper_" + std::to_string(wrapperCount++);
+        
+        // Wrapper function type: void(void*)
+        FunctionType* wrapperType = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            {PointerType::getUnqual(ctx.llvmContext)},  // void* task_ptr
+            false
+        );
+        
+        Function* wrapperFunc = Function::Create(
+            wrapperType,
+            Function::InternalLinkage,
+            wrapperName,
+            ctx.module.get()
+        );
+        
+        // Generate wrapper body in new basic block
+        BasicBlock* wrapperEntry = BasicBlock::Create(ctx.llvmContext, "entry", wrapperFunc);
+        IRBuilder<> wrapperBuilder(wrapperEntry);
+        
+        // Get task pointer argument
+        Value* taskPtr = wrapperFunc->arg_begin();
+        
+        // Get return type of target function
+        FunctionType* targetFuncType = targetFunc->getFunctionType();
+        Type* returnType = targetFuncType->getReturnType();
+        bool hasReturnValue = !returnType->isVoidTy();
+        
+        // If function has arguments, unpack them from args struct
+        std::vector<Value*> callArgs;
+        if (!call->arguments.empty()) {
+            // SpawnTask has: void (*function)(void*); void* args; Future* future; void (*completion)(...);
+            // We need to load the 'args' field (index 1)
+            StructType* spawnTaskType = StructType::get(ctx.llvmContext, {
+                PointerType::getUnqual(ctx.llvmContext),  // function
+                PointerType::getUnqual(ctx.llvmContext),  // args
+                PointerType::getUnqual(ctx.llvmContext),  // future
+                PointerType::getUnqual(ctx.llvmContext)   // completion
+            });
+            
+            Value* argsFieldPtr = wrapperBuilder.CreateStructGEP(spawnTaskType, taskPtr, 1);
+            Value* argsPtr = wrapperBuilder.CreateLoad(PointerType::getUnqual(ctx.llvmContext), argsFieldPtr);
+            
+            // Get argument types from target function
+            std::vector<Type*> argTypes;
+            for (unsigned i = 0; i < targetFuncType->getNumParams(); i++) {
+                argTypes.push_back(targetFuncType->getParamType(i));
+            }
+            
+            StructType* argsStructType = StructType::create(ctx.llvmContext, argTypes, "spawn_args");
+            
+            // Load each field and build call argument list
+            for (size_t i = 0; i < argTypes.size(); i++) {
+                Value* fieldPtr = wrapperBuilder.CreateStructGEP(argsStructType, argsPtr, i);
+                Value* fieldVal = wrapperBuilder.CreateLoad(argTypes[i], fieldPtr);
+                callArgs.push_back(fieldVal);
+            }
+        }
+        
+        // Call the target function and capture result
+        Value* result = wrapperBuilder.CreateCall(targetFunc, callArgs);
+        
+        // If function returns a value, store it in the Future
+        if (hasReturnValue) {
+            // Get SpawnTask fields
+            StructType* spawnTaskType = StructType::get(ctx.llvmContext, {
+                PointerType::getUnqual(ctx.llvmContext),  // function
+                PointerType::getUnqual(ctx.llvmContext),  // args
+                PointerType::getUnqual(ctx.llvmContext),  // future
+                PointerType::getUnqual(ctx.llvmContext)   // completion
+            });
+            
+            // Load Future* (field index 2)
+            Value* futureFieldPtr = wrapperBuilder.CreateStructGEP(spawnTaskType, taskPtr, 2);
+            Value* futurePtr = wrapperBuilder.CreateLoad(PointerType::getUnqual(ctx.llvmContext), futureFieldPtr);
+            
+            // Allocate space for result on stack
+            Value* resultPtr = wrapperBuilder.CreateAlloca(returnType);
+            wrapperBuilder.CreateStore(result, resultPtr);
+            
+            // Call Future->set(result_ptr)
+            // Future.set() signature: void set(void* value)
+            Function* futureSetFunc = ctx.module->getFunction("_ZN6Future3setEPv");  // Mangled name
+            if (!futureSetFunc) {
+                // Declare it if not present
+                FunctionType* setFuncType = FunctionType::get(
+                    Type::getVoidTy(ctx.llvmContext),
+                    {PointerType::getUnqual(ctx.llvmContext), PointerType::getUnqual(ctx.llvmContext)},  // this, void* value
+                    false
+                );
+                futureSetFunc = Function::Create(setFuncType, Function::ExternalLinkage, "_ZN6Future3setEPv", ctx.module.get());
+            }
+            
+            wrapperBuilder.CreateCall(futureSetFunc, {futurePtr, resultPtr});
+        }
+        
+        wrapperBuilder.CreateRetVoid();
+        
+        // Now in the original function, allocate args struct and populate it
+        if (!call->arguments.empty()) {
+            // Use TARGET FUNCTION parameter types
+            FunctionType* targetFuncType = targetFunc->getFunctionType();
+            std::vector<Type*> argTypes;
+            std::vector<Value*> argValues;
+            
+            for (unsigned i = 0; i < call->arguments.size(); i++) {
+                Value* argVal = visitExpr(call->arguments[i].get());
+                Type* expectedType = targetFuncType->getParamType(i);
+                
+                // Cast argument to match target function's parameter type if needed
+                if (argVal->getType() != expectedType) {
+                    if (argVal->getType()->isIntegerTy() && expectedType->isIntegerTy()) {
+                        argVal = ctx.builder->CreateIntCast(argVal, expectedType, true);
+                    }
+                }
+                
+                argTypes.push_back(expectedType);
+                argValues.push_back(argVal);
+            }
+            
+            StructType* argsStructType = StructType::create(ctx.llvmContext, argTypes, "spawn_args");
+            
+            // Allocate args struct on heap (it will be freed by the worker after execution)
+            Function* mallocFunc = ctx.module->getFunction("malloc");
+            if (!mallocFunc) {
+                FunctionType* mallocType = FunctionType::get(
+                    PointerType::getUnqual(ctx.llvmContext),
+                    {Type::getInt64Ty(ctx.llvmContext)},
+                    false
+                );
+                mallocFunc = Function::Create(mallocType, Function::ExternalLinkage, "malloc", ctx.module.get());
+            }
+            
+            uint64_t structSize = ctx.module->getDataLayout().getTypeAllocSize(argsStructType);
+            Value* argsPtr = ctx.builder->CreateCall(
+                mallocFunc,
+                {ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), structSize)}
+            );
+            
+            // Store each argument into the struct
+            for (size_t i = 0; i < argValues.size(); i++) {
+                Value* fieldPtr = ctx.builder->CreateStructGEP(argsStructType, argsPtr, i);
+                ctx.builder->CreateStore(argValues[i], fieldPtr);
+            }
+            
+            // Create Future for the return value
+            Type* returnType = targetFuncType->getReturnType();
+            Value* futurePtr = nullptr;
+            
+            if (!returnType->isVoidTy()) {
+                // Allocate Future via aria_future_create(result_size)
+                Function* futureCreateFunc = ctx.module->getFunction("aria_future_create");
+                if (!futureCreateFunc) {
+                    FunctionType* createFuncType = FunctionType::get(
+                        PointerType::getUnqual(ctx.llvmContext),
+                        {Type::getInt64Ty(ctx.llvmContext)},  // size_t result_size
+                        false
+                    );
+                    futureCreateFunc = Function::Create(createFuncType, Function::ExternalLinkage, "aria_future_create", ctx.module.get());
+                }
+                
+                uint64_t resultSize = ctx.module->getDataLayout().getTypeAllocSize(returnType);
+                futurePtr = ctx.builder->CreateCall(
+                    futureCreateFunc,
+                    {ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), resultSize)}
+                );
+            }
+            
+            // Create SpawnTask struct on heap
+            // struct SpawnTask { void (*function)(void*); void* args; Future* future; void (*completion)(...); }
+            StructType* spawnTaskType = StructType::create(ctx.llvmContext, {
+                PointerType::getUnqual(ctx.llvmContext),  // function pointer
+                PointerType::getUnqual(ctx.llvmContext),  // args
+                PointerType::getUnqual(ctx.llvmContext),  // future
+                PointerType::getUnqual(ctx.llvmContext)   // completion
+            }, "SpawnTask");
+            
+            Value* taskPtr = ctx.builder->CreateCall(
+                mallocFunc,
+                {ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 
+                    ctx.module->getDataLayout().getTypeAllocSize(spawnTaskType))}
+            );
+            
+            // Store wrapper function pointer
+            Value* funcPtrField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 0);
+            ctx.builder->CreateStore(wrapperFunc, funcPtrField);
+            
+            // Store args pointer
+            Value* argsPtrField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 1);
+            ctx.builder->CreateStore(argsPtr, argsPtrField);
+            
+            // Store future pointer (or null if void return)
+            Value* futureField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 2);
+            if (futurePtr) {
+                ctx.builder->CreateStore(futurePtr, futureField);
+            } else {
+                ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), futureField);
+            }
+            
+            // Store null for completion (not used yet - Future::set is called directly)
+            Value* completionField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 3);
+            ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), completionField);
+            
+            // Call aria_spawn_schedule(task)
+            Function* scheduleFunc = ctx.module->getFunction("aria_spawn_schedule");
+            if (!scheduleFunc) {
+                FunctionType* scheduleType = FunctionType::get(
+                    Type::getVoidTy(ctx.llvmContext),
+                    {PointerType::getUnqual(ctx.llvmContext)},
+                    false
+                );
+                scheduleFunc = Function::Create(scheduleType, Function::ExternalLinkage, "aria_spawn_schedule", ctx.module.get());
+            }
+            
+            ctx.builder->CreateCall(scheduleFunc, {taskPtr});
+            
+            // Save future pointer for visitExpr to return
+            currentSpawnFuture = futurePtr;
+        } else {
+            // No arguments - simpler path
+            // Get return type for Future creation
+            FunctionType* targetFuncType = targetFunc->getFunctionType();
+            Type* returnType = targetFuncType->getReturnType();
+            Value* futurePtr = nullptr;
+            
+            if (!returnType->isVoidTy()) {
+                // Allocate Future via aria_future_create(result_size)
+                Function* futureCreateFunc = ctx.module->getFunction("aria_future_create");
+                if (!futureCreateFunc) {
+                    FunctionType* createFuncType = FunctionType::get(
+                        PointerType::getUnqual(ctx.llvmContext),
+                        {Type::getInt64Ty(ctx.llvmContext)},
+                        false
+                    );
+                    futureCreateFunc = Function::Create(createFuncType, Function::ExternalLinkage, "aria_future_create", ctx.module.get());
+                }
+                
+                uint64_t resultSize = ctx.module->getDataLayout().getTypeAllocSize(returnType);
+                futurePtr = ctx.builder->CreateCall(
+                    futureCreateFunc,
+                    {ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), resultSize)}
+                );
+            }
+            
+            // Create SpawnTask with null args
+            StructType* spawnTaskType = StructType::create(ctx.llvmContext, {
+                PointerType::getUnqual(ctx.llvmContext),  // function pointer
+                PointerType::getUnqual(ctx.llvmContext),  // args
+                PointerType::getUnqual(ctx.llvmContext),  // future
+                PointerType::getUnqual(ctx.llvmContext)   // completion
+            }, "SpawnTask");
+            
+            Function* mallocFunc = ctx.module->getFunction("malloc");
+            if (!mallocFunc) {
+                FunctionType* mallocType = FunctionType::get(
+                    PointerType::getUnqual(ctx.llvmContext),
+                    {Type::getInt64Ty(ctx.llvmContext)},
+                    false
+                );
+                mallocFunc = Function::Create(mallocType, Function::ExternalLinkage, "malloc", ctx.module.get());
+            }
+            
+            Value* taskPtr = ctx.builder->CreateCall(
+                mallocFunc,
+                {ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 
+                    ctx.module->getDataLayout().getTypeAllocSize(spawnTaskType))}
+            );
+            
+            Value* funcPtrField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 0);
+            ctx.builder->CreateStore(wrapperFunc, funcPtrField);
+            
+            Value* argsPtrField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 1);
+            ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), argsPtrField);
+            
+            // Store future pointer (or null if void return)
+            Value* futureField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 2);
+            if (futurePtr) {
+                ctx.builder->CreateStore(futurePtr, futureField);
+            } else {
+                ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), futureField);
+            }
+            
+            Value* completionField = ctx.builder->CreateStructGEP(spawnTaskType, taskPtr, 3);
+            ctx.builder->CreateStore(ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext)), completionField);
+            
+            Function* scheduleFunc = ctx.module->getFunction("aria_spawn_schedule");
+            if (!scheduleFunc) {
+                FunctionType* scheduleType = FunctionType::get(
+                    Type::getVoidTy(ctx.llvmContext),
+                    {PointerType::getUnqual(ctx.llvmContext)},
+                    false
+                );
+                scheduleFunc = Function::Create(scheduleType, Function::ExternalLinkage, "aria_spawn_schedule", ctx.module.get());
+            }
+            
+            ctx.builder->CreateCall(scheduleFunc, {taskPtr});
+            
+            // Save future pointer for visitExpr to return
+            currentSpawnFuture = futurePtr;
+        }
+        
+        // TODO: Return Future<T> instead of void
+    }
+    
+    void visit(IntLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::FloatLiteral* node) override {} // Handled by visitExpr()
+    void visit(BoolLiteral* node) override {} // Handled by visitExpr()
+    void visit(NullLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::StringLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::TemplateString* node) override {} // Handled by visitExpr()
+    void visit(frontend::TernaryExpr* node) override {} // Handled by visitExpr()
+    void visit(frontend::ObjectLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::MemberAccess* node) override {} // Handled by visitExpr()
+    // TODO: void visit(frontend::RangeExpr* node) override {} // Waiting for RangeExpr AST node
+    void visit(frontend::ArrayLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::IndexExpr* node) override {} // Handled by visitExpr()
+    void visit(frontend::LambdaExpr* node) override {} // Handled by visitExpr()
+    void visit(VarExpr* node) override {}
+    void visit(CallExpr* node) override {
+        // =====================================================================
+        // GENERIC FUNCTION CALL DETECTION
+        // =====================================================================
+        // Check if this is a call to a generic function template
+        std::cerr << "[DEBUG] CallExpr: looking for function '" << node->function_name << "'" << std::endl;
+        std::cerr << "[DEBUG] genericTemplates size: " << genericTemplates.size() << std::endl;
+        
+        auto templateIt = genericTemplates.find(node->function_name);
+        bool isGenericCall = (templateIt != genericTemplates.end());
+        
+        std::cerr << "[DEBUG] isGenericCall: " << (isGenericCall ? "YES" : "NO") << std::endl;
+        
+        Function* callee = nullptr;
+        
+        if (isGenericCall) {
+            // This is a generic function call - perform monomorphization
+            GenericTemplate& tmpl = templateIt->second;
+            
+            std::vector<std::string> concreteTypes;
+            
+            if (!node->type_arguments.empty()) {
+                // Explicit type arguments provided: max<int8, int8>(5, 10)
+                concreteTypes = node->type_arguments;
+            } else {
+                // Type inference: deduce T from argument types
+                // Example: max(5, 10) infers T=int8 from arguments
+                concreteTypes = inferGenericTypes(tmpl, node);
+                
+                if (concreteTypes.empty()) {
+                    throw std::runtime_error(
+                        "Cannot infer generic type arguments for function '" + 
+                        node->function_name + "'. \n" +
+                        "Provide explicit type arguments: " + node->function_name + "<type>(...)"
+                    );
+                }
+            }
+            
+            // Validate argument count matches template parameter count
+            if (concreteTypes.size() != tmpl.typeParams.size()) {
+                throw std::runtime_error(
+                    "Generic function '" + node->function_name + "' expects " +
+                    std::to_string(tmpl.typeParams.size()) + " type argument(s) but got " +
+                    std::to_string(concreteTypes.size())
+                );
+            }
+            
+            // Monomorphize: generate specialized version
+            callee = monomorphize(node->function_name, concreteTypes);
+            
+            if (!callee) {
+                throw std::runtime_error(
+                    "Failed to instantiate generic function '" + node->function_name + "'"
+                );
+            }
+        } else {
+            // Regular function call - look up function in symbol table first, then module
+            auto* sym = ctx.lookup(node->function_name);
+            
+            std::cerr << "[CLOSURE_CALL] Function: " << node->function_name << std::endl;
+            if (sym) {
+                std::cerr << "[CLOSURE_CALL] Found symbol, is_ref: " << sym->is_ref << std::endl;
+                if (sym->val) {
+                    std::cerr << "[CLOSURE_CALL] Symbol value type: " << sym->val->getType()->getTypeID() << std::endl;
+                }
+            }
+            
+            // CLOSURE SUPPORT: Check if this is a fat pointer (closure)
+            bool isClosure = false;
+            Value* closurePtr = nullptr;
+            Value* envPtr = nullptr;
+            
+            if (sym && sym->is_ref) {
+                // This is a reference (could be a fat pointer)
+                // Check if it's a struct type with 2 pointer fields (fat pointer pattern)
+                if (auto* allocaInst = dyn_cast<AllocaInst>(sym->val)) {
+                    Type* allocatedType = allocaInst->getAllocatedType();
+                    if (auto* structType = dyn_cast<StructType>(allocatedType)) {
+                        // Check if it matches fat pointer pattern: {ptr, ptr}
+                        if (structType->getNumElements() == 2 &&
+                            structType->getElementType(0)->isPointerTy() &&
+                            structType->getElementType(1)->isPointerTy()) {
+                            isClosure = true;
+                            closurePtr = sym->val;
+                            
+                            // Extract function pointer (field 0)
+                            Value* funcPtrField = ctx.builder->CreateStructGEP(
+                                structType,
+                                closurePtr,
+                                0,
+                                "closure.func_ptr"
+                            );
+                            Value* funcPtr = ctx.builder->CreateLoad(
+                                PointerType::getUnqual(ctx.llvmContext),
+                                funcPtrField,
+                                "func_ptr"
+                            );
+                            callee = dyn_cast<Function>(funcPtr);
+                            
+                            // Extract environment pointer (field 1)
+                            Value* envPtrField = ctx.builder->CreateStructGEP(
+                                structType,
+                                closurePtr,
+                                1,
+                                "closure.env_ptr"
+                            );
+                            envPtr = ctx.builder->CreateLoad(
+                                PointerType::getUnqual(ctx.llvmContext),
+                                envPtrField,
+                                "env_ptr"
+                            );
+                        }
+                    }
+                }
+            }
+            
+            // If not a closure, try regular function lookup
+            if (!isClosure) {
+                if (sym && !sym->is_ref) {
+                    callee = dyn_cast_or_null<Function>(sym->val);
+                }
+                if (!callee) {
+                    callee = ctx.module->getFunction(node->function_name);
+                }
+            }
+            
+            if (!callee) {
+                std::string errorMsg = "Undefined function '" + node->function_name + "'";
+                errorMsg += "\n\nMake sure the function is declared before it's called.";
+                throw std::runtime_error(errorMsg);
+            }
+            
+            // CLOSURE SUPPORT: Prepend environment pointer to arguments if this is a closure
+            if (isClosure && envPtr) {
+                // Evaluate user arguments
+                std::vector<Value*> args;
+                args.push_back(envPtr);  // Hidden environment parameter
+                for (auto& arg : node->arguments) {
+                    args.push_back(visitExpr(arg.get()));
+                }
+                
+                // Create call instruction with environment
+                ctx.builder->CreateCall(callee, args, "calltmp");
+                return;
+            }
+        }
+        
+        // Evaluate arguments
+        std::vector<Value*> args;
+        for (auto& arg : node->arguments) {
+            args.push_back(visitExpr(arg.get()));
+        }
+        
+        // Create call instruction
+        ctx.builder->CreateCall(callee, args, "calltmp");
+    }
+    void visit(BinaryOp* node) override {} // Handled by visitExpr()
+    void visit(UnaryOp* node) override {} // Handled by visitExpr()
+    
+    void visit(ReturnStmt* node) override {
+        // Execute all defers from the current function only (first scope in deferStacks after clear)
+        // We only execute defers from deferStacks[0] since we clear at function entry
+        if (!ctx.deferStacks.empty() && !ctx.deferStacks[0].empty()) {
+            // Execute in LIFO order
+            for (auto it = ctx.deferStacks[0].rbegin(); it != ctx.deferStacks[0].rend(); ++it) {
+                (*it)->accept(*this);
+            }
+        }
+        
+        // SHADOW STACK: Pop frame before return (after defers, before actual return)
+        FunctionType* popFrameType = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            {},
+            false
+        );
+        FunctionCallee popFrameFunc = ctx.module->getOrInsertFunction(
+            "aria_shadow_stack_pop_frame",
+            popFrameType
+        );
+        ctx.builder->CreateCall(popFrameFunc);
+        
+        // ASYNC COROUTINE SPECIAL HANDLING
+        // For async functions, return statements trigger final suspension and return the coroutine handle
+        // The actual return value (if any) is stored in the coroutine frame for the awaiter
+        if (ctx.lookup("__coro_handle__")) {
+            // This is an async function
+            // TODO: Store return value in coroutine frame if present
+            // For now, just perform final suspend and return handle
+            
+            // Get coroutine handle from symbol table
+            auto* hdlSym = ctx.lookup("__coro_handle__");
+            Value* hdlAlloca = hdlSym->val;
+            Value* hdl = ctx.builder->CreateLoad(
+                PointerType::getUnqual(ctx.llvmContext),
+                hdlAlloca,
+                "coro.handle.final"
+            );
+            
+            // Perform final suspend (tells LLVM the coroutine is done)
+            Function* coroSuspend = Intrinsic::getDeclaration(
+                ctx.module.get(),
+                Intrinsic::coro_suspend
+            );
+            
+            // Final suspend (final=true)
+            Value* suspendResult = ctx.builder->CreateCall(coroSuspend, {
+                ConstantTokenNone::get(ctx.llvmContext),
+                ConstantInt::getTrue(ctx.llvmContext)  // final=true
+            }, "final.suspend");
+            
+            // Create switch for final suspend
+            BasicBlock* suspendBB = BasicBlock::Create(ctx.llvmContext, "final.suspend", ctx.currentFunction);
+            BasicBlock* resumeBB = BasicBlock::Create(ctx.llvmContext, "final.resume", ctx.currentFunction);
+            BasicBlock* destroyBB = BasicBlock::Create(ctx.llvmContext, "final.destroy", ctx.currentFunction);
+            
+            SwitchInst* suspendSwitch = ctx.builder->CreateSwitch(suspendResult, suspendBB, 2);
+            suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), resumeBB);
+            suspendSwitch->addCase(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 1), destroyBB);
+            
+            // Suspend block (shouldn't happen for final suspend)
+            ctx.builder->SetInsertPoint(suspendBB);
+            ctx.builder->CreateUnreachable();
+            
+            // Resume block (shouldn't happen for final suspend)
+            ctx.builder->SetInsertPoint(resumeBB);
+            ctx.builder->CreateUnreachable();
+            
+            // Destroy block - cleanup and return
+            ctx.builder->SetInsertPoint(destroyBB);
+            Function* coroEnd = Intrinsic::getDeclaration(ctx.module.get(), Intrinsic::coro_end);
+            
+            // Need to get the coro.id token from function entry
+            // Search for it in the entry block
+            Value* coroIdToken = nullptr;
+            for (auto& BB : *ctx.currentFunction) {
+                for (auto& I : BB) {
+                    if (auto* call = dyn_cast<CallInst>(&I)) {
+                        if (call->getCalledFunction() && 
+                            call->getCalledFunction()->getName() == "llvm.coro.id") {
+                            coroIdToken = call;
+                            break;
+                        }
+                    }
+                }
+                if (coroIdToken) break;
+            }
+            
+            ctx.builder->CreateCall(coroEnd, {
+                hdl,
+                ConstantInt::getFalse(ctx.llvmContext),  // unwind = false
+                coroIdToken ? coroIdToken : static_cast<Value*>(ConstantTokenNone::get(ctx.llvmContext))
+            });
+            ctx.builder->CreateRet(hdl);  // Return coroutine handle
+            
+            return;  // Done with async return handling
+        }
+        
+        if (node->value) {
+            // Return with value
+            Value* retVal = visitExpr(node->value.get());
+            if (retVal) {
+                Type* expectedReturnType = ctx.currentFunction->getReturnType();
+                
+                // Check if this function uses auto-wrap (*)
+                if (ctx.currentFunctionAutoWrap) {
+                    // AUTO-WRAP: Wrap raw value in {err:NULL, val:retVal}
+                    // Expected return type is result<T>, need to create the struct
+                    
+                    StructType* resultType = dyn_cast<StructType>(expectedReturnType);
+                    if (!resultType) {
+                        throw std::runtime_error("Auto-wrap function must return result type");
+                    }
+                    
+                    // Check if return value is already a Result struct (from explicit {err:x, val:y})
+                    if (retVal->getType() == expectedReturnType) {
+                        // Already a Result - user provided explicit {err:x, val:y}, don't wrap again
+                        ctx.builder->CreateRet(retVal);
+                        return;
+                    }
+                    
+                    // Get expected val field type
+                    Type* expectedValType = resultType->getElementType(1);
+                    
+                    // Type check and cast if needed
+                    if (retVal->getType() != expectedValType) {
+                        if (retVal->getType()->isIntegerTy() && expectedValType->isIntegerTy()) {
+                            retVal = ctx.builder->CreateIntCast(retVal, expectedValType, true, "auto_wrap_cast");
+                        } else {
+                            throw std::runtime_error(
+                                "Auto-wrap type mismatch: function declared return type '" + 
+                                ctx.currentFunctionReturnType + "' but return value has different type"
+                            );
+                        }
+                    }
+                    
+                    // Create result struct: {err:0, val:retVal}
+                    AllocaInst* resultAlloca = ctx.builder->CreateAlloca(resultType, nullptr, "auto_wrap_result");
+                    
+                    // Set err = 0 (success)
+                    Value* errPtr = ctx.builder->CreateStructGEP(resultType, resultAlloca, 0, "err_ptr");
+                    ctx.builder->CreateStore(ConstantInt::get(Type::getInt8Ty(ctx.llvmContext), 0), errPtr);
+                    
+                    // Set val = retVal
+                    Value* valPtr = ctx.builder->CreateStructGEP(resultType, resultAlloca, 1, "val_ptr");
+                    ctx.builder->CreateStore(retVal, valPtr);
+                    
+                    // Load and return the struct
+                    Value* resultVal = ctx.builder->CreateLoad(resultType, resultAlloca, "result_val");
+                    ctx.builder->CreateRet(resultVal);
+                } else {
+                    // NO AUTO-WRAP: Return value must already be a result struct
+                    // OR function must return a non-result type (void, int, etc.)
+                    
+                    // Check if expected return type is a result struct
+                    StructType* resultType = dyn_cast<StructType>(expectedReturnType);
+                    bool expectingResult = resultType && resultType->getName().starts_with("result_");
+                    
+                    if (expectingResult) {
+                        // Function returns result<T> - return value MUST be a result struct
+                        if (retVal->getType() != expectedReturnType) {
+                            throw std::runtime_error(
+                                "Type error: Function '" + std::string(ctx.currentFunction->getName()) + 
+                                "' returns result<" + ctx.currentFunctionReturnType + 
+                                "> but 'return' statement provides a plain value.\n" +
+                                "Use 'pass(value)' for success or 'fail(errorCode)' for errors.\n" +
+                                "Example: pass(42) or fail(1)"
+                            );
+                        }
+                        // Correct - returning a result struct
+                        ctx.builder->CreateRet(retVal);
+                    } else {
+                        // Function returns plain type (void, int, etc.) - allow plain return
+                        // Cast/truncate return value to match function return type if needed
+                        if (retVal->getType() != expectedReturnType) {
+                            if (retVal->getType()->isIntegerTy() && expectedReturnType->isIntegerTy()) {
+                                retVal = ctx.builder->CreateIntCast(retVal, expectedReturnType, true);
+                            }
+                            // If types still don't match, it's an error (should be caught by type checker)
+                        }
+                        ctx.builder->CreateRet(retVal);
+                    }
+                }
+            }
+        } else {
+            // Return void
+            ctx.builder->CreateRetVoid();
+        }
+    }
+
+    // Module System Visitors
+    // =============================================================================
+    
+    void visit(frontend::UseStmt* node) override {
+        // Basic module import support - declare external symbols
+        // Full linking happens at link time with LLVM linker
+        
+        // For now, we support a simple symbol declaration mechanism
+        // The actual module loading and linking is deferred to a future linker pass
+        
+        // Create a comment in the IR for documentation
+        std::string comment = "; use " + node->module_path;
+        if (!node->imports.empty()) {
+            comment += ".{";
+            for (size_t i = 0; i < node->imports.size(); ++i) {
+                if (i > 0) comment += ", ";
+                comment += node->imports[i];
+            }
+            comment += "}";
+        }
+        
+        // Add module to a list for later linking (stored in module metadata)
+        // This allows the linker to know which modules need to be linked
+        auto* stringType = llvm::ArrayType::get(Type::getInt8Ty(ctx.llvmContext), comment.size() + 1);
+        auto* commentGlobal = new GlobalVariable(
+            *ctx.module,
+            stringType,
+            true,  // isConstant
+            GlobalValue::PrivateLinkage,
+            ConstantDataArray::getString(ctx.llvmContext, comment, true),
+            ".use.comment"
+        );
+        commentGlobal->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+        
+        // Store module dependency metadata for linker
+        // This creates a list of required modules that the linker can use
+        if (!node->module_path.empty()) {
+            NamedMDNode* moduleDepsMD = ctx.module->getOrInsertNamedMetadata("aria.module.deps");
+            Metadata* pathMD = MDString::get(ctx.llvmContext, node->module_path);
+            
+            // Create tuple with module path and optional import list
+            SmallVector<Metadata*, 2> mdValues;
+            mdValues.push_back(pathMD);
+            
+            if (!node->imports.empty()) {
+                SmallVector<Metadata*, 8> importMDs;
+                for (const auto& imp : node->imports) {
+                    importMDs.push_back(MDString::get(ctx.llvmContext, imp));
+                }
+                mdValues.push_back(MDNode::get(ctx.llvmContext, importMDs));
+            }
+            
+            moduleDepsMD->addOperand(MDNode::get(ctx.llvmContext, mdValues));
+        }
+    }
+    
+    void visit(frontend::ModDef* node) override {
+        // Module definition creates a namespace
+        // For LLVM IR, we prefix all symbols with the module name
+        
+        // Save current module prefix
+        std::string previousPrefix = ctx.currentModulePrefix;
+        
+        // Set new prefix: mod_name.
+        if (previousPrefix.empty()) {
+            ctx.currentModulePrefix = node->name + ".";
+        } else {
+            ctx.currentModulePrefix = previousPrefix + node->name + ".";
+        }
+        
+        // Visit module body
+        if (node->body) {
+            node->body->accept(*this);
+        }
+        
+        // Restore previous prefix
+        ctx.currentModulePrefix = previousPrefix;
+    }
+    
+    void visit(frontend::ExternBlock* node) override {
+        // Extern blocks declare C functions without generating definitions
+        // Just process the declarations (they should be function declarations)
+        for (auto& decl : node->declarations) {
+            decl->accept(*this);
+        }
+    }
+};
+
+// Implementation of executeScopeDefers
+void CodeGenContext::executeScopeDefers(CodeGenVisitor* visitor) {
+    if (deferStacks.empty()) return;
+    
+    auto& currentDefers = deferStacks.back();
+    // Execute in LIFO order (reverse)
+    for (auto it = currentDefers.rbegin(); it != currentDefers.rend(); ++it) {
+        (*it)->accept(*visitor);
+    }
+}
+
+// =============================================================================
+// Module Linking Support
+// =============================================================================
+
+// Helper: Try to locate and load a module file (.ll or .bc)
+std::unique_ptr<Module> loadModule(const std::string& modulePath, LLVMContext& context) {
+    // Try .ll first (LLVM IR text)
+    std::string llPath = modulePath + ".ll";
+    SMDiagnostic err;
+    auto mod = parseIRFile(llPath, err, context);
+    if (mod) return mod;
+    
+    // Try .bc (LLVM bitcode)
+    std::string bcPath = modulePath + ".bc";
+    mod = parseIRFile(bcPath, err, context);
+    if (mod) return mod;
+    
+    // Try .aria file path directly (would need compilation first)
+    // For now, we only support pre-compiled modules
+    return nullptr;
+}
+
+// Link imported modules into the main module
+bool linkModules(Module& mainModule) {
+    // Get module dependencies from metadata
+    NamedMDNode* depsMD = mainModule.getNamedMetadata("aria.module.deps");
+    if (!depsMD) return true; // No dependencies
+    
+    Linker linker(mainModule);
+    
+    for (unsigned i = 0; i < depsMD->getNumOperands(); ++i) {
+        MDNode* depNode = depsMD->getOperand(i);
+        if (!depNode || depNode->getNumOperands() < 1) continue;
+        
+        // First operand is the module path
+        auto* pathMD = dyn_cast<MDString>(depNode->getOperand(0));
+        if (!pathMD) continue;
+        
+        std::string modulePath = pathMD->getString().str();
+        
+        // Try to load the module
+        auto importedModule = loadModule(modulePath, mainModule.getContext());
+        if (!importedModule) {
+            errs() << "Warning: Could not load module '" << modulePath << "'\n";
+            errs() << "         Searched for: " << modulePath << ".ll, " << modulePath << ".bc\n";
+            errs() << "         Functions from this module will be external references.\n";
+            continue;
+        }
+        
+        // Rename 'main' in imported module to avoid conflicts
+        // The main module's main() is the entry point
+        if (Function* importedMain = importedModule->getFunction("main")) {
+            importedMain->setName("__module_" + modulePath + "_main");
+        }
+        
+        // Also rename __user_main if it exists
+        if (Function* userMain = importedModule->getFunction("__user_main")) {
+            userMain->setName("__module_" + modulePath + "_user_main");
+        }
+        
+        // Link the module
+        if (linker.linkInModule(std::move(importedModule))) {
+            errs() << "Error: Failed to link module '" << modulePath << "'\n";
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+// =============================================================================
+// Main Entry Point for Code Generation
+// =============================================================================
+
+bool generate_code(aria::frontend::Block* root, const std::string& filename, bool enableVerify) {
+    try {
+        CodeGenContext ctx("aria_module");
+        CodeGenVisitor visitor(ctx);
+
+        // Declare built-in print function (uses C puts)
+        // print(string) -> void
+        std::vector<Type*> printParams = {PointerType::get(Type::getInt8Ty(ctx.llvmContext), 0)};
+        FunctionType* printType = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            printParams,
+            false  // not vararg
+        );
+        Function::Create(printType, Function::ExternalLinkage, "puts", ctx.module.get());
+        
+        // Create alias for Aria 'print' function
+        Function::Create(printType, Function::ExternalLinkage, "print", ctx.module.get());
+
+        // Generate coroutine resume bridge for scheduler integration
+        // This allows C++ scheduler to resume LLVM coroutines via llvm.coro.resume
+        {
+            // Declare llvm.coro.resume intrinsic
+            FunctionType* coroResumeType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {PointerType::getUnqual(ctx.llvmContext)},  // takes ptr (coroutine handle)
+                false
+            );
+            Function* coroResumeIntrinsic = Intrinsic::getOrInsertDeclaration(
+                ctx.module.get(),
+                Intrinsic::coro_resume
+            );
+            
+            // Create bridge function: void aria_coro_resume_bridge(void* coro_handle)
+            FunctionType* bridgeType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {PointerType::getUnqual(ctx.llvmContext)},
+                false
+            );
+            Function* bridgeFn = Function::Create(
+                bridgeType,
+                Function::ExternalLinkage,
+                "aria_coro_resume_bridge",
+                ctx.module.get()
+            );
+            
+            // Generate bridge body: just call llvm.coro.resume(handle)
+            BasicBlock* bridgeEntry = BasicBlock::Create(ctx.llvmContext, "entry", bridgeFn);
+            IRBuilder<> bridgeBuilder(bridgeEntry);
+            Value* handleArg = bridgeFn->getArg(0);
+            bridgeBuilder.CreateCall(coroResumeIntrinsic, {handleArg});
+            bridgeBuilder.CreateRetVoid();
+        }
+
+        // JavaScript-style module execution:
+        // Module-level code runs in a global initializer function
+        // This allows lambdas, variable initializers, and statements at module scope
+        FunctionType* moduleInitType = FunctionType::get(Type::getVoidTy(ctx.llvmContext), false);
+        Function* moduleInit = Function::Create(
+            moduleInitType, 
+            Function::InternalLinkage, 
+            "__aria_module_init", 
+            ctx.module.get()
+        );
+        BasicBlock* moduleEntry = BasicBlock::Create(ctx.llvmContext, "entry", moduleInit);
+        
+        // Set insertion point for module-level code
+        ctx.builder->SetInsertPoint(moduleEntry);
+        ctx.currentFunction = moduleInit;
+
+        // Generate IR for module-level code (functions, variables, statements)
+        root->accept(visitor);
+    
+    ctx.builder->CreateRetVoid();
+    
+    // Verify module init function
+    verifyFunction(*moduleInit);
+
+    // Now create the actual main() that calls module init and user's main (if exists)
+    // First check if user defined a main function
+    Function* userMainFunc = ctx.module->getFunction("main");
+    
+    if (userMainFunc) {
+        // User defined main() - rename it to __user_main and create wrapper
+        userMainFunc->setName("__user_main");
+    }
+    
+    // Create the C main() entry point
+    FunctionType* mainType = FunctionType::get(Type::getInt64Ty(ctx.llvmContext), false);
+    Function* mainFunc = Function::Create(mainType, Function::ExternalLinkage, "main", ctx.module.get());
+    BasicBlock* mainEntry = BasicBlock::Create(ctx.llvmContext, "entry", mainFunc);
+    
+    ctx.builder->SetInsertPoint(mainEntry);
+    
+    // =========================================================================
+    // Initialize async scheduler (if program uses async/await)
+    // =========================================================================
+    // Declare aria_scheduler_init function (from runtime)
+    FunctionType* schedulerInitType = FunctionType::get(
+        Type::getVoidTy(ctx.llvmContext),
+        {Type::getInt32Ty(ctx.llvmContext)},  // num_threads parameter
+        false
+    );
+    Function* schedulerInit = Function::Create(
+        schedulerInitType,
+        Function::ExternalLinkage,
+        "aria_scheduler_init",
+        ctx.module.get()
+    );
+    
+    // Initialize with hardware_concurrency threads (0 = auto-detect)
+    // In a full implementation, this would be configurable
+    ctx.builder->CreateCall(schedulerInit, {
+        ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0)  // 0 = use hardware_concurrency
+    });
+    
+    // =========================================================================
+    // Initialize balanced ternary operations (lookup tables)
+    // =========================================================================
+    FunctionType* ternaryInitType = FunctionType::get(
+        Type::getVoidTy(ctx.llvmContext),
+        false
+    );
+    Function* ternaryInit = Function::Create(
+        ternaryInitType,
+        Function::ExternalLinkage,
+        "_ZN4aria7backend10TernaryOps10initializeEv",  // Mangled name
+        ctx.module.get()
+    );
+    ctx.builder->CreateCall(ternaryInit);
+    
+    // Call module initializer
+    ctx.builder->CreateCall(moduleInit);
+    
+    if (userMainFunc) {
+        // Call user's main and return its result
+        Value* result = ctx.builder->CreateCall(userMainFunc);
+        // Convert to int64 for C main convention
+        if (result->getType()->isIntegerTy()) {
+            Value* extended = ctx.builder->CreateSExt(result, Type::getInt64Ty(ctx.llvmContext));
+            ctx.builder->CreateRet(extended);
+        } else {
+            ctx.builder->CreateRet(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));
+        }
+    } else {
+        // No user main - just return 0
+        ctx.builder->CreateRet(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));
+    }
+    
+    // Verify main function
+    verifyFunction(*mainFunc);
+    
+    // =========================================================================
+    // RUN OPTIMIZATION PASSES
+    // =========================================================================
+    
+    // Create pass managers
+    LoopAnalysisManager LAM;
+    FunctionAnalysisManager FAM;
+    CGSCCAnalysisManager CGAM;
+    ModuleAnalysisManager MAM;
+    
+    // Create pass builder and register analyses
+    PassBuilder PB;
+    PB.registerModuleAnalyses(MAM);
+    PB.registerCGSCCAnalyses(CGAM);
+    PB.registerFunctionAnalyses(FAM);
+    PB.registerLoopAnalyses(LAM);
+    PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+    
+    // Build custom optimization pipeline
+    ModulePassManager MPM;
+    
+    // Add our custom TBB optimizer pass (runs on each function)
+    FunctionPassManager FPM;
+    FPM.addPass(TBBOptimizerPass());
+    
+    // Add the function pass manager to the module pass manager
+    MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+    
+    // Run the optimization pipeline
+    MPM.run(*ctx.module, MAM);
+    
+    // =========================================================================
+    // Link imported modules
+    // =========================================================================
+    
+    if (!linkModules(*ctx.module)) {
+        errs() << "Module linking failed.\n";
+        return false;
+    }
+    
+    // =========================================================================
+    
+    bool verificationPassed = true;
+    
+    // Verify entire module for correctness (if enabled)
+    if (enableVerify) {
+        std::string verifyErrors;
+        raw_string_ostream errorStream(verifyErrors);
+        if (verifyModule(*ctx.module, &errorStream)) {
+            verificationPassed = false;
+            errs() << "\n========================================\n";
+            errs() << "LLVM IR VERIFICATION FAILED\n";
+            errs() << "========================================\n";
+            errs() << errorStream.str() << "\n";
+            errs() << "========================================\n";
+            errs() << "Generated IR contains errors.\n";
+            errs() << "Use --no-verify to output anyway (not recommended).\n";
+            errs() << "========================================\n\n";
+        }
+    }
+    
+    // Emit to File (LLVM IR) even if verification failed (for debugging)
+    std::error_code EC;
+    raw_fd_ostream dest(filename, EC, sys::fs::OF_None);
+    if (EC) {
+        errs() << "Could not open file: " << EC.message();
+        return false;
+    }
+    ctx.module->print(dest, nullptr);
+    dest.flush();
+    
+    return verificationPassed;
+    
+    } catch (const std::runtime_error& e) {
+        // Catch codegen errors and provide friendly error message
+        std::cerr << "\n";
+        std::cerr << "╔═══════════════════════════════════════════════════════════╗\n";
+        std::cerr << "║  ARIA COMPILATION ERROR                                   ║\n";
+        std::cerr << "╚═══════════════════════════════════════════════════════════╝\n";
+        std::cerr << "\n";
+        std::cerr << "Error: " << e.what() << "\n";
+        std::cerr << "\n";
+        std::cerr << "Compilation failed. Please fix the error and try again.\n";
+        std::cerr << "\n";
+        return false;
+    } catch (const std::exception& e) {
+        // Catch any other exceptions
+        std::cerr << "\n";
+        std::cerr << "╔═══════════════════════════════════════════════════════════╗\n";
+        std::cerr << "║  ARIA INTERNAL ERROR                                      ║\n";
+        std::cerr << "╚═══════════════════════════════════════════════════════════╝\n";
+        std::cerr << "\n";
+        std::cerr << "Internal compiler error: " << e.what() << "\n";
+        std::cerr << "\n";
+        std::cerr << "This is likely a compiler bug. Please report it at:\n";
+        std::cerr << "https://github.com/alternative-intelligence-cp/aria/issues\n";
+        std::cerr << "\n";
+        return false;
+    }
+}
+
+// =============================================================================
+// Trait-Aware Code Generation Entry Point
+// =============================================================================
+
+bool generate_code(aria::frontend::Block* root, const std::string& filename, const TraitContext& traitCtx, bool enableVerify) {
+    try {
+        // If no traits/impls, use fast path
+        if (traitCtx.traits.empty() && traitCtx.impls.empty()) {
+            return generate_code(root, filename, enableVerify);
+        }
+
+        // Create monomorphization context
+        MonomorphizationContext monoCtx;
+        Monomorphizer monomorphizer(monoCtx);
+        
+        // Register all traits and impls
+        for (auto* trait : traitCtx.traits) {
+            monomorphizer.registerTrait(trait);
+        }
+        for (auto* impl : traitCtx.impls) {
+            monomorphizer.registerImpl(impl);
+        }
+        
+        // Run monomorphization pass to generate specialized functions
+        // This creates specialized versions of trait methods for each type
+        auto specializedFuncs = monomorphizer.monomorphizeAll();
+        
+        // Now generate code normally
+        // The specialized functions will be added to the module during code generation
+        // Note: Full integration would require modifying the AST or adding specialized
+        // functions to the symbol table before code generation. For now, we use the
+        // standard code generation path and note that specialized functions need to be
+        // generated during the codegen visitor pass when trait method calls are encountered.
+        
+        return generate_code(root, filename, enableVerify);
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Trait monomorphization error: " << e.what() << "\n";
+        return false;
+    }
+}
+
+} // namespace backend
+} // namespace aria

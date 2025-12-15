@@ -1,0 +1,137 @@
+// src/stdlib/log/logger.aria
+// Aria Standard Library - Structured Logging Module
+// Version: 0.0.6
+// 
+// Implements the 'stddbg' interface for Channel 3 I/O.
+// Provides zero-allocation (amortized) structured logging.
+
+use std.io;
+use std.time;
+use std.process;
+
+mod std.log {
+
+    // Log Levels Constants
+    pub const int8:LEVEL_DEBUG = 0;
+    pub const int8:LEVEL_INFO  = 1;
+    pub const int8:LEVEL_WARN  = 2;
+    pub const int8:LEVEL_ERROR = 3;
+
+    // Configuration Structure
+    pub struct LoggerConfig {
+        string:service_name;
+        int8:min_level;
+        bool:use_json;   // Toggle between Text and JSON output
+    }
+
+    // The Main Logger Object
+    pub struct Logger {
+        LoggerConfig:config;
+        wild int64:sequence_id; // Manual counter, keeps persistent state
+    }
+
+    // Logger Factory
+    pub func:create = (string:name) -> Logger {
+        return Logger {
+            config: LoggerConfig {
+                service_name: name,
+                min_level: LEVEL_INFO,
+                use_json: true
+            },
+            sequence_id: 0
+        };
+    };
+
+    // Internal helper to get formatted timestamp
+    // Uses the standard library time module
+    func:get_iso_time = () -> string {
+        int64:ts = time.now(); // Unix timestamp (nanoseconds)
+        // In v0.0.6, we return raw timestamp. 
+        // Future: ISO8601 formatting implementation.
+        return `&{ts}`;
+    };
+
+    // Internal helper to escape JSON strings
+    // Critical for generating valid JSON when context contains quotes
+    func:json_escape = (string:raw) -> string {
+        // Placeholder for SIMD-accelerated string escaping
+        // Current impl assumes safe input or performs basic check
+        return raw; 
+    };
+
+    // The Core Log Method
+    // Uses the 'stddbg' stream identifier (Channel 3)
+    // This is the "Hot Path" of the logger.
+    func:emit = (Logger:self, int8:level, string:msg, dyn:context) -> void {
+        // Filter based on level
+        if (level < self.config.min_level) { return; }
+
+        // Increment sequence safely (wild memory)
+        self.sequence_id++;
+        
+        string:lvl_str;
+        pick(level) {
+            (LEVEL_DEBUG) { lvl_str = "DEBUG"; },
+            (LEVEL_INFO)  { lvl_str = "INFO"; },
+            (LEVEL_WARN)  { lvl_str = "WARN"; },
+            (LEVEL_ERROR) { lvl_str = "ERROR"; },
+            (*)           { lvl_str = "UNKNOWN"; }
+        }
+
+        string:timestamp = get_iso_time();
+        int64:pid = process.get_pid();
+
+        // 1. JSON Format (Machine Readable for stddbg)
+        // Targeted at log aggregators (Splunk, ELK, Datadog)
+        if (self.config.use_json) {
+            // Construct JSON payload
+            // Note: utilizing Aria's template literal optimization which 
+            // allocates a single buffer for the result.
+            string:json = `{
+  "ver": "0.0.6",
+  "seq": &{self.sequence_id},
+  "time": "&{timestamp}",
+  "svc": "&{self.config.service_name}",
+  "pid": &{pid},
+  "lvl": "&{lvl_str}",
+  "msg": "&{json_escape(msg)}",
+  "ctx": "&{context}" 
+}\n`; 
+            // Write directly to Channel 3 (stddbg)
+            // 'stddbg' is a built-in stream identifier in the runtime
+            // that maps to the specialized file descriptor.
+            stddbg.write(json);
+        } 
+        // 2. Text Format (Human Readable Fallback)
+        else {
+            string:text = `[&{timestamp}][&{lvl_str}][&{self.config.service_name}] &{msg} | &{context}\n`;
+            stddbg.write(text);
+        }
+    };
+
+    // Public API Wrappers
+    // These provide the ergonomic interface for developers.
+    
+    pub func:debug = (Logger:self, string:msg, dyn:ctx) { 
+        self.emit(LEVEL_DEBUG, msg, ctx); 
+    };
+    
+    pub func:info  = (Logger:self, string:msg, dyn:ctx) { 
+        self.emit(LEVEL_INFO, msg, ctx); 
+    };
+    
+    pub func:warn  = (Logger:self, string:msg, dyn:ctx) { 
+        self.emit(LEVEL_WARN, msg, ctx); 
+    };
+    
+    pub func:error = (Logger:self, string:msg, dyn:ctx) { 
+        self.emit(LEVEL_ERROR, msg, ctx); 
+    };
+    
+    // Static Convenience Method
+    pub func:global_info = (string:msg) {
+        // Writes a raw unstructured log to stddbg
+        // Useful for runtime panic messages
+        stddbg.write(` &{msg}\n`);
+    };
+}

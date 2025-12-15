@@ -1,0 +1,273 @@
+/**
+ * src/backend/monomorphization.cpp
+ *
+ * Monomorphization Engine Implementation
+ */
+
+#include "monomorphization.h"
+#include "../frontend/ast/expr.h"
+#include "../frontend/ast/control_flow.h"
+#include "../frontend/ast/loops.h"
+#include "../frontend/ast/defer.h"
+#include <sstream>
+#include <stdexcept>
+
+namespace aria {
+namespace backend {
+
+// Generate specialized function name with type mangling
+std::string Monomorphizer::generateSpecializedName(
+    const std::string& trait_name,
+    const std::string& type_name,
+    const std::string& method_name
+) {
+    std::stringstream ss;
+    ss << trait_name << "_" << type_name << "_" << method_name;
+    return ss.str();
+}
+
+// Clone expression (deep copy for AST specialization)
+std::unique_ptr<frontend::Expression> Monomorphizer::cloneExpr(frontend::Expression* expr) {
+    if (!expr) return nullptr;
+    
+    // Use dynamic_cast to determine expression type and clone appropriately
+    
+    // Literals
+    if (auto* intLit = dynamic_cast<frontend::IntLiteral*>(expr)) {
+        auto cloned = std::make_unique<frontend::IntLiteral>();
+        cloned->value = intLit->value;
+        return cloned;
+    }
+    
+    if (auto* floatLit = dynamic_cast<frontend::FloatLiteral*>(expr)) {
+        auto cloned = std::make_unique<frontend::FloatLiteral>();
+        cloned->value = floatLit->value;
+        return cloned;
+    }
+    
+    if (auto* boolLit = dynamic_cast<frontend::BoolLiteral*>(expr)) {
+        auto cloned = std::make_unique<frontend::BoolLiteral>();
+        cloned->value = boolLit->value;
+        return cloned;
+    }
+    
+    if (auto* strLit = dynamic_cast<frontend::StringLiteral*>(expr)) {
+        auto cloned = std::make_unique<frontend::StringLiteral>();
+        cloned->value = strLit->value;
+        return cloned;
+    }
+    
+    if (auto* nullLit = dynamic_cast<frontend::NullLiteral*>(expr)) {
+        return std::make_unique<frontend::NullLiteral>();
+    }
+    
+    // Variables
+    if (auto* varExpr = dynamic_cast<frontend::VarExpr*>(expr)) {
+        auto cloned = std::make_unique<frontend::VarExpr>();
+        cloned->name = varExpr->name;
+        return cloned;
+    }
+    
+    // Binary operations
+    if (auto* binOp = dynamic_cast<frontend::BinaryOp*>(expr)) {
+        auto cloned = std::make_unique<frontend::BinaryOp>();
+        cloned->op = binOp->op;
+        cloned->left = cloneExpr(binOp->left.get());
+        cloned->right = cloneExpr(binOp->right.get());
+        return cloned;
+    }
+    
+    // Unary operations
+    if (auto* unOp = dynamic_cast<frontend::UnaryOp*>(expr)) {
+        auto cloned = std::make_unique<frontend::UnaryOp>();
+        cloned->op = unOp->op;
+        cloned->operand = cloneExpr(unOp->operand.get());
+        return cloned;
+    }
+    
+    // Function calls
+    if (auto* callExpr = dynamic_cast<frontend::CallExpr*>(expr)) {
+        auto cloned = std::make_unique<frontend::CallExpr>();
+        cloned->callee = cloneExpr(callExpr->callee.get());
+        for (const auto& arg : callExpr->arguments) {
+            cloned->arguments.push_back(cloneExpr(arg.get()));
+        }
+        return cloned;
+    }
+    
+    // For other expression types, return nullptr
+    // This is safe because monomorphization only needs to clone function bodies
+    // which typically contain basic expressions
+    return nullptr;
+}
+
+// Clone statement (deep copy)
+std::unique_ptr<frontend::Statement> Monomorphizer::cloneStmt(frontend::Statement* stmt) {
+    if (!stmt) return nullptr;
+    
+    // Return statement
+    if (auto* retStmt = dynamic_cast<frontend::ReturnStmt*>(stmt)) {
+        auto cloned = std::make_unique<frontend::ReturnStmt>();
+        cloned->value = cloneExpr(retStmt->value.get());
+        return cloned;
+    }
+    
+    // Variable declaration
+    if (auto* varDecl = dynamic_cast<frontend::VarDecl*>(stmt)) {
+        auto cloned = std::make_unique<frontend::VarDecl>();
+        cloned->name = varDecl->name;
+        cloned->type = varDecl->type;
+        cloned->initializer = cloneExpr(varDecl->initializer.get());
+        cloned->is_const = varDecl->is_const;
+        cloned->is_mut = varDecl->is_mut;
+        return cloned;
+    }
+    
+    // Expression statement
+    if (auto* exprStmt = dynamic_cast<frontend::ExpressionStmt*>(stmt)) {
+        auto cloned = std::make_unique<frontend::ExpressionStmt>();
+        cloned->expression = cloneExpr(exprStmt->expression.get());
+        return cloned;
+    }
+    
+    // If statement
+    if (auto* ifStmt = dynamic_cast<frontend::IfStmt*>(stmt)) {
+        auto cloned = std::make_unique<frontend::IfStmt>();
+        cloned->condition = cloneExpr(ifStmt->condition.get());
+        cloned->thenBlock = cloneBlock(ifStmt->thenBlock.get());
+        cloned->elseBlock = cloneBlock(ifStmt->elseBlock.get());
+        return cloned;
+    }
+    
+    // Block
+    if (auto* block = dynamic_cast<frontend::Block*>(stmt)) {
+        return cloneBlock(block);
+    }
+    
+    // For other statement types, return nullptr
+    return nullptr;
+}
+
+// Clone block (deep copy)
+std::unique_ptr<frontend::Block> Monomorphizer::cloneBlock(frontend::Block* block) {
+    if (!block) return nullptr;
+    
+    auto new_block = std::make_unique<frontend::Block>();
+    
+    for (const auto& stmt : block->statements) {
+        new_block->statements.push_back(cloneStmt(stmt.get()));
+    }
+    
+    return new_block;
+}
+
+// Clone function declaration
+std::unique_ptr<frontend::FuncDecl> Monomorphizer::cloneFuncDecl(frontend::FuncDecl* original) {
+    if (!original) return nullptr;
+    
+    auto cloned = std::make_unique<frontend::FuncDecl>();
+    
+    // Copy basic properties
+    cloned->name = original->name;
+    cloned->return_type = original->return_type;
+    cloned->params = original->params;  // Simple copy (params are POD-like)
+    cloned->is_pub = original->is_pub;
+    cloned->is_async = original->is_async;
+    cloned->auto_wrap = original->auto_wrap;
+    
+    // Clone body
+    cloned->body = cloneBlock(original->body.get());
+    
+    return cloned;
+}
+
+// Get or create specialized function
+std::string Monomorphizer::getOrCreateSpecialization(
+    const std::string& trait_name,
+    const std::string& type_name,
+    const std::string& method_name
+) {
+    // Check if specialization already exists
+    auto key = std::make_tuple(trait_name, type_name, method_name);
+    auto it = context.specialization_map.find(key);
+    
+    if (it != context.specialization_map.end()) {
+        return it->second;  // Return existing specialization name
+    }
+    
+    // Find the impl for this trait and type
+    auto range = context.impl_table.equal_range(trait_name);
+    frontend::ImplDecl* target_impl = nullptr;
+    
+    for (auto impl_it = range.first; impl_it != range.second; ++impl_it) {
+        if (impl_it->second->type_name == type_name) {
+            target_impl = impl_it->second;
+            break;
+        }
+    }
+    
+    if (!target_impl) {
+        std::stringstream ss;
+        ss << "No implementation of trait '" << trait_name 
+           << "' found for type '" << type_name << "'";
+        throw std::runtime_error(ss.str());
+    }
+    
+    // Find the method in the impl
+    frontend::FuncDecl* method = nullptr;
+    for (const auto& m : target_impl->methods) {
+        if (m->name == method_name) {
+            method = m.get();
+            break;
+        }
+    }
+    
+    if (!method) {
+        std::stringstream ss;
+        ss << "Method '" << method_name << "' not found in impl of trait '" 
+           << trait_name << "' for type '" << type_name << "'";
+        throw std::runtime_error(ss.str());
+    }
+    
+    // Generate specialized name
+    std::string specialized_name = generateSpecializedName(trait_name, type_name, method_name);
+    
+    // Clone the method
+    auto specialized_func = cloneFuncDecl(method);
+    specialized_func->name = specialized_name;
+    
+    // Register specialization
+    context.specialization_map[key] = specialized_name;
+    context.specialized_functions.push_back(std::move(specialized_func));
+    
+    return specialized_name;
+}
+
+// Monomorphize all implementations
+std::vector<frontend::FuncDecl*> Monomorphizer::monomorphizeAll() {
+    std::vector<frontend::FuncDecl*> result;
+    
+    // For each implementation, create specializations for all methods
+    for (const auto& [trait_name, impl] : context.impl_table) {
+        for (const auto& method : impl->methods) {
+            std::string specialized_name = getOrCreateSpecialization(
+                trait_name,
+                impl->type_name,
+                method->name
+            );
+            
+            // Find the specialized function we just created
+            for (const auto& func : context.specialized_functions) {
+                if (func->name == specialized_name) {
+                    result.push_back(func.get());
+                    break;
+                }
+            }
+        }
+    }
+    
+    return result;
+}
+
+} // namespace backend
+} // namespace aria
