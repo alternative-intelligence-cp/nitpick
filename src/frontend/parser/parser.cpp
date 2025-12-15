@@ -586,6 +586,14 @@ ASTNodePtr Parser::parseStatement() {
         return parseIfStatement();
     }
     
+    if (match(TokenType::TOKEN_KW_WHILE)) {
+        return parseWhileStatement();
+    }
+    
+    if (match(TokenType::TOKEN_KW_FOR)) {
+        return parseForStatement();
+    }
+    
     // Check for block
     if (match(TokenType::TOKEN_LEFT_BRACE)) {
         return parseBlock();
@@ -768,6 +776,94 @@ ASTNodePtr Parser::parseIfStatement() {
     }
     
     return std::make_shared<IfStmt>(condition, thenBranch, elseBranch, ifToken.line, ifToken.column);
+}
+
+// Parse while statement: while (condition) body
+ASTNodePtr Parser::parseWhileStatement() {
+    using namespace frontend;
+    
+    Token whileToken = previous(); // We already consumed 'while'
+    
+    // Parse condition
+    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'while'");
+    ASTNodePtr condition = parseExpression();
+    
+    if (!condition) {
+        error("Expected condition expression in while statement");
+        return nullptr;
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after while condition");
+    
+    // Parse body (can be block or single statement)
+    ASTNodePtr body = nullptr;
+    if (match(TokenType::TOKEN_LEFT_BRACE)) {
+        body = parseBlock();
+    } else {
+        body = parseStatement();
+    }
+    
+    if (!body) {
+        error("Expected statement or block after while condition");
+        return nullptr;
+    }
+    
+    return std::make_shared<WhileStmt>(condition, body, whileToken.line, whileToken.column);
+}
+
+// Parse for statement: for (init; condition; update) body
+// init can be variable declaration or expression
+// All three clauses are optional: for (;;) is valid (infinite loop)
+ASTNodePtr Parser::parseForStatement() {
+    using namespace frontend;
+    
+    Token forToken = previous(); // We already consumed 'for'
+    
+    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'for'");
+    
+    // Parse initializer (optional)
+    ASTNodePtr initializer = nullptr;
+    if (match(TokenType::TOKEN_SEMICOLON)) {
+        // No initializer
+        initializer = nullptr;
+    } else if (isTypeKeyword(peek().type)) {
+        // Variable declaration
+        initializer = parseVarDecl();
+        // parseVarDecl consumes the semicolon
+    } else {
+        // Expression statement
+        initializer = parseExpression();
+        consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after for loop initializer");
+    }
+    
+    // Parse condition (optional)
+    ASTNodePtr condition = nullptr;
+    if (!check(TokenType::TOKEN_SEMICOLON)) {
+        condition = parseExpression();
+    }
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after for loop condition");
+    
+    // Parse update (optional)
+    ASTNodePtr update = nullptr;
+    if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+        update = parseExpression();
+    }
+    consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after for clauses");
+    
+    // Parse body (can be block or single statement)
+    ASTNodePtr body = nullptr;
+    if (match(TokenType::TOKEN_LEFT_BRACE)) {
+        body = parseBlock();
+    } else {
+        body = parseStatement();
+    }
+    
+    if (!body) {
+        error("Expected statement or block after for clauses");
+        return nullptr;
+    }
+    
+    return std::make_shared<ForStmt>(initializer, condition, update, body, forToken.line, forToken.column);
 }
 
 ASTNodePtr Parser::parse() {
