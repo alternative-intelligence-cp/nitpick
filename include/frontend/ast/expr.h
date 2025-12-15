@@ -76,9 +76,10 @@ class UnaryExpr : public ASTNode {
 public:
     Token op;
     ASTNodePtr operand;
+    bool isPostfix;
     
-    UnaryExpr(const Token& o, ASTNodePtr operand, int line = 0, int column = 0)
-        : ASTNode(NodeType::UNARY_OP, line, column), op(o), operand(operand) {}
+    UnaryExpr(const Token& o, ASTNodePtr operand, bool isPost = false, int line = 0, int column = 0)
+        : ASTNode(NodeType::UNARY_OP, line, column), op(o), operand(operand), isPostfix(isPost) {}
     
     std::string toString() const override;
 };

@@ -81,7 +81,7 @@ set(AST_SOURCES
 )
 
 set(PARSER_SOURCES
-    # src/frontend/parser/parser.cpp
+    src/frontend/parser/parser.cpp
     # src/frontend/parser/parse_expr.cpp
     # src/frontend/parser/parse_stmt.cpp
     # src/frontend/parser/parse_type.cpp
