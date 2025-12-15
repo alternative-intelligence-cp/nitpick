@@ -87,6 +87,25 @@ private:
     void error(const std::string& message);
     
     // ========================================================================
+    // Literal Scanning Methods
+    // ========================================================================
+    
+    // Scan identifier or keyword
+    void scanIdentifier();
+    
+    // Scan number literal (integer or float)
+    void scanNumber();
+    
+    // Scan string literal (double quotes)
+    void scanString();
+    
+    // Scan character literal (single quotes)
+    void scanCharacter();
+    
+    // Check if identifier is a keyword and return appropriate token type
+    TokenType identifierType();
+    
+    // ========================================================================
     // Character Classification Helpers
     // ========================================================================
     
