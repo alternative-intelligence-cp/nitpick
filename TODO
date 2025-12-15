@@ -904,31 +904,49 @@
 **Status**: Tokens/Parser done, waiting on research  
 **Dependencies**: research_002, research_003
 
-#### 1.2.1 Trit/Tryte Implementation (After research_002)
-- [ ] Review research findings from Gemini
-- [ ] Create `TernaryArithmetic` class in `src/backend/ternary_arithmetic.cpp`
-  - [ ] Implement ternary addition algorithm
-  - [ ] Implement ternary subtraction algorithm
-  - [ ] Implement ternary multiplication algorithm
-  - [ ] Implement ternary division algorithm
-  - [ ] Implement comparison operations
-- [ ] Create packing/unpacking functions
-  - [ ] `packTryte()`: Pack 10 trits into uint16
-  - [ ] `unpackTryte()`: Extract 10 trits from uint16
-  - [ ] Document bit layout
-- [ ] Implement binary↔ternary conversion
-  - [ ] `binaryToTernary()`: int → balanced ternary
-  - [ ] `ternaryToBinary()`: balanced ternary → int
-  - [ ] Handle negative numbers correctly
-- [ ] Extend `ExprCodeGen` for trit/tryte operations
-  - [ ] Map trit operations to LLVM IR
-  - [ ] Map tryte operations (packed representation)
-  - [ ] Optimize common operations
-- [ ] Add comprehensive tests
-  - [ ] Test arithmetic correctness
-  - [ ] Test packing/unpacking
-  - [ ] Test conversions
-  - [ ] Test edge cases
+#### 1.2.1 Trit/Tryte Implementation ✅ COMPLETE (v0.0.15 - Dec 14, 2025)
+**Research Status**: ✅ research_002 (612 lines) - Balanced Ternary Arithmetic
+**Implementation Status**: ✅ COMPLETE (commit e81c29d)
+
+**Key Implementation Details**:
+- Split-Byte Packing: 10 trits in uint16 (90.1% efficiency)
+  * Low byte (bits 0-7): Trits 0-4
+  * High byte (bits 8-15): Trits 5-9  
+  * Each 5-trit chunk with bias of 121
+- Range: [-29,524, +29,524]
+- ERR Sentinel: 0xFFFF (65,535)
+- O(1) Unpacking: 256-entry lookup table
+- Sticky Error Propagation: ERR + x = ERR, overflow → ERR
+
+**Files Implemented**:
+- [x] `src/backend/ternary_ops.{h,cpp}` - Runtime operations (237 + 329 lines)
+  - [x] TernaryOps class with pack/unpack
+  - [x] 256-entry LUT for O(1) trybble unpacking
+  - [x] Ternary addition with carry propagation
+  - [x] Symmetric negation (trit inversion)
+  - [x] Shift-and-add multiplication
+  - [x] Non-restoring division
+  - [x] Binary↔ternary conversion with carry adjustment
+- [x] `src/backend/ternary_runtime.cpp` - C linkage wrappers (157 lines)
+  - [x] aria_tryte_add, sub, mul, div, mod
+  - [x] aria_tryte_negate
+  - [x] aria_tryte_eq, ne, lt, le, gt, ge
+  - [x] aria_int32_to_tryte, aria_tryte_to_int32
+- [x] `src/backend/codegen_ternary.{h,cpp}` - LLVM IR generation (182 + 276 lines)
+  - [x] TernaryLowerer class
+  - [x] Runtime function declarations
+  - [x] IR generation for all operations
+- [x] `tests/ternary/test_ternary_ops.cpp` - Comprehensive tests (11/11 passing)
+  - [x] Binary ↔ tryte conversion (zero, positive, negative, max, min)
+  - [x] Addition (positive, negative, overflow)
+  - [x] Subtraction (negative results)
+  - [x] Multiplication (sign handling)
+  - [x] Division (divide-by-zero protection)
+  - [x] Negation and double negation
+  - [x] Sticky error propagation
+  - [x] Overflow detection
+  - [x] Pack/unpack trit arrays
+  - [x] Out-of-range validation
 
 #### 1.2.2 Nit/Nyte Implementation ✅ COMPLETE (v0.0.12 - Dec 11, 2025)
 **Research Status**: ✅ Received Dec 11, 2025 (59KB report)
