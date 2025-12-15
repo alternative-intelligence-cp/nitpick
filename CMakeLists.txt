@@ -70,7 +70,7 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 # Phase 1: Lexer
 set(LEXER_SOURCES
     src/frontend/lexer/token.cpp
-    # src/frontend/lexer/lexer.cpp
+    src/frontend/lexer/lexer.cpp
 )
 
 # Phase 2: Parser
