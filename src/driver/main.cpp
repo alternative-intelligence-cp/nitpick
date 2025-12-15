@@ -256,22 +256,10 @@ int main(int argc, char** argv) {
                << implDecls.size() << " implementation(s)\n";
     }
 
-    // 6. Semantic Analysis: Borrow Checker
-    // Enforces the "Appendage Theory" rules (pinning, wild pointers)
-    // See src/frontend/sema/borrow_checker.cpp
-    if (Verbose) outs() << "[Phase 4] Semantic Analysis (Borrow Check)...\n";
-    bool safe = aria::sema::check_borrow_rules(astRoot.get());
-
-    if (!safe) {
-        errs() << "Compilation Failed: Memory Safety Violations Detected.\n";
-        // In Aria, safety violations are fatal errors, not warnings.
-        return 1;
-    }
-
-    // 6.5 Semantic Analysis: Escape Analysis
+    // 6.4 Semantic Analysis: Escape Analysis
     // Prevents stack pointers from escaping function scope (dangling references)
     // See src/frontend/sema/escape_analysis.cpp
-    if (Verbose) outs() << "[Phase 4b] Escape Analysis...\n";
+    if (Verbose) outs() << "[Phase 4a] Escape Analysis...\n";
     aria::sema::EscapeAnalysisResult escapeResult = aria::sema::run_escape_analysis(astRoot.get());
 
     if (escapeResult.has_escapes) {
@@ -281,10 +269,11 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // 6.6 Semantic Analysis: Type Checking
+    // 6.5 Semantic Analysis: Type Checking + Borrow Checking (Phase 2.2)
     // Verifies that all operations use compatible types
-    // See src/frontend/sema/type_checker.cpp
-    if (Verbose) outs() << "[Phase 4c] Type Checking...\n";
+    // Also runs borrow checker after type checking succeeds (integrated in Phase 2.2)
+    // See src/frontend/sema/type_checker.cpp (checkTypes function)
+    if (Verbose) outs() << "[Phase 4b] Type Checking + Borrow Checking...\n";
     aria::sema::TypeCheckResult typeResult = aria::sema::checkTypes(astRoot.get());
     
     if (!typeResult.success) {

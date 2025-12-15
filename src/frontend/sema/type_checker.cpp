@@ -524,12 +524,24 @@ void TypeChecker::visit(frontend::VarDecl* node) {
     // They will be type-checked when monomorphized at call sites
     if (!node->generic_params.empty()) {
         // Generic function template - register in symbol table but don't type check
-        // We'll type-check the instantiated versions later
+        // We'll type-checked the instantiated versions later
         // For now, just mark it as a dynamic/template type
         auto template_type = std::make_shared<Type>(TypeKind::DYN, "template<" + node->name + ">");
         symbols->define(node->name, template_type, false);
         return;
     }
+    
+    // Phase 2.2: Memory region detection for borrow checker integration
+    // Detect memory region keywords and set AST flags
+    // Default is GC-managed (neither wild nor stack)
+    if (node->is_wild || node->is_wildx) {
+        // Wild memory: opt-out of GC, requires manual management
+        node->requires_drop = true;  // Wild memory needs explicit cleanup (defer)
+    } else if (node->is_stack) {
+        // Stack memory: automatic cleanup at scope exit
+        node->requires_drop = false;  // Stack automatically cleaned up
+    }
+    // else: GC-managed (default), no special handling needed
     
     // Parse the declared type
     auto declared_type = parseType(node->type);
