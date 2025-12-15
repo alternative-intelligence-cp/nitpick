@@ -10,6 +10,7 @@ set(CMAKE_MAKEFILE_DEPENDS
   "/home/randy/._____RANDY_____/REPOS/aria/CMakeLists.txt"
   "CMakeFiles/3.28.3/CMakeCXXCompiler.cmake"
   "CMakeFiles/3.28.3/CMakeSystem.cmake"
+  "/home/randy/._____RANDY_____/REPOS/aria/tests/CMakeLists.txt"
   "/usr/lib/llvm-20/cmake/FindFFI.cmake"
   "/usr/lib/llvm-20/cmake/FindLibEdit.cmake"
   "/usr/lib/llvm-20/cmake/Findzstd.cmake"
@@ -117,6 +118,7 @@ set(CMAKE_MAKEFILE_PRODUCTS
   "CMakeFiles/3.28.3/CMakeCXXCompiler.cmake"
   "CMakeFiles/3.28.3/CMakeCXXCompiler.cmake"
   "CMakeFiles/CMakeDirectoryInformation.cmake"
+  "tests/CMakeFiles/CMakeDirectoryInformation.cmake"
   )
 
 # Dependency information for all targets:
@@ -128,4 +130,5 @@ set(CMAKE_DEPEND_INFO_FILES
   "CMakeFiles/ARMTargetParserTableGen.dir/DependInfo.cmake"
   "CMakeFiles/AArch64TargetParserTableGen.dir/DependInfo.cmake"
   "CMakeFiles/RISCVTargetParserTableGen.dir/DependInfo.cmake"
+  "tests/CMakeFiles/test_runner.dir/DependInfo.cmake"
   )

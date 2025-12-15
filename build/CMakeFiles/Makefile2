@@ -63,11 +63,11 @@ CMAKE_BINARY_DIR = /home/randy/._____RANDY_____/REPOS/aria/build
 # Directory level rules for the build root directory
 
 # The main recursive "all" target.
-all:
+all: tests/all
 .PHONY : all
 
 # The main recursive "preinstall" target.
-preinstall:
+preinstall: tests/preinstall
 .PHONY : preinstall
 
 # The main recursive "clean" target.
@@ -78,7 +78,23 @@ clean: CMakeFiles/acc_gen.dir/clean
 clean: CMakeFiles/ARMTargetParserTableGen.dir/clean
 clean: CMakeFiles/AArch64TargetParserTableGen.dir/clean
 clean: CMakeFiles/RISCVTargetParserTableGen.dir/clean
+clean: tests/clean
 .PHONY : clean
+
+#=============================================================================
+# Directory level rules for directory tests
+
+# Recursive "all" directory target.
+tests/all: tests/CMakeFiles/test_runner.dir/all
+.PHONY : tests/all
+
+# Recursive "preinstall" directory target.
+tests/preinstall:
+.PHONY : tests/preinstall
+
+# Recursive "clean" directory target.
+tests/clean: tests/CMakeFiles/test_runner.dir/clean
+.PHONY : tests/clean
 
 #=============================================================================
 # Target rules for target CMakeFiles/intrinsics_gen.dir
@@ -261,6 +277,32 @@ RISCVTargetParserTableGen: CMakeFiles/RISCVTargetParserTableGen.dir/rule
 CMakeFiles/RISCVTargetParserTableGen.dir/clean:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/RISCVTargetParserTableGen.dir/build.make CMakeFiles/RISCVTargetParserTableGen.dir/clean
 .PHONY : CMakeFiles/RISCVTargetParserTableGen.dir/clean
+
+#=============================================================================
+# Target rules for target tests/CMakeFiles/test_runner.dir
+
+# All Build rule for target.
+tests/CMakeFiles/test_runner.dir/all:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_runner.dir/build.make tests/CMakeFiles/test_runner.dir/depend
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_runner.dir/build.make tests/CMakeFiles/test_runner.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles --progress-num=1,2,3,4,5 "Built target test_runner"
+.PHONY : tests/CMakeFiles/test_runner.dir/all
+
+# Build rule for subdir invocation for target.
+tests/CMakeFiles/test_runner.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles 5
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/test_runner.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles 0
+.PHONY : tests/CMakeFiles/test_runner.dir/rule
+
+# Convenience name for target.
+test_runner: tests/CMakeFiles/test_runner.dir/rule
+.PHONY : test_runner
+
+# clean rule for target.
+tests/CMakeFiles/test_runner.dir/clean:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_runner.dir/build.make tests/CMakeFiles/test_runner.dir/clean
+.PHONY : tests/CMakeFiles/test_runner.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

@@ -217,6 +217,19 @@ RISCVTargetParserTableGen/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/RISCVTargetParserTableGen.dir/build.make CMakeFiles/RISCVTargetParserTableGen.dir/build
 .PHONY : RISCVTargetParserTableGen/fast
 
+#=============================================================================
+# Target rules for targets named test_runner
+
+# Build rule for target.
+test_runner: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_runner
+.PHONY : test_runner
+
+# fast build rule for target.
+test_runner/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_runner.dir/build.make tests/CMakeFiles/test_runner.dir/build
+.PHONY : test_runner/fast
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -233,6 +246,7 @@ help:
 	@echo "... intrinsics_gen"
 	@echo "... omp_gen"
 	@echo "... vt_gen"
+	@echo "... test_runner"
 .PHONY : help
 
 
