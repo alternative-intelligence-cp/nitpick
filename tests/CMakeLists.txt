@@ -6,7 +6,13 @@
 add_executable(test_runner
     test_runner.cpp
     unit/test_sample.cpp
+    unit/test_token.cpp
     # Add more test files here as they are created
+)
+
+# Link with lexer sources
+target_sources(test_runner PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/frontend/lexer/token.cpp
 )
 
 # Include test helpers header
