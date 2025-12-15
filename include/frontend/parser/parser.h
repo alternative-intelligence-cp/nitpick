@@ -67,6 +67,9 @@ private:
     ASTNodePtr parseForStatement();
     ASTNodePtr parseBreakStatement();
     ASTNodePtr parseContinueStatement();
+    ASTNodePtr parseTillStatement();
+    ASTNodePtr parseLoopStatement();
+    ASTNodePtr parseWhenStatement();
     bool isTypeKeyword(frontend::TokenType type) const;
     
 public:

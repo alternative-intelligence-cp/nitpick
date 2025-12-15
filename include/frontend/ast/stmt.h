@@ -213,6 +213,65 @@ public:
 };
 
 /**
+ * Till loop statement node
+ * Represents: till(limit, step) { body }
+ * Automatically tracks iteration via $ variable
+ * Directionality: positive step counts up from 0, negative counts down from limit
+ */
+class TillStmt : public ASTNode {
+public:
+    ASTNodePtr limit;  // Iteration limit
+    ASTNodePtr step;   // Step value (direction determined by sign)
+    ASTNodePtr body;   // Loop body
+    
+    TillStmt(ASTNodePtr lim, ASTNodePtr st, ASTNodePtr b, int line = 0, int column = 0)
+        : ASTNode(NodeType::TILL, line, column), limit(lim), step(st), body(b) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Loop statement node
+ * Represents: loop(start, limit, step) { body }
+ * Automatically tracks iteration via $ variable
+ * Direction determined by start vs limit comparison
+ */
+class LoopStmt : public ASTNode {
+public:
+    ASTNodePtr start;  // Starting value
+    ASTNodePtr limit;  // Limit value
+    ASTNodePtr step;   // Step value (always positive magnitude)
+    ASTNodePtr body;   // Loop body
+    
+    LoopStmt(ASTNodePtr st, ASTNodePtr lim, ASTNodePtr step_val, ASTNodePtr b, 
+             int line = 0, int column = 0)
+        : ASTNode(NodeType::LOOP, line, column), 
+          start(st), limit(lim), step(step_val), body(b) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * When loop statement node
+ * Represents: when(condition) { body } then { then_block } end { end_block }
+ * Tri-state: then executes on normal completion, end on break or initial false
+ */
+class WhenStmt : public ASTNode {
+public:
+    ASTNodePtr condition;     // Loop condition
+    ASTNodePtr body;          // Loop body
+    ASTNodePtr then_block;    // Executed on normal completion (optional)
+    ASTNodePtr end_block;     // Executed on break or no execution (optional)
+    
+    WhenStmt(ASTNodePtr cond, ASTNodePtr b, ASTNodePtr then_blk, ASTNodePtr end_blk,
+             int line = 0, int column = 0)
+        : ASTNode(NodeType::WHEN, line, column),
+          condition(cond), body(b), then_block(then_blk), end_block(end_blk) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Program node (root of AST)
  * Represents: entire program
  */

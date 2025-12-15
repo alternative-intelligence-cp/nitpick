@@ -116,6 +116,27 @@ std::string ContinueStmt::toString() const {
     return "Continue";
 }
 
+std::string TillStmt::toString() const {
+    return "Till(" + limit->toString() + ", " + step->toString() + ", " + body->toString() + ")";
+}
+
+std::string LoopStmt::toString() const {
+    return "Loop(" + start->toString() + ", " + limit->toString() + ", " + 
+           step->toString() + ", " + body->toString() + ")";
+}
+
+std::string WhenStmt::toString() const {
+    std::string result = "When(" + condition->toString() + ", " + body->toString();
+    if (then_block) {
+        result += ", then: " + then_block->toString();
+    }
+    if (end_block) {
+        result += ", end: " + end_block->toString();
+    }
+    result += ")";
+    return result;
+}
+
 std::string ProgramNode::toString() const {
     std::ostringstream oss;
     oss << "Program([";
