@@ -32,6 +32,7 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"fall", TokenType::TOKEN_KW_FALL},
     {"break", TokenType::TOKEN_KW_BREAK},
     {"continue", TokenType::TOKEN_KW_CONTINUE},
+    {"return", TokenType::TOKEN_KW_RETURN},
     {"pass", TokenType::TOKEN_KW_PASS},
     {"fail", TokenType::TOKEN_KW_FAIL},
     
@@ -130,9 +131,8 @@ std::vector<Token> Lexer::tokenize() {
         scanToken();
     }
     
-    // Note: Not adding EOF token for now to keep tests simple
-    // Parser can check for end of tokens vector
-    // tokens.push_back(Token(TokenType::TOKEN_EOF, "", line, column));
+    // Add EOF token so parser can reliably detect end of input
+    tokens.push_back(Token(TokenType::TOKEN_EOF, "", line, column));
     
     return tokens;
 }
