@@ -405,4 +405,34 @@ std::string LifetimeContext::get_borrow_error_message(const std::string& var_nam
     return oss.str();
 }
 
+// ============================================================================
+// Wild Memory Leak Detection (Rule 2)
+// ============================================================================
+
+void LifetimeContext::track_wild_allocation(const std::string& var_name) {
+    pending_wild_frees_.insert(var_name);
+}
+
+void LifetimeContext::track_wild_free(const std::string& var_name) {
+    // Remove from pending (no longer needs free)
+    pending_wild_frees_.erase(var_name);
+    
+    // Add to freed set (for use-after-free detection)
+    freed_wild_vars_.insert(var_name);
+}
+
+bool LifetimeContext::is_freed(const std::string& var_name) const {
+    return freed_wild_vars_.find(var_name) != freed_wild_vars_.end();
+}
+
+std::vector<std::string> LifetimeContext::get_pending_wild_frees() const {
+    return std::vector<std::string>(pending_wild_frees_.begin(), pending_wild_frees_.end());
+}
+
+void LifetimeContext::clear_pending_wild_frees_for_scope() {
+    // This would need more sophisticated tracking per scope
+    // For now, just clear all (assumes defer was used properly)
+    pending_wild_frees_.clear();
+}
+
 } // namespace aria
