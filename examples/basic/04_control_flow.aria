@@ -1,0 +1,100 @@
+// ============================================================================
+// Example 04: Control Flow
+// ============================================================================
+// Demonstrates:
+// - if/else statements
+// - while loops
+// - till loops with $ iteration variable
+// - loop(start, limit, step) with $ variable
+// - pick (switch) with fall() for fallthrough
+// - when/then/end loops
+// - break and continue
+// - Comparison operators
+// ============================================================================
+
+func:main = int8(){
+    // If-else statement
+    int32:x = 10;
+    if(x > 5){
+        print("x is greater than 5");
+    }else{
+        print("x is less than or equal to 5");
+    }
+    
+    // If-else if-else chain
+    int32:score = 85;
+    if(score >= 90){
+        print("Grade: A");
+    }else if(score >= 80){
+        print("Grade: B");
+    }else if(score >= 70){
+        print("Grade: C");
+    }else{
+        print("Grade: F");
+    }
+    
+    // While loop
+    int32:counter = 0;
+    while(counter < 5){
+        print(`Counter: &{counter}`);
+        counter = counter + 1;
+    }
+    
+    // till loop - counts from 0 to limit by step
+    // Positive step: counts UP from 0
+    till(10,1){
+        if($ % 2 == 0){
+            print(`Even: &{$}`);
+        }
+    }
+    
+    // loop(start, limit, step) - $ holds current iteration value
+    // Direction determined by start vs limit, step is always magnitude
+    loop(0,10,1){
+        print(`Iteration: &{$}`);
+    }
+    
+    // Break and continue
+    int32:n = 0;
+    while(n < 20){
+        n = n + 1;
+        
+        if(n % 2 == 1){
+            continue;  // Skip odd numbers
+        }
+        
+        if(n > 10){
+            break;     // Stop at 10
+        }
+        
+        print(`&{n}`);
+    }
+    
+    // Nested loops
+    loop(0,3,1){
+        int32:i = $;
+        loop(0,3,1){
+            int32:j = $;
+            print(`i=&{i} j=&{j}`);
+        }
+    }
+    
+    // pick statement (switch/match)
+    int32:value = 9;
+    pick(value){
+        (<9){
+            print("Less than 9");
+        },
+        (>9){
+            print("Greater than 9");
+        },
+        (9){
+            print("Exactly 9");
+        },
+        (*){
+            print("Default case");
+        }
+    }
+    
+    pass(0);
+};

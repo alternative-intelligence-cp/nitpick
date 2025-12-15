@@ -1,0 +1,59 @@
+// ============================================================================
+// Example 05: Memory Management
+// ============================================================================
+// Demonstrates:
+// - Default GC-managed memory
+// - wild keyword to opt-out of GC
+// - @ address/pointer operator
+// - # memory pinning operator
+// - $ safe reference operator
+// - aria.alloc() and aria.free() for wild memory
+// - defer for RAII-style cleanup
+// - Memory safety with borrow checker
+// ============================================================================
+
+func:main = int8(){
+    // Default GC-managed memory
+    string:managed = "automatically managed";
+    print(managed);
+    
+    // Wild (unmanaged) memory with Aria allocator
+    wild int64*:raw_ptr = aria.alloc<int64>(1000);
+    defer aria.free(raw_ptr); // Cleanup when scope ends
+    
+    // Wild allocation patterns
+    wild buffer:raw_buffer = aria.alloc_buffer(4096);
+    defer aria.free(raw_buffer);
+    
+    wild string:unmanaged_str = aria.alloc_string(256);
+    defer aria.free(unmanaged_str);
+    
+    // Address/pointer operator @
+    int64:value = 12345;
+    wild int64@:ptr = @value;  // Get address of value
+    int64:deref = *ptr;        // Dereference pointer
+    print(`Value via pointer: &{deref}`);
+    
+    // Memory pinning with # for safe reference with $
+    wild string:critical_data = "must not move";
+    string$:safe_ref = #critical_data;  // Pin and create safe reference
+    // After pinning, critical_data cannot be moved by GC
+    print(safe_ref);
+    
+    // Explicit GC allocation (default behavior, but explicit)
+    gc int64*:managed_ptr = aria.gc_alloc<int64>(100);
+    gc array:managed_array = aria.gc_alloc_array<int>(10);
+    
+    // Stack allocation for performance-critical code
+    stack int64[1000]:stack_buffer;  // Fixed-size stack allocation
+    stack string[256]:temp_string;    // Stack string buffer
+    
+    // Demonstration of wild memory lifecycle
+    wild int32:wild_value = 42;
+    print(`Wild value: &{wild_value}`);
+    wild int32@:wild_ptr = @wild_value;
+    print(`Address: &{wild_ptr}`);
+    
+    print("Memory management demo complete");
+    pass(0);
+};

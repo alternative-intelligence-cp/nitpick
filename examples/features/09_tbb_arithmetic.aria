@@ -1,0 +1,75 @@
+// ============================================================================
+// Example 09: Twisted Balanced Binary (TBB) Arithmetic
+// ============================================================================
+// Demonstrates:
+// - TBB types (tbb8, tbb16, tbb32, tbb64) - symmetric integer ranges
+// - ERR sentinel for error propagation (minimum value is reserved)
+// - Sticky error propagation
+// - TBB safety advantages (no abs(-128) bugs)
+// - TBB arithmetic operations
+// ============================================================================
+
+func:main = int8(){
+    print("=== Twisted Balanced Binary (TBB) Demo ===\n");
+    
+    // TBB types have symmetric ranges with ERR sentinel
+    print("--- TBB Types ---");
+    tbb8:safe_byte = 100;         // Valid range: [-127, +127]
+    tbb8:max_pos = 127;            // Maximum positive value
+    tbb8:max_neg = -127;           // Maximum negative value (symmetric!)
+    tbb8:error = ERR;              // Error sentinel (-128/0x80 reserved)
+    
+    print(`tbb8 value: &{safe_byte}`);
+    print(`tbb8 max positive: &{max_pos}`);
+    print(`tbb8 max negative: &{max_neg}`);
+    print("tbb8 error: ERR");
+    
+    // TBB arithmetic with sticky error propagation
+    print("\n--- TBB Arithmetic ---");
+    tbb8:a = 100;
+    tbb8:b = 50;
+    tbb8:res = a + b;           // 150 exceeds 127 → res = ERR
+    tbb8:chained = res + 10;    // ERR + 10 → ERR (sticky)
+    
+    print(`100 + 50 = overflow → ERR`);
+    print("ERR + 10 = ERR (sticky propagation)");
+    
+    // TBB safety - no asymmetry bugs
+    print("\n--- TBB Safety Advantages ---");
+    tbb8:val = -127;
+    tbb8:negated = -val;           // 127 (works perfectly, symmetric range!)
+    print(`-(-127) = &{negated}  (no overflow!)`);
+    
+    // Compare to standard int8: abs(-128) would fail/wrap
+    // With TBB: abs() always works because range is symmetric
+    print("No abs(-128) bug - range is symmetric!");
+    
+    // TBB types by width
+    print("\n--- TBB Types ---");
+    tbb16:medium = 30000;          // Range: [-32767, +32767], ERR = -32768
+    tbb32:large = 2000000000;      // Range: [-2147483647, +2147483647]
+    tbb64:huge = 9000000000000;    // 64-bit symmetric range
+    
+    print(`tbb16: &{medium}`);
+    print(`tbb32: &{large}`);
+    print(`tbb64: &{huge}`);
+    
+    // TBB use cases
+    print("\n--- TBB Use Cases ---");
+    print("1. Financial arithmetic - overflow detection without exceptions");
+    print("2. Safe pointer arithmetic - invalid offsets become ERR");
+    print("3. Audio/video processing - sample overflow → corruption detection");
+    print("4. State machines - invalid state transitions → ERR");
+    print("5. Branchless pipelines - check error once at end");
+    
+    // Comparison operations
+    print("\n--- TBB Comparison ---");
+    tbb8:x = 50;
+    tbb8:y = 30;
+    if(x > y){
+        print(`&{x} > &{y}`);
+    }
+    
+    print("\n=== TBB Demo Complete ===");
+    pass(0);
+};
