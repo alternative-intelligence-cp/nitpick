@@ -1,0 +1,95 @@
+# ============================================================================
+# Aria Compiler - Test Suite
+# ============================================================================
+
+# Test runner executable
+add_executable(test_runner
+    test_runner.cpp
+    unit/test_sample.cpp
+    # Add more test files here as they are created
+)
+
+# Include test helpers header
+target_include_directories(test_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Link with LLVM libraries (when needed)
+# target_link_libraries(test_runner ${llvm_libs})
+
+# Register with CTest
+add_test(NAME unit_tests COMMAND test_runner)
+
+# Set test properties
+set_tests_properties(unit_tests PROPERTIES
+    TIMEOUT 300  # 5 minutes
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# ============================================================================
+# Integration Tests
+# ============================================================================
+
+# Find all .aria files in integration directory
+file(GLOB INTEGRATION_TESTS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.aria")
+
+# Add integration test runner if we have .aria files
+if(INTEGRATION_TESTS)
+    add_test(
+        NAME integration_tests
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/integration/runner.sh
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/integration
+    )
+    set_tests_properties(integration_tests PROPERTIES
+        TIMEOUT 600  # 10 minutes
+        DEPENDS unit_tests  # Run after unit tests pass
+    )
+endif()
+
+# ============================================================================
+# Code Coverage Target
+# ============================================================================
+
+if(USE_COVERAGE)
+    # Add coverage target
+    add_custom_target(coverage
+        COMMAND lcov --capture --directory ${CMAKE_BINARY_DIR} --output-file coverage.info
+        COMMAND lcov --remove coverage.info '/usr/*' '*/tests/*' --output-file coverage.info
+        COMMAND lcov --list coverage.info
+        COMMAND genhtml coverage.info --output-directory coverage_html
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Generating code coverage report"
+    )
+    
+    # Make coverage depend on running tests
+    add_dependencies(coverage test_runner)
+    
+    message(STATUS "Code coverage enabled. Run 'make coverage' after 'make test' to generate report.")
+endif()
+
+# ============================================================================
+# Memory Leak Detection
+# ============================================================================
+
+if(USE_ASAN)
+    # AddressSanitizer is enabled via compiler flags in main CMakeLists.txt
+    # Tests will automatically use ASAN when built with -DUSE_ASAN=ON
+    message(STATUS "AddressSanitizer enabled for tests. Memory leaks and errors will be reported.")
+    
+    # Set ASAN options for tests
+    set_tests_properties(unit_tests PROPERTIES
+        ENVIRONMENT "ASAN_OPTIONS=detect_leaks=1:halt_on_error=0"
+    )
+endif()
+
+# ============================================================================
+# Benchmark Tests (Phase 0.2 - optional)
+# ============================================================================
+
+# Benchmarks will be added later when we have compiler components to benchmark
+# add_subdirectory(benchmarks)
+
+# ============================================================================
+# Fuzz Tests (Phase 0.2 - optional)
+# ============================================================================
+
+# Fuzz tests will be added later when we have parser to fuzz
+# add_subdirectory(fuzz)

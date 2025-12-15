@@ -134,8 +134,8 @@ set(ARIA_SOURCES
 
 enable_testing()
 
-# Test runner will be added in Phase 0.2
-# add_subdirectory(tests)
+# Test runner (Phase 0.2)
+add_subdirectory(tests)
 
 # ============================================================================
 # Installation
