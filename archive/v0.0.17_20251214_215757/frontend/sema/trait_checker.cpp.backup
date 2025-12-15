@@ -1,0 +1,177 @@
+/**
+ * src/frontend/sema/trait_checker.cpp
+ *
+ * Trait System Type Checking
+ * Validates trait declarations and implementations
+ */
+
+#include "type_checker.h"
+#include "../ast.h"
+#include "../ast/stmt.h"
+#include <algorithm>
+#include <sstream>
+
+namespace aria {
+namespace sema {
+
+// Visit trait declaration
+// Register the trait and validate it has no duplicate method names
+void TypeChecker::visit(frontend::TraitDecl* node) {
+    // Check if trait name is already registered
+    if (trait_table.find(node->name) != trait_table.end()) {
+        std::stringstream ss;
+        ss << "Trait '" << node->name << "' is already defined";
+        addError(ss.str());
+        return;
+    }
+    
+    // Validate super traits exist
+    for (const auto& super_trait_name : node->super_traits) {
+        if (trait_table.find(super_trait_name) == trait_table.end()) {
+            std::stringstream ss;
+            ss << "Super trait '" << super_trait_name << "' not found for trait '" << node->name << "'";
+            addError(ss.str());
+        }
+    }
+    
+    // Check for duplicate method names in trait
+    std::set<std::string> method_names;
+    for (const auto& method : node->methods) {
+        if (method_names.find(method.name) != method_names.end()) {
+            std::stringstream ss;
+            ss << "Duplicate method '" << method.name << "' in trait '" << node->name << "'";
+            addError(ss.str());
+        }
+        method_names.insert(method.name);
+    }
+    
+    // Register trait
+    trait_table[node->name] = node;
+}
+
+// Visit trait implementation
+// Validate the impl satisfies all trait requirements
+void TypeChecker::visit(frontend::ImplDecl* node) {
+    // Check if trait exists
+    auto trait_it = trait_table.find(node->trait_name);
+    if (trait_it == trait_table.end()) {
+        std::stringstream ss;
+        ss << "Trait '" << node->trait_name << "' not found in impl";
+        addError(ss.str());
+        return;
+    }
+    
+    frontend::TraitDecl* trait = trait_it->second;
+    
+    // Check if type exists (for structs)
+    if (!isRegisteredStruct(node->type_name)) {
+        // TODO: Also check for primitive types and other type aliases
+        // For now, just warn but allow it (could be a primitive or generic)
+        // std::stringstream ss;
+        // ss << "Type '" << node->type_name << "' not found in impl";
+        // addError(ss.str());
+    }
+    
+    // Build a map of implemented methods
+    std::map<std::string, frontend::FuncDecl*> impl_methods;
+    for (const auto& method : node->methods) {
+        impl_methods[method->name] = method.get();
+    }
+    
+    // Collect all required methods from trait and super traits
+    std::vector<frontend::TraitMethod> required_methods;
+    
+    // Helper function to collect methods from a trait and its super traits
+    std::function<void(frontend::TraitDecl*)> collect_trait_methods;
+    collect_trait_methods = [&](frontend::TraitDecl* t) {
+        // Add methods from this trait
+        for (const auto& method : t->methods) {
+            required_methods.push_back(method);
+        }
+        
+        // Recursively add methods from super traits
+        for (const auto& super_name : t->super_traits) {
+            auto super_it = trait_table.find(super_name);
+            if (super_it != trait_table.end()) {
+                collect_trait_methods(super_it->second);
+            }
+        }
+    };
+    
+    collect_trait_methods(trait);
+    
+    // Validate all required methods are implemented
+    for (const auto& required : required_methods) {
+        auto impl_it = impl_methods.find(required.name);
+        
+        if (impl_it == impl_methods.end()) {
+            std::stringstream ss;
+            ss << "Missing implementation of method '" << required.name 
+               << "' in impl of trait '" << node->trait_name 
+               << "' for type '" << node->type_name << "'";
+            addError(ss.str());
+            continue;
+        }
+        
+        frontend::FuncDecl* impl_method = impl_it->second;
+        
+        // Validate method signature matches trait signature
+        // Check return type
+        if (impl_method->return_type != required.return_type) {
+            std::stringstream ss;
+            ss << "Return type mismatch for method '" << required.name 
+               << "' in impl: expected '" << required.return_type 
+               << "', got '" << impl_method->return_type << "'";
+            addError(ss.str());
+        }
+        
+        // Check parameter count
+        if (impl_method->params.size() != required.parameters.size()) {
+            std::stringstream ss;
+            ss << "Parameter count mismatch for method '" << required.name 
+               << "' in impl: expected " << required.parameters.size() 
+               << ", got " << impl_method->params.size();
+            addError(ss.str());
+            continue;
+        }
+        
+        // Check parameter types
+        for (size_t i = 0; i < required.parameters.size(); ++i) {
+            if (impl_method->params[i].type != required.parameters[i].type) {
+                std::stringstream ss;
+                ss << "Parameter type mismatch for method '" << required.name 
+                   << "' parameter '" << required.parameters[i].name 
+                   << "': expected '" << required.parameters[i].type 
+                   << "', got '" << impl_method->params[i].type << "'";
+                addError(ss.str());
+            }
+        }
+        
+        // Type check the method body
+        if (impl_method->body) {
+            visit(impl_method->body.get());
+        }
+    }
+    
+    // Check for extra methods not in trait (warn but allow)
+    for (const auto& [method_name, method] : impl_methods) {
+        bool found = false;
+        for (const auto& required : required_methods) {
+            if (required.name == method_name) {
+                found = true;
+                break;
+            }
+        }
+        
+        if (!found) {
+            // This is allowed - impl can have additional methods
+            // Just document it for now
+        }
+    }
+    
+    // Register implementation
+    impl_table.insert({node->trait_name, node});
+}
+
+} // namespace sema
+} // namespace aria

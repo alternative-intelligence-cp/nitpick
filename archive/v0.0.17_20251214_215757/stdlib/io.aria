@@ -1,0 +1,194 @@
+/**
+ * stdlib/io.aria
+ *
+ * Aria Standard Library - Input/Output Module
+ * Version: 0.0.6
+ *
+ * Provides convenient I/O functions for Aria programs.
+ * This module wraps the low-level C runtime functions.
+ */
+
+// ============================================================================
+// Print Functions
+// ============================================================================
+
+// Print a string without newline
+extern func print(string:msg) {
+    // Calls aria_print_string from runtime
+}
+
+// Print a string with newline
+extern func println(string:msg) {
+    // Calls aria_println_string from runtime
+}
+
+// Print just a newline
+extern func println() {
+    // Calls aria_println from runtime
+}
+
+// Print an integer
+extern func print_int(int64:value) {
+    // Calls aria_print_int64 from runtime
+}
+
+// Print an integer with newline
+extern func println_int(int64:value) {
+    // Calls aria_println_int64 from runtime
+}
+
+// Print a floating-point number
+extern func print_float(flt64:value) {
+    // Calls aria_print_float64 from runtime
+}
+
+// Print a floating-point number with newline
+extern func println_float(flt64:value) {
+    // Calls aria_println_float64 from runtime
+}
+
+// Print a boolean value
+extern func print_bool(bool:value) {
+    // Calls aria_print_bool from runtime
+}
+
+// Print a boolean value with newline
+extern func println_bool(bool:value) {
+    // Calls aria_println_bool from runtime
+}
+
+// Flush output buffer
+extern func flush() {
+    // Calls aria_flush from runtime
+}
+
+// ============================================================================
+// Error Output Functions
+// ============================================================================
+
+// Print to stderr
+extern func eprint(string:msg) {
+    // Calls aria_eprint_string from runtime
+}
+
+// Print to stderr with newline
+extern func eprintln(string:msg) {
+    // Calls aria_eprintln_string from runtime
+}
+
+// ============================================================================
+// Debug Channel Functions
+// ============================================================================
+
+// Print to debug channel (stddati - file descriptor 4)
+extern func debug(string:msg) {
+    // Calls aria_debug_print from runtime
+}
+
+// ============================================================================
+// File I/O Functions
+// ============================================================================
+
+// Read entire file into a string
+// Returns null on error
+extern func readFile(string:path) -> wild string {
+    // Calls aria_read_file from runtime
+    // Returns a wild pointer that must be explicitly freed
+}
+
+// Write content to file
+// Returns 0 on success, -1 on error
+extern func writeFile(string:path, string:content) -> int64 {
+    // Calls aria_write_file from runtime
+}
+
+// Append content to file
+// Returns 0 on success, -1 on error
+extern func appendFile(string:path, string:content) -> int64 {
+    // Calls aria_append_file from runtime
+}
+
+// Check if file exists
+// Returns 1 if exists, 0 otherwise
+extern func fileExists(string:path) -> int64 {
+    // Calls aria_file_exists from runtime
+}
+
+// Get file size in bytes
+// Returns -1 on error
+extern func fileSize(string:path) -> int64 {
+    // Calls aria_file_size from runtime
+}
+
+// Delete a file
+// Returns 0 on success, -1 on error
+extern func deleteFile(string:path) -> int64 {
+    // Calls aria_delete_file from runtime
+}
+
+// ============================================================================
+// Usage Examples
+// ============================================================================
+
+/*
+
+Example 1: Simple printing
+```aria
+import io;
+
+func main() -> int64 {
+    io::println("Hello, Aria!");
+    io::print_int(42);
+    io::println();
+    return 0;
+}
+```
+
+Example 2: File I/O
+```aria
+import io;
+
+func main() -> int64 {
+    // Write to file
+    int64:result = io::writeFile("test.txt", "Hello, World!");
+    if (result != 0) {
+        io::eprintln("Failed to write file");
+        return 1;
+    }
+
+    // Read from file
+    wild string:content = io::readFile("test.txt");
+    if (content == null) {
+        io::eprintln("Failed to read file");
+        return 1;
+    }
+
+    io::println(content);
+
+    // Must explicitly free wild pointers
+    free(content);
+
+    return 0;
+}
+```
+
+Example 3: File operations
+```aria
+import io;
+
+func main() -> int64 {
+    string:path = "data.txt";
+
+    if (io::fileExists(path)) {
+        int64:size = io::fileSize(path);
+        io::print("File size: ");
+        io::println_int(size);
+    } else {
+        io::println("File does not exist");
+    }
+
+    return 0;
+}
+```
+
+*/

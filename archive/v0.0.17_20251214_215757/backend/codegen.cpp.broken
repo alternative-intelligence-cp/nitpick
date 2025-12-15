@@ -1,0 +1,1398 @@
+/**
+ * src/backend/codegen.cpp
+ * 
+ * Aria Compiler - LLVM Code Generation Backend
+ * Version: 0.0.6
+ * 
+ * This file implements the translation of the Aria Abstract Syntax Tree (AST)
+ * into LLVM Intermediate Representation (IR).
+ * 
+ * Features:
+ * - Hybrid Memory Support: Distinguishes between Stack, Wild (mimalloc), and GC allocations.
+ * - Exotic Type Lowering: Handles int512, trit, and tryte types.
+ * - Pattern Matching: Compiles 'pick' statements into optimized branch chains.
+ * - Loops: Implements 'till' loops with SSA-based iteration variables.
+ * 
+ * Dependencies:
+ * - LLVM 18 Core, IR, Support
+ * - Aria AST Headers
+ */
+
+#include "codegen.h"
+#include "codegen_context.h"
+#include "codegen_expr.h"
+#include "codegen_lambda.h"
+#include "codegen_decl.h"
+#include "codegen_control_flow.h"
+#include "codegen_stmt.h"
+#include "codegen_async.h"
+#include "codegen_tbb.h"
+#include "tbb_optimizer.h"
+#include "monomorphization.h"
+#include "vtable.h"
+#include "../frontend/ast.h"
+#include "../frontend/ast/stmt.h"
+#include "../frontend/ast/expr.h"
+#include "../frontend/ast/control_flow.h"
+#include "../frontend/ast/loops.h"
+#include "../frontend/ast/defer.h"
+#include "../frontend/ast/module.h"
+#include "../frontend/tokens.h"
+#include <iostream>
+
+// LLVM Includes
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/InlineAsm.h>
+#include <llvm/IR/Intrinsics.h>
+#include <llvm/IR/Metadata.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/Linker/Linker.h>
+#include <llvm/IRReader/IRReader.h>
+#include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetOptions.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Passes/PassBuilder.h>
+#include <llvm/Analysis/LoopAnalysisManager.h>
+#include <llvm/Analysis/CGSCCPassManager.h>
+
+#include <vector>
+#include <map>
+#include <stack>
+
+using namespace llvm;
+
+namespace aria {
+namespace backend {
+
+// Import frontend types for use in this file
+using aria::frontend::AstVisitor;
+using aria::frontend::Block;
+using aria::frontend::VarDecl;
+using aria::frontend::StructDecl;
+using aria::frontend::FuncDecl;
+using aria::frontend::ExpressionStmt;
+using aria::frontend::PickStmt;
+using aria::frontend::PickCase;
+using aria::frontend::FallStmt;
+using aria::frontend::TillLoop;
+using aria::frontend::WhenLoop;
+using aria::frontend::ForLoop;
+using aria::frontend::WhileLoop;
+using aria::frontend::BreakStmt;
+using aria::frontend::ContinueStmt;
+using aria::frontend::IfStmt;
+using aria::frontend::DeferStmt;
+using aria::frontend::Expression;
+using aria::frontend::IntLiteral;
+using aria::frontend::FloatLiteral;
+using aria::frontend::BoolLiteral;
+using aria::frontend::NullLiteral;
+using aria::frontend::VarExpr;
+using aria::frontend::CallExpr;
+using aria::frontend::ArrayLiteral;
+using aria::frontend::VectorLiteral;
+using aria::frontend::IndexExpr;
+using aria::frontend::BinaryOp;
+using aria::frontend::UnaryOp;
+using aria::frontend::ReturnStmt;
+using aria::frontend::UseStmt;
+using aria::frontend::ModDef;
+using aria::frontend::ExternBlock;
+using aria::frontend::FuncParam;
+
+// Bring CodeGenContext and ScopeGuard from extracted header
+using aria::backend::CodeGenContext;
+using aria::backend::ScopeGuard;
+
+// =============================================================================
+// The Code Generator Visitor
+// =============================================================================
+
+class CodeGenVisitor : public AstVisitor {
+    CodeGenContext& ctx;
+    LambdaCodeGen lambdaGen;
+    DeclCodeGen declGen;
+    ControlFlowCodeGen controlFlowGen;
+    StmtCodeGen stmtGen;
+    AsyncCodeGen asyncGen;
+    
+    // Future handle for spawn expressions (set by visit(SpawnExpr), retrieved by visitExpr)
+    Value* currentSpawnFuture = nullptr;
+    
+    // -------------------------------------------------------------------------
+    // Generic Function Monomorphization Support
+    // -------------------------------------------------------------------------
+    // Generic functions are stored as templates and instantiated on demand
+    // when used with concrete type arguments
+    struct GenericTemplate {
+        // Support both FuncDecl (old syntax) and VarDecl+Lambda (new syntax)
+        FuncDecl* funcDecl = nullptr;                // For func<T>:name(T:x) { } syntax
+        VarDecl* varDecl = nullptr;                  // For func<T>:name = T(T:x) { } syntax
+        aria::frontend::LambdaExpr* lambda = nullptr; // The lambda expression (for VarDecl style)
+        std::vector<std::string> typeParams;         // Type parameter names (e.g., ["T", "U"])
+        std::map<std::string, Function*> specializations;  // Map type args -> LLVM function
+        
+        // Get parameters (works for both styles)
+        const std::vector<FuncParam>& getParameters() const {
+            if (funcDecl) return funcDecl->parameters;
+            if (lambda) return lambda->parameters;
+            throw std::runtime_error("Invalid GenericTemplate: no function or lambda");
+        }
+    };
+    
+    std::map<std::string, GenericTemplate> genericTemplates;  // funcName -> template
+    
+    // Generate mangled name for generic specialization
+    // Example: identity<int8> -> "identity_int8"
+    std::string mangleGenericName(const std::string& funcName, const std::vector<std::string>& concreteTypes) {
+        std::string mangledName = funcName;
+        for (const auto& t : concreteTypes) {
+            mangledName += "_" + t;
+        }
+        return mangledName;
+    }
+    
+    // Generate specialized version of generic function for concrete types
+    // Example: identity<int8> generates "identity_int8" function
+    Function* monomorphize(const std::string& funcName, const std::vector<std::string>& concreteTypes) {
+        auto it = genericTemplates.find(funcName);
+        if (it == genericTemplates.end()) {
+            return nullptr;  // Not a generic function
+        }
+        
+        GenericTemplate& tmpl = it->second;
+        
+        // Check if this specialization already exists
+        std::string typeKey = "";
+        for (const auto& t : concreteTypes) {
+            if (!typeKey.empty()) typeKey += "_";
+            typeKey += t;
+        }
+        
+        auto specIt = tmpl.specializations.find(typeKey);
+        if (specIt != tmpl.specializations.end()) {
+            return specIt->second;  // Already generated
+        }
+        
+        // Generate new specialization
+        // Check which style of generic function we have
+        aria::frontend::LambdaExpr* originalLambda = nullptr;
+        const std::vector<FuncParam>* funcParamsPtr = nullptr;
+        std::string funcReturnType;
+        
+        if (tmpl.funcDecl) {
+            funcParamsPtr = &(tmpl.funcDecl->parameters);
+            funcReturnType = tmpl.funcDecl->return_type;
+        } else if (tmpl.lambda) {
+            originalLambda = tmpl.lambda;
+            funcParamsPtr = &(originalLambda->parameters);
+            funcReturnType = originalLambda->return_type;
+        } else {
+            throw std::runtime_error("Invalid GenericTemplate");
+        }
+        
+        const std::vector<FuncParam>& funcParams = *funcParamsPtr;
+        
+        // Strip generic type marker (*) from return type if present
+        // *T becomes T,  which will then be substituted
+        if (!funcReturnType.empty() && funcReturnType[0] == '*') {
+            funcReturnType = funcReturnType.substr(1);
+        }
+        
+        // Create type substitution map: T -> int8, U -> float32, etc.
+        std::map<std::string, std::string> typeSubstitution;
+        for (size_t i = 0; i < tmpl.typeParams.size() && i < concreteTypes.size(); ++i) {
+            typeSubstitution[tmpl.typeParams[i]] = concreteTypes[i];
+        }
+        
+        // Create specialized function type
+        std::vector<Type*> paramTypes;
+        for (auto& param : funcParams) {
+            // Strip generic type marker (*) from parameter type if present
+            // *T:x becomes T:x, then T gets substituted
+            std::string paramType = param.type;
+            if (!paramType.empty() && paramType[0] == '*') {
+                paramType = paramType.substr(1);
+            }
+            
+            // Substitute generic types in parameters
+            if (typeSubstitution.count(paramType) > 0) {
+                paramType = typeSubstitution[paramType];
+            }
+            paramTypes.push_back(ctx.getLLVMType(paramType));
+        }
+        
+        // Substitute generic type in return type
+        std::string returnType = funcReturnType;
+        if (typeSubstitution.count(returnType) > 0) {
+            returnType = typeSubstitution[returnType];
+        }
+        Type* returnLLVMType = ctx.getResultType(returnType);
+        
+        FunctionType* funcType = FunctionType::get(returnLLVMType, paramTypes, false);
+        
+        // Create specialized function with mangled name
+        std::string mangledName = ctx.currentModulePrefix + funcName + "_" + typeKey;
+        Function* specializedFunc = Function::Create(
+            funcType,
+            Function::InternalLinkage,
+            mangledName,
+            ctx.module.get()
+        );
+        
+        // Save current type substitution state
+        auto prevSubstitution = ctx.typeSubstitution;
+        auto prevReturnType = ctx.currentFunctionReturnType;
+        
+        // Set up substitution context
+        ctx.typeSubstitution = typeSubstitution;
+        ctx.currentFunctionReturnType = returnType;  // Set substituted return type for validation
+        
+        // Generate the function body based on which style we have
+        if (tmpl.funcDecl) {
+            // TODO: Implement FuncDecl monomorphization
+            throw std::runtime_error("FuncDecl-style generic functions not yet supported for monomorphization");
+        } else {
+            // Lambda style (VarDecl) - use lambdaGen.generateLambdaBody
+            // TODO: Add closure support for generic functions
+            LambdaCodeGen lambdaGen(ctx, this);
+            lambdaGen.generateLambdaBody(originalLambda, specializedFunc, nullptr);
+        }
+        
+        // Restore state
+        ctx.typeSubstitution = prevSubstitution;
+        ctx.currentFunctionReturnType = prevReturnType;
+        
+        // Cache the specialized function
+        tmpl.specializations[typeKey] = specializedFunc;
+        
+        return specializedFunc;
+    }
+
+public:
+    CodeGenVisitor(CodeGenContext& context) : ctx(context), lambdaGen(context, this), declGen(context), controlFlowGen(context), stmtGen(context), asyncGen(context) {}
+
+    // -------------------------------------------------------------------------
+    // Helper: Generic Type Inference
+    // -------------------------------------------------------------------------
+    
+    // Infer concrete types for generic parameters from call arguments
+    // Example: max(5, 10) -> infer T=int8 from both arguments
+    std::vector<std::string> inferGenericTypes(const GenericTemplate& tmpl, CallExpr* call) {
+        const auto& params = tmpl.getParameters();
+        if (call->arguments.size() != params.size()) {
+            return {};  // Argument count mismatch, can't infer
+        }
+        
+        // Map: generic param name -> inferred type
+        std::map<std::string, std::string> inferredTypes;
+        
+        // Analyze each argument to infer types
+        for (size_t i = 0; i < call->arguments.size(); ++i) {
+            const auto& param = params[i];
+            Expression* argExpr = call->arguments[i].get();
+            
+            // Get the Aria type of the argument
+            std::string argType = inferExpressionType(argExpr);
+            if (argType.empty()) {
+                return {};  // Can't determine argument type
+            }
+            
+            // Check if parameter type is a generic type parameter
+            std::string paramType = param.type;
+            bool isGenericParam = false;
+            for (const auto& typeParam : tmpl.typeParams) {
+                if (paramType == typeParam) {
+                    isGenericParam = true;
+                    
+                    // Check for conflicting inferences
+                    if (inferredTypes.count(typeParam) > 0) {
+                        if (inferredTypes[typeParam] != argType) {
+                            throw std::runtime_error(
+                                "Type inference conflict for parameter '" + typeParam + "': " +
+                                "inferred both '" + inferredTypes[typeParam] + "' and '" + argType + "'"
+                            );
+                        }
+                    } else {
+                        inferredTypes[typeParam] = argType;
+                    }
+                    break;
+                }
+            }
+        }
+        
+        // Build result vector in the same order as typeParams
+        std::vector<std::string> result;
+        for (const auto& typeParam : tmpl.typeParams) {
+            if (inferredTypes.count(typeParam) == 0) {
+                return {};  // Couldn't infer this type parameter
+            }
+            result.push_back(inferredTypes[typeParam]);
+        }
+        
+        return result;
+    }
+    
+    // Infer the Aria type of an expression (simplified version)
+    std::string inferExpressionType(Expression* expr) {
+        // Integer literals
+        if (auto* intLit = dynamic_cast<IntLiteral*>(expr)) {
+            // Default to int32 for literals without suffix
+            return "int32";
+        }
+        
+        // Float literals
+        if (auto* floatLit = dynamic_cast<FloatLiteral*>(expr)) {
+            return "flt64";
+        }
+        
+        // Boolean literals
+        if (auto* boolLit = dynamic_cast<BoolLiteral*>(expr)) {
+            return "bool";
+        }
+        
+        // Variable references - look up in symbol table
+        if (auto* varExpr = dynamic_cast<VarExpr*>(expr)) {
+            auto* sym = ctx.lookup(varExpr->name);
+            if (sym) {
+                return sym->ariaType;
+            }
+        }
+        
+        // Binary operations - infer from operands
+        if (auto* binOp = dynamic_cast<BinaryOp*>(expr)) {
+            // For now, assume both operands have the same type
+            return inferExpressionType(binOp->left.get());
+        }
+        
+        // For other expression types, we'd need more sophisticated analysis
+        // This is a simplified implementation - full type inference would be more complex
+        return "";
+    }
+
+    // -------------------------------------------------------------------------
+    // Lambda helper methods moved to LambdaCodeGen
+    // -------------------------------------------------------------------------
+    
+
+    
+
+
+    // -------------------------------------------------------------------------
+    // Helper: Runtime Function Declarations (Allocators)
+    // -------------------------------------------------------------------------
+    // NOTE: Syscall infrastructure (createSyscall, emitAllocExec, emitProtectExec) removed
+    // as dead code - never used in practice
+    
+    // getOrInsertAriaAlloc - Declare aria.alloc (standard heap via mimalloc)
+    Function* getOrInsertAriaAlloc() {
+        if (Function* existing = ctx.module->getFunction("aria.alloc")) {
+            return existing;
+        }
+        
+        FunctionType* allocType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),  // returns ptr
+            {Type::getInt64Ty(ctx.llvmContext)},       // size argument
+            false
+        );
+        
+        return Function::Create(allocType, Function::ExternalLinkage, "aria.alloc", ctx.module.get());
+    }
+    
+    // NOTE: getOrInsertAriaAllocExec removed - dead code, never used
+    
+    // getOrInsertGetNursery - Declare get_current_thread_nursery (GC arena)
+    Function* getOrInsertGetNursery() {
+        if (Function* existing = ctx.module->getFunction("get_current_thread_nursery")) {
+            return existing;
+        }
+        
+        FunctionType* nurseryType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),
+            {},
+            false
+        );
+        
+        return Function::Create(nurseryType, Function::ExternalLinkage, "get_current_thread_nursery", ctx.module.get());
+    }
+    
+    // getOrInsertGCAlloc - Declare aria_gc_alloc (GC allocation)
+    Function* getOrInsertGCAlloc() {
+        if (Function* existing = ctx.module->getFunction("aria_gc_alloc")) {
+            return existing;
+        }
+        
+        FunctionType* gcAllocType = FunctionType::get(
+            PointerType::getUnqual(ctx.llvmContext),
+            {PointerType::getUnqual(ctx.llvmContext), Type::getInt64Ty(ctx.llvmContext)},
+            false
+        );
+        
+        return Function::Create(gcAllocType, Function::ExternalLinkage, "aria_gc_alloc", ctx.module.get());
+    }
+    
+    // getOrInsertAriaMemProtectExec - Declare aria_mem_protect_exec (make memory executable)
+    Function* getOrInsertAriaMemProtectExec() {
+        if (Function* existing = ctx.module->getFunction("aria_mem_protect_exec")) {
+            return existing;
+        }
+        
+        FunctionType* protectType = FunctionType::get(
+            Type::getInt32Ty(ctx.llvmContext),  // Returns 0 on success
+            {PointerType::getUnqual(ctx.llvmContext), Type::getInt64Ty(ctx.llvmContext)},
+            false
+        );
+        
+        return Function::Create(protectType, Function::ExternalLinkage, "aria_mem_protect_exec", ctx.module.get());
+    }
+    
+    // getOrInsertAriaMemProtectWrite - Declare aria_mem_protect_write (make memory writable)
+    Function* getOrInsertAriaMemProtectWrite() {
+        if (Function* existing = ctx.module->getFunction("aria_mem_protect_write")) {
+            return existing;
+        }
+        
+        FunctionType* protectType = FunctionType::get(
+            Type::getInt32Ty(ctx.llvmContext),  // Returns 0 on success
+            {PointerType::getUnqual(ctx.llvmContext), Type::getInt64Ty(ctx.llvmContext)},
+            false
+        );
+        
+        return Function::Create(protectType, Function::ExternalLinkage, "aria_mem_protect_write", ctx.module.get());
+    }
+    
+    // getOrInsertAriaFreeExec - Declare aria_free_exec (free executable memory)
+    Function* getOrInsertAriaFreeExec() {
+        if (Function* existing = ctx.module->getFunction("aria_free_exec")) {
+            return existing;
+        }
+        
+        FunctionType* freeType = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            {PointerType::getUnqual(ctx.llvmContext)},
+            false
+        );
+        
+        return Function::Create(freeType, Function::ExternalLinkage, "aria_free_exec", ctx.module.get());
+    }
+    
+    // declareLLVMIntrinsic - Declare LLVM math intrinsics (llvm.sin.f32, etc.)
+    // NOTE: declareLLVMIntrinsic removed - dead code, never called
+
+    // -------------------------------------------------------------------------
+    // 1. Variable Declarations
+    // -------------------------------------------------------------------------
+    
+    // NOTE: Lambda helper methods moved to LambdaCodeGen
+
+    // -------------------------------------------------------------------------
+    // 1. Variable Declarations
+    // -------------------------------------------------------------------------
+
+    void visit(VarDecl* node) override {
+        
+        // If we have an environment, first arg is __env (already named)
+        if (lambda->needs_heap_environment && envType) {
+            argIdx = 1;  // Skip environment parameter when naming user parameters
+        }
+        
+        for (auto argIt = func->arg_begin() + argIdx; argIt != func->arg_end(); ++argIt) {
+            if (idx < lambda->parameters.size()) {
+                argIt->setName(lambda->parameters[idx++].name);
+            }
+        }
+        
+        // Create entry basic block
+        BasicBlock* entry = BasicBlock::Create(ctx.llvmContext, "entry", func);
+        
+        // Save previous state
+        Function* prevFunc = ctx.currentFunction;
+        BasicBlock* prevBlock = ctx.builder->GetInsertBlock();
+        std::string prevReturnType = ctx.currentFunctionReturnType;
+        bool prevAutoWrap = ctx.currentFunctionAutoWrap;
+        
+        ctx.currentFunction = func;
+        
+        // If we're in a generic monomorphization context (typeSubstitution is not empty),
+        // currentFunctionReturnType has already been set to the substituted type.
+        // Don't overwrite it with the lambda's original generic type.
+        if (ctx.typeSubstitution.empty()) {
+            ctx.currentFunctionReturnType = lambda->return_type;
+        }
+        // Otherwise, keep the already-set substituted return type
+        
+        ctx.currentFunctionAutoWrap = lambda->auto_wrap;
+        ctx.builder->SetInsertPoint(entry);
+        
+        // ASYNC COROUTINE SETUP (if lambda is marked async)
+        if (lambda->is_async) {
+            // Get LLVM coroutine intrinsics
+            Function* coroId = Intrinsic::getDeclaration(
+                ctx.module.get(), 
+                Intrinsic::coro_id
+            );
+            Function* coroBegin = Intrinsic::getDeclaration(
+                ctx.module.get(), 
+                Intrinsic::coro_begin
+            );
+            Function* coroSize = Intrinsic::getDeclaration(
+                ctx.module.get(), 
+                Intrinsic::coro_size, 
+                {Type::getInt32Ty(ctx.llvmContext)}
+            );
+            Function* coroAlloc = Intrinsic::getDeclaration(
+                ctx.module.get(), 
+                Intrinsic::coro_alloc
+            );
+            
+            // Create coroutine ID token
+            Value* nullPtr = ConstantPointerNull::get(PointerType::getUnqual(ctx.llvmContext));
+            Value* coroIdVal = ctx.builder->CreateCall(
+                coroId,
+                {
+                    ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0),  // alignment
+                    nullPtr,  // promise
+                    nullPtr,  // coroaddr
+                    nullPtr   // fnaddr
+                },
+                "coro.id"
+            );
+            
+            // Get coroutine frame size
+            Value* size = ctx.builder->CreateCall(coroSize, {}, "coro.size");
+            
+            // Check if we need to allocate
+            Value* needAlloc = ctx.builder->CreateCall(coroAlloc, {coroIdVal}, "coro.alloc");
+            
+            // Allocate coroutine frame using malloc
+            // Get or declare malloc
+            FunctionType* mallocType = FunctionType::get(
+                PointerType::getUnqual(ctx.llvmContext),
+                {Type::getInt32Ty(ctx.llvmContext)},
+                false
+            );
+            FunctionCallee mallocFunc = ctx.module->getOrInsertFunction("malloc", mallocType);
+            
+            // Allocate frame
+            Value* frame = ctx.builder->CreateCall(mallocFunc, {size}, "coro.frame");
+            
+            // Begin coroutine
+            Value* hdl = ctx.builder->CreateCall(
+                coroBegin,
+                {coroIdVal, frame},
+                "coro.handle"
+            );
+            
+            // Store handle in a variable for later use
+            AllocaInst* hdlAlloca = ctx.builder->CreateAlloca(
+                hdl->getType(), 
+                nullptr, 
+                "coro.handle.addr"
+            );
+            ctx.builder->CreateStore(hdl, hdlAlloca);
+            ctx.define("__coro_handle__", hdlAlloca, false, "void*");
+        }
+        
+        // Clear defer stacks for new function
+        ctx.deferStacks = std::vector<std::vector<Block*>>();
+        ctx.deferStacks.emplace_back();
+        
+        // SHADOW STACK: Push frame for GC root tracking
+        // Get or declare aria_shadow_stack_push_frame()
+        FunctionType* pushFrameType = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            {},
+            false
+        );
+        FunctionCallee pushFrameFunc = ctx.module->getOrInsertFunction(
+            "aria_shadow_stack_push_frame",
+            pushFrameType
+        );
+        ctx.builder->CreateCall(pushFrameFunc);
+        
+        // CLOSURE SUPPORT: Extract captured variables from environment
+        if (lambda->needs_heap_environment && envType) {
+            // First parameter is environment pointer
+            Argument* envArg = func->arg_begin();
+            
+            // Extract each captured variable from environment
+            unsigned fieldIdx = 0;
+            for (const auto& captured : lambda->captured_variables) {
+                if (!captured.is_global) {
+                    // Get pointer to environment field
+                    Value* fieldPtr = ctx.builder->CreateStructGEP(
+                        envType,
+                        envArg,
+                        fieldIdx,
+                        "env." + captured.name
+                    );
+                    
+                    // Load the captured value
+                    Type* fieldType = ctx.getLLVMType(captured.type);
+                    Value* capturedValue = ctx.builder->CreateLoad(
+                        fieldType,
+                        fieldPtr,
+                        captured.name
+                    );
+                    
+                    // Store in alloca so it can be referenced in lambda body
+                    AllocaInst* alloca = ctx.builder->CreateAlloca(
+                        fieldType,
+                        nullptr,
+                        captured.name + ".addr"
+                    );
+                    ctx.builder->CreateStore(capturedValue, alloca);
+                    
+                    // Register in symbol table
+                    ctx.define(captured.name, alloca, true, captured.type);
+                    
+                    fieldIdx++;
+                }
+            }
+        }
+        
+        // Create allocas for parameters
+        std::vector<std::pair<std::string, CodeGenContext::Symbol*>> savedSymbols;
+        
+        idx = 0;
+        argIdx = 0;
+        
+        // Skip environment parameter if present
+        if (lambda->needs_heap_environment && envType) {
+            argIdx = 1;
+        }
+        
+        for (auto argIt = func->arg_begin() + argIdx; argIt != func->arg_end(); ++argIt) {
+            Type* argType = argIt->getType();
+            AllocaInst* alloca = ctx.builder->CreateAlloca(argType, nullptr, argIt->getName());
+            ctx.builder->CreateStore(&(*argIt), alloca);
+            
+            std::string argName = std::string(argIt->getName());
+            auto* existingSym = ctx.lookup(argName);
+            if (existingSym) {
+                savedSymbols.push_back({argName, existingSym});
+            }
+            
+            // Store parameter with its Aria type from the lambda parameter list
+            std::string paramAriaType = lambda->parameters[idx].type;
+            ctx.define(argName, alloca, true, paramAriaType);
+            idx++; // Increment for next parameter
+        }
+        
+        // Generate lambda body
+        if (lambda->body) {
+            lambda->body->accept(*this);
+        }
+        
+        // Add return if missing
+        if (ctx.builder->GetInsertBlock()->getTerminator() == nullptr) {
+            // Execute all defers before implicit return (LIFO order)
+            if (!ctx.deferStacks.empty() && !ctx.deferStacks[0].empty()) {
+                for (auto it = ctx.deferStacks[0].rbegin(); it != ctx.deferStacks[0].rend(); ++it) {
+                    (*it)->accept(*this);
+                }
+            }
+            
+            // SHADOW STACK: Pop frame before return
+            FunctionType* popFrameType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {},
+                false
+            );
+            FunctionCallee popFrameFunc = ctx.module->getOrInsertFunction(
+                "aria_shadow_stack_pop_frame",
+                popFrameType
+            );
+            ctx.builder->CreateCall(popFrameFunc);
+            
+            Type* returnType = func->getReturnType();
+            if (returnType->isVoidTy()) {
+                ctx.builder->CreateRetVoid();
+            } else {
+                ctx.builder->CreateRet(Constant::getNullValue(returnType));
+            }
+        }
+        
+        // Restore previous symbols
+        for (auto& pair : savedSymbols) {
+            ctx.define(pair.first, pair.second->val, pair.second->is_ref);
+        }
+        
+        // Generate resume wrapper for async functions
+        // This bridges LLVM coroutines with the Aria scheduler's function-pointer model
+        if (lambda->is_async) {
+            // Create the resume wrapper function: void funcName_resume(void* handle)
+            std::string resumeName = std::string(func->getName()) + "_resume";
+            
+            FunctionType* resumeType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {PointerType::getUnqual(ctx.llvmContext)},  // void* handle parameter
+                false
+            );
+            
+            Function* resumeFunc = Function::Create(
+                resumeType,
+                Function::ExternalLinkage,  // External so scheduler can call it
+                resumeName,
+                ctx.module.get()
+            );
+            
+            // Generate the resume wrapper body
+            BasicBlock* resumeEntry = BasicBlock::Create(ctx.llvmContext, "entry", resumeFunc);
+            IRBuilder<> resumeBuilder(resumeEntry);
+            
+            // Get the handle parameter
+            Value* handle = resumeFunc->arg_begin();
+            handle->setName("handle");
+            
+            // Get llvm.coro.resume intrinsic
+            Function* coroResume = Intrinsic::getDeclaration(
+                ctx.module.get(),
+                Intrinsic::coro_resume
+            );
+            
+            // Call llvm.coro.resume(handle)
+            resumeBuilder.CreateCall(coroResume, {handle});
+            
+            // Return void
+            resumeBuilder.CreateRetVoid();
+            
+            // Store the resume function pointer in a global variable
+            // so the scheduler can find it when setting up the CoroutineFrame
+            std::string resumePtrName = std::string(func->getName()) + "_resume_ptr";
+            GlobalVariable* resumePtr = new GlobalVariable(
+                *ctx.module,
+                resumeFunc->getType(),
+                true,  // constant
+                GlobalValue::ExternalLinkage,
+                resumeFunc,
+    // -------------------------------------------------------------------------
+    // 1. Variable Declarations
+    // -------------------------------------------------------------------------
+
+    void visit(VarDecl* node) override {
+        // SPECIAL CASE: Generic function template (has generic_params)
+        // Don't generate code immediately - store as template for monomorphization
+        if (!node->generic_params.empty() && 
+            (node->type == "func" || node->type.find("func<") == 0) && 
+            node->initializer) {
+            
+            if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node->initializer.get())) {
+                // Register the generic function template
+                GenericTemplate tmpl;
+                tmpl.varDecl = node;
+                tmpl.lambda = lambda;
+                tmpl.typeParams = node->generic_params;
+                
+                genericTemplates[node->name] = tmpl;
+                
+                // Skip code generation - will instantiate at call sites
+                return;
+            }
+        }
+        
+        // Special case: Function variables (type="func" or "func<signature>" with Lambda initializer)
+        if ((node->type == "func" || node->type.find("func<") == 0) && node->initializer) {
+            if (auto* lambda = dynamic_cast<aria::frontend::LambdaExpr*>(node->initializer.get())) {
+                // Delegate to Lambda module for named lambda generation
+                StructType* envType = nullptr;
+                if (lambda->needs_heap_environment) {
+                    envType = lambdaGen.generateClosureEnvType(lambda, node->name + "_env");
+                }
+                lambdaGen.generateNamedLambda(lambda, node->name, envType);
+                return;
+            }
+        }
+        
+        // Delegate main VarDecl logic to DeclCodeGen
+        ExprCodeGen exprGen(ctx);
+        declGen.visitVarDecl(node, exprGen);
+    }
+
+    void visit(StructDecl* node) override {
+        // Delegate to DeclCodeGen (pass visitor for method generation)
+        declGen.visitStructDecl(node, this);
+    }
+
+    void visit(ExpressionStmt* node) override {
+        // Execute expression for side effects (e.g., function call)
+        visitExpr(node->expression.get());
+    }
+
+    void visit(FuncDecl* node) override {
+        // =====================================================================
+        // GENERIC FUNCTION DETECTION (Preprocessing - stays in visitor)
+        // =====================================================================
+        // If function has generic type parameters (func<T>:name), don't generate
+        // code immediately. Instead, store as template for later monomorphization.
+        if (!node->generics.empty()) {
+            GenericTemplate tmpl;
+            tmpl.funcDecl = node;  // Store pointer to FuncDecl
+            tmpl.typeParams = node->generics;
+            genericTemplates[node->name] = tmpl;
+            
+            // Don't generate code yet - will be instantiated when called with concrete types
+            return;
+        }
+        
+        // =====================================================================
+        // DELEGATION: Function Declaration and Body Generation
+        // =====================================================================
+        // DeclCodeGen handles function setup, parameter allocation, body generation
+        declGen.visitFuncDecl(node, this);
+        
+        // =====================================================================
+        // ASYNC FINAL SUSPEND (if needed)
+        // =====================================================================
+        // For async functions, emit the coroutine final suspend sequence
+        if (node->is_async && ctx.builder->GetInsertBlock() && 
+            !ctx.builder->GetInsertBlock()->getTerminator()) {
+            asyncGen.emitAsyncFinalSuspend();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. Control Flow: Pick & Loops
+    // -------------------------------------------------------------------------
+
+    void visit(PickStmt* node) override {
+        // Delegate to ControlFlowCodeGen
+        controlFlowGen.visitPickStmt(node, this);
+    }
+
+    void visit(FallStmt* node) override {
+        stmtGen.visitFallStmt(node);
+    }
+
+    void visit(TillLoop* node) override {
+        controlFlowGen.visitTillLoop(node, this);
+    }
+    
+    void visit(WhenLoop* node) override {
+        controlFlowGen.visitWhenLoop(node, this);
+    }
+
+    void visit(ForLoop* node) override {
+        controlFlowGen.visitForLoop(node, this);
+    }
+
+    void visit(WhileLoop* node) override {
+        controlFlowGen.visitWhileLoop(node, this);
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. Expressions (Helper)
+    // -------------------------------------------------------------------------
+
+    Value* visitExpr(Expression* node) {
+        // ======================================================================
+        // PREPROCESSING: Generic Template Monomorphization
+        // ======================================================================
+        // Generic function calls need special preprocessing before delegation
+        // to ExprCodeGen. This rewrites the call to use the specialized version.
+        // ======================================================================
+        if (auto* call = dynamic_cast<aria::frontend::CallExpr*>(node)) {
+            bool isGenericCall = !call->type_arguments.empty();
+            auto templateIt = genericTemplates.find(call->function_name);
+            
+            if (templateIt != genericTemplates.end()) {
+                const GenericTemplate& tmpl = templateIt->second;
+                
+                // Determine the concrete type arguments
+                std::vector<std::string> concreteTypes;
+                
+                if (isGenericCall) {
+                    // Explicit type arguments: identity<int8>(42)
+                    concreteTypes = call->type_arguments;
+                } else {
+                    // Type inference: identity(42)
+                    concreteTypes = inferGenericTypes(tmpl, call);
+                }
+                
+                // Check if we already have a specialization for these types
+                std::string mangledName = mangleGenericName(call->function_name, concreteTypes);
+                
+                if (tmpl.specializations.find(mangledName) == tmpl.specializations.end()) {
+                    // Need to instantiate a new specialization
+                    monomorphize(call->function_name, concreteTypes);
+                }
+                
+                // Redirect the call to the specialized version
+                call->function_name = mangledName;
+            }
+        }
+        
+        // ======================================================================
+        // DELEGATION: Expression Code Generation
+        // ======================================================================
+        // All expression code generation is now handled by ExprCodeGen module.
+        // This maintains clean separation: CodeGenVisitor handles AST-level
+        // preprocessing (generics), ExprCodeGen handles IR generation.
+        // ======================================================================
+        ExprCodeGen exprGen(ctx);
+        return exprGen.generate(node);
+    }
+
+    // AST Visitor Stubs
+    void visit(Block* node) override { 
+        for(auto& s: node->statements) {
+            s->accept(*this);
+        }
+    }
+    
+    void visit(IfStmt* node) override {
+        controlFlowGen.visitIfStmt(node, this);
+    }
+    
+    void visit(BreakStmt* node) override {
+        stmtGen.visitBreakStmt(node);
+    }
+    
+    void visit(ContinueStmt* node) override {
+        stmtGen.visitContinueStmt(node);
+    }
+    
+    void visit(DeferStmt* node) override {
+        stmtGen.visitDeferStmt(node);
+    }
+    
+    void visit(frontend::AsyncBlock* node) override {
+        // Delegate to AsyncCodeGen with visitor for body generation
+        asyncGen.visitAsyncBlock(node, *this);
+    }
+    
+    void visit(frontend::AwaitExpr* node) override {
+        // Delegate to AsyncCodeGen with ExprCodeGen for expression evaluation
+        ExprCodeGen exprGen(ctx);
+        asyncGen.visitAwaitExpr(node, exprGen);
+    }
+    
+    void visit(frontend::WhenExpr* node) override {
+        // when { case1 then result1; case2 then result2; end }
+        // Pattern matching expression - returns a value
+        
+        // TODO: Implement when expression lowering
+        // This is similar to pick but returns a value instead of jumping
+        // For v0.0.7, this is a placeholder
+    }
+    
+    void visit(frontend::SpawnExpr* node) override {
+        // Delegate to AsyncCodeGen with ExprCodeGen for expression evaluation
+        ExprCodeGen exprGen(ctx);
+        asyncGen.visitSpawnExpr(node, exprGen);
+    }
+    
+    void visit(IntLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::FloatLiteral* node) override {} // Handled by visitExpr()
+    void visit(BoolLiteral* node) override {} // Handled by visitExpr()
+    void visit(NullLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::StringLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::TemplateString* node) override {} // Handled by visitExpr()
+    void visit(frontend::TernaryExpr* node) override {} // Handled by visitExpr()
+    void visit(frontend::ObjectLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::MemberAccess* node) override {} // Handled by visitExpr()
+    void visit(frontend::ArrayLiteral* node) override {} // Handled by visitExpr()
+    void visit(frontend::IndexExpr* node) override {} // Handled by visitExpr()
+    void visit(frontend::LambdaExpr* node) override {} // Handled by visitExpr()
+    void visit(VarExpr* node) override {}
+    void visit(CallExpr* node) override {} // Handled by visitExpr() → ExprCodeGen
+    void visit(BinaryOp* node) override {} // Handled by visitExpr()
+    void visit(UnaryOp* node) override {} // Handled by visitExpr()
+    
+    void visit(ReturnStmt* node) override {
+        // Delegate to StmtCodeGen with ExprCodeGen for expression evaluation
+        ExprCodeGen exprGen(ctx);
+        stmtGen.visitReturnStmt(node, exprGen, *this);
+    }
+
+    // Module System Visitors
+    // =============================================================================
+    
+    void visit(frontend::UseStmt* node) override {
+        declGen.visitUseStmt(node);
+    }
+    
+    void visit(frontend::ModDef* node) override {
+        declGen.visitModDef(node, *this);
+    }
+    
+    void visit(frontend::ExternBlock* node) override {
+        declGen.visitExternBlock(node, *this);
+    }
+};
+
+// Implementation of executeScopeDefers
+void CodeGenContext::executeScopeDefers(CodeGenVisitor* visitor) {
+    if (deferStacks.empty()) return;
+    
+    auto& currentDefers = deferStacks.back();
+    // Execute in LIFO order (reverse)
+    for (auto it = currentDefers.rbegin(); it != currentDefers.rend(); ++it) {
+        (*it)->accept(*visitor);
+    }
+}
+
+// =============================================================================
+// Module Linking Support
+// =============================================================================
+
+// Helper: Try to locate and load a module file (.ll or .bc)
+std::unique_ptr<Module> loadModule(const std::string& modulePath, LLVMContext& context) {
+    // Try .ll first (LLVM IR text)
+    std::string llPath = modulePath + ".ll";
+    SMDiagnostic err;
+    auto mod = parseIRFile(llPath, err, context);
+    if (mod) return mod;
+    
+    // Try .bc (LLVM bitcode)
+    std::string bcPath = modulePath + ".bc";
+    mod = parseIRFile(bcPath, err, context);
+    if (mod) return mod;
+    
+    // Try .aria file path directly (would need compilation first)
+    // For now, we only support pre-compiled modules
+    return nullptr;
+}
+
+// Link imported modules into the main module
+bool linkModules(Module& mainModule) {
+    // Get module dependencies from metadata
+    NamedMDNode* depsMD = mainModule.getNamedMetadata("aria.module.deps");
+    if (!depsMD) return true; // No dependencies
+    
+    Linker linker(mainModule);
+    
+    for (unsigned i = 0; i < depsMD->getNumOperands(); ++i) {
+        MDNode* depNode = depsMD->getOperand(i);
+        if (!depNode || depNode->getNumOperands() < 1) continue;
+        
+        // First operand is the module path
+        auto* pathMD = dyn_cast<MDString>(depNode->getOperand(0));
+        if (!pathMD) continue;
+        
+        std::string modulePath = pathMD->getString().str();
+        
+        // Try to load the module
+        auto importedModule = loadModule(modulePath, mainModule.getContext());
+        if (!importedModule) {
+            errs() << "Warning: Could not load module '" << modulePath << "'\n";
+            errs() << "         Searched for: " << modulePath << ".ll, " << modulePath << ".bc\n";
+            errs() << "         Functions from this module will be external references.\n";
+            continue;
+        }
+        
+        // Rename 'main' in imported module to avoid conflicts
+        // The main module's main() is the entry point
+        if (Function* importedMain = importedModule->getFunction("main")) {
+            importedMain->setName("__module_" + modulePath + "_main");
+        }
+        
+        // Also rename __user_main if it exists
+        if (Function* userMain = importedModule->getFunction("__user_main")) {
+            userMain->setName("__module_" + modulePath + "_user_main");
+        }
+        
+        // Link the module
+        if (linker.linkInModule(std::move(importedModule))) {
+            errs() << "Error: Failed to link module '" << modulePath << "'\n";
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+// =============================================================================
+// Main Entry Point for Code Generation
+// =============================================================================
+
+bool generate_code(aria::frontend::Block* root, const std::string& filename, bool enableVerify) {
+    try {
+        CodeGenContext ctx("aria_module");
+        CodeGenVisitor visitor(ctx);
+
+        // Declare built-in print function (uses C puts)
+        // print(string) -> void
+        std::vector<Type*> printParams = {PointerType::get(Type::getInt8Ty(ctx.llvmContext), 0)};
+        FunctionType* printType = FunctionType::get(
+            Type::getVoidTy(ctx.llvmContext),
+            printParams,
+            false  // not vararg
+        );
+        Function::Create(printType, Function::ExternalLinkage, "puts", ctx.module.get());
+        
+        // Create alias for Aria 'print' function
+        Function::Create(printType, Function::ExternalLinkage, "print", ctx.module.get());
+
+        // Generate coroutine resume bridge for scheduler integration
+        // This allows C++ scheduler to resume LLVM coroutines via llvm.coro.resume
+        {
+            // Declare llvm.coro.resume intrinsic
+            FunctionType* coroResumeType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {PointerType::getUnqual(ctx.llvmContext)},  // takes ptr (coroutine handle)
+                false
+            );
+            Function* coroResumeIntrinsic = Intrinsic::getOrInsertDeclaration(
+                ctx.module.get(),
+                Intrinsic::coro_resume
+            );
+            
+            // Create bridge function: void aria_coro_resume_bridge(void* coro_handle)
+            FunctionType* bridgeType = FunctionType::get(
+                Type::getVoidTy(ctx.llvmContext),
+                {PointerType::getUnqual(ctx.llvmContext)},
+                false
+            );
+            Function* bridgeFn = Function::Create(
+                bridgeType,
+                Function::ExternalLinkage,
+                "aria_coro_resume_bridge",
+                ctx.module.get()
+            );
+            
+            // Generate bridge body: just call llvm.coro.resume(handle)
+            BasicBlock* bridgeEntry = BasicBlock::Create(ctx.llvmContext, "entry", bridgeFn);
+            IRBuilder<> bridgeBuilder(bridgeEntry);
+            Value* handleArg = bridgeFn->getArg(0);
+            bridgeBuilder.CreateCall(coroResumeIntrinsic, {handleArg});
+            bridgeBuilder.CreateRetVoid();
+        }
+
+        // JavaScript-style module execution:
+        // Module-level code runs in a global initializer function
+        // This allows lambdas, variable initializers, and statements at module scope
+        FunctionType* moduleInitType = FunctionType::get(Type::getVoidTy(ctx.llvmContext), false);
+        Function* moduleInit = Function::Create(
+            moduleInitType, 
+            Function::InternalLinkage, 
+            "__aria_module_init", 
+            ctx.module.get()
+        );
+        BasicBlock* moduleEntry = BasicBlock::Create(ctx.llvmContext, "entry", moduleInit);
+        
+        // Set insertion point for module-level code
+        ctx.builder->SetInsertPoint(moduleEntry);
+        ctx.currentFunction = moduleInit;
+
+        // Generate IR for module-level code (functions, variables, statements)
+        root->accept(visitor);
+    
+    ctx.builder->CreateRetVoid();
+    
+    // Verify module init function
+    verifyFunction(*moduleInit);
+
+    // Now create the actual main() that calls module init and user's main (if exists)
+    // First check if user defined a main function
+    Function* userMainFunc = ctx.module->getFunction("main");
+    
+    if (userMainFunc) {
+        // User defined main() - rename it to __user_main and create wrapper
+        userMainFunc->setName("__user_main");
+    }
+    
+    // Create the C main() entry point
+    FunctionType* mainType = FunctionType::get(Type::getInt64Ty(ctx.llvmContext), false);
+    Function* mainFunc = Function::Create(mainType, Function::ExternalLinkage, "main", ctx.module.get());
+    BasicBlock* mainEntry = BasicBlock::Create(ctx.llvmContext, "entry", mainFunc);
+    
+    ctx.builder->SetInsertPoint(mainEntry);
+    
+    // =========================================================================
+    // Initialize async scheduler (if program uses async/await)
+    // =========================================================================
+    // Declare aria_scheduler_init function (from runtime)
+    FunctionType* schedulerInitType = FunctionType::get(
+        Type::getVoidTy(ctx.llvmContext),
+        {Type::getInt32Ty(ctx.llvmContext)},  // num_threads parameter
+        false
+    );
+    Function* schedulerInit = Function::Create(
+        schedulerInitType,
+        Function::ExternalLinkage,
+        "aria_scheduler_init",
+        ctx.module.get()
+    );
+    
+    // Initialize with hardware_concurrency threads (0 = auto-detect)
+    // In a full implementation, this would be configurable
+    ctx.builder->CreateCall(schedulerInit, {
+        ConstantInt::get(Type::getInt32Ty(ctx.llvmContext), 0)  // 0 = use hardware_concurrency
+    });
+    
+    // Call module initializer
+    ctx.builder->CreateCall(moduleInit);
+    
+    if (userMainFunc) {
+        // Call user's main and return its result
+        Value* result = ctx.builder->CreateCall(userMainFunc);
+        // Convert to int64 for C main convention
+        if (result->getType()->isIntegerTy()) {
+            Value* extended = ctx.builder->CreateSExt(result, Type::getInt64Ty(ctx.llvmContext));
+            ctx.builder->CreateRet(extended);
+        } else {
+            ctx.builder->CreateRet(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));
+        }
+    } else {
+        // No user main - just return 0
+        ctx.builder->CreateRet(ConstantInt::get(Type::getInt64Ty(ctx.llvmContext), 0));
+    }
+    
+    // Verify main function
+    verifyFunction(*mainFunc);
+    
+    // =========================================================================
+    // RUN OPTIMIZATION PASSES
+    // =========================================================================
+    
+    // Create pass managers
+    LoopAnalysisManager LAM;
+    FunctionAnalysisManager FAM;
+    CGSCCAnalysisManager CGAM;
+    ModuleAnalysisManager MAM;
+    
+    // Create pass builder and register analyses
+    PassBuilder PB;
+    PB.registerModuleAnalyses(MAM);
+    PB.registerCGSCCAnalyses(CGAM);
+    PB.registerFunctionAnalyses(FAM);
+    PB.registerLoopAnalyses(LAM);
+    PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+    
+    // Build custom optimization pipeline
+    ModulePassManager MPM;
+    
+    // Add our custom TBB optimizer pass (runs on each function)
+    FunctionPassManager FPM;
+    FPM.addPass(TBBOptimizerPass());
+    
+    // Add the function pass manager to the module pass manager
+    MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+    
+    // Run the optimization pipeline
+    MPM.run(*ctx.module, MAM);
+    
+    // =========================================================================
+    // Link imported modules
+    // =========================================================================
+    
+    if (!linkModules(*ctx.module)) {
+        errs() << "Module linking failed.\n";
+        return false;
+    }
+    
+    // =========================================================================
+    
+    bool verificationPassed = true;
+    
+    // Verify entire module for correctness (if enabled)
+    if (enableVerify) {
+        std::string verifyErrors;
+        raw_string_ostream errorStream(verifyErrors);
+        if (verifyModule(*ctx.module, &errorStream)) {
+            verificationPassed = false;
+            errs() << "\n========================================\n";
+            errs() << "LLVM IR VERIFICATION FAILED\n";
+            errs() << "========================================\n";
+            errs() << errorStream.str() << "\n";
+            errs() << "========================================\n";
+            errs() << "Generated IR contains errors.\n";
+            errs() << "Use --no-verify to output anyway (not recommended).\n";
+            errs() << "========================================\n\n";
+        }
+    }
+    
+    // Emit to File (LLVM IR) even if verification failed (for debugging)
+    std::error_code EC;
+    raw_fd_ostream dest(filename, EC, sys::fs::OF_None);
+    if (EC) {
+        errs() << "Could not open file: " << EC.message();
+        return false;
+    }
+    ctx.module->print(dest, nullptr);
+    dest.flush();
+    
+    return verificationPassed;
+    
+    } catch (const std::runtime_error& e) {
+        // Catch codegen errors and provide friendly error message
+        std::cerr << "\n";
+        std::cerr << "╔═══════════════════════════════════════════════════════════╗\n";
+        std::cerr << "║  ARIA COMPILATION ERROR                                   ║\n";
+        std::cerr << "╚═══════════════════════════════════════════════════════════╝\n";
+        std::cerr << "\n";
+        std::cerr << "Error: " << e.what() << "\n";
+        std::cerr << "\n";
+        std::cerr << "Compilation failed. Please fix the error and try again.\n";
+        std::cerr << "\n";
+        return false;
+    } catch (const std::exception& e) {
+        // Catch any other exceptions
+        std::cerr << "\n";
+        std::cerr << "╔═══════════════════════════════════════════════════════════╗\n";
+        std::cerr << "║  ARIA INTERNAL ERROR                                      ║\n";
+        std::cerr << "╚═══════════════════════════════════════════════════════════╝\n";
+        std::cerr << "\n";
+        std::cerr << "Internal compiler error: " << e.what() << "\n";
+        std::cerr << "\n";
+        std::cerr << "This is likely a compiler bug. Please report it at:\n";
+        std::cerr << "https://github.com/alternative-intelligence-cp/aria/issues\n";
+        std::cerr << "\n";
+        return false;
+    }
+}
+
+// =============================================================================
+// Trait-Aware Code Generation Entry Point
+// =============================================================================
+
+bool generate_code(aria::frontend::Block* root, const std::string& filename, const TraitContext& traitCtx, bool enableVerify) {
+    try {
+        // If no traits/impls, use fast path
+        if (traitCtx.traits.empty() && traitCtx.impls.empty()) {
+            return generate_code(root, filename, enableVerify);
+        }
+
+        // Create monomorphization context
+        aria::backend::MonomorphizationContext monoCtx;
+        aria::backend::Monomorphizer monomorphizer(monoCtx);
+        
+        // Register all traits and impls
+        // TODO: Fix API mismatch with monomorphization.h
+        // for (auto* trait : traitCtx.traits) {
+        //     monomorphizer.registerTrait(trait);
+        // }
+        // for (auto* impl : traitCtx.impls) {
+        //     monomorphizer.registerImpl(impl);
+        // }
+        
+        // Run monomorphization pass to generate specialized functions
+        // This creates specialized versions of trait methods for each type
+        // auto specializedFuncs = monomorphizer.monomorphizeAll();
+        
+        // Now generate code normally
+        // The specialized functions will be added to the module during code generation
+        // Note: Full integration would require modifying the AST or adding specialized
+        // functions to the symbol table before code generation. For now, we use the
+        // standard code generation path and note that specialized functions need to be
+        // generated during the codegen visitor pass when trait method calls are encountered.
+        
+        return generate_code(root, filename, enableVerify);
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Trait monomorphization error: " << e.what() << "\n";
+        return false;
+    }
+}
+
+} // namespace backend
+} // namespace aria

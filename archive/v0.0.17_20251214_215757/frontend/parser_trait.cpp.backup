@@ -1,0 +1,229 @@
+// Implementation of Trait System Parsing
+// Handles trait declarations and trait implementations
+#include "parser.h"
+#include "ast.h"
+#include "ast/stmt.h"
+#include <memory>
+#include <sstream>
+#include <stdexcept>
+
+namespace aria {
+namespace frontend {
+
+// Parse trait declaration
+// Syntax: trait:Name = { method_name:(params) -> return_type, ... }
+// Or with super traits: trait:Name:SuperTrait1:SuperTrait2 = { ... }
+std::unique_ptr<TraitDecl> Parser::parseTraitDecl() {
+    auto trait = std::make_unique<TraitDecl>();
+    
+    // Expect TOKEN_KW_TRAIT
+    if (current.type != TOKEN_KW_TRAIT) {
+        throw std::runtime_error("Expected 'trait' keyword");
+    }
+    advance();
+    
+    // Expect colon
+    if (!match(TOKEN_COLON)) {
+        throw std::runtime_error("Expected ':' after 'trait'");
+    }
+    
+    // Parse trait name
+    if (current.type != TOKEN_IDENTIFIER) {
+        throw std::runtime_error("Expected trait name after 'trait:'");
+    }
+    trait->name = current.value;
+    advance();
+    
+    // Parse optional super traits: :SuperTrait1:SuperTrait2
+    while (current.type == TOKEN_COLON && peek().type != TOKEN_ASSIGN) {
+        advance(); // consume ':'
+        
+        if (current.type != TOKEN_IDENTIFIER) {
+            throw std::runtime_error("Expected super trait name after ':'");
+        }
+        
+        trait->super_traits.push_back(current.value);
+        advance();
+    }
+    
+    // Expect assignment
+    if (!match(TOKEN_ASSIGN)) {
+        throw std::runtime_error("Expected '=' after trait name");
+    }
+    
+    // Expect opening brace
+    if (!match(TOKEN_LBRACE)) {
+        throw std::runtime_error("Expected '{' to begin trait body");
+    }
+    
+    // Parse trait methods
+    while (current.type != TOKEN_RBRACE && current.type != TOKEN_EOF) {
+        // Skip commas between method signatures
+        if (match(TOKEN_COMMA)) {
+            continue;
+        }
+        
+        TraitMethod method;
+        
+        // Parse method name
+        if (current.type != TOKEN_IDENTIFIER) {
+            throw std::runtime_error("Expected method name in trait");
+        }
+        method.name = current.value;
+        advance();
+        
+        // Expect colon before parameters
+        if (!match(TOKEN_COLON)) {
+            throw std::runtime_error("Expected ':' after method name");
+        }
+        
+        // Parse parameters
+        if (!match(TOKEN_LPAREN)) {
+            throw std::runtime_error("Expected '(' to begin method parameters");
+        }
+        
+        // Parse parameter list
+        while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
+            // Skip commas
+            if (match(TOKEN_COMMA)) {
+                continue;
+            }
+            
+            FuncParam param;
+            
+            // Parse parameter name
+            if (current.type != TOKEN_IDENTIFIER) {
+                throw std::runtime_error("Expected parameter name");
+            }
+            param.name = current.value;
+            advance();
+            
+            // Expect colon
+            if (!match(TOKEN_COLON)) {
+                throw std::runtime_error("Expected ':' after parameter name");
+            }
+            
+            // Parse parameter type
+            param.type = parseTypeName();
+            
+            // Check for auto_wrap modifier
+            if (current.type == TOKEN_IDENTIFIER && current.value == "auto_wrap") {
+                param.auto_wrap = true;
+                advance();
+            }
+            
+            method.parameters.push_back(param);
+        }
+        
+        // Expect closing paren
+        if (!match(TOKEN_RPAREN)) {
+            throw std::runtime_error("Expected ')' to end method parameters");
+        }
+        
+        // Parse optional return type
+        if (match(TOKEN_ARROW)) {
+            method.return_type = parseTypeName();
+        } else {
+            method.return_type = "void";
+        }
+        
+        // Check if entire method signature is marked auto_wrap
+        if (current.type == TOKEN_IDENTIFIER && current.value == "auto_wrap") {
+            method.auto_wrap = true;
+            advance();
+        }
+        
+        trait->methods.push_back(method);
+    }
+    
+    // Expect closing brace
+    if (!match(TOKEN_RBRACE)) {
+        throw std::runtime_error("Expected '}' to end trait body");
+    }
+    
+    return trait;
+}
+
+// Parse trait implementation
+// Syntax: impl:TraitName:for:TypeName = { method implementations }
+std::unique_ptr<ImplDecl> Parser::parseImplDecl() {
+    auto impl = std::make_unique<ImplDecl>();
+    
+    // Expect TOKEN_KW_IMPL
+    if (current.type != TOKEN_KW_IMPL) {
+        throw std::runtime_error("Expected 'impl' keyword");
+    }
+    advance();
+    
+    // Expect colon
+    if (!match(TOKEN_COLON)) {
+        throw std::runtime_error("Expected ':' after 'impl'");
+    }
+    
+    // Parse trait name
+    if (current.type != TOKEN_IDENTIFIER) {
+        throw std::runtime_error("Expected trait name after 'impl:'");
+    }
+    impl->trait_name = current.value;
+    advance();
+    
+    // Expect :for:
+    if (!match(TOKEN_COLON)) {
+        throw std::runtime_error("Expected ':for:' in impl declaration");
+    }
+    
+    if (current.type != TOKEN_IDENTIFIER || current.value != "for") {
+        throw std::runtime_error("Expected 'for' keyword in impl declaration");
+    }
+    advance();
+    
+    if (!match(TOKEN_COLON)) {
+        throw std::runtime_error("Expected ':' after 'for'");
+    }
+    
+    // Parse type name
+    if (current.type != TOKEN_IDENTIFIER) {
+        throw std::runtime_error("Expected type name after 'for:'");
+    }
+    impl->type_name = current.value;
+    advance();
+    
+    // Expect assignment
+    if (!match(TOKEN_ASSIGN)) {
+        throw std::runtime_error("Expected '=' after impl declaration");
+    }
+    
+    // Expect opening brace
+    if (!match(TOKEN_LBRACE)) {
+        throw std::runtime_error("Expected '{' to begin impl body");
+    }
+    
+    // Parse method implementations
+    while (current.type != TOKEN_RBRACE && current.type != TOKEN_EOF) {
+        // Skip commas
+        if (match(TOKEN_COMMA)) {
+            continue;
+        }
+        
+        // Parse function declaration (method implementation)
+        // Methods in impl blocks are regular function declarations
+        if (current.type == TOKEN_KW_FUNC || current.type == TOKEN_IDENTIFIER) {
+            auto method = parseFuncDecl();
+            if (method) {
+                impl->methods.push_back(std::move(method));
+            }
+        } else {
+            throw std::runtime_error("Expected method implementation in impl block");
+        }
+    }
+    
+    // Expect closing brace
+    if (!match(TOKEN_RBRACE)) {
+        throw std::runtime_error("Expected '}' to end impl body");
+    }
+    
+    return impl;
+}
+
+} // namespace frontend
+} // namespace aria
