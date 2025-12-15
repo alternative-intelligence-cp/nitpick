@@ -73,7 +73,13 @@ set(LEXER_SOURCES
     src/frontend/lexer/lexer.cpp
 )
 
-# Phase 2: Parser
+# Phase 2: AST & Parser
+set(AST_SOURCES
+    src/frontend/ast/ast_node.cpp
+    src/frontend/ast/expr.cpp
+    src/frontend/ast/stmt.cpp
+)
+
 set(PARSER_SOURCES
     # src/frontend/parser/parser.cpp
     # src/frontend/parser/parse_expr.cpp
@@ -110,9 +116,10 @@ set(RUNTIME_SOURCES
     # src/runtime/process/process.cpp
 )
 
-# Combine all sources (empty for now)
+# Combine all sources
 set(ARIA_SOURCES
     ${LEXER_SOURCES}
+    ${AST_SOURCES}
     ${PARSER_SOURCES}
     ${SEMA_SOURCES}
     ${IR_SOURCES}
