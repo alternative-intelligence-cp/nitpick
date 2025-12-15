@@ -212,6 +212,8 @@ CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o: \
  /usr/include/c++/13/bits/erase_if.h /usr/include/c++/13/set \
  /usr/include/c++/13/bits/stl_set.h \
  /usr/include/c++/13/bits/stl_multiset.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/borrow_checker.h \
+ /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/lifetime_context.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/control_flow.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/stmt.h \
  /home/randy/._____RANDY_____/REPOS/aria/src/frontend/sema/../ast/defer.h \
