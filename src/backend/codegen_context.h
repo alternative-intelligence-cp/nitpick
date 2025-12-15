@@ -114,6 +114,30 @@ public:
     std::set<std::string> loadedModules;  // Track which modules have been loaded (prevent circular imports)
     std::vector<std::string> moduleSearchPaths;  // Directories to search for .aria modules
     std::string currentSourceFile = "";  // Current file being compiled (for relative imports)
+    
+    // Phase 2.3: Lifetime intrinsics and scope tracking for borrow checker integration
+    struct ScopedVariable {
+        Value* ptr;               // LLVM alloca pointer
+        uint64_t size;            // Size in bytes for lifetime intrinsics
+        std::string name;         // Variable name (for debugging)
+        int scope_depth;          // Scope depth from borrow checker
+        bool requires_drop;       // Needs explicit cleanup (wild memory)
+    };
+    
+    // Map: scope_depth -> list of variables in that scope
+    std::map<int, std::vector<ScopedVariable>> scopedVariables;
+    
+    // Current scope depth (incremented on block entry, decremented on exit)
+    int currentScopeDepth = 0;
+    
+    // Pinned variables tracking (for shadow stack generation)
+    // Map: scope_depth -> list of pinned variable pointers
+    std::map<int, std::vector<Value*>> pinnedVariables;
+    
+    // Shadow stack for GC root tracking (pinned objects)
+    GlobalVariable* shadowStack = nullptr;
+    Value* shadowStackTop = nullptr;  // Current top index
+    static constexpr size_t SHADOW_STACK_SIZE = 1024;  // Max pinned objects
 
     CodeGenContext(std::string moduleName) {
         module = std::make_unique<Module>(moduleName, llvmContext);
@@ -429,6 +453,147 @@ public:
         }
         
         return FunctionType::get(returnType, paramTypes, false);
+    }
+    
+    // Phase 2.3: Lifetime intrinsic helpers
+    
+    /**
+     * Get or declare llvm.lifetime.start intrinsic
+     * Signature: void @llvm.lifetime.start.p0(i64 <size>, ptr <ptr>)
+     */
+    Function* getLifetimeStart() {
+        if (Function* existing = module->getFunction("llvm.lifetime.start.p0")) {
+            return existing;
+        }
+        
+        FunctionType* lifetimeType = FunctionType::get(
+            Type::getVoidTy(llvmContext),
+            {Type::getInt64Ty(llvmContext), PointerType::getUnqual(llvmContext)},
+            false
+        );
+        
+        return Function::Create(lifetimeType, Function::ExternalLinkage,
+                              "llvm.lifetime.start.p0", module.get());
+    }
+    
+    /**
+     * Get or declare llvm.lifetime.end intrinsic
+     * Signature: void @llvm.lifetime.end.p0(i64 <size>, ptr <ptr>)
+     */
+    Function* getLifetimeEnd() {
+        if (Function* existing = module->getFunction("llvm.lifetime.end.p0")) {
+            return existing;
+        }
+        
+        FunctionType* lifetimeType = FunctionType::get(
+            Type::getVoidTy(llvmContext),
+            {Type::getInt64Ty(llvmContext), PointerType::getUnqual(llvmContext)},
+            false
+        );
+        
+        return Function::Create(lifetimeType, Function::ExternalLinkage,
+                              "llvm.lifetime.end.p0", module.get());
+    }
+    
+    /**
+     * Emit lifetime.start for a variable
+     * Called when variable is declared and allocated
+     */
+    void emitLifetimeStart(Value* ptr, uint64_t size) {
+        if (!ptr || size == 0) return;
+        
+        Function* lifetimeStart = getLifetimeStart();
+        builder->CreateCall(lifetimeStart, {
+            ConstantInt::get(Type::getInt64Ty(llvmContext), size),
+            ptr
+        });
+    }
+    
+    /**
+     * Emit lifetime.end for a variable
+     * Called when variable goes out of scope
+     */
+    void emitLifetimeEnd(Value* ptr, uint64_t size) {
+        if (!ptr || size == 0) return;
+        
+        Function* lifetimeEnd = getLifetimeEnd();
+        builder->CreateCall(lifetimeEnd, {
+            ConstantInt::get(Type::getInt64Ty(llvmContext), size),
+            ptr
+        });
+    }
+    
+    /**
+     * Register a scoped variable for lifetime tracking
+     * Called from VarDecl code generation
+     */
+    void registerScopedVariable(Value* ptr, uint64_t size, const std::string& name, 
+                                int scope_depth, bool requires_drop) {
+        if (scope_depth < 0) return;  // Not tracked by borrow checker
+        
+        scopedVariables[scope_depth].push_back({ptr, size, name, scope_depth, requires_drop});
+        
+        // Emit lifetime.start immediately
+        emitLifetimeStart(ptr, size);
+    }
+    
+    /**
+     * Emit lifetime.end for all variables in a given scope
+     * Called when exiting a scope (block end, return, etc.)
+     */
+    void emitScopeCleanup(int scope_depth) {
+        auto it = scopedVariables.find(scope_depth);
+        if (it == scopedVariables.end()) return;
+        
+        // Emit lifetime.end for all variables in LIFO order (reverse)
+        for (auto rit = it->second.rbegin(); rit != it->second.rend(); ++rit) {
+            emitLifetimeEnd(rit->ptr, rit->size);
+        }
+        
+        // Remove this scope's variables
+        scopedVariables.erase(it);
+        
+        // Also cleanup pinned variables if any
+        auto pinnedIt = pinnedVariables.find(scope_depth);
+        if (pinnedIt != pinnedVariables.end()) {
+            // TODO Phase 2.3 Task 4: Emit shadow stack pop operations
+            pinnedVariables.erase(pinnedIt);
+        }
+    }
+    
+    /**
+     * Initialize shadow stack for pinned object tracking
+     * Called once during module initialization
+     */
+    void initializeShadowStack() {
+        if (shadowStack) return;  // Already initialized
+        
+        // Create global shadow stack array
+        ArrayType* stackType = ArrayType::get(
+            PointerType::getUnqual(llvmContext),
+            SHADOW_STACK_SIZE
+        );
+        
+        shadowStack = new GlobalVariable(
+            *module,
+            stackType,
+            false,  // not constant
+            GlobalValue::InternalLinkage,
+            ConstantAggregateZero::get(stackType),
+            "aria_shadow_stack"
+        );
+        
+        // Create global for stack top index
+        GlobalVariable* stackTopGlobal = new GlobalVariable(
+            *module,
+            Type::getInt64Ty(llvmContext),
+            false,  // not constant
+            GlobalValue::InternalLinkage,
+            ConstantInt::get(Type::getInt64Ty(llvmContext), 0),
+            "aria_shadow_stack_top"
+        );
+        
+        shadowStackTop = stackTopGlobal;
     }
 };
 
