@@ -602,6 +602,18 @@ ASTNodePtr Parser::parseStatement() {
         return parseContinueStatement();
     }
     
+    if (match(TokenType::TOKEN_KW_TILL)) {
+        return parseTillStatement();
+    }
+    
+    if (match(TokenType::TOKEN_KW_LOOP)) {
+        return parseLoopStatement();
+    }
+    
+    if (match(TokenType::TOKEN_KW_WHEN)) {
+        return parseWhenStatement();
+    }
+    
     // Check for block
     if (match(TokenType::TOKEN_LEFT_BRACE)) {
         return parseBlock();
@@ -910,6 +922,158 @@ ASTNodePtr Parser::parseContinueStatement() {
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after continue statement");
     
     return std::make_shared<ContinueStmt>(label, continueToken.line, continueToken.column);
+}
+
+ASTNodePtr Parser::parseTillStatement() {
+    using namespace frontend;
+    
+    Token tillToken = previous(); // We already consumed 'till'
+    
+    // Parse: till(limit, step) { body }
+    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'till'");
+    
+    // Parse limit expression
+    ASTNodePtr limit = parseExpression();
+    if (!limit) {
+        error("Expected limit expression in till statement");
+        return nullptr;
+    }
+    
+    consume(TokenType::TOKEN_COMMA, "Expected ',' after till limit");
+    
+    // Parse step expression
+    ASTNodePtr step = parseExpression();
+    if (!step) {
+        error("Expected step expression in till statement");
+        return nullptr;
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after till parameters");
+    
+    // Parse body (must be a block with braces)
+    if (!match(TokenType::TOKEN_LEFT_BRACE)) {
+        error("Expected '{' after till parameters");
+        return nullptr;
+    }
+    ASTNodePtr body = parseBlock();
+    
+    if (!body) {
+        error("Expected block after till parameters");
+        return nullptr;
+    }
+    
+    return std::make_shared<TillStmt>(limit, step, body, tillToken.line, tillToken.column);
+}
+
+ASTNodePtr Parser::parseLoopStatement() {
+    using namespace frontend;
+    
+    Token loopToken = previous(); // We already consumed 'loop'
+    
+    // Parse: loop(start, limit, step) { body }
+    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'loop'");
+    
+    // Parse start expression
+    ASTNodePtr start = parseExpression();
+    if (!start) {
+        error("Expected start expression in loop statement");
+        return nullptr;
+    }
+    
+    consume(TokenType::TOKEN_COMMA, "Expected ',' after loop start");
+    
+    // Parse limit expression
+    ASTNodePtr limit = parseExpression();
+    if (!limit) {
+        error("Expected limit expression in loop statement");
+        return nullptr;
+    }
+    
+    consume(TokenType::TOKEN_COMMA, "Expected ',' after loop limit");
+    
+    // Parse step expression
+    ASTNodePtr step = parseExpression();
+    if (!step) {
+        error("Expected step expression in loop statement");
+        return nullptr;
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after loop parameters");
+    
+    // Parse body (must be a block with braces)
+    if (!match(TokenType::TOKEN_LEFT_BRACE)) {
+        error("Expected '{' after loop parameters");
+        return nullptr;
+    }
+    ASTNodePtr body = parseBlock();
+    
+    if (!body) {
+        error("Expected block after loop parameters");
+        return nullptr;
+    }
+    
+    return std::make_shared<LoopStmt>(start, limit, step, body, loopToken.line, loopToken.column);
+}
+
+ASTNodePtr Parser::parseWhenStatement() {
+    using namespace frontend;
+    
+    Token whenToken = previous(); // We already consumed 'when'
+    
+    // Parse: when(condition) { body } [then { then_block }] [end { end_block }]
+    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'when'");
+    
+    // Parse condition
+    ASTNodePtr condition = parseExpression();
+    if (!condition) {
+        error("Expected condition in when statement");
+        return nullptr;
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after when condition");
+    
+    // Parse body (must be a block)
+    if (!match(TokenType::TOKEN_LEFT_BRACE)) {
+        error("Expected '{' after when condition");
+        return nullptr;
+    }
+    ASTNodePtr body = parseBlock();
+    
+    if (!body) {
+        error("Expected block after when condition");
+        return nullptr;
+    }
+    
+    // Parse optional 'then' block
+    ASTNodePtr then_block = nullptr;
+    if (match(TokenType::TOKEN_KW_THEN)) {
+        if (!match(TokenType::TOKEN_LEFT_BRACE)) {
+            error("Expected '{' after 'then'");
+            return nullptr;
+        }
+        then_block = parseBlock();
+        if (!then_block) {
+            error("Expected block after 'then'");
+            return nullptr;
+        }
+    }
+    
+    // Parse optional 'end' block
+    ASTNodePtr end_block = nullptr;
+    if (match(TokenType::TOKEN_KW_END)) {
+        if (!match(TokenType::TOKEN_LEFT_BRACE)) {
+            error("Expected '{' after 'end'");
+            return nullptr;
+        }
+        end_block = parseBlock();
+        if (!end_block) {
+            error("Expected block after 'end'");
+            return nullptr;
+        }
+    }
+    
+    return std::make_shared<WhenStmt>(condition, body, then_block, end_block, 
+                                      whenToken.line, whenToken.column);
 }
 
 ASTNodePtr Parser::parse() {
