@@ -1,0 +1,97 @@
+// ============================================================================
+// Example 08: Standard Library
+// ============================================================================
+// Demonstrates:
+// - Standard library imports with 'use'
+// - I/O operations (stdout, stderr, stddbg, stdin, stddati, stddato)
+// - File operations with result type
+// - readFile(), writeFile(), readJSON(), readCSV()
+// - Math functions with Math.round()
+// - Error handling with result.err and result.val
+// - Unwrap operator ? for defaults
+// ============================================================================
+
+use std.io;
+use std.math;
+
+func:demo_io = int8(){
+    print("=== I/O Demo ===");
+    
+    // Modern stdio - separation of text and binary
+    stdout.write("Normal program output\n");
+    stderr.write("Error message\n");
+    stddbg.write("Debug information\n");
+    
+    // String interpolation
+    int32:value = 42;
+    print(`The value is &{value}`);
+    
+    pass(0);
+};
+
+func:demo_files = int8(){
+    print("=== File I/O Demo ===");
+    
+    // File operations with error handling
+    result:file_result = readFile("config.txt");
+    if(file_result.err == NULL){
+        string:content = file_result.val;
+        print(`File content: &{content}`);
+    }else{
+        print(`Error reading file: &{file_result.err}`);
+    }
+    
+    // Using unwrap operator ? for default value
+    string:config = readFile("app.config") ? "default config";
+    print(`Config: &{config}`);
+    
+    // Write operations
+    result:write_result = writeFile("output.txt", "Hello, File!");
+    if(write_result.err != NULL){
+        stderr.write(`Failed to write file: &{write_result.err}`);
+    }
+    
+    // JSON and CSV operations
+    obj:settings = readJSON("settings.json") ? { theme: "dark" };
+    array:data = readCSV("data.csv") ? [];
+    
+    pass(0);
+};
+
+func:demo_math = int8(){
+    print("=== Math Demo ===");
+    
+    // Math operations
+    flt64:value = 3.7;
+    flt64:rounded = Math.round(value);
+    print(`Rounded: &{rounded}`);
+    
+    // Math functions available
+    print("Math.round(), sqrt(), pow(), abs() available");
+    
+    pass(0);
+};
+
+func:demo_collections = int8(){
+    print("=== Collections Demo ===");
+    
+    // Arrays (fixed size)
+    int32[5]:numbers = [1, 2, 3, 4, 5];
+    print(`First number: &{numbers[0]}`);
+    
+    // Array operations available
+    print("filter(), transform(), reduce(), sort(), reverse(), unique() available");
+    
+    pass(0);
+};
+
+func:main = int8(){
+    demo_io();
+    demo_files();
+    demo_math();
+    demo_collections();
+    
+    print("\n=== Standard Library Demo Complete ===");
+    
+    pass(0);
+};

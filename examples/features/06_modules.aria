@@ -1,0 +1,78 @@
+// ============================================================================
+// Example 06: Modules
+// ============================================================================
+// Demonstrates:
+// - Module declarations with 'mod'
+// - Import statements with 'use'
+// - Public/private visibility with 'pub'
+// - Module hierarchies
+// - Module aliases
+// ============================================================================
+
+// Import standard library modules
+use std.io;
+use std.math;
+use std.collections;
+
+// Import with alias
+use std.string as str_utils;
+
+// Selective imports
+use std.collections.{array, map};
+
+// Define a module
+mod math_helpers {
+    // Public function (accessible outside module)
+    pub func:square = int32(int32:x){
+        pass(x * x);
+    };
+    
+    // Public function
+    pub func:cube = int32(int32:x){
+        pass(x * x * x);
+    };
+    
+    // Private function (only accessible within module)
+    func:internal_helper = int32(int32:x){
+        pass(x + 1);
+    };
+}
+
+// Another module
+mod string_helpers {
+    pub func:repeat = string(string:s, int32:count){
+        string:result = "";
+        till(count,1){
+            result = result + s;
+        }
+        pass(result);
+    };
+    
+    pub func:uppercase = string(string:s){
+        // Placeholder - would use stdlib
+        pass(s);
+    };
+}
+
+func:main = int8(){
+    result:r;
+    
+    // Use functions from modules
+    r = math_helpers.square(5);
+    int32:squared = r.val;
+    print(`5 squared = &{squared}`);
+    
+    r = math_helpers.cube(3);
+    int32:cubed = r.val;
+    print(`3 cubed = &{cubed}`);
+    
+    r = string_helpers.repeat("Ha", 3);
+    string:repeated = r.val;
+    print(repeated);  // Prints "HaHaHa"
+    
+    // Use imported stdlib (placeholder)
+    // r = std.math.sqrt(16.0);
+    // flt64:sqrt_value = r.val;
+    
+    pass(0);
+};

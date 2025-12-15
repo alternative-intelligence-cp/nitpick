@@ -1,0 +1,84 @@
+// ============================================================================
+// Example 07: Generics
+// ============================================================================
+// Demonstrates:
+// - Generic function definitions with func<T>:name syntax
+// - * prefix to mark generic type usage in function body
+// - Type parameters with monomorphization (zero-cost)
+// - Generic types in parameters (*T:param) and return values (*T)
+// - Type inference with generics
+// ============================================================================
+
+// Generic function with single type parameter
+// Syntax: func<T>:name = *T(*T:param) { body };
+// The * prefix marks generic type usage
+func<T>:identity = *T(*T:value){
+    pass(value);
+};
+
+// Generic function with multiple type parameters
+func<T,U>:pair = int8(*T:first, *U:second){
+    print("First: ");
+    print(`&{first}`);
+    print("Second: ");
+    print(`&{second}`);
+    pass(0);
+};
+
+// Generic function with comparison operations
+func<T>:max = *T(*T:a, *T:b){
+    if(a > b){
+        pass(a);
+    }else{
+        pass(b);
+    }
+};
+
+// Generic function for arrays
+func<T>:first = *T(*T[]:items, int64:len){
+    if(len > 0){
+        pass(items[0]);
+    }
+    fail(1);
+};
+
+func:main = int8(){
+    result:r;
+    
+    // Generic function calls with explicit type parameters
+    r = identity<int32>(42);
+    int32:int_val = r.val;
+    
+    r = identity<flt64>(3.14);
+    flt64:float_val = r.val;
+    
+    r = identity<string>("hello");
+    string:string_val = r.val;
+    
+    print(`Integer: &{int_val}`);
+    print(`Float: &{float_val}`);
+    print(`String: &{string_val}`);
+    
+    // Multiple type parameters
+    pair<int32,string>(10, "ten");
+    pair<flt64,bool>(3.14, true);
+    
+    // Generic comparison with type inference
+    r = max<int32>(10, 20);
+    int32:max_int = r.val;
+    
+    r = max<flt64>(3.14, 2.71);
+    flt64:max_float = r.val;
+    
+    print(`Max int: &{max_int}`);
+    print(`Max float: &{max_float}`);
+    
+    // Type inference example (T inferred from arguments)
+    int32:val1 = identity<int32>(100) ? 0;
+    string:val2 = identity<string>("test") ? "";
+    
+    print(`Inferred int: &{val1}`);
+    print(`Inferred string: &{val2}`);
+    
+    pass(0);
+};

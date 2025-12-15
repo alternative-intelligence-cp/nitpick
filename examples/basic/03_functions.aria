@@ -1,0 +1,65 @@
+// ============================================================================
+// Example 03: Functions
+// ============================================================================
+// Demonstrates:
+// - Function definitions: func:name = returnType(type:param) { body };
+// - Function parameters with type:name syntax
+// - Function calls
+// - pass() for successful return
+// - Multiple parameters
+// - result type with {err, val} fields (implicit)
+// ============================================================================
+
+// Simple function with no parameters
+func:greet = int8(){
+    print("Hello from Aria!");
+    pass(0);
+};
+
+// Function with parameters and return value
+func:add = int32(int32:a, int32:b){
+    pass(a + b);
+};
+
+// Function with multiple parameters
+func:multiply = flt64(flt64:x, flt64:y){
+    pass(x * y);
+};
+
+// Function that returns boolean
+func:is_even = bool(int32:n){
+    pass((n % 2) == 0);
+};
+
+// Function that prints (returns int8 for status)
+func:print_sum = int8(int32:a, int32:b){
+    int32:result = a + b;
+    print("Sum: ");
+    print(`&{result}`);
+    pass(0);
+};
+
+func:main = int8(){
+    result:r;
+    
+    r = greet();
+    
+    r = add(10, 20);
+    int32:sum = r.val;
+    print("10 + 20 = ");
+    print(`&{sum}`);
+    
+    r = multiply(3.5, 2.0);
+    flt64:product = r.val;
+    print("3.5 * 2.0 = ");
+    print(`&{product}`);
+    
+    r = is_even(42);
+    bool:even = r.val;
+    print("Is 42 even? ");
+    print(`&{even}`);
+    
+    print_sum(15, 25);
+    
+    pass(0);
+};
