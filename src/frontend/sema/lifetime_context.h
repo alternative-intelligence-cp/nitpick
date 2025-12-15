@@ -153,6 +153,10 @@ private:
     
     // Counter for generating unique IDs
     int next_loan_id_;
+    
+    // Wild memory leak tracking
+    std::set<std::string> pending_wild_frees_; // Variables awaiting free/defer
+    std::set<std::string> freed_wild_vars_;     // Variables already freed (use-after-free detection)
 
 public:
     LifetimeContext();
@@ -343,6 +347,39 @@ public:
      */
     std::string get_borrow_error_message(const std::string& var_name,
                                         BorrowKind attempted_kind) const;
+    
+    // ========================================================================
+    // Wild Memory Leak Detection (Rule 2)
+    // ========================================================================
+    
+    /**
+     * Track wild allocation (aria.alloc, new, etc.)
+     * Adds to pending_wild_frees_ set
+     */
+    void track_wild_allocation(const std::string& var_name);
+    
+    /**
+     * Track wild deallocation (aria.free, defer aria.free)
+     * Removes from pending_wild_frees_, adds to freed_wild_vars_
+     */
+    void track_wild_free(const std::string& var_name);
+    
+    /**
+     * Check if variable has been freed (use-after-free detection)
+     */
+    bool is_freed(const std::string& var_name) const;
+    
+    /**
+     * Get all wild variables pending free in current scope
+     * Used to check for memory leaks on scope exit
+     */
+    std::vector<std::string> get_pending_wild_frees() const;
+    
+    /**
+     * Clear pending wild frees for current scope
+     * Called after validation or defer registration
+     */
+    void clear_pending_wild_frees_for_scope();
 };
 
 } // namespace aria

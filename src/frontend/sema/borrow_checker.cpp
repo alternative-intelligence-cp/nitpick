@@ -710,8 +710,8 @@ void BorrowChecker::visit(frontend::ImplDecl* node) {
 
 void BorrowChecker::track_wild_allocation(const std::string& var_name, 
                                          frontend::AstNode* node) {
-    // Wild allocations are tracked via VarInfo in LifetimeContext
-    // Additional tracking can be added here if needed
+    // Track in LifetimeContext for leak detection
+    context_.track_wild_allocation(var_name);
 }
 
 void BorrowChecker::track_wild_free(const std::string& var_name, 
@@ -721,14 +721,29 @@ void BorrowChecker::track_wild_free(const std::string& var_name,
         return;
     }
     
+    // Check if already freed (use-after-free)
+    if (context_.is_freed(var_name)) {
+        report_error("Use-after-free: Variable '" + var_name + "' already freed", node);
+        return;
+    }
+    
+    // Track the free
+    context_.track_wild_free(var_name);
+    
     // Mark as moved (wild pointers become invalid after free)
     context_.move_variable(var_name);
 }
 
 void BorrowChecker::check_wild_leaks(const std::string& scope_name) {
-    // TODO: Check for wild allocations without corresponding frees/defers
-    // This requires tracking aria.alloc() calls and matching them with
-    // aria.free() or defer statements
+    // Check for wild allocations without corresponding frees/defers
+    auto pending = context_.get_pending_wild_frees();
+    
+    if (!pending.empty()) {
+        for (const auto& var_name : pending) {
+            report_error("Memory leak: Wild allocation '" + var_name + 
+                        "' not freed in scope '" + scope_name + "'", nullptr);
+        }
+    }
 }
 
 // ============================================================================
