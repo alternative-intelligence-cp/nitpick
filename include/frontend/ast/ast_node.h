@@ -55,6 +55,7 @@ public:
         WHEN,                 // when/then/end loop
         PICK,                 // pick (pattern matching)
         PICK_CASE,            // Individual pick case
+        FALL,                 // fall statement (explicit fallthrough)
         
         // === TYPES ===
         TYPE_ANNOTATION,      // Type annotation: int8, string, etc.

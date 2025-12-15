@@ -272,6 +272,57 @@ public:
 };
 
 /**
+ * Pick case node (individual case in pick statement)
+ * Represents: pattern { body } or label:pattern { body } or (!) { unreachable }
+ */
+class PickCase : public ASTNode {
+public:
+    std::string label;         // Optional label (empty if no label)
+    ASTNodePtr pattern;        // Pattern expression: (< 10), (9), (*), (!), etc.
+    ASTNodePtr body;           // Case body block
+    bool is_unreachable;       // True if pattern is (!)
+    
+    PickCase(const std::string& lbl, ASTNodePtr patt, ASTNodePtr b, bool unreachable = false,
+             int line = 0, int column = 0)
+        : ASTNode(NodeType::PICK_CASE, line, column),
+          label(lbl), pattern(patt), body(b), is_unreachable(unreachable) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Pick statement node (pattern matching)
+ * Represents: pick(selector) { case1, case2, ... }
+ */
+class PickStmt : public ASTNode {
+public:
+    ASTNodePtr selector;              // Expression being matched
+    std::vector<ASTNodePtr> cases;    // Vector of PickCase nodes
+    
+    PickStmt(ASTNodePtr sel, const std::vector<ASTNodePtr>& cs,
+             int line = 0, int column = 0)
+        : ASTNode(NodeType::PICK, line, column),
+          selector(sel), cases(cs) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Fall statement node (explicit fallthrough in pick)
+ * Represents: fall(label);
+ */
+class FallStmt : public ASTNode {
+public:
+    std::string target_label;     // Label to fall through to
+    
+    FallStmt(const std::string& label, int line = 0, int column = 0)
+        : ASTNode(NodeType::FALL, line, column),
+          target_label(label) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Program node (root of AST)
  * Represents: entire program
  */

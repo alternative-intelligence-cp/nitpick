@@ -614,6 +614,14 @@ ASTNodePtr Parser::parseStatement() {
         return parseWhenStatement();
     }
     
+    if (match(TokenType::TOKEN_KW_PICK)) {
+        return parsePickStatement();
+    }
+    
+    if (match(TokenType::TOKEN_KW_FALL)) {
+        return parseFallStatement();
+    }
+    
     // Check for block
     if (match(TokenType::TOKEN_LEFT_BRACE)) {
         return parseBlock();
@@ -1074,6 +1082,163 @@ ASTNodePtr Parser::parseWhenStatement() {
     
     return std::make_shared<WhenStmt>(condition, body, then_block, end_block, 
                                       whenToken.line, whenToken.column);
+}
+
+// Parse pick statement: pick(selector) { case1, case2, ... }
+// Cases: pattern { body } or label:pattern { body } or (!) { unreachable }
+// Patterns: (< 10), (9), (10..20), (*), (!), etc.
+ASTNodePtr Parser::parsePickStatement() {
+    using namespace frontend;
+    Token pickToken = previous();
+    
+    // Expect '(' after 'pick'
+    if (!match(TokenType::TOKEN_LEFT_PAREN)) {
+        error("Expected '(' after 'pick'");
+        return nullptr;
+    }
+    
+    // Parse selector expression
+    ASTNodePtr selector = parseExpression();
+    if (!selector) {
+        error("Expected expression in pick selector");
+        return nullptr;
+    }
+    
+    // Expect ')' after selector
+    if (!match(TokenType::TOKEN_RIGHT_PAREN)) {
+        error("Expected ')' after pick selector");
+        return nullptr;
+    }
+    
+    // Expect '{' to start cases
+    if (!match(TokenType::TOKEN_LEFT_BRACE)) {
+        error("Expected '{' to start pick cases");
+        return nullptr;
+    }
+    
+    // Parse cases (comma-separated)
+    std::vector<ASTNodePtr> cases;
+    
+    while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        // Check for optional label (identifier or keyword followed by ':' before '(')
+        // Labels can be identifiers or keywords used as labels
+        std::string label;
+        Token currentToken = peek();
+        if (check(TokenType::TOKEN_IDENTIFIER) || 
+            (currentToken.lexeme.length() > 0 && currentToken.type != TokenType::TOKEN_LEFT_PAREN)) {
+            size_t savedPos = current;
+            Token labelToken = advance(); // consume potential label
+            if (check(TokenType::TOKEN_COLON)) {
+                advance(); // consume ':'
+                // This was a label
+                label = labelToken.lexeme;
+            } else {
+                // Not a label, backtrack
+                current = savedPos;
+            }
+        }
+        
+        // Expect '(' to start pattern
+        if (!match(TokenType::TOKEN_LEFT_PAREN)) {
+            error("Expected '(' to start pick case pattern");
+            break;
+        }
+        
+        // Check for unreachable marker (!)
+        bool is_unreachable = false;
+        if (match(TokenType::TOKEN_BANG)) {
+            is_unreachable = true;
+        }
+        
+        // Parse pattern (expression or wildcard *)
+        ASTNodePtr pattern = nullptr;
+        if (!is_unreachable) {
+            if (match(TokenType::TOKEN_STAR)) {
+                // Wildcard '*' - represented as string literal
+                pattern = std::make_shared<LiteralExpr>("*", 
+                                                        previous().line, previous().column);
+            } else {
+                // Regular pattern expression (comparison, range, value, etc.)
+                pattern = parseExpression();
+                if (!pattern) {
+                    error("Expected pattern expression in pick case");
+                    break;
+                }
+            }
+        }
+        
+        // Expect ')' after pattern
+        if (!match(TokenType::TOKEN_RIGHT_PAREN)) {
+            error("Expected ')' after pick case pattern");
+            break;
+        }
+        
+        // Expect '{' to start case body
+        if (!match(TokenType::TOKEN_LEFT_BRACE)) {
+            error("Expected '{' to start pick case body");
+            break;
+        }
+        
+        // Parse case body block
+        ASTNodePtr body = parseBlock();
+        if (!body) {
+            error("Expected block for pick case body");
+            break;
+        }
+        
+        // Create PickCase node
+        cases.push_back(std::make_shared<PickCase>(label, pattern, body, is_unreachable,
+                                                     pickToken.line, pickToken.column));
+        
+        // Cases are comma-separated
+        if (!match(TokenType::TOKEN_COMMA)) {
+            // No more cases
+            break;
+        }
+    }
+    
+    // Expect '}' to close pick
+    if (!match(TokenType::TOKEN_RIGHT_BRACE)) {
+        error("Expected '}' to close pick statement");
+        return nullptr;
+    }
+    
+    return std::make_shared<PickStmt>(selector, cases, pickToken.line, pickToken.column);
+}
+
+// Parse fall statement: fall(label);
+ASTNodePtr Parser::parseFallStatement() {
+    using namespace frontend;
+    Token fallToken = previous();
+    
+    // Expect '(' after 'fall'
+    if (!match(TokenType::TOKEN_LEFT_PAREN)) {
+        error("Expected '(' after 'fall'");
+        return nullptr;
+    }
+    
+    // Expect label identifier
+    if (!check(TokenType::TOKEN_IDENTIFIER)) {
+        error("Expected label identifier in fall statement");
+        return nullptr;
+    }
+    
+    Token labelToken = advance();
+    std::string label = labelToken.lexeme;
+    
+    // Expect ')' after label
+    if (!match(TokenType::TOKEN_RIGHT_PAREN)) {
+        error("Expected ')' after fall label");
+        return nullptr;
+    }
+    
+    // Expect ';' to end statement
+    if (!match(TokenType::TOKEN_SEMICOLON)) {
+        error("Expected ';' after fall statement");
+        return nullptr;
+    }
+    
+    return std::make_shared<FallStmt>(label, fallToken.line, fallToken.column);
 }
 
 ASTNodePtr Parser::parse() {
