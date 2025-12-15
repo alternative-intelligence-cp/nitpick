@@ -2,10 +2,11 @@
  * src/frontend/sema/type_checker.cpp
  *
  * Aria Type Checker Implementation
- * Version: 0.0.6
+ * Version: 0.0.16 (Phase 2.2 - Borrow Checker Integration)
  */
 
 #include "type_checker.h"
+#include "borrow_checker.h"  // Phase 2.2: Borrow checker integration
 #include "types.h"
 #include "../ast/expr.h"
 #include "../ast/stmt.h"
@@ -1180,7 +1181,24 @@ bool TypeChecker::checkTypeCompatibility(const Type& expected, const Type& actua
 TypeCheckResult checkTypes(frontend::Block* ast) {
     TypeChecker checker;
     ast->accept(checker);
-    return checker.getResult();
+    
+    TypeCheckResult result = checker.getResult();
+    
+    // If type checking succeeded, run borrow checker (Phase 2.2 integration)
+    if (result.success) {
+        BorrowChecker borrow_checker;
+        bool borrow_safe = borrow_checker.analyze(ast);
+        
+        if (!borrow_safe) {
+            result.success = false;
+            // Add borrow checker errors to result
+            for (const auto& err : borrow_checker.get_errors()) {
+                result.errors.push_back("Borrow Check: " + err);
+            }
+        }
+    }
+    
+    return result;
 }
 
 } // namespace sema
