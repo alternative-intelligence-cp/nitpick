@@ -56,6 +56,14 @@ private:
     ASTNodePtr parseTemplateLiteral();
     ASTNodePtr parseLambda();
     
+    // Phase 2.4: Statement parsing
+    ASTNodePtr parseStatement();
+    ASTNodePtr parseVarDecl();
+    ASTNodePtr parseBlock();
+    ASTNodePtr parseExpressionStmt();
+    ASTNodePtr parseReturn();
+    bool isTypeKeyword(frontend::TokenType type) const;
+    
 public:
     Parser(const std::vector<frontend::Token>& tokens);
     
