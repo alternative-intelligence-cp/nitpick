@@ -2687,6 +2687,9 @@ public:
             stepVal = ConstantInt::get(iterType, 1);
         }
         
+        // Create increment block for continue support
+        BasicBlock* incrementBB = BasicBlock::Create(ctx.llvmContext, "for_inc");
+        
         // Create loop
         ctx.builder->CreateBr(loopCondBB);
         ctx.builder->SetInsertPoint(loopCondBB);
@@ -2706,7 +2709,7 @@ public:
         BasicBlock* prevBreakTarget = ctx.currentLoopBreakTarget;
         BasicBlock* prevContinueTarget = ctx.currentLoopContinueTarget;
         ctx.currentLoopBreakTarget = exitBB;
-        ctx.currentLoopContinueTarget = loopCondBB;
+        ctx.currentLoopContinueTarget = incrementBB;  // Continue goes to increment block
         
         {
             ScopeGuard guard(ctx);
@@ -2718,12 +2721,17 @@ public:
         ctx.currentLoopBreakTarget = prevBreakTarget;
         ctx.currentLoopContinueTarget = prevContinueTarget;
         
-        // Increment iterator (only if block not terminated by break/continue)
+        // Branch to increment block (only if block not terminated by break)
         if (!ctx.builder->GetInsertBlock()->getTerminator()) {
-            Value* nextIter = ctx.builder->CreateAdd(iterVar, stepVal, "next_iter");
-            iterVar->addIncoming(nextIter, ctx.builder->GetInsertBlock());
-            ctx.builder->CreateBr(loopCondBB);
+            ctx.builder->CreateBr(incrementBB);
         }
+        
+        // Increment block
+        func->insert(func->end(), incrementBB);
+        ctx.builder->SetInsertPoint(incrementBB);
+        Value* nextIter = ctx.builder->CreateAdd(iterVar, stepVal, "next_iter");
+        iterVar->addIncoming(nextIter, incrementBB);
+        ctx.builder->CreateBr(loopCondBB);
         
         // Exit
         func->insert(func->end(), exitBB);
