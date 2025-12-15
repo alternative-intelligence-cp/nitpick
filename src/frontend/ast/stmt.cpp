@@ -137,6 +137,36 @@ std::string WhenStmt::toString() const {
     return result;
 }
 
+std::string PickCase::toString() const {
+    std::ostringstream oss;
+    oss << "PickCase(";
+    if (!label.empty()) {
+        oss << label << ":";
+    }
+    if (is_unreachable) {
+        oss << "(!)" << " { " << body->toString() << " }";
+    } else {
+        oss << pattern->toString() << " { " << body->toString() << " }";
+    }
+    oss << ")";
+    return oss.str();
+}
+
+std::string PickStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Pick(" << selector->toString() << ", [";
+    for (size_t i = 0; i < cases.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << cases[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
+std::string FallStmt::toString() const {
+    return "Fall(" + target_label + ")";
+}
+
 std::string ProgramNode::toString() const {
     std::ostringstream oss;
     oss << "Program([";
