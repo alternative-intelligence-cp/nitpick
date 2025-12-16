@@ -21,15 +21,21 @@ TypeSubstitution GenericResolver::inferTypeArgs(
     TypeSubstitution substitution;
     
     if (!funcDecl || funcDecl->genericParams.empty()) {
-        addError("Function is not generic", callExpr ? callExpr->line : 0,
-                callExpr ? callExpr->column : 0);
+        addError("Cannot infer type arguments: function is not generic",
+                callExpr ? callExpr->line : 0,
+                callExpr ? callExpr->column : 0,
+                "Only generic functions can have type arguments inferred");
         return substitution;
     }
     
     // Check argument count
     if (funcDecl->parameters.size() != argTypes.size()) {
-        addError("Argument count mismatch in generic call",
-                callExpr ? callExpr->line : 0, callExpr ? callExpr->column : 0);
+        std::ostringstream msg;
+        msg << "Argument count mismatch: expected " << funcDecl->parameters.size()
+            << " arguments, got " << argTypes.size();
+        addError(msg.str(),
+                callExpr ? callExpr->line : 0, callExpr ? callExpr->column : 0,
+                "Check function signature and call site");
         return substitution;
     }
     
@@ -51,10 +57,7 @@ TypeSubstitution GenericResolver::inferTypeArgs(
             
             // Try to unify with this type parameter
             if (!unifyTypes(nullptr, argType, substitution, typeParamName)) {
-                addError("Failed to infer type parameter '" + typeParamName + "'",
-                        callExpr ? callExpr->line : 0,
-                        callExpr ? callExpr->column : 0,
-                        "Could not unify with argument type");
+                // Error message already set by unifyTypes with conflict details
                 return TypeSubstitution();
             }
         }
@@ -63,10 +66,15 @@ TypeSubstitution GenericResolver::inferTypeArgs(
     // Phase 2: Validate that all type parameters have been inferred
     for (const auto& param : funcDecl->genericParams) {
         if (substitution.find(param.name) == substitution.end()) {
-            addError("Unable to infer type parameter '" + param.name + "'",
+            std::ostringstream msg;
+            msg << "Cannot infer type parameter '" << param.name << "' from arguments";
+            std::ostringstream help;
+            help << "Hint: Use turbofish syntax to specify explicitly: "
+                 << funcDecl->funcName << "::<" << param.name << "=type>(...)";
+            addError(msg.str(),
                     callExpr ? callExpr->line : 0,
                     callExpr ? callExpr->column : 0,
-                    "Type parameter appears in return type or is unused");
+                    help.str());
             return TypeSubstitution();
         }
     }
@@ -213,10 +221,11 @@ bool GenericResolver::unifyTypes(Type* expected, Type* actual,
         // Parameter already bound - check for consistency
         Type* boundType = it->second;
         if (boundType->toString() != actual->toString()) {
-            addError("Type parameter '" + paramName +
-                    "' bound to multiple different types: '" +
-                    boundType->toString() + "' and '" +
-                    actual->toString() + "'");
+            std::ostringstream msg;
+            msg << "Type conflict: '" << paramName << "' cannot be both '"
+                << boundType->toString() << "' and '" << actual->toString() << "'";
+            addError(msg.str(), 0, 0,
+                    "All uses of the same type parameter must have the same type");
             return false;
         }
         return true;
