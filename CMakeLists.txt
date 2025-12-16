@@ -94,7 +94,7 @@ set(SEMA_SOURCES
     src/frontend/sema/symbol_table.cpp
     src/frontend/sema/type.cpp
     src/frontend/sema/module_table.cpp
-    # src/frontend/sema/type_checker.cpp
+    src/frontend/sema/type_checker.cpp
     # src/frontend/sema/borrow_checker.cpp
     # src/frontend/sema/generic_resolver.cpp
     # src/frontend/sema/module_resolver.cpp
