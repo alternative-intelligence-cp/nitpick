@@ -1670,3 +1670,146 @@ TEST_CASE(parser_nested_pass_fail) {
     auto stmt = prog->declarations[0];
     ASSERT(stmt->type == ASTNode::NodeType::IF, "Should be IF statement");
 }
+// ═══════════════════════════════════════════════════════════════════════
+// Phase 2.4.2: Function Declaration Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(parser_func_no_params) {
+    auto program = parseStmt("func:getName = string() { return \"test\"; };");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 1, "Should have one declaration");
+    
+    auto stmt = prog->declarations[0];
+    ASSERT_EQ(stmt->type, ASTNode::NodeType::FUNC_DECL, "Should be function declaration");
+    
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(stmt);
+    ASSERT(funcDecl != nullptr, "Cast to FuncDeclStmt should succeed");
+    ASSERT_EQ(funcDecl->funcName, "getName", "Function name should be getName");
+    ASSERT_EQ(funcDecl->returnType, "string", "Return type should be string");
+    ASSERT_EQ(funcDecl->parameters.size(), 0, "Should have no parameters");
+    ASSERT(funcDecl->body != nullptr, "Should have a body");
+}
+
+TEST_CASE(parser_func_one_param) {
+    auto program = parseStmt("func:double = int8(int8:x) { return x * 2; };");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(stmt);
+    ASSERT(funcDecl != nullptr, "Cast to FuncDeclStmt should succeed");
+    ASSERT_EQ(funcDecl->funcName, "double", "Function name should be double");
+    ASSERT_EQ(funcDecl->returnType, "int8", "Return type should be int8");
+    ASSERT_EQ(funcDecl->parameters.size(), 1, "Should have one parameter");
+    
+    auto param = std::dynamic_pointer_cast<ParameterNode>(funcDecl->parameters[0]);
+    ASSERT(param != nullptr, "Cast to ParameterNode should succeed");
+    ASSERT_EQ(param->typeName, "int8", "Parameter type should be int8");
+    ASSERT_EQ(param->paramName, "x", "Parameter name should be x");
+}
+
+TEST_CASE(parser_func_multiple_params) {
+    auto program = parseStmt("func:add = int32(int32:a, int32:b) { return a + b; };");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(stmt);
+    ASSERT(funcDecl != nullptr, "Cast to FuncDeclStmt should succeed");
+    ASSERT_EQ(funcDecl->funcName, "add", "Function name should be add");
+    ASSERT_EQ(funcDecl->returnType, "int32", "Return type should be int32");
+    ASSERT_EQ(funcDecl->parameters.size(), 2, "Should have two parameters");
+    
+    auto param1 = std::dynamic_pointer_cast<ParameterNode>(funcDecl->parameters[0]);
+    ASSERT_EQ(param1->typeName, "int32", "First parameter type should be int32");
+    ASSERT_EQ(param1->paramName, "a", "First parameter name should be a");
+    
+    auto param2 = std::dynamic_pointer_cast<ParameterNode>(funcDecl->parameters[1]);
+    ASSERT_EQ(param2->typeName, "int32", "Second parameter type should be int32");
+    ASSERT_EQ(param2->paramName, "b", "Second parameter name should be b");
+}
+
+TEST_CASE(parser_func_with_pass) {
+    auto program = parseStmt("func:test = int8(int8:x) { pass(x * 2); };");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(stmt);
+    ASSERT(funcDecl != nullptr, "Cast to FuncDeclStmt should succeed");
+    ASSERT(funcDecl->body != nullptr, "Should have a body");
+    
+    auto block = std::dynamic_pointer_cast<BlockStmt>(funcDecl->body);
+    ASSERT(block != nullptr, "Body should be a BlockStmt");
+    ASSERT(block->statements.size() > 0, "Block should have statements");
+}
+
+TEST_CASE(parser_func_empty_body) {
+    auto program = parseStmt("func:noop = int8() { };");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(stmt);
+    ASSERT(funcDecl != nullptr, "Cast to FuncDeclStmt should succeed");
+    ASSERT_EQ(funcDecl->funcName, "noop", "Function name should be noop");
+    ASSERT_EQ(funcDecl->returnType, "int8", "Return type should be int8");
+    ASSERT(funcDecl->body != nullptr, "Should have a body");
+    
+    auto block = std::dynamic_pointer_cast<BlockStmt>(funcDecl->body);
+    ASSERT(block != nullptr, "Body should be a BlockStmt");
+}
+
+TEST_CASE(parser_func_complex_body) {
+    auto program = parseStmt("func:calc = int64(int64:x, int64:y) { int64:sum = x + y; pass(sum); };");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(stmt);
+    ASSERT(funcDecl != nullptr, "Cast to FuncDeclStmt should succeed");
+    ASSERT_EQ(funcDecl->parameters.size(), 2, "Should have two parameters");
+    
+    auto block = std::dynamic_pointer_cast<BlockStmt>(funcDecl->body);
+    ASSERT(block != nullptr, "Body should be a BlockStmt");
+    ASSERT(block->statements.size() >= 1, "Block should have at least one statement");
+}
+
+TEST_CASE(parser_func_with_if) {
+    auto program = parseStmt("func:abs = int8(int8:x) { if (x < 0) { pass(-x); } pass(x); };");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(stmt);
+    ASSERT(funcDecl != nullptr, "Cast to FuncDeclStmt should succeed");
+    ASSERT(funcDecl->body != nullptr, "Should have a body");
+    
+    auto block = std::dynamic_pointer_cast<BlockStmt>(funcDecl->body);
+    ASSERT(block != nullptr, "Body should be a BlockStmt");
+    ASSERT(block->statements.size() > 0, "Block should have statements");
+}
+
+TEST_CASE(parser_func_with_loop) {
+    auto program = parseStmt("func:sum = int32(int32:n) { int32:total = 0; while (n > 0) { total = total + n; n = n - 1; } pass(total); };");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(stmt);
+    ASSERT(funcDecl != nullptr, "Cast to FuncDeclStmt should succeed");
+    ASSERT_EQ(funcDecl->funcName, "sum", "Function name should be sum");
+    
+    auto block = std::dynamic_pointer_cast<BlockStmt>(funcDecl->body);
+    ASSERT(block != nullptr, "Body should be a BlockStmt");
+    ASSERT(block->statements.size() >= 2, "Block should have multiple statements");
+}

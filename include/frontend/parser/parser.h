@@ -59,6 +59,7 @@ private:
     // Phase 2.4: Statement parsing
     ASTNodePtr parseStatement();
     ASTNodePtr parseVarDecl();
+    ASTNodePtr parseFuncDecl();
     ASTNodePtr parseBlock();
     ASTNodePtr parseExpressionStmt();
     ASTNodePtr parseReturn();

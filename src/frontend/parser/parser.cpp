@@ -577,6 +577,24 @@ ASTNodePtr Parser::parseStatement() {
         return parseVarDecl();
     }
     
+    // Check for function declaration: func:name = ...
+    // Only treat as function declaration if followed by colon
+    if (peek().type == TokenType::TOKEN_KW_FUNC) {
+        // Look ahead to see if it's func:name (declaration) or func() (call)
+        size_t saved = current;
+        advance(); // consume 'func'
+        if (check(TokenType::TOKEN_COLON)) {
+            // It's a function declaration: func:name = ...
+            current = saved; // reset position
+            match(TokenType::TOKEN_KW_FUNC); // consume it properly
+            return parseFuncDecl();
+        } else {
+            // It's a function call or expression, restore position
+            current = saved;
+            // Fall through to expression statement
+        }
+    }
+    
     // Check for control flow keywords
     if (match(TokenType::TOKEN_KW_RETURN)) {
         return parseReturn();
@@ -705,6 +723,79 @@ ASTNodePtr Parser::parseVarDecl() {
     varDecl->isGC = isGC;
     
     return varDecl;
+}
+
+// Parse function declaration: func:name = returnType(params) { body };
+ASTNodePtr Parser::parseFuncDecl() {
+    using namespace frontend;
+    
+    Token funcToken = previous(); // 'func' keyword
+    
+    // Consume colon
+    consume(TokenType::TOKEN_COLON, "Expected ':' after 'func'");
+    
+    // Get function name
+    Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected function name");
+    
+    // Consume equal sign
+    consume(TokenType::TOKEN_EQUAL, "Expected '=' after function name");
+    
+    // Get return type
+    Token returnTypeToken = advance();
+    if (!isTypeKeyword(returnTypeToken.type)) {
+        error("Expected return type");
+        return nullptr;
+    }
+    
+    // Parse parameters: (type:name, type:name, ...)
+    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after return type");
+    
+    std::vector<ASTNodePtr> parameters;
+    if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+        do {
+            // Parse parameter: type:name
+            Token paramTypeToken = advance();
+            if (!isTypeKeyword(paramTypeToken.type)) {
+                error("Expected parameter type");
+                return nullptr;
+            }
+            
+            consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
+            
+            Token paramNameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
+            
+            auto param = std::make_shared<ParameterNode>(
+                paramTypeToken.lexeme,
+                paramNameToken.lexeme,
+                nullptr, // No default values for now
+                paramTypeToken.line,
+                paramTypeToken.column
+            );
+            
+            parameters.push_back(param);
+            
+        } while (match(TokenType::TOKEN_COMMA));
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after parameters");
+    
+    // Parse function body: { ... }
+    consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' before function body");
+    ASTNodePtr body = parseBlock();
+    
+    // Consume semicolon after closing brace
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after function declaration");
+    
+    auto funcDecl = std::make_shared<FuncDeclStmt>(
+        nameToken.lexeme,
+        returnTypeToken.lexeme,
+        parameters,
+        body,
+        funcToken.line,
+        funcToken.column
+    );
+    
+    return funcDecl;
 }
 
 // Parse block: { stmt1; stmt2; ... }
