@@ -1527,3 +1527,146 @@ TEST_CASE(parser_defer_with_return) {
     ASSERT(blockStmt->statements[0]->type == ASTNode::NodeType::DEFER, "First should be defer");
     ASSERT(blockStmt->statements[1]->type == ASTNode::NodeType::RETURN, "Second should be return");
 }
+
+// =============================================================================
+// PHASE 2.4.9: Pass/Fail Statements (Result Monad Integration)
+// =============================================================================
+// Research: research_020 - Control Transfer (pass/fail section)
+// Syntax: pass(expr); and fail(error_code);
+// Semantics: Syntactic sugar for result type construction and return
+//   pass(x) → return { err: 0, val: x }
+//   fail(e) → return { err: e, val: 0 }
+
+TEST_CASE(parser_pass_simple) {
+    auto program = parseStmt("pass(42);");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT(prog->declarations.size() > 0, "Program should have declarations");
+    auto stmt = prog->declarations[0];
+    ASSERT(stmt->type == ASTNode::NodeType::RETURN, "Pass should desugar to RETURN");
+    
+    auto returnStmt = std::static_pointer_cast<ReturnStmt>(stmt);
+    ASSERT(returnStmt->value != nullptr, "Return should have value");
+}
+
+TEST_CASE(parser_pass_expression) {
+    auto program = parseStmt("pass(x + 10);");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    ASSERT(stmt->type == ASTNode::NodeType::RETURN, "Should desugar to RETURN");
+    
+    auto returnStmt = std::static_pointer_cast<ReturnStmt>(stmt);
+    ASSERT(returnStmt->value != nullptr, "Should have result object");
+}
+
+TEST_CASE(parser_pass_variable) {
+    auto program = parseStmt("pass(value);");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT(prog->declarations.size() > 0, "Program should have declarations");
+    auto stmt = prog->declarations[0];
+    ASSERT(stmt->type == ASTNode::NodeType::RETURN, "Should be RETURN statement");
+}
+
+TEST_CASE(parser_pass_function_call) {
+    auto program = parseStmt("pass(computeValue(a, b));");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT(prog->declarations.size() > 0, "Program should have declarations");
+    auto stmt = prog->declarations[0];
+    ASSERT(stmt->type == ASTNode::NodeType::RETURN, "Should be RETURN statement");
+    
+    auto returnStmt = std::static_pointer_cast<ReturnStmt>(stmt);
+    ASSERT(returnStmt->value != nullptr, "Should have value");
+}
+
+TEST_CASE(parser_fail_simple) {
+    auto program = parseStmt("fail(1);");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT(prog->declarations.size() > 0, "Program should have declarations");
+    auto stmt = prog->declarations[0];
+    ASSERT(stmt->type == ASTNode::NodeType::RETURN, "Fail should desugar to RETURN");
+    
+    auto returnStmt = std::static_pointer_cast<ReturnStmt>(stmt);
+    ASSERT(returnStmt->value != nullptr, "Return should have value");
+}
+
+TEST_CASE(parser_fail_error_code) {
+    auto program = parseStmt("fail(errorCode);");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT(prog->declarations.size() > 0, "Program should have declarations");
+    auto stmt = prog->declarations[0];
+    ASSERT(stmt->type == ASTNode::NodeType::RETURN, "Should desugar to RETURN");
+}
+
+TEST_CASE(parser_fail_expression) {
+    auto program = parseStmt("fail(ERR_NOT_FOUND);");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT(prog->declarations.size() > 0, "Program should have declarations");
+    auto stmt = prog->declarations[0];
+    ASSERT(stmt->type == ASTNode::NodeType::RETURN, "Should be RETURN statement");
+}
+
+TEST_CASE(parser_pass_in_if) {
+    auto program = parseStmt("if (valid) { pass(value); }");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    ASSERT(stmt->type == ASTNode::NodeType::IF, "Should be IF statement");
+    
+    auto ifStmt = std::static_pointer_cast<IfStmt>(stmt);
+    auto thenBlock = std::static_pointer_cast<BlockStmt>(ifStmt->thenBranch);
+    ASSERT(thenBlock->statements.size() > 0, "Then block should have statements");
+    ASSERT(thenBlock->statements[0]->type == ASTNode::NodeType::RETURN, 
+           "Pass should desugar to return");
+}
+
+TEST_CASE(parser_fail_in_else) {
+    auto program = parseStmt("if (valid) { pass(x); } else { fail(1); }");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    ASSERT(stmt->type == ASTNode::NodeType::IF, "Should be IF statement");
+    
+    auto ifStmt = std::static_pointer_cast<IfStmt>(stmt);
+    ASSERT(ifStmt->elseBranch != nullptr, "Should have else branch");
+    auto elseBlock = std::static_pointer_cast<BlockStmt>(ifStmt->elseBranch);
+    ASSERT(elseBlock->statements[0]->type == ASTNode::NodeType::RETURN,
+           "Fail should desugar to return");
+}
+
+TEST_CASE(parser_pass_fail_pattern) {
+    auto program = parseStmt("{ if (success) { pass(value); } fail(errCode); }");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    ASSERT(stmt->type == ASTNode::NodeType::BLOCK, "Should be BLOCK");
+    
+    auto block = std::static_pointer_cast<BlockStmt>(stmt);
+    ASSERT(block->statements.size() == 2, "Block should have if and fail");
+}
+
+TEST_CASE(parser_pass_with_defer) {
+    auto program = parseStmt("{ defer { cleanup(); } pass(value); }");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    ASSERT(stmt->type == ASTNode::NodeType::BLOCK, "Should be BLOCK");
+    
+    auto block = std::static_pointer_cast<BlockStmt>(stmt);
+    ASSERT(block->statements.size() == 2, "Should have defer and pass");
+    ASSERT(block->statements[0]->type == ASTNode::NodeType::DEFER, "First is defer");
+    ASSERT(block->statements[1]->type == ASTNode::NodeType::RETURN, "Second is pass→return");
+}
+
+TEST_CASE(parser_nested_pass_fail) {
+    auto program = parseStmt("if (check1) { if (check2) { pass(val); } fail(2); }");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    ASSERT(stmt->type == ASTNode::NodeType::IF, "Should be IF statement");
+}
