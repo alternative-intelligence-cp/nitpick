@@ -81,7 +81,7 @@ pick
 ||,
 &&,
 !,
-@,         // address/pointer operator
+@,         // address/pointer operator (ARIA NATIVE: type@ for pointers, @var for address-of)
 $,         // iteration variable in till loops, safe reference
 #,         // memory pinning operator
 &,         // bitwise and, string interpolation prefix
@@ -101,7 +101,24 @@ is,        // ternary condition keyword
 NOTE: => is NOT a lambda operator. Lambda syntax is just: returnType(params) { body }
       -> is NOT for function return types. It's ONLY for pointer member access: ptr->member
       All functions return result type implicitly with {err, val} fields
+
+!! CRITICAL POINTER SYNTAX RULES !!
+   ARIA NATIVE CODE: Uses @ operator for pointers
+      - Pointer type declaration: int64@, string@, obj@
+      - Get address of variable: @variable
+      - Dereference is NOT via * (syntax TBD in type system design)
+      - Example: wild int64@:ptr = @value;
+   
+   EXTERN BLOCKS ONLY: Uses C-style * for FFI compatibility
+      - C pointer types: void*, int*, char*
+      - This allows direct mapping to C library signatures
+      - Example: extern "libc" { func:malloc = void*(uint64:size); }
+   
+   MEMBER ACCESS:
+      - -> operator: Dereferences pointer AND accesses member (C-style): ptr->member
+      - . operator: Direct member access on object: obj.member
 */
+
 
 /* std library
 aria.alloc(),      // wild memory allocation
@@ -154,10 +171,12 @@ use "../shared/crypto.aria";   // Relative path
 use "/usr/lib/aria/graphics"; // Absolute path
 
 // EXTERNAL C LIBRARY INTEGRATION
+// NOTE: extern blocks use C-style * for pointer types (FFI compatibility)
+//       All other Aria code uses @ for pointers
 extern "libc" {
-    func:malloc = void*(uint64:size);
-    func:free = void(void*:ptr);
-    func:printf = int(string:format, ...);
+    func:malloc = void*(uint64:size);     // C-style void* for FFI
+    func:free = void(void*:ptr);          // C-style void* for FFI
+    func:printf = int32(string:format, ...); // C returns int
 }
 
 // MODULE DEFINITION (typically in separate .aria files)
@@ -554,7 +573,8 @@ logger.debug("Processing item &{i} of &{total}");
 string:managed = "automatically managed";
 
 // Wild opt-out of GC with Aria allocator
-wild int64*:raw_ptr = aria.alloc<int64>(1000); // Aria's wild allocator
+// NOTE: Aria uses @ for pointer types, NOT *
+wild int64@:raw_ptr = aria.alloc<int64>(1000); // Aria's wild allocator
 defer aria.free(raw_ptr); // RAII-style cleanup
 
 // Alternative wild allocation patterns
@@ -567,8 +587,9 @@ string$:safe_ref = #critical_data; // Pin and create safe reference
 // After pinning, critical_data cannot be moved by GC
 
 // GC-managed allocation (default, but explicit)
-gc int64*:managed_ptr = aria.gc_alloc<int64>(100);
-gc array:managed_array = aria.gc_alloc_array<int>(size);
+// NOTE: Aria uses @ for pointer types in ALL native code
+gc int64@:managed_ptr = aria.gc_alloc<int64>(100);
+gc array:managed_array = aria.gc_alloc_array<int32>(size);
 
 // Stack allocation for performance-critical code
 stack int64[1000]:stack_buffer; // Fixed-size stack allocation
@@ -837,7 +858,7 @@ ARIA_ALLOC_STRING, ARIA_ALLOC_ARRAY,
 - advanced math library
 - string library
 - metaprogramming library
-- c level memory control for wild (unmanaged) memory via address/pointer operator (@), dereference operator (*), and dereferencing member access operator (->)
+- c level memory control for wild (unmanaged) memory via address/pointer operator (@var for address-of, type@ for pointer types), dereferencing member access operator (ptr->member), and explicit dereference syntax (TBD)
 - memeber access operator (.)
 - lambda functions : returnType(type:name,type:name....){ //function body }(//optional immediate execution if () follows rather than ; first );
 - docker dev environment based on ubuntu 24.04

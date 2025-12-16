@@ -34,7 +34,8 @@ public:
 
 /**
  * Pointer type annotation
- * Represents: int8*, string*, obj*
+ * Represents: int8@, string@, obj@ (Aria native pointer syntax)
+ * Note: extern blocks use C-style * for FFI compatibility
  */
 class PointerType : public TypeNode {
 public:
