@@ -1211,23 +1211,40 @@ Reference: [research_001, research_012-017, research_027-028]
 3.1: Symbol Table Implementation
 ═══════════════════════════════════════════════════════════════════════
 
-[ ] 3.1.1: Create symbol table data structures
+[✓] 3.1.1: Create symbol table data structures (commit d8fa39c)
     File: include/frontend/sema/symbol_table.h
     Content:
-    - Symbol struct (name, type, scope, location)
-    - Scope class (parent scope, symbols map)
-    - SymbolTable class (root scope, current scope)
+    - Symbol struct (name, kind, type, scope, location, visibility, mutability)
+    - SymbolKind enum (VARIABLE, FUNCTION, PARAMETER, TYPE, MODULE, CONSTANT)
+    - Scope class (parent scope, children scopes, symbols map, kind)
+    - ScopeKind enum (GLOBAL, FUNCTION, BLOCK, STRUCT, MODULE)
+    - SymbolTable class (root scope, current scope, symbol ownership)
     Methods:
-    - enterScope(), exitScope()
-    - define(name, type), lookup(name)
-    - isInCurrentScope(name)
-    Test: Symbol table operations work
+    - enterScope(kind, name), exitScope()
+    - defineSymbol(name, kind, type, line, col), lookupSymbol(name), resolveSymbol(name)
+    - isDefined(name), getCurrentScope(), hasErrors(), getErrors()
+    - Scope: lookup(name), resolve(name), enterScope(), exitScope()
+    Type System Stub:
+    - include/frontend/sema/type.h with Type, PrimitiveType, UnknownType, ErrorType
+    - TypeSystem factory with primitive caching (int1-512, uint8-512, flt32-512, tbb8-64, bool, string, obj, dyn)
+    Tests: 20 comprehensive tests (264 total, 1187 assertions, all passing)
+    Features: Hierarchical scoping, symbol shadowing, duplicate detection, parent scope resolution
+    Status: Complete and tested
     
-[ ] 3.1.2: Implement scoped symbol resolution
+[✓] 3.1.2: Implement scoped symbol resolution (included in 3.1.1 - commit d8fa39c)
     File: src/frontend/sema/symbol_table.cpp
-    Function: lookup() searches current then parent scopes
-    Handle: Nested scopes (functions, blocks)
-    Test: Symbols resolve correctly in nested scopes
+    Implementation:
+    - Scope::lookup(name) - searches ONLY current scope
+    - Scope::resolve(name) - searches current THEN parent scopes recursively
+    - SymbolTable::lookupSymbol(name) - current scope only
+    - SymbolTable::resolveSymbol(name) - current + parent scopes (delegates to Scope::resolve)
+    Handle: All nested scopes (GLOBAL, FUNCTION, BLOCK, STRUCT, MODULE)
+    Tests:
+    - symbol_table_nested_scopes: Verifies resolution across scope boundaries
+    - symbol_table_shadowing: Verifies inner scope shadows outer scope
+    - symbol_table_function_parameters: Verifies function scope resolution
+    - symbol_table_block_scope: Verifies block scope resolution
+    Status: Complete and tested (part of 264 tests, 1187 assertions)
     
 [ ] 3.1.3: Implement module-level symbol table
     File: src/frontend/sema/module_table.cpp
