@@ -602,6 +602,10 @@ ASTNodePtr Parser::parseStatement() {
         return parseContinueStatement();
     }
     
+    if (match(TokenType::TOKEN_KW_DEFER)) {
+        return parseDeferStatement();
+    }
+    
     if (match(TokenType::TOKEN_KW_TILL)) {
         return parseTillStatement();
     }
@@ -930,6 +934,26 @@ ASTNodePtr Parser::parseContinueStatement() {
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after continue statement");
     
     return std::make_shared<ContinueStmt>(label, continueToken.line, continueToken.column);
+}
+
+ASTNodePtr Parser::parseDeferStatement() {
+    using namespace frontend;
+    
+    Token deferToken = previous(); // We already consumed 'defer'
+    
+    // Parse: defer { block }
+    // According to research_020, defer takes a block, not just an expression
+    consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after 'defer' - defer requires a block");
+    
+    ASTNodePtr block = parseBlock();
+    if (!block) {
+        error("Expected block after 'defer'");
+        return nullptr;
+    }
+    
+    // No semicolon needed after defer block (it's a block statement)
+    
+    return std::make_shared<DeferStmt>(block, deferToken.line, deferToken.column);
 }
 
 ASTNodePtr Parser::parseTillStatement() {

@@ -99,7 +99,7 @@ std::string ForStmt::toString() const {
 }
 
 std::string DeferStmt::toString() const {
-    return "Defer(" + expression->toString() + ")";
+    return "Defer(" + block->toString() + ")";
 }
 
 std::string BreakStmt::toString() const {

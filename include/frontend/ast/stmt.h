@@ -200,14 +200,15 @@ public:
 
 /**
  * Defer statement node
- * Represents: defer expr;
+ * Represents: defer { block }
+ * Block-scoped RAII cleanup - executes at scope exit in LIFO order
  */
 class DeferStmt : public ASTNode {
 public:
-    ASTNodePtr expression;
+    ASTNodePtr block;  // BlockStmt to execute on scope exit
     
-    DeferStmt(ASTNodePtr expr, int line = 0, int column = 0)
-        : ASTNode(NodeType::DEFER, line, column), expression(expr) {}
+    DeferStmt(ASTNodePtr blk, int line = 0, int column = 0)
+        : ASTNode(NodeType::DEFER, line, column), block(blk) {}
     
     std::string toString() const override;
 };
