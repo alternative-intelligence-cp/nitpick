@@ -618,9 +618,21 @@ bool TypeChecker::canCoerce(Type* from, Type* to) {
     // Disallowed Coercions (Explicit Cast Required)
     // ========================================================================
     
+    // TBB ↔ Standard Integer: FORBIDDEN (Phase 3.2.4)
+    // TBB types have error sentinels and sticky error semantics
+    // Standard integers use modular arithmetic
+    // Mixing them requires explicit conversion
+    bool fromIsTBB = (fromName.find("tbb") == 0);
+    bool toIsTBB = (toName.find("tbb") == 0);
+    bool fromIsStdInt = (fromName.find("int") == 0 || fromName.find("uint") == 0);
+    bool toIsStdInt = (toName.find("int") == 0 || toName.find("uint") == 0);
+    
+    if ((fromIsTBB && toIsStdInt) || (fromIsStdInt && toIsTBB)) {
+        return false;  // Explicit cast required
+    }
+    
     // No narrowing (int32 → int8)
     // No float to int (flt32 → int32)
-    // No standard ↔ TBB (int32 ↔ tbb32)
     // No signed ↔ unsigned (int32 ↔ uint32)
     
     return false;
@@ -724,12 +736,32 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             return;
         }
         
+        // TBB Type Validation (Phase 3.2.4)
+        // Special handling for integer literals assigned to TBB types
+        bool tbbLiteralAssignment = false;
+        if (isTBBType(declaredType) && stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+            if (std::holds_alternative<int64_t>(literal->value)) {
+                int64_t value = std::get<int64_t>(literal->value);
+                checkTBBLiteralValue(value, declaredType, stmt);
+                tbbLiteralAssignment = true;
+                
+                // If no errors, allow the assignment (literal is in range)
+                if (hasErrors()) {
+                    return;  // Validation failed
+                }
+            }
+        }
+        
         // Check if initializer type is assignable to declared type
-        if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType)) {
-            addError("Cannot initialize variable '" + stmt->varName + 
-                    "' of type '" + declaredType->toString() + 
-                    "' with value of type '" + initType->toString() + "'", stmt);
-            return;
+        // Skip this check if we handled TBB literal assignment above
+        if (!tbbLiteralAssignment) {
+            if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType)) {
+                addError("Cannot initialize variable '" + stmt->varName + 
+                        "' of type '" + declaredType->toString() + 
+                        "' with value of type '" + initType->toString() + "'", stmt);
+                return;
+            }
         }
     }
     
@@ -778,10 +810,27 @@ void TypeChecker::checkAssignment(BinaryExpr* expr) {
         return;
     }
     
-    // Check type compatibility
-    if (!rightType->isAssignableTo(leftType) && !canCoerce(rightType, leftType)) {
-        addError("Cannot assign value of type '" + rightType->toString() + 
-                "' to variable of type '" + leftType->toString() + "'", expr);
+    // TBB Type Validation (Phase 3.2.4)
+    // Special handling for integer literals assigned to TBB types
+    bool tbbLiteralAssignment = false;
+    if (isTBBType(leftType) && expr->right->type == ASTNode::NodeType::LITERAL) {
+        LiteralExpr* literal = static_cast<LiteralExpr*>(expr->right.get());
+        if (std::holds_alternative<int64_t>(literal->value)) {
+            int64_t value = std::get<int64_t>(literal->value);
+            checkTBBLiteralValue(value, leftType, expr);
+            tbbLiteralAssignment = true;
+            
+            // If validation failed, early exit
+            // If succeeded, allow the assignment (literal is in range)
+        }
+    }
+    
+    // Check type compatibility (skip if we handled TBB literal assignment)
+    if (!tbbLiteralAssignment) {
+        if (!rightType->isAssignableTo(leftType) && !canCoerce(rightType, leftType)) {
+            addError("Cannot assign value of type '" + rightType->toString() + 
+                    "' to variable of type '" + leftType->toString() + "'", expr);
+        }
     }
 }
 
@@ -947,6 +996,112 @@ void TypeChecker::checkExpressionStmt(ExpressionStmt* stmt) {
     
     // Otherwise just infer type (to check for errors)
     inferType(stmt->expression.get());
+}
+
+// ============================================================================
+// TBB Type Validation - Phase 3.2.4
+// ============================================================================
+
+bool TypeChecker::isTBBType(Type* type) {
+    if (!type || type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& name = primType->getName();
+    
+    return name == "tbb8" || name == "tbb16" || name == "tbb32" || name == "tbb64";
+}
+
+int64_t TypeChecker::getTBBErrorSentinel(Type* type) {
+    if (!isTBBType(type)) {
+        return 0;  // Not a TBB type
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& name = primType->getName();
+    
+    if (name == "tbb8") {
+        return -128;  // 0x80
+    } else if (name == "tbb16") {
+        return -32768;  // 0x8000
+    } else if (name == "tbb32") {
+        return -2147483648LL;  // 0x80000000
+    } else if (name == "tbb64") {
+        return INT64_MIN;  // 0x8000000000000000
+    }
+    
+    return 0;
+}
+
+std::pair<int64_t, int64_t> TypeChecker::getTBBValidRange(Type* type) {
+    if (!isTBBType(type)) {
+        return {0, 0};  // Not a TBB type
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& name = primType->getName();
+    
+    if (name == "tbb8") {
+        return {-127, 127};
+    } else if (name == "tbb16") {
+        return {-32767, 32767};
+    } else if (name == "tbb32") {
+        return {-2147483647LL, 2147483647LL};
+    } else if (name == "tbb64") {
+        return {-9223372036854775807LL, 9223372036854775807LL};
+    }
+    
+    return {0, 0};
+}
+
+void TypeChecker::checkTBBLiteralValue(int64_t value, Type* type, ASTNode* node) {
+    if (!isTBBType(type)) {
+        return;  // Not a TBB type, no validation needed
+    }
+    
+    int64_t errSentinel = getTBBErrorSentinel(type);
+    
+    // Check if value is the ERR sentinel
+    if (value == errSentinel) {
+        PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+        addError("Warning: Assigning ERR sentinel value (" + std::to_string(errSentinel) + 
+                ") to " + primType->getName() + ". Use 'ERR' keyword for clarity.", node);
+    }
+    
+    // Check if value is in valid range
+    auto [minVal, maxVal] = getTBBValidRange(type);
+    if (value < minVal || value > maxVal) {
+        // Value is out of range (excluding ERR sentinel check above)
+        if (value != errSentinel) {
+            PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+            addError("Value " + std::to_string(value) + " is out of range for " + 
+                    primType->getName() + " (valid range: [" + std::to_string(minVal) + 
+                    ", " + std::to_string(maxVal) + "])", node);
+        }
+    }
+}
+
+bool TypeChecker::isERRProducingOperation(Type* resultType, Type* leftType, Type* rightType) {
+    // If any operand is a TBB type, the result inherits TBB semantics
+    // In actual runtime, ERR values propagate through operations
+    // For type checking, we just verify the types are compatible
+    
+    // Note: This method is primarily for documentation and future expansion
+    // The actual ERR propagation happens at runtime
+    // Type checker just ensures TBB types are used correctly
+    
+    if (!isTBBType(resultType)) {
+        return false;
+    }
+    
+    // TBB + TBB = TBB (ERR propagates at runtime)
+    // TBB + standard int = ERROR (mixing not allowed)
+    if (isTBBType(leftType) != isTBBType(rightType)) {
+        return true;  // Type mismatch will be caught by type checking
+    }
+    
+    return false;
 }
 
 } // namespace sema
