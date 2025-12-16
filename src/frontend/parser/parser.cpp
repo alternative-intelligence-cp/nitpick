@@ -144,8 +144,29 @@ Token Parser::consume(TokenType type, const std::string& message) {
 void Parser::error(const std::string& message) {
     Token token = peek();
     std::stringstream ss;
-    ss << "Parse error at line " << token.line << ", column " << token.column 
-       << ": " << message;
+    
+    // Main error message with location
+    ss << "Parse error at line " << token.line << ", column " << token.column << ":\n";
+    ss << "  " << message;
+    
+    // Add token context if available
+    if (token.type != TokenType::TOKEN_EOF) {
+        ss << "\n  Found: ";
+        if (token.type == TokenType::TOKEN_IDENTIFIER) {
+            ss << "identifier '" << token.lexeme << "'";
+        } else if (token.type == TokenType::TOKEN_INTEGER) {
+            ss << "integer literal";
+        } else if (token.type == TokenType::TOKEN_FLOAT) {
+            ss << "float literal";
+        } else if (token.type == TokenType::TOKEN_STRING) {
+            ss << "string literal";
+        } else {
+            ss << "token '" << token.lexeme << "'";
+        }
+    } else {
+        ss << "\n  Found: end of file";
+    }
+    
     errors.push_back(ss.str());
 }
 
@@ -153,16 +174,30 @@ void Parser::synchronize() {
     advance();
     
     while (!isAtEnd()) {
+        // After a semicolon, we're at a safe point
         if (previous().type == TokenType::TOKEN_SEMICOLON) return;
         
+        // These keywords start new statements - safe synchronization points
         switch (peek().type) {
             case TokenType::TOKEN_KW_FUNC:
             case TokenType::TOKEN_KW_IF:
+            case TokenType::TOKEN_KW_ELSE:
             case TokenType::TOKEN_KW_WHILE:
             case TokenType::TOKEN_KW_FOR:
+            case TokenType::TOKEN_KW_LOOP:
+            case TokenType::TOKEN_KW_TILL:
+            case TokenType::TOKEN_KW_WHEN:
+            case TokenType::TOKEN_KW_PICK:
             case TokenType::TOKEN_KW_RETURN:
+            case TokenType::TOKEN_KW_PASS:
+            case TokenType::TOKEN_KW_FAIL:
             case TokenType::TOKEN_KW_BREAK:
             case TokenType::TOKEN_KW_CONTINUE:
+            case TokenType::TOKEN_KW_DEFER:
+            case TokenType::TOKEN_KW_USE:
+            case TokenType::TOKEN_KW_MOD:
+            case TokenType::TOKEN_KW_EXTERN:
+            case TokenType::TOKEN_KW_STRUCT:
                 return;
             default:
                 advance();
