@@ -631,6 +631,25 @@ bool TypeChecker::canCoerce(Type* from, Type* to) {
         return false;  // Explicit cast required
     }
     
+    // Balanced ↔ Standard Integer: FORBIDDEN (Phase 3.2.5)
+    // Balanced types (trit, tryte, nit, nyte) use symmetric digit sets
+    // Standard integers use modular arithmetic
+    // Mixing them requires explicit conversion
+    bool fromIsBalanced = (fromName == "trit" || fromName == "tryte" || 
+                          fromName == "nit" || fromName == "nyte");
+    bool toIsBalanced = (toName == "trit" || toName == "tryte" || 
+                        toName == "nit" || toName == "nyte");
+    
+    if ((fromIsBalanced && toIsStdInt) || (fromIsStdInt && toIsBalanced)) {
+        return false;  // Explicit cast required
+    }
+    
+    // Balanced ↔ TBB: FORBIDDEN (Phase 3.2.5)
+    // Different semantic models
+    if ((fromIsBalanced && toIsTBB) || (fromIsTBB && toIsBalanced)) {
+        return false;  // Explicit cast required
+    }
+    
     // No narrowing (int32 → int8)
     // No float to int (flt32 → int32)
     // No signed ↔ unsigned (int32 ↔ uint32)
@@ -753,9 +772,26 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             }
         }
         
+        // Balanced Type Validation (Phase 3.2.5)
+        // Special handling for integer literals assigned to balanced types
+        bool balancedLiteralAssignment = false;
+        if (isBalancedType(declaredType) && stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+            if (std::holds_alternative<int64_t>(literal->value)) {
+                int64_t value = std::get<int64_t>(literal->value);
+                checkBalancedLiteralValue(value, declaredType, stmt);
+                balancedLiteralAssignment = true;
+                
+                // If no errors, allow the assignment (literal is in range)
+                if (hasErrors()) {
+                    return;  // Validation failed
+                }
+            }
+        }
+        
         // Check if initializer type is assignable to declared type
-        // Skip this check if we handled TBB literal assignment above
-        if (!tbbLiteralAssignment) {
+        // Skip this check if we handled TBB or balanced literal assignment above
+        if (!tbbLiteralAssignment && !balancedLiteralAssignment) {
             if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType)) {
                 addError("Cannot initialize variable '" + stmt->varName + 
                         "' of type '" + declaredType->toString() + 
@@ -825,8 +861,23 @@ void TypeChecker::checkAssignment(BinaryExpr* expr) {
         }
     }
     
-    // Check type compatibility (skip if we handled TBB literal assignment)
-    if (!tbbLiteralAssignment) {
+    // Balanced Type Validation (Phase 3.2.5)
+    // Special handling for integer literals assigned to balanced types
+    bool balancedLiteralAssignment = false;
+    if (isBalancedType(leftType) && expr->right->type == ASTNode::NodeType::LITERAL) {
+        LiteralExpr* literal = static_cast<LiteralExpr*>(expr->right.get());
+        if (std::holds_alternative<int64_t>(literal->value)) {
+            int64_t value = std::get<int64_t>(literal->value);
+            checkBalancedLiteralValue(value, leftType, expr);
+            balancedLiteralAssignment = true;
+            
+            // If validation failed, early exit
+            // If succeeded, allow the assignment (literal is in range)
+        }
+    }
+    
+    // Check type compatibility (skip if we handled TBB or balanced literal assignment)
+    if (!tbbLiteralAssignment && !balancedLiteralAssignment) {
         if (!rightType->isAssignableTo(leftType) && !canCoerce(rightType, leftType)) {
             addError("Cannot assign value of type '" + rightType->toString() + 
                     "' to variable of type '" + leftType->toString() + "'", expr);
@@ -1102,6 +1153,119 @@ bool TypeChecker::isERRProducingOperation(Type* resultType, Type* leftType, Type
     }
     
     return false;
+}
+
+// ============================================================================
+// Balanced Ternary/Nonary Type Validation - Phase 3.2.5
+// ============================================================================
+
+bool TypeChecker::isBalancedType(Type* type) {
+    if (!type || type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& name = primType->getName();
+    
+    return name == "trit" || name == "tryte" || name == "nit" || name == "nyte";
+}
+
+bool TypeChecker::isTritType(Type* type) {
+    if (!type || type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    return primType->getName() == "trit";
+}
+
+bool TypeChecker::isTryteType(Type* type) {
+    if (!type || type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    return primType->getName() == "tryte";
+}
+
+bool TypeChecker::isNitType(Type* type) {
+    if (!type || type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    return primType->getName() == "nit";
+}
+
+bool TypeChecker::isNyteType(Type* type) {
+    if (!type || type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    return primType->getName() == "nyte";
+}
+
+std::vector<int> TypeChecker::getBalancedValidDigits(Type* type) {
+    if (isTritType(type)) {
+        // trit: balanced ternary digit {-1, 0, 1}
+        return {-1, 0, 1};
+    } else if (isNitType(type)) {
+        // nit: balanced nonary digit {-4, -3, -2, -1, 0, 1, 2, 3, 4}
+        return {-4, -3, -2, -1, 0, 1, 2, 3, 4};
+    }
+    
+    // Composite types (tryte/nyte) don't have explicit digit sets
+    return {};
+}
+
+std::pair<int64_t, int64_t> TypeChecker::getBalancedCompositeRange(Type* type) {
+    if (isTryteType(type) || isNyteType(type)) {
+        // Both tryte and nyte have the same range
+        // tryte: 10 trits = 3^10 = 59,049 values
+        // nyte: 5 nits = 9^5 = 59,049 values
+        // Range: [-29524, +29524]
+        return {-29524, 29524};
+    }
+    
+    // Atomic types (trit/nit) use getBalancedValidDigits instead
+    return {0, 0};
+}
+
+void TypeChecker::checkBalancedLiteralValue(int64_t value, Type* type, ASTNode* node) {
+    if (!isBalancedType(type)) {
+        return;  // Not a balanced type, no validation needed
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& typeName = primType->getName();
+    
+    // Check atomic types (trit, nit)
+    if (isTritType(type)) {
+        // trit must be exactly -1, 0, or 1
+        if (value != -1 && value != 0 && value != 1) {
+            addError("trit value must be -1, 0, or 1, got " + std::to_string(value), node);
+        }
+    } else if (isNitType(type)) {
+        // nit must be -4, -3, -2, -1, 0, 1, 2, 3, or 4
+        if (value < -4 || value > 4) {
+            addError("nit value must be in range [-4, 4], got " + std::to_string(value), node);
+        }
+    } else if (isTryteType(type)) {
+        // tryte: composite type, check range
+        auto [minVal, maxVal] = getBalancedCompositeRange(type);
+        if (value < minVal || value > maxVal) {
+            addError("tryte value must be in range [" + std::to_string(minVal) + 
+                    ", " + std::to_string(maxVal) + "], got " + std::to_string(value), node);
+        }
+    } else if (isNyteType(type)) {
+        // nyte: composite type, check range
+        auto [minVal, maxVal] = getBalancedCompositeRange(type);
+        if (value < minVal || value > maxVal) {
+            addError("nyte value must be in range [" + std::to_string(minVal) + 
+                    ", " + std::to_string(maxVal) + "], got " + std::to_string(value), node);
+        }
+    }
 }
 
 } // namespace sema

@@ -255,6 +255,78 @@ private:
     bool isERRProducingOperation(Type* resultType, Type* leftType, Type* rightType);
     
     // ========================================================================
+    // Balanced Ternary/Nonary Type Validation (Phase 3.2.5)
+    // ========================================================================
+    
+    /**
+     * Check if a type is a balanced ternary/nonary type
+     * 
+     * Balanced types: trit, tryte, nit, nyte
+     */
+    bool isBalancedType(Type* type);
+    
+    /**
+     * Check if a type is trit (balanced ternary digit)
+     * 
+     * trit: single balanced ternary digit {-1, 0, 1}
+     */
+    bool isTritType(Type* type);
+    
+    /**
+     * Check if a type is tryte (10 trits)
+     * 
+     * tryte: 10 trits stored in uint16
+     * Range: [-29524, +29524] (59,049 values)
+     */
+    bool isTryteType(Type* type);
+    
+    /**
+     * Check if a type is nit (balanced nonary digit)
+     * 
+     * nit: single balanced nonary digit {-4, -3, -2, -1, 0, 1, 2, 3, 4}
+     */
+    bool isNitType(Type* type);
+    
+    /**
+     * Check if a type is nyte (5 nits)
+     * 
+     * nyte: 5 nits stored in uint16
+     * Range: [-29524, +29524] (59,049 values)
+     */
+    bool isNyteType(Type* type);
+    
+    /**
+     * Get valid digit values for balanced atomic types
+     * 
+     * Returns:
+     * - trit: {-1, 0, 1}
+     * - nit: {-4, -3, -2, -1, 0, 1, 2, 3, 4}
+     * - tryte/nyte: empty (composite types, not digit validation)
+     */
+    std::vector<int> getBalancedValidDigits(Type* type);
+    
+    /**
+     * Get valid range for balanced composite types
+     * 
+     * Returns pair of (min, max):
+     * - tryte: [-29524, +29524]
+     * - nyte: [-29524, +29524]
+     * - trit/nit: N/A (use getBalancedValidDigits instead)
+     */
+    std::pair<int64_t, int64_t> getBalancedCompositeRange(Type* type);
+    
+    /**
+     * Validate that a literal value is valid for a balanced type
+     * 
+     * Rules:
+     * - trit: must be exactly -1, 0, or 1
+     * - nit: must be -4, -3, -2, -1, 0, 1, 2, 3, or 4
+     * - tryte: composite type, range checked at runtime
+     * - nyte: composite type, range checked at runtime
+     */
+    void checkBalancedLiteralValue(int64_t value, Type* type, ASTNode* node);
+    
+    // ========================================================================
     // Error Handling
     // ========================================================================
     
