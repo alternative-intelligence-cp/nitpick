@@ -4,6 +4,7 @@
 #include "frontend/ast/ast_node.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
+#include "frontend/ast/type.h"
 
 using namespace aria;
 using namespace aria::frontend;
@@ -1812,4 +1813,146 @@ TEST_CASE(parser_func_with_loop) {
     auto block = std::dynamic_pointer_cast<BlockStmt>(funcDecl->body);
     ASSERT(block != nullptr, "Body should be a BlockStmt");
     ASSERT(block->statements.size() >= 2, "Block should have multiple statements");
+}
+
+// ============================================================================
+// Phase 2.5.1: Type Annotation Parsing Tests
+// ============================================================================
+// Note: Since parseType() is private, we test it indirectly through
+// variable declarations that exercise the type parsing functionality
+
+TEST_CASE(parser_type_simple_int8) {
+    auto program = parseStmt("int8:x = 42;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(stmt);
+    ASSERT(varDecl != nullptr, "Cast to VarDeclStmt should succeed");
+    ASSERT_EQ(varDecl->typeName, "int8", "Type should be int8");
+    ASSERT_EQ(varDecl->varName, "x", "Variable name should be x");
+}
+
+TEST_CASE(parser_type_simple_string) {
+    auto program = parseStmt("string:name = \"test\";");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(stmt);
+    ASSERT(varDecl != nullptr, "Cast to VarDeclStmt should succeed");
+    ASSERT_EQ(varDecl->typeName, "string", "Type should be string");
+    ASSERT_EQ(varDecl->varName, "name", "Variable name should be name");
+}
+
+TEST_CASE(parser_type_simple_bool) {
+    auto program = parseStmt("bool:flag = true;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(stmt);
+    ASSERT(varDecl != nullptr, "Cast to VarDeclStmt should succeed");
+    ASSERT_EQ(varDecl->typeName, "bool", "Type should be bool");
+    ASSERT_EQ(varDecl->varName, "flag", "Variable name should be flag");
+}
+
+TEST_CASE(parser_type_int32) {
+    auto program = parseStmt("int32:count = 100;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(stmt);
+    ASSERT(varDecl != nullptr, "Cast to VarDeclStmt should succeed");
+    ASSERT_EQ(varDecl->typeName, "int32", "Type should be int32");
+    ASSERT_EQ(varDecl->varName, "count", "Variable name should be count");
+}
+
+TEST_CASE(parser_type_int64) {
+    auto program = parseStmt("int64:big = 9999;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(stmt);
+    ASSERT(varDecl != nullptr, "Cast to VarDeclStmt should succeed");
+    ASSERT_EQ(varDecl->typeName, "int64", "Type should be int64");
+    ASSERT_EQ(varDecl->varName, "big", "Variable name should be big");
+}
+
+TEST_CASE(parser_type_flt32) {
+    auto program = parseStmt("flt32:pi = 3.14;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(stmt);
+    ASSERT(varDecl != nullptr, "Cast to VarDeclStmt should succeed");
+    ASSERT_EQ(varDecl->typeName, "flt32", "Type should be flt32");
+    ASSERT_EQ(varDecl->varName, "pi", "Variable name should be pi");
+}
+
+TEST_CASE(parser_type_in_function_params) {
+    auto program = parseStmt("func:add = int32(int32:a, int32:b) { pass(a + b); };");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(stmt);
+    ASSERT(funcDecl != nullptr, "Cast to FuncDeclStmt should succeed");
+    ASSERT_EQ(funcDecl->funcName, "add", "Function name should be add");
+    ASSERT_EQ(funcDecl->returnType, "int32", "Return type should be int32");
+    ASSERT_EQ(funcDecl->parameters.size(), 2, "Should have 2 parameters");
+}
+
+TEST_CASE(parser_type_multiple_vars_same_type) {
+    auto program = parseStmt("int8:x = 1; int8:y = 2; int8:z = 3;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT(prog->declarations.size() >= 3, "Should have at least 3 declarations");
+    
+    auto var1 = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[0]);
+    auto var2 = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[1]);
+    auto var3 = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[2]);
+    
+    ASSERT(var1 != nullptr, "First should be VarDeclStmt");
+    ASSERT(var2 != nullptr, "Second should be VarDeclStmt");
+    ASSERT(var3 != nullptr, "Third should be VarDeclStmt");
+    
+    ASSERT_EQ(var1->typeName, "int8", "First type should be int8");
+    ASSERT_EQ(var2->typeName, "int8", "Second type should be int8");
+    ASSERT_EQ(var3->typeName, "int8", "Third type should be int8");
+    
+    ASSERT_EQ(var1->varName, "x", "First var should be x");
+    ASSERT_EQ(var2->varName, "y", "Second var should be y");
+    ASSERT_EQ(var3->varName, "z", "Third var should be z");
+}
+
+TEST_CASE(parser_type_mixed_types) {
+    auto program = parseStmt("int8:x = 1; string:name = \"test\"; bool:flag = true;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT(prog->declarations.size() >= 3, "Should have at least 3 declarations");
+    
+    auto var1 = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[0]);
+    auto var2 = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[1]);
+    auto var3 = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[2]);
+    
+    ASSERT(var1 != nullptr, "First should be VarDeclStmt");
+    ASSERT(var2 != nullptr, "Second should be VarDeclStmt");
+    ASSERT(var3 != nullptr, "Third should be VarDeclStmt");
+    
+    ASSERT_EQ(var1->typeName, "int8", "First type should be int8");
+    ASSERT_EQ(var2->typeName, "string", "Second type should be string");
+    ASSERT_EQ(var3->typeName, "bool", "Third type should be bool");
 }

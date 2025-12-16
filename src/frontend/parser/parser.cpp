@@ -1,4 +1,5 @@
 #include "frontend/parser/parser.h"
+#include "frontend/ast/type.h"
 #include <sstream>
 #include <iostream>
 
@@ -816,6 +817,45 @@ ASTNodePtr Parser::parseBlock() {
     consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after block");
     
     return std::make_shared<BlockStmt>(statements, leftBrace.line, leftBrace.column);
+}
+
+// Parse type annotation: int8, int8*, int8[], int8[100], Array<int8>, etc.
+ASTNodePtr Parser::parseType() {
+    using namespace frontend;
+    
+    // Must start with a type keyword
+    if (!isTypeKeyword(peek().type)) {
+        error("Expected type keyword");
+        return nullptr;
+    }
+    
+    Token typeToken = advance();
+    ASTNodePtr baseType = std::make_shared<SimpleType>(typeToken.lexeme, typeToken.line, typeToken.column);
+    
+    // Check for pointer type: int8*
+    if (match(TokenType::TOKEN_STAR)) {
+        return std::make_shared<PointerType>(baseType, typeToken.line, typeToken.column);
+    }
+    
+    // Check for array type: int8[] or int8[100]
+    if (match(TokenType::TOKEN_LEFT_BRACKET)) {
+        ASTNodePtr sizeExpr = nullptr;
+        
+        // Check if it's a sized array: int8[100]
+        if (!check(TokenType::TOKEN_RIGHT_BRACKET)) {
+            sizeExpr = parseExpression();
+        }
+        
+        consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after array type");
+        
+        return std::make_shared<ArrayType>(baseType, sizeExpr, typeToken.line, typeToken.column);
+    }
+    
+    // TODO: Handle generic types: Array<int8>
+    // if (match(TokenType::TOKEN_LESS)) { ... }
+    
+    // Simple type
+    return baseType;
 }
 
 // Parse expression statement: expr;
