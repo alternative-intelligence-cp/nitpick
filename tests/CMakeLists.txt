@@ -14,6 +14,7 @@ add_executable(test_runner
     unit/test_module_table.cpp
     unit/test_type_checker.cpp
     unit/test_borrow_checker.cpp
+    unit/test_generic_resolver.cpp
     # Add more test files here as they are created
 )
 
@@ -31,6 +32,7 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/module_table.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/type_checker.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/borrow_checker.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/sema/generic_resolver.cpp
 )
 
 # Include test helpers header
