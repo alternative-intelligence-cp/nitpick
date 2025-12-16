@@ -1349,35 +1349,46 @@ Reference: [research_012-017]
     Test: Balanced type semantics enforced
 
 ═══════════════════════════════════════════════════════════════════════
-3.3: Borrow Checker Integration
+3.3: Borrow Checker Integration ✓ COMPLETE (Commit: dddd6af)
 ═══════════════════════════════════════════════════════════════════════
 Reference: [research_001]
+Completion Date: [Current]
+Files: borrow_checker.h (344 lines), borrow_checker.cpp (617 lines)
+Tests: 13 new tests, 376 total tests passing (1388 assertions)
 
-[ ] 3.3.1: Implement lifetime tracking
+[✓] 3.3.1: Implement lifetime tracking
     File: src/frontend/sema/borrow_checker.cpp
-    Track:
-    - Variable lifetimes (scope-based)
-    - Reference lifetimes
-    - Borrow relationships
-    Reference: [research_001] for complete algorithm
-    Test: Lifetimes tracked correctly
+    Implemented:
+    - Scope depth tracking with LifetimeContext
+    - Variable registration and depth lookup
+    - Appendage Theory: Depth(Host) ≤ Depth(Reference)
+    - Lifetime validation for borrows and pins
+    Test: ✓ All lifetime tests pass
     
-[ ] 3.3.2: Implement borrow rules
+[✓] 3.3.2: Implement borrow rules
     File: src/frontend/sema/borrow_checker.cpp
-    Rules:
-    - At most one mutable reference OR any number of immutable references
-    - References must not outlive referent
-    - Wild memory opts out of borrow checker
-    Test: Borrow rules enforced
+    Implemented:
+    - Rust-style exclusivity: 1 mutable XOR N immutable borrows
+    - Loan tracking with borrower/host relationships
+    - Pinning support (# operator) prevents GC movement
+    - Active loan and pin state management
+    Test: ✓ All borrow rule tests pass
     
-[ ] 3.3.3: Implement memory safety validation
+[✓] 3.3.3: Implement memory safety validation
     File: src/frontend/sema/borrow_checker.cpp
-    Check:
-    - No use after free
-    - No double free
-    - No dangling pointers (GC memory exempt)
-    - Wild memory: full manual control
-    Test: Memory safety errors caught
+    Implemented:
+    - Wild memory leak detection
+    - Use-after-free prevention  
+    - Double-free detection
+    - State tracking (ALLOCATED/FREED/MOVED)
+    Test: ✓ All memory safety tests pass
+    
+Additional Features:
+- Control flow analysis: If/else branching with phi node merging
+- While/for loop handling
+- Conservative state merging
+- Comprehensive AST traversal (10 statement + 4 expression visitors)
+- Borrow/pin detection in variable declarations
 
 ═══════════════════════════════════════════════════════════════════════
 3.4: Generic Type Resolution
