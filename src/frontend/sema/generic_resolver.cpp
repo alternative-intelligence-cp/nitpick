@@ -390,19 +390,250 @@ void Monomorphizer::addError(const std::string& message, int line, int column) {
 ASTNodePtr Monomorphizer::cloneAST(ASTNode* node) {
     if (!node) return nullptr;
     
-    // TODO: Implement deep AST cloning
-    // For now, we'll return nullptr indicating cloning not yet implemented
-    // This will be implemented in the next phase
-    
-    return nullptr;
+    // Deep clone based on node type
+    switch (node->type) {
+        // === Literals ===
+        case ASTNode::NodeType::LITERAL: {
+            LiteralExpr* lit = static_cast<LiteralExpr*>(node);
+            auto cloned = std::make_unique<LiteralExpr>(*lit);
+            return cloned;
+        }
+        
+        // === Identifiers ===
+        case ASTNode::NodeType::IDENTIFIER: {
+            IdentifierExpr* id = static_cast<IdentifierExpr*>(node);
+            return std::make_unique<IdentifierExpr>(id->name, id->line, id->column);
+        }
+        
+        // === Binary Operations ===
+        case ASTNode::NodeType::BINARY_OP: {
+            BinaryExpr* bin = static_cast<BinaryExpr*>(node);
+            auto left = cloneAST(bin->left.get());
+            auto right = cloneAST(bin->right.get());
+            return std::make_unique<BinaryExpr>(
+                std::move(left), bin->op, std::move(right),
+                bin->line, bin->column);
+        }
+        
+        // === Unary Operations ===
+        case ASTNode::NodeType::UNARY_OP: {
+            UnaryExpr* un = static_cast<UnaryExpr*>(node);
+            auto operand = cloneAST(un->operand.get());
+            return std::make_unique<UnaryExpr>(
+                un->op, std::move(operand), un->line, un->column);
+        }
+        
+        // === Call Expressions ===
+        case ASTNode::NodeType::CALL: {
+            CallExpr* call = static_cast<CallExpr*>(node);
+            auto callee = cloneAST(call->callee.get());
+            std::vector<ASTNodePtr> args;
+            for (const auto& arg : call->arguments) {
+                args.push_back(cloneAST(arg.get()));
+            }
+            return std::make_unique<CallExpr>(
+                std::move(callee), std::move(args), call->line, call->column);
+        }
+        
+        // === Variable Declarations ===
+        case ASTNode::NodeType::VAR_DECL: {
+            VarDeclStmt* var = static_cast<VarDeclStmt*>(node);
+            auto init = var->initializer ? cloneAST(var->initializer.get()) : nullptr;
+            auto cloned = std::make_unique<VarDeclStmt>(
+                var->typeName, var->varName, std::move(init),
+                var->line, var->column);
+            cloned->isWild = var->isWild;
+            cloned->isConst = var->isConst;
+            cloned->isStack = var->isStack;
+            cloned->isGC = var->isGC;
+            return cloned;
+        }
+        
+        // === Parameters ===
+        case ASTNode::NodeType::PARAMETER: {
+            ParameterNode* param = static_cast<ParameterNode*>(node);
+            auto defVal = param->defaultValue ? cloneAST(param->defaultValue.get()) : nullptr;
+            return std::make_unique<ParameterNode>(
+                param->typeName, param->paramName, std::move(defVal),
+                param->line, param->column);
+        }
+        
+        // === Block Statements ===
+        case ASTNode::NodeType::BLOCK: {
+            BlockStmt* block = static_cast<BlockStmt*>(node);
+            std::vector<ASTNodePtr> stmts;
+            for (const auto& stmt : block->statements) {
+                stmts.push_back(cloneAST(stmt.get()));
+            }
+            return std::make_unique<BlockStmt>(std::move(stmts), block->line, block->column);
+        }
+        
+        // === Return Statements ===
+        case ASTNode::NodeType::RETURN: {
+            ReturnStmt* ret = static_cast<ReturnStmt*>(node);
+            auto val = ret->value ? cloneAST(ret->value.get()) : nullptr;
+            return std::make_unique<ReturnStmt>(std::move(val), ret->line, ret->column);
+        }
+        
+        // === If Statements ===
+        case ASTNode::NodeType::IF: {
+            IfStmt* ifStmt = static_cast<IfStmt*>(node);
+            auto cond = cloneAST(ifStmt->condition.get());
+            auto thenBranch = cloneAST(ifStmt->thenBranch.get());
+            auto elseBranch = ifStmt->elseBranch ? cloneAST(ifStmt->elseBranch.get()) : nullptr;
+            return std::make_unique<IfStmt>(
+                std::move(cond), std::move(thenBranch), std::move(elseBranch),
+                ifStmt->line, ifStmt->column);
+        }
+        
+        // === While Statements ===
+        case ASTNode::NodeType::WHILE: {
+            WhileStmt* whileStmt = static_cast<WhileStmt*>(node);
+            auto cond = cloneAST(whileStmt->condition.get());
+            auto body = cloneAST(whileStmt->body.get());
+            return std::make_unique<WhileStmt>(
+                std::move(cond), std::move(body),
+                whileStmt->line, whileStmt->column);
+        }
+        
+        // === Expression Statements ===
+        case ASTNode::NodeType::EXPRESSION_STMT: {
+            ExpressionStmt* exprStmt = static_cast<ExpressionStmt*>(node);
+            auto expr = cloneAST(exprStmt->expression.get());
+            return std::make_unique<ExpressionStmt>(
+                std::move(expr), exprStmt->line, exprStmt->column);
+        }
+        
+        default:
+            addError("Cannot clone AST node of type: " + 
+                    std::to_string(static_cast<int>(node->type)),
+                    node->line, node->column);
+            return nullptr;
+    }
 }
 
 void Monomorphizer::substituteTypes(ASTNode* node,
                                    const TypeSubstitution& substitution) {
     if (!node) return;
     
-    // TODO: Traverse AST and substitute *T references with concrete types
-    // This will be implemented when we have proper AST traversal
+    // Substitute types based on node type
+    switch (node->type) {
+        case ASTNode::NodeType::VAR_DECL: {
+            VarDeclStmt* var = static_cast<VarDeclStmt*>(node);
+            if (!var->typeName.empty() && var->typeName[0] == '*') {
+                std::string paramName = var->typeName.substr(1);
+                auto it = substitution.find(paramName);
+                if (it != substitution.end() && it->second) {
+                    var->typeName = it->second->toString();
+                }
+            }
+            if (var->initializer) {
+                substituteTypes(var->initializer.get(), substitution);
+            }
+            break;
+        }
+        
+        case ASTNode::NodeType::PARAMETER: {
+            ParameterNode* param = static_cast<ParameterNode*>(node);
+            if (!param->typeName.empty() && param->typeName[0] == '*') {
+                std::string paramName = param->typeName.substr(1);
+                auto it = substitution.find(paramName);
+                if (it != substitution.end() && it->second) {
+                    param->typeName = it->second->toString();
+                }
+            }
+            if (param->defaultValue) {
+                substituteTypes(param->defaultValue.get(), substitution);
+            }
+            break;
+        }
+        
+        case ASTNode::NodeType::FUNC_DECL: {
+            FuncDeclStmt* func = static_cast<FuncDeclStmt*>(node);
+            // Substitute return type
+            if (!func->returnType.empty() && func->returnType[0] == '*') {
+                std::string paramName = func->returnType.substr(1);
+                auto it = substitution.find(paramName);
+                if (it != substitution.end() && it->second) {
+                    func->returnType = it->second->toString();
+                }
+            }
+            // Substitute parameter types
+            for (auto& param : func->parameters) {
+                substituteTypes(param.get(), substitution);
+            }
+            // Substitute body
+            if (func->body) {
+                substituteTypes(func->body.get(), substitution);
+            }
+            break;
+        }
+        
+        case ASTNode::NodeType::BINARY_OP: {
+            BinaryExpr* bin = static_cast<BinaryExpr*>(node);
+            substituteTypes(bin->left.get(), substitution);
+            substituteTypes(bin->right.get(), substitution);
+            break;
+        }
+        
+        case ASTNode::NodeType::UNARY_OP: {
+            UnaryExpr* un = static_cast<UnaryExpr*>(node);
+            substituteTypes(un->operand.get(), substitution);
+            break;
+        }
+        
+        case ASTNode::NodeType::CALL: {
+            CallExpr* call = static_cast<CallExpr*>(node);
+            substituteTypes(call->callee.get(), substitution);
+            for (auto& arg : call->arguments) {
+                substituteTypes(arg.get(), substitution);
+            }
+            break;
+        }
+        
+        case ASTNode::NodeType::BLOCK: {
+            BlockStmt* block = static_cast<BlockStmt*>(node);
+            for (auto& stmt : block->statements) {
+                substituteTypes(stmt.get(), substitution);
+            }
+            break;
+        }
+        
+        case ASTNode::NodeType::RETURN: {
+            ReturnStmt* ret = static_cast<ReturnStmt*>(node);
+            if (ret->value) {
+                substituteTypes(ret->value.get(), substitution);
+            }
+            break;
+        }
+        
+        case ASTNode::NodeType::IF: {
+            IfStmt* ifStmt = static_cast<IfStmt*>(node);
+            substituteTypes(ifStmt->condition.get(), substitution);
+            substituteTypes(ifStmt->thenBranch.get(), substitution);
+            if (ifStmt->elseBranch) {
+                substituteTypes(ifStmt->elseBranch.get(), substitution);
+            }
+            break;
+        }
+        
+        case ASTNode::NodeType::WHILE: {
+            WhileStmt* whileStmt = static_cast<WhileStmt*>(node);
+            substituteTypes(whileStmt->condition.get(), substitution);
+            substituteTypes(whileStmt->body.get(), substitution);
+            break;
+        }
+        
+        case ASTNode::NodeType::EXPRESSION_STMT: {
+            ExpressionStmt* exprStmt = static_cast<ExpressionStmt*>(node);
+            substituteTypes(exprStmt->expression.get(), substitution);
+            break;
+        }
+        
+        // Other node types don't have type information to substitute
+        default:
+            break;
+    }
 }
 
 uint64_t Monomorphizer::computeTypeHash(const TypeSubstitution& substitution) const {
