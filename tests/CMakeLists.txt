@@ -15,6 +15,7 @@ add_executable(test_runner
     unit/test_type_checker.cpp
     unit/test_borrow_checker.cpp
     unit/test_generic_resolver.cpp
+    unit/test_generic_parser.cpp
     # Add more test files here as they are created
 )
 
