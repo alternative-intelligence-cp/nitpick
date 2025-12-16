@@ -10,10 +10,11 @@ add_executable(test_runner
     unit/test_lexer.cpp
     unit/test_ast.cpp
     unit/test_parser.cpp
+    unit/test_symbol_table.cpp
     # Add more test files here as they are created
 )
 
-# Link with lexer, AST, and parser sources
+# Link with lexer, AST, parser, and sema sources
 target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/lexer/token.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/lexer/lexer.cpp
@@ -22,6 +23,8 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/ast/stmt.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/ast/type.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/parser/parser.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/sema/symbol_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/sema/type.cpp
 )
 
 # Include test helpers header
