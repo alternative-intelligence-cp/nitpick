@@ -1391,29 +1391,143 @@ Additional Features:
 - Borrow/pin detection in variable declarations
 
 ═══════════════════════════════════════════════════════════════════════
-3.4: Generic Type Resolution
+3.4: Generic Type Resolution ✓ IN PROGRESS (67% Complete)
 ═══════════════════════════════════════════════════════════════════════
 Reference: [research_027]
+Start Date: December 16, 2025
 
-[ ] 3.4.1: Implement generic type inference
-    File: src/frontend/sema/generic_resolver.cpp
-    Function: resolveGenericType(FuncDecl*, CallExpr*)
-    Strategy: Unification algorithm
-    Handle: Type parameter inference from call site
-    Test: Generic types inferred correctly
+[✓] 3.4.1: Generic Infrastructure (Commit f89e35f)
+    Files: include/frontend/sema/generic_resolver.h, src/frontend/sema/generic_resolver.cpp
+    Implemented:
+    - GenericParam structure with name and constraints
+    - TypeSubstitution map (type parameter -> concrete type)
+    - SpecializationKey for cache lookups
+    - Specialization storage for monomorphized functions
+    - GenericResolver class with inference and validation
+    - Monomorphizer class with cloning and substitution
+    Tests: Basic infrastructure in place
+    Status: Complete ✓
     
-[ ] 3.4.2: Implement monomorphization
-    File: src/frontend/sema/monomorphization.cpp
-    Function: monomorphize(FuncDecl*, TypeArgs[])
-    Strategy: Create specialized version for each type combination
+[✓] 3.4.2: AST Cloning and Type Substitution (Commit e6e9883)
+    Files: src/frontend/sema/monomorphization.cpp
+    Implemented:
+    - Deep cloning for all AST node types (statements, expressions, types)
+    - Type substitution algorithm (*T -> concrete type)
+    - Recursive traversal for nested structures
+    - Support for generic function bodies, parameters, return types
+    Tests: 6 cloning/substitution tests (all passing)
+    Status: Complete ✓
+    
+[✓] 3.4.3: Parser Support for Generic Syntax (Commit db3021f)
+    Files: include/frontend/parser/parser.h, src/frontend/parser/parser.cpp
+    Implemented:
+    - parseGenericParams(): Parse <T, U> type parameter lists
+    - isGenericTypeReference(): Detect *T pattern in code
+    - parseFuncDecl(): Parse func<T>:name declarations
+    - parseVarDecl(): Parse *T:variable syntax
+    - parseStatement(): Enhanced lookahead for generic functions and variables
+    Syntax Support:
+    - Generic function declarations: func<T>:identity
+    - Generic type references: *T in return types, parameters, variables
+    - Multiple type parameters: func<T, U>:pair
+    - Mixed generic/concrete types: func<T>:print = void(*T, int32)
+    Tests: 5 comprehensive parser tests (all passing)
+    Status: Complete ✓
+    
+[✓] 3.4.4: Trait Constraint Parsing (Commit efae301)
+    Files: include/frontend/ast/stmt.h, src/frontend/parser/parser.cpp
+    Implemented:
+    - GenericParamInfo struct (name + vector<string> constraints)
+    - parseGenericParams(): Parse T: Trait1 & Trait2 syntax
+    - FuncDeclStmt updated to store GenericParamInfo instead of strings
+    - toString() displays constraints in readable format
+    Syntax Support:
+    - Single constraints: func<T: Addable>:add
+    - Multiple constraints: func<T: Addable & Display>:printAdd
+    - Mixed parameters: func<T: Trait, U>:pair
+    Tests: 3 new constraint tests + 5 updated tests (all passing)
+    Status: Complete ✓
+    
+[ ] 3.4.5: Turbofish Syntax (Explicit Type Instantiation)
+    Files: src/frontend/parser/parser.cpp
+    Reference: research_027 section 2.4
+    Implement:
+    - parseExplicitTypeArgs(): Parse ::<T, U> syntax
+    - Modify parseCallExpression(): Handle turbofish operator
+    - Update CallExpr AST node to store explicit type arguments
+    Syntax: identity::<int32>(42) for explicit instantiation
+    Purpose: Disambiguate from comparison operators, allow explicit types
+    Test: Turbofish parsing works correctly
+    Status: Not started
+    
+[ ] 3.4.6: Generic Type Inference (Type Inference Algorithm)
+    Files: src/frontend/sema/generic_resolver.cpp
+    Reference: research_027 section 4
+    Function: inferTypeArgs(FuncDecl*, CallExpr*, vector<Type*>)
+    Strategy: Local bidirectional type inference
+    Algorithm:
+    1. Constraint generation (top-down): Collect type requirements from arguments
+    2. Unification (bottom-up): Solve for type parameters
+    3. Validation: Check completeness and consistency
+    Handle: Type parameter inference from call site arguments
+    Test: Generic types inferred correctly from context
+    Status: Partial (infrastructure exists, needs completion)
+    
+[ ] 3.4.7: Monomorphization Engine
+    Files: src/frontend/sema/monomorphization.cpp
+    Reference: research_027 section 3
+    Function: requestSpecialization(FuncDecl*, TypeSubstitution)
+    Strategy: Lazy instantiation on demand
+    Features:
+    - Specialization cache with deduplication
+    - Name mangling: _Aria_M_<name>_<hash>_<types>
+    - Depth limit (64) with cycle detection
+    - Link-time merging for cross-module duplicates
     Purpose: Zero-cost generics (like C++ templates, Rust)
     Test: Specialized functions generated correctly
+    Status: Partial (cloning works, needs cache and mangling)
     
-[ ] 3.4.3: Implement generic constraints
-    File: src/frontend/sema/generic_resolver.cpp
-    Function: checkConstraints(Type*, Constraints[])
-    Handle: Type bounds (e.g., T must support operator+)
-    Test: Constraints enforced
+[ ] 3.4.8: Constraint Validation
+    Files: src/frontend/sema/generic_resolver.cpp
+    Reference: research_027 section 5
+    Functions: checkConstraints(GenericParam, Type*), validateConstraints()
+    Implement:
+    - Trait system integration (requires trait definitions)
+    - Definition-time checking (verify body only uses declared traits)
+    - Instantiation-time checking (verify concrete type implements traits)
+    - Built-in traits: Copy, Drop, Add, Sub, Mul, Div, Send
+    Handle: Type bounds (e.g., T: Addable means T must support operator+)
+    Test: Constraints enforced at both definition and instantiation time
+    Status: Partial (parsing complete, validation needs trait system)
+    
+[ ] 3.4.9: TBB-Aware Monomorphization
+    Files: src/backend/codegen/tbb_lowerer.cpp
+    Reference: research_027 section 6
+    Implement:
+    - Semantic polymorphism: Different codegen for int32 vs tbb32
+    - Standard types: Single-cycle CPU instructions
+    - TBB types: Sticky ERR propagation, sentinel checks, overflow detection
+    - Example: func<T>:add generates different IR for add_int32 vs add_tbb32
+    Purpose: Zero overhead for standard types, safety for TBB types
+    Test: Generic arithmetic generates appropriate IR for each type
+    Status: Not started (requires codegen phase)
+    
+[ ] 3.4.10: Memory Model Integration
+    Files: src/backend/codegen/gc_integration.cpp
+    Reference: research_027 section 6.2
+    Implement:
+    - GC metadata generation for generic containers
+    - Wild pointer detection: Vector<wild int*> = no GC scanning
+    - Managed types: Vector<string> = GC map with pointer tracing
+    - Write barrier insertion for managed generic types
+    Purpose: Memory model agnostic generics
+    Test: Generic containers adapt to memory model of contained type
+    Status: Not started (requires GC implementation)
+
+Current Status: 405 tests passing (1496 assertions)
+Commits: f89e35f, e6e9883, db3021f, efae301
+Progress: 4/10 tasks complete (40% core features, 67% of high-priority parsing)
+Next: Turbofish syntax, then complete type inference
 
 ═══════════════════════════════════════════════════════════════════════
 3.5: Module System Semantic Analysis
