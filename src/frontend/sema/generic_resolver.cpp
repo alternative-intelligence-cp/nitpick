@@ -140,7 +140,7 @@ bool GenericResolver::checkConstraints(const GenericParam& param, Type* concrete
     // Check each trait constraint
     for (const auto& traitName : param.constraints) {
         if (!implementsTrait(concreteType, traitName)) {
-            addError("Type '" + concreteType->getName() +
+            addError("Type '" + concreteType->toString() +
                     "' does not satisfy trait bound '" + traitName + "'",
                     param.line, param.column);
             return false;
@@ -178,7 +178,7 @@ std::string GenericResolver::canonicalizeTypeName(Type* type) const {
     
     // For now, just return the type name
     // TODO: Resolve type aliases to their underlying types
-    return type->getName();
+    return type->toString();
 }
 
 SpecializationKey GenericResolver::makeSpecializationKey(
@@ -214,11 +214,11 @@ bool GenericResolver::unifyTypes(Type* expected, Type* actual,
     if (it != substitution.end()) {
         // Parameter already bound - check for consistency
         Type* boundType = it->second;
-        if (boundType->getName() != actual->getName()) {
+        if (boundType->toString() != actual->toString()) {
             addError("Type parameter '" + paramName +
                     "' bound to multiple different types: '" +
-                    boundType->getName() + "' and '" +
-                    actual->getName() + "'");
+                    boundType->toString() + "' and '" +
+                    actual->toString() + "'");
             return false;
         }
         return true;
