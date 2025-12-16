@@ -202,6 +202,59 @@ private:
     Type* checkUnaryOperator(frontend::TokenType op, Type* operandType);
     
     // ========================================================================
+    // TBB Type Validation (Phase 3.2.4)
+    // ========================================================================
+    
+    /**
+     * Check if a type is a TBB (Twisted Balanced Binary) type
+     * 
+     * TBB types: tbb8, tbb16, tbb32, tbb64
+     */
+    bool isTBBType(Type* type);
+    
+    /**
+     * Get the ERR sentinel value for a TBB type
+     * 
+     * Returns:
+     * - tbb8:  -128 (0x80)
+     * - tbb16: -32768 (0x8000)
+     * - tbb32: -2147483648 (0x80000000)
+     * - tbb64: -9223372036854775808 (0x8000000000000000)
+     */
+    int64_t getTBBErrorSentinel(Type* type);
+    
+    /**
+     * Get the valid range for a TBB type (excluding ERR sentinel)
+     * 
+     * Returns pair of (min, max):
+     * - tbb8:  [-127, +127]
+     * - tbb16: [-32767, +32767]
+     * - tbb32: [-2147483647, +2147483647]
+     * - tbb64: [-9223372036854775807, +9223372036854775807]
+     */
+    std::pair<int64_t, int64_t> getTBBValidRange(Type* type);
+    
+    /**
+     * Validate that a literal value is not the ERR sentinel for a TBB type
+     * 
+     * Rules:
+     * - Assigning ERR sentinel directly should produce a warning
+     * - Use ERR keyword literal instead for clarity
+     */
+    void checkTBBLiteralValue(int64_t value, Type* type, ASTNode* node);
+    
+    /**
+     * Check if operation produces ERR (sticky error propagation)
+     * 
+     * Rules:
+     * - ERR + anything = ERR
+     * - ERR * anything = ERR
+     * - ERR in any arithmetic operation produces ERR
+     * - Overflow in TBB operations produces ERR
+     */
+    bool isERRProducingOperation(Type* resultType, Type* leftType, Type* rightType);
+    
+    // ========================================================================
     // Error Handling
     // ========================================================================
     
