@@ -67,6 +67,7 @@ private:
     ASTNodePtr parseForStatement();
     ASTNodePtr parseBreakStatement();
     ASTNodePtr parseContinueStatement();
+    ASTNodePtr parseDeferStatement();
     ASTNodePtr parseTillStatement();
     ASTNodePtr parseLoopStatement();
     ASTNodePtr parseWhenStatement();
