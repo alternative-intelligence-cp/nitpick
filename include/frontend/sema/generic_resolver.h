@@ -301,6 +301,12 @@ public:
     bool hasErrors() const { return !errors.empty(); }
     const std::vector<GenericError>& getErrors() const { return errors; }
     
+    // Public for testing: Deep clone an AST node
+    ASTNodePtr cloneAST(ASTNode* node);
+    
+    // Public for testing: Substitute types in an AST node
+    void substituteTypes(ASTNode* node, const TypeSubstitution& substitution);
+    
 private:
     GenericResolver* resolver;
     
@@ -322,12 +328,6 @@ private:
     
     // Helper: Add an error
     void addError(const std::string& message, int line = 0, int column = 0);
-    
-    // Helper: Deep clone an AST node
-    ASTNodePtr cloneAST(ASTNode* node);
-    
-    // Helper: Substitute types in an AST node
-    void substituteTypes(ASTNode* node, const TypeSubstitution& substitution);
     
     // Helper: Compute hash for mangling
     uint64_t computeTypeHash(const TypeSubstitution& substitution) const;
