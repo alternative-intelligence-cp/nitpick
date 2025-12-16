@@ -234,3 +234,90 @@ TEST_CASE(parse_generic_function_mixed_constraints) {
     ASSERT_EQ(funcDecl->genericParams[1].name, "U", "Second param should be 'U'");
     ASSERT_EQ(funcDecl->genericParams[1].constraints.size(), 0, "U should have no constraints");
 }
+
+// ============================================================================
+// Phase 3.4 Part 5: Turbofish Syntax Tests
+// ============================================================================
+
+// Test parsing function call with turbofish (explicit type arguments)
+TEST_CASE(parse_call_with_turbofish_single_type) {
+    std::string source = R"(
+        int32:x = identity::<int32>(42);
+    )";
+    
+    auto ast = parseSource(source);
+    ASSERT(ast != nullptr, "AST should not be null");
+    
+    ProgramNode* program = static_cast<ProgramNode*>(ast.get());
+    ASSERT_EQ(program->declarations.size(), 1, "Should have 1 declaration");
+    
+    VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(program->declarations[0].get());
+    ASSERT(varDecl->initializer != nullptr, "Variable should have initializer");
+    ASSERT_EQ(varDecl->initializer->type, ASTNode::NodeType::CALL, "Initializer should be call expression");
+    
+    CallExpr* call = static_cast<CallExpr*>(varDecl->initializer.get());
+    ASSERT_EQ(call->explicitTypeArgs.size(), 1, "Should have 1 explicit type argument");
+    ASSERT_EQ(call->explicitTypeArgs[0], "int32", "Type argument should be 'int32'");
+    ASSERT_EQ(call->arguments.size(), 1, "Should have 1 argument");
+}
+
+// Test parsing function call with multiple turbofish type arguments
+TEST_CASE(parse_call_with_turbofish_multiple_types) {
+    std::string source = R"(
+        obj:output = convert::<T, U>(value);
+    )";
+    
+    auto ast = parseSource(source);
+    ASSERT(ast != nullptr, "AST should not be null");
+    
+    ProgramNode* program = static_cast<ProgramNode*>(ast.get());
+    ASSERT_EQ(program->declarations.size(), 1, "Should have 1 declaration");
+    
+    VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(program->declarations[0].get());
+    ASSERT(varDecl->initializer != nullptr, "Variable should have initializer");
+    ASSERT_EQ(varDecl->initializer->type, ASTNode::NodeType::CALL, "Initializer should be call expression");
+    
+    CallExpr* call = static_cast<CallExpr*>(varDecl->initializer.get());
+    
+    ASSERT_EQ(call->explicitTypeArgs.size(), 2, "Should have 2 explicit type arguments");
+    ASSERT_EQ(call->explicitTypeArgs[0], "T", "First type should be 'T'");
+    ASSERT_EQ(call->explicitTypeArgs[1], "U", "Second type should be 'U'");
+    ASSERT_EQ(call->arguments.size(), 1, "Should have 1 argument");
+}
+
+// Test parsing function call without turbofish (implicit inference)
+TEST_CASE(parse_call_without_turbofish) {
+    std::string source = R"(
+        int32:x = identity(42);
+    )";
+    
+    auto ast = parseSource(source);
+    ASSERT(ast != nullptr, "AST should not be null");
+    
+    ProgramNode* program = static_cast<ProgramNode*>(ast.get());
+    VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(program->declarations[0].get());
+    CallExpr* call = static_cast<CallExpr*>(varDecl->initializer.get());
+    
+    ASSERT_EQ(call->explicitTypeArgs.size(), 0, "Should have no explicit type arguments");
+    ASSERT_EQ(call->arguments.size(), 1, "Should have 1 argument");
+}
+
+// Test parsing turbofish with complex type names
+TEST_CASE(parse_call_with_turbofish_complex_types) {
+    std::string source = R"(
+        obj:map = create::<string, tbb32, bool>(key, value, flag);
+    )";
+    
+    auto ast = parseSource(source);
+    ASSERT(ast != nullptr, "AST should not be null");
+    
+    ProgramNode* program = static_cast<ProgramNode*>(ast.get());
+    VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(program->declarations[0].get());
+    CallExpr* call = static_cast<CallExpr*>(varDecl->initializer.get());
+    
+    ASSERT_EQ(call->explicitTypeArgs.size(), 3, "Should have 3 explicit type arguments");
+    ASSERT_EQ(call->explicitTypeArgs[0], "string", "First type should be 'string'");
+    ASSERT_EQ(call->explicitTypeArgs[1], "tbb32", "Second type should be 'tbb32'");
+    ASSERT_EQ(call->explicitTypeArgs[2], "bool", "Third type should be 'bool'");
+    ASSERT_EQ(call->arguments.size(), 3, "Should have 3 arguments");
+}
