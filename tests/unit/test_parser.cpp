@@ -2130,3 +2130,118 @@ TEST_CASE(parser_use_multiple_statements) {
     ASSERT_EQ(use2->items.size(), 2, "Second use should have 2 items");
     ASSERT(use3->isWildcard, "Third use should be wildcard");
 }
+
+// ============================================================================
+// mod Statement Tests (Phase 2.5.3)
+// ============================================================================
+
+TEST_CASE(parser_mod_external) {
+    auto program = parseStmt("mod network;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto modStmt = std::dynamic_pointer_cast<ModStmt>(prog->declarations[0]);
+    ASSERT(modStmt != nullptr, "Should be ModStmt");
+    ASSERT_EQ(modStmt->name, "network", "Module name should be network");
+    ASSERT(!modStmt->isPublic, "Should not be public");
+    ASSERT(!modStmt->isInline, "Should not be inline");
+}
+
+TEST_CASE(parser_mod_public) {
+    auto program = parseStmt("pub mod utils;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto modStmt = std::dynamic_pointer_cast<ModStmt>(prog->declarations[0]);
+    ASSERT(modStmt != nullptr, "Should be ModStmt");
+    ASSERT_EQ(modStmt->name, "utils", "Module name should be utils");
+    ASSERT(modStmt->isPublic, "Should be public");
+    ASSERT(!modStmt->isInline, "Should not be inline");
+}
+
+TEST_CASE(parser_mod_inline_empty) {
+    auto program = parseStmt("mod internal { }");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto modStmt = std::dynamic_pointer_cast<ModStmt>(prog->declarations[0]);
+    ASSERT(modStmt != nullptr, "Should be ModStmt");
+    ASSERT_EQ(modStmt->name, "internal", "Module name should be internal");
+    ASSERT(!modStmt->isPublic, "Should not be public");
+    ASSERT(modStmt->isInline, "Should be inline");
+    ASSERT_EQ(modStmt->body.size(), 0, "Body should be empty");
+}
+
+TEST_CASE(parser_mod_inline_with_func) {
+    auto program = parseStmt("mod math { func:add = int8(int8:a, int8:b) { return a + b; } }");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto modStmt = std::dynamic_pointer_cast<ModStmt>(prog->declarations[0]);
+    ASSERT(modStmt != nullptr, "Should be ModStmt");
+    ASSERT_EQ(modStmt->name, "math", "Module name should be math");
+    ASSERT(modStmt->isInline, "Should be inline");
+    ASSERT_EQ(modStmt->body.size(), 1, "Body should have 1 statement");
+    
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(modStmt->body[0]);
+    ASSERT(funcDecl != nullptr, "Body should contain function declaration");
+    ASSERT_EQ(funcDecl->funcName, "add", "Function name should be add");
+}
+
+TEST_CASE(parser_mod_inline_with_multiple) {
+    auto program = parseStmt("mod utils { int8:x = 5; int8:y = 10; }");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto modStmt = std::dynamic_pointer_cast<ModStmt>(prog->declarations[0]);
+    ASSERT(modStmt != nullptr, "Should be ModStmt");
+    ASSERT_EQ(modStmt->name, "utils", "Module name should be utils");
+    ASSERT(modStmt->isInline, "Should be inline");
+    ASSERT_EQ(modStmt->body.size(), 2, "Body should have 2 statements");
+}
+
+TEST_CASE(parser_mod_pub_inline) {
+    auto program = parseStmt("pub mod helpers { int8:x = 42; }");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto modStmt = std::dynamic_pointer_cast<ModStmt>(prog->declarations[0]);
+    ASSERT(modStmt != nullptr, "Should be ModStmt");
+    ASSERT_EQ(modStmt->name, "helpers", "Module name should be helpers");
+    ASSERT(modStmt->isPublic, "Should be public");
+    ASSERT(modStmt->isInline, "Should be inline");
+    ASSERT_EQ(modStmt->body.size(), 1, "Body should have 1 statement");
+}
+
+TEST_CASE(parser_mod_multiple) {
+    auto program = parseStmt("mod network; mod ui; pub mod utils;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 3, "Should have 3 declarations");
+    
+    auto mod1 = std::dynamic_pointer_cast<ModStmt>(prog->declarations[0]);
+    auto mod2 = std::dynamic_pointer_cast<ModStmt>(prog->declarations[1]);
+    auto mod3 = std::dynamic_pointer_cast<ModStmt>(prog->declarations[2]);
+    
+    ASSERT(mod1 != nullptr, "First should be ModStmt");
+    ASSERT(mod2 != nullptr, "Second should be ModStmt");
+    ASSERT(mod3 != nullptr, "Third should be ModStmt");
+    
+    ASSERT_EQ(mod1->name, "network", "First module should be network");
+    ASSERT_EQ(mod2->name, "ui", "Second module should be ui");
+    ASSERT_EQ(mod3->name, "utils", "Third module should be utils");
+    ASSERT(mod3->isPublic, "Third module should be public");
+}

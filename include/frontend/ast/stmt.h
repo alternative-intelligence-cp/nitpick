@@ -346,6 +346,26 @@ public:
 };
 
 /**
+ * Module statement node (module definition)
+ * Represents: mod name;                  (external file module)
+ *             mod name { ... }           (inline module)
+ *             pub mod name;              (public module)
+ */
+class ModStmt : public ASTNode {
+public:
+    std::string name;                     // Module name
+    bool isPublic;                        // true if pub mod
+    bool isInline;                        // true if inline module { }
+    std::vector<ASTNodePtr> body;         // Statements inside inline module
+    
+    ModStmt(const std::string& n, int line = 0, int column = 0)
+        : ASTNode(NodeType::MOD, line, column),
+          name(n), isPublic(false), isInline(false) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Program node (root of AST)
  * Represents: entire program
  */
