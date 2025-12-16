@@ -1246,12 +1246,29 @@ Reference: [research_001, research_012-017, research_027-028]
     - symbol_table_block_scope: Verifies block scope resolution
     Status: Complete and tested (part of 264 tests, 1187 assertions)
     
-[ ] 3.1.3: Implement module-level symbol table
-    File: src/frontend/sema/module_table.cpp
-    Purpose: Track symbols across modules
-    Handle: Public vs private symbols
-    Reference: [research_028]
-    Test: Module symbols resolve correctly
+[✓] 3.1.3: Implement module-level symbol table (commit 03633cb)
+    Files: include/frontend/sema/module_table.h, src/frontend/sema/module_table.cpp
+    Purpose: Track symbols across modules with visibility control
+    Implementation:
+    - Module class: hierarchical parent/child relationships, per-module symbol table, export/import management
+    - ModuleTable class: module registry, import resolution, circular dependency detection, visibility enforcement
+    Visibility Levels (research_028 Section 5):
+    - PRIVATE (default): visible only within defining module
+    - PUBLIC (pub): visible to all importers
+    - PACKAGE (pub(package)): visible within compilation unit
+    - SUPER (pub(super)): visible to parent module
+    Import Types (research_028 Section 3):
+    - Basic: use std.io
+    - Aliased: use std.io as stdio
+    - Wildcard: use math.*
+    - Selective: use std.collections.{array, map}
+    Features:
+    - Import resolution with logical path support (std.io)
+    - Circular dependency detection with recursion stack (A->B->A cycles caught at compile time)
+    - Re-export support (pub use pattern)
+    - Module hierarchy with full path tracking (std.io.file)
+    Tests: 20 comprehensive tests (284 total, 1235 assertions, all passing)
+    Status: Complete and tested
 
 ═══════════════════════════════════════════════════════════════════════
 3.2: Type System Implementation
