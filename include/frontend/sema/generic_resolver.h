@@ -12,6 +12,11 @@
 #include <unordered_set>
 #include <memory>
 
+// Forward declarations
+namespace aria {
+    struct GenericParamInfo;  // Defined in frontend/ast/stmt.h
+}
+
 namespace aria {
 namespace sema {
 
@@ -183,7 +188,7 @@ public:
      * @param concreteType The type being checked
      * @return true if all constraints satisfied
      */
-    bool checkConstraints(const GenericParam& param, Type* concreteType);
+    bool checkConstraints(const GenericParamInfo& param, Type* concreteType);
     
     /**
      * Validate that all type parameters' constraints are satisfied
@@ -192,7 +197,7 @@ public:
      * @param substitution The concrete type bindings
      * @return true if all constraints satisfied
      */
-    bool validateConstraints(const std::vector<GenericParam>& genericParams,
+    bool validateConstraints(const std::vector<GenericParamInfo>& genericParams,
                             const TypeSubstitution& substitution);
     
     // ========================================================================

@@ -129,7 +129,7 @@ bool GenericResolver::validateSubstitution(
     return true;
 }
 
-bool GenericResolver::checkConstraints(const GenericParam& param, Type* concreteType) {
+bool GenericResolver::checkConstraints(const GenericParamInfo& param, Type* concreteType) {
     if (!concreteType) return false;
     
     // If no constraints, any type is valid
@@ -141,8 +141,7 @@ bool GenericResolver::checkConstraints(const GenericParam& param, Type* concrete
     for (const auto& traitName : param.constraints) {
         if (!implementsTrait(concreteType, traitName)) {
             addError("Type '" + concreteType->toString() +
-                    "' does not satisfy trait bound '" + traitName + "'",
-                    param.line, param.column);
+                    "' does not satisfy trait bound '" + traitName + "'");
             return false;
         }
     }
@@ -151,7 +150,7 @@ bool GenericResolver::checkConstraints(const GenericParam& param, Type* concrete
 }
 
 bool GenericResolver::validateConstraints(
-    const std::vector<GenericParam>& genericParams,
+    const std::vector<GenericParamInfo>& genericParams,
     const TypeSubstitution& substitution) {
     
     bool allValid = true;
@@ -159,8 +158,7 @@ bool GenericResolver::validateConstraints(
     for (const auto& param : genericParams) {
         auto it = substitution.find(param.name);
         if (it == substitution.end()) {
-            addError("No type binding for parameter '" + param.name + "'",
-                    param.line, param.column);
+            addError("No type binding for parameter '" + param.name + "'");
             allValid = false;
             continue;
         }
