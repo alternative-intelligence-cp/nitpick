@@ -62,6 +62,10 @@ private:
     ASTNodePtr parseFuncDecl();
     ASTNodePtr parseBlock();
     
+    // Phase 3.4: Generic syntax parsing
+    std::vector<std::string> parseGenericParams();  // Parse <T, U>
+    bool isGenericTypeReference() const;            // Check for *T syntax
+    
     // Phase 2.5: Type and module parsing
     ASTNodePtr parseType();
     ASTNodePtr parseUseStatement();

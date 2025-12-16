@@ -641,6 +641,11 @@ ASTNodePtr Parser::parseStatement() {
         return parseVarDecl();
     }
     
+    // Check for generic type reference (variable declaration): *T:name = ...
+    if (isGenericTypeReference()) {
+        return parseVarDecl();
+    }
+    
     // Check for type annotation (variable declaration)
     // Must be followed by colon to avoid ambiguity with identifiers
     // Example: "obj:x = 5" is variable declaration, "obj.field" is member access
@@ -658,14 +663,36 @@ ASTNodePtr Parser::parseStatement() {
         }
     }
     
-    // Check for function declaration: func:name = ...
-    // Only treat as function declaration if followed by colon
+    // Check for function declaration: func:name = ... or func<T>:name = ...
+    // Only treat as function declaration if followed by colon or generic params then colon
     if (peek().type == TokenType::TOKEN_KW_FUNC) {
-        // Look ahead to see if it's func:name (declaration) or func() (call)
+        // Look ahead to see if it's func:name or func<T>:name (declaration) or func() (call)
         size_t saved = current;
-        advance(); // consume 'func'
-        if (check(TokenType::TOKEN_COLON)) {
-            // It's a function declaration: func:name = ...
+        current++; // skip 'func'
+        
+        // Check for generic parameters: func<T, U>
+        if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_LESS) {
+            current++; // skip '<'
+            // Skip generic parameter names  
+            while (current < tokens.size() && tokens[current].type != TokenType::TOKEN_GREATER) {
+                if (tokens[current].type == TokenType::TOKEN_IDENTIFIER) {
+                    current++; // skip identifier
+                    if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_COMMA) {
+                        current++; // skip comma
+                    }
+                } else {
+                    // Not an identifier, break
+                    break;
+                }
+            }
+            if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_GREATER) {
+                current++; // skip '>'
+            }
+        }
+        
+        // Check for colon
+        if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_COLON) {
+            // It's a function declaration: func:name = ... or func<T>:name = ...
             current = saved; // reset position
             match(TokenType::TOKEN_KW_FUNC); // consume it properly
             return parseFuncDecl();
@@ -768,11 +795,25 @@ ASTNodePtr Parser::parseVarDecl() {
         }
     }
     
-    // Get type
-    Token typeToken = advance();
-    if (!isTypeKeyword(typeToken.type)) {
-        error("Expected type keyword in variable declaration");
-        return nullptr;
+    // Get type (could be *T for generic or regular type)
+    std::string typeName;
+    int typeLine, typeColumn;
+    if (isGenericTypeReference()) {
+        // Generic type reference: *T
+        Token starToken = advance(); // consume '*'
+        typeLine = starToken.line;
+        typeColumn = starToken.column;
+        Token typeParamToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name after '*'");
+        typeName = "*" + typeParamToken.lexeme;
+    } else {
+        Token typeToken = advance();
+        if (!isTypeKeyword(typeToken.type)) {
+            error("Expected type keyword in variable declaration");
+            return nullptr;
+        }
+        typeName = typeToken.lexeme;
+        typeLine = typeToken.line;
+        typeColumn = typeToken.column;
     }
     
     // Consume colon
@@ -791,11 +832,11 @@ ASTNodePtr Parser::parseVarDecl() {
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after variable declaration");
     
     auto varDecl = std::make_shared<VarDeclStmt>(
-        typeToken.lexeme,
+        typeName,
         nameToken.lexeme,
         initializer,
-        typeToken.line,
-        typeToken.column
+        typeLine,
+        typeColumn
     );
     
     varDecl->isWild = isWild;
@@ -812,6 +853,9 @@ ASTNodePtr Parser::parseFuncDecl() {
     
     Token funcToken = previous(); // 'func' keyword
     
+    // Phase 3.4: Parse generic parameters if present: func<T, U>
+    std::vector<std::string> genericParams = parseGenericParams();
+    
     // Consume colon
     consume(TokenType::TOKEN_COLON, "Expected ':' after 'func'");
     
@@ -821,11 +865,20 @@ ASTNodePtr Parser::parseFuncDecl() {
     // Consume equal sign
     consume(TokenType::TOKEN_EQUAL, "Expected '=' after function name");
     
-    // Get return type
-    Token returnTypeToken = advance();
-    if (!isTypeKeyword(returnTypeToken.type)) {
-        error("Expected return type");
-        return nullptr;
+    // Get return type (could be *T for generic or regular type)
+    std::string returnTypeName;
+    if (isGenericTypeReference()) {
+        // Generic type reference: *T
+        advance(); // consume '*'
+        Token typeParamToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name after '*'");
+        returnTypeName = "*" + typeParamToken.lexeme;
+    } else {
+        Token returnTypeToken = advance();
+        if (!isTypeKeyword(returnTypeToken.type)) {
+            error("Expected return type");
+            return nullptr;
+        }
+        returnTypeName = returnTypeToken.lexeme;
     }
     
     // Parse parameters: (type:name, type:name, ...)
@@ -834,11 +887,20 @@ ASTNodePtr Parser::parseFuncDecl() {
     std::vector<ASTNodePtr> parameters;
     if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
         do {
-            // Parse parameter: type:name
-            Token paramTypeToken = advance();
-            if (!isTypeKeyword(paramTypeToken.type)) {
-                error("Expected parameter type");
-                return nullptr;
+            // Parse parameter type (could be *T for generic or regular type)
+            std::string paramTypeName;
+            if (isGenericTypeReference()) {
+                // Generic type reference: *T
+                advance(); // consume '*'
+                Token typeParamToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name after '*'");
+                paramTypeName = "*" + typeParamToken.lexeme;
+            } else {
+                Token paramTypeToken = advance();
+                if (!isTypeKeyword(paramTypeToken.type)) {
+                    error("Expected parameter type");
+                    return nullptr;
+                }
+                paramTypeName = paramTypeToken.lexeme;
             }
             
             consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
@@ -846,11 +908,11 @@ ASTNodePtr Parser::parseFuncDecl() {
             Token paramNameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
             
             auto param = std::make_shared<ParameterNode>(
-                paramTypeToken.lexeme,
+                paramTypeName,
                 paramNameToken.lexeme,
                 nullptr, // No default values for now
-                paramTypeToken.line,
-                paramTypeToken.column
+                funcToken.line,
+                funcToken.column
             );
             
             parameters.push_back(param);
@@ -869,12 +931,15 @@ ASTNodePtr Parser::parseFuncDecl() {
     
     auto funcDecl = std::make_shared<FuncDeclStmt>(
         nameToken.lexeme,
-        returnTypeToken.lexeme,
+        returnTypeName,
         parameters,
         body,
         funcToken.line,
         funcToken.column
     );
+    
+    // Set generic parameters if present
+    funcDecl->genericParams = genericParams;
     
     return funcDecl;
 }
@@ -1852,17 +1917,64 @@ ASTNodePtr Parser::parseFallStatement() {
 }
 
 ASTNodePtr Parser::parse() {
-    std::vector<ASTNodePtr> statements;
+    std::vector<ASTNodePtr> declarations;
     
     while (!isAtEnd()) {
         if (auto stmt = parseStatement()) {
-            statements.push_back(stmt);
+            declarations.push_back(stmt);
         } else {
             synchronize(); // Error recovery
         }
     }
     
-    return std::make_shared<ProgramNode>(statements, 0, 0);
+    return std::make_shared<ProgramNode>(declarations, 0, 0);
+}
+
+// ============================================================================
+// Phase 3.4: Generic Syntax Parsing
+// ============================================================================
+
+// Parse generic parameters: <T, U, V>
+std::vector<std::string> Parser::parseGenericParams() {
+    using namespace frontend;
+    
+    std::vector<std::string> params;
+    
+    // Consume the '<'
+    if (!match(TokenType::TOKEN_LESS)) {
+        return params;  // No generic params
+    }
+    
+    // Parse first parameter
+    Token paramToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name");
+    params.push_back(paramToken.lexeme);
+    
+    // Parse remaining parameters
+    while (match(TokenType::TOKEN_COMMA)) {
+        Token nextParam = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name");
+        params.push_back(nextParam.lexeme);
+    }
+    
+    // Consume the '>'
+    consume(TokenType::TOKEN_GREATER, "Expected '>' after generic parameters");
+    
+    return params;
+}
+
+// Check if current token is a generic type reference (*T syntax)
+bool Parser::isGenericTypeReference() const {
+    using namespace frontend;
+    
+    if (!check(TokenType::TOKEN_STAR)) {
+        return false;
+    }
+    
+    // Look ahead to see if * is followed by an identifier
+    if (current + 1 < tokens.size()) {
+        return tokens[current + 1].type == TokenType::TOKEN_IDENTIFIER;
+    }
+    
+    return false;
 }
 
 bool Parser::hasErrors() const {
