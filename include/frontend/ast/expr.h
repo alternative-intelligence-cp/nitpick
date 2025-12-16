@@ -86,15 +86,21 @@ public:
 
 /**
  * Function call expression node
- * Represents: func(arg1, arg2, ...)
+ * Represents: func(arg1, arg2, ...) or func::<T, U>(arg1, arg2, ...)
  */
 class CallExpr : public ASTNode {
 public:
     ASTNodePtr callee;
     std::vector<ASTNodePtr> arguments;
+    std::vector<std::string> explicitTypeArgs;  // For turbofish syntax: ::<T, U>
     
     CallExpr(ASTNodePtr callee, const std::vector<ASTNodePtr>& args, int line = 0, int column = 0)
         : ASTNode(NodeType::CALL, line, column), callee(callee), arguments(args) {}
+    
+    CallExpr(ASTNodePtr callee, const std::vector<ASTNodePtr>& args, 
+             const std::vector<std::string>& typeArgs, int line = 0, int column = 0)
+        : ASTNode(NodeType::CALL, line, column), callee(callee), arguments(args), 
+          explicitTypeArgs(typeArgs) {}
     
     std::string toString() const override;
 };

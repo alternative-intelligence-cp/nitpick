@@ -40,7 +40,19 @@ std::string UnaryExpr::toString() const {
 
 std::string CallExpr::toString() const {
     std::ostringstream oss;
-    oss << "Call(" << callee->toString() << ", [";
+    oss << "Call(" << callee->toString();
+    
+    // Display explicit type arguments if present (turbofish)
+    if (!explicitTypeArgs.empty()) {
+        oss << "::<";
+        for (size_t i = 0; i < explicitTypeArgs.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << explicitTypeArgs[i];
+        }
+        oss << ">";
+    }
+    
+    oss << ", [";
     for (size_t i = 0; i < arguments.size(); ++i) {
         if (i > 0) oss << ", ";
         oss << arguments[i]->toString();

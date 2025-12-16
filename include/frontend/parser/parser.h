@@ -88,6 +88,9 @@ private:
     ASTNodePtr parseFallStatement();
     bool isTypeKeyword(frontend::TokenType type) const;
     
+    // Generic type arguments parsing (Phase 3.4 Part 5)
+    std::vector<std::string> parseExplicitTypeArgs();  // Parse turbofish ::<T, U>
+    
 public:
     Parser(const std::vector<frontend::Token>& tokens);
     

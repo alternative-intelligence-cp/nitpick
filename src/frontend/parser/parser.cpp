@@ -419,7 +419,43 @@ ASTNodePtr Parser::parsePostfix(ASTNodePtr expr) {
     while (!isAtEnd()) {
         Token token = peek();
         
-        // Function call
+        // Check for turbofish syntax: ::<T, U> followed by function call
+        // This must be checked BEFORE normal function call to disambiguate from comparison
+        // Look for two consecutive colons followed by <
+        if (token.type == TokenType::TOKEN_COLON && 
+            current + 1 < tokens.size() && tokens[current + 1].type == TokenType::TOKEN_COLON &&
+            current + 2 < tokens.size() && tokens[current + 2].type == TokenType::TOKEN_LESS) {
+            
+            advance(); // consume first ':'
+            advance(); // consume second ':'
+            // Now parse the explicit type arguments
+            std::vector<std::string> typeArgs = parseExplicitTypeArgs();
+            
+            // After turbofish, expect function call
+            if (check(TokenType::TOKEN_LEFT_PAREN)) {
+                Token leftParen = advance();
+                std::vector<ASTNodePtr> arguments;
+                
+                if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+                    do {
+                        ASTNodePtr arg = parseExpression();
+                        if (arg) {
+                            arguments.push_back(arg);
+                        }
+                    } while (match(TokenType::TOKEN_COMMA));
+                }
+                
+                consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after function arguments");
+                
+                // Create CallExpr with explicit type arguments
+                expr = std::make_shared<CallExpr>(expr, arguments, typeArgs, leftParen.line, leftParen.column);
+            } else {
+                error("Expected '(' after turbofish type arguments");
+            }
+            continue;
+        }
+        
+        // Function call (without turbofish)
         if (token.type == TokenType::TOKEN_LEFT_PAREN) {
             expr = parseCallExpression(expr);
             continue;
@@ -1989,6 +2025,51 @@ std::vector<GenericParamInfo> Parser::parseGenericParams() {
     consume(TokenType::TOKEN_GREATER, "Expected '>' after generic parameters");
     
     return params;
+}
+
+// Parse explicit type arguments (turbofish syntax): ::<T, U, ...>
+// This is called when we see :: followed by < in a call expression
+std::vector<std::string> Parser::parseExplicitTypeArgs() {
+    using namespace frontend;
+    
+    std::vector<std::string> typeArgs;
+    
+    // We've already consumed '::' at this point, now expect '<'
+    if (!match(TokenType::TOKEN_LESS)) {
+        error("Expected '<' after '::' in turbofish syntax");
+        return typeArgs;
+    }
+    
+    // Parse first type argument (can be type keyword or generic type parameter name)
+    if (isAtEnd()) {
+        error("Unexpected end of input in turbofish");
+        return typeArgs;
+    }
+    Token typeToken = advance();
+    if (!isTypeKeyword(typeToken.type) && typeToken.type != TokenType::TOKEN_IDENTIFIER) {
+        error("Expected type name in turbofish, got: " + typeToken.lexeme);
+        return typeArgs;
+    }
+    typeArgs.push_back(typeToken.lexeme);
+    
+    // Parse remaining type arguments
+    while (match(TokenType::TOKEN_COMMA)) {
+        if (isAtEnd()) {
+            error("Unexpected end of input after ',' in turbofish");
+            return typeArgs;
+        }
+        Token nextType = advance();
+        if (!isTypeKeyword(nextType.type) && nextType.type != TokenType::TOKEN_IDENTIFIER) {
+            error("Expected type name after ',', got: " + nextType.lexeme);
+            return typeArgs;
+        }
+        typeArgs.push_back(nextType.lexeme);
+    }
+    
+    // Consume the '>'
+    consume(TokenType::TOKEN_GREATER, "Expected '>' after type arguments");
+    
+    return typeArgs;
 }
 
 // Check if current token is a generic type reference (*T syntax)
