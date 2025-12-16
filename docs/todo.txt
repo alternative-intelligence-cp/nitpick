@@ -1079,18 +1079,29 @@ Reference: All research docs for complete language constructs
     - Conditional: use cfg(target_os = "linux") std.os.linux;
     Test: Parse all use statement forms
     
-[ ] 2.5.3: Implement mod statement parsing
-    File: src/frontend/parser/parse_module.cpp
-    Function: ASTNode* parseMod()
+[X] 2.5.3: Implement mod statement parsing - COMPLETE
+    File: src/frontend/parser/parser.cpp  
+    Function: ASTNode* parseModStatement()
     Reference: [research_028]
-    Test: Parse module definitions
+    Status: Implemented (commit 5a98554)
+    Test: All 9 mod tests passing (216 total tests, 1036 assertions)
+    Note: Supports both external mod {...} and inline mod:name statements
     
-[ ] 2.5.4: Implement extern statement parsing
-    File: src/frontend/parser/parse_module.cpp
-    Function: ASTNode* parseExtern()
-    Syntax: extern "libname" { declarations }
-    Reference: [research_028]
-    Test: Parse extern blocks
+[X] 2.5.4: Implement extern statement parsing - COMPLETE
+    File: src/frontend/parser/parser.cpp
+    Function: ASTNode* parseExternStatement()
+    Syntax: extern "libname" { func_signatures; var_decls; }
+    Reference: [research_028] lines 250-350
+    Status: Implemented (commit 133ac30)
+    Features:
+    - ExternStmt AST node with libraryName and declarations vector
+    - Parses FFI function signatures without bodies (C-style void*, int*)
+    - Parses FFI variable declarations (qualifiers + type:name)
+    - Handles pointer types (* suffix) in return types and parameters
+    - Accepts C type identifiers (void) + Aria types in extern blocks
+    Test: All 7 extern tests passing (223 total tests, 1082 assertions)
+    Note: In Aria, pointer syntax is type@ (e.g., int64@), but extern blocks
+          use C-style syntax type* (e.g., void*) for FFI compatibility
 
 ═══════════════════════════════════════════════════════════════════════
 2.6: Parser Error Handling
