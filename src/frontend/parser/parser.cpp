@@ -593,6 +593,11 @@ ASTNodePtr Parser::parseStatement() {
         return parseModStatement();
     }
     
+    // Check for extern blocks (FFI)
+    if (match(TokenType::TOKEN_KW_EXTERN)) {
+        return parseExternStatement();
+    }
+    
     // Check for qualifiers (wild, const, stack, gc) followed by type
     if (peek().type == TokenType::TOKEN_KW_WILD ||
         peek().type == TokenType::TOKEN_KW_CONST ||
@@ -1005,6 +1010,172 @@ ASTNodePtr Parser::parseModStatement() {
     }
     
     return modStmt;
+}
+
+// Parse extern statement: extern "libname" { declarations }
+ASTNodePtr Parser::parseExternStatement() {
+    using namespace frontend;
+    
+    Token externToken = previous(); // 'extern' keyword already consumed
+    
+    // Get library name (must be a string literal)
+    Token libNameToken = consume(TokenType::TOKEN_STRING, "Expected library name string after 'extern'");
+    
+    // Strip quotes from library name
+    std::string libName = libNameToken.lexeme;
+    if (libName.length() >= 2 && libName.front() == '"' && libName.back() == '"') {
+        libName = libName.substr(1, libName.length() - 2);
+    }
+    
+    auto externStmt = std::make_shared<ExternStmt>(libName, externToken.line, externToken.column);
+    
+    // Expect opening brace
+    consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after extern library name");
+    
+    // Parse declarations inside the extern block
+    // Note: extern blocks contain signatures (declarations without bodies), not statements
+    while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        // Check for function declaration: func:name = returnType(params);
+        if (match(TokenType::TOKEN_KW_FUNC)) {
+            Token funcToken = previous();
+            
+            // Consume colon
+            consume(TokenType::TOKEN_COLON, "Expected ':' after 'func'");
+            
+            // Get function name
+            Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected function name");
+            
+            // Consume equal sign
+            consume(TokenType::TOKEN_EQUAL, "Expected '=' after function name");
+            
+            // Get return type (can be Aria type or C type identifier for FFI)
+            Token returnTypeToken = advance();
+            if (!isTypeKeyword(returnTypeToken.type) && returnTypeToken.type != TokenType::TOKEN_IDENTIFIER) {
+                error("Expected return type or type identifier in extern function");
+                continue; // Skip this declaration
+            }
+            
+            // Handle pointer types: void*, int8*, etc.
+            std::string returnType = returnTypeToken.lexeme;
+            while (check(TokenType::TOKEN_STAR)) {
+                advance(); // consume '*'
+                returnType += "*";
+            }
+            
+            // Parse parameters: (type:name, type:name, ...)
+            consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after return type");
+            
+            std::vector<ASTNodePtr> parameters;
+            if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+                do {
+                    // Parse parameter: type:name (can be Aria type or C type identifier for FFI)
+                    Token paramTypeToken = advance();
+                    if (!isTypeKeyword(paramTypeToken.type) && paramTypeToken.type != TokenType::TOKEN_IDENTIFIER) {
+                        error("Expected parameter type or type identifier in extern function");
+                        break;
+                    }
+                    
+                    // Handle pointer types: void*, int8*, etc.
+                    std::string paramType = paramTypeToken.lexeme;
+                    while (check(TokenType::TOKEN_STAR)) {
+                        advance(); // consume '*'
+                        paramType += "*";
+                    }
+                    
+                    consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
+                    
+                    Token paramNameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
+                    
+                    auto param = std::make_shared<ParameterNode>(
+                        paramType, // Use the full type including pointer stars
+                        paramNameToken.lexeme,
+                        nullptr,
+                        paramTypeToken.line,
+                        paramTypeToken.column
+                    );
+                    
+                    parameters.push_back(param);
+                    
+                } while (match(TokenType::TOKEN_COMMA));
+            }
+            
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after parameters");
+            
+            // No body for extern functions - just a semicolon
+            consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after extern function signature");
+            
+            // Create function declaration WITHOUT a body
+            auto funcDecl = std::make_shared<FuncDeclStmt>(
+                nameToken.lexeme,
+                returnType, // Use the full type including pointer stars
+                parameters,
+                nullptr, // No body for extern functions
+                funcToken.line,
+                funcToken.column
+            );
+            
+            externStmt->declarations.push_back(funcDecl);
+        }
+        // Check for variable declaration: [qualifier] type:name;
+        else if (peek().type == TokenType::TOKEN_KW_WILD ||
+                 peek().type == TokenType::TOKEN_KW_CONST ||
+                 peek().type == TokenType::TOKEN_KW_STACK ||
+                 peek().type == TokenType::TOKEN_KW_GC ||
+                 isTypeKeyword(peek().type)) {
+            
+            // Parse qualifiers
+            std::vector<std::string> qualifiers;
+            while (peek().type == TokenType::TOKEN_KW_WILD ||
+                   peek().type == TokenType::TOKEN_KW_CONST ||
+                   peek().type == TokenType::TOKEN_KW_STACK ||
+                   peek().type == TokenType::TOKEN_KW_GC) {
+                qualifiers.push_back(advance().lexeme);
+            }
+            
+            // Get type
+            Token typeToken = advance();
+            if (!isTypeKeyword(typeToken.type)) {
+                error("Expected type in extern variable declaration");
+                continue;
+            }
+            
+            // Consume colon
+            consume(TokenType::TOKEN_COLON, "Expected ':' after type");
+            
+            // Get variable name
+            Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected variable name");
+            
+            // No initializer for extern variables - just a semicolon
+            consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after extern variable declaration");
+            
+            // Create variable declaration WITHOUT an initializer
+            auto varDecl = std::make_shared<VarDeclStmt>(
+                typeToken.lexeme,
+                nameToken.lexeme,
+                nullptr, // No initializer for extern variables
+                typeToken.line,
+                typeToken.column
+            );
+            
+            // Apply qualifiers
+            for (const auto& qual : qualifiers) {
+                if (qual == "wild") varDecl->isWild = true;
+                else if (qual == "const") varDecl->isConst = true;
+                else if (qual == "stack") varDecl->isStack = true;
+                else if (qual == "gc") varDecl->isGC = true;
+            }
+            
+            externStmt->declarations.push_back(varDecl);
+        }
+        else {
+            error("Expected function or variable declaration in extern block");
+            advance(); // Skip this token and continue
+        }
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after extern block");
+    
+    return externStmt;
 }
 
 // Parse expression statement: expr;

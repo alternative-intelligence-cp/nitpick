@@ -366,6 +366,23 @@ public:
 };
 
 /**
+ * Extern block statement node (FFI declarations)
+ * Represents: extern "libname" { declarations }
+ *             extern "libc" { func:malloc = void*(uint64:size); }
+ */
+class ExternStmt : public ASTNode {
+public:
+    std::string libraryName;              // "libc", "kernel32", etc.
+    std::vector<ASTNodePtr> declarations; // Function/variable declarations
+    
+    ExternStmt(const std::string& libName, int line = 0, int column = 0)
+        : ASTNode(NodeType::EXTERN, line, column),
+          libraryName(libName) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Program node (root of AST)
  * Represents: entire program
  */

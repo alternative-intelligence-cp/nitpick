@@ -228,6 +228,19 @@ std::string ModStmt::toString() const {
     return oss.str();
 }
 
+std::string ExternStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Extern(\"" << libraryName << "\" { ";
+    
+    for (size_t i = 0; i < declarations.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << declarations[i]->toString();
+    }
+    
+    oss << " })";
+    return oss.str();
+}
+
 std::string ProgramNode::toString() const {
     std::ostringstream oss;
     oss << "Program([";
