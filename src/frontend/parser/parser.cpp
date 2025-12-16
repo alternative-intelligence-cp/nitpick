@@ -565,6 +565,11 @@ bool Parser::isTypeKeyword(frontend::TokenType type) const {
 ASTNodePtr Parser::parseStatement() {
     using namespace frontend;
     
+    // Check for module imports
+    if (match(TokenType::TOKEN_KW_USE)) {
+        return parseUseStatement();
+    }
+    
     // Check for qualifiers (wild, const, stack, gc) followed by type
     if (peek().type == TokenType::TOKEN_KW_WILD ||
         peek().type == TokenType::TOKEN_KW_CONST ||
@@ -856,6 +861,96 @@ ASTNodePtr Parser::parseType() {
     
     // Simple type
     return baseType;
+}
+
+// Parse use statement: use path.to.module;
+//                       use path.{item1, item2};
+//                       use path.*;
+//                       use "file.aria" as alias;
+ASTNodePtr Parser::parseUseStatement() {
+    using namespace frontend;
+    
+    Token useToken = previous(); // 'use' keyword already consumed
+    auto useStmt = std::make_shared<UseStmt>(std::vector<std::string>(), useToken.line, useToken.column);
+    
+    // Check for string literal (file path)
+    if (check(TokenType::TOKEN_STRING)) {
+        Token pathToken = advance();
+        // Strip quotes from string literal
+        std::string path = pathToken.lexeme;
+        if (path.length() >= 2 && path.front() == '"' && path.back() == '"') {
+            path = path.substr(1, path.length() - 2);
+        }
+        useStmt->path.push_back(path);
+        useStmt->isFilePath = true;
+        
+        // Check for 'as' alias
+        if (match(TokenType::TOKEN_KW_AS)) {
+            Token aliasToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected identifier after 'as'");
+            useStmt->alias = aliasToken.lexeme;
+        }
+        
+        consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after use statement");
+        return useStmt;
+    }
+    
+    // Parse logical path: std.io or std.collections.array
+    do {
+        Token segment = consume(TokenType::TOKEN_IDENTIFIER, "Expected identifier in module path");
+        useStmt->path.push_back(segment.lexeme);
+        
+        // Check for continuation
+        if (match(TokenType::TOKEN_DOT)) {
+            // Check for wildcard: use math.*;
+            if (match(TokenType::TOKEN_STAR)) {
+                useStmt->isWildcard = true;
+                consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after use statement");
+                return useStmt;
+            }
+            
+            // Check for selective import: use std.{array, map};
+            if (match(TokenType::TOKEN_LEFT_BRACE)) {
+                // Parse first item (can be identifier or keyword)
+                Token firstItem = peek();
+                if (!check(TokenType::TOKEN_IDENTIFIER) && !isTypeKeyword(firstItem.type)) {
+                    error("Expected identifier or keyword in import list");
+                    return useStmt;
+                }
+                advance();
+                useStmt->items.push_back(firstItem.lexeme);
+                
+                // Parse remaining items
+                while (match(TokenType::TOKEN_COMMA)) {
+                    Token nextItem = peek();
+                    if (!check(TokenType::TOKEN_IDENTIFIER) && !isTypeKeyword(nextItem.type)) {
+                        error("Expected identifier or keyword in import list");
+                        break;
+                    }
+                    advance();
+                    useStmt->items.push_back(nextItem.lexeme);
+                }
+                
+                consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after import list");
+                consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after use statement");
+                return useStmt;
+            }
+            
+            // Continue with path (another segment coming)
+            continue;
+        }
+        
+        // No dot, so we're done with the path
+        break;
+    } while (true);
+    
+    // Check for 'as' alias
+    if (match(TokenType::TOKEN_KW_AS)) {
+        Token aliasToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected identifier after 'as'");
+        useStmt->alias = aliasToken.lexeme;
+    }
+    
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after use statement");
+    return useStmt;
 }
 
 // Parse expression statement: expr;

@@ -62,6 +62,7 @@ enum class TokenType {
     TOKEN_KW_EXTERN,    // extern - external C functions
     TOKEN_KW_CONST,     // const - compile-time constant
     TOKEN_KW_CFG,       // cfg - conditional compilation
+    TOKEN_KW_AS,        // as - alias in use statement
     
     // ========================================================================
     // Type Keywords - Integers (Signed)
