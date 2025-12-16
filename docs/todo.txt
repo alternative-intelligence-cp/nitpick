@@ -1275,31 +1275,47 @@ Reference: [research_001, research_012-017, research_027-028]
 ═══════════════════════════════════════════════════════════════════════
 Reference: [research_012-017]
 
-[ ] 3.2.1: Create type representation
-    File: include/frontend/sema/type.h
-    Classes:
-    - Type (base class)
-    - PrimitiveType (int8, flt32, bool, etc.)
-    - PointerType (T*)
-    - ArrayType (T[], T[N])
-    - FuncType (params, return)
-    - GenericType (T, U, V)
-    - StructType, UnionType
-    Methods:
-    - equals(Type*), isAssignableTo(Type*)
-    - toString()
-    Test: Type classes work
+[X] 3.2.1: Create type representation (COMPLETE - Commit ac8173d)
+    File: include/frontend/sema/type.h, src/frontend/sema/type.cpp
+    Completed:
+    - Type base class with TypeKind enum (12 variants)
+    - PrimitiveType: Enhanced with bitWidth, isSigned, isFloating, isTBB
+    - PointerType (T@): with mutability and wild pointer support
+    - ArrayType (T[N]): fixed-size and dynamic arrays
+    - VectorType (vec2-vec9): SIMD vectors with component types
+    - FunctionType: params, return, async, variadic flags
+    - StructType: nominal typing with fields, layout, alignment
+    - UnionType: nominal typing with variants
+    - GenericType: type parameters (T, U, V)
+    - ResultType: error handling (result<T>)
+    - TypeSystem factory: pre-cached 50+ primitives, factory methods
+    - All operations: equals(), isAssignableTo(), toString()
+    Research: research_012-016 (integers, floats, TBB, composites, vectors, functions)
+    Tests: All 284 tests still passing (backward compatible)
+    Status: Complete and ready for type checking
     
-[ ] 3.2.2: Implement type checking for expressions
-    File: src/frontend/sema/type_checker.cpp
-    Function: Type* inferType(ASTNode* expr)
-    Handle:
-    - Literals: int, float, string, bool
-    - Identifiers: lookup in symbol table
-    - Binary ops: type compatibility [research_024-025]
-    - Unary ops: type rules [research_024]
-    - Function calls: check args match params
-    Test: Expression types inferred correctly
+[X] 3.2.2: Implement type checking for expressions (COMPLETE - Commit 4d33714)
+    Files: include/frontend/sema/type_checker.h, src/frontend/sema/type_checker.cpp
+    Completed:
+    - TypeChecker class with inferType() main entry point
+    - Literal type inference: int64, flt64, string, bool, null
+    - Identifier type resolution via symbol table lookup
+    - Binary operators (research_024, research_025):
+      * Arithmetic (+, -, *, /, %): numeric type promotion/widening
+      * Bitwise (&, |, ^, <<, >>): UNSIGNED MANDATE enforcement
+      * Comparison (==, !=, <, <=, >, >=): result is bool
+      * Logical (&&, ||): STRICT BOOLEAN requirement (no truthiness!)
+      * Spaceship (<=>): three-way comparison returning int
+      * Assignment (=, +=, -=, *=, /=, %=): assignability checking
+    - Unary operators (-, !, ~): type validation with strict boolean logic
+    - Ternary operator (is cond : true : false): bool condition enforcement
+    - Type coercion system: findCommonType(), canCoerce()
+    - Widening rules: int8→int16→int32→int64, int→float, tbb8→tbb16→tbb32→tbb64
+    - No narrowing (requires explicit cast), no standard↔TBB mixing
+    - Error accumulation and reporting with line/column info
+    Tests: 29 comprehensive tests (literals, identifiers, operators, coercion, complex expressions)
+    Results: 313 tests total, 1322 assertions, all passing
+    Status: Complete - expression type checking fully operational
     
 [ ] 3.2.3: Implement type checking for statements
     File: src/frontend/sema/type_checker.cpp
