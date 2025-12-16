@@ -30,6 +30,22 @@ public:
 };
 
 /**
+ * Generic parameter information
+ * Stores name and trait constraints for a type parameter
+ * Example: T: Addable & Display
+ */
+struct GenericParamInfo {
+    std::string name;                    // e.g., "T"
+    std::vector<std::string> constraints; // Trait bounds: ["Addable", "Display"]
+    
+    GenericParamInfo(const std::string& n) : name(n) {}
+    GenericParamInfo(const std::string& n, const std::vector<std::string>& c)
+        : name(n), constraints(c) {}
+    
+    bool hasConstraints() const { return !constraints.empty(); }
+};
+
+/**
  * Function declaration statement node
  * Represents: func:name = returnType(params) { body };
  */
@@ -42,7 +58,7 @@ public:
     bool isAsync;
     bool isPublic;
     bool isExtern;
-    std::vector<std::string> genericParams;  // For generics: func<T, U>
+    std::vector<GenericParamInfo> genericParams;  // For generics: func<T: Trait, U>
     
     FuncDeclStmt(const std::string& name, const std::string& retType,
                  const std::vector<ASTNodePtr>& params, ASTNodePtr body,
