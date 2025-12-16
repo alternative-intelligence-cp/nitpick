@@ -202,6 +202,32 @@ std::string UseStmt::toString() const {
     return oss.str();
 }
 
+std::string ModStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Mod(";
+    
+    // Public modifier
+    if (isPublic) {
+        oss << "pub ";
+    }
+    
+    // Module name
+    oss << name;
+    
+    // Inline module with body
+    if (isInline) {
+        oss << " { ";
+        for (size_t i = 0; i < body.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << body[i]->toString();
+        }
+        oss << " }";
+    }
+    
+    oss << ")";
+    return oss.str();
+}
+
 std::string ProgramNode::toString() const {
     std::ostringstream oss;
     oss << "Program([";

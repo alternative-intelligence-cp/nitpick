@@ -65,6 +65,7 @@ private:
     // Phase 2.5: Type and module parsing
     ASTNodePtr parseType();
     ASTNodePtr parseUseStatement();
+    ASTNodePtr parseModStatement();
     ASTNodePtr parseExpressionStmt();
     ASTNodePtr parseReturn();
     ASTNodePtr parsePassStatement();

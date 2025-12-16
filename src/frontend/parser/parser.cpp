@@ -570,6 +570,29 @@ ASTNodePtr Parser::parseStatement() {
         return parseUseStatement();
     }
     
+    // Check for public module definitions: pub mod name
+    if (peek().type == TokenType::TOKEN_KW_PUB) {
+        size_t saved = current;
+        advance(); // consume 'pub'
+        if (match(TokenType::TOKEN_KW_MOD)) {
+            auto modStmt = parseModStatement();
+            // Set public flag
+            if (modStmt && modStmt->type == ASTNode::NodeType::MOD) {
+                auto mod = std::static_pointer_cast<ModStmt>(modStmt);
+                mod->isPublic = true;
+            }
+            return modStmt;
+        } else {
+            // Not pub mod, restore position and continue
+            current = saved;
+        }
+    }
+    
+    // Check for module definitions
+    if (match(TokenType::TOKEN_KW_MOD)) {
+        return parseModStatement();
+    }
+    
     // Check for qualifiers (wild, const, stack, gc) followed by type
     if (peek().type == TokenType::TOKEN_KW_WILD ||
         peek().type == TokenType::TOKEN_KW_CONST ||
@@ -951,6 +974,37 @@ ASTNodePtr Parser::parseUseStatement() {
     
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after use statement");
     return useStmt;
+}
+
+// Parse mod statement: mod name; or mod name { ... }
+ASTNodePtr Parser::parseModStatement() {
+    using namespace frontend;
+    
+    Token modToken = previous(); // 'mod' keyword already consumed
+    
+    // Get module name
+    Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected module name after 'mod'");
+    auto modStmt = std::make_shared<ModStmt>(nameToken.lexeme, modToken.line, modToken.column);
+    
+    // Check if it's an inline module with a body
+    if (match(TokenType::TOKEN_LEFT_BRACE)) {
+        modStmt->isInline = true;
+        
+        // Parse statements inside the module until we hit the closing brace
+        while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+            ASTNodePtr stmt = parseStatement();
+            if (stmt) {
+                modStmt->body.push_back(stmt);
+            }
+        }
+        
+        consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after module body");
+    } else {
+        // External file module: just consume the semicolon
+        consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after module declaration");
+    }
+    
+    return modStmt;
 }
 
 // Parse expression statement: expr;
