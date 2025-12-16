@@ -61,6 +61,9 @@ private:
     ASTNodePtr parseVarDecl();
     ASTNodePtr parseFuncDecl();
     ASTNodePtr parseBlock();
+    
+    // Phase 2.5: Type parsing
+    ASTNodePtr parseType();
     ASTNodePtr parseExpressionStmt();
     ASTNodePtr parseReturn();
     ASTNodePtr parsePassStatement();

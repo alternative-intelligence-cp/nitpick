@@ -78,6 +78,7 @@ set(AST_SOURCES
     src/frontend/ast/ast_node.cpp
     src/frontend/ast/expr.cpp
     src/frontend/ast/stmt.cpp
+    src/frontend/ast/type.cpp
 )
 
 set(PARSER_SOURCES

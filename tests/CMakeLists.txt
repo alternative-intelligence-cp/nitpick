@@ -20,6 +20,7 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/ast/ast_node.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/ast/expr.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/ast/stmt.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/ast/type.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/parser/parser.cpp
 )
 
