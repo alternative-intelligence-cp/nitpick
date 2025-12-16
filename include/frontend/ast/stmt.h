@@ -324,6 +324,28 @@ public:
 };
 
 /**
+ * Use statement node (module import)
+ * Represents: use path.to.module;
+ *             use path.{item1, item2};
+ *             use path.*;
+ *             use "file.aria" as alias;
+ */
+class UseStmt : public ASTNode {
+public:
+    std::vector<std::string> path;    // ["std", "io"] for use std.io;
+    std::vector<std::string> items;   // ["array", "map"] for use std.{array, map};
+    bool isWildcard;                  // true for use math.*;
+    std::string alias;                // "utils" for use "./file.aria" as utils;
+    bool isFilePath;                  // true if path is a file path (quoted string)
+    
+    UseStmt(const std::vector<std::string>& p, int line = 0, int column = 0)
+        : ASTNode(NodeType::USE, line, column),
+          path(p), isWildcard(false), isFilePath(false) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Program node (root of AST)
  * Represents: entire program
  */

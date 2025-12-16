@@ -1956,3 +1956,177 @@ TEST_CASE(parser_type_mixed_types) {
     ASSERT_EQ(var2->typeName, "string", "Second type should be string");
     ASSERT_EQ(var3->typeName, "bool", "Third type should be bool");
 }
+
+// ============================================================================
+// Phase 2.5.2: use Statement Parsing Tests
+// ============================================================================
+
+TEST_CASE(parser_use_simple) {
+    auto program = parseStmt("use std.io;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto useStmt = std::dynamic_pointer_cast<UseStmt>(stmt);
+    ASSERT(useStmt != nullptr, "Cast to UseStmt should succeed");
+    ASSERT_EQ(useStmt->path.size(), 2, "Path should have 2 segments");
+    ASSERT_EQ(useStmt->path[0], "std", "First segment should be std");
+    ASSERT_EQ(useStmt->path[1], "io", "Second segment should be io");
+    ASSERT(!useStmt->isWildcard, "Should not be wildcard");
+    ASSERT(useStmt->items.empty(), "Should not have selective items");
+    ASSERT(useStmt->alias.empty(), "Should not have alias");
+}
+
+TEST_CASE(parser_use_nested_path) {
+    auto program = parseStmt("use std.collections.map;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto useStmt = std::dynamic_pointer_cast<UseStmt>(stmt);
+    ASSERT(useStmt != nullptr, "Cast to UseStmt should succeed");
+    ASSERT_EQ(useStmt->path.size(), 3, "Path should have 3 segments");
+    ASSERT_EQ(useStmt->path[0], "std", "First segment should be std");
+    ASSERT_EQ(useStmt->path[1], "collections", "Second segment should be collections");
+    ASSERT_EQ(useStmt->path[2], "map", "Third segment should be map");
+}
+
+TEST_CASE(parser_use_selective_single) {
+    auto program = parseStmt("use std.collections.{array};");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto useStmt = std::dynamic_pointer_cast<UseStmt>(stmt);
+    ASSERT(useStmt != nullptr, "Cast to UseStmt should succeed");
+    ASSERT_EQ(useStmt->path.size(), 2, "Path should have 2 segments");
+    ASSERT_EQ(useStmt->path[0], "std", "First segment should be std");
+    ASSERT_EQ(useStmt->path[1], "collections", "Second segment should be collections");
+    ASSERT_EQ(useStmt->items.size(), 1, "Should have 1 item");
+    ASSERT_EQ(useStmt->items[0], "array", "Item should be array");
+    ASSERT(!useStmt->isWildcard, "Should not be wildcard");
+}
+
+TEST_CASE(parser_use_selective_multiple) {
+    // Test without spaces first to debug
+    auto program = parseStmt("use std.collections.{array,map,Vector};");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto useStmt = std::dynamic_pointer_cast<UseStmt>(stmt);
+    ASSERT(useStmt != nullptr, "Cast to UseStmt should succeed");
+    ASSERT_EQ(useStmt->path.size(), 2, "Path should have 2 segments");
+    ASSERT_EQ(useStmt->items.size(), 3, "Should have 3 items");
+    ASSERT_EQ(useStmt->items[0], "array", "First item should be array");
+    ASSERT_EQ(useStmt->items[1], "map", "Second item should be map");
+    ASSERT_EQ(useStmt->items[2], "Vector", "Third item should be Vector");
+}
+
+TEST_CASE(parser_use_wildcard) {
+    auto program = parseStmt("use math.*;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto useStmt = std::dynamic_pointer_cast<UseStmt>(stmt);
+    ASSERT(useStmt != nullptr, "Cast to UseStmt should succeed");
+    ASSERT_EQ(useStmt->path.size(), 1, "Path should have 1 segment");
+    ASSERT_EQ(useStmt->path[0], "math", "Path should be math");
+    ASSERT(useStmt->isWildcard, "Should be wildcard");
+    ASSERT(useStmt->items.empty(), "Should not have selective items");
+}
+
+TEST_CASE(parser_use_file_path_relative) {
+    auto program = parseStmt("use \"./utils.aria\";");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto useStmt = std::dynamic_pointer_cast<UseStmt>(stmt);
+    ASSERT(useStmt != nullptr, "Cast to UseStmt should succeed");
+    ASSERT(useStmt->isFilePath, "Should be a file path");
+    ASSERT_EQ(useStmt->path.size(), 1, "Path should have 1 element");
+    ASSERT_EQ(useStmt->path[0], "./utils.aria", "Path should be ./utils.aria");
+    ASSERT(useStmt->alias.empty(), "Should not have alias");
+}
+
+TEST_CASE(parser_use_file_path_parent) {
+    auto program = parseStmt("use \"../shared/crypto.aria\";");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto useStmt = std::dynamic_pointer_cast<UseStmt>(stmt);
+    ASSERT(useStmt != nullptr, "Cast to UseStmt should succeed");
+    ASSERT(useStmt->isFilePath, "Should be a file path");
+    ASSERT_EQ(useStmt->path[0], "../shared/crypto.aria", "Path should be ../shared/crypto.aria");
+}
+
+TEST_CASE(parser_use_file_path_absolute) {
+    auto program = parseStmt("use \"/usr/lib/aria/graphics\";");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto useStmt = std::dynamic_pointer_cast<UseStmt>(stmt);
+    ASSERT(useStmt != nullptr, "Cast to UseStmt should succeed");
+    ASSERT(useStmt->isFilePath, "Should be a file path");
+    ASSERT_EQ(useStmt->path[0], "/usr/lib/aria/graphics", "Path should be absolute path");
+}
+
+TEST_CASE(parser_use_with_alias_file) {
+    auto program = parseStmt("use \"./utils.aria\" as utils;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto useStmt = std::dynamic_pointer_cast<UseStmt>(stmt);
+    ASSERT(useStmt != nullptr, "Cast to UseStmt should succeed");
+    ASSERT(useStmt->isFilePath, "Should be a file path");
+    ASSERT_EQ(useStmt->path[0], "./utils.aria", "Path should be ./utils.aria");
+    ASSERT_EQ(useStmt->alias, "utils", "Alias should be utils");
+}
+
+TEST_CASE(parser_use_with_alias_module) {
+    auto program = parseStmt("use std.network.http.client as HttpClient;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto stmt = prog->declarations[0];
+    
+    auto useStmt = std::dynamic_pointer_cast<UseStmt>(stmt);
+    ASSERT(useStmt != nullptr, "Cast to UseStmt should succeed");
+    ASSERT_EQ(useStmt->path.size(), 4, "Path should have 4 segments");
+    ASSERT_EQ(useStmt->path[3], "client", "Last segment should be client");
+    ASSERT_EQ(useStmt->alias, "HttpClient", "Alias should be HttpClient");
+}
+
+TEST_CASE(parser_use_multiple_statements) {
+    auto program = parseStmt("use std.io; use std.collections.{array, map}; use math.*;");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT(prog->declarations.size() >= 3, "Should have at least 3 declarations");
+    
+    auto use1 = std::dynamic_pointer_cast<UseStmt>(prog->declarations[0]);
+    auto use2 = std::dynamic_pointer_cast<UseStmt>(prog->declarations[1]);
+    auto use3 = std::dynamic_pointer_cast<UseStmt>(prog->declarations[2]);
+    
+    ASSERT(use1 != nullptr, "First should be UseStmt");
+    ASSERT(use2 != nullptr, "Second should be UseStmt");
+    ASSERT(use3 != nullptr, "Third should be UseStmt");
+    
+    ASSERT_EQ(use1->path[1], "io", "First use should import io");
+    ASSERT_EQ(use2->items.size(), 2, "Second use should have 2 items");
+    ASSERT(use3->isWildcard, "Third use should be wildcard");
+}

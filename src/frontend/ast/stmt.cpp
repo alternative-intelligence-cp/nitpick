@@ -167,6 +167,41 @@ std::string FallStmt::toString() const {
     return "Fall(" + target_label + ")";
 }
 
+std::string UseStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Use(";
+    
+    // Path
+    if (isFilePath) {
+        oss << "\"" << path[0] << "\"";
+    } else {
+        for (size_t i = 0; i < path.size(); ++i) {
+            if (i > 0) oss << ".";
+            oss << path[i];
+        }
+    }
+    
+    // Items or wildcard
+    if (isWildcard) {
+        oss << ".*";
+    } else if (!items.empty()) {
+        oss << ".{";
+        for (size_t i = 0; i < items.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << items[i];
+        }
+        oss << "}";
+    }
+    
+    // Alias
+    if (!alias.empty()) {
+        oss << " as " << alias;
+    }
+    
+    oss << ")";
+    return oss.str();
+}
+
 std::string ProgramNode::toString() const {
     std::ostringstream oss;
     oss << "Program([";
