@@ -5,6 +5,7 @@
 #include "symbol_table.h"
 #include "frontend/ast/ast_node.h"
 #include "frontend/ast/expr.h"
+#include "frontend/ast/stmt.h"
 #include "frontend/token.h"
 #include <string>
 #include <memory>
@@ -225,13 +226,78 @@ public:
     /**
      * Check type compatibility for statements (Phase 3.2.3)
      * 
-     * TODO: Implement in Phase 3.2.3
-     * - Variable declaration initializer type checking
-     * - Assignment type compatibility
-     * - Return statement type matching
-     * - Control flow condition type checking
+     * Main entry point for statement type checking.
+     * Dispatches to specific checking methods based on statement type.
+     * Validates type safety for all statement constructs.
      */
-    // void checkStatement(ASTNode* stmt);
+    void checkStatement(ASTNode* stmt);
+    
+    /**
+     * Check variable declaration statement
+     * 
+     * Rules:
+     * - If initializer exists, its type must be assignable to declared type
+     * - const variables must have initializer
+     * - Declared type must exist in type system
+     */
+    void checkVarDecl(VarDeclStmt* stmt);
+    
+    /**
+     * Check assignment expression
+     * 
+     * Rules:
+     * - Left side must be assignable (identifier, index, member access)
+     * - Right side type must be assignable to left side type
+     * - Cannot assign to const variables
+     */
+    void checkAssignment(BinaryExpr* expr);
+    
+    /**
+     * Check return statement
+     * 
+     * Rules:
+     * - Return type must match current function's return type
+     * - Void functions cannot return values
+     * - Non-void functions must return values
+     */
+    void checkReturnStmt(ReturnStmt* stmt);
+    
+    /**
+     * Check if statement
+     * 
+     * Rules:
+     * - Condition must be bool type
+     * - No truthiness allowed (must use explicit comparison)
+     */
+    void checkIfStmt(IfStmt* stmt);
+    
+    /**
+     * Check while statement
+     * 
+     * Rules:
+     * - Condition must be bool type
+     * - No truthiness allowed
+     */
+    void checkWhileStmt(WhileStmt* stmt);
+    
+    /**
+     * Check for statement
+     * 
+     * Rules:
+     * - Condition (if present) must be bool type
+     * - Initializer and update can be any expression
+     */
+    void checkForStmt(ForStmt* stmt);
+    
+    /**
+     * Check block statement (recursively check all statements)
+     */
+    void checkBlockStmt(BlockStmt* stmt);
+    
+    /**
+     * Check expression statement (just infer its type)
+     */
+    void checkExpressionStmt(ExpressionStmt* stmt);
     
     /**
      * Get accumulated type errors

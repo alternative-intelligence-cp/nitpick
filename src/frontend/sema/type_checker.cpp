@@ -1,5 +1,6 @@
 #include "frontend/sema/type_checker.h"
 #include "frontend/ast/expr.h"
+#include "frontend/ast/stmt.h"
 #include <sstream>
 #include <variant>
 
@@ -644,6 +645,308 @@ void TypeChecker::addError(const std::string& message, ASTNode* node) {
     } else {
         addError(message, 0, 0);
     }
+}
+
+// ============================================================================
+// Statement Type Checking - Phase 3.2.3
+// ============================================================================
+
+void TypeChecker::checkStatement(ASTNode* stmt) {
+    if (!stmt) {
+        return;
+    }
+    
+    switch (stmt->type) {
+        case ASTNode::NodeType::VAR_DECL:
+            checkVarDecl(static_cast<VarDeclStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::RETURN:
+            checkReturnStmt(static_cast<ReturnStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::IF:
+            checkIfStmt(static_cast<IfStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::WHILE:
+            checkWhileStmt(static_cast<WhileStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::FOR:
+            checkForStmt(static_cast<ForStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::BLOCK:
+            checkBlockStmt(static_cast<BlockStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::EXPRESSION_STMT:
+            checkExpressionStmt(static_cast<ExpressionStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::BREAK:
+        case ASTNode::NodeType::CONTINUE:
+            // No type checking needed for break/continue
+            break;
+        
+        default:
+            // Other statement types not yet implemented
+            break;
+    }
+}
+
+// ============================================================================
+// Variable Declaration Type Checking
+// ============================================================================
+
+void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
+    // Get declared type
+    Type* declaredType = typeSystem->getPrimitiveType(stmt->typeName);
+    
+    if (!declaredType || declaredType->getKind() == TypeKind::ERROR) {
+        addError("Unknown type: '" + stmt->typeName + "'", stmt);
+        return;
+    }
+    
+    // Check const variables have initializers
+    if (stmt->isConst && !stmt->initializer) {
+        addError("const variable '" + stmt->varName + "' must have initializer", stmt);
+        return;
+    }
+    
+    // If initializer exists, check type compatibility
+    if (stmt->initializer) {
+        Type* initType = inferType(stmt->initializer.get());
+        
+        if (initType->getKind() == TypeKind::ERROR) {
+            // Error already reported by inferType
+            return;
+        }
+        
+        // Check if initializer type is assignable to declared type
+        if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType)) {
+            addError("Cannot initialize variable '" + stmt->varName + 
+                    "' of type '" + declaredType->toString() + 
+                    "' with value of type '" + initType->toString() + "'", stmt);
+            return;
+        }
+    }
+    
+    // Define symbol in symbol table
+    symbolTable->defineSymbol(stmt->varName, 
+                             stmt->isConst ? SymbolKind::CONSTANT : SymbolKind::VARIABLE,
+                             declaredType, 
+                             stmt->line, 
+                             stmt->column);
+}
+
+// ============================================================================
+// Assignment Type Checking
+// ============================================================================
+
+void TypeChecker::checkAssignment(BinaryExpr* expr) {
+    // Left side must be an lvalue (identifier, index, member access)
+    if (expr->left->type != ASTNode::NodeType::IDENTIFIER &&
+        expr->left->type != ASTNode::NodeType::INDEX &&
+        expr->left->type != ASTNode::NodeType::MEMBER_ACCESS &&
+        expr->left->type != ASTNode::NodeType::POINTER_MEMBER) {
+        addError("Left side of assignment must be a variable, array element, or member", expr->left.get());
+        return;
+    }
+    
+    // Get left side type
+    Type* leftType = inferType(expr->left.get());
+    if (leftType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // Check if assigning to const variable
+    if (expr->left->type == ASTNode::NodeType::IDENTIFIER) {
+        IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr->left.get());
+        Symbol* symbol = symbolTable->lookupSymbol(ident->name);
+        
+        if (symbol && symbol->kind == SymbolKind::CONSTANT) {
+            addError("Cannot assign to const variable '" + ident->name + "'", expr);
+            return;
+        }
+    }
+    
+    // Get right side type
+    Type* rightType = inferType(expr->right.get());
+    if (rightType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // Check type compatibility
+    if (!rightType->isAssignableTo(leftType) && !canCoerce(rightType, leftType)) {
+        addError("Cannot assign value of type '" + rightType->toString() + 
+                "' to variable of type '" + leftType->toString() + "'", expr);
+    }
+}
+
+// ============================================================================
+// Return Statement Type Checking
+// ============================================================================
+
+void TypeChecker::checkReturnStmt(ReturnStmt* stmt) {
+    // Check if we're inside a function
+    if (!currentFunctionReturnType) {
+        addError("return statement outside of function", stmt);
+        return;
+    }
+    
+    // Get the primitive type "void" for comparison
+    Type* voidType = typeSystem->getPrimitiveType("void");
+    bool isVoidFunction = currentFunctionReturnType->equals(voidType);
+    
+    // Case 1: void function with return value
+    if (isVoidFunction && stmt->value) {
+        addError("void function cannot return a value", stmt);
+        return;
+    }
+    
+    // Case 2: non-void function without return value
+    if (!isVoidFunction && !stmt->value) {
+        addError("Non-void function must return a value of type '" + 
+                currentFunctionReturnType->toString() + "'", stmt);
+        return;
+    }
+    
+    // Case 3: non-void function with return value - check type
+    if (!isVoidFunction && stmt->value) {
+        Type* returnType = inferType(stmt->value.get());
+        
+        if (returnType->getKind() == TypeKind::ERROR) {
+            return;
+        }
+        
+        if (!returnType->isAssignableTo(currentFunctionReturnType) && 
+            !canCoerce(returnType, currentFunctionReturnType)) {
+            addError("Return type '" + returnType->toString() + 
+                    "' does not match function return type '" + 
+                    currentFunctionReturnType->toString() + "'", stmt);
+        }
+    }
+}
+
+// ============================================================================
+// If Statement Type Checking
+// ============================================================================
+
+void TypeChecker::checkIfStmt(IfStmt* stmt) {
+    // Check condition type
+    Type* condType = inferType(stmt->condition.get());
+    
+    if (condType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // Condition must be bool (strict, no truthiness)
+    PrimitiveType* condPrim = dynamic_cast<PrimitiveType*>(condType);
+    if (!condPrim || condPrim->getName() != "bool") {
+        addError("if condition must be 'bool' type, got '" + condType->toString() + 
+                "'. Use explicit comparison (e.g., x != 0) instead of truthiness.", stmt->condition.get());
+    }
+    
+    // Check then branch
+    checkStatement(stmt->thenBranch.get());
+    
+    // Check else branch if present
+    if (stmt->elseBranch) {
+        checkStatement(stmt->elseBranch.get());
+    }
+}
+
+// ============================================================================
+// While Statement Type Checking
+// ============================================================================
+
+void TypeChecker::checkWhileStmt(WhileStmt* stmt) {
+    // Check condition type
+    Type* condType = inferType(stmt->condition.get());
+    
+    if (condType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // Condition must be bool (strict, no truthiness)
+    PrimitiveType* condPrim = dynamic_cast<PrimitiveType*>(condType);
+    if (!condPrim || condPrim->getName() != "bool") {
+        addError("while condition must be 'bool' type, got '" + condType->toString() + 
+                "'. Use explicit comparison (e.g., x != 0) instead of truthiness.", stmt->condition.get());
+    }
+    
+    // Check body
+    checkStatement(stmt->body.get());
+}
+
+// ============================================================================
+// For Statement Type Checking
+// ============================================================================
+
+void TypeChecker::checkForStmt(ForStmt* stmt) {
+    // Check initializer if present
+    if (stmt->initializer) {
+        checkStatement(stmt->initializer.get());
+    }
+    
+    // Check condition if present
+    if (stmt->condition) {
+        Type* condType = inferType(stmt->condition.get());
+        
+        if (condType->getKind() != TypeKind::ERROR) {
+            PrimitiveType* condPrim = dynamic_cast<PrimitiveType*>(condType);
+            if (!condPrim || condPrim->getName() != "bool") {
+                addError("for condition must be 'bool' type, got '" + condType->toString() + 
+                        "'. Use explicit comparison (e.g., i < 10) instead of truthiness.", stmt->condition.get());
+            }
+        }
+    }
+    
+    // Check update if present (just infer type, any expression is valid)
+    if (stmt->update) {
+        inferType(stmt->update.get());
+    }
+    
+    // Check body
+    checkStatement(stmt->body.get());
+}
+
+// ============================================================================
+// Block Statement Type Checking
+// ============================================================================
+
+void TypeChecker::checkBlockStmt(BlockStmt* stmt) {
+    // Enter new scope
+    symbolTable->enterScope(ScopeKind::BLOCK, "block");
+    
+    // Check all statements in block
+    for (const auto& statement : stmt->statements) {
+        checkStatement(statement.get());
+    }
+    
+    // Exit scope
+    symbolTable->exitScope();
+}
+
+// ============================================================================
+// Expression Statement Type Checking
+// ============================================================================
+
+void TypeChecker::checkExpressionStmt(ExpressionStmt* stmt) {
+    // Just infer the expression type
+    // Special case: check if it's an assignment
+    if (stmt->expression->type == ASTNode::NodeType::BINARY_OP) {
+        BinaryExpr* binExpr = static_cast<BinaryExpr*>(stmt->expression.get());
+        if (binExpr->op.type == frontend::TokenType::TOKEN_EQUAL) {
+            checkAssignment(binExpr);
+            return;
+        }
+    }
+    
+    // Otherwise just infer type (to check for errors)
+    inferType(stmt->expression.get());
 }
 
 } // namespace sema
