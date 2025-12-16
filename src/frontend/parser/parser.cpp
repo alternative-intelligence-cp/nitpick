@@ -582,6 +582,14 @@ ASTNodePtr Parser::parseStatement() {
         return parseReturn();
     }
     
+    if (match(TokenType::TOKEN_KW_PASS)) {
+        return parsePassStatement();
+    }
+    
+    if (match(TokenType::TOKEN_KW_FAIL)) {
+        return parseFailStatement();
+    }
+    
     if (match(TokenType::TOKEN_KW_IF)) {
         return parseIfStatement();
     }
@@ -756,6 +764,54 @@ ASTNodePtr Parser::parseReturn() {
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after return statement");
     
     return std::make_shared<ReturnStmt>(value, returnToken.line, returnToken.column);
+}
+
+ASTNodePtr Parser::parsePassStatement() {
+    using namespace frontend;
+    
+    Token passToken = previous(); // We already consumed 'pass'
+    
+    // Parse: pass(expr);
+    // Desugars to: return { err: 0, val: expr }
+    // TODO: Once ObjectLiteralExpr is implemented, create proper result object
+    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'pass'");
+    
+    ASTNodePtr value = parseExpression();
+    if (!value) {
+        error("Expected expression in pass statement");
+        return nullptr;
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after pass value");
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after pass statement");
+    
+    // For now, just return the value directly
+    // Full implementation: return { err: 0, val: value }
+    return std::make_shared<ReturnStmt>(value, passToken.line, passToken.column);
+}
+
+ASTNodePtr Parser::parseFailStatement() {
+    using namespace frontend;
+    
+    Token failToken = previous(); // We already consumed 'fail'
+    
+    // Parse: fail(error_code);
+    // Desugars to: return { err: error_code, val: 0 }
+    // TODO: Once ObjectLiteralExpr is implemented, create proper result object
+    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'fail'");
+    
+    ASTNodePtr errorCode = parseExpression();
+    if (!errorCode) {
+        error("Expected error code expression in fail statement");
+        return nullptr;
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after fail error code");
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after fail statement");
+    
+    // For now, just return the error code directly
+    // Full implementation: return { err: error_code, val: 0 }
+    return std::make_shared<ReturnStmt>(errorCode, failToken.line, failToken.column);
 }
 
 // Parse if statement: if (condition) thenBranch [else elseBranch]
