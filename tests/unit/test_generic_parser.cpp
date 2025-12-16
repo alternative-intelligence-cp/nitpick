@@ -42,7 +42,7 @@ TEST_CASE(parse_generic_function_simple) {
     FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(stmt);
     ASSERT_EQ(funcDecl->funcName, "identity", "Function name should be 'identity'");
     ASSERT_EQ(funcDecl->genericParams.size(), 1, "Should have 1 generic parameter");
-    ASSERT_EQ(funcDecl->genericParams[0], "T", "Generic param should be 'T'");
+    ASSERT_EQ(funcDecl->genericParams[0].name, "T", "Generic param should be 'T'");
     ASSERT_EQ(funcDecl->returnType, "*T", "Return type should be '*T'");
     ASSERT_EQ(funcDecl->parameters.size(), 1, "Should have 1 parameter");
     
@@ -66,8 +66,8 @@ TEST_CASE(parse_generic_function_multiple_params) {
     
     ASSERT_EQ(funcDecl->funcName, "pair", "Function name should be 'pair'");
     ASSERT_EQ(funcDecl->genericParams.size(), 2, "Should have 2 generic parameters");
-    ASSERT_EQ(funcDecl->genericParams[0], "T", "First param should be 'T'");
-    ASSERT_EQ(funcDecl->genericParams[1], "U", "Second param should be 'U'");
+    ASSERT_EQ(funcDecl->genericParams[0].name, "T", "First param should be 'T'");
+    ASSERT_EQ(funcDecl->genericParams[1].name, "U", "Second param should be 'U'");
     ASSERT_EQ(funcDecl->returnType, "*T", "Return type should be '*T'");
     ASSERT_EQ(funcDecl->parameters.size(), 2, "Should have 2 parameters");
     
@@ -162,4 +162,75 @@ TEST_CASE(parse_generic_var_decl) {
     VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(block->statements[0].get());
     ASSERT_EQ(varDecl->typeName, "*T", "Variable type should be '*T'");
     ASSERT_EQ(varDecl->varName, "local", "Variable name should be 'local'");
+}
+// ----------------------------------------------------------------------------
+// Generic Parameter Constraint Tests - Phase 3.4 Part 4
+// ----------------------------------------------------------------------------
+
+TEST_CASE(parse_generic_function_single_constraint) {
+    std::string source = R"(
+        func<T: Addable>:add = *T(*T:a, *T:b) {
+            return a + b;
+        };
+    )";
+    
+    auto ast = parseSource(source);
+    ASSERT(ast != nullptr, "AST should not be null");
+    
+    ProgramNode* program = static_cast<ProgramNode*>(ast.get());
+    FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(program->declarations[0].get());
+    
+    ASSERT_EQ(funcDecl->funcName, "add", "Function name should be 'add'");
+    ASSERT_EQ(funcDecl->genericParams.size(), 1, "Should have 1 generic parameter");
+    ASSERT_EQ(funcDecl->genericParams[0].name, "T", "Generic param should be 'T'");
+    ASSERT_EQ(funcDecl->genericParams[0].constraints.size(), 1, "Should have 1 constraint");
+    ASSERT_EQ(funcDecl->genericParams[0].constraints[0], "Addable", "Constraint should be 'Addable'");
+}
+
+TEST_CASE(parse_generic_function_multiple_constraints) {
+    std::string source = R"(
+        func<T: Addable & Display>:printAdd = *T(*T:a, *T:b) {
+            return a + b;
+        };
+    )";
+    
+    auto ast = parseSource(source);
+    ASSERT(ast != nullptr, "AST should not be null");
+    
+    ProgramNode* program = static_cast<ProgramNode*>(ast.get());
+    FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(program->declarations[0].get());
+    
+    ASSERT_EQ(funcDecl->funcName, "printAdd", "Function name should be 'printAdd'");
+    ASSERT_EQ(funcDecl->genericParams.size(), 1, "Should have 1 generic parameter");
+    ASSERT_EQ(funcDecl->genericParams[0].name, "T", "Generic param should be 'T'");
+    ASSERT_EQ(funcDecl->genericParams[0].constraints.size(), 2, "Should have 2 constraints");
+    ASSERT_EQ(funcDecl->genericParams[0].constraints[0], "Addable", "First constraint should be 'Addable'");
+    ASSERT_EQ(funcDecl->genericParams[0].constraints[1], "Display", "Second constraint should be 'Display'");
+}
+
+TEST_CASE(parse_generic_function_mixed_constraints) {
+    std::string source = R"(
+        func<T: Hashable & Display, U>:printPair = *T(*T:first, *U:second) {
+            return first;
+        };
+    )";
+    
+    auto ast = parseSource(source);
+    ASSERT(ast != nullptr, "AST should not be null");
+    
+    ProgramNode* program = static_cast<ProgramNode*>(ast.get());
+    FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(program->declarations[0].get());
+    
+    ASSERT_EQ(funcDecl->funcName, "printPair", "Function name should be 'printPair'");
+    ASSERT_EQ(funcDecl->genericParams.size(), 2, "Should have 2 generic parameters");
+    
+    // First parameter with constraints
+    ASSERT_EQ(funcDecl->genericParams[0].name, "T", "First param should be 'T'");
+    ASSERT_EQ(funcDecl->genericParams[0].constraints.size(), 2, "T should have 2 constraints");
+    ASSERT_EQ(funcDecl->genericParams[0].constraints[0], "Hashable", "First constraint should be 'Hashable'");
+    ASSERT_EQ(funcDecl->genericParams[0].constraints[1], "Display", "Second constraint should be 'Display'");
+    
+    // Second parameter without constraints
+    ASSERT_EQ(funcDecl->genericParams[1].name, "U", "Second param should be 'U'");
+    ASSERT_EQ(funcDecl->genericParams[1].constraints.size(), 0, "U should have no constraints");
 }

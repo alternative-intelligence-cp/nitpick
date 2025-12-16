@@ -853,8 +853,8 @@ ASTNodePtr Parser::parseFuncDecl() {
     
     Token funcToken = previous(); // 'func' keyword
     
-    // Phase 3.4: Parse generic parameters if present: func<T, U>
-    std::vector<std::string> genericParams = parseGenericParams();
+    // Phase 3.4: Parse generic parameters if present: func<T: Trait, U>
+    std::vector<GenericParamInfo> genericParams = parseGenericParams();
     
     // Consume colon
     consume(TokenType::TOKEN_COLON, "Expected ':' after 'func'");
@@ -1934,11 +1934,11 @@ ASTNodePtr Parser::parse() {
 // Phase 3.4: Generic Syntax Parsing
 // ============================================================================
 
-// Parse generic parameters: <T, U, V>
-std::vector<std::string> Parser::parseGenericParams() {
+// Parse generic parameters with optional trait constraints: <T: Trait1 & Trait2, U>
+std::vector<GenericParamInfo> Parser::parseGenericParams() {
     using namespace frontend;
     
-    std::vector<std::string> params;
+    std::vector<GenericParamInfo> params;
     
     // Consume the '<'
     if (!match(TokenType::TOKEN_LESS)) {
@@ -1947,12 +1947,42 @@ std::vector<std::string> Parser::parseGenericParams() {
     
     // Parse first parameter
     Token paramToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name");
-    params.push_back(paramToken.lexeme);
+    
+    // Check for trait constraints: T: Trait1 & Trait2
+    std::vector<std::string> constraints;
+    if (match(TokenType::TOKEN_COLON)) {
+        // Parse first trait bound
+        Token traitToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected trait name after ':'");
+        constraints.push_back(traitToken.lexeme);
+        
+        // Parse additional trait bounds with '&'
+        while (match(TokenType::TOKEN_AMPERSAND)) {
+            Token nextTrait = consume(TokenType::TOKEN_IDENTIFIER, "Expected trait name after '&'");
+            constraints.push_back(nextTrait.lexeme);
+        }
+    }
+    
+    params.emplace_back(paramToken.lexeme, constraints);
     
     // Parse remaining parameters
     while (match(TokenType::TOKEN_COMMA)) {
         Token nextParam = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name");
-        params.push_back(nextParam.lexeme);
+        
+        // Check for constraints on this parameter
+        std::vector<std::string> nextConstraints;
+        if (match(TokenType::TOKEN_COLON)) {
+            // Parse first trait bound
+            Token traitToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected trait name after ':'");
+            nextConstraints.push_back(traitToken.lexeme);
+            
+            // Parse additional trait bounds with '&'
+            while (match(TokenType::TOKEN_AMPERSAND)) {
+                Token nextTrait = consume(TokenType::TOKEN_IDENTIFIER, "Expected trait name after '&'");
+                nextConstraints.push_back(nextTrait.lexeme);
+            }
+        }
+        
+        params.emplace_back(nextParam.lexeme, nextConstraints);
     }
     
     // Consume the '>'

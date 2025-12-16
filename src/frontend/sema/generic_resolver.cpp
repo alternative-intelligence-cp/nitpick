@@ -61,9 +61,9 @@ TypeSubstitution GenericResolver::inferTypeArgs(
     }
     
     // Phase 2: Validate that all type parameters have been inferred
-    for (const auto& paramName : funcDecl->genericParams) {
-        if (substitution.find(paramName) == substitution.end()) {
-            addError("Unable to infer type parameter '" + paramName + "'",
+    for (const auto& param : funcDecl->genericParams) {
+        if (substitution.find(param.name) == substitution.end()) {
+            addError("Unable to infer type parameter '" + param.name + "'",
                     callExpr ? callExpr->line : 0,
                     callExpr ? callExpr->column : 0,
                     "Type parameter appears in return type or is unused");
@@ -95,7 +95,7 @@ TypeSubstitution GenericResolver::resolveExplicitTypeArgs(
     
     // Create substitution map
     for (size_t i = 0; i < funcDecl->genericParams.size(); i++) {
-        const std::string& paramName = funcDecl->genericParams[i];
+        const std::string& paramName = funcDecl->genericParams[i].name;
         const std::string& typeName = typeArgs[i];
         
         // TODO: Resolve type name to Type* via TypeRegistry
@@ -113,15 +113,15 @@ bool GenericResolver::validateSubstitution(
     if (!funcDecl) return false;
     
     // Check that all type parameters have bindings
-    for (const auto& paramName : funcDecl->genericParams) {
-        auto it = substitution.find(paramName);
+    for (const auto& param : funcDecl->genericParams) {
+        auto it = substitution.find(param.name);
         if (it == substitution.end()) {
-            addError("Missing type binding for parameter '" + paramName + "'");
+            addError("Missing type binding for parameter '" + param.name + "'");
             return false;
         }
         
         if (it->second == nullptr) {
-            addError("Null type binding for parameter '" + paramName + "'");
+            addError("Null type binding for parameter '" + param.name + "'");
             return false;
         }
     }
@@ -140,7 +140,7 @@ bool GenericResolver::checkConstraints(const GenericParam& param, Type* concrete
     // Check each trait constraint
     for (const auto& traitName : param.constraints) {
         if (!implementsTrait(concreteType, traitName)) {
-            addError("Type '" + concreteType->toString() +
+            addError("Type '" + concreteType->getName() +
                     "' does not satisfy trait bound '" + traitName + "'",
                     param.line, param.column);
             return false;
@@ -178,7 +178,7 @@ std::string GenericResolver::canonicalizeTypeName(Type* type) const {
     
     // For now, just return the type name
     // TODO: Resolve type aliases to their underlying types
-    return type->toString();
+    return type->getName();
 }
 
 SpecializationKey GenericResolver::makeSpecializationKey(
@@ -214,11 +214,11 @@ bool GenericResolver::unifyTypes(Type* expected, Type* actual,
     if (it != substitution.end()) {
         // Parameter already bound - check for consistency
         Type* boundType = it->second;
-        if (boundType->toString() != actual->toString()) {
+        if (boundType->getName() != actual->getName()) {
             addError("Type parameter '" + paramName +
                     "' bound to multiple different types: '" +
-                    boundType->toString() + "' and '" +
-                    actual->toString() + "'");
+                    boundType->getName() + "' and '" +
+                    actual->getName() + "'");
             return false;
         }
         return true;

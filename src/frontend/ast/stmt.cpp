@@ -29,7 +29,14 @@ std::string FuncDeclStmt::toString() const {
         oss << "<";
         for (size_t i = 0; i < genericParams.size(); ++i) {
             if (i > 0) oss << ", ";
-            oss << genericParams[i];
+            oss << genericParams[i].name;
+            if (!genericParams[i].constraints.empty()) {
+                oss << ": ";
+                for (size_t j = 0; j < genericParams[i].constraints.size(); ++j) {
+                    if (j > 0) oss << " & ";
+                    oss << genericParams[i].constraints[j];
+                }
+            }
         }
         oss << ">";
     }
