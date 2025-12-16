@@ -2245,3 +2245,116 @@ TEST_CASE(parser_mod_multiple) {
     ASSERT_EQ(mod3->name, "utils", "Third module should be utils");
     ASSERT(mod3->isPublic, "Third module should be public");
 }
+
+// ============================================================================
+// extern Statement Tests (Phase 2.5.4)
+// ============================================================================
+
+TEST_CASE(parser_extern_empty) {
+    auto program = parseStmt("extern \"libc\" { }");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto externStmt = std::dynamic_pointer_cast<ExternStmt>(prog->declarations[0]);
+    ASSERT(externStmt != nullptr, "Should be ExternStmt");
+    ASSERT_EQ(externStmt->libraryName, "libc", "Library name should be libc");
+    ASSERT_EQ(externStmt->declarations.size(), 0, "Should have no declarations");
+}
+
+TEST_CASE(parser_extern_with_func) {
+    auto program = parseStmt("extern \"libc\" { func:malloc = void*(uint64:size); }");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto externStmt = std::dynamic_pointer_cast<ExternStmt>(prog->declarations[0]);
+    ASSERT(externStmt != nullptr, "Should be ExternStmt");
+    ASSERT_EQ(externStmt->libraryName, "libc", "Library name should be libc");
+    ASSERT_EQ(externStmt->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(externStmt->declarations[0]);
+    ASSERT(funcDecl != nullptr, "Should contain function declaration");
+    ASSERT_EQ(funcDecl->funcName, "malloc", "Function name should be malloc");
+}
+
+TEST_CASE(parser_extern_multiple_funcs) {
+    auto program = parseStmt("extern \"libc\" { func:malloc = void*(uint64:size); func:free = void(void*:ptr); }");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto externStmt = std::dynamic_pointer_cast<ExternStmt>(prog->declarations[0]);
+    ASSERT(externStmt != nullptr, "Should be ExternStmt");
+    ASSERT_EQ(externStmt->libraryName, "libc", "Library name should be libc");
+    ASSERT_EQ(externStmt->declarations.size(), 2, "Should have 2 declarations");
+    
+    auto func1 = std::dynamic_pointer_cast<FuncDeclStmt>(externStmt->declarations[0]);
+    auto func2 = std::dynamic_pointer_cast<FuncDeclStmt>(externStmt->declarations[1]);
+    
+    ASSERT(func1 != nullptr, "First should be function declaration");
+    ASSERT(func2 != nullptr, "Second should be function declaration");
+    ASSERT_EQ(func1->funcName, "malloc", "First function should be malloc");
+    ASSERT_EQ(func2->funcName, "free", "Second function should be free");
+}
+
+TEST_CASE(parser_extern_with_variable) {
+    auto program = parseStmt("extern \"libc\" { wild int32:errno; }");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto externStmt = std::dynamic_pointer_cast<ExternStmt>(prog->declarations[0]);
+    ASSERT(externStmt != nullptr, "Should be ExternStmt");
+    ASSERT_EQ(externStmt->libraryName, "libc", "Library name should be libc");
+    ASSERT_EQ(externStmt->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(externStmt->declarations[0]);
+    ASSERT(varDecl != nullptr, "Should contain variable declaration");
+}
+
+TEST_CASE(parser_extern_different_library) {
+    auto program = parseStmt("extern \"kernel32\" { func:Sleep = void(uint32:dwMilliseconds); }");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto externStmt = std::dynamic_pointer_cast<ExternStmt>(prog->declarations[0]);
+    ASSERT(externStmt != nullptr, "Should be ExternStmt");
+    ASSERT_EQ(externStmt->libraryName, "kernel32", "Library name should be kernel32");
+    ASSERT_EQ(externStmt->declarations.size(), 1, "Should have 1 declaration");
+}
+
+TEST_CASE(parser_extern_mixed_declarations) {
+    auto program = parseStmt("extern \"libc\" { func:printf = int32(string:format); wild int32:errno; func:exit = void(int32:code); }");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 1, "Should have 1 declaration");
+    
+    auto externStmt = std::dynamic_pointer_cast<ExternStmt>(prog->declarations[0]);
+    ASSERT(externStmt != nullptr, "Should be ExternStmt");
+    ASSERT_EQ(externStmt->libraryName, "libc", "Library name should be libc");
+    ASSERT_EQ(externStmt->declarations.size(), 3, "Should have 3 declarations");
+}
+
+TEST_CASE(parser_extern_multiple_blocks) {
+    auto program = parseStmt("extern \"libc\" { func:malloc = void*(uint64:size); } extern \"kernel32\" { func:Sleep = void(uint32:ms); }");
+    auto prog = getProgram(program);
+    
+    ASSERT(prog != nullptr, "Program should not be null");
+    ASSERT_EQ(prog->declarations.size(), 2, "Should have 2 declarations");
+    
+    auto extern1 = std::dynamic_pointer_cast<ExternStmt>(prog->declarations[0]);
+    auto extern2 = std::dynamic_pointer_cast<ExternStmt>(prog->declarations[1]);
+    
+    ASSERT(extern1 != nullptr, "First should be ExternStmt");
+    ASSERT(extern2 != nullptr, "Second should be ExternStmt");
+    ASSERT_EQ(extern1->libraryName, "libc", "First library should be libc");
+    ASSERT_EQ(extern2->libraryName, "kernel32", "Second library should be kernel32");
+}

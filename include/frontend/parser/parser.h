@@ -66,6 +66,7 @@ private:
     ASTNodePtr parseType();
     ASTNodePtr parseUseStatement();
     ASTNodePtr parseModStatement();
+    ASTNodePtr parseExternStatement();
     ASTNodePtr parseExpressionStmt();
     ASTNodePtr parseReturn();
     ASTNodePtr parsePassStatement();
