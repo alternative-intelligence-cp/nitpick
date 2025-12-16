@@ -2358,3 +2358,140 @@ TEST_CASE(parser_extern_multiple_blocks) {
     ASSERT_EQ(extern1->libraryName, "libc", "First library should be libc");
     ASSERT_EQ(extern2->libraryName, "kernel32", "Second library should be kernel32");
 }
+
+// ============================================================================
+// Phase 2.5.1: Type Annotation Parsing Tests (Extended)
+// ============================================================================
+// Tests for parseType() through variable declarations and function signatures
+// Type syntax: simple (int8), pointer (int8@), array (int8[], int8[100]), generic (Array<int8>)
+
+// Simple type tests - basic primitives
+TEST_CASE(parser_type_uint8) {
+    auto program = parseStmt("uint8:byte = 255;");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[0]);
+    ASSERT(varDecl != nullptr, "Should be VarDeclStmt");
+    ASSERT_EQ(varDecl->typeName, "uint8", "Type should be uint8");
+}
+
+TEST_CASE(parser_type_uint32) {
+    auto program = parseStmt("uint32:count = 1000;");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[0]);
+    ASSERT(varDecl != nullptr, "Should be VarDeclStmt");
+    ASSERT_EQ(varDecl->typeName, "uint32", "Type should be uint32");
+}
+
+TEST_CASE(parser_type_uint64) {
+    auto program = parseStmt("uint64:bignum = 999;");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[0]);
+    ASSERT(varDecl != nullptr, "Should be VarDeclStmt");
+    ASSERT_EQ(varDecl->typeName, "uint64", "Type should be uint64");
+}
+
+TEST_CASE(parser_type_flt64) {
+    auto program = parseStmt("flt64:precise = 3.14159;");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[0]);
+    ASSERT(varDecl != nullptr, "Should be VarDeclStmt");
+    ASSERT_EQ(varDecl->typeName, "flt64", "Type should be flt64");
+}
+
+// TBB (Twisted Balanced Binary) types
+TEST_CASE(parser_type_tbb8) {
+    auto program = parseStmt("tbb8:safe = 100;");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[0]);
+    ASSERT(varDecl != nullptr, "Should be VarDeclStmt");
+    ASSERT_EQ(varDecl->typeName, "tbb8", "Type should be tbb8");
+}
+
+TEST_CASE(parser_type_tbb32) {
+    auto program = parseStmt("tbb32:balanced = 500;");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[0]);
+    ASSERT(varDecl != nullptr, "Should be VarDeclStmt");
+    ASSERT_EQ(varDecl->typeName, "tbb32", "Type should be tbb32");
+}
+
+// Composite types
+TEST_CASE(parser_type_obj) {
+    auto program = parseStmt("obj:config = { key: \"value\" };");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[0]);
+    ASSERT(varDecl != nullptr, "Should be VarDeclStmt");
+    ASSERT_EQ(varDecl->typeName, "obj", "Type should be obj");
+}
+
+TEST_CASE(parser_type_dyn) {
+    auto program = parseStmt("dyn:flexible = 42;");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto varDecl = std::dynamic_pointer_cast<VarDeclStmt>(prog->declarations[0]);
+    ASSERT(varDecl != nullptr, "Should be VarDeclStmt");
+    ASSERT_EQ(varDecl->typeName, "dyn", "Type should be dyn");
+}
+
+// Type in function parameters (multiple different types)
+TEST_CASE(parser_type_func_params_varied) {
+    auto program = parseStmt("func:process = int32(string:name, bool:flag, flt32:ratio) { pass(0); };");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(prog->declarations[0]);
+    ASSERT(funcDecl != nullptr, "Should be FuncDeclStmt");
+    ASSERT_EQ(funcDecl->parameters.size(), 3, "Should have 3 parameters");
+    
+    auto param1 = std::dynamic_pointer_cast<ParameterNode>(funcDecl->parameters[0]);
+    auto param2 = std::dynamic_pointer_cast<ParameterNode>(funcDecl->parameters[1]);
+    auto param3 = std::dynamic_pointer_cast<ParameterNode>(funcDecl->parameters[2]);
+    
+    ASSERT_EQ(param1->typeName, "string", "First param should be string");
+    ASSERT_EQ(param2->typeName, "bool", "Second param should be bool");
+    ASSERT_EQ(param3->typeName, "flt32", "Third param should be flt32");
+}
+
+// Function with different return types
+TEST_CASE(parser_type_func_return_bool) {
+    auto program = parseStmt("func:isValid = bool() { pass(true); };");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(prog->declarations[0]);
+    ASSERT(funcDecl != nullptr, "Should be FuncDeclStmt");
+    ASSERT_EQ(funcDecl->returnType, "bool", "Return type should be bool");
+}
+
+TEST_CASE(parser_type_func_return_string) {
+    auto program = parseStmt("func:getName = string() { pass(\"test\"); };");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(prog->declarations[0]);
+    ASSERT(funcDecl != nullptr, "Should be FuncDeclStmt");
+    ASSERT_EQ(funcDecl->returnType, "string", "Return type should be string");
+}
+
+// Complex function with varied types
+TEST_CASE(parser_type_func_complex) {
+    auto program = parseStmt("func:calculate = flt64(int32:x, int32:y, flt32:factor) { pass(0.0); };");
+    auto prog = getProgram(program);
+    ASSERT(prog != nullptr, "Program should not be null");
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(prog->declarations[0]);
+    ASSERT(funcDecl != nullptr, "Should be FuncDeclStmt");
+    ASSERT_EQ(funcDecl->returnType, "flt64", "Return type should be flt64");
+    ASSERT_EQ(funcDecl->parameters.size(), 3, "Should have 3 parameters");
+}
+
+// TODO: Add these tests once pointer/array/generic type parsing is integrated:
+// - Pointer types: int8@, string@
+// - Dynamic arrays: int8[], string[]
+// - Sized arrays: int8[100], uint32[256]
+// - Generic types: Array<int8>, Map<string, int32>
+// - Nested generics: Array<Array<int32>>
+// - Function types as parameters

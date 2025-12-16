@@ -542,10 +542,10 @@ bool Parser::isTypeKeyword(frontend::TokenType type) const {
         type == TokenType::TOKEN_KW_FLT512 ||
         // Other types
         type == TokenType::TOKEN_KW_BOOL || type == TokenType::TOKEN_KW_STRING ||
-        type == TokenType::TOKEN_KW_DYN ||
+        type == TokenType::TOKEN_KW_DYN || type == TokenType::TOKEN_KW_OBJ ||
         type == TokenType::TOKEN_KW_RESULT || type == TokenType::TOKEN_KW_ARRAY ||
         type == TokenType::TOKEN_KW_STRUCT ||
-        // Note: TOKEN_KW_FUNC and TOKEN_KW_OBJ removed - handled as identifiers in expressions
+        // Note: TOKEN_KW_FUNC removed - handled as identifier in expressions
         // Balanced ternary/nonary
         type == TokenType::TOKEN_KW_TRIT || type == TokenType::TOKEN_KW_TRYTE ||
         type == TokenType::TOKEN_KW_NIT || type == TokenType::TOKEN_KW_NYTE ||
@@ -607,8 +607,20 @@ ASTNodePtr Parser::parseStatement() {
     }
     
     // Check for type annotation (variable declaration)
+    // Must be followed by colon to avoid ambiguity with identifiers
+    // Example: "obj:x = 5" is variable declaration, "obj.field" is member access
     if (isTypeKeyword(peek().type)) {
-        return parseVarDecl();
+        size_t saved = current;
+        advance(); // consume type keyword
+        if (check(TokenType::TOKEN_COLON)) {
+            // It's a type annotation: type:name
+            current = saved; // reset position
+            return parseVarDecl();
+        } else {
+            // It's an identifier used in an expression, restore position
+            current = saved;
+            // Fall through to expression statement
+        }
     }
     
     // Check for function declaration: func:name = ...
@@ -852,42 +864,74 @@ ASTNodePtr Parser::parseBlock() {
     return std::make_shared<BlockStmt>(statements, leftBrace.line, leftBrace.column);
 }
 
-// Parse type annotation: int8, int8*, int8[], int8[100], Array<int8>, etc.
+// Parse type annotation
+// Handles: simple types (int8, string), pointers (int8@), arrays (int8[], int8[100]),
+//          and generic types (Array<int8>, Map<string, int32>)
 ASTNodePtr Parser::parseType() {
     using namespace frontend;
     
-    // Must start with a type keyword
-    if (!isTypeKeyword(peek().type)) {
-        error("Expected type keyword");
+    Token typeToken = peek();
+    ASTNodePtr baseType;
+    
+    // Check for type keyword or identifier (for generic types)
+    if (isTypeKeyword(typeToken.type) || typeToken.type == TokenType::TOKEN_IDENTIFIER) {
+        advance(); // Consume the type token
+        
+        // Create simple type
+        baseType = std::make_shared<SimpleType>(typeToken.lexeme, typeToken.line, typeToken.column);
+        
+        // Check for generic parameters: Array<int8>, Map<K, V>
+        if (check(TokenType::TOKEN_LESS)) {
+            advance(); // consume '<'
+            
+            std::vector<ASTNodePtr> typeArgs;
+            
+            // Parse type arguments
+            do {
+                if (check(TokenType::TOKEN_GREATER)) break;
+                
+                ASTNodePtr typeArg = parseType(); // Recursive call for nested generics
+                if (typeArg) {
+                    typeArgs.push_back(typeArg);
+                } else {
+                    error("Expected type argument in generic type");
+                    break;
+                }
+                
+            } while (match(TokenType::TOKEN_COMMA));
+            
+            consume(TokenType::TOKEN_GREATER, "Expected '>' after generic type arguments");
+            
+            // Create generic type node
+            baseType = std::make_shared<GenericType>(typeToken.lexeme, typeArgs, 
+                                                     typeToken.line, typeToken.column);
+        }
+    } else {
+        error("Expected type annotation");
         return nullptr;
     }
     
-    Token typeToken = advance();
-    ASTNodePtr baseType = std::make_shared<SimpleType>(typeToken.lexeme, typeToken.line, typeToken.column);
-    
-    // Check for pointer type: int8*
-    if (match(TokenType::TOKEN_STAR)) {
-        return std::make_shared<PointerType>(baseType, typeToken.line, typeToken.column);
+    // Check for pointer suffix: type@ (Aria native pointer syntax)
+    // Note: extern blocks use * for C FFI, but that's handled separately
+    if (match(TokenType::TOKEN_AT)) {
+        baseType = std::make_shared<PointerType>(baseType, typeToken.line, typeToken.column);
     }
     
-    // Check for array type: int8[] or int8[100]
+    // Check for array suffix: type[] or type[size]
     if (match(TokenType::TOKEN_LEFT_BRACKET)) {
         ASTNodePtr sizeExpr = nullptr;
         
         // Check if it's a sized array: int8[100]
         if (!check(TokenType::TOKEN_RIGHT_BRACKET)) {
+            // Parse the size expression (could be literal or identifier)
             sizeExpr = parseExpression();
         }
         
         consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after array type");
         
-        return std::make_shared<ArrayType>(baseType, sizeExpr, typeToken.line, typeToken.column);
+        baseType = std::make_shared<ArrayType>(baseType, sizeExpr, typeToken.line, typeToken.column);
     }
     
-    // TODO: Handle generic types: Array<int8>
-    // if (match(TokenType::TOKEN_LESS)) { ... }
-    
-    // Simple type
     return baseType;
 }
 

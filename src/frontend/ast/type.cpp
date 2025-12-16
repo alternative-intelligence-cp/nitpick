@@ -10,9 +10,9 @@ std::string SimpleType::toString() const {
 std::string PointerType::toString() const {
     std::ostringstream oss;
     if (baseType) {
-        oss << baseType->toString() << "*";
+        oss << baseType->toString() << "@";  // Aria uses @ for pointers
     } else {
-        oss << "unknown*";
+        oss << "unknown@";
     }
     return oss.str();
 }
