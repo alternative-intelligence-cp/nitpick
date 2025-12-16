@@ -294,6 +294,14 @@ Specialization* Monomorphizer::requestSpecialization(
     specializationCache[key] = spec;
     specializations.push_back(spec);
     
+    // TODO(Phase 3.5+): Send specialized function to TypeChecker for recursive analysis
+    // This ensures:
+    //   1. Concrete types satisfy all trait constraints
+    //   2. All operations in the function body are valid for the concrete types
+    //   3. Any nested generic calls are also instantiated and validated
+    // Once validated, set spec->analyzed = true
+    // Reference: research_027_generics_templates.txt Section 3.1 "Recursive Analysis"
+    
     // Pop from instantiation stack
     instantiationStack.pop_back();
     
