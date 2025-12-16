@@ -302,6 +302,13 @@ public:
      */
     bool checkDepthLimit() const;
     
+    /**
+     * Get current instantiation stack depth (for testing)
+     */
+    size_t getInstantiationDepth() const {
+        return instantiationStack.size();
+    }
+    
     // Error handling
     bool hasErrors() const { return !errors.empty(); }
     const std::vector<GenericError>& getErrors() const { return errors; }
