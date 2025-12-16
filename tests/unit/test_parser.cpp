@@ -2495,3 +2495,132 @@ TEST_CASE(parser_type_func_complex) {
 // - Generic types: Array<int8>, Map<string, int32>
 // - Nested generics: Array<Array<int32>>
 // - Function types as parameters
+
+// ============================================================================
+// Parser Error Handling Tests (Phase 2.6)
+// ============================================================================
+
+// Test that parser collects errors instead of crashing
+TEST_CASE(parser_error_missing_semicolon) {
+    std::string source = "int32:x = 5";  // Missing semicolon
+    Lexer lexer(source);
+    auto tokens = lexer.tokenize();
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    
+    ASSERT(parser.hasErrors(), "Parser should have errors");
+    ASSERT_EQ(parser.getErrors().size(), 1, "Should have 1 error");
+}
+
+TEST_CASE(parser_error_unclosed_paren) {
+    std::string source = "int32:x = (5 + 3;";  // Missing closing paren
+    Lexer lexer(source);
+    auto tokens = lexer.tokenize();
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    
+    ASSERT(parser.hasErrors(), "Parser should have errors");
+}
+
+TEST_CASE(parser_error_missing_condition) {
+    std::string source = "if { x = 5; };";  // Missing condition
+    Lexer lexer(source);
+    auto tokens = lexer.tokenize();
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    
+    ASSERT(parser.hasErrors(), "Parser should have errors");
+}
+
+TEST_CASE(parser_error_invalid_type) {
+    std::string source = "invalidtype:x = 5;";  // Invalid type keyword
+    Lexer lexer(source);
+    auto tokens = lexer.tokenize();
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    
+    ASSERT(parser.hasErrors(), "Parser should have errors");
+}
+
+// Test error recovery - parser continues after error
+TEST_CASE(parser_error_recovery_multiple_statements) {
+    std::string source = R"(
+        int32:x = 5;
+        int32:y = (3 + 2;  // Error: unclosed paren
+        int32:z = 10;      // Should still parse this
+    )";
+    Lexer lexer(source);
+    auto tokens = lexer.tokenize();
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    
+    ASSERT(parser.hasErrors(), "Parser should have errors");
+    // Parser should recover and parse the third statement
+    auto prog = std::dynamic_pointer_cast<ProgramNode>(ast);
+    ASSERT(prog != nullptr, "Should still create program node");
+}
+
+// Test that single error doesn't cause cascade
+TEST_CASE(parser_error_no_cascade) {
+    std::string source = R"(
+        int32:x = ;  // Error: missing initializer
+        int32:y = 10;
+    )";
+    Lexer lexer(source);
+    auto tokens = lexer.tokenize();
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    
+    ASSERT(parser.hasErrors(), "Parser should have errors");
+    // Should not have dozens of errors from the single mistake
+    ASSERT(parser.getErrors().size() < 5, "Should not have cascading errors");
+}
+
+// Test error message format
+TEST_CASE(parser_error_message_format) {
+    std::string source = "int32:x = 5";  // Missing semicolon
+    Lexer lexer(source);
+    auto tokens = lexer.tokenize();
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    
+    ASSERT(parser.hasErrors(), "Parser should have errors");
+    const auto& errors = parser.getErrors();
+    ASSERT(!errors.empty(), "Should have at least one error");
+    
+    // Error message should contain line number
+    std::string errorMsg = errors[0];
+    ASSERT(errorMsg.find("line") != std::string::npos, "Error should mention line number");
+}
+
+// Test synchronization at semicolon
+TEST_CASE(parser_error_sync_semicolon) {
+    std::string source = R"(
+        int32:x = (5 + 3;
+        int32:y = 10;
+    )";
+    Lexer lexer(source);
+    auto tokens = lexer.tokenize();
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    
+    // Parser should sync at semicolon and continue
+    auto prog = std::dynamic_pointer_cast<ProgramNode>(ast);
+    ASSERT(prog != nullptr, "Should create program node");
+}
+
+// Test synchronization at keyword
+TEST_CASE(parser_error_sync_keyword) {
+    std::string source = R"(
+        int32:x = (5 + 3
+        func:test = int32() { pass(42); };
+    )";
+    Lexer lexer(source);
+    auto tokens = lexer.tokenize();
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    
+    // Parser should sync at 'func' keyword
+    auto prog = std::dynamic_pointer_cast<ProgramNode>(ast);
+    ASSERT(prog != nullptr, "Should create program node");
+}
