@@ -24,6 +24,8 @@ add_executable(test_runner
     backend/test_codegen_stmt.cpp
     integration/test_generics_integration.cpp
     integration/test_sema_integration.cpp
+    integration/test_ir_compilation.cpp
+    integration/test_ir_optimization.cpp
     # Add more test files here as they are created
 )
 
