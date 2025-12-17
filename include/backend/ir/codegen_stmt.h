@@ -19,6 +19,8 @@ namespace aria {
     class LoopStmt;
     class TillStmt;
     class WhenStmt;
+    class PickStmt;
+    class FallStmt;
     class BlockStmt;
     class ReturnStmt;
     class ExpressionStmt;
@@ -135,6 +137,20 @@ public:
      * @param stmt When statement
      */
     void codegenWhen(WhenStmt* stmt);
+    
+    /**
+     * Generate code for a pick statement (pattern matching)
+     * Creates cascading if-else structure for pattern matching
+     * @param stmt Pick statement
+     */
+    void codegenPick(PickStmt* stmt);
+    
+    /**
+     * Generate code for a fall statement (explicit fallthrough)
+     * Transfers control to labeled case in pick
+     * @param stmt Fall statement
+     */
+    void codegenFall(FallStmt* stmt);
     
     /**
      * Generate code for a block statement
