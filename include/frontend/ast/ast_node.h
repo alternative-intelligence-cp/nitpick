@@ -35,6 +35,7 @@ public:
         UNWRAP,               // Unwrap operator: result?
         ARRAY_LITERAL,        // Array literal: [1, 2, 3]
         OBJECT_LITERAL,       // Object literal: { key: value }
+        AWAIT,                // Await expression: await future (async/await)
         
         // === STATEMENTS ===
         VAR_DECL,             // Variable declaration: type:name = value;

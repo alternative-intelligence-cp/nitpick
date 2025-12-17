@@ -135,4 +135,10 @@ std::string LambdaExpr::toString() const {
     return oss.str();
 }
 
+std::string AwaitExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Await(" << operand->toString() << ")";
+    return oss.str();
+}
+
 } // namespace aria

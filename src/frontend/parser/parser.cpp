@@ -399,6 +399,19 @@ ASTNodePtr Parser::parsePrimary() {
 ASTNodePtr Parser::parseUnary() {
     Token token = peek();
     
+    // Check for await expression: await <expression>
+    if (token.type == TokenType::TOKEN_KW_AWAIT) {
+        advance(); // consume 'await'
+        ASTNodePtr operand = parseUnary(); // Right-associative
+        
+        if (!operand) {
+            error("Expected expression after 'await'");
+            return nullptr;
+        }
+        
+        return std::make_shared<AwaitExpr>(operand, token.line, token.column);
+    }
+    
     if (isUnaryOperator(token.type)) {
         advance();
         ASTNodePtr operand = parseUnary(); // Right-associative

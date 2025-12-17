@@ -185,6 +185,25 @@ public:
 };
 
 /**
+ * Await expression node (Async/Await)
+ * Represents: await future_expression
+ * 
+ * Based on research_029_async_await_system.txt:
+ * - Suspends execution if the Future is not ready
+ * - Only valid within async functions or async blocks
+ * - Operand must be a type implementing the Future trait
+ */
+class AwaitExpr : public ASTNode {
+public:
+    ASTNodePtr operand;  // Expression that yields a Future
+    
+    AwaitExpr(ASTNodePtr expr, int line = 0, int column = 0)
+        : ASTNode(NodeType::AWAIT, line, column), operand(expr) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Lambda expression node (Closures)
  * Represents: (x, y) => x + y  or  int64(int64 x, int64 y) { return x + y; }
  * 
