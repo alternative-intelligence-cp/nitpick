@@ -783,6 +783,57 @@ ASTNodePtr Parser::parseStatement() {
         }
     }
     
+    // Check for async function declaration: async func:name = ...
+    if (peek().type == TokenType::TOKEN_KW_ASYNC) {
+        size_t saved = current;
+        current++; // skip 'async'
+        
+        // Must be followed by 'func' keyword
+        if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_KW_FUNC) {
+            current++; // skip 'func'
+            
+            // Check for generic parameters: func<T, U>
+            if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_LESS) {
+                current++; // skip '<'
+                // Skip generic parameter names
+                while (current < tokens.size() && tokens[current].type != TokenType::TOKEN_GREATER) {
+                    if (tokens[current].type == TokenType::TOKEN_IDENTIFIER) {
+                        current++; // skip identifier
+                        if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_COMMA) {
+                            current++; // skip comma
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_GREATER) {
+                    current++; // skip '>'
+                }
+            }
+            
+            // Check for colon
+            if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_COLON) {
+                // It's an async function declaration
+                current = saved; // reset position
+                match(TokenType::TOKEN_KW_ASYNC); // consume 'async'
+                match(TokenType::TOKEN_KW_FUNC);  // consume 'func'
+                auto funcDecl = parseFuncDecl();
+                // Set isAsync flag
+                if (funcDecl && funcDecl->type == ASTNode::NodeType::FUNC_DECL) {
+                    auto func = std::static_pointer_cast<FuncDeclStmt>(funcDecl);
+                    func->isAsync = true;
+                }
+                return funcDecl;
+            } else {
+                // Not async func declaration, restore and continue
+                current = saved;
+            }
+        } else {
+            // Not followed by 'func', restore and continue
+            current = saved;
+        }
+    }
+    
     // Check for function declaration: func:name = ... or func<T>:name = ...
     // Only treat as function declaration if followed by colon or generic params then colon
     if (peek().type == TokenType::TOKEN_KW_FUNC) {

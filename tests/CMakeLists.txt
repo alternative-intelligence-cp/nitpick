@@ -18,6 +18,7 @@ add_executable(test_runner
     unit/test_generic_parser.cpp
     unit/test_module_resolver.cpp
     unit/test_visibility_checker.cpp
+    unit/test_async_await_parser.cpp
     backend/test_ir_generator.cpp
     backend/test_tbb_codegen.cpp
     backend/test_codegen_expr.cpp
