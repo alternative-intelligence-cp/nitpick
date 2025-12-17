@@ -96,6 +96,10 @@ public:
     bool isPointer() const { return kind == Kind::POINTER; }
     bool isERR() const { return kind == Kind::ERR_SENTINEL; }
     
+    // Comparison operator for memoization cache keys (research_030 Section 5.2)
+    bool operator<(const ComptimeValue& other) const;
+    bool operator==(const ComptimeValue& other) const;
+    
     // Value accessors
     int64_t getInt() const;
     uint64_t getUint() const;
@@ -237,13 +241,21 @@ public:
     bool checkStackDepth();
     bool checkHeapSize(size_t additionalBytes);
     
+    // Stack frame management for function calls (research_030 Section 5.2)
+    bool pushStackFrame();   // Returns false if limit exceeded
+    void popStackFrame();
+    
     // === Error Handling ===
     bool hasErrors() const { return !errors.empty(); }
     const std::vector<std::string>& getErrors() const { return errors; }
     void clearErrors() { errors.clear(); }
     
-    // === Memoization ===
+    // === Memoization (research_030 Section 5.2) ===
+    // Infrastructure ready; will be activated in Step 7 (const functions)
     void clearMemoCache() { memoCache.clear(); }
+    bool hasMemoizedResult(const std::string& funcName, const std::vector<ComptimeValue>& args) const;
+    ComptimeValue getMemoizedResult(const std::string& funcName, const std::vector<ComptimeValue>& args);
+    void memoizeResult(const std::string& funcName, const std::vector<ComptimeValue>& args, const ComptimeValue& result);
     
 private:
     void addError(const std::string& msg);

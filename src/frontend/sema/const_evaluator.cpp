@@ -175,6 +175,70 @@ std::string ComptimeValue::toString() const {
     return oss.str();
 }
 
+// Comparison operators for memoization cache (research_030 Section 5.2)
+// Needed to use ComptimeValue in std::map keys
+bool ComptimeValue::operator==(const ComptimeValue& other) const {
+    if (kind != other.kind) return false;
+    if (typeName != other.typeName) return false;
+    if (bitWidth != other.bitWidth) return false;
+    
+    // Compare values based on kind
+    switch (kind) {
+        case Kind::INTEGER:
+        case Kind::UNSIGNED:
+        case Kind::TBB:
+        case Kind::ERR_SENTINEL:
+            return getInt() == other.getInt();
+        case Kind::FLOAT:
+            return getFloat() == other.getFloat();
+        case Kind::BOOL:
+            return getBool() == other.getBool();
+        case Kind::STRING:
+            return getString() == other.getString();
+        case Kind::POINTER:
+            return getPointer() == other.getPointer();
+        case Kind::NULL_VALUE:
+            return true;  // All NULL values are equal
+        default:
+            return false;  // Arrays/structs not yet comparable
+    }
+}
+
+bool ComptimeValue::operator<(const ComptimeValue& other) const {
+    // First compare by kind
+    if (kind != other.kind) return static_cast<int>(kind) < static_cast<int>(other.kind);
+    
+    // Then by type name
+    if (typeName != other.typeName) return typeName < other.typeName;
+    
+    // Then by bit width
+    if (bitWidth != other.bitWidth) return bitWidth < other.bitWidth;
+    
+    // Finally compare values based on kind
+    switch (kind) {
+        case Kind::INTEGER:
+        case Kind::UNSIGNED:
+        case Kind::TBB:
+        case Kind::ERR_SENTINEL:
+            return getInt() < other.getInt();
+        case Kind::FLOAT:
+            return getFloat() < other.getFloat();
+        case Kind::BOOL:
+            return getBool() < other.getBool();
+        case Kind::STRING:
+            return getString() < other.getString();
+        case Kind::POINTER:
+            // Compare pointers by allocId, then offset
+            if (getPointer().allocId != other.getPointer().allocId)
+                return getPointer().allocId < other.getPointer().allocId;
+            return getPointer().offset < other.getPointer().offset;
+        case Kind::NULL_VALUE:
+            return false;  // All NULL values are equal
+        default:
+            return false;  // Arrays/structs not yet comparable
+    }
+}
+
 // ============================================================================
 // ConstEvaluator Implementation
 // ============================================================================
@@ -373,9 +437,27 @@ ComptimeValue ConstEvaluator::evalTernary(TernaryExpr* ternary) {
 }
 
 ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
+    // Step 6: Prepare stack depth tracking for Step 7 (const function evaluation)
+    // When functions are implemented, they will use this stack tracking
+    
+    // Push stack frame and check depth limit
+    if (!pushStackFrame()) {
+        // Error already added by checkStackDepth()
+        return ComptimeValue();
+    }
+    
+    // TODO: Step 7 will implement:
+    // 1. Check memoization cache: hasMemoizedResult(funcName, args)
+    // 2. If cached, return getMemoizedResult(funcName, args)
+    // 3. Otherwise, evaluate function body
+    // 4. Store result: memoizeResult(funcName, args, result)
+    // 5. Return result
+    
     (void)call; // unused for now
-    // TODO: Implement const function evaluation in Step 7
-    addError("Const function evaluation not yet implemented");
+    addError("Const function evaluation not yet implemented (Step 7)");
+    
+    // Pop stack frame before returning
+    popStackFrame();
     return ComptimeValue();
 }
 
@@ -738,6 +820,17 @@ void ConstEvaluator::incrementInstructions() {
     checkInstructionLimit();
 }
 
+bool ConstEvaluator::pushStackFrame() {
+    stackDepth++;
+    return checkStackDepth();
+}
+
+void ConstEvaluator::popStackFrame() {
+    if (stackDepth > 0) {
+        stackDepth--;
+    }
+}
+
 void ConstEvaluator::addError(const std::string& msg) {
     errors.push_back(msg);
 }
@@ -893,6 +986,47 @@ void ConstEvaluator::store(const ComptimeValue& ptr, const ComptimeValue& value)
     } else {
         addError("Store of non-integer value not yet implemented");
     }
+}
+
+// ============================================================================
+// Memoization (research_030 Section 5.2)
+// ============================================================================
+// Infrastructure for caching pure function results
+// Will be activated in Step 7 when const function evaluation is implemented
+
+bool ConstEvaluator::hasMemoizedResult(const std::string& funcName, 
+                                       const std::vector<ComptimeValue>& args) const {
+    auto funcIt = memoCache.find(funcName);
+    if (funcIt == memoCache.end()) {
+        return false;
+    }
+    
+    // Check if this specific argument combination exists
+    return funcIt->second.find(args) != funcIt->second.end();
+}
+
+ComptimeValue ConstEvaluator::getMemoizedResult(const std::string& funcName,
+                                                 const std::vector<ComptimeValue>& args) {
+    auto funcIt = memoCache.find(funcName);
+    if (funcIt == memoCache.end()) {
+        addError("Internal error: getMemoizedResult called but no cache entry exists");
+        return ComptimeValue();
+    }
+    
+    auto argIt = funcIt->second.find(args);
+    if (argIt == funcIt->second.end()) {
+        addError("Internal error: getMemoizedResult called but args not in cache");
+        return ComptimeValue();
+    }
+    
+    return argIt->second;
+}
+
+void ConstEvaluator::memoizeResult(const std::string& funcName,
+                                   const std::vector<ComptimeValue>& args,
+                                   const ComptimeValue& result) {
+    // Store the result for this function + arguments combination
+    memoCache[funcName][args] = result;
 }
 
 } // namespace sema
