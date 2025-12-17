@@ -26,10 +26,11 @@ add_executable(test_runner
     integration/test_sema_integration.cpp
     integration/test_ir_compilation.cpp
     integration/test_ir_optimization.cpp
+    runtime/test_gc.cpp
     # Add more test files here as they are created
 )
 
-# Link with lexer, AST, parser, sema, and backend sources
+# Link with lexer, AST, parser, sema, backend, and runtime sources
 target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/lexer/token.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/lexer/lexer.cpp
@@ -50,6 +51,8 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/backend/ir/tbb_codegen.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/codegen_expr.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/codegen_stmt.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/gc/allocator.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/gc/gc.cpp
 )
 
 # Include test helpers header
