@@ -101,6 +101,7 @@ set(SEMA_SOURCES
     src/frontend/sema/closure_analyzer.cpp
     src/frontend/sema/visibility_checker.cpp
     src/frontend/sema/async_analyzer.cpp
+    src/frontend/sema/const_evaluator.cpp
 )
 
 # Phase 4: IR Generation
