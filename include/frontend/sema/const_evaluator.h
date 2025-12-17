@@ -3,7 +3,6 @@
 
 #include "frontend/ast/ast_node.h"
 #include "frontend/ast/expr.h"
-#include "frontend/ast/stmt.h"
 #include <memory>
 #include <string>
 #include <map>
@@ -11,6 +10,13 @@
 #include <vector>
 #include <stdint.h>
 #include <variant>
+
+// Forward declarations to avoid circular dependency
+namespace aria {
+    class FuncDeclStmt;
+    class ParameterNode;
+    class ReturnStmt;
+}
 
 namespace aria {
 namespace sema {
@@ -134,6 +140,11 @@ private:
     std::map<std::string, ComptimeValue> constants;  // Named const values
     std::vector<std::map<std::string, ComptimeValue>> scopeStack;  // Local scopes
     
+    // === Function Registry (research_030 Section 5) ===
+    // Stores const-evaluable functions for CTFE
+    // TODO: Task 8 will integrate with full symbol table
+    std::map<std::string, FuncDeclStmt*> functions;  // Function name -> AST node
+    
     // === Memoization Cache ===
     // Maps (function_name, arg_values) -> result
     std::map<std::string, std::map<std::vector<ComptimeValue>, ComptimeValue>> memoCache;
@@ -230,6 +241,11 @@ public:
     void popScope();
     void defineConstant(const std::string& name, const ComptimeValue& value);
     ComptimeValue lookupConstant(const std::string& name);
+    
+    // === Function Registration (research_030 Section 5) ===
+    // Register a function for const evaluation
+    void registerFunction(const std::string& name, FuncDeclStmt* funcDecl);
+    FuncDeclStmt* lookupFunction(const std::string& name);
     
     // === Resource Management ===
     void resetLimits();
