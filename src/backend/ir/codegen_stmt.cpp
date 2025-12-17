@@ -1003,6 +1003,316 @@ void StmtCodegen::codegenWhen(WhenStmt* stmt) {
 }
 
 // ============================================================================
+// Phase 4.3.5: Pick Pattern Matching Code Generation
+// ============================================================================
+
+/**
+ * Generate code for pick statement (pattern matching)
+ * 
+ * Implements pattern matching via cascading if-else structure.
+ * Supports literal matches, range comparisons, and wildcard patterns.
+ * 
+ * Example Aria code:
+ *   pick(status) {
+ *       (200) { success(); },
+ *       (404) { notFound(); },
+ *       (500..599) { serverError(); },
+ *       (*) { other(); }
+ *   }
+ * 
+ * Generated LLVM IR structure:
+ *   %selector = <evaluated selector>
+ *   
+ *   case0.check:
+ *     %match0 = icmp eq %selector, 200
+ *     br i1 %match0, label %case0.body, label %case1.check
+ *   
+ *   case0.body:
+ *     <case body code>
+ *     br label %pick.end
+ *   
+ *   case1.check:
+ *     ...
+ *   
+ *   pick.end:
+ *     <continue after pick>
+ * 
+ * Pattern types:
+ * - Literal: (5), (200) - exact value match
+ * - Less than: (< 10) - value < 10
+ * - Greater than: (> 20) - value > 20
+ * - Range (inclusive): (10..20) - 10 <= value <= 20
+ * - Range (exclusive): (10...20) - 10 <= value < 20
+ * - Wildcard: (*) - matches anything (default case)
+ * - Unreachable: (!) - marks unreachable case
+ * 
+ * Labels and fallthrough:
+ * - Cases can have labels: success:(200) { ... }
+ * - fall(label) performs explicit fallthrough to labeled case
+ * - Fallthrough is NOT implicit (unlike C switch)
+ */
+void StmtCodegen::codegenPick(PickStmt* stmt) {
+    // Get current function
+    llvm::Function* func = builder.GetInsertBlock()->getParent();
+    
+    if (!expr_codegen) {
+        throw std::runtime_error("ExprCodegen not set in StmtCodegen");
+    }
+    
+    // Evaluate the selector expression once
+    llvm::Value* selector = expr_codegen->codegenExpressionNode(stmt->selector.get(), expr_codegen);
+    
+    if (!selector) {
+        throw std::runtime_error("Failed to generate code for pick selector");
+    }
+    
+    // Create end block (continuation after pick)
+    llvm::BasicBlock* end_block = llvm::BasicBlock::Create(context, "pick.end");
+    
+    // Create map of labeled blocks for fall() statements
+    std::map<std::string, llvm::BasicBlock*> labeled_blocks;
+    
+    // Create blocks for all cases first (for fall() support)
+    std::vector<llvm::BasicBlock*> check_blocks;
+    std::vector<llvm::BasicBlock*> body_blocks;
+    
+    for (size_t i = 0; i < stmt->cases.size(); i++) {
+        PickCase* pick_case = static_cast<PickCase*>(stmt->cases[i].get());
+        
+        std::string check_name = "case" + std::to_string(i) + ".check";
+        std::string body_name = "case" + std::to_string(i) + ".body";
+        
+        llvm::BasicBlock* check_block = llvm::BasicBlock::Create(context, check_name);
+        llvm::BasicBlock* body_block = llvm::BasicBlock::Create(context, body_name);
+        
+        check_blocks.push_back(check_block);
+        body_blocks.push_back(body_block);
+        
+        // Store labeled blocks for fall() statements
+        if (!pick_case->label.empty()) {
+            labeled_blocks[pick_case->label] = body_block;
+        }
+    }
+    
+    // Branch to first check block
+    if (!check_blocks.empty()) {
+        builder.CreateBr(check_blocks[0]);
+    } else {
+        // No cases - branch to end
+        builder.CreateBr(end_block);
+    }
+    
+    // Generate code for each case
+    for (size_t i = 0; i < stmt->cases.size(); i++) {
+        PickCase* pick_case = static_cast<PickCase*>(stmt->cases[i].get());
+        llvm::BasicBlock* check_block = check_blocks[i];
+        llvm::BasicBlock* body_block = body_blocks[i];
+        llvm::BasicBlock* next_check = (i + 1 < check_blocks.size()) ? check_blocks[i + 1] : end_block;
+        
+        // Check block: Evaluate pattern match
+        check_block->insertInto(func);
+        builder.SetInsertPoint(check_block);
+        
+        // Check if this is a wildcard pattern (*)
+        bool is_wildcard = false;
+        if (pick_case->pattern->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* ident = static_cast<IdentifierExpr*>(pick_case->pattern.get());
+            if (ident->name == "*") {
+                is_wildcard = true;
+            }
+        }
+        
+        // Check if this is an unreachable pattern (!)
+        if (pick_case->is_unreachable) {
+            // Generate unreachable instruction
+            builder.CreateUnreachable();
+            
+            // Body block is dead code, but we still need to insert it for structure
+            body_block->insertInto(func);
+            builder.SetInsertPoint(body_block);
+            builder.CreateUnreachable();
+            continue;
+        }
+        
+        llvm::Value* match_result = nullptr;
+        
+        if (is_wildcard) {
+            // Wildcard matches everything - always true
+            match_result = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 1);
+        } else if (pick_case->pattern->type == ASTNode::NodeType::BINARY_OP) {
+            // Handle comparison patterns: (< 10), (> 20), ranges (10..20)
+            BinaryExpr* bin_expr = static_cast<BinaryExpr*>(pick_case->pattern.get());
+            
+            // Check if this is a range operator (.., ...)
+            if (bin_expr->op.type == TokenType::TOKEN_DOT_DOT || bin_expr->op.type == TokenType::TOKEN_DOT_DOT_DOT) {
+                // Range pattern: start..end or start...end
+                llvm::Value* start_val = expr_codegen->codegenExpressionNode(bin_expr->left.get(), expr_codegen);
+                llvm::Value* end_val = expr_codegen->codegenExpressionNode(bin_expr->right.get(), expr_codegen);
+                
+                if (!start_val || !end_val) {
+                    throw std::runtime_error("Failed to generate range bounds in pick");
+                }
+                
+                // Check: selector >= start
+                llvm::Value* ge_start;
+                if (selector->getType()->isIntegerTy()) {
+                    ge_start = builder.CreateICmpSGE(selector, start_val, "ge.start");
+                } else {
+                    ge_start = builder.CreateFCmpOGE(selector, start_val, "ge.start");
+                }
+                
+                // Check: selector <= end (inclusive) or selector < end (exclusive)
+                llvm::Value* cmp_end;
+                if (bin_expr->op.type == TokenType::TOKEN_DOT_DOT) {
+                    // Inclusive range: selector <= end
+                    if (selector->getType()->isIntegerTy()) {
+                        cmp_end = builder.CreateICmpSLE(selector, end_val, "le.end");
+                    } else {
+                        cmp_end = builder.CreateFCmpOLE(selector, end_val, "le.end");
+                    }
+                } else {
+                    // Exclusive range: selector < end
+                    if (selector->getType()->isIntegerTy()) {
+                        cmp_end = builder.CreateICmpSLT(selector, end_val, "lt.end");
+                    } else {
+                        cmp_end = builder.CreateFCmpOLT(selector, end_val, "lt.end");
+                    }
+                }
+                
+                // Combine: start <= selector && selector <= end
+                match_result = builder.CreateAnd(ge_start, cmp_end, "range.match");
+                
+            } else if (bin_expr->op.type == TokenType::TOKEN_LESS) {
+                // Pattern: (< value)
+                llvm::Value* comp_val = expr_codegen->codegenExpressionNode(bin_expr->right.get(), expr_codegen);
+                
+                if (!comp_val) {
+                    throw std::runtime_error("Failed to generate comparison value in pick");
+                }
+                
+                if (selector->getType()->isIntegerTy()) {
+                    match_result = builder.CreateICmpSLT(selector, comp_val, "lt.match");
+                } else {
+                    match_result = builder.CreateFCmpOLT(selector, comp_val, "lt.match");
+                }
+                
+            } else if (bin_expr->op.type == TokenType::TOKEN_GREATER) {
+                // Pattern: (> value)
+                llvm::Value* comp_val = expr_codegen->codegenExpressionNode(bin_expr->right.get(), expr_codegen);
+                
+                if (!comp_val) {
+                    throw std::runtime_error("Failed to generate comparison value in pick");
+                }
+                
+                if (selector->getType()->isIntegerTy()) {
+                    match_result = builder.CreateICmpSGT(selector, comp_val, "gt.match");
+                } else {
+                    match_result = builder.CreateFCmpOGT(selector, comp_val, "gt.match");
+                }
+                
+            } else if (bin_expr->op.type == TokenType::TOKEN_LESS_EQUAL) {
+                // Pattern: (<= value)
+                llvm::Value* comp_val = expr_codegen->codegenExpressionNode(bin_expr->right.get(), expr_codegen);
+                
+                if (!comp_val) {
+                    throw std::runtime_error("Failed to generate comparison value in pick");
+                }
+                
+                if (selector->getType()->isIntegerTy()) {
+                    match_result = builder.CreateICmpSLE(selector, comp_val, "le.match");
+                } else {
+                    match_result = builder.CreateFCmpOLE(selector, comp_val, "le.match");
+                }
+                
+            } else if (bin_expr->op.type == TokenType::TOKEN_GREATER_EQUAL) {
+                // Pattern: (>= value)
+                llvm::Value* comp_val = expr_codegen->codegenExpressionNode(bin_expr->right.get(), expr_codegen);
+                
+                if (!comp_val) {
+                    throw std::runtime_error("Failed to generate comparison value in pick");
+                }
+                
+                if (selector->getType()->isIntegerTy()) {
+                    match_result = builder.CreateICmpSGE(selector, comp_val, "ge.match");
+                } else {
+                    match_result = builder.CreateFCmpOGE(selector, comp_val, "ge.match");
+                }
+            } else {
+                // Unknown binary operator in pattern
+                throw std::runtime_error("Unsupported binary operator in pick pattern");
+            }
+            
+        } else {
+            // Literal pattern: exact value match
+            llvm::Value* pattern_val = expr_codegen->codegenExpressionNode(pick_case->pattern.get(), expr_codegen);
+            
+            if (!pattern_val) {
+                throw std::runtime_error("Failed to generate pattern value in pick");
+            }
+            
+            // Compare selector with pattern value
+            if (selector->getType()->isIntegerTy()) {
+                match_result = builder.CreateICmpEQ(selector, pattern_val, "match");
+            } else if (selector->getType()->isFloatingPointTy()) {
+                match_result = builder.CreateFCmpOEQ(selector, pattern_val, "match");
+            } else {
+                throw std::runtime_error("Unsupported selector type in pick");
+            }
+        }
+        
+        // Branch based on match result
+        if (match_result) {
+            builder.CreateCondBr(match_result, body_block, next_check);
+        }
+        
+        // Body block: Execute case body
+        body_block->insertInto(func);
+        builder.SetInsertPoint(body_block);
+        
+        // Generate code for case body
+        if (pick_case->body->type == ASTNode::NodeType::BLOCK) {
+            codegenBlock(static_cast<BlockStmt*>(pick_case->body.get()));
+        } else {
+            codegenStatement(pick_case->body.get());
+        }
+        
+        // Branch to end (no implicit fallthrough)
+        if (!builder.GetInsertBlock()->getTerminator()) {
+            builder.CreateBr(end_block);
+        }
+    }
+    
+    // End block (continuation after pick)
+    end_block->insertInto(func);
+    builder.SetInsertPoint(end_block);
+}
+
+/**
+ * Generate code for fall statement (explicit fallthrough in pick)
+ * 
+ * The fall statement provides explicit control flow transfer to a labeled
+ * case within a pick statement. Unlike C's implicit fallthrough, Aria
+ * requires explicit fall(label) to transfer control.
+ * 
+ * Example Aria code:
+ *   pick(status) {
+ *       success:(200) { print("OK"); fall(log); },
+ *       created:(201) { print("Created"); fall(log); },
+ *       log:(0) { logRequest(); }
+ *   }
+ * 
+ * Note: This is a placeholder implementation. Full fall() support requires
+ * maintaining a map of labeled blocks during pick codegen and generating
+ * unconditional branches to those blocks.
+ */
+void StmtCodegen::codegenFall(FallStmt* stmt) {
+    // TODO: Implement fall() with label resolution
+    // For now, this is a placeholder that will be enhanced when we add
+    // full label tracking in pick statements
+    throw std::runtime_error("Fall statement not yet fully implemented - requires label resolution in pick");
+}
+
+// ============================================================================
 // Block and Expression Statement Code Generation
 // ============================================================================
 
@@ -1082,6 +1392,14 @@ void StmtCodegen::codegenStatement(ASTNode* stmt) {
         
         case ASTNode::NodeType::WHEN:
             codegenWhen(static_cast<WhenStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::PICK:
+            codegenPick(static_cast<PickStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::FALL:
+            codegenFall(static_cast<FallStmt*>(stmt));
             break;
         
         case ASTNode::NodeType::BLOCK:
