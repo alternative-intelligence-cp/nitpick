@@ -608,9 +608,9 @@ if (calculation.err == NULL) {
 async func:fetchData = obj(string:url) {
     result:response = await httpGet(url);
     if (response.err == NULL) {
-        return response.val.json();
+        pass(response.val.json());  // pass() for success
     } else {
-        return { err: response.err, val: NULL };
+        fail(response.err);  // fail() for error
     }
 };
 
@@ -631,36 +631,42 @@ async {
 //   func:name = returnType(type:arg, type:arg) { body };
 //
 // Anonymous with immediate execution (assigned to result-type variable):
-//   resultType:r = resultType(type:arg, type:arg) { body }(arg, arg);
+//   result:r = returnType(type:arg, type:arg) { body }(arg, arg);
 //   // Immediate execution () is REQUIRED when assigning to non-func variable
 //   // Otherwise you'd assign the function itself (type mismatch)
 //
+// CRITICAL: ALL functions return result type {err, val}
+//   pass(value) → syntactic sugar for return {err: NULL, val: value}
+//   fail(code)  → syntactic sugar for return {err: code, val: NULL}
+//   return {err: ..., val: ...} → explicit result object (verbose form)
+//
 // Examples:
-//   func:add = int8(int8:a, int8:b) { return a + b; };          // Named function
-//   int8:sum = int8(int8:a, int8:b) { return a + b; }(3, 4);    // Anonymous + immediate = 7
-//   func:f = int8(int8:a, int8:b) { return a + b; };            // Store function
-//   int8:result = f(3, 4);                                       // Call stored function = 7
+//   func:add = int8(int8:a, int8:b) { pass(a + b); };          // Named function
+//   int8:sum = int8(int8:a, int8:b) { pass(a + b); }(3, 4) ? 0; // Anonymous + immediate + unwrap = 7
+//   func:f = int8(int8:a, int8:b) { pass(a + b); };            // Store function
+//   int8:res = f(3, 4) ? 0;                                     // Call stored function, unwrap = 7
 //
 // LAMBDAS AS ARGUMENTS (JS-style callbacks):
 //   // Function that takes a func parameter
 //   func:processValues = int8(func:operation, int8:a, int8:b) {
-//       return operation(a, b);
+//       result:r = operation(a, b);
+//       pass(r.val);  // Unwrap and re-pass
 //   };
 //   // Call with inline anonymous lambda
-//   int8:result = processValues(
-//       int8(int8:x, int8:y) { return x * y; },  // Lambda passed as argument
+//   result:r = processValues(
+//       int8(int8:x, int8:y) { pass(x * y); },  // Lambda passed as argument
 //       4, 5
-//   );  // result = 20
+//   );
+//   int8:res = r ? 0;  // Unwrap result = 20
 //
 // LAMBDA + IMMEDIATE EXECUTION + UNWRAP (composable features):
-//   // Lambda returns result type, executed immediately, unwrapped with ?
-//   func:test = result(int8:a, int8:b) { return {err:NULL, val:a+b}; };
-//   test(
-//       result(int8:x, int8:y) { return {err:NULL, val:x*y}; }(4, 5)?,  // Execute & unwrap = 20
+//   // Lambda returns result, executed immediately, unwrapped with ?
+//   func:test = int8(int8:a, int8:b) { pass(a+b); };
+//   result:r = test(
+//       int8(int8:x, int8:y) { pass(x*y); }(4, 5) ? 0,  // Execute & unwrap = 20
 //       12
 //   );  // Passes unwrapped value 20 and 12 to test()
-//   // Without ?: would pass full {err:NULL, val:20} result object
-//   // With ?: passes just the unwrapped value 20 (or default if error)
+//   int8:final = r ? 0;  // final = 32
 //
 // IMPORTANT: Arrow operator (->) is ONLY for pointer member dereference (C-style):
 //   ptr->member  // Access member through pointer (dereference + member access)
@@ -671,6 +677,7 @@ async {
 //   NO -> for return types
 //   NO => for lambdas (that's just inline function syntax)
 //   ALL functions return result type implicitly with {err, val} fields
+//   Use pass(value) for success, fail(code) for error, or explicit return {err:..., val:...}
 
 // COMPILE-TIME COMPUTATION (performance critical)
 const int:BUFFER_SIZE = computeOptimalSize(); // Computed at compile time
