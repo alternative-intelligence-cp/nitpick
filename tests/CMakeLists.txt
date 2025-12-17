@@ -17,6 +17,7 @@ add_executable(test_runner
     unit/test_generic_resolver.cpp
     unit/test_generic_parser.cpp
     unit/test_module_resolver.cpp
+    unit/test_visibility_checker.cpp
     integration/test_generics_integration.cpp
     # Add more test files here as they are created
 )
@@ -37,6 +38,7 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/borrow_checker.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/generic_resolver.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/module_resolver.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/sema/visibility_checker.cpp
 )
 
 # Include test helpers header

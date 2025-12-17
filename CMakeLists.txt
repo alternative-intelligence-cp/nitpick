@@ -98,6 +98,7 @@ set(SEMA_SOURCES
     src/frontend/sema/borrow_checker.cpp
     src/frontend/sema/generic_resolver.cpp
     src/frontend/sema/module_resolver.cpp
+    src/frontend/sema/visibility_checker.cpp
 )
 
 # Phase 4: IR Generation
