@@ -19,6 +19,7 @@ add_executable(test_runner
     unit/test_module_resolver.cpp
     unit/test_visibility_checker.cpp
     integration/test_generics_integration.cpp
+    integration/test_sema_integration.cpp
     # Add more test files here as they are created
 )
 
