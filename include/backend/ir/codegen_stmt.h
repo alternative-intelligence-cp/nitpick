@@ -31,6 +31,8 @@ namespace aria {
     
     namespace sema {
         class Type;
+        class Monomorphizer;  // For generic instantiation (Phase 4.5.1)
+        class Specialization;
     }
 }
 
@@ -71,6 +73,9 @@ private:
     
     // Expression codegen helper
     ExprCodegen* expr_codegen;
+    
+    // Generic instantiation engine (Phase 4.5.1)
+    sema::Monomorphizer* monomorphizer;
     
     // Loop context stack for break/continue resolution
     std::vector<LoopContext> loop_stack;
@@ -120,6 +125,19 @@ public:
      * @param expr_gen Expression codegen instance
      */
     void setExprCodegen(ExprCodegen* expr_gen);
+    
+    /**
+     * Set monomorphizer for generic instantiation (Phase 4.5.1)
+     * @param mono Monomorphizer instance
+     */
+    void setMonomorphizer(sema::Monomorphizer* mono);
+    
+    /**
+     * Generate code for all specialized generic functions
+     * Called after all call sites are discovered
+     * @return Number of specializations generated
+     */
+    size_t codegenAllSpecializations();
     
     /**
      * Generate code for a variable declaration
