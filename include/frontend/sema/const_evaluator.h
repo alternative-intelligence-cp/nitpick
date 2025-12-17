@@ -214,6 +214,11 @@ public:
     ComptimeValue tbbMod(const ComptimeValue& a, const ComptimeValue& b);
     ComptimeValue tbbNeg(const ComptimeValue& a);
     
+    // Aliases for test compatibility
+    ComptimeValue tbbSubtract(const ComptimeValue& a, const ComptimeValue& b) { return tbbSub(a, b); }
+    ComptimeValue tbbMultiply(const ComptimeValue& a, const ComptimeValue& b) { return tbbMul(a, b); }
+    ComptimeValue tbbNegate(const ComptimeValue& a) { return tbbNeg(a); }
+    
     // === Standard Arithmetic ===
     ComptimeValue intAdd(const ComptimeValue& a, const ComptimeValue& b);
     ComptimeValue intSub(const ComptimeValue& a, const ComptimeValue& b);
