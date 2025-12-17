@@ -191,8 +191,10 @@ llvm::Value* codegenExpressionNode(ASTNode* node, ExprCodegen* codegen) {
             return codegen->codegenIdentifier(static_cast<IdentifierExpr*>(node));
         case ASTNode::NodeType::BINARY_OP:
             return codegen->codegenBinary(static_cast<BinaryExpr*>(node));
+        case ASTNode::NodeType::UNARY_OP:
+            return codegen->codegenUnary(static_cast<UnaryExpr*>(node));
         default:
-            throw std::runtime_error("Unsupported expression node type in binary operation");
+            throw std::runtime_error("Unsupported expression node type in operation");
     }
 }
 
@@ -406,8 +408,73 @@ llvm::Value* ExprCodegen::codegenUnary(UnaryExpr* expr) {
         throw std::runtime_error("Null unary expression");
     }
     
-    // TODO: Implement in Phase 4.2.4
-    throw std::runtime_error("Unary operations not yet implemented");
+    // Generate code for the operand recursively
+    llvm::Value* operand = codegenExpressionNode(expr->operand.get(), this);
+    if (!operand) {
+        throw std::runtime_error("Failed to generate code for unary operand");
+    }
+    
+    TokenType op = expr->op.type;
+    bool isFloat = operand->getType()->isFloatingPointTy();
+    
+    // Arithmetic negation: -x
+    if (op == TokenType::TOKEN_MINUS) {
+        if (isFloat) {
+            return builder.CreateFNeg(operand, "negtmp");
+        } else {
+            return builder.CreateNeg(operand, "negtmp");
+        }
+    }
+    
+    // Logical NOT: !x
+    if (op == TokenType::TOKEN_BANG) {
+        // If operand is not i1, need to compare with zero
+        if (operand->getType()->isIntegerTy(1)) {
+            // Already boolean, just XOR with true
+            return builder.CreateNot(operand, "nottmp");
+        } else if (isFloat) {
+            // Compare float with 0.0
+            llvm::Value* zero = llvm::ConstantFP::get(operand->getType(), 0.0);
+            return builder.CreateFCmpOEQ(operand, zero, "nottmp");
+        } else {
+            // Compare integer with 0
+            llvm::Value* zero = llvm::ConstantInt::get(operand->getType(), 0);
+            return builder.CreateICmpEQ(operand, zero, "nottmp");
+        }
+    }
+    
+    // Bitwise NOT: ~x
+    if (op == TokenType::TOKEN_TILDE) {
+        if (isFloat) {
+            throw std::runtime_error("Bitwise NOT cannot be applied to floating-point types");
+        }
+        return builder.CreateNot(operand, "bnottmp");
+    }
+    
+    // Address-of operator: @x
+    if (op == TokenType::TOKEN_AT) {
+        // For address-of, we need the address, not the loaded value
+        // This would require integration with symbol table to get alloca
+        // For now, we'll return the operand itself if it's already a pointer
+        // Full implementation requires lvalue handling in Phase 4.3+
+        throw std::runtime_error("Address-of operator (@) requires lvalue support (Phase 4.3+)");
+    }
+    
+    // Dereference operator: * (when TOKEN_STAR used as unary)
+    if (op == TokenType::TOKEN_STAR) {
+        // Dereference a pointer: load from the pointer
+        if (!operand->getType()->isPointerTy()) {
+            throw std::runtime_error("Dereference operator (*) can only be applied to pointer types");
+        }
+        return builder.CreateLoad(llvm::Type::getInt32Ty(context), operand, "dereftmp");
+    }
+    
+    // Increment/decrement operators (++, --)
+    if (op == TokenType::TOKEN_PLUS_PLUS || op == TokenType::TOKEN_MINUS_MINUS) {
+        throw std::runtime_error("Increment/decrement operators (++/--) require lvalue support (Phase 4.3+)");
+    }
+    
+    throw std::runtime_error("Unknown unary operator: " + std::to_string(static_cast<int>(op)));
 }
 
 /**
