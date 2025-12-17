@@ -1,4 +1,6 @@
 #include "frontend/sema/const_evaluator.h"
+#include "frontend/sema/symbol_table.h"
+#include "frontend/sema/type.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
 #include <sstream>
@@ -244,8 +246,9 @@ bool ComptimeValue::operator<(const ComptimeValue& other) const {
 // ConstEvaluator Implementation
 // ============================================================================
 
-ConstEvaluator::ConstEvaluator()
-    : instructionCount(0),
+ConstEvaluator::ConstEvaluator(SymbolTable* symTab)
+    : symbolTable(symTab),
+      instructionCount(0),
       instructionLimit(DEFAULT_INSTRUCTION_LIMIT),
       stackDepth(0),
       stackDepthLimit(DEFAULT_STACK_DEPTH_LIMIT),
@@ -489,13 +492,13 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
         return ComptimeValue();
     }
     
-    // Create new scope for function body
-    pushScope();
+    // Create new local scope for function body (parameters, local consts)
+    pushLocalScope();
     
-    // Bind parameters to arguments
+    // Bind parameters to arguments in local scope
     for (size_t i = 0; i < funcDecl->parameters.size(); ++i) {
         ParameterNode* param = static_cast<ParameterNode*>(funcDecl->parameters[i].get());
-        defineConstant(param->paramName, argValues[i]);
+        defineLocalConstant(param->paramName, argValues[i]);
     }
     
     // Evaluate function body
@@ -581,8 +584,8 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
         }
     }
     
-    // Cleanup scope and stack frame
-    popScope();
+    // Cleanup local scope and stack frame
+    popLocalScope();
     popStackFrame();
     
     // If evaluation succeeded, memoize the result
@@ -871,39 +874,75 @@ ComptimeValue ConstEvaluator::logicalNot(const ComptimeValue& a) {
 // Scope Management
 // ============================================================================
 
-void ConstEvaluator::pushScope() {
-    scopeStack.push_back(std::map<std::string, ComptimeValue>());
+// === Local Scope Management (Task 8) ===
+// Local scopes are for function-local constants (e.g., parameters)
+// They don't go into the symbol table
+
+void ConstEvaluator::pushLocalScope() {
+    localScopeStack.push_back(std::map<std::string, ComptimeValue>());
 }
 
-void ConstEvaluator::popScope() {
-    if (!scopeStack.empty()) {
-        scopeStack.pop_back();
+void ConstEvaluator::popLocalScope() {
+    if (!localScopeStack.empty()) {
+        localScopeStack.pop_back();
     }
 }
 
-void ConstEvaluator::defineConstant(const std::string& name, const ComptimeValue& value) {
-    if (scopeStack.empty()) {
-        // Global scope
-        constants[name] = value;
+void ConstEvaluator::defineLocalConstant(const std::string& name, const ComptimeValue& value) {
+    // Define in the current local scope (for function parameters, etc.)
+    if (!localScopeStack.empty()) {
+        localScopeStack.back()[name] = value;
     } else {
-        // Local scope
-        scopeStack.back()[name] = value;
+        addError("defineLocalConstant called without local scope");
+    }
+}
+
+void ConstEvaluator::defineConstant(const std::string& name, const ComptimeValue& value, Type* type) {
+    if (symbolTable) {
+        // Define a global const in the symbol table
+        // Create symbol with CONSTANT kind
+        Symbol* symbol = new Symbol(name, SymbolKind::CONSTANT, type, 
+                                     symbolTable->getCurrentScope(), 0, 0);
+        symbol->isMutable = false;  // Constants are immutable
+        symbol->isInitialized = true;
+        
+        // Allocate ComptimeValue on heap and store in symbol
+        ComptimeValue* heapValue = new ComptimeValue(value);
+        symbol->setComptimeValue(heapValue);
+        
+        // Add to symbol table
+        if (!symbolTable->getCurrentScope()->define(symbol)) {
+            addError("Failed to define constant '" + name + "' in symbol table");
+            delete heapValue;
+            delete symbol;
+        }
+    } else {
+        // Standalone testing mode - store in current local scope or create one
+        if (localScopeStack.empty()) {
+            // Create a global-like scope for testing
+            pushLocalScope();
+        }
+        localScopeStack.back()[name] = value;
     }
 }
 
 ComptimeValue ConstEvaluator::lookupConstant(const std::string& name) {
-    // Check local scopes (innermost first)
-    for (auto it = scopeStack.rbegin(); it != scopeStack.rend(); ++it) {
+    // Check local scopes first (innermost first) - for function parameters
+    for (auto it = localScopeStack.rbegin(); it != localScopeStack.rend(); ++it) {
         auto found = it->find(name);
         if (found != it->end()) {
             return found->second;
         }
     }
     
-    // Check global scope
-    auto found = constants.find(name);
-    if (found != constants.end()) {
-        return found->second;
+    // Check symbol table for global constants
+    if (symbolTable) {
+        Symbol* symbol = symbolTable->getCurrentScope()->resolve(name);
+        if (symbol && symbol->kind == SymbolKind::CONSTANT) {
+            if (symbol->hasComptimeValue()) {
+                return *symbol->getComptimeValue();
+            }
+        }
     }
     
     addError("Undefined constant: " + name);
@@ -914,15 +953,45 @@ ComptimeValue ConstEvaluator::lookupConstant(const std::string& name) {
 // Function Registration (research_030 Section 5)
 // ============================================================================
 
-void ConstEvaluator::registerFunction(const std::string& name, FuncDeclStmt* funcDecl) {
-    functions[name] = funcDecl;
+void ConstEvaluator::registerFunction(const std::string& name, FuncDeclStmt* funcDecl, Type* type) {
+    if (symbolTable) {
+        // Register function for CTFE in symbol table
+        // Create or lookup function symbol
+        Symbol* symbol = symbolTable->getCurrentScope()->resolve(name);
+        if (!symbol || symbol->kind != SymbolKind::FUNCTION) {
+            // Create new function symbol
+            symbol = new Symbol(name, SymbolKind::FUNCTION, type,
+                              symbolTable->getCurrentScope(), 0, 0);
+            if (!symbolTable->getCurrentScope()->define(symbol)) {
+                addError("Failed to register function '" + name + "' in symbol table");
+                delete symbol;
+                return;
+            }
+        }
+        
+        // Store AST for CTFE
+        symbol->setFuncDecl(funcDecl);
+    } else {
+        // Standalone testing mode - use internal storage
+        standaloneFunctions[name] = funcDecl;
+    }
 }
 
 FuncDeclStmt* ConstEvaluator::lookupFunction(const std::string& name) {
-    auto it = functions.find(name);
-    if (it != functions.end()) {
-        return it->second;
+    if (symbolTable) {
+        // Lookup function from symbol table
+        Symbol* symbol = symbolTable->getCurrentScope()->resolve(name);
+        if (symbol && symbol->kind == SymbolKind::FUNCTION) {
+            return symbol->getFuncDecl();
+        }
+    } else {
+        // Standalone testing mode - use internal storage
+        auto it = standaloneFunctions.find(name);
+        if (it != standaloneFunctions.end()) {
+            return it->second;
+        }
     }
+    
     return nullptr;
 }
 

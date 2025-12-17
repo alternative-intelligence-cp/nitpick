@@ -21,6 +21,10 @@ namespace aria {
 namespace aria {
 namespace sema {
 
+// Forward declarations
+class SymbolTable;
+class Type;
+
 /**
  * ComptimeValue - Represents a value computed at compile time
  * 
@@ -136,14 +140,21 @@ public:
  */
 class ConstEvaluator {
 private:
-    // === Evaluation Context ===
-    std::map<std::string, ComptimeValue> constants;  // Named const values
-    std::vector<std::map<std::string, ComptimeValue>> scopeStack;  // Local scopes
+    // === Symbol Table Integration (Task 8) ===
+    // ConstEvaluator now uses the main symbol table for:
+    // - Storing const values (Symbol::comptimeValue)
+    // - Looking up functions for CTFE (Symbol::funcDecl)
+    // - Maintaining scope hierarchy
+    SymbolTable* symbolTable;  // NOT owned - managed by semantic analyzer
     
-    // === Function Registry (research_030 Section 5) ===
-    // Stores const-evaluable functions for CTFE
-    // TODO: Task 8 will integrate with full symbol table
-    std::map<std::string, FuncDeclStmt*> functions;  // Function name -> AST node
+    // === Local Scope Stack ===
+    // For function-local constants during CTFE (e.g., function parameters)
+    // These are temporary and don't go into the symbol table
+    std::vector<std::map<std::string, ComptimeValue>> localScopeStack;
+    
+    // === Standalone Testing Support ===
+    // When symbolTable is nullptr, use these for testing
+    std::map<std::string, FuncDeclStmt*> standaloneFunctions;
     
     // === Memoization Cache ===
     // Maps (function_name, arg_values) -> result
@@ -178,7 +189,9 @@ private:
     std::vector<std::string> errors;
     
 public:
-    ConstEvaluator();
+    // Constructor - takes optional SymbolTable pointer
+    // If nullptr, uses internal storage (for standalone testing)
+    ConstEvaluator(SymbolTable* symTab = nullptr);
     
     // === Main Evaluation Interface ===
     ComptimeValue evaluate(ASTNode* node);
@@ -237,14 +250,22 @@ public:
     void store(const ComptimeValue& ptr, const ComptimeValue& value);
     
     // === Scope Management ===
-    void pushScope();
-    void popScope();
-    void defineConstant(const std::string& name, const ComptimeValue& value);
+    // Local scopes for function execution (parameters, local consts)
+    void pushLocalScope();
+    void popLocalScope();
+    void defineLocalConstant(const std::string& name, const ComptimeValue& value);
+    
+    // === Symbol Table Integration (Task 8) ===
+    // Define a const in the symbol table
+    void defineConstant(const std::string& name, const ComptimeValue& value, Type* type = nullptr);
+    
+    // Lookup with fallback: local scopes first, then symbol table
     ComptimeValue lookupConstant(const std::string& name);
     
-    // === Function Registration (research_030 Section 5) ===
-    // Register a function for const evaluation
-    void registerFunction(const std::string& name, FuncDeclStmt* funcDecl);
+    // Register a function for CTFE in symbol table
+    void registerFunction(const std::string& name, FuncDeclStmt* funcDecl, Type* type = nullptr);
+    
+    // Lookup function from symbol table
     FuncDeclStmt* lookupFunction(const std::string& name);
     
     // === Resource Management ===
