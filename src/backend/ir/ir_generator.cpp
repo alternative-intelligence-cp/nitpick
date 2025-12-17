@@ -2,6 +2,8 @@
 #include "frontend/ast/ast_node.h"
 #include "frontend/sema/type.h"  // Full type definitions needed
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/IR/DerivedTypes.h>  // For FunctionType, StructType, etc.
+#include <llvm/IR/DataLayout.h>     // For getTypeAllocSize
 #include <cassert>
 
 namespace aria {
@@ -76,9 +78,133 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
             break;
         }
         
-        // Other types - add as needed
+        case TypeKind::VECTOR: {
+            // Vector types (vec2, vec3, vec9, etc.) - SIMD vectors
+            // Reference: research_015
+            auto* vec_type = static_cast<VectorType*>(aria_type);
+            llvm::Type* component_type = mapType(vec_type->getComponentType());
+            int dimension = vec_type->getDimension();
+            
+            // LLVM fixed vectors (for dimensions 2, 3, 4, 8, 16)
+            // For vec9, we'll use a struct with 9 components instead
+            if (dimension == 9) {
+                // vec9 is special - create struct of 9 components
+                std::vector<llvm::Type*> components(9, component_type);
+                llvm_type = llvm::StructType::get(context, components);
+            } else {
+                // Standard LLVM fixed vector
+                llvm_type = llvm::FixedVectorType::get(component_type, dimension);
+            }
+            break;
+        }
+        
+        case TypeKind::FUNCTION: {
+            // Function types: func(params) -> return
+            // Reference: research_016
+            auto* func_type = static_cast<FunctionType*>(aria_type);
+            
+            // Map return type
+            llvm::Type* return_type = mapType(func_type->getReturnType());
+            
+            // Map parameter types
+            std::vector<llvm::Type*> param_types;
+            for (Type* param : func_type->getParamTypes()) {
+                param_types.push_back(mapType(param));
+            }
+            
+            // Create LLVM function type
+            llvm_type = llvm::FunctionType::get(
+                return_type,
+                param_types,
+                func_type->isVariadicFunction()  // isVarArg
+            );
+            break;
+        }
+        
+        case TypeKind::STRUCT: {
+            // Struct types with fields
+            // Reference: research_015
+            auto* struct_type = static_cast<StructType*>(aria_type);
+            
+            // Map all field types
+            std::vector<llvm::Type*> field_types;
+            for (const auto& field : struct_type->getFields()) {
+                field_types.push_back(mapType(field.type));
+            }
+            
+            // Create LLVM struct type
+            // Use identified struct for named types
+            llvm_type = llvm::StructType::create(
+                context,
+                field_types,
+                struct_type->getName(),
+                struct_type->isPackedStruct()  // isPacked
+            );
+            break;
+        }
+        
+        case TypeKind::UNION: {
+            // Union types - represented as struct with largest variant + tag
+            // Reference: research_015
+            auto* union_type = static_cast<UnionType*>(aria_type);
+            
+            // Find largest variant type
+            llvm::Type* largest_type = builder.getInt8Ty();  // Minimum size
+            size_t max_size = 1;
+            
+            for (const auto& variant : union_type->getVariants()) {
+                llvm::Type* variant_llvm = mapType(variant.type);
+                size_t variant_size = module->getDataLayout().getTypeAllocSize(variant_llvm);
+                if (variant_size > max_size) {
+                    max_size = variant_size;
+                    largest_type = variant_llvm;
+                }
+            }
+            
+            // Union = { tag: i32, data: largest_type }
+            std::vector<llvm::Type*> union_fields = {
+                builder.getInt32Ty(),  // Tag field
+                largest_type            // Data field (largest variant)
+            };
+            
+            llvm_type = llvm::StructType::create(
+                context,
+                union_fields,
+                union_type->getName()
+            );
+            break;
+        }
+        
+        case TypeKind::RESULT: {
+            // Result type for error handling: result<T>
+            // Represented as { hasValue: i1, value: T, error: i8 }
+            // Reference: research_016
+            auto* result_type = static_cast<ResultType*>(aria_type);
+            
+            llvm::Type* value_type = mapType(result_type->getValueType());
+            
+            std::vector<llvm::Type*> result_fields = {
+                builder.getInt1Ty(),    // hasValue flag
+                value_type,              // Success value
+                builder.getInt8Ty()     // Error code
+            };
+            
+            llvm_type = llvm::StructType::get(context, result_fields);
+            break;
+        }
+        
+        case TypeKind::GENERIC: {
+            // Generic types should be monomorphized before codegen
+            // If we see one here, it's an error in the compiler pipeline
+            // For now, treat as opaque pointer
+            llvm_type = llvm::PointerType::get(context, 0);
+            break;
+        }
+        
+        case TypeKind::UNKNOWN:
+        case TypeKind::ERROR:
         default:
-            // Default to void for unknown types
+            // Unknown or error types - use void
             llvm_type = builder.getVoidTy();
             break;
     }
