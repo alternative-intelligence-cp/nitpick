@@ -18,6 +18,7 @@ namespace aria {
     class ForStmt;
     class LoopStmt;
     class TillStmt;
+    class WhenStmt;
     class BlockStmt;
     class ReturnStmt;
     class ExpressionStmt;
@@ -113,6 +114,27 @@ public:
      * @param stmt For statement
      */
     void codegenFor(ForStmt* stmt);
+    
+    /**
+     * Generate code for a till loop (Aria-specific)
+     * Creates counted loop from 0 to limit with implicit $ variable
+     * @param stmt Till statement
+     */
+    void codegenTill(TillStmt* stmt);
+    
+    /**
+     * Generate code for a loop statement (Aria-specific)
+     * Creates counted loop from start to limit with implicit $ variable
+     * @param stmt Loop statement
+     */
+    void codegenLoop(LoopStmt* stmt);
+    
+    /**
+     * Generate code for a when loop (Aria-specific)
+     * Creates loop with then/end completion handling
+     * @param stmt When statement
+     */
+    void codegenWhen(WhenStmt* stmt);
     
     /**
      * Generate code for a block statement
