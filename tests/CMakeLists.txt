@@ -20,6 +20,7 @@ add_executable(test_runner
     unit/test_visibility_checker.cpp
     unit/test_async_await_parser.cpp
     unit/test_await_parser.cpp
+    unit/test_async_semantic.cpp
     backend/test_ir_generator.cpp
     backend/test_tbb_codegen.cpp
     backend/test_codegen_expr.cpp
@@ -60,6 +61,7 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/generic_resolver.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/module_resolver.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/visibility_checker.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/sema/async_analyzer.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/ir_generator.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/tbb_codegen.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/codegen_expr.cpp
