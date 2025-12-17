@@ -27,6 +27,7 @@ add_executable(test_runner
     integration/test_ir_compilation.cpp
     integration/test_ir_optimization.cpp
     runtime/test_gc.cpp
+    runtime/test_allocators.cpp
     # Add more test files here as they are created
 )
 
@@ -53,6 +54,8 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/backend/ir/codegen_stmt.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/gc/allocator.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/gc/gc.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/allocators/wild_alloc.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/allocators/wildx_alloc.cpp
 )
 
 # Include test helpers header
