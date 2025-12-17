@@ -4,6 +4,7 @@
 #include <sstream>
 #include <cmath>
 #include <limits>
+#include <algorithm>
 
 namespace aria {
 namespace sema {
@@ -437,28 +438,159 @@ ComptimeValue ConstEvaluator::evalTernary(TernaryExpr* ternary) {
 }
 
 ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
-    // Step 6: Prepare stack depth tracking for Step 7 (const function evaluation)
-    // When functions are implemented, they will use this stack tracking
+    // research_030 Section 5: Const Function Evaluation with Recursion and Memoization
     
-    // Push stack frame and check depth limit
+    // Get function name
+    // CallExpr has callee which should be an IdentifierExpr for simple function calls
+    IdentifierExpr* callee = dynamic_cast<IdentifierExpr*>(call->callee.get());
+    if (!callee) {
+        addError("Const evaluation only supports direct function calls (not function pointers)");
+        return ComptimeValue();
+    }
+    
+    const std::string& funcName = callee->name;
+    
+    // Evaluate arguments
+    std::vector<ComptimeValue> argValues;
+    argValues.reserve(call->arguments.size());
+    
+    for (const auto& arg : call->arguments) {
+        ComptimeValue argVal = evaluateExpr(arg.get());
+        if (hasErrors()) {
+            return ComptimeValue();
+        }
+        argValues.push_back(argVal);
+    }
+    
+    // Check memoization cache (research_030 Section 5.2)
+    if (hasMemoizedResult(funcName, argValues)) {
+        // Cache hit - return memoized result
+        return getMemoizedResult(funcName, argValues);
+    }
+    
+    // Lookup function definition
+    FuncDeclStmt* funcDecl = lookupFunction(funcName);
+    if (!funcDecl) {
+        addError("Undefined function in const context: " + funcName);
+        return ComptimeValue();
+    }
+    
+    // Validate parameter count
+    if (argValues.size() != funcDecl->parameters.size()) {
+        addError("Function " + funcName + " expects " + 
+                 std::to_string(funcDecl->parameters.size()) + " arguments, got " +
+                 std::to_string(argValues.size()));
+        return ComptimeValue();
+    }
+    
+    // Push stack frame and check recursion depth (research_030 Section 4.3)
     if (!pushStackFrame()) {
         // Error already added by checkStackDepth()
         return ComptimeValue();
     }
     
-    // TODO: Step 7 will implement:
-    // 1. Check memoization cache: hasMemoizedResult(funcName, args)
-    // 2. If cached, return getMemoizedResult(funcName, args)
-    // 3. Otherwise, evaluate function body
-    // 4. Store result: memoizeResult(funcName, args, result)
-    // 5. Return result
+    // Create new scope for function body
+    pushScope();
     
-    (void)call; // unused for now
-    addError("Const function evaluation not yet implemented (Step 7)");
+    // Bind parameters to arguments
+    for (size_t i = 0; i < funcDecl->parameters.size(); ++i) {
+        ParameterNode* param = static_cast<ParameterNode*>(funcDecl->parameters[i].get());
+        defineConstant(param->paramName, argValues[i]);
+    }
     
-    // Pop stack frame before returning
+    // Evaluate function body
+    ComptimeValue result;
+    if (funcDecl->body) {
+        BlockStmt* block = static_cast<BlockStmt*>(funcDecl->body.get());
+        
+        // Execute each statement in the block
+        for (const auto& stmt : block->statements) {
+            // Check for return statement
+            if (stmt->type == ASTNode::NodeType::RETURN) {
+                ReturnStmt* retStmt = static_cast<ReturnStmt*>(stmt.get());
+                if (retStmt->value) {
+                    result = evaluateExpr(retStmt->value.get());
+                } else {
+                    // Return with no value - use NULL
+                    result = ComptimeValue();
+                }
+                break;  // Stop execution at return
+            } 
+            // Handle if statements
+            else if (stmt->type == ASTNode::NodeType::IF) {
+                IfStmt* ifStmt = static_cast<IfStmt*>(stmt.get());
+                
+                // Evaluate condition
+                ComptimeValue condValue = evaluateExpr(ifStmt->condition.get());
+                if (hasErrors()) {
+                    break;
+                }
+                
+                if (!condValue.isBool()) {
+                    addError("If condition must evaluate to bool");
+                    break;
+                }
+                
+                // Execute appropriate branch
+                if (condValue.getBool()) {
+                    // Execute then branch
+                    if (ifStmt->thenBranch) {
+                        // Check if then branch is a return statement (single statement if)
+                        if (ifStmt->thenBranch->type == ASTNode::NodeType::RETURN) {
+                            ReturnStmt* retStmt = static_cast<ReturnStmt*>(ifStmt->thenBranch.get());
+                            if (retStmt->value) {
+                                result = evaluateExpr(retStmt->value.get());
+                            } else {
+                                result = ComptimeValue();
+                            }
+                            break;  // Stop execution at return
+                        } 
+                        // Otherwise execute the statement
+                        else {
+                            evaluateStmt(ifStmt->thenBranch.get());
+                        }
+                    }
+                } else {
+                    // Execute else branch if present
+                    if (ifStmt->elseBranch) {
+                        if (ifStmt->elseBranch->type == ASTNode::NodeType::RETURN) {
+                            ReturnStmt* retStmt = static_cast<ReturnStmt*>(ifStmt->elseBranch.get());
+                            if (retStmt->value) {
+                                result = evaluateExpr(retStmt->value.get());
+                            } else {
+                                result = ComptimeValue();
+                            }
+                            break;  // Stop execution at return
+                        } else {
+                            evaluateStmt(ifStmt->elseBranch.get());
+                        }
+                    }
+                }
+                
+                if (hasErrors()) {
+                    break;
+                }
+            }
+            else {
+                // Execute other statements (e.g., variable declarations, nested blocks)
+                evaluateStmt(stmt.get());
+                if (hasErrors()) {
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Cleanup scope and stack frame
+    popScope();
     popStackFrame();
-    return ComptimeValue();
+    
+    // If evaluation succeeded, memoize the result
+    if (!hasErrors()) {
+        memoizeResult(funcName, argValues, result);
+    }
+    
+    return result;
 }
 
 // ============================================================================
@@ -776,6 +908,22 @@ ComptimeValue ConstEvaluator::lookupConstant(const std::string& name) {
     
     addError("Undefined constant: " + name);
     return ComptimeValue();
+}
+
+// ============================================================================
+// Function Registration (research_030 Section 5)
+// ============================================================================
+
+void ConstEvaluator::registerFunction(const std::string& name, FuncDeclStmt* funcDecl) {
+    functions[name] = funcDecl;
+}
+
+FuncDeclStmt* ConstEvaluator::lookupFunction(const std::string& name) {
+    auto it = functions.find(name);
+    if (it != functions.end()) {
+        return it->second;
+    }
+    return nullptr;
 }
 
 // ============================================================================
