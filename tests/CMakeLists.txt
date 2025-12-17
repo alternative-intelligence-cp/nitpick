@@ -23,6 +23,7 @@ add_executable(test_runner
     unit/test_async_semantic.cpp
     frontend/test_const_evaluator.cpp
     frontend/test_const_integration.cpp
+    frontend/test_const_generics_arrays.cpp
     backend/test_ir_generator.cpp
     backend/test_tbb_codegen.cpp
     backend/test_codegen_expr.cpp
