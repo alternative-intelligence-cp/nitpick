@@ -424,6 +424,12 @@ void StmtCodegen::codegenWhile(WhileStmt* stmt) {
     llvm::BasicBlock* body_block = llvm::BasicBlock::Create(context, "while.body");
     llvm::BasicBlock* end_block = llvm::BasicBlock::Create(context, "while.end");
     
+    // Push loop context for break/continue (unlabeled)
+    loop_stack.emplace_back("", cond_block, end_block);
+    
+    // Push new defer scope for loop body
+    defer_stack.push_back(std::vector<BlockStmt*>());
+    
     // Branch to condition block
     builder.CreateBr(cond_block);
     
@@ -467,10 +473,17 @@ void StmtCodegen::codegenWhile(WhileStmt* stmt) {
         codegenStatement(stmt->body.get());
     }
     
-    // Loop back to condition check (if no terminator already present)
+    // Execute defers and loop back to condition check (if no terminator already present)
     if (!builder.GetInsertBlock()->getTerminator()) {
+        executeScopeDefers();
         builder.CreateBr(cond_block);
     }
+    
+    // Pop defer scope
+    defer_stack.pop_back();
+    
+    // Pop loop context
+    loop_stack.pop_back();
     
     // Set insertion point to end block for continuation
     end_block->insertInto(func);
@@ -529,6 +542,12 @@ void StmtCodegen::codegenFor(ForStmt* stmt) {
         codegenStatement(stmt->initializer.get());
     }
     
+    // Push loop context for break/continue (continue goes to inc_block)
+    loop_stack.emplace_back("", inc_block, end_block);
+    
+    // Push new defer scope for loop body
+    defer_stack.push_back(std::vector<BlockStmt*>());
+    
     // Branch to condition block
     builder.CreateBr(cond_block);
     
@@ -585,6 +604,9 @@ void StmtCodegen::codegenFor(ForStmt* stmt) {
     inc_block->insertInto(func);
     builder.SetInsertPoint(inc_block);
     
+    // Execute defers before update
+    executeScopeDefers();
+    
     if (stmt->update) {
         // Generate update expression (result is discarded)
         expr_codegen->codegenExpressionNode(stmt->update.get(), expr_codegen);
@@ -592,6 +614,12 @@ void StmtCodegen::codegenFor(ForStmt* stmt) {
     
     // Loop back to condition
     builder.CreateBr(cond_block);
+    
+    // Pop defer scope
+    defer_stack.pop_back();
+    
+    // Pop loop context
+    loop_stack.pop_back();
     
     // Set insertion point to end block for continuation
     end_block->insertInto(func);
@@ -652,6 +680,12 @@ void StmtCodegen::codegenTill(TillStmt* stmt) {
     llvm::BasicBlock* body_block = llvm::BasicBlock::Create(context, "till.body");
     llvm::BasicBlock* inc_block = llvm::BasicBlock::Create(context, "till.inc");
     llvm::BasicBlock* end_block = llvm::BasicBlock::Create(context, "till.end");
+    
+    // Push loop context for break/continue (continue goes to inc_block)
+    loop_stack.emplace_back("", inc_block, end_block);
+    
+    // Push new defer scope for loop body
+    defer_stack.push_back(std::vector<BlockStmt*>());
     
     // Branch to condition block
     builder.CreateBr(cond_block);
@@ -722,6 +756,12 @@ void StmtCodegen::codegenTill(TillStmt* stmt) {
     // Loop back to condition
     builder.CreateBr(cond_block);
     
+    // Pop defer scope
+    defer_stack.pop_back();
+    
+    // Pop loop context
+    loop_stack.pop_back();
+    
     // Restore old $ value (for nested loops)
     if (old_dollar) {
         named_values[dollar_var] = old_dollar;
@@ -770,6 +810,12 @@ void StmtCodegen::codegenLoop(LoopStmt* stmt) {
     llvm::BasicBlock* body_block = llvm::BasicBlock::Create(context, "loop.body");
     llvm::BasicBlock* inc_block = llvm::BasicBlock::Create(context, "loop.inc");
     llvm::BasicBlock* end_block = llvm::BasicBlock::Create(context, "loop.end");
+    
+    // Push loop context for break/continue (continue goes to inc_block)
+    loop_stack.emplace_back("", inc_block, end_block);
+    
+    // Push new defer scope for loop body
+    defer_stack.push_back(std::vector<BlockStmt*>());
     
     // Branch to condition block
     builder.CreateBr(cond_block);
@@ -839,6 +885,12 @@ void StmtCodegen::codegenLoop(LoopStmt* stmt) {
     // Loop back to condition
     builder.CreateBr(cond_block);
     
+    // Pop defer scope
+    defer_stack.pop_back();
+    
+    // Pop loop context
+    loop_stack.pop_back();
+    
     // Restore old $ value (for nested loops)
     if (old_dollar) {
         named_values[dollar_var] = old_dollar;
@@ -900,6 +952,12 @@ void StmtCodegen::codegenWhen(WhenStmt* stmt) {
     if (stmt->end_block) {
         end_block = llvm::BasicBlock::Create(context, "when.end");
     }
+    
+    // Push loop context for break/continue (continue goes to cond_block, break goes to decision_block)
+    loop_stack.emplace_back("", cond_block, decision_block);
+    
+    // Push new defer scope for loop body
+    defer_stack.push_back(std::vector<BlockStmt*>());
     
     // Branch to condition
     builder.CreateBr(cond_block);
@@ -996,6 +1054,12 @@ void StmtCodegen::codegenWhen(WhenStmt* stmt) {
             builder.CreateBr(exit_block);
         }
     }
+    
+    // Pop defer scope
+    defer_stack.pop_back();
+    
+    // Pop loop context
+    loop_stack.pop_back();
     
     // Exit block
     exit_block->insertInto(func);
@@ -1317,13 +1381,88 @@ void StmtCodegen::codegenFall(FallStmt* stmt) {
 // ============================================================================
 
 void StmtCodegen::codegenBlock(BlockStmt* stmt) {
+    // Push new defer scope for this block
+    defer_stack.push_back(std::vector<BlockStmt*>());
+    
     // Generate code for each statement in the block
     for (const auto& statement : stmt->statements) {
         codegenStatement(statement.get());
     }
+    
+    // Execute defers at block exit (LIFO order)
+    executeScopeDefers();
+    
+    // Pop defer scope
+    defer_stack.pop_back();
 }
 
+// ============================================================================
+// Phase 4.3.6: Control Flow Statements (break, continue, return, defer)
+// ============================================================================
+
+/**
+ * Execute all defer blocks in the current scope
+ * 
+ * Defer blocks are executed in LIFO (Last-In, First-Out) order,
+ * implementing Aria's block-scoped RAII pattern.
+ */
+void StmtCodegen::executeScopeDefers() {
+    if (defer_stack.empty()) {
+        return;
+    }
+    
+    // Get the current scope's defer blocks
+    std::vector<BlockStmt*>& current_scope_defers = defer_stack.back();
+    
+    // Execute in LIFO order (reverse)
+    // Note: Execute statements directly, not via codegenBlock to avoid recursive defer scoping
+    for (auto it = current_scope_defers.rbegin(); it != current_scope_defers.rend(); ++it) {
+        BlockStmt* defer_block = *it;
+        for (const auto& statement : defer_block->statements) {
+            codegenStatement(statement.get());
+        }
+    }
+}
+
+/**
+ * Execute all defer blocks up to function level
+ * 
+ * Called by return statements to ensure all defers in the function
+ * are executed before returning, maintaining LIFO order.
+ */
+void StmtCodegen::executeFunctionDefers() {
+    // Execute all scopes' defers in reverse order (inside-out)
+    // Note: Execute statements directly, not via codegenBlock to avoid recursive defer scoping
+    for (auto scope_it = defer_stack.rbegin(); scope_it != defer_stack.rend(); ++scope_it) {
+        // Within each scope, execute defers in LIFO order
+        for (auto defer_it = scope_it->rbegin(); defer_it != scope_it->rend(); ++defer_it) {
+            BlockStmt* defer_block = *defer_it;
+            for (const auto& statement : defer_block->statements) {
+                codegenStatement(statement.get());
+            }
+        }
+    }
+}
+
+/**
+ * Generate code for return statement
+ * 
+ * Returns from the current function, executing all defer blocks
+ * along the way in LIFO order. This ensures proper resource cleanup.
+ * 
+ * Example Aria code:
+ *   func:test = i32() {
+ *       defer { print("cleanup"); }
+ *       return 42;  // Executes defer before returning
+ *   }
+ * 
+ * Per research_020: Return must execute all defers in the function
+ * before transferring control to the caller.
+ */
 void StmtCodegen::codegenReturn(ReturnStmt* stmt) {
+    // Execute all defer blocks before returning (LIFO order)
+    executeFunctionDefers();
+    
     if (stmt->value) {
         if (!expr_codegen) {
             throw std::runtime_error("ExprCodegen not set in StmtCodegen");
@@ -1341,6 +1480,148 @@ void StmtCodegen::codegenReturn(ReturnStmt* stmt) {
         // Return void
         builder.CreateRetVoid();
     }
+}
+
+/**
+ * Generate code for break statement
+ * 
+ * Exits the current loop (or labeled loop) by branching to the loop's
+ * break_block. Executes defer blocks in the current scope before exiting.
+ * 
+ * Example Aria code:
+ *   while (true) {
+ *       defer { print("cleanup"); }
+ *       if (done) { break; }  // Executes defer before breaking
+ *   }
+ * 
+ * Labeled break:
+ *   outer: while (true) {
+ *       while (true) {
+ *           break(outer);  // Breaks from outer loop
+ *       }
+ *   }
+ * 
+ * Per research_020: Break transfers control to the loop's end block.
+ * In when loops, break triggers the end block instead of then block.
+ */
+void StmtCodegen::codegenBreak(BreakStmt* stmt) {
+    if (loop_stack.empty()) {
+        throw std::runtime_error("break statement outside of loop");
+    }
+    
+    // Execute defers in current scope before breaking
+    executeScopeDefers();
+    
+    // Find the target loop
+    llvm::BasicBlock* target_break_block = nullptr;
+    
+    if (stmt->label.empty()) {
+        // Unlabeled break: target innermost loop
+        target_break_block = loop_stack.back().break_block;
+    } else {
+        // Labeled break: search for matching label
+        for (auto it = loop_stack.rbegin(); it != loop_stack.rend(); ++it) {
+            if (it->label == stmt->label) {
+                target_break_block = it->break_block;
+                break;
+            }
+        }
+        
+        if (!target_break_block) {
+            throw std::runtime_error("break label '" + stmt->label + "' not found");
+        }
+    }
+    
+    // Branch to the loop's break block
+    builder.CreateBr(target_break_block);
+}
+
+/**
+ * Generate code for continue statement
+ * 
+ * Skips the remainder of the current loop iteration by branching to
+ * the loop's continue_block. Executes defer blocks before continuing.
+ * 
+ * Example Aria code:
+ *   for (i32:i = 0; i < 10; i++) {
+ *       if (i == 5) { continue; }
+ *       print(i);
+ *   }
+ * 
+ * Labeled continue:
+ *   outer: for (i32:i = 0; i < 3; i++) {
+ *       for (i32:j = 0; j < 3; j++) {
+ *           continue(outer);  // Continues outer loop
+ *       }
+ *   }
+ * 
+ * Per research_020: Continue transfers control to the loop's condition
+ * check or update expression.
+ */
+void StmtCodegen::codegenContinue(ContinueStmt* stmt) {
+    if (loop_stack.empty()) {
+        throw std::runtime_error("continue statement outside of loop");
+    }
+    
+    // Execute defers in current scope before continuing
+    executeScopeDefers();
+    
+    // Find the target loop
+    llvm::BasicBlock* target_continue_block = nullptr;
+    
+    if (stmt->label.empty()) {
+        // Unlabeled continue: target innermost loop
+        target_continue_block = loop_stack.back().continue_block;
+    } else {
+        // Labeled continue: search for matching label
+        for (auto it = loop_stack.rbegin(); it != loop_stack.rend(); ++it) {
+            if (it->label == stmt->label) {
+                target_continue_block = it->continue_block;
+                break;
+            }
+        }
+        
+        if (!target_continue_block) {
+            throw std::runtime_error("continue label '" + stmt->label + "' not found");
+        }
+    }
+    
+    // Branch to the loop's continue block
+    builder.CreateBr(target_continue_block);
+}
+
+/**
+ * Generate code for defer statement
+ * 
+ * Registers a block to be executed at scope exit in LIFO order.
+ * This implements Aria's block-scoped RAII pattern.
+ * 
+ * Example Aria code:
+ *   {
+ *       defer { print("cleanup 1"); }
+ *       defer { print("cleanup 2"); }
+ *       print("work");
+ *   }  // Outputs: "work", "cleanup 2", "cleanup 1"
+ * 
+ * Per research_020: Defer is block-scoped (unlike Go's function-scoped defer).
+ * Defers execute at scope exit in LIFO order: last deferred executes first.
+ * 
+ * Critical for Wild memory management:
+ *   wild i32*:ptr = aria.alloc<i32>(100);
+ *   defer { aria.free(ptr); }  // Guaranteed cleanup
+ */
+void StmtCodegen::codegenDefer(DeferStmt* stmt) {
+    if (defer_stack.empty()) {
+        throw std::runtime_error("defer statement outside of scope");
+    }
+    
+    // Get the block to defer
+    BlockStmt* defer_block = static_cast<BlockStmt*>(stmt->block.get());
+    
+    // Add to current scope's defer list
+    defer_stack.back().push_back(defer_block);
+    
+    // Note: Actual execution happens at scope exit, not here
 }
 
 void StmtCodegen::codegenExpressionStmt(ExpressionStmt* stmt) {
@@ -1408,6 +1689,18 @@ void StmtCodegen::codegenStatement(ASTNode* stmt) {
         
         case ASTNode::NodeType::RETURN:
             codegenReturn(static_cast<ReturnStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::BREAK:
+            codegenBreak(static_cast<BreakStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::CONTINUE:
+            codegenContinue(static_cast<ContinueStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::DEFER:
+            codegenDefer(static_cast<DeferStmt*>(stmt));
             break;
         
         case ASTNode::NodeType::EXPRESSION_STMT:

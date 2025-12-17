@@ -23,6 +23,9 @@ namespace aria {
     class FallStmt;
     class BlockStmt;
     class ReturnStmt;
+    class BreakStmt;
+    class ContinueStmt;
+    class DeferStmt;
     class ExpressionStmt;
     class ASTNode;
     
@@ -45,6 +48,18 @@ class ExprCodegen;
  * 
  * Phase 4.3: Statement Code Generation
  */
+/**
+ * Loop context information for break/continue resolution
+ */
+struct LoopContext {
+    std::string label;                         // Optional label for labeled break/continue
+    llvm::BasicBlock* continue_block;         // Block to jump to for continue
+    llvm::BasicBlock* break_block;            // Block to jump to for break
+    
+    LoopContext(const std::string& lbl, llvm::BasicBlock* cont, llvm::BasicBlock* brk)
+        : label(lbl), continue_block(cont), break_block(brk) {}
+};
+
 class StmtCodegen {
 private:
     llvm::LLVMContext& context;
@@ -57,11 +72,24 @@ private:
     // Expression codegen helper
     ExprCodegen* expr_codegen;
     
+    // Loop context stack for break/continue resolution
+    std::vector<LoopContext> loop_stack;
+    
+    // Defer stack for block-scoped cleanup (RAII pattern)
+    // Each scope has a vector of BlockStmt* to execute in LIFO order on exit
+    std::vector<std::vector<BlockStmt*>> defer_stack;
+    
     // Helper: Get LLVM type from Aria type string
     llvm::Type* getLLVMTypeFromString(const std::string& type_name);
     
     // Helper: Get LLVM type from Aria type
     llvm::Type* getLLVMType(sema::Type* type);
+    
+    // Helper: Execute all defers in current scope
+    void executeScopeDefers();
+    
+    // Helper: Execute all defers up to function level
+    void executeFunctionDefers();
     
 public:
     /**
@@ -161,10 +189,31 @@ public:
     
     /**
      * Generate code for a return statement
-     * Creates return instruction
+     * Creates return instruction with defer cleanup
      * @param stmt Return statement
      */
     void codegenReturn(ReturnStmt* stmt);
+    
+    /**
+     * Generate code for a break statement
+     * Exits the current loop (or labeled loop)
+     * @param stmt Break statement
+     */
+    void codegenBreak(BreakStmt* stmt);
+    
+    /**
+     * Generate code for a continue statement
+     * Skips to next iteration of current loop (or labeled loop)
+     * @param stmt Continue statement
+     */
+    void codegenContinue(ContinueStmt* stmt);
+    
+    /**
+     * Generate code for a defer statement
+     * Registers block for LIFO execution at scope exit
+     * @param stmt Defer statement
+     */
+    void codegenDefer(DeferStmt* stmt);
     
     /**
      * Generate code for an expression statement
