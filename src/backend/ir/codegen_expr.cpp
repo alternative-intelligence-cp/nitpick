@@ -1,10 +1,15 @@
 #include "backend/ir/codegen_expr.h"
 #include "frontend/ast/expr.h"
+#include "frontend/ast/ast_node.h"
 #include "frontend/sema/type.h"
+#include "frontend/token.h"
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/BasicBlock.h>
 #include <stdexcept>
+
+using namespace aria;
+using namespace aria::frontend;
 
 using namespace aria;
 using namespace aria::backend;
@@ -170,6 +175,28 @@ llvm::Value* ExprCodegen::codegenIdentifier(IdentifierExpr* expr) {
 }
 
 /**
+ * Helper: Recursively generate code for any expression node
+ * This is a simplified dispatcher for testing - full integration in Phase 4.3+
+ */
+llvm::Value* codegenExpressionNode(ASTNode* node, ExprCodegen* codegen) {
+    if (!node) {
+        throw std::runtime_error("Null expression node");
+    }
+    
+    // Dispatch based on node type
+    switch (node->type) {
+        case ASTNode::NodeType::LITERAL:
+            return codegen->codegenLiteral(static_cast<LiteralExpr*>(node));
+        case ASTNode::NodeType::IDENTIFIER:
+            return codegen->codegenIdentifier(static_cast<IdentifierExpr*>(node));
+        case ASTNode::NodeType::BINARY_OP:
+            return codegen->codegenBinary(static_cast<BinaryExpr*>(node));
+        default:
+            throw std::runtime_error("Unsupported expression node type in binary operation");
+    }
+}
+
+/**
  * Generate code for binary operations
  * Handles: arithmetic, comparison, logical, bitwise operators
  */
@@ -178,8 +205,196 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         throw std::runtime_error("Null binary expression");
     }
     
-    // TODO: Implement in Phase 4.2.3
-    throw std::runtime_error("Binary operations not yet implemented");
+    // Generate code for left and right operands
+    llvm::Value* left = codegenExpressionNode(expr->left.get(), this);
+    llvm::Value* right = codegenExpressionNode(expr->right.get(), this);
+    
+    if (!left || !right) {
+        throw std::runtime_error("Failed to generate code for binary operation operands");
+    }
+    
+    // Get the operator type
+    TokenType op = expr->op.type;
+    
+    // Check if operands are floating point
+    bool isFloat = left->getType()->isFloatingPointTy() || right->getType()->isFloatingPointTy();
+    
+    // ARITHMETIC OPERATORS
+    if (op == TokenType::TOKEN_PLUS) {
+        if (isFloat) {
+            return builder.CreateFAdd(left, right, "addtmp");
+        } else {
+            return builder.CreateAdd(left, right, "addtmp");
+        }
+    }
+    
+    if (op == TokenType::TOKEN_MINUS) {
+        if (isFloat) {
+            return builder.CreateFSub(left, right, "subtmp");
+        } else {
+            return builder.CreateSub(left, right, "subtmp");
+        }
+    }
+    
+    if (op == TokenType::TOKEN_STAR) {
+        if (isFloat) {
+            return builder.CreateFMul(left, right, "multmp");
+        } else {
+            return builder.CreateMul(left, right, "multmp");
+        }
+    }
+    
+    if (op == TokenType::TOKEN_SLASH) {
+        if (isFloat) {
+            return builder.CreateFDiv(left, right, "divtmp");
+        } else {
+            // For integers, use signed division
+            return builder.CreateSDiv(left, right, "divtmp");
+        }
+    }
+    
+    if (op == TokenType::TOKEN_PERCENT) {
+        if (isFloat) {
+            return builder.CreateFRem(left, right, "modtmp");
+        } else {
+            return builder.CreateSRem(left, right, "modtmp");
+        }
+    }
+    
+    // COMPARISON OPERATORS
+    if (op == TokenType::TOKEN_EQUAL_EQUAL) {
+        if (isFloat) {
+            return builder.CreateFCmpOEQ(left, right, "eqtmp");
+        } else {
+            return builder.CreateICmpEQ(left, right, "eqtmp");
+        }
+    }
+    
+    if (op == TokenType::TOKEN_BANG_EQUAL) {
+        if (isFloat) {
+            return builder.CreateFCmpONE(left, right, "netmp");
+        } else {
+            return builder.CreateICmpNE(left, right, "netmp");
+        }
+    }
+    
+    if (op == TokenType::TOKEN_LESS) {
+        if (isFloat) {
+            return builder.CreateFCmpOLT(left, right, "lttmp");
+        } else {
+            return builder.CreateICmpSLT(left, right, "lttmp");
+        }
+    }
+    
+    if (op == TokenType::TOKEN_LESS_EQUAL) {
+        if (isFloat) {
+            return builder.CreateFCmpOLE(left, right, "letmp");
+        } else {
+            return builder.CreateICmpSLE(left, right, "letmp");
+        }
+    }
+    
+    if (op == TokenType::TOKEN_GREATER) {
+        if (isFloat) {
+            return builder.CreateFCmpOGT(left, right, "gttmp");
+        } else {
+            return builder.CreateICmpSGT(left, right, "gttmp");
+        }
+    }
+    
+    if (op == TokenType::TOKEN_GREATER_EQUAL) {
+        if (isFloat) {
+            return builder.CreateFCmpOGE(left, right, "getmp");
+        } else {
+            return builder.CreateICmpSGE(left, right, "getmp");
+        }
+    }
+    
+    // LOGICAL OPERATORS (short-circuit evaluation with phi nodes)
+    if (op == TokenType::TOKEN_AND_AND) {
+        // Convert to i1 if needed
+        if (!left->getType()->isIntegerTy(1)) {
+            left = builder.CreateICmpNE(left, llvm::ConstantInt::get(left->getType(), 0), "tobool");
+        }
+        
+        // Create blocks for short-circuit evaluation
+        llvm::Function* func = builder.GetInsertBlock()->getParent();
+        llvm::BasicBlock* evalRightBB = llvm::BasicBlock::Create(context, "and_eval_right", func);
+        llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "and_merge", func);
+        
+        // If left is false, skip right and return false
+        builder.CreateCondBr(left, evalRightBB, mergeBB);
+        
+        // Evaluate right
+        builder.SetInsertPoint(evalRightBB);
+        if (!right->getType()->isIntegerTy(1)) {
+            right = builder.CreateICmpNE(right, llvm::ConstantInt::get(right->getType(), 0), "tobool");
+        }
+        builder.CreateBr(mergeBB);
+        
+        // Merge
+        builder.SetInsertPoint(mergeBB);
+        llvm::PHINode* phi = builder.CreatePHI(llvm::Type::getInt1Ty(context), 2, "and_result");
+        phi->addIncoming(llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0), evalRightBB->getSinglePredecessor());
+        phi->addIncoming(right, evalRightBB);
+        
+        return phi;
+    }
+    
+    if (op == TokenType::TOKEN_OR_OR) {
+        // Convert to i1 if needed
+        if (!left->getType()->isIntegerTy(1)) {
+            left = builder.CreateICmpNE(left, llvm::ConstantInt::get(left->getType(), 0), "tobool");
+        }
+        
+        // Create blocks for short-circuit evaluation
+        llvm::Function* func = builder.GetInsertBlock()->getParent();
+        llvm::BasicBlock* evalRightBB = llvm::BasicBlock::Create(context, "or_eval_right", func);
+        llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "or_merge", func);
+        
+        // If left is true, skip right and return true
+        builder.CreateCondBr(left, mergeBB, evalRightBB);
+        
+        // Evaluate right
+        builder.SetInsertPoint(evalRightBB);
+        if (!right->getType()->isIntegerTy(1)) {
+            right = builder.CreateICmpNE(right, llvm::ConstantInt::get(right->getType(), 0), "tobool");
+        }
+        builder.CreateBr(mergeBB);
+        
+        // Merge
+        builder.SetInsertPoint(mergeBB);
+        llvm::PHINode* phi = builder.CreatePHI(llvm::Type::getInt1Ty(context), 2, "or_result");
+        phi->addIncoming(llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 1), evalRightBB->getSinglePredecessor());
+        phi->addIncoming(right, evalRightBB);
+        
+        return phi;
+    }
+    
+    // BITWISE OPERATORS
+    if (op == TokenType::TOKEN_AMPERSAND) {
+        return builder.CreateAnd(left, right, "andtmp");
+    }
+    
+    if (op == TokenType::TOKEN_PIPE) {
+        return builder.CreateOr(left, right, "ortmp");
+    }
+    
+    if (op == TokenType::TOKEN_CARET) {
+        return builder.CreateXor(left, right, "xortmp");
+    }
+    
+    if (op == TokenType::TOKEN_SHIFT_LEFT) {
+        return builder.CreateShl(left, right, "shltmp");
+    }
+    
+    if (op == TokenType::TOKEN_SHIFT_RIGHT) {
+        // Arithmetic right shift (sign extension)
+        return builder.CreateAShr(left, right, "shrtmp");
+    }
+    
+    // Unknown operator
+    throw std::runtime_error("Unknown binary operator: " + expr->op.lexeme);
 }
 
 /**
