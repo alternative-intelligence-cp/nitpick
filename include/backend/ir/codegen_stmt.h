@@ -91,6 +91,19 @@ private:
     // Helper: Execute all defers up to function level
     void executeFunctionDefers();
     
+    // Phase 4.4: Memory Model Helpers
+    // Helper: Get or declare aria_gc_alloc runtime function
+    llvm::Function* getOrDeclareGCAlloc();
+    
+    // Helper: Get or declare aria.alloc runtime function (wild memory)
+    llvm::Function* getOrDeclareWildAlloc();
+    
+    // Helper: Get or declare aria_alloc_exec runtime function (wildx memory)
+    llvm::Function* getOrDeclareWildXAlloc();
+    
+    // Helper: Get or declare aria.free runtime function
+    llvm::Function* getOrDeclareWildFree();
+    
 public:
     /**
      * Constructor

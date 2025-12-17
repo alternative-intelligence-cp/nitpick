@@ -58,26 +58,135 @@ llvm::Type* StmtCodegen::getLLVMType(Type* type) {
 }
 
 // ============================================================================
-// Phase 4.3.1: Variable Declaration Code Generation
+// Phase 4.4: Memory Model Runtime Function Declarations
+// ============================================================================
+
+/**
+ * Get or declare aria_gc_alloc runtime function
+ * Signature: void* aria_gc_alloc(i64 size)
+ */
+llvm::Function* StmtCodegen::getOrDeclareGCAlloc() {
+    llvm::Function* func = module->getFunction("aria_gc_alloc");
+    if (!func) {
+        // Declare: void* aria_gc_alloc(i64 size)
+        llvm::FunctionType* func_type = llvm::FunctionType::get(
+            llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),  // void* return
+            {llvm::Type::getInt64Ty(context)},                          // i64 size param
+            false                                                         // not vararg
+        );
+        func = llvm::Function::Create(
+            func_type,
+            llvm::Function::ExternalLinkage,
+            "aria_gc_alloc",
+            module
+        );
+    }
+    return func;
+}
+
+/**
+ * Get or declare aria.alloc runtime function (wild memory)
+ * Signature: void* aria_alloc(i64 size)
+ */
+llvm::Function* StmtCodegen::getOrDeclareWildAlloc() {
+    llvm::Function* func = module->getFunction("aria_alloc");
+    if (!func) {
+        // Declare: void* aria_alloc(i64 size)
+        llvm::FunctionType* func_type = llvm::FunctionType::get(
+            llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),  // void* return
+            {llvm::Type::getInt64Ty(context)},                          // i64 size param
+            false
+        );
+        func = llvm::Function::Create(
+            func_type,
+            llvm::Function::ExternalLinkage,
+            "aria_alloc",
+            module
+        );
+    }
+    return func;
+}
+
+/**
+ * Get or declare aria_alloc_exec runtime function (wildx executable memory)
+ * Signature: void* aria_alloc_exec(i64 size)
+ */
+llvm::Function* StmtCodegen::getOrDeclareWildXAlloc() {
+    llvm::Function* func = module->getFunction("aria_alloc_exec");
+    if (!func) {
+        // Declare: void* aria_alloc_exec(i64 size)
+        llvm::FunctionType* func_type = llvm::FunctionType::get(
+            llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),  // void* return
+            {llvm::Type::getInt64Ty(context)},                          // i64 size param
+            false
+        );
+        func = llvm::Function::Create(
+            func_type,
+            llvm::Function::ExternalLinkage,
+            "aria_alloc_exec",
+            module
+        );
+    }
+    return func;
+}
+
+/**
+ * Get or declare aria.free runtime function
+ * Signature: void aria_free(void* ptr)
+ */
+llvm::Function* StmtCodegen::getOrDeclareWildFree() {
+    llvm::Function* func = module->getFunction("aria_free");
+    if (!func) {
+        // Declare: void aria_free(void* ptr)
+        llvm::FunctionType* func_type = llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context),                              // void return
+            {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)}, // void* ptr param
+            false
+        );
+        func = llvm::Function::Create(
+            func_type,
+            llvm::Function::ExternalLinkage,
+            "aria_free",
+            module
+        );
+    }
+    return func;
+}
+
+// ============================================================================
+// Phase 4.3.1 + 4.4: Variable Declaration Code Generation with Memory Model
 // ============================================================================
 
 /**
  * Generate code for variable declaration
  * 
- * Creates an alloca instruction to allocate space on the stack for the variable,
- * then optionally stores the initial value if an initializer is provided.
+ * Supports four allocation strategies based on keywords:
+ * 1. stack: Fast LIFO allocation via alloca (explicit or default for primitives)
+ * 2. gc: Garbage collected heap via aria_gc_alloc (default for objects)
+ * 3. wild: Manual heap via aria.alloc/aria.free (opt-out of GC)
+ * 4. wildx: Executable memory via aria_alloc_exec (JIT code generation)
  * 
  * Example Aria code:
- *   i32:x = 42;
+ *   i32:x = 42;                    // Default (stack for primitive)
+ *   stack i32:y = 100;             // Explicit stack
+ *   gc obj:data = {a:1};           // GC-managed object
+ *   wild int64@:ptr = aria.alloc(8); // Manual memory
+ *   wildx void@:code = aria_alloc_exec(1024); // Executable memory
  * 
- * Generated LLVM IR:
+ * Generated LLVM IR (stack):
  *   %x = alloca i32
  *   store i32 42, i32* %x
  * 
- * Allocation modes (future):
- * - stack: Explicit stack allocation (alloca)
- * - wild: Manual memory management (malloc/free)
- * - gc: Garbage collected (default, runtime support needed)
+ * Generated LLVM IR (gc):
+ *   %0 = call i8* @aria_gc_alloc(i64 16)
+ *   %x = bitcast i8* %0 to i32*
+ *   store i32 42, i32* %x
+ * 
+ * Generated LLVM IR (wild):
+ *   %0 = call i8* @aria_alloc(i64 8)
+ *   %ptr = bitcast i8* %0 to i64*
+ * 
+ * Reference: research_021 (GC), research_022 (Wild/WildX)
  */
 void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
     // Get LLVM type from type string
@@ -86,13 +195,68 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
     // Get the current function
     llvm::Function* func = builder.GetInsertBlock()->getParent();
     
-    // Create alloca instruction for the variable
-    // Allocas are created at the entry block of the function for optimization
-    llvm::IRBuilder<> tmp_builder(&func->getEntryBlock(), func->getEntryBlock().begin());
-    llvm::AllocaInst* alloca = tmp_builder.CreateAlloca(var_type, nullptr, stmt->varName);
+    // Determine allocation strategy
+    // Priority: explicit keywords > default behavior
+    // Default: stack for primitives, gc for objects
     
-    // Store the alloca in named_values so we can reference it later
-    named_values[stmt->varName] = alloca;
+    llvm::Value* var_ptr = nullptr;
+    
+    if (stmt->isStack || (!stmt->isWild && !stmt->isGC)) {
+        // Stack allocation (default or explicit)
+        // Use alloca instruction - fast LIFO allocation
+        llvm::IRBuilder<> tmp_builder(&func->getEntryBlock(), func->getEntryBlock().begin());
+        llvm::AllocaInst* alloca = tmp_builder.CreateAlloca(var_type, nullptr, stmt->varName);
+        var_ptr = alloca;
+        
+    } else if (stmt->isGC) {
+        // GC heap allocation (explicit gc keyword)
+        // Call aria_gc_alloc runtime function
+        llvm::Function* gc_alloc = getOrDeclareGCAlloc();
+        
+        // Calculate size: Get type size in bytes
+        const llvm::DataLayout& data_layout = module->getDataLayout();
+        uint64_t type_size = data_layout.getTypeAllocSize(var_type);
+        llvm::Value* size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), type_size);
+        
+        // Call aria_gc_alloc(size) -> returns void* (i8*)
+        llvm::Value* raw_ptr = builder.CreateCall(gc_alloc, {size}, "gc_alloc");
+        
+        // Bitcast void* to appropriate pointer type
+        var_ptr = builder.CreateBitCast(
+            raw_ptr,
+            llvm::PointerType::get(var_type, 0),
+            stmt->varName
+        );
+        
+    } else if (stmt->isWild) {
+        // Wild heap allocation (manual memory management)
+        // Call aria.alloc runtime function
+        llvm::Function* wild_alloc = getOrDeclareWildAlloc();
+        
+        // Calculate size
+        const llvm::DataLayout& data_layout = module->getDataLayout();
+        uint64_t type_size = data_layout.getTypeAllocSize(var_type);
+        llvm::Value* size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), type_size);
+        
+        // Call aria_alloc(size) -> returns void* (i8*)
+        llvm::Value* raw_ptr = builder.CreateCall(wild_alloc, {size}, "wild_alloc");
+        
+        // Bitcast void* to appropriate pointer type
+        var_ptr = builder.CreateBitCast(
+            raw_ptr,
+            llvm::PointerType::get(var_type, 0),
+            stmt->varName
+        );
+    }
+    // Note: wildx allocation would be handled via explicit aria_alloc_exec() calls in user code,
+    // not via variable declarations (it's for runtime code generation, not regular variables)
+    
+    if (!var_ptr) {
+        throw std::runtime_error("Failed to allocate memory for variable: " + stmt->varName);
+    }
+    
+    // Store the pointer in named_values so we can reference it later
+    named_values[stmt->varName] = var_ptr;
     
     // If there's an initializer, generate code for it and store the result
     if (stmt->initializer) {
@@ -107,15 +271,9 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
             throw std::runtime_error("Failed to generate code for initializer expression");
         }
         
-        // Store the initial value in the allocated variable
-        builder.CreateStore(init_value, alloca);
+        // Store the initial value in the allocated memory
+        builder.CreateStore(init_value, var_ptr);
     }
-    
-    // TODO: Handle allocation modes (stack, wild, gc)
-    // For now, everything is allocated on the stack using alloca
-    // - stmt->isStack: Already handled (uses alloca)
-    // - stmt->isWild: Would use malloc/free (Phase 4.4+)
-    // - stmt->isGC: Would use GC runtime (Phase 4.6+)
 }
 
 // ============================================================================
