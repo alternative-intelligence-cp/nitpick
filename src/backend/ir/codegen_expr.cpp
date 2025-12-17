@@ -1,23 +1,28 @@
 #include "backend/ir/codegen_expr.h"
+#include "backend/ir/codegen_stmt.h"
 #include "frontend/ast/expr.h"
+#include "frontend/ast/stmt.h"
 #include "frontend/ast/ast_node.h"
 #include "frontend/sema/type.h"
 #include "frontend/token.h"
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Function.h>
 #include <stdexcept>
 
 using namespace aria;
 using namespace aria::frontend;
-
-using namespace aria;
 using namespace aria::backend;
 using namespace aria::sema;
 
 ExprCodegen::ExprCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr,
                          llvm::Module* mod, std::map<std::string, llvm::Value*>& values)
-    : context(ctx), builder(bldr), module(mod), named_values(values) {}
+    : context(ctx), builder(bldr), module(mod), named_values(values), stmt_codegen(nullptr) {}
+
+void ExprCodegen::setStmtCodegen(StmtCodegen* stmt_gen) {
+    stmt_codegen = stmt_gen;
+}
 
 // Helper: Get LLVM type from Aria type
 llvm::Type* ExprCodegen::getLLVMType(Type* type) {
@@ -799,24 +804,91 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
     // Create entry basic block
     llvm::BasicBlock* entry_block = llvm::BasicBlock::Create(context, "entry", lambda_func);
     
-    // Save current insertion point
+    // Save current insertion point and named_values (lexical scope)
     llvm::BasicBlock* saved_insert_block = builder.GetInsertBlock();
+    std::map<std::string, llvm::Value*> saved_named_values = named_values;
+    named_values.clear();
     
     // Set insertion point to lambda body
     builder.SetInsertPoint(entry_block);
     
-    // TODO: Generate lambda body code from expr->body
-    // For now, just return a placeholder
-    if (return_type->isVoidTy()) {
-        builder.CreateRetVoid();
-    } else {
-        builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
+    // ========================================================================
+    // STEP 2a: MAP LAMBDA PARAMETERS
+    // ========================================================================
+    
+    // First argument is the hidden env_ptr (i8*)
+    auto arg_it = lambda_func->arg_begin();
+    llvm::Argument* env_arg = &(*arg_it);
+    env_arg->setName("env");
+    ++arg_it;
+    
+    // Map explicit parameters to allocas
+    // This allows parameters to be mutable inside the lambda body
+    size_t param_idx = 0;
+    for (; arg_it != lambda_func->arg_end(); ++arg_it, ++param_idx) {
+        llvm::Argument* arg = &(*arg_it);
+        
+        // Get parameter name from AST
+        if (param_idx < expr->parameters.size()) {
+            // TODO: Extract parameter name from ParameterNode
+            // For now, use generic names
+            std::string param_name = "param_" + std::to_string(param_idx);
+            arg->setName(param_name);
+            
+            // Create alloca for parameter
+            llvm::AllocaInst* param_alloca = builder.CreateAlloca(arg->getType(), nullptr, param_name);
+            builder.CreateStore(arg, param_alloca);
+            
+            // Add to named_values
+            named_values[param_name] = param_alloca;
+        }
     }
     
-    // Restore insertion point
+    // ========================================================================
+    // STEP 2b: MAP CAPTURED VARIABLES (TODO: Extract from environment)
+    // ========================================================================
+    
+    // For now, captured variables are not accessible in the body
+    // This will be implemented when we properly extract them from env_ptr
+    
+    // ========================================================================
+    // STEP 2c: GENERATE LAMBDA BODY
+    // ========================================================================
+    
+    if (expr->body && stmt_codegen) {
+        // Generate code for lambda body using StmtCodegen
+        BlockStmt* body_block = static_cast<BlockStmt*>(expr->body.get());
+        stmt_codegen->codegenBlock(body_block);
+        
+        // If body doesn't have a terminator, add default return
+        if (!builder.GetInsertBlock()->getTerminator()) {
+            if (return_type->isVoidTy()) {
+                builder.CreateRetVoid();
+            } else {
+                // Return zero/null for non-void functions without explicit return
+                if (return_type->isIntegerTy()) {
+                    builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
+                } else if (return_type->isFloatingPointTy()) {
+                    builder.CreateRet(llvm::ConstantFP::get(return_type, 0.0));
+                } else {
+                    builder.CreateRet(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(return_type)));
+                }
+            }
+        }
+    } else {
+        // No body or no stmt_codegen - generate placeholder return
+        if (return_type->isVoidTy()) {
+            builder.CreateRetVoid();
+        } else {
+            builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
+        }
+    }
+    
+    // Restore insertion point and named_values (return to outer scope)
     if (saved_insert_block) {
         builder.SetInsertPoint(saved_insert_block);
     }
+    named_values = saved_named_values;
     
     // ========================================================================
     // STEP 3: CREATE FAT POINTER STRUCT

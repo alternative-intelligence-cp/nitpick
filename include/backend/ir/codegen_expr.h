@@ -29,6 +29,9 @@ namespace aria {
 namespace aria {
 namespace backend {
 
+// Forward declaration for circular dependency
+class StmtCodegen;
+
 /**
  * ExprCodegen - Expression code generation
  * 
@@ -46,6 +49,9 @@ private:
     // Symbol table (maps variable names to their LLVM values)
     std::map<std::string, llvm::Value*>& named_values;
     
+    // Statement codegen (for lambda body generation)
+    StmtCodegen* stmt_codegen;
+    
     // Helper: Get LLVM type from Aria type
     llvm::Type* getLLVMType(sema::Type* type);
     
@@ -62,6 +68,12 @@ public:
      */
     ExprCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr, 
                 llvm::Module* mod, std::map<std::string, llvm::Value*>& values);
+    
+    /**
+     * Set statement codegen helper (for lambda body generation)
+     * @param stmt_gen Statement codegen instance
+     */
+    void setStmtCodegen(StmtCodegen* stmt_gen);
     
     /**
      * Generate code for a literal expression
