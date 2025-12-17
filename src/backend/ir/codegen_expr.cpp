@@ -154,12 +154,18 @@ llvm::Value* ExprCodegen::codegenIdentifier(IdentifierExpr* expr) {
     
     llvm::Value* var_ptr = it->second;
     
-    // If it's a pointer (alloca), we need to load the value
-    // For now, we assume all variables in named_values are allocas that need loading
-    // The type to load is determined by what's stored in the alloca
-    // For LLVM 20+ with opaque pointers, we need to specify the type explicitly
-    // This will be handled properly when we implement variable declarations
-    // For now, just return the pointer itself (will be fixed in Phase 4.3)
+    // Check if this is an alloca (stack variable) that needs loading
+    // In LLVM 20+ with opaque pointers, we use the alloca's allocated type
+    if (llvm::isa<llvm::AllocaInst>(var_ptr)) {
+        llvm::AllocaInst* alloca = llvm::cast<llvm::AllocaInst>(var_ptr);
+        llvm::Type* allocated_type = alloca->getAllocatedType();
+        
+        // Create a load instruction
+        return builder.CreateLoad(allocated_type, var_ptr, expr->name);
+    }
+    
+    // If it's not an alloca, return the value directly
+    // (could be a function parameter or constant)
     return var_ptr;
 }
 
