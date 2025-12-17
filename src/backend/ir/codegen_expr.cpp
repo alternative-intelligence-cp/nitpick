@@ -830,26 +830,84 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
         
         // Get parameter name from AST
         if (param_idx < expr->parameters.size()) {
-            // TODO: Extract parameter name from ParameterNode
-            // For now, use generic names
-            std::string param_name = "param_" + std::to_string(param_idx);
+            // Extract parameter name from ParameterNode
+            ParameterNode* param_node = static_cast<ParameterNode*>(expr->parameters[param_idx].get());
+            std::string param_name = param_node->paramName;
+            
             arg->setName(param_name);
             
             // Create alloca for parameter
             llvm::AllocaInst* param_alloca = builder.CreateAlloca(arg->getType(), nullptr, param_name);
             builder.CreateStore(arg, param_alloca);
             
-            // Add to named_values
+            // Add to named_values so lambda body can reference it
             named_values[param_name] = param_alloca;
         }
     }
     
     // ========================================================================
-    // STEP 2b: MAP CAPTURED VARIABLES (TODO: Extract from environment)
+    // STEP 2b: MAP CAPTURED VARIABLES (Extract from environment)
     // ========================================================================
     
-    // For now, captured variables are not accessible in the body
-    // This will be implemented when we properly extract them from env_ptr
+    // If we have captured variables, extract them from the environment pointer
+    if (!expr->capturedVars.empty() && env_struct_type) {
+        // Cast env_ptr (i8*) back to the environment struct type
+        llvm::Value* env_ptr_typed = builder.CreateBitCast(
+            env_arg,
+            llvm::PointerType::get(env_struct_type, 0),
+            "env_typed"
+        );
+        
+        // Extract each captured variable from the environment
+        for (size_t i = 0; i < expr->capturedVars.size(); ++i) {
+            const auto& captured = expr->capturedVars[i];
+            
+            // Get pointer to field in environment struct
+            llvm::Value* field_ptr = builder.CreateStructGEP(
+                env_struct_type,
+                env_ptr_typed,
+                i,
+                captured.name + "_ptr"
+            );
+            
+            if (captured.mode == LambdaExpr::CaptureMode::BY_VALUE) {
+                // BY_VALUE: Load the value from environment
+                llvm::Type* field_type = env_struct_type->getElementType(i);
+                llvm::Value* captured_value = builder.CreateLoad(field_type, field_ptr, captured.name);
+                
+                // Create alloca and store value (so it can be mutable in lambda)
+                llvm::AllocaInst* capture_alloca = builder.CreateAlloca(field_type, nullptr, captured.name);
+                builder.CreateStore(captured_value, capture_alloca);
+                
+                // Add to named_values
+                named_values[captured.name] = capture_alloca;
+                
+            } else if (captured.mode == LambdaExpr::CaptureMode::BY_REFERENCE) {
+                // BY_REFERENCE: Environment contains pointer to original variable
+                // Load the pointer from environment (stored as i64)
+                llvm::Value* ptr_as_i64 = builder.CreateLoad(
+                    llvm::Type::getInt64Ty(context),
+                    field_ptr,
+                    captured.name + "_ptr_val"
+                );
+                
+                // Convert i64 back to pointer
+                // TODO: Get actual type from symbol table
+                llvm::Value* original_ptr = builder.CreateIntToPtr(
+                    ptr_as_i64,
+                    llvm::PointerType::get(context, 0),
+                    captured.name + "_ptr"
+                );
+                
+                // Add to named_values (as pointer, so loads/stores go to original)
+                named_values[captured.name] = original_ptr;
+                
+            } else {
+                // BY_MOVE: Not yet implemented
+                throw std::runtime_error("BY_MOVE capture mode not yet implemented in lambda body");
+            }
+        }
+    }
     
     // ========================================================================
     // STEP 2c: GENERATE LAMBDA BODY
