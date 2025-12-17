@@ -4,6 +4,7 @@
 #include "frontend/ast/expr.h"
 #include "frontend/ast/ast_node.h"
 #include "frontend/sema/type.h"
+#include "frontend/sema/generic_resolver.h"  // Phase 4.5.1: Generic support
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/BasicBlock.h>
@@ -17,10 +18,15 @@ using namespace aria::sema;
 
 StmtCodegen::StmtCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr,
                          llvm::Module* mod, std::map<std::string, llvm::Value*>& values)
-    : context(ctx), builder(bldr), module(mod), named_values(values), expr_codegen(nullptr) {}
+    : context(ctx), builder(bldr), module(mod), named_values(values), 
+      expr_codegen(nullptr), monomorphizer(nullptr) {}
 
 void StmtCodegen::setExprCodegen(ExprCodegen* expr_gen) {
     expr_codegen = expr_gen;
+}
+
+void StmtCodegen::setMonomorphizer(Monomorphizer* mono) {
+    monomorphizer = mono;
 }
 
 // Helper: Get LLVM type from Aria type string
@@ -305,6 +311,15 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
  *   }
  */
 llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
+    // Phase 4.5.1: Skip generic function templates
+    // Generic functions are not directly compiled - only their specializations are
+    // The Monomorphizer will create concrete versions when needed
+    if (!stmt->genericParams.empty()) {
+        // This is a generic function template, don't generate code
+        // Specializations will be handled by codegenAllSpecializations()
+        return nullptr;
+    }
+    
     // Get return type
     llvm::Type* return_type = getLLVMTypeFromString(stmt->returnType);
     
@@ -397,6 +412,61 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
     }
     
     return func;
+}
+
+// ============================================================================
+// Phase 4.5.1: Generic Instantiation Code Generation
+// ============================================================================
+
+/**
+ * Generate code for all specialized generic functions
+ * 
+ * After the entire AST has been processed and all call sites discovered,
+ * this function generates LLVM IR for each monomorphized specialization.
+ * 
+ * The Monomorphizer has already:
+ * 1. Detected calls to generic functions
+ * 2. Inferred or received explicit type arguments
+ * 3. Created specialized AST nodes with concrete types
+ * 4. Generated unique mangled names for each specialization
+ * 
+ * This function simply iterates through all specializations and generates
+ * IR for each one using the normal codegenFuncDecl flow.
+ * 
+ * Example:
+ *   Generic template: func<T>:identity = *T(*T:value) { return value; }
+ *   Call site 1: identity(42)        -> T=int32
+ *   Call site 2: identity(3.14)      -> T=float64
+ *   
+ *   Generated specializations:
+ *   - _Aria_M_identity_<hash>_int32(int32) -> int32
+ *   - _Aria_M_identity_<hash>_float64(float64) -> float64
+ * 
+ * @return Number of specializations successfully generated
+ */
+size_t StmtCodegen::codegenAllSpecializations() {
+    if (!monomorphizer) {
+        return 0;  // No monomorphizer set, no generics to process
+    }
+    
+    const auto& specializations = monomorphizer->getSpecializations();
+    size_t generated = 0;
+    
+    for (const auto* spec : specializations) {
+        if (!spec || !spec->funcDecl) {
+            continue;
+        }
+        
+        // Generate code for this specialized function
+        // The function name in the AST has already been changed to the mangled name
+        llvm::Function* func = codegenFuncDecl(spec->funcDecl);
+        
+        if (func) {
+            generated++;
+        }
+    }
+    
+    return generated;
 }
 
 // ============================================================================
