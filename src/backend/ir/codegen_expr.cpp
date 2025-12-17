@@ -178,7 +178,7 @@ llvm::Value* ExprCodegen::codegenIdentifier(IdentifierExpr* expr) {
  * Helper: Recursively generate code for any expression node
  * This is a simplified dispatcher for testing - full integration in Phase 4.3+
  */
-llvm::Value* codegenExpressionNode(ASTNode* node, ExprCodegen* codegen) {
+llvm::Value* ExprCodegen::codegenExpressionNode(ASTNode* node, ExprCodegen* codegen) {
     if (!node) {
         throw std::runtime_error("Null expression node");
     }
