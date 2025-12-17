@@ -197,6 +197,8 @@ llvm::Value* ExprCodegen::codegenExpressionNode(ASTNode* node, ExprCodegen* code
             return codegen->codegenCall(static_cast<CallExpr*>(node));
         case ASTNode::NodeType::TERNARY:
             return codegen->codegenTernary(static_cast<TernaryExpr*>(node));
+        case ASTNode::NodeType::LAMBDA:
+            return codegen->codegenLambda(static_cast<LambdaExpr*>(node));
         default:
             throw std::runtime_error("Unsupported expression node type in operation");
     }
@@ -617,6 +619,241 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
     
     // TODO: Implement later with struct support
     throw std::runtime_error("Member access not yet implemented");
+}
+
+// ============================================================================
+// Phase 4.5.2: LAMBDA/CLOSURE CODE GENERATION
+// ============================================================================
+//
+// Implements fat pointer representation for closures: { method_ptr, env_ptr }
+// Reference: research_016 (Functional Types)
+//
+// Fat Pointer Layout (16 bytes on 64-bit):
+//   struct FuncFatPtr {
+//       void* method_ptr;  // Pointer to lambda body machine code
+//       void* env_ptr;     // Pointer to captured environment (or NULL)
+//   };
+//
+// Calling Convention:
+//   1. Load method_ptr into temp register
+//   2. Load env_ptr into dedicated register (hidden first argument)
+//   3. Call method_ptr with env_ptr + explicit arguments
+//   4. Inside lambda: access captures via env_ptr offset
+//
+// Capture Strategies:
+//   - BY_VALUE: Copy primitives into environment struct
+//   - BY_REFERENCE: Store pointer to variable in environment
+//   - BY_MOVE: Transfer ownership (invalidate original)
+//
+// ============================================================================
+
+/**
+ * Generate code for lambda expression (closure)
+ * Creates a fat pointer with method_ptr and env_ptr
+ * 
+ * Example Aria code:
+ *   func:add = int8(int8:a, int8:b) { return a + b; };
+ *   
+ *   int8:x = 10;
+ *   func:addX = int8(int8:y) { return x + y; };  // Captures x
+ *
+ * Generated LLVM IR (non-capturing):
+ *   %lambda_body_1 = function returning i8, taking (i8*, i8, i8)
+ *   %fat_ptr = alloca { i8*, i8* }
+ *   %method_ptr = bitcast %lambda_body_1 to i8*
+ *   %gep_0 = getelementptr { i8*, i8* }, %fat_ptr, 0, 0
+ *   store i8* %method_ptr, i8** %gep_0
+ *   %gep_1 = getelementptr { i8*, i8* }, %fat_ptr, 0, 1
+ *   store i8* null, i8** %gep_1  ; No environment
+ *   
+ * Generated LLVM IR (capturing x):
+ *   %env = alloca { i8 }  ; Environment with one i8 capture
+ *   %x_val = load i8, i8* %x
+ *   %env_field_0 = getelementptr { i8 }, %env, 0, 0
+ *   store i8 %x_val, i8* %env_field_0
+ *   %lambda_body_2 = function returning i8, taking (i8*, i8)
+ *   %fat_ptr = alloca { i8*, i8* }
+ *   %method_ptr = bitcast %lambda_body_2 to i8*
+ *   %gep_0 = getelementptr { i8*, i8* }, %fat_ptr, 0, 0
+ *   store i8* %method_ptr, i8** %gep_0
+ *   %env_ptr = bitcast { i8 }* %env to i8*
+ *   %gep_1 = getelementptr { i8*, i8* }, %fat_ptr, 0, 1
+ *   store i8* %env_ptr, i8** %gep_1
+ */
+llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
+    if (!expr) {
+        throw std::runtime_error("Null lambda expression");
+    }
+    
+    // ========================================================================
+    // STEP 1: CREATE ENVIRONMENT STRUCT FOR CAPTURED VARIABLES
+    // ========================================================================
+    
+    llvm::StructType* env_struct_type = nullptr;
+    llvm::Value* env_alloca = nullptr;
+    
+    if (!expr->capturedVars.empty()) {
+        // Build environment struct type: { type0, type1, ... }
+        std::vector<llvm::Type*> env_field_types;
+        
+        for (const auto& captured : expr->capturedVars) {
+            // For now, assume all captures are i64 (will be refined later)
+            // TODO: Determine actual type from symbol table
+            llvm::Type* field_type = llvm::Type::getInt64Ty(context);
+            env_field_types.push_back(field_type);
+        }
+        
+        // Create anonymous struct type for environment
+        env_struct_type = llvm::StructType::create(context, env_field_types, "lambda_env");
+        
+        // Allocate environment on stack
+        env_alloca = builder.CreateAlloca(env_struct_type, nullptr, "env");
+        
+        // Populate environment with captured values
+        for (size_t i = 0; i < expr->capturedVars.size(); ++i) {
+            const auto& captured = expr->capturedVars[i];
+            
+            // Look up captured variable in symbol table
+            auto it = named_values.find(captured.name);
+            if (it == named_values.end()) {
+                throw std::runtime_error("Captured variable not found: " + captured.name);
+            }
+            
+            llvm::Value* captured_value = it->second;
+            
+            // Handle capture mode
+            if (captured.mode == LambdaExpr::CaptureMode::BY_VALUE) {
+                // Load value and store into environment
+                // Assuming it's an alloca
+                if (llvm::isa<llvm::AllocaInst>(captured_value)) {
+                    llvm::AllocaInst* alloca = llvm::cast<llvm::AllocaInst>(captured_value);
+                    llvm::Type* allocated_type = alloca->getAllocatedType();
+                    llvm::Value* loaded_val = builder.CreateLoad(allocated_type, captured_value, captured.name + "_val");
+                    
+                    // Get pointer to environment field
+                    llvm::Value* env_field_ptr = builder.CreateStructGEP(env_struct_type, env_alloca, i, "env_field_" + std::to_string(i));
+                    builder.CreateStore(loaded_val, env_field_ptr);
+                } else {
+                    // Direct value, store as-is
+                    llvm::Value* env_field_ptr = builder.CreateStructGEP(env_struct_type, env_alloca, i, "env_field_" + std::to_string(i));
+                    builder.CreateStore(captured_value, env_field_ptr);
+                }
+            } else if (captured.mode == LambdaExpr::CaptureMode::BY_REFERENCE) {
+                // Store pointer to variable
+                llvm::Value* env_field_ptr = builder.CreateStructGEP(env_struct_type, env_alloca, i, "env_field_" + std::to_string(i));
+                // Cast to i64* and store (pointer to original variable)
+                llvm::Value* ptr_as_i64 = builder.CreatePtrToInt(captured_value, llvm::Type::getInt64Ty(context));
+                builder.CreateStore(ptr_as_i64, env_field_ptr);
+            } else {
+                // BY_MOVE: Transfer ownership (for now, treat like BY_VALUE)
+                throw std::runtime_error("BY_MOVE capture not yet implemented");
+            }
+        }
+    }
+    
+    // ========================================================================
+    // STEP 2: GENERATE LAMBDA FUNCTION BODY
+    // ========================================================================
+    
+    // Generate unique name for lambda function
+    static int lambda_counter = 0;
+    std::string lambda_name = "lambda_" + std::to_string(lambda_counter++);
+    
+    // Build parameter types: env_ptr (i8*) + explicit parameters
+    std::vector<llvm::Type*> param_types;
+    param_types.push_back(llvm::PointerType::get(context, 0));  // i8* env_ptr (hidden first parameter)
+    
+    for (const auto& param : expr->parameters) {
+        // TODO: Get actual parameter type from AST
+        // For now, assume all parameters are i64
+        param_types.push_back(llvm::Type::getInt64Ty(context));
+    }
+    
+    // Determine return type
+    llvm::Type* return_type = llvm::Type::getVoidTy(context);
+    if (!expr->returnTypeName.empty()) {
+        // Map Aria type to LLVM type
+        if (expr->returnTypeName == "int8" || expr->returnTypeName == "tbb8") {
+            return_type = llvm::Type::getInt8Ty(context);
+        } else if (expr->returnTypeName == "int32" || expr->returnTypeName == "tbb32") {
+            return_type = llvm::Type::getInt32Ty(context);
+        } else if (expr->returnTypeName == "int64" || expr->returnTypeName == "tbb64") {
+            return_type = llvm::Type::getInt64Ty(context);
+        } else if (expr->returnTypeName == "void") {
+            return_type = llvm::Type::getVoidTy(context);
+        }
+        // TODO: Handle all types
+    }
+    
+    // Create function type
+    llvm::FunctionType* lambda_func_type = llvm::FunctionType::get(return_type, param_types, false);
+    
+    // Create lambda function
+    llvm::Function* lambda_func = llvm::Function::Create(
+        lambda_func_type,
+        llvm::Function::InternalLinkage,  // Lambda bodies are internal
+        lambda_name,
+        module
+    );
+    
+    // Create entry basic block
+    llvm::BasicBlock* entry_block = llvm::BasicBlock::Create(context, "entry", lambda_func);
+    
+    // Save current insertion point
+    llvm::BasicBlock* saved_insert_block = builder.GetInsertBlock();
+    
+    // Set insertion point to lambda body
+    builder.SetInsertPoint(entry_block);
+    
+    // TODO: Generate lambda body code from expr->body
+    // For now, just return a placeholder
+    if (return_type->isVoidTy()) {
+        builder.CreateRetVoid();
+    } else {
+        builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
+    }
+    
+    // Restore insertion point
+    if (saved_insert_block) {
+        builder.SetInsertPoint(saved_insert_block);
+    }
+    
+    // ========================================================================
+    // STEP 3: CREATE FAT POINTER STRUCT
+    // ========================================================================
+    
+    // Define fat pointer struct type: { i8* method_ptr, i8* env_ptr }
+    std::vector<llvm::Type*> fat_ptr_fields = {
+        llvm::PointerType::get(context, 0),  // method_ptr (function pointer as i8*)
+        llvm::PointerType::get(context, 0)   // env_ptr (environment pointer as i8*)
+    };
+    llvm::StructType* fat_ptr_type = llvm::StructType::create(context, fat_ptr_fields, "func_fat_ptr");
+    
+    // Allocate fat pointer on stack
+    llvm::Value* fat_ptr_alloca = builder.CreateAlloca(fat_ptr_type, nullptr, "fat_ptr");
+    
+    // Store method_ptr (function pointer)
+    llvm::Value* method_ptr_field = builder.CreateStructGEP(fat_ptr_type, fat_ptr_alloca, 0, "method_ptr_field");
+    llvm::Value* func_ptr_as_i8 = builder.CreateBitCast(lambda_func, llvm::PointerType::get(context, 0));
+    builder.CreateStore(func_ptr_as_i8, method_ptr_field);
+    
+    // Store env_ptr (environment pointer or NULL)
+    llvm::Value* env_ptr_field = builder.CreateStructGEP(fat_ptr_type, fat_ptr_alloca, 1, "env_ptr_field");
+    if (env_alloca) {
+        // We have captured variables, store environment pointer
+        llvm::Value* env_ptr_as_i8 = builder.CreateBitCast(env_alloca, llvm::PointerType::get(context, 0));
+        builder.CreateStore(env_ptr_as_i8, env_ptr_field);
+    } else {
+        // No captures, store NULL
+        llvm::Value* null_ptr = llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
+        builder.CreateStore(null_ptr, env_ptr_field);
+    }
+    
+    // Return fat pointer (as struct value, not pointer)
+    // Load the struct from stack
+    llvm::Value* fat_ptr_value = builder.CreateLoad(fat_ptr_type, fat_ptr_alloca, "fat_ptr_val");
+    
+    return fat_ptr_value;
 }
 
 // ============================================================================
