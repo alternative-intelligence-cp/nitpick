@@ -66,6 +66,15 @@ ComptimeValue ComptimeValue::makeString(const std::string& val) {
     return result;
 }
 
+ComptimeValue ComptimeValue::makePointer(uint32_t allocId, uint32_t offset, const std::string& type) {
+    ComptimeValue result;
+    result.kind = Kind::POINTER;
+    result.value = PointerHandle(allocId, offset);
+    result.typeName = type;
+    result.bitWidth = 0;  // Pointers don't have bit width
+    return result;
+}
+
 ComptimeValue ComptimeValue::makeERR(const std::string& type, int bits) {
     ComptimeValue result;
     result.kind = Kind::ERR_SENTINEL;
@@ -97,6 +106,10 @@ bool ComptimeValue::getBool() const {
 
 const std::string& ComptimeValue::getString() const {
     return std::get<std::string>(value);
+}
+
+const ComptimeValue::PointerHandle& ComptimeValue::getPointer() const {
+    return std::get<PointerHandle>(value);
 }
 
 bool ComptimeValue::isTBBInRange() const {
@@ -171,6 +184,7 @@ ConstEvaluator::ConstEvaluator()
       instructionLimit(DEFAULT_INSTRUCTION_LIMIT),
       stackDepth(0),
       stackDepthLimit(DEFAULT_STACK_DEPTH_LIMIT),
+      nextAllocId(1),
       virtualHeapSize(0),
       virtualHeapLimit(DEFAULT_HEAP_SIZE_LIMIT) {
 }
@@ -729,34 +743,156 @@ void ConstEvaluator::addError(const std::string& msg) {
 }
 
 // ============================================================================
-// Virtual Heap Operations (Stub - to be implemented in Step 5)
+// Virtual Heap Operations (research_030 Section 7 & 13.2)
 // ============================================================================
 
-ComptimeValue ConstEvaluator::allocate(const std::string& typeName, size_t count, bool isWild) {
-    (void)typeName; // unused for now
-    (void)count;    // unused for now
-    (void)isWild;   // unused for now
-    // TODO: Implement virtual heap allocation
-    addError("Virtual heap allocation not yet implemented");
-    return ComptimeValue();
+ComptimeValue ConstEvaluator::allocate(size_t sizeBytes, bool isMutable, bool isWild) {
+    // Check resource limits
+    if (!checkHeapSize(sizeBytes)) {
+        addError("Virtual heap allocation would exceed heap size limit");
+        return ComptimeValue();
+    }
+    
+    // Security: Prevent WildX (executable) allocations at compile-time
+    // This is enforced elsewhere, but double-check here for safety
+    
+    // Create allocation
+    Allocation alloc;
+    alloc.data.resize(sizeBytes, 0);  // Zero-initialize
+    alloc.isMutable = isMutable;
+    alloc.isStaticPromotable = !isMutable;  // Only immutable data can go to .rodata
+    alloc.isWild = isWild;
+    alloc.isGC = !isWild;  // Non-wild is GC by default
+    alloc.isWildX = false;  // NEVER allowed in CTFE
+    
+    // Assign ID and store
+    uint32_t allocId = nextAllocId++;
+    virtualHeap[allocId] = std::move(alloc);
+    virtualHeapSize += sizeBytes;
+    
+    // Return pointer handle at offset 0
+    return ComptimeValue::makePointer(allocId, 0, "void@");
 }
 
-void ConstEvaluator::deallocate(void* ptr) {
-    (void)ptr; // unused for now
-    // TODO: Implement virtual heap deallocation
+void ConstEvaluator::deallocate(uint32_t allocId) {
+    // Check if allocation exists
+    auto it = virtualHeap.find(allocId);
+    if (it == virtualHeap.end()) {
+        addError("Double-free or invalid deallocate: allocation ID " + 
+                 std::to_string(allocId) + " not found");
+        return;
+    }
+    
+    // Update heap size
+    virtualHeapSize -= it->second.data.size();
+    
+    // Remove allocation
+    virtualHeap.erase(it);
+}
+
+uint8_t ConstEvaluator::readByte(uint32_t allocId, uint32_t offset) {
+    // Validate allocation exists
+    auto it = virtualHeap.find(allocId);
+    if (it == virtualHeap.end()) {
+        addError("Use-after-free: read from deallocated allocation ID " + 
+                 std::to_string(allocId));
+        return 0;
+    }
+    
+    // Bounds check
+    if (offset >= it->second.data.size()) {
+        addError("Out-of-bounds read: offset " + std::to_string(offset) + 
+                 " exceeds allocation size " + std::to_string(it->second.data.size()));
+        return 0;
+    }
+    
+    return it->second.data[offset];
+}
+
+void ConstEvaluator::writeByte(uint32_t allocId, uint32_t offset, uint8_t value) {
+    // Validate allocation exists
+    auto it = virtualHeap.find(allocId);
+    if (it == virtualHeap.end()) {
+        addError("Use-after-free: write to deallocated allocation ID " + 
+                 std::to_string(allocId));
+        return;
+    }
+    
+    // Check mutability
+    if (!it->second.isMutable) {
+        addError("Write to immutable allocation: allocation ID " + 
+                 std::to_string(allocId) + " is const");
+        return;
+    }
+    
+    // Bounds check
+    if (offset >= it->second.data.size()) {
+        addError("Out-of-bounds write: offset " + std::to_string(offset) + 
+                 " exceeds allocation size " + std::to_string(it->second.data.size()));
+        return;
+    }
+    
+    it->second.data[offset] = value;
+}
+
+bool ConstEvaluator::isValidAllocation(uint32_t allocId) const {
+    return virtualHeap.find(allocId) != virtualHeap.end();
+}
+
+size_t ConstEvaluator::getAllocationSize(uint32_t allocId) const {
+    auto it = virtualHeap.find(allocId);
+    if (it == virtualHeap.end()) {
+        return 0;
+    }
+    return it->second.data.size();
 }
 
 ComptimeValue ConstEvaluator::dereference(const ComptimeValue& ptr) {
-    (void)ptr; // unused for now
-    // TODO: Implement pointer dereference
-    addError("Pointer dereference not yet implemented");
-    return ComptimeValue();
+    if (!ptr.isPointer()) {
+        addError("Cannot dereference non-pointer value");
+        return ComptimeValue();
+    }
+    
+    const auto& handle = ptr.getPointer();
+    
+    // Validate allocation
+    if (!isValidAllocation(handle.allocId)) {
+        addError("Dereference of invalid pointer: allocation ID " + 
+                 std::to_string(handle.allocId) + " not found");
+        return ComptimeValue();
+    }
+    
+    // For now, we'll implement simple byte-level dereference
+    // Full struct/type-aware dereference will be added in Step 7 (const functions)
+    uint8_t byte = readByte(handle.allocId, handle.offset);
+    
+    // Return as int8 for now
+    return ComptimeValue::makeInteger(static_cast<int64_t>(byte), "int8", 8);
 }
 
 void ConstEvaluator::store(const ComptimeValue& ptr, const ComptimeValue& value) {
-    (void)ptr;   // unused for now
-    (void)value; // unused for now
-    // TODO: Implement store through pointer
+    if (!ptr.isPointer()) {
+        addError("Cannot store through non-pointer value");
+        return;
+    }
+    
+    const auto& handle = ptr.getPointer();
+    
+    // Validate allocation
+    if (!isValidAllocation(handle.allocId)) {
+        addError("Store through invalid pointer: allocation ID " + 
+                 std::to_string(handle.allocId) + " not found");
+        return;
+    }
+    
+    // For now, we'll implement simple byte-level store
+    // Full struct/type-aware store will be added in Step 7 (const functions)
+    if (value.isInteger() || value.isTBB()) {
+        uint8_t byte = static_cast<uint8_t>(value.getInt() & 0xFF);
+        writeByte(handle.allocId, handle.offset, byte);
+    } else {
+        addError("Store of non-integer value not yet implemented");
+    }
 }
 
 } // namespace sema
