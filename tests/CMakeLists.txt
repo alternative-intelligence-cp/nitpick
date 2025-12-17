@@ -62,6 +62,7 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/module_resolver.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/visibility_checker.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/async_analyzer.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/sema/const_evaluator.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/ir_generator.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/tbb_codegen.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/codegen_expr.cpp
