@@ -10,6 +10,7 @@
 
 // Forward declarations
 namespace aria {
+    class ASTNode;
     class LiteralExpr;
     class IdentifierExpr;
     class BinaryExpr;
@@ -119,6 +120,14 @@ public:
      * @return LLVM value of the member
      */
     llvm::Value* codegenMemberAccess(MemberAccessExpr* expr);
+    
+    /**
+     * Generate code for any expression (dispatcher)
+     * @param node Expression node
+     * @param codegen ExprCodegen instance
+     * @return LLVM value of the expression
+     */
+    static llvm::Value* codegenExpressionNode(aria::ASTNode* node, ExprCodegen* codegen);
 };
 
 } // namespace backend
