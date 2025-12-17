@@ -496,38 +496,118 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         throw std::runtime_error("Null call expression");
     }
     
-    // The callee should be an identifier (function name)
+    // The callee should be an identifier (function name or func variable)
     IdentifierExpr* callee_ident = dynamic_cast<IdentifierExpr*>(expr->callee.get());
     if (!callee_ident) {
         throw std::runtime_error("Function callee must be an identifier");
     }
     
-    // Look up the function in the module
-    llvm::Function* callee_func = module->getFunction(callee_ident->name);
-    if (!callee_func) {
-        throw std::runtime_error("Unknown function referenced: " + callee_ident->name);
-    }
+    // Check if this is a direct function call or a closure call
+    // Try to find a direct function first
+    llvm::Function* direct_func = module->getFunction(callee_ident->name);
     
-    // Verify argument count matches
-    if (callee_func->arg_size() != expr->arguments.size()) {
-        throw std::runtime_error("Incorrect number of arguments passed to function " + 
-                                callee_ident->name + ": expected " + 
-                                std::to_string(callee_func->arg_size()) + 
-                                ", got " + std::to_string(expr->arguments.size()));
-    }
+    // Check if it's a closure (func variable in named_values)
+    auto it = named_values.find(callee_ident->name);
+    bool is_closure_call = (direct_func == nullptr && it != named_values.end());
     
-    // Evaluate all arguments recursively
-    std::vector<llvm::Value*> args;
-    for (size_t i = 0; i < expr->arguments.size(); i++) {
-        llvm::Value* arg_value = codegenExpressionNode(expr->arguments[i].get(), this);
-        if (!arg_value) {
-            throw std::runtime_error("Failed to generate code for argument " + std::to_string(i));
+    if (is_closure_call) {
+        // ====================================================================
+        // CLOSURE CALLING CONVENTION (Fat Pointer Call)
+        // ====================================================================
+        // Fat pointer struct: { i8* method_ptr, i8* env_ptr }
+        // Calling convention: call method_ptr(env_ptr, explicit_args...)
+        
+        llvm::Value* fat_ptr_alloca = it->second;
+        
+        // Load the fat pointer struct from memory
+        // Define the fat pointer struct type
+        std::vector<llvm::Type*> fat_ptr_fields = {
+            llvm::PointerType::get(context, 0),  // method_ptr
+            llvm::PointerType::get(context, 0)   // env_ptr
+        };
+        llvm::StructType* fat_ptr_type = llvm::StructType::get(context, fat_ptr_fields);
+        
+        llvm::Value* fat_ptr_value = builder.CreateLoad(fat_ptr_type, fat_ptr_alloca, "fat_ptr");
+        
+        // Extract method_ptr (field 0)
+        llvm::Value* method_ptr = builder.CreateExtractValue(fat_ptr_value, 0, "method_ptr");
+        
+        // Extract env_ptr (field 1)
+        llvm::Value* env_ptr = builder.CreateExtractValue(fat_ptr_value, 1, "env_ptr");
+        
+        // Evaluate explicit arguments
+        std::vector<llvm::Value*> args;
+        
+        // Hidden first argument: env_ptr
+        args.push_back(env_ptr);
+        
+        // Explicit arguments
+        for (size_t i = 0; i < expr->arguments.size(); i++) {
+            llvm::Value* arg_value = codegenExpressionNode(expr->arguments[i].get(), this);
+            if (!arg_value) {
+                throw std::runtime_error("Failed to generate code for closure argument " + std::to_string(i));
+            }
+            args.push_back(arg_value);
         }
-        args.push_back(arg_value);
+        
+        // Build function type for the call
+        // Return type: For now assume i64, will need type inference later
+        // Parameters: env_ptr (i8*) + explicit arg types
+        std::vector<llvm::Type*> param_types;
+        param_types.push_back(llvm::PointerType::get(context, 0));  // env_ptr
+        for (size_t i = 1; i < args.size(); i++) {
+            param_types.push_back(args[i]->getType());
+        }
+        
+        // TODO: Determine actual return type from type system
+        // For now, assume i64 return type
+        llvm::Type* return_type = llvm::Type::getInt64Ty(context);
+        
+        llvm::FunctionType* closure_func_type = llvm::FunctionType::get(
+            return_type,
+            param_types,
+            false  // not vararg
+        );
+        
+        // Cast method_ptr (i8*) to typed function pointer
+        llvm::Value* typed_func_ptr = builder.CreateBitCast(
+            method_ptr,
+            llvm::PointerType::get(closure_func_type, 0),
+            "typed_method_ptr"
+        );
+        
+        // Create indirect call through function pointer
+        return builder.CreateCall(closure_func_type, typed_func_ptr, args, "closure_call");
+        
+    } else if (direct_func) {
+        // ====================================================================
+        // DIRECT FUNCTION CALL (Standard calling convention)
+        // ====================================================================
+        
+        // Verify argument count matches
+        if (direct_func->arg_size() != expr->arguments.size()) {
+            throw std::runtime_error("Incorrect number of arguments passed to function " + 
+                                    callee_ident->name + ": expected " + 
+                                    std::to_string(direct_func->arg_size()) + 
+                                    ", got " + std::to_string(expr->arguments.size()));
+        }
+        
+        // Evaluate all arguments recursively
+        std::vector<llvm::Value*> args;
+        for (size_t i = 0; i < expr->arguments.size(); i++) {
+            llvm::Value* arg_value = codegenExpressionNode(expr->arguments[i].get(), this);
+            if (!arg_value) {
+                throw std::runtime_error("Failed to generate code for argument " + std::to_string(i));
+            }
+            args.push_back(arg_value);
+        }
+        
+        // Generate the call instruction
+        return builder.CreateCall(direct_func, args, "calltmp");
+        
+    } else {
+        throw std::runtime_error("Unknown function or closure: " + callee_ident->name);
     }
-    
-    // Generate the call instruction
-    return builder.CreateCall(callee_func, args, "calltmp");
 }
 
 /**
