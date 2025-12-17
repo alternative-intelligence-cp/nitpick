@@ -195,6 +195,8 @@ llvm::Value* codegenExpressionNode(ASTNode* node, ExprCodegen* codegen) {
             return codegen->codegenUnary(static_cast<UnaryExpr*>(node));
         case ASTNode::NodeType::CALL:
             return codegen->codegenCall(static_cast<CallExpr*>(node));
+        case ASTNode::NodeType::TERNARY:
+            return codegen->codegenTernary(static_cast<TernaryExpr*>(node));
         default:
             throw std::runtime_error("Unsupported expression node type in operation");
     }
@@ -523,14 +525,74 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
 
 /**
  * Generate code for ternary expressions (is ? :)
+ * Syntax: is condition : true_value : false_value
+ * Generates branching control flow with PHI node for result merging
  */
 llvm::Value* ExprCodegen::codegenTernary(TernaryExpr* expr) {
     if (!expr) {
         throw std::runtime_error("Null ternary expression");
     }
     
-    // TODO: Implement in Phase 4.2.6
-    throw std::runtime_error("Ternary operations not yet implemented");
+    // Get current function for creating basic blocks
+    llvm::Function* func = builder.GetInsertBlock()->getParent();
+    
+    // Evaluate the condition
+    llvm::Value* condition = codegenExpressionNode(expr->condition.get(), this);
+    if (!condition) {
+        throw std::runtime_error("Failed to generate code for ternary condition");
+    }
+    
+    // If condition is not i1, convert to boolean (compare with zero)
+    if (!condition->getType()->isIntegerTy(1)) {
+        if (condition->getType()->isFloatingPointTy()) {
+            llvm::Value* zero = llvm::ConstantFP::get(condition->getType(), 0.0);
+            condition = builder.CreateFCmpONE(condition, zero, "ternary_cond");
+        } else {
+            llvm::Value* zero = llvm::ConstantInt::get(condition->getType(), 0);
+            condition = builder.CreateICmpNE(condition, zero, "ternary_cond");
+        }
+    }
+    
+    // Create basic blocks for control flow
+    llvm::BasicBlock* true_bb = llvm::BasicBlock::Create(context, "ternary_true", func);
+    llvm::BasicBlock* false_bb = llvm::BasicBlock::Create(context, "ternary_false", func);
+    llvm::BasicBlock* merge_bb = llvm::BasicBlock::Create(context, "ternary_merge", func);
+    
+    // Branch based on condition
+    builder.CreateCondBr(condition, true_bb, false_bb);
+    
+    // Generate code for true branch
+    builder.SetInsertPoint(true_bb);
+    llvm::Value* true_value = codegenExpressionNode(expr->trueValue.get(), this);
+    if (!true_value) {
+        throw std::runtime_error("Failed to generate code for ternary true value");
+    }
+    builder.CreateBr(merge_bb);
+    // Update true_bb in case code generation changed the current block
+    true_bb = builder.GetInsertBlock();
+    
+    // Generate code for false branch
+    builder.SetInsertPoint(false_bb);
+    llvm::Value* false_value = codegenExpressionNode(expr->falseValue.get(), this);
+    if (!false_value) {
+        throw std::runtime_error("Failed to generate code for ternary false value");
+    }
+    builder.CreateBr(merge_bb);
+    // Update false_bb in case code generation changed the current block
+    false_bb = builder.GetInsertBlock();
+    
+    // Verify both branches produce the same type
+    if (true_value->getType() != false_value->getType()) {
+        throw std::runtime_error("Ternary branches must produce values of the same type");
+    }
+    
+    // Create merge point with PHI node
+    builder.SetInsertPoint(merge_bb);
+    llvm::PHINode* phi = builder.CreatePHI(true_value->getType(), 2, "ternary_result");
+    phi->addIncoming(true_value, true_bb);
+    phi->addIncoming(false_value, false_bb);
+    
+    return phi;
 }
 
 /**
@@ -556,3 +618,45 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
     // TODO: Implement later with struct support
     throw std::runtime_error("Member access not yet implemented");
 }
+
+// ============================================================================
+// SPECIAL OPERATORS - FUTURE IMPLEMENTATION NOTES
+// ============================================================================
+//
+// The following special operators from research_026 require additional language
+// features to be fully implemented:
+//
+// 1. Unwrap Operator (?) - Postfix unary operator
+//    - Requires: result<T> type implementation
+//    - Purpose: Early return on error, monadic bind operation
+//    - Will be implemented with: Phase 4.5+ (Result type support)
+//
+// 2. Safe Navigation Operator (?.)
+//    - Requires: Null pointer tracking, optional types
+//    - Purpose: Safe member/method access with null propagation
+//    - Implementation: Branching control flow similar to ternary
+//    - Will be implemented with: Phase 4.4+ (Struct/member access) + null handling
+//
+// 3. Null Coalescing Operator (??)
+//    - Requires: Null value representation, optional types
+//    - Purpose: Provide default value when expression is null/ERR
+//    - Implementation: Similar to ternary with null check
+//    - Will be implemented with: Phase 4.4+ (null handling)
+//
+// 4. Pipeline Operators (|>, <|)
+//    - Forward pipeline (|>): data |> func desugars to func(data)
+//    - Reverse pipeline (<|): func <| data desugars to func(data)
+//    - Requires: AST transformation during parsing (desugaring)
+//    - Will be implemented with: Phase 2+ (Parser enhancement for operator desugaring)
+//
+// 5. Range Operators (.., ...)
+//    - Inclusive range (..): start..end includes both boundaries
+//    - Exclusive range (...): start...end excludes end
+//    - Requires: Range type implementation, iterator support
+//    - Will be implemented with: Phase 4.7+ (Range and iterator support)
+//
+// Note: The ternary operator (is ? :) has been implemented in Phase 4.2.6
+//       as it only requires basic control flow without additional type system
+//       features.
+//
+// ============================================================================
