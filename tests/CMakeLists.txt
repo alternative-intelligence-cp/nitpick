@@ -20,6 +20,7 @@ add_executable(test_runner
     unit/test_visibility_checker.cpp
     backend/test_ir_generator.cpp
     backend/test_tbb_codegen.cpp
+    backend/test_codegen_expr.cpp
     integration/test_generics_integration.cpp
     integration/test_sema_integration.cpp
     # Add more test files here as they are created
@@ -44,6 +45,7 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/visibility_checker.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/ir_generator.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/tbb_codegen.cpp
+    ${CMAKE_SOURCE_DIR}/src/backend/ir/codegen_expr.cpp
 )
 
 # Include test helpers header
