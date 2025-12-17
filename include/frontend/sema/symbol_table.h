@@ -7,12 +7,17 @@
 #include <vector>
 
 namespace aria {
+
+// Forward declarations from AST
+class FuncDeclStmt;
+
 namespace sema {
 
 // Forward declarations
 class Type;
 class Scope;
 class SymbolTable;
+class ComptimeValue;
 
 // ============================================================================
 // Symbol - Represents a named entity in the program
@@ -40,9 +45,22 @@ struct Symbol {
     bool isMutable;             // Mutability (const vs mutable)
     bool isInitialized;         // Has been initialized
     
+    // CTFE Integration (Task 8: Symbol Table Integration)
+    // These fields support compile-time evaluation:
+    ComptimeValue* comptimeValue;   // For CONSTANT symbols - compile-time value
+    FuncDeclStmt* funcDecl;         // For FUNCTION symbols - AST for CTFE
+    
     // Constructor
     Symbol(const std::string& name, SymbolKind kind, Type* type,
            Scope* scope, int line = 0, int column = 0);
+    
+    // CTFE Helpers
+    void setComptimeValue(ComptimeValue* value);
+    void setFuncDecl(FuncDeclStmt* decl);
+    ComptimeValue* getComptimeValue() const { return comptimeValue; }
+    FuncDeclStmt* getFuncDecl() const { return funcDecl; }
+    bool hasComptimeValue() const { return comptimeValue != nullptr; }
+    bool isCTFEFunction() const { return kind == SymbolKind::FUNCTION && funcDecl != nullptr; }
     
     // Helpers
     std::string toString() const;

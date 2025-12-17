@@ -13,7 +13,16 @@ Symbol::Symbol(const std::string& name, SymbolKind kind, Type* type,
                Scope* scope, int line, int column)
     : name(name), kind(kind), type(type), scope(scope),
       line(line), column(column), isPublic(false),
-      isMutable(true), isInitialized(false) {}
+      isMutable(true), isInitialized(false),
+      comptimeValue(nullptr), funcDecl(nullptr) {}
+
+void Symbol::setComptimeValue(ComptimeValue* value) {
+    comptimeValue = value;
+}
+
+void Symbol::setFuncDecl(FuncDeclStmt* decl) {
+    funcDecl = decl;
+}
 
 std::string Symbol::toString() const {
     std::stringstream ss;
