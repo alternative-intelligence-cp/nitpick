@@ -184,6 +184,48 @@ public:
     std::string toString() const override;
 };
 
+/**
+ * Lambda expression node (Closures)
+ * Represents: (x, y) => x + y  or  int64(int64 x, int64 y) { return x + y; }
+ * 
+ * Based on research_016_functional_types.txt:
+ * - Fat pointer representation: { method_ptr, env_ptr }
+ * - Captures can be by-value, by-reference, or by-move
+ * - Must respect Appendage Theory for lifetime safety
+ */
+class LambdaExpr : public ASTNode {
+public:
+    enum class CaptureMode {
+        BY_VALUE,      // Copy into closure environment
+        BY_REFERENCE,  // Capture as pointer (borrowing)
+        BY_MOVE        // Transfer ownership to closure
+    };
+    
+    struct CapturedVar {
+        std::string name;
+        CaptureMode mode;
+        ASTNodePtr typeAnnotation;  // Optional type hint
+        
+        CapturedVar(const std::string& n, CaptureMode m, ASTNodePtr type = nullptr)
+            : name(n), mode(m), typeAnnotation(type) {}
+    };
+    
+    std::vector<ASTNodePtr> parameters;      // Function parameters
+    std::string returnTypeName;              // Return type annotation (string like "int64", "string")
+    ASTNodePtr body;                         // Function body (BlockStmt)
+    std::vector<CapturedVar> capturedVars;   // Variables captured from outer scope (filled by semantic analysis)
+    bool isAsync;                            // true for async closures
+    
+    LambdaExpr(const std::vector<ASTNodePtr>& params, 
+               const std::string& retType,
+               ASTNodePtr bodyNode,
+               int line = 0, int column = 0)
+        : ASTNode(NodeType::LAMBDA, line, column),
+          parameters(params), returnTypeName(retType), body(bodyNode), isAsync(false) {}
+    
+    std::string toString() const override;
+};
+
 } // namespace aria
 
 #endif // ARIA_EXPR_H
