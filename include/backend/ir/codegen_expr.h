@@ -19,6 +19,7 @@ namespace aria {
     class TernaryExpr;
     class IndexExpr;
     class MemberAccessExpr;
+    class LambdaExpr;
     
     namespace sema {
         class Type;
@@ -120,6 +121,15 @@ public:
      * @return LLVM value of the member
      */
     llvm::Value* codegenMemberAccess(MemberAccessExpr* expr);
+    
+    /**
+     * Generate code for lambda expressions (closures)
+     * Creates fat pointer: { method_ptr, env_ptr }
+     * @param expr Lambda expression node
+     * @return LLVM value of the fat pointer struct
+     * Reference: research_016 (Functional Types)
+     */
+    llvm::Value* codegenLambda(LambdaExpr* expr);
     
     /**
      * Generate code for any expression (dispatcher)
