@@ -105,8 +105,8 @@ set(SEMA_SOURCES
 set(IR_SOURCES
     src/backend/ir/ir_generator.cpp
     src/backend/ir/tbb_codegen.cpp
+    src/backend/ir/codegen_expr.cpp
     # src/backend/ir/type_mapper.cpp
-    # src/backend/ir/codegen_expr.cpp
     # src/backend/ir/codegen_stmt.cpp
     # src/backend/ir/memory_codegen.cpp
 )
