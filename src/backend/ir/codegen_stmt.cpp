@@ -242,13 +242,143 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
 }
 
 // ============================================================================
-// Phase 4.3.3: If Statement Code Generation (TODO)
+// Phase 4.3.3: If Statement Code Generation
 // ============================================================================
 
+/**
+ * Generate code for if/else statement
+ * 
+ * Creates conditional branching using LLVM basic blocks:
+ * - Evaluates condition expression
+ * - Creates then_block for true branch
+ * - Creates else_block for false branch (optional)
+ * - Creates merge_block to continue execution after if/else
+ * 
+ * Example Aria code (simple if):
+ *   if (x > 10) {
+ *       y = x + 1;
+ *   }
+ * 
+ * Generated LLVM IR:
+ *   %cond = icmp sgt i32 %x, 10
+ *   br i1 %cond, label %if.then, label %if.merge
+ * if.then:
+ *   %add = add i32 %x, 1
+ *   store i32 %add, i32* %y
+ *   br label %if.merge
+ * if.merge:
+ *   ...
+ * 
+ * Example Aria code (if/else):
+ *   if (x > 10) {
+ *       y = x + 1;
+ *   } else {
+ *       y = x - 1;
+ *   }
+ * 
+ * Generated LLVM IR:
+ *   %cond = icmp sgt i32 %x, 10
+ *   br i1 %cond, label %if.then, label %if.else
+ * if.then:
+ *   %add = add i32 %x, 1
+ *   store i32 %add, i32* %y
+ *   br label %if.merge
+ * if.else:
+ *   %sub = sub i32 %x, 1
+ *   store i32 %sub, i32* %y
+ *   br label %if.merge
+ * if.merge:
+ *   ...
+ * 
+ * Note: TBB sentinel checking will be added in Phase 4.5+
+ */
 void StmtCodegen::codegenIf(IfStmt* stmt) {
-    // TODO: Implement if statement code generation
-    // Will be implemented in Phase 4.3.3
-    throw std::runtime_error("If statement code generation not yet implemented");
+    if (!expr_codegen) {
+        throw std::runtime_error("ExprCodegen not set in StmtCodegen");
+    }
+    
+    // Get current function for basic block creation
+    llvm::Function* func = builder.GetInsertBlock()->getParent();
+    
+    // Generate code for condition expression
+    llvm::Value* cond_value = expr_codegen->codegenExpressionNode(stmt->condition.get(), expr_codegen);
+    
+    if (!cond_value) {
+        throw std::runtime_error("Failed to generate code for if condition");
+    }
+    
+    // Convert condition to boolean (i1) if needed
+    // LLVM expects i1 for branch instructions
+    if (cond_value->getType() != llvm::Type::getInt1Ty(context)) {
+        // Compare against zero for integer types
+        if (cond_value->getType()->isIntegerTy()) {
+            cond_value = builder.CreateICmpNE(
+                cond_value,
+                llvm::ConstantInt::get(cond_value->getType(), 0),
+                "tobool"
+            );
+        } else if (cond_value->getType()->isFloatingPointTy()) {
+            // Compare against 0.0 for floating point types
+            cond_value = builder.CreateFCmpONE(
+                cond_value,
+                llvm::ConstantFP::get(cond_value->getType(), 0.0),
+                "tobool"
+            );
+        } else {
+            throw std::runtime_error("Cannot convert condition value to boolean");
+        }
+    }
+    
+    // Create basic blocks
+    llvm::BasicBlock* then_block = llvm::BasicBlock::Create(context, "if.then", func);
+    llvm::BasicBlock* else_block = nullptr;
+    llvm::BasicBlock* merge_block = llvm::BasicBlock::Create(context, "if.merge");
+    
+    // If there's an else branch, create else block
+    if (stmt->elseBranch) {
+        else_block = llvm::BasicBlock::Create(context, "if.else");
+        builder.CreateCondBr(cond_value, then_block, else_block);
+    } else {
+        // No else branch, jump to merge if condition is false
+        builder.CreateCondBr(cond_value, then_block, merge_block);
+    }
+    
+    // Generate code for then branch
+    builder.SetInsertPoint(then_block);
+    
+    if (stmt->thenBranch->type == ASTNode::NodeType::BLOCK) {
+        codegenBlock(static_cast<BlockStmt*>(stmt->thenBranch.get()));
+    } else {
+        // Single statement (not a block)
+        codegenStatement(stmt->thenBranch.get());
+    }
+    
+    // Add branch to merge block if then branch doesn't have terminator
+    if (!builder.GetInsertBlock()->getTerminator()) {
+        builder.CreateBr(merge_block);
+    }
+    
+    // Generate code for else branch if present
+    if (else_block) {
+        else_block->insertInto(func);
+        builder.SetInsertPoint(else_block);
+        
+        if (stmt->elseBranch->type == ASTNode::NodeType::BLOCK) {
+            codegenBlock(static_cast<BlockStmt*>(stmt->elseBranch.get()));
+        } else {
+            // Single statement or another if statement (else if)
+            codegenStatement(stmt->elseBranch.get());
+        }
+        
+        // Add branch to merge block if else branch doesn't have terminator
+        if (!builder.GetInsertBlock()->getTerminator()) {
+            builder.CreateBr(merge_block);
+        }
+    }
+    
+    // Add merge block to function and set it as insertion point
+    merge_block->insertInto(func);
+    builder.SetInsertPoint(merge_block);
 }
 
 // ============================================================================
