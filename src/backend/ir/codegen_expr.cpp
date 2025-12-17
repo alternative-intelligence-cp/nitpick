@@ -193,6 +193,8 @@ llvm::Value* codegenExpressionNode(ASTNode* node, ExprCodegen* codegen) {
             return codegen->codegenBinary(static_cast<BinaryExpr*>(node));
         case ASTNode::NodeType::UNARY_OP:
             return codegen->codegenUnary(static_cast<UnaryExpr*>(node));
+        case ASTNode::NodeType::CALL:
+            return codegen->codegenCall(static_cast<CallExpr*>(node));
         default:
             throw std::runtime_error("Unsupported expression node type in operation");
     }
@@ -485,8 +487,38 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         throw std::runtime_error("Null call expression");
     }
     
-    // TODO: Implement in Phase 4.2.5
-    throw std::runtime_error("Function calls not yet implemented");
+    // The callee should be an identifier (function name)
+    IdentifierExpr* callee_ident = dynamic_cast<IdentifierExpr*>(expr->callee.get());
+    if (!callee_ident) {
+        throw std::runtime_error("Function callee must be an identifier");
+    }
+    
+    // Look up the function in the module
+    llvm::Function* callee_func = module->getFunction(callee_ident->name);
+    if (!callee_func) {
+        throw std::runtime_error("Unknown function referenced: " + callee_ident->name);
+    }
+    
+    // Verify argument count matches
+    if (callee_func->arg_size() != expr->arguments.size()) {
+        throw std::runtime_error("Incorrect number of arguments passed to function " + 
+                                callee_ident->name + ": expected " + 
+                                std::to_string(callee_func->arg_size()) + 
+                                ", got " + std::to_string(expr->arguments.size()));
+    }
+    
+    // Evaluate all arguments recursively
+    std::vector<llvm::Value*> args;
+    for (size_t i = 0; i < expr->arguments.size(); i++) {
+        llvm::Value* arg_value = codegenExpressionNode(expr->arguments[i].get(), this);
+        if (!arg_value) {
+            throw std::runtime_error("Failed to generate code for argument " + std::to_string(i));
+        }
+        args.push_back(arg_value);
+    }
+    
+    // Generate the call instruction
+    return builder.CreateCall(callee_func, args, "calltmp");
 }
 
 /**
