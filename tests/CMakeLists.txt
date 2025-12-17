@@ -18,12 +18,13 @@ add_executable(test_runner
     unit/test_generic_parser.cpp
     unit/test_module_resolver.cpp
     unit/test_visibility_checker.cpp
+    backend/test_ir_generator.cpp
     integration/test_generics_integration.cpp
     integration/test_sema_integration.cpp
     # Add more test files here as they are created
 )
 
-# Link with lexer, AST, parser, and sema sources
+# Link with lexer, AST, parser, sema, and backend sources
 target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/lexer/token.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/lexer/lexer.cpp
@@ -40,13 +41,14 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/generic_resolver.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/module_resolver.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/visibility_checker.cpp
+    ${CMAKE_SOURCE_DIR}/src/backend/ir/ir_generator.cpp
 )
 
 # Include test helpers header
 target_include_directories(test_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Link with LLVM libraries (when needed)
-# target_link_libraries(test_runner ${llvm_libs})
+# Link with LLVM libraries (needed for IR generation)
+target_link_libraries(test_runner ${llvm_libs})
 
 # Register with CTest
 add_test(NAME unit_tests COMMAND test_runner)
