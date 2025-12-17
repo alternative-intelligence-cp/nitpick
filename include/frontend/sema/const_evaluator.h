@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <map>
+#include <unordered_map>
 #include <vector>
 #include <stdint.h>
 #include <variant>
@@ -38,6 +39,20 @@ public:
         ERR_SENTINEL  // TBB ERR sentinel
     };
     
+    // Pointer representation: opaque handle {AllocID, Offset}
+    // NOT raw addresses (research_030 Section 7)
+    struct PointerHandle {
+        uint32_t allocId;  // Allocation ID in Virtual Heap
+        uint32_t offset;   // Byte offset within allocation
+        
+        PointerHandle() : allocId(0), offset(0) {}
+        PointerHandle(uint32_t id, uint32_t off) : allocId(id), offset(off) {}
+        
+        bool operator==(const PointerHandle& other) const {
+            return allocId == other.allocId && offset == other.offset;
+        }
+    };
+    
 private:
     Kind kind;
     
@@ -49,7 +64,7 @@ private:
         std::string,  // STRING
         std::vector<ComptimeValue>, // ARRAY
         std::map<std::string, ComptimeValue>, // STRUCT
-        void*         // POINTER (virtual heap address)
+        PointerHandle // POINTER (virtual heap handle {AllocID, Offset})
     > value;
     
     std::string typeName;  // Aria type name (e.g., "int32", "tbb8")
@@ -58,13 +73,14 @@ private:
 public:
     ComptimeValue() : kind(Kind::NULL_VALUE), bitWidth(0) {}
     
-    // Integer constructors
+    // Factory methods
     static ComptimeValue makeInteger(int64_t val, const std::string& type, int bits);
     static ComptimeValue makeUnsigned(uint64_t val, const std::string& type, int bits);
     static ComptimeValue makeTBB(int64_t val, const std::string& type, int bits);
     static ComptimeValue makeFloat(double val, const std::string& type);
     static ComptimeValue makeBool(bool val);
     static ComptimeValue makeString(const std::string& val);
+    static ComptimeValue makePointer(uint32_t allocId, uint32_t offset, const std::string& type);
     static ComptimeValue makeERR(const std::string& type, int bits);
     
     // Type queries
@@ -77,6 +93,7 @@ public:
     bool isFloat() const { return kind == Kind::FLOAT; }
     bool isBool() const { return kind == Kind::BOOL; }
     bool isString() const { return kind == Kind::STRING; }
+    bool isPointer() const { return kind == Kind::POINTER; }
     bool isERR() const { return kind == Kind::ERR_SENTINEL; }
     
     // Value accessors
@@ -85,6 +102,7 @@ public:
     double getFloat() const;
     bool getBool() const;
     const std::string& getString() const;
+    const PointerHandle& getPointer() const;
     
     // TBB-specific queries
     bool isTBBInRange() const;  // Check if TBB value is not ERR
@@ -126,15 +144,18 @@ private:
     size_t stackDepth;
     size_t stackDepthLimit;
     
-    // === Virtual Heap (research_030 Section 7) ===
-    struct VirtualHeapBlock {
+    // === Virtual Heap (research_030 Section 7 & 13.2) ===
+    // Sandboxed memory simulation using opaque handles {AllocID, Offset}
+    struct Allocation {
         std::vector<uint8_t> data;
-        std::string typeName;
-        bool isWild;   // Manual memory (wild)
-        bool isGC;     // GC memory
-        bool isWildX;  // Executable memory (FORBIDDEN)
+        bool isMutable;           // Can be written to
+        bool isStaticPromotable;  // Can move to .rodata
+        bool isWild;              // Manual memory (wild)
+        bool isGC;                // GC memory
+        bool isWildX;             // Executable memory (FORBIDDEN in CTFE)
     };
-    std::map<void*, VirtualHeapBlock> virtualHeap;
+    std::unordered_map<uint32_t, Allocation> virtualHeap;
+    uint32_t nextAllocId;
     size_t virtualHeapSize;
     size_t virtualHeapLimit;
     
@@ -187,9 +208,16 @@ public:
     ComptimeValue logicalOr(const ComptimeValue& a, const ComptimeValue& b);
     ComptimeValue logicalNot(const ComptimeValue& a);
     
-    // === Virtual Heap Operations (research_030 Section 7) ===
-    ComptimeValue allocate(const std::string& typeName, size_t count, bool isWild);
-    void deallocate(void* ptr);
+    // === Virtual Heap Operations (research_030 Section 7 & 13.2) ===
+    // Sandboxed memory simulation for compile-time pointer operations
+    ComptimeValue allocate(size_t sizeBytes, bool isMutable = true, bool isWild = false);
+    void deallocate(uint32_t allocId);
+    uint8_t readByte(uint32_t allocId, uint32_t offset);
+    void writeByte(uint32_t allocId, uint32_t offset, uint8_t value);
+    bool isValidAllocation(uint32_t allocId) const;
+    size_t getAllocationSize(uint32_t allocId) const;
+    
+    // Higher-level pointer operations
     ComptimeValue dereference(const ComptimeValue& ptr);
     void store(const ComptimeValue& ptr, const ComptimeValue& value);
     
