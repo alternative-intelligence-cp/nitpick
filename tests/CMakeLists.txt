@@ -29,6 +29,15 @@ add_executable(test_runner
     runtime/test_gc.cpp
     runtime/test_allocators.cpp
     runtime/test_assembler.cpp
+    runtime/test_llvm_jit.cpp
+    runtime/test_code_cache.cpp
+    runtime/test_io.cpp
+    runtime/test_streams.cpp
+    runtime/test_process.cpp
+    runtime/test_thread.cpp
+    runtime/test_atomic.cpp
+    runtime/test_timer.cpp
+    integration/test_runtime_stress.cpp
     # Add more test files here as they are created
 )
 
@@ -58,6 +67,14 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/runtime/allocators/wild_alloc.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/allocators/wildx_alloc.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/assembler/assembler.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/assembler/llvm_jit.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/assembler/code_cache.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/io/io.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/streams/streams.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/process/process.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/thread/thread.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/atomic/atomic.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/timer/timer.cpp
 )
 
 # Include test helpers header
