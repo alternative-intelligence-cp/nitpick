@@ -382,19 +382,220 @@ void StmtCodegen::codegenIf(IfStmt* stmt) {
 }
 
 // ============================================================================
-// Phase 4.3.4: Loop Code Generation (TODO)
+// ============================================================================
+// Phase 4.3.4: Loop Statement Code Generation
 // ============================================================================
 
+/**
+ * Generate code for while loop
+ * 
+ * Creates a loop with condition check and body. Uses three basic blocks:
+ * - while.cond: Checks loop condition
+ * - while.body: Executes loop body
+ * - while.end: Continuation after loop
+ * 
+ * Example Aria code:
+ *   i32:i = 0;
+ *   while (i < 10) {
+ *       i = i + 1;
+ *   }
+ * 
+ * Generated LLVM IR:
+ *   br label %while.cond
+ * 
+ * while.cond:
+ *   %i.val = load i32, i32* %i
+ *   %cmp = icmp slt i32 %i.val, 10
+ *   br i1 %cmp, label %while.body, label %while.end
+ * 
+ * while.body:
+ *   ; body statements
+ *   br label %while.cond
+ * 
+ * while.end:
+ *   ; continue execution
+ */
 void StmtCodegen::codegenWhile(WhileStmt* stmt) {
-    // TODO: Implement while loop code generation
-    // Will be implemented in Phase 4.3.4
-    throw std::runtime_error("While loop code generation not yet implemented");
+    // Get current function
+    llvm::Function* func = builder.GetInsertBlock()->getParent();
+    
+    // Create basic blocks for the loop
+    llvm::BasicBlock* cond_block = llvm::BasicBlock::Create(context, "while.cond", func);
+    llvm::BasicBlock* body_block = llvm::BasicBlock::Create(context, "while.body");
+    llvm::BasicBlock* end_block = llvm::BasicBlock::Create(context, "while.end");
+    
+    // Branch to condition block
+    builder.CreateBr(cond_block);
+    
+    // Generate condition check
+    builder.SetInsertPoint(cond_block);
+    
+    if (!expr_codegen) {
+        throw std::runtime_error("ExprCodegen not set in StmtCodegen");
+    }
+    
+    llvm::Value* cond_value = expr_codegen->codegenExpressionNode(stmt->condition.get(), expr_codegen);
+    
+    if (!cond_value) {
+        throw std::runtime_error("Failed to generate code for while condition");
+    }
+    
+    // Convert non-boolean conditions to boolean
+    if (cond_value->getType() != llvm::Type::getInt1Ty(context)) {
+        if (cond_value->getType()->isIntegerTy()) {
+            // Integer: non-zero is true
+            cond_value = builder.CreateICmpNE(cond_value,
+                llvm::ConstantInt::get(cond_value->getType(), 0), "tobool");
+        } else if (cond_value->getType()->isFloatingPointTy()) {
+            // Float: non-zero is true
+            cond_value = builder.CreateFCmpONE(cond_value,
+                llvm::ConstantFP::get(cond_value->getType(), 0.0), "tobool");
+        }
+    }
+    
+    // Conditional branch: if true goto body, else goto end
+    builder.CreateCondBr(cond_value, body_block, end_block);
+    
+    // Generate loop body
+    body_block->insertInto(func);
+    builder.SetInsertPoint(body_block);
+    
+    // Generate body statements
+    if (stmt->body->type == ASTNode::NodeType::BLOCK) {
+        codegenBlock(static_cast<BlockStmt*>(stmt->body.get()));
+    } else {
+        codegenStatement(stmt->body.get());
+    }
+    
+    // Loop back to condition check (if no terminator already present)
+    if (!builder.GetInsertBlock()->getTerminator()) {
+        builder.CreateBr(cond_block);
+    }
+    
+    // Set insertion point to end block for continuation
+    end_block->insertInto(func);
+    builder.SetInsertPoint(end_block);
 }
 
+/**
+ * Generate code for for loop
+ * 
+ * Creates a loop with initialization, condition, update, and body. Uses four phases:
+ * 1. Initialization: Execute init statement (optional)
+ * 2. Condition: Check loop condition
+ * 3. Body: Execute loop body
+ * 4. Update: Execute update expression and loop back to condition
+ * 
+ * Example Aria code:
+ *   for (i32:i = 0; i < 10; i = i + 1) {
+ *       print(i);
+ *   }
+ * 
+ * Generated LLVM IR:
+ *   ; init
+ *   %i = alloca i32
+ *   store i32 0, i32* %i
+ *   br label %for.cond
+ * 
+ * for.cond:
+ *   %i.val = load i32, i32* %i
+ *   %cmp = icmp slt i32 %i.val, 10
+ *   br i1 %cmp, label %for.body, label %for.end
+ * 
+ * for.body:
+ *   ; body statements
+ *   br label %for.inc
+ * 
+ * for.inc:
+ *   %next = add i32 %i.val, 1
+ *   store i32 %next, i32* %i
+ *   br label %for.cond
+ * 
+ * for.end:
+ *   ; continue execution
+ */
 void StmtCodegen::codegenFor(ForStmt* stmt) {
-    // TODO: Implement for loop code generation
-    // Will be implemented in Phase 4.3.4
-    throw std::runtime_error("For loop code generation not yet implemented");
+    // Get current function
+    llvm::Function* func = builder.GetInsertBlock()->getParent();
+    
+    // Create basic blocks for the loop
+    llvm::BasicBlock* cond_block = llvm::BasicBlock::Create(context, "for.cond");
+    llvm::BasicBlock* body_block = llvm::BasicBlock::Create(context, "for.body");
+    llvm::BasicBlock* inc_block = llvm::BasicBlock::Create(context, "for.inc");
+    llvm::BasicBlock* end_block = llvm::BasicBlock::Create(context, "for.end");
+    
+    // Generate initialization statement (if present)
+    if (stmt->initializer) {
+        codegenStatement(stmt->initializer.get());
+    }
+    
+    // Branch to condition block
+    builder.CreateBr(cond_block);
+    
+    // Generate condition check
+    cond_block->insertInto(func);
+    builder.SetInsertPoint(cond_block);
+    
+    if (!expr_codegen) {
+        throw std::runtime_error("ExprCodegen not set in StmtCodegen");
+    }
+    
+    // If no condition, treat as infinite loop (condition = true)
+    llvm::Value* cond_value = nullptr;
+    if (stmt->condition) {
+        cond_value = expr_codegen->codegenExpressionNode(stmt->condition.get(), expr_codegen);
+        
+        if (!cond_value) {
+            throw std::runtime_error("Failed to generate code for for loop condition");
+        }
+        
+        // Convert non-boolean conditions to boolean
+        if (cond_value->getType() != llvm::Type::getInt1Ty(context)) {
+            if (cond_value->getType()->isIntegerTy()) {
+                cond_value = builder.CreateICmpNE(cond_value,
+                    llvm::ConstantInt::get(cond_value->getType(), 0), "tobool");
+            } else if (cond_value->getType()->isFloatingPointTy()) {
+                cond_value = builder.CreateFCmpONE(cond_value,
+                    llvm::ConstantFP::get(cond_value->getType(), 0.0), "tobool");
+            }
+        }
+        
+        builder.CreateCondBr(cond_value, body_block, end_block);
+    } else {
+        // No condition = infinite loop (always branch to body)
+        builder.CreateBr(body_block);
+    }
+    
+    // Generate loop body
+    body_block->insertInto(func);
+    builder.SetInsertPoint(body_block);
+    
+    if (stmt->body->type == ASTNode::NodeType::BLOCK) {
+        codegenBlock(static_cast<BlockStmt*>(stmt->body.get()));
+    } else {
+        codegenStatement(stmt->body.get());
+    }
+    
+    // Branch to increment block (if no terminator already present)
+    if (!builder.GetInsertBlock()->getTerminator()) {
+        builder.CreateBr(inc_block);
+    }
+    
+    // Generate increment/update
+    inc_block->insertInto(func);
+    builder.SetInsertPoint(inc_block);
+    
+    if (stmt->update) {
+        // Generate update expression (result is discarded)
+        expr_codegen->codegenExpressionNode(stmt->update.get(), expr_codegen);
+    }
+    
+    // Loop back to condition
+    builder.CreateBr(cond_block);
+    
+    // Set insertion point to end block for continuation
+    end_block->insertInto(func);
+    builder.SetInsertPoint(end_block);
 }
 
 // ============================================================================
@@ -461,6 +662,10 @@ void StmtCodegen::codegenStatement(ASTNode* stmt) {
         
         case ASTNode::NodeType::WHILE:
             codegenWhile(static_cast<WhileStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::FOR:
+            codegenFor(static_cast<ForStmt*>(stmt));
             break;
         
         case ASTNode::NodeType::BLOCK:
