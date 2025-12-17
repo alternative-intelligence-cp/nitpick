@@ -119,13 +119,126 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
 }
 
 // ============================================================================
-// Phase 4.3.2: Function Declaration Code Generation (TODO)
+// Phase 4.3.2: Function Declaration Code Generation
 // ============================================================================
 
+/**
+ * Generate code for function declaration
+ * 
+ * Creates an LLVM function with proper signature (return type and parameters),
+ * sets up entry block, generates code for function body, and verifies the result.
+ * 
+ * Example Aria code:
+ *   func:add = i32(i32:a, i32:b) {
+ *       pass(a + b);
+ *   };
+ * 
+ * Generated LLVM IR:
+ *   define i32 @add(i32 %a, i32 %b) {
+ *   entry:
+ *     %a.addr = alloca i32
+ *     %b.addr = alloca i32
+ *     store i32 %a, i32* %a.addr
+ *     store i32 %b, i32* %b.addr
+ *     %0 = load i32, i32* %a.addr
+ *     %1 = load i32, i32* %b.addr
+ *     %2 = add i32 %0, %1
+ *     ret i32 %2
+ *   }
+ */
 llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
-    // TODO: Implement function declaration code generation
-    // Will be implemented in Phase 4.3.2
-    throw std::runtime_error("Function declaration code generation not yet implemented");
+    // Get return type
+    llvm::Type* return_type = getLLVMTypeFromString(stmt->returnType);
+    
+    // Build parameter types
+    std::vector<llvm::Type*> param_types;
+    for (const auto& param : stmt->parameters) {
+        ParameterNode* param_node = static_cast<ParameterNode*>(param.get());
+        llvm::Type* param_type = getLLVMTypeFromString(param_node->typeName);
+        param_types.push_back(param_type);
+    }
+    
+    // Create function type
+    llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
+    
+    // Create function
+    llvm::Function* func = llvm::Function::Create(
+        func_type,
+        llvm::Function::ExternalLinkage,
+        stmt->funcName,
+        module
+    );
+    
+    // Set parameter names and create allocas for them
+    unsigned idx = 0;
+    for (auto& arg : func->args()) {
+        ParameterNode* param_node = static_cast<ParameterNode*>(stmt->parameters[idx].get());
+        arg.setName(param_node->paramName);
+        idx++;
+    }
+    
+    // Create entry block
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Save the old named_values (for nested functions/closures in the future)
+    std::map<std::string, llvm::Value*> old_named_values = named_values;
+    named_values.clear();
+    
+    // Create allocas for parameters and store their values
+    // This allows parameters to be mutable (can be reassigned in function body)
+    idx = 0;
+    for (auto& arg : func->args()) {
+        ParameterNode* param_node = static_cast<ParameterNode*>(stmt->parameters[idx].get());
+        
+        // Create alloca for this parameter
+        llvm::AllocaInst* alloca = builder.CreateAlloca(arg.getType(), nullptr, param_node->paramName);
+        
+        // Store the parameter value
+        builder.CreateStore(&arg, alloca);
+        
+        // Remember this allocation
+        named_values[param_node->paramName] = alloca;
+        
+        idx++;
+    }
+    
+    // Generate code for function body
+    if (stmt->body) {
+        BlockStmt* body_block = static_cast<BlockStmt*>(stmt->body.get());
+        codegenBlock(body_block);
+    }
+    
+    // If the last instruction isn't a terminator, add a default return
+    llvm::BasicBlock* current_block = builder.GetInsertBlock();
+    if (current_block && !current_block->getTerminator()) {
+        if (return_type->isVoidTy()) {
+            builder.CreateRetVoid();
+        } else {
+            // Return zero/null for non-void functions without explicit return
+            if (return_type->isIntegerTy()) {
+                builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
+            } else if (return_type->isFloatingPointTy()) {
+                builder.CreateRet(llvm::ConstantFP::get(return_type, 0.0));
+            } else {
+                // For pointer or other types, return null
+                builder.CreateRet(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(return_type)));
+            }
+        }
+    }
+    
+    // Restore old named_values
+    named_values = old_named_values;
+    
+    // Verify the function
+    std::string error_msg;
+    llvm::raw_string_ostream error_stream(error_msg);
+    if (llvm::verifyFunction(*func, &error_stream)) {
+        error_stream.flush();
+        throw std::runtime_error("Function verification failed: " + error_msg);
+    }
+    
+    return func;
 }
 
 // ============================================================================
