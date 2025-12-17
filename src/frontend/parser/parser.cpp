@@ -579,10 +579,94 @@ ASTNodePtr Parser::parseTemplateLiteral() {
     return nullptr;
 }
 
+/**
+ * Parse lambda expressions (Closures - Phase 4.5.2)
+ * 
+ * Syntax (from aria_specs.txt):
+ * Lambda syntax is just: returnType(type:param, type:param) { body }
+ * NO arrow operator (=>), NO special keywords
+ * 
+ * Examples:
+ * - int8(int8:a, int8:b) { return a + b; }
+ * - Anonymous inline: returnType(params) { body }
+ * - With immediate execution: returnType(params) { body }(args);
+ * 
+ * Captures are inferred during semantic analysis.
+ */
 ASTNodePtr Parser::parseLambda() {
-    // Stub for now - will implement in Phase 2.3
-    error("Lambda expressions not yet implemented");
-    return nullptr;
+    using namespace frontend;
+    
+    // Lambda starts with optional return type, then (params) { body }
+    // This is called when we've already determined we're parsing a lambda
+    // (e.g., saw type keyword followed by left paren with typed params)
+    
+    std::string returnTypeName;
+    std::vector<ASTNodePtr> parameters;
+    
+    // Check if we have a return type annotation
+    // e.g., int64(int64:x, int64:y) { ... }
+    if (isTypeKeyword(peek().type)) {
+        Token retTypeToken = advance();
+        returnTypeName = retTypeToken.lexeme;
+    }
+    
+    // Expect opening parenthesis for parameters
+    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' for lambda parameters");
+    
+    // Parse parameters with required type annotations: type:name
+    while (!check(TokenType::TOKEN_RIGHT_PAREN) && !isAtEnd()) {
+        // Parameters MUST be typed: int64:x, string:name, etc.
+        if (!isTypeKeyword(peek().type)) {
+            error("Lambda parameters must have type annotations (type:name)");
+            return nullptr;
+        }
+        
+        // Consume the type keyword and get its lexeme
+        Token typeToken = advance();
+        std::string typeName = typeToken.lexeme;
+        
+        consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
+        
+        Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
+        std::string paramName = nameToken.lexeme;
+        
+        // Create parameter node: ParameterNode(typeName, paramName, defaultValue, line, column)
+        auto param = std::make_shared<ParameterNode>(
+            typeName, 
+            paramName, 
+            nullptr,  // No default value for lambda params
+            typeToken.line, 
+            typeToken.column
+        );
+        parameters.push_back(param);
+        
+        // Check for more parameters
+        if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+            consume(TokenType::TOKEN_COMMA, "Expected ',' between parameters");
+        }
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after lambda parameters");
+    
+    // Parse body - must be a block { ... }
+    // No arrow operator in Aria!
+    if (!check(TokenType::TOKEN_LEFT_BRACE)) {
+        error("Expected '{' for lambda body (no arrow operator in Aria)");
+        return nullptr;
+    }
+    
+    ASTNodePtr body = parseBlock();
+    
+    // Create and return the lambda node
+    auto lambdaNode = std::make_shared<LambdaExpr>(
+        parameters,
+        returnTypeName,
+        body,
+        body->line,
+        body->column
+    );
+    
+    return lambdaNode;
 }
 
 // ============================================================================

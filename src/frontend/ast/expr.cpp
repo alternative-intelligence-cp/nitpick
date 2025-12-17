@@ -91,4 +91,48 @@ std::string ArrayLiteralExpr::toString() const {
     return oss.str();
 }
 
+std::string LambdaExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Lambda(";
+    
+    // Parameters
+    oss << "params=[";
+    for (size_t i = 0; i < parameters.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << parameters[i]->toString();
+    }
+    oss << "]";
+    
+    // Return type
+    if (!returnTypeName.empty()) {
+        oss << ", returnType=" << returnTypeName;
+    }
+    
+    // Captured variables
+    if (!capturedVars.empty()) {
+        oss << ", captures=[";
+        for (size_t i = 0; i < capturedVars.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << capturedVars[i].name;
+            switch (capturedVars[i].mode) {
+                case CaptureMode::BY_VALUE: oss << "(copy)"; break;
+                case CaptureMode::BY_REFERENCE: oss << "(ref)"; break;
+                case CaptureMode::BY_MOVE: oss << "(move)"; break;
+            }
+        }
+        oss << "]";
+    }
+    
+    // Async flag
+    if (isAsync) {
+        oss << ", async";
+    }
+    
+    // Body
+    oss << ", body=" << body->toString();
+    
+    oss << ")";
+    return oss.str();
+}
+
 } // namespace aria
