@@ -58,10 +58,18 @@ llvm_map_components_to_libnames(llvm_libs
 )
 
 # ============================================================================
+# Third-party libraries
+# ============================================================================
+
+# toml11 for aria.toml parsing (header-only library)
+add_subdirectory(vendor/toml11)
+
+# ============================================================================
 # Include directories
 # ============================================================================
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${CMAKE_SOURCE_DIR}/vendor/toml11/include)
 
 # ============================================================================
 # Source files (will be populated as we implement each phase)
@@ -148,6 +156,11 @@ set(STDLIB_SOURCES
     src/runtime/math/math.cpp
 )
 
+# Phase 7: Tooling
+set(TOOLS_SOURCES
+    src/tools/project_config.cpp
+)
+
 # Combine all sources
 set(ARIA_SOURCES
     ${LEXER_SOURCES}
@@ -158,6 +171,7 @@ set(ARIA_SOURCES
     ${IR_SOURCES}
     ${RUNTIME_SOURCES}
     ${STDLIB_SOURCES}
+    ${TOOLS_SOURCES}
 )
 
 # ============================================================================
