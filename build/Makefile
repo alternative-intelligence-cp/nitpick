@@ -435,6 +435,30 @@ src/frontend/ast/type.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/type.cpp.s
 .PHONY : src/frontend/ast/type.cpp.s
 
+src/frontend/diagnostics.o: src/frontend/diagnostics.cpp.o
+.PHONY : src/frontend/diagnostics.o
+
+# target to build an object file
+src/frontend/diagnostics.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/diagnostics.cpp.o
+.PHONY : src/frontend/diagnostics.cpp.o
+
+src/frontend/diagnostics.i: src/frontend/diagnostics.cpp.i
+.PHONY : src/frontend/diagnostics.i
+
+# target to preprocess a source file
+src/frontend/diagnostics.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/diagnostics.cpp.i
+.PHONY : src/frontend/diagnostics.cpp.i
+
+src/frontend/diagnostics.s: src/frontend/diagnostics.cpp.s
+.PHONY : src/frontend/diagnostics.s
+
+# target to generate assembly for a file
+src/frontend/diagnostics.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/diagnostics.cpp.s
+.PHONY : src/frontend/diagnostics.cpp.s
+
 src/frontend/lexer/lexer.o: src/frontend/lexer/lexer.cpp.o
 .PHONY : src/frontend/lexer/lexer.o
 
@@ -1317,6 +1341,9 @@ help:
 	@echo "... src/frontend/ast/type.o"
 	@echo "... src/frontend/ast/type.i"
 	@echo "... src/frontend/ast/type.s"
+	@echo "... src/frontend/diagnostics.o"
+	@echo "... src/frontend/diagnostics.i"
+	@echo "... src/frontend/diagnostics.s"
 	@echo "... src/frontend/lexer/lexer.o"
 	@echo "... src/frontend/lexer/lexer.i"
 	@echo "... src/frontend/lexer/lexer.s"
