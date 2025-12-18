@@ -384,6 +384,10 @@ public:
     ResultType* getResultType(Type* valueType);
     FutureType* getFutureType(Type* outputType);
     
+    // Type extraction helpers
+    // Phase 4.5.3: Extract T from future<T> for await expressions
+    Type* unwrapFutureType(Type* futureType);
+    
     // Named types
     StructType* getStructType(const std::string& name);
     StructType* createStructType(const std::string& name, const std::vector<StructType::Field>& fields,

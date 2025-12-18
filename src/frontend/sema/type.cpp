@@ -543,6 +543,24 @@ FutureType* TypeSystem::getFutureType(Type* outputType) {
     return ptr;
 }
 
+// Phase 4.5.3 Task #4: Extract T from future<T> for await expressions
+// When we await a future<T>, the result type is T (not future<T>)
+Type* TypeSystem::unwrapFutureType(Type* futureType) {
+    if (!futureType) {
+        return getErrorType();
+    }
+    
+    // If it's a Future type, extract the output type
+    if (futureType->getKind() == TypeKind::FUTURE) {
+        FutureType* future = static_cast<FutureType*>(futureType);
+        return future->getOutputType();
+    }
+    
+    // If it's not a Future, this is a type error
+    // await can only be used on Future types
+    return getErrorType();
+}
+
 StructType* TypeSystem::getStructType(const std::string& name) {
     auto it = structCache.find(name);
     if (it != structCache.end()) {
