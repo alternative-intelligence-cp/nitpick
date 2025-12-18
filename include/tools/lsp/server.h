@@ -2,6 +2,7 @@
 #define ARIA_LSP_SERVER_H
 
 #include "tools/lsp/transport.h"
+#include "tools/lsp/vfs.h"
 #include <string>
 #include <atomic>
 
@@ -98,11 +99,20 @@ private:
     // Declared capabilities
     ServerCapabilities capabilities_;
     
+    // Virtual file system
+    VirtualFileSystem vfs_;
+    
     // Request/notification handlers
     json handle_initialize(const json& params);
     void handle_initialized(const json& params);
     json handle_shutdown(const json& params);
     void handle_exit(const json& params);
+    
+    // Document synchronization handlers
+    void handle_did_open(const json& params);
+    void handle_did_change(const json& params);
+    void handle_did_close(const json& params);
+    void handle_did_save(const json& params);
     
     // Message dispatcher
     void dispatch_message(const JsonRpcMessage& msg);

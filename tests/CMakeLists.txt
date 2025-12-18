@@ -15,6 +15,7 @@ add_executable(test_runner
     unit/test_project_config.cpp
     unit/test_lsp_transport.cpp
     unit/test_lsp_server.cpp
+    unit/test_lsp_vfs.cpp
     unit/test_symbol_table.cpp
     unit/test_module_table.cpp
     unit/test_type_checker.cpp
@@ -118,6 +119,7 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/tools/project_config.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/lsp/transport.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/lsp/server.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/lsp/vfs.cpp
 )
 
 # Include test helpers header
