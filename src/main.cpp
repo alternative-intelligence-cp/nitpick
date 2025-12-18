@@ -206,8 +206,33 @@ llvm::Module* compile_to_module(
     if (!lexer.getErrors().empty()) {
         // Convert lexer errors to diagnostic engine format
         for (const auto& err : lexer.getErrors()) {
-            // Simple error without location for now (lexer errors need enhancement)
-            diags.error(aria::SourceLocation(filename, 0, 0), err);
+            // Parse line/column from error message format: "[Line X, Col Y] Error: message"
+            int line = 0, column = 0;
+            size_t line_pos = err.find("Line ");
+            size_t col_pos = err.find("Col ");
+            
+            if (line_pos != std::string::npos && col_pos != std::string::npos) {
+                try {
+                    size_t line_start = line_pos + 5;  // Skip "Line "
+                    size_t line_end = err.find(',', line_start);
+                    line = std::stoi(err.substr(line_start, line_end - line_start));
+                    
+                    size_t col_start = col_pos + 4;  // Skip "Col "
+                    size_t col_end = err.find(']', col_start);
+                    column = std::stoi(err.substr(col_start, col_end - col_start));
+                } catch (...) {
+                    // If parsing fails, use 0,0
+                }
+            }
+            
+            // Extract just the error message (skip location prefix)
+            std::string message = err;
+            size_t error_pos = err.find("Error: ");
+            if (error_pos != std::string::npos) {
+                message = err.substr(error_pos + 7);  // Skip "Error: "
+            }
+            
+            diags.error(aria::SourceLocation(filename, line, column), message);
         }
         return nullptr;
     }
@@ -231,8 +256,33 @@ llvm::Module* compile_to_module(
     if (!module_node || parser.hasErrors()) {
         // Convert parser errors to diagnostic engine format
         for (const auto& err : parser.getErrors()) {
-            // Simple error without location for now (parser errors need enhancement)
-            diags.error(aria::SourceLocation(filename, 0, 0), err);
+            // Parse line/column from error message format: "Parse error at line X, column Y:"
+            int line = 0, column = 0;
+            size_t line_pos = err.find("line ");
+            size_t col_pos = err.find("column ");
+            
+            if (line_pos != std::string::npos && col_pos != std::string::npos) {
+                try {
+                    size_t line_start = line_pos + 5;  // Skip "line "
+                    size_t line_end = err.find(',', line_start);
+                    line = std::stoi(err.substr(line_start, line_end - line_start));
+                    
+                    size_t col_start = col_pos + 7;  // Skip "column "
+                    size_t col_end = err.find(':', col_start);
+                    column = std::stoi(err.substr(col_start, col_end - col_start));
+                } catch (...) {
+                    // If parsing fails, use 0,0
+                }
+            }
+            
+            // Extract just the error message (skip the location line)
+            std::string message = err;
+            size_t newline_pos = err.find('\n');
+            if (newline_pos != std::string::npos) {
+                message = err.substr(newline_pos + 1);
+            }
+            
+            diags.error(aria::SourceLocation(filename, line, column), message);
         }
         return nullptr;
     }
