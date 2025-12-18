@@ -1778,6 +1778,33 @@ src/tools/lsp/transport.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/transport.cpp.s
 .PHONY : src/tools/lsp/transport.cpp.s
 
+src/tools/lsp/vfs.o: src/tools/lsp/vfs.cpp.o
+.PHONY : src/tools/lsp/vfs.o
+
+# target to build an object file
+src/tools/lsp/vfs.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/vfs.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/vfs.cpp.o
+.PHONY : src/tools/lsp/vfs.cpp.o
+
+src/tools/lsp/vfs.i: src/tools/lsp/vfs.cpp.i
+.PHONY : src/tools/lsp/vfs.i
+
+# target to preprocess a source file
+src/tools/lsp/vfs.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/vfs.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/vfs.cpp.i
+.PHONY : src/tools/lsp/vfs.cpp.i
+
+src/tools/lsp/vfs.s: src/tools/lsp/vfs.cpp.s
+.PHONY : src/tools/lsp/vfs.s
+
+# target to generate assembly for a file
+src/tools/lsp/vfs.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/vfs.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/vfs.cpp.s
+.PHONY : src/tools/lsp/vfs.cpp.s
+
 src/tools/project_config.o: src/tools/project_config.cpp.o
 .PHONY : src/tools/project_config.o
 
@@ -1996,6 +2023,9 @@ help:
 	@echo "... src/tools/lsp/transport.o"
 	@echo "... src/tools/lsp/transport.i"
 	@echo "... src/tools/lsp/transport.s"
+	@echo "... src/tools/lsp/vfs.o"
+	@echo "... src/tools/lsp/vfs.i"
+	@echo "... src/tools/lsp/vfs.s"
 	@echo "... src/tools/project_config.o"
 	@echo "... src/tools/project_config.i"
 	@echo "... src/tools/project_config.s"

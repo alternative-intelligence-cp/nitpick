@@ -165,6 +165,7 @@ set(TOOLS_SOURCES
     src/tools/project_config.cpp
     src/tools/lsp/transport.cpp
     src/tools/lsp/server.cpp
+    src/tools/lsp/vfs.cpp
 )
 
 # Combine all sources

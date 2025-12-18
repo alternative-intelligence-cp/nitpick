@@ -118,6 +118,18 @@ void Server::handle_notification(const std::string& method, const json& params) 
         else if (method == "exit") {
             handle_exit(params);
         }
+        else if (method == "textDocument/didOpen") {
+            handle_did_open(params);
+        }
+        else if (method == "textDocument/didChange") {
+            handle_did_change(params);
+        }
+        else if (method == "textDocument/didClose") {
+            handle_did_close(params);
+        }
+        else if (method == "textDocument/didSave") {
+            handle_did_save(params);
+        }
         else {
             // Unknown notification - ignore per spec (don't send response)
             std::cerr << "Unknown notification: " << method << std::endl;
@@ -184,6 +196,111 @@ json Server::error_response(int code, const std::string& message) {
         {"code", code},
         {"message", message}
     };
+}
+
+// ============================================================================
+// Document Synchronization
+// ============================================================================
+
+void Server::handle_did_open(const json& params) {
+    // Extract document info
+    // params: { textDocument: { uri, languageId, version, text } }
+    
+    if (!params.contains("textDocument")) {
+        std::cerr << "didOpen: missing textDocument" << std::endl;
+        return;
+    }
+    
+    const json& doc = params["textDocument"];
+    std::string uri = doc.value("uri", "");
+    std::string text = doc.value("text", "");
+    
+    if (uri.empty()) {
+        std::cerr << "didOpen: missing uri" << std::endl;
+        return;
+    }
+    
+    std::cerr << "Document opened: " << uri << " (" << text.size() << " bytes)" << std::endl;
+    
+    // Store in VFS
+    vfs_.set_content(uri, text);
+    
+    // TODO Phase 7.3.4: Trigger diagnostics
+    // We'll parse the file and send diagnostics
+}
+
+void Server::handle_did_change(const json& params) {
+    // For Full Sync (TextDocumentSyncKind::Full = 1):
+    // params: { textDocument: { uri, version }, contentChanges: [{ text }] }
+    // contentChanges has exactly one element with full text
+    
+    if (!params.contains("textDocument") || !params.contains("contentChanges")) {
+        std::cerr << "didChange: missing required fields" << std::endl;
+        return;
+    }
+    
+    std::string uri = params["textDocument"].value("uri", "");
+    
+    if (uri.empty()) {
+        std::cerr << "didChange: missing uri" << std::endl;
+        return;
+    }
+    
+    // Get the new full text (Full Sync mode)
+    const json& changes = params["contentChanges"];
+    if (!changes.is_array() || changes.empty()) {
+        std::cerr << "didChange: empty contentChanges" << std::endl;
+        return;
+    }
+    
+    std::string text = changes[0].value("text", "");
+    
+    std::cerr << "Document changed: " << uri << " (" << text.size() << " bytes)" << std::endl;
+    
+    // Update VFS
+    vfs_.set_content(uri, text);
+    
+    // TODO Phase 7.3.4: Trigger diagnostics
+}
+
+void Server::handle_did_close(const json& params) {
+    // params: { textDocument: { uri } }
+    
+    if (!params.contains("textDocument")) {
+        std::cerr << "didClose: missing textDocument" << std::endl;
+        return;
+    }
+    
+    std::string uri = params["textDocument"].value("uri", "");
+    
+    if (uri.empty()) {
+        std::cerr << "didClose: missing uri" << std::endl;
+        return;
+    }
+    
+    std::cerr << "Document closed: " << uri << std::endl;
+    
+    // Remove from VFS
+    vfs_.remove(uri);
+    
+    // Clear diagnostics for this file (send empty diagnostics)
+    // TODO Phase 7.3.4
+}
+
+void Server::handle_did_save(const json& params) {
+    // params: { textDocument: { uri }, text?: string }
+    // We're using Full Sync, so we already have latest content from didChange
+    // Just log it
+    
+    if (!params.contains("textDocument")) {
+        std::cerr << "didSave: missing textDocument" << std::endl;
+        return;
+    }
+    
+    std::string uri = params["textDocument"].value("uri", "");
+    std::cerr << "Document saved: " << uri << std::endl;
+    
+    // Could trigger additional actions here (e.g., run tests)
 }
 
 } // namespace lsp
