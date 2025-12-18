@@ -1687,6 +1687,30 @@ src/runtime/timer/timer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/timer/timer.cpp.s
 .PHONY : src/runtime/timer/timer.cpp.s
 
+src/tools/lsp/transport.o: src/tools/lsp/transport.cpp.o
+.PHONY : src/tools/lsp/transport.o
+
+# target to build an object file
+src/tools/lsp/transport.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/transport.cpp.o
+.PHONY : src/tools/lsp/transport.cpp.o
+
+src/tools/lsp/transport.i: src/tools/lsp/transport.cpp.i
+.PHONY : src/tools/lsp/transport.i
+
+# target to preprocess a source file
+src/tools/lsp/transport.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/transport.cpp.i
+.PHONY : src/tools/lsp/transport.cpp.i
+
+src/tools/lsp/transport.s: src/tools/lsp/transport.cpp.s
+.PHONY : src/tools/lsp/transport.s
+
+# target to generate assembly for a file
+src/tools/lsp/transport.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/transport.cpp.s
+.PHONY : src/tools/lsp/transport.cpp.s
+
 src/tools/project_config.o: src/tools/project_config.cpp.o
 .PHONY : src/tools/project_config.o
 
@@ -1892,6 +1916,9 @@ help:
 	@echo "... src/runtime/timer/timer.o"
 	@echo "... src/runtime/timer/timer.i"
 	@echo "... src/runtime/timer/timer.s"
+	@echo "... src/tools/lsp/transport.o"
+	@echo "... src/tools/lsp/transport.i"
+	@echo "... src/tools/lsp/transport.s"
 	@echo "... src/tools/project_config.o"
 	@echo "... src/tools/project_config.i"
 	@echo "... src/tools/project_config.s"

@@ -1,0 +1,334 @@
+﻿Architectural Blueprint and Implementation Strategy for the Aria Language Server (AriaLS)
+1. Executive Introduction and Strategic Alignment
+The development of the Aria Language Server (AriaLS) represents a pivotal infrastructure project within the broader Aria programming language ecosystem. As delineated in the foundational language specifications 1 and the comprehensive implementation roadmap 1, Aria is designed as a high-performance systems language that introduces novel paradigms such as Twisted Balanced Binary (TBB) arithmetic, a hybrid memory model distinguishing between garbage-collected (gc) and manual (wild) allocation, and a rigid module system. While the compiler infrastructure—comprising the Lexer, Parser, and Semantic Analysis phases—has reached a level of maturity that permits code generation and execution, the developer experience (DX) remains nascent.
+In the contemporary software engineering landscape, the viability of a new programming language is inextricably linked to the quality of its tooling. Developers expect immediate feedback loops, intelligent code completion, and seamless navigation—capabilities that are traditionally decoupled from the compiler's batch-processing architecture. The Language Server Protocol (LSP), currently in version 3.17 2, offers a standardized architectural solution to this challenge. By decoupling the language-specific intelligence (the Server) from the editor interface (the Client), LSP allows the Aria project to implement complex analysis logic once and deploy it across a multitude of development environments, including Visual Studio Code (VS Code), Neovim, and Sublime Text.2
+This report provides an exhaustive, expert-level technical blueprint for the design and implementation of AriaLS. It synthesizes the internal architectural constraints of the Aria compiler—specifically the non-incremental nature of the current Parser 1 and the explicit string-based interface of the Lexer 1—with the asynchronous, request-response requirements of the LSP specification.4 The analysis proceeds from low-level transport mechanisms through concurrency models to high-level semantic feature implementation, ensuring that unique Aria features like TBB error propagation 1 and wild pointer safety 1 are accurately represented in the developer tooling.
+2. Protocol Fundamentals and Transport Layer Design
+The foundation of any Language Server is its ability to communicate reliably with the host editor. The LSP specification mandates the use of JSON-RPC 2.0 as the message protocol, encapsulated within a header-based framing strategy reminiscent of HTTP but optimized for local inter-process communication (IPC).2
+2.1 The Transport Mechanism: Standard I/O via JSON-RPC
+For the AriaLS implementation, the analysis strongly recommends utilizing standard input (stdin) and standard output (stdout) as the primary transport channels. This approach is the industry standard for VS Code extensions 6 and avoids the complexity of managing TCP ports or named pipes during the initial development phases.7
+2.1.1 Message Framing and Header Parsing
+The protocol defines a strict message format consisting of a Header Part and a Content Part, separated by a specific delimiter sequence (\r\n\r\n).4
+* Header Part: Must contain the Content-Length field, which specifies the size of the payload in bytes. The Content-Type is optional and defaults to application/vscode-jsonrpc; charset=utf-8.4
+* Content Part: The JSON-RPC payload encoded in UTF-8.
+Implementation Criticality:
+A naive implementation using C++ stream operators (e.g., std::cin >> string) is insufficient and represents a common point of failure.8 The standard extraction operators delineate based on whitespace, which violates the byte-precise requirement of the LSP framing. The AriaLS transport layer must implement a robust state machine that:
+1. Reads stdin character-by-character or line-by-line to parse headers until the \r\n\r\n sequence is detected.
+2. Extracts the integer value from Content-Length.
+3. Allocates a buffer of exactly that size.
+4. Performs a blocking read of stdin to fill the buffer with the exact number of bytes specified.
+Failure to adhere strictly to the byte count will result in desynchronization, where the server attempts to parse the beginning of the next header as part of the current JSON payload, leading to fatal parsing errors.9
+2.1.2 JSON-RPC 2.0 Message Semantics
+The server must differentiate between three distinct message categories defined by the JSON-RPC 2.0 specification 5:
+1. Requests: Messages containing a unique id (integer or string) and a method field. The server is contractually obligated to send a response with the corresponding id. Critical AriaLS requests include initialize 4, textDocument/definition 4, and textDocument/hover.4
+2. Notifications: Messages strictly without an id. These are "fire-and-forget" events used for synchronization and telemetry. The most critical notifications for AriaLS are textDocument/didOpen and textDocument/didChange 4, which drive the internal compiler state.
+3. Responses: Messages sent by the server to close the loop on a Request. These must contain either a result object (on success) or an error object (on failure).10
+Table 1: JSON-RPC Message Types and AriaLS Handling Strategy
+Message Type
+	Presence of id
+	Direction
+	AriaLS Handling Strategy
+	Critical Examples
+	Request
+	Yes
+	Client $\to$ Server
+	Must queue for processing; Main thread delegates to Thread Pool; Response required.
+	initialize, textDocument/hover, textDocument/completion
+	Notification
+	No
+	Client $\to$ Server
+	Immediate processing or high-priority queue; No response sent.
+	textDocument/didChange, textDocument/didSave, $/cancelRequest
+	Response
+	Yes
+	Server $\to$ Client
+	Result of worker thread processing; Must be serialized thread-safely to stdout.
+	Result of definition, Diagnostics (via publishDiagnostics notification)
+	2.2 Data Interchange and Serialization Library
+The choice of a JSON serialization library is a foundational architectural decision that impacts both performance and developer velocity. The C++ ecosystem offers several mature options, primarily rapidjson and nlohmann/json.
+Comparative Analysis:
+* RapidJSON: Renowned for extreme performance and low memory footprint.11 However, its API is verbose, relying on a DOM-style interaction model that requires manual memory management of allocators.
+* Nlohmann/Json: Offers "first-class" citizen support for JSON in C++, mimicking Python-like syntax.13 It is a header-only library that integrates seamlessly with C++ Standard Library containers (std::vector, std::map), which are heavily used in the Aria compiler's internal structures (e.g., std::vector<Token> in parser.h 1).
+Strategic Selection:
+Given that the Aria compiler codebase utilizes modern C++ (C++17/20) concepts like std::optional (implied by obj? semantics in specs) and RAII patterns (std::unique_ptr in DiagnosticEngine 1), nlohmann/json is the superior choice. The slight performance overhead compared to rapidjson is negligible for the scale of typical source files, while the implementation speed and code maintainability are significantly higher.13 The ability to map Aria's Token structs directly to JSON objects using nlohmann's arbitrary type conversion features outweighs raw throughput gains.
+2.3 Exception Handling in the Transport Layer
+The Transport Layer must be the firewall for the application. Exceptions thrown during JSON parsing (e.g., malformed JSON from a buggy client) or I/O operations must be caught at this boundary. If the server crashes, the editor loses all language intelligence, providing a poor user experience. The main loop must wrap the message processing logic in a try-catch block, logging errors to stderr (which VS Code captures in the Output panel) rather than terminating the process.15
+3. Server Architecture and Concurrency Model
+The architectural design of AriaLS is heavily constrained by the current implementation of the Aria compiler frontend. As revealed in the parser.h 1 and lexer.h 1 headers, the compiler is designed as a single-pass, blocking system. The Parser constructor takes a complete vector of tokens, and the Lexer takes a complete string of source code. There is no public API for incremental updates or partial re-parsing.
+3.1 The Concurrency Conundrum
+In a single-threaded naive implementation, if the server receives a textDocument/didChange notification for a large file, the main thread would block while re-tokenizing and re-parsing the entire document. During this blocking period, incoming requests (like a user typing or hovering) would be buffered in the OS pipe. By the time the server finishes parsing, it might have a backlog of obsolete requests, leading to perceived latency and "jank" in the editor.
+Furthermore, the LSP specification allows for request cancellation ($/cancelRequest).16 A blocking main thread cannot process a cancellation signal for the task it is currently executing.
+3.2 Thread Pool Architecture
+To resolve these constraints, AriaLS must adopt a Thread Pool Architecture.17 This design decouples the I/O operations from the computational workload of the compiler.
+3.2.1 The Main Thread (I/O & Dispatch)
+The main thread's responsibilities are strictly limited to low-latency operations:
+1. Reading from stdin and unmarshalling JSON messages.
+2. Routing messages based on the method field.
+3. For Requests, wrapping the payload in a Task object (containing the id) and pushing it to a thread-safe WorkQueue.
+4. For Notifications (like didChange), pushing them to the queue with high priority, or updating a "pending state" to debounce rapid edits.
+5. Writing responses coming from worker threads back to stdout. Crucial: Access to stdout must be protected by a std::mutex to prevent interleaved output from multiple threads completing simultaneously.19
+3.2.2 The Worker Pool
+A pool of generic worker threads (sized typically to std::thread::hardware_concurrency()) pulls tasks from the WorkQueue. A worker executing a task (e.g., textDocument/definition) performs the following:
+1. Acquires a Read Lock on the global VirtualFileSystem and SymbolTable (discussed in Section 4).
+2. Invokes the necessary compiler components (e.g., traversing the AST).
+3. Constructs the JSON response.
+4. Pushes the response to an output queue (or directly writes to stdout under a lock).
+3.2.3 State Synchronization
+Since the Aria Parser and Lexer are not thread-safe and hold internal state (current index, tokens vector) 1, they cannot be shared across threads. However, the results of the parse (the AST, the Symbol Table) must be shared.
+The architecture requires a GlobalState object protected by a std::shared_mutex (Read-Write Lock) 20:
+* Writers: Operations like didChange require a Write Lock. They create a fresh Lexer and Parser, generate a new AST, and replace the reference in the GlobalState.
+* Readers: Operations like hover or definition require a Read Lock. Multiple readers can access the AST simultaneously, ensuring that a long-running "Find All References" does not block a quick "Hover".
+3.3 Request Cancellation
+To handle $/cancelRequest, the WorkQueue should map Request IDs to CancellationTokens (atomic booleans).
+1. When a request arrives, a token is created and stored in a map.
+2. When $/cancelRequest arrives, the map is queried, and the token is flagged as cancelled.
+3. Deep Integration: The Aria Parser and TypeChecker loops should be instrumented to check this atomic boolean periodically (e.g., every 100 statements). If cancelled, they abort immediately, saving CPU cycles.16
+4. Document Synchronization and Virtual File System
+The integration of the Aria compiler frontend into the LSP context presents a specific challenge regarding file handling. The Lexer class constructor Lexer(const std::string& source) 1 explicitly requires the source code as an in-memory string. It does not accept file paths. This design decision necessitates the implementation of a Virtual File System (VFS) within AriaLS.
+4.1 The Necessity of VFS
+In an IDE environment, the code displayed in the editor (the "dirty" buffer) often differs from the code stored on the disk. If the compiler were to read from the disk, it would analyze stale code, leading to incorrect diagnostics and navigation. AriaLS must act as the source of truth, maintaining a mirror of the editor's buffers in memory.
+4.2 Implementation of VFS
+The VFS should be implemented as a specialized class wrapping a std::unordered_map<std::string, std::string>, mapping Document URIs to their content.
+* textDocument/didOpen: The server receives the full text of the file. The VFS stores this in the map.6
+* textDocument/didClose: The server removes the entry from the map. Subsequent operations on this URI must fall back to reading from the disk (if the file is referenced by another open file).
+* textDocument/didChange: This is the most critical notification. The server updates the VFS entry.
+4.3 Synchronization Strategy: Full vs. Incremental
+The LSP specification supports two synchronization models: Incremental and Full.4
+* Incremental Sync: The client sends only the changes (range + new text). This minimizes IPC bandwidth but requires the server to implement complex string patching logic to reconstruct the full file content.
+* Full Sync: The client sends the entire content of the file on every change event.
+Recommendation: Given that the Aria Lexer and Parser currently require the full source string to operate and do not support incremental tokenization 1, implementing Full Synchronization (TextDocumentSyncKind::Full = 1) is the correct architectural choice for the initial release.21 This simplifies the VFS implementation significantly: the map entry is simply overwritten with the new string.
+Future Optimization: As the Aria compiler matures to support incremental parsing (Phase 9), the LSP can be upgraded to Incremental sync (TextDocumentSyncKind::Incremental = 2). This would involve applying the patches to the VFS string buffer before passing it to the Lexer, reducing the overhead of data transfer for large files.22
+4.4 Position Encoding and Unicode
+LSP 3.17 introduces explicit support for PositionEncodingKind.4
+* The Issue: VS Code uses UTF-16 encoding for string indices (due to JavaScript/Java legacy). C++ std::string uses UTF-8.
+* The Mismatch: If a file contains multi-byte characters (e.g., emojis or specific non-ASCII symbols), the "character offset" will differ between UTF-8 and UTF-16.
+* The Solution: AriaLS must negotiate positionEncoding: "utf-8" during the initialize handshake.23 If the client supports it (which VS Code does as of recent versions), this eliminates the need for expensive transcoding or offset mapping tables, allowing the C++ backend to work natively with byte offsets.
+5. Diagnostics and Error Reporting Integration
+Real-time feedback on syntax and semantic errors is a cornerstone of the LSP value proposition. The Aria compiler already possesses a sophisticated DiagnosticEngine 1, which facilitates a direct integration path.
+5.1 Mapping Diagnostic Primitives
+The aria::Diagnostic class structures errors with a SourceLocation and a DiagnosticLevel. These must be mapped to their LSP counterparts.
+Table 2: Diagnostic Mapping Strategy
+Aria Concept
+	Aria Type
+	LSP Concept
+	LSP Type
+	Transformation Logic
+	Severity
+	DiagnosticLevel::NOTE
+	Severity
+	Information (3)
+	Direct Mapping
+	Severity
+	DiagnosticLevel::WARNING
+	Severity
+	Warning (2)
+	Direct Mapping
+	Severity
+	DiagnosticLevel::ERROR
+	Severity
+	Error (1)
+	Direct Mapping
+	Severity
+	DiagnosticLevel::FATAL
+	Severity
+	Error (1)
+	Map to Error; consider halting analysis.
+	Line
+	int (1-based)
+	Line
+	uinteger (0-based)
+	lsp_line = aria_line - 1
+	Column
+	int (1-based)
+	Character
+	uinteger (0-based)
+	lsp_char = aria_col - 1
+	Context
+	notes_ (Vector)
+	Related Info
+	relatedInformation
+	Map secondary locations (e.g., "previous declaration here")
+	5.2 The Diagnostics Pipeline
+The generation of diagnostics follows a specific pipeline triggered by document updates:
+1. Trigger: textDocument/didOpen or textDocument/didChange event is received.
+2. Debounce: To avoid overloading the thread pool, the server should wait for a short quiescence period (e.g., 200ms) if changes are rapid.
+3. Compilation:
+   * A worker thread retrieves the text from VFS.
+   * It instantiates a Lexer and Parser.
+   * It invokes Parser::parse().
+   * It invokes the TypeChecker (Phase 3.2 of Roadmap 1) to validate semantics.
+4. Collection: If DiagnosticEngine::hasErrors() returns true 1, the worker iterates through the diagnostics() vector.
+5. Serialization: Each aria::Diagnostic is converted into a JSON object adhering to the PublishDiagnosticsParams structure.4
+   * Crucial Step: The SourceLocation must be converted from 1-based to 0-based indexing.
+6. Publication: The server sends a textDocument/publishDiagnostics notification to the client.16
+5.3 Handling "Notes" and "Suggestions"
+The diagnostics.h file reveals that Aria diagnostics can contain "notes" and "suggestions".1
+* Notes: Should be mapped to the relatedInformation field in the LSP diagnostic. This allows the editor to show nested messages, such as pointing to the definition of a variable that is being misused.
+* Suggestions: These are candidates for textDocument/codeAction (Quick Fixes). The DiagnosticEngine essentially provides the data needed to implement automated fixes (e.g., "Did you mean 'variable'?" -> Rename action).
+6. Symbol Management and Navigation Features
+Navigational features like "Go to Definition" and "Outline" transform a text editor into an IDE. These features rely heavily on the SymbolTable implementation defined in the Aria roadmap.1
+6.1 Document Symbols (Outline View)
+The textDocument/documentSymbol request asks the server to return a hierarchy of symbols in the file.24
+Implementation Strategy:
+AriaLS must implement a SymbolWalker class (following the Visitor pattern) that traverses the AST generated by Parser::parse().
+Token to SymbolKind Mapping:
+The token.h file 1 lists the keywords that define structure. These must be mapped to LSP SymbolKind 25:
+Aria Token
+	Keyword
+	LSP SymbolKind
+	Value
+	TOKEN_KW_MOD
+	mod
+	Module
+	2
+	TOKEN_KW_FUNC
+	func
+	Function
+	12
+	TOKEN_KW_STRUCT
+	struct
+	Struct
+	23
+	TOKEN_KW_CONST
+	const
+	Constant
+	14
+	TOKEN_KW_OBJ
+	obj
+	Object
+	19
+	TOKEN_KW_TBB*
+	tbb64, etc.
+	Variable
+	13
+	Hierarchy Handling:
+Since Aria supports nested modules (mod network { mod http {... } }) 1, the DocumentSymbol response must be hierarchical. The SymbolWalker must maintain a stack of parent symbols. When entering a ModStmt, a new symbol is pushed; when exiting, it is popped. This reflects the nested structure in the client's "Outline" pane.
+6.2 Go to Definition
+The textDocument/definition request is the most frequently used navigation feature.4
+Resolution Logic:
+1. Hit Testing: The server receives a position (line, col). It must traverse the AST to find the IdentifierExpr or Type node at that location.
+2. Symbol Table Query: Using the SymbolTable (Phase 3.1) 1, the server resolves the identifier string. The SymbolTable handles scope lookups (checking local scope, then parent, then global).
+3. Result Construction: The Symbol object in the table must store its declaration SourceLocation. This is converted to an LSP Location (URI + Range) and returned.
+Cross-Module Resolution:
+Aria's module system (use std.io) adds complexity. The Parser handles parseUseStatement 1, but the LSP needs to resolve the string path to a file URI. The ModuleTable (Phase 3.1.3) is responsible for mapping logical paths (e.g., std.io) to physical file paths.
+* Action: If the user triggers "Go to Definition" on std.io, the server queries ModuleTable, retrieves the absolute path (e.g., /usr/lib/aria/std/io.aria), and returns a Location at (0, 0) of that file.
+6.3 Hover Information (Type and Documentation)
+The textDocument/hover request provides context at the cursor.4
+TBB and Type Visualization:
+Aria's Twisted Balanced Binary (TBB) types are a unique feature that requires explanation. A user hovering over a tbb8 variable should see more than just the type name.
+* Strategy: The TypeChecker infers the type. The Hover provider should generate a markdown string that includes the type's properties.
+variable_name
+Type: tbb8 (Twisted Balanced Binary)
+Range: [-127, +127]
+Sentinel: ERR (-128)
+This educational approach aids adoption by reinforcing the language's unique semantics directly in the editor.
+Doc Comments:
+The Lexer identifies comments (TOKEN_COMMENT).1 To support documentation hovers (e.g., Javadoc/Doxygen style), the Parser must be enhanced to attach "leading comments" to the subsequent AST node. When the SymbolWalker indexes symbols, it copies these comments into the Symbol object. The Hover provider then retrieves and formats them.
+7. Advanced Language Features
+7.1 Semantic Tokens (Highlighting)
+Standard syntax highlighting (TextMate) is regex-based and cannot distinguish between complex semantics. Aria's memory model (wild vs gc) is a prime candidate for Semantic Token highlighting.26
+Implementation:
+The server should implement textDocument/semanticTokens/full.
+   1. Walk the AST.
+   2. Identify variable declarations and usages.
+   3. Check the type of the variable via TypeChecker.
+   4. If the type is wild, assign a specific token modifier (e.g., unsafe).
+   5. If the type is gc, assign a different modifier.
+This allows the client theme to color wild pointers differently (e.g., red) to visually warn the developer of manual memory management risks, significantly enhancing safety.
+7.2 Code Completion
+The textDocument/completion request requires a robust context analysis.
+   * Keyword Completion: If the parser expects a statement, suggest keywords from token.h (if, while, pick, defer).1
+   * Member Access: If the trigger character is . or ->, the server must use the TypeChecker to resolve the type of the left-hand expression.
+   * Aria Specific: If the left-hand side is a pointer (int64@), the completion should suggest the -> operator. If it is an optional (obj?), it should suggest ?.. This guides the user toward correct Aria syntax.
+8. Client-Side Integration (VS Code Extension)
+The C++ server requires a lightweight client extension to integrate with VS Code.6
+8.1 Extension Manifest (package.json)
+The package.json configuration is the entry point.27
+   * activationEvents: Must include "onLanguage:aria" to ensure the server starts automatically.28
+   * contributes.languages: Registers the .aria extension and associates it with the aria language ID.29
+   * contributes.configuration: Should expose settings like aria.lsp.trace.server for debugging and aria.serverPath to allow users to specify a custom path to the aria-ls binary.
+8.2 Syntax Highlighting (TextMate)
+While Semantic Tokens handle advanced coloring, basic coloring is achieved via a tmLanguage.json file.26 This file must define regex patterns for:
+   * Keywords: \b(wild|defer|async|await|use|mod|pub|extern)\b.
+   * Types: \b(int\d+|uint\d+|tbb\d+|flt\d+|bool|string)\b.
+   * Control Flow: \b(pick|fall|pass|fail)\b.
+   * Operators: Special attention to Aria operators like @, #, ->, |>.1
+8.3 Language Configuration
+A language-configuration.json file is needed to define editor behaviors 30:
+   * Comments: Define // for line comments and /*... */ for blocks.
+   * Brackets: Define auto-closing pairs for {}, ``, (), and the string interpolation markers &{ } defined in token.h.1
+9. Conclusion and Roadmap
+The implementation of the Aria Language Server is a complex but necessary undertaking that elevates Aria from an experimental language to a viable tool for systems programming. By adopting the architecture outlined in this report—specifically the Thread Pool model for concurrency, nlohmann/json for data interchange, and a Virtual File System for document synchronization—the AriaLS can deliver high performance and reliability.
+Future Outlook:
+   * Phase 1: Implement the JSON-RPC transport and basic textDocument/didOpen/didChange loop.
+   * Phase 2: Integrate DiagnosticEngine to surface compiler errors.
+   * Phase 3: Implement SymbolTable lookups to support Definition and Hover.
+   * Phase 4: Develop the Semantic Token provider to visualize Aria's memory model.
+This strategic roadmap ensures that tooling development proceeds in lockstep with the compiler, providing early adopters with the support necessary to build complex applications in Aria.
+Tables
+Table 3: Aria Token to LSP Completion Item Mapping
+Aria Token
+	Context
+	Completion Item Kind
+	Label Detail
+	TOKEN_KW_FUNC
+	Global/Module
+	Keyword (14)
+	func
+	TOKEN_KW_WILD
+	Variable Decl
+	Keyword (14)
+	wild (Manual Memory)
+	TOKEN_KW_TBB64
+	Type Position
+	Class (7)
+	tbb64
+	TOKEN_KW_PICK
+	Statement
+	Snippet (15)
+	pick ($1) {... }
+	TOKEN_KW_DEFER
+	Block End
+	Keyword (14)
+	defer
+	Table 4: Threading Model Responsibilities
+Thread
+	Responsibilities
+	Synchronization Primitive
+	Main (I/O)
+	Read stdin, Parse Header, Parse JSON, Queue Tasks, Write stdout.
+	std::mutex (for stdout)
+	Worker
+	Lexing, Parsing, Semantic Analysis, AST Traversal, Response Generation.
+	std::shared_mutex (on GlobalState)
+	Works cited
+   1. aria_specs.txt
+   2. Official page for Language Server Protocol - Microsoft Open Source, accessed December 18, 2025, https://microsoft.github.io/language-server-protocol/
+   3. Language Server Protocol - Grokipedia, accessed December 18, 2025, https://grokipedia.com/page/Language_Server_Protocol
+   4. Language Server Protocol Specification - 3.17 - Microsoft Open Source, accessed December 18, 2025, https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/
+   5. What is JSON-RPC 2.0: A Comprehensive Guide - A2A Protocol Documentation, accessed December 18, 2025, https://www.a2aprotocol.org/en/docs/json-rpc-2-0
+   6. Language Server Extension Guide - Visual Studio Code, accessed December 18, 2025, https://code.visualstudio.com/api/language-extensions/language-server-extension-guide
+   7. Getting Started with the Language Server Protocol - Nabeel Valley, accessed December 18, 2025, https://nabeelvalley.co.za/blog/2025/26-03/the-language-server-protocol/
+   8. Initialize response from LSP Server doesn't reach the (vscode) lsp client (TransportKind is stdio) #906 - GitHub, accessed December 18, 2025, https://github.com/microsoft/vscode-extension-samples/issues/906
+   9. Pipe LSP server over HTTP - Stack Overflow, accessed December 18, 2025, https://stackoverflow.com/questions/76191982/pipe-lsp-server-over-http
+   10. JSON-RPC 2.0 Specification, accessed December 18, 2025, https://www.jsonrpc.org/specification
+   11. How does this compare with RapidJSON, JSONCpp and JSON Spirit - other popular C+... | Hacker News, accessed December 18, 2025, https://news.ycombinator.com/item?id=21106046
+   12. Benchmarks, accessed December 18, 2025, https://230.jsondocs.prtest.cppalliance.org/libs/json/doc/html/json/benchmarks.html
+   13. What JSON library do you suggest? : r/cpp - Reddit, accessed December 18, 2025, https://www.reddit.com/r/cpp/comments/ovhrhn/what_json_library_do_you_suggest/
+   14. nlohmann/json: JSON for Modern C++ - GitHub, accessed December 18, 2025, https://github.com/nlohmann/json
+   15. Understanding the Language Server Protocol | by Malintha Ranasinghe - Medium, accessed December 18, 2025, https://medium.com/@malintha1996/understanding-the-language-server-protocol-5c0ba3ac83d2
+   16. Adding a Language Server Protocol extension - Visual Studio (Windows) - Microsoft Learn, accessed December 18, 2025, https://learn.microsoft.com/en-us/visualstudio/extensibility/adding-an-lsp-extension?view=visualstudio
+   17. Thread Pool in C++ - GeeksforGeeks, accessed December 18, 2025, https://www.geeksforgeeks.org/cpp/thread-pool-in-cpp/
+   18. Building a Thread Pool with C++ and STL - Coding Notes, accessed December 18, 2025, https://nixiz.github.io/yazilim-notlari/2023/10/07/thread_pool-en
+   19. StdIn / Stdout Example · Issue #1 · AArnott/StreamJsonRpc.Sample - GitHub, accessed December 18, 2025, https://github.com/AArnott/StreamJsonRpc.Sample/issues/1
+   20. Understanding Single-Threaded vs Multi-Threaded Applications: A Detailed Guide - Medium, accessed December 18, 2025, https://medium.com/@smita.s.kothari/understanding-single-threaded-vs-multi-threaded-applications-a-detailed-guide-8f1c74512d2d
+   21. tower_lsp client/server Document Sync : r/rust - Reddit, accessed December 18, 2025, https://www.reddit.com/r/rust/comments/vryddi/tower_lsp_clientserver_document_sync/
+   22. LSP confusion : r/vscode - Reddit, accessed December 18, 2025, https://www.reddit.com/r/vscode/comments/1fai5o3/lsp_confusion/
+   23. [tools] internal/lsp: update LSP protocol for 3.17 - Google Groups, accessed December 18, 2025, https://groups.google.com/g/golang-codereviews/c/ujz6SjpUF5Q
+   24. lsp_types - Rust - Docs.rs, accessed December 18, 2025, https://docs.rs/lsp-types
+   25. SymbolKind Enum (Microsoft.VisualStudio.LanguageServer.Protocol), accessed December 18, 2025, https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.languageserver.protocol.symbolkind?view=visualstudiosdk-2022
+   26. Syntax Highlight Guide | Visual Studio Code Extension API, accessed December 18, 2025, https://code.visualstudio.com/api/language-extensions/syntax-highlight-guide
+   27. Extension Manifest - Visual Studio Code, accessed December 18, 2025, https://code.visualstudio.com/api/references/extension-manifest
+   28. Activation events - vscode-docs, accessed December 18, 2025, https://vscode-docs.readthedocs.io/en/stable/extensionAPI/activation-events/
+   29. Extension points - vscode-docs, accessed December 18, 2025, https://vscode-docs.readthedocs.io/en/stable/extensionAPI/extension-points/
+   30. Language Configuration Guide | Visual Studio Code Extension API, accessed December 18, 2025, https://code.visualstudio.com/api/language-extensions/language-configuration-guide
