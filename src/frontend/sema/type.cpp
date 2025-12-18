@@ -512,8 +512,16 @@ VectorType* TypeSystem::getVectorType(Type* componentType, int dimension) {
 
 FunctionType* TypeSystem::getFunctionType(const std::vector<Type*>& paramTypes, Type* returnType,
                                          bool isAsync, bool isVariadic) {
+    // Phase 4.5.3: Async functions automatically return future<T> instead of T
+    // When user declares: async func:foo = int32() { ... }
+    // Actual type becomes: func() -> future<int32>
+    Type* actualReturnType = returnType;
+    if (isAsync && returnType) {
+        actualReturnType = getFutureType(returnType);
+    }
+    
     // TODO: Implement caching for function types
-    auto type = std::make_unique<FunctionType>(paramTypes, returnType, isAsync, isVariadic);
+    auto type = std::make_unique<FunctionType>(paramTypes, actualReturnType, isAsync, isVariadic);
     FunctionType* ptr = type.get();
     types.push_back(std::move(type));
     return ptr;
