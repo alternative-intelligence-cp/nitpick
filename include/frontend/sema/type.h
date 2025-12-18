@@ -30,6 +30,7 @@ enum class TypeKind {
     VECTOR,         // vec2, vec3, vec4, etc.
     GENERIC,        // T, U, V (type parameters)
     RESULT,         // result<T> for error handling
+    FUTURE,         // future<T> for async computation
     UNKNOWN,        // Type not yet inferred
     ERROR,          // Type error occurred
 };
@@ -307,6 +308,26 @@ public:
 };
 
 // ============================================================================
+// FutureType - Future type for async computation (future<T>)
+// ============================================================================
+// Reference: research_029 (async/await system), section 4 (Future trait design)
+
+class FutureType : public Type {
+private:
+    Type* outputType;  // The type produced when the Future completes
+    
+public:
+    explicit FutureType(Type* outputType)
+        : Type(TypeKind::FUTURE), outputType(outputType) {}
+    
+    Type* getOutputType() const { return outputType; }
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
 // UnknownType - Used during type inference
 // ============================================================================
 
@@ -361,6 +382,7 @@ public:
     FunctionType* getFunctionType(const std::vector<Type*>& paramTypes, Type* returnType,
                                  bool isAsync = false, bool isVariadic = false);
     ResultType* getResultType(Type* valueType);
+    FutureType* getFutureType(Type* outputType);
     
     // Named types
     StructType* getStructType(const std::string& name);

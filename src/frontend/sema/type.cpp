@@ -353,6 +353,33 @@ std::string ResultType::toString() const {
 }
 
 // ============================================================================
+// FutureType Implementation
+// ============================================================================
+
+bool FutureType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::FUTURE) {
+        return false;
+    }
+    const FutureType* otherFuture = static_cast<const FutureType*>(other);
+    return outputType->equals(otherFuture->outputType);
+}
+
+bool FutureType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // Future types must match exactly
+    return equals(target);
+}
+
+std::string FutureType::toString() const {
+    std::stringstream ss;
+    ss << "future<" << outputType->toString() << ">";
+    return ss.str();
+}
+
+// ============================================================================
 // UnknownType Implementation
 // ============================================================================
 
@@ -496,6 +523,14 @@ ResultType* TypeSystem::getResultType(Type* valueType) {
     // TODO: Implement caching for result types
     auto type = std::make_unique<ResultType>(valueType);
     ResultType* ptr = type.get();
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+FutureType* TypeSystem::getFutureType(Type* outputType) {
+    // TODO: Implement caching for future types
+    auto type = std::make_unique<FutureType>(outputType);
+    FutureType* ptr = type.get();
     types.push_back(std::move(type));
     return ptr;
 }
