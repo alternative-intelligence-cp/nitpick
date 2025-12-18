@@ -795,6 +795,30 @@ src/frontend/sema/visibility_checker.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/visibility_checker.cpp.s
 .PHONY : src/frontend/sema/visibility_checker.cpp.s
 
+src/frontend/warnings.o: src/frontend/warnings.cpp.o
+.PHONY : src/frontend/warnings.o
+
+# target to build an object file
+src/frontend/warnings.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/warnings.cpp.o
+.PHONY : src/frontend/warnings.cpp.o
+
+src/frontend/warnings.i: src/frontend/warnings.cpp.i
+.PHONY : src/frontend/warnings.i
+
+# target to preprocess a source file
+src/frontend/warnings.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/warnings.cpp.i
+.PHONY : src/frontend/warnings.cpp.i
+
+src/frontend/warnings.s: src/frontend/warnings.cpp.s
+.PHONY : src/frontend/warnings.s
+
+# target to generate assembly for a file
+src/frontend/warnings.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/warnings.cpp.s
+.PHONY : src/frontend/warnings.cpp.s
+
 src/main.o: src/main.cpp.o
 .PHONY : src/main.o
 
@@ -1386,6 +1410,9 @@ help:
 	@echo "... src/frontend/sema/visibility_checker.o"
 	@echo "... src/frontend/sema/visibility_checker.i"
 	@echo "... src/frontend/sema/visibility_checker.s"
+	@echo "... src/frontend/warnings.o"
+	@echo "... src/frontend/warnings.i"
+	@echo "... src/frontend/warnings.s"
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"

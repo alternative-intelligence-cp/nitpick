@@ -28,6 +28,7 @@
 #include "frontend/sema/type_checker.h"
 #include "frontend/sema/borrow_checker.h"
 #include "frontend/diagnostics.h"
+#include "frontend/warnings.h"
 #include "backend/ir/ir_generator.h"
 
 // LLVM
@@ -60,6 +61,7 @@ struct CompilerOptions {
     bool dump_tokens = false;
     bool verbose = false;
     int opt_level = 0;  // -O0, -O1, -O2, -O3
+    std::vector<std::string> warning_flags;  // -Wall, -Werror, -W<warning>, etc.
 };
 
 /**
@@ -86,6 +88,10 @@ void print_help() {
     std::cout << "  --tokens          Dump tokens and exit\n";
     std::cout << "  -O<level>         Optimization level (0-3)\n";
     std::cout << "  -v, --verbose     Verbose output\n";
+    std::cout << "  -Wall             Enable all warnings\n";
+    std::cout << "  -Werror           Treat warnings as errors\n";
+    std::cout << "  -W<warning>       Enable specific warning\n";
+    std::cout << "  -Wno-<warning>    Disable specific warning\n";
     std::cout << "  --version         Show version\n";
     std::cout << "  --help            Show this help\n\n";
     std::cout << "Examples:\n";
@@ -139,6 +145,9 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
                 std::cerr << "Error: Invalid optimization level: " << arg << "\n";
                 return false;
             }
+        } else if (arg.substr(0, 2) == "-W") {
+            // Warning flags: -Wall, -Werror, -Wunused-variable, -Wno-dead-code, etc.
+            opts.warning_flags.push_back(arg);
         } else if (arg[0] == '-') {
             std::cerr << "Error: Unknown option: " << arg << "\n";
             return false;

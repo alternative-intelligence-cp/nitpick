@@ -92,6 +92,7 @@ set(PARSER_SOURCES
 # Diagnostics (Phase 7.2)
 set(DIAGNOSTICS_SOURCES
     src/frontend/diagnostics.cpp
+    src/frontend/warnings.cpp
 )
 
 # Phase 3: Semantic Analysis
