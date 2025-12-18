@@ -64,12 +64,16 @@ llvm_map_components_to_libnames(llvm_libs
 # toml11 for aria.toml parsing (header-only library)
 add_subdirectory(vendor/toml11)
 
+# nlohmann/json for LSP JSON-RPC (header-only library)
+# No add_subdirectory needed - just include headers
+
 # ============================================================================
 # Include directories
 # ============================================================================
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/vendor/toml11/include)
+include_directories(${CMAKE_SOURCE_DIR}/vendor/json/include)
 
 # ============================================================================
 # Source files (will be populated as we implement each phase)
@@ -159,6 +163,7 @@ set(STDLIB_SOURCES
 # Phase 7: Tooling
 set(TOOLS_SOURCES
     src/tools/project_config.cpp
+    src/tools/lsp/transport.cpp
 )
 
 # Combine all sources
