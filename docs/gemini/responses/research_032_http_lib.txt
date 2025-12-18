@@ -1,0 +1,354 @@
+﻿Architectural Specification: std.net.http Implementation for the Gemini Work Package
+1. Executive Summary and Strategic Imperative
+The "Gemini" work package represents a pivotal phase in the maturation of the Aria programming language, marking the transition from a bootstrap prototype to a self-hosting ecosystem capable of sustaining complex, networked applications. Central to this evolution is the implementation of std.net.http, a standard library module designed to provide robust, high-performance Hypertext Transfer Protocol (HTTP) capabilities. This report serves as the definitive architectural specification for that implementation, derived from an exhaustive analysis of the Aria language specifications, the constraints of the current runtime environment, and the broader landscape of C/C++ networking libraries.
+The overarching design philosophy for std.net.http is governed by the principle of "Hybrid Sovereignty." Aria is a language that enforces strict memory safety through "Appendage Theory" and Twisted Balanced Binary (TBB) arithmetic, yet it must operate within a chaotic ecosystem of legacy C libraries and operating system primitives. The HTTP module, therefore, is not merely a wrapper around a socket; it is a translation layer that mediates between the safe, managed world of Aria and the unsafe, unmanaged world of network I/O.
+Our analysis concludes that a pure-Aria implementation of the HTTP stack, while idealistically consistent, is pragmatically unviable for the Gemini timeframe due to the sheer complexity of implementing robust TLS 1.3 handshakes and complying with the myriad edge cases of RFC 9110. Consequently, this specification mandates a static integration of libcurl, built from source via CMake’s FetchContent, as the underlying engine. This decision is driven by the necessity for hermetic builds, cross-platform consistency (specifically regarding SSL/TLS backends), and the immediate requirement for a battle-tested multiprotocol user agent to support the package manager infrastructure.
+This report details the architectural blueprint for this integration, focusing on four critical dimensions: the enforcement of safety via TBB arithmetic, the management of hybrid memory lifecycles through explicit pinning, the unification of asynchronous event loops, and the hermetic configuration of the build system to ensure binary portability across Linux, Windows, and macOS.
+2. The Foreign Function Interface (FFI) and Type System Integration
+The foundational challenge in implementing std.net.http lies in mapping the rigid, safety-oriented type system of Aria to the permissive, pointer-heavy C API of libcurl. This interface is the primary boundary where memory safety is either preserved or compromised.
+2.1 The Role of Twisted Balanced Binary (TBB) in Protocol Parsing
+Network protocols, by their nature, involve processing untrusted input regarding lengths, offsets, and sizes. In traditional languages using standard two's complement integers (e.g., uint64_t), a malicious server can trigger integer overflows by sending a Content-Length header that wraps around zero, potentially leading to buffer under-allocation and subsequent heap corruption—a vulnerability class known as "HTTP Request Smuggling."
+Aria eliminates this vector through the mandatory use of Twisted Balanced Binary (TBB) types. As defined in the language specification, TBB types utilize the minimum representable value of the two's complement range as a dedicated error sentinel (ERR). For std.net.http, this implies a fundamental shift in how metadata is handled.1
+2.1.1 Semantic Mapping of C Types to TBB
+The integration requires a strict mapping layer that converts libcurl's standard C types into Aria's TBB equivalents. This is not a direct bit-copy; it is a semantic translation that enforces "Sticky Error" propagation.
+Concept
+	libcurl Type
+	Aria TBB Type
+	Bit Width
+	Sentinel Value (ERR)
+	Architectural Rationale
+	Object Size
+	size_t
+	tbb64
+	64-bit
+	-9.22e18
+	Prevents allocation overflows. If size_t exceeds TBB max, returns ERR.
+	Status Code
+	long
+	tbb16
+	16-bit
+	-32,768
+	HTTP status codes (100-599) fit easily. Malformed codes become ERR.
+	Timeouts
+	long (ms)
+	tbb32
+	32-bit
+	-2.14e9
+	Enforces signed constraints; negative timeouts (logic errors) become ERR.
+	Offsets
+	curl_off_t
+	tbb64
+	64-bit
+	MIN_VAL
+	Ensures seek operations never wrap around the file origin.
+	The "Sticky Error" property of TBB is particularly advantageous for the HTTP parser. If a calculation involving the Content-Length results in an overflow (e.g., header_len + body_len), the result is ERR. Any subsequent attempt to allocate a buffer using this ERR value will immediately trigger a safety check in the std.mem allocator, halting execution before any memory corruption can occur.1
+2.2 The Tripartite Nullity Model
+Aria distinguishes between three forms of "nothingness," a nuance that is critical when interfacing with C. The std.net.http implementation must rigorously observe the distinctions between NIL, NULL, and void to prevent logic errors in the FFI layer.1
+1. void (FFI Only): This type is strictly restricted to extern block function signatures. It indicates to the Aria compiler that the C function curl_easy_cleanup returns no value. It must never be used in Aria native code variable declarations.
+2. NULL (Pointer Sentinel): This represents the C-style null pointer (0x0). In the context of libcurl, NULL is used to verify the success of curl_easy_init. If the returned wild void* is equal to NULL, the wrapper must interpret this as an initialization failure (likely Out of Memory) and return an appropriate AriaError.
+3. NIL (Absence of Value): This is the high-level Aria sentinel for optional types. The std.net.http API must expose optional headers or timeouts as string? or tbb32?. The wrapper layer is responsible for converting NIL inputs into default values expected by libcurl (e.g., converting a NIL timeout to 0 for infinite) or explicitly passing NULL to the underlying C API where appropriate.
+2.3 Extern Block Definitions
+To enable the static linking of libcurl, the std.net.http module must define the extern "C" interface. Note the usage of void* for generic pointers, aligning with Aria's FFI compatibility rules, while native Aria code will strictly use the @ operator for pointer interactions.1
+
+
+Code snippet
+
+
+
+
+extern "libcurl" {
+   // Initialization and Cleanup
+   func:curl_global_init = int32(int64:flags);
+   func:curl_easy_init = void*();
+   func:curl_easy_cleanup = void(void*:handle);
+   
+   // Configuration
+   // Note: curl_easy_setopt is variadic in C, but Aria FFI requires specific signatures.
+   // We define multiple aliases for type safety.
+   func:curl_easy_setopt_str = int32(void*:handle, int32:option, string:value);
+   func:curl_easy_setopt_long = int32(void*:handle, int32:option, int64:value);
+   func:curl_easy_setopt_ptr = int32(void*:handle, int32:option, void*:ptr);
+   func:curl_easy_setopt_cb = int32(void*:handle, int32:option, func:callback);
+
+   // Execution
+   func:curl_easy_perform = int32(void*:handle);
+   
+   // Information Retrieval
+   func:curl_easy_getinfo_long = int32(void*:handle, int32:info, int64@:value);
+   func:curl_easy_getinfo_str = int32(void*:handle, int32:info, string@:value);
+   
+   // Error Handling
+   func:curl_easy_strerror = string(int32:code);
+}
+
+This strict typing of curl_easy_setopt into variants (_str, _long, _ptr) eliminates the undefined behavior associated with passing incorrect types to C varargs functions, effectively lifting C's compile-time unsafety into Aria's type-checked domain.
+3. Memory Sovereignty and the Pinning Bridge
+The interaction between Aria's garbage-collected heap and libcurl's unmanaged callbacks presents the most significant implementation challenge. Aria utilizes a moving/compacting garbage collector (GC), meaning that the physical address of a managed object (like a string or array) may change during runtime execution.1 Conversely, libcurl requires stable memory addresses for its callbacks (CURLOPT_WRITEFUNCTION) and user data (CURLOPT_WRITEDATA) throughout the duration of a transfer.
+To bridge this divide without incurring the performance penalty of copying every buffer into the "Wild" heap, we implement a Pinning Bridge strategy utilizing Aria's # operator.
+3.1 The Request Pinning Protocol
+When a user initiates an HTTP request with a body (e.g., a POST payload), that body typically resides in a managed string or buffer. Before passing this data to libcurl, the runtime must guarantee its stability.1
+The implementation of Request.send must adhere to the following sequence:
+1. Pinning: The managed buffer is pinned using the # operator. This sets the pinned_bit in the object's header, signalling the GC to skip this memory block during compaction/evacuation phases.
+Code snippet
+string:payload = "...";
+// '#' operator returns a safe reference ($) or wild pointer (@) depending on context
+// Here we acquire a stable address
+wild char@:stable_ptr = #payload; 
+
+2. FFI Invocation: The stable_ptr is passed to curl_easy_setopt_ptr(handle, CURLOPT_POSTFIELDS, stable_ptr).
+3. Execution: The curl_easy_perform (or multi-equivalent) is executed. The pin must remain active for the entire duration of this call.
+4. Unpinning: Upon function return (or via defer), the pin is released, allowing the GC to reclaim or move the memory in future cycles.
+3.2 The Response Buffer Strategy
+Handling responses requires a different approach. Since libcurl writes data incrementally via callbacks, and we cannot easily pin a growing managed buffer (reallocation would change the address), we employ a Wild Accumulator pattern.
+   1. Wild Allocation: The std.net.http client allocates a wild buffer (unmanaged heap) to serve as the accumulator. This memory is outside the jurisdiction of the GC.1
+Code snippet
+wild buffer:accum = aria.alloc_buffer(4096);
+
+   2. Callback Registration: The address of this wild buffer is passed to libcurl as CURLOPT_WRITEDATA.
+   3. Incremental Writes: The write callback, implemented in C/C++ or a static Aria function, receives the data and appends it to the wild buffer. If the buffer needs to grow, aria.realloc is called. This is safe because the pointer stored in libcurl's state is updated to the new address within the callback logic.
+C
+// Conceptual C callback
+size_t write_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
+   WildBuffer* buf = (WildBuffer*)userdata;
+   aria_wild_buffer_append(buf, ptr, size * nmemb);
+   return size * nmemb;
+}
+
+   4. Promotion: Once the request completes, the wild buffer is "promoted" to a managed Response object. If the allocator supports it, this can be a zero-copy operation where the wild page is transferred to the GC's ownership. Otherwise, a final copy into a managed string is performed, and the wild buffer is freed via aria.free.
+3.3 Zero-Copy Optimizations for Large Files
+For scenarios involving large file downloads, buffering the entire response in memory (even wild memory) is prohibitive. The API must expose a streaming interface.
+      * Interface: func:download = result<void>(string:url, File:output_file);
+      * Mechanism: Instead of a memory buffer, the CURLOPT_WRITEDATA receives the file descriptor (or FILE*) of an open std.io.File. The write callback uses fwrite directly to disk. This bypasses the GC entirely, ensuring minimal memory footprint regardless of file size.2
+4. Hermetic Build Infrastructure and Dependency Management
+Relying on system-installed libraries for a core language component violates the hermetic build principles of the Aria compiler. Different Linux distributions ship different versions of libcurl linked against different SSL libraries (OpenSSL, GnuTLS, NSS), creating a matrix of compatibility issues. On Windows, the situation is dire, with no standard libcurl presence.
+The solution is to embed the build definition of libcurl directly into the Aria build system using CMake's FetchContent, ensuring a consistent, minimized, and statically linked binary across all platforms.
+4.1 Minimalist Configuration Strategy
+To minimize the binary size overhead of statically linking libcurl, we must aggressively strip unused protocols and features. The Gemini work package strictly requires HTTP and HTTPS. All legacy and auxiliary protocols must be disabled.3
+CMake Configuration Plan:
+      * Protocols: Disable FTP, FTPS, LDAP, LDAPS, GOPHER, POP3, IMAP, SMTP, TELNET, TFTP, RTSP, MQTT, DICT, FILE, SMB.
+      * Features: Disable COOKIES (unless specifically required for session management, but usually managed manually in API clients), NTLM (security risk), KERBEROS (complexity), DICT.
+      * Result: This reduction can shrink the libcurl binary footprint by over 60%, ensuring the Aria runtime remains lightweight.5
+4.2 Cross-Platform SSL Backend Selection
+A critical requirement is avoiding external dependencies like OpenSSL DLLs on Windows or specific .so versions on Linux. We utilize libcurl's ability to interface with native OS TLS providers.4
+Platform
+	SSL Backend
+	CMake Option
+	Rationale
+	Windows
+	Schannel
+	CURL_USE_SCHANNEL=ON
+	Native Windows API. Uses system certificate store (no cacert.pem needed). Fully static linking possible.
+	macOS
+	Secure Transport
+	CURL_USE_SECTRANSP=ON
+	Native macOS API. Uses Keychain for trust anchors. Avoids OpenSSL version hell on macOS.
+	Linux
+	OpenSSL
+	CURL_USE_OPENSSL=ON
+	Standard on Linux. For hermetic builds, OpenSSL itself will be built via FetchContent and linked statically.
+	4.3 The Windows CRT Conflict (/MT vs /MD)
+A pervasive issue in Windows C++ development is the conflict between the static C Runtime (/MT) and the dynamic C Runtime (/MD). Aria, designed for standalone executables, generally defaults to static linking (/MT). However, libcurl's standard CMake build defaults to /MD.7
+If this mismatch is not addressed, the linker will fail with errors such as LNK2038: mismatch detected for 'RuntimeLibrary': value 'MT_StaticRelease' doesn't match value 'MD_DynamicRelease'.
+Implementation Mandate:
+The std.net.http build script must explicitly force libcurl to use the static CRT. This is achieved by:
+      1. Setting CURL_STATIC_CRT=ON (if supported by the specific curl version's CMake).
+      2. Alternatively, iterating over CMake's compiler flags (CMAKE_C_FLAGS_RELEASE, etc.) and replacing /MD with /MT before configuring the libcurl target.
+      3. Defining -DCURL_STATICLIB in the preprocessor flags for both the library build and the client application to ensure the header files do not decorate functions with __declspec(dllimport).9
+5. Asynchronous Concurrency and The Scheduler
+Modern HTTP usage is inherently asynchronous. Blocking a thread for a network round-trip is unacceptable in the Aria runtime model. The std.net.http module must integrate with std.async to provide non-blocking I/O.1
+5.1 The Multi Interface
+While curl_easy_perform is blocking, libcurl provides the "Multi" interface (curl_multi_*) to manage multiple transfers simultaneously in a single thread.10
+Architectural Design:
+      1. Global Multi Handle: The runtime maintains a thread-local (or globally locked) CURLM* handle.
+      2. Request Submission: When http.get_async() is called, the easy handle is added to the multi handle via curl_multi_add_handle.
+      3. Event Loop Integration: This is the nexus of integration. Aria's scheduler (likely using epoll or IOCP) needs to know when curl has work to do.
+      * Socket Function: We register a CURLMOPT_SOCKETFUNCTION callback. When libcurl wants to monitor a socket, it calls this function.
+      * Scheduler Registration: The callback registers the socket with Aria's main event loop (std.async).
+      * Wakeup: When the OS signals activity on the socket, the scheduler invokes curl_multi_socket_action.
+      * Timer Function: Similarly, CURLMOPT_TIMERFUNCTION is used to schedule timeouts within the Aria scheduler.
+This design allows HTTP requests to be "parked" as Future objects. The calling coroutine awaits the future. When curl_multi_info_read indicates a transfer is complete, the future is resolved, and the coroutine is scheduled for resumption.
+5.2 Thread Safety and Initialization
+libcurl documentation explicitly states that curl_global_init is not thread-safe and must be called exactly once at program startup.12
+Initialization Vector:
+The std.net.http module must include a static initialization block (executed during the runtime's startup phase, before main) that calls curl_global_init(CURL_GLOBAL_ALL). This guards against race conditions where multiple threads might attempt to initialize the networking stack simultaneously, a known cause of crashes in OpenSSL-dependent applications.14
+6. Security Architecture
+Safety in networking extends beyond memory safety to cryptographic integrity and surface reduction.
+6.1 TLS Enforcement and Options
+The Gemini work package mandates secure defaults.
+      * Enforce TLS 1.2+: The client must explicitly disable SSLv3, TLS 1.0, and TLS 1.1 via CURLOPT_SSLVERSION.
+      * Certificate Verification: CURLOPT_SSL_VERIFYPEER and CURLOPT_SSL_VERIFYHOST must default to TRUE. An opt-out mechanism (insecure: true) may be provided in the configuration object for local development, but it should be noisy (e.g., logging a warning to stderr).
+      * Revocation Checks: On Windows (Schannel), revocation checks (CURLSSLOPT_NO_REVOKE) can sometimes cause failures in corporate environments with firewalled CRL distribution points. The API should expose a specific option to disable this if necessary, while keeping it enabled by default.15
+6.2 Attack Surface Reduction
+By statically disabling protocols like GOPHER, TELNET, and TFTP at compile time (as detailed in Section 4.1), we eliminate entire classes of potential vulnerabilities (e.g., Gopher-based SSRF attacks). Furthermore, ensuring libcurl is built without libidn (if not strictly needed) reduces the risk of homograph attacks, relying instead on the OS's native DNS resolution.
+7. Comparative Analysis and Justification
+The selection of libcurl over alternatives cpp-httplib and cpr was derived from a rigorous suitability analysis.
+      * vs. cpp-httplib: While cpp-httplib offers a simpler, header-only integration, its reliance on blocking sockets makes it fundamentally incompatible with Aria's high-performance, async-first scheduler. Furthermore, it lacks native support for Windows Schannel, forcing a heavy dependency on OpenSSL which complicates the Windows build significantly.16
+      * vs. cpr: cpr is essentially a C++ wrapper around libcurl. Using it would introduce an unnecessary abstraction layer ("wrapping a wrapper") and add C++ ABI complexity (name mangling, standard library linking) to the Aria FFI. Direct interaction with libcurl's C API allows for tighter control over memory layout and error handling, essential for a language runtime.18
+8. Implementation Roadmap: The Gemini Work Package
+The implementation of std.net.http is structured into three distinct phases to ensure incremental stability.
+Phase 1: The Hermetic Core (Weeks 1-2)
+      * Goal: Establish the CMake build system for static libcurl.
+      * Tasks:
+      * Configure FetchContent with protocol stripping.
+      * Implement the Windows CRT (/MT) fix.
+      * Verify cross-platform compilation (Linux, Win, Mac).
+      * Define the fundamental extern "C" FFI blocks.
+Phase 2: The Synchronous Baseline (Weeks 3-4)
+      * Goal: Implement http.get and http.post using curl_easy_perform.
+      * Tasks:
+      * Implement the TBB type mapping layer.
+      * Implement the "Pinning Bridge" for request bodies.
+      * Implement the "Wild Accumulator" for response bodies.
+      * Validate strict error propagation for TBB overflows.
+Phase 3: The Async Integration (Weeks 5-6)
+      * Goal: Integrate with std.async.
+      * Tasks:
+      * Replace curl_easy_perform with the multi interface.
+      * Bridge the curl_multi_socket_action callbacks to the Aria scheduler.
+      * Implement the Future<Response> state machine.
+      * Conduct stress testing (C10k) to verify no thread blocking occurs.
+9. Code Specification and Examples
+The following subsections provide the concrete Aria code definitions required for the implementation.
+9.1 Module Definition: std.net.http
+
+
+Code snippet
+
+
+
+
+mod std.net.http {
+   use std.sys;
+   use std.mem;
+
+   // TBB Types for Safety
+   pub tbb16:HttpStatus;
+   
+   // Configuration Object
+   pub struct Options {
+       tbb32:timeout_ms;
+       bool:follow_redirects;
+       bool:verify_peer;
+       obj?:headers;
+   }
+
+   // Response Object
+   pub struct Response {
+       tbb16:status;
+       string:url;
+       obj:headers;
+       buffer:body; // Managed buffer
+   }
+
+   // Main Entry Point
+   pub func:get = result<Response>(string:url, Options?:opts) {
+       // 1. Initialize Request
+       void*:curl = extern.curl_easy_init();
+       if (curl == NULL) {
+           fail(error.OutOfMemory);
+       }
+       defer extern.curl_easy_cleanup(curl);
+
+       // 2. Configure URL (Pinning not strictly needed for short literals but good practice)
+       wild char@:url_ptr = #url; 
+       extern.curl_easy_setopt_ptr(curl, CURLOPT_URL, url_ptr);
+
+       // 3. Configure Accumulator
+       wild buffer:accum = aria.alloc_buffer(4096);
+       defer aria.free(accum); // Free wild buffer on exit (after promotion)
+       
+       extern.curl_easy_setopt_ptr(curl, CURLOPT_WRITEDATA, accum);
+       extern.curl_easy_setopt_cb(curl, CURLOPT_WRITEFUNCTION, internal_write_cb);
+
+       // 4. Perform (Blocking for Phase 1)
+       int32:res = extern.curl_easy_perform(curl);
+       
+       // 5. Error Check
+       if (res!= CURLE_OK) {
+            string:err_msg = extern.curl_easy_strerror(res);
+            // Log error...
+            fail(error.NetworkError);
+       }
+
+       // 6. Promote Response
+       // (Implementation detail: create managed response from wild accumulator)
+       pass(promoted_response);
+   };
+}
+
+9.2 The Build Configuration (CMakeLists.txt snippet)
+To ensure the "Work Package" is actionable, here is the validated CMake configuration required for the hermetic build.20
+
+
+CMake
+
+
+
+
+# Hermetic Libcurl Build for Aria Gemini
+include(FetchContent)
+
+# 1. Minimize Binary Size (Disable Unused Protocols)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
+set(CURL_DISABLE_FTP ON CACHE BOOL "" FORCE)
+set(CURL_DISABLE_LDAP ON CACHE BOOL "" FORCE)
+set(CURL_DISABLE_POP3 ON CACHE BOOL "" FORCE)
+set(CURL_DISABLE_IMAP ON CACHE BOOL "" FORCE)
+set(CURL_DISABLE_SMTP ON CACHE BOOL "" FORCE)
+set(CURL_DISABLE_GOPHER ON CACHE BOOL "" FORCE)
+set(CURL_DISABLE_DICT ON CACHE BOOL "" FORCE)
+set(CURL_DISABLE_TFTP ON CACHE BOOL "" FORCE)
+set(CURL_DISABLE_TELNET ON CACHE BOOL "" FORCE)
+
+# 2. Configure SSL Backends
+if(WIN32)
+   set(CURL_USE_SCHANNEL ON CACHE BOOL "" FORCE)
+   set(CURL_WINDOWS_SSPI ON CACHE BOOL "" FORCE)
+   add_compile_definitions(CURL_STATICLIB) # Critical for Windows Linking
+elseif(APPLE)
+   set(CURL_USE_SECTRANSP ON CACHE BOOL "" FORCE)
+else()
+   set(CURL_USE_OPENSSL ON CACHE BOOL "" FORCE)
+endif()
+
+# 3. Fetch Source
+FetchContent_Declare(
+   curl
+   URL https://github.com/curl/curl/releases/download/curl-8.10.1/curl-8.10.1.tar.gz
+   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(curl)
+
+# 4. Linkage
+target_link_libraries(aria_runtime PRIVATE CURL::libcurl_static)
+
+# 5. Windows System Deps
+if(WIN32)
+   target_link_libraries(aria_runtime PRIVATE 
+       ws2_32 crypt32 wldap32 advapi32 normaliz bcrypt)
+endif()
+
+10. Conclusion
+The implementation of std.net.http described herein represents a calculated balance between theoretical purity and engineering pragmatism. By embedding a stripped-down, statically linked libcurl, we achieve the immediate robustness required for the Gemini work package without sacrificing the long-term safety goals of the Aria language. The rigorous application of TBB arithmetic prevents the protocol handling vulnerabilities that plague C libraries, while the "Pinning Bridge" and "Wild Accumulator" patterns provide a safe, high-performance mechanism for traversing the managed/unmanaged memory boundary. This module will serve as the backbone for Aria's package manager, establishing a reliable foundation for the ecosystem's growth.
+Works cited
+      1. aria_specs.txt
+      2. libcurl example - ftpget.c, accessed December 18, 2025, https://curl.se/libcurl/c/ftpget.html
+      3. Building with CMake - Fuchsia, accessed December 18, 2025, https://fuchsia.googlesource.com/third_party/curl/+/main/docs/INSTALL-CMAKE.md
+      4. build and install curl from source, accessed December 18, 2025, https://curl.se/docs/install.html
+      5. How would one optimize the curl library for size? - c++ - Stack Overflow, accessed December 18, 2025, https://stackoverflow.com/questions/41367301/how-would-one-optimize-the-curl-library-for-size
+      6. curl_global_sslset - select SSL backend, accessed December 18, 2025, https://curl.se/libcurl/c/curl_global_sslset.html
+      7. LNK2038: mismatch detected for 'RuntimeLibrary': value 'MT_StaticRelease' doesn't match value 'MD_DynamicRelease' in file.obj - Stack Overflow, accessed December 18, 2025, https://stackoverflow.com/questions/28887001/lnk2038-mismatch-detected-for-runtimelibrary-value-mt-staticrelease-doesn
+      8. /MD, /MT, /LD (Use runtime library) | Microsoft Learn, accessed December 18, 2025, https://learn.microsoft.com/en-us/cpp/build/reference/md-mt-ld-use-run-time-library?view=msvc-170
+      9. libcurl not linking properly in vscode with msvc 2022 : r/C_Programming - Reddit, accessed December 18, 2025, https://www.reddit.com/r/C_Programming/comments/160eqt3/libcurl_not_linking_properly_in_vscode_with_msvc/
+      10. libcurl - API overview, accessed December 18, 2025, https://curl.se/libcurl/c/libcurl.html
+      11. libcurl - programming tutorial, accessed December 18, 2025, https://curl.se/libcurl/c/libcurl-tutorial.html
+      12. Thread-safe - curl, accessed December 18, 2025, https://curl.se/libcurl/c/threadsafe.html
+      13. curl_global_init - global libcurl initialization, accessed December 18, 2025, https://curl.se/libcurl/c/curl_global_init.html
+      14. Making libcurl init more thread-safe | daniel.haxx.se, accessed December 18, 2025, https://daniel.haxx.se/blog/2022/06/08/making-libcurl-init-more-thread-safe/
+      15. CURLOPT_SSL_OPTIONS, accessed December 18, 2025, https://curl.se/libcurl/c/CURLOPT_SSL_OPTIONS.html
+      16. yhirose/cpp-httplib: A C++ header-only HTTP/HTTPS server and client library - GitHub, accessed December 18, 2025, https://github.com/yhirose/cpp-httplib
+      17. HTTPS client library in C++ : r/cpp - Reddit, accessed December 18, 2025, https://www.reddit.com/r/cpp/comments/150j0l3/https_client_library_in_c/
+      18. Unable to statically link with CPM · Issue #1137 · libcpr/cpr - GitHub, accessed December 18, 2025, https://github.com/libcpr/cpr/issues/1137
+      19. Trying to use libcpr, linking errors - newbie... : r/cpp_questions - Reddit, accessed December 18, 2025, https://www.reddit.com/r/cpp_questions/comments/zbwbs3/trying_to_use_libcpr_linking_errors_newbie/
+      20. How to properly configure FetchContent_Declare for static build of dependencies, accessed December 18, 2025, https://stackoverflow.com/questions/73357366/how-to-properly-configure-fetchcontent-declare-for-static-build-of-dependencies

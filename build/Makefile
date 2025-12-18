@@ -218,6 +218,19 @@ RISCVTargetParserTableGen/fast:
 .PHONY : RISCVTargetParserTableGen/fast
 
 #=============================================================================
+# Target rules for targets named ariac
+
+# Build rule for target.
+ariac: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ariac
+.PHONY : ariac
+
+# fast build rule for target.
+ariac/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/build
+.PHONY : ariac/fast
+
+#=============================================================================
 # Target rules for targets named test_runner
 
 # Build rule for target.
@@ -229,6 +242,1038 @@ test_runner: cmake_check_build_system
 test_runner/fast:
 	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_runner.dir/build.make tests/CMakeFiles/test_runner.dir/build
 .PHONY : test_runner/fast
+
+src/backend/ir/codegen_expr.o: src/backend/ir/codegen_expr.cpp.o
+.PHONY : src/backend/ir/codegen_expr.o
+
+# target to build an object file
+src/backend/ir/codegen_expr.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/codegen_expr.cpp.o
+.PHONY : src/backend/ir/codegen_expr.cpp.o
+
+src/backend/ir/codegen_expr.i: src/backend/ir/codegen_expr.cpp.i
+.PHONY : src/backend/ir/codegen_expr.i
+
+# target to preprocess a source file
+src/backend/ir/codegen_expr.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/codegen_expr.cpp.i
+.PHONY : src/backend/ir/codegen_expr.cpp.i
+
+src/backend/ir/codegen_expr.s: src/backend/ir/codegen_expr.cpp.s
+.PHONY : src/backend/ir/codegen_expr.s
+
+# target to generate assembly for a file
+src/backend/ir/codegen_expr.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/codegen_expr.cpp.s
+.PHONY : src/backend/ir/codegen_expr.cpp.s
+
+src/backend/ir/codegen_stmt.o: src/backend/ir/codegen_stmt.cpp.o
+.PHONY : src/backend/ir/codegen_stmt.o
+
+# target to build an object file
+src/backend/ir/codegen_stmt.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/codegen_stmt.cpp.o
+.PHONY : src/backend/ir/codegen_stmt.cpp.o
+
+src/backend/ir/codegen_stmt.i: src/backend/ir/codegen_stmt.cpp.i
+.PHONY : src/backend/ir/codegen_stmt.i
+
+# target to preprocess a source file
+src/backend/ir/codegen_stmt.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/codegen_stmt.cpp.i
+.PHONY : src/backend/ir/codegen_stmt.cpp.i
+
+src/backend/ir/codegen_stmt.s: src/backend/ir/codegen_stmt.cpp.s
+.PHONY : src/backend/ir/codegen_stmt.s
+
+# target to generate assembly for a file
+src/backend/ir/codegen_stmt.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/codegen_stmt.cpp.s
+.PHONY : src/backend/ir/codegen_stmt.cpp.s
+
+src/backend/ir/ir_generator.o: src/backend/ir/ir_generator.cpp.o
+.PHONY : src/backend/ir/ir_generator.o
+
+# target to build an object file
+src/backend/ir/ir_generator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/ir_generator.cpp.o
+.PHONY : src/backend/ir/ir_generator.cpp.o
+
+src/backend/ir/ir_generator.i: src/backend/ir/ir_generator.cpp.i
+.PHONY : src/backend/ir/ir_generator.i
+
+# target to preprocess a source file
+src/backend/ir/ir_generator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/ir_generator.cpp.i
+.PHONY : src/backend/ir/ir_generator.cpp.i
+
+src/backend/ir/ir_generator.s: src/backend/ir/ir_generator.cpp.s
+.PHONY : src/backend/ir/ir_generator.s
+
+# target to generate assembly for a file
+src/backend/ir/ir_generator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/ir_generator.cpp.s
+.PHONY : src/backend/ir/ir_generator.cpp.s
+
+src/backend/ir/tbb_codegen.o: src/backend/ir/tbb_codegen.cpp.o
+.PHONY : src/backend/ir/tbb_codegen.o
+
+# target to build an object file
+src/backend/ir/tbb_codegen.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/tbb_codegen.cpp.o
+.PHONY : src/backend/ir/tbb_codegen.cpp.o
+
+src/backend/ir/tbb_codegen.i: src/backend/ir/tbb_codegen.cpp.i
+.PHONY : src/backend/ir/tbb_codegen.i
+
+# target to preprocess a source file
+src/backend/ir/tbb_codegen.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/tbb_codegen.cpp.i
+.PHONY : src/backend/ir/tbb_codegen.cpp.i
+
+src/backend/ir/tbb_codegen.s: src/backend/ir/tbb_codegen.cpp.s
+.PHONY : src/backend/ir/tbb_codegen.s
+
+# target to generate assembly for a file
+src/backend/ir/tbb_codegen.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/tbb_codegen.cpp.s
+.PHONY : src/backend/ir/tbb_codegen.cpp.s
+
+src/frontend/ast/ast_node.o: src/frontend/ast/ast_node.cpp.o
+.PHONY : src/frontend/ast/ast_node.o
+
+# target to build an object file
+src/frontend/ast/ast_node.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/ast_node.cpp.o
+.PHONY : src/frontend/ast/ast_node.cpp.o
+
+src/frontend/ast/ast_node.i: src/frontend/ast/ast_node.cpp.i
+.PHONY : src/frontend/ast/ast_node.i
+
+# target to preprocess a source file
+src/frontend/ast/ast_node.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/ast_node.cpp.i
+.PHONY : src/frontend/ast/ast_node.cpp.i
+
+src/frontend/ast/ast_node.s: src/frontend/ast/ast_node.cpp.s
+.PHONY : src/frontend/ast/ast_node.s
+
+# target to generate assembly for a file
+src/frontend/ast/ast_node.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/ast_node.cpp.s
+.PHONY : src/frontend/ast/ast_node.cpp.s
+
+src/frontend/ast/expr.o: src/frontend/ast/expr.cpp.o
+.PHONY : src/frontend/ast/expr.o
+
+# target to build an object file
+src/frontend/ast/expr.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/expr.cpp.o
+.PHONY : src/frontend/ast/expr.cpp.o
+
+src/frontend/ast/expr.i: src/frontend/ast/expr.cpp.i
+.PHONY : src/frontend/ast/expr.i
+
+# target to preprocess a source file
+src/frontend/ast/expr.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/expr.cpp.i
+.PHONY : src/frontend/ast/expr.cpp.i
+
+src/frontend/ast/expr.s: src/frontend/ast/expr.cpp.s
+.PHONY : src/frontend/ast/expr.s
+
+# target to generate assembly for a file
+src/frontend/ast/expr.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/expr.cpp.s
+.PHONY : src/frontend/ast/expr.cpp.s
+
+src/frontend/ast/stmt.o: src/frontend/ast/stmt.cpp.o
+.PHONY : src/frontend/ast/stmt.o
+
+# target to build an object file
+src/frontend/ast/stmt.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/stmt.cpp.o
+.PHONY : src/frontend/ast/stmt.cpp.o
+
+src/frontend/ast/stmt.i: src/frontend/ast/stmt.cpp.i
+.PHONY : src/frontend/ast/stmt.i
+
+# target to preprocess a source file
+src/frontend/ast/stmt.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/stmt.cpp.i
+.PHONY : src/frontend/ast/stmt.cpp.i
+
+src/frontend/ast/stmt.s: src/frontend/ast/stmt.cpp.s
+.PHONY : src/frontend/ast/stmt.s
+
+# target to generate assembly for a file
+src/frontend/ast/stmt.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/stmt.cpp.s
+.PHONY : src/frontend/ast/stmt.cpp.s
+
+src/frontend/ast/type.o: src/frontend/ast/type.cpp.o
+.PHONY : src/frontend/ast/type.o
+
+# target to build an object file
+src/frontend/ast/type.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/type.cpp.o
+.PHONY : src/frontend/ast/type.cpp.o
+
+src/frontend/ast/type.i: src/frontend/ast/type.cpp.i
+.PHONY : src/frontend/ast/type.i
+
+# target to preprocess a source file
+src/frontend/ast/type.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/type.cpp.i
+.PHONY : src/frontend/ast/type.cpp.i
+
+src/frontend/ast/type.s: src/frontend/ast/type.cpp.s
+.PHONY : src/frontend/ast/type.s
+
+# target to generate assembly for a file
+src/frontend/ast/type.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/type.cpp.s
+.PHONY : src/frontend/ast/type.cpp.s
+
+src/frontend/lexer/lexer.o: src/frontend/lexer/lexer.cpp.o
+.PHONY : src/frontend/lexer/lexer.o
+
+# target to build an object file
+src/frontend/lexer/lexer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/lexer.cpp.o
+.PHONY : src/frontend/lexer/lexer.cpp.o
+
+src/frontend/lexer/lexer.i: src/frontend/lexer/lexer.cpp.i
+.PHONY : src/frontend/lexer/lexer.i
+
+# target to preprocess a source file
+src/frontend/lexer/lexer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/lexer.cpp.i
+.PHONY : src/frontend/lexer/lexer.cpp.i
+
+src/frontend/lexer/lexer.s: src/frontend/lexer/lexer.cpp.s
+.PHONY : src/frontend/lexer/lexer.s
+
+# target to generate assembly for a file
+src/frontend/lexer/lexer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/lexer.cpp.s
+.PHONY : src/frontend/lexer/lexer.cpp.s
+
+src/frontend/lexer/token.o: src/frontend/lexer/token.cpp.o
+.PHONY : src/frontend/lexer/token.o
+
+# target to build an object file
+src/frontend/lexer/token.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/token.cpp.o
+.PHONY : src/frontend/lexer/token.cpp.o
+
+src/frontend/lexer/token.i: src/frontend/lexer/token.cpp.i
+.PHONY : src/frontend/lexer/token.i
+
+# target to preprocess a source file
+src/frontend/lexer/token.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/token.cpp.i
+.PHONY : src/frontend/lexer/token.cpp.i
+
+src/frontend/lexer/token.s: src/frontend/lexer/token.cpp.s
+.PHONY : src/frontend/lexer/token.s
+
+# target to generate assembly for a file
+src/frontend/lexer/token.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/token.cpp.s
+.PHONY : src/frontend/lexer/token.cpp.s
+
+src/frontend/parser/parser.o: src/frontend/parser/parser.cpp.o
+.PHONY : src/frontend/parser/parser.o
+
+# target to build an object file
+src/frontend/parser/parser.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser/parser.cpp.o
+.PHONY : src/frontend/parser/parser.cpp.o
+
+src/frontend/parser/parser.i: src/frontend/parser/parser.cpp.i
+.PHONY : src/frontend/parser/parser.i
+
+# target to preprocess a source file
+src/frontend/parser/parser.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser/parser.cpp.i
+.PHONY : src/frontend/parser/parser.cpp.i
+
+src/frontend/parser/parser.s: src/frontend/parser/parser.cpp.s
+.PHONY : src/frontend/parser/parser.s
+
+# target to generate assembly for a file
+src/frontend/parser/parser.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser/parser.cpp.s
+.PHONY : src/frontend/parser/parser.cpp.s
+
+src/frontend/sema/async_analyzer.o: src/frontend/sema/async_analyzer.cpp.o
+.PHONY : src/frontend/sema/async_analyzer.o
+
+# target to build an object file
+src/frontend/sema/async_analyzer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/async_analyzer.cpp.o
+.PHONY : src/frontend/sema/async_analyzer.cpp.o
+
+src/frontend/sema/async_analyzer.i: src/frontend/sema/async_analyzer.cpp.i
+.PHONY : src/frontend/sema/async_analyzer.i
+
+# target to preprocess a source file
+src/frontend/sema/async_analyzer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/async_analyzer.cpp.i
+.PHONY : src/frontend/sema/async_analyzer.cpp.i
+
+src/frontend/sema/async_analyzer.s: src/frontend/sema/async_analyzer.cpp.s
+.PHONY : src/frontend/sema/async_analyzer.s
+
+# target to generate assembly for a file
+src/frontend/sema/async_analyzer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/async_analyzer.cpp.s
+.PHONY : src/frontend/sema/async_analyzer.cpp.s
+
+src/frontend/sema/borrow_checker.o: src/frontend/sema/borrow_checker.cpp.o
+.PHONY : src/frontend/sema/borrow_checker.o
+
+# target to build an object file
+src/frontend/sema/borrow_checker.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.o
+.PHONY : src/frontend/sema/borrow_checker.cpp.o
+
+src/frontend/sema/borrow_checker.i: src/frontend/sema/borrow_checker.cpp.i
+.PHONY : src/frontend/sema/borrow_checker.i
+
+# target to preprocess a source file
+src/frontend/sema/borrow_checker.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.i
+.PHONY : src/frontend/sema/borrow_checker.cpp.i
+
+src/frontend/sema/borrow_checker.s: src/frontend/sema/borrow_checker.cpp.s
+.PHONY : src/frontend/sema/borrow_checker.s
+
+# target to generate assembly for a file
+src/frontend/sema/borrow_checker.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/borrow_checker.cpp.s
+.PHONY : src/frontend/sema/borrow_checker.cpp.s
+
+src/frontend/sema/closure_analyzer.o: src/frontend/sema/closure_analyzer.cpp.o
+.PHONY : src/frontend/sema/closure_analyzer.o
+
+# target to build an object file
+src/frontend/sema/closure_analyzer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/closure_analyzer.cpp.o
+.PHONY : src/frontend/sema/closure_analyzer.cpp.o
+
+src/frontend/sema/closure_analyzer.i: src/frontend/sema/closure_analyzer.cpp.i
+.PHONY : src/frontend/sema/closure_analyzer.i
+
+# target to preprocess a source file
+src/frontend/sema/closure_analyzer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/closure_analyzer.cpp.i
+.PHONY : src/frontend/sema/closure_analyzer.cpp.i
+
+src/frontend/sema/closure_analyzer.s: src/frontend/sema/closure_analyzer.cpp.s
+.PHONY : src/frontend/sema/closure_analyzer.s
+
+# target to generate assembly for a file
+src/frontend/sema/closure_analyzer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/closure_analyzer.cpp.s
+.PHONY : src/frontend/sema/closure_analyzer.cpp.s
+
+src/frontend/sema/const_evaluator.o: src/frontend/sema/const_evaluator.cpp.o
+.PHONY : src/frontend/sema/const_evaluator.o
+
+# target to build an object file
+src/frontend/sema/const_evaluator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/const_evaluator.cpp.o
+.PHONY : src/frontend/sema/const_evaluator.cpp.o
+
+src/frontend/sema/const_evaluator.i: src/frontend/sema/const_evaluator.cpp.i
+.PHONY : src/frontend/sema/const_evaluator.i
+
+# target to preprocess a source file
+src/frontend/sema/const_evaluator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/const_evaluator.cpp.i
+.PHONY : src/frontend/sema/const_evaluator.cpp.i
+
+src/frontend/sema/const_evaluator.s: src/frontend/sema/const_evaluator.cpp.s
+.PHONY : src/frontend/sema/const_evaluator.s
+
+# target to generate assembly for a file
+src/frontend/sema/const_evaluator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/const_evaluator.cpp.s
+.PHONY : src/frontend/sema/const_evaluator.cpp.s
+
+src/frontend/sema/generic_resolver.o: src/frontend/sema/generic_resolver.cpp.o
+.PHONY : src/frontend/sema/generic_resolver.o
+
+# target to build an object file
+src/frontend/sema/generic_resolver.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/generic_resolver.cpp.o
+.PHONY : src/frontend/sema/generic_resolver.cpp.o
+
+src/frontend/sema/generic_resolver.i: src/frontend/sema/generic_resolver.cpp.i
+.PHONY : src/frontend/sema/generic_resolver.i
+
+# target to preprocess a source file
+src/frontend/sema/generic_resolver.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/generic_resolver.cpp.i
+.PHONY : src/frontend/sema/generic_resolver.cpp.i
+
+src/frontend/sema/generic_resolver.s: src/frontend/sema/generic_resolver.cpp.s
+.PHONY : src/frontend/sema/generic_resolver.s
+
+# target to generate assembly for a file
+src/frontend/sema/generic_resolver.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/generic_resolver.cpp.s
+.PHONY : src/frontend/sema/generic_resolver.cpp.s
+
+src/frontend/sema/module_resolver.o: src/frontend/sema/module_resolver.cpp.o
+.PHONY : src/frontend/sema/module_resolver.o
+
+# target to build an object file
+src/frontend/sema/module_resolver.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/module_resolver.cpp.o
+.PHONY : src/frontend/sema/module_resolver.cpp.o
+
+src/frontend/sema/module_resolver.i: src/frontend/sema/module_resolver.cpp.i
+.PHONY : src/frontend/sema/module_resolver.i
+
+# target to preprocess a source file
+src/frontend/sema/module_resolver.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/module_resolver.cpp.i
+.PHONY : src/frontend/sema/module_resolver.cpp.i
+
+src/frontend/sema/module_resolver.s: src/frontend/sema/module_resolver.cpp.s
+.PHONY : src/frontend/sema/module_resolver.s
+
+# target to generate assembly for a file
+src/frontend/sema/module_resolver.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/module_resolver.cpp.s
+.PHONY : src/frontend/sema/module_resolver.cpp.s
+
+src/frontend/sema/module_table.o: src/frontend/sema/module_table.cpp.o
+.PHONY : src/frontend/sema/module_table.o
+
+# target to build an object file
+src/frontend/sema/module_table.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/module_table.cpp.o
+.PHONY : src/frontend/sema/module_table.cpp.o
+
+src/frontend/sema/module_table.i: src/frontend/sema/module_table.cpp.i
+.PHONY : src/frontend/sema/module_table.i
+
+# target to preprocess a source file
+src/frontend/sema/module_table.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/module_table.cpp.i
+.PHONY : src/frontend/sema/module_table.cpp.i
+
+src/frontend/sema/module_table.s: src/frontend/sema/module_table.cpp.s
+.PHONY : src/frontend/sema/module_table.s
+
+# target to generate assembly for a file
+src/frontend/sema/module_table.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/module_table.cpp.s
+.PHONY : src/frontend/sema/module_table.cpp.s
+
+src/frontend/sema/symbol_table.o: src/frontend/sema/symbol_table.cpp.o
+.PHONY : src/frontend/sema/symbol_table.o
+
+# target to build an object file
+src/frontend/sema/symbol_table.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/symbol_table.cpp.o
+.PHONY : src/frontend/sema/symbol_table.cpp.o
+
+src/frontend/sema/symbol_table.i: src/frontend/sema/symbol_table.cpp.i
+.PHONY : src/frontend/sema/symbol_table.i
+
+# target to preprocess a source file
+src/frontend/sema/symbol_table.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/symbol_table.cpp.i
+.PHONY : src/frontend/sema/symbol_table.cpp.i
+
+src/frontend/sema/symbol_table.s: src/frontend/sema/symbol_table.cpp.s
+.PHONY : src/frontend/sema/symbol_table.s
+
+# target to generate assembly for a file
+src/frontend/sema/symbol_table.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/symbol_table.cpp.s
+.PHONY : src/frontend/sema/symbol_table.cpp.s
+
+src/frontend/sema/type.o: src/frontend/sema/type.cpp.o
+.PHONY : src/frontend/sema/type.o
+
+# target to build an object file
+src/frontend/sema/type.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/type.cpp.o
+.PHONY : src/frontend/sema/type.cpp.o
+
+src/frontend/sema/type.i: src/frontend/sema/type.cpp.i
+.PHONY : src/frontend/sema/type.i
+
+# target to preprocess a source file
+src/frontend/sema/type.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/type.cpp.i
+.PHONY : src/frontend/sema/type.cpp.i
+
+src/frontend/sema/type.s: src/frontend/sema/type.cpp.s
+.PHONY : src/frontend/sema/type.s
+
+# target to generate assembly for a file
+src/frontend/sema/type.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/type.cpp.s
+.PHONY : src/frontend/sema/type.cpp.s
+
+src/frontend/sema/type_checker.o: src/frontend/sema/type_checker.cpp.o
+.PHONY : src/frontend/sema/type_checker.o
+
+# target to build an object file
+src/frontend/sema/type_checker.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.o
+.PHONY : src/frontend/sema/type_checker.cpp.o
+
+src/frontend/sema/type_checker.i: src/frontend/sema/type_checker.cpp.i
+.PHONY : src/frontend/sema/type_checker.i
+
+# target to preprocess a source file
+src/frontend/sema/type_checker.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.i
+.PHONY : src/frontend/sema/type_checker.cpp.i
+
+src/frontend/sema/type_checker.s: src/frontend/sema/type_checker.cpp.s
+.PHONY : src/frontend/sema/type_checker.s
+
+# target to generate assembly for a file
+src/frontend/sema/type_checker.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/type_checker.cpp.s
+.PHONY : src/frontend/sema/type_checker.cpp.s
+
+src/frontend/sema/visibility_checker.o: src/frontend/sema/visibility_checker.cpp.o
+.PHONY : src/frontend/sema/visibility_checker.o
+
+# target to build an object file
+src/frontend/sema/visibility_checker.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/visibility_checker.cpp.o
+.PHONY : src/frontend/sema/visibility_checker.cpp.o
+
+src/frontend/sema/visibility_checker.i: src/frontend/sema/visibility_checker.cpp.i
+.PHONY : src/frontend/sema/visibility_checker.i
+
+# target to preprocess a source file
+src/frontend/sema/visibility_checker.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/visibility_checker.cpp.i
+.PHONY : src/frontend/sema/visibility_checker.cpp.i
+
+src/frontend/sema/visibility_checker.s: src/frontend/sema/visibility_checker.cpp.s
+.PHONY : src/frontend/sema/visibility_checker.s
+
+# target to generate assembly for a file
+src/frontend/sema/visibility_checker.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/visibility_checker.cpp.s
+.PHONY : src/frontend/sema/visibility_checker.cpp.s
+
+src/main.o: src/main.cpp.o
+.PHONY : src/main.o
+
+# target to build an object file
+src/main.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/main.cpp.o
+.PHONY : src/main.cpp.o
+
+src/main.i: src/main.cpp.i
+.PHONY : src/main.i
+
+# target to preprocess a source file
+src/main.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/main.cpp.i
+.PHONY : src/main.cpp.i
+
+src/main.s: src/main.cpp.s
+.PHONY : src/main.s
+
+# target to generate assembly for a file
+src/main.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/main.cpp.s
+.PHONY : src/main.cpp.s
+
+src/runtime/allocators/wild_alloc.o: src/runtime/allocators/wild_alloc.cpp.o
+.PHONY : src/runtime/allocators/wild_alloc.o
+
+# target to build an object file
+src/runtime/allocators/wild_alloc.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/wild_alloc.cpp.o
+.PHONY : src/runtime/allocators/wild_alloc.cpp.o
+
+src/runtime/allocators/wild_alloc.i: src/runtime/allocators/wild_alloc.cpp.i
+.PHONY : src/runtime/allocators/wild_alloc.i
+
+# target to preprocess a source file
+src/runtime/allocators/wild_alloc.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/wild_alloc.cpp.i
+.PHONY : src/runtime/allocators/wild_alloc.cpp.i
+
+src/runtime/allocators/wild_alloc.s: src/runtime/allocators/wild_alloc.cpp.s
+.PHONY : src/runtime/allocators/wild_alloc.s
+
+# target to generate assembly for a file
+src/runtime/allocators/wild_alloc.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/wild_alloc.cpp.s
+.PHONY : src/runtime/allocators/wild_alloc.cpp.s
+
+src/runtime/allocators/wildx_alloc.o: src/runtime/allocators/wildx_alloc.cpp.o
+.PHONY : src/runtime/allocators/wildx_alloc.o
+
+# target to build an object file
+src/runtime/allocators/wildx_alloc.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/wildx_alloc.cpp.o
+.PHONY : src/runtime/allocators/wildx_alloc.cpp.o
+
+src/runtime/allocators/wildx_alloc.i: src/runtime/allocators/wildx_alloc.cpp.i
+.PHONY : src/runtime/allocators/wildx_alloc.i
+
+# target to preprocess a source file
+src/runtime/allocators/wildx_alloc.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/wildx_alloc.cpp.i
+.PHONY : src/runtime/allocators/wildx_alloc.cpp.i
+
+src/runtime/allocators/wildx_alloc.s: src/runtime/allocators/wildx_alloc.cpp.s
+.PHONY : src/runtime/allocators/wildx_alloc.s
+
+# target to generate assembly for a file
+src/runtime/allocators/wildx_alloc.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/wildx_alloc.cpp.s
+.PHONY : src/runtime/allocators/wildx_alloc.cpp.s
+
+src/runtime/assembler/assembler.o: src/runtime/assembler/assembler.cpp.o
+.PHONY : src/runtime/assembler/assembler.o
+
+# target to build an object file
+src/runtime/assembler/assembler.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/assembler.cpp.o
+.PHONY : src/runtime/assembler/assembler.cpp.o
+
+src/runtime/assembler/assembler.i: src/runtime/assembler/assembler.cpp.i
+.PHONY : src/runtime/assembler/assembler.i
+
+# target to preprocess a source file
+src/runtime/assembler/assembler.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/assembler.cpp.i
+.PHONY : src/runtime/assembler/assembler.cpp.i
+
+src/runtime/assembler/assembler.s: src/runtime/assembler/assembler.cpp.s
+.PHONY : src/runtime/assembler/assembler.s
+
+# target to generate assembly for a file
+src/runtime/assembler/assembler.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/assembler.cpp.s
+.PHONY : src/runtime/assembler/assembler.cpp.s
+
+src/runtime/assembler/code_cache.o: src/runtime/assembler/code_cache.cpp.o
+.PHONY : src/runtime/assembler/code_cache.o
+
+# target to build an object file
+src/runtime/assembler/code_cache.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/code_cache.cpp.o
+.PHONY : src/runtime/assembler/code_cache.cpp.o
+
+src/runtime/assembler/code_cache.i: src/runtime/assembler/code_cache.cpp.i
+.PHONY : src/runtime/assembler/code_cache.i
+
+# target to preprocess a source file
+src/runtime/assembler/code_cache.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/code_cache.cpp.i
+.PHONY : src/runtime/assembler/code_cache.cpp.i
+
+src/runtime/assembler/code_cache.s: src/runtime/assembler/code_cache.cpp.s
+.PHONY : src/runtime/assembler/code_cache.s
+
+# target to generate assembly for a file
+src/runtime/assembler/code_cache.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/code_cache.cpp.s
+.PHONY : src/runtime/assembler/code_cache.cpp.s
+
+src/runtime/assembler/llvm_jit.o: src/runtime/assembler/llvm_jit.cpp.o
+.PHONY : src/runtime/assembler/llvm_jit.o
+
+# target to build an object file
+src/runtime/assembler/llvm_jit.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/llvm_jit.cpp.o
+.PHONY : src/runtime/assembler/llvm_jit.cpp.o
+
+src/runtime/assembler/llvm_jit.i: src/runtime/assembler/llvm_jit.cpp.i
+.PHONY : src/runtime/assembler/llvm_jit.i
+
+# target to preprocess a source file
+src/runtime/assembler/llvm_jit.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/llvm_jit.cpp.i
+.PHONY : src/runtime/assembler/llvm_jit.cpp.i
+
+src/runtime/assembler/llvm_jit.s: src/runtime/assembler/llvm_jit.cpp.s
+.PHONY : src/runtime/assembler/llvm_jit.s
+
+# target to generate assembly for a file
+src/runtime/assembler/llvm_jit.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/llvm_jit.cpp.s
+.PHONY : src/runtime/assembler/llvm_jit.cpp.s
+
+src/runtime/async/coroutine.o: src/runtime/async/coroutine.cpp.o
+.PHONY : src/runtime/async/coroutine.o
+
+# target to build an object file
+src/runtime/async/coroutine.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/coroutine.cpp.o
+.PHONY : src/runtime/async/coroutine.cpp.o
+
+src/runtime/async/coroutine.i: src/runtime/async/coroutine.cpp.i
+.PHONY : src/runtime/async/coroutine.i
+
+# target to preprocess a source file
+src/runtime/async/coroutine.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/coroutine.cpp.i
+.PHONY : src/runtime/async/coroutine.cpp.i
+
+src/runtime/async/coroutine.s: src/runtime/async/coroutine.cpp.s
+.PHONY : src/runtime/async/coroutine.s
+
+# target to generate assembly for a file
+src/runtime/async/coroutine.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/coroutine.cpp.s
+.PHONY : src/runtime/async/coroutine.cpp.s
+
+src/runtime/async/executor.o: src/runtime/async/executor.cpp.o
+.PHONY : src/runtime/async/executor.o
+
+# target to build an object file
+src/runtime/async/executor.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/executor.cpp.o
+.PHONY : src/runtime/async/executor.cpp.o
+
+src/runtime/async/executor.i: src/runtime/async/executor.cpp.i
+.PHONY : src/runtime/async/executor.i
+
+# target to preprocess a source file
+src/runtime/async/executor.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/executor.cpp.i
+.PHONY : src/runtime/async/executor.cpp.i
+
+src/runtime/async/executor.s: src/runtime/async/executor.cpp.s
+.PHONY : src/runtime/async/executor.s
+
+# target to generate assembly for a file
+src/runtime/async/executor.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/executor.cpp.s
+.PHONY : src/runtime/async/executor.cpp.s
+
+src/runtime/atomic/atomic.o: src/runtime/atomic/atomic.cpp.o
+.PHONY : src/runtime/atomic/atomic.o
+
+# target to build an object file
+src/runtime/atomic/atomic.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/atomic/atomic.cpp.o
+.PHONY : src/runtime/atomic/atomic.cpp.o
+
+src/runtime/atomic/atomic.i: src/runtime/atomic/atomic.cpp.i
+.PHONY : src/runtime/atomic/atomic.i
+
+# target to preprocess a source file
+src/runtime/atomic/atomic.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/atomic/atomic.cpp.i
+.PHONY : src/runtime/atomic/atomic.cpp.i
+
+src/runtime/atomic/atomic.s: src/runtime/atomic/atomic.cpp.s
+.PHONY : src/runtime/atomic/atomic.s
+
+# target to generate assembly for a file
+src/runtime/atomic/atomic.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/atomic/atomic.cpp.s
+.PHONY : src/runtime/atomic/atomic.cpp.s
+
+src/runtime/collections/collections.o: src/runtime/collections/collections.cpp.o
+.PHONY : src/runtime/collections/collections.o
+
+# target to build an object file
+src/runtime/collections/collections.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections.cpp.o
+.PHONY : src/runtime/collections/collections.cpp.o
+
+src/runtime/collections/collections.i: src/runtime/collections/collections.cpp.i
+.PHONY : src/runtime/collections/collections.i
+
+# target to preprocess a source file
+src/runtime/collections/collections.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections.cpp.i
+.PHONY : src/runtime/collections/collections.cpp.i
+
+src/runtime/collections/collections.s: src/runtime/collections/collections.cpp.s
+.PHONY : src/runtime/collections/collections.s
+
+# target to generate assembly for a file
+src/runtime/collections/collections.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections.cpp.s
+.PHONY : src/runtime/collections/collections.cpp.s
+
+src/runtime/gc/allocator.o: src/runtime/gc/allocator.cpp.o
+.PHONY : src/runtime/gc/allocator.o
+
+# target to build an object file
+src/runtime/gc/allocator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/gc/allocator.cpp.o
+.PHONY : src/runtime/gc/allocator.cpp.o
+
+src/runtime/gc/allocator.i: src/runtime/gc/allocator.cpp.i
+.PHONY : src/runtime/gc/allocator.i
+
+# target to preprocess a source file
+src/runtime/gc/allocator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/gc/allocator.cpp.i
+.PHONY : src/runtime/gc/allocator.cpp.i
+
+src/runtime/gc/allocator.s: src/runtime/gc/allocator.cpp.s
+.PHONY : src/runtime/gc/allocator.s
+
+# target to generate assembly for a file
+src/runtime/gc/allocator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/gc/allocator.cpp.s
+.PHONY : src/runtime/gc/allocator.cpp.s
+
+src/runtime/gc/gc.o: src/runtime/gc/gc.cpp.o
+.PHONY : src/runtime/gc/gc.o
+
+# target to build an object file
+src/runtime/gc/gc.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/gc/gc.cpp.o
+.PHONY : src/runtime/gc/gc.cpp.o
+
+src/runtime/gc/gc.i: src/runtime/gc/gc.cpp.i
+.PHONY : src/runtime/gc/gc.i
+
+# target to preprocess a source file
+src/runtime/gc/gc.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/gc/gc.cpp.i
+.PHONY : src/runtime/gc/gc.cpp.i
+
+src/runtime/gc/gc.s: src/runtime/gc/gc.cpp.s
+.PHONY : src/runtime/gc/gc.s
+
+# target to generate assembly for a file
+src/runtime/gc/gc.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/gc/gc.cpp.s
+.PHONY : src/runtime/gc/gc.cpp.s
+
+src/runtime/io/io.o: src/runtime/io/io.cpp.o
+.PHONY : src/runtime/io/io.o
+
+# target to build an object file
+src/runtime/io/io.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/io/io.cpp.o
+.PHONY : src/runtime/io/io.cpp.o
+
+src/runtime/io/io.i: src/runtime/io/io.cpp.i
+.PHONY : src/runtime/io/io.i
+
+# target to preprocess a source file
+src/runtime/io/io.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/io/io.cpp.i
+.PHONY : src/runtime/io/io.cpp.i
+
+src/runtime/io/io.s: src/runtime/io/io.cpp.s
+.PHONY : src/runtime/io/io.s
+
+# target to generate assembly for a file
+src/runtime/io/io.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/io/io.cpp.s
+.PHONY : src/runtime/io/io.cpp.s
+
+src/runtime/math/math.o: src/runtime/math/math.cpp.o
+.PHONY : src/runtime/math/math.o
+
+# target to build an object file
+src/runtime/math/math.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/math.cpp.o
+.PHONY : src/runtime/math/math.cpp.o
+
+src/runtime/math/math.i: src/runtime/math/math.cpp.i
+.PHONY : src/runtime/math/math.i
+
+# target to preprocess a source file
+src/runtime/math/math.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/math.cpp.i
+.PHONY : src/runtime/math/math.cpp.i
+
+src/runtime/math/math.s: src/runtime/math/math.cpp.s
+.PHONY : src/runtime/math/math.s
+
+# target to generate assembly for a file
+src/runtime/math/math.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/math.cpp.s
+.PHONY : src/runtime/math/math.cpp.s
+
+src/runtime/process/process.o: src/runtime/process/process.cpp.o
+.PHONY : src/runtime/process/process.o
+
+# target to build an object file
+src/runtime/process/process.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/process/process.cpp.o
+.PHONY : src/runtime/process/process.cpp.o
+
+src/runtime/process/process.i: src/runtime/process/process.cpp.i
+.PHONY : src/runtime/process/process.i
+
+# target to preprocess a source file
+src/runtime/process/process.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/process/process.cpp.i
+.PHONY : src/runtime/process/process.cpp.i
+
+src/runtime/process/process.s: src/runtime/process/process.cpp.s
+.PHONY : src/runtime/process/process.s
+
+# target to generate assembly for a file
+src/runtime/process/process.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/process/process.cpp.s
+.PHONY : src/runtime/process/process.cpp.s
+
+src/runtime/result/result.o: src/runtime/result/result.cpp.o
+.PHONY : src/runtime/result/result.o
+
+# target to build an object file
+src/runtime/result/result.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/result/result.cpp.o
+.PHONY : src/runtime/result/result.cpp.o
+
+src/runtime/result/result.i: src/runtime/result/result.cpp.i
+.PHONY : src/runtime/result/result.i
+
+# target to preprocess a source file
+src/runtime/result/result.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/result/result.cpp.i
+.PHONY : src/runtime/result/result.cpp.i
+
+src/runtime/result/result.s: src/runtime/result/result.cpp.s
+.PHONY : src/runtime/result/result.s
+
+# target to generate assembly for a file
+src/runtime/result/result.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/result/result.cpp.s
+.PHONY : src/runtime/result/result.cpp.s
+
+src/runtime/stdlib/stdlib.o: src/runtime/stdlib/stdlib.cpp.o
+.PHONY : src/runtime/stdlib/stdlib.o
+
+# target to build an object file
+src/runtime/stdlib/stdlib.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/stdlib/stdlib.cpp.o
+.PHONY : src/runtime/stdlib/stdlib.cpp.o
+
+src/runtime/stdlib/stdlib.i: src/runtime/stdlib/stdlib.cpp.i
+.PHONY : src/runtime/stdlib/stdlib.i
+
+# target to preprocess a source file
+src/runtime/stdlib/stdlib.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/stdlib/stdlib.cpp.i
+.PHONY : src/runtime/stdlib/stdlib.cpp.i
+
+src/runtime/stdlib/stdlib.s: src/runtime/stdlib/stdlib.cpp.s
+.PHONY : src/runtime/stdlib/stdlib.s
+
+# target to generate assembly for a file
+src/runtime/stdlib/stdlib.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/stdlib/stdlib.cpp.s
+.PHONY : src/runtime/stdlib/stdlib.cpp.s
+
+src/runtime/streams/streams.o: src/runtime/streams/streams.cpp.o
+.PHONY : src/runtime/streams/streams.o
+
+# target to build an object file
+src/runtime/streams/streams.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/streams/streams.cpp.o
+.PHONY : src/runtime/streams/streams.cpp.o
+
+src/runtime/streams/streams.i: src/runtime/streams/streams.cpp.i
+.PHONY : src/runtime/streams/streams.i
+
+# target to preprocess a source file
+src/runtime/streams/streams.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/streams/streams.cpp.i
+.PHONY : src/runtime/streams/streams.cpp.i
+
+src/runtime/streams/streams.s: src/runtime/streams/streams.cpp.s
+.PHONY : src/runtime/streams/streams.s
+
+# target to generate assembly for a file
+src/runtime/streams/streams.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/streams/streams.cpp.s
+.PHONY : src/runtime/streams/streams.cpp.s
+
+src/runtime/strings/strings.o: src/runtime/strings/strings.cpp.o
+.PHONY : src/runtime/strings/strings.o
+
+# target to build an object file
+src/runtime/strings/strings.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings.cpp.o
+.PHONY : src/runtime/strings/strings.cpp.o
+
+src/runtime/strings/strings.i: src/runtime/strings/strings.cpp.i
+.PHONY : src/runtime/strings/strings.i
+
+# target to preprocess a source file
+src/runtime/strings/strings.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings.cpp.i
+.PHONY : src/runtime/strings/strings.cpp.i
+
+src/runtime/strings/strings.s: src/runtime/strings/strings.cpp.s
+.PHONY : src/runtime/strings/strings.s
+
+# target to generate assembly for a file
+src/runtime/strings/strings.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings.cpp.s
+.PHONY : src/runtime/strings/strings.cpp.s
+
+src/runtime/thread/thread.o: src/runtime/thread/thread.cpp.o
+.PHONY : src/runtime/thread/thread.o
+
+# target to build an object file
+src/runtime/thread/thread.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/thread/thread.cpp.o
+.PHONY : src/runtime/thread/thread.cpp.o
+
+src/runtime/thread/thread.i: src/runtime/thread/thread.cpp.i
+.PHONY : src/runtime/thread/thread.i
+
+# target to preprocess a source file
+src/runtime/thread/thread.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/thread/thread.cpp.i
+.PHONY : src/runtime/thread/thread.cpp.i
+
+src/runtime/thread/thread.s: src/runtime/thread/thread.cpp.s
+.PHONY : src/runtime/thread/thread.s
+
+# target to generate assembly for a file
+src/runtime/thread/thread.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/thread/thread.cpp.s
+.PHONY : src/runtime/thread/thread.cpp.s
+
+src/runtime/timer/timer.o: src/runtime/timer/timer.cpp.o
+.PHONY : src/runtime/timer/timer.o
+
+# target to build an object file
+src/runtime/timer/timer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/timer/timer.cpp.o
+.PHONY : src/runtime/timer/timer.cpp.o
+
+src/runtime/timer/timer.i: src/runtime/timer/timer.cpp.i
+.PHONY : src/runtime/timer/timer.i
+
+# target to preprocess a source file
+src/runtime/timer/timer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/timer/timer.cpp.i
+.PHONY : src/runtime/timer/timer.cpp.i
+
+src/runtime/timer/timer.s: src/runtime/timer/timer.cpp.s
+.PHONY : src/runtime/timer/timer.s
+
+# target to generate assembly for a file
+src/runtime/timer/timer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/timer/timer.cpp.s
+.PHONY : src/runtime/timer/timer.cpp.s
 
 # Help Target
 help:
@@ -246,7 +1291,137 @@ help:
 	@echo "... intrinsics_gen"
 	@echo "... omp_gen"
 	@echo "... vt_gen"
+	@echo "... ariac"
 	@echo "... test_runner"
+	@echo "... src/backend/ir/codegen_expr.o"
+	@echo "... src/backend/ir/codegen_expr.i"
+	@echo "... src/backend/ir/codegen_expr.s"
+	@echo "... src/backend/ir/codegen_stmt.o"
+	@echo "... src/backend/ir/codegen_stmt.i"
+	@echo "... src/backend/ir/codegen_stmt.s"
+	@echo "... src/backend/ir/ir_generator.o"
+	@echo "... src/backend/ir/ir_generator.i"
+	@echo "... src/backend/ir/ir_generator.s"
+	@echo "... src/backend/ir/tbb_codegen.o"
+	@echo "... src/backend/ir/tbb_codegen.i"
+	@echo "... src/backend/ir/tbb_codegen.s"
+	@echo "... src/frontend/ast/ast_node.o"
+	@echo "... src/frontend/ast/ast_node.i"
+	@echo "... src/frontend/ast/ast_node.s"
+	@echo "... src/frontend/ast/expr.o"
+	@echo "... src/frontend/ast/expr.i"
+	@echo "... src/frontend/ast/expr.s"
+	@echo "... src/frontend/ast/stmt.o"
+	@echo "... src/frontend/ast/stmt.i"
+	@echo "... src/frontend/ast/stmt.s"
+	@echo "... src/frontend/ast/type.o"
+	@echo "... src/frontend/ast/type.i"
+	@echo "... src/frontend/ast/type.s"
+	@echo "... src/frontend/lexer/lexer.o"
+	@echo "... src/frontend/lexer/lexer.i"
+	@echo "... src/frontend/lexer/lexer.s"
+	@echo "... src/frontend/lexer/token.o"
+	@echo "... src/frontend/lexer/token.i"
+	@echo "... src/frontend/lexer/token.s"
+	@echo "... src/frontend/parser/parser.o"
+	@echo "... src/frontend/parser/parser.i"
+	@echo "... src/frontend/parser/parser.s"
+	@echo "... src/frontend/sema/async_analyzer.o"
+	@echo "... src/frontend/sema/async_analyzer.i"
+	@echo "... src/frontend/sema/async_analyzer.s"
+	@echo "... src/frontend/sema/borrow_checker.o"
+	@echo "... src/frontend/sema/borrow_checker.i"
+	@echo "... src/frontend/sema/borrow_checker.s"
+	@echo "... src/frontend/sema/closure_analyzer.o"
+	@echo "... src/frontend/sema/closure_analyzer.i"
+	@echo "... src/frontend/sema/closure_analyzer.s"
+	@echo "... src/frontend/sema/const_evaluator.o"
+	@echo "... src/frontend/sema/const_evaluator.i"
+	@echo "... src/frontend/sema/const_evaluator.s"
+	@echo "... src/frontend/sema/generic_resolver.o"
+	@echo "... src/frontend/sema/generic_resolver.i"
+	@echo "... src/frontend/sema/generic_resolver.s"
+	@echo "... src/frontend/sema/module_resolver.o"
+	@echo "... src/frontend/sema/module_resolver.i"
+	@echo "... src/frontend/sema/module_resolver.s"
+	@echo "... src/frontend/sema/module_table.o"
+	@echo "... src/frontend/sema/module_table.i"
+	@echo "... src/frontend/sema/module_table.s"
+	@echo "... src/frontend/sema/symbol_table.o"
+	@echo "... src/frontend/sema/symbol_table.i"
+	@echo "... src/frontend/sema/symbol_table.s"
+	@echo "... src/frontend/sema/type.o"
+	@echo "... src/frontend/sema/type.i"
+	@echo "... src/frontend/sema/type.s"
+	@echo "... src/frontend/sema/type_checker.o"
+	@echo "... src/frontend/sema/type_checker.i"
+	@echo "... src/frontend/sema/type_checker.s"
+	@echo "... src/frontend/sema/visibility_checker.o"
+	@echo "... src/frontend/sema/visibility_checker.i"
+	@echo "... src/frontend/sema/visibility_checker.s"
+	@echo "... src/main.o"
+	@echo "... src/main.i"
+	@echo "... src/main.s"
+	@echo "... src/runtime/allocators/wild_alloc.o"
+	@echo "... src/runtime/allocators/wild_alloc.i"
+	@echo "... src/runtime/allocators/wild_alloc.s"
+	@echo "... src/runtime/allocators/wildx_alloc.o"
+	@echo "... src/runtime/allocators/wildx_alloc.i"
+	@echo "... src/runtime/allocators/wildx_alloc.s"
+	@echo "... src/runtime/assembler/assembler.o"
+	@echo "... src/runtime/assembler/assembler.i"
+	@echo "... src/runtime/assembler/assembler.s"
+	@echo "... src/runtime/assembler/code_cache.o"
+	@echo "... src/runtime/assembler/code_cache.i"
+	@echo "... src/runtime/assembler/code_cache.s"
+	@echo "... src/runtime/assembler/llvm_jit.o"
+	@echo "... src/runtime/assembler/llvm_jit.i"
+	@echo "... src/runtime/assembler/llvm_jit.s"
+	@echo "... src/runtime/async/coroutine.o"
+	@echo "... src/runtime/async/coroutine.i"
+	@echo "... src/runtime/async/coroutine.s"
+	@echo "... src/runtime/async/executor.o"
+	@echo "... src/runtime/async/executor.i"
+	@echo "... src/runtime/async/executor.s"
+	@echo "... src/runtime/atomic/atomic.o"
+	@echo "... src/runtime/atomic/atomic.i"
+	@echo "... src/runtime/atomic/atomic.s"
+	@echo "... src/runtime/collections/collections.o"
+	@echo "... src/runtime/collections/collections.i"
+	@echo "... src/runtime/collections/collections.s"
+	@echo "... src/runtime/gc/allocator.o"
+	@echo "... src/runtime/gc/allocator.i"
+	@echo "... src/runtime/gc/allocator.s"
+	@echo "... src/runtime/gc/gc.o"
+	@echo "... src/runtime/gc/gc.i"
+	@echo "... src/runtime/gc/gc.s"
+	@echo "... src/runtime/io/io.o"
+	@echo "... src/runtime/io/io.i"
+	@echo "... src/runtime/io/io.s"
+	@echo "... src/runtime/math/math.o"
+	@echo "... src/runtime/math/math.i"
+	@echo "... src/runtime/math/math.s"
+	@echo "... src/runtime/process/process.o"
+	@echo "... src/runtime/process/process.i"
+	@echo "... src/runtime/process/process.s"
+	@echo "... src/runtime/result/result.o"
+	@echo "... src/runtime/result/result.i"
+	@echo "... src/runtime/result/result.s"
+	@echo "... src/runtime/stdlib/stdlib.o"
+	@echo "... src/runtime/stdlib/stdlib.i"
+	@echo "... src/runtime/stdlib/stdlib.s"
+	@echo "... src/runtime/streams/streams.o"
+	@echo "... src/runtime/streams/streams.i"
+	@echo "... src/runtime/streams/streams.s"
+	@echo "... src/runtime/strings/strings.o"
+	@echo "... src/runtime/strings/strings.i"
+	@echo "... src/runtime/strings/strings.s"
+	@echo "... src/runtime/thread/thread.o"
+	@echo "... src/runtime/thread/thread.i"
+	@echo "... src/runtime/thread/thread.s"
+	@echo "... src/runtime/timer/timer.o"
+	@echo "... src/runtime/timer/timer.i"
+	@echo "... src/runtime/timer/timer.s"
 .PHONY : help
 
 

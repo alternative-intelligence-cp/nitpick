@@ -78,6 +78,34 @@ extern TestStats g_test_stats;
 #define ASSERT_TRUE(condition, message) ASSERT((condition), message)
 #define ASSERT_FALSE(condition, message) ASSERT(!(condition), message)
 
+// Aliases for convenience (MSG suffix)
+#define ASSERT_MSG(condition, message) ASSERT((condition), message)
+#define ASSERT_EQ_MSG(actual, expected, message) ASSERT_EQ((actual), (expected), message)
+#define ASSERT_NE_MSG(actual, not_expected, message) ASSERT_NE((actual), (not_expected), message)
+
+// Floating point comparison with tolerance
+#define ASSERT_NEAR(actual, expected, epsilon, message) \
+    do { \
+        g_test_stats.total++; \
+        double _diff = ((actual) > (expected)) ? ((actual) - (expected)) : ((expected) - (actual)); \
+        if (_diff > (epsilon)) { \
+            g_test_stats.failed++; \
+            std::stringstream ss; \
+            ss << __FILE__ << ":" << __LINE__ << " - " << message \
+               << " (expected: " << (expected) << ", got: " << (actual) << ", diff: " << _diff << ")"; \
+            g_test_stats.failures.push_back(ss.str()); \
+            std::cerr << COLOR_RED << "✗ FAIL: " << message << COLOR_RESET << std::endl; \
+            std::cerr << "  Expected: " << (expected) << std::endl; \
+            std::cerr << "  Got:      " << (actual) << std::endl; \
+            std::cerr << "  Diff:     " << _diff << " (tolerance: " << (epsilon) << ")" << std::endl; \
+            std::cerr << "  at " << __FILE__ << ":" << __LINE__ << std::endl; \
+        } else { \
+            g_test_stats.passed++; \
+        } \
+    } while(0)
+
+#define ASSERT_NEAR_MSG(actual, expected, epsilon, message) ASSERT_NEAR((actual), (expected), (epsilon), message)
+
 // Test case registration
 struct TestCase {
     std::string name;

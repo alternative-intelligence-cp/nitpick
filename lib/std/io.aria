@@ -1,0 +1,107 @@
+// Aria Standard Library - Input/Output Module
+// File: lib/std/io.aria
+// Reference: research_031_essential_stdlib.txt Section 4
+// 
+// This module provides safe I/O operations built on the runtime foundation.
+// It implements the six-channel I/O system and provides high-level wrappers
+// for file operations, stream handling, and formatted output.
+
+use std.sys;
+use std.mem;
+use std.result;
+
+// ============================================================================
+// Core Print Functions (Phase 6.1.1)
+// ============================================================================
+
+// Print string to stdout (no newline)
+// This is the most basic output function in the standard library
+pub func:print = void(string:msg) {
+    // Get stdout file descriptor (1)
+    wild int32:fd = 1;
+    
+    // Pin the string for system call (requires stable address)
+    wild string@:pinned = #msg;
+    
+    // Get string length (strings have null terminator)
+    int64:len = msg.length();
+    
+    // Call system write (unsafe FFI call to POSIX write)
+    // write(fd, buffer, count) -> ssize_t
+    extern "libc" {
+        func write(fd: int32, buf: wild void*, count: int64) -> int64;
+    }
+    
+    // Write the string (ignore error for basic print)
+    write(fd, pinned, len);
+};
+
+// Print string to stdout with newline
+pub func:println = void(string:msg) {
+    print(msg);
+    print("\n");
+};
+
+// Print to stderr (no newline)
+pub func:eprint = void(string:msg) {
+    wild int32:fd = 2;
+    wild string@:pinned = #msg;
+    int64:len = msg.length();
+    
+    extern "libc" {
+        func write(fd: int32, buf: wild void*, count: int64) -> int64;
+    }
+    
+    write(fd, pinned, len);
+};
+
+// Print to stderr with newline
+pub func:eprintln = void(string:msg) {
+    eprint(msg);
+    eprint("\n");
+};
+
+// Print to debug channel (stddbg - fd 3)
+pub func:debug = void(string:msg) {
+    wild int32:fd = 3;
+    wild string@:pinned = #msg;
+    int64:len = msg.length();
+    
+    extern "libc" {
+        func write(fd: int32, buf: wild void*, count: int64) -> int64;
+    }
+    
+    write(fd, pinned, len);
+};
+
+// Debug print with newline
+pub func:debugln = void(string:msg) {
+    debug(msg);
+    debug("\n");
+};
+
+// ============================================================================
+// TODO: Advanced I/O (Future Phases)
+// ============================================================================
+
+// File struct will wrap file descriptors with RAII
+// pub struct:File {
+//     wild int32:fd;
+//     bool:is_open;
+// };
+
+// pub func:open = result<File>(string:path, string:mode) {
+//     // Implementation in future phase
+// };
+
+// pub func:close = result<void>(File@:f) {
+//     // Implementation in future phase
+// };
+
+// pub func:read = result<string>(File@:f, int64:count) {
+//     // Implementation in future phase
+// };
+
+// pub func:write = result<int64>(File@:f, string:data) {
+//     // Implementation in future phase
+// };

@@ -10,10 +10,10 @@
 #include <string>
 #include <memory>
 
-// Forward declarations
-class ASTNode;  // ASTNode is in global namespace
-
 namespace aria {
+
+// Forward declarations
+class ASTNode;  // ASTNode is in aria namespace
 namespace sema {
     class Type;  // Forward declaration in correct namespace
 }
@@ -64,6 +64,12 @@ public:
      * @return Pointer to LLVM Module (ownership retained)
      */
     llvm::Module* getModule();
+    
+    /**
+     * Take ownership of the generated LLVM module
+     * @return unique_ptr to LLVM Module (ownership transferred)
+     */
+    std::unique_ptr<llvm::Module> takeModule();
     
     /**
      * Dump the generated IR to stdout (for debugging)
