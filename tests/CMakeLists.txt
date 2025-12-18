@@ -23,6 +23,7 @@ add_executable(test_runner
     unit/test_async_semantic.cpp
     unit/test_future_type.cpp
     unit/test_async_function_types.cpp
+    unit/test_await_type_extraction.cpp
     frontend/test_const_evaluator.cpp
     frontend/test_const_integration.cpp
     frontend/test_const_generics_arrays.cpp
