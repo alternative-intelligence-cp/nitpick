@@ -164,6 +164,7 @@ set(STDLIB_SOURCES
 set(TOOLS_SOURCES
     src/tools/project_config.cpp
     src/tools/lsp/transport.cpp
+    src/tools/lsp/server.cpp
 )
 
 # Combine all sources
@@ -186,6 +187,11 @@ set(ARIA_SOURCES
 # Main compiler executable
 add_executable(ariac src/main.cpp ${ARIA_SOURCES})
 target_link_libraries(ariac ${llvm_libs})
+
+# LSP server executable (Phase 7.3)
+add_executable(aria-ls src/tools/lsp/aria-ls.cpp ${TOOLS_SOURCES})
+# LSP server doesn't need full compiler - just transport and server
+# But for now link everything to avoid complex dependency management
 
 # ============================================================================
 # Testing

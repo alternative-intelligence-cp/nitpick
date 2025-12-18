@@ -231,6 +231,19 @@ ariac/fast:
 .PHONY : ariac/fast
 
 #=============================================================================
+# Target rules for targets named aria-ls
+
+# Build rule for target.
+aria-ls: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 aria-ls
+.PHONY : aria-ls
+
+# fast build rule for target.
+aria-ls/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/build
+.PHONY : aria-ls/fast
+
+#=============================================================================
 # Target rules for targets named Experimental
 
 # Build rule for target.
@@ -1687,12 +1700,64 @@ src/runtime/timer/timer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/timer/timer.cpp.s
 .PHONY : src/runtime/timer/timer.cpp.s
 
+src/tools/lsp/aria-ls.o: src/tools/lsp/aria-ls.cpp.o
+.PHONY : src/tools/lsp/aria-ls.o
+
+# target to build an object file
+src/tools/lsp/aria-ls.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/aria-ls.cpp.o
+.PHONY : src/tools/lsp/aria-ls.cpp.o
+
+src/tools/lsp/aria-ls.i: src/tools/lsp/aria-ls.cpp.i
+.PHONY : src/tools/lsp/aria-ls.i
+
+# target to preprocess a source file
+src/tools/lsp/aria-ls.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/aria-ls.cpp.i
+.PHONY : src/tools/lsp/aria-ls.cpp.i
+
+src/tools/lsp/aria-ls.s: src/tools/lsp/aria-ls.cpp.s
+.PHONY : src/tools/lsp/aria-ls.s
+
+# target to generate assembly for a file
+src/tools/lsp/aria-ls.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/aria-ls.cpp.s
+.PHONY : src/tools/lsp/aria-ls.cpp.s
+
+src/tools/lsp/server.o: src/tools/lsp/server.cpp.o
+.PHONY : src/tools/lsp/server.o
+
+# target to build an object file
+src/tools/lsp/server.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/server.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/server.cpp.o
+.PHONY : src/tools/lsp/server.cpp.o
+
+src/tools/lsp/server.i: src/tools/lsp/server.cpp.i
+.PHONY : src/tools/lsp/server.i
+
+# target to preprocess a source file
+src/tools/lsp/server.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/server.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/server.cpp.i
+.PHONY : src/tools/lsp/server.cpp.i
+
+src/tools/lsp/server.s: src/tools/lsp/server.cpp.s
+.PHONY : src/tools/lsp/server.s
+
+# target to generate assembly for a file
+src/tools/lsp/server.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/server.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/server.cpp.s
+.PHONY : src/tools/lsp/server.cpp.s
+
 src/tools/lsp/transport.o: src/tools/lsp/transport.cpp.o
 .PHONY : src/tools/lsp/transport.o
 
 # target to build an object file
 src/tools/lsp/transport.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/transport.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/transport.cpp.o
 .PHONY : src/tools/lsp/transport.cpp.o
 
 src/tools/lsp/transport.i: src/tools/lsp/transport.cpp.i
@@ -1701,6 +1766,7 @@ src/tools/lsp/transport.i: src/tools/lsp/transport.cpp.i
 # target to preprocess a source file
 src/tools/lsp/transport.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/transport.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/transport.cpp.i
 .PHONY : src/tools/lsp/transport.cpp.i
 
 src/tools/lsp/transport.s: src/tools/lsp/transport.cpp.s
@@ -1709,6 +1775,7 @@ src/tools/lsp/transport.s: src/tools/lsp/transport.cpp.s
 # target to generate assembly for a file
 src/tools/lsp/transport.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/transport.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/transport.cpp.s
 .PHONY : src/tools/lsp/transport.cpp.s
 
 src/tools/project_config.o: src/tools/project_config.cpp.o
@@ -1717,6 +1784,7 @@ src/tools/project_config.o: src/tools/project_config.cpp.o
 # target to build an object file
 src/tools/project_config.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/project_config.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/project_config.cpp.o
 .PHONY : src/tools/project_config.cpp.o
 
 src/tools/project_config.i: src/tools/project_config.cpp.i
@@ -1725,6 +1793,7 @@ src/tools/project_config.i: src/tools/project_config.cpp.i
 # target to preprocess a source file
 src/tools/project_config.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/project_config.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/project_config.cpp.i
 .PHONY : src/tools/project_config.cpp.i
 
 src/tools/project_config.s: src/tools/project_config.cpp.s
@@ -1733,6 +1802,7 @@ src/tools/project_config.s: src/tools/project_config.cpp.s
 # target to generate assembly for a file
 src/tools/project_config.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/project_config.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/project_config.cpp.s
 .PHONY : src/tools/project_config.cpp.s
 
 # Help Target
@@ -1779,6 +1849,7 @@ help:
 	@echo "... intrinsics_gen"
 	@echo "... omp_gen"
 	@echo "... vt_gen"
+	@echo "... aria-ls"
 	@echo "... ariac"
 	@echo "... test_runner"
 	@echo "... src/backend/ir/codegen_expr.o"
@@ -1916,6 +1987,12 @@ help:
 	@echo "... src/runtime/timer/timer.o"
 	@echo "... src/runtime/timer/timer.i"
 	@echo "... src/runtime/timer/timer.s"
+	@echo "... src/tools/lsp/aria-ls.o"
+	@echo "... src/tools/lsp/aria-ls.i"
+	@echo "... src/tools/lsp/aria-ls.s"
+	@echo "... src/tools/lsp/server.o"
+	@echo "... src/tools/lsp/server.i"
+	@echo "... src/tools/lsp/server.s"
 	@echo "... src/tools/lsp/transport.o"
 	@echo "... src/tools/lsp/transport.i"
 	@echo "... src/tools/lsp/transport.s"
