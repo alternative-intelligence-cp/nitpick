@@ -1703,6 +1703,43 @@ void StmtCodegen::codegenReturn(ReturnStmt* stmt) {
             throw std::runtime_error("Failed to generate code for return value");
         }
         
+        // Get the current function's return type
+        llvm::Function* current_func = builder.GetInsertBlock()->getParent();
+        llvm::Type* expected_return_type = current_func->getReturnType();
+        
+        // Cast/coerce the return value to match the function's return type if needed
+        if (ret_value->getType() != expected_return_type) {
+            // Integer type coercion
+            if (ret_value->getType()->isIntegerTy() && expected_return_type->isIntegerTy()) {
+                // Truncate or extend to match target type
+                ret_value = builder.CreateIntCast(ret_value, expected_return_type, true, "ret_cast");
+            }
+            // Float type coercion
+            else if (ret_value->getType()->isFloatingPointTy() && expected_return_type->isFloatingPointTy()) {
+                ret_value = builder.CreateFPCast(ret_value, expected_return_type, "ret_fpcast");
+            }
+            // Int to float coercion
+            else if (ret_value->getType()->isIntegerTy() && expected_return_type->isFloatingPointTy()) {
+                ret_value = builder.CreateSIToFP(ret_value, expected_return_type, "ret_itof");
+            }
+            // Float to int coercion
+            else if (ret_value->getType()->isFloatingPointTy() && expected_return_type->isIntegerTy()) {
+                ret_value = builder.CreateFPToSI(ret_value, expected_return_type, "ret_ftoi");
+            }
+            // Otherwise, attempt bitcast for pointer types
+            else if (ret_value->getType()->isPointerTy() && expected_return_type->isPointerTy()) {
+                ret_value = builder.CreateBitCast(ret_value, expected_return_type, "ret_ptrcast");
+            }
+            else {
+                throw std::runtime_error(
+                    "Cannot coerce return value type " + 
+                    std::string(ret_value->getType()->isIntegerTy() ? "int" : "?") +
+                    " to function return type " +
+                    std::string(expected_return_type->isIntegerTy() ? "int" : "?")
+                );
+            }
+        }
+        
         builder.CreateRet(ret_value);
     } else {
         // Return void
