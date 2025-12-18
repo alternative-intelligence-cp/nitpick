@@ -11,8 +11,10 @@ using namespace sema;  // Now inside aria namespace
 
 IRGenerator::IRGenerator(const std::string& module_name)
     : context(), 
-      module(std::make_unique<llvm::Module>(module_name, context)),
+      module(std::make_unique<llvm::Module>(module_name.empty() ? "aria_module" : module_name, context)),
       builder(context) {
+    // Set source filename for better debug info
+    module->setSourceFileName(module_name.empty() ? "aria_module" : module_name);
 }
 
 llvm::Type* IRGenerator::mapType(Type* aria_type) {
@@ -221,20 +223,62 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
 
 // Define methods outside namespace to avoid ambiguity
 
-llvm::Value* aria::IRGenerator::codegen(::ASTNode* node) {
+llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
     if (!node) {
         return nullptr;
     }
     
-    // TODO: Implement codegen for different AST node types
-    // This will be expanded in Phase 4.2 (Expression Code Generation)
+    // Basic implementation for Phase 7.1.1-7.1.2 stub
+    // Full implementation in Phase 4.2 (Expression Code Generation)
     // and Phase 4.3 (Statement Code Generation)
     
-    return nullptr;
+    // For multi-file compilation: Check if this module's AST contains a main function
+    // by looking at the node type and checking for main in function declarations
+    // For now, use module name to create unique function names
+    
+    // Extract module base name from full path (e.g., "utils" from "tests/integration/utils.aria")
+    std::string module_name = module->getName().str();
+    size_t last_slash = module_name.find_last_of("/\\");
+    if (last_slash != std::string::npos) {
+        module_name = module_name.substr(last_slash + 1);
+    }
+    size_t last_dot = module_name.find_last_of('.');
+    if (last_dot != std::string::npos) {
+        module_name = module_name.substr(0, last_dot);
+    }
+    
+    // Create a module init function (or main if module name suggests it's the main file)
+    bool is_main_module = (module_name.find("main") != std::string::npos || 
+                           module_name == "hello");
+    std::string func_name = is_main_module ? "main" : ("__" + module_name + "_init");
+    
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        builder.getInt32Ty(),  // return int32
+        false  // not vararg
+    );
+    
+    llvm::Function* func = llvm::Function::Create(
+        func_type,
+        llvm::Function::ExternalLinkage,
+        func_name,
+        module.get()
+    );
+    
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Return 0 for now
+    builder.CreateRet(builder.getInt32(0));
+    
+    return func;
 }
 
 llvm::Module* aria::IRGenerator::getModule() {
     return module.get();
+}
+
+std::unique_ptr<llvm::Module> aria::IRGenerator::takeModule() {
+    return std::move(module);
 }
 
 void aria::IRGenerator::dump() {

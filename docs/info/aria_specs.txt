@@ -41,7 +41,100 @@ tryte !!! IMPORTANT tryte is 10 trits for 3^10 values stored in uint16 NOT NEGOT
 nit !!! IMPORTANT nit is balanced nonary digit (-4,-3,-2,-1,0,1,2,3,4) NOT NEGOTIABLE!!!,
 nyte !!! IMPORTANT nyte is 5 nits for 9^5 values stored in uint16 NOT NEGOTIABLE!!!,
 tensor,
-matrix
+matrix,
+void,   !!! IMPORTANT void is ONLY for C FFI function signatures - represents "no return value" in extern blocks. NOT usable in Aria native code!
+*/
+
+/* NIL vs NULL vs void - CRITICAL DISTINCTION !!!
+
+NIL:     Aria's native "absence of value" sentinel
+         - Type: Special unit type, distinct from all other types
+         - Used in Aria native code for optional/maybe types
+         - Represents "no value present" (not an error, just absence)
+         - Different from NULL (which is specifically for pointers)
+         - Examples:
+             obj?:user = getUser() ?? NIL;  // Optional type, can be NIL
+             string?:name = user?.name ?? NIL;  // Safe navigation returns NIL if chain breaks
+             int64?:value = NIL;  // Explicitly no value
+
+NULL:    C-style null pointer constant
+         - Type: Pointer sentinel value (address 0x0)
+         - Used for pointer comparisons and initialization
+         - Represents "invalid/no pointer" 
+         - Compatible with @ pointer types
+         - Examples:
+             int64@:ptr = NULL;  // Null pointer
+             if (ptr == NULL) { /* handle null pointer */ }
+             string@:str = NULL;
+
+void:    C FFI "no return value" type
+         - Type: Only valid in extern block function signatures
+         - Represents functions that don't return a value (C convention)
+         - CANNOT be used as a variable type in Aria
+         - CANNOT be used in Aria native function signatures (use result type instead)
+         - ONLY for FFI compatibility with C libraries
+         - Examples:
+             extern "libc" {
+                 func:free = void(void*:ptr);  // C void return type - OK in extern
+                 func:exit = void(int32:code); // C void return type - OK in extern
+             }
+             // INVALID: func:aria_func = void() { };  // ERROR! Aria functions use result type
+             // CORRECT: func:aria_func = result() { pass(NIL); };  // Aria way
+
+Interplay and Rules:
+1. Aria Native Code:
+   - Use NIL for "absence of value" semantics
+   - Use NULL only for pointer comparisons/initialization
+   - NEVER use void (syntax error outside extern blocks)
+   - All Aria functions return result type (use pass(NIL) for "no value")
+
+2. C FFI (extern blocks):
+   - Use void for C functions that don't return values
+   - Use C-style pointers (void*, int*, etc.) instead of @ 
+   - NULL works for C pointer parameters
+   - C void return translates to result type internally
+
+3. Type System:
+   - NIL has its own type (unit type)
+   - NULL is a pointer value (type: T@)
+   - void is not a type in Aria (only FFI signature marker)
+   - Optional types use ? suffix: int64?, string?, obj?
+
+4. Common Patterns:
+   - Optional return: pass(value) or pass(NIL)
+   - Null pointer check: if (ptr == NULL)
+   - Safe navigation: obj?.field returns NIL if obj is NIL
+   - Null coalescing: value ?? NIL or value ?? default_value
+   - C FFI void return: maps to result type with pass(NIL) internally
+
+Examples Comparing All Three:
+
+// Aria native - using NIL for optional values
+func:findUser = obj?(string:username) {
+    obj?:user = database.lookup(username);
+    if (user == NIL) {
+        pass(NIL);  // No user found, return NIL
+    }
+    pass(user);
+};
+obj?:res = findUser("bob") ?? NIL;
+
+// Aria native - using NULL for pointers  
+wild int64@:ptr = aria.alloc<int64>(100);
+if (ptr == NULL) {
+    stderr.write("Allocation failed");
+    fail(-1);
+}
+defer aria.free(ptr);
+
+// C FFI - using void for C function returns
+extern "libc" {
+    func:printf = int32(string:format, ...);  // C returns int
+    func:exit = void(int32:code);              // C void return
+    func:free = void(void*:ptr);               // C void return, void* param
+}
+// When calling C void functions, they internally return result with NIL:
+result:r = exit(0);  // r.val is NIL, r.err is NULL (if no error)
 */
 
 /* keywords
@@ -54,6 +147,9 @@ mod,        // define module
 pub,        // public visibility
 extern,     // external C functions
 ERR,        // TBB error sentinel literal (context-dependent based on type)
+NIL,        // Aria's "no value" sentinel for optional types (different from NULL pointer)
+NULL,       // Null pointer constant (address 0x0) for @ pointer types
+void,       // C FFI only - "no return value" type (NOT usable in Aria native code)
 stack,      // explicit stack allocation
 gc,         // explicit GC allocation
 wildx,      // executable memory allocation (for JIT)
@@ -723,7 +819,8 @@ FLOAT_LITERAL,       // 3.14, 1e10, 0x1.2p3
 STRING_LITERAL,      // "hello", 'world'
 TEMPLATE_LITERAL,    // `template with &{var}`
 BOOLEAN_LITERAL,     // true, false
-NULL_LITERAL,        // NULL
+NIL_LITERAL,         // NIL (Aria's "no value" sentinel for optional types)
+NULL_LITERAL,        // NULL (null pointer constant for @ pointer types)
 CHAR_LITERAL,        // 'a'
 
 // IDENTIFIERS

@@ -116,12 +116,30 @@ set(IR_SOURCES
 
 # Phase 5: Runtime
 set(RUNTIME_SOURCES
-    # src/runtime/gc/allocator.cpp
-    # src/runtime/gc/mark.cpp
-    # src/runtime/gc/sweep.cpp
-    # src/runtime/allocators/wild_alloc.cpp
-    # src/runtime/io/file.cpp
-    # src/runtime/process/process.cpp
+    src/runtime/gc/allocator.cpp
+    src/runtime/gc/gc.cpp
+    src/runtime/allocators/wild_alloc.cpp
+    src/runtime/allocators/wildx_alloc.cpp
+    src/runtime/assembler/assembler.cpp
+    src/runtime/assembler/llvm_jit.cpp
+    src/runtime/assembler/code_cache.cpp
+    src/runtime/io/io.cpp
+    src/runtime/streams/streams.cpp
+    src/runtime/process/process.cpp
+    src/runtime/thread/thread.cpp
+    src/runtime/atomic/atomic.cpp
+    src/runtime/timer/timer.cpp
+    src/runtime/async/executor.cpp
+    src/runtime/async/coroutine.cpp
+)
+
+# Phase 6: Standard Library Runtime Support
+set(STDLIB_SOURCES
+    src/runtime/stdlib/stdlib.cpp
+    src/runtime/result/result.cpp
+    src/runtime/collections/collections.cpp
+    src/runtime/strings/strings.cpp
+    src/runtime/math/math.cpp
 )
 
 # Combine all sources
@@ -132,16 +150,16 @@ set(ARIA_SOURCES
     ${SEMA_SOURCES}
     ${IR_SOURCES}
     ${RUNTIME_SOURCES}
+    ${STDLIB_SOURCES}
 )
 
 # ============================================================================
-# Compiler executable (will be enabled when we have sources)
+# Compiler executable
 # ============================================================================
 
 # Main compiler executable
-# Uncomment when we have main.cpp
-# add_executable(ariac src/main.cpp ${ARIA_SOURCES})
-# target_link_libraries(ariac ${llvm_libs})
+add_executable(ariac src/main.cpp ${ARIA_SOURCES})
+target_link_libraries(ariac ${llvm_libs})
 
 # ============================================================================
 # Testing
