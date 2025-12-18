@@ -249,13 +249,25 @@ Aria is **dual-licensed**:
 
 ## Contributing
 
-Currently preparing for expert review (Tsoding). After Phase 2 completion, contributions will be welcomed.
+We welcome contributions from the community! Whether you're fixing bugs, adding features, improving documentation, or creating examples - your help is appreciated.
+
+**Getting Started:**
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
+- Check open issues for tasks
+- Join discussions on design decisions
+- Share your Aria programs!
 
 **By contributing, you agree to the dual-license model.**
 
 ---
 
-## 💝 Support This Project
+## � Acknowledgments
+
+This project stands on the shoulders of giants. See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) for the full list of people and projects that made Aria possible.
+
+---
+
+## �💝 Support This Project
 
 If you find Aria useful, consider supporting its development! See [DONATIONS.md](DONATIONS.md) for cryptocurrency donation addresses.
 
