@@ -29,6 +29,7 @@ add_executable(test_runner
     backend/test_lambda_execution.cpp
     backend/test_async_basic.cpp
     backend/test_async_execution.cpp
+    backend/test_async_lowering.cpp
     backend/test_tbb_codegen.cpp
     backend/test_codegen_expr.cpp
     backend/test_codegen_stmt.cpp
