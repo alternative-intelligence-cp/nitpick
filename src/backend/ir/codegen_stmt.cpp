@@ -617,9 +617,9 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
         }
         builder.CreateCall(free_func, {free_mem});
         
-        // End coroutine: i1 @llvm.coro.end(i8* handle, i1 unwind)
+        // End coroutine: i1 @llvm.coro.end(i8* handle, i1 unwind, token)
         llvm::Value* unwind = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
-        builder.CreateCall(getCoroEnd(), {coro_handle, unwind});
+        builder.CreateCall(getCoroEnd(), {coro_handle, unwind, llvm::ConstantTokenNone::get(context)});
         
         // Return coroutine handle
         builder.CreateRet(coro_handle);
