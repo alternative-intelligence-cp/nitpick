@@ -3,6 +3,9 @@
 
 #include "tools/lsp/transport.h"
 #include "tools/lsp/vfs.h"
+#include "frontend/diagnostics.h"
+#include "frontend/lexer/lexer.h"
+#include "frontend/parser/parser.h"
 #include <string>
 #include <atomic>
 
@@ -113,6 +116,11 @@ private:
     void handle_did_change(const json& params);
     void handle_did_close(const json& params);
     void handle_did_save(const json& params);
+    
+    // Diagnostics
+    void publish_diagnostics(const std::string& uri);
+    void clear_diagnostics(const std::string& uri);
+    json convert_diagnostic_to_lsp(const aria::Diagnostic& diag);
     
     // Message dispatcher
     void dispatch_message(const JsonRpcMessage& msg);

@@ -190,9 +190,14 @@ add_executable(ariac src/main.cpp ${ARIA_SOURCES})
 target_link_libraries(ariac ${llvm_libs})
 
 # LSP server executable (Phase 7.3)
-add_executable(aria-ls src/tools/lsp/aria-ls.cpp ${TOOLS_SOURCES})
-# LSP server doesn't need full compiler - just transport and server
-# But for now link everything to avoid complex dependency management
+add_executable(aria-ls src/tools/lsp/aria-ls.cpp 
+    ${TOOLS_SOURCES} 
+    ${DIAGNOSTICS_SOURCES}
+    ${LEXER_SOURCES}
+    ${PARSER_SOURCES}
+    ${AST_SOURCES}
+)
+# LSP server needs lexer, parser, diagnostics for real-time error checking
 
 # ============================================================================
 # Testing
