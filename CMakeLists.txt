@@ -89,6 +89,11 @@ set(PARSER_SOURCES
     # src/frontend/parser/parse_module.cpp
 )
 
+# Diagnostics (Phase 7.2)
+set(DIAGNOSTICS_SOURCES
+    src/frontend/diagnostics.cpp
+)
+
 # Phase 3: Semantic Analysis
 set(SEMA_SOURCES
     src/frontend/sema/symbol_table.cpp
@@ -147,6 +152,7 @@ set(ARIA_SOURCES
     ${LEXER_SOURCES}
     ${AST_SOURCES}
     ${PARSER_SOURCES}
+    ${DIAGNOSTICS_SOURCES}
     ${SEMA_SOURCES}
     ${IR_SOURCES}
     ${RUNTIME_SOURCES}
