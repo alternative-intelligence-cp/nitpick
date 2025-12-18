@@ -62,6 +62,79 @@ llvm::Type* ExprCodegen::getLLVMType(Type* type) {
     return llvm::Type::getInt32Ty(context);
 }
 
+// Helper: Get LLVM type from Aria type name string
+// Complete mapping for all Aria primitive types from specs
+llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
+    // Integer types
+    if (typeName == "int1") return llvm::Type::getInt1Ty(context);
+    if (typeName == "int2") return llvm::Type::getInt8Ty(context);   // Smallest LLVM int
+    if (typeName == "int4") return llvm::Type::getInt8Ty(context);   // Smallest LLVM int
+    if (typeName == "int8") return llvm::Type::getInt8Ty(context);
+    if (typeName == "int16") return llvm::Type::getInt16Ty(context);
+    if (typeName == "int32") return llvm::Type::getInt32Ty(context);
+    if (typeName == "int64") return llvm::Type::getInt64Ty(context);
+    if (typeName == "int128") return llvm::Type::getInt128Ty(context);
+    if (typeName == "int256") return llvm::IntegerType::get(context, 256);
+    if (typeName == "int512") return llvm::IntegerType::get(context, 512);
+    
+    // Unsigned integer types
+    if (typeName == "uint8") return llvm::Type::getInt8Ty(context);
+    if (typeName == "uint16") return llvm::Type::getInt16Ty(context);
+    if (typeName == "uint32") return llvm::Type::getInt32Ty(context);
+    if (typeName == "uint64") return llvm::Type::getInt64Ty(context);
+    if (typeName == "uint128") return llvm::Type::getInt128Ty(context);
+    if (typeName == "uint256") return llvm::IntegerType::get(context, 256);
+    if (typeName == "uint512") return llvm::IntegerType::get(context, 512);
+    
+    // TBB (Twisted Balanced Binary) - symmetric signed with error sentinel
+    if (typeName == "tbb8") return llvm::Type::getInt8Ty(context);
+    if (typeName == "tbb16") return llvm::Type::getInt16Ty(context);
+    if (typeName == "tbb32") return llvm::Type::getInt32Ty(context);
+    if (typeName == "tbb64") return llvm::Type::getInt64Ty(context);
+    
+    // Floating point types
+    if (typeName == "flt32") return llvm::Type::getFloatTy(context);
+    if (typeName == "flt64") return llvm::Type::getDoubleTy(context);
+    if (typeName == "flt128") return llvm::Type::getFP128Ty(context);
+    if (typeName == "flt256") return llvm::Type::getFP128Ty(context);  // Use FP128 for now
+    if (typeName == "flt512") return llvm::Type::getFP128Ty(context);  // Use FP128 for now
+    
+    // Boolean
+    if (typeName == "bool") return llvm::Type::getInt1Ty(context);
+    
+    // Void
+    if (typeName == "void") return llvm::Type::getVoidTy(context);
+    
+    // Ternary/Nonary (stored as uint16)
+    if (typeName == "trit") return llvm::Type::getInt8Ty(context);   // -1,0,1
+    if (typeName == "tryte") return llvm::Type::getInt16Ty(context); // 10 trits in uint16
+    if (typeName == "nit") return llvm::Type::getInt8Ty(context);    // -4...4
+    if (typeName == "nyte") return llvm::Type::getInt16Ty(context);  // 5 nits in uint16
+    
+    // Compound/reference types (pointers)
+    if (typeName == "string") return llvm::PointerType::get(context, 0);
+    if (typeName == "dyn") return llvm::PointerType::get(context, 0);
+    if (typeName == "obj") return llvm::PointerType::get(context, 0);
+    if (typeName == "struct") return llvm::PointerType::get(context, 0);
+    if (typeName == "result") return llvm::PointerType::get(context, 0);
+    if (typeName == "func") return llvm::PointerType::get(context, 0);
+    if (typeName == "array") return llvm::PointerType::get(context, 0);
+    if (typeName == "buffer") return llvm::PointerType::get(context, 0);
+    if (typeName == "stream") return llvm::PointerType::get(context, 0);
+    if (typeName == "process") return llvm::PointerType::get(context, 0);
+    if (typeName == "pipe") return llvm::PointerType::get(context, 0);
+    
+    // Vector types (future expansion)
+    if (typeName == "vec2") return llvm::PointerType::get(context, 0);
+    if (typeName == "vec3") return llvm::PointerType::get(context, 0);
+    if (typeName == "vec9") return llvm::PointerType::get(context, 0);
+    if (typeName == "tensor") return llvm::PointerType::get(context, 0);
+    if (typeName == "matrix") return llvm::PointerType::get(context, 0);
+    
+    // Unknown type - throw error instead of defaulting
+    throw std::runtime_error("Unknown Aria type: " + typeName);
+}
+
 // Helper: Get size of Aria type in bytes
 size_t ExprCodegen::getTypeSize(Type* type) {
     if (!type) return 0;
@@ -862,25 +935,21 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
     param_types.push_back(llvm::PointerType::get(context, 0));  // i8* env_ptr (hidden first parameter)
     
     for (const auto& param : expr->parameters) {
-        // TODO: Get actual parameter type from AST
-        // For now, assume all parameters are i64
-        param_types.push_back(llvm::Type::getInt64Ty(context));
+        // Extract parameter type from AST
+        if (auto paramNode = std::dynamic_pointer_cast<ParameterNode>(param)) {
+            llvm::Type* param_type = getLLVMTypeFromString(paramNode->typeName);
+            param_types.push_back(param_type);
+        } else {
+            throw std::runtime_error("Invalid parameter node in lambda");
+        }
     }
     
-    // Determine return type
+    // Determine return type from explicit annotation (required by Aria specs)
     llvm::Type* return_type = llvm::Type::getVoidTy(context);
     if (!expr->returnTypeName.empty()) {
-        // Map Aria type to LLVM type
-        if (expr->returnTypeName == "int8" || expr->returnTypeName == "tbb8") {
-            return_type = llvm::Type::getInt8Ty(context);
-        } else if (expr->returnTypeName == "int32" || expr->returnTypeName == "tbb32") {
-            return_type = llvm::Type::getInt32Ty(context);
-        } else if (expr->returnTypeName == "int64" || expr->returnTypeName == "tbb64") {
-            return_type = llvm::Type::getInt64Ty(context);
-        } else if (expr->returnTypeName == "void") {
-            return_type = llvm::Type::getVoidTy(context);
-        }
-        // TODO: Handle all types
+        return_type = getLLVMTypeFromString(expr->returnTypeName);
+    } else {
+        throw std::runtime_error("Lambda missing required return type annotation");
     }
     
     // Create function type

@@ -81,6 +81,19 @@ public:
     bool analyzeLambda(LambdaExpr* lambda);
     
     /**
+     * Infer return type of lambda from its body
+     * 
+     * Walks the lambda body to find all return/pass statements,
+     * collects their types, and infers a unified return type.
+     * If the lambda already has an explicit return type annotation,
+     * this validates it. Otherwise, it sets the inferred type.
+     * 
+     * @param lambda The lambda expression to infer type for
+     * @return true if inference succeeds, false if errors
+     */
+    bool inferReturnType(LambdaExpr* lambda);
+    
+    /**
      * Get accumulated errors
      */
     const std::vector<std::string>& getErrors() const { return errors; }
