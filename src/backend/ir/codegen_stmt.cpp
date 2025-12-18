@@ -10,6 +10,7 @@
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/IR/Intrinsics.h>  // Phase 4.5.3: Coroutine intrinsics
 #include <stdexcept>
 
 using namespace aria;
@@ -156,6 +157,115 @@ llvm::Function* StmtCodegen::getOrDeclareWildFree() {
             module
         );
     }
+    return func;
+}
+
+// ============================================================================
+// Phase 4.5.3: LLVM Coroutine Intrinsics for Async/Await
+// ============================================================================
+
+/**
+ * Get or declare @llvm.coro.id intrinsic
+ * Signature: token @llvm.coro.id(i32 align, i8* promise, i8* coroaddr, i8* fnaddr)
+ * Returns a token identifying the coroutine
+ */
+llvm::Function* StmtCodegen::getCoroId() {
+    llvm::Function* func = llvm::Intrinsic::getDeclaration(
+        module, 
+        llvm::Intrinsic::coro_id
+    );
+    return func;
+}
+
+/**
+ * Get or declare @llvm.coro.size.i64 intrinsic
+ * Signature: i64 @llvm.coro.size.i64()
+ * Returns the size needed for coroutine frame allocation
+ */
+llvm::Function* StmtCodegen::getCoroSize() {
+    llvm::Function* func = llvm::Intrinsic::getDeclaration(
+        module,
+        llvm::Intrinsic::coro_size,
+        {llvm::Type::getInt64Ty(context)}
+    );
+    return func;
+}
+
+/**
+ * Get or declare @llvm.coro.begin intrinsic
+ * Signature: i8* @llvm.coro.begin(token id, i8* mem)
+ * Marks the beginning of coroutine and returns frame pointer
+ */
+llvm::Function* StmtCodegen::getCoroBegin() {
+    llvm::Function* func = llvm::Intrinsic::getDeclaration(
+        module,
+        llvm::Intrinsic::coro_begin
+    );
+    return func;
+}
+
+/**
+ * Get or declare @llvm.coro.save intrinsic
+ * Signature: token @llvm.coro.save(i8* handle)
+ * Prepares the coroutine for a suspend point
+ */
+llvm::Function* StmtCodegen::getCoroSave() {
+    llvm::Function* func = llvm::Intrinsic::getDeclaration(
+        module,
+        llvm::Intrinsic::coro_save
+    );
+    return func;
+}
+
+/**
+ * Get or declare @llvm.coro.suspend intrinsic
+ * Signature: i8 @llvm.coro.suspend(token save, i1 final)
+ * Suspends the coroutine. Returns 0=resume, 1=destroy, -1=initial
+ */
+llvm::Function* StmtCodegen::getCoroSuspend() {
+    llvm::Function* func = llvm::Intrinsic::getDeclaration(
+        module,
+        llvm::Intrinsic::coro_suspend
+    );
+    return func;
+}
+
+/**
+ * Get or declare @llvm.coro.end intrinsic
+ * Signature: i1 @llvm.coro.end(i8* handle, i1 unwind)
+ * Marks the end of coroutine. Returns true if needs cleanup
+ */
+llvm::Function* StmtCodegen::getCoroEnd() {
+    llvm::Function* func = llvm::Intrinsic::getDeclaration(
+        module,
+        llvm::Intrinsic::coro_end
+    );
+    return func;
+}
+
+/**
+ * Get or declare @llvm.coro.free intrinsic
+ * Signature: i8* @llvm.coro.free(token id, i8* handle)
+ * Returns pointer to memory that should be freed
+ */
+llvm::Function* StmtCodegen::getCoroFree() {
+    llvm::Function* func = llvm::Intrinsic::getDeclaration(
+        module,
+        llvm::Intrinsic::coro_free
+    );
+    return func;
+}
+
+/**
+ * Get or declare @llvm.coro.resume intrinsic
+ * Signature: void @llvm.coro.resume(i8* handle)
+ * Resumes a suspended coroutine
+ */
+llvm::Function* StmtCodegen::getCoroResume() {
+    llvm::Function* func = llvm::Intrinsic::getDeclaration(
+        module,
+        llvm::Intrinsic::coro_resume
+    );
     return func;
 }
 
@@ -323,6 +433,13 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
     // Get return type
     llvm::Type* return_type = getLLVMTypeFromString(stmt->returnType);
     
+    // Phase 4.5.3: Async functions return i8* (coroutine handle)
+    // The actual return type is wrapped in a Future<T> at runtime
+    llvm::Type* actual_return_type = return_type;
+    if (stmt->isAsync) {
+        actual_return_type = llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0);
+    }
+    
     // Build parameter types
     std::vector<llvm::Type*> param_types;
     for (const auto& param : stmt->parameters) {
@@ -332,7 +449,7 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
     }
     
     // Create function type
-    llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
+    llvm::FunctionType* func_type = llvm::FunctionType::get(actual_return_type, param_types, false);
     
     // Create function
     llvm::Function* func = llvm::Function::Create(
@@ -353,6 +470,59 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
     // Create entry block
     llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
     builder.SetInsertPoint(entry);
+    
+    // Phase 4.5.3: Async function coroutine setup
+    llvm::Value* coro_id = nullptr;
+    llvm::Value* coro_handle = nullptr;
+    llvm::BasicBlock* coro_suspend_block = nullptr;
+    llvm::BasicBlock* coro_cleanup_block = nullptr;
+    
+    if (stmt->isAsync) {
+        // Generate coroutine intrinsics for async function
+        // Based on LLVM coroutine transformation algorithm
+        
+        // 1. Generate coroutine ID
+        // token @llvm.coro.id(i32 align, i8* promise, i8* coroaddr, i8* fnaddr)
+        llvm::Value* align = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 8);
+        llvm::Value* null_ptr = llvm::ConstantPointerNull::get(
+            llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)
+        );
+        coro_id = builder.CreateCall(
+            getCoroId(),
+            {align, null_ptr, null_ptr, null_ptr},
+            "coro.id"
+        );
+        
+        // 2. Get coroutine frame size
+        // i64 @llvm.coro.size.i64()
+        llvm::Value* coro_size = builder.CreateCall(getCoroSize(), {}, "coro.size");
+        
+        // 3. Allocate coroutine frame (heap allocation for now, RAMP optimization later)
+        // For now, use simple malloc (TODO: integrate with Aria memory model)
+        llvm::Function* malloc_func = module->getFunction("malloc");
+        if (!malloc_func) {
+            llvm::FunctionType* malloc_type = llvm::FunctionType::get(
+                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                {llvm::Type::getInt64Ty(context)},
+                false
+            );
+            malloc_func = llvm::Function::Create(
+                malloc_type,
+                llvm::Function::ExternalLinkage,
+                "malloc",
+                module
+            );
+        }
+        llvm::Value* coro_mem = builder.CreateCall(malloc_func, {coro_size}, "coro.alloc");
+        
+        // 4. Begin coroutine
+        // i8* @llvm.coro.begin(token id, i8* mem)
+        coro_handle = builder.CreateCall(getCoroBegin(), {coro_id, coro_mem}, "coro.handle");
+        
+        // Create suspend and cleanup blocks for later use
+        coro_suspend_block = llvm::BasicBlock::Create(context, "coro.suspend", func);
+        coro_cleanup_block = llvm::BasicBlock::Create(context, "coro.cleanup", func);
+    }
     
     // Save the old named_values (for nested functions/closures in the future)
     std::map<std::string, llvm::Value*> old_named_values = named_values;
@@ -385,7 +555,10 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
     // If the last instruction isn't a terminator, add a default return
     llvm::BasicBlock* current_block = builder.GetInsertBlock();
     if (current_block && !current_block->getTerminator()) {
-        if (return_type->isVoidTy()) {
+        if (stmt->isAsync) {
+            // Async function: Jump to final suspend instead of returning directly
+            builder.CreateBr(coro_suspend_block);
+        } else if (return_type->isVoidTy()) {
             builder.CreateRetVoid();
         } else {
             // Return zero/null for non-void functions without explicit return
@@ -398,6 +571,58 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
                 builder.CreateRet(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(return_type)));
             }
         }
+    }
+    
+    // Phase 4.5.3: Generate coroutine suspend and cleanup blocks for async functions
+    if (stmt->isAsync) {
+        // Final suspend point (where all returns converge)
+        builder.SetInsertPoint(coro_suspend_block);
+        
+        // Save coroutine state before final suspend
+        llvm::Value* save_token = builder.CreateCall(getCoroSave(), {coro_handle}, "coro.save");
+        
+        // Final suspend: i8 @llvm.coro.suspend(token save, i1 final)
+        llvm::Value* is_final = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 1);
+        llvm::Value* suspend_result = builder.CreateCall(
+            getCoroSuspend(),
+            {save_token, is_final},
+            "coro.suspend.result"
+        );
+        
+        // Switch on suspend result
+        // 0 = resume (shouldn't happen for final suspend)
+        // 1 = destroy (cleanup path)
+        llvm::SwitchInst* suspend_switch = builder.CreateSwitch(suspend_result, coro_cleanup_block, 1);
+        
+        // Cleanup block: free coroutine frame
+        builder.SetInsertPoint(coro_cleanup_block);
+        
+        // Get memory to free: i8* @llvm.coro.free(token id, i8* handle)
+        llvm::Value* free_mem = builder.CreateCall(getCoroFree(), {coro_id, coro_handle}, "coro.free.mem");
+        
+        // Free the memory (TODO: integrate with Aria memory model)
+        llvm::Function* free_func = module->getFunction("free");
+        if (!free_func) {
+            llvm::FunctionType* free_type = llvm::FunctionType::get(
+                llvm::Type::getVoidTy(context),
+                {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)},
+                false
+            );
+            free_func = llvm::Function::Create(
+                free_type,
+                llvm::Function::ExternalLinkage,
+                "free",
+                module
+            );
+        }
+        builder.CreateCall(free_func, {free_mem});
+        
+        // End coroutine: i1 @llvm.coro.end(i8* handle, i1 unwind)
+        llvm::Value* unwind = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
+        builder.CreateCall(getCoroEnd(), {coro_handle, unwind});
+        
+        // Return coroutine handle
+        builder.CreateRet(coro_handle);
     }
     
     // Restore old named_values
