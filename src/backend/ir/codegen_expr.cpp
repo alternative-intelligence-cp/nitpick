@@ -102,9 +102,9 @@ llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
     // Boolean
     if (typeName == "bool") return llvm::Type::getInt1Ty(context);
     
-    // Void / Nil (function with no return value)
+    // Void (FFI/C interop) / NIL (native Aria - function with no return value)
     if (typeName == "void") return llvm::Type::getVoidTy(context);
-    if (typeName == "nil") return llvm::Type::getVoidTy(context);
+    if (typeName == "NIL") return llvm::Type::getVoidTy(context);
     
     // Ternary/Nonary (stored as uint16)
     if (typeName == "trit") return llvm::Type::getInt8Ty(context);   // -1,0,1
