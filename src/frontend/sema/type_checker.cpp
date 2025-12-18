@@ -116,6 +116,43 @@ Type* TypeChecker::inferBinaryOp(BinaryExpr* expr) {
         return typeSystem->getErrorType();
     }
     
+    // Context-aware literal typing for standard integers
+    // If one operand is a literal int64 and the other is a smaller standard integer type,
+    // check if the literal value fits in the smaller type. If so, use the smaller type
+    // for the literal to avoid unnecessary widening.
+    
+    // Check if right operand is an int64 literal and left is a standard integer
+    if (expr->right->type == ASTNode::NodeType::LITERAL &&
+        isStandardIntType(leftType) &&
+        rightType->toString() == "int64") {
+        
+        LiteralExpr* rightLiteral = static_cast<LiteralExpr*>(expr->right.get());
+        if (std::holds_alternative<int64_t>(rightLiteral->value)) {
+            int64_t value = std::get<int64_t>(rightLiteral->value);
+            
+            // Check if literal fits in left type - if so, use left type for the literal
+            if (literalFitsInType(value, leftType)) {
+                rightType = leftType;  // Treat literal as having the same type as left operand
+            }
+        }
+    }
+    
+    // Check if left operand is an int64 literal and right is a standard integer
+    if (expr->left->type == ASTNode::NodeType::LITERAL &&
+        isStandardIntType(rightType) &&
+        leftType->toString() == "int64") {
+        
+        LiteralExpr* leftLiteral = static_cast<LiteralExpr*>(expr->left.get());
+        if (std::holds_alternative<int64_t>(leftLiteral->value)) {
+            int64_t value = std::get<int64_t>(leftLiteral->value);
+            
+            // Check if literal fits in right type - if so, use right type for the literal
+            if (literalFitsInType(value, rightType)) {
+                leftType = rightType;  // Treat literal as having the same type as right operand
+            }
+        }
+    }
+    
     // Check operator validity for given types
     return checkBinaryOperator(expr->op.type, leftType, rightType);
 }
@@ -789,9 +826,26 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             }
         }
         
+        // Standard Integer Type Validation
+        // Special handling for integer literals assigned to smaller integer types
+        // This allows safe narrowing conversions when the literal value fits at compile time
+        bool standardIntLiteralAssignment = false;
+        if (isStandardIntType(declaredType) && stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+            if (std::holds_alternative<int64_t>(literal->value)) {
+                int64_t value = std::get<int64_t>(literal->value);
+                if (canLiteralFitInIntType(value, declaredType, stmt)) {
+                    standardIntLiteralAssignment = true;
+                    // Literal fits in target type, allow the assignment
+                } else {
+                    return;  // Validation failed, error already reported
+                }
+            }
+        }
+        
         // Check if initializer type is assignable to declared type
-        // Skip this check if we handled TBB or balanced literal assignment above
-        if (!tbbLiteralAssignment && !balancedLiteralAssignment) {
+        // Skip this check if we handled TBB, balanced, or standard int literal assignment above
+        if (!tbbLiteralAssignment && !balancedLiteralAssignment && !standardIntLiteralAssignment) {
             if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType)) {
                 addError("Cannot initialize variable '" + stmt->varName + 
                         "' of type '" + declaredType->toString() + 
@@ -1266,6 +1320,118 @@ void TypeChecker::checkBalancedLiteralValue(int64_t value, Type* type, ASTNode* 
                     ", " + std::to_string(maxVal) + "], got " + std::to_string(value), node);
         }
     }
+}
+
+// ============================================================================
+// Standard Integer Type Validation
+// ============================================================================
+
+bool TypeChecker::isStandardIntType(Type* type) const {
+    if (type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& name = primType->getName();
+    
+    return name == "int8" || name == "int16" || name == "int32" || name == "int64" ||
+           name == "uint8" || name == "uint16" || name == "uint32" || name == "uint64";
+}
+
+bool TypeChecker::literalFitsInType(int64_t value, Type* type) const {
+    if (!isStandardIntType(type)) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& typeName = primType->getName();
+    
+    // Determine range based on type name
+    if (typeName == "int8") {
+        return value >= -128 && value <= 127;
+    } else if (typeName == "int16") {
+        return value >= -32768 && value <= 32767;
+    } else if (typeName == "int32") {
+        return value >= -2147483648LL && value <= 2147483647LL;
+    } else if (typeName == "int64") {
+        return true;  // int64 can hold any int64_t value
+    } else if (typeName == "uint8") {
+        return value >= 0 && value <= 255;
+    } else if (typeName == "uint16") {
+        return value >= 0 && value <= 65535;
+    } else if (typeName == "uint32") {
+        return value >= 0 && value <= 4294967295LL;
+    } else if (typeName == "uint64") {
+        return value >= 0;  // uint64 can hold any non-negative int64_t value
+    }
+    
+    return false;  // Unknown type
+}
+
+bool TypeChecker::canLiteralFitInIntType(int64_t value, Type* type, ASTNode* node) {
+    if (!isStandardIntType(type)) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& typeName = primType->getName();
+    
+    int64_t minVal, maxVal;
+    
+    // Determine range based on type name
+    if (typeName == "int8") {
+        minVal = -128;
+        maxVal = 127;
+    } else if (typeName == "int16") {
+        minVal = -32768;
+        maxVal = 32767;
+    } else if (typeName == "int32") {
+        minVal = -2147483648LL;
+        maxVal = 2147483647LL;
+    } else if (typeName == "int64") {
+        // int64 can hold any int64_t value
+        return true;
+    } else if (typeName == "uint8") {
+        if (value < 0) {
+            addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
+            return false;
+        }
+        minVal = 0;
+        maxVal = 255;
+    } else if (typeName == "uint16") {
+        if (value < 0) {
+            addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
+            return false;
+        }
+        minVal = 0;
+        maxVal = 65535;
+    } else if (typeName == "uint32") {
+        if (value < 0) {
+            addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
+            return false;
+        }
+        minVal = 0;
+        maxVal = 4294967295LL;
+    } else if (typeName == "uint64") {
+        if (value < 0) {
+            addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
+            return false;
+        }
+        // uint64 can hold any non-negative int64_t value
+        return true;
+    } else {
+        return false;  // Unknown type
+    }
+    
+    // Check if value is in range
+    if (value < minVal || value > maxVal) {
+        addError("Value " + std::to_string(value) + " is out of range for " + 
+                typeName + " (valid range: [" + std::to_string(minVal) + 
+                ", " + std::to_string(maxVal) + "])", node);
+        return false;
+    }
+    
+    return true;
 }
 
 } // namespace sema

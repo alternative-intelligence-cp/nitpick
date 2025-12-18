@@ -326,8 +326,47 @@ private:
      */
     void checkBalancedLiteralValue(int64_t value, Type* type, ASTNode* node);
     
+    // ========================================================================    // Standard Integer Type Validation
     // ========================================================================
-    // Error Handling
+    
+    /**
+     * Check if a type is a standard integer type (int8, int16, int32, int64, uint8, uint16, uint32, uint64)
+     */
+    bool isStandardIntType(Type* type) const;
+    
+    /**
+     * Check if an int64_t literal value fits in the target integer type (silent check, no errors)
+     * 
+     * This is used for context-aware literal typing in binary expressions.
+     * For example, in "x + 10" where x is int32, we check if 10 fits in int32
+     * to avoid unnecessary widening to int64.
+     * 
+     * Returns: true if the literal fits, false otherwise (no error reporting)
+     */
+    bool literalFitsInType(int64_t value, Type* type) const;
+    
+    /**
+     * Check if an int64_t literal value can fit in the target integer type (with error reporting)
+     * 
+     * This enables safe narrowing conversions at compile time.
+     * For example, the literal 42 (int64_t) can be assigned to int32, int16, or int8
+     * because 42 fits within their ranges.
+     * 
+     * Rules:
+     * - int8: range [-128, 127]
+     * - int16: range [-32768, 32767]
+     * - int32: range [-2147483648, 2147483647]
+     * - int64: always fits (same type)
+     * - uint8: range [0, 255]
+     * - uint16: range [0, 65535]
+     * - uint32: range [0, 4294967295]
+     * - uint64: non-negative values always fit
+     * 
+     * Returns: true if the literal fits, false otherwise (and reports error)
+     */
+    bool canLiteralFitInIntType(int64_t value, Type* type, ASTNode* node);
+    
+    // ========================================================================    // Error Handling
     // ========================================================================
     
     void addError(const std::string& message, int line, int column);
