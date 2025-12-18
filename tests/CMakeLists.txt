@@ -41,6 +41,7 @@ add_executable(test_runner
     integration/test_sema_integration.cpp
     integration/test_ir_compilation.cpp
     integration/test_ir_optimization.cpp
+    integration/test_async_execution.cpp
     runtime/test_gc.cpp
     runtime/test_allocators.cpp
     runtime/test_assembler.cpp
