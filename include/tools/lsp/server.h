@@ -122,6 +122,10 @@ private:
     void clear_diagnostics(const std::string& uri);
     json convert_diagnostic_to_lsp(const aria::Diagnostic& diag);
     
+    // Navigation handlers
+    json handle_hover(const json& params);
+    json handle_definition(const json& params);
+    
     // Message dispatcher
     void dispatch_message(const JsonRpcMessage& msg);
     void handle_request(const json& id, const std::string& method, const json& params);
