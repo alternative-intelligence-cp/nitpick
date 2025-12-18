@@ -722,6 +722,7 @@ src/frontend/ast/ast_node.o: src/frontend/ast/ast_node.cpp.o
 # target to build an object file
 src/frontend/ast/ast_node.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/ast_node.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/ast_node.cpp.o
 .PHONY : src/frontend/ast/ast_node.cpp.o
 
 src/frontend/ast/ast_node.i: src/frontend/ast/ast_node.cpp.i
@@ -730,6 +731,7 @@ src/frontend/ast/ast_node.i: src/frontend/ast/ast_node.cpp.i
 # target to preprocess a source file
 src/frontend/ast/ast_node.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/ast_node.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/ast_node.cpp.i
 .PHONY : src/frontend/ast/ast_node.cpp.i
 
 src/frontend/ast/ast_node.s: src/frontend/ast/ast_node.cpp.s
@@ -738,6 +740,7 @@ src/frontend/ast/ast_node.s: src/frontend/ast/ast_node.cpp.s
 # target to generate assembly for a file
 src/frontend/ast/ast_node.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/ast_node.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/ast_node.cpp.s
 .PHONY : src/frontend/ast/ast_node.cpp.s
 
 src/frontend/ast/expr.o: src/frontend/ast/expr.cpp.o
@@ -746,6 +749,7 @@ src/frontend/ast/expr.o: src/frontend/ast/expr.cpp.o
 # target to build an object file
 src/frontend/ast/expr.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/expr.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/expr.cpp.o
 .PHONY : src/frontend/ast/expr.cpp.o
 
 src/frontend/ast/expr.i: src/frontend/ast/expr.cpp.i
@@ -754,6 +758,7 @@ src/frontend/ast/expr.i: src/frontend/ast/expr.cpp.i
 # target to preprocess a source file
 src/frontend/ast/expr.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/expr.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/expr.cpp.i
 .PHONY : src/frontend/ast/expr.cpp.i
 
 src/frontend/ast/expr.s: src/frontend/ast/expr.cpp.s
@@ -762,6 +767,7 @@ src/frontend/ast/expr.s: src/frontend/ast/expr.cpp.s
 # target to generate assembly for a file
 src/frontend/ast/expr.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/expr.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/expr.cpp.s
 .PHONY : src/frontend/ast/expr.cpp.s
 
 src/frontend/ast/stmt.o: src/frontend/ast/stmt.cpp.o
@@ -770,6 +776,7 @@ src/frontend/ast/stmt.o: src/frontend/ast/stmt.cpp.o
 # target to build an object file
 src/frontend/ast/stmt.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/stmt.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/stmt.cpp.o
 .PHONY : src/frontend/ast/stmt.cpp.o
 
 src/frontend/ast/stmt.i: src/frontend/ast/stmt.cpp.i
@@ -778,6 +785,7 @@ src/frontend/ast/stmt.i: src/frontend/ast/stmt.cpp.i
 # target to preprocess a source file
 src/frontend/ast/stmt.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/stmt.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/stmt.cpp.i
 .PHONY : src/frontend/ast/stmt.cpp.i
 
 src/frontend/ast/stmt.s: src/frontend/ast/stmt.cpp.s
@@ -786,6 +794,7 @@ src/frontend/ast/stmt.s: src/frontend/ast/stmt.cpp.s
 # target to generate assembly for a file
 src/frontend/ast/stmt.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/stmt.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/stmt.cpp.s
 .PHONY : src/frontend/ast/stmt.cpp.s
 
 src/frontend/ast/type.o: src/frontend/ast/type.cpp.o
@@ -794,6 +803,7 @@ src/frontend/ast/type.o: src/frontend/ast/type.cpp.o
 # target to build an object file
 src/frontend/ast/type.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/type.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/type.cpp.o
 .PHONY : src/frontend/ast/type.cpp.o
 
 src/frontend/ast/type.i: src/frontend/ast/type.cpp.i
@@ -802,6 +812,7 @@ src/frontend/ast/type.i: src/frontend/ast/type.cpp.i
 # target to preprocess a source file
 src/frontend/ast/type.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/type.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/type.cpp.i
 .PHONY : src/frontend/ast/type.cpp.i
 
 src/frontend/ast/type.s: src/frontend/ast/type.cpp.s
@@ -810,6 +821,7 @@ src/frontend/ast/type.s: src/frontend/ast/type.cpp.s
 # target to generate assembly for a file
 src/frontend/ast/type.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/type.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/type.cpp.s
 .PHONY : src/frontend/ast/type.cpp.s
 
 src/frontend/diagnostics.o: src/frontend/diagnostics.cpp.o
@@ -818,6 +830,7 @@ src/frontend/diagnostics.o: src/frontend/diagnostics.cpp.o
 # target to build an object file
 src/frontend/diagnostics.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/diagnostics.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/diagnostics.cpp.o
 .PHONY : src/frontend/diagnostics.cpp.o
 
 src/frontend/diagnostics.i: src/frontend/diagnostics.cpp.i
@@ -826,6 +839,7 @@ src/frontend/diagnostics.i: src/frontend/diagnostics.cpp.i
 # target to preprocess a source file
 src/frontend/diagnostics.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/diagnostics.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/diagnostics.cpp.i
 .PHONY : src/frontend/diagnostics.cpp.i
 
 src/frontend/diagnostics.s: src/frontend/diagnostics.cpp.s
@@ -834,6 +848,7 @@ src/frontend/diagnostics.s: src/frontend/diagnostics.cpp.s
 # target to generate assembly for a file
 src/frontend/diagnostics.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/diagnostics.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/diagnostics.cpp.s
 .PHONY : src/frontend/diagnostics.cpp.s
 
 src/frontend/lexer/lexer.o: src/frontend/lexer/lexer.cpp.o
@@ -842,6 +857,7 @@ src/frontend/lexer/lexer.o: src/frontend/lexer/lexer.cpp.o
 # target to build an object file
 src/frontend/lexer/lexer.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/lexer.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/lexer.cpp.o
 .PHONY : src/frontend/lexer/lexer.cpp.o
 
 src/frontend/lexer/lexer.i: src/frontend/lexer/lexer.cpp.i
@@ -850,6 +866,7 @@ src/frontend/lexer/lexer.i: src/frontend/lexer/lexer.cpp.i
 # target to preprocess a source file
 src/frontend/lexer/lexer.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/lexer.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/lexer.cpp.i
 .PHONY : src/frontend/lexer/lexer.cpp.i
 
 src/frontend/lexer/lexer.s: src/frontend/lexer/lexer.cpp.s
@@ -858,6 +875,7 @@ src/frontend/lexer/lexer.s: src/frontend/lexer/lexer.cpp.s
 # target to generate assembly for a file
 src/frontend/lexer/lexer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/lexer.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/lexer.cpp.s
 .PHONY : src/frontend/lexer/lexer.cpp.s
 
 src/frontend/lexer/token.o: src/frontend/lexer/token.cpp.o
@@ -866,6 +884,7 @@ src/frontend/lexer/token.o: src/frontend/lexer/token.cpp.o
 # target to build an object file
 src/frontend/lexer/token.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/token.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/token.cpp.o
 .PHONY : src/frontend/lexer/token.cpp.o
 
 src/frontend/lexer/token.i: src/frontend/lexer/token.cpp.i
@@ -874,6 +893,7 @@ src/frontend/lexer/token.i: src/frontend/lexer/token.cpp.i
 # target to preprocess a source file
 src/frontend/lexer/token.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/token.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/token.cpp.i
 .PHONY : src/frontend/lexer/token.cpp.i
 
 src/frontend/lexer/token.s: src/frontend/lexer/token.cpp.s
@@ -882,6 +902,7 @@ src/frontend/lexer/token.s: src/frontend/lexer/token.cpp.s
 # target to generate assembly for a file
 src/frontend/lexer/token.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/token.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/token.cpp.s
 .PHONY : src/frontend/lexer/token.cpp.s
 
 src/frontend/parser/parser.o: src/frontend/parser/parser.cpp.o
@@ -890,6 +911,7 @@ src/frontend/parser/parser.o: src/frontend/parser/parser.cpp.o
 # target to build an object file
 src/frontend/parser/parser.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser/parser.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/parser/parser.cpp.o
 .PHONY : src/frontend/parser/parser.cpp.o
 
 src/frontend/parser/parser.i: src/frontend/parser/parser.cpp.i
@@ -898,6 +920,7 @@ src/frontend/parser/parser.i: src/frontend/parser/parser.cpp.i
 # target to preprocess a source file
 src/frontend/parser/parser.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser/parser.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/parser/parser.cpp.i
 .PHONY : src/frontend/parser/parser.cpp.i
 
 src/frontend/parser/parser.s: src/frontend/parser/parser.cpp.s
@@ -906,6 +929,7 @@ src/frontend/parser/parser.s: src/frontend/parser/parser.cpp.s
 # target to generate assembly for a file
 src/frontend/parser/parser.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser/parser.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/parser/parser.cpp.s
 .PHONY : src/frontend/parser/parser.cpp.s
 
 src/frontend/sema/async_analyzer.o: src/frontend/sema/async_analyzer.cpp.o
@@ -1178,6 +1202,7 @@ src/frontend/warnings.o: src/frontend/warnings.cpp.o
 # target to build an object file
 src/frontend/warnings.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/warnings.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/warnings.cpp.o
 .PHONY : src/frontend/warnings.cpp.o
 
 src/frontend/warnings.i: src/frontend/warnings.cpp.i
@@ -1186,6 +1211,7 @@ src/frontend/warnings.i: src/frontend/warnings.cpp.i
 # target to preprocess a source file
 src/frontend/warnings.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/warnings.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/warnings.cpp.i
 .PHONY : src/frontend/warnings.cpp.i
 
 src/frontend/warnings.s: src/frontend/warnings.cpp.s
@@ -1194,6 +1220,7 @@ src/frontend/warnings.s: src/frontend/warnings.cpp.s
 # target to generate assembly for a file
 src/frontend/warnings.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/warnings.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/warnings.cpp.s
 .PHONY : src/frontend/warnings.cpp.s
 
 src/main.o: src/main.cpp.o

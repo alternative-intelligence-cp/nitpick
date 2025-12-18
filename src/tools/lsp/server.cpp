@@ -17,6 +17,7 @@ Server::Server() : state_(ServerState::UNINITIALIZED) {
     // Start with minimal capabilities
     // We'll enable more as we implement features
     capabilities_.textDocumentSync = 1; // Full sync for now
+    capabilities_.diagnosticProvider = true; // We can provide diagnostics!
 }
 
 Server::~Server() = default;
@@ -225,8 +226,8 @@ void Server::handle_did_open(const json& params) {
     // Store in VFS
     vfs_.set_content(uri, text);
     
-    // TODO Phase 7.3.4: Trigger diagnostics
-    // We'll parse the file and send diagnostics
+    // Publish diagnostics for this file
+    publish_diagnostics(uri);
 }
 
 void Server::handle_did_change(const json& params) {
@@ -260,7 +261,8 @@ void Server::handle_did_change(const json& params) {
     // Update VFS
     vfs_.set_content(uri, text);
     
-    // TODO Phase 7.3.4: Trigger diagnostics
+    // Publish updated diagnostics
+    publish_diagnostics(uri);
 }
 
 void Server::handle_did_close(const json& params) {
@@ -283,8 +285,8 @@ void Server::handle_did_close(const json& params) {
     // Remove from VFS
     vfs_.remove(uri);
     
-    // Clear diagnostics for this file (send empty diagnostics)
-    // TODO Phase 7.3.4
+    // Clear diagnostics for this file
+    clear_diagnostics(uri);
 }
 
 void Server::handle_did_save(const json& params) {
@@ -301,6 +303,154 @@ void Server::handle_did_save(const json& params) {
     std::cerr << "Document saved: " << uri << std::endl;
     
     // Could trigger additional actions here (e.g., run tests)
+}
+
+// ============================================================================
+// Diagnostics Publishing
+// ============================================================================
+
+void Server::publish_diagnostics(const std::string& uri) {
+    // Get file content from VFS
+    auto content_opt = vfs_.get_content(uri);
+    if (!content_opt.has_value()) {
+        std::cerr << "Cannot publish diagnostics: file not in VFS: " << uri << std::endl;
+        return;
+    }
+    
+    std::string content = content_opt.value();
+    
+    try {
+        // Create diagnostic engine
+        aria::DiagnosticEngine diag_engine;
+        
+        // Lex the file
+        aria::frontend::Lexer lexer(content);
+        std::vector<aria::frontend::Token> tokens = lexer.tokenize();
+        
+        // Check for lexer errors
+        if (!lexer.getErrors().empty()) {
+            for (const auto& error : lexer.getErrors()) {
+                // Parse error message to extract location
+                // Format: "[Line X, Col Y] Error: message"
+                size_t line_pos = error.find("Line ");
+                size_t col_pos = error.find(", Col ");
+                
+                if (line_pos != std::string::npos && col_pos != std::string::npos) {
+                    int line = std::stoi(error.substr(line_pos + 5, col_pos - line_pos - 5));
+                    int col = std::stoi(error.substr(col_pos + 6));
+                    
+                    aria::SourceLocation loc(uri, line, col, 1);
+                    
+                    diag_engine.error(loc, error.substr(error.find("Error: ") + 7));
+                }
+            }
+        }
+        
+        // Parse the tokens
+        aria::Parser parser(tokens);
+        try {
+            auto ast = parser.parse();
+            
+            // Check for parser errors
+            if (!parser.getErrors().empty()) {
+                for (const auto& error : parser.getErrors()) {
+                    // Similar parsing logic as above
+                    size_t line_pos = error.find("line ");
+                    size_t col_pos = error.find(", column ");
+                    
+                    if (line_pos != std::string::npos && col_pos != std::string::npos) {
+                        int line = std::stoi(error.substr(line_pos + 5, col_pos - line_pos - 5));
+                        int col = std::stoi(error.substr(col_pos + 9));
+                        
+                        aria::SourceLocation loc(uri, line, col, 1);
+                        
+                        // Extract error message
+                        size_t msg_start = error.find(": ", col_pos);
+                        if (msg_start != std::string::npos) {
+                            diag_engine.error(loc, error.substr(msg_start + 2));
+                        }
+                    }
+                }
+            }
+            
+            // TODO: Semantic analysis would go here (Phase 7.3.5+)
+            // TypeChecker, BorrowChecker, etc.
+            
+        } catch (const std::exception& e) {
+            // Parser threw exception - create diagnostic
+            aria::SourceLocation loc(uri, 1, 1, 1);
+            diag_engine.error(loc, std::string("Parse error: ") + e.what());
+        }
+        
+        // Convert diagnostics to LSP format
+        json diagnostics_array = json::array();
+        
+        for (const auto& diag_ptr : diag_engine.diagnostics()) {
+            diagnostics_array.push_back(convert_diagnostic_to_lsp(*diag_ptr));
+        }
+        
+        // Build publishDiagnostics notification
+        json notification = Transport::makeNotification("textDocument/publishDiagnostics", {
+            {"uri", uri},
+            {"diagnostics", diagnostics_array}
+        });
+        
+        // Send to client
+        transport_.write(notification);
+        
+        std::cerr << "Published " << diagnostics_array.size() << " diagnostics for " << uri << std::endl;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error publishing diagnostics: " << e.what() << std::endl;
+    }
+}
+
+void Server::clear_diagnostics(const std::string& uri) {
+    // Send empty diagnostics array
+    json notification = Transport::makeNotification("textDocument/publishDiagnostics", {
+        {"uri", uri},
+        {"diagnostics", json::array()}
+    });
+    
+    transport_.write(notification);
+    std::cerr << "Cleared diagnostics for " << uri << std::endl;
+}
+
+json Server::convert_diagnostic_to_lsp(const aria::Diagnostic& diag) {
+    // Map severity (research_034 Table 2)
+    int lsp_severity;
+    switch (diag.level()) {
+        case aria::DiagnosticLevel::NOTE:
+            lsp_severity = 3; // Information
+            break;
+        case aria::DiagnosticLevel::WARNING:
+            lsp_severity = 2; // Warning
+            break;
+        case aria::DiagnosticLevel::ERROR:
+        case aria::DiagnosticLevel::FATAL:
+            lsp_severity = 1; // Error
+            break;
+        default:
+            lsp_severity = 1;
+    }
+    
+    // Convert 1-based to 0-based indices (research_034 Section 5.1)
+    const aria::SourceLocation& loc = diag.location();
+    int lsp_line = loc.line - 1;
+    int lsp_col = loc.column - 1;
+    
+    // Build LSP diagnostic
+    json lsp_diag = {
+        {"range", {
+            {"start", {{"line", lsp_line}, {"character", lsp_col}}},
+            {"end", {{"line", lsp_line}, {"character", lsp_col + loc.length}}}
+        }},
+        {"severity", lsp_severity},
+        {"message", diag.message()},
+        {"source", "aria"}
+    };
+    
+    return lsp_diag;
 }
 
 } // namespace lsp
