@@ -52,6 +52,7 @@ add_executable(test_runner
     runtime/test_thread.cpp
     runtime/test_atomic.cpp
     runtime/test_timer.cpp
+    runtime/test_async_executor.cpp
     integration/test_runtime_stress.cpp
     # Add more test files here as they are created
 )
@@ -93,6 +94,7 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/runtime/thread/thread.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/atomic/atomic.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/timer/timer.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/async/executor.cpp
 )
 
 # Include test helpers header
