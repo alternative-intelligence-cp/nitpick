@@ -18,6 +18,8 @@ Server::Server() : state_(ServerState::UNINITIALIZED) {
     // We'll enable more as we implement features
     capabilities_.textDocumentSync = 1; // Full sync for now
     capabilities_.diagnosticProvider = true; // We can provide diagnostics!
+    capabilities_.hoverProvider = true; // Show type info on hover
+    capabilities_.definitionProvider = true; // Go to definition
 }
 
 Server::~Server() = default;
@@ -88,6 +90,12 @@ void Server::handle_request(const json& id, const std::string& method, const jso
         }
         else if (method == "shutdown") {
             result = handle_shutdown(params);
+        }
+        else if (method == "textDocument/hover") {
+            result = handle_hover(params);
+        }
+        else if (method == "textDocument/definition") {
+            result = handle_definition(params);
         }
         else {
             // Method not found
@@ -451,6 +459,127 @@ json Server::convert_diagnostic_to_lsp(const aria::Diagnostic& diag) {
     };
     
     return lsp_diag;
+}
+
+json Server::handle_hover(const json& params) {
+    // Extract position from params
+    std::string uri = params["textDocument"]["uri"];
+    int line = params["position"]["line"];  // 0-based
+    int character = params["position"]["character"];  // 0-based
+    
+    std::cerr << "Hover request at " << uri << ":" << line << ":" << character << std::endl;
+    
+    // Get file content
+    auto content = vfs_.get_content(uri);
+    if (!content) {
+        return nullptr;  // null means no hover info
+    }
+    
+    // For Phase 7.3.5, we'll return basic hover info
+    // TODO Phase 7.3.6+: Full semantic analysis with SymbolTable
+    // For now, just show that hover is working with a placeholder
+    
+    // Parse to find token at position
+    aria::frontend::Lexer lexer(*content);
+    std::vector<aria::frontend::Token> tokens = lexer.tokenize();
+    
+    // Find token at cursor position (convert to 1-based for Aria)
+    int aria_line = line + 1;
+    int aria_col = character + 1;
+    
+    for (const auto& token : tokens) {
+        if (token.line == aria_line && 
+            token.column <= aria_col && 
+            aria_col < token.column + static_cast<int>(token.lexeme.length())) {
+            
+            // Found token under cursor
+            std::string hover_text = "**Token:** `" + token.lexeme + "`";
+            
+            // Build hover response
+            json result = {
+                {"contents", {
+                    {"kind", "markdown"},
+                    {"value", hover_text}
+                }},
+                {"range", {
+                    {"start", {{"line", line}, {"character", token.column - 1}}},
+                    {"end", {{"line", line}, {"character", token.column - 1 + static_cast<int>(token.lexeme.length())}}}
+                }}
+            };
+            
+            return result;
+        }
+    }
+    
+    // No token at position
+    return nullptr;
+}
+
+json Server::handle_definition(const json& params) {
+    // Extract position from params
+    std::string uri = params["textDocument"]["uri"];
+    int line = params["position"]["line"];  // 0-based
+    int character = params["position"]["character"];  // 0-based
+    
+    std::cerr << "Go-to-definition request at " << uri << ":" << line << ":" << character << std::endl;
+    
+    // Get file content
+    auto content = vfs_.get_content(uri);
+    if (!content) {
+        return nullptr;  // null means no definition found
+    }
+    
+    // For Phase 7.3.5, we'll return basic placeholder functionality
+    // TODO Phase 7.3.6+: Full semantic analysis with SymbolTable
+    // For now, we'll just demonstrate the protocol works
+    
+    // Parse to find identifier at position
+    aria::frontend::Lexer lexer(*content);
+    std::vector<aria::frontend::Token> tokens = lexer.tokenize();
+    
+    // Find token at cursor position (convert to 1-based for Aria)
+    int aria_line = line + 1;
+    int aria_col = character + 1;
+    
+    for (size_t i = 0; i < tokens.size(); i++) {
+        const auto& token = tokens[i];
+        if (token.type == aria::frontend::TokenType::TOKEN_IDENTIFIER &&
+            token.line == aria_line && 
+            token.column <= aria_col && 
+            aria_col < token.column + static_cast<int>(token.lexeme.length())) {
+            
+            // Found identifier under cursor
+            // For Phase 7.3.5, just demonstrate the protocol works
+            // TODO Phase 7.3.6+: Use SymbolTable to find actual declarations
+            // For now, search for first occurrence of this identifier
+            std::string target_name = token.lexeme;
+            
+            for (size_t j = 0; j < tokens.size(); j++) {
+                if (tokens[j].type == aria::frontend::TokenType::TOKEN_IDENTIFIER &&
+                    tokens[j].lexeme == target_name &&
+                    j != i) {  // Not the same token
+                    
+                    // Found another occurrence - assume it's the declaration
+                    const auto& decl_token = tokens[j];
+                    json location = {
+                        {"uri", uri},
+                        {"range", {
+                            {"start", {{"line", decl_token.line - 1}, {"character", decl_token.column - 1}}},
+                            {"end", {{"line", decl_token.line - 1}, {"character", decl_token.column - 1 + static_cast<int>(decl_token.lexeme.length())}}}
+                        }}
+                    };
+                    
+                    return location;
+                }
+            }
+            
+            // No other occurrence found - return null
+            return nullptr;
+        }
+    }
+    
+    // No identifier at position
+    return nullptr;
 }
 
 } // namespace lsp
