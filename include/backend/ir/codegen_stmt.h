@@ -109,6 +109,31 @@ private:
     // Helper: Get or declare aria.free runtime function
     llvm::Function* getOrDeclareWildFree();
     
+    // Phase 4.5.3: Coroutine Intrinsics for async/await
+    // Helper: Get or declare @llvm.coro.id intrinsic
+    llvm::Function* getCoroId();
+    
+    // Helper: Get or declare @llvm.coro.size.i64 intrinsic
+    llvm::Function* getCoroSize();
+    
+    // Helper: Get or declare @llvm.coro.begin intrinsic
+    llvm::Function* getCoroBegin();
+    
+    // Helper: Get or declare @llvm.coro.save intrinsic
+    llvm::Function* getCoroSave();
+    
+    // Helper: Get or declare @llvm.coro.suspend intrinsic
+    llvm::Function* getCoroSuspend();
+    
+    // Helper: Get or declare @llvm.coro.end intrinsic
+    llvm::Function* getCoroEnd();
+    
+    // Helper: Get or declare @llvm.coro.free intrinsic
+    llvm::Function* getCoroFree();
+    
+    // Helper: Get or declare @llvm.coro.resume intrinsic
+    llvm::Function* getCoroResume();
+    
 public:
     /**
      * Constructor
