@@ -55,6 +55,9 @@ private:
     // Helper: Get LLVM type from Aria type
     llvm::Type* getLLVMType(sema::Type* type);
     
+    // Helper: Get LLVM type from Aria type name string
+    llvm::Type* getLLVMTypeFromString(const std::string& typeName);
+    
     // Helper: Get size of Aria type in bytes
     size_t getTypeSize(sema::Type* type);
     
