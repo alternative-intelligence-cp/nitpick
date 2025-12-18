@@ -1,4 +1,5 @@
 #include "frontend/sema/closure_analyzer.h"
+#include "frontend/sema/type.h"
 #include <algorithm>
 
 namespace aria {
@@ -198,7 +199,7 @@ bool ClosureAnalyzer::isFromOuterScope(const std::string& name) {
     // Check if variable exists in symbol table
     // For now, simplified: assume all non-parameter, non-local identifiers are captures
     // Proper implementation would check symbol table scope depth
-    return symbolTable && symbolTable->lookup(name) != nullptr;
+    return symbolTable && symbolTable->lookupSymbol(name) != nullptr;
 }
 
 LambdaExpr::CaptureMode ClosureAnalyzer::determineCaptureMode(const CaptureInfo& info) {
@@ -220,7 +221,7 @@ bool ClosureAnalyzer::shouldCaptureByValue(const std::string& varName) {
     // Look up variable type in symbol table
     if (!symbolTable) return true;
     
-    auto symbol = symbolTable->lookup(varName);
+    auto symbol = symbolTable->lookupSymbol(varName);
     if (!symbol) return true;
     
     // For now, simplified: capture primitives by value
@@ -229,9 +230,9 @@ bool ClosureAnalyzer::shouldCaptureByValue(const std::string& varName) {
     // - Large structs, arrays → BY_REFERENCE
     // - Wild pointers → BY_MOVE (ownership transfer)
     
-    const std::string& typeName = symbol->type->name;
+    const std::string typeName = symbol->type->toString();
     
-    // Primitives
+    // Primitives - use toString() to get type name
     if (typeName.find("int") != std::string::npos ||
         typeName.find("flt") != std::string::npos ||
         typeName.find("tbb") != std::string::npos ||
