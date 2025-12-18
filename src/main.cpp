@@ -27,6 +27,7 @@
 #include "frontend/parser/parser.h"
 #include "frontend/sema/type_checker.h"
 #include "frontend/sema/borrow_checker.h"
+#include "frontend/diagnostics.h"
 #include "backend/ir/ir_generator.h"
 
 // LLVM
@@ -171,10 +172,11 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
 /**
  * Read source file
  */
-bool read_source_file(const std::string& filename, std::string& source) {
+bool read_source_file(const std::string& filename, std::string& source, aria::DiagnosticEngine& diags) {
     std::ifstream file(filename);
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open file: " << filename << "\n";
+        diags.fatal(aria::SourceLocation(filename, 0, 0), "could not open source file");
+        diags.addNote("check that the file exists and you have read permissions");
         return false;
     }
 
@@ -190,7 +192,8 @@ llvm::Module* compile_to_module(
     const std::string& source,
     const std::string& filename,
     const CompilerOptions& opts,
-    aria::IRGenerator& ir_gen
+    aria::IRGenerator& ir_gen,
+    aria::DiagnosticEngine& diags
 ) {
     // Phase 1: Lexical Analysis
     if (opts.verbose) {
@@ -201,9 +204,10 @@ llvm::Module* compile_to_module(
     auto tokens = lexer.tokenize();
     
     if (!lexer.getErrors().empty()) {
-        std::cerr << "Lexer errors:\n";
+        // Convert lexer errors to diagnostic engine format
         for (const auto& err : lexer.getErrors()) {
-            std::cerr << "  " << err << "\n";
+            // Simple error without location for now (lexer errors need enhancement)
+            diags.error(aria::SourceLocation(filename, 0, 0), err);
         }
         return nullptr;
     }
@@ -225,9 +229,10 @@ llvm::Module* compile_to_module(
     auto module_node = parser.parse();
     
     if (!module_node || parser.hasErrors()) {
-        std::cerr << "Error: Parsing failed\n";
+        // Convert parser errors to diagnostic engine format
         for (const auto& err : parser.getErrors()) {
-            std::cerr << "  " << err << "\n";
+            // Simple error without location for now (parser errors need enhancement)
+            diags.error(aria::SourceLocation(filename, 0, 0), err);
         }
         return nullptr;
     }
@@ -259,7 +264,7 @@ llvm::Module* compile_to_module(
     auto value = ir_gen.codegen(module_node.get());
     
     if (!value) {
-        std::cerr << "Error: IR generation failed\n";
+        diags.error(aria::SourceLocation(filename, 0, 0), "IR generation failed");
         return nullptr;
     }
 
@@ -387,15 +392,23 @@ int main(int argc, char** argv) {
         std::cout << "Output: " << opts.output_file << "\n";
     }
 
+    // Create diagnostic engine
+    aria::DiagnosticEngine diags;
+
     // For --dump-tokens or --dump-ast, only process first file
     if (opts.dump_tokens || opts.dump_ast) {
         std::string source;
-        if (!read_source_file(opts.input_files[0], source)) {
+        if (!read_source_file(opts.input_files[0], source, diags)) {
+            diags.printAll();
             return 1;
         }
         aria::IRGenerator ir_gen(opts.input_files[0]);
-        llvm::Module* module = compile_to_module(source, opts.input_files[0], opts, ir_gen);
+        llvm::Module* module = compile_to_module(source, opts.input_files[0], opts, ir_gen, diags);
         // compile_to_module returns nullptr for early exits (dump modes)
+        if (diags.hasErrors()) {
+            diags.printAll();
+            return 1;
+        }
         return module ? 1 : 0;
     }
 
@@ -412,7 +425,8 @@ int main(int argc, char** argv) {
         
         // Read source file
         std::string source;
-        if (!read_source_file(input_file, source)) {
+        if (!read_source_file(input_file, source, diags)) {
+            diags.printAll();
             return 1;
         }
         
@@ -420,8 +434,9 @@ int main(int argc, char** argv) {
         ir_generators.push_back(std::make_unique<aria::IRGenerator>(input_file));
         
         // Compile to LLVM module
-        llvm::Module* module = compile_to_module(source, input_file, opts, *ir_generators.back());
+        llvm::Module* module = compile_to_module(source, input_file, opts, *ir_generators.back(), diags);
         if (!module) {
+            diags.printAll();
             return 1;
         }
         
