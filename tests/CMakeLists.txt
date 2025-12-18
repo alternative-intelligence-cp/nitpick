@@ -10,6 +10,7 @@ add_executable(test_runner
     unit/test_lexer.cpp
     unit/test_ast.cpp
     unit/test_parser.cpp
+    unit/test_diagnostics.cpp
     unit/test_symbol_table.cpp
     unit/test_module_table.cpp
     unit/test_type_checker.cpp
@@ -68,6 +69,7 @@ add_executable(test_runner
 target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/lexer/token.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/lexer/lexer.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/diagnostics.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/ast/ast_node.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/ast/expr.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/ast/stmt.cpp
