@@ -25,6 +25,7 @@ add_executable(test_runner
     frontend/test_const_integration.cpp
     frontend/test_const_generics_arrays.cpp
     backend/test_ir_generator.cpp
+    backend/test_lambdas.cpp
     backend/test_tbb_codegen.cpp
     backend/test_codegen_expr.cpp
     backend/test_codegen_stmt.cpp
@@ -65,6 +66,7 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/module_resolver.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/visibility_checker.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/async_analyzer.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/sema/closure_analyzer.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/const_evaluator.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/ir_generator.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/tbb_codegen.cpp
