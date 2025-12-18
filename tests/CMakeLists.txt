@@ -26,6 +26,7 @@ add_executable(test_runner
     frontend/test_const_generics_arrays.cpp
     backend/test_ir_generator.cpp
     backend/test_lambdas.cpp
+    backend/test_lambda_execution.cpp
     backend/test_tbb_codegen.cpp
     backend/test_codegen_expr.cpp
     backend/test_codegen_stmt.cpp
