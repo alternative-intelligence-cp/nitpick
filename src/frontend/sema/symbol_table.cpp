@@ -181,7 +181,7 @@ Symbol* SymbolTable::defineSymbol(const std::string& name, SymbolKind kind,
 }
 
 Symbol* SymbolTable::lookupSymbol(const std::string& name) const {
-    return currentScope->lookup(name);
+    return currentScope->resolve(name);  // Use resolve() to traverse parent scopes
 }
 
 Symbol* SymbolTable::resolveSymbol(const std::string& name) const {

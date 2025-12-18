@@ -900,6 +900,26 @@ void TypeChecker::checkAssignment(BinaryExpr* expr) {
         return;
     }
     
+    // Standard Integer Literal Assignment (Phase 4.5.4)
+    // Allow safe narrowing for integer literals in assignments (e.g., x = 5)
+    // This makes direct assignments consistent with variable declarations
+    bool standardIntLiteralAssignment = false;
+    if (isStandardIntType(leftType) && expr->right->type == ASTNode::NodeType::LITERAL) {
+        LiteralExpr* literal = static_cast<LiteralExpr*>(expr->right.get());
+        if (std::holds_alternative<int64_t>(literal->value)) {
+            int64_t value = std::get<int64_t>(literal->value);
+            if (literalFitsInType(value, leftType)) {
+                // Literal fits, narrow the type to allow assignment
+                rightType = leftType;
+                standardIntLiteralAssignment = true;
+            } else {
+                // Literal doesn't fit, report error
+                canLiteralFitInIntType(value, leftType, expr);
+                return;
+            }
+        }
+    }
+    
     // TBB Type Validation (Phase 3.2.4)
     // Special handling for integer literals assigned to TBB types
     bool tbbLiteralAssignment = false;
@@ -930,8 +950,8 @@ void TypeChecker::checkAssignment(BinaryExpr* expr) {
         }
     }
     
-    // Check type compatibility (skip if we handled TBB or balanced literal assignment)
-    if (!tbbLiteralAssignment && !balancedLiteralAssignment) {
+    // Check type compatibility (skip if we handled standard int, TBB, or balanced literal assignment)
+    if (!standardIntLiteralAssignment && !tbbLiteralAssignment && !balancedLiteralAssignment) {
         if (!rightType->isAssignableTo(leftType) && !canCoerce(rightType, leftType)) {
             addError("Cannot assign value of type '" + rightType->toString() + 
                     "' to variable of type '" + leftType->toString() + "'", expr);
