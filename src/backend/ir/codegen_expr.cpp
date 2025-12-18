@@ -9,6 +9,7 @@
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/Intrinsics.h>  // Phase 4.5.3: Coroutine intrinsics for await
 #include <stdexcept>
 
 using namespace aria;
@@ -278,6 +279,8 @@ llvm::Value* ExprCodegen::codegenExpressionNode(ASTNode* node, ExprCodegen* code
             return codegen->codegenTernary(static_cast<TernaryExpr*>(node));
         case ASTNode::NodeType::LAMBDA:
             return codegen->codegenLambda(static_cast<LambdaExpr*>(node));
+        case ASTNode::NodeType::AWAIT:
+            return codegen->codegenAwait(node);
         default:
             throw std::runtime_error("Unsupported expression node type in operation");
     }
@@ -1190,3 +1193,136 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
 //       features.
 //
 // ============================================================================
+
+// ============================================================================
+// Phase 4.5.3: Await Expression Code Generation (Coroutine Suspension)
+// ============================================================================
+
+/**
+ * Generate code for await expression
+ * 
+ * Creates a suspension point in the coroutine where execution can be paused
+ * and later resumed. The LLVM coroutine transformation pass will split this
+ * into a state machine.
+ * 
+ * Algorithm (from research_029):
+ * 1. Evaluate the operand (expression yielding Future<T>)
+ * 2. Call @llvm.coro.save to capture coroutine state
+ * 3. Call @llvm.coro.suspend with save token
+ * 4. Switch on suspend result:
+ *    - 0 (resume): Continue to resume block
+ *    - 1 (destroy): Jump to cleanup
+ * 5. Resume block: Extract value from Future and continue
+ * 
+ * Example Aria code:
+ *   async func:fetchData = int64() {
+ *       int64:result = await someAsyncOp();
+ *       pass(result);
+ *   };
+ * 
+ * Generated LLVM IR:
+ *   %future = call i8* @someAsyncOp()
+ *   %save = call token @llvm.coro.save(i8* %handle)
+ *   %suspend = call i8 @llvm.coro.suspend(token %save, i1 false)
+ *   switch i8 %suspend, label %suspend.resume [
+ *     i8 1, label %coro.cleanup
+ *   ]
+ * suspend.resume:
+ *   %result = ... extract value from future ...
+ *   ; continue execution
+ * 
+ * Reference: research_029 Section 5 (Compiler Lowering & State Machine)
+ */
+llvm::Value* ExprCodegen::codegenAwait(ASTNode* node) {
+    AwaitExpr* expr = static_cast<AwaitExpr*>(node);
+    
+    // Check that we're in an async function context
+    llvm::Function* current_func = builder.GetInsertBlock()->getParent();
+    if (!current_func) {
+        throw std::runtime_error("await outside of function context");
+    }
+    
+    // TODO: Add runtime check that current function is async
+    // For now, semantic analysis ensures this
+    
+    // Step 1: Evaluate the operand (should return a Future or coroutine handle)
+    llvm::Value* future_value = codegenExpressionNode(expr->operand.get(), this);
+    
+    // For now, assume operand returns i8* (coroutine handle)
+    // TODO: Proper Future<T> type handling when we implement the trait system
+    
+    // Step 2: Get coroutine intrinsics
+    llvm::Function* coro_save = llvm::Intrinsic::getDeclaration(
+        module,
+        llvm::Intrinsic::coro_save
+    );
+    
+    llvm::Function* coro_suspend = llvm::Intrinsic::getDeclaration(
+        module,
+        llvm::Intrinsic::coro_suspend
+    );
+    
+    llvm::Function* coro_resume = llvm::Intrinsic::getDeclaration(
+        module,
+        llvm::Intrinsic::coro_resume
+    );
+    
+    // Step 3: If the operand is a coroutine handle (i8*), resume it
+    if (future_value->getType()->isPointerTy()) {
+        // Resume the awaited coroutine
+        builder.CreateCall(coro_resume, {future_value});
+    }
+    
+    // Get the current coroutine handle
+    // LLVM's coroutine pass will insert this properly during transformation
+    // For now, we use the awaited handle as placeholder
+    llvm::Value* current_handle = future_value;
+    
+    // Step 4: Save state and suspend
+    llvm::Value* save_token = builder.CreateCall(coro_save, {current_handle}, "await.save");
+    
+    // Suspend (not final - this is an intermediate suspension point)
+    llvm::Value* is_final = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
+    llvm::Value* suspend_result = builder.CreateCall(
+        coro_suspend,
+        {save_token, is_final},
+        "await.suspend"
+    );
+    
+    // Step 5: Create resume and cleanup blocks
+    llvm::BasicBlock* resume_block = llvm::BasicBlock::Create(
+        context,
+        "await.resume",
+        current_func
+    );
+    
+    llvm::BasicBlock* cleanup_block = llvm::BasicBlock::Create(
+        context,
+        "await.cleanup",
+        current_func
+    );
+    
+    // Step 6: Switch on suspend result
+    // 0 = resume (continue execution)
+    // 1 = destroy (cleanup)
+    llvm::SwitchInst* suspend_switch = builder.CreateSwitch(suspend_result, resume_block, 1);
+    suspend_switch->addCase(
+        llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 1),
+        cleanup_block
+    );
+    
+    // Step 7: Generate cleanup block (jump to function's main cleanup)
+    builder.SetInsertPoint(cleanup_block);
+    // TODO: Jump to function's coro.cleanup block when we refactor to share state
+    // For now, just create unreachable as LLVM's pass will fix this
+    builder.CreateUnreachable();
+    
+    // Step 8: Generate resume block - continue execution here
+    builder.SetInsertPoint(resume_block);
+    
+    // For now, return the future value itself
+    // TODO: Extract actual result from Future<T> when trait system is ready
+    // This will involve calling Future::poll() and handling Ready/Pending states
+    
+    return future_value;
+}

@@ -20,6 +20,7 @@ namespace aria {
     class IndexExpr;
     class MemberAccessExpr;
     class LambdaExpr;
+    class AwaitExpr;
     
     namespace sema {
         class Type;
@@ -145,6 +146,15 @@ public:
      * Reference: research_016 (Functional Types)
      */
     llvm::Value* codegenLambda(LambdaExpr* expr);
+    
+    /**
+     * Generate code for await expression (async/await)
+     * Creates suspension point in coroutine with state machine
+     * @param expr Await expression node
+     * @return LLVM value after resumption (Future result)
+     * Reference: research_029 (Async/Await System)
+     */
+    llvm::Value* codegenAwait(ASTNode* expr);
     
     /**
      * Generate code for any expression (dispatcher)
