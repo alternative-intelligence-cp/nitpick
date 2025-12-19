@@ -13,16 +13,25 @@ constexpr int ERROR_INTERNAL_ERROR = -32603;
 constexpr int ERROR_SERVER_NOT_INITIALIZED = -32002;
 constexpr int ERROR_SERVER_ERROR_START = -32099;
 
-Server::Server() : state_(ServerState::UNINITIALIZED) {
+Server::Server(size_t worker_count) 
+    : state_(ServerState::UNINITIALIZED), thread_pool_(worker_count) {
+    
     // Start with minimal capabilities
     // We'll enable more as we implement features
     capabilities_.textDocumentSync = 1; // Full sync for now
     capabilities_.diagnosticProvider = true; // We can provide diagnostics!
     capabilities_.hoverProvider = true; // Show type info on hover
     capabilities_.definitionProvider = true; // Go to definition
+    
+    // Set result callback for thread pool
+    thread_pool_.set_result_callback([this](const json& id, const json& result) {
+        send_response(id, result);
+    });
 }
 
-Server::~Server() = default;
+Server::~Server() {
+    thread_pool_.shutdown();
+}
 
 void Server::run() {
     std::cerr << "Aria Language Server starting..." << std::endl;
@@ -82,71 +91,126 @@ void Server::dispatch_message(const JsonRpcMessage& msg) {
 void Server::handle_request(const json& id, const std::string& method, const json& params) {
     std::cerr << "Request: " << method << std::endl;
     
-    try {
-        json result;
-        
-        if (method == "initialize") {
-            result = handle_initialize(params);
-        }
-        else if (method == "shutdown") {
-            result = handle_shutdown(params);
-        }
-        else if (method == "textDocument/hover") {
-            result = handle_hover(params);
-        }
-        else if (method == "textDocument/definition") {
-            result = handle_definition(params);
-        }
-        else {
-            // Method not found
-            json error = Transport::makeError(id, ERROR_METHOD_NOT_FOUND, 
-                                              "Method not found: " + method);
+    // Special case: initialize and shutdown must run on I/O thread (synchronous)
+    if (method == "initialize") {
+        try {
+            json result = handle_initialize(params);
+            json response = Transport::makeResponse(id, result);
+            transport_.write(response);
+        } catch (const std::exception& e) {
+            json error = Transport::makeError(id, ERROR_INTERNAL_ERROR, 
+                                              std::string("Initialize error: ") + e.what());
             transport_.write(error);
-            return;
         }
-        
-        // Send success response
-        json response = Transport::makeResponse(id, result);
-        transport_.write(response);
-        
-    } catch (const std::exception& e) {
-        // Internal error
-        json error = Transport::makeError(id, ERROR_INTERNAL_ERROR, 
-                                          std::string("Internal error: ") + e.what());
-        transport_.write(error);
+        return;
     }
+    
+    if (method == "shutdown") {
+        try {
+            json result = handle_shutdown(params);
+            json response = Transport::makeResponse(id, result);
+            transport_.write(response);
+        } catch (const std::exception& e) {
+            json error = Transport::makeError(id, ERROR_INTERNAL_ERROR, 
+                                              std::string("Shutdown error: ") + e.what());
+            transport_.write(error);
+        }
+        return;
+    }
+    
+    // All other requests: Submit to thread pool
+    TaskType task_type = classify_method(method);
+    TaskPriority priority = get_priority(method);
+    std::string uri = params.contains("textDocument") && params["textDocument"].contains("uri")
+                      ? params["textDocument"]["uri"].get<std::string>() 
+                      : "";
+    
+    // Create task with captured parameters
+    Task task(task_type, priority, uri, [this, method, params, id]() -> json {
+        try {
+            if (method == "textDocument/hover") {
+                return handle_hover(params);
+            }
+            else if (method == "textDocument/definition") {
+                return handle_definition(params);
+            }
+            else {
+                // Method not found
+                return {
+                    {"error", {
+                        {"code", ERROR_METHOD_NOT_FOUND},
+                        {"message", "Method not found: " + method}
+                    }}
+                };
+            }
+        } catch (const std::exception& e) {
+            return {
+                {"error", {
+                    {"code", ERROR_INTERNAL_ERROR},
+                    {"message", std::string("Request handler error: ") + e.what()}
+                }}
+            };
+        }
+    });
+    
+    task.request_id = id;
+    thread_pool_.submit(std::move(task));
 }
 
 void Server::handle_notification(const std::string& method, const json& params) {
     std::cerr << "Notification: " << method << std::endl;
     
-    try {
-        if (method == "initialized") {
-            handle_initialized(params);
-        }
-        else if (method == "exit") {
-            handle_exit(params);
-        }
-        else if (method == "textDocument/didOpen") {
-            handle_did_open(params);
-        }
-        else if (method == "textDocument/didChange") {
-            handle_did_change(params);
-        }
-        else if (method == "textDocument/didClose") {
-            handle_did_close(params);
-        }
-        else if (method == "textDocument/didSave") {
-            handle_did_save(params);
-        }
-        else {
-            // Unknown notification - ignore per spec (don't send response)
-            std::cerr << "Unknown notification: " << method << std::endl;
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "Error handling notification: " << e.what() << std::endl;
-        // Don't send response for notifications
+    // Special cases: Run on I/O thread (synchronous)
+    if (method == "initialized") {
+        handle_initialized(params);
+        return;
     }
+    
+    if (method == "exit") {
+        handle_exit(params);
+        return;
+    }
+    
+    // Special case: $/cancelRequest
+    if (method == "$/cancelRequest") {
+        if (params.contains("id")) {
+            thread_pool_.cancel_request(params["id"]);
+        }
+        return;
+    }
+    
+    // Document notifications: Submit to thread pool
+    TaskType task_type = classify_method(method);
+    TaskPriority priority = get_priority(method);
+    std::string uri = params.contains("textDocument") && params["textDocument"].contains("uri")
+                      ? params["textDocument"]["uri"].get<std::string>() 
+                      : "";
+    
+    // Create task (notifications have no request_id)
+    Task task(task_type, priority, uri, [this, method, params]() -> json {
+        try {
+            if (method == "textDocument/didOpen") {
+                handle_did_open(params);
+            }
+            else if (method == "textDocument/didChange") {
+                handle_did_change(params);
+            }
+            else if (method == "textDocument/didClose") {
+                handle_did_close(params);
+            }
+            else if (method == "textDocument/didSave") {
+                handle_did_save(params);
+            }
+            else {
+                std::cerr << "Unknown notification: " << method << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Notification handler error: " << e.what() << std::endl;
+        }
+        return nullptr; // Notifications don't return results
+    });
+    
+    thread_pool_.submit(std::move(task));
 }
 
 json Server::handle_initialize(const json& params) {
@@ -580,6 +644,65 @@ json Server::handle_definition(const json& params) {
     
     // No identifier at position
     return nullptr;
+}
+
+void Server::send_response(const json& id, const json& result) {
+    // Called by worker threads when request completes
+    // This is the only place worker threads write to transport
+    
+    if (result.contains("error")) {
+        // Task returned an error
+        json error = Transport::makeError(id, 
+                                          result["error"]["code"], 
+                                          result["error"]["message"]);
+        transport_.write(error);
+    } else {
+        // Success response
+        json response = Transport::makeResponse(id, result);
+        transport_.write(response);
+    }
+}
+
+TaskType Server::classify_method(const std::string& method) const {
+    if (method == "initialize") return TaskType::INITIALIZE;
+    if (method == "shutdown") return TaskType::SHUTDOWN;
+    if (method == "textDocument/didOpen") return TaskType::DID_OPEN;
+    if (method == "textDocument/didChange") return TaskType::DID_CHANGE;
+    if (method == "textDocument/didClose") return TaskType::DID_CLOSE;
+    if (method == "textDocument/didSave") return TaskType::DID_SAVE;
+    if (method == "textDocument/hover") return TaskType::HOVER;
+    if (method == "textDocument/definition") return TaskType::DEFINITION;
+    if (method == "textDocument/completion") return TaskType::COMPLETION;
+    if (method == "textDocument/documentSymbol") return TaskType::DOCUMENT_SYMBOL;
+    return TaskType::OTHER;
+}
+
+TaskPriority Server::get_priority(const std::string& method) const {
+    // Critical: State-changing notifications
+    if (method == "textDocument/didOpen" || 
+        method == "textDocument/didChange") {
+        return TaskPriority::CRITICAL;
+    }
+    
+    // High: User-facing queries
+    if (method == "textDocument/hover" || 
+        method == "textDocument/completion" ||
+        method == "textDocument/definition") {
+        return TaskPriority::HIGH;
+    }
+    
+    // Normal: Other document events
+    if (method == "textDocument/didSave" || 
+        method == "textDocument/didClose") {
+        return TaskPriority::NORMAL;
+    }
+    
+    // Low: Background analysis
+    if (method == "textDocument/documentSymbol") {
+        return TaskPriority::LOW;
+    }
+    
+    return TaskPriority::NORMAL;
 }
 
 } // namespace lsp

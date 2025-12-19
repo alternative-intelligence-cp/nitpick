@@ -166,6 +166,8 @@ set(TOOLS_SOURCES
     src/tools/lsp/transport.cpp
     src/tools/lsp/server.cpp
     src/tools/lsp/vfs.cpp
+    src/tools/lsp/work_queue.cpp
+    src/tools/lsp/thread_pool.cpp
 )
 
 # Combine all sources
