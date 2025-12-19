@@ -1,0 +1,79 @@
+// Struct Instantiation Test
+// Based on research_014_composite_types_part1.txt
+// Tests object literal syntax for struct construction
+
+// Define a simple struct (assuming struct definitions work)
+struct Point {
+    int32:x;
+    int32:y;
+};
+
+struct Duration {
+    int64:nanos;
+};
+
+func:test_point_creation = int32() {
+    // Test 1: Create struct with literal syntax
+    Point:p = Point{ x: 10, y: 20 };
+    
+    // Test 2: Access members
+    if (p.x != 10) {
+        pass(1);  // ERROR: x field wrong
+    }
+    
+    if (p.y != 20) {
+        pass(2);  // ERROR: y field wrong
+    }
+    
+    pass(0);  // Success
+};
+
+func:test_duration = int32() {
+    // Test 3: Create Duration struct
+    Duration:d = Duration{ nanos: 5000000000 };
+    
+    // Test 4: Access nanos field
+    if (d.nanos != 5000000000) {
+        pass(3);  // ERROR: nanos field wrong
+    }
+    
+    pass(0);  // Success
+};
+
+func:test_struct_in_function = int32() {
+    // Test 5: Create struct and pass to function
+    Point:origin = Point{ x: 0, y: 0 };
+    
+    int32:sum = add_coords(origin);
+    
+    if (sum != 0) {
+        pass(5);  // ERROR: origin sum should be 0
+    }
+    
+    pass(0);  // Success
+};
+
+func:add_coords = int32(Point:p) {
+    return p.x + p.y;
+};
+
+func:main = int32() {
+    int32:result = 0;
+    
+    result = test_point_creation();
+    if (result != 0) {
+        pass(result);
+    }
+    
+    result = test_duration();
+    if (result != 0) {
+        pass(result);
+    }
+    
+    result = test_struct_in_function();
+    if (result != 0) {
+        pass(result);
+    }
+    
+    pass(42);  // All tests passed!
+};

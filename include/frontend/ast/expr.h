@@ -204,6 +204,40 @@ public:
 };
 
 /**
+ * Object literal expression node
+ * Represents: { key: value, ... } syntax for both dynamic objects and struct initialization
+ * 
+ * Based on research_014_composite_types_part1.txt:
+ * - When type_name is empty: Creates a dynamic obj (hash map)
+ * - When type_name is set: Initializes a struct (e.g., Point{ x:1, y:2 })
+ * - Fields are evaluated at runtime and added to the object
+ */
+class ObjectLiteralExpr : public ASTNode {
+public:
+    struct Field {
+        std::string name;
+        ASTNodePtr value;
+        
+        Field(const std::string& n, ASTNodePtr v)
+            : name(n), value(std::move(v)) {}
+    };
+    
+    std::vector<Field> fields;
+    std::string type_name;  // Empty for dynamic obj, set for struct constructors
+    
+    ObjectLiteralExpr(const std::vector<Field>& flds, 
+                      const std::string& typeName = "",
+                      int line = 0, int column = 0)
+        : ASTNode(NodeType::OBJECT_LITERAL, line, column), 
+          fields(flds), type_name(typeName) {}
+    
+    ObjectLiteralExpr(int line = 0, int column = 0)
+        : ASTNode(NodeType::OBJECT_LITERAL, line, column), type_name("") {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Lambda expression node (Closures)
  * Represents: (x, y) => x + y  or  int64(int64 x, int64 y) { return x + y; }
  * 

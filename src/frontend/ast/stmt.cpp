@@ -50,6 +50,17 @@ std::string FuncDeclStmt::toString() const {
     return oss.str();
 }
 
+std::string StructDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "StructDecl(struct " << structName << " { ";
+    for (size_t i = 0; i < fields.size(); ++i) {
+        if (i > 0) oss << "; ";
+        oss << fields[i]->toString();
+    }
+    oss << " })";
+    return oss.str();
+}
+
 std::string ParameterNode::toString() const {
     std::string result = typeName + ":" + paramName;
     if (defaultValue) {

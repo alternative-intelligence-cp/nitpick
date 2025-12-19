@@ -71,6 +71,23 @@ public:
 };
 
 /**
+ * Struct declaration node
+ * Represents: struct Name { type:field1; type:field2; };
+ */
+class StructDeclStmt : public ASTNode {
+public:
+    std::string structName;
+    std::vector<ASTNodePtr> fields;  // VarDeclStmt instances (field declarations)
+    
+    StructDeclStmt(const std::string& name, const std::vector<ASTNodePtr>& fieldList,
+                   int line = 0, int column = 0)
+        : ASTNode(NodeType::STRUCT_DECL, line, column),
+          structName(name), fields(fieldList) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Function parameter node
  * Represents: type:name in function parameters
  */

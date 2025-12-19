@@ -40,6 +40,7 @@ public:
         // === STATEMENTS ===
         VAR_DECL,             // Variable declaration: type:name = value;
         FUNC_DECL,            // Function declaration: func:name = returnType(params) { body };
+        STRUCT_DECL,          // Struct declaration: struct Name { fields };
         RETURN,               // return statement
         BREAK,                // break statement
         CONTINUE,             // continue statement

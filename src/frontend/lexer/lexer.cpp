@@ -48,6 +48,9 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"cfg", TokenType::TOKEN_KW_CFG},
     {"as", TokenType::TOKEN_KW_AS},
     
+    // Type declaration
+    {"struct", TokenType::TOKEN_KW_STRUCT},
+    
     // Other
     {"const", TokenType::TOKEN_KW_CONST},
     {"is", TokenType::TOKEN_KW_IS},
