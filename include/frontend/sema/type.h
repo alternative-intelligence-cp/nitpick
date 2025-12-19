@@ -393,6 +393,9 @@ public:
     StructType* createStructType(const std::string& name, const std::vector<StructType::Field>& fields,
                                 int size = 0, int alignment = 0, bool isPacked = false);
     
+    // Register custom type from AST (e.g., struct declaration)
+    void registerCustomType(const std::string& name, void* astNode);
+    
     UnionType* getUnionType(const std::string& name);
     UnionType* createUnionType(const std::string& name, const std::vector<UnionType::Variant>& variants,
                               int size = 0);
