@@ -257,6 +257,19 @@ aria-dap/fast:
 .PHONY : aria-dap/fast
 
 #=============================================================================
+# Target rules for targets named aria-pkg
+
+# Build rule for target.
+aria-pkg: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 aria-pkg
+.PHONY : aria-pkg
+
+# fast build rule for target.
+aria-pkg/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-pkg.dir/build.make CMakeFiles/aria-pkg.dir/build
+.PHONY : aria-pkg/fast
+
+#=============================================================================
 # Target rules for targets named Experimental
 
 # Build rule for target.
@@ -1836,6 +1849,30 @@ src/tools/debugger/dap_server.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/dap_server.cpp.s
 .PHONY : src/tools/debugger/dap_server.cpp.s
 
+src/tools/debugger/memory_visualizer.o: src/tools/debugger/memory_visualizer.cpp.o
+.PHONY : src/tools/debugger/memory_visualizer.o
+
+# target to build an object file
+src/tools/debugger/memory_visualizer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/memory_visualizer.cpp.o
+.PHONY : src/tools/debugger/memory_visualizer.cpp.o
+
+src/tools/debugger/memory_visualizer.i: src/tools/debugger/memory_visualizer.cpp.i
+.PHONY : src/tools/debugger/memory_visualizer.i
+
+# target to preprocess a source file
+src/tools/debugger/memory_visualizer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/memory_visualizer.cpp.i
+.PHONY : src/tools/debugger/memory_visualizer.cpp.i
+
+src/tools/debugger/memory_visualizer.s: src/tools/debugger/memory_visualizer.cpp.s
+.PHONY : src/tools/debugger/memory_visualizer.s
+
+# target to generate assembly for a file
+src/tools/debugger/memory_visualizer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/memory_visualizer.cpp.s
+.PHONY : src/tools/debugger/memory_visualizer.cpp.s
+
 src/tools/debugger/web_server.o: src/tools/debugger/web_server.cpp.o
 .PHONY : src/tools/debugger/web_server.o
 
@@ -2022,6 +2059,54 @@ src/tools/lsp/work_queue.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/work_queue.cpp.s
 .PHONY : src/tools/lsp/work_queue.cpp.s
 
+src/tools/pkg/installer.o: src/tools/pkg/installer.cpp.o
+.PHONY : src/tools/pkg/installer.o
+
+# target to build an object file
+src/tools/pkg/installer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-pkg.dir/build.make CMakeFiles/aria-pkg.dir/src/tools/pkg/installer.cpp.o
+.PHONY : src/tools/pkg/installer.cpp.o
+
+src/tools/pkg/installer.i: src/tools/pkg/installer.cpp.i
+.PHONY : src/tools/pkg/installer.i
+
+# target to preprocess a source file
+src/tools/pkg/installer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-pkg.dir/build.make CMakeFiles/aria-pkg.dir/src/tools/pkg/installer.cpp.i
+.PHONY : src/tools/pkg/installer.cpp.i
+
+src/tools/pkg/installer.s: src/tools/pkg/installer.cpp.s
+.PHONY : src/tools/pkg/installer.s
+
+# target to generate assembly for a file
+src/tools/pkg/installer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-pkg.dir/build.make CMakeFiles/aria-pkg.dir/src/tools/pkg/installer.cpp.s
+.PHONY : src/tools/pkg/installer.cpp.s
+
+src/tools/pkg/main.o: src/tools/pkg/main.cpp.o
+.PHONY : src/tools/pkg/main.o
+
+# target to build an object file
+src/tools/pkg/main.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-pkg.dir/build.make CMakeFiles/aria-pkg.dir/src/tools/pkg/main.cpp.o
+.PHONY : src/tools/pkg/main.cpp.o
+
+src/tools/pkg/main.i: src/tools/pkg/main.cpp.i
+.PHONY : src/tools/pkg/main.i
+
+# target to preprocess a source file
+src/tools/pkg/main.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-pkg.dir/build.make CMakeFiles/aria-pkg.dir/src/tools/pkg/main.cpp.i
+.PHONY : src/tools/pkg/main.cpp.i
+
+src/tools/pkg/main.s: src/tools/pkg/main.cpp.s
+.PHONY : src/tools/pkg/main.s
+
+# target to generate assembly for a file
+src/tools/pkg/main.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-pkg.dir/build.make CMakeFiles/aria-pkg.dir/src/tools/pkg/main.cpp.s
+.PHONY : src/tools/pkg/main.cpp.s
+
 src/tools/project_config.o: src/tools/project_config.cpp.o
 .PHONY : src/tools/project_config.o
 
@@ -2095,6 +2180,7 @@ help:
 	@echo "... vt_gen"
 	@echo "... aria-dap"
 	@echo "... aria-ls"
+	@echo "... aria-pkg"
 	@echo "... ariac"
 	@echo "... test_runner"
 	@echo "... src/backend/ir/codegen_expr.o"
@@ -2244,6 +2330,9 @@ help:
 	@echo "... src/tools/debugger/dap_server.o"
 	@echo "... src/tools/debugger/dap_server.i"
 	@echo "... src/tools/debugger/dap_server.s"
+	@echo "... src/tools/debugger/memory_visualizer.o"
+	@echo "... src/tools/debugger/memory_visualizer.i"
+	@echo "... src/tools/debugger/memory_visualizer.s"
 	@echo "... src/tools/debugger/web_server.o"
 	@echo "... src/tools/debugger/web_server.i"
 	@echo "... src/tools/debugger/web_server.s"
@@ -2265,6 +2354,12 @@ help:
 	@echo "... src/tools/lsp/work_queue.o"
 	@echo "... src/tools/lsp/work_queue.i"
 	@echo "... src/tools/lsp/work_queue.s"
+	@echo "... src/tools/pkg/installer.o"
+	@echo "... src/tools/pkg/installer.i"
+	@echo "... src/tools/pkg/installer.s"
+	@echo "... src/tools/pkg/main.o"
+	@echo "... src/tools/pkg/main.i"
+	@echo "... src/tools/pkg/main.s"
 	@echo "... src/tools/project_config.o"
 	@echo "... src/tools/project_config.i"
 	@echo "... src/tools/project_config.s"

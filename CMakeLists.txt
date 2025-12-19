@@ -212,6 +212,11 @@ if(LLDB_FOUND)
     )
 endif()
 
+# Phase 7.5: Package Manager
+set(PKG_SOURCES
+    src/tools/pkg/installer.cpp
+)
+
 # Combine all sources
 set(ARIA_SOURCES
     ${LEXER_SOURCES}
@@ -257,6 +262,13 @@ if(LLDB_FOUND)
 else()
     message(STATUS "LLDB not found - DAP server will not be built")
 endif()
+
+# Package manager executable (Phase 7.5)
+add_executable(aria-pkg
+    src/tools/pkg/main.cpp
+    ${PKG_SOURCES}
+)
+target_link_libraries(aria-pkg)
 
 # ============================================================================
 # Testing
