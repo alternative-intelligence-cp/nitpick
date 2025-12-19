@@ -91,6 +91,22 @@ std::string ArrayLiteralExpr::toString() const {
     return oss.str();
 }
 
+std::string ObjectLiteralExpr::toString() const {
+    std::ostringstream oss;
+    if (!type_name.empty()) {
+        oss << type_name;
+    } else {
+        oss << "obj";
+    }
+    oss << "{ ";
+    for (size_t i = 0; i < fields.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << fields[i].name << ": " << fields[i].value->toString();
+    }
+    oss << " }";
+    return oss.str();
+}
+
 std::string LambdaExpr::toString() const {
     std::ostringstream oss;
     oss << "Lambda(";

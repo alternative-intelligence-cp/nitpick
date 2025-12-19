@@ -398,6 +398,15 @@ ASTNodePtr Parser::parsePrimary() {
         return std::make_shared<IdentifierExpr>(lexeme, line, col);
     }
     
+    // Allow 'result' keyword to be used as identifier (common name in tests)
+    if (token.type == TokenType::TOKEN_KW_RESULT) {
+        std::string lexeme = token.lexeme;  // Save before advance()
+        int line = token.line;
+        int col = token.column;
+        advance();
+        return std::make_shared<IdentifierExpr>(lexeme, line, col);
+    }
+    
     // Parenthesized expression
     if (token.type == TokenType::TOKEN_LEFT_PAREN) {
         advance();
@@ -460,6 +469,51 @@ ASTNodePtr Parser::parseUnary() {
 ASTNodePtr Parser::parsePostfix(ASTNodePtr expr) {
     while (!isAtEnd()) {
         Token token = peek();
+        
+        // Check for struct literal: Identifier{ field: value, ... }
+        // Only if expr is an IdentifierExpr
+        if (token.type == TokenType::TOKEN_LEFT_BRACE && 
+            expr && expr->type == ASTNode::NodeType::IDENTIFIER) {
+            auto identExpr = std::static_pointer_cast<IdentifierExpr>(expr);
+            std::string typeName = identExpr->name;
+            
+            advance(); // consume '{'
+            
+            std::vector<ObjectLiteralExpr::Field> fields;
+            
+            while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+                // Parse field name
+                Token fieldNameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected field name in struct literal");
+                std::string fieldName = fieldNameToken.lexeme;
+                
+                // Expect colon
+                consume(TokenType::TOKEN_COLON, "Expected ':' after field name");
+                
+                // Parse field value
+                ASTNodePtr fieldValue = parseExpression();
+                if (!fieldValue) {
+                    error("Expected field value");
+                    return nullptr;
+                }
+                
+                fields.push_back(ObjectLiteralExpr::Field(fieldName, fieldValue));
+                
+                // Allow trailing comma
+                if (!check(TokenType::TOKEN_RIGHT_BRACE)) {
+                    consume(TokenType::TOKEN_COMMA, "Expected ',' or '}' after field");
+                }
+            }
+            
+            consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after struct fields");
+            
+            // Create ObjectLiteralExpr with type_name set
+            return std::make_shared<ObjectLiteralExpr>(
+                fields,
+                typeName,  // Set type name for struct literals
+                token.line,
+                token.column
+            );
+        }
         
         // Check for turbofish syntax: ::<T, U> followed by function call
         // This must be checked BEFORE normal function call to disambiguate from comparison
@@ -610,9 +664,42 @@ ASTNodePtr Parser::parseArrayLiteral() {
 }
 
 ASTNodePtr Parser::parseObjectLiteral() {
-    // Stub for now - will implement in later phase
-    error("Object literals not yet implemented");
-    return nullptr;
+    Token braceToken = previous(); // '{'
+    
+    std::vector<ObjectLiteralExpr::Field> fields;
+    
+    while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        // Parse field name
+        Token fieldNameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected field name in object literal");
+        std::string fieldName = fieldNameToken.lexeme;
+        
+        // Expect colon
+        consume(TokenType::TOKEN_COLON, "Expected ':' after field name");
+        
+        // Parse field value
+        ASTNodePtr fieldValue = parseExpression();
+        if (!fieldValue) {
+            error("Expected field value");
+            return nullptr;
+        }
+        
+        fields.push_back(ObjectLiteralExpr::Field(fieldName, fieldValue));
+        
+        // Allow trailing comma
+        if (!check(TokenType::TOKEN_RIGHT_BRACE)) {
+            consume(TokenType::TOKEN_COMMA, "Expected ',' or '}' after field");
+        }
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after object fields");
+    
+    // Create ObjectLiteralExpr without type_name (dynamic object)
+    return std::make_shared<ObjectLiteralExpr>(
+        fields,
+        "",  // No type name for dynamic objects
+        braceToken.line,
+        braceToken.column
+    );
 }
 
 ASTNodePtr Parser::parseTemplateLiteral() {
@@ -795,6 +882,11 @@ ASTNodePtr Parser::parseStatement() {
         return parseExternStatement();
     }
     
+    // Check for struct declarations
+    if (match(TokenType::TOKEN_KW_STRUCT)) {
+        return parseStructDecl();
+    }
+    
     // Check for qualifiers (wild, const, stack, gc) followed by type
     if (peek().type == TokenType::TOKEN_KW_WILD ||
         peek().type == TokenType::TOKEN_KW_CONST ||
@@ -806,6 +898,22 @@ ASTNodePtr Parser::parseStatement() {
     // Check for generic type reference (variable declaration): *T:name = ...
     if (isGenericTypeReference()) {
         return parseVarDecl();
+    }
+    
+    // Check for custom type reference (variable declaration): CustomType:name = ...
+    // This allows struct types and other custom types in variable declarations
+    if (peek().type == TokenType::TOKEN_IDENTIFIER) {
+        size_t saved = current;
+        advance(); // consume identifier
+        if (check(TokenType::TOKEN_COLON)) {
+            // It's a type annotation with custom type: CustomType:name
+            current = saved; // reset position
+            return parseVarDecl();
+        } else {
+            // It's an identifier used in an expression, restore position
+            current = saved;
+            // Fall through to expression statement
+        }
     }
     
     // Check for type annotation (variable declaration)
@@ -1008,7 +1116,7 @@ ASTNodePtr Parser::parseVarDecl() {
         }
     }
     
-    // Get type (could be *T for generic or regular type)
+    // Get type (could be *T for generic, identifier for custom types, or type keyword)
     std::string typeName;
     int typeLine, typeColumn;
     if (isGenericTypeReference()) {
@@ -1018,10 +1126,16 @@ ASTNodePtr Parser::parseVarDecl() {
         typeColumn = starToken.column;
         Token typeParamToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name after '*'");
         typeName = "*" + typeParamToken.lexeme;
+    } else if (peek().type == TokenType::TOKEN_IDENTIFIER) {
+        // Custom type (e.g., struct name): Point, Duration, etc.
+        Token typeToken = advance();
+        typeName = typeToken.lexeme;
+        typeLine = typeToken.line;
+        typeColumn = typeToken.column;
     } else {
         Token typeToken = advance();
         if (!isTypeKeyword(typeToken.type)) {
-            error("Expected type keyword in variable declaration");
+            error("Expected type keyword or identifier in variable declaration");
             return nullptr;
         }
         typeName = typeToken.lexeme;
@@ -1032,8 +1146,17 @@ ASTNodePtr Parser::parseVarDecl() {
     // Consume colon
     consume(TokenType::TOKEN_COLON, "Expected ':' after type in variable declaration");
     
-    // Get variable name
-    Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected variable name");
+    // Get variable name (can be identifier or certain keywords used as names)
+    Token nameToken = peek();
+    if (nameToken.type == TokenType::TOKEN_IDENTIFIER ||
+        nameToken.type == TokenType::TOKEN_KW_RESULT ||
+        nameToken.type == TokenType::TOKEN_KW_FUNC ||
+        nameToken.type == TokenType::TOKEN_KW_OBJ) {
+        advance();
+    } else {
+        error("Expected variable name");
+        return nullptr;
+    }
     
     // Check for initializer
     ASTNodePtr initializer = nullptr;
@@ -1100,13 +1223,17 @@ ASTNodePtr Parser::parseFuncDecl() {
     std::vector<ASTNodePtr> parameters;
     if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
         do {
-            // Parse parameter type (could be *T for generic or regular type)
+            // Parse parameter type (could be *T for generic, identifier for custom type, or regular type)
             std::string paramTypeName;
             if (isGenericTypeReference()) {
                 // Generic type reference: *T
                 advance(); // consume '*'
                 Token typeParamToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name after '*'");
                 paramTypeName = "*" + typeParamToken.lexeme;
+            } else if (peek().type == TokenType::TOKEN_IDENTIFIER) {
+                // Custom type (e.g., struct name)
+                Token paramTypeToken = advance();
+                paramTypeName = paramTypeToken.lexeme;
             } else {
                 Token paramTypeToken = advance();
                 if (!isTypeKeyword(paramTypeToken.type)) {
@@ -1155,6 +1282,61 @@ ASTNodePtr Parser::parseFuncDecl() {
     funcDecl->genericParams = genericParams;
     
     return funcDecl;
+}
+
+// Parse struct declaration: struct Name { type:field1; type:field2; };
+ASTNodePtr Parser::parseStructDecl() {
+    using namespace frontend;
+    
+    Token structToken = previous(); // 'struct' keyword
+    
+    // Get struct name
+    Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected struct name");
+    
+    // Parse struct body: { type:field; type:field; ... }
+    consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after struct name");
+    
+    std::vector<ASTNodePtr> fields;
+    while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        // Parse field type
+        Token fieldTypeToken = advance();
+        if (!isTypeKeyword(fieldTypeToken.type)) {
+            error("Expected field type in struct");
+            return nullptr;
+        }
+        
+        // Consume colon
+        consume(TokenType::TOKEN_COLON, "Expected ':' after field type");
+        
+        // Get field name
+        Token fieldNameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected field name");
+        
+        // Create a VarDeclStmt for the field (without initializer)
+        auto fieldDecl = std::make_shared<VarDeclStmt>(
+            fieldTypeToken.lexeme,
+            fieldNameToken.lexeme,
+            nullptr,  // No initializer for struct fields
+            structToken.line,
+            structToken.column
+        );
+        
+        fields.push_back(fieldDecl);
+        
+        // Consume semicolon after field
+        consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after struct field");
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after struct fields");
+    
+    // Consume semicolon after struct declaration
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after struct declaration");
+    
+    return std::make_shared<StructDeclStmt>(
+        nameToken.lexeme,
+        fields,
+        structToken.line,
+        structToken.column
+    );
 }
 
 // Parse block: { stmt1; stmt2; ... }
