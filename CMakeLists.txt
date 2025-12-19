@@ -58,6 +58,20 @@ llvm_map_components_to_libnames(llvm_libs
 )
 
 # ============================================================================
+# LLDB Configuration (for debugger formatters)
+# ============================================================================
+
+# Find LLDB library
+find_library(LLDB_LIBRARY NAMES lldb LLDB HINTS ${LLVM_LIBRARY_DIRS})
+if(LLDB_LIBRARY)
+    message(STATUS "Found LLDB library: ${LLDB_LIBRARY}")
+    set(LLDB_FOUND TRUE)
+else()
+    message(STATUS "LLDB library not found - debugger formatters will not be built")
+    set(LLDB_FOUND FALSE)
+endif()
+
+# ============================================================================
 # Third-party libraries
 # ============================================================================
 
@@ -169,6 +183,13 @@ set(TOOLS_SOURCES
     src/tools/lsp/work_queue.cpp
     src/tools/lsp/thread_pool.cpp
 )
+
+# Phase 7.4: Debugger formatters (optional, requires LLDB)
+if(LLDB_FOUND)
+    set(DEBUGGER_SOURCES
+        src/tools/debugger/aria_formatters.cpp
+    )
+endif()
 
 # Combine all sources
 set(ARIA_SOURCES
