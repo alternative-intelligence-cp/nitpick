@@ -1,7 +1,7 @@
-=== ARIA SOURCE PART 2: FRONTEND - AST & DIAGNOSTICS ===
+=== ARIA SOURCE PART2 - FRONTEND - AST ===
 
 FILE: include/frontend/ast/ast_node.h
-====================================
+================================================================================
 #ifndef ARIA_AST_NODE_H
 #define ARIA_AST_NODE_H
 
@@ -44,6 +44,7 @@ public:
         // === STATEMENTS ===
         VAR_DECL,             // Variable declaration: type:name = value;
         FUNC_DECL,            // Function declaration: func:name = returnType(params) { body };
+        STRUCT_DECL,          // Struct declaration: struct Name { fields };
         RETURN,               // return statement
         BREAK,                // break statement
         CONTINUE,             // continue statement
@@ -119,9 +120,8 @@ std::ostream& operator<<(std::ostream& os, aria::ASTNode::NodeType type);
 #endif // ARIA_AST_NODE_H
 
 
-
 FILE: include/frontend/ast/expr.h
-====================================
+================================================================================
 #ifndef ARIA_EXPR_H
 #define ARIA_EXPR_H
 
@@ -328,6 +328,40 @@ public:
 };
 
 /**
+ * Object literal expression node
+ * Represents: { key: value, ... } syntax for both dynamic objects and struct initialization
+ * 
+ * Based on research_014_composite_types_part1.txt:
+ * - When type_name is empty: Creates a dynamic obj (hash map)
+ * - When type_name is set: Initializes a struct (e.g., Point{ x:1, y:2 })
+ * - Fields are evaluated at runtime and added to the object
+ */
+class ObjectLiteralExpr : public ASTNode {
+public:
+    struct Field {
+        std::string name;
+        ASTNodePtr value;
+        
+        Field(const std::string& n, ASTNodePtr v)
+            : name(n), value(std::move(v)) {}
+    };
+    
+    std::vector<Field> fields;
+    std::string type_name;  // Empty for dynamic obj, set for struct constructors
+    
+    ObjectLiteralExpr(const std::vector<Field>& flds, 
+                      const std::string& typeName = "",
+                      int line = 0, int column = 0)
+        : ASTNode(NodeType::OBJECT_LITERAL, line, column), 
+          fields(flds), type_name(typeName) {}
+    
+    ObjectLiteralExpr(int line = 0, int column = 0)
+        : ASTNode(NodeType::OBJECT_LITERAL, line, column), type_name("") {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Lambda expression node (Closures)
  * Represents: (x, y) => x + y  or  int64(int64 x, int64 y) { return x + y; }
  * 
@@ -374,9 +408,172 @@ public:
 #endif // ARIA_EXPR_H
 
 
+FILE: src/frontend/ast/expr.cpp
+================================================================================
+#include "frontend/ast/expr.h"
+#include <sstream>
+
+namespace aria {
+
+std::string LiteralExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Literal(";
+    
+    std::visit([&oss](auto&& arg) {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, int64_t>) {
+            oss << arg;
+        } else if constexpr (std::is_same_v<T, double>) {
+            oss << arg;
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            oss << "\"" << arg << "\"";
+        } else if constexpr (std::is_same_v<T, bool>) {
+            oss << (arg ? "true" : "false");
+        } else if constexpr (std::is_same_v<T, std::monostate>) {
+            oss << "null";
+        }
+    }, value);
+    
+    oss << ")";
+    return oss.str();
+}
+
+std::string IdentifierExpr::toString() const {
+    return "Identifier(" + name + ")";
+}
+
+std::string BinaryExpr::toString() const {
+    return "Binary(" + left->toString() + " " + aria::frontend::tokenTypeToString(op.type) + " " + right->toString() + ")";
+}
+
+std::string UnaryExpr::toString() const {
+    return "Unary(" + aria::frontend::tokenTypeToString(op.type) + " " + operand->toString() + ")";
+}
+
+std::string CallExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Call(" << callee->toString();
+    
+    // Display explicit type arguments if present (turbofish)
+    if (!explicitTypeArgs.empty()) {
+        oss << "::<";
+        for (size_t i = 0; i < explicitTypeArgs.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << explicitTypeArgs[i];
+        }
+        oss << ">";
+    }
+    
+    oss << ", [";
+    for (size_t i = 0; i < arguments.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << arguments[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
+std::string IndexExpr::toString() const {
+    return "Index(" + array->toString() + "[" + index->toString() + "])";
+}
+
+std::string MemberAccessExpr::toString() const {
+    std::string op = isPointerAccess ? "->" : ".";
+    return "MemberAccess(" + object->toString() + op + member + ")";
+}
+
+std::string TernaryExpr::toString() const {
+    return "Ternary(" + condition->toString() + " ? " + 
+           trueValue->toString() + " : " + falseValue->toString() + ")";
+}
+
+std::string AssignmentExpr::toString() const {
+    return "Assignment(" + target->toString() + " " + 
+           aria::frontend::tokenTypeToString(op.type) + " " + value->toString() + ")";
+}
+
+std::string ArrayLiteralExpr::toString() const {
+    std::ostringstream oss;
+    oss << "ArrayLiteral([";
+    for (size_t i = 0; i < elements.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << elements[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
+std::string ObjectLiteralExpr::toString() const {
+    std::ostringstream oss;
+    if (!type_name.empty()) {
+        oss << type_name;
+    } else {
+        oss << "obj";
+    }
+    oss << "{ ";
+    for (size_t i = 0; i < fields.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << fields[i].name << ": " << fields[i].value->toString();
+    }
+    oss << " }";
+    return oss.str();
+}
+
+std::string LambdaExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Lambda(";
+    
+    // Parameters
+    oss << "params=[";
+    for (size_t i = 0; i < parameters.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << parameters[i]->toString();
+    }
+    oss << "]";
+    
+    // Return type
+    if (!returnTypeName.empty()) {
+        oss << ", returnType=" << returnTypeName;
+    }
+    
+    // Captured variables
+    if (!capturedVars.empty()) {
+        oss << ", captures=[";
+        for (size_t i = 0; i < capturedVars.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << capturedVars[i].name;
+            switch (capturedVars[i].mode) {
+                case CaptureMode::BY_VALUE: oss << "(copy)"; break;
+                case CaptureMode::BY_REFERENCE: oss << "(ref)"; break;
+                case CaptureMode::BY_MOVE: oss << "(move)"; break;
+            }
+        }
+        oss << "]";
+    }
+    
+    // Async flag
+    if (isAsync) {
+        oss << ", async";
+    }
+    
+    // Body
+    oss << ", body=" << body->toString();
+    
+    oss << ")";
+    return oss.str();
+}
+
+std::string AwaitExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Await(" << operand->toString() << ")";
+    return oss.str();
+}
+
+} // namespace aria
+
 
 FILE: include/frontend/ast/stmt.h
-====================================
+================================================================================
 #ifndef ARIA_STMT_H
 #define ARIA_STMT_H
 
@@ -445,6 +642,23 @@ public:
         : ASTNode(NodeType::FUNC_DECL, line, column),
           funcName(name), returnType(retType), parameters(params), body(body),
           isAsync(false), isPublic(false), isExtern(false) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Struct declaration node
+ * Represents: struct Name { type:field1; type:field2; };
+ */
+class StructDeclStmt : public ASTNode {
+public:
+    std::string structName;
+    std::vector<ASTNodePtr> fields;  // VarDeclStmt instances (field declarations)
+    
+    StructDeclStmt(const std::string& name, const std::vector<ASTNodePtr>& fieldList,
+                   int line = 0, int column = 0)
+        : ASTNode(NodeType::STRUCT_DECL, line, column),
+          structName(name), fields(fieldList) {}
     
     std::string toString() const override;
 };
@@ -799,484 +1013,280 @@ public:
 #endif // ARIA_STMT_H
 
 
-
-FILE: include/frontend/ast/type.h
-====================================
-#ifndef ARIA_TYPE_H
-#define ARIA_TYPE_H
-
-#include "ast_node.h"
-#include <vector>
-
-namespace aria {
-
-/**
- * Base class for type annotations
- * Represents type information in variable/function declarations
- */
-class TypeNode : public ASTNode {
-public:
-    TypeNode(NodeType type, int line = 0, int column = 0)
-        : ASTNode(type, line, column) {}
-    
-    virtual ~TypeNode() = default;
-};
-
-/**
- * Simple type annotation
- * Represents: int8, string, bool, etc.
- */
-class SimpleType : public TypeNode {
-public:
-    std::string typeName;  // e.g., "int8", "string", "bool"
-    
-    SimpleType(const std::string& name, int line = 0, int column = 0)
-        : TypeNode(NodeType::TYPE_ANNOTATION, line, column), typeName(name) {}
-    
-    std::string toString() const override;
-};
-
-/**
- * Pointer type annotation
- * Represents: int8@, string@, obj@ (Aria native pointer syntax)
- * Note: extern blocks use C-style * for FFI compatibility
- */
-class PointerType : public TypeNode {
-public:
-    ASTNodePtr baseType;  // The type being pointed to
-    
-    PointerType(ASTNodePtr base, int line = 0, int column = 0)
-        : TypeNode(NodeType::POINTER_TYPE, line, column), baseType(base) {}
-    
-    std::string toString() const override;
-};
-
-/**
- * Array type annotation
- * Represents: int8[], int8[100], string[]
- */
-class ArrayType : public TypeNode {
-public:
-    ASTNodePtr elementType;  // Type of array elements
-    ASTNodePtr sizeExpr;     // Size expression (nullptr for dynamic arrays)
-    bool isDynamic;          // true for int8[], false for int8[100]
-    
-    ArrayType(ASTNodePtr elemType, ASTNodePtr size, int line = 0, int column = 0)
-        : TypeNode(NodeType::ARRAY_TYPE, line, column),
-          elementType(elemType), sizeExpr(size), isDynamic(size == nullptr) {}
-    
-    std::string toString() const override;
-};
-
-/**
- * Generic type annotation
- * Represents: Array<int8>, Map<string, int32>
- */
-class GenericType : public TypeNode {
-public:
-    std::string baseName;              // e.g., "Array", "Map"
-    std::vector<ASTNodePtr> typeArgs;  // Type arguments
-    
-    GenericType(const std::string& base, const std::vector<ASTNodePtr>& args,
-                int line = 0, int column = 0)
-        : TypeNode(NodeType::GENERIC_TYPE, line, column),
-          baseName(base), typeArgs(args) {}
-    
-    std::string toString() const override;
-};
-
-/**
- * Function type annotation
- * Represents: func type in parameters or variables
- */
-class FunctionType : public TypeNode {
-public:
-    ASTNodePtr returnType;              // Return type (can be another TypeNode)
-    std::vector<ASTNodePtr> paramTypes; // Parameter types
-    
-    FunctionType(ASTNodePtr retType, const std::vector<ASTNodePtr>& params,
-                 int line = 0, int column = 0)
-        : TypeNode(NodeType::FUNCTION_TYPE, line, column),
-          returnType(retType), paramTypes(params) {}
-    
-    std::string toString() const override;
-};
-
-} // namespace aria
-
-#endif // ARIA_TYPE_H
-
-
-
-FILE: include/frontend/diagnostics.h
-====================================
-#ifndef ARIA_DIAGNOSTICS_H
-#define ARIA_DIAGNOSTICS_H
-
-#include <string>
-#include <vector>
-#include <memory>
+FILE: src/frontend/ast/stmt.cpp
+================================================================================
+#include "frontend/ast/stmt.h"
 #include <sstream>
-#include <iostream>
 
 namespace aria {
 
-// ============================================================================
-// Diagnostic Severity Levels
-// ============================================================================
-
-enum class DiagnosticLevel {
-    NOTE,       // Informational message (blue)
-    WARNING,    // Warning that doesn't stop compilation (yellow)
-    ERROR,      // Error that prevents compilation (red)
-    FATAL       // Fatal error that stops compilation immediately (bright red)
-};
-
-// Helper function to print DiagnosticLevel
-inline std::ostream& operator<<(std::ostream& os, DiagnosticLevel level) {
-    switch (level) {
-        case DiagnosticLevel::NOTE:    return os << "NOTE";
-        case DiagnosticLevel::WARNING: return os << "WARNING";
-        case DiagnosticLevel::ERROR:   return os << "ERROR";
-        case DiagnosticLevel::FATAL:   return os << "FATAL";
-        default:                       return os << "UNKNOWN";
+std::string VarDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "VarDecl(";
+    if (isWild) oss << "wild ";
+    if (isConst) oss << "const ";
+    if (isStack) oss << "stack ";
+    if (isGC) oss << "gc ";
+    oss << typeName << ":" << varName;
+    if (initializer) {
+        oss << " = " << initializer->toString();
     }
+    oss << ")";
+    return oss.str();
 }
 
-// ============================================================================
-// Source Location - Where the diagnostic occurred
-// ============================================================================
-
-struct SourceLocation {
-    std::string filename;
-    int line;           // 1-indexed
-    int column;         // 1-indexed
-    int length;         // Length of the token/span
+std::string FuncDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "FuncDecl(";
+    if (isAsync) oss << "async ";
+    if (isPublic) oss << "pub ";
+    oss << "func:" << funcName;
     
-    SourceLocation(const std::string& file, int ln, int col, int len = 1)
-        : filename(file), line(ln), column(col), length(len) {}
-};
-
-// ============================================================================
-// Diagnostic - A single compiler message (error/warning/note)
-// ============================================================================
-
-class Diagnostic {
-public:
-    Diagnostic(DiagnosticLevel level, const SourceLocation& loc,
-               const std::string& message)
-        : level_(level), location_(loc), message_(message) {}
-    
-    // Add a note to this diagnostic (helpful context)
-    void addNote(const std::string& note) {
-        notes_.push_back(note);
+    if (!genericParams.empty()) {
+        oss << "<";
+        for (size_t i = 0; i < genericParams.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << genericParams[i].name;
+            if (!genericParams[i].constraints.empty()) {
+                oss << ": ";
+                for (size_t j = 0; j < genericParams[i].constraints.size(); ++j) {
+                    if (j > 0) oss << " & ";
+                    oss << genericParams[i].constraints[j];
+                }
+            }
+        }
+        oss << ">";
     }
     
-    // Add a suggestion for fixing the issue
-    void addSuggestion(const std::string& suggestion) {
-        suggestions_.push_back(suggestion);
+    oss << " = " << returnType << "(";
+    for (size_t i = 0; i < parameters.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << parameters[i]->toString();
+    }
+    oss << ") { ... })";
+    return oss.str();
+}
+
+std::string StructDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "StructDecl(struct " << structName << " { ";
+    for (size_t i = 0; i < fields.size(); ++i) {
+        if (i > 0) oss << "; ";
+        oss << fields[i]->toString();
+    }
+    oss << " })";
+    return oss.str();
+}
+
+std::string ParameterNode::toString() const {
+    std::string result = typeName + ":" + paramName;
+    if (defaultValue) {
+        result += " = " + defaultValue->toString();
+    }
+    return result;
+}
+
+std::string BlockStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Block([";
+    for (size_t i = 0; i < statements.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << statements[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
+std::string ExpressionStmt::toString() const {
+    return "ExprStmt(" + expression->toString() + ")";
+}
+
+std::string ReturnStmt::toString() const {
+    if (value) {
+        return "Return(" + value->toString() + ")";
+    }
+    return "Return()";
+}
+
+std::string IfStmt::toString() const {
+    std::string result = "If(" + condition->toString() + ", " + thenBranch->toString();
+    if (elseBranch) {
+        result += ", " + elseBranch->toString();
+    }
+    result += ")";
+    return result;
+}
+
+std::string WhileStmt::toString() const {
+    return "While(" + condition->toString() + ", " + body->toString() + ")";
+}
+
+std::string ForStmt::toString() const {
+    std::ostringstream oss;
+    oss << "For(";
+    if (initializer) oss << initializer->toString();
+    oss << "; ";
+    if (condition) oss << condition->toString();
+    oss << "; ";
+    if (update) oss << update->toString();
+    oss << ", " << body->toString() << ")";
+    return oss.str();
+}
+
+std::string DeferStmt::toString() const {
+    return "Defer(" + block->toString() + ")";
+}
+
+std::string BreakStmt::toString() const {
+    if (!label.empty()) {
+        return "Break(" + label + ")";
+    }
+    return "Break";
+}
+
+std::string ContinueStmt::toString() const {
+    if (!label.empty()) {
+        return "Continue(" + label + ")";
+    }
+    return "Continue";
+}
+
+std::string TillStmt::toString() const {
+    return "Till(" + limit->toString() + ", " + step->toString() + ", " + body->toString() + ")";
+}
+
+std::string LoopStmt::toString() const {
+    return "Loop(" + start->toString() + ", " + limit->toString() + ", " + 
+           step->toString() + ", " + body->toString() + ")";
+}
+
+std::string WhenStmt::toString() const {
+    std::string result = "When(" + condition->toString() + ", " + body->toString();
+    if (then_block) {
+        result += ", then: " + then_block->toString();
+    }
+    if (end_block) {
+        result += ", end: " + end_block->toString();
+    }
+    result += ")";
+    return result;
+}
+
+std::string PickCase::toString() const {
+    std::ostringstream oss;
+    oss << "PickCase(";
+    if (!label.empty()) {
+        oss << label << ":";
+    }
+    if (is_unreachable) {
+        oss << "(!)" << " { " << body->toString() << " }";
+    } else {
+        oss << pattern->toString() << " { " << body->toString() << " }";
+    }
+    oss << ")";
+    return oss.str();
+}
+
+std::string PickStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Pick(" << selector->toString() << ", [";
+    for (size_t i = 0; i < cases.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << cases[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
+std::string FallStmt::toString() const {
+    return "Fall(" + target_label + ")";
+}
+
+std::string UseStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Use(";
+    
+    // Path
+    if (isFilePath) {
+        oss << "\"" << path[0] << "\"";
+    } else {
+        for (size_t i = 0; i < path.size(); ++i) {
+            if (i > 0) oss << ".";
+            oss << path[i];
+        }
     }
     
-    // Getters
-    DiagnosticLevel level() const { return level_; }
-    const SourceLocation& location() const { return location_; }
-    const std::string& message() const { return message_; }
-    const std::vector<std::string>& notes() const { return notes_; }
-    const std::vector<std::string>& suggestions() const { return suggestions_; }
-    
-private:
-    DiagnosticLevel level_;
-    SourceLocation location_;
-    std::string message_;
-    std::vector<std::string> notes_;
-    std::vector<std::string> suggestions_;
-};
-
-// ============================================================================
-// DiagnosticEngine - Collects and formats diagnostics
-// ============================================================================
-
-class DiagnosticEngine {
-public:
-    DiagnosticEngine();
-    
-    // Add a diagnostic
-    void report(DiagnosticLevel level, const SourceLocation& loc,
-                const std::string& message);
-    
-    // Convenience methods
-    void error(const SourceLocation& loc, const std::string& message);
-    void warning(const SourceLocation& loc, const std::string& message);
-    void note(const SourceLocation& loc, const std::string& message);
-    void fatal(const SourceLocation& loc, const std::string& message);
-    
-    // Add a note to the last diagnostic
-    void addNote(const std::string& note);
-    
-    // Add a suggestion to the last diagnostic
-    void addSuggestion(const std::string& suggestion);
-    
-    // Check if we have errors
-    bool hasErrors() const { return error_count_ > 0; }
-    bool hasWarnings() const { return warning_count_ > 0; }
-    
-    // Get counts
-    int errorCount() const { return error_count_; }
-    int warningCount() const { return warning_count_; }
-    
-    // Get all diagnostics
-    const std::vector<std::unique_ptr<Diagnostic>>& diagnostics() const {
-        return diagnostics_;
+    // Items or wildcard
+    if (isWildcard) {
+        oss << ".*";
+    } else if (!items.empty()) {
+        oss << ".{";
+        for (size_t i = 0; i < items.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << items[i];
+        }
+        oss << "}";
     }
     
-    // Print all diagnostics to stderr
-    void printAll() const;
+    // Alias
+    if (!alias.empty()) {
+        oss << " as " << alias;
+    }
     
-    // Print a single diagnostic
-    void print(const Diagnostic& diag) const;
+    oss << ")";
+    return oss.str();
+}
+
+std::string ModStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Mod(";
     
-    // Configuration
-    void setColorEnabled(bool enabled) { color_enabled_ = enabled; }
-    void setShowSourceContext(bool enabled) { show_source_context_ = enabled; }
-    void setWarningsAsErrors(bool enabled) { warnings_as_errors_ = enabled; }
+    // Public modifier
+    if (isPublic) {
+        oss << "pub ";
+    }
     
-    // Clear all diagnostics
-    void clear();
+    // Module name
+    oss << name;
     
-private:
-    std::vector<std::unique_ptr<Diagnostic>> diagnostics_;
-    int error_count_ = 0;
-    int warning_count_ = 0;
-    bool color_enabled_ = true;
-    bool show_source_context_ = true;
-    bool warnings_as_errors_ = false;
+    // Inline module with body
+    if (isInline) {
+        oss << " { ";
+        for (size_t i = 0; i < body.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << body[i]->toString();
+        }
+        oss << " }";
+    }
     
-    // ANSI color codes
-    const char* RED = "\033[1;31m";
-    const char* YELLOW = "\033[1;33m";
-    const char* BLUE = "\033[1;34m";
-    const char* GREEN = "\033[1;32m";
-    const char* BOLD = "\033[1m";
-    const char* RESET = "\033[0m";
+    oss << ")";
+    return oss.str();
+}
+
+std::string ExternStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Extern(\"" << libraryName << "\" { ";
     
-    // Helper methods
-    std::string getLevelString(DiagnosticLevel level) const;
-    std::string getLevelColor(DiagnosticLevel level) const;
-    std::string readSourceLine(const std::string& filename, int line) const;
-    void printSourceContext(const Diagnostic& diag) const;
-};
+    for (size_t i = 0; i < declarations.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << declarations[i]->toString();
+    }
+    
+    oss << " })";
+    return oss.str();
+}
+
+std::string ProgramNode::toString() const {
+    std::ostringstream oss;
+    oss << "Program([";
+    for (size_t i = 0; i < declarations.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << declarations[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
 
 } // namespace aria
 
-#endif // ARIA_DIAGNOSTICS_H
 
-
-
-FILE: src/frontend/diagnostics.cpp
-====================================
-#include "frontend/diagnostics.h"
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <iomanip>
-
-namespace aria {
-
-// ============================================================================
-// DiagnosticEngine Implementation
-// ============================================================================
-
-DiagnosticEngine::DiagnosticEngine() 
-    : error_count_(0), warning_count_(0), 
-      color_enabled_(true), show_source_context_(true), 
-      warnings_as_errors_(false) {
-    // Check if stdout is a terminal (for color support)
-    // On Unix: isatty(fileno(stderr)) would be more correct, but keeping simple
-}
-
-void DiagnosticEngine::report(DiagnosticLevel level, const SourceLocation& loc,
-                                const std::string& message) {
-    // Upgrade warnings to errors if configured
-    if (level == DiagnosticLevel::WARNING && warnings_as_errors_) {
-        level = DiagnosticLevel::ERROR;
-    }
-    
-    // Create diagnostic
-    auto diag = std::make_unique<Diagnostic>(level, loc, message);
-    
-    // Update counts
-    if (level == DiagnosticLevel::ERROR || level == DiagnosticLevel::FATAL) {
-        error_count_++;
-    } else if (level == DiagnosticLevel::WARNING) {
-        warning_count_++;
-    }
-    
-    diagnostics_.push_back(std::move(diag));
-}
-
-void DiagnosticEngine::error(const SourceLocation& loc, const std::string& message) {
-    report(DiagnosticLevel::ERROR, loc, message);
-}
-
-void DiagnosticEngine::warning(const SourceLocation& loc, const std::string& message) {
-    report(DiagnosticLevel::WARNING, loc, message);
-}
-
-void DiagnosticEngine::note(const SourceLocation& loc, const std::string& message) {
-    report(DiagnosticLevel::NOTE, loc, message);
-}
-
-void DiagnosticEngine::fatal(const SourceLocation& loc, const std::string& message) {
-    report(DiagnosticLevel::FATAL, loc, message);
-}
-
-void DiagnosticEngine::addNote(const std::string& note) {
-    if (!diagnostics_.empty()) {
-        diagnostics_.back()->addNote(note);
-    }
-}
-
-void DiagnosticEngine::addSuggestion(const std::string& suggestion) {
-    if (!diagnostics_.empty()) {
-        diagnostics_.back()->addSuggestion(suggestion);
-    }
-}
-
-void DiagnosticEngine::clear() {
-    diagnostics_.clear();
-    error_count_ = 0;
-    warning_count_ = 0;
-}
-
-void DiagnosticEngine::printAll() const {
-    for (const auto& diag : diagnostics_) {
-        print(*diag);
-        std::cerr << "\n";  // Blank line between diagnostics
-    }
-    
-    // Print summary if we have multiple diagnostics
-    if (diagnostics_.size() > 1) {
-        std::cerr << (color_enabled_ ? BOLD : "") << "Summary: "
-                  << (color_enabled_ ? RESET : "");
-        
-        if (error_count_ > 0) {
-            std::cerr << (color_enabled_ ? RED : "") << error_count_ 
-                      << " error" << (error_count_ != 1 ? "s" : "")
-                      << (color_enabled_ ? RESET : "");
-        }
-        
-        if (error_count_ > 0 && warning_count_ > 0) {
-            std::cerr << ", ";
-        }
-        
-        if (warning_count_ > 0) {
-            std::cerr << (color_enabled_ ? YELLOW : "") << warning_count_ 
-                      << " warning" << (warning_count_ != 1 ? "s" : "")
-                      << (color_enabled_ ? RESET : "");
-        }
-        
-        std::cerr << "\n";
-    }
-}
-
-void DiagnosticEngine::print(const Diagnostic& diag) const {
-    const SourceLocation& loc = diag.location();
-    
-    // Format: filename:line:column: level: message
-    // Example: main.aria:10:5: error: unexpected token ';'
-    
-    std::cerr << (color_enabled_ ? BOLD : "") << loc.filename 
-              << ":" << loc.line << ":" << loc.column << ": "
-              << (color_enabled_ ? RESET : "");
-    
-    std::cerr << getLevelColor(diag.level()) << getLevelString(diag.level()) 
-              << (color_enabled_ ? RESET : "") << ": ";
-    
-    std::cerr << (color_enabled_ ? BOLD : "") << diag.message() 
-              << (color_enabled_ ? RESET : "") << "\n";
-    
-    // Print source context if enabled
-    if (show_source_context_) {
-        printSourceContext(diag);
-    }
-    
-    // Print notes
-    for (const auto& note : diag.notes()) {
-        std::cerr << (color_enabled_ ? BLUE : "") << "note: " 
-                  << (color_enabled_ ? RESET : "") << note << "\n";
-    }
-    
-    // Print suggestions
-    for (const auto& suggestion : diag.suggestions()) {
-        std::cerr << (color_enabled_ ? GREEN : "") << "suggestion: " 
-                  << (color_enabled_ ? RESET : "") << suggestion << "\n";
-    }
-}
-
-std::string DiagnosticEngine::getLevelString(DiagnosticLevel level) const {
-    switch (level) {
-        case DiagnosticLevel::NOTE:    return "note";
-        case DiagnosticLevel::WARNING: return "warning";
-        case DiagnosticLevel::ERROR:   return "error";
-        case DiagnosticLevel::FATAL:   return "fatal error";
-        default:                        return "unknown";
-    }
-}
-
-std::string DiagnosticEngine::getLevelColor(DiagnosticLevel level) const {
-    if (!color_enabled_) return "";
-    
-    switch (level) {
-        case DiagnosticLevel::NOTE:    return BLUE;
-        case DiagnosticLevel::WARNING: return YELLOW;
-        case DiagnosticLevel::ERROR:   return RED;
-        case DiagnosticLevel::FATAL:   return RED;
-        default:                        return "";
-    }
-}
-
-std::string DiagnosticEngine::readSourceLine(const std::string& filename, int line) const {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        return "";  // Can't read file, skip source context
-    }
-    
-    std::string current_line;
-    int current_line_num = 1;
-    
-    while (std::getline(file, current_line)) {
-        if (current_line_num == line) {
-            return current_line;
-        }
-        current_line_num++;
-    }
-    
-    return "";  // Line not found
-}
-
-void DiagnosticEngine::printSourceContext(const Diagnostic& diag) const {
-    const SourceLocation& loc = diag.location();
-    
-    // Read the source line
-    std::string source_line = readSourceLine(loc.filename, loc.line);
-    if (source_line.empty()) {
-        return;  // Couldn't read source, skip context
-    }
-    
-    // Print the source line with line number
-    std::cerr << std::setw(5) << loc.line << " | " << source_line << "\n";
-    
-    // Print the caret indicator (^)
-    // Calculate spacing: line number width (5) + " | " (3) + column position
-    std::string spacing(5 + 3 + loc.column - 1, ' ');
-    std::cerr << spacing << (color_enabled_ ? GREEN : "");
-    
-    // Print carets under the problem area
-    for (int i = 0; i < loc.length; i++) {
-        std::cerr << "^";
-    }
-    
-    std::cerr << (color_enabled_ ? RESET : "") << "\n";
-}
-
-} // namespace aria
