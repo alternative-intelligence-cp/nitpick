@@ -1,8 +1,7 @@
-# Aria Programming Language v0.1.0 🎉
+# Aria Programming Language v0.0.6
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Commercial License Available](https://img.shields.io/badge/Commercial-License_Available-green.svg)](LICENSE.md)
-[![Release v0.1.0](https://img.shields.io/badge/Release-v0.1.0-purple.svg)](https://github.com/alternative-intelligence-cp/aria/releases/tag/v0.1.0)
 
 **The Alternative Intelligence Liberation Platform presents: A revolutionary programming language with TESLA-inspired six-stream I/O and production-ready toolchain**
 
@@ -10,9 +9,9 @@
 
 ## 🚀 Current Status (December 19, 2025)
 
-**🎉 FIRST OFFICIAL RELEASE - v0.1.0 IS LIVE!**
+**⚠️ ACTIVE DEVELOPMENT - Phase 7 Complete, Feature Implementation In Progress**
 
-### Complete Compiler Toolchain ✅
+### Compiler Toolchain (Partial) 🔧
 - ✅ **ariac** - Full-featured compiler with LLVM 20 backend
 - ✅ **aria-doc** - Beautiful HTML documentation generator  
 - ✅ **aria-pkg** - Package manager with registry
@@ -21,14 +20,14 @@
 - ✅ **Comprehensive test suite** - All integration tests passing
 - ✅ **Live documentation** - https://aria.docs.ai-liberation-platform.org/
 
-### Language Features ✅
-- ✅ **Six-Stream I/O Model** - stdin, stdout, stderr, stddbg, stddati, stddato (TESLA-inspired)
-- ✅ **Type-Bounded Behaviors (TBB)** - Elegant type constraints
-- ✅ **Async/Await** - Cooperative multitasking with futures
-- ✅ **Memory Safety** - Borrow checking and lifetime analysis
-- ✅ **Generics** - With powerful constraint system
-- ✅ **Const Evaluation** - Compile-time computation
-- ✅ **Module System** - Clean imports and exports
+### Language Features (Status) 🔧
+- 🔧 **Six-Stream I/O Model** - Specified, implementation in progress
+- 🔧 **Type-Bounded Behaviors (TBB)** - Specified, parser support needed
+- 🔧 **Async/Await** - Specified, implementation in progress
+- 🔧 **Memory Safety** - Specified, borrow checker in development
+- ❌ **Generics** - Specified, parser support needed
+- 🔧 **Const Evaluation** - Specified, implementation in progress
+- ❌ **Module System** - Specified, parser support needed (use/mod/pub)
 
 ---
 
@@ -276,7 +275,7 @@ aria/
 
 ## Stability & Testing
 
-Aria v0.1.0 has been validated with comprehensive integration tests:
+Aria is being validated with comprehensive integration tests:
 
 ✅ **Compilation Pipeline**
 - Native executable generation
@@ -306,8 +305,8 @@ The compiler is production-ready for experimental projects. For known limitation
 
 ## Development Roadmap
 
-### v0.1.0 - COMPLETE! ✅ (December 19, 2025)
-**First Official Release**
+### v0.1.0 - IN PROGRESS 🔧 (Target: Q1 2026)
+**First Official Release - Feature Implementation**
 
 ✅ Complete compiler toolchain (ariac, aria-doc, aria-pkg, aria-dap)
 ✅ Six-stream I/O model implementation
@@ -392,4 +391,4 @@ If you find Aria useful, consider supporting its development! See [DONATIONS.md]
 **Alternative Intelligence Liberation Platform (AILP)**  
 *Building tools for collaboration, not exploitation.*
 
-**Status**: v0.1.0 - First Official Release! 🎉 | **Next**: Standard Library Expansion
+**Status**: v0.0.6 - Phase 7 Complete, Feature Implementation In Progress | **Next**: Parser Enhancements & Standard Library
