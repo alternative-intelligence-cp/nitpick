@@ -4,17 +4,28 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/IR/DerivedTypes.h>  // For FunctionType, StructType, etc.
 #include <llvm/IR/DataLayout.h>     // For getTypeAllocSize
+#include <llvm/IR/DebugLoc.h>       // For debug locations
+#include <llvm/BinaryFormat/Dwarf.h>  // For DWARF constants
 #include <cassert>
 
 namespace aria {
 using namespace sema;  // Now inside aria namespace
 
-IRGenerator::IRGenerator(const std::string& module_name)
+IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
     : context(), 
       module(std::make_unique<llvm::Module>(module_name.empty() ? "aria_module" : module_name, context)),
-      builder(context) {
+      builder(context),
+      di_builder(nullptr),
+      di_compile_unit(nullptr),
+      di_file(nullptr),
+      debug_enabled(enable_debug) {
     // Set source filename for better debug info
     module->setSourceFileName(module_name.empty() ? "aria_module" : module_name);
+    
+    if (debug_enabled) {
+        // Create DIBuilder (initialization deferred to initDebugInfo)
+        di_builder = std::make_unique<llvm::DIBuilder>(*module);
+    }
 }
 
 llvm::Type* IRGenerator::mapType(Type* aria_type) {
@@ -283,4 +294,212 @@ std::unique_ptr<llvm::Module> aria::IRGenerator::takeModule() {
 
 void aria::IRGenerator::dump() {
     module->print(llvm::outs(), nullptr);
+}
+
+// =============================================================================
+// Debug Info Generation (Phase 7.4.1)
+// =============================================================================
+
+void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::string& directory) {
+    if (!debug_enabled || !di_builder) {
+        return;
+    }
+    
+    // Create the compile unit
+    di_file = di_builder->createFile(filename, directory);
+    
+    di_compile_unit = di_builder->createCompileUnit(
+        llvm::dwarf::DW_LANG_C,  // Use C for now (could register DW_LANG_Aria later)
+        di_file,
+        "Aria Compiler v0.0.7",  // Producer
+        false,                    // isOptimized
+        "",                       // Flags
+        0                         // Runtime version
+    );
+    
+    // Set compile unit as root scope
+    di_scope_stack.push_back(di_compile_unit);
+}
+
+void aria::IRGenerator::finalizeDebugInfo() {
+    if (!debug_enabled || !di_builder) {
+        return;
+    }
+    
+    // Finalize the DIBuilder (writes all pending debug info)
+    di_builder->finalize();
+}
+
+void aria::IRGenerator::setDebugLocation(unsigned line, unsigned column) {
+    if (!debug_enabled || di_scope_stack.empty()) {
+        return;
+    }
+    
+    llvm::DIScope* scope = getCurrentDebugScope();
+    llvm::DILocation* loc = llvm::DILocation::get(
+        context,
+        line,
+        column,
+        scope
+    );
+    
+    builder.SetCurrentDebugLocation(llvm::DebugLoc(loc));
+}
+
+void aria::IRGenerator::clearDebugLocation() {
+    if (!debug_enabled) {
+        return;
+    }
+    
+    builder.SetCurrentDebugLocation(llvm::DebugLoc());
+}
+
+void aria::IRGenerator::pushDebugScope(llvm::DIScope* scope) {
+    if (!debug_enabled) {
+        return;
+    }
+    
+    di_scope_stack.push_back(scope);
+}
+
+void aria::IRGenerator::popDebugScope() {
+    if (!debug_enabled || di_scope_stack.size() <= 1) {
+        return;  // Never pop the compile unit
+    }
+    
+    di_scope_stack.pop_back();
+}
+
+llvm::DIScope* aria::IRGenerator::getCurrentDebugScope() {
+    if (!debug_enabled || di_scope_stack.empty()) {
+        return nullptr;
+    }
+    
+    return di_scope_stack.back();
+}
+
+llvm::DIType* aria::IRGenerator::mapDebugType(Type* aria_type) {
+    if (!debug_enabled || !aria_type) {
+        return nullptr;
+    }
+    
+    // Check cache first
+    std::string type_name = aria_type->toString();
+    auto it = di_type_map.find(type_name);
+    if (it != di_type_map.end()) {
+        return it->second;
+    }
+    
+    llvm::DIType* di_type = nullptr;
+    
+    switch (aria_type->getKind()) {
+        case TypeKind::PRIMITIVE: {
+            auto* prim = static_cast<PrimitiveType*>(aria_type);
+            std::string name = prim->getName();
+            unsigned bit_width = prim->getBitWidth();
+            
+            // Check if this is a TBB type
+            if (name.rfind("tbb", 0) == 0) {
+                // TBB types: Create typedef over signed integer
+                // This allows LLDB formatters to recognize the type name
+                llvm::DIType* base_int = di_builder->createBasicType(
+                    "int" + std::to_string(bit_width),
+                    bit_width,
+                    llvm::dwarf::DW_ATE_signed
+                );
+                
+                di_type = di_builder->createTypedef(
+                    base_int,
+                    name,        // Type name (e.g., "tbb32")
+                    di_file,
+                    0,           // Line number (0 for built-in types)
+                    getCurrentDebugScope()
+                );
+            }
+            // Boolean
+            else if (name == "bool") {
+                di_type = di_builder->createBasicType(
+                    "bool",
+                    1,
+                    llvm::dwarf::DW_ATE_boolean
+                );
+            }
+            // Floating point
+            else if (prim->isFloatingType()) {
+                di_type = di_builder->createBasicType(
+                    name,
+                    bit_width,
+                    llvm::dwarf::DW_ATE_float
+                );
+            }
+            // Regular integers
+            else if (prim->isSignedType()) {
+                di_type = di_builder->createBasicType(
+                    name,
+                    bit_width,
+                    llvm::dwarf::DW_ATE_signed
+                );
+            }
+            else {
+                di_type = di_builder->createBasicType(
+                    name,
+                    bit_width,
+                    llvm::dwarf::DW_ATE_unsigned
+                );
+            }
+            break;
+        }
+        
+        case TypeKind::POINTER: {
+            auto* ptr_type = static_cast<PointerType*>(aria_type);
+            llvm::DIType* pointee = mapDebugType(ptr_type->getPointeeType());
+            
+            // Check for memory qualifier (gc vs wild)
+            std::string qualifier = ptr_type->isWildPointer() ? "wild" : "gc";
+            std::string ptr_name = qualifier + "_ptr";
+            
+            di_type = di_builder->createPointerType(
+                pointee,
+                64,  // Pointer size (assume 64-bit)
+                0,   // Alignment
+                std::nullopt,
+                ptr_name
+            );
+            break;
+        }
+        
+        case TypeKind::ARRAY: {
+            auto* arr_type = static_cast<ArrayType*>(aria_type);
+            llvm::DIType* elem_type = mapDebugType(arr_type->getElementType());
+            
+            if (arr_type->getSize() > 0) {
+                // Fixed-size array
+                llvm::SmallVector<llvm::Metadata*, 1> subscripts;
+                subscripts.push_back(di_builder->getOrCreateSubrange(0, arr_type->getSize()));
+                
+                di_type = di_builder->createArrayType(
+                    arr_type->getSize() * 64,  // Size in bits (assume 64-bit elements for now)
+                    0,                          // Alignment
+                    elem_type,
+                    di_builder->getOrCreateArray(subscripts)
+                );
+            } else {
+                // Dynamic array (pointer)
+                di_type = di_builder->createPointerType(elem_type, 64, 0, std::nullopt, "array");
+            }
+            break;
+        }
+        
+        default:
+            // For other types, create an unspecified type placeholder
+            di_type = di_builder->createUnspecifiedType(type_name);
+            break;
+    }
+    
+    // Cache the result
+    if (di_type) {
+        di_type_map[type_name] = di_type;
+    }
+    
+    return di_type;
 }
