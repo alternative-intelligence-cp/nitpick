@@ -26,6 +26,7 @@
 #include <condition_variable>
 
 #include "async_debugger.h"
+#include "memory_visualizer.h"
 
 // Note: Fully qualify nlohmann::json to avoid conflicts with LLDB's internal json types
 
@@ -140,6 +141,9 @@ private:
     // Async debugger (Phase 7.4.5)
     std::unique_ptr<AsyncDebugger> m_async_debugger;
     
+    // Memory visualizer (Phase 7.4.6)
+    std::unique_ptr<MemoryVisualizer> m_memory_visualizer;
+    
     // DAP state
     int m_next_seq;
     std::map<int, Breakpoint> m_breakpoints;
@@ -215,6 +219,30 @@ private:
     void handleScopes(const DAPMessage& request, DAPMessage& response);
     void handleVariables(const DAPMessage& request, DAPMessage& response);
     void handleEvaluate(const DAPMessage& request, DAPMessage& response);
+    
+    // ========================================================================
+    // Custom Aria DAP Extensions (Phase 7.4.6)
+    // ========================================================================
+    
+    /**
+     * Handle ariaMemoryMap custom request
+     * 
+     * Returns comprehensive memory layout visualization data for the web UI.
+     * 
+     * Request body:
+     * {
+     *   "type": "all" | "gc" | "wild" | "wildx"  // Filter by region type
+     * }
+     * 
+     * Response body:
+     * {
+     *   "regions": [ { "start": addr, "end": addr, "type": str, ... } ],
+     *   "blocks": [ { "address": addr, "size": int, "type": str, ... } ],
+     *   "statistics": { "nursery_size": int, "old_gen_size": int, ... },
+     *   "timestamp": int
+     * }
+     */
+    void handleAriaMemoryMap(const DAPMessage& request, DAPMessage& response);
 
     // ========================================================================
     // Helper Methods
