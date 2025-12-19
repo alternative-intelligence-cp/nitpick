@@ -1,0 +1,163 @@
+==================
+Function declaration
+==================
+
+func:add = (x: int32, y: int32) -> int32 {
+  return x + y;
+}
+
+---
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (primitive_type))
+      (parameter name: (identifier) type: (primitive_type)))
+    return_type: (primitive_type)
+    body: (block
+      (return_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier))))))
+
+==================
+Struct declaration
+==================
+
+pub struct Point {
+  x: flt64,
+  y: flt64,
+}
+
+---
+
+(source_file
+  (struct_declaration
+    (visibility)
+    name: (identifier)
+    (struct_field name: (identifier) type: (primitive_type))
+    (struct_field name: (identifier) type: (primitive_type))))
+
+==================
+TBB types
+==================
+
+var val: tbb32 = 0;
+
+---
+
+(source_file
+  (variable_declaration
+    name: (identifier)
+    type: (tbb_type)
+    value: (literal
+      (integer_literal))))
+
+==================
+Memory qualifiers
+==================
+
+var ptr: @gc int32* = null;
+
+---
+
+(source_file
+  (variable_declaration
+    name: (identifier)
+    type: (pointer_type
+      qualifier: (memory_qualifier)
+      type: (primitive_type))
+    value: (literal
+      (null_literal))))
+
+==================
+Template string interpolation
+==================
+
+var message: str = `Hello, &{name}!`;
+
+---
+
+(source_file
+  (variable_declaration
+    name: (identifier)
+    type: (primitive_type)
+    value: (literal
+      (template_string
+        (template_chars)
+        (template_substitution (identifier))
+        (template_chars)))))
+
+==================
+Pick expression
+==================
+
+var result: str = pick(value) {
+  case 0: return "zero";
+  case 1: return "one";
+  default: return "other";
+};
+
+---
+
+(source_file
+  (variable_declaration
+    name: (identifier)
+    type: (primitive_type)
+    value: (pick_expression
+      value: (identifier)
+      (case_clause
+        pattern: (literal (integer_literal))
+        (return_statement (literal (string_literal))))
+      (case_clause
+        pattern: (literal (integer_literal))
+        (return_statement (literal (string_literal))))
+      (default_clause
+        (return_statement (literal (string_literal)))))))
+
+==================
+Async function
+==================
+
+async func:fetch = (url: str) -> future<str> {
+  var response: str = await http_get(url);
+  return response;
+}
+
+---
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (primitive_type)))
+    return_type: (future_type (primitive_type))
+    body: (block
+      (variable_declaration
+        name: (identifier)
+        type: (primitive_type)
+        value: (await_expression
+          (call_expression
+            function: (identifier)
+            arguments: (argument_list (identifier)))))
+      (return_statement (identifier)))))
+
+==================
+Pin and safe ref operators
+==================
+
+var pinned: int32 = #value;
+var safe: int32& = $ref;
+
+---
+
+(source_file
+  (variable_declaration
+    name: (identifier)
+    type: (primitive_type)
+    value: (pin_expression (identifier)))
+  (variable_declaration
+    name: (identifier)
+    type: (reference_type type: (primitive_type))
+    value: (safe_ref_expression (identifier))))

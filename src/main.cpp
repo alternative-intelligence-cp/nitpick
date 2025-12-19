@@ -27,6 +27,8 @@
 #include "frontend/parser/parser.h"
 #include "frontend/sema/type_checker.h"
 #include "frontend/sema/borrow_checker.h"
+#include "frontend/diagnostics.h"
+#include "frontend/warnings.h"
 #include "backend/ir/ir_generator.h"
 
 // LLVM
@@ -59,6 +61,7 @@ struct CompilerOptions {
     bool dump_tokens = false;
     bool verbose = false;
     int opt_level = 0;  // -O0, -O1, -O2, -O3
+    std::vector<std::string> warning_flags;  // -Wall, -Werror, -W<warning>, etc.
 };
 
 /**
@@ -85,6 +88,10 @@ void print_help() {
     std::cout << "  --tokens          Dump tokens and exit\n";
     std::cout << "  -O<level>         Optimization level (0-3)\n";
     std::cout << "  -v, --verbose     Verbose output\n";
+    std::cout << "  -Wall             Enable all warnings\n";
+    std::cout << "  -Werror           Treat warnings as errors\n";
+    std::cout << "  -W<warning>       Enable specific warning\n";
+    std::cout << "  -Wno-<warning>    Disable specific warning\n";
     std::cout << "  --version         Show version\n";
     std::cout << "  --help            Show this help\n\n";
     std::cout << "Examples:\n";
@@ -138,6 +145,9 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
                 std::cerr << "Error: Invalid optimization level: " << arg << "\n";
                 return false;
             }
+        } else if (arg.substr(0, 2) == "-W") {
+            // Warning flags: -Wall, -Werror, -Wunused-variable, -Wno-dead-code, etc.
+            opts.warning_flags.push_back(arg);
         } else if (arg[0] == '-') {
             std::cerr << "Error: Unknown option: " << arg << "\n";
             return false;
@@ -171,10 +181,11 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
 /**
  * Read source file
  */
-bool read_source_file(const std::string& filename, std::string& source) {
+bool read_source_file(const std::string& filename, std::string& source, aria::DiagnosticEngine& diags) {
     std::ifstream file(filename);
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open file: " << filename << "\n";
+        diags.fatal(aria::SourceLocation(filename, 0, 0), "could not open source file");
+        diags.addNote("check that the file exists and you have read permissions");
         return false;
     }
 
@@ -190,7 +201,8 @@ llvm::Module* compile_to_module(
     const std::string& source,
     const std::string& filename,
     const CompilerOptions& opts,
-    aria::IRGenerator& ir_gen
+    aria::IRGenerator& ir_gen,
+    aria::DiagnosticEngine& diags
 ) {
     // Phase 1: Lexical Analysis
     if (opts.verbose) {
@@ -201,9 +213,35 @@ llvm::Module* compile_to_module(
     auto tokens = lexer.tokenize();
     
     if (!lexer.getErrors().empty()) {
-        std::cerr << "Lexer errors:\n";
+        // Convert lexer errors to diagnostic engine format
         for (const auto& err : lexer.getErrors()) {
-            std::cerr << "  " << err << "\n";
+            // Parse line/column from error message format: "[Line X, Col Y] Error: message"
+            int line = 0, column = 0;
+            size_t line_pos = err.find("Line ");
+            size_t col_pos = err.find("Col ");
+            
+            if (line_pos != std::string::npos && col_pos != std::string::npos) {
+                try {
+                    size_t line_start = line_pos + 5;  // Skip "Line "
+                    size_t line_end = err.find(',', line_start);
+                    line = std::stoi(err.substr(line_start, line_end - line_start));
+                    
+                    size_t col_start = col_pos + 4;  // Skip "Col "
+                    size_t col_end = err.find(']', col_start);
+                    column = std::stoi(err.substr(col_start, col_end - col_start));
+                } catch (...) {
+                    // If parsing fails, use 0,0
+                }
+            }
+            
+            // Extract just the error message (skip location prefix)
+            std::string message = err;
+            size_t error_pos = err.find("Error: ");
+            if (error_pos != std::string::npos) {
+                message = err.substr(error_pos + 7);  // Skip "Error: "
+            }
+            
+            diags.error(aria::SourceLocation(filename, line, column), message);
         }
         return nullptr;
     }
@@ -225,9 +263,35 @@ llvm::Module* compile_to_module(
     auto module_node = parser.parse();
     
     if (!module_node || parser.hasErrors()) {
-        std::cerr << "Error: Parsing failed\n";
+        // Convert parser errors to diagnostic engine format
         for (const auto& err : parser.getErrors()) {
-            std::cerr << "  " << err << "\n";
+            // Parse line/column from error message format: "Parse error at line X, column Y:"
+            int line = 0, column = 0;
+            size_t line_pos = err.find("line ");
+            size_t col_pos = err.find("column ");
+            
+            if (line_pos != std::string::npos && col_pos != std::string::npos) {
+                try {
+                    size_t line_start = line_pos + 5;  // Skip "line "
+                    size_t line_end = err.find(',', line_start);
+                    line = std::stoi(err.substr(line_start, line_end - line_start));
+                    
+                    size_t col_start = col_pos + 7;  // Skip "column "
+                    size_t col_end = err.find(':', col_start);
+                    column = std::stoi(err.substr(col_start, col_end - col_start));
+                } catch (...) {
+                    // If parsing fails, use 0,0
+                }
+            }
+            
+            // Extract just the error message (skip the location line)
+            std::string message = err;
+            size_t newline_pos = err.find('\n');
+            if (newline_pos != std::string::npos) {
+                message = err.substr(newline_pos + 1);
+            }
+            
+            diags.error(aria::SourceLocation(filename, line, column), message);
         }
         return nullptr;
     }
@@ -259,7 +323,7 @@ llvm::Module* compile_to_module(
     auto value = ir_gen.codegen(module_node.get());
     
     if (!value) {
-        std::cerr << "Error: IR generation failed\n";
+        diags.error(aria::SourceLocation(filename, 0, 0), "IR generation failed");
         return nullptr;
     }
 
@@ -387,15 +451,23 @@ int main(int argc, char** argv) {
         std::cout << "Output: " << opts.output_file << "\n";
     }
 
+    // Create diagnostic engine
+    aria::DiagnosticEngine diags;
+
     // For --dump-tokens or --dump-ast, only process first file
     if (opts.dump_tokens || opts.dump_ast) {
         std::string source;
-        if (!read_source_file(opts.input_files[0], source)) {
+        if (!read_source_file(opts.input_files[0], source, diags)) {
+            diags.printAll();
             return 1;
         }
         aria::IRGenerator ir_gen(opts.input_files[0]);
-        llvm::Module* module = compile_to_module(source, opts.input_files[0], opts, ir_gen);
+        llvm::Module* module = compile_to_module(source, opts.input_files[0], opts, ir_gen, diags);
         // compile_to_module returns nullptr for early exits (dump modes)
+        if (diags.hasErrors()) {
+            diags.printAll();
+            return 1;
+        }
         return module ? 1 : 0;
     }
 
@@ -412,7 +484,8 @@ int main(int argc, char** argv) {
         
         // Read source file
         std::string source;
-        if (!read_source_file(input_file, source)) {
+        if (!read_source_file(input_file, source, diags)) {
+            diags.printAll();
             return 1;
         }
         
@@ -420,8 +493,9 @@ int main(int argc, char** argv) {
         ir_generators.push_back(std::make_unique<aria::IRGenerator>(input_file));
         
         // Compile to LLVM module
-        llvm::Module* module = compile_to_module(source, input_file, opts, *ir_generators.back());
+        llvm::Module* module = compile_to_module(source, input_file, opts, *ir_generators.back(), diags);
         if (!module) {
+            diags.printAll();
             return 1;
         }
         
