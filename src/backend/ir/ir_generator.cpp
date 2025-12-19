@@ -600,6 +600,17 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             llvm::Type* varType = mapTypeFromName(varDecl->typeName);
             llvm::AllocaInst* alloca = builder.CreateAlloca(varType, nullptr, varDecl->varName);
             
+            // Track the Aria type of this alloca (needed for member access)
+            if (type_system) {
+                Type* aria_type = type_system->getStructType(varDecl->typeName);
+                if (!aria_type) {
+                    aria_type = type_system->getPrimitiveType(varDecl->typeName);
+                }
+                if (aria_type) {
+                    value_types[alloca] = aria_type;
+                }
+            }
+            
             // Generate initializer if present
             if (varDecl->initializer) {
                 llvm::Value* initVal = codegenExpression(varDecl->initializer.get());
@@ -1328,32 +1339,71 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Member access - p.x, p.y
             MemberAccessExpr* member = static_cast<MemberAccessExpr*>(expr);
             
-            // Generate code for the object expression
-            llvm::Value* object_value = codegenExpression(member->object.get());
-            if (!object_value) {
+            // Get the pointer to the object (NOT the loaded value)
+            // Special handling for identifiers to get the alloca directly
+            llvm::Value* object_ptr = nullptr;
+            
+            if (member->object->type == ASTNode::NodeType::IDENTIFIER) {
+                IdentifierExpr* ident = static_cast<IdentifierExpr*>(member->object.get());
+                auto it = named_values.find(ident->name);
+                if (it != named_values.end()) {
+                    object_ptr = it->second;  // Get the alloca directly, don't load
+                }
+            } else {
+                // For complex expressions, generate code normally
+                object_ptr = codegenExpression(member->object.get());
+            }
+            
+            if (!object_ptr) {
                 return nullptr;
             }
             
-            // The object should be a pointer to a struct (from alloca or GEP)
-            // We need to access the named member
-            
-            // Get the struct type
-            llvm::Type* object_type = object_value->getType();
-            
-            // If it's a loaded struct value, we can't directly access members
-            // We need the pointer. For now, handle the case where object_value is a pointer
-            if (!object_type->isPointerTy()) {
-                // Error: can't access members of non-pointer
+            // Look up the Aria type of this value
+            auto type_it = value_types.find(object_ptr);
+            if (type_it == value_types.end()) {
+                // No type information available
                 return nullptr;
             }
             
-            // Get the pointed-to type
-            // Note: LLVM uses opaque pointers, so we need type info from somewhere else
-            // For now, we'll use a simplified approach
+            Type* aria_type = type_it->second;
+            if (aria_type->getKind() != TypeKind::STRUCT) {
+                // Not a struct type
+                return nullptr;
+            }
             
-            // TODO: Implement proper member access with field lookup
-            // For now, return nullptr (will be implemented next)
-            return nullptr;
+            StructType* struct_type = static_cast<StructType*>(aria_type);
+            
+            // Find the field index
+            int field_index = -1;
+            Type* field_type = nullptr;
+            const auto& fields = struct_type->getFields();
+            for (size_t i = 0; i < fields.size(); ++i) {
+                if (fields[i].name == member->member) {
+                    field_index = static_cast<int>(i);
+                    field_type = fields[i].type;
+                    break;
+                }
+            }
+            
+            if (field_index < 0) {
+                // Field not found
+                return nullptr;
+            }
+            
+            // Get the LLVM struct type
+            llvm::Type* llvm_struct_type = mapType(struct_type);
+            
+            // Create GEP to access the field
+            llvm::Value* field_ptr = builder.CreateStructGEP(
+                llvm_struct_type, 
+                object_ptr, 
+                field_index, 
+                member->member + ".ptr"
+            );
+            
+            // Load the field value
+            llvm::Type* llvm_field_type = mapType(field_type);
+            return builder.CreateLoad(llvm_field_type, field_ptr, member->member);
         }
         
         default:

@@ -45,6 +45,9 @@ private:
     // Symbol table for LLVM values (maps variable names to LLVM Values)
     std::map<std::string, llvm::Value*> named_values;
     
+    // Track Aria types for LLVM values (needed for member access with opaque pointers)
+    std::map<llvm::Value*, Type*> value_types;
+    
     // Type mapping cache (Aria types -> LLVM types)
     std::map<std::string, llvm::Type*> type_map;
     

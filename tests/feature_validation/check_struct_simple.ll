@@ -14,9 +14,13 @@ entry:
   %struct.val = load %Point, ptr %struct.tmp, align 4
   store %Point %struct.val, ptr %p, align 4
   %x_val = alloca i32, align 4
-  %p1 = load i32, ptr %p, align 4
+  %x.ptr1 = getelementptr inbounds nuw %Point, ptr %p, i32 0, i32 0
+  %x = load i32, ptr %x.ptr1, align 4
+  store i32 %x, ptr %x_val, align 4
   %y_val = alloca i32, align 4
-  %p2 = load i32, ptr %p, align 4
+  %y.ptr2 = getelementptr inbounds nuw %Point, ptr %p, i32 0, i32 1
+  %y = load i32, ptr %y.ptr2, align 4
+  store i32 %y, ptr %y_val, align 4
   %x_val3 = load i32, ptr %x_val, align 4
   %netmp = icmp ne i32 %x_val3, 42
   %ifcond = icmp ne i1 %netmp, false
