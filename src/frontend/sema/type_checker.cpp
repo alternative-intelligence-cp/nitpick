@@ -545,6 +545,9 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getErrorType();
         }
         
+        // Store the mangled name in the CallExpr for IR generation
+        expr->specializedMangledName = spec->mangledName;
+        
         // Use the specialized function's return type
         // TODO: Parse return type string to Type*
         // For now, return UnknownType until we implement type parsing

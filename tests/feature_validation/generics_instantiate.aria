@@ -1,0 +1,16 @@
+// Test: Generic function instantiation and type inference
+
+// Generic identity function  
+func<T>:identity = *T(*T:value) {
+    pass(value);
+};
+
+// Main: Call identity with int32 (should trigger monomorphization)
+func:main = int32() {
+    int32:x = 42;
+    int32:y = identity(x);  // Type inference: T = int32
+    if (y == 42) {
+        pass(0);
+    }
+    pass(1);
+};

@@ -341,14 +341,8 @@ llvm::Module* compile_to_module(
     // Pass TypeSystem to IR generator for struct type lookups
     ir_gen.setTypeSystem(&type_system);
     
-    auto value = ir_gen.codegen(module_node.get());
-    
-    if (!value) {
-        diags.error(aria::SourceLocation(filename, 0, 0), "IR generation failed");
-        return nullptr;
-    }
-    
-    // Generate IR for specialized generic functions
+    // Generate IR for specialized generic functions FIRST (before main codegen)
+    // This ensures specialized functions exist when regular code tries to call them
     const auto& specializations = monomorphizer.getSpecializations();
     if (!specializations.empty()) {
         if (opts.verbose) {
@@ -359,6 +353,14 @@ llvm::Module* compile_to_module(
         if (opts.verbose) {
             std::cout << "  Generated " << generated << " specialization(s)\n";
         }
+    }
+    
+    // Now generate the main module code (which can call specialized functions)
+    auto value = ir_gen.codegen(module_node.get());
+    
+    if (!value) {
+        diags.error(aria::SourceLocation(filename, 0, 0), "IR generation failed");
+        return nullptr;
     }
 
     // Return raw pointer - caller must keep IRGenerator alive

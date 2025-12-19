@@ -73,11 +73,13 @@ public:
 /**
  * Struct declaration node
  * Represents: struct Name { type:field1; type:field2; };
+ * Or: struct<T, U> Name { *T:field1; *U:field2; };
  */
 class StructDeclStmt : public ASTNode {
 public:
     std::string structName;
     std::vector<ASTNodePtr> fields;  // VarDeclStmt instances (field declarations)
+    std::vector<GenericParamInfo> genericParams;  // For generics: struct<T, U>
     
     StructDeclStmt(const std::string& name, const std::vector<ASTNodePtr>& fieldList,
                    int line = 0, int column = 0)

@@ -1,0 +1,18 @@
+// Test: Generic function with actual return (not pass)
+
+// Generic identity that returns the value
+func<T>:identity = *T(*T:value) {
+    pass(value);
+};
+
+// Main: Call identity and use the result
+func:main = int32() {
+    int32:x = 42;
+    int32:y = identity(x);  // Should call the specialized function
+    
+    // Use y to force it to be computed
+    if (y == 42) {
+        pass(0);
+    }
+    pass(1);
+};
