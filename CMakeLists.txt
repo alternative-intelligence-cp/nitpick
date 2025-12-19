@@ -207,6 +207,7 @@ if(LLDB_FOUND)
     set(DEBUGGER_SOURCES
         src/tools/debugger/aria_formatters.cpp
         src/tools/debugger/dap_server.cpp
+        src/tools/debugger/async_debugger.cpp
     )
 endif()
 

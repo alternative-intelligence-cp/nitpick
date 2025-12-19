@@ -443,6 +443,9 @@ void DAPServer::handleLaunch(const DAPMessage& request, DAPMessage& response) {
         return;
     }
     
+    // Initialize async debugger (Phase 7.4.5)
+    m_async_debugger = std::make_unique<AsyncDebugger>(m_target, m_process);
+    
     // Start event thread
     m_event_thread = std::make_unique<std::thread>(&DAPServer::eventThreadFunc, this);
     
@@ -489,6 +492,9 @@ void DAPServer::handleAttach(const DAPMessage& request, DAPMessage& response) {
         response.message = "Failed to attach: " + std::string(error.GetCString());
         return;
     }
+    
+    // Initialize async debugger (Phase 7.4.5)
+    m_async_debugger = std::make_unique<AsyncDebugger>(m_target, m_process);
     
     // Start event thread
     m_event_thread = std::make_unique<std::thread>(&DAPServer::eventThreadFunc, this);
@@ -754,6 +760,12 @@ void DAPServer::handleStackTrace(const DAPMessage& request, DAPMessage& response
     
     nlohmann::json stack_frames = nlohmann::json::array();
     
+    // Get async call stack if async debugger is available (Phase 7.4.5)
+    std::vector<AsyncFrameInfo> async_frames;
+    if (m_async_debugger) {
+        async_frames = m_async_debugger->getAsyncCallStack(thread);
+    }
+    
     uint32_t num_frames = thread.GetNumFrames();
     for (uint32_t i = 0; i < num_frames; ++i) {
         lldb::SBFrame frame = thread.GetFrameAtIndex(i);
@@ -779,6 +791,36 @@ void DAPServer::handleStackTrace(const DAPMessage& request, DAPMessage& response
             } else {
                 frame_json["line"] = 0;
                 frame_json["column"] = 0;
+            }
+            
+            // Check if this is an async frame (Phase 7.4.5)
+            if (m_async_debugger && m_async_debugger->isAsyncFrame(frame)) {
+                // Mark as async frame
+                frame_json["presentationHint"] = "label";
+                
+                // Find corresponding async frame info
+                for (const auto& async_frame : async_frames) {
+                    if (async_frame.function_name == (frame.GetFunctionName() ? frame.GetFunctionName() : "")) {
+                        // Add async-specific metadata
+                        std::string status = async_frame.is_suspended ? " [suspended]" : " [running]";
+                        frame_json["name"] = frame_json["name"].get<std::string>() + status;
+                        
+                        // Add Future state if available
+                        if (async_frame.future_state == "READY") {
+                            frame_json["name"] = frame_json["name"].get<std::string>() + " ✓";
+                        } else if (async_frame.future_state == "PENDING") {
+                            frame_json["name"] = frame_json["name"].get<std::string>() + " ⏳";
+                        } else if (async_frame.future_state == "ERROR") {
+                            frame_json["name"] = frame_json["name"].get<std::string>() + " ✗";
+                        }
+                        
+                        // Add awaiter info if suspended
+                        if (async_frame.is_suspended && !async_frame.suspend_reason.empty()) {
+                            frame_json["name"] = frame_json["name"].get<std::string>() + " - " + async_frame.suspend_reason;
+                        }
+                        break;
+                    }
+                }
             }
             
             stack_frames.push_back(frame_json);
