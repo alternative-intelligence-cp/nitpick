@@ -22,7 +22,7 @@
 - ✅ **Live documentation** - https://aria.docs.ai-liberation-platform.org/
 
 ### Language Features ✅
-- ✅ **Six-Stream I/O Model** - IN, OUT, ERR, LOG, META, CTRL (TESLA-inspired)
+- ✅ **Six-Stream I/O Model** - stdin, stdout, stderr, stddbg, stddati, stddato (TESLA-inspired)
 - ✅ **Type-Bounded Behaviors (TBB)** - Elegant type constraints
 - ✅ **Async/Await** - Cooperative multitasking with futures
 - ✅ **Memory Safety** - Borrow checking and lifetime analysis
@@ -34,16 +34,16 @@
 
 ## Overview
 
-Aria is a modern systems programming language that reimagines how we think about I/O and type systems. Inspired by Nikola Tesla's vision of interconnected systems, Aria introduces **six-stream I/O** - a revolutionary approach where programs communicate through IN, OUT, ERR, LOG, META, and CTRL streams instead of just stdin/stdout/stderr.
+Aria is a modern systems programming language that reimagines how we think about I/O and type systems. Inspired by Nikola Tesla's vision of interconnected systems, Aria introduces **six-stream I/O** - a revolutionary approach where programs communicate through stdin, stdout, stderr, stddbg, stddati, and stddato streams instead of just the traditional three.
 
 ### Key Innovations
 
 **🌊 Six-Stream I/O Model**
 Traditional programs use 3 streams (stdin, stdout, stderr). Aria programs use 6:
-- **IN/OUT/ERR** - Standard I/O (compatible with existing systems)
-- **LOG** - Structured logging separate from output
-- **META** - Machine-readable metadata for AI/tooling
-- **CTRL** - Control plane for monitoring and orchestration
+- **stdin/stdout/stderr** - Standard I/O (compatible with existing systems)
+- **stddbg** - Debug output separate from stderr
+- **stddati** - Structured data input for machine-readable communication
+- **stddato** - Structured data output for machine-readable communication
 
 **🎯 Type-Bounded Behaviors (TBB)**
 Elegant constraints that describe what types can do:
@@ -73,18 +73,17 @@ func:main = int8() {
 ### Six-Stream I/O in Action
 ```aria
 func:main = int8() {
-    // Regular output
-    print("User sees this");
+    // Standard output
+    stdout.write("User sees this\n");
     
-    // Structured logging (separate stream)
-    log("Processing started", "timestamp", "2025-12-19");
+    // Debug output (separate from stderr)
+    stddbg.write("Debug: Processing started\n");
     
-    // Machine-readable metadata
-    meta("version", "1.0.0");
-    meta("status", "running");
+    // Structured data output (machine-readable)
+    stddato.write_json({"version": "1.0.0", "status": "running"});
     
-    // Control plane
-    ctrl("health", "ok");
+    // Read structured data input
+    let config = stddati.read_json();
     
     pass(0);
 };
