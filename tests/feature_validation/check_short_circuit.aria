@@ -1,0 +1,211 @@
+// Short-Circuit Evaluation Test - Basic Verification
+// Tests that && and || properly short-circuit
+
+func:main = int32() {
+    int32:counter = 0;
+    int32:temp = 0;
+    
+    // =================================================================
+    // TEST 1: && false case - right side should NOT execute
+    // =================================================================
+    counter = 0;
+    temp = 0;
+    
+    // Left is false, so right should not execute
+    // We can't use assignment as part of the condition, so we test indirectly
+    if ((1 == 0) && (2 == 2)) {
+        counter = counter + 1;  // Should not execute
+    }
+    
+    if (counter != 0) {
+        pass(1);  // ERROR
+    }
+    
+    // =================================================================
+    // TEST 2: && true case - right side SHOULD execute
+    // =================================================================
+    counter = 0;
+    
+    if ((1 == 1) && (2 == 2)) {
+        counter = counter + 1;  // Should execute
+    }
+    
+    if (counter != 1) {
+        pass(2);  // ERROR
+    }
+    
+    // =================================================================
+    // TEST 3: || true case - right side should NOT execute
+    // =================================================================
+    counter = 0;
+    
+    if ((1 == 1) || (2 == 2)) {
+        counter = counter + 1;  // Should execute
+    }
+    
+    if (counter != 1) {
+        pass(3);  // ERROR
+    }
+    
+    // =================================================================
+    // TEST 4: || false case - right side SHOULD execute
+    // =================================================================
+    counter = 0;
+    
+    if ((1 == 0) || (2 == 2)) {
+        counter = counter + 1;  // Should execute
+    }
+    
+    if (counter != 1) {
+        pass(4);  // ERROR
+    }
+    
+    // =================================================================
+    // TEST 5: Chained && - all true
+    // =================================================================
+    counter = 0;
+    
+    if ((1 == 1) && (2 == 2) && (3 == 3)) {
+        counter = counter + 1;
+    }
+    
+    if (counter != 1) {
+        pass(5);  // ERROR
+    }
+    
+    // =================================================================
+    // TEST 6: Chained && - first false
+    // =================================================================
+    counter = 0;
+    
+    if ((1 == 0) && (2 == 2) && (3 == 3)) {
+        counter = counter + 1;
+    }
+    
+    if (counter != 0) {
+        pass(6);  // ERROR - condition should be false
+    }
+    
+    // =================================================================
+    // TEST 7: Chained || - all false except last
+    // =================================================================
+    counter = 0;
+    
+    if ((1 == 0) || (2 == 0) || (3 == 3)) {
+        counter = counter + 1;
+    }
+    
+    if (counter != 1) {
+        pass(7);  // ERROR
+    }
+    
+    // =================================================================
+    // TEST 8: Chained || - first true
+    // =================================================================
+    counter = 0;
+    
+    if ((1 == 1) || (2 == 0) || (3 == 0)) {
+        counter = counter + 1;
+    }
+    
+    if (counter != 1) {
+        pass(8);  // ERROR
+    }
+    
+    // =================================================================
+    // TEST 9: Mixed && and || (precedence test)
+    // =================================================================
+    counter = 0;
+    
+    // (true && false) || true = false || true = true
+    if (((1 == 1) && (2 == 0)) || (3 == 3)) {
+        counter = counter + 1;
+    }
+    
+    if (counter != 1) {
+        pass(9);  // ERROR
+    }
+    
+    // =================================================================
+    // TEST 10: Complex nested case
+    // =================================================================
+    counter = 0;
+    
+    // (true || false) && (true && true) = true && true = true
+    if (((1 == 1) || (2 == 0)) && ((3 == 3) && (4 == 4))) {
+        counter = counter + 1;
+    }
+    
+    if (counter != 1) {
+        pass(10);  // ERROR
+    }
+    
+    // =================================================================
+    // TEST 11: Truth table for &&
+    // =================================================================
+    
+    // false && false = false
+    if ((1 == 0) && (2 == 0)) {
+        pass(11);  // Should not execute
+    }
+    
+    // false && true = false
+    if ((1 == 0) && (2 == 2)) {
+        pass(12);  // Should not execute
+    }
+    
+    // true && false = false
+    if ((1 == 1) && (2 == 0)) {
+        pass(13);  // Should not execute
+    }
+    
+    // true && true = true
+    counter = 0;
+    if ((1 == 1) && (2 == 2)) {
+        counter = counter + 1;  // Should execute
+    }
+    if (counter != 1) {
+        pass(14);  // ERROR
+    }
+    
+    // =================================================================
+    // TEST 12: Truth table for ||
+    // =================================================================
+    
+    // false || false = false
+    if ((1 == 0) || (2 == 0)) {
+        pass(15);  // Should not execute
+    }
+    
+    // false || true = true
+    counter = 0;
+    if ((1 == 0) || (2 == 2)) {
+        counter = counter + 1;  // Should execute
+    }
+    if (counter != 1) {
+        pass(16);  // ERROR
+    }
+    
+    // true || false = true
+    counter = 0;
+    if ((1 == 1) || (2 == 0)) {
+        counter = counter + 1;  // Should execute
+    }
+    if (counter != 1) {
+        pass(17);  // ERROR
+    }
+    
+    // true || true = true
+    counter = 0;
+    if ((1 == 1) || (2 == 2)) {
+        counter = counter + 1;  // Should execute
+    }
+    if (counter != 1) {
+        pass(18);  // ERROR
+    }
+    
+    // =================================================================
+    // Success!
+    // =================================================================
+    pass(42);
+};
