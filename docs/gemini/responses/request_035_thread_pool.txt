@@ -1,0 +1,244 @@
+﻿Comprehensive Architectural Specification for Aria Language Server Thread Pool Integration (Phase 7.3.6)
+1. Executive Introduction and Strategic Context
+The development of the Aria Language Server (AriaLS) represents a pivotal infrastructure project within the broader Aria programming language ecosystem. As delineated in the foundational language specifications and the comprehensive implementation roadmap 1, Aria is designed as a high-performance systems language that introduces novel paradigms such as Twisted Balanced Binary (TBB) arithmetic, a hybrid memory model distinguishing between garbage-collected (gc) and manual (wild) allocation, and a rigid module system. While the compiler infrastructure—comprising the Lexer, Parser, and Semantic Analysis phases—has reached a level of maturity that permits code generation and execution, the developer experience (DX) remains nascent. In the contemporary software engineering landscape, the viability of a new programming language is inextricably linked to the quality of its tooling. Developers expect immediate feedback loops, intelligent code completion, and seamless navigation—capabilities that are traditionally decoupled from the compiler's batch-processing architecture.
+The Language Server Protocol (LSP), currently in version 3.17 1, offers a standardized architectural solution to this challenge. By decoupling the language-specific intelligence (the Server) from the editor interface (the Client), LSP allows the Aria project to implement complex analysis logic once and deploy it across a multitude of development environments, including Visual Studio Code (VS Code), Neovim, and Sublime Text. However, the integration of the Aria compiler's frontend into a real-time, event-driven server environment presents significant architectural hurdles. Specifically, the current implementation of the Aria compiler operates as a single-pass, blocking system. The Lexer requires a complete string of source code, and the Parser consumes a complete vector of tokens to generate an Abstract Syntax Tree (AST).1
+This non-incremental nature creates a "concurrency conundrum." In a naive, single-threaded implementation, processing a textDocument/didChange notification for a large source file effectively freezes the server. During the parsing window—which could span hundreds of milliseconds for large files—the server cannot process incoming I/O, leading to input buffer saturation and a degraded user experience characterized by "jank" and unresponsiveness. Furthermore, the single-threaded model inherently fails to support the LSP's request cancellation specification ($/cancelRequest), as a blocking main thread cannot process the cancellation signal for the task it is currently executing.1
+This report provides an exhaustive, expert-level technical blueprint for the design and implementation of a Thread Pool Architecture for AriaLS, specifically addressing the requirements of Phase 7.3.6. It synthesizes the internal architectural constraints of the Aria compiler with the asynchronous, request-response requirements of the LSP specification. The analysis proceeds from low-level transport mechanisms through concurrency models to high-level semantic feature implementation, ensuring that unique Aria features like TBB error propagation and wild pointer safety are accurately maintained in a multi-threaded environment.
+2. Architectural Analysis of the Current System
+Before defining the target architecture, it is imperative to rigorously analyze the existing system's constraints and the specific bottlenecks identified in the current codebase.
+2.1 The Single-Threaded Bottleneck
+The current aria::lsp::Server implementation relies on a single main thread to handle the entire lifecycle of a request.1 The run() method executes a continuous loop that reads from standard input (stdin), parses the JSON-RPC message, and immediately dispatches it to a handler.
+In this model, the dispatch_message call is blocking. The handling of a textDocument/didChange notification triggers the publish_diagnostics routine. This routine instantiates a Lexer, tokenizes the entire document, instantiates a Parser, and constructs the Abstract Syntax Tree (AST).1 The complexity of this operation is $O(N)$, where $N$ is the size of the document.1 For a source file of significant size (e.g., 10,000 lines), this process creates a "stop-the-world" event. During this interval, the main thread is unable to read subsequent messages from stdin.
+This creates two critical problems:
+1. Input Buffer Saturation: As the user continues to type, textDocument/didChange messages accumulate in the OS pipe buffer. When the server finally finishes processing the first change, it must process all queued changes sequentially. This leads to a "spiral of death" where the server falls further and further behind the editor state, processing stale versions of the document that have already been superseded by subsequent edits.
+2. Unresponsiveness to Cancellation: The LSP specification defines $/cancelRequest to allow clients to signal that a result is no longer needed (e.g., the user moved the cursor away before the "hover" info appeared).1 In a single-threaded blocking model, the server cannot read the cancellation notification until it has already finished the task it was supposed to cancel. This wastes CPU cycles and battery life, and delays the processing of the new, relevant request.
+2.2 Compiler Constraints
+The Aria compiler's internal architecture imposes strict constraints on the solution space. The Lexer and Parser classes are not thread-safe; they maintain internal state pointers and mutable buffers.1 Furthermore, they are designed for batch processing. There is no mechanism to "pause" a parse, handle a high-priority request, and resume. Therefore, the unit of work for the thread pool must be the processing of a complete compilation phase for a single document version.
+However, the results of compilation—the AST, the Symbol Table, and the Diagnostic set—are read-mostly data structures. Once generated, they can be queried by multiple threads simultaneously (e.g., one thread computing "Hover" while another computes "Code Lens"), provided they are protected by appropriate synchronization primitives.
+3. Proposed Thread Pool Architecture
+To resolve the identified bottlenecks, AriaLS must adopt a Thread Pool Architecture. This design decouples the I/O operations from the computational workload of the compiler, ensuring that the server remains responsive to protocol messages regardless of the compiler's current load.
+3.1 The Main Thread (I/O Pump)
+The architecture redefines the Main Thread's role. It transitions from a "worker" to a "dispatcher." Its responsibilities are strictly limited to operations that complete in effectively constant time ($O(1)$) or very low linear time ($O(L)$ where $L$ is the message length).
+Responsibilities:
+1. Message Decoding: Reading the Content-Length header and the JSON body from stdin.1 This involves a state machine to handle the HTTP-like header framing of LSP.
+2. JSON Unmarshalling: Parsing the string payload into a nlohmann::json object (or equivalent structure). The choice of nlohmann::json is validated by its seamless integration with C++ Standard Library containers, matching the Aria compiler's internal structures.1
+3. Task Routing: Determining if the message is a Notification or a Request.
+4. Task Dispatch: Wrapping the request payload into a Task object and pushing it onto the Global Work Queue.
+5. Response Writing: Retrieving completed Response objects from an output queue (or allowing workers to write directly via a thread-safe method) and serializing them to stdout.
+Critical Implementation Detail: The Main Thread must never perform semantic analysis or AST traversal. Even a "simple" lookup like textDocument/hover involves traversing the AST, which can cause cache misses and delays. All such logic must be offloaded to the pool.
+3.2 The Global Work Queue
+The connection between the Main Thread and the Worker Pool is the WorkQueue. This is not a standard FIFO queue; it requires specialized logic to handle the semantics of LSP and the ordering requirements of document edits.
+Features:
+* Thread Safety: Must support push from the Main Thread and pop (blocking wait) from multiple Worker Threads. A std::mutex and std::condition_variable implementation is standard and robust for this purpose.3
+* Prioritization: Not all requests are equal. textDocument/didChange and textDocument/didOpen are critical because they update the state of the world. Queries like textDocument/completion are high priority because user latency sensitivity is high (developers expect sub-50ms response). Background indexing or textDocument/documentSymbol (Outline) might be lower priority.
+* Debouncing/Coalescing: This is a crucial optimization for the "Full Sync" model. If the queue contains multiple textDocument/didChange tasks for the same document, only the most recent one is relevant. The older tasks represent stale states of the file that will be immediately overwritten. The Work Queue logic should efficiently inspect incoming didChange tasks and remove or flag as "obsolete" any pending didChange tasks for the same URI.6
+3.3 The Worker Pool
+The pool consists of a fixed number of std::thread workers. The optimal count is typically std::thread::hardware_concurrency().8 However, given that AriaLS is likely running alongside an IDE and potentially the application being developed (e.g., running aria run), capping this (e.g., to max(2, hardware_concurrency() - 2)) prevents the language server from starving the host system.
+Worker Loop Logic:
+The worker thread executes a continuous loop:
+1. Dequeue: It waits on the Work Queue's condition variable until a task is available.
+2. Cancellation Check: Before starting execution, it checks if the task has already been cancelled (e.g., by a subsequent didChange).
+3. Execution: It invokes the appropriate handler (e.g., handle_hover or publish_diagnostics). This involves interacting with the Global State (VFS and AST).
+4. Response Generation: It constructs the JSON response or notification.
+5. Output: It writes the response to the transport layer.
+3.4 Synchronization: The Global State
+Since the Parser cannot be shared, every time a worker processes a didChange, it creates a new AST. This new AST must then be made available to other requests. This requires a Global State object protected by a Read-Write Lock (std::shared_mutex).10
+State Components:
+* Virtual File System (VFS): Stores the raw source strings. This is critical as the compiler requires full strings.1
+* Compilation Units: A map from URI to the most recent CompilationUnit (which holds the AST, Token Vector, and Symbol Table).
+Locking Strategy:
+* Writer (Exclusive): A worker processing didChange parses the code into a local, private AST. Once parsing is complete and successful, it acquires a Write Lock (std::unique_lock) on the Global State and swaps the new AST into the URI map. This minimizes the time the lock is held exclusively, reducing contention.
+* Reader (Shared): Workers processing hover, definition, or references acquire a Read Lock (std::shared_lock). This allows multiple features to query the AST simultaneously. Crucially, the read lock prevents a Writer from swapping the AST while a query is traversing it, preventing dangling pointer dereferences.
+4. Cancellation Architecture and Implementation
+LSP supports request cancellation, which is vital for responsiveness. If a user types a character, triggering a didChange, any pending completion or hover requests based on the previous character are now invalid and should be cancelled to save CPU cycles. The AriaLS must implement a "Cooperative Cancellation" pattern.
+4.1 The Cancellation Token Pattern
+We define a CancellationToken mechanism similar to those found in C# or the VS Code API.12
+1. Cancellation Token Source (CTS): When a request arrives, the Main Thread creates a shared state (the CTS) containing an std::atomic<bool> cancelled = false.
+2. Token Distribution: A lightweight CancellationToken holding a reference to this boolean is passed into the Task and subsequently into the compiler components.
+3. Mapping: The Main Thread maintains a map: std::map<RequestId, std::shared_ptr<CTS>>.
+4. Triggering: When $/cancelRequest arrives with an ID, the Main Thread looks up the CTS in the map and atomically sets cancelled = true.
+4.2 Deep Integration with Aria Compiler
+For cancellation to be effective, it must interrupt the heaviest operations. In AriaLS, this is the parsing and type-checking phases.
+The Parser class needs to be modified to accept a CancellationToken. Inside its main loops (e.g., parseBlock, parseStatement), it must periodically check the token state.
+
+
+C++
+
+
+
+
+// Pseudocode inside Aria Parser
+void Parser::parseBlock() {
+   if (cancellation_token.is_cancelled()) {
+       throw OperationCancelledException();
+   }
+   //... normal parsing logic...
+}
+
+Research indicates that checking this token too frequently (e.g., every token) adds overhead, while checking too infrequently reduces responsiveness. A check every ~100 statements or at the entry of every major parsing function (like parseFunctionDefinition) is a reasonable heuristic.1 When the exception is thrown, it unwinds the worker thread's stack, the Task is aborted, and the thread becomes free to process the next item (likely the didChange that caused the cancellation). This "Deep Integration" is mandatory; external thread termination (like pthread_cancel) is unsafe in C++ as it does not guarantee RAII cleanup (destructors running) and can leave mutexes in undefined states.15
+5. Document Synchronization and Ordering Guarantees
+The handling of textDocument/didChange requires strict ordering guarantees. While read requests (hover) can be processed out-of-order or concurrently, document updates must be applied sequentially to maintain consistency with the editor.2
+5.1 The "Full Sync" Implication
+AriaLS currently uses TextDocumentSyncKind::Full.1 This simplifies the VFS implementation because every didChange contains the complete new source text. However, it exacerbates the ordering requirement. If the server receives Update A then Update B, but processes B then A, the server's internal state will be reverted to A, while the user sees B. This desynchronization results in diagnostics pointing to wrong lines and code completion offering invalid suggestions.
+5.2 Ordering Mechanisms
+To enforce ordering within a thread pool, we can adopt one of two strategies:
+Strategy A: The Barrier (Simpler)
+When a didChange task reaches the head of the Work Queue:
+1. The worker acquires the Write Lock on the Global State immediately.
+2. This effectively pauses all other readers (preventing them from seeing inconsistent states).
+3. The worker updates the VFS and performs the parse.
+4. While robust, this blocks the system and can degrade performance if parsing is slow.
+Strategy B: Per-File Serialization (Recommended)
+The WorkQueue can maintain logical "lanes" or "strands" based on the Document URI.18
+* Tasks for file:///A.aria must be executed sequentially.
+* Tasks for file:///B.aria can execute in parallel to A.
+* Read requests for file:///A.aria can execute continuously until a Write request (didChange) arrives. The Write request acts as a barrier for that specific file.
+Given the constraints of Phase 7.3.6 and the single-pass parser, a simpler but robust approach is to tag tasks with a generation or version ID. The Main Thread tracks the latest version number seen for each URI. If a worker picks up a task with version < latest_version, it can immediately discard it as stale.19 This "discard-stale" strategy effectively handles the ordering by ensuring only the latest state is ever processed, which is specifically optimized for the "Full Sync" model where intermediate states are redundant.
+6. Implementation Detail: The Virtual File System (VFS)
+The VFS is the source of truth for the server. The uploaded header vfs.h confirms it is implemented with a std::unordered_map protected by a std::shared_mutex.1
+6.1 Thread Safety Analysis
+The implementation uses a mutable std::shared_mutex named mutex_.
+* Writers: set_content and remove acquire a std::unique_lock (exclusive). This ensures that while the file content is being updated, no other thread can read partially written data.
+* Readers: get_content, contains, and get_open_documents acquire a std::shared_lock (shared). This allows multiple workers to fetch source code for analysis concurrently.
+Insight: The use of mutable on the mutex is a crucial C++ pattern allowing logically const methods (get_content) to modify the mutex internal state (locking/unlocking).1 This ensures that the const-correctness of the VFS API is maintained even while strictly enforcing thread safety.
+6.2 Integration with the Thread Pool
+When a worker processes didChange, it performs the following sequence:
+1. Extract: Takes the text string from the task payload.
+2. Update VFS: Calls vfs_.set_content(uri, text). This briefly blocks all readers.
+3. Compile: The worker must access this content to parse it.
+   * Critical Optimization (Snapshotting): To avoid holding the VFS read lock during the entire compilation (which would starve writers), the worker should retrieve the string (making a copy) and release the VFS lock before starting the Parser. While copying a large string has a cost, holding a lock for the duration of a parse (which is $O(N)$) is unacceptable in a concurrent system. This creates a "Snapshot" of the file at that moment in time, allowing the parser to work on an isolated copy while the VFS is free to accept newer updates.
+7. Aria-Specific Considerations and Synchronization
+The integration of the thread pool must respect the unique semantics of the Aria language.
+7.1 Integration with Diagnostic Engine
+The DiagnosticEngine in Aria collects errors during parsing. In the thread pool model:
+1. The worker creates a thread-local DiagnosticEngine. Sharing a global diagnostic engine would require heavy locking and is unnecessary.
+2. It runs Lexer and Parser.1
+3. If errors are found, it converts them to LSP Diagnostic objects.
+4. Crucially, it must check if the request was cancelled before sending the diagnostics back. Sending diagnostics for an old version of the file causes "flicker" in the editor (where errors appear and disappear rapidly). Using the "latest version" check described in section 5.2 prevents this.
+7.2 Handling TBB Types and Wild Memory
+Aria's unique features like Twisted Balanced Binary (TBB) types and wild pointers affect the content of the analysis but also the safety of the server.
+* TBB: The server must correctly simulate TBB arithmetic for constant folding or type checking. Since TBB error propagation (sentinel ERR) is deterministic and functional (no side effects), this is thread-safe as long as the AST nodes are not shared mutably.1
+* Wild Memory: If the Aria compiler itself uses wild memory (manual allocation) for its internal structures (as hinted by aria.alloc in specs), the worker thread must ensure these allocations are thread-local or properly synchronized. If the Parser allocates nodes using a global memory pool (a common optimization in compilers), that pool must be made thread-safe or, preferably, the parser should use an ArenaAllocator that is local to the compilation task and destroyed when the task finishes. This ensures that wild pointers do not leak across task boundaries or cause race conditions.
+8. Error Handling and Resilience
+In a multi-threaded server, an unhandled exception in a worker thread can terminate the entire process (via std::terminate). AriaLS must implement robust error handling boundaries.
+8.1 The "Firewall" Pattern
+The worker_loop must wrap the execution of any task in a global try-catch block.
+
+
+C++
+
+
+
+
+try {
+   task.execute();
+} catch (const std::exception& e) {
+   log_error("Worker exception: " + std::string(e.what()));
+   // Send internal error response to client if applicable
+} catch (...) {
+   log_error("Unknown worker exception");
+}
+
+This ensures that a bug in the Parser (e.g., a stack overflow or logic error on malformed input) kills only the specific task, not the server. The worker thread can then reset its state and pick up the next task.
+8.2 Logging and Telemetry
+Errors caught in the firewall should be logged to stderr, which VS Code captures in its Output panel.1 Additionally, the server can send a window/showMessage notification to the client to display non-fatal warnings to the user (e.g., "Parsing failed for file X due to internal error").
+9. Implementation Roadmap (Phase 7.3.6)
+The implementation of Phase 7.3.6 should proceed in a phased approach to manage risk and ensure stability.
+Step 1: Thread-Safe Queue and Primitives
+* Goal: Establish the concurrency infrastructure.
+* Action: Implement ThreadSafeQueue<T> using std::queue, std::mutex, and std::condition_variable. Define the Task struct to hold MessageType, json params, std::shared_ptr<CancellationToken>, and version for ordering logic.
+* Validation: Unit tests verifying concurrent push/pop and blocking behavior.
+Step 2: Main Loop Refactoring
+* Goal: Decouple I/O from processing.
+* Action: Refactor Server::run() to stop processing messages directly. Instead, it should parse the message and push it to the WorkQueue.
+* Action: Implement the "Response Writer" logic to serialize outputs from the queue back to stdout.
+Step 3: Worker Implementation
+* Goal: Enable parallel execution.
+* Action: Launch std::thread pool. Implement the worker loop that pulls from the queue. Ensure strict exception handling ("Firewall") so a compiler crash doesn't kill the worker thread.
+* Action: Implement the logic to instantiate Lexer and Parser within the worker context.
+Step 4: VFS and Snapshotting
+* Goal: Ensure data consistency.
+* Action: Verify the VFS std::shared_mutex usage. Implement the "Snapshot" pattern where the worker copies the source text out of the VFS before parsing to minimize lock contention.
+Step 5: Cancellation Wiring
+* Goal: Responsiveness.
+* Action: Modify aria::Parser and aria::TypeChecker to accept a CancellationToken&. Insert checks if (token.cancelled()) return; at the top of major loops (e.g., parseStatement). Update the Main Thread to handle $/cancelRequest by flagging the appropriate token.
+10. Conclusion
+Implementing a thread pool for AriaLS is a complex but necessary evolution to support the non-incremental nature of the current Aria compiler. By adopting a Producer-Consumer model with a Global Work Queue and Reader-Writer locks for shared state, AriaLS can achieve the responsiveness required by modern developers. The architecture explicitly addresses the constraints of the LSP (ordering, cancellation) and the specific memory and type system features of Aria. The key success factor will be the "Cooperative Cancellation" mechanism, allowing the server to abandon expensive processing of stale code instantly, thereby keeping the UI fluid even during heavy typing sessions. This blueprint provides the theoretical and practical foundation required for the engineering team to execute Phase 7.3.6 successfully.
+11. Tables and Data Structures
+Table 1: Locking Strategy for Global State
+Component
+	Lock Type
+	Operation
+	Purpose
+	Virtual File System
+	std::unique_lock (Write)
+	didOpen, didChange, didClose
+	Exclusive access to update source text.
+	Virtual File System
+	std::shared_lock (Read)
+	hover, definition, Compiler Start
+	Shared access to copy source text for analysis.
+	AST / Symbol Table
+	std::unique_lock (Write)
+	Post-Parsing Update
+	Swapping the old AST with the newly compiled one.
+	AST / Symbol Table
+	std::shared_lock (Read)
+	Semantic Queries
+	Traversing the AST to find nodes/types.
+	Table 2: Task Prioritization Scheme
+Message Type
+	Priority
+	Handling Strategy
+	$/cancelRequest
+	Critical
+	Processed immediately by Main Thread to flag token; not queued.
+	textDocument/didChange
+	High
+	Queued with priority; invalidates pending tasks for same file.
+	textDocument/completion
+	High
+	Latency-sensitive; processed ahead of general queries.
+	textDocument/hover
+	Normal
+	Standard FIFO processing.
+	textDocument/documentSymbol
+	Low
+	Computationally expensive; processed when idle.
+	Table 3: Mapping Aria Concepts to Threaded Implementation
+Aria Feature
+	Challenge
+	Threaded Solution
+	Lexer (String based)
+	Requires full string copy
+	Copy string from VFS under Read Lock, then release lock before tokenizing.
+	Parser (Vector based)
+	Non-incremental
+	Parse usually takes >100ms. Must be cancellable via atomic boolean check.
+	TBB Types
+	Custom arithmetic
+	TBB logic is pure/stateless; safe for concurrent AST traversal.
+	Wild Pointers
+	Unsafe memory access
+	Compiler internal allocations must use thread-local arenas to prevent races.
+	Works cited
+1. aria_specs.txt
+2. Language Server Protocol Specification - 3.17 - Microsoft Open Source, accessed December 18, 2025, https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/
+3. Thread Pool in C++ - GeeksforGeeks, accessed December 18, 2025, https://www.geeksforgeeks.org/cpp/thread-pool-in-cpp/
+4. Thread Safe Template Message Queue in C++17 - GitHub Gist, accessed December 18, 2025, https://gist.github.com/CaglayanDokme/2fd4278969cf9683c5e5ad0ca5534020
+5. Thread-safe Queue with Condition Variables | CodeSignal Learn, accessed December 18, 2025, https://codesignal.com/learn/courses/lock-based-concurrent-data-structures/lessons/thread-safe-queue-with-condition-variables
+6. Protocol consistency gurantees are subtly incorrect · Issue #584 · microsoft/language-server-protocol - GitHub, accessed December 18, 2025, https://github.com/microsoft/language-server-protocol/issues/584
+7. [LSP] Order messages in the LSP server · Issue #46051 · dotnet/roslyn - GitHub, accessed December 18, 2025, https://github.com/dotnet/roslyn/issues/46051
+8. std thread hardware_concurrency() should not be used · Issue #130 · mhx/dwarfs - GitHub, accessed December 18, 2025, https://github.com/mhx/dwarfs/issues/130
+9. Mastering C++ Threads: A Dive into std::hardware_concurrency() | by Sanjay Mishra, accessed December 18, 2025, https://medium.com/@sharpsanjay/mastering-c-threads-a-dive-into-std-hardware-concurrency-27d9e091c3ea
+10. Shared Mutex (Read/write lock) - CLUE++'s documentation!, accessed December 18, 2025, https://cppstdx.readthedocs.io/en/latest/shared_mutex.html
+11. std::shared_mutex - cppreference.com - C++ Reference, accessed December 18, 2025, http://en.cppreference.com/w/cpp/thread/shared_mutex.html
+12. Cancellation in Managed Threads - .NET - Microsoft Learn, accessed December 18, 2025, https://learn.microsoft.com/en-us/dotnet/standard/threading/cancellation-in-managed-threads
+13. A Deep Dive into C#'s CancellationToken | by Mitesh Shah | Medium, accessed December 18, 2025, https://medium.com/@mitesh_shah/a-deep-dive-into-c-s-cancellationtoken-44bc7664555f
+14. A case for CancellationTokens - GitHub Gist, accessed December 18, 2025, https://gist.github.com/Matthias247/354941ebcc4d2270d07ff0c6bf066c64
+15. Cancelling arbitary jobs running in a thread_pool - Stack Overflow, accessed December 18, 2025, https://stackoverflow.com/questions/59450387/cancelling-arbitary-jobs-running-in-a-thread-pool
+16. How will pthread_cancel() respond when the cancellation request is queued?, accessed December 18, 2025, https://stackoverflow.com/questions/34343361/how-will-pthread-cancel-respond-when-the-cancellation-request-is-queued
+17. Language Server Protocol Specification - 3.14 - Microsoft Open Source, accessed December 18, 2025, https://microsoft.github.io/language-server-protocol/specifications/specification-3-14/
+18. Ensuring task execution order in ThreadPool - Stack Overflow, accessed December 18, 2025, https://stackoverflow.com/questions/7192223/ensuring-task-execution-order-in-threadpool
+19. Threads and request handling - What is clangd?, accessed December 18, 2025, https://clangd.llvm.org/design/threads
+20. D44272 [clangd] Support incremental document syncing - LLVM Phabricator archive, accessed December 18, 2025, https://reviews.llvm.org/D44272

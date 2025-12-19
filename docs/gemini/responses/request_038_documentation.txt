@@ -1,0 +1,357 @@
+﻿Aria Documentation System: Architectural Blueprint and Implementation Strategy
+1. Introduction: The Strategic Imperative of World-Class Documentation
+The completion of the Aria compiler core marks the transition from purely linguistic development to ecosystem construction. As a language that introduces novel paradigms—specifically the Twisted Balanced Binary (TBB) type system, a hybrid memory model combining garbage collection with manual "wild" pointers, and explicit control flow structures like pick—Aria presents a unique pedagogical challenge. The documentation system, hereby designated aria-doc, cannot merely serve as a static reference; it must act as a dynamic, interactive bridge between the theoretical specification of the language and its practical application.
+This report outlines a comprehensive research-based strategy for building aria-doc. Drawing inspiration from the gold standards of Rust (rustdoc), Zig (zigdocs), and MDN, the proposed system prioritizes pedagogical clarity, architectural transparency, and offline accessibility. The analysis synthesizes internal compiler source code with industry best practices to propose a system where documentation is treated as structured data, tightly integrated with the compiler's frontend to ensure accuracy and maintainability.
+The urgency of this system is underscored by the complexity of Aria's memory model. The distinction between gc, wild, and stack allocation is not merely a syntactic choice but a fundamental architectural decision for the developer. Consequently, aria-doc is designed not just to describe what code does, but to visualize where data lives and how errors propagate, particularly within the TBB system. This document serves as the master specification for the aria-doc toolchain, the content strategy for "The Aria Book," and the deployment infrastructure required to sustain a world-class documentation site.
+2. Architectural Design of the aria-doc Toolchain
+The core architectural decision for aria-doc is to implement it as a compiler-integrated tool rather than a standalone parser. Standalone documentation generators (like Doxygen or Sphinx) often rely on regular expressions or fuzzy parsing, which inevitably diverge from the language's actual grammar. For Aria, where semantic nuances like "wild" pointers and "sticky" error propagation in TBB types are critical, the documentation generator must share the same "truth" as the compiler.
+2.1 Compiler Integration and Frontend Modifications
+Current analysis of the Aria compiler source code reveals a significant hurdle: the existing frontend is designed to aggressively discard comments and whitespace to optimize parsing speed. The TokenType enum defines TOKEN_COMMENT 1, but the parser’s advance() and peek() methods contain no logic to preserve or attach these tokens to the Abstract Syntax Tree (AST).1
+2.1.1 The "Trivia" Preservation Strategy
+To enable documentation extraction without degrading the performance of the standard compilation pipeline, we propose a bifurcated frontend approach. The standard compilation path will continue to strip comments. However, when the compiler is invoked in doc mode (e.g., ariac doc), the Lexer will be reconfigured to treat documentation comments (those starting with /// or /**) as semantic tokens rather than ignorable trivia.
+This requires expanding the ASTNode base class.1 Currently, the ASTNode definition in ast_node.h contains only type, line, and column. To support documentation, we must introduce a "Attribute/Metadata" layer.
+Proposed AST Enhancement:
+
+
+C++
+
+
+
+
+// Enhanced ASTNode Base for Documentation Support
+class ASTNode {
+public:
+   NodeType type;
+   int line;
+   int column;
+   
+   // New: Optional pointer to metadata (null in standard builds)
+   std::shared_ptr<DocMetadata> doc_metadata; 
+};
+
+struct DocMetadata {
+   std::string summary;
+   std::string detailed_description;
+   std::vector<DocAttribute> attributes; // e.g., @param, @return
+};
+
+This "Sidecar" approach ensures that the memory footprint of AST nodes remains small for standard compilation, allocating documentation memory only when necessary.
+2.1.2 The Comment Attachment Algorithm
+The recursive descent parser used by Aria 1 typically synchronizes on statement boundaries. To attach comments correctly, the parser must employ a "look-behind" or "buffered" strategy. When the parser identifies a structural keyword (like func, mod, or struct), it must query the token stream for immediately preceding TOKEN_DOC_COMMENT tokens.
+The Attachment Logic:
+1. Buffer: The Parser maintains a std::vector<Token> comment_buffer.
+2. Collection: During advance(), if a TOKEN_DOC_COMMENT is encountered, it is pushed to the buffer instead of being returned as the current token (in doc mode).
+3. Attachment: When a declaration node (e.g., FuncDeclStmt) is successfully constructed, the parser flushes the comment_buffer into the node's doc_metadata field.
+4. Reset: If a non-declaration token is encountered (like a semicolon ending a generic statement), the buffer is cleared to prevent "dangling" comments from attaching to unrelated nodes.
+2.2 The Intermediate Representation (IR): aria-doc-json
+To achieve the flexibility of rustdoc and the frontend-agnosticism needed for modern tooling, aria-doc will not generate HTML directly. Instead, it will emit a structured JSON Intermediate Representation (aria-doc-json). This aligns with the RFC 2963 approach used by Rust 2, allowing the decoupling of data extraction from presentation.
+This JSON schema becomes the public API for the documentation, enabling the community to build alternative viewers, IDE integrations, and dashboard widgets without modifying the compiler.
+Core Schema Specification:
+Field
+	Type
+	Description
+	crate_info
+	Object
+	Metadata about the package (name, version, repo URL).
+	index
+	Map
+	A flat map of DefId (unique identifier) to Item objects.
+	paths
+	Map
+	Mapping of DefId to canonical paths (e.g., std::io::println).
+	external_crates
+	Map
+	References to external dependencies for cross-linking.
+	The Item Object:
+Each documented entity (Function, Struct, TBB Type) is serialized as an Item:
+* id: The compiler's internal DefId.
+* name: The identifier (e.g., "readFile").
+* visibility: public or private.
+* docs: The raw Markdown string extracted from source.
+* attrs: Compiler attributes (e.g., #[deprecated], #[inline]).
+* kind: A discriminant union (Function, Struct, Enum, etc.) containing type-specific data.
+   * For Functions: Signature, generics, arguments, return type.
+   * For TBB Types: Bit width, range [min, max], error sentinel value.
+2.3 Documentation Generator (The Renderer)
+The renderer consumes aria-doc-json and produces the static website. To meet the constraint of "Clean, minimal design with excellent examples" [User Query], we will adopt a dual-mode rendering strategy.
+1. The Reference Renderer: A custom-built static site generator written in Aria (dogfooding) or Rust/Go. This handles the API documentation, ensuring that type signatures are hyperlinked and TBB ranges are visualized correctly. It mimics the rustdoc HTML output structure but with Aria-specific visual language.
+2. The Guide Renderer: For narrative documentation ("The Aria Book"), we will utilize mdBook. Its support for chapters, search, and "playgrounds" is best-in-class.3 While Hugo is faster, mdBook's specialization for technical documentation makes it the superior choice for the guide section.4
+3. Language Guide Strategy: The Aria Book
+The success of a new language often hinges on the quality of its primary instructional text. "The Aria Book" will be structured to guide users from "Zero to Productive in 1 Week" (Success Criteria #1). The pedagogical approach is "Concept Layering"—introducing familiar concepts first (C-style syntax) before introducing Aria's radical innovations (TBB, Wild Memory).
+3.1 Part I: The Foundation (Days 1-2)
+This section targets the "Hello World" to "Basic Logic" phase. It avoids the complexities of memory management and TBB, focusing on syntax familiarity.
+* Chapter 1: Getting Started: Installation of ariac, anatomy of a project (aria.toml), and the build process.
+* Chapter 2: Variables & Types: Introduction to var vs const. Basic int vs float types.
+* Chapter 3: Control Flow: Standard if, while, for.
+   * Highlight: The unique till loop. Explain why till(10) is safer/cleaner than for (i=0; i<10; i++).1
+* Chapter 4: Functions & Modules: Basic syntax. The pass() and fail() return helpers, establishing the result<T> pattern early on.
+3.2 Part II: The TBB System (Day 3)
+This is a critical divergence point for Aria. Users coming from C/C++ will assume wrapping overflow or exceptions. This chapter must unlearn those habits.
+* Chapter 5: The Symmetry of Numbers.
+   * Problem Statement: Explain the asymmetry of Two's Complement (e.g., int8 range -128 to 127) and the bugs it causes (abs(-128)).
+   * The TBB Solution: Visualizing the symmetric range [-127, +127] for tbb8.1
+   * Concept: The Error Sentinel. Introduce -128 (0x80) not as a number, but as ERR.
+   * Concept: Sticky Propagation. Detailed examples of arithmetic where ERR + 1 = ERR. Use diagrams to show the "poisoning" effect of the error state, framing it as a safety feature for financial/scientific computing.
+3.3 Part III: The Hybrid Memory Model (Days 4-5)
+This is the steepest learning curve. The documentation must clearly distinguish between the three memory zones: Stack, GC Heap, and Wild Heap.
+* Chapter 6: Managed Memory (The Happy Path).
+   * Focus on gc types (string, obj). Explain that this is the default for business logic.
+   * Visual: Diagram of the Nursery vs. Old Gen in the GC.1 Show objects moving from Nursery to Old Gen.
+* Chapter 7: Wild Memory (Systems Programming).
+   * Introduction to the wild keyword.
+   * The Allocators: aria.alloc, aria.free.
+   * RAII Pattern: How to use defer aria.free(ptr) to prevent leaks. This is critical for C++ users used to destructors.
+   * Safety Theory: Deep dive into Object Pinning. Explain "Appendage Theory"—why you must pin a GC object (#obj) before creating a wild pointer (wild T@) to it.
+      * Visual: Animation or multi-step diagram showing the GC moving an unpinned object (breaking the pointer) vs. a pinned object staying in place.
+3.4 Part IV: Advanced Patterns (Days 6-7)
+* Chapter 8: Pattern Matching (pick).
+   * Deep dive into pick vs switch.
+   * Explicit Fallthrough: Explain fall(label)—a safety feature preventing accidental fallthrough.1
+* Chapter 9: Async & Concurrency.
+   * The async/await model.
+   * The Future<T> trait structure.
+   * Visual: State machine diagram of a Future (Pending -> Polled -> Ready).
+4. API Documentation Specification
+While the Guide teaches, the API Reference is for lookup. It must be dense, interconnected, and exhaustive. The aria-doc tool will automatically generate this from the source code, but the content depends on the quality of the source comments.
+4.1 Standard Library Documentation Standards
+To meet the criterion "Every stdlib function has a runnable example," we establish a strict Documentation Template for the standard library.
+The Template:
+1. Summary Line: A single sentence description (e.g., "Reads a file into a wild string.").
+2. Signature Block: High-contrast code block showing the full signature including generics and constraints.
+3. Detailed Description: 1-2 paragraphs on behavior, complexity (Big O), and side effects.
+4. Parameters: Definition list of arguments.
+5. Return Value: Detailed breakdown of the result<T> types. Specifically, list all error codes that can be returned via fail().
+6. Safety/Panics: (Crucial for wild functions) Conditions that cause undefined behavior or crashes (e.g., "Must free returned pointer").
+7. Examples: At least one complete, runnable code snippet.
+Example Specification for io::readFile :
+Function: readFile
+Signature: func readFile(string:path) -> wild string
+Description: Reads the entire contents of the file at path into a null-terminated string. The memory is allocated on the wild heap using aria_alloc.
+Safety: The returned pointer is wild. The caller assumes ownership and must explicitly call free() to avoid memory leaks. The pointer is not tracked by the GC.
+Example:
+
+
+Code snippet
+
+
+
+
+import io;
+func main() {
+   wild string:content = io::readFile("config.txt");
+   if (content!= null) {
+       io::println(content);
+       aria.free(content); // Critical cleanup
+   }
+}
+
+4.2 TBB Type Reference
+Since TBB types (tbb8, tbb16, tbb32, tbb64) are built-ins, their documentation needs special handling in the renderer. The docs for tbb8 should include a dynamic table showing its properties:
+Property
+	Value
+	Notes
+	Bit Width
+	8 bits
+	
+
+	Range
+	[-127, +127]
+	Symmetric
+	Sentinel
+	-128 (0x80)
+	ERR keyword
+	Overflow
+	Sticky
+	127 + 1 = ERR
+	5. Visual Documentation Implementation
+Text often fails to convey the topological complexity of memory graphs or the temporal complexity of async flows. We will integrate Mermaid.js directly into the documentation pipeline.
+5.1 Diagram Generation Strategy
+The aria-doc tool will support a ```mermaid code block in documentation comments. During the rendering phase, these blocks will be preserved and rendered client-side by the Mermaid JavaScript library.
+Key Visualizations to Implement:
+1. Memory Layout Comparison:
+   * Visualization: A block diagram contrasting the Stack (growing down), the GC Heap (Nursery/Old Gen split), and the Wild Heap (fragmented blocks).
+   * Purpose: Helps users visualize where their wild vs gc variables live.
+2. Object Header (64-bit) Anatomy:
+   * Visualization: A "bit-tape" diagram showing the 64-bit ObjHeader 1:
+``
+   * Purpose: Demystifies the overhead of GC objects.
+   3. TBB Number Line:
+   * Visualization: A linear scale centered at 0.
+   * Green Zone: -127 to +127 (Valid TBB).
+   * Red Zone: -128 (ERR Sentinel).
+   * Comparison: Overlay a standard int8 range (-128 to 127) to highlight the symmetry difference.
+   4. Async State Machine:
+   * Visualization: A flowchart for Future<T> execution.
+Pending -> poll() -> (Ready | Pending)
+   * Purpose: Explains the non-blocking nature of Aria's concurrency.
+5.2 Interactive Playgrounds
+To meet the "Interactive playground" requirement, we will implement a WebAssembly (WASM) based runner.
+      1. Compilation: The Aria compiler (ariac) will be compiled to WASM.
+      2. Integration: Documentation code blocks will have a "Run" button.
+      3. Execution: Clicking "Run" sends the code to the in-browser WASM compiler, captures stdout, and displays it below the block. This ensures privacy (no code sent to a server) and offline capability.
+6. Search and Navigation Architecture
+Discovery is the primary function of documentation. A slow or inaccurate search destroys user trust. We will utilize Pagefind 5 for the search engine.
+6.1 Why Pagefind?
+      * Static & Client-Side: Pagefind indexes the built HTML files and generates a static index. No server-side search (Elasticsearch/Algolia) is required.
+      * Low Bandwidth: It loads index chunks on demand, keeping the initial page load fast (< 2s constraint).
+      * Multilingual: Supports the "code" language natively.
+6.2 Search Indexing Strategy
+We will configure Pagefind to index specific data attributes to enable advanced filtering:
+      * data-pagefind-filter="type": Filter by Struct, Function, Module.
+      * data-pagefind-weight="10": Boost symbol names over description text.
+      * data-pagefind-body: Restrict indexing to the main content area, ignoring sidebars/footers.
+Type Signature Search:
+A custom search feature will be built on top of the JSON IR. A separate index will map normalized type signatures (e.g., (int, int) -> bool) to functions. This allows users to find functions based on shape rather than name—a power-user feature inspired by Hoogle (Haskell).
+7. Best Practices & Style Guide
+To ensure consistency across the ecosystem, we define the "Idiomatic Aria" style.
+7.1 Naming Conventions
+      * Types/Structs: PascalCase (e.g., TcpStream, Tbb8).
+      * Functions/Methods: camelCase (e.g., readFile, toString).
+      * Variables/Arguments: camelCase (e.g., bufferSize).
+      * Modules: snake_case (e.g., std_io, http_server).
+      * Constants: SCREAMING_SNAKE_CASE (e.g., MAX_RETRY_COUNT).
+7.2 Idiomatic Patterns
+      * Error Handling: Always use result<T> and the ? operator. Avoid returning raw error codes unless interfacing with C.
+      * Memory Safety: Default to gc memory. Only use wild for performance-critical buffers or FFI.
+      * TBB Usage: Use TBB types for domain logic (physics, finance) where symmetry matters. Use standard int for array indexing and bitwise operations.
+      * Documentation: Every public item must have a doc comment. Every wild function must have a # Safety section.
+8. Deployment and Infrastructure
+8.1 CI/CD Pipeline
+Documentation must be automatically generated and deployed on every commit to the main branch.
+Workflow (GitHub Actions):
+      1. Checkout: Fetch repository.
+      2. Build Compiler: Compile ariac from source.
+      3. Generate JSON: Run ariac doc --output-format=json src/std.
+      4. Render HTML: Run the custom renderer on the JSON output.
+      5. Build Guide: Run mdbook build guide/.
+      6. Index Search: Run pagefind --source public/.
+      7. Deploy: Push public/ directory to GitHub Pages.
+8.2 Versioning Strategy
+To support multiple versions of Aria:
+      * URL Structure: docs.aria-lang.org/{version}/... (e.g., /v1.0/, /latest/).
+      * Selector: A dropdown in the top navigation bar allows switching between versions.
+      * Deprecation: The renderer will check for #[deprecated] attributes in the JSON IR and render a warning banner on those pages.
+9. Conclusion
+The Aria Documentation System is designed to be as robust and innovative as the language itself. By treating documentation as structured data derived directly from the compiler's AST, we ensure absolute accuracy. By employing a hybrid approach—mdBook for narrative guides and a Custom Renderer for API references—we cater to both the learner and the expert.
+The inclusion of deep-dive visualizations for TBB ranges and memory layouts addresses the specific complexities of Aria, transforming potential confusion into understanding. With the adoption of Pagefind for search and WASM for interactive examples, this system meets all performance and usability constraints, setting the stage for rapid developer adoption and a thriving ecosystem.
+________________
+Appendix A: Tables and Reference Data
+
+
+Table 1: TBB Type Specifications
+1
+
+
+Type
+	Bit Width
+	Min Valid
+	Max Valid
+	ERR Sentinel
+	tbb8
+	8
+	-127
+	+127
+	-128 (0x80)
+	tbb16
+	16
+	-32,767
+	+32,767
+	-32,768 (0x8000)
+	tbb32
+	32
+	-2,147,483,647
+	+2,147,483,647
+	-2,147,483,648
+	tbb64
+	64
+	-(2^63 - 1)
+	+(2^63 - 1)
+	-2^63
+	
+
+Table 2: Memory Model Decision Matrix
+1
+
+
+Requirement
+	Recommended Storage
+	Keyword
+	Cleanup Responsibility
+	Small, temporary values
+	Stack
+	stack
+	Automatic (Scope exit)
+	Complex objects, strings
+	GC Heap
+	gc (implicit)
+	Automatic (Garbage Collector)
+	Large buffers, IO buffers
+	Wild Heap
+	wild
+	Manual (aria.free + defer)
+	JIT Executable Code
+	WildX
+	wildx
+	Manual
+	FFI Interop structs
+	Wild Heap
+	wild
+	Manual
+	
+
+Table 3: Mapping Aria Types to C (FFI)
+1
+
+
+Aria Type
+	C Equivalent
+	Notes
+	bool
+	int8_t / bool
+	Mapped to 1 byte
+	int32 / tbb32
+	int32_t
+	Standard integer
+	float64
+	double
+	IEEE 754
+	string
+	char*
+	Aria strings are null-terminated in wild mode
+	vec9
+	struct { float v; }
+	Special struct mapping, not SIMD vector
+	result<T>
+	struct { bool ok; T val; int8 err; }
+	Explicit return struct
+	Table 4: API Documentation Template Checklist
+Section
+	Required?
+	Content Description
+	Summary
+	Yes
+	Single line overview.
+	Signature
+	Yes
+	Full function signature with types.
+	Description
+	Yes
+	Detailed behavior, algorithmic complexity.
+	Parameters
+	If > 0
+	List of inputs and their semantic meaning.
+	Returns
+	If!void
+	Description of return value and error codes.
+	Safety
+	If wild
+	Manual memory management requirements.
+	Example
+	Yes
+	Runnable code block demonstrating usage.
+	Works cited
+      1. aria_source_part1_frontend_lexer.txt
+      2. 2963-rustdoc-json - The Rust RFC Book, accessed December 18, 2025, https://rust-lang.github.io/rfcs/2963-rustdoc-json.html
+      3. Why I don't use static website generators like Hugo - Easiest Software Official, accessed December 18, 2025, https://easiestsoft.com/web/easy-static-html-website-builder-software/
+      4. Text in, docs out: Popular Markdown documentation tools compared - Azalio, accessed December 18, 2025, https://www.azalio.io/text-in-docs-out-popular-markdown-documentation-tools-compared/
+      5. Pagefind | Pagefind — Static low-bandwidth search at scale, accessed December 18, 2025, https://pagefind.app/

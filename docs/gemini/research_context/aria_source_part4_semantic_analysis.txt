@@ -1,0 +1,3371 @@
+=== ARIA SOURCE PART 4: SEMANTIC ANALYSIS ===
+
+FILE: include/frontend/sema/symbol_table.h
+====================================
+#ifndef ARIA_SYMBOL_TABLE_H
+#define ARIA_SYMBOL_TABLE_H
+
+#include <string>
+#include <memory>
+#include <unordered_map>
+#include <vector>
+
+namespace aria {
+
+// Forward declarations from AST
+class FuncDeclStmt;
+
+namespace sema {
+
+// Forward declarations
+class Type;
+class Scope;
+class SymbolTable;
+class ComptimeValue;
+
+// ============================================================================
+// Symbol - Represents a named entity in the program
+// ============================================================================
+// A symbol can be a variable, function, type, or module
+// Each symbol has a name, type, scope, and source location
+
+enum class SymbolKind {
+    VARIABLE,       // Variable declaration
+    FUNCTION,       // Function declaration
+    PARAMETER,      // Function parameter
+    TYPE,           // Type definition (struct, enum, etc.)
+    MODULE,         // Module declaration
+    CONSTANT,       // Compile-time constant
+};
+
+struct Symbol {
+    std::string name;           // Symbol identifier
+    SymbolKind kind;            // What kind of symbol this is
+    Type* type;                 // Type information (owned by TypeSystem)
+    Scope* scope;               // Scope where this symbol is defined
+    int line;                   // Source line number
+    int column;                 // Source column number
+    bool isPublic;              // Visibility (pub keyword)
+    bool isMutable;             // Mutability (const vs mutable)
+    bool isInitialized;         // Has been initialized
+    
+    // CTFE Integration (Task 8: Symbol Table Integration)
+    // These fields support compile-time evaluation:
+    ComptimeValue* comptimeValue;   // For CONSTANT symbols - compile-time value
+    FuncDeclStmt* funcDecl;         // For FUNCTION symbols - AST for CTFE
+    
+    // Constructor
+    Symbol(const std::string& name, SymbolKind kind, Type* type,
+           Scope* scope, int line = 0, int column = 0);
+    
+    // CTFE Helpers
+    void setComptimeValue(ComptimeValue* value);
+    void setFuncDecl(FuncDeclStmt* decl);
+    ComptimeValue* getComptimeValue() const { return comptimeValue; }
+    FuncDeclStmt* getFuncDecl() const { return funcDecl; }
+    bool hasComptimeValue() const { return comptimeValue != nullptr; }
+    bool isCTFEFunction() const { return kind == SymbolKind::FUNCTION && funcDecl != nullptr; }
+    
+    // Helpers
+    std::string toString() const;
+};
+
+// ============================================================================
+// Scope - Represents a lexical scope with symbols
+// ============================================================================
+// Scopes form a tree structure where each scope can have:
+// - Parent scope (enclosing scope)
+// - Child scopes (nested scopes like blocks, functions)
+// - Symbols defined in this scope
+
+enum class ScopeKind {
+    GLOBAL,         // Global/module scope
+    FUNCTION,       // Function scope
+    BLOCK,          // Block scope (if, while, for bodies, etc.)
+    STRUCT,         // Struct/type scope
+    MODULE,         // Module scope
+};
+
+class Scope {
+private:
+    ScopeKind kind;
+    Scope* parent;
+    std::vector<std::unique_ptr<Scope>> children;
+    std::unordered_map<std::string, Symbol*> symbols;
+    std::string name;           // Optional name (for functions, modules)
+    int depth;                  // Nesting depth (0 = global)
+    
+public:
+    // Constructor
+    explicit Scope(ScopeKind kind, Scope* parent = nullptr, 
+                   const std::string& name = "");
+    
+    // Scope management
+    Scope* enterScope(ScopeKind kind, const std::string& name = "");
+    Scope* exitScope();
+    Scope* getParent() const { return parent; }
+    ScopeKind getKind() const { return kind; }
+    int getDepth() const { return depth; }
+    const std::string& getName() const { return name; }
+    
+    // Symbol operations
+    bool define(Symbol* symbol);                    // Add symbol to this scope
+    Symbol* lookup(const std::string& name) const;  // Look up in this scope only
+    Symbol* resolve(const std::string& name) const; // Look up in this and parent scopes
+    bool isInScope(const std::string& name) const;  // Check if name exists in this scope
+    bool isDuplicate(const std::string& name) const;// Check if symbol already defined
+    
+    // Iteration
+    const std::unordered_map<std::string, Symbol*>& getSymbols() const { return symbols; }
+    const std::vector<std::unique_ptr<Scope>>& getChildren() const { return children; }
+    
+    // Debugging
+    std::string toString(int indent = 0) const;
+};
+
+// ============================================================================
+// SymbolTable - Manages the entire symbol table hierarchy
+// ============================================================================
+// The symbol table maintains:
+// - Root scope (global scope)
+// - Current scope (for adding new symbols)
+// - All allocated symbols (for memory management)
+
+class SymbolTable {
+private:
+    std::unique_ptr<Scope> rootScope;
+    Scope* currentScope;
+    std::vector<std::unique_ptr<Symbol>> symbols;  // Owns all symbols
+    
+public:
+    // Constructor
+    SymbolTable();
+    
+    // Scope navigation
+    void enterScope(ScopeKind kind, const std::string& name = "");
+    void exitScope();
+    Scope* getCurrentScope() const { return currentScope; }
+    Scope* getRootScope() const { return rootScope.get(); }
+    
+    // Symbol operations
+    Symbol* defineSymbol(const std::string& name, SymbolKind kind, Type* type,
+                         int line = 0, int column = 0);
+    Symbol* lookupSymbol(const std::string& name) const;      // Current scope only
+    Symbol* resolveSymbol(const std::string& name) const;     // Current + parent scopes
+    bool isDefined(const std::string& name) const;            // Check if already defined
+    
+    // Error handling
+    std::vector<std::string> errors;
+    void error(const std::string& message);
+    bool hasErrors() const { return !errors.empty(); }
+    const std::vector<std::string>& getErrors() const { return errors; }
+    
+    // Debugging
+    std::string toString() const;
+};
+
+} // namespace sema
+} // namespace aria
+
+#endif // ARIA_SYMBOL_TABLE_H
+
+
+
+FILE: src/frontend/sema/symbol_table.cpp
+====================================
+#include "frontend/sema/symbol_table.h"
+#include "frontend/sema/type.h"
+#include <sstream>
+
+namespace aria {
+namespace sema {
+
+// ============================================================================
+// Symbol Implementation
+// ============================================================================
+
+Symbol::Symbol(const std::string& name, SymbolKind kind, Type* type,
+               Scope* scope, int line, int column)
+    : name(name), kind(kind), type(type), scope(scope),
+      line(line), column(column), isPublic(false),
+      isMutable(true), isInitialized(false),
+      comptimeValue(nullptr), funcDecl(nullptr) {}
+
+void Symbol::setComptimeValue(ComptimeValue* value) {
+    comptimeValue = value;
+}
+
+void Symbol::setFuncDecl(FuncDeclStmt* decl) {
+    funcDecl = decl;
+}
+
+std::string Symbol::toString() const {
+    std::stringstream ss;
+    ss << name << ": ";
+    if (type) {
+        ss << type->toString();
+    } else {
+        ss << "<no type>";
+    }
+    ss << " (";
+    switch (kind) {
+        case SymbolKind::VARIABLE: ss << "variable"; break;
+        case SymbolKind::FUNCTION: ss << "function"; break;
+        case SymbolKind::PARAMETER: ss << "parameter"; break;
+        case SymbolKind::TYPE: ss << "type"; break;
+        case SymbolKind::MODULE: ss << "module"; break;
+        case SymbolKind::CONSTANT: ss << "constant"; break;
+    }
+    ss << ")";
+    return ss.str();
+}
+
+// ============================================================================
+// Scope Implementation
+// ============================================================================
+
+Scope::Scope(ScopeKind kind, Scope* parent, const std::string& name)
+    : kind(kind), parent(parent), name(name) {
+    depth = parent ? parent->depth + 1 : 0;
+}
+
+Scope* Scope::enterScope(ScopeKind kind, const std::string& name) {
+    auto child = std::make_unique<Scope>(kind, this, name);
+    Scope* childPtr = child.get();
+    children.push_back(std::move(child));
+    return childPtr;
+}
+
+Scope* Scope::exitScope() {
+    return parent;
+}
+
+bool Scope::define(Symbol* symbol) {
+    if (isDuplicate(symbol->name)) {
+        return false;  // Symbol already exists in this scope
+    }
+    symbols[symbol->name] = symbol;
+    symbol->scope = this;
+    return true;
+}
+
+Symbol* Scope::lookup(const std::string& name) const {
+    auto it = symbols.find(name);
+    if (it != symbols.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+Symbol* Scope::resolve(const std::string& name) const {
+    // First check this scope
+    Symbol* symbol = lookup(name);
+    if (symbol) {
+        return symbol;
+    }
+    
+    // Then check parent scopes
+    if (parent) {
+        return parent->resolve(name);
+    }
+    
+    return nullptr;
+}
+
+bool Scope::isInScope(const std::string& name) const {
+    return symbols.find(name) != symbols.end();
+}
+
+bool Scope::isDuplicate(const std::string& name) const {
+    return isInScope(name);
+}
+
+std::string Scope::toString(int indent) const {
+    std::stringstream ss;
+    std::string indentStr(indent * 2, ' ');
+    
+    ss << indentStr << "Scope(";
+    switch (kind) {
+        case ScopeKind::GLOBAL: ss << "global"; break;
+        case ScopeKind::FUNCTION: ss << "function"; break;
+        case ScopeKind::BLOCK: ss << "block"; break;
+        case ScopeKind::STRUCT: ss << "struct"; break;
+        case ScopeKind::MODULE: ss << "module"; break;
+    }
+    if (!name.empty()) {
+        ss << " " << name;
+    }
+    ss << ", depth=" << depth << ")\n";
+    
+    // Print symbols
+    for (const auto& pair : symbols) {
+        ss << indentStr << "  " << pair.second->toString() << "\n";
+    }
+    
+    // Print child scopes
+    for (const auto& child : children) {
+        ss << child->toString(indent + 1);
+    }
+    
+    return ss.str();
+}
+
+// ============================================================================
+// SymbolTable Implementation
+// ============================================================================
+
+SymbolTable::SymbolTable() {
+    rootScope = std::make_unique<Scope>(ScopeKind::GLOBAL, nullptr, "global");
+    currentScope = rootScope.get();
+}
+
+void SymbolTable::enterScope(ScopeKind kind, const std::string& name) {
+    currentScope = currentScope->enterScope(kind, name);
+}
+
+void SymbolTable::exitScope() {
+    if (currentScope->getParent()) {
+        currentScope = currentScope->exitScope();
+    } else {
+        error("Cannot exit global scope");
+    }
+}
+
+Symbol* SymbolTable::defineSymbol(const std::string& name, SymbolKind kind,
+                                   Type* type, int line, int column) {
+    // Check for duplicates in current scope
+    if (currentScope->isDuplicate(name)) {
+        std::stringstream ss;
+        ss << "Symbol '" << name << "' already defined in current scope";
+        if (line > 0) {
+            ss << " at line " << line << ", column " << column;
+        }
+        error(ss.str());
+        return nullptr;
+    }
+    
+    // Create new symbol
+    auto symbol = std::make_unique<Symbol>(name, kind, type, currentScope, line, column);
+    Symbol* symbolPtr = symbol.get();
+    symbols.push_back(std::move(symbol));
+    
+    // Add to current scope
+    currentScope->define(symbolPtr);
+    
+    return symbolPtr;
+}
+
+Symbol* SymbolTable::lookupSymbol(const std::string& name) const {
+    return currentScope->resolve(name);  // Use resolve() to traverse parent scopes
+}
+
+Symbol* SymbolTable::resolveSymbol(const std::string& name) const {
+    return currentScope->resolve(name);
+}
+
+bool SymbolTable::isDefined(const std::string& name) const {
+    return currentScope->resolve(name) != nullptr;
+}
+
+void SymbolTable::error(const std::string& message) {
+    errors.push_back(message);
+}
+
+std::string SymbolTable::toString() const {
+    return rootScope->toString(0);
+}
+
+} // namespace sema
+} // namespace aria
+
+
+
+FILE: include/frontend/sema/type.h
+====================================
+#ifndef ARIA_SEMA_TYPE_H
+#define ARIA_SEMA_TYPE_H
+
+#include <string>
+#include <vector>
+#include <memory>
+#include <unordered_map>
+
+namespace aria {
+namespace sema {
+
+// Forward declarations
+class Type;
+class TypeSystem;
+
+// ============================================================================
+// Type - Base class for all types in the semantic analyzer
+// ============================================================================
+// Reference: research_014 (composite types), research_015 (vectors, structs),
+//            research_016 (functional types)
+
+enum class TypeKind {
+    PRIMITIVE,      // int8, int32, bool, string, etc.
+    POINTER,        // T@ (references)
+    ARRAY,          // T[], T[N]
+    SLICE,          // T[] (view into array)
+    FUNCTION,       // func(params) -> return
+    STRUCT,         // struct { fields }
+    UNION,          // union { variants }
+    VECTOR,         // vec2, vec3, vec4, etc.
+    GENERIC,        // T, U, V (type parameters)
+    RESULT,         // result<T> for error handling
+    FUTURE,         // future<T> for async computation
+    UNKNOWN,        // Type not yet inferred
+    ERROR,          // Type error occurred
+};
+
+class Type {
+protected:
+    TypeKind kind;
+    
+public:
+    explicit Type(TypeKind kind) : kind(kind) {}
+    virtual ~Type() = default;
+    
+    TypeKind getKind() const { return kind; }
+    
+    // Type operations
+    virtual bool equals(const Type* other) const = 0;
+    virtual bool isAssignableTo(const Type* target) const = 0;
+    virtual std::string toString() const = 0;
+    
+    // Type properties
+    virtual bool isPrimitive() const { return kind == TypeKind::PRIMITIVE; }
+    virtual bool isPointer() const { return kind == TypeKind::POINTER; }
+    virtual bool isArray() const { return kind == TypeKind::ARRAY; }
+    virtual bool isFunction() const { return kind == TypeKind::FUNCTION; }
+    virtual bool isStruct() const { return kind == TypeKind::STRUCT; }
+    virtual bool isVector() const { return kind == TypeKind::VECTOR; }
+    virtual bool isGeneric() const { return kind == TypeKind::GENERIC; }
+};
+
+// ============================================================================
+// PrimitiveType - Built-in primitive types
+// ============================================================================
+// Reference: research_012 (integers), research_013 (floats), research_002 (TBB)
+
+class PrimitiveType : public Type {
+private:
+    std::string name;  // "int8", "int32", "bool", "string", etc.
+    int bitWidth;      // Bit width (8, 16, 32, 64, etc.) - 0 for non-numeric types
+    bool isSigned;     // True for signed integers, false for unsigned
+    bool isFloating;   // True for floating-point types
+    bool isTBB;        // True for Twisted Balanced Binary types (tbb8, tbb16, etc.)
+    
+public:
+    explicit PrimitiveType(const std::string& name, int bitWidth = 0,
+                          bool isSigned = false, bool isFloating = false, bool isTBB = false)
+        : Type(TypeKind::PRIMITIVE), name(name), bitWidth(bitWidth),
+          isSigned(isSigned), isFloating(isFloating), isTBB(isTBB) {}
+    
+    const std::string& getName() const { return name; }
+    int getBitWidth() const { return bitWidth; }
+    bool isSignedType() const { return isSigned; }
+    bool isFloatingType() const { return isFloating; }
+    bool isTBBType() const { return isTBB; }
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override { return name; }
+};
+
+// ============================================================================
+// PointerType - Reference types (T@)
+// ============================================================================
+// Reference: research_001 (borrow checker), research_022 (wild pointers)
+
+class PointerType : public Type {
+private:
+    Type* pointeeType;  // Type being pointed to
+    bool isMutable;     // True for mutable references
+    bool isWild;        // True for wild (unsafe) pointers
+    
+public:
+    PointerType(Type* pointeeType, bool isMutable = false, bool isWild = false)
+        : Type(TypeKind::POINTER), pointeeType(pointeeType),
+          isMutable(isMutable), isWild(isWild) {}
+    
+    Type* getPointeeType() const { return pointeeType; }
+    bool isMutableRef() const { return isMutable; }
+    bool isWildPointer() const { return isWild; }
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
+// ArrayType - Fixed-size arrays (T[N])
+// ============================================================================
+// Reference: research_016 (arrays and slices)
+
+class ArrayType : public Type {
+private:
+    Type* elementType;  // Element type
+    int size;           // Array size (-1 for dynamic/unknown size)
+    
+public:
+    ArrayType(Type* elementType, int size)
+        : Type(TypeKind::ARRAY), elementType(elementType), size(size) {}
+    
+    Type* getElementType() const { return elementType; }
+    int getSize() const { return size; }
+    bool isFixedSize() const { return size >= 0; }
+    bool isDynamic() const { return size < 0; }
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
+// VectorType - SIMD vector types (vec2, vec3, vec4, etc.)
+// ============================================================================
+// Reference: research_015 (vector types), research_014 (composite types part 1)
+
+class VectorType : public Type {
+private:
+    Type* componentType;  // Component type (flt32, flt64, int32, etc.)
+    int dimension;        // Number of components (2, 3, 4, 9, etc.)
+    
+public:
+    VectorType(Type* componentType, int dimension)
+        : Type(TypeKind::VECTOR), componentType(componentType), dimension(dimension) {}
+    
+    Type* getComponentType() const { return componentType; }
+    int getDimension() const { return dimension; }
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
+// FunctionType - Function signatures (func(params) -> return)
+// ============================================================================
+// Reference: research_016 (functional types)
+
+class FunctionType : public Type {
+private:
+    std::vector<Type*> paramTypes;  // Parameter types
+    Type* returnType;                // Return type
+    bool isAsync;                    // True for async functions
+    bool isVariadic;                 // True for variadic functions (...)
+    
+public:
+    FunctionType(const std::vector<Type*>& paramTypes, Type* returnType,
+                bool isAsync = false, bool isVariadic = false)
+        : Type(TypeKind::FUNCTION), paramTypes(paramTypes), returnType(returnType),
+          isAsync(isAsync), isVariadic(isVariadic) {}
+    
+    const std::vector<Type*>& getParamTypes() const { return paramTypes; }
+    Type* getReturnType() const { return returnType; }
+    bool isAsyncFunction() const { return isAsync; }
+    bool isVariadicFunction() const { return isVariadic; }
+    int getParamCount() const { return paramTypes.size(); }
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
+// StructType - Struct definitions
+// ============================================================================
+// Reference: research_015 (struct types and layout)
+
+class StructType : public Type {
+public:
+    struct Field {
+        std::string name;
+        Type* type;
+        int offset;      // Byte offset in struct layout
+        bool isPublic;   // Visibility
+        
+        Field(const std::string& name, Type* type, int offset = 0, bool isPublic = false)
+            : name(name), type(type), offset(offset), isPublic(isPublic) {}
+    };
+    
+private:
+    std::string name;            // Struct name
+    std::vector<Field> fields;   // Field definitions
+    int size;                    // Total size in bytes
+    int alignment;               // Alignment requirement
+    bool isPacked;               // True if @pack directive used
+    
+public:
+    StructType(const std::string& name, const std::vector<Field>& fields,
+              int size = 0, int alignment = 0, bool isPacked = false)
+        : Type(TypeKind::STRUCT), name(name), fields(fields),
+          size(size), alignment(alignment), isPacked(isPacked) {}
+    
+    const std::string& getName() const { return name; }
+    const std::vector<Field>& getFields() const { return fields; }
+    int getSize() const { return size; }
+    int getAlignment() const { return alignment; }
+    bool isPackedStruct() const { return isPacked; }
+    
+    // Field lookup
+    const Field* getField(const std::string& fieldName) const;
+    int getFieldIndex(const std::string& fieldName) const;
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
+// UnionType - Union definitions
+// ============================================================================
+
+class UnionType : public Type {
+public:
+    struct Variant {
+        std::string name;
+        Type* type;
+        
+        Variant(const std::string& name, Type* type)
+            : name(name), type(type) {}
+    };
+    
+private:
+    std::string name;              // Union name
+    std::vector<Variant> variants; // Variant definitions
+    int size;                      // Total size (max of all variants)
+    
+public:
+    UnionType(const std::string& name, const std::vector<Variant>& variants, int size = 0)
+        : Type(TypeKind::UNION), name(name), variants(variants), size(size) {}
+    
+    const std::string& getName() const { return name; }
+    const std::vector<Variant>& getVariants() const { return variants; }
+    int getSize() const { return size; }
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
+// GenericType - Type parameters (T, U, V)
+// ============================================================================
+// Reference: research_027 (generics and templates)
+
+class GenericType : public Type {
+private:
+    std::string name;  // Type parameter name (T, U, V, etc.)
+    
+public:
+    explicit GenericType(const std::string& name)
+        : Type(TypeKind::GENERIC), name(name) {}
+    
+    const std::string& getName() const { return name; }
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override { return name; }
+};
+
+// ============================================================================
+// ResultType - Result type for error handling (result<T>)
+// ============================================================================
+// Reference: research_016 (result type and error propagation)
+
+class ResultType : public Type {
+private:
+    Type* valueType;  // Success value type
+    
+public:
+    explicit ResultType(Type* valueType)
+        : Type(TypeKind::RESULT), valueType(valueType) {}
+    
+    Type* getValueType() const { return valueType; }
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
+// FutureType - Future type for async computation (future<T>)
+// ============================================================================
+// Reference: research_029 (async/await system), section 4 (Future trait design)
+
+class FutureType : public Type {
+private:
+    Type* outputType;  // The type produced when the Future completes
+    
+public:
+    explicit FutureType(Type* outputType)
+        : Type(TypeKind::FUTURE), outputType(outputType) {}
+    
+    Type* getOutputType() const { return outputType; }
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
+// UnknownType - Used during type inference
+// ============================================================================
+
+class UnknownType : public Type {
+public:
+    UnknownType() : Type(TypeKind::UNKNOWN) {}
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override { return "<unknown>"; }
+};
+
+// ============================================================================
+// ErrorType - Represents a type error
+// ============================================================================
+
+class ErrorType : public Type {
+public:
+    ErrorType() : Type(TypeKind::ERROR) {}
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override { return "<error>"; }
+};
+
+// ============================================================================
+// TypeSystem - Factory and cache for types
+// ============================================================================
+// Manages type instances to ensure type uniqueness
+
+class TypeSystem {
+private:
+    std::vector<std::unique_ptr<Type>> types;  // Owns all types
+    std::unordered_map<std::string, PrimitiveType*> primitiveCache;
+    std::unordered_map<std::string, GenericType*> genericCache;
+    std::unordered_map<std::string, StructType*> structCache;
+    std::unordered_map<std::string, UnionType*> unionCache;
+    
+    UnknownType* unknownType;
+    ErrorType* errorType;
+    
+public:
+    TypeSystem();
+    
+    // Primitive types
+    PrimitiveType* getPrimitiveType(const std::string& name);
+    
+    // Composite types
+    PointerType* getPointerType(Type* pointeeType, bool isMutable = false, bool isWild = false);
+    ArrayType* getArrayType(Type* elementType, int size);
+    VectorType* getVectorType(Type* componentType, int dimension);
+    FunctionType* getFunctionType(const std::vector<Type*>& paramTypes, Type* returnType,
+                                 bool isAsync = false, bool isVariadic = false);
+    ResultType* getResultType(Type* valueType);
+    FutureType* getFutureType(Type* outputType);
+    
+    // Type extraction helpers
+    // Phase 4.5.3: Extract T from future<T> for await expressions
+    Type* unwrapFutureType(Type* futureType);
+    
+    // Named types
+    StructType* getStructType(const std::string& name);
+    StructType* createStructType(const std::string& name, const std::vector<StructType::Field>& fields,
+                                int size = 0, int alignment = 0, bool isPacked = false);
+    
+    UnionType* getUnionType(const std::string& name);
+    UnionType* createUnionType(const std::string& name, const std::vector<UnionType::Variant>& variants,
+                              int size = 0);
+    
+    // Generic types
+    GenericType* getGenericType(const std::string& name);
+    
+    // Special types
+    UnknownType* getUnknownType() { return unknownType; }
+    ErrorType* getErrorType() { return errorType; }
+};
+
+} // namespace sema
+} // namespace aria
+
+#endif // ARIA_SEMA_TYPE_H
+
+
+
+FILE: src/frontend/sema/type.cpp
+====================================
+#include "frontend/sema/type.h"
+#include <sstream>
+
+namespace aria {
+namespace sema {
+
+// ============================================================================
+// PrimitiveType Implementation
+// ============================================================================
+
+bool PrimitiveType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    const PrimitiveType* otherPrim = static_cast<const PrimitiveType*>(other);
+    return name == otherPrim->name;
+}
+
+bool PrimitiveType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // Exact match
+    if (equals(target)) {
+        return true;
+    }
+    
+    // TODO Phase 3.2.2: Implement type coercion rules
+    // - Numeric widening (int8 -> int32, int32 -> int64)
+    // - Float coercion (flt32 -> flt64)
+    // - Integer to float (int32 -> flt32)
+    // For now, require exact match
+    
+    return false;
+}
+
+// ============================================================================
+// PointerType Implementation
+// ============================================================================
+
+bool PointerType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::POINTER) {
+        return false;
+    }
+    const PointerType* otherPtr = static_cast<const PointerType*>(other);
+    return pointeeType->equals(otherPtr->pointeeType) &&
+           isMutable == otherPtr->isMutable &&
+           isWild == otherPtr->isWild;
+}
+
+bool PointerType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    if (target->getKind() != TypeKind::POINTER) {
+        return false;
+    }
+    
+    const PointerType* targetPtr = static_cast<const PointerType*>(target);
+    
+    // Pointee types must be compatible
+    if (!pointeeType->equals(targetPtr->pointeeType)) {
+        return false;
+    }
+    
+    // Cannot assign mutable reference to immutable
+    if (isMutable && !targetPtr->isMutable) {
+        return false;
+    }
+    
+    // Wild pointers have different rules
+    if (isWild != targetPtr->isWild) {
+        return false;
+    }
+    
+    return true;
+}
+
+std::string PointerType::toString() const {
+    std::stringstream ss;
+    if (isWild) {
+        ss << "wild ";
+    }
+    ss << pointeeType->toString();
+    ss << "@";
+    if (isMutable) {
+        ss << "mut";
+    }
+    return ss.str();
+}
+
+// ============================================================================
+// ArrayType Implementation
+// ============================================================================
+
+bool ArrayType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::ARRAY) {
+        return false;
+    }
+    const ArrayType* otherArray = static_cast<const ArrayType*>(other);
+    return elementType->equals(otherArray->elementType) &&
+           size == otherArray->size;
+}
+
+bool ArrayType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // Array types must match exactly (including size)
+    return equals(target);
+}
+
+std::string ArrayType::toString() const {
+    std::stringstream ss;
+    ss << elementType->toString();
+    ss << "[";
+    if (size >= 0) {
+        ss << size;
+    }
+    ss << "]";
+    return ss.str();
+}
+
+// ============================================================================
+// VectorType Implementation
+// ============================================================================
+
+bool VectorType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::VECTOR) {
+        return false;
+    }
+    const VectorType* otherVec = static_cast<const VectorType*>(other);
+    return componentType->equals(otherVec->componentType) &&
+           dimension == otherVec->dimension;
+}
+
+bool VectorType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // Vector types must match exactly
+    return equals(target);
+}
+
+std::string VectorType::toString() const {
+    std::stringstream ss;
+    
+    // Determine prefix based on component type
+    std::string compName = componentType->toString();
+    if (compName == "flt32") {
+        ss << "vec" << dimension;
+    } else if (compName == "flt64") {
+        ss << "dvec" << dimension;
+    } else if (compName == "int32") {
+        ss << "ivec" << dimension;
+    } else if (compName == "bool") {
+        ss << "bvec" << dimension;
+    } else {
+        ss << compName << "vec" << dimension;
+    }
+    
+    return ss.str();
+}
+
+// ============================================================================
+// FunctionType Implementation
+// ============================================================================
+
+bool FunctionType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::FUNCTION) {
+        return false;
+    }
+    const FunctionType* otherFunc = static_cast<const FunctionType*>(other);
+    
+    // Check parameter count
+    if (paramTypes.size() != otherFunc->paramTypes.size()) {
+        return false;
+    }
+    
+    // Check all parameter types
+    for (size_t i = 0; i < paramTypes.size(); i++) {
+        if (!paramTypes[i]->equals(otherFunc->paramTypes[i])) {
+            return false;
+        }
+    }
+    
+    // Check return type
+    if (!returnType->equals(otherFunc->returnType)) {
+        return false;
+    }
+    
+    // Check async and variadic flags
+    if (isAsync != otherFunc->isAsync || isVariadic != otherFunc->isVariadic) {
+        return false;
+    }
+    
+    return true;
+}
+
+bool FunctionType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // Function types must match exactly for now
+    // TODO Phase 3.4: Implement contravariance for parameters, covariance for return
+    return equals(target);
+}
+
+std::string FunctionType::toString() const {
+    std::stringstream ss;
+    
+    if (isAsync) {
+        ss << "async ";
+    }
+    
+    ss << "func(";
+    for (size_t i = 0; i < paramTypes.size(); i++) {
+        if (i > 0) ss << ", ";
+        ss << paramTypes[i]->toString();
+    }
+    if (isVariadic) {
+        if (!paramTypes.empty()) ss << ", ";
+        ss << "...";
+    }
+    ss << ") -> " << returnType->toString();
+    
+    return ss.str();
+}
+
+// ============================================================================
+// StructType Implementation
+// ============================================================================
+
+const StructType::Field* StructType::getField(const std::string& fieldName) const {
+    for (const auto& field : fields) {
+        if (field.name == fieldName) {
+            return &field;
+        }
+    }
+    return nullptr;
+}
+
+int StructType::getFieldIndex(const std::string& fieldName) const {
+    for (size_t i = 0; i < fields.size(); i++) {
+        if (fields[i].name == fieldName) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+bool StructType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::STRUCT) {
+        return false;
+    }
+    const StructType* otherStruct = static_cast<const StructType*>(other);
+    
+    // Struct types are nominal - compare by name
+    return name == otherStruct->name;
+}
+
+bool StructType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // Struct types must match exactly (nominal typing)
+    return equals(target);
+}
+
+std::string StructType::toString() const {
+    std::stringstream ss;
+    ss << "struct " << name;
+    return ss.str();
+}
+
+// ============================================================================
+// UnionType Implementation
+// ============================================================================
+
+bool UnionType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::UNION) {
+        return false;
+    }
+    const UnionType* otherUnion = static_cast<const UnionType*>(other);
+    
+    // Union types are nominal - compare by name
+    return name == otherUnion->name;
+}
+
+bool UnionType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // Union types must match exactly (nominal typing)
+    return equals(target);
+}
+
+std::string UnionType::toString() const {
+    std::stringstream ss;
+    ss << "union " << name;
+    return ss.str();
+}
+
+// ============================================================================
+// GenericType Implementation
+// ============================================================================
+
+bool GenericType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::GENERIC) {
+        return false;
+    }
+    const GenericType* otherGeneric = static_cast<const GenericType*>(other);
+    return name == otherGeneric->name;
+}
+
+bool GenericType::isAssignableTo(const Type* /*target*/) const {
+    // Generic types can be assigned to anything (will be resolved during monomorphization)
+    return true;
+}
+
+// ============================================================================
+// ResultType Implementation
+// ============================================================================
+
+bool ResultType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::RESULT) {
+        return false;
+    }
+    const ResultType* otherResult = static_cast<const ResultType*>(other);
+    return valueType->equals(otherResult->valueType);
+}
+
+bool ResultType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // Result types must match exactly
+    return equals(target);
+}
+
+std::string ResultType::toString() const {
+    std::stringstream ss;
+    ss << "result<" << valueType->toString() << ">";
+    return ss.str();
+}
+
+// ============================================================================
+// FutureType Implementation
+// ============================================================================
+
+bool FutureType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::FUTURE) {
+        return false;
+    }
+    const FutureType* otherFuture = static_cast<const FutureType*>(other);
+    return outputType->equals(otherFuture->outputType);
+}
+
+bool FutureType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // Future types must match exactly
+    return equals(target);
+}
+
+std::string FutureType::toString() const {
+    std::stringstream ss;
+    ss << "future<" << outputType->toString() << ">";
+    return ss.str();
+}
+
+// ============================================================================
+// UnknownType Implementation
+// ============================================================================
+
+bool UnknownType::equals(const Type* other) const {
+    return other && other->getKind() == TypeKind::UNKNOWN;
+}
+
+bool UnknownType::isAssignableTo(const Type* /*target*/) const {
+    // Unknown types can be assigned to anything (type inference will resolve)
+    return true;
+}
+
+// ============================================================================
+// ErrorType Implementation
+// ============================================================================
+
+bool ErrorType::equals(const Type* other) const {
+    return other && other->getKind() == TypeKind::ERROR;
+}
+
+bool ErrorType::isAssignableTo(const Type* /*target*/) const {
+    // Error types can be assigned to anything (prevent cascading errors)
+    return true;
+}
+
+// ============================================================================
+// TypeSystem Implementation
+// ============================================================================
+
+TypeSystem::TypeSystem() {
+    // Create special types
+    auto unknown = std::make_unique<UnknownType>();
+    unknownType = unknown.get();
+    types.push_back(std::move(unknown));
+    
+    auto error = std::make_unique<ErrorType>();
+    errorType = error.get();
+    types.push_back(std::move(error));
+    
+    // Pre-create common primitive types
+    // Reference: research_012 (integers), research_013 (floats), research_002 (TBB)
+    
+    // Signed integers: int1 through int512
+    for (int bits : {1, 8, 16, 32, 64, 128, 256, 512}) {
+        std::string name = "int" + std::to_string(bits);
+        auto type = std::make_unique<PrimitiveType>(name, bits, true, false, false);
+        primitiveCache[name] = type.get();
+        types.push_back(std::move(type));
+    }
+    
+    // Unsigned integers: uint8 through uint512
+    for (int bits : {8, 16, 32, 64, 128, 256, 512}) {
+        std::string name = "uint" + std::to_string(bits);
+        auto type = std::make_unique<PrimitiveType>(name, bits, false, false, false);
+        primitiveCache[name] = type.get();
+        types.push_back(std::move(type));
+    }
+    
+    // Floating point: flt32 through flt512
+    for (int bits : {32, 64, 128, 256, 512}) {
+        std::string name = "flt" + std::to_string(bits);
+        auto type = std::make_unique<PrimitiveType>(name, bits, true, true, false);
+        primitiveCache[name] = type.get();
+        types.push_back(std::move(type));
+    }
+    
+    // TBB (Twisted Balanced Binary) types: tbb8, tbb16, tbb32, tbb64
+    for (int bits : {8, 16, 32, 64}) {
+        std::string name = "tbb" + std::to_string(bits);
+        auto type = std::make_unique<PrimitiveType>(name, bits, true, false, true);
+        primitiveCache[name] = type.get();
+        types.push_back(std::move(type));
+    }
+    
+    // Other primitives
+    auto boolType = std::make_unique<PrimitiveType>("bool", 1, false, false, false);
+    primitiveCache["bool"] = boolType.get();
+    types.push_back(std::move(boolType));
+    
+    auto stringType = std::make_unique<PrimitiveType>("string", 0, false, false, false);
+    primitiveCache["string"] = stringType.get();
+    types.push_back(std::move(stringType));
+    
+    auto objType = std::make_unique<PrimitiveType>("obj", 0, false, false, false);
+    primitiveCache["obj"] = objType.get();
+    types.push_back(std::move(objType));
+    
+    auto dynType = std::make_unique<PrimitiveType>("dyn", 0, false, false, false);
+    primitiveCache["dyn"] = dynType.get();
+    types.push_back(std::move(dynType));
+}
+
+PrimitiveType* TypeSystem::getPrimitiveType(const std::string& name) {
+    auto it = primitiveCache.find(name);
+    if (it != primitiveCache.end()) {
+        return it->second;
+    }
+    
+    // Create new primitive type if not cached
+    auto type = std::make_unique<PrimitiveType>(name);
+    PrimitiveType* ptr = type.get();
+    primitiveCache[name] = ptr;
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+PointerType* TypeSystem::getPointerType(Type* pointeeType, bool isMutable, bool isWild) {
+    // TODO: Implement caching for pointer types
+    auto type = std::make_unique<PointerType>(pointeeType, isMutable, isWild);
+    PointerType* ptr = type.get();
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+ArrayType* TypeSystem::getArrayType(Type* elementType, int size) {
+    // TODO: Implement caching for array types
+    auto type = std::make_unique<ArrayType>(elementType, size);
+    ArrayType* ptr = type.get();
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+VectorType* TypeSystem::getVectorType(Type* componentType, int dimension) {
+    // TODO: Implement caching for vector types
+    auto type = std::make_unique<VectorType>(componentType, dimension);
+    VectorType* ptr = type.get();
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+FunctionType* TypeSystem::getFunctionType(const std::vector<Type*>& paramTypes, Type* returnType,
+                                         bool isAsync, bool isVariadic) {
+    // Phase 4.5.3: Async functions automatically return future<T> instead of T
+    // When user declares: async func:foo = int32() { ... }
+    // Actual type becomes: func() -> future<int32>
+    Type* actualReturnType = returnType;
+    if (isAsync && returnType) {
+        actualReturnType = getFutureType(returnType);
+    }
+    
+    // TODO: Implement caching for function types
+    auto type = std::make_unique<FunctionType>(paramTypes, actualReturnType, isAsync, isVariadic);
+    FunctionType* ptr = type.get();
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+ResultType* TypeSystem::getResultType(Type* valueType) {
+    // TODO: Implement caching for result types
+    auto type = std::make_unique<ResultType>(valueType);
+    ResultType* ptr = type.get();
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+FutureType* TypeSystem::getFutureType(Type* outputType) {
+    // TODO: Implement caching for future types
+    auto type = std::make_unique<FutureType>(outputType);
+    FutureType* ptr = type.get();
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+// Phase 4.5.3 Task #4: Extract T from future<T> for await expressions
+// When we await a future<T>, the result type is T (not future<T>)
+Type* TypeSystem::unwrapFutureType(Type* futureType) {
+    if (!futureType) {
+        return getErrorType();
+    }
+    
+    // If it's a Future type, extract the output type
+    if (futureType->getKind() == TypeKind::FUTURE) {
+        FutureType* future = static_cast<FutureType*>(futureType);
+        return future->getOutputType();
+    }
+    
+    // If it's not a Future, this is a type error
+    // await can only be used on Future types
+    return getErrorType();
+}
+
+StructType* TypeSystem::getStructType(const std::string& name) {
+    auto it = structCache.find(name);
+    if (it != structCache.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+StructType* TypeSystem::createStructType(const std::string& name, const std::vector<StructType::Field>& fields,
+                                        int size, int alignment, bool isPacked) {
+    auto type = std::make_unique<StructType>(name, fields, size, alignment, isPacked);
+    StructType* ptr = type.get();
+    structCache[name] = ptr;
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+UnionType* TypeSystem::getUnionType(const std::string& name) {
+    auto it = unionCache.find(name);
+    if (it != unionCache.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+UnionType* TypeSystem::createUnionType(const std::string& name, const std::vector<UnionType::Variant>& variants,
+                                      int size) {
+    auto type = std::make_unique<UnionType>(name, variants, size);
+    UnionType* ptr = type.get();
+    unionCache[name] = ptr;
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+GenericType* TypeSystem::getGenericType(const std::string& name) {
+    auto it = genericCache.find(name);
+    if (it != genericCache.end()) {
+        return it->second;
+    }
+    
+    // Create new generic type
+    auto type = std::make_unique<GenericType>(name);
+    GenericType* ptr = type.get();
+    genericCache[name] = ptr;
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+} // namespace sema
+} // namespace aria
+
+
+
+FILE: include/frontend/sema/type_checker.h
+====================================
+#ifndef ARIA_SEMA_TYPE_CHECKER_H
+#define ARIA_SEMA_TYPE_CHECKER_H
+
+#include "type.h"
+#include "symbol_table.h"
+#include "frontend/ast/ast_node.h"
+#include "frontend/ast/expr.h"
+#include "frontend/ast/stmt.h"
+#include "frontend/token.h"
+#include <string>
+#include <memory>
+
+namespace aria {
+namespace sema {
+
+/**
+ * TypeChecker - Performs type checking and type inference for expressions and statements
+ * 
+ * Phase 3.2.2: Type Checking for Expressions
+ * 
+ * Responsibilities:
+ * - Infer types of expressions (literals, identifiers, binary/unary ops, calls)
+ * - Check type compatibility for operations
+ * - Validate operator types based on research_024 (arithmetic/bitwise) and research_025 (comparison/logical)
+ * - Handle TBB type semantics (sticky errors, sentinel checks)
+ * - Enforce strict boolean logic (no truthiness)
+ * - Manage type coercion rules
+ * 
+ * Key Features:
+ * - Literal type inference: int64, double, string, bool
+ * - Identifier lookup in symbol table for type resolution
+ * - Binary operator type checking with promotion/coercion
+ * - Unary operator type validation
+ * - Function call argument type matching
+ * - TBB ERR propagation checking
+ * - Strict boolean enforcement (no implicit truthiness)
+ */
+class TypeChecker {
+private:
+    TypeSystem* typeSystem;
+    SymbolTable* symbolTable;
+    std::vector<std::string> errors;  // Accumulated type errors
+    
+    // Current function return type (for return statement checking)
+    Type* currentFunctionReturnType;
+    
+    // ========================================================================
+    // Expression Type Inference
+    // ========================================================================
+    
+    /**
+     * Infer the type of a literal expression
+     * 
+     * Rules:
+     * - Integer literals: int64 (default), can be narrowed with explicit type annotation
+     * - Float literals: double (default for decimal), flt32 if suffixed with 'f'
+     * - String literals: string
+     * - Boolean literals: bool
+     * - Null literals: UnknownType (will be resolved based on context)
+     */
+    Type* inferLiteral(LiteralExpr* expr);
+    
+    /**
+     * Infer the type of an identifier expression
+     * 
+     * Rules:
+     * - Lookup identifier in symbol table
+     * - Return ErrorType if not found (with error message)
+     * - Return symbol's declared type if found
+     */
+    Type* inferIdentifier(IdentifierExpr* expr);
+    
+    /**
+     * Infer the type of a binary operation expression
+     * 
+     * Rules (based on research_024 and research_025):
+     * - Arithmetic operators (+, -, *, /, %):
+     *   * Require numeric types (int*, uint*, flt*, tbb*)
+     *   * Promote operands to common type (widening)
+     *   * TBB types stick to TBB (preserve error semantics)
+     *   * Result type is the promoted type
+     * 
+     * - Bitwise operators (&, |, ^, ~, <<, >>):
+     *   * UNSIGNED MANDATE: Only unsigned types allowed
+     *   * Error if signed or TBB types used
+     *   * Result type is same as operand type
+     * 
+     * - Comparison operators (==, !=, <, <=, >, >=):
+     *   * Require compatible types
+     *   * Result type is always bool
+     *   * TBB comparisons: ERR handling (ERR == ERR is true, ERR < valid is undefined)
+     * 
+     * - Logical operators (&&, ||):
+     *   * Strict boolean requirement (no truthiness)
+     *   * Both operands must be bool
+     *   * Result type is bool
+     * 
+     * - Spaceship operator (<=>):
+     *   * Result type is int (returns -1, 0, or 1)
+     */
+    Type* inferBinaryOp(BinaryExpr* expr);
+    
+    /**
+     * Infer the type of a unary operation expression
+     * 
+     * Rules (based on research_024 and research_026):
+     * - Arithmetic negation (-): numeric types → same type
+     * - Logical NOT (!): bool → bool (strict, no truthiness)
+     * - Bitwise NOT (~): unsigned types → same type
+     * - Address-of (@): T → T@ (pointer type)
+     * - Pin (#): T (GC object) → wild T@ (pinned pointer)
+     * - Borrow/Iterate ($): Array/Iterator → element type
+     * - Unwrap (?): result<T> → T (with default handling)
+     */
+    Type* inferUnaryOp(UnaryExpr* expr);
+    
+    /**
+     * Infer the type of a function call expression
+     * 
+     * Rules:
+     * - Lookup function identifier to get function type
+     * - Check argument count matches parameter count
+     * - Check each argument type is assignable to parameter type
+     * - Return function's return type
+     */
+    Type* inferCallExpr(CallExpr* expr);
+    
+    /**
+     * Infer the type of an array index expression
+     * 
+     * Rules:
+     * - Base must be array type (T[], T[N])
+     * - Index must be integer type
+     * - Result type is element type T
+     */
+    Type* inferIndexExpr(IndexExpr* expr);
+    
+    /**
+     * Infer the type of a member access expression
+     * 
+     * Rules:
+     * - Object must be struct or union type
+     * - Member must exist in the type
+     * - Result type is member's type
+     */
+    Type* inferMemberAccessExpr(MemberAccessExpr* expr);
+    
+    /**
+     * Infer the type of a ternary expression
+     * 
+     * Rules:
+     * - Condition must be bool
+     * - True and false branches must have compatible types
+     * - Result type is common type of branches
+     */
+    Type* inferTernaryExpr(TernaryExpr* expr);
+    
+    // ========================================================================
+    // Type Compatibility and Coercion
+    // ========================================================================
+    
+    /**
+     * Find common type for binary operation (type promotion/widening)
+     * 
+     * Rules:
+     * - int8 + int16 → int16 (widening to larger type)
+     * - int32 + flt32 → flt32 (integer to float promotion)
+     * - tbb8 + tbb16 → tbb16 (TBB widening preserves error semantics)
+     * - int32 + tbb32 → ERROR (cannot mix standard and TBB)
+     * - uint8 + int8 → ERROR (no implicit signed/unsigned mixing for safety)
+     */
+    Type* findCommonType(Type* left, Type* right);
+    
+    /**
+     * Check if a type can be implicitly coerced to target type
+     * 
+     * Allowed coercions:
+     * - Numeric widening: int8 → int16 → int32 → int64
+     * - Integer to float: int32 → flt32, int64 → flt64
+     * - TBB widening: tbb8 → tbb16 → tbb32 → tbb64
+     * 
+     * Disallowed coercions:
+     * - Narrowing: int32 → int8 (requires explicit cast)
+     * - Float to int: flt32 → int32 (requires explicit cast)
+     * - Standard ↔ TBB: int32 ↔ tbb32 (requires explicit cast)
+     * - Signed ↔ Unsigned: int32 ↔ uint32 (requires explicit cast for safety)
+     */
+    bool canCoerce(Type* from, Type* to);
+    
+    /**
+     * Check if binary operator is valid for given operand types
+     * 
+     * Returns: Result type if valid, ErrorType otherwise
+     */
+    Type* checkBinaryOperator(frontend::TokenType op, Type* leftType, Type* rightType);
+    
+    /**
+     * Check if unary operator is valid for given operand type
+     * 
+     * Returns: Result type if valid, ErrorType otherwise
+     */
+    Type* checkUnaryOperator(frontend::TokenType op, Type* operandType);
+    
+    // ========================================================================
+    // TBB Type Validation (Phase 3.2.4)
+    // ========================================================================
+    
+    /**
+     * Check if a type is a TBB (Twisted Balanced Binary) type
+     * 
+     * TBB types: tbb8, tbb16, tbb32, tbb64
+     */
+    bool isTBBType(Type* type);
+    
+    /**
+     * Get the ERR sentinel value for a TBB type
+     * 
+     * Returns:
+     * - tbb8:  -128 (0x80)
+     * - tbb16: -32768 (0x8000)
+     * - tbb32: -2147483648 (0x80000000)
+     * - tbb64: -9223372036854775808 (0x8000000000000000)
+     */
+    int64_t getTBBErrorSentinel(Type* type);
+    
+    /**
+     * Get the valid range for a TBB type (excluding ERR sentinel)
+     * 
+     * Returns pair of (min, max):
+     * - tbb8:  [-127, +127]
+     * - tbb16: [-32767, +32767]
+     * - tbb32: [-2147483647, +2147483647]
+     * - tbb64: [-9223372036854775807, +9223372036854775807]
+     */
+    std::pair<int64_t, int64_t> getTBBValidRange(Type* type);
+    
+    /**
+     * Validate that a literal value is not the ERR sentinel for a TBB type
+     * 
+     * Rules:
+     * - Assigning ERR sentinel directly should produce a warning
+     * - Use ERR keyword literal instead for clarity
+     */
+    void checkTBBLiteralValue(int64_t value, Type* type, ASTNode* node);
+    
+    /**
+     * Check if operation produces ERR (sticky error propagation)
+     * 
+     * Rules:
+     * - ERR + anything = ERR
+     * - ERR * anything = ERR
+     * - ERR in any arithmetic operation produces ERR
+     * - Overflow in TBB operations produces ERR
+     */
+    bool isERRProducingOperation(Type* resultType, Type* leftType, Type* rightType);
+    
+    // ========================================================================
+    // Balanced Ternary/Nonary Type Validation (Phase 3.2.5)
+    // ========================================================================
+    
+    /**
+     * Check if a type is a balanced ternary/nonary type
+     * 
+     * Balanced types: trit, tryte, nit, nyte
+     */
+    bool isBalancedType(Type* type);
+    
+    /**
+     * Check if a type is trit (balanced ternary digit)
+     * 
+     * trit: single balanced ternary digit {-1, 0, 1}
+     */
+    bool isTritType(Type* type);
+    
+    /**
+     * Check if a type is tryte (10 trits)
+     * 
+     * tryte: 10 trits stored in uint16
+     * Range: [-29524, +29524] (59,049 values)
+     */
+    bool isTryteType(Type* type);
+    
+    /**
+     * Check if a type is nit (balanced nonary digit)
+     * 
+     * nit: single balanced nonary digit {-4, -3, -2, -1, 0, 1, 2, 3, 4}
+     */
+    bool isNitType(Type* type);
+    
+    /**
+     * Check if a type is nyte (5 nits)
+     * 
+     * nyte: 5 nits stored in uint16
+     * Range: [-29524, +29524] (59,049 values)
+     */
+    bool isNyteType(Type* type);
+    
+    /**
+     * Get valid digit values for balanced atomic types
+     * 
+     * Returns:
+     * - trit: {-1, 0, 1}
+     * - nit: {-4, -3, -2, -1, 0, 1, 2, 3, 4}
+     * - tryte/nyte: empty (composite types, not digit validation)
+     */
+    std::vector<int> getBalancedValidDigits(Type* type);
+    
+    /**
+     * Get valid range for balanced composite types
+     * 
+     * Returns pair of (min, max):
+     * - tryte: [-29524, +29524]
+     * - nyte: [-29524, +29524]
+     * - trit/nit: N/A (use getBalancedValidDigits instead)
+     */
+    std::pair<int64_t, int64_t> getBalancedCompositeRange(Type* type);
+    
+    /**
+     * Validate that a literal value is valid for a balanced type
+     * 
+     * Rules:
+     * - trit: must be exactly -1, 0, or 1
+     * - nit: must be -4, -3, -2, -1, 0, 1, 2, 3, or 4
+     * - tryte: composite type, range checked at runtime
+     * - nyte: composite type, range checked at runtime
+     */
+    void checkBalancedLiteralValue(int64_t value, Type* type, ASTNode* node);
+    
+    // ========================================================================    // Standard Integer Type Validation
+    // ========================================================================
+    
+    /**
+     * Check if a type is a standard integer type (int8, int16, int32, int64, uint8, uint16, uint32, uint64)
+     */
+    bool isStandardIntType(Type* type) const;
+    
+    /**
+     * Check if an int64_t literal value fits in the target integer type (silent check, no errors)
+     * 
+     * This is used for context-aware literal typing in binary expressions.
+     * For example, in "x + 10" where x is int32, we check if 10 fits in int32
+     * to avoid unnecessary widening to int64.
+     * 
+     * Returns: true if the literal fits, false otherwise (no error reporting)
+     */
+    bool literalFitsInType(int64_t value, Type* type) const;
+    
+    /**
+     * Check if an int64_t literal value can fit in the target integer type (with error reporting)
+     * 
+     * This enables safe narrowing conversions at compile time.
+     * For example, the literal 42 (int64_t) can be assigned to int32, int16, or int8
+     * because 42 fits within their ranges.
+     * 
+     * Rules:
+     * - int8: range [-128, 127]
+     * - int16: range [-32768, 32767]
+     * - int32: range [-2147483648, 2147483647]
+     * - int64: always fits (same type)
+     * - uint8: range [0, 255]
+     * - uint16: range [0, 65535]
+     * - uint32: range [0, 4294967295]
+     * - uint64: non-negative values always fit
+     * 
+     * Returns: true if the literal fits, false otherwise (and reports error)
+     */
+    bool canLiteralFitInIntType(int64_t value, Type* type, ASTNode* node);
+    
+    // ========================================================================    // Error Handling
+    // ========================================================================
+    
+    void addError(const std::string& message, int line, int column);
+    void addError(const std::string& message, ASTNode* node);
+    
+public:
+    TypeChecker(TypeSystem* typeSystem, SymbolTable* symbolTable)
+        : typeSystem(typeSystem), symbolTable(symbolTable),
+          currentFunctionReturnType(nullptr) {}
+    
+    /**
+     * Infer the type of an expression
+     * 
+     * This is the main entry point for type inference.
+     * Dispatches to specific inference methods based on node type.
+     * 
+     * Returns: The inferred type, or ErrorType if type checking fails
+     */
+    Type* inferType(ASTNode* expr);
+    
+    /**
+     * Check type compatibility for statements (Phase 3.2.3)
+     * 
+     * Main entry point for statement type checking.
+     * Dispatches to specific checking methods based on statement type.
+     * Validates type safety for all statement constructs.
+     */
+    void checkStatement(ASTNode* stmt);
+    
+    /**
+     * Check variable declaration statement
+     * 
+     * Rules:
+     * - If initializer exists, its type must be assignable to declared type
+     * - const variables must have initializer
+     * - Declared type must exist in type system
+     */
+    void checkVarDecl(VarDeclStmt* stmt);
+    
+    /**
+     * Check assignment expression
+     * 
+     * Rules:
+     * - Left side must be assignable (identifier, index, member access)
+     * - Right side type must be assignable to left side type
+     * - Cannot assign to const variables
+     */
+    void checkAssignment(BinaryExpr* expr);
+    
+    /**
+     * Check return statement
+     * 
+     * Rules:
+     * - Return type must match current function's return type
+     * - Void functions cannot return values
+     * - Non-void functions must return values
+     */
+    void checkReturnStmt(ReturnStmt* stmt);
+    
+    /**
+     * Check if statement
+     * 
+     * Rules:
+     * - Condition must be bool type
+     * - No truthiness allowed (must use explicit comparison)
+     */
+    void checkIfStmt(IfStmt* stmt);
+    
+    /**
+     * Check while statement
+     * 
+     * Rules:
+     * - Condition must be bool type
+     * - No truthiness allowed
+     */
+    void checkWhileStmt(WhileStmt* stmt);
+    
+    /**
+     * Check for statement
+     * 
+     * Rules:
+     * - Condition (if present) must be bool type
+     * - Initializer and update can be any expression
+     */
+    void checkForStmt(ForStmt* stmt);
+    
+    /**
+     * Check block statement (recursively check all statements)
+     */
+    void checkBlockStmt(BlockStmt* stmt);
+    
+    /**
+     * Check expression statement (just infer its type)
+     */
+    void checkExpressionStmt(ExpressionStmt* stmt);
+    
+    /**
+     * Get accumulated type errors
+     */
+    const std::vector<std::string>& getErrors() const { return errors; }
+    
+    /**
+     * Check if type checking has errors
+     */
+    bool hasErrors() const { return !errors.empty(); }
+    
+    /**
+     * Clear accumulated errors
+     */
+    void clearErrors() { errors.clear(); }
+    
+    /**
+     * Set current function return type (for return statement checking)
+     */
+    void setCurrentFunctionReturnType(Type* type) { currentFunctionReturnType = type; }
+};
+
+} // namespace sema
+} // namespace aria
+
+#endif // ARIA_SEMA_TYPE_CHECKER_H
+
+
+
+FILE: src/frontend/sema/type_checker.cpp
+====================================
+#include "frontend/sema/type_checker.h"
+#include "frontend/ast/expr.h"
+#include "frontend/ast/stmt.h"
+#include <sstream>
+#include <variant>
+
+namespace aria {
+namespace sema {
+
+// ============================================================================
+// Type Inference: Main Entry Point
+// ============================================================================
+
+Type* TypeChecker::inferType(ASTNode* expr) {
+    if (!expr) {
+        return typeSystem->getErrorType();
+    }
+    
+    switch (expr->type) {
+        case ASTNode::NodeType::LITERAL:
+            return inferLiteral(static_cast<LiteralExpr*>(expr));
+        
+        case ASTNode::NodeType::IDENTIFIER:
+            return inferIdentifier(static_cast<IdentifierExpr*>(expr));
+        
+        case ASTNode::NodeType::BINARY_OP:
+            return inferBinaryOp(static_cast<BinaryExpr*>(expr));
+        
+        case ASTNode::NodeType::UNARY_OP:
+            return inferUnaryOp(static_cast<UnaryExpr*>(expr));
+        
+        case ASTNode::NodeType::CALL:
+            return inferCallExpr(static_cast<CallExpr*>(expr));
+        
+        case ASTNode::NodeType::INDEX:
+            return inferIndexExpr(static_cast<IndexExpr*>(expr));
+        
+        case ASTNode::NodeType::MEMBER_ACCESS:
+        case ASTNode::NodeType::POINTER_MEMBER:
+            return inferMemberAccessExpr(static_cast<MemberAccessExpr*>(expr));
+        
+        case ASTNode::NodeType::TERNARY:
+            return inferTernaryExpr(static_cast<TernaryExpr*>(expr));
+        
+        default:
+            addError("Type inference not implemented for node type: " + 
+                    ASTNode::nodeTypeToString(expr->type), expr);
+            return typeSystem->getErrorType();
+    }
+}
+
+// ============================================================================
+// Literal Type Inference
+// ============================================================================
+
+Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
+    // Use std::visit to handle variant
+    return std::visit([this](auto&& arg) -> Type* {
+        using T = std::decay_t<decltype(arg)>;
+        
+        if constexpr (std::is_same_v<T, int64_t>) {
+            // Integer literal: default to int64
+            return typeSystem->getPrimitiveType("int64");
+        }
+        else if constexpr (std::is_same_v<T, double>) {
+            // Float literal: default to flt64 (double precision)
+            return typeSystem->getPrimitiveType("flt64");
+        }
+        else if constexpr (std::is_same_v<T, std::string>) {
+            // String literal
+            return typeSystem->getPrimitiveType("string");
+        }
+        else if constexpr (std::is_same_v<T, bool>) {
+            // Boolean literal
+            return typeSystem->getPrimitiveType("bool");
+        }
+        else if constexpr (std::is_same_v<T, std::monostate>) {
+            // Null literal: type will be resolved from context
+            return typeSystem->getUnknownType();
+        }
+        else {
+            // Should never reach here
+            return typeSystem->getErrorType();
+        }
+    }, expr->value);
+}
+
+// ============================================================================
+// Identifier Type Inference
+// ============================================================================
+
+Type* TypeChecker::inferIdentifier(IdentifierExpr* expr) {
+    // Lookup symbol in symbol table
+    Symbol* symbol = symbolTable->lookupSymbol(expr->name);
+    
+    if (!symbol) {
+        addError("Undefined identifier: '" + expr->name + "'", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    return symbol->type;
+}
+
+// ============================================================================
+// Binary Operation Type Inference
+// ============================================================================
+
+Type* TypeChecker::inferBinaryOp(BinaryExpr* expr) {
+    // Infer operand types
+    Type* leftType = inferType(expr->left.get());
+    Type* rightType = inferType(expr->right.get());
+    
+    // If either operand has error, propagate error
+    if (leftType->getKind() == TypeKind::ERROR || 
+        rightType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Context-aware literal typing for standard integers
+    // If one operand is a literal int64 and the other is a smaller standard integer type,
+    // check if the literal value fits in the smaller type. If so, use the smaller type
+    // for the literal to avoid unnecessary widening.
+    
+    // Check if right operand is an int64 literal and left is a standard integer
+    if (expr->right->type == ASTNode::NodeType::LITERAL &&
+        isStandardIntType(leftType) &&
+        rightType->toString() == "int64") {
+        
+        LiteralExpr* rightLiteral = static_cast<LiteralExpr*>(expr->right.get());
+        if (std::holds_alternative<int64_t>(rightLiteral->value)) {
+            int64_t value = std::get<int64_t>(rightLiteral->value);
+            
+            // Check if literal fits in left type - if so, use left type for the literal
+            if (literalFitsInType(value, leftType)) {
+                rightType = leftType;  // Treat literal as having the same type as left operand
+            }
+        }
+    }
+    
+    // Check if left operand is an int64 literal and right is a standard integer
+    if (expr->left->type == ASTNode::NodeType::LITERAL &&
+        isStandardIntType(rightType) &&
+        leftType->toString() == "int64") {
+        
+        LiteralExpr* leftLiteral = static_cast<LiteralExpr*>(expr->left.get());
+        if (std::holds_alternative<int64_t>(leftLiteral->value)) {
+            int64_t value = std::get<int64_t>(leftLiteral->value);
+            
+            // Check if literal fits in right type - if so, use right type for the literal
+            if (literalFitsInType(value, rightType)) {
+                leftType = rightType;  // Treat literal as having the same type as right operand
+            }
+        }
+    }
+    
+    // Check operator validity for given types
+    return checkBinaryOperator(expr->op.type, leftType, rightType);
+}
+
+// ============================================================================
+// Binary Operator Type Checking
+// ============================================================================
+
+Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, Type* rightType) {
+    using frontend::TokenType;
+    
+    // ========================================================================
+    // Arithmetic Operators: +, -, *, /, %
+    // ========================================================================
+    if (op == TokenType::TOKEN_PLUS || op == TokenType::TOKEN_MINUS ||
+        op == TokenType::TOKEN_STAR || op == TokenType::TOKEN_SLASH ||
+        op == TokenType::TOKEN_PERCENT) {
+        
+        // Both operands must be numeric (int*, uint*, flt*, tbb*)
+        PrimitiveType* leftPrim = dynamic_cast<PrimitiveType*>(leftType);
+        PrimitiveType* rightPrim = dynamic_cast<PrimitiveType*>(rightType);
+        
+        if (!leftPrim || !rightPrim) {
+            addError("Arithmetic operators require numeric types", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        // Check if types are numeric
+        const std::string& leftName = leftPrim->getName();
+        const std::string& rightName = rightPrim->getName();
+        
+        bool leftIsNumeric = (leftName.find("int") == 0 || leftName.find("uint") == 0 ||
+                             leftName.find("flt") == 0 || leftName.find("tbb") == 0);
+        bool rightIsNumeric = (rightName.find("int") == 0 || rightName.find("uint") == 0 ||
+                              rightName.find("flt") == 0 || rightName.find("tbb") == 0);
+        
+        if (!leftIsNumeric || !rightIsNumeric) {
+            addError("Arithmetic operators require numeric types, got '" + 
+                    leftName + "' and '" + rightName + "'", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        // Find common type (with promotion/widening)
+        Type* resultType = findCommonType(leftType, rightType);
+        if (resultType->getKind() == TypeKind::ERROR) {
+            return typeSystem->getErrorType();
+        }
+        
+        return resultType;
+    }
+    
+    // ========================================================================
+    // Bitwise Operators: &, |, ^, <<, >>
+    // ========================================================================
+    if (op == TokenType::TOKEN_AMPERSAND || op == TokenType::TOKEN_PIPE ||
+        op == TokenType::TOKEN_CARET || op == TokenType::TOKEN_SHIFT_LEFT ||
+        op == TokenType::TOKEN_SHIFT_RIGHT) {
+        
+        // UNSIGNED MANDATE: Only unsigned types allowed
+        PrimitiveType* leftPrim = dynamic_cast<PrimitiveType*>(leftType);
+        PrimitiveType* rightPrim = dynamic_cast<PrimitiveType*>(rightType);
+        
+        if (!leftPrim || !rightPrim) {
+            addError("Bitwise operators require unsigned integer types", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        const std::string& leftName = leftPrim->getName();
+        const std::string& rightName = rightPrim->getName();
+        
+        // Check for unsigned prefix
+        if (leftName.find("uint") != 0 || rightName.find("uint") != 0) {
+            addError("Bitwise operators require unsigned types. Got '" + 
+                    leftName + "' and '" + rightName + "'. Cast to unsigned (uint*) to perform bit manipulation.", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        // Result type is the common type (both must be same unsigned type)
+        if (!leftType->equals(rightType)) {
+            addError("Bitwise operators require same unsigned type on both sides", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        return leftType;
+    }
+    
+    // ========================================================================
+    // Comparison Operators: ==, !=, <, <=, >, >=
+    // ========================================================================
+    if (op == TokenType::TOKEN_EQUAL_EQUAL || op == TokenType::TOKEN_BANG_EQUAL ||
+        op == TokenType::TOKEN_LESS || op == TokenType::TOKEN_LESS_EQUAL ||
+        op == TokenType::TOKEN_GREATER || op == TokenType::TOKEN_GREATER_EQUAL) {
+        
+        // Require compatible types
+        if (!leftType->equals(rightType) && !canCoerce(leftType, rightType) && !canCoerce(rightType, leftType)) {
+            addError("Cannot compare incompatible types: '" + 
+                    leftType->toString() + "' and '" + rightType->toString() + "'", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        // Result is always bool
+        return typeSystem->getPrimitiveType("bool");
+    }
+    
+    // ========================================================================
+    // Logical Operators: &&, ||
+    // ========================================================================
+    if (op == TokenType::TOKEN_AND_AND || op == TokenType::TOKEN_OR_OR) {
+        // Strict boolean requirement (no truthiness)
+        PrimitiveType* leftPrim = dynamic_cast<PrimitiveType*>(leftType);
+        PrimitiveType* rightPrim = dynamic_cast<PrimitiveType*>(rightType);
+        
+        if (!leftPrim || leftPrim->getName() != "bool") {
+            addError("Logical operator requires 'bool' type on left side, got '" + 
+                    leftType->toString() + "'. Use explicit comparison (e.g., x != 0) instead of truthiness.", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        if (!rightPrim || rightPrim->getName() != "bool") {
+            addError("Logical operator requires 'bool' type on right side, got '" + 
+                    rightType->toString() + "'. Use explicit comparison (e.g., x != 0) instead of truthiness.", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        // Result is bool
+        return typeSystem->getPrimitiveType("bool");
+    }
+    
+    // ========================================================================
+    // Spaceship Operator: <=>
+    // ========================================================================
+    if (op == TokenType::TOKEN_SPACESHIP) {
+        // Require compatible types for comparison
+        if (!leftType->equals(rightType) && !canCoerce(leftType, rightType) && !canCoerce(rightType, leftType)) {
+            addError("Spaceship operator requires compatible types: '" + 
+                    leftType->toString() + "' and '" + rightType->toString() + "'", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        // Result is int (returns -1, 0, or 1)
+        return typeSystem->getPrimitiveType("int32");
+    }
+    
+    // ========================================================================
+    // Assignment Operators: =, +=, -=, *=, /=, %=
+    // ========================================================================
+    if (op == TokenType::TOKEN_EQUAL || op == TokenType::TOKEN_PLUS_EQUAL ||
+        op == TokenType::TOKEN_MINUS_EQUAL || op == TokenType::TOKEN_STAR_EQUAL ||
+        op == TokenType::TOKEN_SLASH_EQUAL || op == TokenType::TOKEN_PERCENT_EQUAL) {
+        
+        // Check that right side is assignable to left side
+        if (!rightType->isAssignableTo(leftType)) {
+            addError("Cannot assign '" + rightType->toString() + 
+                    "' to '" + leftType->toString() + "'", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        // Result type is left side type
+        return leftType;
+    }
+    
+    // Unknown operator
+    addError("Unknown binary operator", 0, 0);
+    return typeSystem->getErrorType();
+}
+
+// ============================================================================
+// Unary Operation Type Inference
+// ============================================================================
+
+Type* TypeChecker::inferUnaryOp(UnaryExpr* expr) {
+    // Infer operand type
+    Type* operandType = inferType(expr->operand.get());
+    
+    // If operand has error, propagate error
+    if (operandType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Check operator validity
+    return checkUnaryOperator(expr->op.type, operandType);
+}
+
+// ============================================================================
+// Unary Operator Type Checking
+// ============================================================================
+
+Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType) {
+    using frontend::TokenType;
+    
+    PrimitiveType* primType = dynamic_cast<PrimitiveType*>(operandType);
+    
+    // ========================================================================
+    // Arithmetic Negation: -
+    // ========================================================================
+    if (op == TokenType::TOKEN_MINUS) {
+        // Require numeric type
+        if (!primType) {
+            addError("Unary minus requires numeric type, got '" + 
+                    operandType->toString() + "'", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        const std::string& name = primType->getName();
+        bool isNumeric = (name.find("int") == 0 || name.find("flt") == 0 || name.find("tbb") == 0);
+        
+        if (!isNumeric) {
+            addError("Unary minus requires numeric type, got '" + name + "'", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        // Result type is same as operand
+        return operandType;
+    }
+    
+    // ========================================================================
+    // Logical NOT: !
+    // ========================================================================
+    if (op == TokenType::TOKEN_BANG) {
+        // Strict bool requirement (no truthiness)
+        if (!primType || primType->getName() != "bool") {
+            addError("Logical NOT requires 'bool' type, got '" + 
+                    operandType->toString() + "'. Use explicit comparison (e.g., x == 0) instead of truthiness.", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        // Result is bool
+        return typeSystem->getPrimitiveType("bool");
+    }
+    
+    // ========================================================================
+    // Bitwise NOT: ~
+    // ========================================================================
+    if (op == TokenType::TOKEN_TILDE) {
+        // Require unsigned type
+        if (!primType || primType->getName().find("uint") != 0) {
+            addError("Bitwise NOT requires unsigned type, got '" + 
+                    operandType->toString() + "'. Cast to unsigned (uint*) to perform bit manipulation.", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        // Result type is same as operand
+        return operandType;
+    }
+    
+    // ========================================================================
+    // Address-of: @
+    // ========================================================================
+    if (op == TokenType::TOKEN_AT) {
+        // Create pointer type
+        // TODO: Implement pointer type creation in Phase 3.2.1 enhancements
+        // For now, return ErrorType with message
+        addError("Address-of operator (@) not yet implemented in type system", 0, 0);
+        return typeSystem->getErrorType();
+    }
+    
+    // ========================================================================
+    // Pin: #
+    // ========================================================================
+    if (op == TokenType::TOKEN_HASH) {
+        // Pin GC object to get wild pointer
+        // TODO: Check that operand is GC object type
+        addError("Pin operator (#) not yet implemented in type system", 0, 0);
+        return typeSystem->getErrorType();
+    }
+    
+    // ========================================================================
+    // Borrow/Iterate: $
+    // ========================================================================
+    if (op == TokenType::TOKEN_DOLLAR) {
+        // Borrow or iterate over collection
+        // TODO: Check that operand is array or iterator type
+        addError("Borrow operator ($) not yet implemented in type system", 0, 0);
+        return typeSystem->getErrorType();
+    }
+    
+    // ========================================================================
+    // Unwrap: ?
+    // ========================================================================
+    if (op == TokenType::TOKEN_QUESTION) {
+        // Unwrap result type
+        // TODO: Check that operand is result<T> type, return T
+        addError("Unwrap operator (?) not yet implemented in type system", 0, 0);
+        return typeSystem->getErrorType();
+    }
+    
+    // Unknown operator
+    addError("Unknown unary operator", 0, 0);
+    return typeSystem->getErrorType();
+}
+
+// ============================================================================
+// Function Call Type Inference
+// ============================================================================
+
+Type* TypeChecker::inferCallExpr(CallExpr* expr) {
+    // Infer callee type (should be function type or callable object)
+    Type* calleeType = inferType(expr->callee.get());
+    
+    if (calleeType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // TODO: Check that callee is a function type
+    // TODO: Check argument count and types match parameters
+    // For now, return UnknownType
+    addError("Function call type checking not yet fully implemented", expr);
+    return typeSystem->getUnknownType();
+}
+
+// ============================================================================
+// Array Index Type Inference
+// ============================================================================
+
+Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
+    // Infer array type
+    Type* arrayType = inferType(expr->array.get());
+    
+    if (arrayType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Infer index type
+    Type* indexType = inferType(expr->index.get());
+    
+    if (indexType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Check that index is integer type
+    PrimitiveType* indexPrim = dynamic_cast<PrimitiveType*>(indexType);
+    if (!indexPrim || (indexPrim->getName().find("int") != 0 && indexPrim->getName().find("uint") != 0)) {
+        addError("Array index must be integer type, got '" + indexType->toString() + "'", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // TODO: Check that arrayType is array type, return element type
+    // For now, return UnknownType
+    addError("Array indexing type checking not yet fully implemented", expr);
+    return typeSystem->getUnknownType();
+}
+
+// ============================================================================
+// Member Access Type Inference
+// ============================================================================
+
+Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
+    // Infer object type
+    Type* objectType = inferType(expr->object.get());
+    
+    if (objectType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // TODO: Check that object is struct/union type
+    // TODO: Lookup member in struct/union and return its type
+    // For now, return UnknownType
+    addError("Member access type checking not yet fully implemented", expr);
+    return typeSystem->getUnknownType();
+}
+
+// ============================================================================
+// Ternary Expression Type Inference
+// ============================================================================
+
+Type* TypeChecker::inferTernaryExpr(TernaryExpr* expr) {
+    // Infer condition type
+    Type* condType = inferType(expr->condition.get());
+    
+    if (condType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Condition must be bool
+    PrimitiveType* condPrim = dynamic_cast<PrimitiveType*>(condType);
+    if (!condPrim || condPrim->getName() != "bool") {
+        addError("Ternary operator condition must be 'bool' type, got '" + 
+                condType->toString() + "'", expr->condition.get());
+        return typeSystem->getErrorType();
+    }
+    
+    // Infer branch types
+    Type* trueType = inferType(expr->trueValue.get());
+    Type* falseType = inferType(expr->falseValue.get());
+    
+    if (trueType->getKind() == TypeKind::ERROR || falseType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Find common type for branches
+    Type* resultType = findCommonType(trueType, falseType);
+    
+    if (resultType->getKind() == TypeKind::ERROR) {
+        addError("Ternary operator branches have incompatible types: '" + 
+                trueType->toString() + "' and '" + falseType->toString() + "'", expr);
+    }
+    
+    return resultType;
+}
+
+// ============================================================================
+// Type Compatibility and Coercion
+// ============================================================================
+
+Type* TypeChecker::findCommonType(Type* left, Type* right) {
+    // If types are equal, return either one
+    if (left->equals(right)) {
+        return left;
+    }
+    
+    // Try coercion in both directions
+    if (canCoerce(left, right)) {
+        return right;  // Widen left to right
+    }
+    
+    if (canCoerce(right, left)) {
+        return left;  // Widen right to left
+    }
+    
+    // No common type found
+    addError("No common type between '" + left->toString() + 
+            "' and '" + right->toString() + "'", 0, 0);
+    return typeSystem->getErrorType();
+}
+
+bool TypeChecker::canCoerce(Type* from, Type* to) {
+    // Same type: always coercible
+    if (from->equals(to)) {
+        return true;
+    }
+    
+    // Only handle primitive type coercion for now
+    PrimitiveType* fromPrim = dynamic_cast<PrimitiveType*>(from);
+    PrimitiveType* toPrim = dynamic_cast<PrimitiveType*>(to);
+    
+    if (!fromPrim || !toPrim) {
+        return false;  // Non-primitive types require exact match
+    }
+    
+    const std::string& fromName = fromPrim->getName();
+    const std::string& toName = toPrim->getName();
+    
+    // ========================================================================
+    // Numeric Widening: int8 → int16 → int32 → int64 → int128 → int256 → int512
+    // ========================================================================
+    
+    // Extract bit width from type name (e.g., "int32" → 32)
+    auto extractBitWidth = [](const std::string& name) -> int {
+        if (name.find("int") == 0) {
+            size_t pos = (name[0] == 'u') ? 4 : 3;  // "uint" or "int"
+            return std::stoi(name.substr(pos));
+        }
+        if (name.find("flt") == 0) {
+            return std::stoi(name.substr(3));
+        }
+        if (name.find("tbb") == 0) {
+            return std::stoi(name.substr(3));
+        }
+        return 0;
+    };
+    
+    // Signed integer widening
+    if (fromName.find("int") == 0 && toName.find("int") == 0) {
+        int fromWidth = extractBitWidth(fromName);
+        int toWidth = extractBitWidth(toName);
+        return fromWidth < toWidth;  // Allow widening only
+    }
+    
+    // Unsigned integer widening
+    if (fromName.find("uint") == 0 && toName.find("uint") == 0) {
+        int fromWidth = extractBitWidth(fromName);
+        int toWidth = extractBitWidth(toName);
+        return fromWidth < toWidth;  // Allow widening only
+    }
+    
+    // TBB widening (preserves error semantics)
+    if (fromName.find("tbb") == 0 && toName.find("tbb") == 0) {
+        int fromWidth = extractBitWidth(fromName);
+        int toWidth = extractBitWidth(toName);
+        return fromWidth < toWidth;  // Allow widening only
+    }
+    
+    // Float widening: flt32 → flt64
+    if (fromName.find("flt") == 0 && toName.find("flt") == 0) {
+        int fromWidth = extractBitWidth(fromName);
+        int toWidth = extractBitWidth(toName);
+        return fromWidth < toWidth;  // Allow widening only
+    }
+    
+    // ========================================================================
+    // Integer to Float Promotion
+    // ========================================================================
+    if (fromName.find("int") == 0 && toName.find("flt") == 0) {
+        // Allow int → float promotion (e.g., int32 → flt32, int64 → flt64)
+        // Note: This can lose precision for large integers
+        return true;
+    }
+    
+    // ========================================================================
+    // Disallowed Coercions (Explicit Cast Required)
+    // ========================================================================
+    
+    // TBB ↔ Standard Integer: FORBIDDEN (Phase 3.2.4)
+    // TBB types have error sentinels and sticky error semantics
+    // Standard integers use modular arithmetic
+    // Mixing them requires explicit conversion
+    bool fromIsTBB = (fromName.find("tbb") == 0);
+    bool toIsTBB = (toName.find("tbb") == 0);
+    bool fromIsStdInt = (fromName.find("int") == 0 || fromName.find("uint") == 0);
+    bool toIsStdInt = (toName.find("int") == 0 || toName.find("uint") == 0);
+    
+    if ((fromIsTBB && toIsStdInt) || (fromIsStdInt && toIsTBB)) {
+        return false;  // Explicit cast required
+    }
+    
+    // Balanced ↔ Standard Integer: FORBIDDEN (Phase 3.2.5)
+    // Balanced types (trit, tryte, nit, nyte) use symmetric digit sets
+    // Standard integers use modular arithmetic
+    // Mixing them requires explicit conversion
+    bool fromIsBalanced = (fromName == "trit" || fromName == "tryte" || 
+                          fromName == "nit" || fromName == "nyte");
+    bool toIsBalanced = (toName == "trit" || toName == "tryte" || 
+                        toName == "nit" || toName == "nyte");
+    
+    if ((fromIsBalanced && toIsStdInt) || (fromIsStdInt && toIsBalanced)) {
+        return false;  // Explicit cast required
+    }
+    
+    // Balanced ↔ TBB: FORBIDDEN (Phase 3.2.5)
+    // Different semantic models
+    if ((fromIsBalanced && toIsTBB) || (fromIsTBB && toIsBalanced)) {
+        return false;  // Explicit cast required
+    }
+    
+    // No narrowing (int32 → int8)
+    // No float to int (flt32 → int32)
+    // No signed ↔ unsigned (int32 ↔ uint32)
+    
+    return false;
+}
+
+// ============================================================================
+// Error Handling
+// ============================================================================
+
+void TypeChecker::addError(const std::string& message, int line, int column) {
+    std::ostringstream oss;
+    if (line > 0) {
+        oss << "Line " << line << ", Column " << column << ": ";
+    }
+    oss << message;
+    errors.push_back(oss.str());
+}
+
+void TypeChecker::addError(const std::string& message, ASTNode* node) {
+    if (node) {
+        addError(message, node->line, node->column);
+    } else {
+        addError(message, 0, 0);
+    }
+}
+
+// ============================================================================
+// Statement Type Checking - Phase 3.2.3
+// ============================================================================
+
+void TypeChecker::checkStatement(ASTNode* stmt) {
+    if (!stmt) {
+        return;
+    }
+    
+    switch (stmt->type) {
+        case ASTNode::NodeType::VAR_DECL:
+            checkVarDecl(static_cast<VarDeclStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::RETURN:
+            checkReturnStmt(static_cast<ReturnStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::IF:
+            checkIfStmt(static_cast<IfStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::WHILE:
+            checkWhileStmt(static_cast<WhileStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::FOR:
+            checkForStmt(static_cast<ForStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::BLOCK:
+            checkBlockStmt(static_cast<BlockStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::EXPRESSION_STMT:
+            checkExpressionStmt(static_cast<ExpressionStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::BREAK:
+        case ASTNode::NodeType::CONTINUE:
+            // No type checking needed for break/continue
+            break;
+        
+        default:
+            // Other statement types not yet implemented
+            break;
+    }
+}
+
+// ============================================================================
+// Variable Declaration Type Checking
+// ============================================================================
+
+void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
+    // Get declared type
+    Type* declaredType = typeSystem->getPrimitiveType(stmt->typeName);
+    
+    if (!declaredType || declaredType->getKind() == TypeKind::ERROR) {
+        addError("Unknown type: '" + stmt->typeName + "'", stmt);
+        return;
+    }
+    
+    // Check const variables have initializers
+    if (stmt->isConst && !stmt->initializer) {
+        addError("const variable '" + stmt->varName + "' must have initializer", stmt);
+        return;
+    }
+    
+    // If initializer exists, check type compatibility
+    if (stmt->initializer) {
+        Type* initType = inferType(stmt->initializer.get());
+        
+        if (initType->getKind() == TypeKind::ERROR) {
+            // Error already reported by inferType
+            return;
+        }
+        
+        // TBB Type Validation (Phase 3.2.4)
+        // Special handling for integer literals assigned to TBB types
+        bool tbbLiteralAssignment = false;
+        if (isTBBType(declaredType) && stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+            if (std::holds_alternative<int64_t>(literal->value)) {
+                int64_t value = std::get<int64_t>(literal->value);
+                checkTBBLiteralValue(value, declaredType, stmt);
+                tbbLiteralAssignment = true;
+                
+                // If no errors, allow the assignment (literal is in range)
+                if (hasErrors()) {
+                    return;  // Validation failed
+                }
+            }
+        }
+        
+        // Balanced Type Validation (Phase 3.2.5)
+        // Special handling for integer literals assigned to balanced types
+        bool balancedLiteralAssignment = false;
+        if (isBalancedType(declaredType) && stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+            if (std::holds_alternative<int64_t>(literal->value)) {
+                int64_t value = std::get<int64_t>(literal->value);
+                checkBalancedLiteralValue(value, declaredType, stmt);
+                balancedLiteralAssignment = true;
+                
+                // If no errors, allow the assignment (literal is in range)
+                if (hasErrors()) {
+                    return;  // Validation failed
+                }
+            }
+        }
+        
+        // Standard Integer Type Validation
+        // Special handling for integer literals assigned to smaller integer types
+        // This allows safe narrowing conversions when the literal value fits at compile time
+        bool standardIntLiteralAssignment = false;
+        if (isStandardIntType(declaredType) && stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+            if (std::holds_alternative<int64_t>(literal->value)) {
+                int64_t value = std::get<int64_t>(literal->value);
+                if (canLiteralFitInIntType(value, declaredType, stmt)) {
+                    standardIntLiteralAssignment = true;
+                    // Literal fits in target type, allow the assignment
+                } else {
+                    return;  // Validation failed, error already reported
+                }
+            }
+        }
+        
+        // Check if initializer type is assignable to declared type
+        // Skip this check if we handled TBB, balanced, or standard int literal assignment above
+        if (!tbbLiteralAssignment && !balancedLiteralAssignment && !standardIntLiteralAssignment) {
+            if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType)) {
+                addError("Cannot initialize variable '" + stmt->varName + 
+                        "' of type '" + declaredType->toString() + 
+                        "' with value of type '" + initType->toString() + "'", stmt);
+                return;
+            }
+        }
+    }
+    
+    // Define symbol in symbol table
+    symbolTable->defineSymbol(stmt->varName, 
+                             stmt->isConst ? SymbolKind::CONSTANT : SymbolKind::VARIABLE,
+                             declaredType, 
+                             stmt->line, 
+                             stmt->column);
+}
+
+// ============================================================================
+// Assignment Type Checking
+// ============================================================================
+
+void TypeChecker::checkAssignment(BinaryExpr* expr) {
+    // Left side must be an lvalue (identifier, index, member access)
+    if (expr->left->type != ASTNode::NodeType::IDENTIFIER &&
+        expr->left->type != ASTNode::NodeType::INDEX &&
+        expr->left->type != ASTNode::NodeType::MEMBER_ACCESS &&
+        expr->left->type != ASTNode::NodeType::POINTER_MEMBER) {
+        addError("Left side of assignment must be a variable, array element, or member", expr->left.get());
+        return;
+    }
+    
+    // Get left side type
+    Type* leftType = inferType(expr->left.get());
+    if (leftType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // Check if assigning to const variable
+    if (expr->left->type == ASTNode::NodeType::IDENTIFIER) {
+        IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr->left.get());
+        Symbol* symbol = symbolTable->lookupSymbol(ident->name);
+        
+        if (symbol && symbol->kind == SymbolKind::CONSTANT) {
+            addError("Cannot assign to const variable '" + ident->name + "'", expr);
+            return;
+        }
+    }
+    
+    // Get right side type
+    Type* rightType = inferType(expr->right.get());
+    if (rightType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // Standard Integer Literal Assignment (Phase 4.5.4)
+    // Allow safe narrowing for integer literals in assignments (e.g., x = 5)
+    // This makes direct assignments consistent with variable declarations
+    bool standardIntLiteralAssignment = false;
+    if (isStandardIntType(leftType) && expr->right->type == ASTNode::NodeType::LITERAL) {
+        LiteralExpr* literal = static_cast<LiteralExpr*>(expr->right.get());
+        if (std::holds_alternative<int64_t>(literal->value)) {
+            int64_t value = std::get<int64_t>(literal->value);
+            if (literalFitsInType(value, leftType)) {
+                // Literal fits, narrow the type to allow assignment
+                rightType = leftType;
+                standardIntLiteralAssignment = true;
+            } else {
+                // Literal doesn't fit, report error
+                canLiteralFitInIntType(value, leftType, expr);
+                return;
+            }
+        }
+    }
+    
+    // TBB Type Validation (Phase 3.2.4)
+    // Special handling for integer literals assigned to TBB types
+    bool tbbLiteralAssignment = false;
+    if (isTBBType(leftType) && expr->right->type == ASTNode::NodeType::LITERAL) {
+        LiteralExpr* literal = static_cast<LiteralExpr*>(expr->right.get());
+        if (std::holds_alternative<int64_t>(literal->value)) {
+            int64_t value = std::get<int64_t>(literal->value);
+            checkTBBLiteralValue(value, leftType, expr);
+            tbbLiteralAssignment = true;
+            
+            // If validation failed, early exit
+            // If succeeded, allow the assignment (literal is in range)
+        }
+    }
+    
+    // Balanced Type Validation (Phase 3.2.5)
+    // Special handling for integer literals assigned to balanced types
+    bool balancedLiteralAssignment = false;
+    if (isBalancedType(leftType) && expr->right->type == ASTNode::NodeType::LITERAL) {
+        LiteralExpr* literal = static_cast<LiteralExpr*>(expr->right.get());
+        if (std::holds_alternative<int64_t>(literal->value)) {
+            int64_t value = std::get<int64_t>(literal->value);
+            checkBalancedLiteralValue(value, leftType, expr);
+            balancedLiteralAssignment = true;
+            
+            // If validation failed, early exit
+            // If succeeded, allow the assignment (literal is in range)
+        }
+    }
+    
+    // Check type compatibility (skip if we handled standard int, TBB, or balanced literal assignment)
+    if (!standardIntLiteralAssignment && !tbbLiteralAssignment && !balancedLiteralAssignment) {
+        if (!rightType->isAssignableTo(leftType) && !canCoerce(rightType, leftType)) {
+            addError("Cannot assign value of type '" + rightType->toString() + 
+                    "' to variable of type '" + leftType->toString() + "'", expr);
+        }
+    }
+}
+
+// ============================================================================
+// Return Statement Type Checking
+// ============================================================================
+
+void TypeChecker::checkReturnStmt(ReturnStmt* stmt) {
+    // Check if we're inside a function
+    if (!currentFunctionReturnType) {
+        addError("return statement outside of function", stmt);
+        return;
+    }
+    
+    // Get the primitive type "void" for comparison
+    Type* voidType = typeSystem->getPrimitiveType("void");
+    bool isVoidFunction = currentFunctionReturnType->equals(voidType);
+    
+    // Case 1: void function with return value
+    if (isVoidFunction && stmt->value) {
+        addError("void function cannot return a value", stmt);
+        return;
+    }
+    
+    // Case 2: non-void function without return value
+    if (!isVoidFunction && !stmt->value) {
+        addError("Non-void function must return a value of type '" + 
+                currentFunctionReturnType->toString() + "'", stmt);
+        return;
+    }
+    
+    // Case 3: non-void function with return value - check type
+    if (!isVoidFunction && stmt->value) {
+        Type* returnType = inferType(stmt->value.get());
+        
+        if (returnType->getKind() == TypeKind::ERROR) {
+            return;
+        }
+        
+        if (!returnType->isAssignableTo(currentFunctionReturnType) && 
+            !canCoerce(returnType, currentFunctionReturnType)) {
+            addError("Return type '" + returnType->toString() + 
+                    "' does not match function return type '" + 
+                    currentFunctionReturnType->toString() + "'", stmt);
+        }
+    }
+}
+
+// ============================================================================
+// If Statement Type Checking
+// ============================================================================
+
+void TypeChecker::checkIfStmt(IfStmt* stmt) {
+    // Check condition type
+    Type* condType = inferType(stmt->condition.get());
+    
+    if (condType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // Condition must be bool (strict, no truthiness)
+    PrimitiveType* condPrim = dynamic_cast<PrimitiveType*>(condType);
+    if (!condPrim || condPrim->getName() != "bool") {
+        addError("if condition must be 'bool' type, got '" + condType->toString() + 
+                "'. Use explicit comparison (e.g., x != 0) instead of truthiness.", stmt->condition.get());
+    }
+    
+    // Check then branch
+    checkStatement(stmt->thenBranch.get());
+    
+    // Check else branch if present
+    if (stmt->elseBranch) {
+        checkStatement(stmt->elseBranch.get());
+    }
+}
+
+// ============================================================================
+// While Statement Type Checking
+// ============================================================================
+
+void TypeChecker::checkWhileStmt(WhileStmt* stmt) {
+    // Check condition type
+    Type* condType = inferType(stmt->condition.get());
+    
+    if (condType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // Condition must be bool (strict, no truthiness)
+    PrimitiveType* condPrim = dynamic_cast<PrimitiveType*>(condType);
+    if (!condPrim || condPrim->getName() != "bool") {
+        addError("while condition must be 'bool' type, got '" + condType->toString() + 
+                "'. Use explicit comparison (e.g., x != 0) instead of truthiness.", stmt->condition.get());
+    }
+    
+    // Check body
+    checkStatement(stmt->body.get());
+}
+
+// ============================================================================
+// For Statement Type Checking
+// ============================================================================
+
+void TypeChecker::checkForStmt(ForStmt* stmt) {
+    // Check initializer if present
+    if (stmt->initializer) {
+        checkStatement(stmt->initializer.get());
+    }
+    
+    // Check condition if present
+    if (stmt->condition) {
+        Type* condType = inferType(stmt->condition.get());
+        
+        if (condType->getKind() != TypeKind::ERROR) {
+            PrimitiveType* condPrim = dynamic_cast<PrimitiveType*>(condType);
+            if (!condPrim || condPrim->getName() != "bool") {
+                addError("for condition must be 'bool' type, got '" + condType->toString() + 
+                        "'. Use explicit comparison (e.g., i < 10) instead of truthiness.", stmt->condition.get());
+            }
+        }
+    }
+    
+    // Check update if present (just infer type, any expression is valid)
+    if (stmt->update) {
+        inferType(stmt->update.get());
+    }
+    
+    // Check body
+    checkStatement(stmt->body.get());
+}
+
+// ============================================================================
+// Block Statement Type Checking
+// ============================================================================
+
+void TypeChecker::checkBlockStmt(BlockStmt* stmt) {
+    // Enter new scope
+    symbolTable->enterScope(ScopeKind::BLOCK, "block");
+    
+    // Check all statements in block
+    for (const auto& statement : stmt->statements) {
+        checkStatement(statement.get());
+    }
+    
+    // Exit scope
+    symbolTable->exitScope();
+}
+
+// ============================================================================
+// Expression Statement Type Checking
+// ============================================================================
+
+void TypeChecker::checkExpressionStmt(ExpressionStmt* stmt) {
+    // Just infer the expression type
+    // Special case: check if it's an assignment
+    if (stmt->expression->type == ASTNode::NodeType::BINARY_OP) {
+        BinaryExpr* binExpr = static_cast<BinaryExpr*>(stmt->expression.get());
+        if (binExpr->op.type == frontend::TokenType::TOKEN_EQUAL) {
+            checkAssignment(binExpr);
+            return;
+        }
+    }
+    
+    // Otherwise just infer type (to check for errors)
+    inferType(stmt->expression.get());
+}
+
+// ============================================================================
+// TBB Type Validation - Phase 3.2.4
+// ============================================================================
+
+bool TypeChecker::isTBBType(Type* type) {
+    if (!type || type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& name = primType->getName();
+    
+    return name == "tbb8" || name == "tbb16" || name == "tbb32" || name == "tbb64";
+}
+
+int64_t TypeChecker::getTBBErrorSentinel(Type* type) {
+    if (!isTBBType(type)) {
+        return 0;  // Not a TBB type
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& name = primType->getName();
+    
+    if (name == "tbb8") {
+        return -128;  // 0x80
+    } else if (name == "tbb16") {
+        return -32768;  // 0x8000
+    } else if (name == "tbb32") {
+        return -2147483648LL;  // 0x80000000
+    } else if (name == "tbb64") {
+        return INT64_MIN;  // 0x8000000000000000
+    }
+    
+    return 0;
+}
+
+std::pair<int64_t, int64_t> TypeChecker::getTBBValidRange(Type* type) {
+    if (!isTBBType(type)) {
+        return {0, 0};  // Not a TBB type
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& name = primType->getName();
+    
+    if (name == "tbb8") {
+        return {-127, 127};
+    } else if (name == "tbb16") {
+        return {-32767, 32767};
+    } else if (name == "tbb32") {
+        return {-2147483647LL, 2147483647LL};
+    } else if (name == "tbb64") {
+        return {-9223372036854775807LL, 9223372036854775807LL};
+    }
+    
+    return {0, 0};
+}
+
+void TypeChecker::checkTBBLiteralValue(int64_t value, Type* type, ASTNode* node) {
+    if (!isTBBType(type)) {
+        return;  // Not a TBB type, no validation needed
+    }
+    
+    int64_t errSentinel = getTBBErrorSentinel(type);
+    
+    // Check if value is the ERR sentinel
+    if (value == errSentinel) {
+        PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+        addError("Warning: Assigning ERR sentinel value (" + std::to_string(errSentinel) + 
+                ") to " + primType->getName() + ". Use 'ERR' keyword for clarity.", node);
+    }
+    
+    // Check if value is in valid range
+    auto [minVal, maxVal] = getTBBValidRange(type);
+    if (value < minVal || value > maxVal) {
+        // Value is out of range (excluding ERR sentinel check above)
+        if (value != errSentinel) {
+            PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+            addError("Value " + std::to_string(value) + " is out of range for " + 
+                    primType->getName() + " (valid range: [" + std::to_string(minVal) + 
+                    ", " + std::to_string(maxVal) + "])", node);
+        }
+    }
+}
+
+bool TypeChecker::isERRProducingOperation(Type* resultType, Type* leftType, Type* rightType) {
+    // If any operand is a TBB type, the result inherits TBB semantics
+    // In actual runtime, ERR values propagate through operations
+    // For type checking, we just verify the types are compatible
+    
+    // Note: This method is primarily for documentation and future expansion
+    // The actual ERR propagation happens at runtime
+    // Type checker just ensures TBB types are used correctly
+    
+    if (!isTBBType(resultType)) {
+        return false;
+    }
+    
+    // TBB + TBB = TBB (ERR propagates at runtime)
+    // TBB + standard int = ERROR (mixing not allowed)
+    if (isTBBType(leftType) != isTBBType(rightType)) {
+        return true;  // Type mismatch will be caught by type checking
+    }
+    
+    return false;
+}
+
+// ============================================================================
+// Balanced Ternary/Nonary Type Validation - Phase 3.2.5
+// ============================================================================
+
+bool TypeChecker::isBalancedType(Type* type) {
+    if (!type || type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& name = primType->getName();
+    
+    return name == "trit" || name == "tryte" || name == "nit" || name == "nyte";
+}
+
+bool TypeChecker::isTritType(Type* type) {
+    if (!type || type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    return primType->getName() == "trit";
+}
+
+bool TypeChecker::isTryteType(Type* type) {
+    if (!type || type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    return primType->getName() == "tryte";
+}
+
+bool TypeChecker::isNitType(Type* type) {
+    if (!type || type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    return primType->getName() == "nit";
+}
+
+bool TypeChecker::isNyteType(Type* type) {
+    if (!type || type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    return primType->getName() == "nyte";
+}
+
+std::vector<int> TypeChecker::getBalancedValidDigits(Type* type) {
+    if (isTritType(type)) {
+        // trit: balanced ternary digit {-1, 0, 1}
+        return {-1, 0, 1};
+    } else if (isNitType(type)) {
+        // nit: balanced nonary digit {-4, -3, -2, -1, 0, 1, 2, 3, 4}
+        return {-4, -3, -2, -1, 0, 1, 2, 3, 4};
+    }
+    
+    // Composite types (tryte/nyte) don't have explicit digit sets
+    return {};
+}
+
+std::pair<int64_t, int64_t> TypeChecker::getBalancedCompositeRange(Type* type) {
+    if (isTryteType(type) || isNyteType(type)) {
+        // Both tryte and nyte have the same range
+        // tryte: 10 trits = 3^10 = 59,049 values
+        // nyte: 5 nits = 9^5 = 59,049 values
+        // Range: [-29524, +29524]
+        return {-29524, 29524};
+    }
+    
+    // Atomic types (trit/nit) use getBalancedValidDigits instead
+    return {0, 0};
+}
+
+void TypeChecker::checkBalancedLiteralValue(int64_t value, Type* type, ASTNode* node) {
+    if (!isBalancedType(type)) {
+        return;  // Not a balanced type, no validation needed
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& typeName = primType->getName();
+    
+    // Check atomic types (trit, nit)
+    if (isTritType(type)) {
+        // trit must be exactly -1, 0, or 1
+        if (value != -1 && value != 0 && value != 1) {
+            addError("trit value must be -1, 0, or 1, got " + std::to_string(value), node);
+        }
+    } else if (isNitType(type)) {
+        // nit must be -4, -3, -2, -1, 0, 1, 2, 3, or 4
+        if (value < -4 || value > 4) {
+            addError("nit value must be in range [-4, 4], got " + std::to_string(value), node);
+        }
+    } else if (isTryteType(type)) {
+        // tryte: composite type, check range
+        auto [minVal, maxVal] = getBalancedCompositeRange(type);
+        if (value < minVal || value > maxVal) {
+            addError("tryte value must be in range [" + std::to_string(minVal) + 
+                    ", " + std::to_string(maxVal) + "], got " + std::to_string(value), node);
+        }
+    } else if (isNyteType(type)) {
+        // nyte: composite type, check range
+        auto [minVal, maxVal] = getBalancedCompositeRange(type);
+        if (value < minVal || value > maxVal) {
+            addError("nyte value must be in range [" + std::to_string(minVal) + 
+                    ", " + std::to_string(maxVal) + "], got " + std::to_string(value), node);
+        }
+    }
+}
+
+// ============================================================================
+// Standard Integer Type Validation
+// ============================================================================
+
+bool TypeChecker::isStandardIntType(Type* type) const {
+    if (type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& name = primType->getName();
+    
+    return name == "int8" || name == "int16" || name == "int32" || name == "int64" ||
+           name == "uint8" || name == "uint16" || name == "uint32" || name == "uint64";
+}
+
+bool TypeChecker::literalFitsInType(int64_t value, Type* type) const {
+    if (!isStandardIntType(type)) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& typeName = primType->getName();
+    
+    // Determine range based on type name
+    if (typeName == "int8") {
+        return value >= -128 && value <= 127;
+    } else if (typeName == "int16") {
+        return value >= -32768 && value <= 32767;
+    } else if (typeName == "int32") {
+        return value >= -2147483648LL && value <= 2147483647LL;
+    } else if (typeName == "int64") {
+        return true;  // int64 can hold any int64_t value
+    } else if (typeName == "uint8") {
+        return value >= 0 && value <= 255;
+    } else if (typeName == "uint16") {
+        return value >= 0 && value <= 65535;
+    } else if (typeName == "uint32") {
+        return value >= 0 && value <= 4294967295LL;
+    } else if (typeName == "uint64") {
+        return value >= 0;  // uint64 can hold any non-negative int64_t value
+    }
+    
+    return false;  // Unknown type
+}
+
+bool TypeChecker::canLiteralFitInIntType(int64_t value, Type* type, ASTNode* node) {
+    if (!isStandardIntType(type)) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& typeName = primType->getName();
+    
+    int64_t minVal, maxVal;
+    
+    // Determine range based on type name
+    if (typeName == "int8") {
+        minVal = -128;
+        maxVal = 127;
+    } else if (typeName == "int16") {
+        minVal = -32768;
+        maxVal = 32767;
+    } else if (typeName == "int32") {
+        minVal = -2147483648LL;
+        maxVal = 2147483647LL;
+    } else if (typeName == "int64") {
+        // int64 can hold any int64_t value
+        return true;
+    } else if (typeName == "uint8") {
+        if (value < 0) {
+            addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
+            return false;
+        }
+        minVal = 0;
+        maxVal = 255;
+    } else if (typeName == "uint16") {
+        if (value < 0) {
+            addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
+            return false;
+        }
+        minVal = 0;
+        maxVal = 65535;
+    } else if (typeName == "uint32") {
+        if (value < 0) {
+            addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
+            return false;
+        }
+        minVal = 0;
+        maxVal = 4294967295LL;
+    } else if (typeName == "uint64") {
+        if (value < 0) {
+            addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
+            return false;
+        }
+        // uint64 can hold any non-negative int64_t value
+        return true;
+    } else {
+        return false;  // Unknown type
+    }
+    
+    // Check if value is in range
+    if (value < minVal || value > maxVal) {
+        addError("Value " + std::to_string(value) + " is out of range for " + 
+                typeName + " (valid range: [" + std::to_string(minVal) + 
+                ", " + std::to_string(maxVal) + "])", node);
+        return false;
+    }
+    
+    return true;
+}
+
+} // namespace sema
+} // namespace aria

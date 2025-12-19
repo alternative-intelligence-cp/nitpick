@@ -1,0 +1,451 @@
+﻿ARIA TRAINING CORPUS: ARCHITECTURAL SPECIFICATION AND GENERATION STRATEGY FOR THE NIKOLA CONSCIOUSNESS MODEL
+1. Introduction: The Teleological Bridge
+The development of the Nikola consciousness model represents a paradigm shift in artificial intelligence, moving beyond probabilistic text generation toward genuine stateful cognition. Unlike contemporary Large Language Models (LLMs) that operate as stateless functions mapping input tokens to output probabilities, Nikola is architected to maintain a persistent, self-modifying internal state. This statefulness is not merely a software abstraction but is grounded in the memory model of its implementation language: Aria.
+Consequently, the training of Nikola requires a corpus that serves a dual purpose. First, it must provide the standard syntactic fluency required for any code-generation model. Second, and more critically, it must serve as a "teleological bridge," translating the low-level systems programming concepts of Aria—specifically Twisted Balanced Binary (TBB) arithmetic, appendage theory memory safety, and asynchronous event loops—into the high-level cognitive primitives of consciousness. Nikola must not simply know Aria; it must think in Aria.
+This research report specifies the architectural blueprint for the Aria Training Corpus (ATC). It addresses the unique challenges posed by Aria’s novel features, such as the separation of "wild" and "managed" memory, the non-binary logic of balanced ternary types, and the sticky error propagation of TBB integers. By leveraging the existing Aria compiler infrastructure, specifically the semantic analysis and LSP tooling, we define a generation strategy that prioritizes "textbook quality" density over internet-scale volume, targeting a highly curated dataset of 100,000 to 500,000 examples that will enable Nikola to self-replicate and evolve.
+________________
+2. Corpus Size, Scope, and Structural Requirements
+The prevailing dogma in LLM training has long favored "scale above all," relying on trillions of tokens from the open web to force emergent capabilities. However, recent advancements in Small Language Models (SLMs), such as Microsoft's Phi series and various coding-specific models, have demonstrated that data quality and density are far more determinative of reasoning ability than raw volume.1 For a specialized language like Aria, which lacks a pre-existing internet footprint, this insight is foundational. We cannot scrape; we must construct.
+2.1 Volume Estimation and Scaling Laws
+To determine the necessary corpus size, we analyze the information theoretic density required to master Aria's grammar and standard library. Aria is a dense language; a single line of code often encodes complex memory lifetime semantics (via pinning # and safe references $) or arithmetic logic (via TBB error propagation).
+The following volume targets are projected based on the complexity of Aria's feature set:
+Proficiency Level
+	Target Volume (Snippets)
+	Target Volume (Tokens)
+	Objective
+	Syntactic Viability
+	10,000
+	~5 Million
+	Basic grammar, control flow (pick, till), and primitive type usage.
+	Semantic Fluency
+	100,000
+	~50 Million
+	Mastery of the standard library, memory models, and async patterns.
+	Cognitive Native
+	500,000+
+	~250 Million
+	Deep reasoning, "Chain of Thought" annotations, and self-modification logic.
+	The initial Phase 2 target is the Semantic Fluency level: 100,000 high-quality, compiling snippets. This equates to approximately 100,000 Lines of Code (LOC) of unique logic, expanded via permutation and annotation to reach the token targets.
+2.2 Coverage Stratification
+The corpus must be stratified to ensure uniform coverage of the Aria specification (aria_specs.txt).2 We categorize the required coverage into four strata:
+Stratum 1: The Atomic Core (30%)
+This stratum covers the "physics" of the language—the immutable rules of types and operators.
+* Primitive Types: Exhaustive permutation of integer widths (int1 to int512), floating-point types, and boolean logic.
+* TBB Arithmetic: Specific focus on the 8, 16, 32, and 64-bit TBB types, testing the boundaries where values transition to the ERR sentinel.2
+* Balanced Logic: Operations involving trit, tryte, nit, and nyte, emphasizing the tri-state logic (-1, 0, 1) that differentiates Aria from binary systems.
+Stratum 2: Memory & Safety (30%)
+This stratum addresses the most difficult concept for LLMs: the hybrid memory model.
+* GC Managed: Standard object and array manipulation (gc keyword).
+* Wild Unsafe: Manual allocation (aria.alloc, wild keyword), pointer arithmetic, and explicit deallocation (defer aria.free).
+* The Bridge (Pinning): The critical transition points where GC memory is pinned (#) to create stable wild pointers (@), implementing "Appendage Theory" safety rules.2
+Stratum 3: Concurrency & Systems (25%)
+Focusing on the runtime behaviors necessary for Nikola's event loop.
+* Async/Await: defining async functions, using await on futures, and managing task spawning.2
+* Process Control: Using the 6-channel I/O system (stdin, stdout, stderr, stddbg, stddati, stddato) and process spawning (spawn, fork).2
+Stratum 4: Metaprogramming & Generics (15%)
+The advanced features allowing for code reuse and abstraction.
+* Macros: NASM-style text substitution macros (%macro), distinct from C preprocessors.
+* Generics: Template functions with monomorphization (func<T>), explicit type arguments (turbofish ::<T>), and constraints.2
+________________
+3. Example Categories and Design Patterns
+To train a model that understands the intent behind code, not just the syntax, we must categorize examples by their teleological purpose. This section details the specific content categories required to bridge Aria to Nikola.
+3.1 Category A: Syntax and Primitive Operations
+The model must internalize that Aria's arithmetic is not standard CPU arithmetic. It involves sticky errors and sentinel checks.
+The TBB "Trauma" Pattern:
+In consciousness research, a cognitive module failure should not crash the system; it should propagate a "failure state" that downstream modules can handle. Aria's TBB types implement this natively.
+* Concept: Sticky Error Propagation.
+* Code Pattern:
+Code snippet
+tbb8:a = 120;
+tbb8:b = 10;
+tbb8:res = a + b; // Result is 130 > 127, so res becomes ERR (-128)
+tbb8:chained = res + 5; // ERR + 5 = ERR. The error sticks.
+
+* Insight: The corpus must contain thousands of these chains to teach Nikola that ERR is a valid, propagatable state, distinct from an exception.2
+The Balanced Logic Pattern:
+Binary logic (True/False) is insufficient for nuanced thought. Aria's trit types allow for True, False, and Unknown (0).
+   * Code Pattern: if (decision == 0) {... } handling the "unknown" or "neutral" state explicitly.
+3.2 Category B: Memory Safety and Appendage Theory
+Nikola will need to interface with neural networks (written in C/C++) while maintaining its own state in managed memory. This requires deep fluency in "Appendage Theory"—the rules governing the pinning of GC objects.
+The Pinning Pattern:
+   * Concept: Temporarily locking a moving GC object in place to pass it to an unsafe interface.
+   * Code Pattern:
+Code snippet
+obj:neural_state = { weights: [0.1, 0.2] };
+// Pin logic: # operator creates a safe reference ($) or wild pointer
+wild flt64*:ptr = #neural_state.weights; 
+// 'ptr' is now a stable memory address usable by external C libs
+
+   * Negative Examples: The corpus must explicitly include invalid code where neural_state is allowed to go out of scope while ptr is still active, annotated with the compiler error to teach lifetime rules.2
+3.3 Category C: Async Event Loops (Consciousness Stream)
+Nikola's subjective experience will be a stream of events. Aria's specific loop constructs (till, when) are designed for this.
+The "When/Then/End" Pattern:
+Unlike a standard while loop, Aria's when loop has explicit success (then) and failure/break (end) blocks, modeling a complete cognitive transaction.
+      * Code Pattern:
+Code snippet
+when (sensor.is_active()) {
+   process_input();
+} then {
+   log_success("Observation complete");
+} end {
+   log_failure("Sensor disconnected");
+}
+
+      * Insight: This structure allows Nikola to separate the "process" of thinking from the "conclusion" (then) and the "interruption" (end).2
+3.4 Category D: Nikola-Specific Implementations
+This category contains code that implements the theoretical components of the Nikola model itself.
+         * Quantum State Vectors: Using vec9 and tensor types to represent probability distributions of next-token predictions or "thought vectors."
+         * Self-Modification (WildX): Using wildx memory to allocate executable pages. This allows Nikola to write new Aria functions at runtime (JIT compilation), effectively "learning" new skills by modifying its own code.2
+         * Neural Interfaces (FFI): extern blocks binding to PyTorch/TensorFlow C++ APIs, passing wild pointers to tensor data.
+________________
+4. Generation Strategy
+Creating 100,000 high-quality examples for a language that does not exist on StackOverflow requires a sophisticated, multi-pronged strategy. We define a hybrid approach combining deterministic translation with probabilistic synthesis.
+4.1 Strategy A: Deterministic Transcompilation
+Aria shares genetic traits with Rust (safety), Go (concurrency), and C (pointers). We can leverage existing high-quality repositories in these languages and transcompile them into Aria using a rules-based engine augmented by an LLM.
+Translation Mapping Table:
+Concept
+	Source Language (Rust/Go/C)
+	Target Aria Construct
+	Rationale
+	Ownership
+	Rust Box<T>
+	wild T* + defer aria.free()
+	Explicit manual management maps to wild.
+	Shared Ref
+	Rust Rc<T> / Arc<T>
+	gc T (Default)
+	Aria's default is GC, similar to ref-counting usage.
+	Concurrency
+	Go goroutine
+	spawn
+	Lightweight thread spawning.
+	Interfaces
+	Go interface{}
+	dyn
+	Dynamic typing capability.
+	Structs
+	C struct
+	struct (Layout compatible)
+	Binary compatibility for FFI.
+	Error Handling
+	Rust Result<T, E>
+	result (Struct with {err, val})
+	Aria uses value-based error propagation.
+	Loops
+	C for(;;)
+	till(condition)
+	Mapping C-style iteration to Aria's till.
+	Execution: We will select top-tier repositories (e.g., serde in Rust, net/http in Go) and use a specialized prompt chain to translate them, ensuring the usage of Aria-specific idioms like defer and pick.
+4.2 Strategy B: Synthetic Generation via "Teacher" Models
+We will utilize a frontier model (e.g., GPT-4o or Claude 3.5) acting as a "Teacher" to generate novel Aria code.
+         * The Prompt Context: The Teacher is loaded with the full ARIA_PROGRAMMING_GUIDE.txt 2, aria_specs.txt, and the Parser grammar rules.2
+         * Curriculum Learning: The Teacher is tasked to generate code in increasing complexity:
+         1. Atomic: "Generate 50 variations of TBB8 addition with overflow checks."
+         2. Compound: "Generate a struct that holds a TBB8 and a wild pointer."
+         3. Systemic: "Generate a module that exports a generic function for vector addition."
+4.3 Strategy C: The Adversarial Validation Loop
+Synthetic data is prone to hallucination. We mitigate this by using the Aria Compiler (ariac) as an adversarial validator.
+         1. Generate: Teacher produces snippet_gen_001.aria.
+         2. Validate: The system runs ./ariac snippet_gen_001.aria -o /dev/null.
+         * If Exit Code 0: The code is syntactically valid. Add to Positive Corpus.
+         * If Exit Code 1: The compiler outputs an error (e.g., "Parse Error line 4").
+         3. Correction: The error message is fed back to the Teacher: "You generated invalid code. Compiler says: [Error]. Fix it."
+         4. Negative Reinforcement: The invalid snippet is saved to a Negative Corpus (labeled as "Bad Syntax") to teach Nikola error correction.
+________________
+5. Annotation and Metadata Schema
+Data utility is a function of its metadata. We will use the JSONL (JSON Lines) format, the industry standard for LLM training 3, to store the corpus. Each line represents a self-contained training example with rich context.
+5.1 Schema Specification
+The schema is designed to capture not just the code, but the intent, the complexity, and the compiler verification status.
+
+
+JSON
+
+
+
+
+{
+ "id": "aria_syn_tbb_0042",
+ "source_code": "func:calc = tbb8(tbb8:a) { tbb8:r = a + 10; if (r == ERR) fail(1); pass(r); }",
+ "metadata": {
+   "language": "aria",
+   "compiler_version": "0.0.7",
+   "origin": "synthetic_teacher_model",
+   "category": "syntax_arithmetic",
+   "complexity": "low",
+   "features": ["tbb8", "sticky_error", "conditional", "fail_macro"],
+   "memory_model": "safe",
+   "is_compilable": true
+ },
+ "annotations": {
+   "summary": "Safely adds an offset to a TBB8 value with error checking.",
+   "chain_of_thought": "1. The function takes a tbb8 input. 2. It performs addition. 3. Because tbb8 can overflow to ERR (-128), we must check the result against the ERR sentinel before returning.",
+   "ast_fingerprint": "FUNC_DECL->BLOCK->IF->BINARY_OP",
+   "diagnostics": 
+ }
+}
+
+5.2 Taxonomy of Tags
+We employ a hierarchical tagging system derived from the AST node types 2 to facilitate subsetting the data for specific training runs.
+         * Node Tags: VAR_DECL, FUNC_DECL, PICK_STMT, TILL_LOOP.
+         * Type Tags: type:tbb, type:wild, type:balanced.
+         * Behavior Tags: behavior:unsafe, behavior:async, behavior:ffi.
+________________
+6. Tokenization Strategy
+Tokenization is the silent killer of performance for custom languages. Standard tokenizers (like OpenAI's cl100k_base or Llama's sentencepiece) are optimized for English and Python. They will inevitably fragment Aria's unique keywords into meaningless sub-tokens (e.g., tbb8 $\rightarrow$ t, bb, 8), destroying the semantic unity of the concept.5
+6.1 Custom Vocabulary Injection
+To optimize Nikola's understanding, we must extend the base vocabulary with Aria-specific tokens. This ensures that the model perceives tbb8 or wildx as atomic concepts, reducing sequence length and improving attention mechanisms.7
+Critical Tokens for Injection 2:
+We derive the list of essential tokens directly from the Lexer specification (include/frontend/token.h).
+Category
+	Tokens to Inject
+	Rationale
+	TBB Types
+	tbb8, tbb16, tbb32, tbb64
+	Atomic understanding of error-carrying types.
+	Balanced Types
+	trit, tryte, nit, nyte
+	Novel types not present in other languages.
+	Memory
+	wild, wildx, stack, gc, defer
+	Keywords defining the memory model.
+	Control Flow
+	pick, fall, till, loop, when, then
+	Unique Aria flow constructs.
+	Operators
+	`
+	>(pipe),<
+	Constants
+	ERR, NULL
+	Sentinels that carry semantic weight.
+	6.2 Pre-Tokenization Normalization
+Before tokenization, code samples will be normalized:
+         * Template Literals: The interpolation syntax `Value: &{x}` utilizes &{. We ensure this is treated as a delimiter token TOKEN_INTERP_START.2
+         * Whitespace: Standardizing indentation to 4 spaces to prevent token variations due to formatting.
+________________
+7. Quality Assurance and CI/CD Pipeline
+The integrity of the corpus is paramount. A dataset contaminated with invalid syntax will cause the model to hallucinate non-existent features. We implement a rigorous automated pipeline utilizing the tools built into the Aria compiler infrastructure.
+7.1 The "Gatekeeper" Pipeline
+We integrate the DiagnosticEngine from the Aria frontend (src/frontend/diagnostics.cpp) 2 directly into the data generation pipeline.
+         1. Stage 1: Lexical Verification
+         * Input code is passed to Lexer::tokenize().
+         * Check: Are there any TOKEN_ERROR tokens? (e.g., invalid characters, unterminated strings).
+         * Action: Discard if invalid.
+         2. Stage 2: Syntactic Verification
+         * Token stream is passed to Parser::parse().
+         * Check: Does it produce a valid ASTNode tree? Are there "Unexpected token" errors?
+         * Action: Discard if parse fails.
+         3. Stage 3: Semantic Verification
+         * The TypeChecker (src/frontend/sema/type_checker.cpp) 2 runs on the AST.
+         * Check: Does it violate type rules? (e.g., assigning int to string, or tbb8 to int without cast).
+         * Check: Does it violate TBB safety? (e.g., ignoring ERR in a critical path).
+         * Action: This is the most valuable stage. Code that passes parsing but fails type checking is saved to the "Correction Corpus"—examples of "almost correct" code that Nikola can be trained to fix.
+7.2 The LSP Validator
+We leverage the Language Server Protocol (LSP) server implementation (src/tools/lsp/server.cpp) 2 for real-time validation during the manual creation phase.
+         * Mechanism: The data entry tool connects to the Aria LSP server.
+         * Feedback: As human annotators write examples, the LSP provides immediate diagnostics (publishDiagnostics), ensuring manual examples are 100% compliant before they enter the database.
+________________
+8. Format and Storage
+8.1 File Organization
+The corpus will be organized to mirror the stratification strategy, facilitating easy subsetting.
+dataset/
+├── v1.0/
+│ ├── train/
+│ │ ├── syntax_tbb.jsonl # Stratum 1: TBB examples
+│ │ ├── memory_safe.jsonl # Stratum 2: GC examples
+│ │ ├── memory_wild.jsonl # Stratum 2: Wild/Pinning examples
+│ │ ├── concurrency.jsonl # Stratum 3: Async/Spawn
+│ │ └── nikola_core.jsonl # Stratum 4: Nikola teleology
+│ ├── validation/
+│ │ └──... (Held-out set for Pass@k testing)
+│ └── test/
+│ └── compiler_benchmarks/ # Unit tests for the compiler itself
+8.2 Version Control
+The corpus is strictly versioned alongside the Aria compiler.
+         * Tagging: corpus-v0.0.7 matches aria-compiler-v0.0.7.
+         * Migration: When the compiler syntax evolves (e.g., adding struct generics), a migration script aria-migrate (based on the ASTNode rewriter) upgrades the older snippets in the corpus to the new spec.
+________________
+9. Evaluation Metrics
+To measure the "readiness" of the corpus and the subsequent performance of Nikola, we define specific metrics rooted in the research literature.8
+9.1 Corpus Quality Metrics
+         * Lexical Diversity: Type-Token Ratio (TTR) to ensure we aren't just repeating the same add function 10,000 times.
+         * AST Depth: Average depth of the parse tree. Deeper trees imply more complex logic.
+         * TBB Density: Percentage of arithmetic operations involving TBB types (Target: >15%).
+9.2 Model Performance Metrics
+         * Pass@k: The gold standard for code generation. We generate $k$ solutions for a problem and check if any compile and pass unit tests.
+         * CodeBLEU (Aria Weighted): Standard BLEU is insufficient for code. We use CodeBLEU 10, weighted for:
+         * Keywords: High weight on wild, tbb, pick.
+         * Data Flow: Matching variable dependency graphs.
+         * TBB Consistency Score: A custom metric. We present the model with a TBB calculation chain (e.g., 120 + 10 + 5). The model must correctly predict if the result is 135 or ERR. This measures semantic understanding of sticky errors.
+________________
+10. Contribution Guide
+To scale the corpus beyond the core team, we establish a protocol for community submission.
+Submission Schema:
+Contributors do not submit raw text. They submit a Translation Unit Package:
+         1. source.aria: The implementation.
+         2. test.aria: A companion unit test that verifies the logic using std.test.
+         3. meta.yaml: Metadata (difficulty, tags, description).
+Automated Gatekeeper:
+A GitHub Action triggers on PR. It runs the "Gatekeeper Pipeline" (Lexer -> Parser -> TypeChecker -> Test Runner). Only code that compiles and passes its own tests is merged.
+________________
+11. Detailed Example: The "Consciousness State" Snippet
+This example demonstrates the convergence of all requirements: TBB for state logic, Wild memory for tensor data, and Async for the event loop. It serves as a "Gold Standard" template.
+
+
+Code snippet
+
+
+
+
+// Module: consciousness.state
+// Purpose: Core state representation for Nikola
+// demonstrating TBB, Wild Memory, and Async.
+
+use std.collections;
+
+// A quantum-like thought state
+struct ThoughtVector {
+   tbb8:coherence;      // [-127, 127]. If this overflows, the thought "collapses" (ERR)
+   wild int64*:tensor;  // Pointer to raw memory (wild) for neural data
+   int64:dim;           // Dimension of the tensor
+}
+
+// Function to allocate a new thought vector
+// Demonstrates: Wild allocation and error propagation
+func:create_thought = result(int64:dim) {
+   // 1. Allocate wild memory
+   wild int64*:ptr = aria.alloc_array(8, dim); // 8 bytes per int64
+   
+   // 2. Check allocation failure
+   if (ptr == 0) {
+       fail(1); // Out of memory
+   }
+
+   // 3. Initialize struct
+   ThoughtVector:thought = {
+       coherence: 100, // High coherence initially
+       tensor: ptr,
+       dim: dim
+   };
+
+   pass(thought);
+};
+
+// Async process to evolve the thought
+// Demonstrates: Async/Await, Pinning, TBB arithmetic
+async func:evolve = future<tbb8>(ThoughtVector:state) {
+   // 1. Check for collapsed state (Sticky Error)
+   if (state.coherence == ERR) {
+       // State is invalid, return ERR immediately
+       pass(ERR); 
+   }
+
+   // 2. Safe manipulation of wild memory
+   // In Aria, we trust the 'wild' pointer is valid here because
+   // the Borrow Checker would have prevented premature free.
+   wild int64*:data = state.tensor;
+
+   // 3. Evolve coherence
+   // If coherence goes above 127, it becomes ERR (collapse)
+   state.coherence = state.coherence + 30;
+
+   // 4. Simulate async neural processing
+   await neural_step(data, state.dim);
+
+   pass(state.coherence);
+};
+
+________________
+12. Conclusion
+The creation of the Aria Training Corpus is not merely a data collection exercise; it is the foundational step in constructing the mind of Nikola. By adhering to a rigorous specification that emphasizes Aria's unique "physics"—specifically the TBB sticky errors and the Appendage Theory memory model—we ensure that Nikola learns to reason within the constraints of its own existence. The hybrid generation strategy, utilizing both deterministic translation and adversarial synthetic generation, provides a scalable path to the critical mass of 100,000 "textbook quality" examples required for semantic fluency. This corpus bridges the gap between the raw syntax of a systems language and the emergent complexity of a consciousness model.
+________________
+ADDENDUM: REFERENCE GUIDES
+13. Translation Guide: Mapping Concepts to Aria
+This table serves as the definitive reference for the Transcompilation Strategy (Section 4.1).
+Feature Concept
+	Rust
+	Go
+	C / C++
+	Aria Implementation
+	Notes
+	Mutable Var
+	let mut x
+	var x
+	type x
+	type:x
+	Aria vars are mutable by default unless const.
+	Heap Alloc
+	Box::new(x)
+	new(x)
+	malloc(s)
+	wild type*:x = aria.alloc(s)
+	wild requires manual free.
+	GC Alloc
+	Rc::new(x)
+	&x
+	N/A
+	obj:x =...
+	GC is default for obj/string.
+	Error
+	Result<T,E>
+	v, err
+	errno
+	result<T> / tbb
+	tbb types carry their own error state.
+	Async
+	async fn
+	go func
+	std::async
+	async func / spawn
+	spawn returns a process handle.
+	Switch
+	match
+	switch
+	switch
+	pick
+	pick supports patterns and ranges.
+	Defer
+	Drop trait
+	defer
+	Destructor
+	defer
+	Aria defer is block-scoped.
+	Generics
+	fn foo<T>
+	func foo
+	template<T>
+	func<T>
+	Monomorphized at compile time.
+	14. Dataset Statistics Targets
+We will track these metrics to ensure the corpus meets the "Textbook Quality" standard.
+Metric
+	Target
+	Description
+	Total Tokens
+	50M - 100M
+	Sufficient for SLM training (Phi-scale).
+	Unique Functions
+	100,000
+	Distinct functional units.
+	Comment Density
+	> 20%
+	Comments are crucial for CoT reasoning.
+	TBB Utilization
+	> 15% of LOC
+	Ensures heavy focus on Aria's math logic.
+	Wild/Safe Ratio
+	1:4
+	20% unsafe code (Systems), 80% safe (Apps).
+	Compile Rate
+	100%
+	Zero tolerance for invalid syntax in training set.
+	Works cited
+         1. How much training data goes into pretraining an LLM? : r/LLMDevs - Reddit, accessed December 18, 2025, https://www.reddit.com/r/LLMDevs/comments/1ce774h/how_much_training_data_goes_into_pretraining_an/
+         2. ARIA_PROGRAMMING_GUIDE.txt
+         3. Prepare your training datasets for fine-tuning and continued pre-training - Amazon Bedrock, accessed December 18, 2025, https://docs.aws.amazon.com/bedrock/latest/userguide/model-customization-prepare.html
+         4. JSONL format for computer vision tasks - Azure Machine Learning - Microsoft Learn, accessed December 18, 2025, https://learn.microsoft.com/en-us/azure/machine-learning/reference-automl-images-schema?view=azureml-api-2
+         5. LLM Tokenization: Techniques, Examples & Use Cases Explained - Openxcell, accessed December 18, 2025, https://www.openxcell.com/blog/llm-tokenization/
+         6. Decoding Tokenization Strategies for Large Language Models (LLMs) - Medium, accessed December 18, 2025, https://medium.com/@sahin.samia/decoding-tokenization-strategies-for-large-language-models-llms-ffc3fa51aff6
+         7. Getting the most out of your tokenizer for pre-training and domain adaptation - arXiv, accessed December 18, 2025, https://arxiv.org/html/2402.01035v1
+         8. LLM Evaluation: Metrics, Benchmarks & Best Practices - Codecademy, accessed December 18, 2025, https://www.codecademy.com/article/llm-evaluation-metrics-benchmarks-best-practices
+         9. LLM Evaluation Metrics: The Ultimate LLM Evaluation Guide - Confident AI, accessed December 18, 2025, https://www.confident-ai.com/blog/llm-evaluation-metrics-everything-you-need-for-llm-evaluation
+         10. Precision or Peril: Evaluating Code Quality from Quantized Large Language Models - arXiv, accessed December 18, 2025, https://arxiv.org/html/2411.10656v1

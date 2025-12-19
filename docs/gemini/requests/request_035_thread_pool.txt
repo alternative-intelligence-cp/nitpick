@@ -1,0 +1,110 @@
+ARIA LSP SERVER - PHASE 7.3.6 RESEARCH REQUEST
+==============================================
+Date: December 18, 2025
+Current Status: Phase 7.3.5 Complete
+Next Phase: 7.3.6 - Thread Pool Architecture
+
+COMPLETED PHASES (✅)
+---------------------
+✅ Phase 7.3.1: JSON-RPC Transport Layer (stdin/stdout, message framing)
+✅ Phase 7.3.2: Server Lifecycle (initialize/shutdown handshake)
+✅ Phase 7.3.3: Document Synchronization (VirtualFileSystem with thread-safe operations)
+✅ Phase 7.3.4: Diagnostics Publishing (real-time syntax/parse errors)
+✅ Phase 7.3.5: Navigation Features (textDocument/hover, textDocument/definition)
+
+Test Status: 1198 tests, 6336 assertions, 100% passing
+Executable: build/aria-ls (13MB)
+Code Location: /home/randy/._____RANDY_____/REPOS/aria/
+
+CURRENT ARCHITECTURE
+--------------------
+Server.cpp: Single-threaded message loop
+- Main thread reads from stdin, processes requests synchronously
+- Lexing/parsing happens inline on request thread
+- VirtualFileSystem uses std::shared_mutex for thread safety (prepared for multi-threading)
+
+Key Files:
+- include/tools/lsp/server.h (142 lines) - Server class, capabilities
+- src/tools/lsp/server.cpp (583 lines) - All handlers, single-threaded
+- include/tools/lsp/vfs.h (68 lines) - Thread-safe VFS ready for workers
+- src/tools/lsp/transport.cpp (175 lines) - I/O layer
+
+PHASE 7.3.6 OBJECTIVE
+---------------------
+Implement thread pool architecture for LSP server performance optimization.
+
+RESEARCH REQUEST FOR GEMINI
+----------------------------
+Please provide comprehensive research for implementing a thread pool architecture 
+for the Aria Language Server (aria-ls), addressing:
+
+1. **Architecture Pattern**
+   - Main thread responsibility: I/O only (stdin/stdout, message routing)
+   - Worker thread pool: Compilation tasks (lexing, parsing, semantic analysis)
+   - How to queue work and return results to main thread
+   - Request cancellation handling (LSP clients can cancel long-running requests)
+
+2. **C++ Implementation Details**
+   - Thread pool library choice: std::thread + queue vs std::async vs third-party
+   - Work queue design: std::queue<Task> with std::condition_variable?
+   - Task representation: std::function<void()> or custom Task class?
+   - Result passing back to main thread: std::future? Callback queue?
+   - Thread count: std::thread::hardware_concurrency() or fixed size?
+
+3. **LSP-Specific Concerns**
+   - Which requests should be async? (hover, definition, diagnostics)
+   - Which must be sync? (initialize, shutdown, didChange notifications)
+   - Request ordering: Can textDocument/didChange be processed out of order?
+   - VFS synchronization: Multiple workers reading, main thread writing?
+   - $/cancelRequest handling: How to abort in-progress work?
+
+4. **Error Handling**
+   - Worker thread exceptions: Catch and convert to LSP error responses?
+   - Thread pool shutdown: Graceful termination on server exit
+   - Deadlock prevention: Main thread waiting on workers waiting on main thread
+
+5. **Testing Strategy**
+   - How to test thread pool behavior? Mock tasks with delays?
+   - Race condition detection: ThreadSanitizer flags?
+   - Performance testing: Measure latency improvement
+
+6. **Integration with Existing Code**
+   - Current VirtualFileSystem already has shared_mutex - ready for multi-threading
+   - Transport layer is single-threaded - must stay on main thread
+   - Lexer/Parser are stateless - safe to run on worker threads
+   - DiagnosticEngine uses std::vector - need per-worker instance?
+
+7. **Alternative Approaches**
+   - Should we use existing research_034_lsp.txt (Section 3.2, 7.1) as foundation?
+   - Any modern C++17 patterns we should leverage?
+   - Performance trade-offs: Thread pool vs. simple std::async per request?
+
+CONSTRAINTS
+-----------
+- C++17 standard (no C++20 features)
+- Must work with existing VirtualFileSystem (already thread-safe)
+- Must maintain LSP protocol correctness (no out-of-order responses)
+- LLVM 20.1.2 already linked (but LSP doesn't use LLVM)
+- CMake build system
+- Custom test framework (TEST_CASE macro)
+
+DESIRED RESEARCH OUTPUT
+------------------------
+1. Recommended architecture diagram (main thread + worker pool)
+2. C++ code patterns for:
+   - ThreadPool class interface
+   - Task queue with condition variables
+   - Result passing mechanism
+3. Which LSP requests go async vs sync (table format)
+4. Integration points in Server::run() and Server::dispatch_message()
+5. Testing approach for concurrent behavior
+6. Potential pitfalls and how to avoid them
+
+EXISTING RESEARCH AVAILABLE
+----------------------------
+- research_034_lsp.txt: Mentions thread pool in Section 3.2, Section 7.1
+  Location: /home/randy/._____RANDY_____/REPOS/aria/docs/gemini/responses/research_034_lsp.txt
+  Lines 75-85: Brief mention of main thread I/O + worker pool pattern
+
+Please provide detailed, production-ready guidance suitable for implementation
+within 30-45 minutes of focused coding.

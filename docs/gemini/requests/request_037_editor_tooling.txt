@@ -1,0 +1,179 @@
+ARIA EDITOR TOOLING - RESEARCH REQUEST
+======================================
+Date: December 18, 2025
+Priority: Post-LSP Phase 7.3.7
+
+OBJECTIVE
+---------
+Provide comprehensive editor support for Aria across multiple platforms:
+1. **VS Code** (primary target, LSP already planned)
+2. **Emacs** (via LSP + custom modes)
+3. **Neovim/Vim** (via LSP + TreeSitter)
+4. **Other editors** (generic LSP support)
+
+Plus integration with:
+- **MCP** (Model Context Protocol) for AI assistants
+- **Syntax highlighting** (TextMate, TreeSitter, custom)
+- **Snippets** (common Aria patterns)
+- **Formatters** (aria-fmt tool)
+- **Linters** (integration with diagnostics)
+
+COMPLETED WORK
+--------------
+✅ LSP Server (aria-ls): research_034_lsp.txt
+   - Phases 7.3.1-7.3.5 complete
+   - Transport, lifecycle, sync, diagnostics, navigation
+   - 1198 tests passing
+
+RESEARCH QUESTIONS
+------------------
+
+**1. VS Code Extension (Phase 7.3.7)**
+   - package.json structure for language extension?
+   - How to bundle aria-ls executable with extension?
+   - Configuration options users should have:
+     * aria.serverPath (custom aria-ls binary)
+     * aria.trace.server (debug LSP messages)
+     * aria.formatting.tabSize
+     * aria.linting.level (strict/normal/relaxed)
+   - Language configuration:
+     * Bracket pairs: {}, (), [], &{} (string interpolation)
+     * Comment syntax: // and /* */
+     * Auto-indent rules
+   - Icon theme for .aria files
+   - Publishing to VS Code marketplace process
+
+**2. TextMate Grammar (tmLanguage.json)**
+   - Regex patterns for Aria syntax:
+     * Keywords: wild, wildx, gc, defer, async, await, pick, fall, pass, fail
+     * Types: int8-512, uint8-512, tbb8-64, flt16-128, bool, string
+     * Operators: @, #, ->, |>, ?., !!, &{}
+     * Memory qualifiers: @wild, @gc, @stack
+   - Scopes: comment, keyword, type, operator, string, number
+   - String interpolation highlighting: &{expr}
+   - How to test grammar? vscode-tmgrammar-test?
+
+**3. TreeSitter Grammar (for Neovim)**
+   - TreeSitter parser.c generation from grammar.js
+   - Aria grammar definition:
+     * Expression precedence
+     * Statement types
+     * Module structure
+   - Queries for:
+     * Syntax highlighting (highlights.scm)
+     * Indentation (indents.scm)  
+     * Code folding (folds.scm)
+     * Text objects (textobjects.scm)
+   - How to publish? nvim-treesitter registry
+
+**4. Emacs Support**
+   - aria-mode.el structure:
+     * Syntax table for comments, strings
+     * Font-lock keywords (syntax highlighting)
+     * Indentation function (aria-indent-line)
+     * LSP integration via lsp-mode or eglot
+   - MELPA packaging and submission
+   - Org-babel support for literate programming in Aria
+
+**5. Vim/Neovim Support**
+   - ftdetect/aria.vim (file type detection)
+   - syntax/aria.vim (syntax highlighting) or TreeSitter
+   - indent/aria.vim (indentation rules)
+   - LSP integration:
+     * Neovim: nvim-lspconfig setup
+     * Vim: vim-lsp or coc.nvim
+   - Publishing to vim.org or lazy.nvim registry
+
+**6. MCP Integration (Model Context Protocol)**
+   - What is MCP? How does it differ from LSP?
+   - Should aria-ls also be an MCP server?
+   - What Aria-specific context should AI assistants have?
+     * Type system documentation
+     * TBB arithmetic rules
+     * Memory model best practices
+     * Common error patterns and fixes
+   - Protocol: JSON-RPC like LSP?
+   - Use cases:
+     * "Explain this TBB overflow"
+     * "Convert this C code to Aria"
+     * "Suggest memory model for this function"
+
+**7. Code Snippets**
+   - Common patterns to provide:
+     * Function definition: `func name(params) -> Result<T>`
+     * Error handling: `x := try some_func() else { ... }`
+     * Defer cleanup: `defer resource.close()`
+     * Pick statement: `pick value { case ... }`
+     * Async function: `async func name() -> Future<T>`
+     * Wild allocation: `ptr := @wild alloc<T>()`
+   - Format: VS Code snippets.json, UltiSnips, YASnippet
+   - Dynamic snippets based on context?
+
+**8. Formatting Tool (aria-fmt)**
+   - Automatic code formatting like rustfmt/gofmt
+   - Rules:
+     * Indentation: tabs or spaces (configurable)?
+     * Brace style: K&R, Allman, or Aria-specific?
+     * Line length limit: 80, 100, 120?
+     * Operator spacing: `x + y` vs `x+y`
+     * Import sorting
+   - Integration with editors:
+     * Format on save
+     * Format selection
+     * CLI usage: `aria-fmt *.aria`
+   - How to implement? Visit AST and reprint with rules?
+
+**9. Documentation Generation**
+   - Doc comments format: `/// Documentation` or `/** ... */`?
+   - Markdown in doc comments?
+   - aria-doc tool to generate:
+     * HTML documentation (rustdoc-style)
+     * Markdown files
+     * Man pages
+   - LSP hover integration: Show doc comments on hover
+
+**10. Testing Support**
+   - Test runner integration with editors
+   - Show test results inline (CodeLens)
+   - Debug failed tests directly from editor
+   - Coverage visualization
+
+EXISTING TOOLS TO STUDY
+-----------------------
+- **rust-analyzer**: Best-in-class language server
+- **TypeScript Language Service**: Powers VS Code TypeScript
+- **clangd**: LLVM-based C++ language server  
+- **gopls**: Go language server
+- **TreeSitter**: Modern parsing library for editors
+- **textmate/vscode-tmgrammar**: Grammar format
+
+DESIRED RESEARCH OUTPUT
+-----------------------
+1. **VS Code extension template**: Complete package.json + activation code
+2. **TextMate grammar**: Complete tmLanguage.json for Aria
+3. **TreeSitter grammar**: grammar.js skeleton + queries
+4. **Emacs mode**: aria-mode.el template
+5. **Vim/Neovim config**: Complete ftplugin setup
+6. **MCP protocol spec**: If applicable to Aria
+7. **Snippet library**: 20+ common patterns in multiple formats
+8. **aria-fmt design**: Algorithm and configuration options
+9. **Publishing guides**: How to release on each platform's registry
+
+CONSTRAINTS
+-----------
+- VS Code extension must be TypeScript/JavaScript
+- Should work with existing aria-ls LSP server
+- Minimal dependencies (keep bundle size small)
+- Cross-platform: Linux, macOS, Windows
+- Free and open source (MIT license)
+
+SUCCESS CRITERIA
+----------------
+1. Developer installs extension and gets instant Aria support
+2. Syntax highlighting works for all Aria features
+3. LSP features work seamlessly (hover, definition, diagnostics)
+4. Code formatting is consistent and configurable
+5. Works in all major editors (VS Code, Emacs, Neovim, Vim)
+
+Please provide comprehensive guidance for creating a polished
+editor experience across multiple platforms.

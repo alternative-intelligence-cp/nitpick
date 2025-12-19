@@ -85,6 +85,7 @@ set(CMAKE_DEPEND_INFO_FILES
   "CMakeFiles/RISCVTargetParserTableGen.dir/DependInfo.cmake"
   "CMakeFiles/ariac.dir/DependInfo.cmake"
   "CMakeFiles/aria-ls.dir/DependInfo.cmake"
+  "CMakeFiles/aria-dap.dir/DependInfo.cmake"
   "vendor/toml11/CMakeFiles/Experimental.dir/DependInfo.cmake"
   "vendor/toml11/CMakeFiles/Nightly.dir/DependInfo.cmake"
   "vendor/toml11/CMakeFiles/Continuous.dir/DependInfo.cmake"

@@ -1,0 +1,121 @@
+ARIA DEBUGGER - RESEARCH REQUEST
+=================================
+Date: December 18, 2025
+Priority: Post-LSP Implementation
+
+OBJECTIVE
+---------
+Design and implement a custom debugger for the Aria programming language with:
+1. CLI interface (GDB/LLDB-style command line)
+2. Modern web interface (HTML5/CSS/JS)
+3. Deep integration with Aria's unique features (TBB types, wild/gc memory, pick statements)
+
+ARIA-SPECIFIC FEATURES TO DEBUG
+--------------------------------
+1. **Memory Model Visualization**
+   - wild vs gc allocations (color-coded)
+   - wildx executable memory regions
+   - defer cleanup execution tracking
+   - Memory ownership and borrow checking states
+
+2. **TBB Type Inspection**
+   - Display TBB values with ERR sentinel handling
+   - Show symmetric ranges [-127, +127] for tbb8
+   - Visualize TBB arithmetic overflow behavior
+
+3. **Control Flow**
+   - pick/fall statement execution paths
+   - pass()/fail() return tracking
+   - Async/await coroutine state inspection
+
+4. **Error Propagation**
+   - Result<T> unwrapping visualization
+   - Error chain tracking across function calls
+
+RESEARCH QUESTIONS
+------------------
+
+**1. Architecture & LLVM Integration**
+   - How to integrate with LLVM 20.1.2 debug info (DWARF)?  
+   - Should we use LLDB as backend or implement custom?
+   - GDB/MI protocol for IDE integration?
+   - How to map LLVM IR back to Aria source?
+
+**2. CLI Debugger**
+   - Command set: break, step, next, continue, print, watch
+   - Aria-specific commands: `print-tbb`, `show-memory-model`, `trace-defer`
+   - REPL for evaluating Aria expressions at breakpoints
+   - Source code display with syntax highlighting
+
+**3. Web Interface (HTML5/CSS/JS)**
+   - Architecture: WebSocket server in C++ or embedded HTTP server?
+   - Frontend framework: Vanilla JS, React, or lightweight alternative?
+   - Features:
+     * Live source view with breakpoints
+     * Variable inspector with TBB visualization
+     * Call stack navigator  
+     * Memory map viewer (wild/gc regions)
+     * Watch expressions
+     * Console for commands
+   - How to launch: `aria-debug --web program.aria` opens browser?
+
+**4. Debug Info Generation**
+   - What LLVM debug metadata to emit during compilation?
+   - Source location mapping for IR → AST → Source
+   - Variable name preservation through compilation
+   - Inline function handling
+
+**5. Remote Debugging**
+   - Support for debugging programs on remote machines?
+   - Protocol: GDB remote serial protocol or custom?
+
+**6. Integration Points**
+   - How does this fit with LSP server? Separate process or shared code?
+   - DAP (Debug Adapter Protocol) for VS Code integration?
+   - Should debugger use same VirtualFileSystem as LSP?
+
+**7. Testing Strategy**
+   - How to test debugger commands? Scripted test cases?
+   - Mock programs with known states?
+   - Regression tests for breakpoint accuracy
+
+EXISTING TOOLS TO STUDY
+-----------------------
+- **GDB**: Industry standard, complex but feature-rich
+- **LLDB**: Modern LLVM-based debugger, better C++ support
+- **rr**: Record and replay debugging (Mozilla)
+- **Delve** (Go debugger): Simple, focused language-specific features
+- **CodeLLDB** (VS Code): Web-based debugger UI inspiration
+
+DESIRED RESEARCH OUTPUT
+-----------------------
+1. **Architecture diagram**: CLI + Web UI + Debug Engine + LLVM backend
+2. **Protocol design**: Commands, responses, WebSocket messages
+3. **LLVM integration strategy**: Which APIs to use?
+4. **CLI command reference**: Complete command set with Aria-specific additions
+5. **Web UI mockup**: Key screens (source, variables, memory, stack)
+6. **Implementation roadmap**: Phases (basic CLI → web UI → Aria features)
+7. **Code examples**: 
+   - Setting up LLVM debug info
+   - Parsing debug info at runtime
+   - WebSocket server skeleton
+   - Frontend state management
+
+CONSTRAINTS
+-----------
+- C++17 standard
+- Must use LLVM 20.1.2 (already linked)
+- Should reuse Aria frontend code (Lexer, Parser for REPL)
+- Web UI must work without external dependencies (embedded server)
+- Security: Debug sessions should require authentication
+
+SUCCESS CRITERIA
+----------------
+1. Developer can set breakpoints in Aria code and step through execution
+2. TBB values display correctly with ERR detection
+3. Memory viewer shows wild/gc allocations distinctly  
+4. Web UI is responsive and intuitive
+5. Works on Linux, macOS, Windows (via LLVM portability)
+
+Please provide comprehensive, production-ready guidance for implementing
+a modern debugger that showcases Aria's unique features.

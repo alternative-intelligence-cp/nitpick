@@ -1,0 +1,1659 @@
+=== ARIA SOURCE PART 1: FRONTEND - LEXER & TOKEN ===
+
+FILE: include/frontend/token.h
+====================================
+#ifndef ARIA_TOKEN_H
+#define ARIA_TOKEN_H
+
+#include <string>
+#include <cstdint>
+#include <ostream>
+
+namespace aria {
+namespace frontend {
+
+// ============================================================================
+// TokenType Enum - Complete token classification
+// ============================================================================
+// Reference: aria_specs.txt, research_012 (types), research_002 (TBB)
+// All possible tokens in Aria language
+
+enum class TokenType {
+    // ========================================================================
+    // Keywords - Memory Qualifiers
+    // ========================================================================
+    TOKEN_KW_WILD,      // wild - opt-out of GC
+    TOKEN_KW_WILDX,     // wildx - executable memory allocation (JIT)
+    TOKEN_KW_STACK,     // stack - explicit stack allocation
+    TOKEN_KW_GC,        // gc - explicit GC allocation
+    TOKEN_KW_DEFER,     // defer - RAII-style cleanup
+    
+    // ========================================================================
+    // Keywords - Control Flow
+    // ========================================================================
+    TOKEN_KW_IF,        // if
+    TOKEN_KW_ELSE,      // else
+    TOKEN_KW_WHILE,     // while
+    TOKEN_KW_FOR,       // for
+    TOKEN_KW_LOOP,      // loop(start, limit, step)
+    TOKEN_KW_TILL,      // till(limit, step)
+    TOKEN_KW_WHEN,      // when - conditional loop
+    TOKEN_KW_THEN,      // then - when success branch
+    TOKEN_KW_END,       // end - when failure branch
+    TOKEN_KW_PICK,      // pick - switch/match statement
+    TOKEN_KW_FALL,      // fall() - explicit fallthrough in pick
+    TOKEN_KW_BREAK,     // break
+    TOKEN_KW_CONTINUE,  // continue
+    TOKEN_KW_RETURN,    // return (legacy, use pass/fail)
+    TOKEN_KW_PASS,      // pass() - successful return
+    TOKEN_KW_FAIL,      // fail() - error return
+    
+    // ========================================================================
+    // Keywords - Async/Await
+    // ========================================================================
+    TOKEN_KW_ASYNC,     // async
+    TOKEN_KW_AWAIT,     // await
+    TOKEN_KW_CATCH,     // catch
+    
+    // ========================================================================
+    // Keywords - Declarations
+    // ========================================================================
+    TOKEN_KW_FUNC,      // func - function declaration
+    TOKEN_KW_STRUCT,    // struct - structure declaration
+    TOKEN_KW_USE,       // use - import module
+    TOKEN_KW_MOD,       // mod - define module
+    TOKEN_KW_PUB,       // pub - public visibility
+    TOKEN_KW_EXTERN,    // extern - external C functions
+    TOKEN_KW_CONST,     // const - compile-time constant
+    TOKEN_KW_CFG,       // cfg - conditional compilation
+    TOKEN_KW_AS,        // as - alias in use statement
+    
+    // ========================================================================
+    // Type Keywords - Integers (Signed)
+    // ========================================================================
+    TOKEN_KW_INT1,      // int1 - 1-bit signed
+    TOKEN_KW_INT2,      // int2 - 2-bit signed
+    TOKEN_KW_INT4,      // int4 - 4-bit signed
+    TOKEN_KW_INT8,      // int8 - 8-bit signed
+    TOKEN_KW_INT16,     // int16 - 16-bit signed
+    TOKEN_KW_INT32,     // int32 - 32-bit signed
+    TOKEN_KW_INT64,     // int64 - 64-bit signed
+    TOKEN_KW_INT128,    // int128 - 128-bit signed
+    TOKEN_KW_INT256,    // int256 - 256-bit signed
+    TOKEN_KW_INT512,    // int512 - 512-bit signed
+    
+    // ========================================================================
+    // Type Keywords - Integers (Unsigned)
+    // ========================================================================
+    TOKEN_KW_UINT8,     // uint8 - 8-bit unsigned
+    TOKEN_KW_UINT16,    // uint16 - 16-bit unsigned
+    TOKEN_KW_UINT32,    // uint32 - 32-bit unsigned
+    TOKEN_KW_UINT64,    // uint64 - 64-bit unsigned
+    TOKEN_KW_UINT128,   // uint128 - 128-bit unsigned
+    TOKEN_KW_UINT256,   // uint256 - 256-bit unsigned
+    TOKEN_KW_UINT512,   // uint512 - 512-bit unsigned
+    
+    // ========================================================================
+    // Type Keywords - TBB (Twisted Balanced Binary)
+    // ========================================================================
+    // Symmetric ranges with ERR sentinel at minimum value
+    TOKEN_KW_TBB8,      // tbb8 - [-127, +127], ERR = -128
+    TOKEN_KW_TBB16,     // tbb16 - [-32767, +32767], ERR = -32768
+    TOKEN_KW_TBB32,     // tbb32 - symmetric 32-bit, ERR at min
+    TOKEN_KW_TBB64,     // tbb64 - symmetric 64-bit, ERR at min
+    
+    // ========================================================================
+    // Type Keywords - Floating Point
+    // ========================================================================
+    TOKEN_KW_FLT32,     // flt32 - 32-bit float
+    TOKEN_KW_FLT64,     // flt64 - 64-bit float (double)
+    TOKEN_KW_FLT128,    // flt128 - 128-bit float
+    TOKEN_KW_FLT256,    // flt256 - 256-bit float
+    TOKEN_KW_FLT512,    // flt512 - 512-bit float
+    
+    // ========================================================================
+    // Type Keywords - Special/Composite
+    // ========================================================================
+    TOKEN_KW_BOOL,      // bool - boolean type
+    TOKEN_KW_STRING,    // string - string type
+    TOKEN_KW_DYN,       // dyn - dynamic type
+    TOKEN_KW_OBJ,       // obj - object type
+    TOKEN_KW_RESULT,    // result - result type with {err, val}
+    TOKEN_KW_ARRAY,     // array - array type marker
+    
+    // ========================================================================
+    // Type Keywords - Balanced Ternary/Nonary
+    // ========================================================================
+    TOKEN_KW_TRIT,      // trit - balanced ternary digit (-1, 0, 1)
+    TOKEN_KW_TRYTE,     // tryte - 10 trits in uint16
+    TOKEN_KW_NIT,       // nit - balanced nonary digit (-4..+4)
+    TOKEN_KW_NYTE,      // nyte - 5 nits in uint16
+    
+    // ========================================================================
+    // Type Keywords - Mathematical
+    // ========================================================================
+    TOKEN_KW_VEC2,      // vec2 - 2D vector
+    TOKEN_KW_VEC3,      // vec3 - 3D vector
+    TOKEN_KW_VEC9,      // vec9 - 9D vector
+    TOKEN_KW_MATRIX,    // matrix - matrix type
+    TOKEN_KW_TENSOR,    // tensor - tensor type
+    
+    // ========================================================================
+    // Type Keywords - I/O and System
+    // ========================================================================
+    TOKEN_KW_BINARY,    // binary - binary data type
+    TOKEN_KW_BUFFER,    // buffer - buffer type
+    TOKEN_KW_STREAM,    // stream - stream type
+    TOKEN_KW_PROCESS,   // process - process handle
+    TOKEN_KW_PIPE,      // pipe - pipe handle
+    TOKEN_KW_DEBUG,     // debug - debug session type
+    TOKEN_KW_LOG,       // log - logger type
+    
+    // ========================================================================
+    // Special Keywords
+    // ========================================================================
+    TOKEN_KW_IS,        // is - ternary condition keyword
+    TOKEN_KW_NULL,      // NULL - null value
+    TOKEN_KW_TRUE,      // true - boolean literal
+    TOKEN_KW_FALSE,     // false - boolean literal
+    TOKEN_KW_ERR,       // ERR - TBB error sentinel
+    
+    // ========================================================================
+    // Operators - Arithmetic
+    // ========================================================================
+    TOKEN_PLUS,         // +
+    TOKEN_MINUS,        // -
+    TOKEN_STAR,         // *
+    TOKEN_SLASH,        // /
+    TOKEN_PERCENT,      // %
+    TOKEN_PLUS_PLUS,    // ++
+    TOKEN_MINUS_MINUS,  // --
+    
+    // ========================================================================
+    // Operators - Assignment
+    // ========================================================================
+    TOKEN_EQUAL,        // =
+    TOKEN_PLUS_EQUAL,   // +=
+    TOKEN_MINUS_EQUAL,  // -=
+    TOKEN_STAR_EQUAL,   // *=
+    TOKEN_SLASH_EQUAL,  // /=
+    TOKEN_PERCENT_EQUAL,// %=
+    
+    // ========================================================================
+    // Operators - Comparison
+    // ========================================================================
+    TOKEN_EQUAL_EQUAL,  // ==
+    TOKEN_BANG_EQUAL,   // !=
+    TOKEN_LESS,         // <
+    TOKEN_LESS_EQUAL,   // <=
+    TOKEN_GREATER,      // >
+    TOKEN_GREATER_EQUAL,// >=
+    TOKEN_SPACESHIP,    // <=> (three-way comparison)
+    
+    // ========================================================================
+    // Operators - Logical
+    // ========================================================================
+    TOKEN_AND_AND,      // &&
+    TOKEN_OR_OR,        // ||
+    TOKEN_BANG,         // !
+    
+    // ========================================================================
+    // Operators - Bitwise
+    // ========================================================================
+    TOKEN_AMPERSAND,    // & (bitwise AND, string interpolation prefix)
+    TOKEN_PIPE,         // | (bitwise OR)
+    TOKEN_CARET,        // ^ (bitwise XOR)
+    TOKEN_TILDE,        // ~ (bitwise NOT)
+    TOKEN_SHIFT_LEFT,   // <<
+    TOKEN_SHIFT_RIGHT,  // >>
+    
+    // ========================================================================
+    // Operators - Special
+    // ========================================================================
+    TOKEN_AT,           // @ - address/pointer operator
+    TOKEN_DOLLAR,       // $ - iteration variable, safe reference
+    TOKEN_HASH,         // # - memory pinning operator
+    TOKEN_ARROW,        // -> - pointer member dereference (ptr->member)
+    TOKEN_SAFE_NAV,     // ?. - safe navigation
+    TOKEN_NULL_COALESCE,// ?? - null coalescing
+    TOKEN_QUESTION,     // ? - unwrap operator
+    TOKEN_PIPE_RIGHT,   // |> - pipeline forward
+    TOKEN_PIPE_LEFT,    // <| - pipeline backward
+    TOKEN_DOT_DOT,      // .. - inclusive range
+    TOKEN_DOT_DOT_DOT,  // ... - exclusive range
+    
+    // ========================================================================
+    // Template Literals
+    // ========================================================================
+    TOKEN_BACKTICK,         // ` - template literal delimiter
+    TOKEN_TEMPLATE_START,   // ` at start of template
+    TOKEN_TEMPLATE_PART,    // text between interpolations
+    TOKEN_INTERP_START,     // &{ - interpolation start
+    TOKEN_INTERP_END,       // } - interpolation end (contextual)
+    TOKEN_TEMPLATE_END,     // ` at end of template
+    
+    // ========================================================================
+    // Punctuation
+    // ========================================================================
+    TOKEN_DOT,          // .
+    TOKEN_COMMA,        // ,
+    TOKEN_COLON,        // :
+    TOKEN_SEMICOLON,    // ;
+    TOKEN_LEFT_PAREN,   // (
+    TOKEN_RIGHT_PAREN,  // )
+    TOKEN_LEFT_BRACE,   // {
+    TOKEN_RIGHT_BRACE,  // }
+    TOKEN_LEFT_BRACKET, // [
+    TOKEN_RIGHT_BRACKET,// ]
+    
+    // ========================================================================
+    // Literals
+    // ========================================================================
+    TOKEN_INTEGER,      // Integer literal (decimal, hex, binary, octal)
+    TOKEN_FLOAT,        // Float literal
+    TOKEN_STRING,       // String literal "..."
+    TOKEN_CHAR,         // Character literal '...'
+    
+    // ========================================================================
+    // Identifiers and Special Tokens
+    // ========================================================================
+    TOKEN_IDENTIFIER,   // Variable names, function names
+    TOKEN_EOF,          // End of file
+    TOKEN_ERROR,        // Error token with message
+    
+    // ========================================================================
+    // Comments and Whitespace (typically filtered)
+    // ========================================================================
+    TOKEN_COMMENT,      // Comment (if not skipped)
+    TOKEN_WHITESPACE,   // Whitespace (if not skipped)
+};
+
+// ============================================================================
+// Token - Represents a single token from source code
+// ============================================================================
+
+struct Token {
+    TokenType type;
+    std::string lexeme;      // Raw text from source
+    int line;                // Line number (1-indexed)
+    int column;              // Column number (1-indexed)
+    
+    // Value storage (union for efficiency)
+    union {
+        int64_t int_value;
+        double float_value;
+        bool bool_value;
+    } value;
+    
+    std::string string_value; // For strings (separate due to complex type)
+    
+    // Constructors
+    Token();
+    explicit Token(TokenType t, const std::string& lex, int ln, int col);
+    Token(TokenType t, const std::string& lex, int ln, int col, int64_t val);
+    Token(TokenType t, const std::string& lex, int ln, int col, double val);
+    Token(TokenType t, const std::string& lex, int ln, int col, bool val);
+    Token(TokenType t, const std::string& lex, int ln, int col, const std::string& str_val);
+    
+    // Helper methods
+    bool isKeyword() const;
+    bool isOperator() const;
+    bool isLiteral() const;
+    bool isType() const;
+    std::string toString() const;  // For debugging
+};
+
+// Helper function to convert TokenType to string
+std::string tokenTypeToString(TokenType type);
+
+} // namespace frontend
+} // namespace aria
+
+// Stream operator for TokenType (for test output)
+inline std::ostream& operator<<(std::ostream& os, aria::frontend::TokenType type) {
+    return os << aria::frontend::tokenTypeToString(type);
+}
+
+#endif // ARIA_TOKEN_H
+
+
+
+FILE: src/frontend/lexer/token.cpp
+====================================
+#include "frontend/token.h"
+#include <sstream>
+
+namespace aria {
+namespace frontend {
+
+// ============================================================================
+// Token Constructors
+// ============================================================================
+
+Token::Token() 
+    : type(TokenType::TOKEN_ERROR), lexeme(""), line(0), column(0) {
+    value.int_value = 0;
+}
+
+Token::Token(TokenType t, const std::string& lex, int ln, int col)
+    : type(t), lexeme(lex), line(ln), column(col) {
+    value.int_value = 0;
+}
+
+Token::Token(TokenType t, const std::string& lex, int ln, int col, int64_t val)
+    : type(t), lexeme(lex), line(ln), column(col) {
+    value.int_value = val;
+}
+
+Token::Token(TokenType t, const std::string& lex, int ln, int col, double val)
+    : type(t), lexeme(lex), line(ln), column(col) {
+    value.float_value = val;
+}
+
+Token::Token(TokenType t, const std::string& lex, int ln, int col, bool val)
+    : type(t), lexeme(lex), line(ln), column(col) {
+    value.bool_value = val;
+}
+
+Token::Token(TokenType t, const std::string& lex, int ln, int col, const std::string& str_val)
+    : type(t), lexeme(lex), line(ln), column(col), value{0}, string_value(str_val) {
+}
+
+// ============================================================================
+// Token Helper Methods
+// ============================================================================
+
+bool Token::isKeyword() const {
+    return type >= TokenType::TOKEN_KW_WILD && type <= TokenType::TOKEN_KW_ERR;
+}
+
+bool Token::isOperator() const {
+    return (type >= TokenType::TOKEN_PLUS && type <= TokenType::TOKEN_DOT_DOT_DOT) ||
+           (type >= TokenType::TOKEN_AMPERSAND && type <= TokenType::TOKEN_SHIFT_RIGHT);
+}
+
+bool Token::isLiteral() const {
+    return type == TokenType::TOKEN_INTEGER ||
+           type == TokenType::TOKEN_FLOAT ||
+           type == TokenType::TOKEN_STRING ||
+           type == TokenType::TOKEN_CHAR ||
+           type == TokenType::TOKEN_KW_TRUE ||
+           type == TokenType::TOKEN_KW_FALSE ||
+           type == TokenType::TOKEN_KW_NULL ||
+           type == TokenType::TOKEN_KW_ERR;
+}
+
+bool Token::isType() const {
+    return (type >= TokenType::TOKEN_KW_INT1 && type <= TokenType::TOKEN_KW_INT512) ||
+           (type >= TokenType::TOKEN_KW_UINT8 && type <= TokenType::TOKEN_KW_UINT512) ||
+           (type >= TokenType::TOKEN_KW_TBB8 && type <= TokenType::TOKEN_KW_TBB64) ||
+           (type >= TokenType::TOKEN_KW_FLT32 && type <= TokenType::TOKEN_KW_FLT512) ||
+           (type >= TokenType::TOKEN_KW_BOOL && type <= TokenType::TOKEN_KW_ARRAY) ||
+           (type >= TokenType::TOKEN_KW_TRIT && type <= TokenType::TOKEN_KW_NYTE) ||
+           (type >= TokenType::TOKEN_KW_VEC2 && type <= TokenType::TOKEN_KW_TENSOR) ||
+           (type >= TokenType::TOKEN_KW_BINARY && type <= TokenType::TOKEN_KW_LOG);
+}
+
+std::string Token::toString() const {
+    std::ostringstream oss;
+    oss << "Token(" << tokenTypeToString(type) 
+        << ", \"" << lexeme << "\""
+        << ", line=" << line 
+        << ", col=" << column;
+    
+    // Add value if present
+    if (type == TokenType::TOKEN_INTEGER) {
+        oss << ", value=" << value.int_value;
+    } else if (type == TokenType::TOKEN_FLOAT) {
+        oss << ", value=" << value.float_value;
+    } else if (type == TokenType::TOKEN_KW_TRUE || type == TokenType::TOKEN_KW_FALSE) {
+        oss << ", value=" << (value.bool_value ? "true" : "false");
+    } else if (type == TokenType::TOKEN_STRING || type == TokenType::TOKEN_CHAR) {
+        oss << ", value=\"" << string_value << "\"";
+    }
+    
+    oss << ")";
+    return oss.str();
+}
+
+// ============================================================================
+// TokenType to String Conversion
+// ============================================================================
+
+std::string tokenTypeToString(TokenType type) {
+    switch (type) {
+        // Memory qualifiers
+        case TokenType::TOKEN_KW_WILD: return "WILD";
+        case TokenType::TOKEN_KW_WILDX: return "WILDX";
+        case TokenType::TOKEN_KW_STACK: return "STACK";
+        case TokenType::TOKEN_KW_GC: return "GC";
+        case TokenType::TOKEN_KW_DEFER: return "DEFER";
+        
+        // Control flow
+        case TokenType::TOKEN_KW_IF: return "IF";
+        case TokenType::TOKEN_KW_ELSE: return "ELSE";
+        case TokenType::TOKEN_KW_WHILE: return "WHILE";
+        case TokenType::TOKEN_KW_FOR: return "FOR";
+        case TokenType::TOKEN_KW_LOOP: return "LOOP";
+        case TokenType::TOKEN_KW_TILL: return "TILL";
+        case TokenType::TOKEN_KW_WHEN: return "WHEN";
+        case TokenType::TOKEN_KW_THEN: return "THEN";
+        case TokenType::TOKEN_KW_END: return "END";
+        case TokenType::TOKEN_KW_PICK: return "PICK";
+        case TokenType::TOKEN_KW_FALL: return "FALL";
+        case TokenType::TOKEN_KW_BREAK: return "BREAK";
+        case TokenType::TOKEN_KW_CONTINUE: return "CONTINUE";
+        case TokenType::TOKEN_KW_RETURN: return "RETURN";
+        case TokenType::TOKEN_KW_PASS: return "PASS";
+        case TokenType::TOKEN_KW_FAIL: return "FAIL";
+        
+        // Async
+        case TokenType::TOKEN_KW_ASYNC: return "ASYNC";
+        case TokenType::TOKEN_KW_AWAIT: return "AWAIT";
+        case TokenType::TOKEN_KW_CATCH: return "CATCH";
+        
+        // Declarations
+        case TokenType::TOKEN_KW_FUNC: return "FUNC";
+        case TokenType::TOKEN_KW_STRUCT: return "STRUCT";
+        case TokenType::TOKEN_KW_USE: return "USE";
+        case TokenType::TOKEN_KW_MOD: return "MOD";
+        case TokenType::TOKEN_KW_PUB: return "PUB";
+        case TokenType::TOKEN_KW_EXTERN: return "EXTERN";
+        case TokenType::TOKEN_KW_CONST: return "CONST";
+        case TokenType::TOKEN_KW_CFG: return "CFG";
+        
+        // Integer types
+        case TokenType::TOKEN_KW_INT1: return "INT1";
+        case TokenType::TOKEN_KW_INT2: return "INT2";
+        case TokenType::TOKEN_KW_INT4: return "INT4";
+        case TokenType::TOKEN_KW_INT8: return "INT8";
+        case TokenType::TOKEN_KW_INT16: return "INT16";
+        case TokenType::TOKEN_KW_INT32: return "INT32";
+        case TokenType::TOKEN_KW_INT64: return "INT64";
+        case TokenType::TOKEN_KW_INT128: return "INT128";
+        case TokenType::TOKEN_KW_INT256: return "INT256";
+        case TokenType::TOKEN_KW_INT512: return "INT512";
+        
+        // Unsigned integer types
+        case TokenType::TOKEN_KW_UINT8: return "UINT8";
+        case TokenType::TOKEN_KW_UINT16: return "UINT16";
+        case TokenType::TOKEN_KW_UINT32: return "UINT32";
+        case TokenType::TOKEN_KW_UINT64: return "UINT64";
+        case TokenType::TOKEN_KW_UINT128: return "UINT128";
+        case TokenType::TOKEN_KW_UINT256: return "UINT256";
+        case TokenType::TOKEN_KW_UINT512: return "UINT512";
+        
+        // TBB types
+        case TokenType::TOKEN_KW_TBB8: return "TBB8";
+        case TokenType::TOKEN_KW_TBB16: return "TBB16";
+        case TokenType::TOKEN_KW_TBB32: return "TBB32";
+        case TokenType::TOKEN_KW_TBB64: return "TBB64";
+        
+        // Float types
+        case TokenType::TOKEN_KW_FLT32: return "FLT32";
+        case TokenType::TOKEN_KW_FLT64: return "FLT64";
+        case TokenType::TOKEN_KW_FLT128: return "FLT128";
+        case TokenType::TOKEN_KW_FLT256: return "FLT256";
+        case TokenType::TOKEN_KW_FLT512: return "FLT512";
+        
+        // Special types
+        case TokenType::TOKEN_KW_BOOL: return "BOOL";
+        case TokenType::TOKEN_KW_STRING: return "STRING";
+        case TokenType::TOKEN_KW_DYN: return "DYN";
+        case TokenType::TOKEN_KW_OBJ: return "OBJ";
+        case TokenType::TOKEN_KW_RESULT: return "RESULT";
+        case TokenType::TOKEN_KW_ARRAY: return "ARRAY";
+        
+        // Balanced ternary/nonary
+        case TokenType::TOKEN_KW_TRIT: return "TRIT";
+        case TokenType::TOKEN_KW_TRYTE: return "TRYTE";
+        case TokenType::TOKEN_KW_NIT: return "NIT";
+        case TokenType::TOKEN_KW_NYTE: return "NYTE";
+        
+        // Mathematical types
+        case TokenType::TOKEN_KW_VEC2: return "VEC2";
+        case TokenType::TOKEN_KW_VEC3: return "VEC3";
+        case TokenType::TOKEN_KW_VEC9: return "VEC9";
+        case TokenType::TOKEN_KW_MATRIX: return "MATRIX";
+        case TokenType::TOKEN_KW_TENSOR: return "TENSOR";
+        
+        // I/O and system types
+        case TokenType::TOKEN_KW_BINARY: return "BINARY";
+        case TokenType::TOKEN_KW_BUFFER: return "BUFFER";
+        case TokenType::TOKEN_KW_STREAM: return "STREAM";
+        case TokenType::TOKEN_KW_PROCESS: return "PROCESS";
+        case TokenType::TOKEN_KW_PIPE: return "PIPE";
+        case TokenType::TOKEN_KW_DEBUG: return "DEBUG";
+        case TokenType::TOKEN_KW_LOG: return "LOG";
+        
+        // Special keywords
+        case TokenType::TOKEN_KW_IS: return "IS";
+        case TokenType::TOKEN_KW_NULL: return "NULL";
+        case TokenType::TOKEN_KW_TRUE: return "TRUE";
+        case TokenType::TOKEN_KW_FALSE: return "FALSE";
+        case TokenType::TOKEN_KW_ERR: return "ERR";
+        
+        // Arithmetic operators
+        case TokenType::TOKEN_PLUS: return "PLUS";
+        case TokenType::TOKEN_MINUS: return "MINUS";
+        case TokenType::TOKEN_STAR: return "STAR";
+        case TokenType::TOKEN_SLASH: return "SLASH";
+        case TokenType::TOKEN_PERCENT: return "PERCENT";
+        case TokenType::TOKEN_PLUS_PLUS: return "PLUS_PLUS";
+        case TokenType::TOKEN_MINUS_MINUS: return "MINUS_MINUS";
+        
+        // Assignment operators
+        case TokenType::TOKEN_EQUAL: return "EQUAL";
+        case TokenType::TOKEN_PLUS_EQUAL: return "PLUS_EQUAL";
+        case TokenType::TOKEN_MINUS_EQUAL: return "MINUS_EQUAL";
+        case TokenType::TOKEN_STAR_EQUAL: return "STAR_EQUAL";
+        case TokenType::TOKEN_SLASH_EQUAL: return "SLASH_EQUAL";
+        case TokenType::TOKEN_PERCENT_EQUAL: return "PERCENT_EQUAL";
+        
+        // Comparison operators
+        case TokenType::TOKEN_EQUAL_EQUAL: return "EQUAL_EQUAL";
+        case TokenType::TOKEN_BANG_EQUAL: return "BANG_EQUAL";
+        case TokenType::TOKEN_LESS: return "LESS";
+        case TokenType::TOKEN_LESS_EQUAL: return "LESS_EQUAL";
+        case TokenType::TOKEN_GREATER: return "GREATER";
+        case TokenType::TOKEN_GREATER_EQUAL: return "GREATER_EQUAL";
+        case TokenType::TOKEN_SPACESHIP: return "SPACESHIP";
+        
+        // Logical operators
+        case TokenType::TOKEN_AND_AND: return "AND_AND";
+        case TokenType::TOKEN_OR_OR: return "OR_OR";
+        case TokenType::TOKEN_BANG: return "BANG";
+        
+        // Bitwise operators
+        case TokenType::TOKEN_AMPERSAND: return "AMPERSAND";
+        case TokenType::TOKEN_PIPE: return "PIPE";
+        case TokenType::TOKEN_CARET: return "CARET";
+        case TokenType::TOKEN_TILDE: return "TILDE";
+        case TokenType::TOKEN_SHIFT_LEFT: return "SHIFT_LEFT";
+        case TokenType::TOKEN_SHIFT_RIGHT: return "SHIFT_RIGHT";
+        
+        // Special operators
+        case TokenType::TOKEN_AT: return "AT";
+        case TokenType::TOKEN_DOLLAR: return "DOLLAR";
+        case TokenType::TOKEN_HASH: return "HASH";
+        case TokenType::TOKEN_ARROW: return "ARROW";
+        case TokenType::TOKEN_SAFE_NAV: return "SAFE_NAV";
+        case TokenType::TOKEN_NULL_COALESCE: return "NULL_COALESCE";
+        case TokenType::TOKEN_QUESTION: return "QUESTION";
+        case TokenType::TOKEN_PIPE_RIGHT: return "PIPE_RIGHT";
+        case TokenType::TOKEN_PIPE_LEFT: return "PIPE_LEFT";
+        case TokenType::TOKEN_DOT_DOT: return "DOT_DOT";
+        case TokenType::TOKEN_DOT_DOT_DOT: return "DOT_DOT_DOT";
+        
+        // Template literals
+        case TokenType::TOKEN_BACKTICK: return "BACKTICK";
+        case TokenType::TOKEN_TEMPLATE_START: return "TEMPLATE_START";
+        case TokenType::TOKEN_TEMPLATE_PART: return "TEMPLATE_PART";
+        case TokenType::TOKEN_INTERP_START: return "INTERP_START";
+        case TokenType::TOKEN_INTERP_END: return "INTERP_END";
+        case TokenType::TOKEN_TEMPLATE_END: return "TEMPLATE_END";
+        
+        // Punctuation
+        case TokenType::TOKEN_DOT: return "DOT";
+        case TokenType::TOKEN_COMMA: return "COMMA";
+        case TokenType::TOKEN_COLON: return "COLON";
+        case TokenType::TOKEN_SEMICOLON: return "SEMICOLON";
+        case TokenType::TOKEN_LEFT_PAREN: return "LEFT_PAREN";
+        case TokenType::TOKEN_RIGHT_PAREN: return "RIGHT_PAREN";
+        case TokenType::TOKEN_LEFT_BRACE: return "LEFT_BRACE";
+        case TokenType::TOKEN_RIGHT_BRACE: return "RIGHT_BRACE";
+        case TokenType::TOKEN_LEFT_BRACKET: return "LEFT_BRACKET";
+        case TokenType::TOKEN_RIGHT_BRACKET: return "RIGHT_BRACKET";
+        
+        // Literals
+        case TokenType::TOKEN_INTEGER: return "INTEGER";
+        case TokenType::TOKEN_FLOAT: return "FLOAT";
+        case TokenType::TOKEN_STRING: return "STRING";
+        case TokenType::TOKEN_CHAR: return "CHAR";
+        
+        // Special tokens
+        case TokenType::TOKEN_IDENTIFIER: return "IDENTIFIER";
+        case TokenType::TOKEN_EOF: return "EOF";
+        case TokenType::TOKEN_ERROR: return "ERROR";
+        case TokenType::TOKEN_COMMENT: return "COMMENT";
+        case TokenType::TOKEN_WHITESPACE: return "WHITESPACE";
+        
+        default: return "UNKNOWN";
+    }
+}
+
+} // namespace frontend
+} // namespace aria
+
+
+
+FILE: include/frontend/lexer/lexer.h
+====================================
+#ifndef ARIA_LEXER_H
+#define ARIA_LEXER_H
+
+#include "frontend/token.h"
+#include <string>
+#include <vector>
+
+namespace aria {
+namespace frontend {
+
+// ============================================================================
+// Lexer Class - Tokenizes Aria source code
+// ============================================================================
+// Reference: aria_specs.txt
+// Converts raw source text into a stream of tokens for the parser
+
+class Lexer {
+public:
+    // Constructor
+    explicit Lexer(const std::string& source);
+    
+    // Main tokenization method
+    std::vector<Token> tokenize();
+    
+    // Get all errors encountered during lexing
+    const std::vector<std::string>& getErrors() const;
+    
+private:
+    // Source code and position tracking
+    std::string source;
+    size_t current;      // Current character position
+    size_t start;        // Start of current token
+    int line;            // Current line (1-indexed)
+    int column;          // Current column (1-indexed)
+    int start_line;      // Line where current token started (1-indexed)
+    int start_column;    // Column where current token started (1-indexed)
+    
+    // Token collection and error tracking
+    std::vector<Token> tokens;
+    std::vector<std::string> errors;
+    
+    // ========================================================================
+    // Character Navigation Methods
+    // ========================================================================
+    
+    // Advance to next character and return current
+    char advance();
+    
+    // Look at current character without consuming
+    char peek() const;
+    
+    // Look ahead one character
+    char peekNext() const;
+    
+    // Check if at end of source
+    bool isAtEnd() const;
+    
+    // Conditionally advance if current matches expected
+    bool match(char expected);
+    
+    // ========================================================================
+    // Whitespace and Comment Handling
+    // ========================================================================
+    
+    // Skip whitespace (spaces, tabs, newlines)
+    void skipWhitespace();
+    
+    // Skip line comment (// to end of line)
+    void skipLineComment();
+    
+    // Skip block comment (/* to */)
+    void skipBlockComment();
+    
+    // ========================================================================
+    // Token Scanning Methods
+    // ========================================================================
+    
+    // Scan next token from source
+    void scanToken();
+    
+    // Add token to token list
+    void addToken(TokenType type);
+    void addToken(TokenType type, int64_t value);
+    void addToken(TokenType type, double value);
+    void addToken(TokenType type, bool value);
+    void addToken(TokenType type, const std::string& value);
+    
+    // Report lexer error
+    void error(const std::string& message);
+    
+    // ========================================================================
+    // Literal Scanning Methods
+    // ========================================================================
+    
+    // Scan identifier or keyword
+    void scanIdentifier();
+    
+    // Scan number literal (integer or float)
+    void scanNumber();
+    
+    // Scan string literal (double quotes)
+    void scanString();
+    
+    // Scan character literal (single quotes)
+    void scanCharacter();
+    
+    // Scan template literal (backticks with &{} interpolation)
+    void scanTemplateLiteral();
+    
+    // Check if identifier is a keyword and return appropriate token type
+    TokenType identifierType();
+    
+    // ========================================================================
+    // Character Classification Helpers
+    // ========================================================================
+    
+    // Check if character is valid identifier start (letter or underscore)
+    static bool isAlpha(char c);
+    
+    // Check if character is digit
+    static bool isDigit(char c);
+    
+    // Check if character is alphanumeric or underscore
+    static bool isAlphaNumeric(char c);
+    
+    // Check if character is hex digit
+    static bool isHexDigit(char c);
+    
+    // Check if character is binary digit (0 or 1)
+    static bool isBinaryDigit(char c);
+    
+    // Check if character is octal digit (0-7)
+    static bool isOctalDigit(char c);
+};
+
+} // namespace frontend
+} // namespace aria
+
+#endif // ARIA_LEXER_H
+
+
+
+FILE: src/frontend/lexer/lexer.cpp
+====================================
+#include "frontend/lexer/lexer.h"
+#include <sstream>
+#include <unordered_map>
+#include <algorithm>
+
+namespace aria {
+namespace frontend {
+
+// ============================================================================
+// Keyword Map - Maps identifier strings to keyword tokens
+// ============================================================================
+
+static const std::unordered_map<std::string, TokenType> keywords = {
+    // Memory qualifiers
+    {"wild", TokenType::TOKEN_KW_WILD},
+    {"wildx", TokenType::TOKEN_KW_WILDX},
+    {"stack", TokenType::TOKEN_KW_STACK},
+    {"gc", TokenType::TOKEN_KW_GC},
+    {"defer", TokenType::TOKEN_KW_DEFER},
+    
+    // Control flow
+    {"if", TokenType::TOKEN_KW_IF},
+    {"else", TokenType::TOKEN_KW_ELSE},
+    {"while", TokenType::TOKEN_KW_WHILE},
+    {"for", TokenType::TOKEN_KW_FOR},
+    {"loop", TokenType::TOKEN_KW_LOOP},
+    {"till", TokenType::TOKEN_KW_TILL},
+    {"when", TokenType::TOKEN_KW_WHEN},
+    {"then", TokenType::TOKEN_KW_THEN},
+    {"end", TokenType::TOKEN_KW_END},
+    {"pick", TokenType::TOKEN_KW_PICK},
+    {"fall", TokenType::TOKEN_KW_FALL},
+    {"break", TokenType::TOKEN_KW_BREAK},
+    {"continue", TokenType::TOKEN_KW_CONTINUE},
+    {"return", TokenType::TOKEN_KW_RETURN},
+    {"pass", TokenType::TOKEN_KW_PASS},
+    {"fail", TokenType::TOKEN_KW_FAIL},
+    
+    // Async
+    {"async", TokenType::TOKEN_KW_ASYNC},
+    {"await", TokenType::TOKEN_KW_AWAIT},
+    
+    // Module system
+    {"use", TokenType::TOKEN_KW_USE},
+    {"mod", TokenType::TOKEN_KW_MOD},
+    {"pub", TokenType::TOKEN_KW_PUB},
+    {"extern", TokenType::TOKEN_KW_EXTERN},
+    {"cfg", TokenType::TOKEN_KW_CFG},
+    {"as", TokenType::TOKEN_KW_AS},
+    
+    // Other
+    {"const", TokenType::TOKEN_KW_CONST},
+    {"is", TokenType::TOKEN_KW_IS},
+    
+    // Type keywords - integers
+    {"int1", TokenType::TOKEN_KW_INT1},
+    {"int2", TokenType::TOKEN_KW_INT2},
+    {"int4", TokenType::TOKEN_KW_INT4},
+    {"int8", TokenType::TOKEN_KW_INT8},
+    {"int16", TokenType::TOKEN_KW_INT16},
+    {"int32", TokenType::TOKEN_KW_INT32},
+    {"int64", TokenType::TOKEN_KW_INT64},
+    {"int128", TokenType::TOKEN_KW_INT128},
+    {"int256", TokenType::TOKEN_KW_INT256},
+    {"int512", TokenType::TOKEN_KW_INT512},
+    
+    // Type keywords - unsigned integers
+    {"uint8", TokenType::TOKEN_KW_UINT8},
+    {"uint16", TokenType::TOKEN_KW_UINT16},
+    {"uint32", TokenType::TOKEN_KW_UINT32},
+    {"uint64", TokenType::TOKEN_KW_UINT64},
+    {"uint128", TokenType::TOKEN_KW_UINT128},
+    {"uint256", TokenType::TOKEN_KW_UINT256},
+    {"uint512", TokenType::TOKEN_KW_UINT512},
+    
+    // Type keywords - TBB
+    {"tbb8", TokenType::TOKEN_KW_TBB8},
+    {"tbb16", TokenType::TOKEN_KW_TBB16},
+    {"tbb32", TokenType::TOKEN_KW_TBB32},
+    {"tbb64", TokenType::TOKEN_KW_TBB64},
+    
+    // Type keywords - floats
+    {"flt32", TokenType::TOKEN_KW_FLT32},
+    {"flt64", TokenType::TOKEN_KW_FLT64},
+    {"flt128", TokenType::TOKEN_KW_FLT128},
+    {"flt256", TokenType::TOKEN_KW_FLT256},
+    {"flt512", TokenType::TOKEN_KW_FLT512},
+    
+    // Type keywords - special
+    {"bool", TokenType::TOKEN_KW_BOOL},
+    {"string", TokenType::TOKEN_KW_STRING},
+    {"dyn", TokenType::TOKEN_KW_DYN},
+    {"obj", TokenType::TOKEN_KW_OBJ},
+    {"result", TokenType::TOKEN_KW_RESULT},
+    {"array", TokenType::TOKEN_KW_ARRAY},
+    {"func", TokenType::TOKEN_KW_FUNC},
+    
+    // Type keywords - balanced ternary/nonary
+    {"trit", TokenType::TOKEN_KW_TRIT},
+    {"tryte", TokenType::TOKEN_KW_TRYTE},
+    {"nit", TokenType::TOKEN_KW_NIT},
+    {"nyte", TokenType::TOKEN_KW_NYTE},
+    
+    // Type keywords - vectors and special math
+    {"vec2", TokenType::TOKEN_KW_VEC2},
+    {"vec3", TokenType::TOKEN_KW_VEC3},
+    {"vec9", TokenType::TOKEN_KW_VEC9},
+    {"tensor", TokenType::TOKEN_KW_TENSOR},
+    {"matrix", TokenType::TOKEN_KW_MATRIX},
+    
+    // Literals
+    {"true", TokenType::TOKEN_KW_TRUE},
+    {"false", TokenType::TOKEN_KW_FALSE},
+    {"NULL", TokenType::TOKEN_KW_NULL},
+    {"ERR", TokenType::TOKEN_KW_ERR},
+};
+
+// ============================================================================
+// Constructor and Main Tokenization
+// ============================================================================
+
+Lexer::Lexer(const std::string& source)
+    : source(source), current(0), start(0), line(1), column(1), start_line(1), start_column(1) {
+}
+
+std::vector<Token> Lexer::tokenize() {
+    tokens.clear();
+    errors.clear();
+    
+    while (!isAtEnd()) {
+        start = current;
+        scanToken();
+    }
+    
+    // Add EOF token so parser can reliably detect end of input
+    tokens.push_back(Token(TokenType::TOKEN_EOF, "", line, column));
+    
+    return tokens;
+}
+
+const std::vector<std::string>& Lexer::getErrors() const {
+    return errors;
+}
+
+// ============================================================================
+// Character Navigation Methods
+// ============================================================================
+
+char Lexer::advance() {
+    if (isAtEnd()) return '\0';
+    
+    char c = source[current];
+    current++;
+    column++;
+    
+    // Track newlines for line/column counting
+    if (c == '\n') {
+        line++;
+        column = 1;
+    }
+    
+    return c;
+}
+
+char Lexer::peek() const {
+    if (isAtEnd()) return '\0';
+    return source[current];
+}
+
+char Lexer::peekNext() const {
+    if (current + 1 >= source.length()) return '\0';
+    return source[current + 1];
+}
+
+bool Lexer::isAtEnd() const {
+    return current >= source.length();
+}
+
+bool Lexer::match(char expected) {
+    if (isAtEnd()) return false;
+    if (source[current] != expected) return false;
+    
+    advance();
+    return true;
+}
+
+// ============================================================================
+// Whitespace and Comment Handling
+// ============================================================================
+
+void Lexer::skipWhitespace() {
+    while (!isAtEnd()) {
+        char c = peek();
+        switch (c) {
+            case ' ':
+            case '\r':
+            case '\t':
+            case '\n':
+                advance();
+                break;
+            case '/':
+                // Check for comments
+                if (peekNext() == '/') {
+                    skipLineComment();
+                } else if (peekNext() == '*') {
+                    skipBlockComment();
+                } else {
+                    return; // Not a comment, stop skipping
+                }
+                break;
+            default:
+                return;
+        }
+    }
+}
+
+void Lexer::skipLineComment() {
+    // Skip the //
+    advance();
+    advance();
+    
+    // Skip until end of line or end of file
+    while (!isAtEnd() && peek() != '\n') {
+        advance();
+    }
+}
+
+void Lexer::skipBlockComment() {
+    // Skip the /*
+    advance();
+    advance();
+    
+    int startLine = line;
+    
+    // Skip until we find */
+    while (!isAtEnd()) {
+        if (peek() == '*' && peekNext() == '/') {
+            advance(); // *
+            advance(); // /
+            return;
+        }
+        advance();
+    }
+    
+    // If we get here, we hit EOF without closing comment
+    std::ostringstream oss;
+    oss << "Unterminated block comment starting at line " << startLine;
+    error(oss.str());
+}
+
+// ============================================================================
+// Token Scanning
+// ============================================================================
+
+void Lexer::scanToken() {
+    // Skip whitespace and comments first
+    skipWhitespace();
+    
+    if (isAtEnd()) return;
+    
+    // Update start position for this token
+    start = current;
+    start_line = line;
+    start_column = column;
+    
+    char c = advance();
+    
+    // Single-character tokens and operators
+    switch (c) {
+        case '(': addToken(TokenType::TOKEN_LEFT_PAREN); break;
+        case ')': addToken(TokenType::TOKEN_RIGHT_PAREN); break;
+        case '{': addToken(TokenType::TOKEN_LEFT_BRACE); break;
+        case '}': addToken(TokenType::TOKEN_RIGHT_BRACE); break;
+        case '[': addToken(TokenType::TOKEN_LEFT_BRACKET); break;
+        case ']': addToken(TokenType::TOKEN_RIGHT_BRACKET); break;
+        case ';': addToken(TokenType::TOKEN_SEMICOLON); break;
+        case ',': addToken(TokenType::TOKEN_COMMA); break;
+        case '~': addToken(TokenType::TOKEN_TILDE); break;
+        case '@': addToken(TokenType::TOKEN_AT); break;
+        case '$': addToken(TokenType::TOKEN_DOLLAR); break;
+        case '#': addToken(TokenType::TOKEN_HASH); break;
+        case '`': scanTemplateLiteral(); break; // Template literals
+        
+        // String and character literals
+        case '"': scanString(); break;
+        case '\'': scanCharacter(); break;
+        
+        // Operators that may be multi-character
+        case '+':
+            if (match('+')) {
+                addToken(TokenType::TOKEN_PLUS_PLUS);
+            } else if (match('=')) {
+                addToken(TokenType::TOKEN_PLUS_EQUAL);
+            } else {
+                addToken(TokenType::TOKEN_PLUS);
+            }
+            break;
+            
+        case '-':
+            if (match('-')) {
+                addToken(TokenType::TOKEN_MINUS_MINUS);
+            } else if (match('=')) {
+                addToken(TokenType::TOKEN_MINUS_EQUAL);
+            } else if (match('>')) {
+                addToken(TokenType::TOKEN_ARROW);
+            } else {
+                addToken(TokenType::TOKEN_MINUS);
+            }
+            break;
+            
+        case '*':
+            if (match('=')) {
+                addToken(TokenType::TOKEN_STAR_EQUAL);
+            } else {
+                addToken(TokenType::TOKEN_STAR);
+            }
+            break;
+            
+        case '/':
+            if (match('=')) {
+                addToken(TokenType::TOKEN_SLASH_EQUAL);
+            } else {
+                addToken(TokenType::TOKEN_SLASH);
+            }
+            break;
+            
+        case '%':
+            if (match('=')) {
+                addToken(TokenType::TOKEN_PERCENT_EQUAL);
+            } else {
+                addToken(TokenType::TOKEN_PERCENT);
+            }
+            break;
+            
+        case '=':
+            if (match('=')) {
+                addToken(TokenType::TOKEN_EQUAL_EQUAL);
+            } else {
+                addToken(TokenType::TOKEN_EQUAL);
+            }
+            break;
+            
+        case '!':
+            if (match('=')) {
+                addToken(TokenType::TOKEN_BANG_EQUAL);
+            } else {
+                addToken(TokenType::TOKEN_BANG);
+            }
+            break;
+            
+        case '<':
+            if (match('=')) {
+                if (match('>')) {
+                    addToken(TokenType::TOKEN_SPACESHIP);
+                } else {
+                    addToken(TokenType::TOKEN_LESS_EQUAL);
+                }
+            } else if (match('<')) {
+                addToken(TokenType::TOKEN_SHIFT_LEFT);
+            } else if (match('|')) {
+                addToken(TokenType::TOKEN_PIPE_LEFT);
+            } else {
+                addToken(TokenType::TOKEN_LESS);
+            }
+            break;
+            
+        case '>':
+            if (match('=')) {
+                addToken(TokenType::TOKEN_GREATER_EQUAL);
+            } else if (match('>')) {
+                addToken(TokenType::TOKEN_SHIFT_RIGHT);
+            } else {
+                addToken(TokenType::TOKEN_GREATER);
+            }
+            break;
+            
+        case '&':
+            if (match('&')) {
+                addToken(TokenType::TOKEN_AND_AND);
+            } else {
+                addToken(TokenType::TOKEN_AMPERSAND);
+            }
+            break;
+            
+        case '|':
+            if (match('|')) {
+                addToken(TokenType::TOKEN_OR_OR);
+            } else if (match('>')) {
+                addToken(TokenType::TOKEN_PIPE_RIGHT);
+            } else {
+                addToken(TokenType::TOKEN_PIPE);
+            }
+            break;
+            
+        case '^':
+            addToken(TokenType::TOKEN_CARET);
+            break;
+            
+        case '?':
+            if (match('.')) {
+                addToken(TokenType::TOKEN_SAFE_NAV);
+            } else if (match('?')) {
+                addToken(TokenType::TOKEN_NULL_COALESCE);
+            } else {
+                addToken(TokenType::TOKEN_QUESTION);
+            }
+            break;
+            
+        case ':':
+            addToken(TokenType::TOKEN_COLON);
+            break;
+            
+        case '.':
+            if (match('.')) {
+                if (match('.')) {
+                    addToken(TokenType::TOKEN_DOT_DOT_DOT);
+                } else {
+                    addToken(TokenType::TOKEN_DOT_DOT);
+                }
+            } else {
+                addToken(TokenType::TOKEN_DOT);
+            }
+            break;
+            
+        default:
+            // Check for identifiers (variable names, keywords)
+            if (isAlpha(c)) {
+                scanIdentifier();
+            }
+            // Check for numbers
+            else if (isDigit(c)) {
+                scanNumber();
+            }
+            // Unknown character
+            else {
+                std::ostringstream oss;
+                oss << "Unexpected character: '" << c << "'";
+                error(oss.str());
+            }
+            break;
+    }
+}
+
+// ============================================================================
+// Token Creation Methods
+// ============================================================================
+
+void Lexer::addToken(TokenType type) {
+    std::string lexeme = source.substr(start, current - start);
+    tokens.push_back(Token(type, lexeme, start_line, start_column));
+}
+
+void Lexer::addToken(TokenType type, int64_t value) {
+    std::string lexeme = source.substr(start, current - start);
+    tokens.push_back(Token(type, lexeme, start_line, start_column, value));
+}
+
+void Lexer::addToken(TokenType type, double value) {
+    std::string lexeme = source.substr(start, current - start);
+    tokens.push_back(Token(type, lexeme, start_line, start_column, value));
+}
+
+void Lexer::addToken(TokenType type, bool value) {
+    std::string lexeme = source.substr(start, current - start);
+    tokens.push_back(Token(type, lexeme, start_line, start_column, value));
+}
+
+void Lexer::addToken(TokenType type, const std::string& value) {
+    std::string lexeme = source.substr(start, current - start);
+    tokens.push_back(Token(type, lexeme, start_line, start_column, value));
+}
+
+// ============================================================================
+// Error Reporting
+// ============================================================================
+
+void Lexer::error(const std::string& message) {
+    std::ostringstream oss;
+    oss << "[Line " << line << ", Col " << column << "] Error: " << message;
+    errors.push_back(oss.str());
+}
+
+// ============================================================================
+// Identifier and Keyword Scanning
+// ============================================================================
+
+void Lexer::scanIdentifier() {
+    // Consume all alphanumeric characters
+    while (isAlphaNumeric(peek())) {
+        advance();
+    }
+    
+    // Get the identifier text
+    std::string text = source.substr(start, current - start);
+    
+    // Check if it's a keyword
+    TokenType type = identifierType();
+    
+    // All identifiers (including keywords) use the same token type
+    addToken(type);
+}
+
+TokenType Lexer::identifierType() {
+    std::string text = source.substr(start, current - start);
+    
+    // Look up in keyword map
+    auto it = keywords.find(text);
+    if (it != keywords.end()) {
+        return it->second;
+    }
+    
+    // Not a keyword, it's an identifier
+    return TokenType::TOKEN_IDENTIFIER;
+}
+
+// ============================================================================
+// Number Literal Scanning
+// ============================================================================
+
+void Lexer::scanNumber() {
+    // Check for special number bases (hex, binary, octal)
+    // Note: first digit already consumed, check if it was '0'
+    if (source[start] == '0' && !isAtEnd()) {
+        char next = peek(); // This is the character after '0'
+        
+        // Hexadecimal: 0x
+        if (next == 'x' || next == 'X') {
+            advance(); // consume 'x' (0 already consumed)
+            
+            if (!isHexDigit(peek())) {
+                error("Expected hexadecimal digits after '0x'");
+                return;
+            }
+            
+            while (isHexDigit(peek()) || peek() == '_') {
+                advance();
+            }
+            
+            // Convert hex string to integer
+            std::string text = source.substr(start, current - start);
+            // Remove '0x' prefix and underscores
+            text = text.substr(2);
+            text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
+            
+            int64_t value = std::stoll(text, nullptr, 16);
+            addToken(TokenType::TOKEN_INTEGER, value);
+            return;
+        }
+        
+        // Binary: 0b
+        if (next == 'b' || next == 'B') {
+            advance(); // consume 'b' (0 already consumed)
+            
+            if (!isBinaryDigit(peek())) {
+                error("Expected binary digits after '0b'");
+                return;
+            }
+            
+            while (isBinaryDigit(peek()) || peek() == '_') {
+                advance();
+            }
+            
+            // Convert binary string to integer
+            std::string text = source.substr(start, current - start);
+            // Remove '0b' prefix and underscores
+            text = text.substr(2);
+            text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
+            
+            int64_t value = std::stoll(text, nullptr, 2);
+            addToken(TokenType::TOKEN_INTEGER, value);
+            return;
+        }
+        
+        // Octal: 0o
+        if (next == 'o' || next == 'O') {
+            advance(); // consume 'o' (0 already consumed)
+            
+            if (!isOctalDigit(peek())) {
+                error("Expected octal digits after '0o'");
+                return;
+            }
+            
+            while (isOctalDigit(peek()) || peek() == '_') {
+                advance();
+            }
+            
+            // Convert octal string to integer
+            std::string text = source.substr(start, current - start);
+            // Remove '0o' prefix and underscores
+            text = text.substr(2);
+            text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
+            
+            int64_t value = std::stoll(text, nullptr, 8);
+            addToken(TokenType::TOKEN_INTEGER, value);
+            return;
+        }
+    }
+    
+    // Decimal number (integer or float)
+    while (isDigit(peek()) || peek() == '_') {
+        advance();
+    }
+    
+    // Check for decimal point
+    bool isFloat = false;
+    if (peek() == '.' && isDigit(peekNext())) {
+        isFloat = true;
+        advance(); // consume '.'
+        
+        while (isDigit(peek()) || peek() == '_') {
+            advance();
+        }
+    }
+    
+    // Check for scientific notation
+    if (peek() == 'e' || peek() == 'E') {
+        isFloat = true;
+        advance(); // consume 'e'
+        
+        if (peek() == '+' || peek() == '-') {
+            advance(); // consume sign
+        }
+        
+        if (!isDigit(peek())) {
+            error("Expected digits in exponent");
+            return;
+        }
+        
+        while (isDigit(peek()) || peek() == '_') {
+            advance();
+        }
+    }
+    
+    // Convert string to number
+    std::string text = source.substr(start, current - start);
+    // Remove underscores
+    text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
+    
+    if (isFloat) {
+        double value = std::stod(text);
+        addToken(TokenType::TOKEN_FLOAT, value);
+    } else {
+        int64_t value = std::stoll(text);
+        addToken(TokenType::TOKEN_INTEGER, value);
+    }
+}
+
+// ============================================================================
+// String and Character Literal Scanning
+// ============================================================================
+
+void Lexer::scanString() {
+    int startLine = line;
+    std::string value;
+    
+    // Opening quote already consumed by scanToken()
+    
+    while (!isAtEnd() && peek() != '"') {
+        // Handle escape sequences
+        if (peek() == '\\') {
+            advance(); // consume backslash
+            
+            if (isAtEnd()) {
+                error("Unterminated string literal");
+                return;
+            }
+            
+            char escaped = advance();
+            switch (escaped) {
+                case 'n': value += '\n'; break;
+                case 't': value += '\t'; break;
+                case 'r': value += '\r'; break;
+                case '\\': value += '\\'; break;
+                case '"': value += '"'; break;
+                case '0': value += '\0'; break;
+                default:
+                    std::ostringstream oss;
+                    oss << "Unknown escape sequence: \\" << escaped;
+                    error(oss.str());
+                    value += escaped; // Include the character anyway
+                    break;
+            }
+        } else {
+            value += advance();
+        }
+    }
+    
+    if (isAtEnd()) {
+        std::ostringstream oss;
+        oss << "Unterminated string literal starting at line " << startLine;
+        error(oss.str());
+        return;
+    }
+    
+    // Consume closing quote
+    advance();
+    
+    addToken(TokenType::TOKEN_STRING, value);
+}
+
+void Lexer::scanCharacter() {
+    int startLine = line;
+    
+    // Opening quote already consumed by scanToken()
+    
+    if (isAtEnd() || peek() == '\'') {
+        error("Empty character literal");
+        return;
+    }
+    
+    char value;
+    
+    // Handle escape sequences
+    if (peek() == '\\') {
+        advance(); // consume backslash
+        
+        if (isAtEnd()) {
+            error("Unterminated character literal");
+            return;
+        }
+        
+        char escaped = advance();
+        switch (escaped) {
+            case 'n': value = '\n'; break;
+            case 't': value = '\t'; break;
+            case 'r': value = '\r'; break;
+            case '\\': value = '\\'; break;
+            case '\'': value = '\''; break;
+            case '0': value = '\0'; break;
+            default:
+                std::ostringstream oss;
+                oss << "Unknown escape sequence: \\" << escaped;
+                error(oss.str());
+                value = escaped;
+                break;
+        }
+    } else {
+        value = advance();
+    }
+    
+    if (isAtEnd() || peek() != '\'') {
+        std::ostringstream oss;
+        oss << "Unterminated character literal starting at line " << startLine;
+        error(oss.str());
+        return;
+    }
+    
+    // Consume closing quote
+    advance();
+    
+    // Store as string since Token doesn't have a char constructor
+    std::string charStr(1, value);
+    addToken(TokenType::TOKEN_CHAR, charStr);
+}
+
+// ============================================================================
+// Template Literal Scanning
+// ============================================================================
+
+void Lexer::scanTemplateLiteral() {
+    int startLine = line;
+    std::string value;
+    
+    // Opening backtick already consumed by scanToken()
+    
+    while (!isAtEnd() && peek() != '`') {
+        // Handle escape sequences
+        if (peek() == '\\') {
+            advance(); // consume backslash
+            
+            if (isAtEnd()) {
+                error("Unterminated template literal");
+                return;
+            }
+            
+            char escaped = advance();
+            switch (escaped) {
+                case 'n': value += '\n'; break;
+                case 't': value += '\t'; break;
+                case 'r': value += '\r'; break;
+                case '\\': value += '\\'; break;
+                case '`': value += '`'; break;  // Escaped backtick
+                case '0': value += '\0'; break;
+                default:
+                    std::ostringstream oss;
+                    oss << "Unknown escape sequence: \\" << escaped;
+                    error(oss.str());
+                    value += escaped; // Include the character anyway
+                    break;
+            }
+        }
+        // Handle interpolation syntax &{expression}
+        else if (peek() == '&' && peekNext() == '{') {
+            advance(); // consume '&'
+            advance(); // consume '{'
+            
+            // For now, we'll store the interpolation markers in the string
+            // The parser will need to handle the actual expression parsing
+            // This is a simplified approach - a full implementation would
+            // need to recursively tokenize the expression inside &{}
+            
+            value += "${"; // Convert &{ to ${ for easier processing later
+            
+            int braceDepth = 1;
+            while (!isAtEnd() && braceDepth > 0) {
+                char c = peek();
+                if (c == '{') {
+                    braceDepth++;
+                } else if (c == '}') {
+                    braceDepth--;
+                    if (braceDepth == 0) {
+                        value += '}';
+                        advance(); // consume closing '}'
+                        break;
+                    }
+                }
+                value += advance();
+            }
+            
+            if (braceDepth > 0) {
+                error("Unterminated interpolation expression in template literal");
+                return;
+            }
+        }
+        // Handle newlines (templates can be multi-line)
+        else if (peek() == '\n') {
+            value += advance();
+            // Note: line tracking already handled in advance()
+        }
+        else {
+            value += advance();
+        }
+    }
+    
+    if (isAtEnd()) {
+        std::ostringstream oss;
+        oss << "Unterminated template literal starting at line " << startLine;
+        error(oss.str());
+        return;
+    }
+    
+    // Consume closing backtick
+    advance();
+    
+    // For now, we use TOKEN_STRING to store template literals
+    // A more sophisticated approach would use a dedicated TOKEN_TEMPLATE type
+    // and parse interpolations into separate tokens
+    addToken(TokenType::TOKEN_STRING, value);
+}
+
+// ============================================================================
+// Character Classification Helpers
+// ============================================================================
+
+bool Lexer::isAlpha(char c) {
+    return (c >= 'a' && c <= 'z') ||
+           (c >= 'A' && c <= 'Z') ||
+           c == '_';
+}
+
+bool Lexer::isDigit(char c) {
+    return c >= '0' && c <= '9';
+}
+
+bool Lexer::isAlphaNumeric(char c) {
+    return isAlpha(c) || isDigit(c);
+}
+
+bool Lexer::isHexDigit(char c) {
+    return (c >= '0' && c <= '9') ||
+           (c >= 'a' && c <= 'f') ||
+           (c >= 'A' && c <= 'F');
+}
+
+bool Lexer::isBinaryDigit(char c) {
+    return c == '0' || c == '1';
+}
+
+bool Lexer::isOctalDigit(char c) {
+    return c >= '0' && c <= '7';
+}
+
+} // namespace frontend
+} // namespace aria
