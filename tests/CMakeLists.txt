@@ -134,6 +134,8 @@ if(LLDB_FOUND)
     target_sources(test_runner PRIVATE
         ${CMAKE_SOURCE_DIR}/src/tools/debugger/aria_formatters.cpp
         ${CMAKE_SOURCE_DIR}/src/tools/debugger/dap_server.cpp
+        ${CMAKE_SOURCE_DIR}/src/tools/debugger/async_debugger.cpp
+        ${CMAKE_SOURCE_DIR}/src/tools/debugger/memory_visualizer.cpp
         unit/test_dap_server.cpp
     )
     # Add LLDB include directories for test_runner

@@ -122,6 +122,11 @@ void DAPServer::initializeHandlers() {
     m_handlers["evaluate"] = [this](const DAPMessage& req, DAPMessage& res) {
         handleEvaluate(req, res);
     };
+    
+    // Custom Aria extensions (Phase 7.4.6)
+    m_handlers["ariaMemoryMap"] = [this](const DAPMessage& req, DAPMessage& res) {
+        handleAriaMemoryMap(req, res);
+    };
 }
 
 int DAPServer::run() {
@@ -443,6 +448,12 @@ void DAPServer::handleLaunch(const DAPMessage& request, DAPMessage& response) {
         return;
     }
     
+    // Initialize async debugger (Phase 7.4.5)
+    m_async_debugger = std::make_unique<AsyncDebugger>(m_target, m_process);
+    
+    // Initialize memory visualizer (Phase 7.4.6)
+    m_memory_visualizer = std::make_unique<MemoryVisualizer>(m_target, m_process);
+    
     // Start event thread
     m_event_thread = std::make_unique<std::thread>(&DAPServer::eventThreadFunc, this);
     
@@ -489,6 +500,12 @@ void DAPServer::handleAttach(const DAPMessage& request, DAPMessage& response) {
         response.message = "Failed to attach: " + std::string(error.GetCString());
         return;
     }
+    
+    // Initialize async debugger (Phase 7.4.5)
+    m_async_debugger = std::make_unique<AsyncDebugger>(m_target, m_process);
+    
+    // Initialize memory visualizer (Phase 7.4.6)
+    m_memory_visualizer = std::make_unique<MemoryVisualizer>(m_target, m_process);
     
     // Start event thread
     m_event_thread = std::make_unique<std::thread>(&DAPServer::eventThreadFunc, this);
@@ -754,6 +771,12 @@ void DAPServer::handleStackTrace(const DAPMessage& request, DAPMessage& response
     
     nlohmann::json stack_frames = nlohmann::json::array();
     
+    // Get async call stack if async debugger is available (Phase 7.4.5)
+    std::vector<AsyncFrameInfo> async_frames;
+    if (m_async_debugger) {
+        async_frames = m_async_debugger->getAsyncCallStack(thread);
+    }
+    
     uint32_t num_frames = thread.GetNumFrames();
     for (uint32_t i = 0; i < num_frames; ++i) {
         lldb::SBFrame frame = thread.GetFrameAtIndex(i);
@@ -779,6 +802,36 @@ void DAPServer::handleStackTrace(const DAPMessage& request, DAPMessage& response
             } else {
                 frame_json["line"] = 0;
                 frame_json["column"] = 0;
+            }
+            
+            // Check if this is an async frame (Phase 7.4.5)
+            if (m_async_debugger && m_async_debugger->isAsyncFrame(frame)) {
+                // Mark as async frame
+                frame_json["presentationHint"] = "label";
+                
+                // Find corresponding async frame info
+                for (const auto& async_frame : async_frames) {
+                    if (async_frame.function_name == (frame.GetFunctionName() ? frame.GetFunctionName() : "")) {
+                        // Add async-specific metadata
+                        std::string status = async_frame.is_suspended ? " [suspended]" : " [running]";
+                        frame_json["name"] = frame_json["name"].get<std::string>() + status;
+                        
+                        // Add Future state if available
+                        if (async_frame.future_state == "READY") {
+                            frame_json["name"] = frame_json["name"].get<std::string>() + " ✓";
+                        } else if (async_frame.future_state == "PENDING") {
+                            frame_json["name"] = frame_json["name"].get<std::string>() + " ⏳";
+                        } else if (async_frame.future_state == "ERROR") {
+                            frame_json["name"] = frame_json["name"].get<std::string>() + " ✗";
+                        }
+                        
+                        // Add awaiter info if suspended
+                        if (async_frame.is_suspended && !async_frame.suspend_reason.empty()) {
+                            frame_json["name"] = frame_json["name"].get<std::string>() + " - " + async_frame.suspend_reason;
+                        }
+                        break;
+                    }
+                }
             }
             
             stack_frames.push_back(frame_json);
@@ -960,6 +1013,161 @@ std::string DAPServer::getSourcePath(const nlohmann::json& source) {
         return source["path"];
     }
     return "";
+}
+
+// ============================================================================
+// Custom Aria DAP Extensions (Phase 7.4.6)
+// ============================================================================
+
+void DAPServer::handleAriaMemoryMap(const DAPMessage& request, DAPMessage& response) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    if (!m_memory_visualizer) {
+        response.success = false;
+        response.message = "Memory visualizer not initialized";
+        return;
+    }
+    
+    if (!m_process.IsValid() || m_process.GetState() != lldb::eStateStopped) {
+        response.success = false;
+        response.message = "Process must be stopped to scan memory";
+        return;
+    }
+    
+    // Get filter type from request body
+    std::string filter_type = "all";
+    if (request.body && (*request.body).contains("type")) {
+        filter_type = (*request.body)["type"];
+    }
+    
+    std::cerr << "[DAP] ariaMemoryMap request (filter: " << filter_type << ")\n";
+    
+    try {
+        // Scan memory
+        MemoryMap memory_map = m_memory_visualizer->scanMemory();
+        
+        // Build response JSON
+        nlohmann::json body;
+        
+        // Add regions
+        nlohmann::json regions_json = nlohmann::json::array();
+        for (const auto& region : memory_map.regions) {
+            // Apply filter
+            if (filter_type != "all") {
+                if (filter_type == "gc" && 
+                    region.type != MemoryRegionType::GC_NURSERY && 
+                    region.type != MemoryRegionType::GC_OLD_GEN) {
+                    continue;
+                }
+                if (filter_type == "wild" && region.type != MemoryRegionType::WILD) {
+                    continue;
+                }
+                if (filter_type == "wildx" && region.type != MemoryRegionType::WILDX) {
+                    continue;
+                }
+            }
+            
+            nlohmann::json region_json;
+            region_json["start"] = region.start_address;
+            region_json["end"] = region.end_address;
+            region_json["size"] = region.size;
+            region_json["name"] = region.name;
+            region_json["is_readable"] = region.is_readable;
+            region_json["is_writable"] = region.is_writable;
+            region_json["is_executable"] = region.is_executable;
+            region_json["object_count"] = region.object_count;
+            region_json["fragmentation"] = region.fragmentation_ratio;
+            
+            // Convert region type to string
+            switch (region.type) {
+                case MemoryRegionType::GC_NURSERY:
+                    region_json["type"] = "gc_nursery";
+                    break;
+                case MemoryRegionType::GC_OLD_GEN:
+                    region_json["type"] = "gc_old_gen";
+                    break;
+                case MemoryRegionType::WILD:
+                    region_json["type"] = "wild";
+                    break;
+                case MemoryRegionType::WILDX:
+                    region_json["type"] = "wildx";
+                    break;
+                case MemoryRegionType::FREE:
+                    region_json["type"] = "free";
+                    break;
+                default:
+                    region_json["type"] = "unknown";
+                    break;
+            }
+            
+            regions_json.push_back(region_json);
+        }
+        body["regions"] = regions_json;
+        
+        // Add blocks for visualization
+        nlohmann::json blocks_json = nlohmann::json::array();
+        for (const auto& block : memory_map.blocks) {
+            nlohmann::json block_json;
+            block_json["address"] = block.address;
+            block_json["size"] = block.size;
+            block_json["is_allocated"] = block.is_allocated;
+            block_json["tooltip"] = block.tooltip;
+            
+            // Convert block type to string
+            switch (block.type) {
+                case MemoryRegionType::GC_NURSERY:
+                    block_json["type"] = "gc_nursery";
+                    break;
+                case MemoryRegionType::GC_OLD_GEN:
+                    block_json["type"] = "gc_old_gen";
+                    break;
+                case MemoryRegionType::WILD:
+                    block_json["type"] = "wild";
+                    break;
+                case MemoryRegionType::WILDX:
+                    block_json["type"] = "wildx";
+                    break;
+                default:
+                    block_json["type"] = "unknown";
+                    break;
+            }
+            
+            blocks_json.push_back(block_json);
+        }
+        body["blocks"] = blocks_json;
+        
+        // Add GC statistics
+        nlohmann::json stats_json;
+        stats_json["nursery_size"] = memory_map.gc_stats.nursery_size;
+        stats_json["nursery_used"] = memory_map.gc_stats.nursery_used;
+        stats_json["old_gen_size"] = memory_map.gc_stats.old_gen_size;
+        stats_json["old_gen_used"] = memory_map.gc_stats.old_gen_used;
+        stats_json["total_allocations"] = memory_map.gc_stats.total_allocations;
+        stats_json["total_collections"] = memory_map.gc_stats.total_collections;
+        stats_json["nursery_collections"] = memory_map.gc_stats.nursery_collections;
+        stats_json["old_gen_collections"] = memory_map.gc_stats.old_gen_collections;
+        stats_json["fragmentation_percent"] = memory_map.gc_stats.fragmentation_percent;
+        stats_json["live_objects"] = memory_map.gc_stats.live_objects;
+        stats_json["total_bytes_allocated"] = memory_map.gc_stats.total_bytes_allocated;
+        stats_json["total_bytes_freed"] = memory_map.gc_stats.total_bytes_freed;
+        body["statistics"] = stats_json;
+        
+        // Add metadata
+        body["heap_start"] = memory_map.heap_start;
+        body["heap_end"] = memory_map.heap_end;
+        body["total_heap_size"] = memory_map.total_heap_size;
+        body["timestamp"] = memory_map.timestamp;
+        
+        response.body = new nlohmann::json(body);
+        
+        std::cerr << "[DAP] Memory map generated: " << regions_json.size() 
+                  << " regions, " << blocks_json.size() << " blocks\n";
+        
+    } catch (const std::exception& e) {
+        response.success = false;
+        response.message = std::string("Memory scan failed: ") + e.what();
+        std::cerr << "[DAP] Memory scan error: " << e.what() << "\n";
+    }
 }
 
 } // namespace debugger

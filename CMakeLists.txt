@@ -207,8 +207,21 @@ if(LLDB_FOUND)
     set(DEBUGGER_SOURCES
         src/tools/debugger/aria_formatters.cpp
         src/tools/debugger/dap_server.cpp
+        src/tools/debugger/async_debugger.cpp
+        src/tools/debugger/memory_visualizer.cpp
     )
 endif()
+
+# Phase 7.5: Package Manager
+set(PKG_SOURCES
+    src/tools/pkg/installer.cpp
+)
+
+# Phase 7.6: Documentation Generator
+set(DOC_SOURCES
+    src/tools/doc/parser.cpp
+    src/tools/doc/generator.cpp
+)
 
 # Combine all sources
 set(ARIA_SOURCES
@@ -255,6 +268,20 @@ if(LLDB_FOUND)
 else()
     message(STATUS "LLDB not found - DAP server will not be built")
 endif()
+
+# Package manager executable (Phase 7.5)
+add_executable(aria-pkg
+    src/tools/pkg/main.cpp
+    ${PKG_SOURCES}
+)
+target_link_libraries(aria-pkg)
+
+# Documentation generator executable (Phase 7.6)
+add_executable(aria-doc
+    src/tools/doc/main.cpp
+    ${DOC_SOURCES}
+)
+target_link_libraries(aria-doc)
 
 # ============================================================================
 # Testing
