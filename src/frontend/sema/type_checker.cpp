@@ -76,6 +76,9 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         case ASTNode::NodeType::TERNARY:
             return inferTernaryExpr(static_cast<TernaryExpr*>(expr));
         
+        case ASTNode::NodeType::OBJECT_LITERAL:
+            return inferObjectLiteral(static_cast<ObjectLiteralExpr*>(expr));
+        
         default:
             addError("Type inference not implemented for node type: " + 
                     ASTNode::nodeTypeToString(expr->type), expr);
@@ -644,6 +647,32 @@ Type* TypeChecker::inferTernaryExpr(TernaryExpr* expr) {
     return resultType;
 }
 
+Type* TypeChecker::inferObjectLiteral(ObjectLiteralExpr* expr) {
+    // If type_name is set, this is a struct constructor
+    if (!expr->type_name.empty()) {
+        // Lookup struct type
+        Type* structType = typeSystem->getStructType(expr->type_name);
+        
+        if (!structType) {
+            addError("Unknown struct type: '" + expr->type_name + "'", expr);
+            return typeSystem->getErrorType();
+        }
+        
+        // TODO: When struct types are fully implemented, validate field types here
+        // For now, just return the struct type
+        return structType;
+    }
+    
+    // Dynamic object literal (no type_name): return obj type
+    Type* objType = typeSystem->getPrimitiveType("obj");
+    if (!objType) {
+        addError("obj type not defined in type system", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    return objType;
+}
+
 // ============================================================================
 // Type Compatibility and Coercion
 // ============================================================================
@@ -824,6 +853,10 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             checkFuncDecl(static_cast<FuncDeclStmt*>(stmt));
             break;
         
+        case ASTNode::NodeType::STRUCT_DECL:
+            checkStructDecl(static_cast<StructDeclStmt*>(stmt));
+            break;
+        
         case ASTNode::NodeType::RETURN:
             checkReturnStmt(static_cast<ReturnStmt*>(stmt));
             break;
@@ -864,12 +897,17 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
 // ============================================================================
 
 void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
-    // Get declared type
-    Type* declaredType = typeSystem->getPrimitiveType(stmt->typeName);
+    // Get declared type (try struct first to avoid auto-creating primitive types)
+    Type* declaredType = typeSystem->getStructType(stmt->typeName);
     
-    if (!declaredType || declaredType->getKind() == TypeKind::ERROR) {
-        addError("Unknown type: '" + stmt->typeName + "'", stmt);
-        return;
+    if (!declaredType) {
+        // Try primitive type
+        declaredType = typeSystem->getPrimitiveType(stmt->typeName);
+        
+        if (!declaredType || declaredType->getKind() == TypeKind::ERROR) {
+            addError("Unknown type: '" + stmt->typeName + "'", stmt);
+            return;
+        }
     }
     
     // Check const variables have initializers
@@ -963,12 +1001,17 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
 // ============================================================================
 
 void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
-    // Get return type
-    Type* returnType = typeSystem->getPrimitiveType(stmt->returnType);
+    // Get return type (try struct first to avoid auto-creating primitive types)
+    Type* returnType = typeSystem->getStructType(stmt->returnType);
     
-    if (!returnType || returnType->getKind() == TypeKind::ERROR) {
-        addError("Unknown return type: '" + stmt->returnType + "'", stmt);
-        return;
+    if (!returnType) {
+        // Try primitive type
+        returnType = typeSystem->getPrimitiveType(stmt->returnType);
+        
+        if (!returnType || returnType->getKind() == TypeKind::ERROR) {
+            addError("Unknown return type: '" + stmt->returnType + "'", stmt);
+            return;
+        }
     }
     
     // Set current function return type for return statement checking
@@ -979,11 +1022,16 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     for (const auto& param : stmt->parameters) {
         if (param->type == ASTNode::NodeType::PARAMETER) {
             ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
-            Type* paramType = typeSystem->getPrimitiveType(paramNode->typeName);
+            Type* paramType = typeSystem->getStructType(paramNode->typeName);
             
-            if (!paramType || paramType->getKind() == TypeKind::ERROR) {
-                addError("Unknown parameter type: '" + paramNode->typeName + "'", param.get());
-                continue;
+            if (!paramType) {
+                // Try primitive type
+                paramType = typeSystem->getPrimitiveType(paramNode->typeName);
+                
+                if (!paramType || paramType->getKind() == TypeKind::ERROR) {
+                    addError("Unknown parameter type: '" + paramNode->typeName + "'", param.get());
+                    continue;
+                }
             }
             
             // Define parameter in symbol table (will be visible in function body)
@@ -1007,6 +1055,40 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     if (funcSymbol) {
         funcSymbol->setFuncDecl(stmt);  // Store AST for generic resolution and CTFE
     }
+}
+
+// ============================================================================
+// Struct Declaration Type Checking
+// ============================================================================
+
+void TypeChecker::checkStructDecl(StructDeclStmt* stmt) {
+    // Check if already defined as a struct
+    Type* existingStruct = typeSystem->getStructType(stmt->structName);
+    if (existingStruct) {
+        addError("Struct '" + stmt->structName + "' is already defined", stmt);
+        return;
+    }
+    
+    // Note: We don't check primitiveCache because getPrimitiveType auto-creates types
+    // This is fine - struct names should just avoid conflicting with known primitives
+    
+    // Validate all field types exist
+    for (const auto& field : stmt->fields) {
+        if (field->type == ASTNode::NodeType::VAR_DECL) {
+            VarDeclStmt* fieldDecl = static_cast<VarDeclStmt*>(field.get());
+            Type* fieldType = typeSystem->getPrimitiveType(fieldDecl->typeName);
+            
+            if (!fieldType || fieldType->getKind() == TypeKind::ERROR) {
+                addError("Unknown field type '" + fieldDecl->typeName + 
+                        "' in struct '" + stmt->structName + "'", field.get());
+                // Continue checking other fields
+            }
+        }
+    }
+    
+    // Register struct type in type system
+    // For now, just register as a named type (full struct type implementation needed)
+    typeSystem->registerCustomType(stmt->structName, stmt);
 }
 
 // ============================================================================

@@ -158,6 +158,16 @@ private:
      */
     Type* inferTernaryExpr(TernaryExpr* expr);
     
+    /**
+     * Infer the type of an object literal expression
+     * 
+     * Rules:
+     * - If type_name is set: struct constructor, return struct type
+     * - If type_name is empty: dynamic object, return obj type
+     * - Field values must be compatible with struct field types (if struct)
+     */
+    Type* inferObjectLiteral(ObjectLiteralExpr* expr);
+    
     // ========================================================================
     // Type Compatibility and Coercion
     // ========================================================================
@@ -434,6 +444,16 @@ public:
      * - Generic function calls in body trigger specialization
      */
     void checkFuncDecl(FuncDeclStmt* stmt);
+    
+    /**
+     * Check struct declaration statement
+     * 
+     * Rules:
+     * - Struct name must be unique (not already defined)
+     * - All field types must exist in type system
+     * - Register struct type in type system
+     */
+    void checkStructDecl(StructDeclStmt* stmt);
     
     /**
      * Check assignment expression

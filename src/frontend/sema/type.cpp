@@ -274,9 +274,9 @@ bool StructType::isAssignableTo(const Type* target) const {
 }
 
 std::string StructType::toString() const {
-    std::stringstream ss;
-    ss << "struct " << name;
-    return ss.str();
+    // Just return the struct name (no "struct " prefix)
+    // This allows types to match: Point == Point, not Point != struct Point
+    return name;
 }
 
 // ============================================================================
@@ -576,6 +576,15 @@ StructType* TypeSystem::createStructType(const std::string& name, const std::vec
     structCache[name] = ptr;
     types.push_back(std::move(type));
     return ptr;
+}
+
+void TypeSystem::registerCustomType(const std::string& name, void* astNode) {
+    // For now, create an empty struct type as a placeholder
+    // In the future, we'll extract field information from the AST node
+    std::vector<StructType::Field> fields;
+    
+    // Create the struct type and register it
+    createStructType(name, fields, 0, 0, false);
 }
 
 UnionType* TypeSystem::getUnionType(const std::string& name) {
