@@ -87,6 +87,7 @@ set(CMAKE_DEPEND_INFO_FILES
   "CMakeFiles/aria-ls.dir/DependInfo.cmake"
   "CMakeFiles/aria-dap.dir/DependInfo.cmake"
   "CMakeFiles/aria-pkg.dir/DependInfo.cmake"
+  "CMakeFiles/aria-doc.dir/DependInfo.cmake"
   "vendor/toml11/CMakeFiles/Experimental.dir/DependInfo.cmake"
   "vendor/toml11/CMakeFiles/Nightly.dir/DependInfo.cmake"
   "vendor/toml11/CMakeFiles/Continuous.dir/DependInfo.cmake"

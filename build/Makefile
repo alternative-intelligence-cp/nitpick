@@ -270,6 +270,19 @@ aria-pkg/fast:
 .PHONY : aria-pkg/fast
 
 #=============================================================================
+# Target rules for targets named aria-doc
+
+# Build rule for target.
+aria-doc: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 aria-doc
+.PHONY : aria-doc
+
+# fast build rule for target.
+aria-doc/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-doc.dir/build.make CMakeFiles/aria-doc.dir/build
+.PHONY : aria-doc/fast
+
+#=============================================================================
 # Target rules for targets named Experimental
 
 # Build rule for target.
@@ -1900,6 +1913,78 @@ src/tools/debugger/web_server.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/debugger/web_server.cpp.s
 .PHONY : src/tools/debugger/web_server.cpp.s
 
+src/tools/doc/generator.o: src/tools/doc/generator.cpp.o
+.PHONY : src/tools/doc/generator.o
+
+# target to build an object file
+src/tools/doc/generator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-doc.dir/build.make CMakeFiles/aria-doc.dir/src/tools/doc/generator.cpp.o
+.PHONY : src/tools/doc/generator.cpp.o
+
+src/tools/doc/generator.i: src/tools/doc/generator.cpp.i
+.PHONY : src/tools/doc/generator.i
+
+# target to preprocess a source file
+src/tools/doc/generator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-doc.dir/build.make CMakeFiles/aria-doc.dir/src/tools/doc/generator.cpp.i
+.PHONY : src/tools/doc/generator.cpp.i
+
+src/tools/doc/generator.s: src/tools/doc/generator.cpp.s
+.PHONY : src/tools/doc/generator.s
+
+# target to generate assembly for a file
+src/tools/doc/generator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-doc.dir/build.make CMakeFiles/aria-doc.dir/src/tools/doc/generator.cpp.s
+.PHONY : src/tools/doc/generator.cpp.s
+
+src/tools/doc/main.o: src/tools/doc/main.cpp.o
+.PHONY : src/tools/doc/main.o
+
+# target to build an object file
+src/tools/doc/main.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-doc.dir/build.make CMakeFiles/aria-doc.dir/src/tools/doc/main.cpp.o
+.PHONY : src/tools/doc/main.cpp.o
+
+src/tools/doc/main.i: src/tools/doc/main.cpp.i
+.PHONY : src/tools/doc/main.i
+
+# target to preprocess a source file
+src/tools/doc/main.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-doc.dir/build.make CMakeFiles/aria-doc.dir/src/tools/doc/main.cpp.i
+.PHONY : src/tools/doc/main.cpp.i
+
+src/tools/doc/main.s: src/tools/doc/main.cpp.s
+.PHONY : src/tools/doc/main.s
+
+# target to generate assembly for a file
+src/tools/doc/main.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-doc.dir/build.make CMakeFiles/aria-doc.dir/src/tools/doc/main.cpp.s
+.PHONY : src/tools/doc/main.cpp.s
+
+src/tools/doc/parser.o: src/tools/doc/parser.cpp.o
+.PHONY : src/tools/doc/parser.o
+
+# target to build an object file
+src/tools/doc/parser.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-doc.dir/build.make CMakeFiles/aria-doc.dir/src/tools/doc/parser.cpp.o
+.PHONY : src/tools/doc/parser.cpp.o
+
+src/tools/doc/parser.i: src/tools/doc/parser.cpp.i
+.PHONY : src/tools/doc/parser.i
+
+# target to preprocess a source file
+src/tools/doc/parser.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-doc.dir/build.make CMakeFiles/aria-doc.dir/src/tools/doc/parser.cpp.i
+.PHONY : src/tools/doc/parser.cpp.i
+
+src/tools/doc/parser.s: src/tools/doc/parser.cpp.s
+.PHONY : src/tools/doc/parser.s
+
+# target to generate assembly for a file
+src/tools/doc/parser.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-doc.dir/build.make CMakeFiles/aria-doc.dir/src/tools/doc/parser.cpp.s
+.PHONY : src/tools/doc/parser.cpp.s
+
 src/tools/lsp/aria-ls.o: src/tools/lsp/aria-ls.cpp.o
 .PHONY : src/tools/lsp/aria-ls.o
 
@@ -2179,6 +2264,7 @@ help:
 	@echo "... omp_gen"
 	@echo "... vt_gen"
 	@echo "... aria-dap"
+	@echo "... aria-doc"
 	@echo "... aria-ls"
 	@echo "... aria-pkg"
 	@echo "... ariac"
@@ -2336,6 +2422,15 @@ help:
 	@echo "... src/tools/debugger/web_server.o"
 	@echo "... src/tools/debugger/web_server.i"
 	@echo "... src/tools/debugger/web_server.s"
+	@echo "... src/tools/doc/generator.o"
+	@echo "... src/tools/doc/generator.i"
+	@echo "... src/tools/doc/generator.s"
+	@echo "... src/tools/doc/main.o"
+	@echo "... src/tools/doc/main.i"
+	@echo "... src/tools/doc/main.s"
+	@echo "... src/tools/doc/parser.o"
+	@echo "... src/tools/doc/parser.i"
+	@echo "... src/tools/doc/parser.s"
 	@echo "... src/tools/lsp/aria-ls.o"
 	@echo "... src/tools/lsp/aria-ls.i"
 	@echo "... src/tools/lsp/aria-ls.s"

@@ -217,6 +217,12 @@ set(PKG_SOURCES
     src/tools/pkg/installer.cpp
 )
 
+# Phase 7.6: Documentation Generator
+set(DOC_SOURCES
+    src/tools/doc/parser.cpp
+    src/tools/doc/generator.cpp
+)
+
 # Combine all sources
 set(ARIA_SOURCES
     ${LEXER_SOURCES}
@@ -269,6 +275,13 @@ add_executable(aria-pkg
     ${PKG_SOURCES}
 )
 target_link_libraries(aria-pkg)
+
+# Documentation generator executable (Phase 7.6)
+add_executable(aria-doc
+    src/tools/doc/main.cpp
+    ${DOC_SOURCES}
+)
+target_link_libraries(aria-doc)
 
 # ============================================================================
 # Testing
