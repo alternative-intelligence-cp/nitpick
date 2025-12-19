@@ -601,11 +601,27 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
         return typeSystem->getErrorType();
     }
     
-    // TODO: Check that object is struct/union type
-    // TODO: Lookup member in struct/union and return its type
-    // For now, return UnknownType
-    addError("Member access type checking not yet fully implemented", expr);
-    return typeSystem->getUnknownType();
+    // Handle struct member access
+    if (objectType->getKind() == TypeKind::STRUCT) {
+        StructType* structType = static_cast<StructType*>(objectType);
+        
+        // Look up member in struct fields
+        for (const auto& field : structType->getFields()) {
+            if (field.name == expr->member) {
+                return field.type;
+            }
+        }
+        
+        // Member not found
+        addError("Struct '" + structType->getName() + "' has no member named '" + 
+                expr->member + "'", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // TODO: Handle other types (obj, dyn, etc.)
+    addError("Member access requires struct, object, or union type, got '" + 
+            objectType->toString() + "'", expr);
+    return typeSystem->getErrorType();
 }
 
 // ============================================================================
@@ -1072,23 +1088,32 @@ void TypeChecker::checkStructDecl(StructDeclStmt* stmt) {
     // Note: We don't check primitiveCache because getPrimitiveType auto-creates types
     // This is fine - struct names should just avoid conflicting with known primitives
     
-    // Validate all field types exist
+    // Extract and validate field information
+    std::vector<StructType::Field> fields;
     for (const auto& field : stmt->fields) {
         if (field->type == ASTNode::NodeType::VAR_DECL) {
             VarDeclStmt* fieldDecl = static_cast<VarDeclStmt*>(field.get());
-            Type* fieldType = typeSystem->getPrimitiveType(fieldDecl->typeName);
+            
+            // Look up field type (check struct types first to avoid auto-creating primitives)
+            Type* fieldType = typeSystem->getStructType(fieldDecl->typeName);
+            if (!fieldType) {
+                fieldType = typeSystem->getPrimitiveType(fieldDecl->typeName);
+            }
             
             if (!fieldType || fieldType->getKind() == TypeKind::ERROR) {
                 addError("Unknown field type '" + fieldDecl->typeName + 
                         "' in struct '" + stmt->structName + "'", field.get());
                 // Continue checking other fields
+                continue;
             }
+            
+            // Add field to list (offset 0 for now, isPublic false for now)
+            fields.push_back(StructType::Field(fieldDecl->varName, fieldType, 0, false));
         }
     }
     
-    // Register struct type in type system
-    // For now, just register as a named type (full struct type implementation needed)
-    typeSystem->registerCustomType(stmt->structName, stmt);
+    // Register struct type in type system with field information
+    typeSystem->createStructType(stmt->structName, fields, 0, 0, false);
 }
 
 // ============================================================================

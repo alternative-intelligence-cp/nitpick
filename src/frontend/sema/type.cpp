@@ -578,15 +578,6 @@ StructType* TypeSystem::createStructType(const std::string& name, const std::vec
     return ptr;
 }
 
-void TypeSystem::registerCustomType(const std::string& name, void* astNode) {
-    // For now, create an empty struct type as a placeholder
-    // In the future, we'll extract field information from the AST node
-    std::vector<StructType::Field> fields;
-    
-    // Create the struct type and register it
-    createStructType(name, fields, 0, 0, false);
-}
-
 UnionType* TypeSystem::getUnionType(const std::string& name) {
     auto it = unionCache.find(name);
     if (it != unionCache.end()) {
