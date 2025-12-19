@@ -1,0 +1,909 @@
+=== ARIA SOURCE PART 5: BACKEND - IR & CODEGEN ===
+
+FILE: include/backend/ir/ir_generator.h
+====================================
+#ifndef ARIA_IR_GENERATOR_H
+#define ARIA_IR_GENERATOR_H
+
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Value.h>
+#include <llvm/IR/Type.h>
+#include <map>
+#include <string>
+#include <memory>
+
+namespace aria {
+
+// Forward declarations
+class ASTNode;  // ASTNode is in aria namespace
+namespace sema {
+    class Type;  // Forward declaration in correct namespace
+}
+using sema::Type;  // Make Type available in aria namespace
+
+/**
+ * IRGenerator - Generates LLVM IR from Aria AST
+ * 
+ * This is the main backend class that translates validated AST nodes
+ * into LLVM Intermediate Representation for optimization and code generation.
+ * 
+ * Reference: Phase 4.1 - LLVM Infrastructure Setup
+ */
+class IRGenerator {
+private:
+    llvm::LLVMContext context;
+    std::unique_ptr<llvm::Module> module;
+    llvm::IRBuilder<> builder;
+    
+    // Symbol table for LLVM values (maps variable names to LLVM Values)
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Type mapping cache (Aria types -> LLVM types)
+    std::map<std::string, llvm::Type*> type_map;
+    
+    /**
+     * Map Aria type to LLVM type
+     * Reference: research_012-017 for type specifications
+     */
+    llvm::Type* mapType(Type* aria_type);
+    
+public:
+    /**
+     * Constructor
+     * @param module_name Name of the LLVM module to generate
+     */
+    explicit IRGenerator(const std::string& module_name);
+    
+    /**
+     * Generate LLVM IR for an AST node
+     * @param node AST node to generate code for
+     * @return LLVM Value representing the generated code
+     */
+    llvm::Value* codegen(ASTNode* node);
+    
+    /**
+     * Get the generated LLVM module
+     * @return Pointer to LLVM Module (ownership retained)
+     */
+    llvm::Module* getModule();
+    
+    /**
+     * Take ownership of the generated LLVM module
+     * @return unique_ptr to LLVM Module (ownership transferred)
+     */
+    std::unique_ptr<llvm::Module> takeModule();
+    
+    /**
+     * Dump the generated IR to stdout (for debugging)
+     */
+    void dump();
+};
+
+} // namespace aria
+
+#endif // ARIA_IR_GENERATOR_H
+
+
+
+FILE: src/backend/ir/ir_generator.cpp
+====================================
+#include "backend/ir/ir_generator.h"
+#include "frontend/ast/ast_node.h"
+#include "frontend/sema/type.h"  // Full type definitions needed
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/IR/DerivedTypes.h>  // For FunctionType, StructType, etc.
+#include <llvm/IR/DataLayout.h>     // For getTypeAllocSize
+#include <cassert>
+
+namespace aria {
+using namespace sema;  // Now inside aria namespace
+
+IRGenerator::IRGenerator(const std::string& module_name)
+    : context(), 
+      module(std::make_unique<llvm::Module>(module_name.empty() ? "aria_module" : module_name, context)),
+      builder(context) {
+    // Set source filename for better debug info
+    module->setSourceFileName(module_name.empty() ? "aria_module" : module_name);
+}
+
+llvm::Type* IRGenerator::mapType(Type* aria_type) {
+    if (!aria_type) {
+        return builder.getVoidTy();
+    }
+    
+    // Check cache first
+    std::string type_name = aria_type->toString();
+    auto it = type_map.find(type_name);
+    if (it != type_map.end()) {
+        return it->second;
+    }
+    
+    llvm::Type* llvm_type = nullptr;
+    
+    // Map based on type kind
+    switch (aria_type->getKind()) {
+        case TypeKind::PRIMITIVE: {
+            auto* prim = static_cast<PrimitiveType*>(aria_type);
+            
+            // Boolean type
+            if (prim->getName() == "bool") {
+                llvm_type = builder.getInt1Ty();
+            }
+            // Floating point types
+            else if (prim->isFloatingType()) {
+                switch (prim->getBitWidth()) {
+                    case 32:  llvm_type = builder.getFloatTy(); break;
+                    case 64:  llvm_type = builder.getDoubleTy(); break;
+                    case 128: llvm_type = llvm::Type::getFP128Ty(context); break;
+                    default:
+                        // For 256/512-bit floats, use integer for now
+                        llvm_type = builder.getIntNTy(prim->getBitWidth());
+                        break;
+                }
+            }
+            // Integer and TBB types (TBB uses same representation as int)
+            else {
+                llvm_type = builder.getIntNTy(prim->getBitWidth());
+            }
+            break;
+        }
+        
+        case TypeKind::POINTER: {
+            auto* ptr_type = static_cast<PointerType*>(aria_type);
+            llvm::Type* pointee = mapType(ptr_type->getPointeeType());
+            // LLVM uses opaque pointers in newer versions
+            llvm_type = llvm::PointerType::get(context, 0);
+            break;
+        }
+        
+        case TypeKind::ARRAY: {
+            auto* arr_type = static_cast<ArrayType*>(aria_type);
+            llvm::Type* elem_type = mapType(arr_type->getElementType());
+            if (arr_type->getSize() > 0) {
+                // Fixed-size array
+                llvm_type = llvm::ArrayType::get(elem_type, arr_type->getSize());
+            } else {
+                // Dynamic array (represented as pointer)
+                llvm_type = llvm::PointerType::get(context, 0);
+            }
+            break;
+        }
+        
+        case TypeKind::VECTOR: {
+            // Vector types (vec2, vec3, vec9, etc.) - SIMD vectors
+            // Reference: research_015
+            auto* vec_type = static_cast<VectorType*>(aria_type);
+            llvm::Type* component_type = mapType(vec_type->getComponentType());
+            int dimension = vec_type->getDimension();
+            
+            // LLVM fixed vectors (for dimensions 2, 3, 4, 8, 16)
+            // For vec9, we'll use a struct with 9 components instead
+            if (dimension == 9) {
+                // vec9 is special - create struct of 9 components
+                std::vector<llvm::Type*> components(9, component_type);
+                llvm_type = llvm::StructType::get(context, components);
+            } else {
+                // Standard LLVM fixed vector
+                llvm_type = llvm::FixedVectorType::get(component_type, dimension);
+            }
+            break;
+        }
+        
+        case TypeKind::FUNCTION: {
+            // Function types: func(params) -> return
+            // Reference: research_016
+            auto* func_type = static_cast<FunctionType*>(aria_type);
+            
+            // Map return type
+            llvm::Type* return_type = mapType(func_type->getReturnType());
+            
+            // Map parameter types
+            std::vector<llvm::Type*> param_types;
+            for (Type* param : func_type->getParamTypes()) {
+                param_types.push_back(mapType(param));
+            }
+            
+            // Create LLVM function type
+            llvm_type = llvm::FunctionType::get(
+                return_type,
+                param_types,
+                func_type->isVariadicFunction()  // isVarArg
+            );
+            break;
+        }
+        
+        case TypeKind::STRUCT: {
+            // Struct types with fields
+            // Reference: research_015
+            auto* struct_type = static_cast<StructType*>(aria_type);
+            
+            // Map all field types
+            std::vector<llvm::Type*> field_types;
+            for (const auto& field : struct_type->getFields()) {
+                field_types.push_back(mapType(field.type));
+            }
+            
+            // Create LLVM struct type
+            // Use identified struct for named types
+            llvm_type = llvm::StructType::create(
+                context,
+                field_types,
+                struct_type->getName(),
+                struct_type->isPackedStruct()  // isPacked
+            );
+            break;
+        }
+        
+        case TypeKind::UNION: {
+            // Union types - represented as struct with largest variant + tag
+            // Reference: research_015
+            auto* union_type = static_cast<UnionType*>(aria_type);
+            
+            // Find largest variant type
+            llvm::Type* largest_type = builder.getInt8Ty();  // Minimum size
+            size_t max_size = 1;
+            
+            for (const auto& variant : union_type->getVariants()) {
+                llvm::Type* variant_llvm = mapType(variant.type);
+                size_t variant_size = module->getDataLayout().getTypeAllocSize(variant_llvm);
+                if (variant_size > max_size) {
+                    max_size = variant_size;
+                    largest_type = variant_llvm;
+                }
+            }
+            
+            // Union = { tag: i32, data: largest_type }
+            std::vector<llvm::Type*> union_fields = {
+                builder.getInt32Ty(),  // Tag field
+                largest_type            // Data field (largest variant)
+            };
+            
+            llvm_type = llvm::StructType::create(
+                context,
+                union_fields,
+                union_type->getName()
+            );
+            break;
+        }
+        
+        case TypeKind::RESULT: {
+            // Result type for error handling: result<T>
+            // Represented as { hasValue: i1, value: T, error: i8 }
+            // Reference: research_016
+            auto* result_type = static_cast<ResultType*>(aria_type);
+            
+            llvm::Type* value_type = mapType(result_type->getValueType());
+            
+            std::vector<llvm::Type*> result_fields = {
+                builder.getInt1Ty(),    // hasValue flag
+                value_type,              // Success value
+                builder.getInt8Ty()     // Error code
+            };
+            
+            llvm_type = llvm::StructType::get(context, result_fields);
+            break;
+        }
+        
+        case TypeKind::GENERIC: {
+            // Generic types should be monomorphized before codegen
+            // If we see one here, it's an error in the compiler pipeline
+            // For now, treat as opaque pointer
+            llvm_type = llvm::PointerType::get(context, 0);
+            break;
+        }
+        
+        case TypeKind::UNKNOWN:
+        case TypeKind::ERROR:
+        default:
+            // Unknown or error types - use void
+            llvm_type = builder.getVoidTy();
+            break;
+    }
+    
+    // Cache the mapping
+    if (llvm_type) {
+        type_map[type_name] = llvm_type;
+    }
+    
+    return llvm_type;
+}
+
+} // namespace aria
+
+// Define methods outside namespace to avoid ambiguity
+
+llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
+    if (!node) {
+        return nullptr;
+    }
+    
+    // Basic implementation for Phase 7.1.1-7.1.2 stub
+    // Full implementation in Phase 4.2 (Expression Code Generation)
+    // and Phase 4.3 (Statement Code Generation)
+    
+    // For multi-file compilation: Check if this module's AST contains a main function
+    // by looking at the node type and checking for main in function declarations
+    // For now, use module name to create unique function names
+    
+    // Extract module base name from full path (e.g., "utils" from "tests/integration/utils.aria")
+    std::string module_name = module->getName().str();
+    size_t last_slash = module_name.find_last_of("/\\");
+    if (last_slash != std::string::npos) {
+        module_name = module_name.substr(last_slash + 1);
+    }
+    size_t last_dot = module_name.find_last_of('.');
+    if (last_dot != std::string::npos) {
+        module_name = module_name.substr(0, last_dot);
+    }
+    
+    // Create a module init function (or main if module name suggests it's the main file)
+    bool is_main_module = (module_name.find("main") != std::string::npos || 
+                           module_name == "hello");
+    std::string func_name = is_main_module ? "main" : ("__" + module_name + "_init");
+    
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        builder.getInt32Ty(),  // return int32
+        false  // not vararg
+    );
+    
+    llvm::Function* func = llvm::Function::Create(
+        func_type,
+        llvm::Function::ExternalLinkage,
+        func_name,
+        module.get()
+    );
+    
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Return 0 for now
+    builder.CreateRet(builder.getInt32(0));
+    
+    return func;
+}
+
+llvm::Module* aria::IRGenerator::getModule() {
+    return module.get();
+}
+
+std::unique_ptr<llvm::Module> aria::IRGenerator::takeModule() {
+    return std::move(module);
+}
+
+void aria::IRGenerator::dump() {
+    module->print(llvm::outs(), nullptr);
+}
+
+
+
+FILE: include/backend/ir/tbb_codegen.h
+====================================
+#ifndef ARIA_TBB_CODEGEN_H
+#define ARIA_TBB_CODEGEN_H
+
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Value.h>
+#include "frontend/sema/type.h"
+
+namespace aria {
+
+using Type = aria::sema::Type;
+
+/**
+ * @brief TBBCodegen - Safe Balanced Ternary arithmetic code generation
+ * 
+ * Generates LLVM IR for TBB (Ternary Balanced Binary) types with:
+ * - ERR sentinel detection (min value of each type)
+ * - Overflow checking (result > max or < -max)
+ * - Sticky ERR propagation (if input is ERR, output is ERR)
+ * 
+ * TBB Ranges (from research_002):
+ * - tbb8:  range [-127, +127],     ERR = -128 (0x80)
+ * - tbb16: range [-32767, +32767], ERR = -32768 (0x8000)
+ * - tbb32: range [-2147483647, +2147483647], ERR = -2147483648 (0x80000000)
+ * - tbb64: range [-9223372036854775807, +9223372036854775807], ERR = -9223372036854775808 (0x8000000000000000)
+ */
+class TBBCodegen {
+public:
+    TBBCodegen(llvm::LLVMContext& context, llvm::IRBuilder<>& builder);
+
+    /**
+     * @brief Generate safe TBB addition with overflow and ERR checking
+     * @param lhs Left operand (tbb type)
+     * @param rhs Right operand (tbb type)
+     * @param type The TBB type (tbb8/16/32/64)
+     * @return LLVM Value representing the result or ERR sentinel
+     */
+    llvm::Value* generateAdd(llvm::Value* lhs, llvm::Value* rhs, Type* type);
+
+    /**
+     * @brief Generate safe TBB subtraction with overflow and ERR checking
+     */
+    llvm::Value* generateSub(llvm::Value* lhs, llvm::Value* rhs, Type* type);
+
+    /**
+     * @brief Generate safe TBB multiplication with overflow and ERR checking
+     */
+    llvm::Value* generateMul(llvm::Value* lhs, llvm::Value* rhs, Type* type);
+
+    /**
+     * @brief Generate safe TBB division with ERR checking
+     */
+    llvm::Value* generateDiv(llvm::Value* lhs, llvm::Value* rhs, Type* type);
+
+    /**
+     * @brief Generate safe TBB negation
+     */
+    llvm::Value* generateNeg(llvm::Value* operand, Type* type);
+
+    // ========================================================================
+    // Public helpers for testing
+    // ========================================================================
+
+    /**
+     * @brief Get ERR sentinel value for the given TBB type
+     * @param type TBB type (tbb8/16/32/64)
+     * @return LLVM constant representing the ERR sentinel
+     */
+    llvm::Value* getErrSentinel(Type* type);
+
+    /**
+     * @brief Get maximum valid value for the given TBB type
+     * @param type TBB type (tbb8/16/32/64)
+     * @return LLVM constant representing the max value
+     */
+    llvm::Value* getMaxValue(Type* type);
+
+    /**
+     * @brief Get minimum valid value for the given TBB type (NOT ERR, but the lowest valid value)
+     * @param type TBB type (tbb8/16/32/64)
+     * @return LLVM constant representing the min value
+     */
+    llvm::Value* getMinValue(Type* type);
+
+private:
+    llvm::LLVMContext& context;
+    llvm::IRBuilder<>& builder;
+
+    /**
+     * @brief Check if value is ERR sentinel
+     * @param value Value to check
+     * @param type TBB type
+     * @return LLVM i1 value (1 if ERR, 0 otherwise)
+     */
+    llvm::Value* isErr(llvm::Value* value, Type* type);
+
+    /**
+     * @brief Generate overflow checking for addition
+     * Returns true if overflow would occur
+     */
+    llvm::Value* checkAddOverflow(llvm::Value* lhs, llvm::Value* rhs, Type* type);
+
+    /**
+     * @brief Generate overflow checking for subtraction
+     * Returns true if overflow would occur
+     */
+    llvm::Value* checkSubOverflow(llvm::Value* lhs, llvm::Value* rhs, Type* type);
+
+    /**
+     * @brief Generate overflow checking for multiplication
+     * Returns true if overflow would occur
+     */
+    llvm::Value* checkMulOverflow(llvm::Value* lhs, llvm::Value* rhs, Type* type);
+
+    /**
+     * @brief Get LLVM integer type for TBB type
+     */
+    llvm::IntegerType* getTBBLLVMType(Type* type);
+
+    /**
+     * @brief Get bit width for TBB type (8, 16, 32, or 64)
+     */
+    unsigned getTBBBitWidth(Type* type);
+};
+
+} // namespace aria
+
+#endif // ARIA_TBB_CODEGEN_H
+
+
+
+FILE: src/backend/ir/tbb_codegen.cpp
+====================================
+#include "backend/ir/tbb_codegen.h"
+#include <stdexcept>
+
+namespace aria {
+
+using namespace aria::sema;
+
+TBBCodegen::TBBCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr)
+    : context(ctx), builder(bldr) {}
+
+unsigned TBBCodegen::getTBBBitWidth(Type* type) {
+    if (type->getKind() != TypeKind::PRIMITIVE) {
+        throw std::runtime_error("getTBBBitWidth called on non-primitive type");
+    }
+
+    auto* primType = static_cast<PrimitiveType*>(type);
+    const std::string& name = primType->getName();
+
+    if (name == "tbb8") return 8;
+    if (name == "tbb16") return 16;
+    if (name == "tbb32") return 32;
+    if (name == "tbb64") return 64;
+
+    throw std::runtime_error("getTBBBitWidth called on non-TBB type: " + name);
+}
+
+llvm::IntegerType* TBBCodegen::getTBBLLVMType(Type* type) {
+    unsigned bitWidth = getTBBBitWidth(type);
+    return llvm::IntegerType::get(context, bitWidth);
+}
+
+llvm::Value* TBBCodegen::getErrSentinel(Type* type) {
+    unsigned bitWidth = getTBBBitWidth(type);
+    llvm::IntegerType* llvmType = getTBBLLVMType(type);
+
+    // ERR sentinel is the minimum value of the signed type:
+    // tbb8:  -128 (0x80)
+    // tbb16: -32768 (0x8000)
+    // tbb32: -2147483648 (0x80000000)
+    // tbb64: -9223372036854775808 (0x8000000000000000)
+    int64_t errValue;
+    switch (bitWidth) {
+        case 8:  errValue = -128; break;
+        case 16: errValue = -32768; break;
+        case 32: errValue = -2147483648LL; break;
+        case 64: errValue = INT64_MIN; break;
+        default: throw std::runtime_error("Invalid TBB bit width");
+    }
+
+    return llvm::ConstantInt::get(llvmType, errValue, true);
+}
+
+llvm::Value* TBBCodegen::getMaxValue(Type* type) {
+    unsigned bitWidth = getTBBBitWidth(type);
+    llvm::IntegerType* llvmType = getTBBLLVMType(type);
+
+    // Max valid value (ERR - 1):
+    // tbb8:  +127
+    // tbb16: +32767
+    // tbb32: +2147483647
+    // tbb64: +9223372036854775807
+    int64_t maxValue;
+    switch (bitWidth) {
+        case 8:  maxValue = 127; break;
+        case 16: maxValue = 32767; break;
+        case 32: maxValue = 2147483647LL; break;
+        case 64: maxValue = INT64_MAX; break;
+        default: throw std::runtime_error("Invalid TBB bit width");
+    }
+
+    return llvm::ConstantInt::get(llvmType, maxValue, true);
+}
+
+llvm::Value* TBBCodegen::getMinValue(Type* type) {
+    unsigned bitWidth = getTBBBitWidth(type);
+    llvm::IntegerType* llvmType = getTBBLLVMType(type);
+
+    // Min valid value (NOT ERR, but lowest valid number):
+    // tbb8:  -127
+    // tbb16: -32767
+    // tbb32: -2147483647
+    // tbb64: -9223372036854775807
+    int64_t minValue;
+    switch (bitWidth) {
+        case 8:  minValue = -127; break;
+        case 16: minValue = -32767; break;
+        case 32: minValue = -2147483647LL; break;
+        case 64: minValue = -INT64_MAX; break;
+        default: throw std::runtime_error("Invalid TBB bit width");
+    }
+
+    return llvm::ConstantInt::get(llvmType, minValue, true);
+}
+
+llvm::Value* TBBCodegen::isErr(llvm::Value* value, Type* type) {
+    llvm::Value* errSentinel = getErrSentinel(type);
+    return builder.CreateICmpEQ(value, errSentinel, "is_err");
+}
+
+llvm::Value* TBBCodegen::checkAddOverflow(llvm::Value* lhs, llvm::Value* rhs, Type* type) {
+    llvm::Value* maxVal = getMaxValue(type);
+    llvm::Value* minVal = getMinValue(type);
+
+    // For addition overflow detection:
+    // If lhs > 0 and rhs > 0 and lhs > max - rhs: overflow
+    // If lhs < 0 and rhs < 0 and lhs < min - rhs: underflow
+
+    llvm::Value* zero = llvm::ConstantInt::get(getTBBLLVMType(type), 0, true);
+
+    llvm::Value* lhsPositive = builder.CreateICmpSGT(lhs, zero, "lhs_pos");
+    llvm::Value* rhsPositive = builder.CreateICmpSGT(rhs, zero, "rhs_pos");
+    llvm::Value* bothPositive = builder.CreateAnd(lhsPositive, rhsPositive, "both_pos");
+
+    llvm::Value* maxMinusRhs = builder.CreateSub(maxVal, rhs, "max_minus_rhs");
+    llvm::Value* overflowPos = builder.CreateICmpSGT(lhs, maxMinusRhs, "overflow_pos");
+    llvm::Value* willOverflow = builder.CreateAnd(bothPositive, overflowPos, "will_overflow");
+
+    llvm::Value* lhsNegative = builder.CreateICmpSLT(lhs, zero, "lhs_neg");
+    llvm::Value* rhsNegative = builder.CreateICmpSLT(rhs, zero, "rhs_neg");
+    llvm::Value* bothNegative = builder.CreateAnd(lhsNegative, rhsNegative, "both_neg");
+
+    llvm::Value* minMinusRhs = builder.CreateSub(minVal, rhs, "min_minus_rhs");
+    llvm::Value* underflowNeg = builder.CreateICmpSLT(lhs, minMinusRhs, "underflow_neg");
+    llvm::Value* willUnderflow = builder.CreateAnd(bothNegative, underflowNeg, "will_underflow");
+
+    return builder.CreateOr(willOverflow, willUnderflow, "overflow");
+}
+
+llvm::Value* TBBCodegen::checkSubOverflow(llvm::Value* lhs, llvm::Value* rhs, Type* type) {
+    llvm::Value* maxVal = getMaxValue(type);
+    llvm::Value* minVal = getMinValue(type);
+
+    // For subtraction overflow detection:
+    // lhs - rhs can overflow if lhs > 0, rhs < 0, and lhs > max + rhs
+    // lhs - rhs can underflow if lhs < 0, rhs > 0, and lhs < min + rhs
+
+    llvm::Value* zero = llvm::ConstantInt::get(getTBBLLVMType(type), 0, true);
+
+    llvm::Value* lhsPositive = builder.CreateICmpSGT(lhs, zero, "lhs_pos");
+    llvm::Value* rhsNegative = builder.CreateICmpSLT(rhs, zero, "rhs_neg");
+    llvm::Value* posMinusNeg = builder.CreateAnd(lhsPositive, rhsNegative, "pos_minus_neg");
+
+    llvm::Value* maxPlusRhs = builder.CreateAdd(maxVal, rhs, "max_plus_rhs");
+    llvm::Value* overflowSub = builder.CreateICmpSGT(lhs, maxPlusRhs, "overflow_sub");
+    llvm::Value* willOverflow = builder.CreateAnd(posMinusNeg, overflowSub, "will_overflow");
+
+    llvm::Value* lhsNegative = builder.CreateICmpSLT(lhs, zero, "lhs_neg");
+    llvm::Value* rhsPositive = builder.CreateICmpSGT(rhs, zero, "rhs_pos");
+    llvm::Value* negMinusPos = builder.CreateAnd(lhsNegative, rhsPositive, "neg_minus_pos");
+
+    llvm::Value* minPlusRhs = builder.CreateAdd(minVal, rhs, "min_plus_rhs");
+    llvm::Value* underflowSub = builder.CreateICmpSLT(lhs, minPlusRhs, "underflow_sub");
+    llvm::Value* willUnderflow = builder.CreateAnd(negMinusPos, underflowSub, "will_underflow");
+
+    return builder.CreateOr(willOverflow, willUnderflow, "overflow");
+}
+
+llvm::Value* TBBCodegen::checkMulOverflow(llvm::Value* lhs, llvm::Value* rhs, Type* type) {
+    llvm::Value* maxVal = getMaxValue(type);
+    llvm::Value* minVal = getMinValue(type);
+    llvm::Value* zero = llvm::ConstantInt::get(getTBBLLVMType(type), 0, true);
+
+    // Multiplication overflow is more complex
+    // We use the LLVM overflow intrinsics for simplicity
+    unsigned bitWidth = getTBBBitWidth(type);
+    llvm::Type* overflowStructType = llvm::StructType::get(
+        context,
+        {getTBBLLVMType(type), llvm::IntegerType::get(context, 1)}
+    );
+
+    llvm::Function* smulFunc = llvm::Intrinsic::getDeclaration(
+        builder.GetInsertBlock()->getModule(),
+        llvm::Intrinsic::smul_with_overflow,
+        {getTBBLLVMType(type)}
+    );
+
+    llvm::Value* mulResult = builder.CreateCall(smulFunc, {lhs, rhs}, "mul_overflow");
+    llvm::Value* overflow = builder.CreateExtractValue(mulResult, 1, "overflow_bit");
+
+    // Also need to check if result exceeds our TBB range (not just signed overflow)
+    llvm::Value* result = builder.CreateExtractValue(mulResult, 0, "mul_result");
+    llvm::Value* exceedsMax = builder.CreateICmpSGT(result, maxVal, "exceeds_max");
+    llvm::Value* belowMin = builder.CreateICmpSLT(result, minVal, "below_min");
+    llvm::Value* outOfRange = builder.CreateOr(exceedsMax, belowMin, "out_of_range");
+
+    return builder.CreateOr(overflow, outOfRange, "mul_overflow");
+}
+
+llvm::Value* TBBCodegen::generateAdd(llvm::Value* lhs, llvm::Value* rhs, Type* type) {
+    llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+
+    // Create basic blocks for control flow
+    llvm::BasicBlock* checkLhsErrBB = llvm::BasicBlock::Create(context, "check_lhs_err", currentFunc);
+    llvm::BasicBlock* checkRhsErrBB = llvm::BasicBlock::Create(context, "check_rhs_err", currentFunc);
+    llvm::BasicBlock* checkOverflowBB = llvm::BasicBlock::Create(context, "check_overflow", currentFunc);
+    llvm::BasicBlock* doAddBB = llvm::BasicBlock::Create(context, "do_add", currentFunc);
+    llvm::BasicBlock* returnErrBB = llvm::BasicBlock::Create(context, "return_err", currentFunc);
+    llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "merge", currentFunc);
+
+    // Check if lhs is ERR
+    builder.CreateBr(checkLhsErrBB);
+
+    builder.SetInsertPoint(checkLhsErrBB);
+    llvm::Value* lhsIsErr = isErr(lhs, type);
+    builder.CreateCondBr(lhsIsErr, returnErrBB, checkRhsErrBB);
+
+    // Check if rhs is ERR
+    builder.SetInsertPoint(checkRhsErrBB);
+    llvm::Value* rhsIsErr = isErr(rhs, type);
+    builder.CreateCondBr(rhsIsErr, returnErrBB, checkOverflowBB);
+
+    // Check for overflow
+    builder.SetInsertPoint(checkOverflowBB);
+    llvm::Value* willOverflow = checkAddOverflow(lhs, rhs, type);
+    builder.CreateCondBr(willOverflow, returnErrBB, doAddBB);
+
+    // Perform addition
+    builder.SetInsertPoint(doAddBB);
+    llvm::Value* result = builder.CreateAdd(lhs, rhs, "add_result");
+    builder.CreateBr(mergeBB);
+
+    // Return ERR sentinel
+    builder.SetInsertPoint(returnErrBB);
+    llvm::Value* errSentinel = getErrSentinel(type);
+    builder.CreateBr(mergeBB);
+
+    // Merge results
+    builder.SetInsertPoint(mergeBB);
+    llvm::PHINode* phi = builder.CreatePHI(getTBBLLVMType(type), 2, "add_phi");
+    phi->addIncoming(result, doAddBB);
+    phi->addIncoming(errSentinel, returnErrBB);
+
+    return phi;
+}
+
+llvm::Value* TBBCodegen::generateSub(llvm::Value* lhs, llvm::Value* rhs, Type* type) {
+    llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+
+    llvm::BasicBlock* checkLhsErrBB = llvm::BasicBlock::Create(context, "check_lhs_err", currentFunc);
+    llvm::BasicBlock* checkRhsErrBB = llvm::BasicBlock::Create(context, "check_rhs_err", currentFunc);
+    llvm::BasicBlock* checkOverflowBB = llvm::BasicBlock::Create(context, "check_overflow", currentFunc);
+    llvm::BasicBlock* doSubBB = llvm::BasicBlock::Create(context, "do_sub", currentFunc);
+    llvm::BasicBlock* returnErrBB = llvm::BasicBlock::Create(context, "return_err", currentFunc);
+    llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "merge", currentFunc);
+
+    builder.CreateBr(checkLhsErrBB);
+
+    builder.SetInsertPoint(checkLhsErrBB);
+    llvm::Value* lhsIsErr = isErr(lhs, type);
+    builder.CreateCondBr(lhsIsErr, returnErrBB, checkRhsErrBB);
+
+    builder.SetInsertPoint(checkRhsErrBB);
+    llvm::Value* rhsIsErr = isErr(rhs, type);
+    builder.CreateCondBr(rhsIsErr, returnErrBB, checkOverflowBB);
+
+    builder.SetInsertPoint(checkOverflowBB);
+    llvm::Value* willOverflow = checkSubOverflow(lhs, rhs, type);
+    builder.CreateCondBr(willOverflow, returnErrBB, doSubBB);
+
+    builder.SetInsertPoint(doSubBB);
+    llvm::Value* result = builder.CreateSub(lhs, rhs, "sub_result");
+    builder.CreateBr(mergeBB);
+
+    builder.SetInsertPoint(returnErrBB);
+    llvm::Value* errSentinel = getErrSentinel(type);
+    builder.CreateBr(mergeBB);
+
+    builder.SetInsertPoint(mergeBB);
+    llvm::PHINode* phi = builder.CreatePHI(getTBBLLVMType(type), 2, "sub_phi");
+    phi->addIncoming(result, doSubBB);
+    phi->addIncoming(errSentinel, returnErrBB);
+
+    return phi;
+}
+
+llvm::Value* TBBCodegen::generateMul(llvm::Value* lhs, llvm::Value* rhs, Type* type) {
+    llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+
+    llvm::BasicBlock* checkLhsErrBB = llvm::BasicBlock::Create(context, "check_lhs_err", currentFunc);
+    llvm::BasicBlock* checkRhsErrBB = llvm::BasicBlock::Create(context, "check_rhs_err", currentFunc);
+    llvm::BasicBlock* checkOverflowBB = llvm::BasicBlock::Create(context, "check_overflow", currentFunc);
+    llvm::BasicBlock* doMulBB = llvm::BasicBlock::Create(context, "do_mul", currentFunc);
+    llvm::BasicBlock* returnErrBB = llvm::BasicBlock::Create(context, "return_err", currentFunc);
+    llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "merge", currentFunc);
+
+    builder.CreateBr(checkLhsErrBB);
+
+    builder.SetInsertPoint(checkLhsErrBB);
+    llvm::Value* lhsIsErr = isErr(lhs, type);
+    builder.CreateCondBr(lhsIsErr, returnErrBB, checkRhsErrBB);
+
+    builder.SetInsertPoint(checkRhsErrBB);
+    llvm::Value* rhsIsErr = isErr(rhs, type);
+    builder.CreateCondBr(rhsIsErr, returnErrBB, checkOverflowBB);
+
+    builder.SetInsertPoint(checkOverflowBB);
+    llvm::Value* willOverflow = checkMulOverflow(lhs, rhs, type);
+    builder.CreateCondBr(willOverflow, returnErrBB, doMulBB);
+
+    builder.SetInsertPoint(doMulBB);
+    llvm::Value* result = builder.CreateMul(lhs, rhs, "mul_result");
+    builder.CreateBr(mergeBB);
+
+    builder.SetInsertPoint(returnErrBB);
+    llvm::Value* errSentinel = getErrSentinel(type);
+    builder.CreateBr(mergeBB);
+
+    builder.SetInsertPoint(mergeBB);
+    llvm::PHINode* phi = builder.CreatePHI(getTBBLLVMType(type), 2, "mul_phi");
+    phi->addIncoming(result, doMulBB);
+    phi->addIncoming(errSentinel, returnErrBB);
+
+    return phi;
+}
+
+llvm::Value* TBBCodegen::generateDiv(llvm::Value* lhs, llvm::Value* rhs, Type* type) {
+    llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+
+    llvm::BasicBlock* checkLhsErrBB = llvm::BasicBlock::Create(context, "check_lhs_err", currentFunc);
+    llvm::BasicBlock* checkRhsErrBB = llvm::BasicBlock::Create(context, "check_rhs_err", currentFunc);
+    llvm::BasicBlock* checkDivZeroBB = llvm::BasicBlock::Create(context, "check_div_zero", currentFunc);
+    llvm::BasicBlock* doDivBB = llvm::BasicBlock::Create(context, "do_div", currentFunc);
+    llvm::BasicBlock* returnErrBB = llvm::BasicBlock::Create(context, "return_err", currentFunc);
+    llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "merge", currentFunc);
+
+    builder.CreateBr(checkLhsErrBB);
+
+    builder.SetInsertPoint(checkLhsErrBB);
+    llvm::Value* lhsIsErr = isErr(lhs, type);
+    builder.CreateCondBr(lhsIsErr, returnErrBB, checkRhsErrBB);
+
+    builder.SetInsertPoint(checkRhsErrBB);
+    llvm::Value* rhsIsErr = isErr(rhs, type);
+    builder.CreateCondBr(rhsIsErr, returnErrBB, checkDivZeroBB);
+
+    builder.SetInsertPoint(checkDivZeroBB);
+    llvm::Value* zero = llvm::ConstantInt::get(getTBBLLVMType(type), 0, true);
+    llvm::Value* isZero = builder.CreateICmpEQ(rhs, zero, "is_zero");
+    builder.CreateCondBr(isZero, returnErrBB, doDivBB);
+
+    builder.SetInsertPoint(doDivBB);
+    llvm::Value* result = builder.CreateSDiv(lhs, rhs, "div_result");
+    builder.CreateBr(mergeBB);
+
+    builder.SetInsertPoint(returnErrBB);
+    llvm::Value* errSentinel = getErrSentinel(type);
+    builder.CreateBr(mergeBB);
+
+    builder.SetInsertPoint(mergeBB);
+    llvm::PHINode* phi = builder.CreatePHI(getTBBLLVMType(type), 2, "div_phi");
+    phi->addIncoming(result, doDivBB);
+    phi->addIncoming(errSentinel, returnErrBB);
+
+    return phi;
+}
+
+llvm::Value* TBBCodegen::generateNeg(llvm::Value* operand, Type* type) {
+    llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+
+    llvm::BasicBlock* checkErrBB = llvm::BasicBlock::Create(context, "check_err", currentFunc);
+    llvm::BasicBlock* checkMinBB = llvm::BasicBlock::Create(context, "check_min", currentFunc);
+    llvm::BasicBlock* doNegBB = llvm::BasicBlock::Create(context, "do_neg", currentFunc);
+    llvm::BasicBlock* returnErrBB = llvm::BasicBlock::Create(context, "return_err", currentFunc);
+    llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "merge", currentFunc);
+
+    builder.CreateBr(checkErrBB);
+
+    builder.SetInsertPoint(checkErrBB);
+    llvm::Value* operandIsErr = isErr(operand, type);
+    builder.CreateCondBr(operandIsErr, returnErrBB, checkMinBB);
+
+    // Negating the minimum valid value would overflow
+    builder.SetInsertPoint(checkMinBB);
+    llvm::Value* minVal = getMinValue(type);
+    llvm::Value* isMin = builder.CreateICmpEQ(operand, minVal, "is_min");
+    builder.CreateCondBr(isMin, returnErrBB, doNegBB);
+
+    builder.SetInsertPoint(doNegBB);
+    llvm::Value* result = builder.CreateNeg(operand, "neg_result");
+    builder.CreateBr(mergeBB);
+
+    builder.SetInsertPoint(returnErrBB);
+    llvm::Value* errSentinel = getErrSentinel(type);
+    builder.CreateBr(mergeBB);
+
+    builder.SetInsertPoint(mergeBB);
+    llvm::PHINode* phi = builder.CreatePHI(getTBBLLVMType(type), 2, "neg_phi");
+    phi->addIncoming(result, doNegBB);
+    phi->addIncoming(errSentinel, returnErrBB);
+
+    return phi;
+}
+
+} // namespace aria

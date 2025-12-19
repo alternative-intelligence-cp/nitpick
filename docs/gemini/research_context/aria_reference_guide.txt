@@ -1,3 +1,323 @@
+===========================================
+ARIA COMPILER - GEMINI RESEARCH NAVIGATION
+===========================================
+
+This guide tells you which source compilation files to upload for each research task.
+
+IMPORTANT: Gemini has a 10-file upload limit. Always upload aria_specs.txt + this navigation guide + up to 8 source parts.
+
+===========================================
+FILE OVERVIEW (13 parts total)
+===========================================
+
+Part 1a (53K) - Tokens & Lexer
+Part 1b (46K) - Preprocessor  
+Part 2  (31K) - AST Definitions
+Part 3a (4.8K) - Parser Header
+Part 3b (88K) - Parser Core [LARGE - skip if not needed]
+Part 3c (20K) - Parser Expressions
+Part 4  (44K) - Parser Components (Decl/Func/Struct/Trait)
+Part 5a (55K) - Type Checker
+Part 5b (38K) - Borrow & Trait Checking
+Part 6a (37K) - CodeGen Headers & Context
+Part 6b (71K) - CodeGen Expressions [LARGE - prioritize if needed]
+Part 7a (45K) - CodeGen Stmt & Decl
+Part 7b (67K) - CodeGen Control Flow & Flow [LARGE - prioritize if needed]
+Part 7c (75K) - CodeGen Lambda & Async [LARGE - prioritize if needed]
+Part 8  (49K) - TBB, Monomorphization, VTable, Runtime Headers
+
+=====================================
+RESEARCH TASK FILE RECOMMENDATIONS
+=====================================
+
+--- research_001_borrow_checker ---
+CRITICAL: Need to understand existing borrow checker stub and design full implementation.
+
+REQUIRED FILES (9 files - fits upload limit):
+1. aria_specs.txt
+2. THIS NAVIGATION FILE
+3. Part 1a - Tokens (understand lifetime/borrow tokens)
+4. Part 2 - AST (understand borrow annotations in AST)
+5. Part 5a - Type Checker (integration point)
+6. Part 5b - Borrow & Trait Checking (CRITICAL - existing stubs)
+7. Part 6a - CodeGen Context (understand how to track lifetimes)
+8. Part 8 - Runtime (GC interaction, shadow stack, memory model)
+9. docs/research/wildx_memory_regions.md (Appendage Theory context)
+
+SKIP: Parser details, expression codegen (not relevant to borrow checking)
+
+--- research_002_balanced_ternary_arithmetic ---
+CRITICAL: Need to design trit/tryte arithmetic algorithms.
+
+REQUIRED FILES (7 files - fits upload limit):
+1. aria_specs.txt (NON-NEGOTIABLE spec details)
+2. THIS NAVIGATION FILE
+3. Part 1a - Tokens (trit/tryte tokens)
+4. Part 2 - AST (trit/tryte type nodes)
+5. Part 5a - Type Checker (type system integration)
+6. Part 6b - CodeGen Expressions (arithmetic codegen - LARGE but necessary)
+7. Part 8 - Runtime (type representations)
+
+SKIP: Parser, borrow checking, control flow (not relevant)
+
+--- research_003_balanced_nonary_arithmetic ---
+CRITICAL: Need to design nit/nyte arithmetic algorithms.
+
+REQUIRED FILES (7 files - same as ternary):
+1. aria_specs.txt
+2. THIS NAVIGATION FILE
+3. Part 1a - Tokens
+4. Part 2 - AST
+5. Part 5a - Type Checker
+6. Part 6b - CodeGen Expressions
+7. Part 8 - Runtime
+
+SKIP: Same as ternary task
+
+--- research_004_file_io_library ---
+HIGH: Design file I/O API and async integration.
+
+REQUIRED FILES (8 files):
+1. aria_specs.txt
+2. THIS NAVIGATION FILE
+3. Part 2 - AST (understand existing I/O functions)
+4. Part 5a - Type Checker (TBB error handling)
+5. Part 6a - CodeGen Context (async context)
+6. Part 7c - CodeGen Async (LARGE - async/await integration)
+7. Part 8 - Runtime (scheduler, platform headers)
+8. docs/research/async_await_implementation.md
+
+SKIP: Lexer, parser internals, expression codegen
+
+--- research_005_process_management ---
+HIGH: Design process spawning and IPC.
+
+REQUIRED FILES (6 files):
+1. aria_specs.txt
+2. THIS NAVIGATION FILE
+3. Part 2 - AST
+4. Part 5a - Type Checker (error handling)
+5. Part 7c - CodeGen Async (spawn/future integration)
+6. Part 8 - Runtime (platform abstractions)
+
+SKIP: Most frontend, borrow checking, control flow
+
+--- research_006_modern_streams ---
+HIGH: Design 6-stream I/O system (stdin/stdout/stderr/stddbg/stddati/stddato).
+
+REQUIRED FILES (5 files):
+1. aria_specs.txt (stream requirements)
+2. THIS NAVIGATION FILE
+3. Part 2 - AST
+4. Part 8 - Runtime (platform headers, I/O impl)
+5. docs/research/async_await_implementation.md (async I/O)
+
+SKIP: Frontend, codegen details
+
+--- research_007_threading_library ---
+HIGH: Design threading model and synchronization primitives.
+
+REQUIRED FILES (7 files):
+1. aria_specs.txt
+2. THIS NAVIGATION FILE
+3. Part 2 - AST
+4. Part 5a - Type Checker
+5. Part 7c - CodeGen Async (concurrency integration)
+6. Part 8 - Runtime (scheduler, spawn, concurrency)
+7. docs/research/async_await_implementation.md
+
+SKIP: Parser, borrow checking, most codegen
+
+--- research_008_atomics_library ---
+MEDIUM: Design atomic operations and memory ordering.
+
+REQUIRED FILES (6 files):
+1. aria_specs.txt
+2. THIS NAVIGATION FILE
+3. Part 2 - AST
+4. Part 5a - Type Checker
+5. Part 6b - CodeGen Expressions (atomic codegen)
+6. Part 8 - Runtime (memory model)
+
+SKIP: Parser, control flow, async
+
+--- research_009_timer_clock_library ---
+MEDIUM: Design timer and clock abstractions.
+
+REQUIRED FILES (6 files):
+1. aria_specs.txt
+2. THIS NAVIGATION FILE
+3. Part 2 - AST
+4. Part 7c - CodeGen Async (timer integration)
+5. Part 8 - Runtime (platform, scheduler)
+6. docs/research/async_await_implementation.md
+
+SKIP: Frontend details, type checking, expression codegen
+
+--- research_010_comptime_system ---
+MEDIUM: Design Zig-style compile-time execution.
+
+REQUIRED FILES (9 files - complex, needs full compiler context):
+1. aria_specs.txt
+2. THIS NAVIGATION FILE
+3. Part 1b - Preprocessor (macro expansion context)
+4. Part 2 - AST (comptime nodes)
+5. Part 3c - Parser Expressions (comptime parsing)
+6. Part 4 - Parser Components
+7. Part 5a - Type Checker (comptime type resolution)
+8. Part 6a - CodeGen Context
+9. Part 8 - Runtime (constant evaluation)
+
+SKIP: Only lexer details, borrow checking
+
+=====================================
+FILE NAMING REFERENCE
+=====================================
+
+All files in: /home/randy/._____RANDY_____/REPOS/aria/docs/gemini/research_context/
+
+aria_source_part1a_tokens_lexer.txt
+aria_source_part1b_preprocessor.txt
+aria_source_part2_ast.txt
+aria_source_part3a_parser_header.txt
+aria_source_part3b_parser_core.txt
+aria_source_part3c_parser_expr.txt
+aria_source_part4_parser_components.txt
+aria_source_part5a_type_checker.txt
+aria_source_part5b_borrow_traits.txt
+aria_source_part6a_codegen_headers.txt
+aria_source_part6b_codegen_expr.txt
+aria_source_part7a_codegen_stmt_decl.txt
+aria_source_part7b_codegen_flow.txt
+aria_source_part7c_codegen_lambda_async.txt
+aria_source_part8_tbb_runtime.txt
+
+=====================================
+ADDITIONAL CONTEXT FILES
+=====================================
+
+aria_specs.txt - ALWAYS UPLOAD THIS
+  Location: /home/randy/._____RANDY_____/REPOS/aria/docs/info/aria_specs.txt
+  Size: ~20KB
+  Contains: Complete language specification
+
+Existing Research (upload as needed):
+  docs/research/async_await_implementation.md
+  docs/research/wildx_memory_regions.md
+  docs/research/generics_monomorphization_implementation.md
+  docs/research/module_system_implementation.md
+  docs/research/lambda_closure_implementation.md
+  ... (see research_context/index.md for full list)
+
+=====================================
+UPLOAD STRATEGY
+=====================================
+
+For each research task:
+1. Count required files (must be ≤10 total including specs and this guide)
+2. Upload aria_specs.txt FIRST
+3. Upload THIS navigation file SECOND
+4. Upload recommended source parts (in order listed above)
+5. Upload any additional research docs if room remains
+6. Send the task description from tasks/research_XXX.txt
+
+If you hit the 10-file limit:
+- Prioritize files marked CRITICAL or LARGE in task recommendations
+- Skip parser/frontend details for backend-focused tasks
+- Skip codegen details for frontend-focused tasks
+
+=====================================
+TIPS FOR GEMINI
+=====================================
+
+- Parts marked [LARGE] are 60-88KB but contain essential logic
+- Source files are well-commented with section headers
+- Each part starts with "ARIA COMPILER SOURCE - PART X of Y"
+- Look for "TODO", "FIXME", "STUB" comments for incomplete features
+- Cross-reference with aria_specs.txt for requirements
+
+=====================================
+END OF NAVIGATION GUIDE
+=====================================
+
+
+=== RESEARCH CONTEXT INDEX ===
+
+# Research Context Index
+
+This directory contains source compilations and existing research for Gemini tasks.
+
+## Source Code Compilations
+
+**13 Parts** covering the complete Aria compiler codebase, split for Gemini's upload limits:
+
+- **Part 1a-1b**: Frontend (Tokens, Lexer, Preprocessor)
+- **Part 2**: AST Definitions  
+- **Part 3a-3c**: Parser (Header, Core, Expressions)
+- **Part 4**: Parser Components (Declarations, Functions, Structs, Traits)
+- **Part 5a-5b**: Semantic Analysis (Type Checker, Borrow Checker, Traits)
+- **Part 6a-6b**: CodeGen Core (Context, Headers, Expressions)
+- **Part 7a-7c**: CodeGen Components (Statements, Control Flow, Lambda, Async)
+- **Part 8**: Advanced Features (TBB, Monomorphization, VTable, Runtime)
+
+**See NAVIGATION_GUIDE.txt** for detailed file recommendations for each research task.
+
+## Existing Research Documents
+
+**Location:** `/home/randy/._____RANDY_____/REPOS/aria/docs/research/`
+
+### Work Packages (5 docs)
+- `aria_work_package_1_core_runtime.md` - Core runtime, GC, memory model
+- `aria_work_package_2_advanced_features.md` - SIMD, wildx, struct methods
+- `aria_work_package_3_stdlib.md` - Standard library functions
+- `aria_work_package_4_metaprogramming.md` - Macros, generics, comptime
+- `aria_work_package_5_optimization.md` - Compiler optimizations
+
+### Architectural Reviews (3 docs)
+- `aria_llvm_architecture_review.md` - LLVM integration analysis
+- `aria_compiler_architecture_recommendations.md` - Architecture improvements
+- `aria_compiler_cleanup_plan.md` - Codebase organization
+
+### Feature-Specific Research (9 docs)
+- `async_await_implementation.md` - Async runtime, event loop, futures
+- `generics_monomorphization_implementation.md` - Generic type instantiation
+- `module_system_implementation.md` - Module loading, namespaces
+- `lambda_closure_implementation.md` - Lambda captures, closure conversion
+- `gc_nursery_implementation.md` - Generational GC design
+- `simd_vector_implementation.md` - SIMD intrinsics, vectorization
+- `stack_trace_implementation.md` - Debug information, unwinding
+- `fat_pointer_implementation.md` - Slice representation, bounds checking
+- `trait_system_implementation.md` - Trait resolution, dispatch
+
+### Metaprogramming Specs (4 docs)
+- `metaprogramming_macro_expansion.md` - NASM-style macros
+- `metaprogramming_comptime_evaluation.md` - Compile-time execution
+- `metaprogramming_type_reflection.md` - Type introspection
+- `metaprogramming_code_generation.md` - AST manipulation
+
+## Usage for Research Tasks
+
+When creating a task, reference relevant documents in the `context_files` array of the task JSON. For example:
+
+```json
+"context_files": [
+  "/home/randy/._____RANDY_____/REPOS/aria/docs/info/aria_specs.txt",
+  "/home/randy/._____RANDY_____/REPOS/aria/docs/research/async_await_implementation.md"
+]
+```
+
+## Coverage Analysis
+
+See `/home/randy/._____RANDY_____/WORK_SPACE/RESEARCH_COVERAGE_ANALYSIS.md` for detailed mapping of which research documents cover which features.
+
+**Summary:**
+- 16 features fully researched (ready to implement)
+- 2 features partially researched
+- 10 features need new research (tasks research_001 through research_010)
+
+
+=== ARIA LANGUAGE SPECIFICATIONS ===
+
 /* types
 int1,
 int2,

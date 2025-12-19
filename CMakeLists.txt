@@ -62,9 +62,26 @@ llvm_map_components_to_libnames(llvm_libs
 # ============================================================================
 
 # Find LLDB library
-find_library(LLDB_LIBRARY NAMES lldb LLDB HINTS ${LLVM_LIBRARY_DIRS})
+find_library(LLDB_LIBRARY 
+    NAMES lldb LLDB lldb-20
+    HINTS ${LLVM_LIBRARY_DIRS} /usr/lib/llvm-20/lib
+    PATHS /usr/lib/x86_64-linux-gnu
+)
 if(LLDB_LIBRARY)
     message(STATUS "Found LLDB library: ${LLDB_LIBRARY}")
+    # LLDB headers are always in /usr/lib/llvm-*/include regardless of library location
+    # Try to find the version-specific directory
+    if(EXISTS "/usr/lib/llvm-20/include/lldb")
+        set(LLDB_INCLUDE_DIRS "/usr/lib/llvm-20/include")
+    elseif(EXISTS "/usr/lib/llvm-19/include/lldb")
+        set(LLDB_INCLUDE_DIRS "/usr/lib/llvm-19/include")
+    elseif(EXISTS "/usr/lib/llvm-18/include/lldb")
+        set(LLDB_INCLUDE_DIRS "/usr/lib/llvm-18/include")
+    else()
+        # Fallback: try to derive from LLVM_INCLUDE_DIRS
+        set(LLDB_INCLUDE_DIRS "${LLVM_INCLUDE_DIRS}")
+    endif()
+    message(STATUS "LLDB include directory: ${LLDB_INCLUDE_DIRS}")
     set(LLDB_FOUND TRUE)
 else()
     message(STATUS "LLDB library not found - debugger formatters will not be built")
@@ -182,12 +199,14 @@ set(TOOLS_SOURCES
     src/tools/lsp/vfs.cpp
     src/tools/lsp/work_queue.cpp
     src/tools/lsp/thread_pool.cpp
+    src/tools/debugger/web_server.cpp
 )
 
-# Phase 7.4: Debugger formatters (optional, requires LLDB)
+# Phase 7.4: Debugger (optional, requires LLDB)
 if(LLDB_FOUND)
     set(DEBUGGER_SOURCES
         src/tools/debugger/aria_formatters.cpp
+        src/tools/debugger/dap_server.cpp
     )
 endif()
 
@@ -221,6 +240,21 @@ add_executable(aria-ls src/tools/lsp/aria-ls.cpp
     ${AST_SOURCES}
 )
 # LSP server needs lexer, parser, diagnostics for real-time error checking
+
+# DAP server executable (Phase 7.4.3)
+if(LLDB_FOUND)
+    add_executable(aria-dap 
+        src/tools/debugger/aria_dap.cpp
+        ${DEBUGGER_SOURCES}
+    )
+    target_include_directories(aria-dap PRIVATE ${LLDB_INCLUDE_DIRS})
+    target_link_libraries(aria-dap ${LLDB_LIBRARY})
+    
+    message(STATUS "Building DAP server: aria-dap")
+    message(STATUS "LLDB include dirs for aria-dap: ${LLDB_INCLUDE_DIRS}")
+else()
+    message(STATUS "LLDB not found - DAP server will not be built")
+endif()
 
 # ============================================================================
 # Testing

@@ -244,6 +244,19 @@ aria-ls/fast:
 .PHONY : aria-ls/fast
 
 #=============================================================================
+# Target rules for targets named aria-dap
+
+# Build rule for target.
+aria-dap: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 aria-dap
+.PHONY : aria-dap
+
+# fast build rule for target.
+aria-dap/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/build
+.PHONY : aria-dap/fast
+
+#=============================================================================
 # Target rules for targets named Experimental
 
 # Build rule for target.
@@ -1727,6 +1740,105 @@ src/runtime/timer/timer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/timer/timer.cpp.s
 .PHONY : src/runtime/timer/timer.cpp.s
 
+src/tools/debugger/aria_dap.o: src/tools/debugger/aria_dap.cpp.o
+.PHONY : src/tools/debugger/aria_dap.o
+
+# target to build an object file
+src/tools/debugger/aria_dap.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_dap.cpp.o
+.PHONY : src/tools/debugger/aria_dap.cpp.o
+
+src/tools/debugger/aria_dap.i: src/tools/debugger/aria_dap.cpp.i
+.PHONY : src/tools/debugger/aria_dap.i
+
+# target to preprocess a source file
+src/tools/debugger/aria_dap.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_dap.cpp.i
+.PHONY : src/tools/debugger/aria_dap.cpp.i
+
+src/tools/debugger/aria_dap.s: src/tools/debugger/aria_dap.cpp.s
+.PHONY : src/tools/debugger/aria_dap.s
+
+# target to generate assembly for a file
+src/tools/debugger/aria_dap.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_dap.cpp.s
+.PHONY : src/tools/debugger/aria_dap.cpp.s
+
+src/tools/debugger/aria_formatters.o: src/tools/debugger/aria_formatters.cpp.o
+.PHONY : src/tools/debugger/aria_formatters.o
+
+# target to build an object file
+src/tools/debugger/aria_formatters.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_formatters.cpp.o
+.PHONY : src/tools/debugger/aria_formatters.cpp.o
+
+src/tools/debugger/aria_formatters.i: src/tools/debugger/aria_formatters.cpp.i
+.PHONY : src/tools/debugger/aria_formatters.i
+
+# target to preprocess a source file
+src/tools/debugger/aria_formatters.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_formatters.cpp.i
+.PHONY : src/tools/debugger/aria_formatters.cpp.i
+
+src/tools/debugger/aria_formatters.s: src/tools/debugger/aria_formatters.cpp.s
+.PHONY : src/tools/debugger/aria_formatters.s
+
+# target to generate assembly for a file
+src/tools/debugger/aria_formatters.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_formatters.cpp.s
+.PHONY : src/tools/debugger/aria_formatters.cpp.s
+
+src/tools/debugger/dap_server.o: src/tools/debugger/dap_server.cpp.o
+.PHONY : src/tools/debugger/dap_server.o
+
+# target to build an object file
+src/tools/debugger/dap_server.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/dap_server.cpp.o
+.PHONY : src/tools/debugger/dap_server.cpp.o
+
+src/tools/debugger/dap_server.i: src/tools/debugger/dap_server.cpp.i
+.PHONY : src/tools/debugger/dap_server.i
+
+# target to preprocess a source file
+src/tools/debugger/dap_server.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/dap_server.cpp.i
+.PHONY : src/tools/debugger/dap_server.cpp.i
+
+src/tools/debugger/dap_server.s: src/tools/debugger/dap_server.cpp.s
+.PHONY : src/tools/debugger/dap_server.s
+
+# target to generate assembly for a file
+src/tools/debugger/dap_server.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/dap_server.cpp.s
+.PHONY : src/tools/debugger/dap_server.cpp.s
+
+src/tools/debugger/web_server.o: src/tools/debugger/web_server.cpp.o
+.PHONY : src/tools/debugger/web_server.o
+
+# target to build an object file
+src/tools/debugger/web_server.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/debugger/web_server.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/debugger/web_server.cpp.o
+.PHONY : src/tools/debugger/web_server.cpp.o
+
+src/tools/debugger/web_server.i: src/tools/debugger/web_server.cpp.i
+.PHONY : src/tools/debugger/web_server.i
+
+# target to preprocess a source file
+src/tools/debugger/web_server.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/debugger/web_server.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/debugger/web_server.cpp.i
+.PHONY : src/tools/debugger/web_server.cpp.i
+
+src/tools/debugger/web_server.s: src/tools/debugger/web_server.cpp.s
+.PHONY : src/tools/debugger/web_server.s
+
+# target to generate assembly for a file
+src/tools/debugger/web_server.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/debugger/web_server.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/debugger/web_server.cpp.s
+.PHONY : src/tools/debugger/web_server.cpp.s
+
 src/tools/lsp/aria-ls.o: src/tools/lsp/aria-ls.cpp.o
 .PHONY : src/tools/lsp/aria-ls.o
 
@@ -1777,6 +1889,33 @@ src/tools/lsp/server.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/server.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/server.cpp.s
 .PHONY : src/tools/lsp/server.cpp.s
+
+src/tools/lsp/thread_pool.o: src/tools/lsp/thread_pool.cpp.o
+.PHONY : src/tools/lsp/thread_pool.o
+
+# target to build an object file
+src/tools/lsp/thread_pool.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/thread_pool.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/thread_pool.cpp.o
+.PHONY : src/tools/lsp/thread_pool.cpp.o
+
+src/tools/lsp/thread_pool.i: src/tools/lsp/thread_pool.cpp.i
+.PHONY : src/tools/lsp/thread_pool.i
+
+# target to preprocess a source file
+src/tools/lsp/thread_pool.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/thread_pool.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/thread_pool.cpp.i
+.PHONY : src/tools/lsp/thread_pool.cpp.i
+
+src/tools/lsp/thread_pool.s: src/tools/lsp/thread_pool.cpp.s
+.PHONY : src/tools/lsp/thread_pool.s
+
+# target to generate assembly for a file
+src/tools/lsp/thread_pool.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/thread_pool.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/thread_pool.cpp.s
+.PHONY : src/tools/lsp/thread_pool.cpp.s
 
 src/tools/lsp/transport.o: src/tools/lsp/transport.cpp.o
 .PHONY : src/tools/lsp/transport.o
@@ -1831,6 +1970,33 @@ src/tools/lsp/vfs.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/vfs.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/vfs.cpp.s
 .PHONY : src/tools/lsp/vfs.cpp.s
+
+src/tools/lsp/work_queue.o: src/tools/lsp/work_queue.cpp.o
+.PHONY : src/tools/lsp/work_queue.o
+
+# target to build an object file
+src/tools/lsp/work_queue.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/work_queue.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/work_queue.cpp.o
+.PHONY : src/tools/lsp/work_queue.cpp.o
+
+src/tools/lsp/work_queue.i: src/tools/lsp/work_queue.cpp.i
+.PHONY : src/tools/lsp/work_queue.i
+
+# target to preprocess a source file
+src/tools/lsp/work_queue.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/work_queue.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/work_queue.cpp.i
+.PHONY : src/tools/lsp/work_queue.cpp.i
+
+src/tools/lsp/work_queue.s: src/tools/lsp/work_queue.cpp.s
+.PHONY : src/tools/lsp/work_queue.s
+
+# target to generate assembly for a file
+src/tools/lsp/work_queue.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/work_queue.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/work_queue.cpp.s
+.PHONY : src/tools/lsp/work_queue.cpp.s
 
 src/tools/project_config.o: src/tools/project_config.cpp.o
 .PHONY : src/tools/project_config.o
@@ -1903,6 +2069,7 @@ help:
 	@echo "... intrinsics_gen"
 	@echo "... omp_gen"
 	@echo "... vt_gen"
+	@echo "... aria-dap"
 	@echo "... aria-ls"
 	@echo "... ariac"
 	@echo "... test_runner"
@@ -2041,18 +2208,36 @@ help:
 	@echo "... src/runtime/timer/timer.o"
 	@echo "... src/runtime/timer/timer.i"
 	@echo "... src/runtime/timer/timer.s"
+	@echo "... src/tools/debugger/aria_dap.o"
+	@echo "... src/tools/debugger/aria_dap.i"
+	@echo "... src/tools/debugger/aria_dap.s"
+	@echo "... src/tools/debugger/aria_formatters.o"
+	@echo "... src/tools/debugger/aria_formatters.i"
+	@echo "... src/tools/debugger/aria_formatters.s"
+	@echo "... src/tools/debugger/dap_server.o"
+	@echo "... src/tools/debugger/dap_server.i"
+	@echo "... src/tools/debugger/dap_server.s"
+	@echo "... src/tools/debugger/web_server.o"
+	@echo "... src/tools/debugger/web_server.i"
+	@echo "... src/tools/debugger/web_server.s"
 	@echo "... src/tools/lsp/aria-ls.o"
 	@echo "... src/tools/lsp/aria-ls.i"
 	@echo "... src/tools/lsp/aria-ls.s"
 	@echo "... src/tools/lsp/server.o"
 	@echo "... src/tools/lsp/server.i"
 	@echo "... src/tools/lsp/server.s"
+	@echo "... src/tools/lsp/thread_pool.o"
+	@echo "... src/tools/lsp/thread_pool.i"
+	@echo "... src/tools/lsp/thread_pool.s"
 	@echo "... src/tools/lsp/transport.o"
 	@echo "... src/tools/lsp/transport.i"
 	@echo "... src/tools/lsp/transport.s"
 	@echo "... src/tools/lsp/vfs.o"
 	@echo "... src/tools/lsp/vfs.i"
 	@echo "... src/tools/lsp/vfs.s"
+	@echo "... src/tools/lsp/work_queue.o"
+	@echo "... src/tools/lsp/work_queue.i"
+	@echo "... src/tools/lsp/work_queue.s"
 	@echo "... src/tools/project_config.o"
 	@echo "... src/tools/project_config.i"
 	@echo "... src/tools/project_config.s"

@@ -1,0 +1,414 @@
+﻿ARIA DEBUGGER ARCHITECTURE SPECIFICATION (ADB-2025)
+1. Executive Summary
+The evolution of the Aria programming language has necessitated the development of a bespoke debugging infrastructure capable of handling its unique memory semantics and control flow constructs. This report presents a comprehensive architectural specification for the Aria Debugger (ADB), a unified debugging platform designed to support CLI, Web, and IDE interfaces through a singular, robust backend. The proposed architecture leverages the existing LLVM 20.1.2 infrastructure 1 while introducing novel runtime introspection capabilities to visualize Aria's hybrid wild/gc memory model 1 and Twisted Balanced Binary (TBB) types.1
+Strategic analysis indicates that a custom debugger implementation wrapping LLDB (Low-Level Debugger) via its C++ Public API (liblldb) offers the optimal balance of performance, maintainability, and feature support. This approach allows Aria to inherit LLDB's mature platform support (Linux, macOS, Windows) and JIT-compilation capabilities while injecting Aria-specific semantics—such as ObjHeader decoding 1 and TBB error propagation logic 1—directly into the debugging engine. This bypasses the limitations of generic tools like GDB, which lack the extensibility required to visualize Aria's "wildx" executable memory regions and "sticky" error states without significant performance penalties.2
+The architecture adopts the Debug Adapter Protocol (DAP) 3 as the canonical communication standard. By acting as a DAP server, the aria-debug executable can simultaneously drive a standard IDE session (e.g., VS Code) over standard input/output streams and a custom high-fidelity Web UI over WebSockets.5 This decoupling ensures that the investment in debug logic yields dividends across all developer tooling surfaces. Furthermore, strict adherence to the DAP specification facilitates future integration with editors like Neovim 6 and Emacs 7 with minimal additional effort.
+This document details the technical implementation strategy, covering LLVM DWARF emission, runtime data formatting, memory visualization algorithms, and the asynchronous event loop required to bridge the gap between Aria's cooperative coroutines (async/await) and the operating system's thread model.
+________________
+2. Architectural Design
+The Aria Debugger is designed as a layered system where platform-specific debugging primitives are abstracted away from the user interface logic. This separation of concerns is critical for maintaining stability across different operating systems while providing a consistent debugging experience for Aria's unique language features.
+2.1 System Architecture Diagram
+The system operates as a single monolithic executable, aria-debug, which encapsulates the Debug Adapter protocol handling, the embedded Web server, and the LLDB bindings.
+
+
+Code snippet
+
+
+
+
+graph TD
+   subgraph "External Clients"
+       CLI
+       Web
+       IDE
+   end
+
+   subgraph "Aria Debugger Process (aria-debug)"
+       subgraph "Transport Layer"
+           WS
+           Stdio
+           Auth[Authentication Gate]
+       end
+
+       subgraph "Protocol Translation Layer"
+           DAP_Router
+           Cmd_Trans
+           Event_Loop[Asynchronous Event Loop]
+       end
+
+       subgraph "Semantics Engine"
+           TBB_Inspector
+           Mem_Visualizer[Memory Model Visualizer]
+           Flow_Tracker
+           Err_Decoder
+       end
+
+       subgraph "Backend Abstraction (liblldb)"
+           SBTarget
+           SBProcess
+           SBThread
+           SBFrame
+           Synth_Prov
+       end
+   end
+
+   subgraph "Target Execution Environment"
+       Binary
+       Heap[Managed Heap (Nursery/OldGen)]
+       WildX
+   end
+
+   CLI --> Cmd_Trans
+   Web -- "JSON-RPC (WebSocket)" --> WS
+   IDE -- "JSON-RPC (Stdio)" --> Stdio
+   WS --> Auth --> DAP_Router
+   Stdio --> DAP_Router
+   DAP_Router --> Cmd_Trans
+   Cmd_Trans --> SBTarget
+   SBProcess -- "ptrace / Mach ports" --> Binary
+   SBProcess -- "Memory Read" --> Heap
+   TBB_Inspector -.-> SBFrame
+   Mem_Visualizer -.-> Heap
+   Synth_Prov -.-> SBFrame
+
+2.2 Component Specifications
+2.2.1 The Debug Adapter Layer
+This layer functions as the nervous system of the debugger, translating abstract user intents (e.g., "pause," "inspect variable") into concrete engine operations.
+* Transport Mechanism: The implementation reuses the Transport class defined in src/tools/lsp/transport.cpp 1, which already implements the HTTP-like header framing required by LSP and DAP (Content-Length:...).
+* Concurrency Model: Unlike the LSP server which may be single-threaded, the Debugger requires a dedicated event thread to listen for asynchronous process events (e.g., breakpoints hit, signals received) from LLDB.8 The Event_Loop component manages this, broadcasting state changes to all connected clients.
+* Protocol Extension: Standard DAP is insufficient for Aria's memory features. We extend the protocol with custom requests:
+   * ariaMemoryMap: Request a heatmap of the heap layout.
+   * ariaDeferTrace: Request the stack of pending defer statements.
+2.2.2 The Debug Engine (LLDB Backend)
+The decision to link against liblldb 9 rather than wrapping the lldb executable CLI allows for direct memory access and object manipulation without textual parsing overhead.
+* Symbolication: LLDB's internal DWARF parser maps instruction pointers to DICompileUnit and DISubprogram entries generated by the Aria compiler.10
+* JIT Support: The engine utilizes LLDB's JIT capabilities to evaluate Aria expressions dynamically. This is particularly relevant for wildx regions where code is generated at runtime.1
+2.2.3 The Embedded Web Server
+To adhere to the "no external dependencies" constraint, the Web Server is implemented using a minimal, single-header C++ WebSocket library (e.g., a derivative of uWebSockets or a raw BSD socket implementation).
+* Asset Serving: Static assets (HTML, CSS, JS) are compiled into the aria-debug binary as byte arrays (using xxd -i or similar during build) and served directly from memory. This ensures the debugger is a single, portable binary.
+* Security: The server enforces token-based authentication. Upon launch, aria-debug generates a one-time token printed to the console, which the Web UI must present in the WebSocket handshake.
+________________
+3. LLVM Integration & Debug Info GenerationStrategy
+The efficacy of the debugger is strictly limited by the quality of the DWARF metadata emitted during compilation. The current Aria backend stub 1 lacks this critical data. This section details the integration strategy for llvm::DIBuilder.
+3.1 DWARF Emission Lifecycle
+The IRGenerator class 1 must be augmented to manage a DIBuilder lifecycle parallel to the IRBuilder.
+
+
+Stage
+	Action
+	LLVM API Call
+	Module Init
+	Create Compile Unit
+	DIBuilder::createCompileUnit(DW_LANG_C, file, producer,...) 12
+	Type Definition
+	Map Aria Types
+	DIBuilder::createBasicType, createStructType, createTypedef
+	Function Start
+	Define Subprogram
+	DIBuilder::createFunction, createLexicalBlock
+	Statement
+	Set Location
+	builder.SetCurrentDebugLocation(DILocation::get(...))
+	Variable
+	Declare Local
+	DIBuilder::insertDeclare (creates llvm.dbg.declare intrinsic)
+	Module Finalize
+	Finalize DWARF
+	DIBuilder::finalize()
+	3.2 Mapping Aria Semantics to DWARF
+Aria's unique types require specific DWARF tagging strategies to ensure the debugger can distinguish them from standard C/C++ types.
+3.2.1 Twisted Balanced Binary (TBB) Types
+TBB types (tbb8, tbb16, etc.) use standard integer storage but possess distinct semantic ranges and error sentinels.1
+* Problem: If mapped solely as DW_ATE_signed, LLDB will display a tbb8 value of -128 as -128, whereas it semantically represents ERR.
+* Solution: Usage of DW_TAG_typedef.
+   * Create a base type: int8_t (signed, 8-bit).
+   * Create a typedef: tbb8 pointing to int8_t.
+   * Implication: The custom LLDB formatter can now match against the type name tbb8 specifically, implementing the logic: if (val == -128) return "ERR";.
+3.2.2 The Memory Model (wild vs gc)
+The distinction between wild (unmanaged) and gc (managed) pointers is critical for safety analysis.
+* GC Pointers: These point to the payload of an object, but are preceded by an 8-byte ObjHeader.1
+* DWARF Strategy:
+   * Emit gc pointers as a distinct typedef: gc_ptr<T>.
+   * Emit wild pointers as standard pointers or wild_ptr<T>.
+   * This allows the "Synthetic Children Provider" in LLDB to detect gc_ptr<T>, subtract 8 bytes from the address, read the ObjHeader, and display metadata (mark bit, pinned bit) alongside the actual value.1
+3.2.3 Control Flow Mapping (pick & defer)
+Pick Statements:
+A pick statement translates to complex branching logic. To ensure stepping feels natural:
+* Lexical Blocks: Each case in a pick statement must open a new DILexicalBlock.
+* Fallthrough: The fall statement acts as a goto. The jump instruction generated for fall must be attributed to the source line of the fall keyword. This ensures the debugger pauses on the fall statement before executing the jump, clarifying the flow of control to the user.
+Defer Statements:
+defer blocks execute at scope exit, often resulting in code duplication at multiple return sites.
+* Inlining Strategy: The most robust approach is to encapsulate the defer block's body into an internal static function in the IR. At each scope exit point, generate a call to this function.
+* Debug Info: Attribute the call instruction to the line number of the defer keyword. This creates a cohesive debugging experience where the instruction pointer appears to "jump" back to the defer declaration before leaving the function.
+________________
+4. Implementation of Aria-Specific Debug Features
+4.1 TBB Type Inspection
+Requirement: Correct display of TBB values and ERR sentinels.
+The implementation utilizes LLDB's C++ Data Formatter API.13 Unlike Python formatters, C++ formatters are compiled directly into the debugger, offering superior performance for high-frequency checks.
+Algorithm:
+1. Registration: Register a TypeSummary provider for types matching regex tbb\d+.
+2. Sentinel Extraction: Determine the bit-width ($N$) from the type name. Calculate the sentinel $S = -2^{(N-1)}$ (e.g., -128 for 8-bit).1
+3. Formatting:
+   * Read value $V$ from memory.
+   * If $V == S$: Return string literal "ERR".
+   * If $V \neq S$: Return standard decimal representation.
+   * Constraint Check: If the value is outside the symmetric range $[- (2^{N-1}-1), + (2^{N-1}-1)]$ but not $S$, annotate with (OVERFLOW).
+4.2 Memory Model Visualization
+Visualizing GC Objects:
+Aria's GC objects are prefixed with a 64-bit header.
+* Data Structure: ObjHeader contains mark_bit, pinned_bit, forwarded_bit, is_nursery, size_class, type_id.1
+* Synthetic Provider: A custom SBSyntheticChildrenProvider 13 is implemented for gc_ptr<T>.
+   * It creates a synthetic child named [header].
+   * It reads 8 bytes at offset -8.
+   * It decodes the bit-packed fields and presents them as human-readable children (e.g., pinned: true, gen: nursery).
+Visualizing WildX Regions:
+wildx represents executable memory for JIT compilation.
+* Detection: The debugger queries the OS memory map (e.g., via /proc/self/maps on Linux or VirtualQuery on Windows) looking for pages with RX (Read+Execute) permissions that map to the Aria process's heap range.
+* Integration: These regions are tagged as WildX in the memory map structure sent to the Web UI.
+4.3 Async/Await Coroutine Inspection
+Debugging asynchronous code requires reconstructing the state machine generated by the compiler.
+* State Machine Layout: An async function compiles to a struct containing the state index, captured local variables, and the promise.
+* Frame Reconstruction: When a breakpoint hits inside an async function, the physical stack frame corresponds to the poll() method of the state machine.
+* Logical Stack: The debugger must inspect the promise object to find the "parent" coroutine awaiting this one. By walking this chain of promises, the debugger synthesizes a "Logical Call Stack" that represents the async flow rather than the machine execution stack.
+4.4 Error Propagation (Result<T>)
+The Result<T> type is effectively a discriminated union { err: tbb, val: T }.1
+* Summary Provider:
+   * Inspect err. If err!= 0 (or NULL), Format as Error(code).
+   * If err == 0, Format as Ok(val).
+* Synthetic Children:
+   * If IsError: Expose only the err field.
+   * If IsOk: Expose only the val field.
+   * This declutters the view, allowing the developer to focus on the active state of the result.
+________________
+5. Web Interface Design
+The Web UI addresses the requirement for a "modern, intuitive" interface without external dependencies.
+5.1 Architecture
+The architecture embeds the frontend directly into the binary.
+* Server Logic: A custom C++ HttpServer class manages TCP connections. It identifies HTTP GET requests for / and serves the compressed HTML/JS payload stored in .rodata.
+* WebSocket Upgrade: Upon receiving Upgrade: websocket, the connection is handed off to the WebSocketTransport, which wraps DAP messages in WebSocket frames.
+5.2 Frontend Components
+The frontend is built using Vanilla JS (ES6 modules) to avoid build-step complexity and dependency bloat, ensuring the debugger is "batteries included".
+Memory Map Viewer:
+* Implementation: HTML5 <canvas> element.
+* Rendering:
+   * The heap is represented as a Hilbert Curve or simple grid to maximize screen real estate.
+   * Color Coding:
+      * Green: GC Nursery (Young Gen).
+      * Blue: GC Old Gen.
+      * Red: WildX (Executable).1
+      * Grey: Wild (Unmanaged).
+   * Interactivity: Clicking a block sends a readMemory request to the backend for the specific address range, displaying a hex dump in a modal.
+TBB Inspector:
+* Visualization: A custom variable view renderer checks the type string. If tbb*, it renders a graphical gauge showing the value's position within the symmetric range $[-127, +127]$.
+* ERR State: If value is "ERR", the gauge turns red and displays a warning icon.
+________________
+6. CLI Command Reference
+The CLI provides a familiar interface for veterans of GDB/LLDB while introducing Aria-specific commands.
+Command
+	Short
+	Arguments
+	Description
+	break
+	b
+	<file>:<line>
+	Set a breakpoint at the specified source location.
+	run
+	r
+	[args...]
+	Start the debugged program with arguments.
+	next
+	n
+	
+
+	Step over the current line.
+	step
+	s
+	
+
+	Step into the current line.
+	finish
+	fin
+	
+
+	Run until the current function returns.
+	continue
+	c
+	
+
+	Resume program execution.
+	print
+	p
+	<expr>
+	Evaluate an Aria expression in the current context.
+	print-tbb
+	pt
+	<var>
+	Aria Specific: Display raw integer, TBB value, and validation status (Valid/ERR/Overflow).
+	mem-map
+	mm
+	
+
+	Aria Specific: Render an ASCII-art visualization of memory regions (Wild/GC/WildX).
+	trace-defer
+	td
+	
+
+	Aria Specific: Print the stack of registered defer blocks for the current scope.
+	show-header
+	sh
+	<ptr>
+	Aria Specific: Decode and display the 64-bit ObjHeader for a GC object.
+	________________
+7. Implementation Roadmap
+Phase 1: Foundation & LLVM Integration (Weeks 1-4)
+* Goal: Enable basic debugging (breakpoints, stepping) in CLI.
+* Tasks:
+   1. Update IRGenerator::codegen to initialize DIBuilder and create DICompileUnit.
+   2. Implement mapTypeToDWARF focusing on createTypedef for TBB and createStructType for primitives.
+   3. Instrument VarDeclStmt and FuncDeclStmt to emit llvm.dbg.declare intrinsics.
+   4. Verify line table generation using llvm-dwarfdump.
+Phase 2: Runtime Support & Data Formatters (Weeks 5-8)
+* Goal: Aria-specific type visualization.
+* Tasks:
+   1. Implement C++ class AriaDataFormatters linking against liblldb.
+   2. Register summary providers for tbb* types to handle ERR sentinels.
+   3. Implement GCSyntheticChildProvider to read ObjHeader offsets.
+   4. Implement ResultSyntheticChildProvider for Result<T> unwrapping.
+Phase 3: DAP Server & Async Support (Weeks 9-12)
+* Goal: Protocol support and Async debugging.
+* Tasks:
+   1. Implement DAPServer class wrapping the existing Transport logic.
+   2. Map DAP stackTrace requests to LLDB SBThread::GetFrames.
+   3. Implement "Logical Stack" reconstruction for async functions by tracing Promise chains.
+   4. Build the EventLoop to bridge LLDB asynchronous events to DAP events.
+Phase 4: Web UI & Visualization (Weeks 13-16)
+* Goal: Rich visualization and completion.
+* Tasks:
+   1. Implement embedded C++ WebSocket server.
+   2. Develop Single Page Application (SPA) for the frontend (Source View, Variable Tree).
+   3. Implement Canvas-based Memory Map visualizer consuming custom DAP events.
+   4. Conduct cross-platform testing (Linux, macOS, Windows) to ensure ABI compatibility.
+________________
+8. Integration Points & Remote Debugging
+8.1 LSP Integration
+The Debugger and LSP server share the Virtual File System (VFS).1
+* Shared Code: Both tools link against libaria_frontend. The VirtualFileSystem class is refactored into a shared library.
+* Workflow: When the debugger is active, it queries the LSP's VFS for unsaved file contents. This ensures that if a user modifies code in the editor but hasn't saved, the debugger source view (in Web UI) reflects the editor state, even if the binary is stale.
+8.2 Remote Debugging Strategy
+To support debugging on remote machines (Requirement 5):
+* Protocol: The architecture utilizes the standard GDB Remote Serial Protocol (RSP) supported by LLDB.
+* Topology:
+   * Target Machine: Runs lldb-server platform --server --listen *:1234.
+   * Host Machine: Runs aria-debug.
+   * Connection: aria-debug sends SBTarget::ConnectRemote to the target.
+* Mapping: The debugger automatically maps local source paths to remote binary paths using target.source-map settings in LLDB.
+________________
+9. Testing Strategy
+9.1 Automated Test Suite
+* Scripted Tests: Python scripts utilizing lldb-dap python packages to send DAP requests and assert on JSON responses.
+* Mock Programs: A suite of "Torture Tests" written in Aria:
+   * test_tbb_overflow.aria: Deliberately overflows TBBs to ensure "ERR" is displayed.
+   * test_gc_pinning.aria: Pins objects and verifies pinned_bit visualization.
+   * test_defer_panic.aria: Triggers panic in a defer block to test stack unwinding visibility.
+9.2 Regression Testing
+* Breakpoint Accuracy: Verify DILocation accuracy by setting breakpoints on every line of a control flow dense program (pick/loop) and ensuring the instruction pointer lands correctly.
+________________
+10. Code Examples
+10.1 C++ TBB Formatter (Native API)
+This code snippet demonstrates how to implement the TBB inspection logic within the debugger backend.
+
+
+C++
+
+
+
+
+// src/debug/formatters/tbb_formatter.cpp
+#include <lldb/API/SBValue.h>
+#include <lldb/API/SBStream.h>
+
+bool AriaTBBSummaryProvider(lldb::SBValue val, lldb::SBInternalTypeSummaryOptions options, lldb::SBStream &stream) {
+   if (!val.IsValid()) return false;
+
+   // Get the type name to determine bit width
+   const char* typeName = val.GetType().GetName();
+   int bitWidth = 0;
+   if (strstr(typeName, "tbb8")) bitWidth = 8;
+   else if (strstr(typeName, "tbb16")) bitWidth = 16;
+   else if (strstr(typeName, "tbb32")) bitWidth = 32;
+   else if (strstr(typeName, "tbb64")) bitWidth = 64;
+
+   if (bitWidth == 0) return false;
+
+   // Calculate sentinel: -2^(N-1)
+   int64_t rawValue = val.GetValueAsSigned();
+   int64_t sentinel = -(1LL << (bitWidth - 1));
+
+   if (rawValue == sentinel) {
+       stream.Printf("ERR");
+   } else {
+       stream.Printf("%lld", rawValue);
+       
+       // Check for overflow (outside symmetric range)
+       int64_t maxVal = (1LL << (bitWidth - 1)) - 1;
+       if (rawValue < -maxVal |
+
+| rawValue > maxVal) {
+            stream.Printf(" (Invalid/Overflow)");
+       }
+   }
+   return true;
+}
+
+10.2 DIBuilder Initialization (Backend)
+Integrating debug info generation into the compiler backend.
+
+
+C++
+
+
+
+
+// src/backend/ir/ir_generator.cpp
+void IRGenerator::initDebugInfo(std::string filename, std::string directory) {
+   diBuilder = std::make_unique<llvm::DIBuilder>(*module);
+   
+   // Define the compile unit
+   diCU = diBuilder->createCompileUnit(
+       llvm::dwarf::DW_LANG_C, // Placeholder for DW_LANG_Aria
+       diBuilder->createFile(filename, directory),
+       "Aria Compiler v0.0.7",
+       isOptimized,
+       "", 
+       0
+   );
+   
+   // Register TBB typedefs
+   auto int8Ty = diBuilder->createBasicType("int8", 8, llvm::dwarf::DW_ATE_signed);
+   auto tbb8Ty = diBuilder->createTypedef(int8Ty, "tbb8", diFile, 0, diCU);
+   //... register other types
+}
+
+________________
+11. Conclusions
+The proposed design for the Aria Debugger represents a robust, industrial-strength solution that meets all specified requirements. By wrapping LLDB with a custom DAP layer, we achieve:
+1. Deep Language Integration: Through custom formatters for TBB and GC headers.
+2. Universal Accessibility: Via CLI, Web, and IDE interfaces driven by a single protocol.
+3. Future-Proofing: By leveraging LLVM/LLDB, the debugger automatically gains support for new architectures (ARM64, RISC-V) and OS updates.
+The implementation of WildX region visualization and defer tracking pushes the state of the art for language-specific debugging, positioning Aria as a language with first-class tooling support. The roadmap is aggressive but achievable, prioritizing DWARF emission as the critical path enabler for all downstream features.
+Works cited
+1. aria_source_part7_lsp_tooling.txt
+2. LLDB Debugger - Define custom types display - Stack Overflow, accessed December 18, 2025, https://stackoverflow.com/questions/46060219/lldb-debugger-define-custom-types-display
+3. Debug Adapter Client (dap) - CodeLite Documentation, accessed December 18, 2025, https://docs.codelite.org/plugins/dap/
+4. Official page for Debug Adapter Protocol, accessed December 18, 2025, https://microsoft.github.io/debug-adapter-protocol/
+5. IXWebSocket - GitHub Pages, accessed December 18, 2025, https://machinezone.github.io/IXWebSocket/
+6. Setting up Neovim DAP for codelldb in Nix dev shell | by Heshan Padmasiri - Medium, accessed December 18, 2025, https://medium.com/@hpheshan/setting-up-neovim-dap-for-codelldb-in-nix-dev-shell-b4ad29e34bf4
+7. How to setup and use dap-mode for C++ ? : r/emacs - Reddit, accessed December 18, 2025, https://www.reddit.com/r/emacs/comments/mxiqt6/how_to_setup_and_use_dapmode_for_c/
+8. Using LLDB C++ API for automated debugging sessions - LLVM Discussion Forums, accessed December 18, 2025, https://discourse.llvm.org/t/using-lldb-c-api-for-automated-debugging-sessions/52332
+9. The LLDB Debugger - LLVM, accessed December 18, 2025, https://lldb.llvm.org/
+10. llvm::DIBuilder Class Reference, accessed December 18, 2025, https://llvm.org/doxygen/classllvm_1_1DIBuilder.html
+11. class DIBuilder: LLVM/Clang 15.x documentation, accessed December 18, 2025, https://docs.hdoc.io/hdoc/llvm-project/r423D33D050D0B402.html
+12. lib/IR/DIBuilder.cpp Source File - LLVM, accessed December 18, 2025, https://llvm.org/doxygen/DIBuilder_8cpp_source.html
+13. Variable Formatting - LLDB, accessed December 18, 2025, https://lldb.llvm.org/use/variable.html
+14. Data Formatters - LLDB, accessed December 18, 2025, https://lldb.llvm.org/resources/dataformatters.html
+15. C or C++ websocket client working example - Stack Overflow, accessed December 18, 2025, https://stackoverflow.com/questions/69051106/c-or-c-websocket-client-working-example

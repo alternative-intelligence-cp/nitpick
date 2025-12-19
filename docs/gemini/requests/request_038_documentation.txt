@@ -1,0 +1,225 @@
+ARIA DOCUMENTATION SYSTEM - RESEARCH REQUEST
+============================================
+Date: December 18, 2025
+Priority: Post-Compiler Completion
+
+OBJECTIVE
+---------
+Create comprehensive, world-class documentation for Aria inspired by:
+- **rustdocs**: Best-in-class API documentation
+- **zigdocs**: Clean, minimal design with excellent examples
+- **MDN**: Web standards documentation quality
+
+Covering:
+1. **API/ABI/FFI Documentation**
+2. **Language Guide** (tutorial + reference)
+3. **Examples** (cookbook-style)
+4. **Best Practices** (idiomatic Aria)
+
+ARIA-SPECIFIC DOCUMENTATION NEEDS
+----------------------------------
+1. **TBB Type System**
+   - Why TBB? (symmetric ranges, ERR sentinel)
+   - When to use tbb8 vs int8 vs uint8
+   - Overflow behavior and safety
+   - Arithmetic examples with visual diagrams
+
+2. **Memory Model**
+   - wild vs gc: When to use each
+   - wildx: Executable memory for JIT
+   - stack: Explicit stack allocation
+   - defer: RAII-style cleanup
+   - Ownership and borrowing rules
+   - Common memory bugs and how to avoid
+
+3. **Control Flow**
+   - pick statement (switch/match hybrid)
+   - fall() explicit fallthrough
+   - pass()/fail() vs return
+   - Error handling patterns
+
+4. **Async Programming**
+   - async/await model
+   - Future<T> type
+   - Common pitfalls
+
+5. **FFI (Foreign Function Interface)**
+   - Calling C libraries
+   - Exporting Aria functions to C
+   - ABI compatibility guarantees
+   - Type mapping (Aria ↔ C)
+
+RESEARCH QUESTIONS
+------------------
+
+**1. Documentation Generator (aria-doc)**
+   - Should we build on existing tool (Doxygen, Sphinx, custom)?
+   - Input format:
+     * Doc comments in source: `/// ...` or `/** ... */`?
+     * Markdown files for guides
+     * Code examples in separate files
+   - Output formats:
+     * HTML (primary, hosted on GitHub Pages)
+     * Markdown (for GitHub repo)
+     * PDF (for offline reading)
+     * Man pages (for CLI tools)
+   - Features:
+     * Search functionality
+     * Syntax-highlighted code examples
+     * Interactive playground (WASM-based?)
+     * Dark/light theme toggle
+     * Mobile-responsive design
+
+**2. API Documentation Structure**
+   Study rustdoc and generate equivalent for Aria:
+   - Module organization
+   - Function signatures with type info
+   - Examples in every function doc
+   - "Panics" / "Errors" / "Safety" sections
+   - Related functions and types
+   - Source code links
+   - How to document:
+     * Generic functions
+     * TBB operator overloads
+     * Async functions
+     * Unsafe (wild) operations
+
+**3. Language Guide Structure**
+   Inspired by "The Rust Book" and Zig documentation:
+   
+   **Tutorial Section** (for beginners):
+   - Getting Started (install, hello world)
+   - Basic Syntax (variables, types, control flow)
+   - Functions and Modules
+   - Error Handling (Result<T>, pass/fail)
+   - Memory Management (first gc, then wild)
+   - TBB Types Introduction
+   - Building a Project (aria.toml)
+   
+   **Reference Section** (for lookup):
+   - Complete syntax grammar (EBNF)
+   - Keyword reference
+   - Type reference (all types with ranges)
+   - Operator reference (precedence table)
+   - Standard library API
+   - Compiler flags
+   - Project configuration (aria.toml spec)
+   
+   **Advanced Topics**:
+   - Async programming deep dive
+   - FFI and C interop
+   - Unsafe (wild) programming
+   - Performance optimization
+   - Compiler internals (for contributors)
+
+**4. Examples / Cookbook**
+   - Common tasks with code samples:
+     * File I/O (read, write, append)
+     * String manipulation
+     * Collections (arrays, maps, sets)
+     * Error handling patterns
+     * Testing
+     * Command-line parsing
+     * Web server (HTTP)
+     * Database access
+     * Concurrency
+     * Interop with C libraries
+   - Each example:
+     * Problem statement
+     * Complete, runnable code
+     * Explanation of key points
+     * Common variations
+
+**5. Best Practices Guide**
+   - Idiomatic Aria patterns
+   - Naming conventions (snake_case, CamelCase)
+   - When to use TBB vs regular ints
+   - Memory model decision tree
+   - Error handling patterns
+   - Testing strategies
+   - Documentation standards for library authors
+   - Performance tips
+   - Security guidelines
+
+**6. Visual Documentation**
+   - Diagrams for complex concepts:
+     * Memory layout (wild vs gc heap)
+     * TBB range visualization
+     * Async state machine
+     * Module system organization
+   - Tools: Mermaid, Graphviz, custom SVG?
+   - Interactive demos (WebAssembly playground?)
+
+**7. Search and Navigation**
+   - Full-text search across all docs
+   - Symbol search (jump to specific function/type)
+   - Smart suggestions ("Did you mean...?")
+   - Cross-references between sections
+   - Table of contents with anchor links
+   - Breadcrumb navigation
+
+**8. Versioning**
+   - How to document multiple Aria versions?
+   - Version selector dropdown (like Rust docs)
+   - Deprecation notices
+   - Migration guides between versions
+
+**9. Contribution Guide**
+   - How to contribute to compiler
+   - How to contribute to documentation
+   - Coding standards
+   - Testing requirements
+   - PR review process
+
+**10. Hosting and Deployment**
+   - GitHub Pages setup
+   - CI/CD for automatic doc generation
+   - Custom domain (aria-lang.org?)
+   - CDN for global performance
+
+STUDY THESE EXCELLENT DOCS
+--------------------------
+- **Rust**: https://doc.rust-lang.org/
+  - Book structure, API docs, examples
+- **Zig**: https://ziglang.org/documentation/
+  - Clean design, great examples
+- **MDN**: https://developer.mozilla.org/
+  - Comprehensive, searchable, well-organized
+- **Go**: https://go.dev/doc/
+  - Simple, effective, good examples
+- **Swift**: https://docs.swift.org/
+  - Modern design, playgrounds
+
+DESIRED RESEARCH OUTPUT
+-----------------------
+1. **Documentation site architecture**: Page structure, navigation
+2. **aria-doc tool design**: How it extracts and generates docs
+3. **Doc comment format**: Syntax and conventions
+4. **Template layouts**: HTML/CSS for API docs, guides, examples
+5. **Content outline**: Complete table of contents for all sections
+6. **Example code repository**: Structure for maintaining examples
+7. **Contribution workflow**: How users submit doc improvements
+8. **Deployment pipeline**: GitHub Actions → GitHub Pages automation
+9. **Style guide**: Writing standards for documentation authors
+10. **Search implementation**: Client-side or server-side?
+
+CONSTRAINTS
+-----------
+- Must be accessible (WCAG 2.1 AA compliant)
+- Fast loading (< 2s on slow connections)
+- Works offline (service worker for caching?)
+- No tracking/analytics (respect privacy)
+- SEO-friendly (proper meta tags, sitemap)
+- Mobile-responsive
+
+SUCCESS CRITERIA
+----------------
+1. New user can learn Aria from zero to productive in 1 week
+2. Experienced user can find any API detail in < 30 seconds
+3. Every stdlib function has runnable example
+4. Documentation is cited as reason people choose Aria
+5. Search returns relevant results instantly
+6. Docs are up-to-date with compiler (CI checks this)
+
+Please provide comprehensive guidance for creating documentation
+that developers will actually want to read and reference daily.

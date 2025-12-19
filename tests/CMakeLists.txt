@@ -70,6 +70,7 @@ add_executable(test_runner
     collections/test_collections.cpp
     strings/test_strings.cpp
     math/test_math.cpp
+    unit/test_web_server.cpp
     # Add more test files here as they are created
 )
 
@@ -125,13 +126,18 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/tools/lsp/vfs.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/lsp/work_queue.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/lsp/thread_pool.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/debugger/web_server.cpp
 )
 
-# Add debugger formatters if LLDB is available
+# Add debugger sources and tests if LLDB is available
 if(LLDB_FOUND)
     target_sources(test_runner PRIVATE
         ${CMAKE_SOURCE_DIR}/src/tools/debugger/aria_formatters.cpp
+        ${CMAKE_SOURCE_DIR}/src/tools/debugger/dap_server.cpp
+        unit/test_dap_server.cpp
     )
+    # Add LLDB include directories for test_runner
+    target_include_directories(test_runner PRIVATE ${LLDB_INCLUDE_DIRS})
 endif()
 
 # Include test helpers header

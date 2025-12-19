@@ -1,0 +1,1282 @@
+=== ARIA SOURCE PART 2: FRONTEND - AST & DIAGNOSTICS ===
+
+FILE: include/frontend/ast/ast_node.h
+====================================
+#ifndef ARIA_AST_NODE_H
+#define ARIA_AST_NODE_H
+
+#include <string>
+#include <memory>
+#include <vector>
+
+namespace aria {
+
+/**
+ * Base class for all Abstract Syntax Tree (AST) nodes.
+ * 
+ * The AST represents the hierarchical structure of Aria source code
+ * after parsing. Each node corresponds to a construct in the language.
+ */
+class ASTNode {
+public:
+    enum class NodeType {
+        // === EXPRESSIONS ===
+        LITERAL,              // Integer, float, string, boolean, null literals
+        IDENTIFIER,           // Variable/function names
+        BINARY_OP,            // Binary operations: +, -, *, /, etc.
+        UNARY_OP,             // Unary operations: -, !, ~, @, #, $
+        CALL,                 // Function calls
+        INDEX,                // Array indexing: arr[index]
+        MEMBER_ACCESS,        // Object member access: obj.member
+        POINTER_MEMBER,       // Pointer member access: ptr->member
+        LAMBDA,               // Lambda expressions: returnType(params) { body }
+        TEMPLATE_LITERAL,     // Template literals with interpolation
+        RANGE,                // Range expressions: start..end, start...end
+        TERNARY,              // Ternary operator: is cond : true_val : false_val
+        SAFE_NAV,             // Safe navigation: obj?.member
+        NULL_COALESCE,        // Null coalescing: value ?? default
+        PIPELINE,             // Pipeline operators: |>, <|
+        UNWRAP,               // Unwrap operator: result?
+        ARRAY_LITERAL,        // Array literal: [1, 2, 3]
+        OBJECT_LITERAL,       // Object literal: { key: value }
+        AWAIT,                // Await expression: await future (async/await)
+        
+        // === STATEMENTS ===
+        VAR_DECL,             // Variable declaration: type:name = value;
+        FUNC_DECL,            // Function declaration: func:name = returnType(params) { body };
+        RETURN,               // return statement
+        BREAK,                // break statement
+        CONTINUE,             // continue statement
+        DEFER,                // defer statement (RAII cleanup)
+        BLOCK,                // Code block: { ... }
+        EXPRESSION_STMT,      // Expression as statement
+        
+        // === CONTROL FLOW ===
+        IF,                   // if/else if/else
+        WHILE,                // while loop
+        FOR,                  // for loop
+        LOOP,                 // loop(start, limit, step)
+        TILL,                 // till(limit, step)
+        WHEN,                 // when/then/end loop
+        PICK,                 // pick (pattern matching)
+        PICK_CASE,            // Individual pick case
+        FALL,                 // fall statement (explicit fallthrough)
+        
+        // === TYPES ===
+        TYPE_ANNOTATION,      // Type annotation: int8, string, etc.
+        GENERIC_TYPE,         // Generic type: Array<T>
+        ARRAY_TYPE,           // Array type: int8[], int8[100]
+        POINTER_TYPE,         // Pointer type: int8*
+        FUNCTION_TYPE,        // Function type: func
+        
+        // === MODULES ===
+        USE,                  // use statement (import)
+        MOD,                  // mod statement (module definition)
+        EXTERN,               // extern block (FFI)
+        PROGRAM,              // Root node (entire program)
+        
+        // === SPECIAL ===
+        ASSIGNMENT,           // Assignment: =, +=, -=, etc.
+        PARAMETER,            // Function parameter
+        ARGUMENT,             // Function argument
+    };
+    
+    NodeType type;
+    int line;      // Source line number
+    int column;    // Source column number
+    
+    ASTNode(NodeType t, int l = 0, int c = 0) 
+        : type(t), line(l), column(c) {}
+    
+    virtual ~ASTNode() = default;
+    
+    /**
+     * Convert the node to a string representation (for debugging/testing)
+     */
+    virtual std::string toString() const = 0;
+    
+    /**
+     * Get the node type as a string
+     */
+    static std::string nodeTypeToString(NodeType type);
+    
+    /**
+     * Helper to check node type
+     */
+    bool isExpression() const;
+    bool isStatement() const;
+    bool isType() const;
+};
+
+// Smart pointer typedef for convenience
+using ASTNodePtr = std::shared_ptr<ASTNode>;
+
+} // namespace aria
+
+// Stream output operator for NodeType (for testing)
+std::ostream& operator<<(std::ostream& os, aria::ASTNode::NodeType type);
+
+#endif // ARIA_AST_NODE_H
+
+
+
+FILE: include/frontend/ast/expr.h
+====================================
+#ifndef ARIA_EXPR_H
+#define ARIA_EXPR_H
+
+#include "ast_node.h"
+#include "frontend/token.h"
+#include <variant>
+
+namespace aria {
+
+// Import Token from frontend namespace for convenience
+using aria::frontend::Token;
+using aria::frontend::TokenType;
+
+/**
+ * Literal expression node
+ * Represents: integer, float, string, boolean, null literals
+ */
+class LiteralExpr : public ASTNode {
+public:
+    std::variant<int64_t, double, std::string, bool, std::monostate> value;
+    
+    explicit LiteralExpr(int64_t val, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(val) {}
+    
+    explicit LiteralExpr(double val, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(val) {}
+    
+    explicit LiteralExpr(const std::string& val, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(val) {}
+    
+    explicit LiteralExpr(bool val, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(val) {}
+    
+    // Null literal
+    explicit LiteralExpr(std::monostate, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(std::monostate{}) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Identifier expression node
+ * Represents: variable names, function names
+ */
+class IdentifierExpr : public ASTNode {
+public:
+    std::string name;
+    
+    IdentifierExpr(const std::string& n, int line = 0, int column = 0)
+        : ASTNode(NodeType::IDENTIFIER, line, column), name(n) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Binary operation expression node
+ * Represents: a + b, x * y, etc.
+ */
+class BinaryExpr : public ASTNode {
+public:
+    ASTNodePtr left;
+    Token op;
+    ASTNodePtr right;
+    
+    BinaryExpr(ASTNodePtr l, const Token& o, ASTNodePtr r, int line = 0, int column = 0)
+        : ASTNode(NodeType::BINARY_OP, line, column), left(l), op(o), right(r) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Unary operation expression node
+ * Represents: -x, !flag, ~bits, @ptr, #ref, $iter
+ */
+class UnaryExpr : public ASTNode {
+public:
+    Token op;
+    ASTNodePtr operand;
+    bool isPostfix;
+    
+    UnaryExpr(const Token& o, ASTNodePtr operand, bool isPost = false, int line = 0, int column = 0)
+        : ASTNode(NodeType::UNARY_OP, line, column), op(o), operand(operand), isPostfix(isPost) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Function call expression node
+ * Represents: func(arg1, arg2, ...) or func::<T, U>(arg1, arg2, ...)
+ */
+class CallExpr : public ASTNode {
+public:
+    ASTNodePtr callee;
+    std::vector<ASTNodePtr> arguments;
+    std::vector<std::string> explicitTypeArgs;  // For turbofish syntax: ::<T, U>
+    
+    CallExpr(ASTNodePtr callee, const std::vector<ASTNodePtr>& args, int line = 0, int column = 0)
+        : ASTNode(NodeType::CALL, line, column), callee(callee), arguments(args) {}
+    
+    CallExpr(ASTNodePtr callee, const std::vector<ASTNodePtr>& args, 
+             const std::vector<std::string>& typeArgs, int line = 0, int column = 0)
+        : ASTNode(NodeType::CALL, line, column), callee(callee), arguments(args), 
+          explicitTypeArgs(typeArgs) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Array index expression node
+ * Represents: arr[index]
+ */
+class IndexExpr : public ASTNode {
+public:
+    ASTNodePtr array;
+    ASTNodePtr index;
+    
+    IndexExpr(ASTNodePtr arr, ASTNodePtr idx, int line = 0, int column = 0)
+        : ASTNode(NodeType::INDEX, line, column), array(arr), index(idx) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Member access expression node
+ * Represents: obj.member
+ */
+class MemberAccessExpr : public ASTNode {
+public:
+    ASTNodePtr object;
+    std::string member;
+    bool isPointerAccess;  // true for ->, false for .
+    
+    MemberAccessExpr(ASTNodePtr obj, const std::string& mem, bool isPtr = false, int line = 0, int column = 0)
+        : ASTNode(isPtr ? NodeType::POINTER_MEMBER : NodeType::MEMBER_ACCESS, line, column),
+          object(obj), member(mem), isPointerAccess(isPtr) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Ternary expression node
+ * Represents: is condition : true_value : false_value
+ */
+class TernaryExpr : public ASTNode {
+public:
+    ASTNodePtr condition;
+    ASTNodePtr trueValue;
+    ASTNodePtr falseValue;
+    
+    TernaryExpr(ASTNodePtr cond, ASTNodePtr trueVal, ASTNodePtr falseVal, int line = 0, int column = 0)
+        : ASTNode(NodeType::TERNARY, line, column),
+          condition(cond), trueValue(trueVal), falseValue(falseVal) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Assignment expression node
+ * Represents: x = 5, y += 3, etc.
+ */
+class AssignmentExpr : public ASTNode {
+public:
+    ASTNodePtr target;
+    Token op;  // =, +=, -=, *=, /=, %=
+    ASTNodePtr value;
+    
+    AssignmentExpr(ASTNodePtr tgt, const Token& o, ASTNodePtr val, int line = 0, int column = 0)
+        : ASTNode(NodeType::ASSIGNMENT, line, column), target(tgt), op(o), value(val) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Array literal expression node
+ * Represents: [1, 2, 3, 4]
+ */
+class ArrayLiteralExpr : public ASTNode {
+public:
+    std::vector<ASTNodePtr> elements;
+    
+    ArrayLiteralExpr(const std::vector<ASTNodePtr>& elems, int line = 0, int column = 0)
+        : ASTNode(NodeType::ARRAY_LITERAL, line, column), elements(elems) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Await expression node (Async/Await)
+ * Represents: await future_expression
+ * 
+ * Based on research_029_async_await_system.txt:
+ * - Suspends execution if the Future is not ready
+ * - Only valid within async functions or async blocks
+ * - Operand must be a type implementing the Future trait
+ */
+class AwaitExpr : public ASTNode {
+public:
+    ASTNodePtr operand;  // Expression that yields a Future
+    
+    AwaitExpr(ASTNodePtr expr, int line = 0, int column = 0)
+        : ASTNode(NodeType::AWAIT, line, column), operand(expr) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Lambda expression node (Closures)
+ * Represents: (x, y) => x + y  or  int64(int64 x, int64 y) { return x + y; }
+ * 
+ * Based on research_016_functional_types.txt:
+ * - Fat pointer representation: { method_ptr, env_ptr }
+ * - Captures can be by-value, by-reference, or by-move
+ * - Must respect Appendage Theory for lifetime safety
+ */
+class LambdaExpr : public ASTNode {
+public:
+    enum class CaptureMode {
+        BY_VALUE,      // Copy into closure environment
+        BY_REFERENCE,  // Capture as pointer (borrowing)
+        BY_MOVE        // Transfer ownership to closure
+    };
+    
+    struct CapturedVar {
+        std::string name;
+        CaptureMode mode;
+        ASTNodePtr typeAnnotation;  // Optional type hint
+        
+        CapturedVar(const std::string& n, CaptureMode m, ASTNodePtr type = nullptr)
+            : name(n), mode(m), typeAnnotation(type) {}
+    };
+    
+    std::vector<ASTNodePtr> parameters;      // Function parameters
+    std::string returnTypeName;              // Return type annotation (string like "int64", "string")
+    ASTNodePtr body;                         // Function body (BlockStmt)
+    std::vector<CapturedVar> capturedVars;   // Variables captured from outer scope (filled by semantic analysis)
+    bool isAsync;                            // true for async closures
+    
+    LambdaExpr(const std::vector<ASTNodePtr>& params, 
+               const std::string& retType,
+               ASTNodePtr bodyNode,
+               int line = 0, int column = 0)
+        : ASTNode(NodeType::LAMBDA, line, column),
+          parameters(params), returnTypeName(retType), body(bodyNode), isAsync(false) {}
+    
+    std::string toString() const override;
+};
+
+} // namespace aria
+
+#endif // ARIA_EXPR_H
+
+
+
+FILE: include/frontend/ast/stmt.h
+====================================
+#ifndef ARIA_STMT_H
+#define ARIA_STMT_H
+
+#include "ast_node.h"
+#include "expr.h"
+
+namespace aria {
+
+/**
+ * Variable declaration statement node
+ * Represents: type:name = value;
+ */
+class VarDeclStmt : public ASTNode {
+public:
+    std::string typeName;      // e.g., "int8", "string"
+    std::string varName;
+    ASTNodePtr initializer;    // Can be nullptr
+    bool isWild;               // wild keyword (opt-out of GC)
+    bool isConst;              // const keyword
+    bool isStack;              // stack keyword
+    bool isGC;                 // gc keyword (explicit)
+    
+    VarDeclStmt(const std::string& type, const std::string& name, 
+                ASTNodePtr init = nullptr, int line = 0, int column = 0)
+        : ASTNode(NodeType::VAR_DECL, line, column),
+          typeName(type), varName(name), initializer(init),
+          isWild(false), isConst(false), isStack(false), isGC(false) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Generic parameter information
+ * Stores name and trait constraints for a type parameter
+ * Example: T: Addable & Display
+ */
+struct GenericParamInfo {
+    std::string name;                    // e.g., "T"
+    std::vector<std::string> constraints; // Trait bounds: ["Addable", "Display"]
+    
+    GenericParamInfo(const std::string& n) : name(n) {}
+    GenericParamInfo(const std::string& n, const std::vector<std::string>& c)
+        : name(n), constraints(c) {}
+    
+    bool hasConstraints() const { return !constraints.empty(); }
+};
+
+/**
+ * Function declaration statement node
+ * Represents: func:name = returnType(params) { body };
+ */
+class FuncDeclStmt : public ASTNode {
+public:
+    std::string funcName;
+    std::string returnType;
+    std::vector<ASTNodePtr> parameters;  // ParameterNode instances
+    ASTNodePtr body;                      // BlockStmt
+    bool isAsync;
+    bool isPublic;
+    bool isExtern;
+    std::vector<GenericParamInfo> genericParams;  // For generics: func<T: Trait, U>
+    
+    FuncDeclStmt(const std::string& name, const std::string& retType,
+                 const std::vector<ASTNodePtr>& params, ASTNodePtr body,
+                 int line = 0, int column = 0)
+        : ASTNode(NodeType::FUNC_DECL, line, column),
+          funcName(name), returnType(retType), parameters(params), body(body),
+          isAsync(false), isPublic(false), isExtern(false) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Function parameter node
+ * Represents: type:name in function parameters
+ */
+class ParameterNode : public ASTNode {
+public:
+    std::string typeName;
+    std::string paramName;
+    ASTNodePtr defaultValue;  // Can be nullptr
+    
+    ParameterNode(const std::string& type, const std::string& name,
+                  ASTNodePtr defVal = nullptr, int line = 0, int column = 0)
+        : ASTNode(NodeType::PARAMETER, line, column),
+          typeName(type), paramName(name), defaultValue(defVal) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Block statement node (code block)
+ * Represents: { stmt1; stmt2; ... }
+ */
+class BlockStmt : public ASTNode {
+public:
+    std::vector<ASTNodePtr> statements;
+    
+    BlockStmt(const std::vector<ASTNodePtr>& stmts, int line = 0, int column = 0)
+        : ASTNode(NodeType::BLOCK, line, column), statements(stmts) {}
+    
+    BlockStmt(int line = 0, int column = 0)
+        : ASTNode(NodeType::BLOCK, line, column) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Expression statement node
+ * Represents: any expression used as a statement
+ */
+class ExpressionStmt : public ASTNode {
+public:
+    ASTNodePtr expression;
+    
+    ExpressionStmt(ASTNodePtr expr, int line = 0, int column = 0)
+        : ASTNode(NodeType::EXPRESSION_STMT, line, column), expression(expr) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Return statement node
+ * Represents: return expr; or return;
+ */
+class ReturnStmt : public ASTNode {
+public:
+    ASTNodePtr value;  // Can be nullptr
+    
+    ReturnStmt(ASTNodePtr val = nullptr, int line = 0, int column = 0)
+        : ASTNode(NodeType::RETURN, line, column), value(val) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * If statement node
+ * Represents: if (condition) { thenBlock } else { elseBlock }
+ */
+class IfStmt : public ASTNode {
+public:
+    ASTNodePtr condition;
+    ASTNodePtr thenBranch;    // BlockStmt or single statement
+    ASTNodePtr elseBranch;    // Can be nullptr, or another IfStmt for else if
+    
+    IfStmt(ASTNodePtr cond, ASTNodePtr thenBlock, ASTNodePtr elseBlock = nullptr,
+           int line = 0, int column = 0)
+        : ASTNode(NodeType::IF, line, column),
+          condition(cond), thenBranch(thenBlock), elseBranch(elseBlock) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * While statement node
+ * Represents: while (condition) { body }
+ */
+class WhileStmt : public ASTNode {
+public:
+    ASTNodePtr condition;
+    ASTNodePtr body;
+    
+    WhileStmt(ASTNodePtr cond, ASTNodePtr bodyBlock, int line = 0, int column = 0)
+        : ASTNode(NodeType::WHILE, line, column),
+          condition(cond), body(bodyBlock) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * For statement node
+ * Represents: for (init; condition; update) { body }
+ */
+class ForStmt : public ASTNode {
+public:
+    ASTNodePtr initializer;   // Can be nullptr or VarDecl
+    ASTNodePtr condition;
+    ASTNodePtr update;
+    ASTNodePtr body;
+    
+    ForStmt(ASTNodePtr init, ASTNodePtr cond, ASTNodePtr upd, ASTNodePtr bodyBlock,
+            int line = 0, int column = 0)
+        : ASTNode(NodeType::FOR, line, column),
+          initializer(init), condition(cond), update(upd), body(bodyBlock) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Break statement node
+ * Represents: break; or break(label);
+ */
+class BreakStmt : public ASTNode {
+public:
+    std::string label;  // Empty string if unlabeled
+    
+    BreakStmt(const std::string& lbl = "", int line = 0, int column = 0)
+        : ASTNode(NodeType::BREAK, line, column), label(lbl) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Continue statement node
+ * Represents: continue; or continue(label);
+ */
+class ContinueStmt : public ASTNode {
+public:
+    std::string label;  // Empty string if unlabeled
+    
+    ContinueStmt(const std::string& lbl = "", int line = 0, int column = 0)
+        : ASTNode(NodeType::CONTINUE, line, column), label(lbl) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Defer statement node
+ * Represents: defer { block }
+ * Block-scoped RAII cleanup - executes at scope exit in LIFO order
+ */
+class DeferStmt : public ASTNode {
+public:
+    ASTNodePtr block;  // BlockStmt to execute on scope exit
+    
+    DeferStmt(ASTNodePtr blk, int line = 0, int column = 0)
+        : ASTNode(NodeType::DEFER, line, column), block(blk) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Till loop statement node
+ * Represents: till(limit, step) { body }
+ * Automatically tracks iteration via $ variable
+ * Directionality: positive step counts up from 0, negative counts down from limit
+ */
+class TillStmt : public ASTNode {
+public:
+    ASTNodePtr limit;  // Iteration limit
+    ASTNodePtr step;   // Step value (direction determined by sign)
+    ASTNodePtr body;   // Loop body
+    
+    TillStmt(ASTNodePtr lim, ASTNodePtr st, ASTNodePtr b, int line = 0, int column = 0)
+        : ASTNode(NodeType::TILL, line, column), limit(lim), step(st), body(b) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Loop statement node
+ * Represents: loop(start, limit, step) { body }
+ * Automatically tracks iteration via $ variable
+ * Direction determined by start vs limit comparison
+ */
+class LoopStmt : public ASTNode {
+public:
+    ASTNodePtr start;  // Starting value
+    ASTNodePtr limit;  // Limit value
+    ASTNodePtr step;   // Step value (always positive magnitude)
+    ASTNodePtr body;   // Loop body
+    
+    LoopStmt(ASTNodePtr st, ASTNodePtr lim, ASTNodePtr step_val, ASTNodePtr b, 
+             int line = 0, int column = 0)
+        : ASTNode(NodeType::LOOP, line, column), 
+          start(st), limit(lim), step(step_val), body(b) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * When loop statement node
+ * Represents: when(condition) { body } then { then_block } end { end_block }
+ * Tri-state: then executes on normal completion, end on break or initial false
+ */
+class WhenStmt : public ASTNode {
+public:
+    ASTNodePtr condition;     // Loop condition
+    ASTNodePtr body;          // Loop body
+    ASTNodePtr then_block;    // Executed on normal completion (optional)
+    ASTNodePtr end_block;     // Executed on break or no execution (optional)
+    
+    WhenStmt(ASTNodePtr cond, ASTNodePtr b, ASTNodePtr then_blk, ASTNodePtr end_blk,
+             int line = 0, int column = 0)
+        : ASTNode(NodeType::WHEN, line, column),
+          condition(cond), body(b), then_block(then_blk), end_block(end_blk) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Pick case node (individual case in pick statement)
+ * Represents: pattern { body } or label:pattern { body } or (!) { unreachable }
+ */
+class PickCase : public ASTNode {
+public:
+    std::string label;         // Optional label (empty if no label)
+    ASTNodePtr pattern;        // Pattern expression: (< 10), (9), (*), (!), etc.
+    ASTNodePtr body;           // Case body block
+    bool is_unreachable;       // True if pattern is (!)
+    
+    PickCase(const std::string& lbl, ASTNodePtr patt, ASTNodePtr b, bool unreachable = false,
+             int line = 0, int column = 0)
+        : ASTNode(NodeType::PICK_CASE, line, column),
+          label(lbl), pattern(patt), body(b), is_unreachable(unreachable) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Pick statement node (pattern matching)
+ * Represents: pick(selector) { case1, case2, ... }
+ */
+class PickStmt : public ASTNode {
+public:
+    ASTNodePtr selector;              // Expression being matched
+    std::vector<ASTNodePtr> cases;    // Vector of PickCase nodes
+    
+    PickStmt(ASTNodePtr sel, const std::vector<ASTNodePtr>& cs,
+             int line = 0, int column = 0)
+        : ASTNode(NodeType::PICK, line, column),
+          selector(sel), cases(cs) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Fall statement node (explicit fallthrough in pick)
+ * Represents: fall(label);
+ */
+class FallStmt : public ASTNode {
+public:
+    std::string target_label;     // Label to fall through to
+    
+    FallStmt(const std::string& label, int line = 0, int column = 0)
+        : ASTNode(NodeType::FALL, line, column),
+          target_label(label) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Use statement node (module import)
+ * Represents: use path.to.module;
+ *             use path.{item1, item2};
+ *             use path.*;
+ *             use "file.aria" as alias;
+ */
+class UseStmt : public ASTNode {
+public:
+    std::vector<std::string> path;    // ["std", "io"] for use std.io;
+    std::vector<std::string> items;   // ["array", "map"] for use std.{array, map};
+    bool isWildcard;                  // true for use math.*;
+    std::string alias;                // "utils" for use "./file.aria" as utils;
+    bool isFilePath;                  // true if path is a file path (quoted string)
+    
+    UseStmt(const std::vector<std::string>& p, int line = 0, int column = 0)
+        : ASTNode(NodeType::USE, line, column),
+          path(p), isWildcard(false), isFilePath(false) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Module statement node (module definition)
+ * Represents: mod name;                  (external file module)
+ *             mod name { ... }           (inline module)
+ *             pub mod name;              (public module)
+ */
+class ModStmt : public ASTNode {
+public:
+    std::string name;                     // Module name
+    bool isPublic;                        // true if pub mod
+    bool isInline;                        // true if inline module { }
+    std::vector<ASTNodePtr> body;         // Statements inside inline module
+    
+    ModStmt(const std::string& n, int line = 0, int column = 0)
+        : ASTNode(NodeType::MOD, line, column),
+          name(n), isPublic(false), isInline(false) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Extern block statement node (FFI declarations)
+ * Represents: extern "libname" { declarations }
+ *             extern "libc" { func:malloc = void*(uint64:size); }
+ */
+class ExternStmt : public ASTNode {
+public:
+    std::string libraryName;              // "libc", "kernel32", etc.
+    std::vector<ASTNodePtr> declarations; // Function/variable declarations
+    
+    ExternStmt(const std::string& libName, int line = 0, int column = 0)
+        : ASTNode(NodeType::EXTERN, line, column),
+          libraryName(libName) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Program node (root of AST)
+ * Represents: entire program
+ */
+class ProgramNode : public ASTNode {
+public:
+    std::vector<ASTNodePtr> declarations;
+    
+    ProgramNode(const std::vector<ASTNodePtr>& decls, int line = 0, int column = 0)
+        : ASTNode(NodeType::PROGRAM, line, column), declarations(decls) {}
+    
+    ProgramNode(int line = 0, int column = 0)
+        : ASTNode(NodeType::PROGRAM, line, column) {}
+    
+    std::string toString() const override;
+};
+
+} // namespace aria
+
+#endif // ARIA_STMT_H
+
+
+
+FILE: include/frontend/ast/type.h
+====================================
+#ifndef ARIA_TYPE_H
+#define ARIA_TYPE_H
+
+#include "ast_node.h"
+#include <vector>
+
+namespace aria {
+
+/**
+ * Base class for type annotations
+ * Represents type information in variable/function declarations
+ */
+class TypeNode : public ASTNode {
+public:
+    TypeNode(NodeType type, int line = 0, int column = 0)
+        : ASTNode(type, line, column) {}
+    
+    virtual ~TypeNode() = default;
+};
+
+/**
+ * Simple type annotation
+ * Represents: int8, string, bool, etc.
+ */
+class SimpleType : public TypeNode {
+public:
+    std::string typeName;  // e.g., "int8", "string", "bool"
+    
+    SimpleType(const std::string& name, int line = 0, int column = 0)
+        : TypeNode(NodeType::TYPE_ANNOTATION, line, column), typeName(name) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Pointer type annotation
+ * Represents: int8@, string@, obj@ (Aria native pointer syntax)
+ * Note: extern blocks use C-style * for FFI compatibility
+ */
+class PointerType : public TypeNode {
+public:
+    ASTNodePtr baseType;  // The type being pointed to
+    
+    PointerType(ASTNodePtr base, int line = 0, int column = 0)
+        : TypeNode(NodeType::POINTER_TYPE, line, column), baseType(base) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Array type annotation
+ * Represents: int8[], int8[100], string[]
+ */
+class ArrayType : public TypeNode {
+public:
+    ASTNodePtr elementType;  // Type of array elements
+    ASTNodePtr sizeExpr;     // Size expression (nullptr for dynamic arrays)
+    bool isDynamic;          // true for int8[], false for int8[100]
+    
+    ArrayType(ASTNodePtr elemType, ASTNodePtr size, int line = 0, int column = 0)
+        : TypeNode(NodeType::ARRAY_TYPE, line, column),
+          elementType(elemType), sizeExpr(size), isDynamic(size == nullptr) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Generic type annotation
+ * Represents: Array<int8>, Map<string, int32>
+ */
+class GenericType : public TypeNode {
+public:
+    std::string baseName;              // e.g., "Array", "Map"
+    std::vector<ASTNodePtr> typeArgs;  // Type arguments
+    
+    GenericType(const std::string& base, const std::vector<ASTNodePtr>& args,
+                int line = 0, int column = 0)
+        : TypeNode(NodeType::GENERIC_TYPE, line, column),
+          baseName(base), typeArgs(args) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Function type annotation
+ * Represents: func type in parameters or variables
+ */
+class FunctionType : public TypeNode {
+public:
+    ASTNodePtr returnType;              // Return type (can be another TypeNode)
+    std::vector<ASTNodePtr> paramTypes; // Parameter types
+    
+    FunctionType(ASTNodePtr retType, const std::vector<ASTNodePtr>& params,
+                 int line = 0, int column = 0)
+        : TypeNode(NodeType::FUNCTION_TYPE, line, column),
+          returnType(retType), paramTypes(params) {}
+    
+    std::string toString() const override;
+};
+
+} // namespace aria
+
+#endif // ARIA_TYPE_H
+
+
+
+FILE: include/frontend/diagnostics.h
+====================================
+#ifndef ARIA_DIAGNOSTICS_H
+#define ARIA_DIAGNOSTICS_H
+
+#include <string>
+#include <vector>
+#include <memory>
+#include <sstream>
+#include <iostream>
+
+namespace aria {
+
+// ============================================================================
+// Diagnostic Severity Levels
+// ============================================================================
+
+enum class DiagnosticLevel {
+    NOTE,       // Informational message (blue)
+    WARNING,    // Warning that doesn't stop compilation (yellow)
+    ERROR,      // Error that prevents compilation (red)
+    FATAL       // Fatal error that stops compilation immediately (bright red)
+};
+
+// Helper function to print DiagnosticLevel
+inline std::ostream& operator<<(std::ostream& os, DiagnosticLevel level) {
+    switch (level) {
+        case DiagnosticLevel::NOTE:    return os << "NOTE";
+        case DiagnosticLevel::WARNING: return os << "WARNING";
+        case DiagnosticLevel::ERROR:   return os << "ERROR";
+        case DiagnosticLevel::FATAL:   return os << "FATAL";
+        default:                       return os << "UNKNOWN";
+    }
+}
+
+// ============================================================================
+// Source Location - Where the diagnostic occurred
+// ============================================================================
+
+struct SourceLocation {
+    std::string filename;
+    int line;           // 1-indexed
+    int column;         // 1-indexed
+    int length;         // Length of the token/span
+    
+    SourceLocation(const std::string& file, int ln, int col, int len = 1)
+        : filename(file), line(ln), column(col), length(len) {}
+};
+
+// ============================================================================
+// Diagnostic - A single compiler message (error/warning/note)
+// ============================================================================
+
+class Diagnostic {
+public:
+    Diagnostic(DiagnosticLevel level, const SourceLocation& loc,
+               const std::string& message)
+        : level_(level), location_(loc), message_(message) {}
+    
+    // Add a note to this diagnostic (helpful context)
+    void addNote(const std::string& note) {
+        notes_.push_back(note);
+    }
+    
+    // Add a suggestion for fixing the issue
+    void addSuggestion(const std::string& suggestion) {
+        suggestions_.push_back(suggestion);
+    }
+    
+    // Getters
+    DiagnosticLevel level() const { return level_; }
+    const SourceLocation& location() const { return location_; }
+    const std::string& message() const { return message_; }
+    const std::vector<std::string>& notes() const { return notes_; }
+    const std::vector<std::string>& suggestions() const { return suggestions_; }
+    
+private:
+    DiagnosticLevel level_;
+    SourceLocation location_;
+    std::string message_;
+    std::vector<std::string> notes_;
+    std::vector<std::string> suggestions_;
+};
+
+// ============================================================================
+// DiagnosticEngine - Collects and formats diagnostics
+// ============================================================================
+
+class DiagnosticEngine {
+public:
+    DiagnosticEngine();
+    
+    // Add a diagnostic
+    void report(DiagnosticLevel level, const SourceLocation& loc,
+                const std::string& message);
+    
+    // Convenience methods
+    void error(const SourceLocation& loc, const std::string& message);
+    void warning(const SourceLocation& loc, const std::string& message);
+    void note(const SourceLocation& loc, const std::string& message);
+    void fatal(const SourceLocation& loc, const std::string& message);
+    
+    // Add a note to the last diagnostic
+    void addNote(const std::string& note);
+    
+    // Add a suggestion to the last diagnostic
+    void addSuggestion(const std::string& suggestion);
+    
+    // Check if we have errors
+    bool hasErrors() const { return error_count_ > 0; }
+    bool hasWarnings() const { return warning_count_ > 0; }
+    
+    // Get counts
+    int errorCount() const { return error_count_; }
+    int warningCount() const { return warning_count_; }
+    
+    // Get all diagnostics
+    const std::vector<std::unique_ptr<Diagnostic>>& diagnostics() const {
+        return diagnostics_;
+    }
+    
+    // Print all diagnostics to stderr
+    void printAll() const;
+    
+    // Print a single diagnostic
+    void print(const Diagnostic& diag) const;
+    
+    // Configuration
+    void setColorEnabled(bool enabled) { color_enabled_ = enabled; }
+    void setShowSourceContext(bool enabled) { show_source_context_ = enabled; }
+    void setWarningsAsErrors(bool enabled) { warnings_as_errors_ = enabled; }
+    
+    // Clear all diagnostics
+    void clear();
+    
+private:
+    std::vector<std::unique_ptr<Diagnostic>> diagnostics_;
+    int error_count_ = 0;
+    int warning_count_ = 0;
+    bool color_enabled_ = true;
+    bool show_source_context_ = true;
+    bool warnings_as_errors_ = false;
+    
+    // ANSI color codes
+    const char* RED = "\033[1;31m";
+    const char* YELLOW = "\033[1;33m";
+    const char* BLUE = "\033[1;34m";
+    const char* GREEN = "\033[1;32m";
+    const char* BOLD = "\033[1m";
+    const char* RESET = "\033[0m";
+    
+    // Helper methods
+    std::string getLevelString(DiagnosticLevel level) const;
+    std::string getLevelColor(DiagnosticLevel level) const;
+    std::string readSourceLine(const std::string& filename, int line) const;
+    void printSourceContext(const Diagnostic& diag) const;
+};
+
+} // namespace aria
+
+#endif // ARIA_DIAGNOSTICS_H
+
+
+
+FILE: src/frontend/diagnostics.cpp
+====================================
+#include "frontend/diagnostics.h"
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+
+namespace aria {
+
+// ============================================================================
+// DiagnosticEngine Implementation
+// ============================================================================
+
+DiagnosticEngine::DiagnosticEngine() 
+    : error_count_(0), warning_count_(0), 
+      color_enabled_(true), show_source_context_(true), 
+      warnings_as_errors_(false) {
+    // Check if stdout is a terminal (for color support)
+    // On Unix: isatty(fileno(stderr)) would be more correct, but keeping simple
+}
+
+void DiagnosticEngine::report(DiagnosticLevel level, const SourceLocation& loc,
+                                const std::string& message) {
+    // Upgrade warnings to errors if configured
+    if (level == DiagnosticLevel::WARNING && warnings_as_errors_) {
+        level = DiagnosticLevel::ERROR;
+    }
+    
+    // Create diagnostic
+    auto diag = std::make_unique<Diagnostic>(level, loc, message);
+    
+    // Update counts
+    if (level == DiagnosticLevel::ERROR || level == DiagnosticLevel::FATAL) {
+        error_count_++;
+    } else if (level == DiagnosticLevel::WARNING) {
+        warning_count_++;
+    }
+    
+    diagnostics_.push_back(std::move(diag));
+}
+
+void DiagnosticEngine::error(const SourceLocation& loc, const std::string& message) {
+    report(DiagnosticLevel::ERROR, loc, message);
+}
+
+void DiagnosticEngine::warning(const SourceLocation& loc, const std::string& message) {
+    report(DiagnosticLevel::WARNING, loc, message);
+}
+
+void DiagnosticEngine::note(const SourceLocation& loc, const std::string& message) {
+    report(DiagnosticLevel::NOTE, loc, message);
+}
+
+void DiagnosticEngine::fatal(const SourceLocation& loc, const std::string& message) {
+    report(DiagnosticLevel::FATAL, loc, message);
+}
+
+void DiagnosticEngine::addNote(const std::string& note) {
+    if (!diagnostics_.empty()) {
+        diagnostics_.back()->addNote(note);
+    }
+}
+
+void DiagnosticEngine::addSuggestion(const std::string& suggestion) {
+    if (!diagnostics_.empty()) {
+        diagnostics_.back()->addSuggestion(suggestion);
+    }
+}
+
+void DiagnosticEngine::clear() {
+    diagnostics_.clear();
+    error_count_ = 0;
+    warning_count_ = 0;
+}
+
+void DiagnosticEngine::printAll() const {
+    for (const auto& diag : diagnostics_) {
+        print(*diag);
+        std::cerr << "\n";  // Blank line between diagnostics
+    }
+    
+    // Print summary if we have multiple diagnostics
+    if (diagnostics_.size() > 1) {
+        std::cerr << (color_enabled_ ? BOLD : "") << "Summary: "
+                  << (color_enabled_ ? RESET : "");
+        
+        if (error_count_ > 0) {
+            std::cerr << (color_enabled_ ? RED : "") << error_count_ 
+                      << " error" << (error_count_ != 1 ? "s" : "")
+                      << (color_enabled_ ? RESET : "");
+        }
+        
+        if (error_count_ > 0 && warning_count_ > 0) {
+            std::cerr << ", ";
+        }
+        
+        if (warning_count_ > 0) {
+            std::cerr << (color_enabled_ ? YELLOW : "") << warning_count_ 
+                      << " warning" << (warning_count_ != 1 ? "s" : "")
+                      << (color_enabled_ ? RESET : "");
+        }
+        
+        std::cerr << "\n";
+    }
+}
+
+void DiagnosticEngine::print(const Diagnostic& diag) const {
+    const SourceLocation& loc = diag.location();
+    
+    // Format: filename:line:column: level: message
+    // Example: main.aria:10:5: error: unexpected token ';'
+    
+    std::cerr << (color_enabled_ ? BOLD : "") << loc.filename 
+              << ":" << loc.line << ":" << loc.column << ": "
+              << (color_enabled_ ? RESET : "");
+    
+    std::cerr << getLevelColor(diag.level()) << getLevelString(diag.level()) 
+              << (color_enabled_ ? RESET : "") << ": ";
+    
+    std::cerr << (color_enabled_ ? BOLD : "") << diag.message() 
+              << (color_enabled_ ? RESET : "") << "\n";
+    
+    // Print source context if enabled
+    if (show_source_context_) {
+        printSourceContext(diag);
+    }
+    
+    // Print notes
+    for (const auto& note : diag.notes()) {
+        std::cerr << (color_enabled_ ? BLUE : "") << "note: " 
+                  << (color_enabled_ ? RESET : "") << note << "\n";
+    }
+    
+    // Print suggestions
+    for (const auto& suggestion : diag.suggestions()) {
+        std::cerr << (color_enabled_ ? GREEN : "") << "suggestion: " 
+                  << (color_enabled_ ? RESET : "") << suggestion << "\n";
+    }
+}
+
+std::string DiagnosticEngine::getLevelString(DiagnosticLevel level) const {
+    switch (level) {
+        case DiagnosticLevel::NOTE:    return "note";
+        case DiagnosticLevel::WARNING: return "warning";
+        case DiagnosticLevel::ERROR:   return "error";
+        case DiagnosticLevel::FATAL:   return "fatal error";
+        default:                        return "unknown";
+    }
+}
+
+std::string DiagnosticEngine::getLevelColor(DiagnosticLevel level) const {
+    if (!color_enabled_) return "";
+    
+    switch (level) {
+        case DiagnosticLevel::NOTE:    return BLUE;
+        case DiagnosticLevel::WARNING: return YELLOW;
+        case DiagnosticLevel::ERROR:   return RED;
+        case DiagnosticLevel::FATAL:   return RED;
+        default:                        return "";
+    }
+}
+
+std::string DiagnosticEngine::readSourceLine(const std::string& filename, int line) const {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        return "";  // Can't read file, skip source context
+    }
+    
+    std::string current_line;
+    int current_line_num = 1;
+    
+    while (std::getline(file, current_line)) {
+        if (current_line_num == line) {
+            return current_line;
+        }
+        current_line_num++;
+    }
+    
+    return "";  // Line not found
+}
+
+void DiagnosticEngine::printSourceContext(const Diagnostic& diag) const {
+    const SourceLocation& loc = diag.location();
+    
+    // Read the source line
+    std::string source_line = readSourceLine(loc.filename, loc.line);
+    if (source_line.empty()) {
+        return;  // Couldn't read source, skip context
+    }
+    
+    // Print the source line with line number
+    std::cerr << std::setw(5) << loc.line << " | " << source_line << "\n";
+    
+    // Print the caret indicator (^)
+    // Calculate spacing: line number width (5) + " | " (3) + column position
+    std::string spacing(5 + 3 + loc.column - 1, ' ');
+    std::cerr << spacing << (color_enabled_ ? GREEN : "");
+    
+    // Print carets under the problem area
+    for (int i = 0; i < loc.length; i++) {
+        std::cerr << "^";
+    }
+    
+    std::cerr << (color_enabled_ ? RESET : "") << "\n";
+}
+
+} // namespace aria
