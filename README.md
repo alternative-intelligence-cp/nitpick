@@ -385,7 +385,7 @@ If you find Aria useful, consider supporting its development! See [DONATIONS.md]
 
 - **GitHub Issues**: Bug reports
 - **Discussions**: Design questions
-- **Email**: [Contact info TBD]
+- **Email**: development@ai-liberation-platform.org
 
 ---
 
