@@ -184,10 +184,11 @@ set(TOOLS_SOURCES
     src/tools/lsp/thread_pool.cpp
 )
 
-# Phase 7.4: Debugger formatters (optional, requires LLDB)
+# Phase 7.4: Debugger (optional, requires LLDB)
 if(LLDB_FOUND)
     set(DEBUGGER_SOURCES
         src/tools/debugger/aria_formatters.cpp
+        src/tools/debugger/dap_server.cpp
     )
 endif()
 
@@ -221,6 +222,19 @@ add_executable(aria-ls src/tools/lsp/aria-ls.cpp
     ${AST_SOURCES}
 )
 # LSP server needs lexer, parser, diagnostics for real-time error checking
+
+# DAP server executable (Phase 7.4.3)
+if(LLDB_FOUND)
+    add_executable(aria-dap 
+        src/tools/debugger/aria_dap.cpp
+        ${DEBUGGER_SOURCES}
+    )
+    target_link_libraries(aria-dap ${LLDB_LIBRARY})
+    
+    message(STATUS "Building DAP server: aria-dap")
+else()
+    message(STATUS "LLDB not found - DAP server will not be built")
+endif()
 
 # ============================================================================
 # Testing
