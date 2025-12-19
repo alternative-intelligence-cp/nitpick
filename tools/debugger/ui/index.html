@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aria Debugger</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="debugger">
+        <!-- Top Toolbar -->
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <h1>🔍 Aria Debugger</h1>
+                <span id="connection-status" class="status-disconnected">● Disconnected</span>
+            </div>
+            <div class="toolbar-right">
+                <button id="btn-continue" class="btn-control" title="Continue (F5)" disabled>
+                    <span>▶️</span> Continue
+                </button>
+                <button id="btn-pause" class="btn-control" title="Pause" disabled>
+                    <span>⏸️</span> Pause
+                </button>
+                <button id="btn-step-over" class="btn-control" title="Step Over (F10)" disabled>
+                    <span>⤵️</span> Step Over
+                </button>
+                <button id="btn-step-into" class="btn-control" title="Step Into (F11)" disabled>
+                    <span>⬇️</span> Step Into
+                </button>
+                <button id="btn-step-out" class="btn-control" title="Step Out (Shift+F11)" disabled>
+                    <span>⬆️</span> Step Out
+                </button>
+                <button id="btn-restart" class="btn-control" title="Restart" disabled>
+                    <span>🔄</span> Restart
+                </button>
+                <button id="btn-stop" class="btn-control" title="Stop" disabled>
+                    <span>⏹️</span> Stop
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="content">
+            <!-- Left Panel: Source View -->
+            <div class="panel panel-source">
+                <div class="panel-header">
+                    <span>Source Code</span>
+                    <span id="current-file">No file loaded</span>
+                </div>
+                <div class="panel-body">
+                    <div class="source-view" id="source-view">
+                        <div class="source-placeholder">
+                            <p>📄 No source file loaded</p>
+                            <p>Start debugging to see source code</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Inspector -->
+            <div class="panel panel-inspector">
+                <!-- Call Stack -->
+                <div class="inspector-section">
+                    <div class="section-header">Call Stack</div>
+                    <div class="section-body">
+                        <div id="call-stack" class="call-stack">
+                            <div class="placeholder">No active debugging session</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Variables -->
+                <div class="inspector-section">
+                    <div class="section-header">Variables</div>
+                    <div class="section-body">
+                        <div id="variables" class="variables">
+                            <div class="placeholder">No variables in scope</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Breakpoints -->
+                <div class="inspector-section">
+                    <div class="section-header">Breakpoints</div>
+                    <div class="section-body">
+                        <div id="breakpoints" class="breakpoints">
+                            <div class="placeholder">No breakpoints set</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Panel: Console -->
+        <div class="console">
+            <div class="console-header">
+                <span>Debug Console</span>
+                <button id="btn-clear-console" class="btn-small">Clear</button>
+            </div>
+            <div class="console-body">
+                <div id="console-output" class="console-output"></div>
+                <div class="console-input">
+                    <span class="prompt">&gt;</span>
+                    <input type="text" id="console-input" placeholder="Evaluate expression..." disabled>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Memory Map Visualization Modal -->
+    <div id="memory-map-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Memory Map Visualization</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <canvas id="memory-canvas" width="800" height="600"></canvas>
+                <div class="memory-legend">
+                    <div class="legend-item"><span class="color-box gc"></span> GC Heap</div>
+                    <div class="legend-item"><span class="color-box wild"></span> Wild</div>
+                    <div class="legend-item"><span class="color-box wildx"></span> WildX</div>
+                    <div class="legend-item"><span class="color-box stack"></span> Stack</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="debugger.js"></script>
+</body>
+
+</html>

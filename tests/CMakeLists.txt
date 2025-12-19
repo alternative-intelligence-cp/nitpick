@@ -71,6 +71,7 @@ add_executable(test_runner
     strings/test_strings.cpp
     math/test_math.cpp
     unit/test_dap_server.cpp
+    unit/test_web_server.cpp
     # Add more test files here as they are created
 )
 
@@ -126,6 +127,7 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/tools/lsp/vfs.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/lsp/work_queue.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/lsp/thread_pool.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/debugger/web_server.cpp
 )
 
 # Add debugger sources if LLDB is available
