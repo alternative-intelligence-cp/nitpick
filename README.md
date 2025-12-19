@@ -91,47 +91,54 @@ func:main = int8() {
 
 ### Async/Await
 ```aria
-async fn fetch_data(url: string) -> Result<Data, Error> {
-    let response = await http_get(url);
-    let data = await response.json();
-    return Ok(data);
-}
+async func:fetch_data = obj(string:url) {
+    result:response = await httpGet(url);
+    if (response.err != NULL) {
+        fail(response.err);
+    }
+    result:data = await response.val.json();
+    pass(data.val);
+};
 
-async fn main() -> int8 {
-    let data = await fetch_data("https://api.example.com/data");
-    print(data);
+async func:main = int8() {
+    result:data = await fetch_data("https://api.example.com/data");
+    if (data.err == NULL) {
+        print(data.val);
+    }
     pass(0);
-}
+};
 ```
 
 ### Type-Bounded Behaviors
 ```aria
-// Define what types can do
-behavior Numeric {
-    fn add(self, other: Self) -> Self;
-    fn multiply(self, other: Self) -> Self;
-}
+// Generic function with type constraints
+func<T>:calculate = *T(*T:a, *T:b) {
+    // T must support + and * operators
+    *T:sum = a + b;
+    *T:result = sum * a;
+    pass(result);
+};
 
-// Generic function with constraints
-fn calculate<T: Numeric>(a: T, b: T) -> T {
-    return a.add(b).multiply(a);
-}
+// Usage with type inference
+int32:int_result = calculate(5, 10) ? 0;      // 15 * 5 = 75
+flt64:flt_result = calculate(2.5, 3.0) ? 0.0; // 5.5 * 2.5 = 13.75
 ```
 
 ### Memory Safety
 ```aria
-fn process_data() {
-    let data = vec![1, 2, 3, 4, 5];
+func:process_data = int8() {
+    int32[5]:data = [1, 2, 3, 4, 5];
     
-    // Borrow checking prevents errors
-    let borrowed = &data;  // Immutable borrow
-    print(borrowed[0]);     // OK
+    // Borrow checking with pinning and safe references
+    int32[5]$:borrowed = #data;  // Pin and create safe reference
+    print(`First element: &{borrowed[0]}`);  // OK
     
-    // data.push(6);        // ERROR: Can't mutate while borrowed
+    // data[0] = 10;  // ERROR: Can't mutate while borrowed reference exists
     
-    // Borrow ends, now we can mutate
-    data.push(6);           // OK
-}
+    // After borrowed goes out of scope, can mutate again
+    data[0] = 10;  // OK
+    pass(0);
+};
 
 ---
 
