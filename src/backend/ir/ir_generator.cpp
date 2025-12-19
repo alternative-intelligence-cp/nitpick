@@ -911,7 +911,15 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
             
             IdentifierExpr* callee = static_cast<IdentifierExpr*>(call->callee.get());
-            llvm::Function* calleeFunc = module->getFunction(callee->name);
+            
+            // Check if this is a specialized generic call
+            std::string functionName = callee->name;
+            if (!call->specializedMangledName.empty()) {
+                // Use the specialized mangled name from type checking
+                functionName = call->specializedMangledName;
+            }
+            
+            llvm::Function* calleeFunc = module->getFunction(functionName);
             
             if (!calleeFunc) {
                 return nullptr;  // Function not found
