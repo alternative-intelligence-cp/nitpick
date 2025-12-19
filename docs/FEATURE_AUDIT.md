@@ -23,12 +23,20 @@ This document audits ALL features promised in research files, specifications, an
 ### 1. Generics / Templates
 **Research**: research_027_generics_templates.txt  
 **Specified**: ✅ Full generic system with constraints  
-**Parser Support**: ❌ NO - Generic syntax not recognized  
-**Impact**: CRITICAL - Blocks collections, algorithms, reusable data structures  
+**Parser Support**: ✅ YES - All syntax parses correctly!  
+**Semantic Support**: ✅ YES - Full GenericResolver + Monomorphizer (679 lines)  
+**Integration**: ❌ NO - Not wired into TypeChecker or CodeGen  
+**Impact**: HIGH - Blocks collections, algorithms, but infrastructure exists!  
+**Status**: ~60% COMPLETE (parser + semantic done, needs integration)  
 **Evidence**:
-- `Vec<int32>` fails to parse
-- `func<T>` syntax not recognized
-- Cannot create generic functions or types
+- ✅ `func<T>:identity` syntax parses
+- ✅ `func<T: Trait>` constraints parse
+- ✅ `identity::<int32>(42)` turbofish works
+- ✅ Type inference implemented (inferTypeArgs)
+- ✅ Monomorphization engine complete (requestSpecialization)
+- ❌ TypeChecker doesn't invoke GenericResolver
+- ❌ IR Generator doesn't handle specialized functions
+**See**: docs/GENERICS_STATUS.md for full analysis
 
 ### 2. Module System
 **Research**: research_028_module_system.txt  

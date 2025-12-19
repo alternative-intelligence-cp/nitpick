@@ -26,6 +26,7 @@
 #include "frontend/lexer/lexer.h"
 #include "frontend/parser/parser.h"
 #include "frontend/sema/type_checker.h"
+#include "frontend/sema/generic_resolver.h"
 #include "frontend/sema/borrow_checker.h"
 #include "frontend/diagnostics.h"
 #include "frontend/warnings.h"
@@ -307,9 +308,26 @@ llvm::Module* compile_to_module(
         std::cout << "Phase 3: Semantic analysis...\n";
     }
     
-    // TODO: Type checker integration
-    // aria::TypeChecker type_checker;
-    // type_checker.check(module_node.get());
+    // Create type system and symbol table
+    aria::sema::TypeSystem type_system;
+    aria::sema::SymbolTable symbol_table;
+    
+    // Create generic resolver and monomorphizer
+    aria::sema::GenericResolver generic_resolver;
+    aria::sema::Monomorphizer monomorphizer(&generic_resolver);
+    
+    // Type checker with generic support
+    aria::sema::TypeChecker type_checker(&type_system, &symbol_table, &generic_resolver, &monomorphizer);
+    
+    // Run type checking on entire module (activates generic specialization)
+    type_checker.check(module_node.get());
+    
+    if (type_checker.hasErrors()) {
+        for (const auto& err : type_checker.getErrors()) {
+            diags.error(aria::SourceLocation(filename, 0, 0), err);
+        }
+        return nullptr;
+    }
     
     // TODO: Borrow checker integration  
     // aria::BorrowChecker borrow_checker;
@@ -325,6 +343,19 @@ llvm::Module* compile_to_module(
     if (!value) {
         diags.error(aria::SourceLocation(filename, 0, 0), "IR generation failed");
         return nullptr;
+    }
+    
+    // Generate IR for specialized generic functions
+    const auto& specializations = monomorphizer.getSpecializations();
+    if (!specializations.empty()) {
+        if (opts.verbose) {
+            std::cout << "  Generating " << specializations.size() 
+                     << " specialized generic function(s)...\n";
+        }
+        size_t generated = ir_gen.codegenSpecializedFunctions(specializations);
+        if (opts.verbose) {
+            std::cout << "  Generated " << generated << " specialization(s)\n";
+        }
     }
 
     // Return raw pointer - caller must keep IRGenerator alive

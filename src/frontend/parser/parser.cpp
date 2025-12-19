@@ -253,19 +253,14 @@ ASTNodePtr Parser::parseExpression(int minPrecedence) {
         if (prec < minPrecedence) break;
         
         // Special case: ternary operator
+        // Syntax: is (condition) : true_expr : false_expr
+        // NOT binary: the 'is' starts the whole ternary expression
+        // This case should NOT be hit since 'is' is not a binary operator on left side
         if (op.type == TokenType::TOKEN_KW_IS) {
-            advance(); // consume 'is'
-            ASTNodePtr condition = left;
-            consume(TokenType::TOKEN_COLON, "Expected '?' after 'is' condition");
-            ASTNodePtr trueExpr = parseExpression(prec + 1);
-            consume(TokenType::TOKEN_COLON, "Expected ':' in ternary expression");
-            ASTNodePtr falseExpr = parseExpression(prec);
-            
-            left = std::make_shared<TernaryExpr>(
-                condition, trueExpr, falseExpr,
-                op.line, op.column
-            );
-            continue;
+            // This should not happen in normal parsing
+            // because 'is' is handled in parsePrimary/parseUnary
+            error("Unexpected 'is' in expression - use: is (condition) : true_val : false_val");
+            return left;
         }
         
         // Binary operator
@@ -348,6 +343,40 @@ ASTNodePtr Parser::parsePrimary() {
         int col = token.column;
         advance();
         return std::make_shared<IdentifierExpr>(lexeme, line, col);
+    }
+
+    // Ternary expression: is (condition) : true_value : false_value
+    if (token.type == TokenType::TOKEN_KW_IS) {
+        int line = token.line;
+        int col = token.column;
+        advance(); // consume 'is'
+        
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'is'");
+        ASTNodePtr condition = parseExpression();
+        if (!condition) {
+            error("Expected condition expression in ternary");
+            return nullptr;
+        }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after ternary condition");
+        
+        consume(TokenType::TOKEN_COLON, "Expected ':' after ternary condition");
+        ASTNodePtr trueValue = parseExpression();
+        if (!trueValue) {
+            error("Expected true value in ternary");
+            return nullptr;
+        }
+        
+        consume(TokenType::TOKEN_COLON, "Expected second ':' in ternary expression");
+        ASTNodePtr falseValue = parseExpression();
+        if (!falseValue) {
+            error("Expected false value in ternary");
+            return nullptr;
+        }
+        
+        return std::make_shared<TernaryExpr>(
+            condition, trueValue, falseValue,
+            line, col
+        );
     }
 
     // Allow 'func' keyword to be used as identifier (for function name in test cases)

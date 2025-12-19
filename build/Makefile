@@ -1139,6 +1139,30 @@ src/frontend/sema/module_table.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/module_table.cpp.s
 .PHONY : src/frontend/sema/module_table.cpp.s
 
+src/frontend/sema/safety_checker.o: src/frontend/sema/safety_checker.cpp.o
+.PHONY : src/frontend/sema/safety_checker.o
+
+# target to build an object file
+src/frontend/sema/safety_checker.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/safety_checker.cpp.o
+.PHONY : src/frontend/sema/safety_checker.cpp.o
+
+src/frontend/sema/safety_checker.i: src/frontend/sema/safety_checker.cpp.i
+.PHONY : src/frontend/sema/safety_checker.i
+
+# target to preprocess a source file
+src/frontend/sema/safety_checker.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/safety_checker.cpp.i
+.PHONY : src/frontend/sema/safety_checker.cpp.i
+
+src/frontend/sema/safety_checker.s: src/frontend/sema/safety_checker.cpp.s
+.PHONY : src/frontend/sema/safety_checker.s
+
+# target to generate assembly for a file
+src/frontend/sema/safety_checker.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/safety_checker.cpp.s
+.PHONY : src/frontend/sema/safety_checker.cpp.s
+
 src/frontend/sema/symbol_table.o: src/frontend/sema/symbol_table.cpp.o
 .PHONY : src/frontend/sema/symbol_table.o
 
@@ -2326,6 +2350,9 @@ help:
 	@echo "... src/frontend/sema/module_table.o"
 	@echo "... src/frontend/sema/module_table.i"
 	@echo "... src/frontend/sema/module_table.s"
+	@echo "... src/frontend/sema/safety_checker.o"
+	@echo "... src/frontend/sema/safety_checker.i"
+	@echo "... src/frontend/sema/safety_checker.s"
 	@echo "... src/frontend/sema/symbol_table.o"
 	@echo "... src/frontend/sema/symbol_table.i"
 	@echo "... src/frontend/sema/symbol_table.s"

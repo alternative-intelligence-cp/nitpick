@@ -1,0 +1,586 @@
+/// Core collection data structures
+//!
+//! This module provides essential collection types for storing and manipulating
+//! groups of values. All collections use generics for type safety and support
+//! the Aria memory model with opt-out GC via the wild keyword.
+
+use std.mem;
+
+// ============================================================================
+// Vec<T> - Dynamic Array
+// ============================================================================
+
+/// A growable, heap-allocated array
+/// 
+/// Vec provides O(1) indexed access and amortized O(1) push/pop operations.
+/// Memory is managed automatically unless using wild allocation.
+///
+/// @example
+/// ```aria
+/// // Create empty vector
+/// Vec<int32>:numbers = Vec::new();
+/// numbers.push(10);
+/// numbers.push(20);
+/// numbers.push(30);
+/// 
+/// // Access elements
+/// int32:first = numbers.get(0) ? 0;  // 10
+/// int32:len = numbers.len();          // 3
+/// 
+/// // Iterate
+/// loop(0, numbers.len(), 1) {
+///     int32:val = numbers.get($) ? 0;
+///     stdout.write(`Value: &{val}\n`);
+/// }
+/// ```
+pub struct Vec<T> {
+    wild *T@:data;      // Pointer to heap data
+    uint64:length;      // Number of elements
+    uint64:capacity;    // Allocated capacity
+}
+
+/// Create a new empty vector
+/// @return A new Vec with zero capacity
+pub func<T>:vec_new = Vec<*T>() {
+    Vec<*T>:v = {
+        data: NULL,
+        length: 0,
+        capacity: 0
+    };
+    pass(v);
+};
+
+/// Create a vector with specified capacity
+/// @param cap Initial capacity to allocate
+/// @return A new Vec with pre-allocated space
+pub func<T>:vec_with_capacity = Vec<*T>(uint64:cap) {
+    wild *T@:ptr = aria.alloc<*T>(cap);
+    Vec<*T>:v = {
+        data: ptr,
+        length: 0,
+        capacity: cap
+    };
+    pass(v);
+};
+
+/// Add an element to the end of the vector
+/// @param vec The vector to push to
+/// @param value The value to add
+/// @return Result indicating success or allocation failure
+pub func<T>:vec_push = result(Vec<*T>@:vec, *T:value) {
+    // Check if we need to grow
+    if (vec->length >= vec->capacity) {
+        // Double capacity (or start at 4)
+        uint64:new_cap = is vec->capacity == 0 : 4 : vec->capacity * 2;
+        
+        // Allocate new buffer
+        wild *T@:new_data = aria.alloc<*T>(new_cap);
+        if (new_data == NULL) {
+            fail(ERR);  // Allocation failed
+        }
+        
+        // Copy existing elements
+        loop(0, vec->length, 1) {
+            new_data[$] = vec->data[$];
+        }
+        
+        // Free old buffer if it exists
+        if (vec->data != NULL) {
+            aria.free(vec->data);
+        }
+        
+        // Update vector
+        vec->data = new_data;
+        vec->capacity = new_cap;
+    }
+    
+    // Add element
+    vec->data[vec->length] = value;
+    vec->length = vec->length + 1;
+    
+    pass(NIL);
+};
+
+/// Remove and return the last element
+/// @param vec The vector to pop from
+/// @return The popped value, or ERR if empty
+pub func<T>:vec_pop = result<*T>(Vec<*T>@:vec) {
+    if (vec->length == 0) {
+        fail(ERR);  // Empty vector
+    }
+    
+    vec->length = vec->length - 1;
+    *T:value = vec->data[vec->length];
+    pass(value);
+};
+
+/// Get element at index
+/// @param vec The vector to access
+/// @param index The index to retrieve
+/// @return The element value, or ERR if out of bounds
+pub func<T>:vec_get = result<*T>(Vec<*T>@:vec, uint64:index) {
+    if (index >= vec->length) {
+        fail(ERR);  // Out of bounds
+    }
+    pass(vec->data[index]);
+};
+
+/// Set element at index
+/// @param vec The vector to modify
+/// @param index The index to set
+/// @param value The new value
+/// @return Result indicating success or out of bounds
+pub func<T>:vec_set = result(Vec<*T>@:vec, uint64:index, *T:value) {
+    if (index >= vec->length) {
+        fail(ERR);  // Out of bounds
+    }
+    vec->data[index] = value;
+    pass(NIL);
+};
+
+/// Get the number of elements in the vector
+/// @param vec The vector to query
+/// @return The number of elements
+pub func<T>:vec_len = uint64(Vec<*T>@:vec) {
+    pass(vec->length);
+};
+
+/// Get the allocated capacity
+/// @param vec The vector to query
+/// @return The capacity
+pub func<T>:vec_capacity = uint64(Vec<*T>@:vec) {
+    pass(vec->capacity);
+};
+
+/// Check if vector is empty
+/// @param vec The vector to check
+/// @return true if empty, false otherwise
+pub func<T>:vec_is_empty = bool(Vec<*T>@:vec) {
+    pass(vec->length == 0);
+};
+
+/// Remove all elements from the vector
+/// @param vec The vector to clear
+pub func<T>:vec_clear = result(Vec<*T>@:vec) {
+    vec->length = 0;
+    pass(NIL);
+};
+
+/// Reserve additional capacity
+/// @param vec The vector to resize
+/// @param additional Additional capacity to reserve
+pub func<T>:vec_reserve = result(Vec<*T>@:vec, uint64:additional) {
+    uint64:needed = vec->length + additional;
+    if (needed <= vec->capacity) {
+        pass(NIL);  // Already have enough capacity
+    }
+    
+    // Allocate new buffer
+    wild *T@:new_data = aria.alloc<*T>(needed);
+    if (new_data == NULL) {
+        fail(ERR);
+    }
+    
+    // Copy existing elements
+    loop(0, vec->length, 1) {
+        new_data[$] = vec->data[$];
+    }
+    
+    // Free old buffer
+    if (vec->data != NULL) {
+        aria.free(vec->data);
+    }
+    
+    vec->data = new_data;
+    vec->capacity = needed;
+    pass(NIL);
+};
+
+/// Free the vector's memory
+/// @param vec The vector to free
+pub func<T>:vec_free = result(Vec<*T>@:vec) {
+    if (vec->data != NULL) {
+        aria.free(vec->data);
+        vec->data = NULL;
+    }
+    vec->length = 0;
+    vec->capacity = 0;
+    pass(NIL);
+};
+
+// ============================================================================
+// HashMap<K,V> - Hash Table
+// ============================================================================
+
+/// A hash table mapping keys to values
+///
+/// HashMap provides O(1) average case insertion, lookup, and deletion.
+/// Uses open addressing with linear probing for collision resolution.
+///
+/// @example
+/// ```aria
+/// // Create hash map
+/// HashMap<string,int32>:scores = HashMap::new();
+/// scores.insert("Alice", 95);
+/// scores.insert("Bob", 87);
+/// 
+/// // Lookup
+/// result<int32>:alice_score = scores.get("Alice");
+/// if (alice_score.err == NULL) {
+///     stdout.write(`Alice scored: &{alice_score.val}\n`);
+/// }
+/// ```
+pub struct HashMap<K,V> {
+    wild HashEntry<K,V>@:entries;  // Array of entries
+    uint64:length;                  // Number of entries
+    uint64:capacity;                // Table capacity
+}
+
+/// Hash table entry
+struct HashEntry<K,V> {
+    *K:key;
+    *V:value;
+    bool:occupied;
+}
+
+/// Create a new empty hash map
+pub func<K,V>:hashmap_new = HashMap<*K,*V>() {
+    HashMap<*K,*V>:map = {
+        entries: NULL,
+        length: 0,
+        capacity: 0
+    };
+    pass(map);
+};
+
+/// Simple hash function for integers
+/// @param key The key to hash
+/// @return Hash value
+func hash_int = uint64(int64:key) {
+    // Simple multiplicative hash
+    uint64:h = key * 2654435761;
+    pass(h);
+};
+
+/// Insert or update a key-value pair
+/// @param map The hash map
+/// @param key The key
+/// @param value The value
+/// @return Result indicating success or allocation failure
+pub func<K,V>:hashmap_insert = result(HashMap<*K,*V>@:map, *K:key, *V:value) {
+    // TODO: Implement hash table insertion
+    // This is a placeholder showing the structure
+    pass(NIL);
+};
+
+/// Get value for a key
+/// @param map The hash map
+/// @param key The key to look up
+/// @return The value if found, or ERR if not present
+pub func<K,V>:hashmap_get = result<*V>(HashMap<*K,*V>@:map, *K:key) {
+    // TODO: Implement hash table lookup
+    fail(ERR);
+};
+
+/// Remove a key-value pair
+/// @param map The hash map
+/// @param key The key to remove
+/// @return Result indicating success
+pub func<K,V>:hashmap_remove = result(HashMap<*K,*V>@:map, *K:key) {
+    // TODO: Implement removal
+    pass(NIL);
+};
+
+/// Check if key exists
+/// @param map The hash map
+/// @param key The key to check
+/// @return true if key exists, false otherwise
+pub func<K,V>:hashmap_contains_key = bool(HashMap<*K,*V>@:map, *K:key) {
+    result<*V>:r = hashmap_get(map, key);
+    pass(r.err == NULL);
+};
+
+/// Get number of entries
+/// @param map The hash map
+/// @return Number of entries
+pub func<K,V>:hashmap_len = uint64(HashMap<*K,*V>@:map) {
+    pass(map->length);
+};
+
+/// Check if map is empty
+/// @param map The hash map
+/// @return true if empty, false otherwise
+pub func<K,V>:hashmap_is_empty = bool(HashMap<*K,*V>@:map) {
+    pass(map->length == 0);
+};
+
+/// Free the hash map's memory
+/// @param map The hash map to free
+pub func<K,V>:hashmap_free = result(HashMap<*K,*V>@:map) {
+    if (map->entries != NULL) {
+        aria.free(map->entries);
+        map->entries = NULL;
+    }
+    map->length = 0;
+    map->capacity = 0;
+    pass(NIL);
+};
+
+// ============================================================================
+// HashSet<T> - Hash Set
+// ============================================================================
+
+/// A set of unique values
+///
+/// HashSet provides O(1) average case insertion, lookup, and deletion.
+/// Implemented as a HashMap with unit values.
+///
+/// @example
+/// ```aria
+/// HashSet<int32>:seen = HashSet::new();
+/// seen.insert(42);
+/// seen.insert(17);
+/// 
+/// if (seen.contains(42)) {
+///     stdout.write("Found 42!\n");
+/// }
+/// ```
+pub struct HashSet<T> {
+    HashMap<*T,bool>:map;  // Uses HashMap internally
+}
+
+/// Create a new empty hash set
+pub func<T>:hashset_new = HashSet<*T>() {
+    HashSet<*T>:set = {
+        map: hashmap_new<*T,bool>()
+    };
+    pass(set);
+};
+
+/// Insert a value into the set
+/// @param set The hash set
+/// @param value The value to insert
+/// @return Result indicating success
+pub func<T>:hashset_insert = result(HashSet<*T>@:set, *T:value) {
+    result:r = hashmap_insert(@set->map, value, true);
+    pass(r);
+};
+
+/// Remove a value from the set
+/// @param set The hash set
+/// @param value The value to remove
+/// @return Result indicating success
+pub func<T>:hashset_remove = result(HashSet<*T>@:set, *T:value) {
+    result:r = hashmap_remove(@set->map, value);
+    pass(r);
+};
+
+/// Check if value exists in set
+/// @param set The hash set
+/// @param value The value to check
+/// @return true if value exists, false otherwise
+pub func<T>:hashset_contains = bool(HashSet<*T>@:set, *T:value) {
+    bool:has = hashmap_contains_key(@set->map, value);
+    pass(has);
+};
+
+/// Get number of elements
+/// @param set The hash set
+/// @return Number of elements
+pub func<T>:hashset_len = uint64(HashSet<*T>@:set) {
+    uint64:len = hashmap_len(@set->map);
+    pass(len);
+};
+
+/// Check if set is empty
+/// @param set The hash set
+/// @return true if empty, false otherwise
+pub func<T>:hashset_is_empty = bool(HashSet<*T>@:set) {
+    bool:empty = hashmap_is_empty(@set->map);
+    pass(empty);
+};
+
+/// Free the hash set's memory
+/// @param set The hash set to free
+pub func<T>:hashset_free = result(HashSet<*T>@:set) {
+    result:r = hashmap_free(@set->map);
+    pass(r);
+};
+
+// ============================================================================
+// LinkedList<T> - Doubly-Linked List
+// ============================================================================
+
+/// A doubly-linked list
+///
+/// LinkedList provides O(1) push/pop at both ends and O(n) indexing.
+/// Useful when you need efficient insertion/removal at arbitrary positions.
+///
+/// @example
+/// ```aria
+/// LinkedList<string>:names = LinkedList::new();
+/// names.push_back("Alice");
+/// names.push_back("Bob");
+/// names.push_front("Charlie");
+/// // List: Charlie -> Alice -> Bob
+/// ```
+pub struct LinkedList<T> {
+    wild Node<*T>@:head;
+    wild Node<*T>@:tail;
+    uint64:length;
+}
+
+/// Node in a linked list
+struct Node<T> {
+    *T:value;
+    wild Node<*T>@:next;
+    wild Node<*T>@:prev;
+}
+
+/// Create a new empty linked list
+pub func<T>:linkedlist_new = LinkedList<*T>() {
+    LinkedList<*T>:list = {
+        head: NULL,
+        tail: NULL,
+        length: 0
+    };
+    pass(list);
+};
+
+/// Add element to the front
+/// @param list The linked list
+/// @param value The value to add
+/// @return Result indicating success or allocation failure
+pub func<T>:linkedlist_push_front = result(LinkedList<*T>@:list, *T:value) {
+    // Allocate new node
+    wild Node<*T>@:node = aria.alloc<Node<*T>>(1);
+    if (node == NULL) {
+        fail(ERR);
+    }
+    
+    node->value = value;
+    node->next = list->head;
+    node->prev = NULL;
+    
+    if (list->head != NULL) {
+        list->head->prev = node;
+    }
+    
+    list->head = node;
+    
+    if (list->tail == NULL) {
+        list->tail = node;
+    }
+    
+    list->length = list->length + 1;
+    pass(NIL);
+};
+
+/// Add element to the back
+/// @param list The linked list
+/// @param value The value to add
+/// @return Result indicating success or allocation failure
+pub func<T>:linkedlist_push_back = result(LinkedList<*T>@:list, *T:value) {
+    // Allocate new node
+    wild Node<*T>@:node = aria.alloc<Node<*T>>(1);
+    if (node == NULL) {
+        fail(ERR);
+    }
+    
+    node->value = value;
+    node->next = NULL;
+    node->prev = list->tail;
+    
+    if (list->tail != NULL) {
+        list->tail->next = node;
+    }
+    
+    list->tail = node;
+    
+    if (list->head == NULL) {
+        list->head = node;
+    }
+    
+    list->length = list->length + 1;
+    pass(NIL);
+};
+
+/// Remove and return element from the front
+/// @param list The linked list
+/// @return The value, or ERR if empty
+pub func<T>:linkedlist_pop_front = result<*T>(LinkedList<*T>@:list) {
+    if (list->head == NULL) {
+        fail(ERR);  // Empty list
+    }
+    
+    wild Node<*T>@:node = list->head;
+    *T:value = node->value;
+    
+    list->head = node->next;
+    if (list->head != NULL) {
+        list->head->prev = NULL;
+    } else {
+        list->tail = NULL;
+    }
+    
+    aria.free(node);
+    list->length = list->length - 1;
+    
+    pass(value);
+};
+
+/// Remove and return element from the back
+/// @param list The linked list
+/// @return The value, or ERR if empty
+pub func<T>:linkedlist_pop_back = result<*T>(LinkedList<*T>@:list) {
+    if (list->tail == NULL) {
+        fail(ERR);  // Empty list
+    }
+    
+    wild Node<*T>@:node = list->tail;
+    *T:value = node->value;
+    
+    list->tail = node->prev;
+    if (list->tail != NULL) {
+        list->tail->next = NULL;
+    } else {
+        list->head = NULL;
+    }
+    
+    aria.free(node);
+    list->length = list->length - 1;
+    
+    pass(value);
+};
+
+/// Get the number of elements
+/// @param list The linked list
+/// @return The number of elements
+pub func<T>:linkedlist_len = uint64(LinkedList<*T>@:list) {
+    pass(list->length);
+};
+
+/// Check if list is empty
+/// @param list The linked list
+/// @return true if empty, false otherwise
+pub func<T>:linkedlist_is_empty = bool(LinkedList<*T>@:list) {
+    pass(list->length == 0);
+};
+
+/// Free the linked list's memory
+/// @param list The linked list to free
+pub func<T>:linkedlist_free = result(LinkedList<*T>@:list) {
+    wild Node<*T>@:current = list->head;
+    
+    while (current != NULL) {
+        wild Node<*T>@:next = current->next;
+        aria.free(current);
+        current = next;
+    }
+    
+    list->head = NULL;
+    list->tail = NULL;
+    list->length = 0;
+    
+    pass(NIL);
+};
