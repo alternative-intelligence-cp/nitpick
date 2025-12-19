@@ -246,59 +246,71 @@ This document audits ALL features promised in research files, specifications, an
 
 ## Critical Path to v0.1.0
 
-To legitimately claim v0.1.0 as a "production-ready" release, we need:
+**IMPORTANT**: We do NOT defer features for v0.1.0. Everything specified must be implemented.
+Deferring only creates problems and makes implementation harder later.
 
-### Must Have (Blocking)
+### Required for v0.1.0 (ALL Non-Negotiable)
 1. **Generics** - Cannot have modern systems language without generics
 2. **Module System** - Cannot organize code without modules
 3. **Struct Type Variables** - Cannot use custom types without this
 4. **Collections** - Vec, HashMap, HashSet minimum (requires generics)
 5. **Error Handling** - Result/Option types fully functional
-
-### Should Have (Important)
 6. **Async/Await** - Promised in specs, critical for modern systems
 7. **Memory Safety** - Borrow checker or clear memory model
 8. **Const Evaluation** - Compile-time computation as specified
 9. **Standard Library** - time, fs, process, network basics
 10. **Complete Type System** - Enums, unions, tuples
+11. **Balanced Ternary Arithmetic** - Core Aria feature
+12. **Runtime Assembler** - JIT compilation capability
+13. **Advanced Mathematical Types** - Rational, Complex, BigInt, Matrix
+14. **Threading Library** - Concurrent programming support
+15. **HTTP Library** - Modern networking
 
-### Nice to Have (Can Defer)
-11. Balanced ternary arithmetic
-12. Runtime assembler
-13. Advanced mathematical types
-14. Threading library
-15. HTTP library
-16. Kernel integration
+### Can Be Deferred (Only if Undecided)
+16. **Kernel Integration** - Still evaluating if this will be included
 
 ---
 
 ## Recommended Action Plan
 
-### Phase 1: Parser Enhancements (1-2 weeks)
+**Philosophy**: NO DEFERRALS. Implement everything completely before release.
+We have no timeline pressure. Taking shortcuts now creates exponentially harder work later.
+
+### Phase 1: Parser Enhancements (Target: Complete Implementation)
 1. Implement generic type parsing (`func<T>`, `Vec<T>`)
 2. Add module system keywords (use, mod, pub)
 3. Fix struct type variable parsing (`Type:var`)
 4. Add enum and union parsing
+5. Balanced ternary literal support
+6. Runtime assembler syntax
 
-### Phase 2: Type System Implementation (2-3 weeks)
-5. Implement generic type checking
-6. Module resolution and imports
-7. Struct instantiation and member access
-8. Enum and union handling
+### Phase 2: Type System Implementation (Target: Complete Implementation)
+7. Implement generic type checking and monomorphization
+8. Module resolution and imports
+9. Struct instantiation and member access
+10. Enum and union handling
+11. Advanced mathematical types (Rational, Complex, BigInt, Matrix/Vector)
 
-### Phase 3: Standard Library (2-3 weeks)
-9. Collections module (Vec, HashMap, HashSet)
-10. Time module (Duration, Stopwatch, sleep)
-11. Error handling (Result, Option)
-12. Filesystem basics
+### Phase 3: Core Systems (Target: Complete Implementation)
+12. Borrow checker and lifetime analysis
+13. Async/await execution model with futures
+14. Const evaluation and compile-time computation
+15. Balanced ternary arithmetic operations
+16. Runtime assembler and JIT compilation
 
-### Phase 4: Advanced Features (3-4 weeks)
-13. Async/await execution model
-14. Borrow checker implementation
-15. Const evaluation
-16. Threading primitives
+### Phase 4: Standard Library (Target: Complete Implementation)
+17. Collections (Vec, HashMap, HashSet, LinkedList, etc.)
+18. Time module (Duration, Stopwatch, timestamps)
+19. Error handling (Result, Option, error propagation)
+20. Filesystem (file operations, directory traversal)
+21. Process management (spawn, exec, pipes)
+22. Network basics (sockets, addresses)
+23. Threading library (threads, mutexes, channels)
+24. Atomics library (atomic operations)
+25. HTTP library (client and server)
 
-**Total Estimated Time**: 8-12 weeks to legitimate v0.1.0
+**Total Estimated Time**: WHEN IT'S DONE. No artificial deadlines.
+Quality and completeness over arbitrary timelines.
 
 ---
 
