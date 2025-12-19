@@ -208,6 +208,7 @@ if(LLDB_FOUND)
         src/tools/debugger/aria_formatters.cpp
         src/tools/debugger/dap_server.cpp
         src/tools/debugger/async_debugger.cpp
+        src/tools/debugger/memory_visualizer.cpp
     )
 endif()
 

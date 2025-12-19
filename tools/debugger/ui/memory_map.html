@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aria Memory Map Visualizer</title>
+    <link rel="stylesheet" href="memory_map.css">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>🧠 Aria Memory Map Visualizer</h1>
+            <p class="subtitle">Phase 7.4.6 - Interactive Memory Layout Viewer</p>
+        </header>
+
+        <!-- Controls Panel -->
+        <div class="controls-panel">
+            <div class="control-group">
+                <label for="filter-type">Region Filter:</label>
+                <select id="filter-type">
+                    <option value="all">All Regions</option>
+                    <option value="gc">GC Heap Only</option>
+                    <option value="wild">Wild Heap Only</option>
+                    <option value="wildx">WildX (Executable) Only</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="zoom-level">Zoom Level:</label>
+                <input type="range" id="zoom-level" min="0.5" max="5" step="0.1" value="1">
+                <span id="zoom-display">1.0x</span>
+            </div>
+
+            <div class="control-group">
+                <button id="refresh-btn" class="btn btn-primary">🔄 Refresh Memory Map</button>
+                <button id="reset-view-btn" class="btn btn-secondary">↺ Reset View</button>
+            </div>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="show-fragmentation" checked>
+                    Show Fragmentation Heatmap
+                </label>
+                <label>
+                    <input type="checkbox" id="show-stats" checked>
+                    Show GC Statistics
+                </label>
+            </div>
+        </div>
+
+        <!-- Main Visualization Area -->
+        <div class="visualization-container">
+            <!-- Canvas for memory map -->
+            <div class="canvas-wrapper">
+                <canvas id="memory-canvas"></canvas>
+                <div id="tooltip" class="tooltip"></div>
+            </div>
+
+            <!-- Legend -->
+            <div class="legend">
+                <h3>Memory Region Types</h3>
+                <div class="legend-item">
+                    <div class="legend-color gc-nursery"></div>
+                    <span>GC Nursery (Young Generation)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color gc-old-gen"></div>
+                    <span>GC Old Generation</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color wild"></div>
+                    <span>Wild Heap (Manual)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color wildx"></div>
+                    <span>WildX (Executable)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color free"></div>
+                    <span>Free/Unmapped</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color unknown"></div>
+                    <span>Unknown</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistics Panel -->
+        <div id="statistics-panel" class="statistics-panel">
+            <h3>🔢 GC Statistics</h3>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <span class="stat-label">Nursery Size:</span>
+                    <span class="stat-value" id="stat-nursery-size">0 KB</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Nursery Used:</span>
+                    <span class="stat-value" id="stat-nursery-used">0 KB</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Old Gen Size:</span>
+                    <span class="stat-value" id="stat-old-gen-size">0 KB</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Old Gen Used:</span>
+                    <span class="stat-value" id="stat-old-gen-used">0 KB</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Total Allocations:</span>
+                    <span class="stat-value" id="stat-total-allocs">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Total Collections:</span>
+                    <span class="stat-value" id="stat-total-collections">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Nursery Collections:</span>
+                    <span class="stat-value" id="stat-nursery-collections">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Old Gen Collections:</span>
+                    <span class="stat-value" id="stat-old-gen-collections">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Fragmentation:</span>
+                    <span class="stat-value" id="stat-fragmentation">0.0%</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Live Objects:</span>
+                    <span class="stat-value" id="stat-live-objects">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Bytes Allocated:</span>
+                    <span class="stat-value" id="stat-bytes-allocated">0 KB</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Bytes Freed:</span>
+                    <span class="stat-value" id="stat-bytes-freed">0 KB</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hex Dump Modal -->
+        <div id="hex-modal" class="modal">
+            <div class="modal-content">
+                <span class="modal-close">&times;</span>
+                <h2>Memory Dump</h2>
+                <div class="modal-body">
+                    <div class="hex-info">
+                        <p><strong>Address:</strong> <span id="hex-address">0x0</span></p>
+                        <p><strong>Size:</strong> <span id="hex-size">0 bytes</span></p>
+                        <p><strong>Type:</strong> <span id="hex-type">Unknown</span></p>
+                    </div>
+                    <div class="hex-dump" id="hex-dump">
+                        <!-- Hex dump will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Object Header Modal -->
+        <div id="header-modal" class="modal">
+            <div class="modal-content">
+                <span class="modal-close">&times;</span>
+                <h2>GC Object Header</h2>
+                <div class="modal-body">
+                    <div class="header-info">
+                        <p><strong>Object Address:</strong> <span id="header-address">0x0</span></p>
+                        <p><strong>Mark Bit:</strong> <span id="header-mark-bit">false</span></p>
+                        <p><strong>Pinned:</strong> <span id="header-pinned">false</span></p>
+                        <p><strong>Forwarded:</strong> <span id="header-forwarded">false</span></p>
+                        <p><strong>In Nursery:</strong> <span id="header-is-nursery">false</span></p>
+                        <p><strong>Size Class:</strong> <span id="header-size-class">0</span></p>
+                        <p><strong>Type ID:</strong> <span id="header-type-id">0</span></p>
+                        <p><strong>Object Size:</strong> <span id="header-object-size">0 bytes</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <span id="status-message">Ready. Click "Refresh Memory Map" to scan process memory.</span>
+            <span id="connection-status" class="connection-status disconnected">●</span>
+        </div>
+    </div>
+
+    <!-- Load JavaScript module -->
+    <script type="module" src="memory_map.js"></script>
+</body>
+
+</html>
