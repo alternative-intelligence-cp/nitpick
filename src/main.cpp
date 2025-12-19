@@ -338,6 +338,9 @@ llvm::Module* compile_to_module(
         std::cout << "Phase 4: IR generation...\n";
     }
     
+    // Pass TypeSystem to IR generator for struct type lookups
+    ir_gen.setTypeSystem(&type_system);
+    
     auto value = ir_gen.codegen(module_node.get());
     
     if (!value) {

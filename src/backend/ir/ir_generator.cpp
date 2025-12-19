@@ -19,6 +19,7 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
     : context(), 
       module(std::make_unique<llvm::Module>(module_name.empty() ? "aria_module" : module_name, context)),
       builder(context),
+      type_system(nullptr),
       di_builder(nullptr),
       di_compile_unit(nullptr),
       di_file(nullptr),
@@ -30,6 +31,10 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
         // Create DIBuilder (initialization deferred to initDebugInfo)
         di_builder = std::make_unique<llvm::DIBuilder>(*module);
     }
+}
+
+void IRGenerator::setTypeSystem(TypeSystem* ts) {
+    type_system = ts;
 }
 
 llvm::Type* IRGenerator::mapType(Type* aria_type) {
@@ -279,6 +284,15 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     // String type - represented as i8* (pointer to null-terminated char array)
     if (type_name == "string") {
         return llvm::PointerType::get(context, 0);
+    }
+    
+    // Check for custom types (structs, unions, etc.) if TypeSystem is available
+    if (type_system) {
+        // Look up struct type
+        Type* aria_type = type_system->getStructType(type_name);
+        if (aria_type) {
+            return mapType(aria_type);
+        }
     }
     
     // Default to i32 for unknown types (temporary)
@@ -809,6 +823,13 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             return nullptr;
         }
         
+        case ASTNode::NodeType::STRUCT_DECL: {
+            // Struct declaration - type is already registered in TypeChecker
+            // IR generation happens lazily in mapType() when the type is first used
+            // No code needs to be generated for the declaration itself
+            return nullptr;
+        }
+        
         default:
             // Other statement types not yet implemented
             return nullptr;
@@ -1261,6 +1282,78 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             phi->addIncoming(falseVal, elseBB);
             
             return phi;
+        }
+        
+        case ASTNode::NodeType::OBJECT_LITERAL: {
+            // Object literal - struct instantiation: Point{ x: 10, y: 20 }
+            ObjectLiteralExpr* objLit = static_cast<ObjectLiteralExpr*>(expr);
+            
+            // Get the struct type from the type name
+            llvm::Type* struct_type = mapTypeFromName(objLit->type_name);
+            if (!struct_type || !struct_type->isStructTy()) {
+                // Error: not a struct type
+                return nullptr;
+            }
+            
+            // Allocate space for the struct on the stack
+            llvm::AllocaInst* struct_alloca = builder.CreateAlloca(struct_type, nullptr, "struct.tmp");
+            
+            // Initialize each field
+            // Fields are in objLit->fields (std::vector<Field>)
+            for (size_t i = 0; i < objLit->fields.size(); ++i) {
+                const ObjectLiteralExpr::Field& field = objLit->fields[i];
+                
+                // Generate the field value
+                llvm::Value* field_value = codegenExpression(field.value.get());
+                if (!field_value) {
+                    continue;  // Skip this field on error
+                }
+                
+                // For now, assume fields are in order (index i corresponds to struct field i)
+                // TODO: Implement proper field name lookup to get correct indices
+                
+                // Create GEP to access the field
+                llvm::Value* field_ptr = builder.CreateStructGEP(struct_type, struct_alloca, i, 
+                                                                field.name + ".ptr");
+                
+                // Store the value
+                builder.CreateStore(field_value, field_ptr);
+            }
+            
+            // Load and return the complete struct value
+            return builder.CreateLoad(struct_type, struct_alloca, "struct.val");
+        }
+        
+        case ASTNode::NodeType::MEMBER_ACCESS: {
+            // Member access - p.x, p.y
+            MemberAccessExpr* member = static_cast<MemberAccessExpr*>(expr);
+            
+            // Generate code for the object expression
+            llvm::Value* object_value = codegenExpression(member->object.get());
+            if (!object_value) {
+                return nullptr;
+            }
+            
+            // The object should be a pointer to a struct (from alloca or GEP)
+            // We need to access the named member
+            
+            // Get the struct type
+            llvm::Type* object_type = object_value->getType();
+            
+            // If it's a loaded struct value, we can't directly access members
+            // We need the pointer. For now, handle the case where object_value is a pointer
+            if (!object_type->isPointerTy()) {
+                // Error: can't access members of non-pointer
+                return nullptr;
+            }
+            
+            // Get the pointed-to type
+            // Note: LLVM uses opaque pointers, so we need type info from somewhere else
+            // For now, we'll use a simplified approach
+            
+            // TODO: Implement proper member access with field lookup
+            // For now, return nullptr (will be implemented next)
+            return nullptr;
         }
         
         default:

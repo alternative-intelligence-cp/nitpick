@@ -20,6 +20,7 @@ class ASTNode;  // ASTNode is in aria namespace
 class BlockStmt;  // For defer stack support
 namespace sema {
     class Type;  // Forward declaration in correct namespace
+    class TypeSystem;  // Forward declaration for custom type lookups
     struct Specialization;  // Forward declaration for generic specializations
 }
 using sema::Type;  // Make Type available in aria namespace
@@ -37,6 +38,9 @@ private:
     llvm::LLVMContext context;
     std::unique_ptr<llvm::Module> module;
     llvm::IRBuilder<> builder;
+    
+    // Type system for looking up struct types
+    sema::TypeSystem* type_system;
     
     // Symbol table for LLVM values (maps variable names to LLVM Values)
     std::map<std::string, llvm::Value*> named_values;
@@ -153,6 +157,13 @@ public:
      * Clear debug location (for compiler-generated code)
      */
     void clearDebugLocation();
+    
+    /**
+     * Set the TypeSystem for looking up custom types (structs, unions, etc.)
+     * Must be called before codegen if the code uses custom types
+     * @param ts Pointer to TypeSystem (must remain valid for lifetime of IR generation)
+     */
+    void setTypeSystem(sema::TypeSystem* ts);
     
     /**
      * Generate LLVM IR for an AST node
