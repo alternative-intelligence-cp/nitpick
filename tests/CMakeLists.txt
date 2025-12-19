@@ -18,6 +18,7 @@ add_executable(test_runner
     unit/test_lsp_vfs.cpp
     unit/test_lsp_thread_pool.cpp
     unit/test_debug_info.cpp
+    unit/test_tbb_formatters.cpp
     unit/test_symbol_table.cpp
     unit/test_module_table.cpp
     unit/test_type_checker.cpp
@@ -126,11 +127,23 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/tools/lsp/thread_pool.cpp
 )
 
+# Add debugger formatters if LLDB is available
+if(LLDB_FOUND)
+    target_sources(test_runner PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/tools/debugger/aria_formatters.cpp
+    )
+endif()
+
 # Include test helpers header
 target_include_directories(test_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Link with LLVM libraries (needed for IR generation)
 target_link_libraries(test_runner ${llvm_libs})
+
+# Link with LLDB if available
+if(LLDB_FOUND)
+    target_link_libraries(test_runner ${LLDB_LIBRARY})
+endif()
 
 # Register with CTest
 add_test(NAME unit_tests COMMAND test_runner)
