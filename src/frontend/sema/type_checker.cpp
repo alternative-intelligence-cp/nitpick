@@ -76,6 +76,9 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         case ASTNode::NodeType::TERNARY:
             return inferTernaryExpr(static_cast<TernaryExpr*>(expr));
         
+        case ASTNode::NodeType::UNWRAP:
+            return inferUnwrapExpr(static_cast<UnwrapExpr*>(expr));
+        
         case ASTNode::NodeType::OBJECT_LITERAL:
             return inferObjectLiteral(static_cast<ObjectLiteralExpr*>(expr));
         
@@ -664,6 +667,36 @@ Type* TypeChecker::inferTernaryExpr(TernaryExpr* expr) {
     }
     
     return resultType;
+}
+
+Type* TypeChecker::inferUnwrapExpr(UnwrapExpr* expr) {
+    // Infer the result expression type
+    Type* resultType = inferType(expr->result.get());
+    
+    if (resultType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Infer the default value type
+    Type* defaultType = inferType(expr->defaultValue.get());
+    
+    if (defaultType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // For now, without full result type implementation, we require that
+    // the result and default value have compatible types
+    Type* commonType = findCommonType(resultType, defaultType);
+    
+    if (commonType->getKind() == TypeKind::ERROR) {
+        addError("Unwrap operator (?) requires compatible types: result type '" + 
+                resultType->toString() + "' and default value type '" + 
+                defaultType->toString() + "'", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // The unwrap expression returns the common type of result and default
+    return commonType;
 }
 
 Type* TypeChecker::inferObjectLiteral(ObjectLiteralExpr* expr) {

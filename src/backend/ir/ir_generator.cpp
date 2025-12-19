@@ -1333,6 +1333,24 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             return phi;
         }
         
+        case ASTNode::NodeType::UNWRAP: {
+            // Unwrap expression: result ? default_value
+            // TODO: When full result types are implemented, check for error and use default if needed
+            // For now, simplified implementation: just return the result value
+            UnwrapExpr* unwrap = static_cast<UnwrapExpr*>(expr);
+            
+            // Generate code for the result expression
+            llvm::Value* resultVal = codegenExpression(unwrap->result.get());
+            if (!resultVal) return nullptr;
+            
+            // TODO: Full implementation would:
+            // 1. Check if result.err is NULL
+            // 2. If NULL, return result.val
+            // 3. If not NULL, return default_value
+            // For now, just return the result value directly
+            return resultVal;
+        }
+        
         case ASTNode::NodeType::OBJECT_LITERAL: {
             // Object literal - struct instantiation: Point{ x: 10, y: 20 }
             ObjectLiteralExpr* objLit = static_cast<ObjectLiteralExpr*>(expr);

@@ -578,12 +578,24 @@ ASTNodePtr Parser::parsePostfix(ASTNodePtr expr) {
             continue;
         }
         
-        // Unwrap operator
+        // Unwrap operator: result ? default_value
         if (token.type == TokenType::TOKEN_QUESTION) {
-            advance();
-            // For now, treat as unary postfix operator
-            Token unwrapOp = token;
-            expr = std::make_shared<UnaryExpr>(unwrapOp, expr, true, token.line, token.column);
+            Token unwrapToken = advance(); // consume '?'
+            
+            // Parse the default value expression
+            ASTNodePtr defaultValue = parseExpression();
+            if (!defaultValue) {
+                error("Expected default value after '?' operator");
+                return nullptr;
+            }
+            
+            // Create UnwrapExpr with result on left, default on right
+            expr = std::make_shared<UnwrapExpr>(
+                expr, 
+                defaultValue,
+                unwrapToken.line,
+                unwrapToken.column
+            );
             continue;
         }
         

@@ -157,4 +157,10 @@ std::string AwaitExpr::toString() const {
     return oss.str();
 }
 
+std::string UnwrapExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Unwrap(" << result->toString() << " ? " << defaultValue->toString() << ")";
+    return oss.str();
+}
+
 } // namespace aria

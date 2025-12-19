@@ -280,6 +280,27 @@ public:
     std::string toString() const override;
 };
 
+/**
+ * Unwrap expression node (? operator)
+ * Represents: result ? default_value
+ * 
+ * Unwraps a result type, returning the value if successful,
+ * or the default value if there was an error.
+ * 
+ * Example: string:content = readFile("config.txt") ? "default";
+ */
+class UnwrapExpr : public ASTNode {
+public:
+    ASTNodePtr result;        // Expression that returns a result type
+    ASTNodePtr defaultValue;  // Default value if result contains error
+    
+    UnwrapExpr(ASTNodePtr res, ASTNodePtr defVal, int line = 0, int column = 0)
+        : ASTNode(NodeType::UNWRAP, line, column),
+          result(res), defaultValue(defVal) {}
+    
+    std::string toString() const override;
+};
+
 } // namespace aria
 
 #endif // ARIA_EXPR_H
