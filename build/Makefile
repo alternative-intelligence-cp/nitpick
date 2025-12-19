@@ -1788,6 +1788,30 @@ src/tools/debugger/aria_formatters.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_formatters.cpp.s
 .PHONY : src/tools/debugger/aria_formatters.cpp.s
 
+src/tools/debugger/async_debugger.o: src/tools/debugger/async_debugger.cpp.o
+.PHONY : src/tools/debugger/async_debugger.o
+
+# target to build an object file
+src/tools/debugger/async_debugger.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/async_debugger.cpp.o
+.PHONY : src/tools/debugger/async_debugger.cpp.o
+
+src/tools/debugger/async_debugger.i: src/tools/debugger/async_debugger.cpp.i
+.PHONY : src/tools/debugger/async_debugger.i
+
+# target to preprocess a source file
+src/tools/debugger/async_debugger.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/async_debugger.cpp.i
+.PHONY : src/tools/debugger/async_debugger.cpp.i
+
+src/tools/debugger/async_debugger.s: src/tools/debugger/async_debugger.cpp.s
+.PHONY : src/tools/debugger/async_debugger.s
+
+# target to generate assembly for a file
+src/tools/debugger/async_debugger.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/async_debugger.cpp.s
+.PHONY : src/tools/debugger/async_debugger.cpp.s
+
 src/tools/debugger/dap_server.o: src/tools/debugger/dap_server.cpp.o
 .PHONY : src/tools/debugger/dap_server.o
 
@@ -2214,6 +2238,9 @@ help:
 	@echo "... src/tools/debugger/aria_formatters.o"
 	@echo "... src/tools/debugger/aria_formatters.i"
 	@echo "... src/tools/debugger/aria_formatters.s"
+	@echo "... src/tools/debugger/async_debugger.o"
+	@echo "... src/tools/debugger/async_debugger.i"
+	@echo "... src/tools/debugger/async_debugger.s"
 	@echo "... src/tools/debugger/dap_server.o"
 	@echo "... src/tools/debugger/dap_server.i"
 	@echo "... src/tools/debugger/dap_server.s"

@@ -25,6 +25,8 @@
 #include <mutex>
 #include <condition_variable>
 
+#include "async_debugger.h"
+
 // Note: Fully qualify nlohmann::json to avoid conflicts with LLDB's internal json types
 
 namespace aria {
@@ -134,6 +136,9 @@ private:
     lldb::SBTarget m_target;
     lldb::SBProcess m_process;
     lldb::SBListener m_listener;
+    
+    // Async debugger (Phase 7.4.5)
+    std::unique_ptr<AsyncDebugger> m_async_debugger;
     
     // DAP state
     int m_next_seq;
