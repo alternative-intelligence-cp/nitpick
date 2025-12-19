@@ -1,0 +1,44 @@
+// Test: Unwrap operator (?) without full result types
+// Phase: Session 8 - Result Types
+
+// Test 1: Simple unwrap - just returns the left side for now
+func:test_unwrap = int32() {
+    int32:value = 42;
+    int32:default_val = 99;
+    int32:result = value ? default_val;  // Should return 42
+    pass(result);
+};
+
+// Test 2: Unwrap in expression context
+func:test_unwrap_expr = int32() {
+    int32:x = 10;
+    int32:y = 20;
+    int32:five = 5;
+    // Unwrap in an expression - should return x (10)
+    int32:sum = (x ? y) + five;  // Should be 10 + 5 = 15
+    int32:expected_sum = 15;
+    if (sum == expected_sum) {
+        int32:success = 0;
+        pass(success);  // Success
+    }
+    int32:failure = 1;
+    pass(failure);  // Failure
+};
+
+// Main function
+func:main = int32() {
+    int32:result1 = test_unwrap();
+    int32:expected = 42;
+    
+    if (result1 == expected) {
+        int32:result2 = test_unwrap_expr();
+        int32:success_val = 0;
+        if (result2 == success_val) {
+            int32:success = 0;
+            pass(success);  // All tests passed
+        }
+    }
+    
+    int32:failure = 1;
+    pass(failure);  // Failed
+};

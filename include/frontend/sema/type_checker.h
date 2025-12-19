@@ -159,6 +159,18 @@ private:
     Type* inferTernaryExpr(TernaryExpr* expr);
     
     /**
+     * Infer the type of an unwrap expression (? operator)
+     * 
+     * Syntax: result ? default_value
+     * 
+     * Rules:
+     * - Result expression and default value must have compatible types
+     * - Returns the common type of result and default value
+     * - Full result type checking will be added when result types are implemented
+     */
+    Type* inferUnwrapExpr(UnwrapExpr* expr);
+    
+    /**
      * Infer the type of an object literal expression
      * 
      * Rules:
