@@ -120,7 +120,7 @@ static const std::unordered_map<std::string, TokenType> keywords = {
 // ============================================================================
 
 Lexer::Lexer(const std::string& source)
-    : source(source), current(0), start(0), line(1), column(1) {
+    : source(source), current(0), start(0), line(1), column(1), start_line(1), start_column(1) {
 }
 
 std::vector<Token> Lexer::tokenize() {
@@ -260,6 +260,8 @@ void Lexer::scanToken() {
     
     // Update start position for this token
     start = current;
+    start_line = line;
+    start_column = column;
     
     char c = advance();
     
@@ -445,27 +447,27 @@ void Lexer::scanToken() {
 
 void Lexer::addToken(TokenType type) {
     std::string lexeme = source.substr(start, current - start);
-    tokens.push_back(Token(type, lexeme, line, column - (current - start)));
+    tokens.push_back(Token(type, lexeme, start_line, start_column));
 }
 
 void Lexer::addToken(TokenType type, int64_t value) {
     std::string lexeme = source.substr(start, current - start);
-    tokens.push_back(Token(type, lexeme, line, column - (current - start), value));
+    tokens.push_back(Token(type, lexeme, start_line, start_column, value));
 }
 
 void Lexer::addToken(TokenType type, double value) {
     std::string lexeme = source.substr(start, current - start);
-    tokens.push_back(Token(type, lexeme, line, column - (current - start), value));
+    tokens.push_back(Token(type, lexeme, start_line, start_column, value));
 }
 
 void Lexer::addToken(TokenType type, bool value) {
     std::string lexeme = source.substr(start, current - start);
-    tokens.push_back(Token(type, lexeme, line, column - (current - start), value));
+    tokens.push_back(Token(type, lexeme, start_line, start_column, value));
 }
 
 void Lexer::addToken(TokenType type, const std::string& value) {
     std::string lexeme = source.substr(start, current - start);
-    tokens.push_back(Token(type, lexeme, line, column - (current - start), value));
+    tokens.push_back(Token(type, lexeme, start_line, start_column, value));
 }
 
 // ============================================================================

@@ -1,0 +1,119 @@
+// Sample Aria Program - Demonstrates language features
+// This file tests syntax highlighting in VS Code
+
+import std.io;
+import std.collections;
+
+// TBB (Twisted Balanced Binary) types with error sentinels
+func:calculate_safe = (a: tbb32, b: tbb32) -> tbb32 {
+    // Sticky error propagation - ERR + anything = ERR
+    var result:tbb32 = a + b;
+    
+    if (result == ERR) {
+        io.stderr.write("Overflow detected!");
+        return ERR;
+    }
+    
+    return result;
+}
+
+// Memory model demonstration: gc vs wild
+func:memory_demo = () -> void {
+    // Garbage collected allocation
+    var obj:MyStruct = @gc {
+        x: 100,
+        y: 200,
+        name: "Aria"
+    };
+    
+    // Pin object and get wild pointer
+    wild int32*:ptr = #obj.x;
+    $ptr = 42;  // Safe reference syntax
+    
+    defer {
+        // Automatic cleanup
+        io.print("Cleaning up resources");
+    }
+}
+
+// String interpolation with &{expression}
+func:greet = (name: str, age: tbb8) -> str {
+    return `Hello, &{name}! You are &{age} years old.`;
+}
+
+// Pattern matching with pick
+func:process_value = (x: tbb16) -> str {
+    pick (x) {
+        case 0:
+            return "Zero";
+        case 1:
+            return "One";
+        case ERR:
+            return "Error sentinel";
+        default:
+            return "Other value";
+    }
+}
+
+// Async/await for concurrency
+async func:fetch_data = (url: str) -> result<str> {
+    var response:str = await http.get(url);
+    
+    if (response.is_err()) {
+        return fail(response.err());
+    }
+    
+    return pass(response.ok());
+}
+
+// Balanced ternary logic
+func:ternary_logic = (a: trit, b: trit) -> trit {
+    // -1 (false), 0 (unknown), +1 (true)
+    return a && b;
+}
+
+// Main entry point
+pub func:main = () -> tbb8 {
+    io.print("Aria Language Demo");
+    
+    // TBB arithmetic
+    var x:tbb32 = 127;
+    var y:tbb32 = calculate_safe(x, 1);
+    
+    if (y == ERR) {
+        io.stderr.write("Operation failed");
+        return 1;
+    }
+    
+    // Memory safety
+    memory_demo();
+    
+    // String interpolation
+    var message:str = greet("Alice", 25);
+    io.print(message);
+    
+    // Pattern matching
+    var result:str = process_value(42);
+    io.print(result);
+    
+    return 0;  // Success
+}
+
+// Struct with memory annotations
+struct MyStruct {
+    x: int32,
+    y: int32,
+    name: str
+}
+
+// Trait definition
+trait Printable {
+    func:to_string = () -> str;
+}
+
+// Implementation
+impl Printable for MyStruct {
+    func:to_string = () -> str {
+        return `MyStruct(&{this.x}, &{this.y}, "&{this.name}")`;
+    }
+}

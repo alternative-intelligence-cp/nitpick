@@ -231,6 +231,383 @@ ariac/fast:
 .PHONY : ariac/fast
 
 #=============================================================================
+# Target rules for targets named aria-ls
+
+# Build rule for target.
+aria-ls: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 aria-ls
+.PHONY : aria-ls
+
+# fast build rule for target.
+aria-ls/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/build
+.PHONY : aria-ls/fast
+
+#=============================================================================
+# Target rules for targets named Experimental
+
+# Build rule for target.
+Experimental: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 Experimental
+.PHONY : Experimental
+
+# fast build rule for target.
+Experimental/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/Experimental.dir/build.make vendor/toml11/CMakeFiles/Experimental.dir/build
+.PHONY : Experimental/fast
+
+#=============================================================================
+# Target rules for targets named Nightly
+
+# Build rule for target.
+Nightly: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 Nightly
+.PHONY : Nightly
+
+# fast build rule for target.
+Nightly/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/Nightly.dir/build.make vendor/toml11/CMakeFiles/Nightly.dir/build
+.PHONY : Nightly/fast
+
+#=============================================================================
+# Target rules for targets named Continuous
+
+# Build rule for target.
+Continuous: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 Continuous
+.PHONY : Continuous
+
+# fast build rule for target.
+Continuous/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/Continuous.dir/build.make vendor/toml11/CMakeFiles/Continuous.dir/build
+.PHONY : Continuous/fast
+
+#=============================================================================
+# Target rules for targets named NightlyMemoryCheck
+
+# Build rule for target.
+NightlyMemoryCheck: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 NightlyMemoryCheck
+.PHONY : NightlyMemoryCheck
+
+# fast build rule for target.
+NightlyMemoryCheck/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/NightlyMemoryCheck.dir/build.make vendor/toml11/CMakeFiles/NightlyMemoryCheck.dir/build
+.PHONY : NightlyMemoryCheck/fast
+
+#=============================================================================
+# Target rules for targets named NightlyStart
+
+# Build rule for target.
+NightlyStart: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 NightlyStart
+.PHONY : NightlyStart
+
+# fast build rule for target.
+NightlyStart/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/NightlyStart.dir/build.make vendor/toml11/CMakeFiles/NightlyStart.dir/build
+.PHONY : NightlyStart/fast
+
+#=============================================================================
+# Target rules for targets named NightlyUpdate
+
+# Build rule for target.
+NightlyUpdate: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 NightlyUpdate
+.PHONY : NightlyUpdate
+
+# fast build rule for target.
+NightlyUpdate/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/NightlyUpdate.dir/build.make vendor/toml11/CMakeFiles/NightlyUpdate.dir/build
+.PHONY : NightlyUpdate/fast
+
+#=============================================================================
+# Target rules for targets named NightlyConfigure
+
+# Build rule for target.
+NightlyConfigure: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 NightlyConfigure
+.PHONY : NightlyConfigure
+
+# fast build rule for target.
+NightlyConfigure/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/NightlyConfigure.dir/build.make vendor/toml11/CMakeFiles/NightlyConfigure.dir/build
+.PHONY : NightlyConfigure/fast
+
+#=============================================================================
+# Target rules for targets named NightlyBuild
+
+# Build rule for target.
+NightlyBuild: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 NightlyBuild
+.PHONY : NightlyBuild
+
+# fast build rule for target.
+NightlyBuild/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/NightlyBuild.dir/build.make vendor/toml11/CMakeFiles/NightlyBuild.dir/build
+.PHONY : NightlyBuild/fast
+
+#=============================================================================
+# Target rules for targets named NightlyTest
+
+# Build rule for target.
+NightlyTest: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 NightlyTest
+.PHONY : NightlyTest
+
+# fast build rule for target.
+NightlyTest/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/NightlyTest.dir/build.make vendor/toml11/CMakeFiles/NightlyTest.dir/build
+.PHONY : NightlyTest/fast
+
+#=============================================================================
+# Target rules for targets named NightlyCoverage
+
+# Build rule for target.
+NightlyCoverage: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 NightlyCoverage
+.PHONY : NightlyCoverage
+
+# fast build rule for target.
+NightlyCoverage/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/NightlyCoverage.dir/build.make vendor/toml11/CMakeFiles/NightlyCoverage.dir/build
+.PHONY : NightlyCoverage/fast
+
+#=============================================================================
+# Target rules for targets named NightlyMemCheck
+
+# Build rule for target.
+NightlyMemCheck: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 NightlyMemCheck
+.PHONY : NightlyMemCheck
+
+# fast build rule for target.
+NightlyMemCheck/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/NightlyMemCheck.dir/build.make vendor/toml11/CMakeFiles/NightlyMemCheck.dir/build
+.PHONY : NightlyMemCheck/fast
+
+#=============================================================================
+# Target rules for targets named NightlySubmit
+
+# Build rule for target.
+NightlySubmit: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 NightlySubmit
+.PHONY : NightlySubmit
+
+# fast build rule for target.
+NightlySubmit/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/NightlySubmit.dir/build.make vendor/toml11/CMakeFiles/NightlySubmit.dir/build
+.PHONY : NightlySubmit/fast
+
+#=============================================================================
+# Target rules for targets named ExperimentalStart
+
+# Build rule for target.
+ExperimentalStart: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ExperimentalStart
+.PHONY : ExperimentalStart
+
+# fast build rule for target.
+ExperimentalStart/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ExperimentalStart.dir/build.make vendor/toml11/CMakeFiles/ExperimentalStart.dir/build
+.PHONY : ExperimentalStart/fast
+
+#=============================================================================
+# Target rules for targets named ExperimentalUpdate
+
+# Build rule for target.
+ExperimentalUpdate: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ExperimentalUpdate
+.PHONY : ExperimentalUpdate
+
+# fast build rule for target.
+ExperimentalUpdate/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ExperimentalUpdate.dir/build.make vendor/toml11/CMakeFiles/ExperimentalUpdate.dir/build
+.PHONY : ExperimentalUpdate/fast
+
+#=============================================================================
+# Target rules for targets named ExperimentalConfigure
+
+# Build rule for target.
+ExperimentalConfigure: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ExperimentalConfigure
+.PHONY : ExperimentalConfigure
+
+# fast build rule for target.
+ExperimentalConfigure/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ExperimentalConfigure.dir/build.make vendor/toml11/CMakeFiles/ExperimentalConfigure.dir/build
+.PHONY : ExperimentalConfigure/fast
+
+#=============================================================================
+# Target rules for targets named ExperimentalBuild
+
+# Build rule for target.
+ExperimentalBuild: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ExperimentalBuild
+.PHONY : ExperimentalBuild
+
+# fast build rule for target.
+ExperimentalBuild/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ExperimentalBuild.dir/build.make vendor/toml11/CMakeFiles/ExperimentalBuild.dir/build
+.PHONY : ExperimentalBuild/fast
+
+#=============================================================================
+# Target rules for targets named ExperimentalTest
+
+# Build rule for target.
+ExperimentalTest: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ExperimentalTest
+.PHONY : ExperimentalTest
+
+# fast build rule for target.
+ExperimentalTest/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ExperimentalTest.dir/build.make vendor/toml11/CMakeFiles/ExperimentalTest.dir/build
+.PHONY : ExperimentalTest/fast
+
+#=============================================================================
+# Target rules for targets named ExperimentalCoverage
+
+# Build rule for target.
+ExperimentalCoverage: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ExperimentalCoverage
+.PHONY : ExperimentalCoverage
+
+# fast build rule for target.
+ExperimentalCoverage/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ExperimentalCoverage.dir/build.make vendor/toml11/CMakeFiles/ExperimentalCoverage.dir/build
+.PHONY : ExperimentalCoverage/fast
+
+#=============================================================================
+# Target rules for targets named ExperimentalMemCheck
+
+# Build rule for target.
+ExperimentalMemCheck: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ExperimentalMemCheck
+.PHONY : ExperimentalMemCheck
+
+# fast build rule for target.
+ExperimentalMemCheck/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ExperimentalMemCheck.dir/build.make vendor/toml11/CMakeFiles/ExperimentalMemCheck.dir/build
+.PHONY : ExperimentalMemCheck/fast
+
+#=============================================================================
+# Target rules for targets named ExperimentalSubmit
+
+# Build rule for target.
+ExperimentalSubmit: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ExperimentalSubmit
+.PHONY : ExperimentalSubmit
+
+# fast build rule for target.
+ExperimentalSubmit/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ExperimentalSubmit.dir/build.make vendor/toml11/CMakeFiles/ExperimentalSubmit.dir/build
+.PHONY : ExperimentalSubmit/fast
+
+#=============================================================================
+# Target rules for targets named ContinuousStart
+
+# Build rule for target.
+ContinuousStart: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ContinuousStart
+.PHONY : ContinuousStart
+
+# fast build rule for target.
+ContinuousStart/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ContinuousStart.dir/build.make vendor/toml11/CMakeFiles/ContinuousStart.dir/build
+.PHONY : ContinuousStart/fast
+
+#=============================================================================
+# Target rules for targets named ContinuousUpdate
+
+# Build rule for target.
+ContinuousUpdate: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ContinuousUpdate
+.PHONY : ContinuousUpdate
+
+# fast build rule for target.
+ContinuousUpdate/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ContinuousUpdate.dir/build.make vendor/toml11/CMakeFiles/ContinuousUpdate.dir/build
+.PHONY : ContinuousUpdate/fast
+
+#=============================================================================
+# Target rules for targets named ContinuousConfigure
+
+# Build rule for target.
+ContinuousConfigure: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ContinuousConfigure
+.PHONY : ContinuousConfigure
+
+# fast build rule for target.
+ContinuousConfigure/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ContinuousConfigure.dir/build.make vendor/toml11/CMakeFiles/ContinuousConfigure.dir/build
+.PHONY : ContinuousConfigure/fast
+
+#=============================================================================
+# Target rules for targets named ContinuousBuild
+
+# Build rule for target.
+ContinuousBuild: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ContinuousBuild
+.PHONY : ContinuousBuild
+
+# fast build rule for target.
+ContinuousBuild/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ContinuousBuild.dir/build.make vendor/toml11/CMakeFiles/ContinuousBuild.dir/build
+.PHONY : ContinuousBuild/fast
+
+#=============================================================================
+# Target rules for targets named ContinuousTest
+
+# Build rule for target.
+ContinuousTest: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ContinuousTest
+.PHONY : ContinuousTest
+
+# fast build rule for target.
+ContinuousTest/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ContinuousTest.dir/build.make vendor/toml11/CMakeFiles/ContinuousTest.dir/build
+.PHONY : ContinuousTest/fast
+
+#=============================================================================
+# Target rules for targets named ContinuousCoverage
+
+# Build rule for target.
+ContinuousCoverage: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ContinuousCoverage
+.PHONY : ContinuousCoverage
+
+# fast build rule for target.
+ContinuousCoverage/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ContinuousCoverage.dir/build.make vendor/toml11/CMakeFiles/ContinuousCoverage.dir/build
+.PHONY : ContinuousCoverage/fast
+
+#=============================================================================
+# Target rules for targets named ContinuousMemCheck
+
+# Build rule for target.
+ContinuousMemCheck: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ContinuousMemCheck
+.PHONY : ContinuousMemCheck
+
+# fast build rule for target.
+ContinuousMemCheck/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ContinuousMemCheck.dir/build.make vendor/toml11/CMakeFiles/ContinuousMemCheck.dir/build
+.PHONY : ContinuousMemCheck/fast
+
+#=============================================================================
+# Target rules for targets named ContinuousSubmit
+
+# Build rule for target.
+ContinuousSubmit: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ContinuousSubmit
+.PHONY : ContinuousSubmit
+
+# fast build rule for target.
+ContinuousSubmit/fast:
+	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ContinuousSubmit.dir/build.make vendor/toml11/CMakeFiles/ContinuousSubmit.dir/build
+.PHONY : ContinuousSubmit/fast
+
+#=============================================================================
 # Target rules for targets named test_runner
 
 # Build rule for target.
@@ -345,6 +722,7 @@ src/frontend/ast/ast_node.o: src/frontend/ast/ast_node.cpp.o
 # target to build an object file
 src/frontend/ast/ast_node.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/ast_node.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/ast_node.cpp.o
 .PHONY : src/frontend/ast/ast_node.cpp.o
 
 src/frontend/ast/ast_node.i: src/frontend/ast/ast_node.cpp.i
@@ -353,6 +731,7 @@ src/frontend/ast/ast_node.i: src/frontend/ast/ast_node.cpp.i
 # target to preprocess a source file
 src/frontend/ast/ast_node.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/ast_node.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/ast_node.cpp.i
 .PHONY : src/frontend/ast/ast_node.cpp.i
 
 src/frontend/ast/ast_node.s: src/frontend/ast/ast_node.cpp.s
@@ -361,6 +740,7 @@ src/frontend/ast/ast_node.s: src/frontend/ast/ast_node.cpp.s
 # target to generate assembly for a file
 src/frontend/ast/ast_node.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/ast_node.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/ast_node.cpp.s
 .PHONY : src/frontend/ast/ast_node.cpp.s
 
 src/frontend/ast/expr.o: src/frontend/ast/expr.cpp.o
@@ -369,6 +749,7 @@ src/frontend/ast/expr.o: src/frontend/ast/expr.cpp.o
 # target to build an object file
 src/frontend/ast/expr.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/expr.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/expr.cpp.o
 .PHONY : src/frontend/ast/expr.cpp.o
 
 src/frontend/ast/expr.i: src/frontend/ast/expr.cpp.i
@@ -377,6 +758,7 @@ src/frontend/ast/expr.i: src/frontend/ast/expr.cpp.i
 # target to preprocess a source file
 src/frontend/ast/expr.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/expr.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/expr.cpp.i
 .PHONY : src/frontend/ast/expr.cpp.i
 
 src/frontend/ast/expr.s: src/frontend/ast/expr.cpp.s
@@ -385,6 +767,7 @@ src/frontend/ast/expr.s: src/frontend/ast/expr.cpp.s
 # target to generate assembly for a file
 src/frontend/ast/expr.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/expr.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/expr.cpp.s
 .PHONY : src/frontend/ast/expr.cpp.s
 
 src/frontend/ast/stmt.o: src/frontend/ast/stmt.cpp.o
@@ -393,6 +776,7 @@ src/frontend/ast/stmt.o: src/frontend/ast/stmt.cpp.o
 # target to build an object file
 src/frontend/ast/stmt.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/stmt.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/stmt.cpp.o
 .PHONY : src/frontend/ast/stmt.cpp.o
 
 src/frontend/ast/stmt.i: src/frontend/ast/stmt.cpp.i
@@ -401,6 +785,7 @@ src/frontend/ast/stmt.i: src/frontend/ast/stmt.cpp.i
 # target to preprocess a source file
 src/frontend/ast/stmt.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/stmt.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/stmt.cpp.i
 .PHONY : src/frontend/ast/stmt.cpp.i
 
 src/frontend/ast/stmt.s: src/frontend/ast/stmt.cpp.s
@@ -409,6 +794,7 @@ src/frontend/ast/stmt.s: src/frontend/ast/stmt.cpp.s
 # target to generate assembly for a file
 src/frontend/ast/stmt.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/stmt.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/stmt.cpp.s
 .PHONY : src/frontend/ast/stmt.cpp.s
 
 src/frontend/ast/type.o: src/frontend/ast/type.cpp.o
@@ -417,6 +803,7 @@ src/frontend/ast/type.o: src/frontend/ast/type.cpp.o
 # target to build an object file
 src/frontend/ast/type.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/type.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/type.cpp.o
 .PHONY : src/frontend/ast/type.cpp.o
 
 src/frontend/ast/type.i: src/frontend/ast/type.cpp.i
@@ -425,6 +812,7 @@ src/frontend/ast/type.i: src/frontend/ast/type.cpp.i
 # target to preprocess a source file
 src/frontend/ast/type.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/type.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/type.cpp.i
 .PHONY : src/frontend/ast/type.cpp.i
 
 src/frontend/ast/type.s: src/frontend/ast/type.cpp.s
@@ -433,7 +821,35 @@ src/frontend/ast/type.s: src/frontend/ast/type.cpp.s
 # target to generate assembly for a file
 src/frontend/ast/type.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/type.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/type.cpp.s
 .PHONY : src/frontend/ast/type.cpp.s
+
+src/frontend/diagnostics.o: src/frontend/diagnostics.cpp.o
+.PHONY : src/frontend/diagnostics.o
+
+# target to build an object file
+src/frontend/diagnostics.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/diagnostics.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/diagnostics.cpp.o
+.PHONY : src/frontend/diagnostics.cpp.o
+
+src/frontend/diagnostics.i: src/frontend/diagnostics.cpp.i
+.PHONY : src/frontend/diagnostics.i
+
+# target to preprocess a source file
+src/frontend/diagnostics.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/diagnostics.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/diagnostics.cpp.i
+.PHONY : src/frontend/diagnostics.cpp.i
+
+src/frontend/diagnostics.s: src/frontend/diagnostics.cpp.s
+.PHONY : src/frontend/diagnostics.s
+
+# target to generate assembly for a file
+src/frontend/diagnostics.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/diagnostics.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/diagnostics.cpp.s
+.PHONY : src/frontend/diagnostics.cpp.s
 
 src/frontend/lexer/lexer.o: src/frontend/lexer/lexer.cpp.o
 .PHONY : src/frontend/lexer/lexer.o
@@ -441,6 +857,7 @@ src/frontend/lexer/lexer.o: src/frontend/lexer/lexer.cpp.o
 # target to build an object file
 src/frontend/lexer/lexer.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/lexer.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/lexer.cpp.o
 .PHONY : src/frontend/lexer/lexer.cpp.o
 
 src/frontend/lexer/lexer.i: src/frontend/lexer/lexer.cpp.i
@@ -449,6 +866,7 @@ src/frontend/lexer/lexer.i: src/frontend/lexer/lexer.cpp.i
 # target to preprocess a source file
 src/frontend/lexer/lexer.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/lexer.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/lexer.cpp.i
 .PHONY : src/frontend/lexer/lexer.cpp.i
 
 src/frontend/lexer/lexer.s: src/frontend/lexer/lexer.cpp.s
@@ -457,6 +875,7 @@ src/frontend/lexer/lexer.s: src/frontend/lexer/lexer.cpp.s
 # target to generate assembly for a file
 src/frontend/lexer/lexer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/lexer.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/lexer.cpp.s
 .PHONY : src/frontend/lexer/lexer.cpp.s
 
 src/frontend/lexer/token.o: src/frontend/lexer/token.cpp.o
@@ -465,6 +884,7 @@ src/frontend/lexer/token.o: src/frontend/lexer/token.cpp.o
 # target to build an object file
 src/frontend/lexer/token.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/token.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/token.cpp.o
 .PHONY : src/frontend/lexer/token.cpp.o
 
 src/frontend/lexer/token.i: src/frontend/lexer/token.cpp.i
@@ -473,6 +893,7 @@ src/frontend/lexer/token.i: src/frontend/lexer/token.cpp.i
 # target to preprocess a source file
 src/frontend/lexer/token.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/token.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/token.cpp.i
 .PHONY : src/frontend/lexer/token.cpp.i
 
 src/frontend/lexer/token.s: src/frontend/lexer/token.cpp.s
@@ -481,6 +902,7 @@ src/frontend/lexer/token.s: src/frontend/lexer/token.cpp.s
 # target to generate assembly for a file
 src/frontend/lexer/token.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/token.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/token.cpp.s
 .PHONY : src/frontend/lexer/token.cpp.s
 
 src/frontend/parser/parser.o: src/frontend/parser/parser.cpp.o
@@ -489,6 +911,7 @@ src/frontend/parser/parser.o: src/frontend/parser/parser.cpp.o
 # target to build an object file
 src/frontend/parser/parser.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser/parser.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/parser/parser.cpp.o
 .PHONY : src/frontend/parser/parser.cpp.o
 
 src/frontend/parser/parser.i: src/frontend/parser/parser.cpp.i
@@ -497,6 +920,7 @@ src/frontend/parser/parser.i: src/frontend/parser/parser.cpp.i
 # target to preprocess a source file
 src/frontend/parser/parser.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser/parser.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/parser/parser.cpp.i
 .PHONY : src/frontend/parser/parser.cpp.i
 
 src/frontend/parser/parser.s: src/frontend/parser/parser.cpp.s
@@ -505,6 +929,7 @@ src/frontend/parser/parser.s: src/frontend/parser/parser.cpp.s
 # target to generate assembly for a file
 src/frontend/parser/parser.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser/parser.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/parser/parser.cpp.s
 .PHONY : src/frontend/parser/parser.cpp.s
 
 src/frontend/sema/async_analyzer.o: src/frontend/sema/async_analyzer.cpp.o
@@ -770,6 +1195,33 @@ src/frontend/sema/visibility_checker.s: src/frontend/sema/visibility_checker.cpp
 src/frontend/sema/visibility_checker.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/visibility_checker.cpp.s
 .PHONY : src/frontend/sema/visibility_checker.cpp.s
+
+src/frontend/warnings.o: src/frontend/warnings.cpp.o
+.PHONY : src/frontend/warnings.o
+
+# target to build an object file
+src/frontend/warnings.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/warnings.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/warnings.cpp.o
+.PHONY : src/frontend/warnings.cpp.o
+
+src/frontend/warnings.i: src/frontend/warnings.cpp.i
+.PHONY : src/frontend/warnings.i
+
+# target to preprocess a source file
+src/frontend/warnings.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/warnings.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/warnings.cpp.i
+.PHONY : src/frontend/warnings.cpp.i
+
+src/frontend/warnings.s: src/frontend/warnings.cpp.s
+.PHONY : src/frontend/warnings.s
+
+# target to generate assembly for a file
+src/frontend/warnings.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/warnings.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/warnings.cpp.s
+.PHONY : src/frontend/warnings.cpp.s
 
 src/main.o: src/main.cpp.o
 .PHONY : src/main.o
@@ -1275,6 +1727,138 @@ src/runtime/timer/timer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/timer/timer.cpp.s
 .PHONY : src/runtime/timer/timer.cpp.s
 
+src/tools/lsp/aria-ls.o: src/tools/lsp/aria-ls.cpp.o
+.PHONY : src/tools/lsp/aria-ls.o
+
+# target to build an object file
+src/tools/lsp/aria-ls.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/aria-ls.cpp.o
+.PHONY : src/tools/lsp/aria-ls.cpp.o
+
+src/tools/lsp/aria-ls.i: src/tools/lsp/aria-ls.cpp.i
+.PHONY : src/tools/lsp/aria-ls.i
+
+# target to preprocess a source file
+src/tools/lsp/aria-ls.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/aria-ls.cpp.i
+.PHONY : src/tools/lsp/aria-ls.cpp.i
+
+src/tools/lsp/aria-ls.s: src/tools/lsp/aria-ls.cpp.s
+.PHONY : src/tools/lsp/aria-ls.s
+
+# target to generate assembly for a file
+src/tools/lsp/aria-ls.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/aria-ls.cpp.s
+.PHONY : src/tools/lsp/aria-ls.cpp.s
+
+src/tools/lsp/server.o: src/tools/lsp/server.cpp.o
+.PHONY : src/tools/lsp/server.o
+
+# target to build an object file
+src/tools/lsp/server.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/server.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/server.cpp.o
+.PHONY : src/tools/lsp/server.cpp.o
+
+src/tools/lsp/server.i: src/tools/lsp/server.cpp.i
+.PHONY : src/tools/lsp/server.i
+
+# target to preprocess a source file
+src/tools/lsp/server.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/server.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/server.cpp.i
+.PHONY : src/tools/lsp/server.cpp.i
+
+src/tools/lsp/server.s: src/tools/lsp/server.cpp.s
+.PHONY : src/tools/lsp/server.s
+
+# target to generate assembly for a file
+src/tools/lsp/server.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/server.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/server.cpp.s
+.PHONY : src/tools/lsp/server.cpp.s
+
+src/tools/lsp/transport.o: src/tools/lsp/transport.cpp.o
+.PHONY : src/tools/lsp/transport.o
+
+# target to build an object file
+src/tools/lsp/transport.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/transport.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/transport.cpp.o
+.PHONY : src/tools/lsp/transport.cpp.o
+
+src/tools/lsp/transport.i: src/tools/lsp/transport.cpp.i
+.PHONY : src/tools/lsp/transport.i
+
+# target to preprocess a source file
+src/tools/lsp/transport.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/transport.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/transport.cpp.i
+.PHONY : src/tools/lsp/transport.cpp.i
+
+src/tools/lsp/transport.s: src/tools/lsp/transport.cpp.s
+.PHONY : src/tools/lsp/transport.s
+
+# target to generate assembly for a file
+src/tools/lsp/transport.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/transport.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/transport.cpp.s
+.PHONY : src/tools/lsp/transport.cpp.s
+
+src/tools/lsp/vfs.o: src/tools/lsp/vfs.cpp.o
+.PHONY : src/tools/lsp/vfs.o
+
+# target to build an object file
+src/tools/lsp/vfs.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/vfs.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/vfs.cpp.o
+.PHONY : src/tools/lsp/vfs.cpp.o
+
+src/tools/lsp/vfs.i: src/tools/lsp/vfs.cpp.i
+.PHONY : src/tools/lsp/vfs.i
+
+# target to preprocess a source file
+src/tools/lsp/vfs.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/vfs.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/vfs.cpp.i
+.PHONY : src/tools/lsp/vfs.cpp.i
+
+src/tools/lsp/vfs.s: src/tools/lsp/vfs.cpp.s
+.PHONY : src/tools/lsp/vfs.s
+
+# target to generate assembly for a file
+src/tools/lsp/vfs.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/lsp/vfs.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/lsp/vfs.cpp.s
+.PHONY : src/tools/lsp/vfs.cpp.s
+
+src/tools/project_config.o: src/tools/project_config.cpp.o
+.PHONY : src/tools/project_config.o
+
+# target to build an object file
+src/tools/project_config.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/project_config.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/project_config.cpp.o
+.PHONY : src/tools/project_config.cpp.o
+
+src/tools/project_config.i: src/tools/project_config.cpp.i
+.PHONY : src/tools/project_config.i
+
+# target to preprocess a source file
+src/tools/project_config.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/project_config.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/project_config.cpp.i
+.PHONY : src/tools/project_config.cpp.i
+
+src/tools/project_config.s: src/tools/project_config.cpp.s
+.PHONY : src/tools/project_config.s
+
+# target to generate assembly for a file
+src/tools/project_config.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/tools/project_config.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/tools/project_config.cpp.s
+.PHONY : src/tools/project_config.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -1286,11 +1870,40 @@ help:
 	@echo "... test"
 	@echo "... AArch64TargetParserTableGen"
 	@echo "... ARMTargetParserTableGen"
+	@echo "... Continuous"
+	@echo "... ContinuousBuild"
+	@echo "... ContinuousConfigure"
+	@echo "... ContinuousCoverage"
+	@echo "... ContinuousMemCheck"
+	@echo "... ContinuousStart"
+	@echo "... ContinuousSubmit"
+	@echo "... ContinuousTest"
+	@echo "... ContinuousUpdate"
+	@echo "... Experimental"
+	@echo "... ExperimentalBuild"
+	@echo "... ExperimentalConfigure"
+	@echo "... ExperimentalCoverage"
+	@echo "... ExperimentalMemCheck"
+	@echo "... ExperimentalStart"
+	@echo "... ExperimentalSubmit"
+	@echo "... ExperimentalTest"
+	@echo "... ExperimentalUpdate"
+	@echo "... Nightly"
+	@echo "... NightlyBuild"
+	@echo "... NightlyConfigure"
+	@echo "... NightlyCoverage"
+	@echo "... NightlyMemCheck"
+	@echo "... NightlyMemoryCheck"
+	@echo "... NightlyStart"
+	@echo "... NightlySubmit"
+	@echo "... NightlyTest"
+	@echo "... NightlyUpdate"
 	@echo "... RISCVTargetParserTableGen"
 	@echo "... acc_gen"
 	@echo "... intrinsics_gen"
 	@echo "... omp_gen"
 	@echo "... vt_gen"
+	@echo "... aria-ls"
 	@echo "... ariac"
 	@echo "... test_runner"
 	@echo "... src/backend/ir/codegen_expr.o"
@@ -1317,6 +1930,9 @@ help:
 	@echo "... src/frontend/ast/type.o"
 	@echo "... src/frontend/ast/type.i"
 	@echo "... src/frontend/ast/type.s"
+	@echo "... src/frontend/diagnostics.o"
+	@echo "... src/frontend/diagnostics.i"
+	@echo "... src/frontend/diagnostics.s"
 	@echo "... src/frontend/lexer/lexer.o"
 	@echo "... src/frontend/lexer/lexer.i"
 	@echo "... src/frontend/lexer/lexer.s"
@@ -1359,6 +1975,9 @@ help:
 	@echo "... src/frontend/sema/visibility_checker.o"
 	@echo "... src/frontend/sema/visibility_checker.i"
 	@echo "... src/frontend/sema/visibility_checker.s"
+	@echo "... src/frontend/warnings.o"
+	@echo "... src/frontend/warnings.i"
+	@echo "... src/frontend/warnings.s"
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"
@@ -1422,6 +2041,21 @@ help:
 	@echo "... src/runtime/timer/timer.o"
 	@echo "... src/runtime/timer/timer.i"
 	@echo "... src/runtime/timer/timer.s"
+	@echo "... src/tools/lsp/aria-ls.o"
+	@echo "... src/tools/lsp/aria-ls.i"
+	@echo "... src/tools/lsp/aria-ls.s"
+	@echo "... src/tools/lsp/server.o"
+	@echo "... src/tools/lsp/server.i"
+	@echo "... src/tools/lsp/server.s"
+	@echo "... src/tools/lsp/transport.o"
+	@echo "... src/tools/lsp/transport.i"
+	@echo "... src/tools/lsp/transport.s"
+	@echo "... src/tools/lsp/vfs.o"
+	@echo "... src/tools/lsp/vfs.i"
+	@echo "... src/tools/lsp/vfs.s"
+	@echo "... src/tools/project_config.o"
+	@echo "... src/tools/project_config.i"
+	@echo "... src/tools/project_config.s"
 .PHONY : help
 
 

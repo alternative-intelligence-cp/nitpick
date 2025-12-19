@@ -10,6 +10,15 @@ add_executable(test_runner
     unit/test_lexer.cpp
     unit/test_ast.cpp
     unit/test_parser.cpp
+    unit/test_diagnostics.cpp
+    unit/test_warnings.cpp
+    unit/test_project_config.cpp
+    unit/test_lsp_transport.cpp
+    unit/test_lsp_server.cpp
+    unit/test_lsp_vfs.cpp
+    unit/test_lsp_thread_pool.cpp
+    unit/test_debug_info.cpp
+    unit/test_tbb_formatters.cpp
     unit/test_symbol_table.cpp
     unit/test_module_table.cpp
     unit/test_type_checker.cpp
@@ -68,6 +77,8 @@ add_executable(test_runner
 target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/lexer/token.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/lexer/lexer.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/diagnostics.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/warnings.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/ast/ast_node.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/ast/expr.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/ast/stmt.cpp
@@ -108,13 +119,31 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/runtime/collections/collections.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/strings/strings.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/math/math.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/project_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/lsp/transport.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/lsp/server.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/lsp/vfs.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/lsp/work_queue.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/lsp/thread_pool.cpp
 )
+
+# Add debugger formatters if LLDB is available
+if(LLDB_FOUND)
+    target_sources(test_runner PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/tools/debugger/aria_formatters.cpp
+    )
+endif()
 
 # Include test helpers header
 target_include_directories(test_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Link with LLVM libraries (needed for IR generation)
 target_link_libraries(test_runner ${llvm_libs})
+
+# Link with LLDB if available
+if(LLDB_FOUND)
+    target_link_libraries(test_runner ${LLDB_LIBRARY})
+endif()
 
 # Register with CTest
 add_test(NAME unit_tests COMMAND test_runner)

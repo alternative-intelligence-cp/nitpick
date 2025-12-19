@@ -32,6 +32,8 @@ private:
     size_t start;        // Start of current token
     int line;            // Current line (1-indexed)
     int column;          // Current column (1-indexed)
+    int start_line;      // Line where current token started (1-indexed)
+    int start_column;    // Column where current token started (1-indexed)
     
     // Token collection and error tracking
     std::vector<Token> tokens;

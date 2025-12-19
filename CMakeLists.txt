@@ -58,10 +58,36 @@ llvm_map_components_to_libnames(llvm_libs
 )
 
 # ============================================================================
+# LLDB Configuration (for debugger formatters)
+# ============================================================================
+
+# Find LLDB library
+find_library(LLDB_LIBRARY NAMES lldb LLDB HINTS ${LLVM_LIBRARY_DIRS})
+if(LLDB_LIBRARY)
+    message(STATUS "Found LLDB library: ${LLDB_LIBRARY}")
+    set(LLDB_FOUND TRUE)
+else()
+    message(STATUS "LLDB library not found - debugger formatters will not be built")
+    set(LLDB_FOUND FALSE)
+endif()
+
+# ============================================================================
+# Third-party libraries
+# ============================================================================
+
+# toml11 for aria.toml parsing (header-only library)
+add_subdirectory(vendor/toml11)
+
+# nlohmann/json for LSP JSON-RPC (header-only library)
+# No add_subdirectory needed - just include headers
+
+# ============================================================================
 # Include directories
 # ============================================================================
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${CMAKE_SOURCE_DIR}/vendor/toml11/include)
+include_directories(${CMAKE_SOURCE_DIR}/vendor/json/include)
 
 # ============================================================================
 # Source files (will be populated as we implement each phase)
@@ -87,6 +113,12 @@ set(PARSER_SOURCES
     # src/frontend/parser/parse_stmt.cpp
     # src/frontend/parser/parse_type.cpp
     # src/frontend/parser/parse_module.cpp
+)
+
+# Diagnostics (Phase 7.2)
+set(DIAGNOSTICS_SOURCES
+    src/frontend/diagnostics.cpp
+    src/frontend/warnings.cpp
 )
 
 # Phase 3: Semantic Analysis
@@ -142,15 +174,34 @@ set(STDLIB_SOURCES
     src/runtime/math/math.cpp
 )
 
+# Phase 7: Tooling
+set(TOOLS_SOURCES
+    src/tools/project_config.cpp
+    src/tools/lsp/transport.cpp
+    src/tools/lsp/server.cpp
+    src/tools/lsp/vfs.cpp
+    src/tools/lsp/work_queue.cpp
+    src/tools/lsp/thread_pool.cpp
+)
+
+# Phase 7.4: Debugger formatters (optional, requires LLDB)
+if(LLDB_FOUND)
+    set(DEBUGGER_SOURCES
+        src/tools/debugger/aria_formatters.cpp
+    )
+endif()
+
 # Combine all sources
 set(ARIA_SOURCES
     ${LEXER_SOURCES}
     ${AST_SOURCES}
     ${PARSER_SOURCES}
+    ${DIAGNOSTICS_SOURCES}
     ${SEMA_SOURCES}
     ${IR_SOURCES}
     ${RUNTIME_SOURCES}
     ${STDLIB_SOURCES}
+    ${TOOLS_SOURCES}
 )
 
 # ============================================================================
@@ -160,6 +211,16 @@ set(ARIA_SOURCES
 # Main compiler executable
 add_executable(ariac src/main.cpp ${ARIA_SOURCES})
 target_link_libraries(ariac ${llvm_libs})
+
+# LSP server executable (Phase 7.3)
+add_executable(aria-ls src/tools/lsp/aria-ls.cpp 
+    ${TOOLS_SOURCES} 
+    ${DIAGNOSTICS_SOURCES}
+    ${LEXER_SOURCES}
+    ${PARSER_SOURCES}
+    ${AST_SOURCES}
+)
+# LSP server needs lexer, parser, diagnostics for real-time error checking
 
 # ============================================================================
 # Testing
