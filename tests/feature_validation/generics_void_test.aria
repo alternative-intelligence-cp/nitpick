@@ -1,0 +1,18 @@
+// Simpler generics test - using void to avoid return type issues
+// Goal: Demonstrate that type checker triggers generic specialization
+
+// Generic function that prints a value (void return, so no return type issues)
+func<T>:print_value = void(T:value) {
+    // Just a placeholder - void functions don't need return
+};
+
+// Non-generic function that calls the generic
+func:main = int32() {
+    // These calls should trigger two specializations:
+    // 1. print_value<int32>
+    // 2. print_value<flt64>
+    print_value(42);
+    print_value(3.14);
+    
+    pass(0);
+};

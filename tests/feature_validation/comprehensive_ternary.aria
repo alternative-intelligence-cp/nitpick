@@ -1,0 +1,87 @@
+// Comprehensive Ternary Expression Tests
+// Tests various uses of: is (condition) : true_value : false_value
+// Expected exit code: 125 (sum of all test results)
+
+// Test 1: Simple max function
+func:test_simple = int32() {
+    int32:a = 10;
+    int32:b = 20;
+    int32:max = is (a > b) : a : b;
+    pass(max);  // Returns 20
+};
+
+// Test 2: Min function
+func:test_min = int32() {
+    int32:a = 15;
+    int32:b = 8;
+    int32:min = is (a < b) : a : b;
+    pass(min);  // Returns 8
+};
+
+// Test 3: Conditional sign flip
+func:test_sign = int32() {
+    int32:x = 5;
+    int32:y = 7;
+    // If x < y, add them; else subtract
+    int32:val = is (x < y) : (x + y) : (x - y);
+    pass(val);  // Returns 12 (5 + 7)
+};
+
+// Test 4: Nested ternary (max of 3)
+func:test_nested = int32() {
+    int32:a = 5;
+    int32:b = 25;
+    int32:c = 15;
+    int32:max = is (a > b) : a : (is (b > c) : b : c);
+    pass(max);  // Returns 25
+};
+
+// Test 5: Ternary in computation
+func:test_computation = int32() {
+    int32:x = 7;
+    int32:y = 3;
+    int32:value = (is (x > y) : x : y) + 10;
+    pass(value);  // Returns 17 (7 + 10)
+};
+
+// Test 6: Ternary with function calls
+func:helper_true = int32() {
+    pass(30);
+};
+
+func:helper_false = int32() {
+    pass(40);
+};
+
+func:test_with_calls = int32() {
+    int32:flag = 1;
+    int32:answer = is (flag > 0) : helper_true() : helper_false();
+    pass(answer);  // Returns 30
+};
+
+// Test 7: Multiple ternaries in same statement
+func:test_multiple = int32() {
+    int32:a = 1;
+    int32:b = 2;
+    int32:three = 3;
+    int32:four = 4;
+    int32:five = 5;
+    int32:six = 6;
+    int32:zero = 0;
+    int32:x = is (a > zero) : three : four;
+    int32:y = is (b > zero) : five : six;
+    pass(x + y);  // Returns 8 (3 + 5)
+};
+
+func:main = int32() {
+    int32:r1 = test_simple();       // 20
+    int32:r2 = test_min();          // 8
+    int32:r3 = test_sign();         // 12
+    int32:r4 = test_nested();       // 25
+    int32:r5 = test_computation();  // 17
+    int32:r6 = test_with_calls();   // 30
+    int32:r7 = test_multiple();     // 8
+    
+    int32:sum = r1 + r2 + r3 + r4 + r5 + r6 + r7;
+    pass(sum);  // 20+8+12+25+17+30+8 = 120
+};

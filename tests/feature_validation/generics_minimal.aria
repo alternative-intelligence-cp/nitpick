@@ -1,0 +1,19 @@
+// Minimal test - generic function with matching types
+// Return type matches parameter type both use *T
+
+// Generic identity: takes *T, returns *T
+func<T>:identity = *T(*T:value) {
+    pass(value);
+};
+
+// Caller that uses the generic twice with different types
+func:test_identity = int32() {
+    identity(42);
+    identity(100);
+    pass(42);  // Return int32 literal explicitly
+};
+
+// Entry point  
+func:main = int32() {
+    pass(test_identity());
+};

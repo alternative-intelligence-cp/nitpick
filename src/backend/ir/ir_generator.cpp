@@ -536,16 +536,31 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
         case ASTNode::NodeType::BLOCK: {
             // Block statement - generate code for each statement
             BlockStmt* block = static_cast<BlockStmt*>(stmt);
+            
+            // Push new defer scope for this block
+            defer_stack.push_back(std::vector<BlockStmt*>());
+            
             llvm::Value* lastVal = nullptr;
             for (const auto& s : block->statements) {
                 lastVal = codegenStatement(s.get());
             }
+            
+            // Execute defers at block exit (LIFO order)
+            executeScopeDefers();
+            
+            // Pop defer scope
+            defer_stack.pop_back();
+            
             return lastVal;
         }
         
         case ASTNode::NodeType::RETURN: {
-            // Return statement
+            // Return statement - execute all defers before returning
             ReturnStmt* ret = static_cast<ReturnStmt*>(stmt);
+            
+            // Execute all defer blocks (LIFO order)
+            executeFunctionDefers();
+            
             if (ret->value) {
                 llvm::Value* retVal = codegenExpression(ret->value.get());
                 if (retVal) {
@@ -773,6 +788,24 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             llvm::BasicBlock* afterContinueBB = llvm::BasicBlock::Create(context, "aftercontinue", function);
             builder.SetInsertPoint(afterContinueBB);
             
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::DEFER: {
+            // Defer statement - register block for later execution at scope exit
+            DeferStmt* deferStmt = static_cast<DeferStmt*>(stmt);
+            
+            if (defer_stack.empty()) {
+                // Error: defer outside of scope
+                // TODO: Emit proper error message
+                return nullptr;
+            }
+            
+            // Get the defer block and add to current scope
+            BlockStmt* defer_block = static_cast<BlockStmt*>(deferStmt->block.get());
+            defer_stack.back().push_back(defer_block);
+            
+            // Note: Actual execution happens at scope exit via executeScopeDefers()
             return nullptr;
         }
         
@@ -1442,4 +1475,38 @@ llvm::DIType* aria::IRGenerator::mapDebugType(Type* aria_type) {
     }
     
     return di_type;
+}
+
+// =============================================================================
+// Defer Statement Support
+// =============================================================================
+
+void aria::IRGenerator::executeScopeDefers() {
+    if (defer_stack.empty()) {
+        return;
+    }
+    
+    // Get the current scope's defer blocks
+    std::vector<BlockStmt*>& current_scope_defers = defer_stack.back();
+    
+    // Execute in LIFO order (reverse)
+    for (auto it = current_scope_defers.rbegin(); it != current_scope_defers.rend(); ++it) {
+        BlockStmt* defer_block = *it;
+        for (const auto& statement : defer_block->statements) {
+            codegenStatement(statement.get());
+        }
+    }
+}
+
+void aria::IRGenerator::executeFunctionDefers() {
+    // Execute all scopes' defers in reverse order (inside-out)
+    for (auto scope_it = defer_stack.rbegin(); scope_it != defer_stack.rend(); ++scope_it) {
+        // Within each scope, execute defers in LIFO order
+        for (auto defer_it = scope_it->rbegin(); defer_it != scope_it->rend(); ++defer_it) {
+            BlockStmt* defer_block = *defer_it;
+            for (const auto& statement : defer_block->statements) {
+                codegenStatement(statement.get());
+            }
+        }
+    }
 }

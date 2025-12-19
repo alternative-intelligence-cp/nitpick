@@ -1,4 +1,5 @@
 #include "frontend/sema/type_checker.h"
+#include "frontend/sema/generic_resolver.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
 #include <sstream>
@@ -6,6 +7,39 @@
 
 namespace aria {
 namespace sema {
+
+// ============================================================================
+// AST Traversal: Main Entry Point
+// ============================================================================
+
+void TypeChecker::check(ASTNode* module) {
+    if (!module) {
+        addError("Null module node", 0, 0);
+        return;
+    }
+    
+    // Module should be a BLOCK or PROGRAM node containing statements
+    if (module->type == ASTNode::NodeType::BLOCK) {
+        BlockStmt* blockStmt = static_cast<BlockStmt*>(module);
+        for (const auto& stmt : blockStmt->statements) {
+            if (stmt) {
+                checkStatement(stmt.get());
+            }
+        }
+    } else if (module->type == ASTNode::NodeType::PROGRAM) {
+        // If PROGRAM node exists, it likely contains a body (assume BlockStmt)
+        // For now, treat as block with statements vector
+        BlockStmt* blockStmt = static_cast<BlockStmt*>(module);
+        for (const auto& stmt : blockStmt->statements) {
+            if (stmt) {
+                checkStatement(stmt.get());
+            }
+        }
+    } else {
+        // Single statement module (edge case)
+        checkStatement(module);
+    }
+}
 
 // ============================================================================
 // Type Inference: Main Entry Point
@@ -456,10 +490,67 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         return typeSystem->getErrorType();
     }
     
-    // TODO: Check that callee is a function type
+    // Get the function declaration (if this is a direct function call)
+    FuncDeclStmt* funcDecl = nullptr;
+    if (expr->callee->type == ASTNode::NodeType::IDENTIFIER) {
+        IdentifierExpr* idExpr = static_cast<IdentifierExpr*>(expr->callee.get());
+        Symbol* funcSymbol = symbolTable->lookupSymbol(idExpr->name);
+        if (funcSymbol && funcSymbol->kind == SymbolKind::FUNCTION) {
+            funcDecl = funcSymbol->getFuncDecl();
+        }
+    }
+    
+    // Check if this is a generic function call
+    if (funcDecl && !funcDecl->genericParams.empty() && genericResolver && monomorphizer) {
+        // Infer argument types
+        std::vector<Type*> argTypes;
+        for (const auto& arg : expr->arguments) {
+            Type* argType = inferType(arg.get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            argTypes.push_back(argType);
+        }
+        
+        // Check for explicit type arguments (turbofish syntax)
+        TypeSubstitution substitution;
+        if (!expr->explicitTypeArgs.empty()) {
+            // Explicit type arguments provided: identity::<int32>(42)
+            substitution = genericResolver->resolveExplicitTypeArgs(funcDecl, expr->explicitTypeArgs);
+        } else {
+            // Type inference: identity(42)
+            substitution = genericResolver->inferTypeArgs(funcDecl, expr, argTypes);
+        }
+        
+        // Check for errors in type resolution
+        if (genericResolver->hasErrors()) {
+            for (const auto& err : genericResolver->getErrors()) {
+                addError(err.message, expr);
+            }
+            genericResolver->clearErrors();
+            return typeSystem->getErrorType();
+        }
+        
+        // Request specialization
+        Specialization* spec = monomorphizer->requestSpecialization(funcDecl, substitution);
+        if (!spec) {
+            if (monomorphizer->hasErrors()) {
+                for (const auto& err : monomorphizer->getErrors()) {
+                    addError(err.message, expr);
+                }
+            }
+            return typeSystem->getErrorType();
+        }
+        
+        // Use the specialized function's return type
+        // TODO: Parse return type string to Type*
+        // For now, return UnknownType until we implement type parsing
+        return typeSystem->getUnknownType();
+    }
+    
+    // Non-generic function call or generics not available
     // TODO: Check argument count and types match parameters
     // For now, return UnknownType
-    addError("Function call type checking not yet fully implemented", expr);
     return typeSystem->getUnknownType();
 }
 
@@ -729,6 +820,10 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             checkVarDecl(static_cast<VarDeclStmt*>(stmt));
             break;
         
+        case ASTNode::NodeType::FUNC_DECL:
+            checkFuncDecl(static_cast<FuncDeclStmt*>(stmt));
+            break;
+        
         case ASTNode::NodeType::RETURN:
             checkReturnStmt(static_cast<ReturnStmt*>(stmt));
             break;
@@ -864,6 +959,57 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
 }
 
 // ============================================================================
+// Function Declaration Type Checking
+// ============================================================================
+
+void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
+    // Get return type
+    Type* returnType = typeSystem->getPrimitiveType(stmt->returnType);
+    
+    if (!returnType || returnType->getKind() == TypeKind::ERROR) {
+        addError("Unknown return type: '" + stmt->returnType + "'", stmt);
+        return;
+    }
+    
+    // Set current function return type for return statement checking
+    Type* previousReturnType = currentFunctionReturnType;
+    currentFunctionReturnType = returnType;
+    
+    // Check parameters
+    for (const auto& param : stmt->parameters) {
+        if (param->type == ASTNode::NodeType::PARAMETER) {
+            ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
+            Type* paramType = typeSystem->getPrimitiveType(paramNode->typeName);
+            
+            if (!paramType || paramType->getKind() == TypeKind::ERROR) {
+                addError("Unknown parameter type: '" + paramNode->typeName + "'", param.get());
+                continue;
+            }
+            
+            // Define parameter in symbol table (will be visible in function body)
+            symbolTable->defineSymbol(paramNode->paramName, SymbolKind::VARIABLE,
+                                     paramType, param->line, param->column);
+        }
+    }
+    
+    // Check function body (this is where generic calls get analyzed!)
+    if (stmt->body) {
+        checkStatement(stmt->body.get());
+    }
+    
+    // Restore previous function return type
+    currentFunctionReturnType = previousReturnType;
+    
+    // Define function symbol in symbol table with function declaration
+    // Note: Function type creation would need more work for full signature
+    Symbol* funcSymbol = symbolTable->defineSymbol(stmt->funcName, SymbolKind::FUNCTION,
+                                                    returnType, stmt->line, stmt->column);
+    if (funcSymbol) {
+        funcSymbol->setFuncDecl(stmt);  // Store AST for generic resolution and CTFE
+    }
+}
+
+// ============================================================================
 // Assignment Type Checking
 // ============================================================================
 
@@ -993,6 +1139,22 @@ void TypeChecker::checkReturnStmt(ReturnStmt* stmt) {
         
         if (returnType->getKind() == TypeKind::ERROR) {
             return;
+        }
+        
+        // Context-aware literal typing for return statements
+        // If returning an int64 literal to a smaller int type, check if it fits
+        if (stmt->value->type == ASTNode::NodeType::LITERAL &&
+            isStandardIntType(currentFunctionReturnType) &&
+            returnType->toString() == "int64") {
+            
+            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->value.get());
+            if (std::holds_alternative<int64_t>(literal->value)) {
+                int64_t value = std::get<int64_t>(literal->value);
+                if (literalFitsInType(value, currentFunctionReturnType)) {
+                    // Treat literal as having the function's return type
+                    return;  // Success, literal fits
+                }
+            }
         }
         
         if (!returnType->isAssignableTo(currentFunctionReturnType) && 

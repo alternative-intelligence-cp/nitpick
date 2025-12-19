@@ -17,8 +17,10 @@ namespace aria {
 
 // Forward declarations
 class ASTNode;  // ASTNode is in aria namespace
+class BlockStmt;  // For defer stack support
 namespace sema {
     class Type;  // Forward declaration in correct namespace
+    struct Specialization;  // Forward declaration for generic specializations
 }
 using sema::Type;  // Make Type available in aria namespace
 
@@ -42,6 +44,19 @@ private:
     // Type mapping cache (Aria types -> LLVM types)
     std::map<std::string, llvm::Type*> type_map;
     
+    // Loop context stack for break/continue support
+    struct LoopContext {
+        llvm::BasicBlock* continueTarget;  // Where 'continue' jumps to
+        llvm::BasicBlock* breakTarget;     // Where 'break' jumps to
+        
+        LoopContext(llvm::BasicBlock* cont, llvm::BasicBlock* brk)
+            : continueTarget(cont), breakTarget(brk) {}
+    };
+    std::vector<LoopContext> loop_stack;
+    
+    // Defer statement support (RAII cleanup)
+    std::vector<std::vector<BlockStmt*>> defer_stack;
+    
     // Debug info generation (Phase 7.4.1)
     std::unique_ptr<llvm::DIBuilder> di_builder;
     llvm::DICompileUnit* di_compile_unit;
@@ -55,6 +70,34 @@ private:
      * Reference: research_012-017 for type specifications
      */
     llvm::Type* mapType(Type* aria_type);
+    
+    /**
+     * Map type name string to LLVM Type
+     * @param type_name String name like "int32", "flt64", "bool"
+     * @return Corresponding LLVM type
+     */
+    llvm::Type* mapTypeFromName(const std::string& type_name);
+    
+    /**
+     * Generate code for a statement node
+     */
+    llvm::Value* codegenStatement(ASTNode* stmt);
+    
+    /**
+     * Generate code for an expression node
+     */
+    llvm::Value* codegenExpression(ASTNode* expr);
+    
+    /**
+     * Execute defer blocks in the current scope (LIFO order)
+     */
+    void executeScopeDefers();
+    
+    /**
+     * Execute all defer blocks up to function level (LIFO order)
+     * Called by return statements
+     */
+    void executeFunctionDefers();
     
     /**
      * Map Aria type to DWARF debug type
@@ -117,6 +160,13 @@ public:
      * @return LLVM Value representing the generated code
      */
     llvm::Value* codegen(ASTNode* node);
+    
+    /**
+     * Generate LLVM IR for specialized generic functions
+     * @param specializations Vector of function specializations from Monomorphizer
+     * @return Number of functions generated
+     */
+    size_t codegenSpecializedFunctions(const std::vector<sema::Specialization*>& specializations);
     
     /**
      * Get the generated LLVM module

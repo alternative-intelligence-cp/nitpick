@@ -5,6 +5,8 @@
 
 **The Alternative Intelligence Liberation Platform presents: A revolutionary programming language with TESLA-inspired six-stream I/O and production-ready toolchain**
 
+> ⚠️ **[READ THIS FIRST: SAFETY.md](SAFETY.md)** - No language is truly safe on its own. Aria makes dangerous operations **explicit** - you can't shoot yourself in the foot accidentally, but you can do it intentionally. Understand the safety contract before using `wild`, `async`, `@`, `extern`, or `wildx`.
+
 ---
 
 ## 🚀 Current Status (December 19, 2025)

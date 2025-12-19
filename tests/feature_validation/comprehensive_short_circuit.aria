@@ -1,0 +1,278 @@
+// Comprehensive Short-Circuit Evaluation Tests
+// Tests proper short-circuit behavior for && and || operators
+
+func:main = int32() {
+    // =================================================================
+    // TEST 1: && Short-Circuit - Right side not evaluated if left is false
+    // =================================================================
+    int32:x = 0;
+    int32:y = 10;
+    
+    // Left is false (x != 0 is false), so right side (x = 5) should NOT execute
+    if ((x != 0) && (y = 20)) {
+        // This branch should not execute
+        pass(255);  // ERROR marker
+    }
+    
+    // y should still be 10 (not modified)
+    if (y != 10) {
+        pass(1);  // ERROR: y was modified when it shouldn't be
+    }
+    
+    // =================================================================
+    // TEST 2: && Short-Circuit - Right side evaluated if left is true
+    // =================================================================
+    x = 5;
+    y = 10;
+    
+    // Left is true (x != 0), so right side (y = 20) SHOULD execute
+    if ((x != 0) && (y = 20)) {
+        // This branch should execute since both are true
+    }
+    
+    // y should be 20 (modified)
+    if (y != 20) {
+        pass(2);  // ERROR: y should have been modified
+    }
+    
+    // =================================================================
+    // TEST 3: && Basic truth table
+    // =================================================================
+    // false && false = false
+    if ((1 == 0) && (2 == 0)) {
+        pass(3);  // Should not execute
+    }
+    
+    // false && true = false
+    if ((1 == 0) && (1 == 1)) {
+        pass(4);  // Should not execute
+    }
+    
+    // true && false = false
+    if ((1 == 1) && (1 == 0)) {
+        pass(5);  // Should not execute
+    }
+    
+    // true && true = true
+    if ((1 == 1) && (2 == 2)) {
+        // Should execute - this is correct
+    } else {
+        pass(6);  // ERROR: Should have been true
+    }
+    
+    // =================================================================
+    // TEST 4: || Short-Circuit - Right side not evaluated if left is true
+    // =================================================================
+    x = 5;
+    y = 10;
+    
+    // Left is true (x != 0), so right side (y = 30) should NOT execute
+    if ((x != 0) || (y = 30)) {
+        // This branch should execute due to left being true
+    }
+    
+    // y should still be 10 (not modified)
+    if (y != 10) {
+        pass(7);  // ERROR: y was modified when it shouldn't be
+    }
+    
+    // =================================================================
+    // TEST 5: || Short-Circuit - Right side evaluated if left is false
+    // =================================================================
+    x = 0;
+    y = 10;
+    
+    // Left is false (x != 0 is false), so right side (y = 30) SHOULD execute
+    if ((x != 0) || (y = 30)) {
+        // This branch should execute since right is true
+    }
+    
+    // y should be 30 (modified)
+    if (y != 30) {
+        pass(8);  // ERROR: y should have been modified
+    }
+    
+    // =================================================================
+    // TEST 6: || Basic truth table
+    // =================================================================
+    // false || false = false
+    if ((1 == 0) || (2 == 0)) {
+        pass(9);  // Should not execute
+    }
+    
+    // false || true = true
+    if ((1 == 0) || (1 == 1)) {
+        // Should execute - this is correct
+    } else {
+        pass(10);  // ERROR: Should have been true
+    }
+    
+    // true || false = true
+    if ((1 == 1) || (1 == 0)) {
+        // Should execute - this is correct
+    } else {
+        pass(11);  // ERROR: Should have been true
+    }
+    
+    // true || true = true
+    if ((1 == 1) || (2 == 2)) {
+        // Should execute - this is correct
+    } else {
+        pass(12);  // ERROR: Should have been true
+    }
+    
+    // =================================================================
+    // TEST 7: Chained && (all must be true)
+    // =================================================================
+    x = 1;
+    y = 2;
+    int32:z = 3;
+    
+    if ((x != 0) && (y != 0) && (z != 0)) {
+        // All true - should execute
+    } else {
+        pass(13);  // ERROR
+    }
+    
+    // First is false, rest should not evaluate
+    x = 0;
+    y = 2;
+    z = 3;
+    if ((x != 0) && (y = 100) && (z = 200)) {
+        pass(14);  // Should not execute
+    }
+    
+    // y and z should not have been modified due to short-circuit
+    if (y != 2) {
+        pass(15);  // ERROR: y was modified
+    }
+    if (z != 3) {
+        pass(16);  // ERROR: z was modified
+    }
+    
+    // =================================================================
+    // TEST 8: Chained || (any can be true)
+    // =================================================================
+    x = 0;
+    y = 0;
+    z = 1;
+    
+    if ((x != 0) || (y != 0) || (z != 0)) {
+        // Third is true - should execute
+    } else {
+        pass(17);  // ERROR
+    }
+    
+    // First is true, rest should not evaluate
+    x = 1;
+    y = 2;
+    z = 3;
+    if ((x != 0) || (y = 100) || (z = 200)) {
+        // Should execute (first is true)
+    }
+    
+    // y and z should not have been modified due to short-circuit
+    if (y != 2) {
+        pass(18);  // ERROR: y was modified
+    }
+    if (z != 3) {
+        pass(19);  // ERROR: z was modified
+    }
+    
+    // =================================================================
+    // TEST 9: Nested short-circuit - || inside &&
+    // =================================================================
+    x = 1;
+    y = 2;
+    z = 3;
+    
+    // (x != 0) is true, so right side evaluates
+    // Right side: (y = 10) || (z = 20)
+    // (y = 10) sets y to 10 and returns true, so z should NOT change
+    if ((x != 0) && ((y = 10) || (z = 20))) {
+        // Should execute
+    }
+    
+    if (y != 10) {
+        pass(20);  // ERROR: y should be 10
+    }
+    if (z != 3) {
+        pass(21);  // ERROR: z should still be 3
+    }
+    
+    // =================================================================
+    // TEST 10: Nested short-circuit - && inside ||
+    // =================================================================
+    x = 1;
+    y = 2;
+    z = 3;
+    
+    // (x != 0) is true, so right side doesn't evaluate
+    // Right side: (y = 100) && (z = 200)
+    // Neither should change
+    if ((x != 0) || ((y = 100) && (z = 200))) {
+        // Should execute (left is true)
+    }
+    
+    if (y != 2) {
+        pass(22);  // ERROR: y should still be 2
+    }
+    if (z != 3) {
+        pass(23);  // ERROR: z should still be 3
+    }
+    
+    // =================================================================
+    // TEST 11: Side effects with compound assignment
+    // =================================================================
+    x = 10;
+    y = 5;
+    
+    // Left is false, so (x += 10) should NOT execute
+    if ((y > 10) && (x += 10)) {
+        pass(24);  // Should not execute
+    }
+    
+    if (x != 10) {
+        pass(25);  // ERROR: x was modified in short-circuit
+    }
+    
+    // Left is true, so (y += 5) SHOULD execute
+    if ((x > 5) && (y += 5)) {
+        // Should execute
+    }
+    
+    if (y != 10) {
+        pass(26);  // ERROR: y should be 10
+    }
+    
+    // =================================================================
+    // TEST 12: Complex conditions
+    // =================================================================
+    x = 10;
+    y = 20;
+    
+    if ((x > 0) && (y < 30)) {
+        // true && true = true - should execute
+    } else {
+        pass(27);  // ERROR
+    }
+    
+    if ((x > 20) && (y < 30)) {
+        pass(28);  // false && true = false - should not execute
+    }
+    
+    if ((x > 0) || (y > 30)) {
+        // true || false = true - should execute
+    } else {
+        pass(29);  // ERROR
+    }
+    
+    if ((x > 20) || (y > 30)) {
+        pass(30);  // false || false = false - should not execute
+    }
+    
+    // =================================================================
+    // Success!
+    // =================================================================
+    pass(42);  // Hitchhiker's Guide to the Galaxy!
+};

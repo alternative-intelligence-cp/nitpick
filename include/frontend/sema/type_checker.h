@@ -3,6 +3,7 @@
 
 #include "type.h"
 #include "symbol_table.h"
+#include "generic_resolver.h"
 #include "frontend/ast/ast_node.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
@@ -39,6 +40,8 @@ class TypeChecker {
 private:
     TypeSystem* typeSystem;
     SymbolTable* symbolTable;
+    GenericResolver* genericResolver;
+    Monomorphizer* monomorphizer;
     std::vector<std::string> errors;  // Accumulated type errors
     
     // Current function return type (for return statement checking)
@@ -373,9 +376,24 @@ private:
     void addError(const std::string& message, ASTNode* node);
     
 public:
-    TypeChecker(TypeSystem* typeSystem, SymbolTable* symbolTable)
+    TypeChecker(TypeSystem* typeSystem, SymbolTable* symbolTable,
+                GenericResolver* resolver = nullptr, Monomorphizer* morpher = nullptr)
         : typeSystem(typeSystem), symbolTable(symbolTable),
+          genericResolver(resolver), monomorphizer(morpher),
           currentFunctionReturnType(nullptr) {}
+    
+    /**
+     * Main entry point: Type check entire module AST
+     * 
+     * Walks the AST recursively, performing:
+     * - Type inference on all expressions
+     * - Type checking on all statements
+     * - Generic function specialization detection
+     * - Symbol table population
+     * 
+     * This method triggers the entire type checking pipeline.
+     */
+    void check(ASTNode* module);
     
     /**
      * Infer the type of an expression
@@ -405,6 +423,17 @@ public:
      * - Declared type must exist in type system
      */
     void checkVarDecl(VarDeclStmt* stmt);
+    
+    /**
+     * Check function declaration statement
+     * 
+     * Rules:
+     * - Return type must exist in type system
+     * - All parameter types must exist in type system
+     * - Function body statements are type-checked
+     * - Generic function calls in body trigger specialization
+     */
+    void checkFuncDecl(FuncDeclStmt* stmt);
     
     /**
      * Check assignment expression

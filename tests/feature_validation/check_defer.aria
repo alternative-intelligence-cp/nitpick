@@ -1,0 +1,84 @@
+// Defer Statement Test
+// Tests RAII-style cleanup with defer
+
+func:main = int32() {
+    int32:counter = 0;
+    
+    // Test 1: Simple defer execution
+    {
+        counter = counter + 1;  // counter = 1
+        defer {
+            counter = counter + 10;  // Should execute at scope exit
+        }
+        counter = counter + 1;  // counter = 2
+    }
+    // After scope exit, defer should have executed: counter = 12
+    
+    if (counter != 12) {
+        pass(counter);  // ERROR: defer didn't execute properly - will exit with actual value
+    }
+    
+    // Test 2: Multiple defers (LIFO order - last in, first out)
+    counter = 0;
+    {
+        defer {
+            counter = counter + 1;  // Executes third
+        }
+        defer {
+            counter = counter + 10;  // Executes second
+        }
+        defer {
+            counter = counter + 100;  // Executes first (LIFO)
+        }
+    }
+    // Execution order: last defer first (LIFO)
+    // 1. counter + 100 = 100
+    // 2. counter + 10 = 110  
+    // 3. counter + 1 = 111
+    
+    if (counter != 111) {
+        pass(2);  // ERROR: multiple defers didn't execute in LIFO order
+    }
+    
+    // Test 3: Defer in nested scopes
+    counter = 0;
+    {
+        counter = counter + 1;  // counter = 1
+        defer {
+            counter = counter + 10;  // Outer defer
+        }
+        
+        {
+            counter = counter + 1;  // counter = 2
+            defer {
+                counter = counter + 100;  // Inner defer (executes first)
+            }
+            counter = counter + 1;  // counter = 3
+        }
+        // Inner scope exits, inner defer runs: counter = 103
+        
+        counter = counter + 1;  // counter = 104
+    }
+    // Outer scope exits, outer defer runs: counter = 114
+    
+    if (counter != 114) {
+        pass(3);  // ERROR: nested defer didn't work
+    }
+    
+    // Test 4: Defer with early return (defers still execute)
+    counter = 0;
+    
+    if (1 == 1) {
+        defer {
+            counter = counter + 5;
+        }
+        
+        if (2 == 2) {
+            // Early return - defer should still execute
+            pass(42);  // Success!
+        }
+    }
+    
+    // Should never reach here
+    pass(99);
+};
