@@ -62,9 +62,26 @@ llvm_map_components_to_libnames(llvm_libs
 # ============================================================================
 
 # Find LLDB library
-find_library(LLDB_LIBRARY NAMES lldb LLDB HINTS ${LLVM_LIBRARY_DIRS})
+find_library(LLDB_LIBRARY 
+    NAMES lldb LLDB lldb-20
+    HINTS ${LLVM_LIBRARY_DIRS} /usr/lib/llvm-20/lib
+    PATHS /usr/lib/x86_64-linux-gnu
+)
 if(LLDB_LIBRARY)
     message(STATUS "Found LLDB library: ${LLDB_LIBRARY}")
+    # LLDB headers are always in /usr/lib/llvm-*/include regardless of library location
+    # Try to find the version-specific directory
+    if(EXISTS "/usr/lib/llvm-20/include/lldb")
+        set(LLDB_INCLUDE_DIRS "/usr/lib/llvm-20/include")
+    elseif(EXISTS "/usr/lib/llvm-19/include/lldb")
+        set(LLDB_INCLUDE_DIRS "/usr/lib/llvm-19/include")
+    elseif(EXISTS "/usr/lib/llvm-18/include/lldb")
+        set(LLDB_INCLUDE_DIRS "/usr/lib/llvm-18/include")
+    else()
+        # Fallback: try to derive from LLVM_INCLUDE_DIRS
+        set(LLDB_INCLUDE_DIRS "${LLVM_INCLUDE_DIRS}")
+    endif()
+    message(STATUS "LLDB include directory: ${LLDB_INCLUDE_DIRS}")
     set(LLDB_FOUND TRUE)
 else()
     message(STATUS "LLDB library not found - debugger formatters will not be built")
@@ -230,9 +247,11 @@ if(LLDB_FOUND)
         src/tools/debugger/aria_dap.cpp
         ${DEBUGGER_SOURCES}
     )
+    target_include_directories(aria-dap PRIVATE ${LLDB_INCLUDE_DIRS})
     target_link_libraries(aria-dap ${LLDB_LIBRARY})
     
     message(STATUS "Building DAP server: aria-dap")
+    message(STATUS "LLDB include dirs for aria-dap: ${LLDB_INCLUDE_DIRS}")
 else()
     message(STATUS "LLDB not found - DAP server will not be built")
 endif()

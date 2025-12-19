@@ -127,6 +127,8 @@ std::pair<int64_t, int64_t> TBBTypeSummaryProvider::getSymmetricRange(int bit_wi
 // ============================================================================
 // GC Pointer Synthetic Provider Implementation
 // ============================================================================
+// TODO(LLDB 20): Disabled until ported to Python-based synthetic provider
+#if 0
 
 GCPointerSyntheticProvider::GCPointerSyntheticProvider(lldb::SBValue valobj)
     : m_valobj(valobj), m_valid_header(false) {
@@ -277,6 +279,8 @@ uint64_t GCPointerSyntheticProvider::extractBitField(uint64_t header,
     uint64_t mask = ((1ULL << bit_count) - 1) << bit_offset;
     return (header & mask) >> bit_offset;
 }
+
+#endif // #if 0 - GCPointerSyntheticProvider disabled
 
 // ============================================================================
 // Result<T> Type Summary Provider Implementation

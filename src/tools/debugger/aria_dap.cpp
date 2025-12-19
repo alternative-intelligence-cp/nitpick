@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
     std::cerr.setf(std::ios::unitbuf);
     
     std::cerr << "[DAP] Aria Debug Adapter Protocol Server\n";
-    std::cerr << "[DAP] LLDB version: " << LLDB_VERSION_STRING << "\n";
+    std::cerr << "[DAP] LLDB version: " << lldb::SBDebugger::GetVersionString() << "\n";
     std::cerr << "[DAP] Listening on stdin/stdout...\n";
     
     try {

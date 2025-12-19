@@ -15,6 +15,7 @@
 #define ARIA_DEBUGGER_DAP_SERVER_H
 
 #include <lldb/API/LLDB.h>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <memory>
 #include <map>
@@ -24,10 +25,7 @@
 #include <mutex>
 #include <condition_variable>
 
-// Forward declare JSON library
-namespace nlohmann {
-    class json;
-}
+// Note: Fully qualify nlohmann::json to avoid conflicts with LLDB's internal json types
 
 namespace aria {
 namespace debugger {
