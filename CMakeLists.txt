@@ -182,6 +182,7 @@ set(TOOLS_SOURCES
     src/tools/lsp/vfs.cpp
     src/tools/lsp/work_queue.cpp
     src/tools/lsp/thread_pool.cpp
+    src/tools/debugger/web_server.cpp
 )
 
 # Phase 7.4: Debugger (optional, requires LLDB)
