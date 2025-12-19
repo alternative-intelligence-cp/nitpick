@@ -880,6 +880,14 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             checkReturnStmt(static_cast<ReturnStmt*>(stmt));
             break;
         
+        case ASTNode::NodeType::PASS:
+            checkPassStmt(static_cast<PassStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::FAIL:
+            checkFailStmt(static_cast<FailStmt*>(stmt));
+            break;
+        
         case ASTNode::NodeType::IF:
             checkIfStmt(static_cast<IfStmt*>(stmt));
             break;
@@ -1275,6 +1283,71 @@ void TypeChecker::checkReturnStmt(ReturnStmt* stmt) {
         }
     }
 }
+
+// ============================================================================
+// Pass/Fail Statement Type Checking (Result Types)
+// ============================================================================
+
+void TypeChecker::checkPassStmt(PassStmt* stmt) {
+    // Check if we're inside a function
+    if (!currentFunctionReturnType) {
+        addError("pass statement outside of function", stmt);
+        return;
+    }
+    
+    // Get the primitive type "void" for comparison
+    Type* voidType = typeSystem->getPrimitiveType("void");
+    bool isVoidFunction = currentFunctionReturnType->equals(voidType);
+    
+    // void function cannot use pass
+    if (isVoidFunction) {
+        addError("void function cannot use pass statement", stmt);
+        return;
+    }
+    
+    // Infer type of the pass value
+    Type* valueType = inferType(stmt->value.get());
+    
+    if (valueType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // Check if value type matches function return type
+    if (!valueType->isAssignableTo(currentFunctionReturnType) && 
+        !canCoerce(valueType, currentFunctionReturnType)) {
+        addError("Pass value type '" + valueType->toString() + 
+                "' does not match function return type '" + 
+                currentFunctionReturnType->toString() + "'", stmt);
+    }
+}
+
+void TypeChecker::checkFailStmt(FailStmt* stmt) {
+    // Check if we're inside a function
+    if (!currentFunctionReturnType) {
+        addError("fail statement outside of function", stmt);
+        return;
+    }
+    
+    // Infer type of the error code
+    Type* errorType = inferType(stmt->errorCode.get());
+    
+    if (errorType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // For now, just ensure error code is an integer type
+    // TODO: When full result types are implemented, this will be more sophisticated
+    if (errorType->getKind() != TypeKind::PRIMITIVE) {
+        addError("Fail error code must be an integer type", stmt);
+        return;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(errorType);
+    if (!isStandardIntType(primType)) {
+        addError("Fail error code must be an integer type, got '" + errorType->toString() + "'", stmt);
+    }
+}
+
 
 // ============================================================================
 // If Statement Type Checking

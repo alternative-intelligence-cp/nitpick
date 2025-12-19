@@ -42,6 +42,8 @@ public:
         FUNC_DECL,            // Function declaration: func:name = returnType(params) { body };
         STRUCT_DECL,          // Struct declaration: struct Name { fields };
         RETURN,               // return statement
+        PASS,                 // pass statement (result success)
+        FAIL,                 // fail statement (result error)
         BREAK,                // break statement
         CONTINUE,             // continue statement
         DEFER,                // defer statement (RAII cleanup)

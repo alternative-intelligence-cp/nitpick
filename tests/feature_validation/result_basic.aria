@@ -1,0 +1,43 @@
+// TDD Test: Result Types with pass/fail and ? operator
+// Status: ❌ NOT IMPLEMENTED - This will NOT compile until result system works
+
+// Test 1: Simple pass statement
+func:get_value = result() {
+    pass(42);
+};
+
+// Test 2: Simple fail statement  
+func:get_error = result() {
+    fail(1);
+};
+
+// Test 3: Conditional pass/fail
+func:divide = result(int32:a, int32:b) {
+    if (b == 0) {
+        fail(1);  // Division by zero error
+    }
+    pass(a);  // Just return a for now (division not implemented)
+};
+
+// Test 4: Result unwrapping with ? operator
+func:test_unwrap = int32() {
+    result:r1 = get_value();
+    int32:val = r1 ? 0;  // Unwrap with default value 0
+    
+    if (val == 42) {
+        pass(0);  // Success
+    }
+    pass(1);  // Failure
+};
+
+func:main = int32() {
+    int32:test_result = test_unwrap();
+    pass(test_result);
+};
+
+// EXPECTED BEHAVIOR when complete:
+// - pass(value) returns success with value
+// - fail(code) returns error with code
+// - result:r = func() captures the result
+// - value ? default unwraps result or uses default
+// - Main should return 0 (all tests pass)

@@ -1762,8 +1762,6 @@ ASTNodePtr Parser::parsePassStatement() {
     Token passToken = previous(); // We already consumed 'pass'
     
     // Parse: pass(expr);
-    // Desugars to: return { err: 0, val: expr }
-    // TODO: Once ObjectLiteralExpr is implemented, create proper result object
     consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'pass'");
     
     ASTNodePtr value = parseExpression();
@@ -1775,9 +1773,7 @@ ASTNodePtr Parser::parsePassStatement() {
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after pass value");
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after pass statement");
     
-    // For now, just return the value directly
-    // Full implementation: return { err: 0, val: value }
-    return std::make_shared<ReturnStmt>(value, passToken.line, passToken.column);
+    return std::make_shared<PassStmt>(value, passToken.line, passToken.column);
 }
 
 ASTNodePtr Parser::parseFailStatement() {
@@ -1786,8 +1782,6 @@ ASTNodePtr Parser::parseFailStatement() {
     Token failToken = previous(); // We already consumed 'fail'
     
     // Parse: fail(error_code);
-    // Desugars to: return { err: error_code, val: 0 }
-    // TODO: Once ObjectLiteralExpr is implemented, create proper result object
     consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'fail'");
     
     ASTNodePtr errorCode = parseExpression();
@@ -1799,9 +1793,7 @@ ASTNodePtr Parser::parseFailStatement() {
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after fail error code");
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after fail statement");
     
-    // For now, just return the error code directly
-    // Full implementation: return { err: error_code, val: 0 }
-    return std::make_shared<ReturnStmt>(errorCode, failToken.line, failToken.column);
+    return std::make_shared<FailStmt>(errorCode, failToken.line, failToken.column);
 }
 
 // Parse if statement: if (condition) thenBranch [else elseBranch]

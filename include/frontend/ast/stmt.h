@@ -153,6 +153,36 @@ public:
 };
 
 /**
+ * Pass statement node (result success)
+ * Represents: pass(value);
+ * Returns a result type with err=0 and val=value
+ */
+class PassStmt : public ASTNode {
+public:
+    ASTNodePtr value;  // The success value to return
+    
+    PassStmt(ASTNodePtr val, int line = 0, int column = 0)
+        : ASTNode(NodeType::PASS, line, column), value(val) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Fail statement node (result error)
+ * Represents: fail(error_code);
+ * Returns a result type with err=error_code and val=0
+ */
+class FailStmt : public ASTNode {
+public:
+    ASTNodePtr errorCode;  // The error code to return
+    
+    FailStmt(ASTNodePtr code, int line = 0, int column = 0)
+        : ASTNode(NodeType::FAIL, line, column), errorCode(code) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * If statement node
  * Represents: if (condition) { thenBlock } else { elseBlock }
  */

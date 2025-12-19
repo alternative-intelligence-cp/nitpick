@@ -23,6 +23,8 @@ namespace aria {
     class FallStmt;
     class BlockStmt;
     class ReturnStmt;
+    class PassStmt;
+    class FailStmt;
     class BreakStmt;
     class ContinueStmt;
     class DeferStmt;
@@ -249,6 +251,20 @@ public:
      * @param stmt Return statement
      */
     void codegenReturn(ReturnStmt* stmt);
+    
+    /**
+     * Generate code for a pass statement (result success)
+     * Returns success value (temporarily as direct return)
+     * @param stmt Pass statement
+     */
+    void codegenPass(PassStmt* stmt);
+    
+    /**
+     * Generate code for a fail statement (result error)
+     * Returns error code (temporarily as direct return)
+     * @param stmt Fail statement
+     */
+    void codegenFail(FailStmt* stmt);
     
     /**
      * Generate code for a break statement
