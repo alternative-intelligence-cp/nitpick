@@ -91,6 +91,14 @@ std::string ReturnStmt::toString() const {
     return "Return()";
 }
 
+std::string PassStmt::toString() const {
+    return "Pass(" + value->toString() + ")";
+}
+
+std::string FailStmt::toString() const {
+    return "Fail(" + errorCode->toString() + ")";
+}
+
 std::string IfStmt::toString() const {
     std::string result = "If(" + condition->toString() + ", " + thenBranch->toString();
     if (elseBranch) {

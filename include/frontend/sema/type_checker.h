@@ -476,6 +476,23 @@ public:
     void checkReturnStmt(ReturnStmt* stmt);
     
     /**
+     * Check pass statement (result success)
+     * 
+     * Rules:
+     * - Pass value type must match function return type
+     * - Cannot be used in void functions
+     */
+    void checkPassStmt(PassStmt* stmt);
+    
+    /**
+     * Check fail statement (result error)
+     * 
+     * Rules:
+     * - Error code must be integer type
+     */
+    void checkFailStmt(FailStmt* stmt);
+    
+    /**
      * Check if statement
      * 
      * Rules:

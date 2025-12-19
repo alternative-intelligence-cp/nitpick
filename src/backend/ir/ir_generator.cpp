@@ -841,6 +841,36 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             return nullptr;
         }
         
+        case ASTNode::NodeType::PASS: {
+            // Pass statement - return success with value
+            PassStmt* passStmt = static_cast<PassStmt*>(stmt);
+            
+            // Execute all defer blocks (LIFO order) before returning
+            executeFunctionDefers();
+            
+            // Generate code for the value expression
+            llvm::Value* value = codegenExpression(passStmt->value.get());
+            if (value) {
+                builder.CreateRet(value);
+            }
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::FAIL: {
+            // Fail statement - return failure with error code
+            FailStmt* failStmt = static_cast<FailStmt*>(stmt);
+            
+            // Execute all defer blocks (LIFO order) before returning
+            executeFunctionDefers();
+            
+            // Generate code for the error code expression
+            llvm::Value* errorCode = codegenExpression(failStmt->errorCode.get());
+            if (errorCode) {
+                builder.CreateRet(errorCode);
+            }
+            return nullptr;
+        }
+        
         default:
             // Other statement types not yet implemented
             return nullptr;

@@ -35,6 +35,8 @@ std::string ASTNode::nodeTypeToString(NodeType type) {
         case NodeType::VAR_DECL: return "VAR_DECL";
         case NodeType::FUNC_DECL: return "FUNC_DECL";
         case NodeType::RETURN: return "RETURN";
+        case NodeType::PASS: return "PASS";
+        case NodeType::FAIL: return "FAIL";
         case NodeType::BREAK: return "BREAK";
         case NodeType::CONTINUE: return "CONTINUE";
         case NodeType::DEFER: return "DEFER";
