@@ -3,6 +3,7 @@
 
 #include "tools/lsp/transport.h"
 #include "tools/lsp/vfs.h"
+#include "tools/lsp/thread_pool.h"
 #include "frontend/diagnostics.h"
 #include "frontend/lexer/lexer.h"
 #include "frontend/parser/parser.h"
@@ -76,14 +77,19 @@ struct ServerCapabilities {
  * - Document synchronization (didOpen, didChange, didClose)
  * - Language features (hover, definition, etc.)
  * 
- * Architecture (from research_034):
- * - Main thread handles I/O and message routing
- * - Worker threads will handle actual compilation (Phase 7.3.6)
- * - GlobalState with read-write locks (Phase 7.3.6)
+ * Architecture (Phase 7.3.6 - Thread Pool):
+ * - Main thread: I/O pump (read messages, write responses)
+ * - Worker threads: Execute compilation/analysis tasks
+ * - Work queue: Priority-based with debouncing
+ * - Cancellation: Full $/cancelRequest support
  */
 class Server {
 public:
-    Server();
+    /**
+     * Create server with optional worker count
+     * If worker_count == 0, uses CPU-based heuristic
+     */
+    explicit Server(size_t worker_count = 0);
     ~Server();
     
     /**
@@ -102,8 +108,11 @@ private:
     // Declared capabilities
     ServerCapabilities capabilities_;
     
-    // Virtual file system
+    // Virtual file system (shared between threads)
     VirtualFileSystem vfs_;
+    
+    // Thread pool for async task execution
+    ThreadPool thread_pool_;
     
     // Request/notification handlers
     json handle_initialize(const json& params);
@@ -122,17 +131,24 @@ private:
     void clear_diagnostics(const std::string& uri);
     json convert_diagnostic_to_lsp(const aria::Diagnostic& diag);
     
-    // Navigation handlers
+    // Navigation handlers (executed by worker threads)
     json handle_hover(const json& params);
     json handle_definition(const json& params);
     
-    // Message dispatcher
+    // Message dispatcher (I/O thread)
     void dispatch_message(const JsonRpcMessage& msg);
     void handle_request(const json& id, const std::string& method, const json& params);
     void handle_notification(const std::string& method, const json& params);
     
+    // Result callback (called by worker threads)
+    void send_response(const json& id, const json& result);
+    
     // Error responses
     json error_response(int code, const std::string& message);
+    
+    // Task classification helpers
+    TaskType classify_method(const std::string& method) const;
+    TaskPriority get_priority(const std::string& method) const;
 };
 
 } // namespace lsp
