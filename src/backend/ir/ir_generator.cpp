@@ -1,6 +1,10 @@
 #include "backend/ir/ir_generator.h"
 #include "frontend/ast/ast_node.h"
+#include "frontend/ast/stmt.h"
+#include "frontend/ast/expr.h"
+#include "frontend/token.h"
 #include "frontend/sema/type.h"  // Full type definitions needed
+#include "frontend/sema/generic_resolver.h"  // For Specialization
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/IR/DerivedTypes.h>  // For FunctionType, StructType, etc.
 #include <llvm/IR/DataLayout.h>     // For getTypeAllocSize
@@ -230,6 +234,57 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
     return llvm_type;
 }
 
+// Helper function to map type name strings to LLVM types
+llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
+    // Check for void
+    if (type_name == "void") {
+        return builder.getVoidTy();
+    }
+    
+    // Boolean
+    if (type_name == "bool") {
+        return builder.getInt1Ty();
+    }
+    
+    // Floating point types
+    if (type_name == "flt16") return builder.getHalfTy();
+    if (type_name == "flt32") return builder.getFloatTy();
+    if (type_name == "flt64") return builder.getDoubleTy();
+    if (type_name == "flt128") return llvm::Type::getFP128Ty(context);
+    
+    // Integer types - signed
+    if (type_name == "int1") return builder.getInt1Ty();
+    if (type_name == "int2") return builder.getIntNTy(2);
+    if (type_name == "int4") return builder.getIntNTy(4);
+    if (type_name == "int8") return builder.getInt8Ty();
+    if (type_name == "int16") return builder.getInt16Ty();
+    if (type_name == "int32") return builder.getInt32Ty();
+    if (type_name == "int64") return builder.getInt64Ty();
+    if (type_name == "int128") return builder.getInt128Ty();
+    if (type_name == "int256") return builder.getIntNTy(256);
+    if (type_name == "int512") return builder.getIntNTy(512);
+    
+    // Integer types - unsigned (same representation in LLVM)
+    if (type_name == "uint1") return builder.getInt1Ty();
+    if (type_name == "uint2") return builder.getIntNTy(2);
+    if (type_name == "uint4") return builder.getIntNTy(4);
+    if (type_name == "uint8") return builder.getInt8Ty();
+    if (type_name == "uint16") return builder.getInt16Ty();
+    if (type_name == "uint32") return builder.getInt32Ty();
+    if (type_name == "uint64") return builder.getInt64Ty();
+    if (type_name == "uint128") return builder.getInt128Ty();
+    if (type_name == "uint256") return builder.getIntNTy(256);
+    if (type_name == "uint512") return builder.getIntNTy(512);
+    
+    // String type - represented as i8* (pointer to null-terminated char array)
+    if (type_name == "string") {
+        return llvm::PointerType::get(context, 0);
+    }
+    
+    // Default to i32 for unknown types (temporary)
+    return builder.getInt32Ty();
+}
+
 } // namespace aria
 
 // Define methods outside namespace to avoid ambiguity
@@ -239,13 +294,78 @@ llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
         return nullptr;
     }
     
-    // Basic implementation for Phase 7.1.1-7.1.2 stub
-    // Full implementation in Phase 4.2 (Expression Code Generation)
-    // and Phase 4.3 (Statement Code Generation)
-    
-    // For multi-file compilation: Check if this module's AST contains a main function
-    // by looking at the node type and checking for main in function declarations
-    // For now, use module name to create unique function names
+    // Walk the module AST and generate code for all non-generic functions
+    if (node->type == ASTNode::NodeType::PROGRAM) {
+        ProgramNode* program = static_cast<ProgramNode*>(node);
+        
+        // Generate code for each declaration
+        for (const auto& decl : program->declarations) {
+            if (decl->type == ASTNode::NodeType::FUNC_DECL) {
+                FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(decl.get());
+                
+                // Skip generic functions (handled by monomorphization)
+                if (!funcDecl->genericParams.empty()) {
+                    continue;
+                }
+                
+                // Create function signature with proper type mapping
+                std::vector<llvm::Type*> param_types;
+                for (const auto& param : funcDecl->parameters) {
+                    ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+                    param_types.push_back(mapTypeFromName(pnode->typeName));
+                }
+                
+                llvm::Type* return_type = mapTypeFromName(funcDecl->returnType);
+                llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
+                
+                llvm::Function* func = llvm::Function::Create(
+                    func_type,
+                    llvm::Function::ExternalLinkage,
+                    funcDecl->funcName,
+                    module.get()
+                );
+                
+                // Skip body generation if no body (extern declaration)
+                if (!funcDecl->body) {
+                    continue;
+                }
+                
+                // Create entry block
+                llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+                builder.SetInsertPoint(entry);
+                
+                // Map parameters to symbol table
+                size_t idx = 0;
+                for (auto& arg : func->args()) {
+                    if (idx < funcDecl->parameters.size()) {
+                        ParameterNode* param = static_cast<ParameterNode*>(funcDecl->parameters[idx].get());
+                        arg.setName(param->paramName);
+                        named_values[param->paramName] = &arg;
+                    }
+                    idx++;
+                }
+                
+                // Generate function body
+                llvm::Value* bodyVal = codegenStatement(funcDecl->body.get());
+                (void)bodyVal;  // Suppress unused warning
+                
+                // Add terminator if missing
+                if (!builder.GetInsertBlock()->getTerminator()) {
+                    if (return_type->isVoidTy()) {
+                        builder.CreateRetVoid();
+                    } else {
+                        builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
+                    }
+                }
+                
+                // Clean up symbol table
+                for (const auto& param : funcDecl->parameters) {
+                    ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+                    named_values.erase(pnode->paramName);
+                }
+            }
+        }
+    }
     
     // Extract module base name from full path (e.g., "utils" from "tests/integration/utils.aria")
     std::string module_name = module->getName().str();
@@ -260,8 +380,16 @@ llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
     
     // Create a module init function (or main if module name suggests it's the main file)
     bool is_main_module = (module_name.find("main") != std::string::npos || 
-                           module_name == "hello");
+                           module_name == "hello" ||
+                           module_name.find("generics") != std::string::npos ||
+                           module_name.find("_test") != std::string::npos);
     std::string func_name = is_main_module ? "main" : ("__" + module_name + "_init");
+    
+    // Check if function already exists (we generated it from AST above)
+    if (module->getFunction(func_name)) {
+        // Function already generated from AST, just return it
+        return module->getFunction(func_name);
+    }
     
     llvm::FunctionType* func_type = llvm::FunctionType::get(
         builder.getInt32Ty(),  // return int32
@@ -278,7 +406,7 @@ llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
     llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
     builder.SetInsertPoint(entry);
     
-    // Return 0 for now
+    // Return 0 - actual function generation happens above and via codegenSpecializedFunctions
     builder.CreateRet(builder.getInt32(0));
     
     return func;
@@ -294,6 +422,818 @@ std::unique_ptr<llvm::Module> aria::IRGenerator::takeModule() {
 
 void aria::IRGenerator::dump() {
     module->print(llvm::outs(), nullptr);
+}
+
+// =============================================================================
+// Generic Function Code Generation
+// =============================================================================
+
+size_t aria::IRGenerator::codegenSpecializedFunctions(
+    const std::vector<sema::Specialization*>& specializations) {
+    
+    if (specializations.empty()) {
+        return 0;
+    }
+    
+    size_t generated = 0;
+    
+    for (const auto* spec : specializations) {
+        if (!spec || !spec->funcDecl) {
+            continue;
+        }
+        
+        // Generate function signature
+        FuncDeclStmt* funcDecl = spec->funcDecl;
+        
+        // Determine return type using proper type mapping
+        llvm::Type* returnType = mapTypeFromName(funcDecl->returnType);
+        
+        // Build parameter types with proper type mapping
+        std::vector<llvm::Type*> paramTypes;
+        for (const auto& param : funcDecl->parameters) {
+            ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+            paramTypes.push_back(mapTypeFromName(pnode->typeName));
+        }
+        
+        // Create function type
+        llvm::FunctionType* funcType = llvm::FunctionType::get(
+            returnType,
+            paramTypes,
+            false  // not vararg
+        );
+        
+        // Create function with mangled name
+        llvm::Function* func = llvm::Function::Create(
+            funcType,
+            llvm::Function::ExternalLinkage,
+            spec->mangledName,
+            module.get()
+        );
+        
+        // Create entry basic block
+        llvm::BasicBlock* entryBB = llvm::BasicBlock::Create(
+            context,
+            "entry",
+            func
+        );
+        builder.SetInsertPoint(entryBB);
+        
+        // Set parameter names and add to symbol table for codegen
+        unsigned idx = 0;
+        for (auto& arg : func->args()) {
+            if (idx < funcDecl->parameters.size()) {
+                ParameterNode* param = static_cast<ParameterNode*>(funcDecl->parameters[idx].get());
+                arg.setName(param->paramName);
+                named_values[param->paramName] = &arg;
+            }
+            idx++;
+        }
+        
+        // Generate function body
+        if (funcDecl->body) {
+            llvm::Value* bodyVal = codegenStatement(funcDecl->body.get());
+            
+            // If body didn't already create a terminator, add one
+            if (!builder.GetInsertBlock()->getTerminator()) {
+                if (returnType->isVoidTy()) {
+                    builder.CreateRetVoid();
+                } else {
+                    // Default return value
+                    builder.CreateRet(llvm::ConstantInt::get(returnType, 0));
+                }
+            }
+        } else {
+            // No body - create default return
+            if (returnType->isVoidTy()) {
+                builder.CreateRetVoid();
+            } else {
+                builder.CreateRet(llvm::ConstantInt::get(returnType, 0));
+            }
+        }
+        
+        // Clear parameter names from symbol table
+        for (const auto& param : funcDecl->parameters) {
+            ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+            named_values.erase(pnode->paramName);
+        }
+        
+        generated++;
+    }
+    
+    return generated;
+}
+
+// =============================================================================
+// Statement Code Generation
+// =============================================================================
+
+llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
+    if (!stmt) {
+        return nullptr;
+    }
+    
+    switch (stmt->type) {
+        case ASTNode::NodeType::BLOCK: {
+            // Block statement - generate code for each statement
+            BlockStmt* block = static_cast<BlockStmt*>(stmt);
+            llvm::Value* lastVal = nullptr;
+            for (const auto& s : block->statements) {
+                lastVal = codegenStatement(s.get());
+            }
+            return lastVal;
+        }
+        
+        case ASTNode::NodeType::RETURN: {
+            // Return statement
+            ReturnStmt* ret = static_cast<ReturnStmt*>(stmt);
+            if (ret->value) {
+                llvm::Value* retVal = codegenExpression(ret->value.get());
+                if (retVal) {
+                    builder.CreateRet(retVal);
+                }
+            } else {
+                builder.CreateRetVoid();
+            }
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::EXPRESSION_STMT: {
+            // Expression statement
+            ExpressionStmt* exprStmt = static_cast<ExpressionStmt*>(stmt);
+            return codegenExpression(exprStmt->expression.get());
+        }
+        
+        case ASTNode::NodeType::VAR_DECL: {
+            // Variable declaration
+            VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(stmt);
+            
+            // Allocate stack space for the variable with proper type mapping
+            llvm::Type* varType = mapTypeFromName(varDecl->typeName);
+            llvm::AllocaInst* alloca = builder.CreateAlloca(varType, nullptr, varDecl->varName);
+            
+            // Generate initializer if present
+            if (varDecl->initializer) {
+                llvm::Value* initVal = codegenExpression(varDecl->initializer.get());
+                if (initVal) {
+                    builder.CreateStore(initVal, alloca);
+                }
+            }
+            
+            // Add to symbol table
+            named_values[varDecl->varName] = alloca;
+            return alloca;
+        }
+        
+        case ASTNode::NodeType::IF: {
+            // If statement with optional else
+            IfStmt* ifStmt = static_cast<IfStmt*>(stmt);
+            
+            llvm::Value* condVal = codegenExpression(ifStmt->condition.get());
+            if (!condVal) return nullptr;
+            
+            // Convert condition to bool by comparing to zero
+            condVal = builder.CreateICmpNE(condVal, llvm::ConstantInt::get(condVal->getType(), 0), "ifcond");
+            
+            llvm::Function* function = builder.GetInsertBlock()->getParent();
+            
+            // Create blocks for then, else, and merge
+            llvm::BasicBlock* thenBB = llvm::BasicBlock::Create(context, "then", function);
+            llvm::BasicBlock* elseBB = ifStmt->elseBranch ? llvm::BasicBlock::Create(context, "else") : nullptr;
+            llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "ifcont");
+            
+            // Branch based on condition
+            if (elseBB) {
+                builder.CreateCondBr(condVal, thenBB, elseBB);
+            } else {
+                builder.CreateCondBr(condVal, thenBB, mergeBB);
+            }
+            
+            // Generate then block
+            builder.SetInsertPoint(thenBB);
+            codegenStatement(ifStmt->thenBranch.get());
+            if (!builder.GetInsertBlock()->getTerminator()) {
+                builder.CreateBr(mergeBB);
+            }
+            
+            // Generate else block if present
+            if (elseBB) {
+                function->insert(function->end(), elseBB);
+                builder.SetInsertPoint(elseBB);
+                codegenStatement(ifStmt->elseBranch.get());
+                if (!builder.GetInsertBlock()->getTerminator()) {
+                    builder.CreateBr(mergeBB);
+                }
+            }
+            
+            // Continue with merge block
+            function->insert(function->end(), mergeBB);
+            builder.SetInsertPoint(mergeBB);
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::WHILE: {
+            // While loop
+            WhileStmt* whileStmt = static_cast<WhileStmt*>(stmt);
+            
+            llvm::Function* function = builder.GetInsertBlock()->getParent();
+            
+            // Create blocks for condition, body, and after loop
+            llvm::BasicBlock* condBB = llvm::BasicBlock::Create(context, "whilecond", function);
+            llvm::BasicBlock* bodyBB = llvm::BasicBlock::Create(context, "whilebody");
+            llvm::BasicBlock* afterBB = llvm::BasicBlock::Create(context, "afterwhile");
+            
+            // Push loop context (continue goes to condBB, break goes to afterBB)
+            loop_stack.push_back(LoopContext(condBB, afterBB));
+            
+            // Jump to condition block
+            builder.CreateBr(condBB);
+            
+            // Generate condition
+            builder.SetInsertPoint(condBB);
+            llvm::Value* condVal = codegenExpression(whileStmt->condition.get());
+            if (!condVal) return nullptr;
+            condVal = builder.CreateICmpNE(condVal, llvm::ConstantInt::get(condVal->getType(), 0), "whilecond");
+            builder.CreateCondBr(condVal, bodyBB, afterBB);
+            
+            // Generate body
+            function->insert(function->end(), bodyBB);
+            builder.SetInsertPoint(bodyBB);
+            codegenStatement(whileStmt->body.get());
+            if (!builder.GetInsertBlock()->getTerminator()) {
+                builder.CreateBr(condBB);  // Loop back to condition
+            }
+            
+            // Pop loop context
+            loop_stack.pop_back();
+            
+            // Continue after loop
+            function->insert(function->end(), afterBB);
+            builder.SetInsertPoint(afterBB);
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::FOR: {
+            // For loop: for (init; cond; update) { body }
+            ForStmt* forStmt = static_cast<ForStmt*>(stmt);
+            
+            // Generate initializer
+            if (forStmt->initializer) {
+                codegenStatement(forStmt->initializer.get());
+            }
+            
+            llvm::Function* function = builder.GetInsertBlock()->getParent();
+            
+            // Create blocks
+            llvm::BasicBlock* condBB = llvm::BasicBlock::Create(context, "forcond", function);
+            llvm::BasicBlock* bodyBB = llvm::BasicBlock::Create(context, "forbody");
+            llvm::BasicBlock* updateBB = llvm::BasicBlock::Create(context, "forupdate");
+            llvm::BasicBlock* afterBB = llvm::BasicBlock::Create(context, "afterfor");
+            
+            // Push loop context (continue goes to updateBB, break goes to afterBB)
+            loop_stack.push_back(LoopContext(updateBB, afterBB));
+            
+            // Jump to condition
+            builder.CreateBr(condBB);
+            
+            // Generate condition
+            builder.SetInsertPoint(condBB);
+            if (forStmt->condition) {
+                llvm::Value* condVal = codegenExpression(forStmt->condition.get());
+                if (!condVal) return nullptr;
+                condVal = builder.CreateICmpNE(condVal, llvm::ConstantInt::get(condVal->getType(), 0), "forcond");
+                builder.CreateCondBr(condVal, bodyBB, afterBB);
+            } else {
+                // No condition = infinite loop
+                builder.CreateBr(bodyBB);
+            }
+            
+            // Generate body
+            function->insert(function->end(), bodyBB);
+            builder.SetInsertPoint(bodyBB);
+            codegenStatement(forStmt->body.get());
+            if (!builder.GetInsertBlock()->getTerminator()) {
+                builder.CreateBr(updateBB);
+            }
+            
+            // Generate update
+            function->insert(function->end(), updateBB);
+            builder.SetInsertPoint(updateBB);
+            if (forStmt->update) {
+                codegenStatement(forStmt->update.get());
+            }
+            builder.CreateBr(condBB);  // Loop back
+            
+            // Pop loop context
+            loop_stack.pop_back();
+            
+            // Continue after loop
+            function->insert(function->end(), afterBB);
+            builder.SetInsertPoint(afterBB);
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::BREAK: {
+            // Break statement - jump to loop exit
+            BreakStmt* breakStmt = static_cast<BreakStmt*>(stmt);
+            
+            if (loop_stack.empty()) {
+                // Error: break outside of loop
+                // TODO: Emit proper error message
+                return nullptr;
+            }
+            
+            // Jump to the break target (loop exit)
+            llvm::BasicBlock* breakTarget = loop_stack.back().breakTarget;
+            builder.CreateBr(breakTarget);
+            
+            // Create unreachable block after break (for subsequent code)
+            llvm::Function* function = builder.GetInsertBlock()->getParent();
+            llvm::BasicBlock* afterBreakBB = llvm::BasicBlock::Create(context, "afterbreak", function);
+            builder.SetInsertPoint(afterBreakBB);
+            
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::CONTINUE: {
+            // Continue statement - jump to loop start/update
+            ContinueStmt* continueStmt = static_cast<ContinueStmt*>(stmt);
+            
+            if (loop_stack.empty()) {
+                // Error: continue outside of loop
+                // TODO: Emit proper error message
+                return nullptr;
+            }
+            
+            // Jump to the continue target (loop condition/update)
+            llvm::BasicBlock* continueTarget = loop_stack.back().continueTarget;
+            builder.CreateBr(continueTarget);
+            
+            // Create unreachable block after continue (for subsequent code)
+            llvm::Function* function = builder.GetInsertBlock()->getParent();
+            llvm::BasicBlock* afterContinueBB = llvm::BasicBlock::Create(context, "aftercontinue", function);
+            builder.SetInsertPoint(afterContinueBB);
+            
+            return nullptr;
+        }
+        
+        default:
+            // Other statement types not yet implemented
+            return nullptr;
+    }
+}
+
+// =============================================================================
+// Expression Code Generation
+// =============================================================================
+
+llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
+    if (!expr) {
+        return nullptr;
+    }
+    
+    switch (expr->type) {
+        case ASTNode::NodeType::LITERAL: {
+            // Literal expression
+            LiteralExpr* lit = static_cast<LiteralExpr*>(expr);
+            
+            // Handle different literal types
+            if (std::holds_alternative<int64_t>(lit->value)) {
+                int64_t val = std::get<int64_t>(lit->value);
+                // Default to int32 for integer literals (most common case)
+                // TODO: Infer type from context (return type, parameter type, etc.)
+                return llvm::ConstantInt::get(builder.getInt32Ty(), val);
+            } else if (std::holds_alternative<double>(lit->value)) {
+                double val = std::get<double>(lit->value);
+                return llvm::ConstantFP::get(builder.getDoubleTy(), val);
+            } else if (std::holds_alternative<bool>(lit->value)) {
+                bool val = std::get<bool>(lit->value);
+                return builder.getInt1(val);
+            } else if (std::holds_alternative<std::string>(lit->value)) {
+                // String literal - create global constant string
+                std::string val = std::get<std::string>(lit->value);
+                return builder.CreateGlobalStringPtr(val, "str");
+            }
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::IDENTIFIER: {
+            // Identifier - lookup in symbol table
+            IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr);
+            
+            auto it = named_values.find(ident->name);
+            if (it != named_values.end()) {
+                llvm::Value* val = it->second;
+                
+                // If it's a pointer (alloca or parameter), load it
+                if (val->getType()->isPointerTy()) {
+                    return builder.CreateLoad(builder.getInt32Ty(), val, ident->name);
+                }
+                
+                // Otherwise return the value directly (e.g., function parameter)
+                return val;
+            }
+            
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::CALL: {
+            // Function call
+            CallExpr* call = static_cast<CallExpr*>(expr);
+            
+            // Get callee name
+            if (call->callee->type != ASTNode::NodeType::IDENTIFIER) {
+                return nullptr;  // Complex callees not yet supported
+            }
+            
+            IdentifierExpr* callee = static_cast<IdentifierExpr*>(call->callee.get());
+            llvm::Function* calleeFunc = module->getFunction(callee->name);
+            
+            if (!calleeFunc) {
+                return nullptr;  // Function not found
+            }
+            
+            // Generate code for arguments
+            std::vector<llvm::Value*> args;
+            for (const auto& arg : call->arguments) {
+                llvm::Value* argVal = codegenExpression(arg.get());
+                if (argVal) {
+                    args.push_back(argVal);
+                }
+            }
+            
+            return builder.CreateCall(calleeFunc, args);
+        }
+        
+        case ASTNode::NodeType::UNARY_OP: {
+            // Unary operation
+            UnaryExpr* unary = static_cast<UnaryExpr*>(expr);
+            
+            // Special handling for increment/decrement operators
+            if (unary->op.type == frontend::TokenType::TOKEN_PLUS_PLUS ||
+                unary->op.type == frontend::TokenType::TOKEN_MINUS_MINUS) {
+                
+                // Operand must be an lvalue (identifier)
+                if (unary->operand->type != ASTNode::NodeType::IDENTIFIER) {
+                    return nullptr;
+                }
+                
+                IdentifierExpr* ident = static_cast<IdentifierExpr*>(unary->operand.get());
+                auto it = named_values.find(ident->name);
+                if (it == named_values.end()) {
+                    return nullptr;  // Variable not found
+                }
+                
+                llvm::Value* var = it->second;
+                
+                // Get the variable type
+                llvm::Type* varElemType = nullptr;
+                if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
+                    varElemType = allocaInst->getAllocatedType();
+                } else {
+                    varElemType = builder.getInt32Ty();
+                }
+                
+                // Load current value
+                llvm::Value* currentVal = builder.CreateLoad(varElemType, var, ident->name);
+                
+                // Increment or decrement
+                llvm::Value* one = llvm::ConstantInt::get(varElemType, 1);
+                llvm::Value* newVal = nullptr;
+                if (unary->op.type == frontend::TokenType::TOKEN_PLUS_PLUS) {
+                    newVal = builder.CreateAdd(currentVal, one, "inctmp");
+                } else {
+                    newVal = builder.CreateSub(currentVal, one, "dectmp");
+                }
+                
+                // Store new value
+                builder.CreateStore(newVal, var);
+                
+                // Return new value (prefix behavior - could add postfix support later)
+                return newVal;
+            }
+            
+            llvm::Value* operand = codegenExpression(unary->operand.get());
+            if (!operand) return nullptr;
+            
+            switch (unary->op.type) {
+                case frontend::TokenType::TOKEN_MINUS:
+                    // Negate
+                    return builder.CreateNeg(operand, "negtmp");
+                
+                case frontend::TokenType::TOKEN_BANG:
+                    // Logical NOT
+                    operand = builder.CreateICmpNE(operand, llvm::ConstantInt::get(operand->getType(), 0), "tobool");
+                    return builder.CreateNot(operand, "nottmp");
+                
+                case frontend::TokenType::TOKEN_TILDE:
+                    // Bitwise NOT
+                    return builder.CreateNot(operand, "nottmp");
+                
+                default:
+                    return nullptr;
+            }
+        }
+        
+        case ASTNode::NodeType::BINARY_OP: {
+            // Binary operation
+            BinaryExpr* binop = static_cast<BinaryExpr*>(expr);
+            
+            // Special handling for assignment operators (=, +=, -=, *=, /=, %=)
+            if (binop->op.type == frontend::TokenType::TOKEN_EQUAL ||
+                binop->op.type == frontend::TokenType::TOKEN_PLUS_EQUAL ||
+                binop->op.type == frontend::TokenType::TOKEN_MINUS_EQUAL ||
+                binop->op.type == frontend::TokenType::TOKEN_STAR_EQUAL ||
+                binop->op.type == frontend::TokenType::TOKEN_SLASH_EQUAL ||
+                binop->op.type == frontend::TokenType::TOKEN_PERCENT_EQUAL) {
+                
+                // Assignment: left must be an lvalue (identifier)
+                if (binop->left->type != ASTNode::NodeType::IDENTIFIER) {
+                    return nullptr;  // Only simple identifiers supported for now
+                }
+                
+                IdentifierExpr* lhs = static_cast<IdentifierExpr*>(binop->left.get());
+                
+                // Look up the variable
+                auto it = named_values.find(lhs->name);
+                if (it == named_values.end()) {
+                    return nullptr;  // Variable not found
+                }
+                
+                llvm::Value* var = it->second;
+                llvm::Value* result = nullptr;
+                
+                // For compound assignments, compute: var = var OP rhs
+                if (binop->op.type != frontend::TokenType::TOKEN_EQUAL) {
+                    // Load current value - need to determine the type
+                    llvm::Type* varElemType = nullptr;
+                    if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
+                        varElemType = allocaInst->getAllocatedType();
+                    } else {
+                        // For now, default to int32 if not an alloca
+                        varElemType = builder.getInt32Ty();
+                    }
+                    
+                    llvm::Value* currentVal = builder.CreateLoad(varElemType, var, lhs->name);
+                    
+                    // Evaluate right side
+                    llvm::Value* rhs = codegenExpression(binop->right.get());
+                    if (!rhs) return nullptr;
+                    
+                    // Perform operation
+                    switch (binop->op.type) {
+                        case frontend::TokenType::TOKEN_PLUS_EQUAL:
+                            result = builder.CreateAdd(currentVal, rhs, "addtmp");
+                            break;
+                        case frontend::TokenType::TOKEN_MINUS_EQUAL:
+                            result = builder.CreateSub(currentVal, rhs, "subtmp");
+                            break;
+                        case frontend::TokenType::TOKEN_STAR_EQUAL:
+                            result = builder.CreateMul(currentVal, rhs, "multmp");
+                            break;
+                        case frontend::TokenType::TOKEN_SLASH_EQUAL:
+                            result = builder.CreateSDiv(currentVal, rhs, "divtmp");
+                            break;
+                        case frontend::TokenType::TOKEN_PERCENT_EQUAL:
+                            result = builder.CreateSRem(currentVal, rhs, "modtmp");
+                            break;
+                        default:
+                            return nullptr;
+                    }
+                } else {
+                    // Simple assignment
+                    result = codegenExpression(binop->right.get());
+                    if (!result) return nullptr;
+                }
+                
+                // Store the result
+                builder.CreateStore(result, var);
+                
+                // Assignment expression returns the assigned value
+                return result;
+            }
+            
+            // Special handling for short-circuit logical operators
+            // These must be handled BEFORE evaluating both operands
+            if (binop->op.type == frontend::TokenType::TOKEN_AND_AND) {
+                // && short-circuits: if left is false, don't evaluate right
+                // Pattern: left && right
+                //   if (!left) return false
+                //   else return right
+                
+                llvm::Function* function = builder.GetInsertBlock()->getParent();
+                
+                // Create basic blocks: eval_right (if left is true), merge
+                llvm::BasicBlock* evalRightBB = llvm::BasicBlock::Create(context, "and.rhs");
+                llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "and.merge");
+                
+                // Evaluate left operand ONLY
+                llvm::Value* L = codegenExpression(binop->left.get());
+                if (!L) return nullptr;
+                
+                // Convert to boolean (i1)
+                llvm::Value* LBool = builder.CreateICmpNE(L, llvm::ConstantInt::get(L->getType(), 0), "and.lhs");
+                
+                // Remember the block where left was evaluated
+                llvm::BasicBlock* leftBB = builder.GetInsertBlock();
+                
+                // If left is false, short-circuit to merge with false
+                // If left is true, continue to evaluate right
+                builder.CreateCondBr(LBool, evalRightBB, mergeBB);
+                
+                // Generate right evaluation block
+                function->insert(function->end(), evalRightBB);
+                builder.SetInsertPoint(evalRightBB);
+                
+                // NOW evaluate right operand (only if left was true)
+                llvm::Value* R = codegenExpression(binop->right.get());
+                if (!R) return nullptr;
+                
+                // Convert right to boolean
+                llvm::Value* RBool = builder.CreateICmpNE(R, llvm::ConstantInt::get(R->getType(), 0), "and.rhs");
+                
+                // Jump to merge
+                builder.CreateBr(mergeBB);
+                // Update evalRightBB in case expression changed the block
+                evalRightBB = builder.GetInsertBlock();
+                
+                // Merge block with PHI node
+                function->insert(function->end(), mergeBB);
+                builder.SetInsertPoint(mergeBB);
+                
+                // PHI: false from leftBB (short-circuit), or RBool from evalRightBB
+                llvm::PHINode* phi = builder.CreatePHI(builder.getInt1Ty(), 2, "and.result");
+                phi->addIncoming(llvm::ConstantInt::get(builder.getInt1Ty(), 0), leftBB);  // false if left was false
+                phi->addIncoming(RBool, evalRightBB);  // right's boolean value if left was true
+                
+                return phi;
+            }
+            
+            if (binop->op.type == frontend::TokenType::TOKEN_OR_OR) {
+                // || short-circuits: if left is true, don't evaluate right
+                // Pattern: left || right
+                //   if (left) return true
+                //   else return right
+                
+                llvm::Function* function = builder.GetInsertBlock()->getParent();
+                
+                // Create basic blocks: eval_right (if left is false), merge
+                llvm::BasicBlock* evalRightBB = llvm::BasicBlock::Create(context, "or.rhs");
+                llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "or.merge");
+                
+                // Evaluate left operand ONLY
+                llvm::Value* L = codegenExpression(binop->left.get());
+                if (!L) return nullptr;
+                
+                // Convert to boolean (i1)
+                llvm::Value* LBool = builder.CreateICmpNE(L, llvm::ConstantInt::get(L->getType(), 0), "or.lhs");
+                
+                // Remember the block where left was evaluated
+                llvm::BasicBlock* leftBB = builder.GetInsertBlock();
+                
+                // If left is true, short-circuit to merge with true
+                // If left is false, continue to evaluate right
+                builder.CreateCondBr(LBool, mergeBB, evalRightBB);
+                
+                // Generate right evaluation block
+                function->insert(function->end(), evalRightBB);
+                builder.SetInsertPoint(evalRightBB);
+                
+                // NOW evaluate right operand (only if left was false)
+                llvm::Value* R = codegenExpression(binop->right.get());
+                if (!R) return nullptr;
+                
+                // Convert right to boolean
+                llvm::Value* RBool = builder.CreateICmpNE(R, llvm::ConstantInt::get(R->getType(), 0), "or.rhs");
+                
+                // Jump to merge
+                builder.CreateBr(mergeBB);
+                // Update evalRightBB in case expression changed the block
+                evalRightBB = builder.GetInsertBlock();
+                
+                // Merge block with PHI node
+                function->insert(function->end(), mergeBB);
+                builder.SetInsertPoint(mergeBB);
+                
+                // PHI: true from leftBB (short-circuit), or RBool from evalRightBB
+                llvm::PHINode* phi = builder.CreatePHI(builder.getInt1Ty(), 2, "or.result");
+                phi->addIncoming(llvm::ConstantInt::get(builder.getInt1Ty(), 1), leftBB);  // true if left was true
+                phi->addIncoming(RBool, evalRightBB);  // right's boolean value if left was false
+                
+                return phi;
+            }
+            
+            // For all other operators, evaluate both operands
+            llvm::Value* L = codegenExpression(binop->left.get());
+            llvm::Value* R = codegenExpression(binop->right.get());
+            
+            if (!L || !R) {
+                return nullptr;
+            }
+            
+            // Generate appropriate operation based on operator
+            switch (binop->op.type) {
+                // Arithmetic operators
+                case frontend::TokenType::TOKEN_PLUS:
+                    return builder.CreateAdd(L, R, "addtmp");
+                case frontend::TokenType::TOKEN_MINUS:
+                    return builder.CreateSub(L, R, "subtmp");
+                case frontend::TokenType::TOKEN_STAR:
+                    return builder.CreateMul(L, R, "multmp");
+                case frontend::TokenType::TOKEN_SLASH:
+                    return builder.CreateSDiv(L, R, "divtmp");
+                case frontend::TokenType::TOKEN_PERCENT:
+                    return builder.CreateSRem(L, R, "modtmp");
+                
+                // Comparison operators (return i1)
+                case frontend::TokenType::TOKEN_EQUAL_EQUAL:
+                    return builder.CreateICmpEQ(L, R, "eqtmp");
+                case frontend::TokenType::TOKEN_BANG_EQUAL:
+                    return builder.CreateICmpNE(L, R, "netmp");
+                case frontend::TokenType::TOKEN_LESS:
+                    return builder.CreateICmpSLT(L, R, "lttmp");
+                case frontend::TokenType::TOKEN_LESS_EQUAL:
+                    return builder.CreateICmpSLE(L, R, "letmp");
+                case frontend::TokenType::TOKEN_GREATER:
+                    return builder.CreateICmpSGT(L, R, "gttmp");
+                case frontend::TokenType::TOKEN_GREATER_EQUAL:
+                    return builder.CreateICmpSGE(L, R, "getmp");
+                
+                // Note: Logical operators (&&, ||) handled before switch via early return
+                
+                // Bitwise operators
+                case frontend::TokenType::TOKEN_AMPERSAND:
+                    return builder.CreateAnd(L, R, "andtmp");
+                case frontend::TokenType::TOKEN_PIPE:
+                    return builder.CreateOr(L, R, "ortmp");
+                case frontend::TokenType::TOKEN_CARET:
+                    return builder.CreateXor(L, R, "xortmp");
+                case frontend::TokenType::TOKEN_SHIFT_LEFT:
+                    return builder.CreateShl(L, R, "shltmp");
+                case frontend::TokenType::TOKEN_SHIFT_RIGHT:
+                    return builder.CreateAShr(L, R, "ashrtmp");
+                
+                default:
+                    return nullptr;
+            }
+            break;
+        }
+        
+        case ASTNode::NodeType::TERNARY: {
+            // Ternary expression: is condition : true_value : false_value
+            // Generates: condition ? true_value : false_value
+            // Uses PHI node to merge results from both branches
+            TernaryExpr* ternary = static_cast<TernaryExpr*>(expr);
+            
+            llvm::Function* function = builder.GetInsertBlock()->getParent();
+            
+            // Create basic blocks for true branch, false branch, and merge
+            llvm::BasicBlock* thenBB = llvm::BasicBlock::Create(context, "tern.true");
+            llvm::BasicBlock* elseBB = llvm::BasicBlock::Create(context, "tern.false");
+            llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "tern.cont");
+            
+            // Evaluate condition
+            llvm::Value* condVal = codegenExpression(ternary->condition.get());
+            if (!condVal) return nullptr;
+            
+            // Convert condition to boolean
+            condVal = builder.CreateICmpNE(condVal, llvm::ConstantInt::get(condVal->getType(), 0), "terncond");
+            
+            // Branch based on condition
+            builder.CreateCondBr(condVal, thenBB, elseBB);
+            
+            // Generate true branch
+            function->insert(function->end(), thenBB);
+            builder.SetInsertPoint(thenBB);
+            llvm::Value* trueVal = codegenExpression(ternary->trueValue.get());
+            if (!trueVal) return nullptr;
+            builder.CreateBr(mergeBB);
+            // Update thenBB in case the expression changed the current block
+            thenBB = builder.GetInsertBlock();
+            
+            // Generate false branch
+            function->insert(function->end(), elseBB);
+            builder.SetInsertPoint(elseBB);
+            llvm::Value* falseVal = codegenExpression(ternary->falseValue.get());
+            if (!falseVal) return nullptr;
+            builder.CreateBr(mergeBB);
+            // Update elseBB in case the expression changed the current block
+            elseBB = builder.GetInsertBlock();
+            
+            // Merge block with PHI node
+            function->insert(function->end(), mergeBB);
+            builder.SetInsertPoint(mergeBB);
+            
+            llvm::PHINode* phi = builder.CreatePHI(trueVal->getType(), 2, "ternphi");
+            phi->addIncoming(trueVal, thenBB);
+            phi->addIncoming(falseVal, elseBB);
+            
+            return phi;
+        }
+        
+        default:
+            // Other expression types not yet implemented
+            return nullptr;
+    }
 }
 
 // =============================================================================
