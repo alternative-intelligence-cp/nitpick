@@ -351,7 +351,7 @@ Aria is **dual-licensed**:
 **TL;DR**: 
 - Personal/educational use → FREE
 - Open-source projects → FREE  
-- Commercial/proprietary use → Contact licensing@ailp.org
+- Commercial/proprietary use → Contact development@ai-liberation-platform.org
 
 ---
 
