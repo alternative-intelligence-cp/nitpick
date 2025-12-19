@@ -9,7 +9,7 @@
 
 ## 🚀 Current Status (December 7, 2025)
 
-**Compiler**: 93-95% complete | **Phase**: Tsoding-ready | **Standard Library**: 154 working functions
+**Compiler**: 93-95% complete | **Standard Library**: 154 working functions
 
 ### What's Working ✅
 - ✅ Lexer (100% complete)
@@ -209,7 +209,7 @@ Blocks memory library executable allocation features.
 
 ## Development Roadmap
 
-### Phase 1: Tsoding-Ready (Current)
+### Phase 1: (Current)
 **Goal**: Demonstrate working features, get expert feedback
 
 - ✅ Compiler core (93-95% complete)
