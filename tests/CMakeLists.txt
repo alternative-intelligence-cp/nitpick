@@ -70,6 +70,7 @@ add_executable(test_runner
     collections/test_collections.cpp
     strings/test_strings.cpp
     math/test_math.cpp
+    unit/test_dap_server.cpp
     # Add more test files here as they are created
 )
 
@@ -127,10 +128,11 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/tools/lsp/thread_pool.cpp
 )
 
-# Add debugger formatters if LLDB is available
+# Add debugger sources if LLDB is available
 if(LLDB_FOUND)
     target_sources(test_runner PRIVATE
         ${CMAKE_SOURCE_DIR}/src/tools/debugger/aria_formatters.cpp
+        ${CMAKE_SOURCE_DIR}/src/tools/debugger/dap_server.cpp
     )
 endif()
 
