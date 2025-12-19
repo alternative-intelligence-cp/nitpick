@@ -74,6 +74,11 @@ private:
 /**
  * GC Pointer Synthetic Children Provider
  * 
+ * TODO(LLDB 20): The C++ SBSyntheticValueProvider API was removed in LLDB 20.
+ * Synthetic providers now require Python scripts. This needs to be ported to:
+ * - Python-based synthetic provider script
+ * - Registered via CreateWithScriptCode() or CreateWithClassName()
+ * 
  * Provides synthetic children for gc_ptr<T> to expose:
  * - The actual value (dereferenced pointer)
  * - Object header metadata (at -8 bytes offset):
@@ -86,6 +91,7 @@ private:
  * 
  * Reference: research_002 (GC object headers)
  */
+#if 0 // Disabled until ported to Python-based synthetic provider
 class GCPointerSyntheticProvider : public lldb::SBSyntheticValueProvider {
 public:
     GCPointerSyntheticProvider(lldb::SBValue valobj);
@@ -121,6 +127,7 @@ private:
      */
     uint64_t extractBitField(uint64_t header, int bit_offset, int bit_count);
 };
+#endif
 
 /**
  * Result<T> Type Summary Provider

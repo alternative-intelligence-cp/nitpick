@@ -9,7 +9,7 @@
 #include <sstream>
 #include <unistd.h>
 
-using json = nlohmann::json;
+// Note: Fully qualify nlohmann::nlohmann::json to avoid conflicts with LLDB's internal JSON types
 
 namespace aria {
 namespace debugger {
@@ -197,7 +197,7 @@ std::unique_ptr<DAPMessage> DAPServer::readMessage() {
     
     // Parse JSON
     try {
-        json j = json::parse(content);
+        nlohmann::json j = nlohmann::json::parse(content);
         
         auto msg = std::make_unique<DAPMessage>();
         msg->seq = j["seq"];
@@ -205,18 +205,18 @@ std::unique_ptr<DAPMessage> DAPServer::readMessage() {
         msg->command = j["command"];
         
         if (j.contains("arguments")) {
-            msg->body = new json(j["arguments"]);
+            msg->body = new nlohmann::json(j["arguments"]);
         }
         
         return msg;
-    } catch (const json::exception& e) {
+    } catch (const nlohmann::json::exception& e) {
         std::cerr << "[DAP] JSON parse error: " << e.what() << "\n";
         return nullptr;
     }
 }
 
 void DAPServer::writeMessage(const DAPMessage& msg) {
-    json j;
+    nlohmann::json j;
     j["seq"] = msg.seq;
     
     if (msg.type == DAPMessageType::RESPONSE) {
@@ -248,7 +248,7 @@ void DAPServer::writeMessage(const DAPMessage& msg) {
 }
 
 void DAPServer::sendResponse(int request_seq, const std::string& command,
-                             bool success, const json& body,
+                             bool success, const nlohmann::json& body,
                              const std::string& message) {
     DAPMessage response;
     response.type = DAPMessageType::RESPONSE;
@@ -256,17 +256,17 @@ void DAPServer::sendResponse(int request_seq, const std::string& command,
     response.command = command;
     response.success = success;
     response.message = message;
-    response.body = new json(body);
+    response.body = new nlohmann::json(body);
     
     writeMessage(response);
 }
 
-void DAPServer::sendEvent(const std::string& event, const json& body) {
+void DAPServer::sendEvent(const std::string& event, const nlohmann::json& body) {
     DAPMessage evt;
     evt.type = DAPMessageType::EVENT;
     evt.seq = m_next_seq++;
     evt.event = event;
-    evt.body = new json(body);
+    evt.body = new nlohmann::json(body);
     
     writeMessage(evt);
 }
@@ -290,7 +290,7 @@ void DAPServer::eventThreadFunc() {
                     // Thread stopped - send stopped event
                     lldb::SBThread thread = m_process.GetSelectedThread();
                     if (thread.IsValid()) {
-                        json body;
+                        nlohmann::json body;
                         body["reason"] = "breakpoint";  // Could be step, pause, etc.
                         body["threadId"] = thread.GetThreadID();
                         body["allThreadsStopped"] = true;
@@ -300,15 +300,15 @@ void DAPServer::eventThreadFunc() {
                     break;
                 }
                 case lldb::eStateExited: {
-                    json body;
+                    nlohmann::json body;
                     body["exitCode"] = m_process.GetExitStatus();
                     sendEvent("exited", body);
                     
-                    sendEvent("terminated", json::object());
+                    sendEvent("terminated", nlohmann::json::object());
                     break;
                 }
                 case lldb::eStateCrashed: {
-                    sendEvent("terminated", json::object());
+                    sendEvent("terminated", nlohmann::json::object());
                     break;
                 }
                 default:
@@ -322,7 +322,7 @@ void DAPServer::eventThreadFunc() {
                     // Breakpoint verified
                     lldb::SBBreakpoint bp = lldb::SBBreakpoint::GetBreakpointFromEvent(event);
                     
-                    json body;
+                    nlohmann::json body;
                     body["reason"] = "changed";
                     body["breakpoint"] = {
                         {"id", static_cast<int>(bp.GetID())},
@@ -345,7 +345,7 @@ void DAPServer::eventThreadFunc() {
 void DAPServer::handleInitialize(const DAPMessage& request, DAPMessage& response) {
     std::cerr << "[DAP] Initialize\n";
     
-    json capabilities;
+    nlohmann::json capabilities;
     capabilities["supportsConfigurationDoneRequest"] = true;
     capabilities["supportsEvaluateForHovers"] = true;
     capabilities["supportsStepBack"] = false;
@@ -354,10 +354,10 @@ void DAPServer::handleInitialize(const DAPMessage& request, DAPMessage& response
     capabilities["supportsGotoTargetsRequest"] = false;
     capabilities["supportsStepInTargetsRequest"] = false;
     capabilities["supportsCompletionsRequest"] = false;
-    capabilities["completionTriggerCharacters"] = json::array();
+    capabilities["completionTriggerCharacters"] = nlohmann::json::array();
     capabilities["supportsModulesRequest"] = false;
-    capabilities["additionalModuleColumns"] = json::array();
-    capabilities["supportedChecksumAlgorithms"] = json::array();
+    capabilities["additionalModuleColumns"] = nlohmann::json::array();
+    capabilities["supportedChecksumAlgorithms"] = nlohmann::json::array();
     capabilities["supportsRestartRequest"] = false;
     capabilities["supportsExceptionOptions"] = false;
     capabilities["supportsValueFormattingOptions"] = true;
@@ -379,11 +379,11 @@ void DAPServer::handleInitialize(const DAPMessage& request, DAPMessage& response
     capabilities["supportsInstructionBreakpoints"] = false;
     capabilities["supportsExceptionFilterOptions"] = false;
     
-    response.body = new json(capabilities);
+    response.body = new nlohmann::json(capabilities);
     m_initialized = true;
     
     // Send initialized event
-    sendEvent("initialized", json::object());
+    sendEvent("initialized", nlohmann::json::object());
 }
 
 void DAPServer::handleLaunch(const DAPMessage& request, DAPMessage& response) {
@@ -395,7 +395,7 @@ void DAPServer::handleLaunch(const DAPMessage& request, DAPMessage& response) {
         return;
     }
     
-    const json& args = *request.body;
+    const nlohmann::json& args = *request.body;
     std::string program = args["program"];
     
     std::cerr << "[DAP] Launch: " << program << "\n";
@@ -422,8 +422,10 @@ void DAPServer::handleLaunch(const DAPMessage& request, DAPMessage& response) {
     argv.push_back(nullptr);
     
     // Launch process
+    // Note: LLDB 20 GetListener() returns by value, not reference
+    lldb::SBListener listener = m_debugger.GetListener();
     m_process = m_target.Launch(
-        m_debugger.GetListener(),
+        listener,
         argv.data(),
         nullptr,  // envp
         nullptr,  // stdin
@@ -444,7 +446,7 @@ void DAPServer::handleLaunch(const DAPMessage& request, DAPMessage& response) {
     // Start event thread
     m_event_thread = std::make_unique<std::thread>(&DAPServer::eventThreadFunc, this);
     
-    response.body = new json(json::object());
+    response.body = new nlohmann::json(nlohmann::json::object());
 }
 
 void DAPServer::handleAttach(const DAPMessage& request, DAPMessage& response) {
@@ -456,7 +458,7 @@ void DAPServer::handleAttach(const DAPMessage& request, DAPMessage& response) {
         return;
     }
     
-    const json& args = *request.body;
+    const nlohmann::json& args = *request.body;
     
     if (!args.contains("pid")) {
         response.success = false;
@@ -491,12 +493,12 @@ void DAPServer::handleAttach(const DAPMessage& request, DAPMessage& response) {
     // Start event thread
     m_event_thread = std::make_unique<std::thread>(&DAPServer::eventThreadFunc, this);
     
-    response.body = new json(json::object());
+    response.body = new nlohmann::json(nlohmann::json::object());
 }
 
 void DAPServer::handleConfigurationDone(const DAPMessage& request, DAPMessage& response) {
     std::cerr << "[DAP] Configuration done\n";
-    response.body = new json(json::object());
+    response.body = new nlohmann::json(nlohmann::json::object());
     
     // Resume if stopped at entry
     if (m_process.IsValid() && m_process.GetState() == lldb::eStateStopped) {
@@ -514,7 +516,7 @@ void DAPServer::handleDisconnect(const DAPMessage& request, DAPMessage& response
     }
     
     m_shutdown = true;
-    response.body = new json(json::object());
+    response.body = new nlohmann::json(nlohmann::json::object());
 }
 
 void DAPServer::handleSetBreakpoints(const DAPMessage& request, DAPMessage& response) {
@@ -526,7 +528,7 @@ void DAPServer::handleSetBreakpoints(const DAPMessage& request, DAPMessage& resp
         return;
     }
     
-    const json& args = *request.body;
+    const nlohmann::json& args = *request.body;
     std::string source_path = getSourcePath(args["source"]);
     
     std::cerr << "[DAP] Set breakpoints in: " << source_path << "\n";
@@ -544,7 +546,7 @@ void DAPServer::handleSetBreakpoints(const DAPMessage& request, DAPMessage& resp
     }
     
     // Set new breakpoints
-    json breakpoints = json::array();
+    nlohmann::json breakpoints = nlohmann::json::array();
     
     if (args.contains("breakpoints") && args["breakpoints"].is_array()) {
         for (const auto& bp_req : args["breakpoints"]) {
@@ -563,7 +565,7 @@ void DAPServer::handleSetBreakpoints(const DAPMessage& request, DAPMessage& resp
             
             m_breakpoints[bp.id] = bp;
             
-            json bp_json;
+            nlohmann::json bp_json;
             bp_json["id"] = bp.id;
             bp_json["verified"] = bp.verified;
             bp_json["line"] = bp.line;
@@ -575,14 +577,14 @@ void DAPServer::handleSetBreakpoints(const DAPMessage& request, DAPMessage& resp
         }
     }
     
-    json body;
+    nlohmann::json body;
     body["breakpoints"] = breakpoints;
-    response.body = new json(body);
+    response.body = new nlohmann::json(body);
 }
 
 void DAPServer::handleSetExceptionBreakpoints(const DAPMessage& request, DAPMessage& response) {
     // Not implemented yet
-    response.body = new json(json::object());
+    response.body = new nlohmann::json(nlohmann::json::object());
 }
 
 void DAPServer::handleContinue(const DAPMessage& request, DAPMessage& response) {
@@ -604,9 +606,9 @@ void DAPServer::handleContinue(const DAPMessage& request, DAPMessage& response) 
         return;
     }
     
-    json body;
+    nlohmann::json body;
     body["allThreadsContinued"] = true;
-    response.body = new json(body);
+    response.body = new nlohmann::json(body);
 }
 
 void DAPServer::handleNext(const DAPMessage& request, DAPMessage& response) {
@@ -630,7 +632,7 @@ void DAPServer::handleNext(const DAPMessage& request, DAPMessage& response) {
     }
     
     thread.StepOver();
-    response.body = new json(json::object());
+    response.body = new nlohmann::json(nlohmann::json::object());
 }
 
 void DAPServer::handleStepIn(const DAPMessage& request, DAPMessage& response) {
@@ -654,7 +656,7 @@ void DAPServer::handleStepIn(const DAPMessage& request, DAPMessage& response) {
     }
     
     thread.StepInto();
-    response.body = new json(json::object());
+    response.body = new nlohmann::json(nlohmann::json::object());
 }
 
 void DAPServer::handleStepOut(const DAPMessage& request, DAPMessage& response) {
@@ -678,7 +680,7 @@ void DAPServer::handleStepOut(const DAPMessage& request, DAPMessage& response) {
     }
     
     thread.StepOut();
-    response.body = new json(json::object());
+    response.body = new nlohmann::json(nlohmann::json::object());
 }
 
 void DAPServer::handlePause(const DAPMessage& request, DAPMessage& response) {
@@ -700,7 +702,7 @@ void DAPServer::handlePause(const DAPMessage& request, DAPMessage& response) {
         return;
     }
     
-    response.body = new json(json::object());
+    response.body = new nlohmann::json(nlohmann::json::object());
 }
 
 void DAPServer::handleThreads(const DAPMessage& request, DAPMessage& response) {
@@ -712,14 +714,14 @@ void DAPServer::handleThreads(const DAPMessage& request, DAPMessage& response) {
         return;
     }
     
-    json threads = json::array();
+    nlohmann::json threads = nlohmann::json::array();
     
     uint32_t num_threads = m_process.GetNumThreads();
     for (uint32_t i = 0; i < num_threads; ++i) {
         lldb::SBThread thread = m_process.GetThreadAtIndex(i);
         
         if (thread.IsValid()) {
-            json thread_json;
+            nlohmann::json thread_json;
             thread_json["id"] = thread.GetThreadID();
             thread_json["name"] = thread.GetName() ? thread.GetName() : "Thread";
             
@@ -727,9 +729,9 @@ void DAPServer::handleThreads(const DAPMessage& request, DAPMessage& response) {
         }
     }
     
-    json body;
+    nlohmann::json body;
     body["threads"] = threads;
-    response.body = new json(body);
+    response.body = new nlohmann::json(body);
 }
 
 void DAPServer::handleStackTrace(const DAPMessage& request, DAPMessage& response) {
@@ -750,7 +752,7 @@ void DAPServer::handleStackTrace(const DAPMessage& request, DAPMessage& response
         return;
     }
     
-    json stack_frames = json::array();
+    nlohmann::json stack_frames = nlohmann::json::array();
     
     uint32_t num_frames = thread.GetNumFrames();
     for (uint32_t i = 0; i < num_frames; ++i) {
@@ -760,7 +762,7 @@ void DAPServer::handleStackTrace(const DAPMessage& request, DAPMessage& response
             lldb::SBLineEntry line_entry = frame.GetLineEntry();
             lldb::SBFileSpec file_spec = line_entry.GetFileSpec();
             
-            json frame_json;
+            nlohmann::json frame_json;
             frame_json["id"] = i;  // Frame ID
             frame_json["name"] = frame.GetFunctionName() ? frame.GetFunctionName() : "<unknown>";
             
@@ -783,10 +785,10 @@ void DAPServer::handleStackTrace(const DAPMessage& request, DAPMessage& response
         }
     }
     
-    json body;
+    nlohmann::json body;
     body["stackFrames"] = stack_frames;
     body["totalFrames"] = num_frames;
-    response.body = new json(body);
+    response.body = new nlohmann::json(body);
 }
 
 void DAPServer::handleScopes(const DAPMessage& request, DAPMessage& response) {
@@ -815,25 +817,25 @@ void DAPServer::handleScopes(const DAPMessage& request, DAPMessage& response) {
         return;
     }
     
-    json scopes = json::array();
+    nlohmann::json scopes = nlohmann::json::array();
     
     // Locals scope
-    json locals_scope;
+    nlohmann::json locals_scope;
     locals_scope["name"] = "Locals";
     locals_scope["variablesReference"] = frame_id * 1000 + 1;  // Encoded reference
     locals_scope["expensive"] = false;
     scopes.push_back(locals_scope);
     
     // Arguments scope
-    json args_scope;
+    nlohmann::json args_scope;
     args_scope["name"] = "Arguments";
     args_scope["variablesReference"] = frame_id * 1000 + 2;
     args_scope["expensive"] = false;
     scopes.push_back(args_scope);
     
-    json body;
+    nlohmann::json body;
     body["scopes"] = scopes;
-    response.body = new json(body);
+    response.body = new nlohmann::json(body);
 }
 
 void DAPServer::handleVariables(const DAPMessage& request, DAPMessage& response) {
@@ -865,7 +867,7 @@ void DAPServer::handleVariables(const DAPMessage& request, DAPMessage& response)
         return;
     }
     
-    json variables = json::array();
+    nlohmann::json variables = nlohmann::json::array();
     
     if (scope == 1) {
         // Locals
@@ -874,7 +876,7 @@ void DAPServer::handleVariables(const DAPMessage& request, DAPMessage& response)
             lldb::SBValue value = locals.GetValueAtIndex(i);
             
             if (value.IsValid()) {
-                json var_json;
+                nlohmann::json var_json;
                 var_json["name"] = value.GetName() ? value.GetName() : "<unnamed>";
                 var_json["value"] = value.GetValue() ? value.GetValue() : "<no value>";
                 var_json["type"] = value.GetTypeName() ? value.GetTypeName() : "<unknown>";
@@ -890,7 +892,7 @@ void DAPServer::handleVariables(const DAPMessage& request, DAPMessage& response)
             lldb::SBValue value = args.GetValueAtIndex(i);
             
             if (value.IsValid()) {
-                json var_json;
+                nlohmann::json var_json;
                 var_json["name"] = value.GetName() ? value.GetName() : "<unnamed>";
                 var_json["value"] = value.GetValue() ? value.GetValue() : "<no value>";
                 var_json["type"] = value.GetTypeName() ? value.GetTypeName() : "<unknown>";
@@ -901,9 +903,9 @@ void DAPServer::handleVariables(const DAPMessage& request, DAPMessage& response)
         }
     }
     
-    json body;
+    nlohmann::json body;
     body["variables"] = variables;
-    response.body = new json(body);
+    response.body = new nlohmann::json(body);
 }
 
 void DAPServer::handleEvaluate(const DAPMessage& request, DAPMessage& response) {
@@ -941,19 +943,19 @@ void DAPServer::handleEvaluate(const DAPMessage& request, DAPMessage& response) 
         return;
     }
     
-    json body;
+    nlohmann::json body;
     body["result"] = result.GetValue() ? result.GetValue() : "<no value>";
     body["type"] = result.GetTypeName() ? result.GetTypeName() : "<unknown>";
     body["variablesReference"] = 0;
     
-    response.body = new json(body);
+    response.body = new nlohmann::json(body);
 }
 
 // ============================================================================
 // Helper Methods
 // ============================================================================
 
-std::string DAPServer::getSourcePath(const json& source) {
+std::string DAPServer::getSourcePath(const nlohmann::json& source) {
     if (source.contains("path")) {
         return source["path"];
     }
