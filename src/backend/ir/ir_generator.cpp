@@ -1391,6 +1391,54 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             return builder.CreateLoad(struct_type, struct_alloca, "struct.val");
         }
         
+        case ASTNode::NodeType::ARRAY_LITERAL: {
+            // Array literal: [1, 2, 3, 4]
+            ArrayLiteralExpr* arrLit = static_cast<ArrayLiteralExpr*>(expr);
+            
+            if (arrLit->elements.empty()) {
+                // Empty array - return null pointer
+                return llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
+            }
+            
+            // Determine element type from first element
+            llvm::Value* first_elem = codegenExpression(arrLit->elements[0].get());
+            if (!first_elem) {
+                return nullptr;
+            }
+            llvm::Type* elem_type = first_elem->getType();
+            
+            // Allocate array on the stack
+            size_t array_size = arrLit->elements.size();
+            llvm::AllocaInst* array_alloca = builder.CreateAlloca(
+                elem_type,
+                llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), array_size),
+                "array.tmp"
+            );
+            
+            // Store first element
+            llvm::Value* elem_ptr = builder.CreateGEP(elem_type, array_alloca,
+                llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 0));
+            builder.CreateStore(first_elem, elem_ptr);
+            
+            // Store remaining elements
+            for (size_t i = 1; i < arrLit->elements.size(); ++i) {
+                llvm::Value* elem_value = codegenExpression(arrLit->elements[i].get());
+                if (!elem_value) {
+                    continue;  // Skip on error
+                }
+                
+                // Create GEP to access element at index i
+                elem_ptr = builder.CreateGEP(elem_type, array_alloca,
+                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), i));
+                
+                // Store the value
+                builder.CreateStore(elem_value, elem_ptr);
+            }
+            
+            // Return pointer to first element (arrays decay to pointers)
+            return array_alloca;
+        }
+        
         case ASTNode::NodeType::MEMBER_ACCESS: {
             // Member access - p.x, p.y
             MemberAccessExpr* member = static_cast<MemberAccessExpr*>(expr);
@@ -1460,6 +1508,69 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Load the field value
             llvm::Type* llvm_field_type = mapType(field_type);
             return builder.CreateLoad(llvm_field_type, field_ptr, member->member);
+        }
+        
+        case ASTNode::NodeType::INDEX: {
+            // Array indexing: arr[i]
+            IndexExpr* index = static_cast<IndexExpr*>(expr);
+            
+            // Generate code for the array (should be a pointer)
+            llvm::Value* array_ptr = nullptr;
+            
+            // Special handling for identifiers to get the alloca/pointer directly
+            if (index->array->type == ASTNode::NodeType::IDENTIFIER) {
+                IdentifierExpr* ident = static_cast<IdentifierExpr*>(index->array.get());
+                auto it = named_values.find(ident->name);
+                if (it != named_values.end()) {
+                    llvm::Value* var = it->second;
+                    
+                    // Check if it's a pointer type (arrays are stored as pointers)
+                    if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
+                        llvm::Type* allocated_type = allocaInst->getAllocatedType();
+                        if (allocated_type->isPointerTy()) {
+                            // Load the pointer (array pointer stored in variable)
+                            array_ptr = builder.CreateLoad(allocated_type, var, ident->name + ".ptr");
+                        } else {
+                            // Direct array allocation (e.g., array on stack)
+                            array_ptr = var;
+                        }
+                    } else {
+                        array_ptr = var;
+                    }
+                }
+            } else {
+                // For complex expressions, generate code normally
+                array_ptr = codegenExpression(index->array.get());
+            }
+            
+            if (!array_ptr) {
+                return nullptr;
+            }
+            
+            // Generate code for the index
+            llvm::Value* index_value = codegenExpression(index->index.get());
+            if (!index_value) {
+                return nullptr;
+            }
+            
+            // Get element type (arrays decay to pointers)
+            llvm::Type* elem_type = nullptr;
+            if (auto* ptr_type = llvm::dyn_cast<llvm::PointerType>(array_ptr->getType())) {
+                // Modern LLVM uses opaque pointers, need to track element type separately
+                // For now, assume int64 (common case for literals)
+                elem_type = llvm::Type::getInt64Ty(context);
+            } else if (auto* alloca = llvm::dyn_cast<llvm::AllocaInst>(array_ptr)) {
+                elem_type = alloca->getAllocatedType();
+            } else {
+                // Fallback to int32
+                elem_type = llvm::Type::getInt32Ty(context);
+            }
+            
+            // Create GEP to access element at index
+            llvm::Value* elem_ptr = builder.CreateGEP(elem_type, array_ptr, index_value, "arrayidx");
+            
+            // Load and return the element value
+            return builder.CreateLoad(elem_type, elem_ptr, "elem");
         }
         
         default:

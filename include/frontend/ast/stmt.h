@@ -12,7 +12,8 @@ namespace aria {
  */
 class VarDeclStmt : public ASTNode {
 public:
-    std::string typeName;      // e.g., "int8", "string"
+    std::string typeName;      // e.g., "int8", "string" (legacy, kept for simple types)
+    ASTNodePtr typeNode;       // Type AST node (for complex types like arrays)
     std::string varName;
     ASTNodePtr initializer;    // Can be nullptr
     bool isWild;               // wild keyword (opt-out of GC)
@@ -23,7 +24,14 @@ public:
     VarDeclStmt(const std::string& type, const std::string& name, 
                 ASTNodePtr init = nullptr, int line = 0, int column = 0)
         : ASTNode(NodeType::VAR_DECL, line, column),
-          typeName(type), varName(name), initializer(init),
+          typeName(type), typeNode(nullptr), varName(name), initializer(init),
+          isWild(false), isConst(false), isStack(false), isGC(false) {}
+    
+    // Constructor with typeNode support
+    VarDeclStmt(ASTNodePtr typeN, const std::string& name,
+                ASTNodePtr init = nullptr, int line = 0, int column = 0)
+        : ASTNode(NodeType::VAR_DECL, line, column),
+          typeName(""), typeNode(typeN), varName(name), initializer(init),
           isWild(false), isConst(false), isStack(false), isGC(false) {}
     
     std::string toString() const override;

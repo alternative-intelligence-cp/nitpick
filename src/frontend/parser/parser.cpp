@@ -929,20 +929,47 @@ ASTNodePtr Parser::parseStatement() {
     }
     
     // Check for type annotation (variable declaration)
-    // Must be followed by colon to avoid ambiguity with identifiers
-    // Example: "obj:x = 5" is variable declaration, "obj.field" is member access
+    // Must be followed by colon or array bracket to avoid ambiguity with identifiers
+    // Examples: "int32:x = 5", "int32[]:arr = ...", "int32[10]:arr = ..."
     if (isTypeKeyword(peek().type)) {
         size_t saved = current;
         advance(); // consume type keyword
-        if (check(TokenType::TOKEN_COLON)) {
-            // It's a type annotation: type:name
+        
+        // Check for array type suffix: type[] or type[size]
+        if (check(TokenType::TOKEN_LEFT_BRACKET)) {
+            advance(); // consume '['
+            
+            // Skip size expression if present
+            if (!check(TokenType::TOKEN_RIGHT_BRACKET)) {
+                // Skip the size expression (simple lookahead, just scan tokens)
+                int bracketDepth = 1;
+                while (bracketDepth > 0 && !isAtEnd()) {
+                    if (check(TokenType::TOKEN_LEFT_BRACKET)) bracketDepth++;
+                    if (check(TokenType::TOKEN_RIGHT_BRACKET)) bracketDepth--;
+                    if (bracketDepth > 0) advance();
+                }
+            }
+            
+            // Should be at ']' now
+            if (check(TokenType::TOKEN_RIGHT_BRACKET)) {
+                advance(); // consume ']'
+                
+                // Now check for colon after array type
+                if (check(TokenType::TOKEN_COLON)) {
+                    // It's an array type annotation: type[]:name or type[size]:name
+                    current = saved; // reset position
+                    return parseVarDecl();
+                }
+            }
+        } else if (check(TokenType::TOKEN_COLON)) {
+            // It's a simple type annotation: type:name
             current = saved; // reset position
             return parseVarDecl();
-        } else {
-            // It's an identifier used in an expression, restore position
-            current = saved;
-            // Fall through to expression statement
         }
+        
+        // Not a variable declaration, restore position
+        current = saved;
+        // Fall through to expression statement
     }
     
     // Check for async function declaration: async func:name = ...
@@ -1128,31 +1155,11 @@ ASTNodePtr Parser::parseVarDecl() {
         }
     }
     
-    // Get type (could be *T for generic, identifier for custom types, or type keyword)
-    std::string typeName;
-    int typeLine, typeColumn;
-    if (isGenericTypeReference()) {
-        // Generic type reference: *T
-        Token starToken = advance(); // consume '*'
-        typeLine = starToken.line;
-        typeColumn = starToken.column;
-        Token typeParamToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name after '*'");
-        typeName = "*" + typeParamToken.lexeme;
-    } else if (peek().type == TokenType::TOKEN_IDENTIFIER) {
-        // Custom type (e.g., struct name): Point, Duration, etc.
-        Token typeToken = advance();
-        typeName = typeToken.lexeme;
-        typeLine = typeToken.line;
-        typeColumn = typeToken.column;
-    } else {
-        Token typeToken = advance();
-        if (!isTypeKeyword(typeToken.type)) {
-            error("Expected type keyword or identifier in variable declaration");
-            return nullptr;
-        }
-        typeName = typeToken.lexeme;
-        typeLine = typeToken.line;
-        typeColumn = typeToken.column;
+    // Parse the type (handles simple types, arrays, pointers, generics, etc.)
+    ASTNodePtr typeNode = parseType();
+    if (!typeNode) {
+        error("Expected type in variable declaration");
+        return nullptr;
     }
     
     // Consume colon
@@ -1180,11 +1187,11 @@ ASTNodePtr Parser::parseVarDecl() {
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after variable declaration");
     
     auto varDecl = std::make_shared<VarDeclStmt>(
-        typeName,
+        typeNode,
         nameToken.lexeme,
         initializer,
-        typeLine,
-        typeColumn
+        typeNode->line,
+        typeNode->column
     );
     
     varDecl->isWild = isWild;

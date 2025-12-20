@@ -10,7 +10,15 @@ std::string VarDeclStmt::toString() const {
     if (isConst) oss << "const ";
     if (isStack) oss << "stack ";
     if (isGC) oss << "gc ";
-    oss << typeName << ":" << varName;
+    
+    // Use typeNode if available, otherwise typeName
+    if (typeNode) {
+        oss << typeNode->toString();
+    } else {
+        oss << typeName;
+    }
+    
+    oss << ":" << varName;
     if (initializer) {
         oss << " = " << initializer->toString();
     }
