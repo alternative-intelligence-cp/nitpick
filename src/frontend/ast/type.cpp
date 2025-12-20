@@ -17,6 +17,16 @@ std::string PointerType::toString() const {
     return oss.str();
 }
 
+std::string OptionalTypeNode::toString() const {
+    std::ostringstream oss;
+    if (wrappedType) {
+        oss << wrappedType->toString() << "?";  // Aria uses ? for optional types
+    } else {
+        oss << "unknown?";
+    }
+    return oss.str();
+}
+
 std::string ArrayType::toString() const {
     std::ostringstream oss;
     if (elementType) {

@@ -48,6 +48,20 @@ public:
 };
 
 /**
+ * Optional type annotation
+ * Represents: int64?, string?, obj? (types that can be NIL)
+ */
+class OptionalTypeNode : public TypeNode {
+public:
+    ASTNodePtr wrappedType;  // The underlying type (T in T?)
+    
+    OptionalTypeNode(ASTNodePtr wrapped, int line = 0, int column = 0)
+        : TypeNode(NodeType::OPTIONAL_TYPE, line, column), wrappedType(wrapped) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Array type annotation
  * Represents: int8[], int8[100], string[]
  */

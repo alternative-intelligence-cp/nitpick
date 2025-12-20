@@ -29,6 +29,7 @@ enum class TypeKind {
     UNION,          // union { variants }
     VECTOR,         // vec2, vec3, vec4, etc.
     GENERIC,        // T, U, V (type parameters)
+    OPTIONAL,       // T? (optional types, can be NIL)
     RESULT,         // result<T> for error handling
     FUTURE,         // future<T> for async computation
     UNKNOWN,        // Type not yet inferred
@@ -58,6 +59,7 @@ public:
     virtual bool isStruct() const { return kind == TypeKind::STRUCT; }
     virtual bool isVector() const { return kind == TypeKind::VECTOR; }
     virtual bool isGeneric() const { return kind == TypeKind::GENERIC; }
+    virtual bool isOptional() const { return kind == TypeKind::OPTIONAL; }
 };
 
 // ============================================================================
@@ -288,6 +290,27 @@ public:
 };
 
 // ============================================================================
+// OptionalType - Optional type (T?)
+// ============================================================================
+// Reference: aria_specs.txt (NIL and optional types)
+// Represents a type that can be either a value of type T or NIL
+
+class OptionalType : public Type {
+private:
+    Type* wrappedType;  // The underlying type (T in T?)
+    
+public:
+    explicit OptionalType(Type* wrappedType)
+        : Type(TypeKind::OPTIONAL), wrappedType(wrappedType) {}
+    
+    Type* getWrappedType() const { return wrappedType; }
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
 // ResultType - Result type for error handling (result<T>)
 // ============================================================================
 // Reference: research_016 (result type and error propagation)
@@ -381,6 +404,7 @@ public:
     VectorType* getVectorType(Type* componentType, int dimension);
     FunctionType* getFunctionType(const std::vector<Type*>& paramTypes, Type* returnType,
                                  bool isAsync = false, bool isVariadic = false);
+    OptionalType* getOptionalType(Type* wrappedType);
     ResultType* getResultType(Type* valueType);
     FutureType* getFutureType(Type* outputType);
     
