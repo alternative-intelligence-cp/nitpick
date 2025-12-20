@@ -150,7 +150,8 @@ enum class TokenType {
     // Special Keywords
     // ========================================================================
     TOKEN_KW_IS,        // is - ternary condition keyword
-    TOKEN_KW_NULL,      // NULL - null value
+    TOKEN_KW_NULL,      // NULL - null pointer (C FFI only)
+    TOKEN_KW_NIL,       // NIL - absence of value (Aria native)
     TOKEN_KW_TRUE,      // true - boolean literal
     TOKEN_KW_FALSE,     // false - boolean literal
     TOKEN_KW_ERR,       // ERR - TBB error sentinel

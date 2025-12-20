@@ -1,5 +1,1494 @@
-=== ARIA SOURCE PART6 - RUNTIME ===
+/**
+ * Aria GC Core Implementation
+ * 
+ * This file implements the main garbage collection algorithms:
+ * - Minor GC: Copying collector for nursery (with pinning support)
+ * - Major GC: Mark-sweep collector for old generation
+ * - Shadow stack management
+ * - GC state coordination
+ * 
+ * Reference: research_021_garbage_collection_system.txt
+ */
 
-FILE: lib/runtime/runtime.c
-================================================================================
-[FILE NOT FOUND]
+#include "gc_internal.h"
+#include <algorithm>
+#include <iostream>
+#include <cstring>
+
+namespace aria {
+namespace runtime {
+
+// =============================================================================
+// ShadowStack Implementation
+// =============================================================================
+
+ShadowStack::~ShadowStack() {
+    // Clean up all frames
+    while (top) {
+        pop_frame();
+    }
+}
+
+void ShadowStack::push_frame() {
+    top = new ShadowFrame(top);
+}
+
+void ShadowStack::pop_frame() {
+    if (!top) return;
+    
+    ShadowFrame* old_top = top;
+    top = top->prev;
+    delete old_top;
+}
+
+void ShadowStack::add_root(void** root_addr) {
+    if (top) {
+        top->roots.push_back(root_addr);
+    }
+}
+
+void ShadowStack::remove_root(void** root_addr) {
+    if (!top) return;
+    
+    auto& roots = top->roots;
+    roots.erase(std::remove(roots.begin(), roots.end(), root_addr), roots.end());
+}
+
+std::vector<void**> ShadowStack::get_all_roots() const {
+    std::vector<void**> all_roots;
+    
+    // Walk the frame chain
+    for (ShadowFrame* frame = top; frame != nullptr; frame = frame->prev) {
+        all_roots.insert(all_roots.end(), frame->roots.begin(), frame->roots.end());
+    }
+    
+    return all_roots;
+}
+
+// =============================================================================
+// GCState Implementation
+// =============================================================================
+
+GCState& GCState::instance() {
+    static GCState inst;
+    return inst;
+}
+
+void GCState::init(size_t nursery_size, size_t old_gen_threshold) {
+    std::lock_guard<std::mutex> lock(gc_mutex);
+    
+    if (initialized) {
+        return;  // Already initialized
+    }
+    
+    // Default sizes if not specified
+    if (nursery_size == 0) {
+        nursery_size = 4 * 1024 * 1024;  // 4MB default
+    }
+    if (old_gen_threshold == 0) {
+        old_gen_threshold = 64 * 1024 * 1024;  // 64MB default
+    }
+    
+    // Initialize components
+    nursery = new Nursery(nursery_size);
+    old_gen = new OldGeneration(old_gen_threshold);
+    
+    // Card table covers both nursery and old gen (worst case: 128MB = 256K cards)
+    size_t total_heap = nursery_size + old_gen_threshold;
+    card_table = new CardTable(nursery->start_addr, total_heap);
+    
+    // Initialize stats
+    stats = {};
+    stats.nursery_size = nursery_size;
+    stats.old_gen_size = 0;
+    
+    initialized = true;
+}
+
+void GCState::shutdown() {
+    std::lock_guard<std::mutex> lock(gc_mutex);
+    
+    if (!initialized) return;
+    
+    delete nursery;
+    delete old_gen;
+    delete card_table;
+    
+    nursery = nullptr;
+    old_gen = nullptr;
+    card_table = nullptr;
+    
+    initialized = false;
+}
+
+void* GCState::alloc(size_t size, uint16_t type_id) {
+    std::lock_guard<std::mutex> lock(gc_mutex);
+    
+    if (!initialized) {
+        init(0, 0);  // Auto-initialize with defaults
+    }
+    
+    // Try to allocate in nursery
+    void* ptr = nursery->allocate(size, type_id);
+    
+    if (ptr) {
+        stats.total_allocated += size;
+        stats.nursery_used = nursery->used;
+        return ptr;
+    }
+    
+    // Nursery full - trigger minor GC
+    minor_gc();
+    
+    // Retry allocation
+    ptr = nursery->allocate(size, type_id);
+    
+    if (ptr) {
+        stats.total_allocated += size;
+        stats.nursery_used = nursery->used;
+        return ptr;
+    }
+    
+    // Still failing - trigger major GC
+    major_gc();
+    
+    // Final retry
+    ptr = nursery->allocate(size, type_id);
+    
+    if (ptr) {
+        stats.total_allocated += size;
+        stats.nursery_used = nursery->used;
+        return ptr;
+    }
+    
+    // Out of memory
+    std::cerr << "Aria GC: Out of memory!\n";
+    return nullptr;
+}
+
+void GCState::pin(void* ptr) {
+    std::lock_guard<std::mutex> lock(gc_mutex);
+    
+    if (!ptr) return;
+    
+    // Get header
+    ObjHeader* header = get_header(ptr);
+    if (!header) return;
+    
+    // Set pinned bit
+    header->pinned_bit = 1;
+    
+    // Track in nursery
+    if (header->is_nursery && nursery) {
+        nursery->pinned_objects.insert(ptr);
+        stats.num_pinned_objects++;
+    }
+}
+
+void GCState::unpin(void* ptr) {
+    std::lock_guard<std::mutex> lock(gc_mutex);
+    
+    if (!ptr) return;
+    
+    ObjHeader* header = get_header(ptr);
+    if (!header) return;
+    
+    // Clear pinned bit
+    header->pinned_bit = 0;
+    
+    // Remove from tracking
+    if (header->is_nursery && nursery) {
+        nursery->pinned_objects.erase(ptr);
+        if (stats.num_pinned_objects > 0) {
+            stats.num_pinned_objects--;
+        }
+    }
+}
+
+void GCState::collect(bool full) {
+    std::lock_guard<std::mutex> lock(gc_mutex);
+    
+    if (!initialized || collecting) {
+        return;  // Already collecting or not initialized
+    }
+    
+    collecting = true;
+    
+    if (full) {
+        major_gc();
+    } else {
+        minor_gc();
+    }
+    
+    collecting = false;
+}
+
+void GCState::minor_gc() {
+    /**
+     * Minor GC: Evacuate nursery to old generation
+     * 
+     * Algorithm:
+     * 1. Scan all roots (shadow stack)
+     * 2. For each root pointing to nursery:
+     *    a. If object is pinned: mark as live, don't move
+     *    b. If object is unpinned: evacuate to old gen
+     * 3. Reconstruct nursery (handle pinned objects)
+     * 4. Clear card table
+     * 
+     * This is a stop-the-world copying collector with pinning support.
+     */
+    
+    if (!initialized) return;
+    
+    stats.num_minor_collections++;
+    
+    // Scan roots
+    auto roots = shadow_stack.get_all_roots();
+    
+    for (void** root_addr : roots) {
+        void* obj_ptr = *root_addr;
+        
+        if (!obj_ptr || !nursery->contains(obj_ptr)) {
+            continue;  // Not a nursery object
+        }
+        
+        ObjHeader* header = get_header(obj_ptr);
+        if (!header) continue;
+        
+        // Check if pinned
+        if (header->pinned_bit) {
+            // Pinned object - mark as live but don't move
+            header->mark_bit = 1;
+            continue;
+        }
+        
+        // Evacuate to old generation
+        void* new_ptr = evacuate_object(obj_ptr);
+        
+        if (new_ptr) {
+            // Update root to point to new location
+            *root_addr = new_ptr;
+        }
+    }
+    
+    // Reconstruct nursery (handle fragments from pinned objects)
+    nursery->reset_with_pinned();
+    
+    // Clear card table
+    card_table->clear();
+    
+    // Update stats
+    stats.nursery_used = nursery->used;
+    stats.old_gen_used = old_gen->used;
+}
+
+void* GCState::evacuate_object(void* ptr) {
+    /**
+     * Evacuate object from nursery to old generation
+     * 
+     * Steps:
+     * 1. Get object size from header
+     * 2. Allocate in old generation
+     * 3. Copy header + payload
+     * 4. Update header metadata
+     * 5. Set forwarding pointer in old location
+     * 6. Return new address
+     */
+    
+    if (!ptr) return nullptr;
+    
+    ObjHeader* old_header = get_header(ptr);
+    if (!old_header) return nullptr;
+    
+    // Check if already forwarded
+    if (old_header->forwarded_bit) {
+        // Already evacuated - return forwarding address
+        // The forwarding address is stored in the first word of the old payload
+        void** forward_ptr = (void**)ptr;
+        return *forward_ptr;
+    }
+    
+    // Get object size
+    size_t obj_size = old_header->size_class * 8 - sizeof(ObjHeader);
+    
+    // Allocate in old generation
+    void* new_ptr = old_gen->allocate(obj_size, old_header->type_id);
+    
+    if (!new_ptr) {
+        // Old gen allocation failed - trigger major GC
+        // For now, just return nullptr (proper implementation would retry)
+        return nullptr;
+    }
+    
+    // Copy payload
+    std::memcpy(new_ptr, ptr, obj_size);
+    
+    // Mark old location as forwarded
+    old_header->forwarded_bit = 1;
+    
+    // Store forwarding address in old payload
+    void** forward_ptr = (void**)ptr;
+    *forward_ptr = new_ptr;
+    
+    // Update statistics
+    stats.total_collected += (old_header->size_class * 8);
+    
+    return new_ptr;
+}
+
+void GCState::major_gc() {
+    /**
+     * Major GC: Mark-sweep for old generation
+     * 
+     * Algorithm:
+     * 1. Mark Phase: Starting from roots, mark all reachable objects
+     * 2. Sweep Phase: Free unmarked objects, reset marks for next cycle
+     * 
+     * This is a simple stop-the-world mark-sweep collector.
+     */
+    
+    if (!initialized) return;
+    
+    stats.num_major_collections++;
+    
+    // =========================================================================
+    // Mark Phase
+    // =========================================================================
+    
+    // Scan all roots
+    auto roots = shadow_stack.get_all_roots();
+    
+    for (void** root_addr : roots) {
+        void* obj_ptr = *root_addr;
+        if (obj_ptr) {
+            mark_object(obj_ptr);
+        }
+    }
+    
+    // Also scan nursery objects that reference old gen
+    // (For simplicity, we'll skip this in the basic implementation)
+    
+    // =========================================================================
+    // Sweep Phase
+    // =========================================================================
+    
+    sweep_old_gen();
+    
+    // Update stats
+    stats.old_gen_used = old_gen->used;
+}
+
+void GCState::mark_object(void* ptr) {
+    /**
+     * Mark phase: Recursively mark reachable objects
+     * 
+     * This is a simplified implementation that marks objects
+     * but doesn't trace their references (would require type information).
+     * 
+     * A full implementation would:
+     * 1. Use type_id to look up object layout
+     * 2. Scan fields for references
+     * 3. Recursively mark referenced objects
+     */
+    
+    if (!ptr) return;
+    
+    ObjHeader* header = get_header(ptr);
+    if (!header) return;
+    
+    // Already marked?
+    if (header->mark_bit) return;
+    
+    // Mark this object
+    header->mark_bit = 1;
+    
+    // TODO: Trace references (requires type information)
+    // For now, we just mark the object itself
+}
+
+void GCState::sweep_old_gen() {
+    /**
+     * Sweep phase: Free unmarked objects
+     * 
+     * Iterates through old generation objects:
+     * - If mark_bit == 1: Object is live, reset mark for next cycle
+     * - If mark_bit == 0: Object is dead, free it
+     * 
+     * Uses swap-remove optimization for O(1) deletion from vector.
+     */
+    
+    auto& objects = old_gen->objects;
+    size_t bytes_freed = 0;
+    
+    for (size_t i = 0; i < objects.size(); ) {
+        void* obj_ptr = objects[i];
+        ObjHeader* header = get_header(obj_ptr);
+        
+        if (!header) {
+            // Corrupted header - skip
+            ++i;
+            continue;
+        }
+        
+        if (header->mark_bit) {
+            // Live object - reset mark bit for next cycle
+            header->mark_bit = 0;
+            ++i;
+        } else {
+            // Dead object - free it
+            size_t obj_size = header->size_class * 8;
+            bytes_freed += obj_size;
+            
+            // Free memory
+            void* alloc_ptr = (char*)obj_ptr - sizeof(ObjHeader);
+            std::free(alloc_ptr);
+            
+            // Remove from vector (swap with last and pop)
+            objects[i] = objects.back();
+            objects.pop_back();
+            // Don't increment i - we moved a new element to position i
+        }
+    }
+    
+    // Update statistics
+    old_gen->used -= bytes_freed;
+    stats.total_collected += bytes_freed;
+}
+
+void GCState::push_frame() {
+    shadow_stack.push_frame();
+}
+
+void GCState::pop_frame() {
+    shadow_stack.pop_frame();
+}
+
+void GCState::add_root(void** root_addr) {
+    shadow_stack.add_root(root_addr);
+}
+
+void GCState::remove_root(void** root_addr) {
+    shadow_stack.remove_root(root_addr);
+}
+
+void GCState::write_barrier(void* obj, void* ref) {
+    /**
+     * Write Barrier: Track old-to-young references
+     * 
+     * Called after: obj.field = ref
+     * 
+     * If obj is in old generation and ref is in nursery,
+     * mark the card containing obj as DIRTY.
+     * 
+     * During minor GC, DIRTY cards are scanned as additional roots.
+     */
+    
+    if (!obj || !ref) return;
+    
+    ObjHeader* obj_header = get_header(obj);
+    ObjHeader* ref_header = get_header(ref);
+    
+    if (!obj_header || !ref_header) return;
+    
+    // Only care about old-to-young references
+    if (!obj_header->is_nursery && ref_header->is_nursery) {
+        card_table->mark_dirty(obj);
+    }
+}
+
+bool GCState::is_heap_pointer(void* ptr) const {
+    if (!initialized || !ptr) return false;
+    
+    return (nursery && nursery->contains(ptr)) || 
+           (old_gen && old_gen->contains(ptr));
+}
+
+ObjHeader* GCState::get_header(void* ptr) const {
+    if (!ptr) return nullptr;
+    
+    // Header is immediately before the object pointer
+    return (ObjHeader*)((char*)ptr - sizeof(ObjHeader));
+}
+
+void GCState::get_stats(GCStats* stats_out) const {
+    if (!stats_out) return;
+    
+    std::lock_guard<std::mutex> lock(gc_mutex);
+    *stats_out = stats;
+}
+
+} // namespace runtime
+} // namespace aria
+/**
+ * Aria GC Allocator Implementation
+ * 
+ * This file implements the memory allocation logic for the Aria
+ * Garbage Collection System. It provides the aria_gc_alloc function
+ * and the Nursery allocator infrastructure.
+ * 
+ * Allocation Strategy:
+ * 1. Fast path: Bump pointer allocation in nursery (O(1))
+ * 2. Fragment search: If pinned objects exist, search free gaps
+ * 3. GC trigger: If nursery full, trigger minor GC
+ * 4. OOM: If still failing, trigger major GC or return NULL
+ * 
+ * Reference: research_021_garbage_collection_system.txt
+ */
+
+#include "gc_internal.h"
+#include <cstdlib>
+#include <cstring>
+#include <algorithm>
+#include <sys/mman.h>  // For mmap (nursery allocation)
+
+namespace aria {
+namespace runtime {
+
+// =============================================================================
+// Nursery Implementation
+// =============================================================================
+
+Nursery::Nursery(size_t size) : capacity(size), used(0) {
+    // Allocate nursery using mmap for alignment and large pages
+    // PROT_READ | PROT_WRITE: Memory is readable and writable
+    // MAP_PRIVATE | MAP_ANONYMOUS: Private, not backed by file
+    start_addr = mmap(nullptr, size, PROT_READ | PROT_WRITE,
+                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    
+    if (start_addr == MAP_FAILED) {
+        // Fallback to malloc if mmap fails
+        start_addr = std::malloc(size);
+        if (!start_addr) {
+            throw std::bad_alloc();
+        }
+    }
+    
+    bump_ptr = start_addr;
+    end_addr = (char*)start_addr + size;
+}
+
+Nursery::~Nursery() {
+    // Try to unmap if it was mmapped
+    if (start_addr != nullptr) {
+        // Check if munmap succeeds (indicates it was mmapped)
+        if (munmap(start_addr, capacity) != 0) {
+            // Not mmapped, use free
+            std::free(start_addr);
+        }
+    }
+}
+
+void* Nursery::allocate(size_t obj_size, uint16_t type_id) {
+    // Total allocation size: header + object payload
+    size_t total_size = sizeof(ObjHeader) + obj_size;
+    
+    // Align to 8 bytes for performance
+    total_size = (total_size + 7) & ~7;
+    
+    // Fast path: Bump pointer allocation
+    void* alloc_ptr = bump_ptr;
+    void* new_bump_ptr = (char*)alloc_ptr + total_size;
+    
+    if (new_bump_ptr <= end_addr) {
+        // Allocation succeeds
+        bump_ptr = new_bump_ptr;
+        used += total_size;
+        
+        // Initialize header
+        ObjHeader* header = static_cast<ObjHeader*>(alloc_ptr);
+        std::memset(header, 0, sizeof(ObjHeader));
+        header->is_nursery = 1;
+        header->type_id = type_id;
+        header->size_class = total_size / 8;  // Simplified size class
+        
+        // Return pointer after header
+        void* obj_ptr = (char*)alloc_ptr + sizeof(ObjHeader);
+        
+        // Zero-initialize payload (important for safety)
+        std::memset(obj_ptr, 0, obj_size);
+        
+        return obj_ptr;
+    }
+    
+    // Slow path: Try to find a suitable fragment
+    for (size_t i = 0; i < fragments.size(); ++i) {
+        Fragment& frag = fragments[i];
+        
+        if (frag.size >= total_size) {
+            // Found suitable fragment
+            alloc_ptr = frag.start;
+            
+            // Update fragment (shrink or remove)
+            frag.start = (char*)frag.start + total_size;
+            frag.size -= total_size;
+            
+            if (frag.size < sizeof(ObjHeader) + 8) {
+                // Fragment too small to be useful, remove it
+                fragments.erase(fragments.begin() + i);
+            }
+            
+            used += total_size;
+            
+            // Initialize header
+            ObjHeader* header = static_cast<ObjHeader*>(alloc_ptr);
+            std::memset(header, 0, sizeof(ObjHeader));
+            header->is_nursery = 1;
+            header->type_id = type_id;
+            header->size_class = total_size / 8;
+            
+            // Return pointer after header
+            void* obj_ptr = (char*)alloc_ptr + sizeof(ObjHeader);
+            std::memset(obj_ptr, 0, obj_size);
+            
+            return obj_ptr;
+        }
+    }
+    
+    // No space available - caller must trigger GC
+    return nullptr;
+}
+
+void Nursery::reset_with_pinned() {
+    /**
+     * Fragmented Nursery Reset Algorithm
+     * 
+     * When pinned objects exist, we cannot simply reset bump_ptr to start_addr
+     * (that would overwrite pinned objects on next allocation).
+     * 
+     * Instead:
+     * 1. Collect all pinned object regions
+     * 2. Sort by address
+     * 3. Find gaps between pinned regions
+     * 4. Create Fragment structs for each gap
+     * 5. Reset bump_ptr to first available space
+     * 
+     * This transforms the nursery into a freelist-backed space when pinning
+     * is active, with performance degradation from O(1) to O(N) allocation.
+     */
+    
+    if (pinned_objects.empty()) {
+        // No pinned objects - simple reset
+        bump_ptr = start_addr;
+        used = 0;
+        fragments.clear();
+        return;
+    }
+    
+    // Collect pinned regions (address ranges)
+    struct Region {
+        void* start;
+        void* end;
+        
+        bool operator<(const Region& other) const {
+            return start < other.start;
+        }
+    };
+    
+    std::vector<Region> pinned_regions;
+    pinned_regions.reserve(pinned_objects.size());
+    
+    for (void* obj_ptr : pinned_objects) {
+        // Get header (before object pointer)
+        ObjHeader* header = (ObjHeader*)((char*)obj_ptr - sizeof(ObjHeader));
+        
+        // Calculate region: [header_start, obj_end)
+        void* region_start = (void*)header;
+        size_t obj_size = header->size_class * 8;  // Reconstruct size
+        void* region_end = (char*)region_start + obj_size;
+        
+        pinned_regions.push_back({region_start, region_end});
+    }
+    
+    // Sort by address
+    std::sort(pinned_regions.begin(), pinned_regions.end());
+    
+    // Find gaps and create fragments
+    fragments.clear();
+    void* prev_end = start_addr;
+    
+    for (const Region& region : pinned_regions) {
+        if (region.start > prev_end) {
+            // Gap exists: [prev_end, region.start)
+            size_t gap_size = (char*)region.start - (char*)prev_end;
+            
+            // Only create fragment if gap is useful (>= min allocation)
+            if (gap_size >= sizeof(ObjHeader) + 8) {
+                fragments.emplace_back(prev_end, region.start);
+            }
+        }
+        
+        prev_end = region.end;
+    }
+    
+    // Final gap: [last_pinned_end, end_addr)
+    if (prev_end < end_addr) {
+        size_t gap_size = (char*)end_addr - (char*)prev_end;
+        if (gap_size >= sizeof(ObjHeader) + 8) {
+            fragments.emplace_back(prev_end, end_addr);
+        }
+    }
+    
+    // Update bump pointer to first fragment (or end if no fragments)
+    if (!fragments.empty()) {
+        bump_ptr = fragments[0].start;
+    } else {
+        // Completely fragmented - bump_ptr is unusable
+        bump_ptr = end_addr;
+    }
+    
+    // Recalculate used memory (sum of pinned regions)
+    used = 0;
+    for (const Region& region : pinned_regions) {
+        used += (char*)region.end - (char*)region.start;
+    }
+}
+
+// =============================================================================
+// OldGeneration Implementation
+// =============================================================================
+
+OldGeneration::OldGeneration(size_t threshold) 
+    : used(0), threshold(threshold) {
+    objects.reserve(1024);  // Pre-allocate for efficiency
+}
+
+void* OldGeneration::allocate(size_t obj_size, uint16_t type_id) {
+    // Total size: header + payload
+    size_t total_size = sizeof(ObjHeader) + obj_size;
+    
+    // Align to 8 bytes
+    total_size = (total_size + 7) & ~7;
+    
+    // Use malloc for old generation objects
+    void* alloc_ptr = std::malloc(total_size);
+    if (!alloc_ptr) {
+        return nullptr;  // OOM
+    }
+    
+    used += total_size;
+    
+    // Initialize header
+    ObjHeader* header = static_cast<ObjHeader*>(alloc_ptr);
+    std::memset(header, 0, sizeof(ObjHeader));
+    header->is_nursery = 0;  // Old generation
+    header->type_id = type_id;
+    header->size_class = total_size / 8;
+    
+    // Return pointer after header
+    void* obj_ptr = (char*)alloc_ptr + sizeof(ObjHeader);
+    std::memset(obj_ptr, 0, obj_size);
+    
+    // Track for sweeping
+    objects.push_back(obj_ptr);
+    
+    return obj_ptr;
+}
+
+void OldGeneration::add_object(void* ptr) {
+    if (ptr) {
+        objects.push_back(ptr);
+        
+        // Update header: mark as old generation
+        ObjHeader* header = (ObjHeader*)((char*)ptr - sizeof(ObjHeader));
+        header->is_nursery = 0;
+    }
+}
+
+bool OldGeneration::contains(void* ptr) const {
+    // Check if pointer is in our tracked objects
+    // This is O(N) but only called during GC/debugging
+    return std::find(objects.begin(), objects.end(), ptr) != objects.end();
+}
+
+// =============================================================================
+// CardTable Implementation
+// =============================================================================
+
+CardTable::CardTable(void* heap_start, size_t heap_size) 
+    : heap_start(heap_start) {
+    num_cards = (heap_size + CARD_SIZE - 1) / CARD_SIZE;
+    cards = new uint8_t[num_cards];
+    clear();
+}
+
+CardTable::~CardTable() {
+    delete[] cards;
+}
+
+void CardTable::mark_dirty(void* addr) {
+    // Calculate card index
+    size_t offset = (char*)addr - (char*)heap_start;
+    size_t card_idx = offset >> CARD_SHIFT;  // Divide by 512
+    
+    if (card_idx < num_cards) {
+        cards[card_idx] = CARD_DIRTY;
+    }
+}
+
+std::vector<void*> CardTable::get_dirty_cards() {
+    std::vector<void*> dirty;
+    
+    for (size_t i = 0; i < num_cards; ++i) {
+        if (cards[i] == CARD_DIRTY) {
+            void* card_addr = (char*)heap_start + (i * CARD_SIZE);
+            dirty.push_back(card_addr);
+        }
+    }
+    
+    return dirty;
+}
+
+void CardTable::clear() {
+    std::memset(cards, CARD_CLEAN, num_cards);
+}
+
+// =============================================================================
+// C API Implementation
+// =============================================================================
+
+extern "C" {
+
+void* aria_gc_alloc(size_t size, uint16_t type_id) {
+    return GCState::instance().alloc(size, type_id);
+}
+
+void aria_gc_pin(void* ptr) {
+    GCState::instance().pin(ptr);
+}
+
+void aria_gc_unpin(void* ptr) {
+    GCState::instance().unpin(ptr);
+}
+
+void aria_gc_collect(bool full_collection) {
+    GCState::instance().collect(full_collection);
+}
+
+void aria_gc_get_stats(GCStats* stats) {
+    GCState::instance().get_stats(stats);
+}
+
+void aria_shadow_stack_push_frame(void) {
+    GCState::instance().push_frame();
+}
+
+void aria_shadow_stack_pop_frame(void) {
+    GCState::instance().pop_frame();
+}
+
+void aria_shadow_stack_add_root(void** root_addr) {
+    GCState::instance().add_root(root_addr);
+}
+
+void aria_shadow_stack_remove_root(void** root_addr) {
+    GCState::instance().remove_root(root_addr);
+}
+
+void aria_gc_write_barrier(void* obj, void* ref) {
+    GCState::instance().write_barrier(obj, ref);
+}
+
+ObjHeader* aria_gc_get_header(void* ptr) {
+    return GCState::instance().get_header(ptr);
+}
+
+bool aria_gc_is_heap_pointer(void* ptr) {
+    return GCState::instance().is_heap_pointer(ptr);
+}
+
+void aria_gc_init(size_t nursery_size, size_t old_gen_threshold) {
+    GCState::instance().init(nursery_size, old_gen_threshold);
+}
+
+void aria_gc_shutdown(void) {
+    GCState::instance().shutdown();
+}
+
+} // extern "C"
+
+} // namespace runtime
+} // namespace aria
+/**
+ * Wild Memory Allocator Implementation
+ * 
+ * Manual heap allocator (malloc/free wrapper) for unmanaged memory.
+ * Provides RAII integration via defer keyword.
+ */
+
+#include "runtime/allocators.h"
+#include <cstdlib>
+#include <cstring>
+#include <atomic>
+#include <mutex>
+
+// =============================================================================
+// Statistics Tracking
+// =============================================================================
+
+struct AllocatorState {
+    std::atomic<size_t> total_wild_allocated{0};
+    std::atomic<size_t> num_wild_allocations{0};
+    std::atomic<size_t> peak_wild_usage{0};
+    std::mutex stats_mutex;  // For peak tracking
+};
+
+static AllocatorState g_alloc_state;
+
+static void update_peak_usage() {
+    std::lock_guard<std::mutex> lock(g_alloc_state.stats_mutex);
+    size_t current = g_alloc_state.total_wild_allocated.load();
+    size_t peak = g_alloc_state.peak_wild_usage.load();
+    if (current > peak) {
+        g_alloc_state.peak_wild_usage.store(current);
+    }
+}
+
+// =============================================================================
+// Wild Allocator (Basic malloc/free)
+// =============================================================================
+
+void* aria_alloc(size_t size) {
+    if (size == 0) {
+        return nullptr;
+    }
+
+    void* ptr = std::malloc(size);
+    if (ptr) {
+        g_alloc_state.total_wild_allocated.fetch_add(size);
+        g_alloc_state.num_wild_allocations.fetch_add(1);
+        update_peak_usage();
+    }
+
+    return ptr;
+}
+
+void aria_free(void* ptr) {
+    if (!ptr) {
+        return;  // NULL is a no-op
+    }
+
+    std::free(ptr);
+    g_alloc_state.num_wild_allocations.fetch_sub(1);
+    
+    // Note: We cannot accurately track size without a header, so we
+    // don't decrement total_wild_allocated. This is acceptable for
+    // statistics purposes.
+}
+
+void* aria_realloc(void* ptr, size_t new_size) {
+    if (new_size == 0) {
+        aria_free(ptr);
+        return nullptr;
+    }
+
+    void* new_ptr = std::realloc(ptr, new_size);
+    if (new_ptr) {
+        // Note: realloc size tracking is imprecise without headers
+        // For simplicity, we treat it as a new allocation
+        g_alloc_state.total_wild_allocated.fetch_add(new_size);
+        update_peak_usage();
+    }
+
+    return new_ptr;
+}
+
+// =============================================================================
+// Specialized Allocators
+// =============================================================================
+
+void* aria_alloc_buffer(size_t size, size_t alignment, bool zero_init) {
+    if (size == 0) {
+        return nullptr;
+    }
+
+    void* ptr = nullptr;
+
+    // Platform-specific aligned allocation
+    if (alignment == 0) {
+        // Default allocation
+        ptr = aria_alloc(size);
+    } else {
+#ifdef _WIN32
+        ptr = _aligned_malloc(size, alignment);
+#else
+        // POSIX aligned_alloc requires size to be multiple of alignment
+        size_t adjusted_size = (size + alignment - 1) & ~(alignment - 1);
+        ptr = aligned_alloc(alignment, adjusted_size);
+#endif
+        if (ptr) {
+            g_alloc_state.total_wild_allocated.fetch_add(size);
+            g_alloc_state.num_wild_allocations.fetch_add(1);
+            update_peak_usage();
+        }
+    }
+
+    // Zero-initialize if requested
+    if (ptr && zero_init) {
+        std::memset(ptr, 0, size);
+    }
+
+    return ptr;
+}
+
+char* aria_alloc_string(size_t size) {
+    // Allocate size + 1 for null terminator
+    size_t alloc_size = size + 1;
+    if (alloc_size < size) {
+        // Overflow check
+        return nullptr;
+    }
+
+    char* str = static_cast<char*>(aria_alloc(alloc_size));
+    if (str) {
+        str[size] = '\0';  // Ensure null termination
+    }
+
+    return str;
+}
+
+void* aria_alloc_array(size_t elem_size, size_t count) {
+    if (elem_size == 0 || count == 0) {
+        return nullptr;
+    }
+
+    // Check for multiplication overflow
+    if (count > SIZE_MAX / elem_size) {
+        return nullptr;  // Would overflow
+    }
+
+    size_t total_size = elem_size * count;
+    return aria_alloc(total_size);
+}
+
+// =============================================================================
+// Statistics Query (Wild portion)
+// =============================================================================
+
+// Forward declarations for WildX stats (implemented in wildx_alloc.cpp)
+extern std::atomic<size_t> g_wildx_total_allocated;
+extern std::atomic<size_t> g_wildx_num_allocations;
+extern std::atomic<size_t> g_wildx_peak_usage;
+
+void aria_allocator_get_stats(AllocatorStats* stats) {
+    if (!stats) {
+        return;
+    }
+
+    // Wild stats (this file)
+    stats->total_wild_allocated = g_alloc_state.total_wild_allocated.load();
+    stats->num_wild_allocations = g_alloc_state.num_wild_allocations.load();
+    stats->peak_wild_usage = g_alloc_state.peak_wild_usage.load();
+    
+    // WildX stats (wildx_alloc.cpp)
+    stats->total_wildx_allocated = g_wildx_total_allocated.load();
+    stats->num_wildx_allocations = g_wildx_num_allocations.load();
+    stats->peak_wildx_usage = g_wildx_peak_usage.load();
+}
+/**
+ * WildX Executable Memory Allocator
+ * 
+ * Provides W⊕X (Write XOR Execute) secure memory for JIT compilation.
+ * Implements state machine: UNINITIALIZED → WRITABLE → EXECUTABLE → FREED
+ * 
+ * Platform support: POSIX (mmap), Windows (VirtualAlloc)
+ */
+
+#include "runtime/allocators.h"
+#include <cstring>
+#include <atomic>
+#include <mutex>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
+
+// =============================================================================
+// Statistics Tracking (exposed to wild_alloc.cpp)
+// =============================================================================
+
+std::atomic<size_t> g_wildx_total_allocated{0};
+std::atomic<size_t> g_wildx_num_allocations{0};
+std::atomic<size_t> g_wildx_peak_usage{0};
+static std::mutex g_wildx_stats_mutex;
+
+static void update_wildx_peak() {
+    std::lock_guard<std::mutex> lock(g_wildx_stats_mutex);
+    size_t current = g_wildx_total_allocated.load();
+    size_t peak = g_wildx_peak_usage.load();
+    if (current > peak) {
+        g_wildx_peak_usage.store(current);
+    }
+}
+
+// =============================================================================
+// Platform Utilities
+// =============================================================================
+
+/**
+ * Get system page size
+ */
+static size_t get_page_size() {
+#ifdef _WIN32
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return si.dwPageSize;
+#else
+    return static_cast<size_t>(sysconf(_SC_PAGESIZE));
+#endif
+}
+
+/**
+ * Round size up to page boundary
+ */
+static size_t round_to_page(size_t size) {
+    size_t page_size = get_page_size();
+    return (size + page_size - 1) & ~(page_size - 1);
+}
+
+/**
+ * Flush CPU instruction cache (I-cache / D-cache coherency)
+ * 
+ * Required before executing self-modifying code or JIT-compiled code.
+ * Ensures instruction cache sees the freshly written opcodes.
+ */
+static void flush_instruction_cache(void* ptr, size_t size) {
+#ifdef _WIN32
+    // Windows: FlushInstructionCache
+    FlushInstructionCache(GetCurrentProcess(), ptr, size);
+#elif defined(__GNUC__) || defined(__clang__)
+    // GCC/Clang: __builtin___clear_cache
+    __builtin___clear_cache(static_cast<char*>(ptr), 
+                            static_cast<char*>(ptr) + size);
+#else
+    // Fallback: No-op (may cause issues on some architectures)
+    (void)ptr;
+    (void)size;
+#endif
+}
+
+// =============================================================================
+// WildX Allocator
+// =============================================================================
+
+WildXGuard aria_alloc_exec(size_t size) {
+    if (size == 0) {
+        return {nullptr, 0, WILDX_STATE_UNINITIALIZED, false};
+    }
+
+    // Round to page size
+    size_t alloc_size = round_to_page(size);
+
+#ifdef _WIN32
+    // Windows: VirtualAlloc with PAGE_READWRITE
+    void* ptr = VirtualAlloc(nullptr, alloc_size, MEM_COMMIT | MEM_RESERVE, 
+                             PAGE_READWRITE);
+#else
+    // POSIX: mmap with PROT_READ | PROT_WRITE (NOT executable)
+    void* ptr = mmap(nullptr, alloc_size, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ptr == MAP_FAILED) {
+        ptr = nullptr;
+    }
+#endif
+
+    if (!ptr) {
+        return {nullptr, 0, WILDX_STATE_UNINITIALIZED, false};
+    }
+
+    // Update statistics
+    g_wildx_total_allocated.fetch_add(alloc_size);
+    g_wildx_num_allocations.fetch_add(1);
+    update_wildx_peak();
+
+    // Initialize guard structure
+    WildXGuard guard;
+    guard.ptr = ptr;
+    guard.size = alloc_size;
+    guard.state = WILDX_STATE_WRITABLE;
+    guard.sealed = false;
+
+    return guard;
+}
+
+int aria_mem_protect_exec(WildXGuard* guard) {
+    if (!guard || !guard->ptr) {
+        return -1;  // Invalid guard
+    }
+
+    if (guard->state != WILDX_STATE_WRITABLE) {
+        return -1;  // Not in writable state
+    }
+
+    if (guard->sealed) {
+        return -1;  // Already sealed
+    }
+
+    // Step 1: Flush CPU caches for I-cache / D-cache coherency
+    flush_instruction_cache(guard->ptr, guard->size);
+
+    // Step 2: Flip memory protection from RW to RX
+#ifdef _WIN32
+    DWORD old_protect;
+    if (!VirtualProtect(guard->ptr, guard->size, PAGE_EXECUTE_READ, 
+                        &old_protect)) {
+        return -1;  // Protection failed
+    }
+#else
+    if (mprotect(guard->ptr, guard->size, PROT_READ | PROT_EXEC) != 0) {
+        return -1;  // Protection failed
+    }
+#endif
+
+    // Step 3: Update guard state
+    guard->state = WILDX_STATE_EXECUTABLE;
+    guard->sealed = true;
+
+    return 0;  // Success
+}
+
+void aria_free_exec(WildXGuard* guard) {
+    if (!guard || !guard->ptr) {
+        return;  // NULL guard is no-op
+    }
+
+    // Deallocate memory
+#ifdef _WIN32
+    VirtualFree(guard->ptr, 0, MEM_RELEASE);
+#else
+    munmap(guard->ptr, guard->size);
+#endif
+
+    // Update statistics
+    g_wildx_total_allocated.fetch_sub(guard->size);
+    g_wildx_num_allocations.fetch_sub(1);
+
+    // Reset guard to freed state
+    guard->ptr = nullptr;
+    guard->size = 0;
+    guard->state = WILDX_STATE_FREED;
+    guard->sealed = false;
+}
+
+void* aria_exec_jit(WildXGuard* guard, void* args) {
+    if (!guard || !guard->ptr) {
+        return nullptr;  // Invalid guard
+    }
+
+    if (guard->state != WILDX_STATE_EXECUTABLE) {
+        return nullptr;  // Not sealed yet
+    }
+
+    // Cast to function pointer and execute
+    // Note: The actual function signature depends on the JIT code
+    // For now, we use a generic (void* -> void*) signature
+    typedef void* (*jit_func_t)(void*);
+    jit_func_t func = reinterpret_cast<jit_func_t>(guard->ptr);
+    
+    return func(args);
+}
+
+// Note: aria_allocator_get_stats() is implemented in wild_alloc.cpp
+// This file only provides the WildX statistics via global atomics
+// Basic async executor implementation
+// Phase 4.5.3 Task #6: Single-threaded run-to-completion executor
+// Enhanced with LLVM coroutine resume support
+
+#include "runtime/async/executor.h"
+#include "runtime/async/coroutine.h"
+#include <algorithm>
+#include <stdexcept>
+
+namespace aria {
+namespace runtime {
+
+Task::TaskId Executor::spawn(Task::CoroutineHandle handle) {
+    if (!handle) {
+        throw std::runtime_error("Cannot spawn task with null handle");
+    }
+    
+    // Create new task
+    Task::TaskId id = nextTaskId++;
+    Task* task = new Task(id, handle);
+    
+    // Register task
+    tasks.push_back(task);
+    
+    // Add to ready queue (tasks start in ready state)
+    task->setState(TaskState::READY);
+    readyQueue.push(task);
+    
+    return id;
+}
+
+void Executor::runToCompletion() {
+    status = ExecutorStatus::RUNNING;
+    
+    // Run until no tasks remain in ready queue
+    while (!readyQueue.empty()) {
+        if (!step()) {
+            break;  // Error occurred
+        }
+    }
+    
+    // Check if all tasks completed successfully
+    bool allCompleted = true;
+    bool anyFailed = false;
+    
+    for (Task* task : tasks) {
+        if (task->isFailed()) {
+            anyFailed = true;
+            allCompleted = false;
+        } else if (!task->isCompleted()) {
+            allCompleted = false;
+        }
+    }
+    
+    if (anyFailed) {
+        status = ExecutorStatus::ERROR;
+    } else if (allCompleted) {
+        status = ExecutorStatus::COMPLETED;
+    } else {
+        status = ExecutorStatus::IDLE;
+    }
+}
+
+bool Executor::step() {
+    if (readyQueue.empty()) {
+        return false;  // No tasks to run
+    }
+    
+    // Get next ready task
+    Task* task = readyQueue.front();
+    readyQueue.pop();
+    
+    // Update state
+    task->setState(TaskState::RUNNING);
+    tasksExecuted++;
+    
+    // Resume coroutine execution
+    CoroutineHandle coro(task->getHandle());
+    
+    if (coro.valid()) {
+        // Resume the coroutine
+        coro.resume();
+        
+        // Check if coroutine completed
+        if (coro.done()) {
+            task->setState(TaskState::COMPLETED);
+            tasksCompleted++;
+        } else {
+            // Coroutine suspended at await point
+            task->setState(TaskState::SUSPENDED);
+            // Task will be marked ready when dependency completes
+        }
+    } else {
+        // Invalid handle - for testing, just mark complete
+        task->setState(TaskState::COMPLETED);
+        tasksCompleted++;
+    }
+    
+    return true;
+}
+
+Task* Executor::getTask(Task::TaskId id) {
+    for (Task* task : tasks) {
+        if (task->getId() == id) {
+            return task;
+        }
+    }
+    return nullptr;
+}
+
+void Executor::markReady(Task::TaskId id) {
+    Task* task = getTask(id);
+    if (!task) {
+        throw std::runtime_error("Task not found");
+    }
+    
+    // Can only mark suspended tasks as ready
+    if (!task->isSuspended()) {
+        throw std::runtime_error("Can only mark suspended tasks as ready");
+    }
+    
+    task->setState(TaskState::READY);
+    readyQueue.push(task);
+}
+
+} // namespace runtime
+} // namespace aria
+// LLVM coroutine runtime support implementation
+#include "runtime/async/coroutine.h"
+#include "runtime/async/future.h"
+#include <cstdlib>
+#include <cstring>
+
+namespace aria {
+namespace runtime {
+
+// Stub implementations of LLVM intrinsics
+// In production, these are provided by LLVM's coroutine lowering pass
+// For testing, we provide minimal stubs
+extern "C" {
+    void __aria_coro_resume(void* handle) {
+        // LLVM intrinsic stub
+        // Real implementation transfers control to coroutine
+    }
+    
+    void __aria_coro_destroy(void* handle) {
+        // LLVM intrinsic stub
+        // Real implementation destroys coroutine frame
+    }
+    
+    bool __aria_coro_done(void* handle) {
+        // LLVM intrinsic stub
+        // Real implementation checks coroutine completion
+        // For testing with dummy handles, treat them as immediately done
+        // Real LLVM coroutines will have proper state
+        return true;  // Test mode: assume completed after resume
+    }
+}
+
+namespace coro_support {
+
+void* allocate_frame(std::size_t size) {
+    // Allocate coroutine frame on heap
+    // In production, this could use a pool allocator
+    return std::malloc(size);
+}
+
+void free_frame(void* ptr) {
+    // Free coroutine frame
+    if (ptr) {
+        std::free(ptr);
+    }
+}
+
+void* create_future(std::size_t typeSize) {
+    // Allocate Future<T> for async function result
+    Future* future = new Future(typeSize);
+    return future;
+}
+
+void complete_future(void* futurePtr, const void* value, std::size_t size) {
+    // Complete future with result value
+    if (!futurePtr) return;
+    
+    Future* future = static_cast<Future*>(futurePtr);
+    future->setValue(value, size);
+}
+
+void complete_future_error(void* futurePtr) {
+    // Complete future with error
+    if (!futurePtr) return;
+    
+    Future* future = static_cast<Future*>(futurePtr);
+    future->setError(true);
+}
+
+} // namespace coro_support
+
+} // namespace runtime
+} // namespace aria

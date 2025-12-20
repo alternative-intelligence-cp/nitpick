@@ -995,6 +995,30 @@ src/frontend/parser/parser.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/parser/parser.cpp.s
 .PHONY : src/frontend/parser/parser.cpp.s
 
+src/frontend/preprocessor/preprocessor.o: src/frontend/preprocessor/preprocessor.cpp.o
+.PHONY : src/frontend/preprocessor/preprocessor.o
+
+# target to build an object file
+src/frontend/preprocessor/preprocessor.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/preprocessor/preprocessor.cpp.o
+.PHONY : src/frontend/preprocessor/preprocessor.cpp.o
+
+src/frontend/preprocessor/preprocessor.i: src/frontend/preprocessor/preprocessor.cpp.i
+.PHONY : src/frontend/preprocessor/preprocessor.i
+
+# target to preprocess a source file
+src/frontend/preprocessor/preprocessor.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/preprocessor/preprocessor.cpp.i
+.PHONY : src/frontend/preprocessor/preprocessor.cpp.i
+
+src/frontend/preprocessor/preprocessor.s: src/frontend/preprocessor/preprocessor.cpp.s
+.PHONY : src/frontend/preprocessor/preprocessor.s
+
+# target to generate assembly for a file
+src/frontend/preprocessor/preprocessor.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/preprocessor/preprocessor.cpp.s
+.PHONY : src/frontend/preprocessor/preprocessor.cpp.s
+
 src/frontend/sema/async_analyzer.o: src/frontend/sema/async_analyzer.cpp.o
 .PHONY : src/frontend/sema/async_analyzer.o
 
@@ -2356,6 +2380,9 @@ help:
 	@echo "... src/frontend/parser/parser.o"
 	@echo "... src/frontend/parser/parser.i"
 	@echo "... src/frontend/parser/parser.s"
+	@echo "... src/frontend/preprocessor/preprocessor.o"
+	@echo "... src/frontend/preprocessor/preprocessor.i"
+	@echo "... src/frontend/preprocessor/preprocessor.s"
 	@echo "... src/frontend/sema/async_analyzer.o"
 	@echo "... src/frontend/sema/async_analyzer.i"
 	@echo "... src/frontend/sema/async_analyzer.s"

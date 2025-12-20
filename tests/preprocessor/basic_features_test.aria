@@ -1,0 +1,51 @@
+// Test basic preprocessor features
+// NASM-style macro system
+
+// Test 1: Simple macro definition
+%define VERSION 1
+%define AUTHOR "Aria Team"
+
+// Test 2: Macro with parameters
+%macro ADD_FUNC 2
+func add_%1_%2(int32:a, int32:b) -> int32 {
+    result a + b
+}
+%endmacro
+
+// Test 3: Repeat blocks
+%assign COUNTER 0
+%rep 3
+%assign COUNTER COUNTER+1
+%endrep
+// COUNTER should be 3
+
+// Test 4: Conditional compilation
+%ifdef VERSION
+func get_version() -> int32 {
+    result VERSION
+}
+%endif
+
+%ifndef UNDEFINED_SYMBOL
+func is_defined() -> int32 {
+    result 1
+}
+%endif
+
+// Test 5: Context stack
+%push mycontext
+%assign LOCAL_VAR 42
+%pop
+
+// Generate add functions
+ADD_FUNC(int8, int8)
+ADD_FUNC(int32, int32)
+
+func main() -> int32 {
+    int32:version = get_version()
+    int32:defined = is_defined()
+    int32:sum = add_int32_int32(5, 10)
+    
+    result version + defined + sum + COUNTER
+    // Expected: 1 + 1 + 15 + 3 = 20
+}

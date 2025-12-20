@@ -1,7 +1,3 @@
-=== ARIA SOURCE PART8 - COMPILER - DRIVER ===
-
-FILE: src/main.cpp
-================================================================================
 /**
  * Aria Compiler Driver
  * 
@@ -27,6 +23,7 @@ FILE: src/main.cpp
 #include <cstdlib>
 
 // Aria compiler components
+#include "frontend/preprocessor/preprocessor.h"  // NEW: Phase 0
 #include "frontend/lexer/lexer.h"
 #include "frontend/parser/parser.h"
 #include "frontend/sema/type_checker.h"
@@ -64,6 +61,7 @@ struct CompilerOptions {
     bool emit_asm = false;
     bool dump_ast = false;
     bool dump_tokens = false;
+    bool preprocess_only = false;  // NEW: -E flag for preprocessed output
     bool verbose = false;
     int opt_level = 0;  // -O0, -O1, -O2, -O3
     std::vector<std::string> warning_flags;  // -Wall, -Werror, -W<warning>, etc.
@@ -86,6 +84,7 @@ void print_help() {
     std::cout << "  ariac <input.aria> [<input2.aria> ...] [options]\n\n";
     std::cout << "Options:\n";
     std::cout << "  -o <file>         Write output to <file>\n";
+    std::cout << "  -E                Preprocess only (output to stdout)\n";
     std::cout << "  --emit-llvm       Emit LLVM IR text (.ll)\n";
     std::cout << "  --emit-llvm-bc    Emit LLVM bitcode (.bc)\n";
     std::cout << "  --emit-asm        Emit assembly (.s)\n";
@@ -137,6 +136,8 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.emit_llvm_bc = true;
         } else if (arg == "--emit-asm") {
             opts.emit_asm = true;
+        } else if (arg == "-E") {
+            opts.preprocess_only = true;
         } else if (arg == "--ast-dump") {
             opts.dump_ast = true;
         } else if (arg == "--tokens") {
@@ -209,12 +210,34 @@ llvm::Module* compile_to_module(
     aria::IRGenerator& ir_gen,
     aria::DiagnosticEngine& diags
 ) {
+    // Phase 0: Preprocessing (NASM-style macros)
+    std::string preprocessed_source = source;
+    
+    if (opts.verbose) {
+        std::cout << "Phase 0: Preprocessing...\n";
+    }
+    
+    try {
+        aria::frontend::Preprocessor preprocessor;
+        preprocessed_source = preprocessor.process(source, filename);
+    } catch (const std::exception& e) {
+        diags.error(aria::SourceLocation(filename, 0, 0), 
+                   std::string("Preprocessor error: ") + e.what());
+        return nullptr;
+    }
+    
+    // If -E flag is set, output preprocessed source and exit
+    if (opts.preprocess_only) {
+        std::cout << preprocessed_source;
+        return nullptr;
+    }
+    
     // Phase 1: Lexical Analysis
     if (opts.verbose) {
         std::cout << "Phase 1: Lexical analysis...\n";
     }
     
-    aria::frontend::Lexer lexer(source);
+    aria::frontend::Lexer lexer(preprocessed_source);
     auto tokens = lexer.tokenize();
     
     if (!lexer.getErrors().empty()) {
@@ -623,11 +646,3 @@ int main(int argc, char** argv) {
 
     return 0;
 }
-
-FILE: include/driver/compiler.h
-================================================================================
-[FILE NOT FOUND]
-
-FILE: src/driver/compiler.cpp
-================================================================================
-[FILE NOT FOUND]

@@ -1,0 +1,16 @@
+func:test = int32() {
+    int32:counter = 0;
+    {
+        counter = counter + 1;
+        defer {
+            counter = counter + 10;
+        }
+        counter = counter + 1;
+    }
+    return counter;
+};
+
+func:main = int32() {
+    int32:value = test();
+    pass(value);
+};
