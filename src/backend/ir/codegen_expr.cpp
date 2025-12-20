@@ -32,6 +32,14 @@ llvm::Type* ExprCodegen::getLLVMType(Type* type) {
         return llvm::Type::getVoidTy(context);
     }
     
+    // Handle optional types: T? -> { i1, T }
+    if (type->getKind() == TypeKind::OPTIONAL) {
+        OptionalType* optType = static_cast<OptionalType*>(type);
+        Type* wrappedType = optType->getWrappedType();
+        llvm::Type* wrappedLLVMType = getLLVMType(wrappedType);
+        return getOptionalType(wrappedLLVMType);
+    }
+    
     // Get type name - for now, we only handle primitive types
     if (!type->isPrimitive()) {
         // Non-primitive types will be handled later
@@ -476,13 +484,9 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     
     // NULL COALESCING OPERATOR (??) with short-circuit evaluation
-    // Pattern: a ?? b returns a if a is not NIL/null, otherwise returns b
+    // Pattern: optional ?? default returns value if has value, otherwise default
     if (op == TokenType::TOKEN_NULL_COALESCE) {
-        // For now, without proper optional types, we implement a simplified version
-        // that checks if left is zero/null (for pointers) or a sentinel value
-        // TODO: Enhance when optional types are fully implemented
-        
-        // Save left value for later
+        // Save left value and block
         llvm::Value* leftVal = left;
         llvm::BasicBlock* leftBB = builder.GetInsertBlock();
         
@@ -491,20 +495,33 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         llvm::BasicBlock* useRightBB = llvm::BasicBlock::Create(context, "coalesce_right", func);
         llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "coalesce_merge", func);
         
-        // Check if left is null/NIL (depends on type)
+        // Check if left is optional type
         llvm::Value* isNull;
-        if (left->getType()->isPointerTy()) {
+        llvm::Value* unwrappedLeft;
+        
+        if (left->getType()->isStructTy()) {
+            // Left is optional type { i1 hasValue, T value }
+            // Extract hasValue field
+            llvm::Value* hasValue = isOptionalSome(left);
+            isNull = builder.CreateNot(hasValue, "isNone");
+            
+            // Extract value for use if has value
+            unwrappedLeft = unwrapOptional(left);
+        } else if (left->getType()->isPointerTy()) {
             // For pointers, check against nullptr
             isNull = builder.CreateIsNull(left, "isnull");
+            unwrappedLeft = left;
         } else if (left->getType()->isIntegerTy()) {
             // For integers, check against 0 (NIL sentinel)
             isNull = builder.CreateICmpEQ(left, llvm::ConstantInt::get(left->getType(), 0), "isnull");
+            unwrappedLeft = left;
         } else {
-            // For other types, assume not null (TODO: proper optional type support)
+            // For other types, assume not null
             isNull = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
+            unwrappedLeft = left;
         }
         
-        // If left is null, evaluate and use right; otherwise use left
+        // If left is null, evaluate and use right; otherwise use unwrapped left
         builder.CreateCondBr(isNull, useRightBB, mergeBB);
         
         // Evaluate right side only if left was null
@@ -513,10 +530,11 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         llvm::BasicBlock* rightBB = builder.GetInsertBlock();
         builder.CreateBr(mergeBB);
         
-        // Merge with phi node
+        // Merge with phi node - use unwrapped type
         builder.SetInsertPoint(mergeBB);
-        llvm::PHINode* phi = builder.CreatePHI(left->getType(), 2, "coalesce_result");
-        phi->addIncoming(leftVal, leftBB);
+        llvm::Type* resultType = unwrappedLeft->getType();
+        llvm::PHINode* phi = builder.CreatePHI(resultType, 2, "coalesce_result");
+        phi->addIncoming(unwrappedLeft, leftBB);
         phi->addIncoming(rightVal, rightBB);
         
         return phi;
@@ -1522,3 +1540,76 @@ llvm::Value* ExprCodegen::codegenAwait(ASTNode* node) {
     
     return future_value;
 }
+
+// ============================================================================
+// Phase 2: Optional Types & Special Operators
+// ============================================================================
+
+/**
+ * Get LLVM struct type for optional<T>: { i1 hasValue, T value }
+ * Uses cached types to avoid recreation
+ */
+llvm::StructType* ExprCodegen::getOptionalType(llvm::Type* wrappedType) {
+    // Create struct type: { i1 hasValue, T value }
+    std::vector<llvm::Type*> fields = {
+        llvm::Type::getInt1Ty(context),  // hasValue flag
+        wrappedType                       // the wrapped value
+    };
+    
+    // Create named struct for debugging
+    std::string name = "optional." + std::string(wrappedType->getStructName());
+    return llvm::StructType::create(context, fields, name);
+}
+
+/**
+ * Create an optional value with hasValue=true
+ */
+llvm::Value* ExprCodegen::createOptionalSome(llvm::Value* value, llvm::Type* wrappedType) {
+    llvm::StructType* optType = getOptionalType(wrappedType);
+    
+    // Create undef struct
+    llvm::Value* opt = llvm::UndefValue::get(optType);
+    
+    // Set hasValue = true
+    opt = builder.CreateInsertValue(opt, llvm::ConstantInt::getTrue(context), 0);
+    
+    // Set value
+    opt = builder.CreateInsertValue(opt, value, 1);
+    
+    return opt;
+}
+
+/**
+ * Create an optional value with hasValue=false (NIL)
+ */
+llvm::Value* ExprCodegen::createOptionalNone(llvm::Type* wrappedType) {
+    llvm::StructType* optType = getOptionalType(wrappedType);
+    
+    // Create undef struct
+    llvm::Value* opt = llvm::UndefValue::get(optType);
+    
+    // Set hasValue = false
+    opt = builder.CreateInsertValue(opt, llvm::ConstantInt::getFalse(context), 0);
+    
+    // Value field is undef (won't be accessed)
+    
+    return opt;
+}
+
+/**
+ * Check if optional hasValue (is not NIL)
+ */
+llvm::Value* ExprCodegen::isOptionalSome(llvm::Value* optional) {
+    // Extract hasValue field (index 0)
+    return builder.CreateExtractValue(optional, 0, "optional.hasValue");
+}
+
+/**
+ * Extract value from optional (unwrap)
+ * Note: Caller must check hasValue first!
+ */
+llvm::Value* ExprCodegen::unwrapOptional(llvm::Value* optional) {
+    // Extract value field (index 1)
+    return builder.CreateExtractValue(optional, 1, "optional.value");
+}
+

@@ -163,6 +163,47 @@ public:
      */
     llvm::Value* codegenAwait(ASTNode* expr);
     
+    // ========================================================================
+    // Phase 2: Optional Types & Special Operators
+    // ========================================================================
+    
+    /**
+     * Get LLVM struct type for optional<T>: { i1 hasValue, T value }
+     * @param wrappedType The LLVM type being wrapped
+     * @return LLVM struct type for optional
+     */
+    llvm::StructType* getOptionalType(llvm::Type* wrappedType);
+    
+    /**
+     * Create an optional value with hasValue=true
+     * @param value The value to wrap
+     * @param wrappedType The type of the wrapped value
+     * @return LLVM optional struct with value set
+     */
+    llvm::Value* createOptionalSome(llvm::Value* value, llvm::Type* wrappedType);
+    
+    /**
+     * Create an optional value with hasValue=false (NIL)
+     * @param wrappedType The type that would be wrapped
+     * @return LLVM optional struct representing NIL
+     */
+    llvm::Value* createOptionalNone(llvm::Type* wrappedType);
+    
+    /**
+     * Check if optional hasValue (is not NIL)
+     * @param optional The optional struct value
+     * @return LLVM i1 value (true if has value)
+     */
+    llvm::Value* isOptionalSome(llvm::Value* optional);
+    
+    /**
+     * Extract value from optional (unwrap)
+     * Note: Caller must check hasValue first!
+     * @param optional The optional struct value
+     * @return The wrapped value
+     */
+    llvm::Value* unwrapOptional(llvm::Value* optional);
+    
     /**
      * Generate code for any expression (dispatcher)
      * @param node Expression node
