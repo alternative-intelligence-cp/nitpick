@@ -870,6 +870,8 @@ ASTNodePtr Parser::parseStatement() {
     if (peek().type == TokenType::TOKEN_KW_PUB) {
         size_t saved = current;
         advance(); // consume 'pub'
+        
+        // Check for pub mod
         if (match(TokenType::TOKEN_KW_MOD)) {
             auto modStmt = parseModStatement();
             // Set public flag
@@ -878,10 +880,21 @@ ASTNodePtr Parser::parseStatement() {
                 mod->isPublic = true;
             }
             return modStmt;
-        } else {
-            // Not pub mod, restore position and continue
-            current = saved;
         }
+        
+        // Check for pub func
+        if (match(TokenType::TOKEN_KW_FUNC)) {
+            auto funcStmt = parseFuncDecl();
+            // Set public flag
+            if (funcStmt && funcStmt->type == ASTNode::NodeType::FUNC_DECL) {
+                auto func = std::static_pointer_cast<FuncDeclStmt>(funcStmt);
+                func->isPublic = true;
+            }
+            return funcStmt;
+        }
+        
+        // Not pub mod or pub func, restore position and continue
+        current = saved;
     }
     
     // Check for module definitions
