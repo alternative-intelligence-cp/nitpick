@@ -1664,3 +1664,35 @@ std::string FunctionType::toString() const {
 }
 
 } // namespace aria
+
+=== PHASE 2 ENHANCEMENTS - OPTIONAL TYPES (Session 21, Dec 2025) ===
+
+FILE: include/frontend/ast/ast_node.h (UPDATED NodeType enum)
+================================================================================
+Added to NodeType enum:
+        OPTIONAL_TYPE,        // Optional type: int64?, string?
+
+FILE: include/frontend/ast/type.h (NEW: OptionalTypeNode)
+================================================================================
+/**
+ * Optional type annotation: int64?, string?, MyType?
+ * Represents types that can hold a value or NIL
+ */
+class OptionalTypeNode : public TypeNode {
+public:
+    std::shared_ptr<TypeNode> wrappedType;
+    
+    OptionalTypeNode(std::shared_ptr<TypeNode> wrapped, int line = 0, int column = 0)
+        : TypeNode(ASTNode::NodeType::OPTIONAL_TYPE, line, column), wrappedType(wrapped) {}
+    
+    std::string toString() const override {
+        return wrappedType->toString() + "?";
+    }
+};
+
+FILE: src/frontend/ast/type.cpp (OptionalTypeNode implementation)
+================================================================================
+std::string OptionalTypeNode::toString() const {
+    return wrappedType->toString() + "?";
+}
+

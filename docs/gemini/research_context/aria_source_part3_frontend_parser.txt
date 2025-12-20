@@ -2635,3 +2635,52 @@ const std::vector<std::string>& Parser::getErrors() const {
 }
 
 } // namespace aria
+
+=== PHASE 2 ENHANCEMENTS - PARSER UPDATES (Session 21, Dec 2025) ===
+
+FILE: src/frontend/parser/parser.cpp (parseType - Optional Type Support)
+================================================================================
+Added after pointer type parsing (~line 1578):
+
+    // Optional type: type?
+    if (match(TOKEN_QUESTION)) {
+        baseType = make_shared<OptionalTypeNode>(baseType, previous().line, previous().column);
+    }
+
+FILE: src/frontend/parser/parser.cpp (parseStatement - Lookahead Fix)
+================================================================================
+Updated statement dispatcher lookahead to recognize type?:name pattern (~lines 1053-1069):
+
+    // Check for type?:name (optional type variable declaration)
+    if (next.type == TOKEN_QUESTION) {
+        size_t savedPos = current;
+        advance(); // Skip type keyword
+        if (match(TOKEN_QUESTION)) {
+            if (check(TOKEN_COLON)) {
+                current = savedPos; // Restore position
+                return parseVarDecl();
+            }
+        }
+        current = savedPos; // Restore if not type?:name
+    }
+
+FILE: include/frontend/lexer/token.h (New Tokens)
+================================================================================
+Added Phase 2 operator tokens:
+    TOKEN_SAFE_NAV,         // ?.
+    TOKEN_NULL_COALESCE,    // ??
+    TOKEN_PIPE_FORWARD,     // |>
+    TOKEN_PIPE_BACKWARD,    // <|
+    TOKEN_KW_NIL,           // NIL keyword
+
+FILE: src/frontend/lexer/lexer.cpp (Token Recognition)
+================================================================================
+Added NIL keyword to keyword map:
+    {"NIL", TOKEN_KW_NIL},
+
+Added multi-character operator recognition:
+    - "?." -> TOKEN_SAFE_NAV
+    - "??" -> TOKEN_NULL_COALESCE
+    - "|>" -> TOKEN_PIPE_FORWARD
+    - "<|" -> TOKEN_PIPE_BACKWARD
+

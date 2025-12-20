@@ -4363,3 +4363,441 @@ void ConstEvaluator::memoizeResult(const std::string& funcName,
 
 } // namespace sema
 } // namespace aria
+
+=== PHASE 2 ENHANCEMENTS - TYPE SYSTEM & SEMANTIC ANALYSIS (Session 21, Dec 2025) ===
+
+FILE: include/frontend/sema/type.h (OptionalType)
+================================================================================
+Added to TypeKind enum:
+    OPTIONAL,         // Optional types (int64?, string?)
+
+Added OptionalType class:
+/**
+ * Optional type: T?
+ * Represents a value that can be T or NIL
+ * Different from NULL pointers - this is explicit absence
+ */
+class OptionalType : public Type {
+private:
+    Type* wrappedType;
+    
+public:
+    OptionalType(Type* wrapped) : Type(TypeKind::OPTIONAL), wrappedType(wrapped) {}
+    
+    Type* getWrappedType() const { return wrappedType; }
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+Added to TypeSystem class:
+    Type* getOptionalType(Type* wrappedType);
+
+FILE: src/frontend/sema/type.cpp (OptionalType Implementation)
+================================================================================
+bool OptionalType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::OPTIONAL) {
+        return false;
+    }
+    const OptionalType* otherOptional = static_cast<const OptionalType*>(other);
+    return wrappedType->equals(otherOptional->wrappedType);
+}
+
+bool OptionalType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // Can assign T? to T? if T matches
+    if (target->getKind() == TypeKind::OPTIONAL) {
+        const OptionalType* targetOptional = static_cast<const OptionalType*>(target);
+        return wrappedType->isAssignableTo(targetOptional->wrappedType);
+    }
+    
+    // Cannot assign T? to T (requires explicit unwrapping)
+    return false;
+}
+
+std::string OptionalType::toString() const {
+    return wrappedType->toString() + "?";
+}
+
+Type* TypeSystem::getOptionalType(Type* wrappedType) {
+    if (!wrappedType) {
+        return getErrorType();
+    }
+    
+    // Check if we already have this optional type
+    for (const auto& type : customTypes) {
+        if (type->getKind() == TypeKind::OPTIONAL) {
+            OptionalType* opt = static_cast<OptionalType*>(type.get());
+            if (opt->getWrappedType()->equals(wrappedType)) {
+                return opt;
+            }
+        }
+    }
+    
+    // Create new optional type
+    auto optType = std::make_unique<OptionalType>(wrappedType);
+    Type* result = optType.get();
+    customTypes.push_back(std::move(optType));
+    return result;
+}
+
+FILE: src/frontend/sema/type_checker.cpp (resolveTypeNode - Optional Support)
+================================================================================
+Added case for OPTIONAL_TYPE in resolveTypeNode():
+
+    case ASTNode::NodeType::OPTIONAL_TYPE: {
+        // Optional type: int64?, string?, etc.
+        aria::OptionalTypeNode* optType = static_cast<aria::OptionalTypeNode*>(typeNode);
+        
+        // Resolve wrapped type
+        Type* wrappedType = resolveTypeNode(optType->wrappedType.get());
+        if (wrappedType->getKind() == TypeKind::ERROR) {
+            return typeSystem->getErrorType();
+        }
+        
+        return typeSystem->getOptionalType(wrappedType);
+    }
+
+FILE: src/frontend/sema/type_checker.cpp (checkVarDecl - Optional Wrapping)
+================================================================================
+Added special handling for T -> T? in initialization:
+
+    // Special case: Allow T to be initialized to T? (wrapping)
+    bool optionalWrapping = false;
+    if (declaredType->getKind() == TypeKind::OPTIONAL) {
+        const OptionalType* declaredOptional = static_cast<const OptionalType*>(declaredType);
+        if (initType->isAssignableTo(declaredOptional->getWrappedType())) {
+            optionalWrapping = true;
+        }
+    }
+    
+    if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType) && !optionalWrapping) {
+        addError("Cannot initialize variable...");
+    }
+
+FILE: src/frontend/sema/type_checker.cpp (checkAssignment - Optional Wrapping)
+================================================================================
+Added special handling for T -> T? in assignment:
+
+    // Special case: Allow T to be assigned to T? (wrapping)
+    bool optionalWrapping = false;
+    if (leftType->getKind() == TypeKind::OPTIONAL) {
+        const OptionalType* leftOptional = static_cast<const OptionalType*>(leftType);
+        if (rightType->isAssignableTo(leftOptional->getWrappedType())) {
+            optionalWrapping = true;
+        }
+    }
+    
+    if (!rightType->isAssignableTo(leftType) && !canCoerce(rightType, leftType) && !optionalWrapping) {
+        addError("Cannot assign value...");
+    }
+
+FILE: src/frontend/sema/type_checker.cpp (inferType - Null Coalescing)
+================================================================================
+Updated null coalescing operator to handle optional types:
+
+    if (op == TokenType::TOKEN_NULL_COALESCE) {
+        // Returns left side if not NIL, otherwise right side
+        // Pattern: T? ?? T returns T (unwrapping the optional)
+        
+        // Check if left is optional
+        if (leftType->getKind() == TypeKind::OPTIONAL) {
+            const OptionalType* leftOptional = static_cast<const OptionalType*>(leftType);
+            Type* unwrappedType = leftOptional->getWrappedType();
+            
+            // Right side should be compatible with the unwrapped type
+            if (!rightType->equals(unwrappedType) && !rightType->isAssignableTo(unwrappedType)) {
+                addError("Null coalescing operator: right side type '" + rightType->toString() + 
+                        "' is not compatible with unwrapped optional type '" + unwrappedType->toString() + "'", 0, 0);
+                return typeSystem->getErrorType();
+            }
+            
+            // Result is the unwrapped type
+            return unwrappedType;
+        }
+        
+        // If left is not optional, both types should be compatible
+        if (!leftType->equals(rightType) && !canCoerce(rightType, leftType)) {
+            addError("Null coalescing operator requires compatible types...");
+            return typeSystem->getErrorType();
+        }
+        
+        // Result is the left type
+        return leftType;
+    }
+
+FILE: src/frontend/sema/type_checker.cpp (inferType - Pipeline Operators)
+================================================================================
+Added type checking for pipeline operators:
+
+    // Pipeline forward: value |> function
+    if (op == TokenType::TOKEN_PIPE_FORWARD) {
+        // Right side should be a function
+        // Left side type should match function's first parameter
+        // Result type is function's return type
+        // (Type checking implementation depends on function type system)
+        return rightType;  // Simplified for now
+    }
+    
+    // Pipeline backward: function <| value  
+    if (op == TokenType::TOKEN_PIPE_BACKWARD) {
+        // Left side should be a function
+        // Right side type should match function's first parameter
+        // Result type is function's return type
+        return leftType;  // Simplified for now
+    }
+
+FILE: src/frontend/sema/type_checker.cpp (inferType - Safe Navigation)
+================================================================================
+Added type checking for safe navigation operator:
+
+    // Safe navigation: obj?.member
+    if (op == TokenType::TOKEN_SAFE_NAV) {
+        // Left side should be a struct/object type
+        // Returns NIL if object is NIL, otherwise accesses member
+        // Result type should ideally be optional, but for now return rightType
+        
+        if (leftType->getKind() != TypeKind::STRUCT) {
+            addError("Safe navigation operator requires struct type on left side", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        return rightType;  // Future: Should return Optional<rightType>
+    }
+
+
+=== PHASE 1 ENHANCEMENTS - RANGES & SLICING (Sessions 18-20, Nov-Dec 2025) ===
+
+COMMITS:
+- 3cb7826: Session 18: Add range operators (.., ...) for loops and slicing
+- 65811cb: Session 19: Implement range-based for loops
+- f5f6acb: Session 20: Implement array slicing with ranges
+- 7d5d554: Session 20 Part 2: Fix array literal bug (enables slicing)
+
+FILE: include/frontend/ast/ast_node.h (NodeType enum)
+================================================================================
+Added to NodeType enum:
+        RANGE,                // Range expressions: start..end, start...end
+
+FILE: include/frontend/ast/expr.h (RangeExpr)
+================================================================================
+/**
+ * Range expression: start..end (inclusive), start...end (exclusive)
+ * Used in for loops and array slicing
+ */
+class RangeExpr : public ASTNode {
+public:
+    std::shared_ptr<ASTNode> start;
+    std::shared_ptr<ASTNode> end;
+    bool isInclusive;  // true for .., false for ...
+    
+    RangeExpr(std::shared_ptr<ASTNode> s, std::shared_ptr<ASTNode> e, bool inclusive,
+              int line = 0, int column = 0)
+        : ASTNode(NodeType::RANGE, line, column), start(s), end(e), isInclusive(inclusive) {}
+};
+
+FILE: include/frontend/lexer/token.h (Range Tokens)
+================================================================================
+Added range operator tokens:
+    TOKEN_RANGE_INCLUSIVE,   // ..  (inclusive range)
+    TOKEN_RANGE_EXCLUSIVE,   // ... (exclusive range)
+
+FILE: src/frontend/parser/parser.cpp (Range Parsing)
+================================================================================
+Added range expression parsing in parseComparison():
+    - Detects .. and ... operators
+    - Creates RangeExpr with start, end, and inclusivity flag
+    - Used in for loops: for i in 0..10
+    - Used in array slicing: arr[0..5], arr[1...10]
+
+FILE: src/frontend/parser/parser.cpp (For Loop Range Support)
+================================================================================
+Updated parseForStmt() to handle range-based iteration:
+    for i in 0..10 { }      // Inclusive: 0,1,2,...,10
+    for i in 0...10 { }     // Exclusive: 0,1,2,...,9
+
+FILE: src/frontend/parser/parser.cpp (Array Slicing)
+================================================================================
+Updated parseIndex() to handle slice expressions:
+    arr[0..5]     // Slice from index 0 to 5 (inclusive)
+    arr[1...10]   // Slice from index 1 to 9 (exclusive)
+    arr[start..end]  // Dynamic slicing
+
+FILE: src/frontend/sema/type_checker.cpp (Range Type Checking)
+================================================================================
+Added type checking for range expressions:
+    - Start and end must be integer types
+    - Used in for loop iteration and array indexing
+    - Result type is appropriate for context (iterator or array slice)
+
+
+=== ADVANCED LOOP CONSTRUCTS (Session 11, Nov 2025) ===
+
+COMMITS:
+- 1540b29: Session 11: Advanced Loops (till, loop, when)
+
+FILE: include/frontend/ast/stmt.h (Loop Statements)
+================================================================================
+Added loop statement types:
+    - TillStmt: Pre-condition loop (like while)
+    - LoopStmt: Infinite loop (like while(true))
+    - WhenStmt: Post-condition loop (like do-while)
+
+Syntax:
+    till condition { body }     // Loop while condition is false
+    loop { body }               // Infinite loop
+    when condition { body }     // Execute body, then loop while condition is true
+
+FILE: src/frontend/parser/parser.cpp (Loop Parsing)
+================================================================================
+Added parsers for new loop constructs:
+    - parseTillStmt(): Parses till-loops
+    - parseLoopStmt(): Parses infinite loops
+    - parseWhenStmt(): Parses post-condition loops
+
+FILE: src/frontend/sema/type_checker.cpp (Loop Type Checking)
+================================================================================
+Added type checking for new loop types:
+    - Till: Validates condition is boolean
+    - Loop: No condition validation needed
+    - When: Validates condition is boolean
+
+
+=== GENERIC STRUCTS & MONOMORPHIZATION (Session 13, Nov 2025) ===
+
+COMMITS:
+- 8104046: Session 13 Part 1: Parser Support for Generic Structs  
+- a801980: Session 13 Part 2: Monomorphization for Generic Structs - WORKING!
+- 0d4022f: Session 13 Part 3: Fix IR generation for generic structs
+
+FILE: include/frontend/ast/stmt.h (Generic Struct Declaration)
+================================================================================
+Extended StructDeclStmt to support generic parameters:
+    struct GenericParam {
+        std::string name;        // Type parameter name (T, U, etc.)
+        int line;
+        int column;
+    };
+    
+    class StructDeclStmt {
+        std::vector<GenericParam> genericParams;  // Generic type parameters
+        ...
+    };
+
+Syntax:
+    mod:Box<T> {
+        T:value;
+    };
+
+FILE: src/frontend/parser/parser.cpp (Generic Struct Parsing)
+================================================================================
+Added parseStructDecl() support for generic parameters:
+    - Parses <T, U, ...> after struct name
+    - Creates GenericParam entries
+    - Validates type parameter names are unique
+
+FILE: include/frontend/sema/generic_resolver.h (Monomorphizer)
+================================================================================
+Created Monomorphizer class for generic instantiation:
+    - Tracks generic struct templates
+    - Generates specialized versions for each type argument combination
+    - Creates mangled names for specialized structs
+    - Performs type substitution in struct bodies
+
+Key methods:
+    - registerGenericStruct(): Registers a generic struct template
+    - requestStructSpecialization(): Creates specialized version
+    - substitute(): Performs type parameter substitution
+
+FILE: src/frontend/sema/type_checker.cpp (Generic Type Resolution)
+================================================================================
+Added support for GenericType in resolveTypeNode():
+    - Resolves type arguments: Box<int64>, Result<int32, string>
+    - Requests monomorphization of generic struct
+    - Returns specialized struct type
+    - Validates type argument count matches parameter count
+
+Mangling scheme:
+    Box<int64> -> _Aria_M_Box_<hash>_int64
+    Result<int32,string> -> _Aria_M_Result_<hash>_int32_string
+
+FILE: src/backend/codegen/codegen.cpp (Generic Struct IR Generation)
+================================================================================
+Updated struct IR generation to handle specialized structs:
+    - Uses mangled names for specialized struct types
+    - Substitutes type parameters in field types
+    - Generates struct definitions for each specialization
+
+
+=== BALANCED TERNARY & TBB TYPES (Sessions 14-15, Nov 2025) ===
+
+COMMITS:
+- 308b746: Session 14 Part 1: TBB type coercion
+- e4ad6d7: Session 14 Part 2: Integrate TBB overflow detection and sticky ERR propagation
+- d681db7: Session 15 Part 1: Add TernaryCodegen for balanced ternary/nonary arithmetic
+- 5e1e8ee: Session 15 Complete: Balanced Ternary/Nonary Types with Runtime Arithmetic
+- 01affb0: Session 17: Add balanced ternary literal notation (0t[01T]+)
+
+FILE: include/frontend/sema/type.h (Balanced Ternary Types)
+================================================================================
+Added TypeKind enum values for balanced number systems:
+    TBT3,   // 3-trit balanced ternary (-13 to 13)
+    TBT9,   // 9-trit balanced ternary
+    TBT27,  // 27-trit balanced ternary
+    TBN3,   // 3-trit balanced nonary
+    TBN9,   // 9-trit balanced nonary
+    TBN27,  // 27-trit balanced nonary
+
+Balanced Ternary uses trits: {T=-1, 0, 1}
+Balanced Nonary uses trits: {-4, -3, -2, -1, 0, 1, 2, 3, 4}
+
+FILE: src/frontend/lexer/lexer.cpp (Balanced Ternary Literals)
+================================================================================
+Added support for 0t prefix for balanced ternary literals:
+    0t1     // Value: 1
+    0tT     // Value: -1 (T = negative)
+    0t10    // Value: 3
+    0t1T    // Value: 2
+
+Literal format: 0t[01T]+ where:
+    - 0 = zero trit
+    - 1 = positive trit
+    - T = negative trit (replaces - sign)
+
+FILE: src/frontend/sema/type_checker.cpp (TBB Type Validation)
+================================================================================
+Added compile-time range validation for TBB literals:
+    - checkTBBLiteralValue(): Validates integer literals fit in TBB type
+    - checkBalancedLiteralValue(): Validates for balanced nonary
+    - Prevents overflow at compile time
+
+Examples:
+    tbt3:x = 14;   // ERROR: 14 exceeds tbt3 range (-13 to 13)
+    tbt9:y = 100;  // OK: 100 fits in tbt9 range
+
+FILE: include/runtime/tbb_arithmetic.h (Runtime Balanced Arithmetic)
+================================================================================
+Created runtime library for balanced ternary/nonary arithmetic:
+    - tbt3_add(), tbt9_add(), tbt27_add()
+    - tbn3_add(), tbn9_add(), tbn27_add()
+    - Overflow detection with sticky ERR flag
+    - ERR propagation through calculations
+
+Key features:
+    - Hardware-efficient balanced number representation
+    - Automatic overflow detection (no silent wrapping)
+    - ERR state propagates through all operations
+    - Symmetric range around zero
+
+FILE: src/backend/codegen/ternary_codegen.cpp (Balanced Arithmetic IR)
+================================================================================
+Created specialized IR generation for TBB arithmetic:
+    - Maps TBB operations to runtime library calls
+    - Generates overflow checking code
+    - Handles ERR state propagation
+    - Converts between TBB and standard integers
+
