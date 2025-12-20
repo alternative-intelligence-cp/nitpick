@@ -755,6 +755,30 @@ src/backend/ir/tbb_codegen.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/tbb_codegen.cpp.s
 .PHONY : src/backend/ir/tbb_codegen.cpp.s
 
+src/backend/ir/ternary_codegen.o: src/backend/ir/ternary_codegen.cpp.o
+.PHONY : src/backend/ir/ternary_codegen.o
+
+# target to build an object file
+src/backend/ir/ternary_codegen.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/ternary_codegen.cpp.o
+.PHONY : src/backend/ir/ternary_codegen.cpp.o
+
+src/backend/ir/ternary_codegen.i: src/backend/ir/ternary_codegen.cpp.i
+.PHONY : src/backend/ir/ternary_codegen.i
+
+# target to preprocess a source file
+src/backend/ir/ternary_codegen.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/ternary_codegen.cpp.i
+.PHONY : src/backend/ir/ternary_codegen.cpp.i
+
+src/backend/ir/ternary_codegen.s: src/backend/ir/ternary_codegen.cpp.s
+.PHONY : src/backend/ir/ternary_codegen.s
+
+# target to generate assembly for a file
+src/backend/ir/ternary_codegen.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/ternary_codegen.cpp.s
+.PHONY : src/backend/ir/ternary_codegen.cpp.s
+
 src/frontend/ast/ast_node.o: src/frontend/ast/ast_node.cpp.o
 .PHONY : src/frontend/ast/ast_node.o
 
@@ -2305,6 +2329,9 @@ help:
 	@echo "... src/backend/ir/tbb_codegen.o"
 	@echo "... src/backend/ir/tbb_codegen.i"
 	@echo "... src/backend/ir/tbb_codegen.s"
+	@echo "... src/backend/ir/ternary_codegen.o"
+	@echo "... src/backend/ir/ternary_codegen.i"
+	@echo "... src/backend/ir/ternary_codegen.s"
 	@echo "... src/frontend/ast/ast_node.o"
 	@echo "... src/frontend/ast/ast_node.i"
 	@echo "... src/frontend/ast/ast_node.s"
