@@ -345,17 +345,32 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
     // ========================================================================
     if (op == TokenType::TOKEN_NULL_COALESCE) {
         // Returns left side if not NIL, otherwise right side
-        // Result type is the union of both types, but for simplicity we use left type
-        // TODO: Proper optional type support would make this more precise
+        // Pattern: T? ?? T returns T (unwrapping the optional)
         
-        // Both types should be compatible
+        // Check if left is optional
+        if (leftType->getKind() == TypeKind::OPTIONAL) {
+            const OptionalType* leftOptional = static_cast<const OptionalType*>(leftType);
+            Type* unwrappedType = leftOptional->getWrappedType();
+            
+            // Right side should be compatible with the unwrapped type
+            if (!rightType->equals(unwrappedType) && !rightType->isAssignableTo(unwrappedType)) {
+                addError("Null coalescing operator: right side type '" + rightType->toString() + 
+                        "' is not compatible with unwrapped optional type '" + unwrappedType->toString() + "'", 0, 0);
+                return typeSystem->getErrorType();
+            }
+            
+            // Result is the unwrapped type
+            return unwrappedType;
+        }
+        
+        // If left is not optional, both types should be compatible
         if (!leftType->equals(rightType) && !canCoerce(rightType, leftType)) {
             addError("Null coalescing operator requires compatible types: '" + 
                     leftType->toString() + "' and '" + rightType->toString() + "'", 0, 0);
             return typeSystem->getErrorType();
         }
         
-        // Result is the left type (or common type if different)
+        // Result is the left type
         return leftType;
     }
     
@@ -1248,6 +1263,19 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             return typeSystem->getPointerType(baseType);
         }
         
+        case ASTNode::NodeType::OPTIONAL_TYPE: {
+            // Optional type: int64?, string?, etc.
+            aria::OptionalTypeNode* optType = static_cast<aria::OptionalTypeNode*>(typeNode);
+            
+            // Resolve wrapped type
+            Type* wrappedType = resolveTypeNode(optType->wrappedType.get());
+            if (wrappedType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            return typeSystem->getOptionalType(wrappedType);
+        }
+        
         case ASTNode::NodeType::GENERIC_TYPE: {
             // Generic type instantiation: Box<int64>, Result<int32, string>, etc.
             aria::GenericType* genericType = static_cast<aria::GenericType*>(typeNode);
@@ -1441,7 +1469,16 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         // Check if initializer type is assignable to declared type
         // Skip this check if we handled TBB, balanced, or standard int literal assignment above
         if (!tbbLiteralAssignment && !balancedLiteralAssignment && !standardIntLiteralAssignment) {
-            if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType)) {
+            // Special case: Allow T to be initialized to T? (wrapping)
+            bool optionalWrapping = false;
+            if (declaredType->getKind() == TypeKind::OPTIONAL) {
+                const OptionalType* declaredOptional = static_cast<const OptionalType*>(declaredType);
+                if (initType->isAssignableTo(declaredOptional->getWrappedType())) {
+                    optionalWrapping = true;
+                }
+            }
+            
+            if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType) && !optionalWrapping) {
                 addError("Cannot initialize variable '" + stmt->varName + 
                         "' of type '" + declaredType->toString() + 
                         "' with value of type '" + initType->toString() + "'", stmt);
@@ -1664,7 +1701,16 @@ void TypeChecker::checkAssignment(BinaryExpr* expr) {
     
     // Check type compatibility (skip if we handled standard int, TBB, or balanced literal assignment)
     if (!standardIntLiteralAssignment && !tbbLiteralAssignment && !balancedLiteralAssignment) {
-        if (!rightType->isAssignableTo(leftType) && !canCoerce(rightType, leftType)) {
+        // Special case: Allow T to be assigned to T? (wrapping)
+        bool optionalWrapping = false;
+        if (leftType->getKind() == TypeKind::OPTIONAL) {
+            const OptionalType* leftOptional = static_cast<const OptionalType*>(leftType);
+            if (rightType->isAssignableTo(leftOptional->getWrappedType())) {
+                optionalWrapping = true;
+            }
+        }
+        
+        if (!rightType->isAssignableTo(leftType) && !canCoerce(rightType, leftType) && !optionalWrapping) {
             addError("Cannot assign value of type '" + rightType->toString() + 
                     "' to variable of type '" + leftType->toString() + "'", expr);
         }

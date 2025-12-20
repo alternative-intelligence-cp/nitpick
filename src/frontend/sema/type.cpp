@@ -394,6 +394,37 @@ bool GenericType::isAssignableTo(const Type* /*target*/) const {
 }
 
 // ============================================================================
+// OptionalType Implementation
+// ============================================================================
+
+bool OptionalType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::OPTIONAL) {
+        return false;
+    }
+    const OptionalType* otherOptional = static_cast<const OptionalType*>(other);
+    return wrappedType->equals(otherOptional->wrappedType);
+}
+
+bool OptionalType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // Can assign T? to T? if T matches
+    if (target->getKind() == TypeKind::OPTIONAL) {
+        const OptionalType* targetOptional = static_cast<const OptionalType*>(target);
+        return wrappedType->isAssignableTo(targetOptional->wrappedType);
+    }
+    
+    // Cannot assign T? to T (requires explicit unwrapping)
+    return false;
+}
+
+std::string OptionalType::toString() const {
+    return wrappedType->toString() + "?";
+}
+
+// ============================================================================
 // ResultType Implementation
 // ============================================================================
 
@@ -612,6 +643,15 @@ FunctionType* TypeSystem::getFunctionType(const std::vector<Type*>& paramTypes, 
     // TODO: Implement caching for function types
     auto type = std::make_unique<FunctionType>(paramTypes, actualReturnType, isAsync, isVariadic);
     FunctionType* ptr = type.get();
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+OptionalType* TypeSystem::getOptionalType(Type* wrappedType) {
+    // TODO: Implement caching for optional types
+    // For now, create a new one each time
+    auto type = std::make_unique<OptionalType>(wrappedType);
+    OptionalType* ptr = type.get();
     types.push_back(std::move(type));
     return ptr;
 }

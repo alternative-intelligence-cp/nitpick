@@ -1053,13 +1053,28 @@ ASTNodePtr Parser::parseStatement() {
     
     // Check for type annotation (variable declaration)
     // Must be followed by colon or array bracket to avoid ambiguity with identifiers
-    // Examples: "int32:x = 5", "int32[]:arr = ...", "int32[10]:arr = ..."
+    // Examples: "int32:x = 5", "int32[]:arr = ...", "int32[10]:arr = ...", "int64?:maybe = ..."
     if (isTypeKeyword(peek().type)) {
         size_t saved = current;
         advance(); // consume type keyword
         
+        // Check for optional type suffix: type?
+        if (check(TokenType::TOKEN_QUESTION)) {
+            advance(); // consume '?'
+            
+            // Now check for colon after optional type
+            if (check(TokenType::TOKEN_COLON)) {
+                // It's an optional type annotation: type?:name
+                current = saved; // reset position
+                return parseVarDecl();
+            }
+            
+            // Not a variable declaration, restore position
+            current = saved;
+            // Fall through to expression statement
+        }
         // Check for array type suffix: type[] or type[size]
-        if (check(TokenType::TOKEN_LEFT_BRACKET)) {
+        else if (check(TokenType::TOKEN_LEFT_BRACKET)) {
             advance(); // consume '['
             
             // Skip size expression if present
@@ -1575,6 +1590,11 @@ ASTNodePtr Parser::parseType() {
     // Note: extern blocks use * for C FFI, but that's handled separately
     if (match(TokenType::TOKEN_AT)) {
         baseType = std::make_shared<PointerType>(baseType, typeToken.line, typeToken.column);
+    }
+    
+    // Check for optional suffix: type? (optional types, can be NIL)
+    if (match(TokenType::TOKEN_QUESTION)) {
+        baseType = std::make_shared<OptionalTypeNode>(baseType, typeToken.line, typeToken.column);
     }
     
     // Check for array suffix: type[] or type[size]
