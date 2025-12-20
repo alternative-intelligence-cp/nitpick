@@ -229,8 +229,9 @@ bool Parser::isUnaryOperator(TokenType type) const {
            type == TokenType::TOKEN_BANG ||
            type == TokenType::TOKEN_TILDE ||
            type == TokenType::TOKEN_AT ||
-           type == TokenType::TOKEN_HASH;
-           // Note: TOKEN_DOLLAR is NOT a unary operator - it's the iteration variable
+           type == TokenType::TOKEN_HASH ||
+           type == TokenType::TOKEN_DOLLAR;  // $ for safe borrow/reference
+           // Note: TOKEN_DOLLAR is BOTH a unary operator ($x for borrow) AND used as iteration variable in till loops
 }
 
 bool Parser::isAssignmentOperator(TokenType type) const {
@@ -1053,13 +1054,43 @@ ASTNodePtr Parser::parseStatement() {
     
     // Check for type annotation (variable declaration)
     // Must be followed by colon or array bracket to avoid ambiguity with identifiers
-    // Examples: "int32:x = 5", "int32[]:arr = ...", "int32[10]:arr = ...", "int64?:maybe = ..."
+    // Examples: "int32:x = 5", "int32[]:arr = ...", "int32[10]:arr = ...", "int64?:maybe = ...", "int32$:ref = ...", "int32@:ptr = ..."
     if (isTypeKeyword(peek().type)) {
         size_t saved = current;
         advance(); // consume type keyword
         
+        // Check for pointer type suffix: type@
+        if (check(TokenType::TOKEN_AT)) {
+            advance(); // consume '@'
+            
+            // Now check for colon after pointer type
+            if (check(TokenType::TOKEN_COLON)) {
+                // It's a pointer type annotation: type@:name
+                current = saved; // reset position
+                return parseVarDecl();
+            }
+            
+            // Not a variable declaration, restore position
+            current = saved;
+            // Fall through to expression statement
+        }
+        // Check for safe reference type suffix: type$
+        else if (check(TokenType::TOKEN_DOLLAR)) {
+            advance(); // consume '$'
+            
+            // Now check for colon after safe reference type
+            if (check(TokenType::TOKEN_COLON)) {
+                // It's a safe reference type annotation: type$:name
+                current = saved; // reset position
+                return parseVarDecl();
+            }
+            
+            // Not a variable declaration, restore position
+            current = saved;
+            // Fall through to expression statement
+        }
         // Check for optional type suffix: type?
-        if (check(TokenType::TOKEN_QUESTION)) {
+        else if (check(TokenType::TOKEN_QUESTION)) {
             advance(); // consume '?'
             
             // Now check for colon after optional type
@@ -1590,6 +1621,11 @@ ASTNodePtr Parser::parseType() {
     // Note: extern blocks use * for C FFI, but that's handled separately
     if (match(TokenType::TOKEN_AT)) {
         baseType = std::make_shared<PointerType>(baseType, typeToken.line, typeToken.column);
+    }
+    
+    // Check for safe reference suffix: type$ (safe reference for borrow checker)
+    if (match(TokenType::TOKEN_DOLLAR)) {
+        baseType = std::make_shared<SafeRefType>(baseType, typeToken.line, typeToken.column);
     }
     
     // Check for optional suffix: type? (optional types, can be NIL)

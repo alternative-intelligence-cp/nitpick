@@ -356,9 +356,27 @@ llvm::Module* compile_to_module(
         return nullptr;
     }
     
-    // TODO: Borrow checker integration  
-    // aria::BorrowChecker borrow_checker;
-    // borrow_checker.check(module_node.get());
+    // Phase 3.5: Borrow Checker (Phase 5b in research)
+    if (opts.verbose) {
+        std::cout << "Phase 3.5: Borrow checking...\n";
+    }
+    
+    aria::sema::BorrowChecker borrow_checker;
+    auto borrow_errors = borrow_checker.analyze(module_node.get());
+    
+    if (!borrow_errors.empty()) {
+        for (const auto& err : borrow_errors) {
+            aria::SourceLocation loc(filename, err.line, err.column);
+            diags.error(loc, err.message);
+            
+            // Print related information if available
+            if (err.related_line >= 0) {
+                aria::SourceLocation related_loc(filename, err.related_line, err.related_column);
+                diags.note(related_loc, err.related_message);
+            }
+        }
+        return nullptr;
+    }
 
     // Phase 4: IR Generation
     if (opts.verbose) {

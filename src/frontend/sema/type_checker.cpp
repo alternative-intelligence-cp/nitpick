@@ -496,11 +496,9 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
     // Address-of: @
     // ========================================================================
     if (op == TokenType::TOKEN_AT) {
-        // Create pointer type
-        // TODO: Implement pointer type creation in Phase 3.2.1 enhancements
-        // For now, return ErrorType with message
-        addError("Address-of operator (@) not yet implemented in type system", 0, 0);
-        return typeSystem->getErrorType();
+        // Create pointer type to the operand
+        // @x where x: int32 → result type: int32@
+        return typeSystem->getPointerType(operandType);
     }
     
     // ========================================================================
@@ -508,19 +506,19 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
     // ========================================================================
     if (op == TokenType::TOKEN_HASH) {
         // Pin GC object to get wild pointer
-        // TODO: Check that operand is GC object type
-        addError("Pin operator (#) not yet implemented in type system", 0, 0);
-        return typeSystem->getErrorType();
+        // #x where x: int32 → result type: int32@ (wild pointer)
+        // The borrow checker will track the pinning relationship
+        return typeSystem->getPointerType(operandType);
     }
     
     // ========================================================================
-    // Borrow/Iterate: $
+    // Borrow/Safe Reference: $
     // ========================================================================
     if (op == TokenType::TOKEN_DOLLAR) {
-        // Borrow or iterate over collection
-        // TODO: Check that operand is array or iterator type
-        addError("Borrow operator ($) not yet implemented in type system", 0, 0);
-        return typeSystem->getErrorType();
+        // Borrow variable to create safe reference
+        // $x where x: int32 → result type: int32$ (safe reference, resolves to int32@ internally)
+        // The borrow checker will track the borrowing relationship
+        return typeSystem->getPointerType(operandType);
     }
     
     // ========================================================================
@@ -1260,6 +1258,22 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 return typeSystem->getErrorType();
             }
             
+            return typeSystem->getPointerType(baseType);
+        }
+        
+        case ASTNode::NodeType::SAFE_REF_TYPE: {
+            // Safe reference type: int32$, string$, etc.
+            // For now, treat safe references as pointer types in the type system
+            // The borrow checker will enforce the safety rules
+            aria::SafeRefType* safeRefType = static_cast<aria::SafeRefType*>(typeNode);
+            
+            // Resolve base type
+            Type* baseType = resolveTypeNode(safeRefType->baseType.get());
+            if (baseType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            // Use pointer type internally, borrow checker handles safety
             return typeSystem->getPointerType(baseType);
         }
         

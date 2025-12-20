@@ -65,7 +65,8 @@ public:
         TYPE_ANNOTATION,      // Type annotation: int8, string, etc.
         GENERIC_TYPE,         // Generic type: Array<T>
         ARRAY_TYPE,           // Array type: int8[], int8[100]
-        POINTER_TYPE,         // Pointer type: int8*
+        POINTER_TYPE,         // Pointer type: int8@
+        SAFE_REF_TYPE,        // Safe reference type: int64$, string$ (borrow checker)
         OPTIONAL_TYPE,        // Optional type: int64?, string? (can be NIL)
         FUNCTION_TYPE,        // Function type: func
         
