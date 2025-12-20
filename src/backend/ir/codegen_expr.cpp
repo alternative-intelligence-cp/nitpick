@@ -562,6 +562,102 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         return builder.CreateAShr(left, right, "shrtmp");
     }
     
+    // SAFE NAVIGATION OPERATOR (?.)
+    // Pattern: obj?.member returns optional<T> (Some(member) if obj not NIL, None otherwise)
+    if (op == TokenType::TOKEN_SAFE_NAV) {
+        // Check if left (object) is NIL/null
+        llvm::Value* isNull;
+        
+        if (left->getType()->isPointerTy()) {
+            // For pointers, check against nullptr
+            isNull = builder.CreateIsNull(left, "obj.isnull");
+        } else if (left->getType()->isStructTy()) {
+            // If left is already optional, check hasValue
+            isNull = builder.CreateNot(isOptionalSome(left), "obj.isnone");
+        } else {
+            // For primitive types (shouldn't normally happen), assume not null
+            isNull = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
+        }
+        
+        // Create basic blocks for conditional member access
+        llvm::Function* func = builder.GetInsertBlock()->getParent();
+        llvm::BasicBlock* accessBB = llvm::BasicBlock::Create(context, "safeNav.access", func);
+        llvm::BasicBlock* nilBB = llvm::BasicBlock::Create(context, "safeNav.nil", func);
+        llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "safeNav.merge", func);
+        
+        // Branch based on null check
+        builder.CreateCondBr(isNull, nilBB, accessBB);
+        
+        // Access block: evaluate member access (right side)
+        builder.SetInsertPoint(accessBB);
+        llvm::Value* memberVal = right;  // Right is the member access result
+        
+        // Wrap result in optional Some
+        llvm::Value* someResult = createOptionalSome(memberVal, memberVal->getType());
+        builder.CreateBr(mergeBB);
+        llvm::BasicBlock* afterAccessBB = builder.GetInsertBlock();
+        
+        // NIL block: return None
+        builder.SetInsertPoint(nilBB);
+        llvm::Value* noneResult = createOptionalNone(memberVal->getType());
+        builder.CreateBr(mergeBB);
+        
+        // Merge results
+        builder.SetInsertPoint(mergeBB);
+        llvm::PHINode* phi = builder.CreatePHI(someResult->getType(), 2, "safeNav.result");
+        phi->addIncoming(someResult, afterAccessBB);
+        phi->addIncoming(noneResult, nilBB);
+        
+        return phi;
+    }
+    
+    // PIPELINE FORWARD OPERATOR (|>)
+    // Pattern: value |> function becomes function(value)
+    if (op == TokenType::TOKEN_PIPE_RIGHT) {
+        // Right side should be a function or callable
+        // Left side is the value to pass as first argument
+        
+        // For now, assume right is a function pointer or callable
+        // We need to call it with left as the argument
+        
+        if (right->getType()->isPointerTy()) {
+            // Right is likely a function pointer
+            // Create call with left as argument
+            llvm::FunctionType* funcType = llvm::FunctionType::get(
+                left->getType(),  // Return type (assumed same as input for now)
+                {left->getType()}, // Parameter types
+                false  // Not variadic
+            );
+            
+            return builder.CreateCall(funcType, right, {left}, "pipe.result");
+        } else {
+            // For non-function types, just return the right side
+            // TODO: Full implementation needs function type analysis
+            return right;
+        }
+    }
+    
+    // PIPELINE BACKWARD OPERATOR (<|)
+    // Pattern: function <| value becomes function(value)  
+    if (op == TokenType::TOKEN_PIPE_LEFT) {
+        // Left side should be a function or callable
+        // Right side is the value to pass as first argument
+        
+        if (left->getType()->isPointerTy()) {
+            // Left is likely a function pointer
+            llvm::FunctionType* funcType = llvm::FunctionType::get(
+                right->getType(),  // Return type
+                {right->getType()}, // Parameter types
+                false  // Not variadic
+            );
+            
+            return builder.CreateCall(funcType, left, {right}, "pipe.result");
+        } else {
+            // For non-function types, just return the left side
+            return left;
+        }
+    }
+    
     // Unknown operator
     throw std::runtime_error("Unknown binary operator: " + expr->op.lexeme);
 }
