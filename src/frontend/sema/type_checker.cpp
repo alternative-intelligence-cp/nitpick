@@ -1085,6 +1085,44 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             return typeSystem->getPointerType(baseType);
         }
         
+        case ASTNode::NodeType::GENERIC_TYPE: {
+            // Generic type instantiation: Box<int64>, Result<int32, string>, etc.
+            aria::GenericType* genericType = static_cast<aria::GenericType*>(typeNode);
+            
+            // Phase 3.4: Generic Struct Instantiation
+            // Resolve all type arguments
+            std::vector<Type*> resolvedTypeArgs;
+            for (const auto& typeArg : genericType->typeArgs) {
+                Type* argType = resolveTypeNode(typeArg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+                resolvedTypeArgs.push_back(argType);
+            }
+            
+            // Look up the generic struct definition
+            // For now, look up by base name in the struct registry
+            // TODO: Check if it's actually a generic struct
+            Type* baseStructType = typeSystem->getStructType(genericType->baseName);
+            
+            if (!baseStructType) {
+                addError("Unknown generic type: '" + genericType->baseName + "'", typeNode);
+                return typeSystem->getErrorType();
+            }
+            
+            // TODO: Trigger monomorphization to create specialized struct
+            // For now, return the base struct type (this is incomplete)
+            // The monomorphizer will need to:
+            // 1. Clone the generic struct AST
+            // 2. Substitute type parameters with concrete types
+            // 3. Register the specialized struct with a mangled name
+            // 4. Return the specialized struct type
+            
+            addError("Generic struct instantiation not yet fully implemented: '" + 
+                    genericType->baseName + "<...>'", typeNode);
+            return typeSystem->getErrorType();
+        }
+        
         default:
             addError("Unsupported type node in type resolution", typeNode);
             return typeSystem->getErrorType();

@@ -83,33 +83,44 @@ Tests: /home/randy/._____RANDY_____/REPOS/aria/tests/
 Context: /home/randy/._____RANDY_____/____FILES/aria/
 Postmortem: /home/randy/._____RANDY_____/REPOS/aria/docs/POSTMORTEM_V0.1.0.md
 
-=== CURRENT STATUS (v0.0.8) ===
+=== CURRENT STATUS (v0.1.0-dev) ===
 
-What ACTUALLY works:
-✅ Basic types (int8-64, uint8-64, flt32, flt64, bool)
-✅ Control flow (if, while, for, loop, till, break, continue)
+What ACTUALLY works (verified Dec 19, 2025):
+✅ Basic types (int8-64, uint8-64, flt32, flt64, bool, string)
+✅ Control flow (if, while, for, break, continue)
+✅ Advanced loops (till, loop, when) with $ iteration variable
 ✅ Operators (arithmetic, bitwise, comparison, logical)
-✅ Basic FFI to libc
+✅ Short-circuit evaluation (&& and ||)
+✅ Ternary expressions (is (cond) : true : false)
+✅ Basic FFI to libc (extern "libc")
 ✅ Defer statements (RAII cleanup)
-✅ Short-circuit logical operators (&& and ||)
 ✅ Struct declarations and instantiation
 ✅ Struct member access (p.x, p.y)
 ✅ Generic functions with monomorphization
 ✅ Type inference for generic calls
 ✅ Multiple specializations per function
+✅ Result types (pass/fail statements)
+✅ ? operator for result unwrapping
+✅ Arrays (fixed and dynamic size)
+✅ Array literals [1, 2, 3]
+✅ Array indexing arr[i]
+✅ Module system (use, mod, pub, extern)
 
-What DOES NOT work (critical blockers for v0.1.0):
+What has ISSUES (needs fixing):
+⚠️ Many tests broken by int64 literal default (were written for int32)
+⚠️ Array runtime may have segfaults in some cases
+⚠️ Result type checking may have edge cases
+⚠️ Generic tests fail due to int64 vs int32 type mismatches
+
+What DOES NOT work (critical for v0.1.0):
 ❌ Generic structs - struct<T>:Container { *T:value; }
-❌ Result types and ? operator - Error handling foundation
-❌ Arrays - Essential data structure
-❌ Module system - use/mod/pub not implemented
-❌ Async/await - Not implemented
 ❌ Borrow checker - Not functional
 ❌ Balanced ternary - Not implemented
 ❌ Runtime assembler - Not implemented
 ❌ Advanced math types - Not implemented
 ❌ Threading - Not implemented
 ❌ HTTP - Not implemented
+❌ Async/await - Not fully tested
 
 === RELEASE CRITERIA ===
 
