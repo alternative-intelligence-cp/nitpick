@@ -57,6 +57,25 @@ bool PrimitiveType::isAssignableTo(const Type* target) const {
     }
     
     // ========================================================================
+    // Balanced Ternary & Nonary Type Coercion (Session 15)
+    // ========================================================================
+    // Allow signed integers to be assigned to ternary/nonary types
+    // trit: -1, 0, 1 (balanced ternary digit)
+    // tryte: 10 trits in uint16
+    // nit: -4 to 4 (nonary digit)
+    // nyte: 5 nits in uint16
+    
+    std::string targetName = targetPrim->getName();
+    if (targetName == "trit" || targetName == "tryte" || 
+        targetName == "nit" || targetName == "nyte") {
+        // Allow signed integers to coerce to balanced types
+        if (isSigned && !isFloating && !isTBB) {
+            // Runtime will check range
+            return true;
+        }
+    }
+    
+    // ========================================================================
     // Standard Integer Coercion
     // ========================================================================
     // Numeric widening (int8 -> int32 -> int64)
@@ -502,6 +521,27 @@ TypeSystem::TypeSystem() {
         primitiveCache[name] = type.get();
         types.push_back(std::move(type));
     }
+    
+    // Balanced Ternary types (trit, tryte) and Nonary types (nit, nyte)
+    // trit: Single balanced ternary digit (-1, 0, 1) - 3 states in 2 bits
+    auto tritType = std::make_unique<PrimitiveType>("trit", 2, true, false, false);
+    primitiveCache["trit"] = tritType.get();
+    types.push_back(std::move(tritType));
+    
+    // tryte: 10 trits packed in uint16 (16 bits for 10 ternary digits)
+    auto tryteType = std::make_unique<PrimitiveType>("tryte", 16, false, false, false);
+    primitiveCache["tryte"] = tryteType.get();
+    types.push_back(std::move(tryteType));
+    
+    // nit: Single nonary digit (-4 to 4) - 9 states in 4 bits
+    auto nitType = std::make_unique<PrimitiveType>("nit", 4, true, false, false);
+    primitiveCache["nit"] = nitType.get();
+    types.push_back(std::move(nitType));
+    
+    // nyte: 5 nits packed in uint16 (16 bits for 5 nonary digits)
+    auto nyteType = std::make_unique<PrimitiveType>("nyte", 16, false, false, false);
+    primitiveCache["nyte"] = nyteType.get();
+    types.push_back(std::move(nyteType));
     
     // Other primitives
     auto boolType = std::make_unique<PrimitiveType>("bool", 1, false, false, false);
