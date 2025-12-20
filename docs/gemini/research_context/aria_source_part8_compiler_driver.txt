@@ -1,4 +1,4 @@
-=== ARIA SOURCE PART8 - COMPILER DRIVER ===
+=== ARIA SOURCE PART8 - COMPILER - DRIVER ===
 
 FILE: src/main.cpp
 ================================================================================
@@ -316,9 +316,9 @@ llvm::Module* compile_to_module(
     aria::sema::TypeSystem type_system;
     aria::sema::SymbolTable symbol_table;
     
-    // Create generic resolver and monomorphizer
+    // Create generic resolver and monomorphizer (Session 13: pass TypeSystem for struct specialization)
     aria::sema::GenericResolver generic_resolver;
-    aria::sema::Monomorphizer monomorphizer(&generic_resolver);
+    aria::sema::Monomorphizer monomorphizer(&generic_resolver, &type_system);
     
     // Type checker with generic support
     aria::sema::TypeChecker type_checker(&type_system, &symbol_table, &generic_resolver, &monomorphizer);
@@ -623,3 +623,11 @@ int main(int argc, char** argv) {
 
     return 0;
 }
+
+FILE: include/driver/compiler.h
+================================================================================
+[FILE NOT FOUND]
+
+FILE: src/driver/compiler.cpp
+================================================================================
+[FILE NOT FOUND]

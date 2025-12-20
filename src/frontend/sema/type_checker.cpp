@@ -237,9 +237,13 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         const std::string& rightName = rightPrim->getName();
         
         bool leftIsNumeric = (leftName.find("int") == 0 || leftName.find("uint") == 0 ||
-                             leftName.find("flt") == 0 || leftName.find("tbb") == 0);
+                             leftName.find("flt") == 0 || leftName.find("tbb") == 0 ||
+                             leftName == "trit" || leftName == "tryte" ||
+                             leftName == "nit" || leftName == "nyte");
         bool rightIsNumeric = (rightName.find("int") == 0 || rightName.find("uint") == 0 ||
-                              rightName.find("flt") == 0 || rightName.find("tbb") == 0);
+                              rightName.find("flt") == 0 || rightName.find("tbb") == 0 ||
+                              rightName == "trit" || rightName == "tryte" ||
+                              rightName == "nit" || rightName == "nyte");
         
         if (!leftIsNumeric || !rightIsNumeric) {
             addError("Arithmetic operators require numeric types, got '" + 
@@ -409,7 +413,8 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
         }
         
         const std::string& name = primType->getName();
-        bool isNumeric = (name.find("int") == 0 || name.find("flt") == 0 || name.find("tbb") == 0);
+        bool isNumeric = (name.find("int") == 0 || name.find("flt") == 0 || name.find("tbb") == 0 ||
+                         name == "trit" || name == "tryte" || name == "nit" || name == "nyte");
         
         if (!isNumeric) {
             addError("Unary minus requires numeric type, got '" + name + "'", 0, 0);
@@ -904,17 +909,24 @@ bool TypeChecker::canCoerce(Type* from, Type* to) {
         return false;  // Explicit cast required
     }
     
-    // Balanced ↔ Standard Integer: FORBIDDEN (Phase 3.2.5)
+    // Balanced ↔ Standard Integer: Partially allowed (Session 15)
     // Balanced types (trit, tryte, nit, nyte) use symmetric digit sets
-    // Standard integers use modular arithmetic
-    // Mixing them requires explicit conversion
+    // Allow int → balanced for literals (comparison, assignment)
+    // Forbid balanced → int (would lose semantic meaning)
     bool fromIsBalanced = (fromName == "trit" || fromName == "tryte" || 
                           fromName == "nit" || fromName == "nyte");
     bool toIsBalanced = (toName == "trit" || toName == "tryte" || 
                         toName == "nit" || toName == "nyte");
+    bool fromIsStdInt = (fromName.find("int") == 0 && fromName.find("uint") != 0);
     bool fromIsStdIntOrUint = (fromName.find("int") == 0 || fromName.find("uint") == 0);
     
-    if ((fromIsBalanced && toIsStdInt) || (fromIsStdIntOrUint && toIsBalanced)) {
+    // Allow signed int → balanced (for literals and comparisons)
+    if (fromIsStdInt && toIsBalanced) {
+        return true;  // Runtime will check range
+    }
+    
+    // Forbid balanced → standard int (explicit cast required)
+    if (fromIsBalanced && fromIsStdIntOrUint) {
         return false;  // Explicit cast required
     }
     

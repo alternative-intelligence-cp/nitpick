@@ -414,6 +414,1379 @@ public:
 
 #endif // ARIA_SEMA_TYPE_H
 
+FILE: include/frontend/sema/symbol_table.h
+================================================================================
+#ifndef ARIA_SYMBOL_TABLE_H
+#define ARIA_SYMBOL_TABLE_H
+
+#include <string>
+#include <memory>
+#include <unordered_map>
+#include <vector>
+
+namespace aria {
+
+// Forward declarations from AST
+class FuncDeclStmt;
+
+namespace sema {
+
+// Forward declarations
+class Type;
+class Scope;
+class SymbolTable;
+class ComptimeValue;
+
+// ============================================================================
+// Symbol - Represents a named entity in the program
+// ============================================================================
+// A symbol can be a variable, function, type, or module
+// Each symbol has a name, type, scope, and source location
+
+enum class SymbolKind {
+    VARIABLE,       // Variable declaration
+    FUNCTION,       // Function declaration
+    PARAMETER,      // Function parameter
+    TYPE,           // Type definition (struct, enum, etc.)
+    MODULE,         // Module declaration
+    CONSTANT,       // Compile-time constant
+};
+
+struct Symbol {
+    std::string name;           // Symbol identifier
+    SymbolKind kind;            // What kind of symbol this is
+    Type* type;                 // Type information (owned by TypeSystem)
+    Scope* scope;               // Scope where this symbol is defined
+    int line;                   // Source line number
+    int column;                 // Source column number
+    bool isPublic;              // Visibility (pub keyword)
+    bool isMutable;             // Mutability (const vs mutable)
+    bool isInitialized;         // Has been initialized
+    
+    // CTFE Integration (Task 8: Symbol Table Integration)
+    // These fields support compile-time evaluation:
+    ComptimeValue* comptimeValue;   // For CONSTANT symbols - compile-time value
+    FuncDeclStmt* funcDecl;         // For FUNCTION symbols - AST for CTFE
+    
+    // Constructor
+    Symbol(const std::string& name, SymbolKind kind, Type* type,
+           Scope* scope, int line = 0, int column = 0);
+    
+    // CTFE Helpers
+    void setComptimeValue(ComptimeValue* value);
+    void setFuncDecl(FuncDeclStmt* decl);
+    ComptimeValue* getComptimeValue() const { return comptimeValue; }
+    FuncDeclStmt* getFuncDecl() const { return funcDecl; }
+    bool hasComptimeValue() const { return comptimeValue != nullptr; }
+    bool isCTFEFunction() const { return kind == SymbolKind::FUNCTION && funcDecl != nullptr; }
+    
+    // Helpers
+    std::string toString() const;
+};
+
+// ============================================================================
+// Scope - Represents a lexical scope with symbols
+// ============================================================================
+// Scopes form a tree structure where each scope can have:
+// - Parent scope (enclosing scope)
+// - Child scopes (nested scopes like blocks, functions)
+// - Symbols defined in this scope
+
+enum class ScopeKind {
+    GLOBAL,         // Global/module scope
+    FUNCTION,       // Function scope
+    BLOCK,          // Block scope (if, while, for bodies, etc.)
+    STRUCT,         // Struct/type scope
+    MODULE,         // Module scope
+};
+
+class Scope {
+private:
+    ScopeKind kind;
+    Scope* parent;
+    std::vector<std::unique_ptr<Scope>> children;
+    std::unordered_map<std::string, Symbol*> symbols;
+    std::string name;           // Optional name (for functions, modules)
+    int depth;                  // Nesting depth (0 = global)
+    
+public:
+    // Constructor
+    explicit Scope(ScopeKind kind, Scope* parent = nullptr, 
+                   const std::string& name = "");
+    
+    // Scope management
+    Scope* enterScope(ScopeKind kind, const std::string& name = "");
+    Scope* exitScope();
+    Scope* getParent() const { return parent; }
+    ScopeKind getKind() const { return kind; }
+    int getDepth() const { return depth; }
+    const std::string& getName() const { return name; }
+    
+    // Symbol operations
+    bool define(Symbol* symbol);                    // Add symbol to this scope
+    Symbol* lookup(const std::string& name) const;  // Look up in this scope only
+    Symbol* resolve(const std::string& name) const; // Look up in this and parent scopes
+    bool isInScope(const std::string& name) const;  // Check if name exists in this scope
+    bool isDuplicate(const std::string& name) const;// Check if symbol already defined
+    
+    // Iteration
+    const std::unordered_map<std::string, Symbol*>& getSymbols() const { return symbols; }
+    const std::vector<std::unique_ptr<Scope>>& getChildren() const { return children; }
+    
+    // Debugging
+    std::string toString(int indent = 0) const;
+};
+
+// ============================================================================
+// SymbolTable - Manages the entire symbol table hierarchy
+// ============================================================================
+// The symbol table maintains:
+// - Root scope (global scope)
+// - Current scope (for adding new symbols)
+// - All allocated symbols (for memory management)
+
+class SymbolTable {
+private:
+    std::unique_ptr<Scope> rootScope;
+    Scope* currentScope;
+    std::vector<std::unique_ptr<Symbol>> symbols;  // Owns all symbols
+    
+public:
+    // Constructor
+    SymbolTable();
+    
+    // Scope navigation
+    void enterScope(ScopeKind kind, const std::string& name = "");
+    void exitScope();
+    Scope* getCurrentScope() const { return currentScope; }
+    Scope* getRootScope() const { return rootScope.get(); }
+    
+    // Symbol operations
+    Symbol* defineSymbol(const std::string& name, SymbolKind kind, Type* type,
+                         int line = 0, int column = 0);
+    Symbol* lookupSymbol(const std::string& name) const;      // Current scope only
+    Symbol* resolveSymbol(const std::string& name) const;     // Current + parent scopes
+    bool isDefined(const std::string& name) const;            // Check if already defined
+    
+    // Error handling
+    std::vector<std::string> errors;
+    void error(const std::string& message);
+    bool hasErrors() const { return !errors.empty(); }
+    const std::vector<std::string>& getErrors() const { return errors; }
+    
+    // Debugging
+    std::string toString() const;
+};
+
+} // namespace sema
+} // namespace aria
+
+#endif // ARIA_SYMBOL_TABLE_H
+
+FILE: include/frontend/sema/type_checker.h
+================================================================================
+#ifndef ARIA_SEMA_TYPE_CHECKER_H
+#define ARIA_SEMA_TYPE_CHECKER_H
+
+#include "type.h"
+#include "symbol_table.h"
+#include "generic_resolver.h"
+#include "frontend/ast/ast_node.h"
+#include "frontend/ast/expr.h"
+#include "frontend/ast/stmt.h"
+#include "frontend/token.h"
+#include <string>
+#include <memory>
+
+namespace aria {
+namespace sema {
+
+/**
+ * TypeChecker - Performs type checking and type inference for expressions and statements
+ * 
+ * Phase 3.2.2: Type Checking for Expressions
+ * 
+ * Responsibilities:
+ * - Infer types of expressions (literals, identifiers, binary/unary ops, calls)
+ * - Check type compatibility for operations
+ * - Validate operator types based on research_024 (arithmetic/bitwise) and research_025 (comparison/logical)
+ * - Handle TBB type semantics (sticky errors, sentinel checks)
+ * - Enforce strict boolean logic (no truthiness)
+ * - Manage type coercion rules
+ * 
+ * Key Features:
+ * - Literal type inference: int64, double, string, bool
+ * - Identifier lookup in symbol table for type resolution
+ * - Binary operator type checking with promotion/coercion
+ * - Unary operator type validation
+ * - Function call argument type matching
+ * - TBB ERR propagation checking
+ * - Strict boolean enforcement (no implicit truthiness)
+ */
+class TypeChecker {
+private:
+    TypeSystem* typeSystem;
+    SymbolTable* symbolTable;
+    GenericResolver* genericResolver;
+    Monomorphizer* monomorphizer;
+    std::vector<std::string> errors;  // Accumulated type errors
+    
+    // Current function return type (for return statement checking)
+    Type* currentFunctionReturnType;
+    
+    // Generic struct registry (Session 13)
+    // Maps struct name -> generic struct declaration AST
+    std::unordered_map<std::string, StructDeclStmt*> genericStructRegistry;
+    
+    // ========================================================================
+    // Expression Type Inference
+    // ========================================================================
+    
+    /**
+     * Infer the type of a literal expression
+     * 
+     * Rules:
+     * - Integer literals: int64 (default), can be narrowed with explicit type annotation
+     * - Float literals: double (default for decimal), flt32 if suffixed with 'f'
+     * - String literals: string
+     * - Boolean literals: bool
+     * - Null literals: UnknownType (will be resolved based on context)
+     */
+    Type* inferLiteral(LiteralExpr* expr);
+    
+    /**
+     * Infer the type of an identifier expression
+     * 
+     * Rules:
+     * - Lookup identifier in symbol table
+     * - Return ErrorType if not found (with error message)
+     * - Return symbol's declared type if found
+     */
+    Type* inferIdentifier(IdentifierExpr* expr);
+    
+    /**
+     * Infer the type of a binary operation expression
+     * 
+     * Rules (based on research_024 and research_025):
+     * - Arithmetic operators (+, -, *, /, %):
+     *   * Require numeric types (int*, uint*, flt*, tbb*)
+     *   * Promote operands to common type (widening)
+     *   * TBB types stick to TBB (preserve error semantics)
+     *   * Result type is the promoted type
+     * 
+     * - Bitwise operators (&, |, ^, ~, <<, >>):
+     *   * UNSIGNED MANDATE: Only unsigned types allowed
+     *   * Error if signed or TBB types used
+     *   * Result type is same as operand type
+     * 
+     * - Comparison operators (==, !=, <, <=, >, >=):
+     *   * Require compatible types
+     *   * Result type is always bool
+     *   * TBB comparisons: ERR handling (ERR == ERR is true, ERR < valid is undefined)
+     * 
+     * - Logical operators (&&, ||):
+     *   * Strict boolean requirement (no truthiness)
+     *   * Both operands must be bool
+     *   * Result type is bool
+     * 
+     * - Spaceship operator (<=>):
+     *   * Result type is int (returns -1, 0, or 1)
+     */
+    Type* inferBinaryOp(BinaryExpr* expr);
+    
+    /**
+     * Infer the type of a unary operation expression
+     * 
+     * Rules (based on research_024 and research_026):
+     * - Arithmetic negation (-): numeric types → same type
+     * - Logical NOT (!): bool → bool (strict, no truthiness)
+     * - Bitwise NOT (~): unsigned types → same type
+     * - Address-of (@): T → T@ (pointer type)
+     * - Pin (#): T (GC object) → wild T@ (pinned pointer)
+     * - Borrow/Iterate ($): Array/Iterator → element type
+     * - Unwrap (?): result<T> → T (with default handling)
+     */
+    Type* inferUnaryOp(UnaryExpr* expr);
+    
+    /**
+     * Infer the type of a function call expression
+     * 
+     * Rules:
+     * - Lookup function identifier to get function type
+     * - Check argument count matches parameter count
+     * - Check each argument type is assignable to parameter type
+     * - Return function's return type
+     */
+    Type* inferCallExpr(CallExpr* expr);
+    
+    /**
+     * Infer the type of an array index expression
+     * 
+     * Rules:
+     * - Base must be array type (T[], T[N])
+     * - Index must be integer type
+     * - Result type is element type T
+     */
+    Type* inferIndexExpr(IndexExpr* expr);
+    
+    /**
+     * Infer the type of a member access expression
+     * 
+     * Rules:
+     * - Object must be struct or union type
+     * - Member must exist in the type
+     * - Result type is member's type
+     */
+    Type* inferMemberAccessExpr(MemberAccessExpr* expr);
+    
+    /**
+     * Infer the type of a ternary expression
+     * 
+     * Rules:
+     * - Condition must be bool
+     * - True and false branches must have compatible types
+     * - Result type is common type of branches
+     */
+    Type* inferTernaryExpr(TernaryExpr* expr);
+    
+    /**
+     * Infer the type of an unwrap expression (? operator)
+     * 
+     * Syntax: result ? default_value
+     * 
+     * Rules:
+     * - Result expression and default value must have compatible types
+     * - Returns the common type of result and default value
+     * - Full result type checking will be added when result types are implemented
+     */
+    Type* inferUnwrapExpr(UnwrapExpr* expr);
+    
+    /**
+     * Infer the type of an object literal expression
+     * 
+     * Rules:
+     * - If type_name is set: struct constructor, return struct type
+     * - If type_name is empty: dynamic object, return obj type
+     * - Field values must be compatible with struct field types (if struct)
+     */
+    Type* inferObjectLiteral(ObjectLiteralExpr* expr);
+    
+    /**
+     * Infer the type of an array literal expression
+     * 
+     * Rules:
+     * - Empty array: cannot infer type (error)
+     * - Non-empty: infer from first element
+     * - All elements must have compatible types
+     * - Returns pointer to element type (arrays decay to pointers)
+     */
+    Type* inferArrayLiteral(ArrayLiteralExpr* expr);
+    
+    // ========================================================================
+    // Type Compatibility and Coercion
+    // ========================================================================
+    
+    /**
+     * Find common type for binary operation (type promotion/widening)
+     * 
+     * Rules:
+     * - int8 + int16 → int16 (widening to larger type)
+     * - int32 + flt32 → flt32 (integer to float promotion)
+     * - tbb8 + tbb16 → tbb16 (TBB widening preserves error semantics)
+     * - int32 + tbb32 → ERROR (cannot mix standard and TBB)
+     * - uint8 + int8 → ERROR (no implicit signed/unsigned mixing for safety)
+     */
+    Type* findCommonType(Type* left, Type* right);
+    
+    /**
+     * Check if a type can be implicitly coerced to target type
+     * 
+     * Allowed coercions:
+     * - Numeric widening: int8 → int16 → int32 → int64
+     * - Integer to float: int32 → flt32, int64 → flt64
+     * - TBB widening: tbb8 → tbb16 → tbb32 → tbb64
+     * 
+     * Disallowed coercions:
+     * - Narrowing: int32 → int8 (requires explicit cast)
+     * - Float to int: flt32 → int32 (requires explicit cast)
+     * - Standard ↔ TBB: int32 ↔ tbb32 (requires explicit cast)
+     * - Signed ↔ Unsigned: int32 ↔ uint32 (requires explicit cast for safety)
+     */
+    bool canCoerce(Type* from, Type* to);
+    
+    /**
+     * Check if binary operator is valid for given operand types
+     * 
+     * Returns: Result type if valid, ErrorType otherwise
+     */
+    Type* checkBinaryOperator(frontend::TokenType op, Type* leftType, Type* rightType);
+    
+    /**
+     * Check if unary operator is valid for given operand type
+     * 
+     * Returns: Result type if valid, ErrorType otherwise
+     */
+    Type* checkUnaryOperator(frontend::TokenType op, Type* operandType);
+    
+    // ========================================================================
+    // TBB Type Validation (Phase 3.2.4)
+    // ========================================================================
+    
+    /**
+     * Check if a type is a TBB (Twisted Balanced Binary) type
+     * 
+     * TBB types: tbb8, tbb16, tbb32, tbb64
+     */
+    bool isTBBType(Type* type);
+    
+    /**
+     * Get the ERR sentinel value for a TBB type
+     * 
+     * Returns:
+     * - tbb8:  -128 (0x80)
+     * - tbb16: -32768 (0x8000)
+     * - tbb32: -2147483648 (0x80000000)
+     * - tbb64: -9223372036854775808 (0x8000000000000000)
+     */
+    int64_t getTBBErrorSentinel(Type* type);
+    
+    /**
+     * Get the valid range for a TBB type (excluding ERR sentinel)
+     * 
+     * Returns pair of (min, max):
+     * - tbb8:  [-127, +127]
+     * - tbb16: [-32767, +32767]
+     * - tbb32: [-2147483647, +2147483647]
+     * - tbb64: [-9223372036854775807, +9223372036854775807]
+     */
+    std::pair<int64_t, int64_t> getTBBValidRange(Type* type);
+    
+    /**
+     * Validate that a literal value is not the ERR sentinel for a TBB type
+     * 
+     * Rules:
+     * - Assigning ERR sentinel directly should produce a warning
+     * - Use ERR keyword literal instead for clarity
+     */
+    void checkTBBLiteralValue(int64_t value, Type* type, ASTNode* node);
+    
+    /**
+     * Check if operation produces ERR (sticky error propagation)
+     * 
+     * Rules:
+     * - ERR + anything = ERR
+     * - ERR * anything = ERR
+     * - ERR in any arithmetic operation produces ERR
+     * - Overflow in TBB operations produces ERR
+     */
+    bool isERRProducingOperation(Type* resultType, Type* leftType, Type* rightType);
+    
+    // ========================================================================
+    // Balanced Ternary/Nonary Type Validation (Phase 3.2.5)
+    // ========================================================================
+    
+    /**
+     * Check if a type is a balanced ternary/nonary type
+     * 
+     * Balanced types: trit, tryte, nit, nyte
+     */
+    bool isBalancedType(Type* type);
+    
+    /**
+     * Check if a type is trit (balanced ternary digit)
+     * 
+     * trit: single balanced ternary digit {-1, 0, 1}
+     */
+    bool isTritType(Type* type);
+    
+    /**
+     * Check if a type is tryte (10 trits)
+     * 
+     * tryte: 10 trits stored in uint16
+     * Range: [-29524, +29524] (59,049 values)
+     */
+    bool isTryteType(Type* type);
+    
+    /**
+     * Check if a type is nit (balanced nonary digit)
+     * 
+     * nit: single balanced nonary digit {-4, -3, -2, -1, 0, 1, 2, 3, 4}
+     */
+    bool isNitType(Type* type);
+    
+    /**
+     * Check if a type is nyte (5 nits)
+     * 
+     * nyte: 5 nits stored in uint16
+     * Range: [-29524, +29524] (59,049 values)
+     */
+    bool isNyteType(Type* type);
+    
+    /**
+     * Get valid digit values for balanced atomic types
+     * 
+     * Returns:
+     * - trit: {-1, 0, 1}
+     * - nit: {-4, -3, -2, -1, 0, 1, 2, 3, 4}
+     * - tryte/nyte: empty (composite types, not digit validation)
+     */
+    std::vector<int> getBalancedValidDigits(Type* type);
+    
+    /**
+     * Get valid range for balanced composite types
+     * 
+     * Returns pair of (min, max):
+     * - tryte: [-29524, +29524]
+     * - nyte: [-29524, +29524]
+     * - trit/nit: N/A (use getBalancedValidDigits instead)
+     */
+    std::pair<int64_t, int64_t> getBalancedCompositeRange(Type* type);
+    
+    /**
+     * Validate that a literal value is valid for a balanced type
+     * 
+     * Rules:
+     * - trit: must be exactly -1, 0, or 1
+     * - nit: must be -4, -3, -2, -1, 0, 1, 2, 3, or 4
+     * - tryte: composite type, range checked at runtime
+     * - nyte: composite type, range checked at runtime
+     */
+    void checkBalancedLiteralValue(int64_t value, Type* type, ASTNode* node);
+    
+    // ========================================================================    // Standard Integer Type Validation
+    // ========================================================================
+    
+    /**
+     * Check if a type is a standard integer type (int8, int16, int32, int64, uint8, uint16, uint32, uint64)
+     */
+    bool isStandardIntType(Type* type) const;
+    
+    /**
+     * Check if an int64_t literal value fits in the target integer type (silent check, no errors)
+     * 
+     * This is used for context-aware literal typing in binary expressions.
+     * For example, in "x + 10" where x is int32, we check if 10 fits in int32
+     * to avoid unnecessary widening to int64.
+     * 
+     * Returns: true if the literal fits, false otherwise (no error reporting)
+     */
+    bool literalFitsInType(int64_t value, Type* type) const;
+    
+    /**
+     * Check if an int64_t literal value can fit in the target integer type (with error reporting)
+     * 
+     * This enables safe narrowing conversions at compile time.
+     * For example, the literal 42 (int64_t) can be assigned to int32, int16, or int8
+     * because 42 fits within their ranges.
+     * 
+     * Rules:
+     * - int8: range [-128, 127]
+     * - int16: range [-32768, 32767]
+     * - int32: range [-2147483648, 2147483647]
+     * - int64: always fits (same type)
+     * - uint8: range [0, 255]
+     * - uint16: range [0, 65535]
+     * - uint32: range [0, 4294967295]
+     * - uint64: non-negative values always fit
+     * 
+     * Returns: true if the literal fits, false otherwise (and reports error)
+     */
+    bool canLiteralFitInIntType(int64_t value, Type* type, ASTNode* node);
+    
+    // ========================================================================    // Error Handling
+    // ========================================================================
+    
+    void addError(const std::string& message, int line, int column);
+    void addError(const std::string& message, ASTNode* node);
+    
+public:
+    TypeChecker(TypeSystem* typeSystem, SymbolTable* symbolTable,
+                GenericResolver* resolver = nullptr, Monomorphizer* morpher = nullptr)
+        : typeSystem(typeSystem), symbolTable(symbolTable),
+          genericResolver(resolver), monomorphizer(morpher),
+          currentFunctionReturnType(nullptr) {}
+    
+    /**
+     * Main entry point: Type check entire module AST
+     * 
+     * Walks the AST recursively, performing:
+     * - Type inference on all expressions
+     * - Type checking on all statements
+     * - Generic function specialization detection
+     * - Symbol table population
+     * 
+     * This method triggers the entire type checking pipeline.
+     */
+    void check(ASTNode* module);
+    
+    /**
+     * Infer the type of an expression
+     * 
+     * This is the main entry point for type inference.
+     * Dispatches to specific inference methods based on node type.
+     * 
+     * Returns: The inferred type, or ErrorType if type checking fails
+     */
+    Type* inferType(ASTNode* expr);
+    
+    /**
+     * Check type compatibility for statements (Phase 3.2.3)
+     * 
+     * Main entry point for statement type checking.
+     * Dispatches to specific checking methods based on statement type.
+     * Validates type safety for all statement constructs.
+     */
+    void checkStatement(ASTNode* stmt);
+    
+    // ========================================================================
+    // Type Resolution
+    // ========================================================================
+    
+    /**
+     * Resolve a Type from an AST type node
+     * 
+     * Rules:
+     * - TYPE_ANNOTATION: Simple type (int32, string, etc.)
+     * - ARRAY_TYPE: Array type (int32[], int32[10], etc.)
+     * - POINTER_TYPE: Pointer type (int32@, string@, etc.)
+     * - Returns ERROR type if resolution fails
+     */
+    Type* resolveTypeNode(ASTNode* typeNode);
+    
+    // ========================================================================
+    // Statement Type Checking
+    // ========================================================================
+    
+    /**
+     * Check variable declaration statement
+     * 
+     * Rules:
+     * - If initializer exists, its type must be assignable to declared type
+     * - const variables must have initializer
+     * - Declared type must exist in type system
+     */
+    void checkVarDecl(VarDeclStmt* stmt);
+    
+    /**
+     * Check function declaration statement
+     * 
+     * Rules:
+     * - Return type must exist in type system
+     * - All parameter types must exist in type system
+     * - Function body statements are type-checked
+     * - Generic function calls in body trigger specialization
+     */
+    void checkFuncDecl(FuncDeclStmt* stmt);
+    
+    /**
+     * Check struct declaration statement
+     * 
+     * Rules:
+     * - Struct name must be unique (not already defined)
+     * - All field types must exist in type system
+     * - Register struct type in type system
+     */
+    void checkStructDecl(StructDeclStmt* stmt);
+    
+    /**
+     * Check assignment expression
+     * 
+     * Rules:
+     * - Left side must be assignable (identifier, index, member access)
+     * - Right side type must be assignable to left side type
+     * - Cannot assign to const variables
+     */
+    void checkAssignment(BinaryExpr* expr);
+    
+    /**
+     * Check return statement
+     * 
+     * Rules:
+     * - Return type must match current function's return type
+     * - Void functions cannot return values
+     * - Non-void functions must return values
+     */
+    void checkReturnStmt(ReturnStmt* stmt);
+    
+    /**
+     * Check pass statement (result success)
+     * 
+     * Rules:
+     * - Pass value type must match function return type
+     * - Cannot be used in void functions
+     */
+    void checkPassStmt(PassStmt* stmt);
+    
+    /**
+     * Check fail statement (result error)
+     * 
+     * Rules:
+     * - Error code must be integer type
+     */
+    void checkFailStmt(FailStmt* stmt);
+    
+    /**
+     * Check if statement
+     * 
+     * Rules:
+     * - Condition must be bool type
+     * - No truthiness allowed (must use explicit comparison)
+     */
+    void checkIfStmt(IfStmt* stmt);
+    
+    /**
+     * Check while statement
+     * 
+     * Rules:
+     * - Condition must be bool type
+     * - No truthiness allowed
+     */
+    void checkWhileStmt(WhileStmt* stmt);
+    
+    /**
+     * Check for statement
+     * 
+     * Rules:
+     * - Condition (if present) must be bool type
+     * - Initializer and update can be any expression
+     */
+    void checkForStmt(ForStmt* stmt);
+    
+    /**
+     * Check till statement
+     * 
+     * Rules:
+     * - Limit must be integer type
+     * - Step must be integer type
+     * - $ variable is automatically available as iteration value
+     */
+    void checkTillStmt(TillStmt* stmt);
+    
+    /**
+     * Check loop statement
+     * 
+     * Rules:
+     * - Start must be integer type
+     * - Limit must be integer type
+     * - Step must be integer type
+     * - $ variable is automatically available as iteration value
+     */
+    void checkLoopStmt(LoopStmt* stmt);
+    
+    /**
+     * Check when statement (tri-state loop)
+     * 
+     * Rules:
+     * - Condition must be bool type
+     * - then block executes on normal completion
+     * - end block executes on break or initial false
+     */
+    void checkWhenStmt(WhenStmt* stmt);
+    
+    /**
+     * Check block statement (recursively check all statements)
+     */
+    void checkBlockStmt(BlockStmt* stmt);
+    
+    /**
+     * Check expression statement (just infer its type)
+     */
+    void checkExpressionStmt(ExpressionStmt* stmt);
+    
+    /**
+     * Check use statement (module import)
+     * Validates import path structure and format
+     */
+    void checkUseStmt(UseStmt* stmt);
+    
+    /**
+     * Check mod statement (module declaration)
+     * Validates module name and recursively checks inline module bodies
+     */
+    void checkModStmt(ModStmt* stmt);
+    
+    /**
+     * Get accumulated type errors
+     */
+    const std::vector<std::string>& getErrors() const { return errors; }
+    
+    /**
+     * Check if type checking has errors
+     */
+    bool hasErrors() const { return !errors.empty(); }
+    
+    /**
+     * Clear accumulated errors
+     */
+    void clearErrors() { errors.clear(); }
+    
+    /**
+     * Set current function return type (for return statement checking)
+     */
+    void setCurrentFunctionReturnType(Type* type) { currentFunctionReturnType = type; }
+};
+
+} // namespace sema
+} // namespace aria
+
+#endif // ARIA_SEMA_TYPE_CHECKER_H
+
+FILE: include/frontend/sema/module_table.h
+================================================================================
+#ifndef ARIA_FRONTEND_SEMA_MODULE_TABLE_H
+#define ARIA_FRONTEND_SEMA_MODULE_TABLE_H
+
+#include "frontend/sema/symbol_table.h"
+#include <string>
+#include <memory>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+namespace aria {
+namespace sema {
+
+// Forward declarations
+class ModuleTable;
+class Module;
+
+/**
+ * Visibility levels for exported symbols
+ * Based on research_028 Section 5.1
+ */
+enum class Visibility {
+    PRIVATE,       // Default - visible only within module
+    PUBLIC,        // pub - visible to all importers
+    PACKAGE,       // pub(package) - visible within same compilation unit
+    SUPER          // pub(super) - visible to parent module
+};
+
+/**
+ * Represents an import declaration (use statement)
+ * Based on research_028 Section 3
+ */
+struct Import {
+    std::string path;           // Import path (e.g., "std.io" or "./file.aria")
+    std::string alias;          // Alias if using 'as' keyword (empty if none)
+    bool isWildcard;            // True if using '*' wildcard
+    std::vector<std::string> selectiveItems;  // Items imported with {item1, item2}
+    int line;                   // Source location
+    int column;
+    
+    Import(const std::string& path, int line, int column)
+        : path(path), alias(""), isWildcard(false), line(line), column(column) {}
+};
+
+/**
+ * Represents a module in the program
+ * Based on research_028 Section 4
+ * 
+ * Each module has:
+ * - A unique name and path
+ * - Its own symbol table for local symbols
+ * - Public exports (symbols visible to importers)
+ * - Import declarations
+ * - Parent/child relationships for submodules
+ */
+class Module {
+public:
+    Module(const std::string& name, const std::string& path, Module* parent = nullptr);
+    
+    // Module identification
+    const std::string& getName() const { return name; }
+    const std::string& getPath() const { return path; }
+    std::string getFullPath() const;  // Returns hierarchical path (e.g., "std.io.file")
+    
+    // Parent/child relationships
+    Module* getParent() const { return parent; }
+    void addSubmodule(std::unique_ptr<Module> submodule);
+    Module* getSubmodule(const std::string& name) const;
+    const std::vector<std::unique_ptr<Module>>& getSubmodules() const { return submodules; }
+    
+    // Symbol table access
+    SymbolTable* getSymbolTable() { return &symbolTable; }
+    const SymbolTable* getSymbolTable() const { return &symbolTable; }
+    
+    // Import management
+    void addImport(const Import& import);
+    const std::vector<Import>& getImports() const { return imports; }
+    
+    // Export management (pub symbols)
+    void exportSymbol(const std::string& name, Symbol* symbol, Visibility visibility = Visibility::PUBLIC);
+    Symbol* lookupExport(const std::string& name) const;
+    bool isExported(const std::string& name) const;
+    Visibility getExportVisibility(const std::string& name) const;
+    
+    // Re-export support (pub use pattern from research_028 Section 5.2)
+    void reexportSymbol(const std::string& name, Symbol* symbol, Visibility visibility = Visibility::PUBLIC);
+    
+    // Module state
+    bool isFullyResolved() const { return fullyResolved; }
+    void markResolved() { fullyResolved = true; }
+    
+    std::string toString(int indent = 0) const;
+    
+private:
+    std::string name;           // Module name (e.g., "io")
+    std::string path;           // File system path
+    Module* parent;             // Parent module (nullptr for root)
+    
+    std::vector<std::unique_ptr<Module>> submodules;  // Child modules
+    SymbolTable symbolTable;    // Local symbol table
+    std::vector<Import> imports;  // Import declarations
+    
+    // Exported symbols with visibility
+    struct ExportEntry {
+        Symbol* symbol;
+        Visibility visibility;
+        bool isReexport;  // True if this is a pub use re-export
+    };
+    std::unordered_map<std::string, ExportEntry> exports;
+    
+    bool fullyResolved;  // True when all imports are resolved
+};
+
+/**
+ * Module Table - manages all modules in the program
+ * Based on research_028 Section 7
+ * 
+ * Responsibilities:
+ * - Module registration and lookup
+ * - Import resolution
+ * - Circular dependency detection
+ * - Visibility enforcement
+ */
+class ModuleTable {
+public:
+    ModuleTable();
+    
+    // Module management
+    Module* createModule(const std::string& name, const std::string& path, Module* parent = nullptr);
+    Module* getModule(const std::string& fullPath) const;
+    Module* getRootModule() const { return rootModule.get(); }
+    
+    // Import resolution (research_028 Section 3.2)
+    Module* resolveImport(const std::string& importPath, Module* fromModule);
+    Symbol* resolveImportedSymbol(const std::string& symbolName, Module* fromModule);
+    
+    // Visibility checking (research_028 Section 5.3)
+    bool canAccess(Symbol* symbol, Module* fromModule) const;
+    
+    // Circular dependency detection (research_028 Section 3.3)
+    bool hasCircularDependency(Module* module);
+    
+    // Error handling
+    bool hasErrors() const { return !errors.empty(); }
+    const std::vector<std::string>& getErrors() const { return errors; }
+    void clearErrors() { errors.clear(); }
+    
+    std::string toString() const;
+    
+private:
+    std::unique_ptr<Module> rootModule;  // Root module (global scope)
+    std::unordered_map<std::string, Module*> moduleRegistry;  // Fast lookup by full path
+    std::vector<std::string> errors;
+    
+    // Circular dependency detection state
+    std::unordered_set<Module*> visitedModules;
+    std::unordered_set<Module*> recursionStack;
+    
+    void error(const std::string& message);
+    bool checkCircularDependencyRecursive(Module* module);
+};
+
+} // namespace sema
+} // namespace aria
+
+#endif // ARIA_FRONTEND_SEMA_MODULE_TABLE_H
+
+FILE: include/frontend/sema/generic_resolver.h
+================================================================================
+#ifndef ARIA_GENERIC_RESOLVER_H
+#define ARIA_GENERIC_RESOLVER_H
+
+#include "frontend/ast/ast_node.h"
+#include "frontend/ast/stmt.h"
+#include "frontend/ast/expr.h"
+#include "frontend/sema/type.h"
+#include "frontend/sema/symbol_table.h"
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <unordered_set>
+#include <memory>
+
+// Forward declarations
+namespace aria {
+    struct GenericParamInfo;  // Defined in frontend/ast/stmt.h
+}
+
+namespace aria {
+namespace sema {
+
+// ============================================================================
+// Generic Type System
+// ============================================================================
+// This module implements Aria's zero-cost generic system via monomorphization.
+// Based on research_027_generics_templates.txt
+//
+// Key Features:
+// - Compile-time monomorphization (like C++/Rust templates)
+// - Lazy instantiation on demand
+// - Bidirectional type inference
+// - Trait-based constraints
+// - Deep integration with TBB types and hybrid memory model
+//
+// Syntax: func<T, U>:name = *T(*U:param) { ... }
+// - <T, U> declares type parameters
+// - *T, *U references them in body (explicit sigil)
+// ============================================================================
+
+/**
+ * Represents a single generic type parameter
+ */
+struct GenericParam {
+    std::string name;                    // e.g., "T"
+    std::vector<std::string> constraints; // Trait bounds: "T: Addable & Display"
+    int line;
+    int column;
+    
+    GenericParam(const std::string& n, int l = 0, int c = 0)
+        : name(n), line(l), column(c) {}
+    
+    bool hasConstraints() const { return !constraints.empty(); }
+};
+
+/**
+ * Represents a type argument provided at a call site
+ */
+struct TypeArg {
+    Type* type;            // The concrete type
+    std::string source;    // "inferred" or "explicit"
+    int line;
+    int column;
+    
+    TypeArg(Type* t, const std::string& src = "inferred", int l = 0, int c = 0)
+        : type(t), source(src), line(l), column(c) {}
+};
+
+/**
+ * Represents a mapping from type parameters to concrete types
+ * Example: {T -> int32, U -> string}
+ */
+using TypeSubstitution = std::unordered_map<std::string, Type*>;
+
+/**
+ * Cache key for specialized functions
+ * Format: (function_name, [type1, type2, ...])
+ */
+struct SpecializationKey {
+    std::string funcName;
+    std::vector<std::string> typeNames;  // Canonical type names
+    
+    bool operator==(const SpecializationKey& other) const {
+        return funcName == other.funcName && typeNames == other.typeNames;
+    }
+};
+
+// Hash function for SpecializationKey
+struct SpecializationKeyHash {
+    std::size_t operator()(const SpecializationKey& key) const {
+        std::size_t h = std::hash<std::string>{}(key.funcName);
+        for (const auto& typeName : key.typeNames) {
+            h ^= std::hash<std::string>{}(typeName) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        }
+        return h;
+    }
+};
+
+/**
+ * Stores a specialized (monomorphized) version of a generic function
+ */
+struct Specialization {
+    FuncDeclStmt* funcDecl;        // The specialized AST
+    std::string mangledName;       // Unique symbol name
+    TypeSubstitution substitution; // Type parameter bindings
+    bool analyzed;                 // Has type checking been performed?
+    
+    Specialization(FuncDeclStmt* decl, const std::string& name,
+                   const TypeSubstitution& sub)
+        : funcDecl(decl), mangledName(name), substitution(sub), analyzed(false) {}
+};
+
+/**
+ * Error reported during generic resolution
+ */
+struct GenericError {
+    int line;
+    int column;
+    std::string message;
+    std::string context;  // Additional context information
+    
+    GenericError(const std::string& msg, int l = 0, int c = 0,
+                 const std::string& ctx = "")
+        : line(l), column(c), message(msg), context(ctx) {}
+};
+
+// ============================================================================
+// GenericResolver: Type Inference and Validation
+// ============================================================================
+
+class GenericResolver {
+public:
+    GenericResolver();
+    ~GenericResolver() = default;
+    
+    // ========================================================================
+    // Type Inference (Phase 3.4.1)
+    // ========================================================================
+    
+    /**
+     * Infer type arguments from a function call
+     * 
+     * Uses bidirectional type inference:
+     * 1. Generate constraints from arguments
+     * 2. Unify to solve for type parameters
+     * 3. Validate and return substitution
+     * 
+     * @param funcDecl The generic function being called
+     * @param callExpr The call expression
+     * @param argTypes The types of the arguments
+     * @return TypeSubstitution mapping type params to concrete types
+     */
+    TypeSubstitution inferTypeArgs(FuncDeclStmt* funcDecl,
+                                   CallExpr* callExpr,
+                                   const std::vector<Type*>& argTypes);
+    
+    /**
+     * Explicitly resolve type arguments from turbofish syntax
+     * Example: identity::<int32>(42)
+     * 
+     * @param funcDecl The generic function
+     * @param typeArgs The explicit type arguments
+     * @return TypeSubstitution
+     */
+    TypeSubstitution resolveExplicitTypeArgs(FuncDeclStmt* funcDecl,
+                                            const std::vector<std::string>& typeArgs);
+    
+    /**
+     * Validate that a type substitution is complete and valid
+     * 
+     * @param funcDecl The generic function
+     * @param substitution The type parameter bindings
+     * @return true if valid
+     */
+    bool validateSubstitution(FuncDeclStmt* funcDecl,
+                             const TypeSubstitution& substitution);
+    
+    // ========================================================================
+    // Constraint Checking (Phase 3.4.3)
+    // ========================================================================
+    
+    /**
+     * Check that a concrete type satisfies the constraints on a type parameter
+     * 
+     * Example: If T: Addable, verify that int32 implements Addable
+     * 
+     * @param param The generic parameter with constraints
+     * @param concreteType The type being checked
+     * @return true if all constraints satisfied
+     */
+    bool checkConstraints(const GenericParamInfo& param, Type* concreteType);
+    
+    /**
+     * Validate that all type parameters' constraints are satisfied
+     * 
+     * @param genericParams The list of parameters with constraints
+     * @param substitution The concrete type bindings
+     * @return true if all constraints satisfied
+     */
+    bool validateConstraints(const std::vector<GenericParamInfo>& genericParams,
+                            const TypeSubstitution& substitution);
+    
+    // ========================================================================
+    // Utilities
+    // ========================================================================
+    
+    /**
+     * Canonicalize a type name for cache key generation
+     * Resolves aliases: type MyInt = int32 -> "int32"
+     */
+    std::string canonicalizeTypeName(Type* type) const;
+    
+    /**
+     * Create a specialization key for caching
+     */
+    SpecializationKey makeSpecializationKey(const std::string& funcName,
+                                           const TypeSubstitution& substitution) const;
+    
+    // Error handling
+    bool hasErrors() const { return !errors.empty(); }
+    const std::vector<GenericError>& getErrors() const { return errors; }
+    void clearErrors() { errors.clear(); }
+    
+private:
+    std::vector<GenericError> errors;
+    
+    // Helper: Add an error
+    void addError(const std::string& message, int line = 0, int column = 0,
+                  const std::string& context = "");
+    
+    // Helper: Unify two types during inference
+    bool unifyTypes(Type* expected, Type* actual,
+                   TypeSubstitution& substitution,
+                   const std::string& paramName);
+    
+    // Helper: Check if a type implements a trait
+    bool implementsTrait(Type* type, const std::string& traitName);
+};
+
+// ============================================================================
+// Monomorphizer: Specialization Engine (Phase 3.4.2)
+// ============================================================================
+
+class Monomorphizer {
+public:
+    Monomorphizer(GenericResolver* resolver, TypeSystem* ts = nullptr);
+    ~Monomorphizer() = default;
+    
+    // Set TypeSystem (needed for struct registration)
+    void setTypeSystem(TypeSystem* ts) { typeSystem = ts; }
+    
+    /**
+     * Request a specialized version of a generic function
+     * 
+     * This is the main entry point for the monomorphization engine:
+     * 1. Check cache for existing specialization
+     * 2. If not found, create new specialized copy
+     * 3. Perform type substitution on the cloned AST
+     * 4. Return the specialized function
+     * 
+     * @param funcDecl The generic function template
+     * @param substitution Type parameter bindings
+     * @return Specialized function (cached or newly created)
+     */
+    Specialization* requestSpecialization(FuncDeclStmt* funcDecl,
+                                         const TypeSubstitution& substitution);
+    
+    /**
+     * Request a specialized version of a generic struct (Session 13)
+     * 
+     * Similar to function specialization, but for structs:
+     * 1. Check cache for existing struct specialization
+     * 2. If not found, clone the generic struct AST
+     * 3. Substitute type parameters (*T) with concrete types
+     * 4. Register specialized struct with TypeSystem
+     * 5. Return the specialized struct name
+     * 
+     * @param structDecl The generic struct template
+     * @param substitution Type parameter bindings (T -> int64, etc.)
+     * @return Mangled name of specialized struct, or empty string on error
+     */
+    std::string requestStructSpecialization(StructDeclStmt* structDecl,
+                                           const TypeSubstitution& substitution);
+    
+    /**
+     * Generate a mangled name for a specialized function
+     * 
+     * Format: _Aria_M_<FuncName>_<TypeHash>_<TypeDesc>
+     * Example: _Aria_M_identity_F4A19C88_int32
+     * 
+     * @param funcName The base function name
+     * @param substitution The type bindings
+     * @return Mangled symbol name
+     */
+    std::string mangleName(const std::string& funcName,
+                          const TypeSubstitution& substitution) const;
+    
+    /**
+     * Clone a generic function AST and substitute types
+     * 
+     * Creates a deep copy of the AST, replacing all *T references
+     * with the concrete type from the substitution
+     * 
+     * @param funcDecl The generic function to clone
+     * @param substitution Type parameter bindings
+     * @return New specialized FuncDeclStmt
+     */
+    FuncDeclStmt* cloneAndSubstitute(FuncDeclStmt* funcDecl,
+                                     const TypeSubstitution& substitution);
+    
+    /**
+     * Clone a generic struct AST and substitute types (Session 13)
+     * 
+     * Creates a deep copy of the struct, replacing all *T references
+     * in field types with concrete types from the substitution
+     * 
+     * @param structDecl The generic struct to clone
+     * @param substitution Type parameter bindings
+     * @return New specialized StructDeclStmt
+     */
+    StructDeclStmt* cloneStructAndSubstitute(StructDeclStmt* structDecl,
+                                            const TypeSubstitution& substitution);
+    
+    /**
+     * Get all specializations created so far
+     * Used for code generation phase
+     */
+    const std::vector<Specialization*>& getSpecializations() const {
+        return specializations;
+    }
+    
+    /**
+     * Check if instantiation depth limit exceeded
+     * Prevents infinite recursive instantiation
+     */
+    bool checkDepthLimit() const;
+    
+    /**
+     * Get current instantiation stack depth (for testing)
+     */
+    size_t getInstantiationDepth() const {
+        return instantiationStack.size();
+    }
+    
+    // Error handling
+    bool hasErrors() const { return !errors.empty(); }
+    const std::vector<GenericError>& getErrors() const { return errors; }
+    
+    // Public for testing: Deep clone an AST node
+    ASTNodePtr cloneAST(ASTNode* node);
+    
+    // Public for testing: Substitute types in an AST node
+    void substituteTypes(ASTNode* node, const TypeSubstitution& substitution);
+    
+private:
+    GenericResolver* resolver;
+    TypeSystem* typeSystem;
+    
+    // Cache: (function_name, type_args) -> Specialization
+    std::unordered_map<SpecializationKey, Specialization*,
+                       SpecializationKeyHash> specializationCache;
+    
+    // All specializations created (for code generation)
+    std::vector<Specialization*> specializations;
+    
+    // Instantiation stack (for cycle detection)
+    std::vector<SpecializationKey> instantiationStack;
+    
+    // Errors
+    std::vector<GenericError> errors;
+    
+    // Configuration
+    static const int MAX_INSTANTIATION_DEPTH = 64;
+    
+    // Helper: Add an error
+    void addError(const std::string& message, int line = 0, int column = 0);
+    
+    // Helper: Compute hash for mangling
+    uint64_t computeTypeHash(const TypeSubstitution& substitution) const;
+};
+
+} // namespace sema
+} // namespace aria
+
+#endif // ARIA_GENERIC_RESOLVER_H
 
 FILE: src/frontend/sema/type.cpp
 ================================================================================
@@ -445,11 +1818,79 @@ bool PrimitiveType::isAssignableTo(const Type* target) const {
         return true;
     }
     
-    // TODO Phase 3.2.2: Implement type coercion rules
-    // - Numeric widening (int8 -> int32, int32 -> int64)
-    // - Float coercion (flt32 -> flt64)
-    // - Integer to float (int32 -> flt32)
-    // For now, require exact match
+    // Only allow coercion between primitive types
+    if (target->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    const PrimitiveType* targetPrim = static_cast<const PrimitiveType*>(target);
+    
+    // ========================================================================
+    // TBB Type Coercion (Session 14)
+    // ========================================================================
+    // Allow signed integers to be assigned to TBB types of same or larger width
+    // This enables: tbb8:x = 100 (where 100 is int64)
+    // Runtime will validate range and convert to ERR on overflow
+    
+    if (targetPrim->isTBBType()) {
+        // Allow signed integers to coerce to TBB
+        if (isSigned && !isFloating && !isTBB) {
+            // int64 -> tbb8, tbb16, tbb32, tbb64 all allowed
+            // int32 -> tbb32, tbb64 allowed
+            // int8 -> tbb8, tbb16, tbb32, tbb64 allowed
+            // Runtime will check range and set ERR on overflow
+            return bitWidth <= targetPrim->getBitWidth();
+        }
+        
+        // Allow other TBB types to assign (for intermediate calculations)
+        if (isTBB) {
+            return bitWidth <= targetPrim->getBitWidth();
+        }
+    }
+    
+    // ========================================================================
+    // Balanced Ternary & Nonary Type Coercion (Session 15)
+    // ========================================================================
+    // Allow signed integers to be assigned to ternary/nonary types
+    // trit: -1, 0, 1 (balanced ternary digit)
+    // tryte: 10 trits in uint16
+    // nit: -4 to 4 (nonary digit)
+    // nyte: 5 nits in uint16
+    
+    std::string targetName = targetPrim->getName();
+    if (targetName == "trit" || targetName == "tryte" || 
+        targetName == "nit" || targetName == "nyte") {
+        // Allow signed integers to coerce to balanced types
+        if (isSigned && !isFloating && !isTBB) {
+            // Runtime will check range
+            return true;
+        }
+    }
+    
+    // ========================================================================
+    // Standard Integer Coercion
+    // ========================================================================
+    // Numeric widening (int8 -> int32 -> int64)
+    if (!isFloating && !targetPrim->isFloatingType()) {
+        // Both are integers
+        if (isSigned == targetPrim->isSignedType() && !isTBB && !targetPrim->isTBBType()) {
+            // Same signedness, allow widening
+            return bitWidth <= targetPrim->getBitWidth();
+        }
+    }
+    
+    // ========================================================================
+    // Float Coercion
+    // ========================================================================
+    // Float widening (flt32 -> flt64)
+    if (isFloating && targetPrim->isFloatingType()) {
+        return bitWidth <= targetPrim->getBitWidth();
+    }
+    
+    // Integer to float (int32 -> flt32, int64 -> flt64)
+    if (!isFloating && targetPrim->isFloatingType() && !isTBB) {
+        return true;  // Allow any integer to float (may lose precision)
+    }
     
     return false;
 }
@@ -873,6 +2314,27 @@ TypeSystem::TypeSystem() {
         types.push_back(std::move(type));
     }
     
+    // Balanced Ternary types (trit, tryte) and Nonary types (nit, nyte)
+    // trit: Single balanced ternary digit (-1, 0, 1) - 3 states in 2 bits
+    auto tritType = std::make_unique<PrimitiveType>("trit", 2, true, false, false);
+    primitiveCache["trit"] = tritType.get();
+    types.push_back(std::move(tritType));
+    
+    // tryte: 10 trits packed in uint16 (16 bits for 10 ternary digits)
+    auto tryteType = std::make_unique<PrimitiveType>("tryte", 16, false, false, false);
+    primitiveCache["tryte"] = tryteType.get();
+    types.push_back(std::move(tryteType));
+    
+    // nit: Single nonary digit (-4 to 4) - 9 states in 4 bits
+    auto nitType = std::make_unique<PrimitiveType>("nit", 4, true, false, false);
+    primitiveCache["nit"] = nitType.get();
+    types.push_back(std::move(nitType));
+    
+    // nyte: 5 nits packed in uint16 (16 bits for 5 nonary digits)
+    auto nyteType = std::make_unique<PrimitiveType>("nyte", 16, false, false, false);
+    primitiveCache["nyte"] = nyteType.get();
+    types.push_back(std::move(nyteType));
+    
     // Other primitives
     auto boolType = std::make_unique<PrimitiveType>("bool", 1, false, false, false);
     primitiveCache["bool"] = boolType.get();
@@ -1031,549 +2493,212 @@ GenericType* TypeSystem::getGenericType(const std::string& name) {
 } // namespace sema
 } // namespace aria
 
-
-FILE: include/frontend/sema/type_checker.h
+FILE: src/frontend/sema/symbol_table.cpp
 ================================================================================
-#ifndef ARIA_SEMA_TYPE_CHECKER_H
-#define ARIA_SEMA_TYPE_CHECKER_H
-
-#include "type.h"
-#include "symbol_table.h"
-#include "generic_resolver.h"
-#include "frontend/ast/ast_node.h"
-#include "frontend/ast/expr.h"
-#include "frontend/ast/stmt.h"
-#include "frontend/token.h"
-#include <string>
-#include <memory>
+#include "frontend/sema/symbol_table.h"
+#include "frontend/sema/type.h"
+#include <sstream>
 
 namespace aria {
 namespace sema {
 
-/**
- * TypeChecker - Performs type checking and type inference for expressions and statements
- * 
- * Phase 3.2.2: Type Checking for Expressions
- * 
- * Responsibilities:
- * - Infer types of expressions (literals, identifiers, binary/unary ops, calls)
- * - Check type compatibility for operations
- * - Validate operator types based on research_024 (arithmetic/bitwise) and research_025 (comparison/logical)
- * - Handle TBB type semantics (sticky errors, sentinel checks)
- * - Enforce strict boolean logic (no truthiness)
- * - Manage type coercion rules
- * 
- * Key Features:
- * - Literal type inference: int64, double, string, bool
- * - Identifier lookup in symbol table for type resolution
- * - Binary operator type checking with promotion/coercion
- * - Unary operator type validation
- * - Function call argument type matching
- * - TBB ERR propagation checking
- * - Strict boolean enforcement (no implicit truthiness)
- */
-class TypeChecker {
-private:
-    TypeSystem* typeSystem;
-    SymbolTable* symbolTable;
-    GenericResolver* genericResolver;
-    Monomorphizer* monomorphizer;
-    std::vector<std::string> errors;  // Accumulated type errors
+// ============================================================================
+// Symbol Implementation
+// ============================================================================
+
+Symbol::Symbol(const std::string& name, SymbolKind kind, Type* type,
+               Scope* scope, int line, int column)
+    : name(name), kind(kind), type(type), scope(scope),
+      line(line), column(column), isPublic(false),
+      isMutable(true), isInitialized(false),
+      comptimeValue(nullptr), funcDecl(nullptr) {}
+
+void Symbol::setComptimeValue(ComptimeValue* value) {
+    comptimeValue = value;
+}
+
+void Symbol::setFuncDecl(FuncDeclStmt* decl) {
+    funcDecl = decl;
+}
+
+std::string Symbol::toString() const {
+    std::stringstream ss;
+    ss << name << ": ";
+    if (type) {
+        ss << type->toString();
+    } else {
+        ss << "<no type>";
+    }
+    ss << " (";
+    switch (kind) {
+        case SymbolKind::VARIABLE: ss << "variable"; break;
+        case SymbolKind::FUNCTION: ss << "function"; break;
+        case SymbolKind::PARAMETER: ss << "parameter"; break;
+        case SymbolKind::TYPE: ss << "type"; break;
+        case SymbolKind::MODULE: ss << "module"; break;
+        case SymbolKind::CONSTANT: ss << "constant"; break;
+    }
+    ss << ")";
+    return ss.str();
+}
+
+// ============================================================================
+// Scope Implementation
+// ============================================================================
+
+Scope::Scope(ScopeKind kind, Scope* parent, const std::string& name)
+    : kind(kind), parent(parent), name(name) {
+    depth = parent ? parent->depth + 1 : 0;
+}
+
+Scope* Scope::enterScope(ScopeKind kind, const std::string& name) {
+    auto child = std::make_unique<Scope>(kind, this, name);
+    Scope* childPtr = child.get();
+    children.push_back(std::move(child));
+    return childPtr;
+}
+
+Scope* Scope::exitScope() {
+    return parent;
+}
+
+bool Scope::define(Symbol* symbol) {
+    if (isDuplicate(symbol->name)) {
+        return false;  // Symbol already exists in this scope
+    }
+    symbols[symbol->name] = symbol;
+    symbol->scope = this;
+    return true;
+}
+
+Symbol* Scope::lookup(const std::string& name) const {
+    auto it = symbols.find(name);
+    if (it != symbols.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+Symbol* Scope::resolve(const std::string& name) const {
+    // First check this scope
+    Symbol* symbol = lookup(name);
+    if (symbol) {
+        return symbol;
+    }
     
-    // Current function return type (for return statement checking)
-    Type* currentFunctionReturnType;
+    // Then check parent scopes
+    if (parent) {
+        return parent->resolve(name);
+    }
     
-    // ========================================================================
-    // Expression Type Inference
-    // ========================================================================
+    return nullptr;
+}
+
+bool Scope::isInScope(const std::string& name) const {
+    return symbols.find(name) != symbols.end();
+}
+
+bool Scope::isDuplicate(const std::string& name) const {
+    return isInScope(name);
+}
+
+std::string Scope::toString(int indent) const {
+    std::stringstream ss;
+    std::string indentStr(indent * 2, ' ');
     
-    /**
-     * Infer the type of a literal expression
-     * 
-     * Rules:
-     * - Integer literals: int64 (default), can be narrowed with explicit type annotation
-     * - Float literals: double (default for decimal), flt32 if suffixed with 'f'
-     * - String literals: string
-     * - Boolean literals: bool
-     * - Null literals: UnknownType (will be resolved based on context)
-     */
-    Type* inferLiteral(LiteralExpr* expr);
+    ss << indentStr << "Scope(";
+    switch (kind) {
+        case ScopeKind::GLOBAL: ss << "global"; break;
+        case ScopeKind::FUNCTION: ss << "function"; break;
+        case ScopeKind::BLOCK: ss << "block"; break;
+        case ScopeKind::STRUCT: ss << "struct"; break;
+        case ScopeKind::MODULE: ss << "module"; break;
+    }
+    if (!name.empty()) {
+        ss << " " << name;
+    }
+    ss << ", depth=" << depth << ")\n";
     
-    /**
-     * Infer the type of an identifier expression
-     * 
-     * Rules:
-     * - Lookup identifier in symbol table
-     * - Return ErrorType if not found (with error message)
-     * - Return symbol's declared type if found
-     */
-    Type* inferIdentifier(IdentifierExpr* expr);
+    // Print symbols
+    for (const auto& pair : symbols) {
+        ss << indentStr << "  " << pair.second->toString() << "\n";
+    }
     
-    /**
-     * Infer the type of a binary operation expression
-     * 
-     * Rules (based on research_024 and research_025):
-     * - Arithmetic operators (+, -, *, /, %):
-     *   * Require numeric types (int*, uint*, flt*, tbb*)
-     *   * Promote operands to common type (widening)
-     *   * TBB types stick to TBB (preserve error semantics)
-     *   * Result type is the promoted type
-     * 
-     * - Bitwise operators (&, |, ^, ~, <<, >>):
-     *   * UNSIGNED MANDATE: Only unsigned types allowed
-     *   * Error if signed or TBB types used
-     *   * Result type is same as operand type
-     * 
-     * - Comparison operators (==, !=, <, <=, >, >=):
-     *   * Require compatible types
-     *   * Result type is always bool
-     *   * TBB comparisons: ERR handling (ERR == ERR is true, ERR < valid is undefined)
-     * 
-     * - Logical operators (&&, ||):
-     *   * Strict boolean requirement (no truthiness)
-     *   * Both operands must be bool
-     *   * Result type is bool
-     * 
-     * - Spaceship operator (<=>):
-     *   * Result type is int (returns -1, 0, or 1)
-     */
-    Type* inferBinaryOp(BinaryExpr* expr);
+    // Print child scopes
+    for (const auto& child : children) {
+        ss << child->toString(indent + 1);
+    }
     
-    /**
-     * Infer the type of a unary operation expression
-     * 
-     * Rules (based on research_024 and research_026):
-     * - Arithmetic negation (-): numeric types → same type
-     * - Logical NOT (!): bool → bool (strict, no truthiness)
-     * - Bitwise NOT (~): unsigned types → same type
-     * - Address-of (@): T → T@ (pointer type)
-     * - Pin (#): T (GC object) → wild T@ (pinned pointer)
-     * - Borrow/Iterate ($): Array/Iterator → element type
-     * - Unwrap (?): result<T> → T (with default handling)
-     */
-    Type* inferUnaryOp(UnaryExpr* expr);
+    return ss.str();
+}
+
+// ============================================================================
+// SymbolTable Implementation
+// ============================================================================
+
+SymbolTable::SymbolTable() {
+    rootScope = std::make_unique<Scope>(ScopeKind::GLOBAL, nullptr, "global");
+    currentScope = rootScope.get();
+}
+
+void SymbolTable::enterScope(ScopeKind kind, const std::string& name) {
+    currentScope = currentScope->enterScope(kind, name);
+}
+
+void SymbolTable::exitScope() {
+    if (currentScope->getParent()) {
+        currentScope = currentScope->exitScope();
+    } else {
+        error("Cannot exit global scope");
+    }
+}
+
+Symbol* SymbolTable::defineSymbol(const std::string& name, SymbolKind kind,
+                                   Type* type, int line, int column) {
+    // Check for duplicates in current scope
+    if (currentScope->isDuplicate(name)) {
+        std::stringstream ss;
+        ss << "Symbol '" << name << "' already defined in current scope";
+        if (line > 0) {
+            ss << " at line " << line << ", column " << column;
+        }
+        error(ss.str());
+        return nullptr;
+    }
     
-    /**
-     * Infer the type of a function call expression
-     * 
-     * Rules:
-     * - Lookup function identifier to get function type
-     * - Check argument count matches parameter count
-     * - Check each argument type is assignable to parameter type
-     * - Return function's return type
-     */
-    Type* inferCallExpr(CallExpr* expr);
+    // Create new symbol
+    auto symbol = std::make_unique<Symbol>(name, kind, type, currentScope, line, column);
+    Symbol* symbolPtr = symbol.get();
+    symbols.push_back(std::move(symbol));
     
-    /**
-     * Infer the type of an array index expression
-     * 
-     * Rules:
-     * - Base must be array type (T[], T[N])
-     * - Index must be integer type
-     * - Result type is element type T
-     */
-    Type* inferIndexExpr(IndexExpr* expr);
+    // Add to current scope
+    currentScope->define(symbolPtr);
     
-    /**
-     * Infer the type of a member access expression
-     * 
-     * Rules:
-     * - Object must be struct or union type
-     * - Member must exist in the type
-     * - Result type is member's type
-     */
-    Type* inferMemberAccessExpr(MemberAccessExpr* expr);
-    
-    /**
-     * Infer the type of a ternary expression
-     * 
-     * Rules:
-     * - Condition must be bool
-     * - True and false branches must have compatible types
-     * - Result type is common type of branches
-     */
-    Type* inferTernaryExpr(TernaryExpr* expr);
-    
-    /**
-     * Infer the type of an object literal expression
-     * 
-     * Rules:
-     * - If type_name is set: struct constructor, return struct type
-     * - If type_name is empty: dynamic object, return obj type
-     * - Field values must be compatible with struct field types (if struct)
-     */
-    Type* inferObjectLiteral(ObjectLiteralExpr* expr);
-    
-    // ========================================================================
-    // Type Compatibility and Coercion
-    // ========================================================================
-    
-    /**
-     * Find common type for binary operation (type promotion/widening)
-     * 
-     * Rules:
-     * - int8 + int16 → int16 (widening to larger type)
-     * - int32 + flt32 → flt32 (integer to float promotion)
-     * - tbb8 + tbb16 → tbb16 (TBB widening preserves error semantics)
-     * - int32 + tbb32 → ERROR (cannot mix standard and TBB)
-     * - uint8 + int8 → ERROR (no implicit signed/unsigned mixing for safety)
-     */
-    Type* findCommonType(Type* left, Type* right);
-    
-    /**
-     * Check if a type can be implicitly coerced to target type
-     * 
-     * Allowed coercions:
-     * - Numeric widening: int8 → int16 → int32 → int64
-     * - Integer to float: int32 → flt32, int64 → flt64
-     * - TBB widening: tbb8 → tbb16 → tbb32 → tbb64
-     * 
-     * Disallowed coercions:
-     * - Narrowing: int32 → int8 (requires explicit cast)
-     * - Float to int: flt32 → int32 (requires explicit cast)
-     * - Standard ↔ TBB: int32 ↔ tbb32 (requires explicit cast)
-     * - Signed ↔ Unsigned: int32 ↔ uint32 (requires explicit cast for safety)
-     */
-    bool canCoerce(Type* from, Type* to);
-    
-    /**
-     * Check if binary operator is valid for given operand types
-     * 
-     * Returns: Result type if valid, ErrorType otherwise
-     */
-    Type* checkBinaryOperator(frontend::TokenType op, Type* leftType, Type* rightType);
-    
-    /**
-     * Check if unary operator is valid for given operand type
-     * 
-     * Returns: Result type if valid, ErrorType otherwise
-     */
-    Type* checkUnaryOperator(frontend::TokenType op, Type* operandType);
-    
-    // ========================================================================
-    // TBB Type Validation (Phase 3.2.4)
-    // ========================================================================
-    
-    /**
-     * Check if a type is a TBB (Twisted Balanced Binary) type
-     * 
-     * TBB types: tbb8, tbb16, tbb32, tbb64
-     */
-    bool isTBBType(Type* type);
-    
-    /**
-     * Get the ERR sentinel value for a TBB type
-     * 
-     * Returns:
-     * - tbb8:  -128 (0x80)
-     * - tbb16: -32768 (0x8000)
-     * - tbb32: -2147483648 (0x80000000)
-     * - tbb64: -9223372036854775808 (0x8000000000000000)
-     */
-    int64_t getTBBErrorSentinel(Type* type);
-    
-    /**
-     * Get the valid range for a TBB type (excluding ERR sentinel)
-     * 
-     * Returns pair of (min, max):
-     * - tbb8:  [-127, +127]
-     * - tbb16: [-32767, +32767]
-     * - tbb32: [-2147483647, +2147483647]
-     * - tbb64: [-9223372036854775807, +9223372036854775807]
-     */
-    std::pair<int64_t, int64_t> getTBBValidRange(Type* type);
-    
-    /**
-     * Validate that a literal value is not the ERR sentinel for a TBB type
-     * 
-     * Rules:
-     * - Assigning ERR sentinel directly should produce a warning
-     * - Use ERR keyword literal instead for clarity
-     */
-    void checkTBBLiteralValue(int64_t value, Type* type, ASTNode* node);
-    
-    /**
-     * Check if operation produces ERR (sticky error propagation)
-     * 
-     * Rules:
-     * - ERR + anything = ERR
-     * - ERR * anything = ERR
-     * - ERR in any arithmetic operation produces ERR
-     * - Overflow in TBB operations produces ERR
-     */
-    bool isERRProducingOperation(Type* resultType, Type* leftType, Type* rightType);
-    
-    // ========================================================================
-    // Balanced Ternary/Nonary Type Validation (Phase 3.2.5)
-    // ========================================================================
-    
-    /**
-     * Check if a type is a balanced ternary/nonary type
-     * 
-     * Balanced types: trit, tryte, nit, nyte
-     */
-    bool isBalancedType(Type* type);
-    
-    /**
-     * Check if a type is trit (balanced ternary digit)
-     * 
-     * trit: single balanced ternary digit {-1, 0, 1}
-     */
-    bool isTritType(Type* type);
-    
-    /**
-     * Check if a type is tryte (10 trits)
-     * 
-     * tryte: 10 trits stored in uint16
-     * Range: [-29524, +29524] (59,049 values)
-     */
-    bool isTryteType(Type* type);
-    
-    /**
-     * Check if a type is nit (balanced nonary digit)
-     * 
-     * nit: single balanced nonary digit {-4, -3, -2, -1, 0, 1, 2, 3, 4}
-     */
-    bool isNitType(Type* type);
-    
-    /**
-     * Check if a type is nyte (5 nits)
-     * 
-     * nyte: 5 nits stored in uint16
-     * Range: [-29524, +29524] (59,049 values)
-     */
-    bool isNyteType(Type* type);
-    
-    /**
-     * Get valid digit values for balanced atomic types
-     * 
-     * Returns:
-     * - trit: {-1, 0, 1}
-     * - nit: {-4, -3, -2, -1, 0, 1, 2, 3, 4}
-     * - tryte/nyte: empty (composite types, not digit validation)
-     */
-    std::vector<int> getBalancedValidDigits(Type* type);
-    
-    /**
-     * Get valid range for balanced composite types
-     * 
-     * Returns pair of (min, max):
-     * - tryte: [-29524, +29524]
-     * - nyte: [-29524, +29524]
-     * - trit/nit: N/A (use getBalancedValidDigits instead)
-     */
-    std::pair<int64_t, int64_t> getBalancedCompositeRange(Type* type);
-    
-    /**
-     * Validate that a literal value is valid for a balanced type
-     * 
-     * Rules:
-     * - trit: must be exactly -1, 0, or 1
-     * - nit: must be -4, -3, -2, -1, 0, 1, 2, 3, or 4
-     * - tryte: composite type, range checked at runtime
-     * - nyte: composite type, range checked at runtime
-     */
-    void checkBalancedLiteralValue(int64_t value, Type* type, ASTNode* node);
-    
-    // ========================================================================    // Standard Integer Type Validation
-    // ========================================================================
-    
-    /**
-     * Check if a type is a standard integer type (int8, int16, int32, int64, uint8, uint16, uint32, uint64)
-     */
-    bool isStandardIntType(Type* type) const;
-    
-    /**
-     * Check if an int64_t literal value fits in the target integer type (silent check, no errors)
-     * 
-     * This is used for context-aware literal typing in binary expressions.
-     * For example, in "x + 10" where x is int32, we check if 10 fits in int32
-     * to avoid unnecessary widening to int64.
-     * 
-     * Returns: true if the literal fits, false otherwise (no error reporting)
-     */
-    bool literalFitsInType(int64_t value, Type* type) const;
-    
-    /**
-     * Check if an int64_t literal value can fit in the target integer type (with error reporting)
-     * 
-     * This enables safe narrowing conversions at compile time.
-     * For example, the literal 42 (int64_t) can be assigned to int32, int16, or int8
-     * because 42 fits within their ranges.
-     * 
-     * Rules:
-     * - int8: range [-128, 127]
-     * - int16: range [-32768, 32767]
-     * - int32: range [-2147483648, 2147483647]
-     * - int64: always fits (same type)
-     * - uint8: range [0, 255]
-     * - uint16: range [0, 65535]
-     * - uint32: range [0, 4294967295]
-     * - uint64: non-negative values always fit
-     * 
-     * Returns: true if the literal fits, false otherwise (and reports error)
-     */
-    bool canLiteralFitInIntType(int64_t value, Type* type, ASTNode* node);
-    
-    // ========================================================================    // Error Handling
-    // ========================================================================
-    
-    void addError(const std::string& message, int line, int column);
-    void addError(const std::string& message, ASTNode* node);
-    
-public:
-    TypeChecker(TypeSystem* typeSystem, SymbolTable* symbolTable,
-                GenericResolver* resolver = nullptr, Monomorphizer* morpher = nullptr)
-        : typeSystem(typeSystem), symbolTable(symbolTable),
-          genericResolver(resolver), monomorphizer(morpher),
-          currentFunctionReturnType(nullptr) {}
-    
-    /**
-     * Main entry point: Type check entire module AST
-     * 
-     * Walks the AST recursively, performing:
-     * - Type inference on all expressions
-     * - Type checking on all statements
-     * - Generic function specialization detection
-     * - Symbol table population
-     * 
-     * This method triggers the entire type checking pipeline.
-     */
-    void check(ASTNode* module);
-    
-    /**
-     * Infer the type of an expression
-     * 
-     * This is the main entry point for type inference.
-     * Dispatches to specific inference methods based on node type.
-     * 
-     * Returns: The inferred type, or ErrorType if type checking fails
-     */
-    Type* inferType(ASTNode* expr);
-    
-    /**
-     * Check type compatibility for statements (Phase 3.2.3)
-     * 
-     * Main entry point for statement type checking.
-     * Dispatches to specific checking methods based on statement type.
-     * Validates type safety for all statement constructs.
-     */
-    void checkStatement(ASTNode* stmt);
-    
-    /**
-     * Check variable declaration statement
-     * 
-     * Rules:
-     * - If initializer exists, its type must be assignable to declared type
-     * - const variables must have initializer
-     * - Declared type must exist in type system
-     */
-    void checkVarDecl(VarDeclStmt* stmt);
-    
-    /**
-     * Check function declaration statement
-     * 
-     * Rules:
-     * - Return type must exist in type system
-     * - All parameter types must exist in type system
-     * - Function body statements are type-checked
-     * - Generic function calls in body trigger specialization
-     */
-    void checkFuncDecl(FuncDeclStmt* stmt);
-    
-    /**
-     * Check struct declaration statement
-     * 
-     * Rules:
-     * - Struct name must be unique (not already defined)
-     * - All field types must exist in type system
-     * - Register struct type in type system
-     */
-    void checkStructDecl(StructDeclStmt* stmt);
-    
-    /**
-     * Check assignment expression
-     * 
-     * Rules:
-     * - Left side must be assignable (identifier, index, member access)
-     * - Right side type must be assignable to left side type
-     * - Cannot assign to const variables
-     */
-    void checkAssignment(BinaryExpr* expr);
-    
-    /**
-     * Check return statement
-     * 
-     * Rules:
-     * - Return type must match current function's return type
-     * - Void functions cannot return values
-     * - Non-void functions must return values
-     */
-    void checkReturnStmt(ReturnStmt* stmt);
-    
-    /**
-     * Check if statement
-     * 
-     * Rules:
-     * - Condition must be bool type
-     * - No truthiness allowed (must use explicit comparison)
-     */
-    void checkIfStmt(IfStmt* stmt);
-    
-    /**
-     * Check while statement
-     * 
-     * Rules:
-     * - Condition must be bool type
-     * - No truthiness allowed
-     */
-    void checkWhileStmt(WhileStmt* stmt);
-    
-    /**
-     * Check for statement
-     * 
-     * Rules:
-     * - Condition (if present) must be bool type
-     * - Initializer and update can be any expression
-     */
-    void checkForStmt(ForStmt* stmt);
-    
-    /**
-     * Check block statement (recursively check all statements)
-     */
-    void checkBlockStmt(BlockStmt* stmt);
-    
-    /**
-     * Check expression statement (just infer its type)
-     */
-    void checkExpressionStmt(ExpressionStmt* stmt);
-    
-    /**
-     * Get accumulated type errors
-     */
-    const std::vector<std::string>& getErrors() const { return errors; }
-    
-    /**
-     * Check if type checking has errors
-     */
-    bool hasErrors() const { return !errors.empty(); }
-    
-    /**
-     * Clear accumulated errors
-     */
-    void clearErrors() { errors.clear(); }
-    
-    /**
-     * Set current function return type (for return statement checking)
-     */
-    void setCurrentFunctionReturnType(Type* type) { currentFunctionReturnType = type; }
-};
+    return symbolPtr;
+}
+
+Symbol* SymbolTable::lookupSymbol(const std::string& name) const {
+    return currentScope->resolve(name);  // Use resolve() to traverse parent scopes
+}
+
+Symbol* SymbolTable::resolveSymbol(const std::string& name) const {
+    return currentScope->resolve(name);
+}
+
+bool SymbolTable::isDefined(const std::string& name) const {
+    return currentScope->resolve(name) != nullptr;
+}
+
+void SymbolTable::error(const std::string& message) {
+    errors.push_back(message);
+}
+
+std::string SymbolTable::toString() const {
+    return rootScope->toString(0);
+}
 
 } // namespace sema
 } // namespace aria
-
-#endif // ARIA_SEMA_TYPE_CHECKER_H
-
 
 FILE: src/frontend/sema/type_checker.cpp
 ================================================================================
@@ -1581,6 +2706,7 @@ FILE: src/frontend/sema/type_checker.cpp
 #include "frontend/sema/generic_resolver.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
+#include "frontend/ast/type.h"  // For ArrayType, SimpleType, etc.
 #include <sstream>
 #include <variant>
 
@@ -1655,8 +2781,14 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         case ASTNode::NodeType::TERNARY:
             return inferTernaryExpr(static_cast<TernaryExpr*>(expr));
         
+        case ASTNode::NodeType::UNWRAP:
+            return inferUnwrapExpr(static_cast<UnwrapExpr*>(expr));
+        
         case ASTNode::NodeType::OBJECT_LITERAL:
             return inferObjectLiteral(static_cast<ObjectLiteralExpr*>(expr));
+        
+        case ASTNode::NodeType::ARRAY_LITERAL:
+            return inferArrayLiteral(static_cast<ArrayLiteralExpr*>(expr));
         
         default:
             addError("Type inference not implemented for node type: " + 
@@ -1706,6 +2838,14 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
 // ============================================================================
 
 Type* TypeChecker::inferIdentifier(IdentifierExpr* expr) {
+    // Special case: $ is the implicit iteration variable in till/loop constructs
+    // Its type is determined by the loop parameters (usually int64)
+    if (expr->name == "$") {
+        // For type checking purposes, assume int64
+        // The actual type will be determined by the loop parameters during IR generation
+        return typeSystem->getPrimitiveType("int64");
+    }
+    
     // Lookup symbol in symbol table
     Symbol* symbol = symbolTable->lookupSymbol(expr->name);
     
@@ -1801,9 +2941,13 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         const std::string& rightName = rightPrim->getName();
         
         bool leftIsNumeric = (leftName.find("int") == 0 || leftName.find("uint") == 0 ||
-                             leftName.find("flt") == 0 || leftName.find("tbb") == 0);
+                             leftName.find("flt") == 0 || leftName.find("tbb") == 0 ||
+                             leftName == "trit" || leftName == "tryte" ||
+                             leftName == "nit" || leftName == "nyte");
         bool rightIsNumeric = (rightName.find("int") == 0 || rightName.find("uint") == 0 ||
-                              rightName.find("flt") == 0 || rightName.find("tbb") == 0);
+                              rightName.find("flt") == 0 || rightName.find("tbb") == 0 ||
+                              rightName == "trit" || rightName == "tryte" ||
+                              rightName == "nit" || rightName == "nyte");
         
         if (!leftIsNumeric || !rightIsNumeric) {
             addError("Arithmetic operators require numeric types, got '" + 
@@ -1973,7 +3117,8 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
         }
         
         const std::string& name = primType->getName();
-        bool isNumeric = (name.find("int") == 0 || name.find("flt") == 0 || name.find("tbb") == 0);
+        bool isNumeric = (name.find("int") == 0 || name.find("flt") == 0 || name.find("tbb") == 0 ||
+                         name == "trit" || name == "tryte" || name == "nit" || name == "nyte");
         
         if (!isNumeric) {
             addError("Unary minus requires numeric type, got '" + name + "'", 0, 0);
@@ -2124,6 +3269,9 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getErrorType();
         }
         
+        // Store the mangled name in the CallExpr for IR generation
+        expr->specializedMangledName = spec->mangledName;
+        
         // Use the specialized function's return type
         // TODO: Parse return type string to Type*
         // For now, return UnknownType until we implement type parsing
@@ -2162,10 +3310,16 @@ Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
         return typeSystem->getErrorType();
     }
     
-    // TODO: Check that arrayType is array type, return element type
-    // For now, return UnknownType
-    addError("Array indexing type checking not yet fully implemented", expr);
-    return typeSystem->getUnknownType();
+    // Arrays are represented as pointer types
+    // Extract element type from pointer
+    if (arrayType->getKind() == TypeKind::POINTER) {
+        PointerType* ptrType = static_cast<PointerType*>(arrayType);
+        return ptrType->getPointeeType();
+    }
+    
+    // Not an array/pointer type
+    addError("Cannot index non-array type '" + arrayType->toString() + "'", expr);
+    return typeSystem->getErrorType();
 }
 
 // ============================================================================
@@ -2242,6 +3396,36 @@ Type* TypeChecker::inferTernaryExpr(TernaryExpr* expr) {
     return resultType;
 }
 
+Type* TypeChecker::inferUnwrapExpr(UnwrapExpr* expr) {
+    // Infer the result expression type
+    Type* resultType = inferType(expr->result.get());
+    
+    if (resultType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Infer the default value type
+    Type* defaultType = inferType(expr->defaultValue.get());
+    
+    if (defaultType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // For now, without full result type implementation, we require that
+    // the result and default value have compatible types
+    Type* commonType = findCommonType(resultType, defaultType);
+    
+    if (commonType->getKind() == TypeKind::ERROR) {
+        addError("Unwrap operator (?) requires compatible types: result type '" + 
+                resultType->toString() + "' and default value type '" + 
+                defaultType->toString() + "'", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // The unwrap expression returns the common type of result and default
+    return commonType;
+}
+
 Type* TypeChecker::inferObjectLiteral(ObjectLiteralExpr* expr) {
     // If type_name is set, this is a struct constructor
     if (!expr->type_name.empty()) {
@@ -2266,6 +3450,42 @@ Type* TypeChecker::inferObjectLiteral(ObjectLiteralExpr* expr) {
     }
     
     return objType;
+}
+
+// ============================================================================
+// Array Literal Type Inference
+// ============================================================================
+
+Type* TypeChecker::inferArrayLiteral(ArrayLiteralExpr* expr) {
+    // Empty array literal: type cannot be inferred without context
+    if (expr->elements.empty()) {
+        addError("Cannot infer type of empty array literal", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // Infer type from first element
+    Type* elementType = inferType(expr->elements[0].get());
+    if (elementType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Check all elements have compatible types
+    for (size_t i = 1; i < expr->elements.size(); ++i) {
+        Type* elemType = inferType(expr->elements[i].get());
+        if (elemType->getKind() == TypeKind::ERROR) {
+            return typeSystem->getErrorType();
+        }
+        
+        if (!elemType->equals(elementType) && !canCoerce(elemType, elementType)) {
+            addError("Array element " + std::to_string(i) + " has incompatible type: " +
+                    "expected '" + elementType->toString() + "', got '" + elemType->toString() + "'", 
+                    expr->elements[i].get());
+            return typeSystem->getErrorType();
+        }
+    }
+    
+    // Return pointer to element type (arrays decay to pointers)
+    return typeSystem->getPointerType(elementType);
 }
 
 // ============================================================================
@@ -2367,32 +3587,50 @@ bool TypeChecker::canCoerce(Type* from, Type* to) {
     }
     
     // ========================================================================
-    // Disallowed Coercions (Explicit Cast Required)
+    // Integer to TBB Coercion (Session 14)
     // ========================================================================
-    
-    // TBB ↔ Standard Integer: FORBIDDEN (Phase 3.2.4)
-    // TBB types have error sentinels and sticky error semantics
-    // Standard integers use modular arithmetic
-    // Mixing them requires explicit conversion
+    // Allow signed integers to coerce to TBB types (int64 → tbb8, tbb16, tbb32, tbb64)
+    // This is safe because runtime will validate range and convert to ERR on overflow
+    // TBB → integer is FORBIDDEN (would lose error sentinel)
     bool fromIsTBB = (fromName.find("tbb") == 0);
     bool toIsTBB = (toName.find("tbb") == 0);
-    bool fromIsStdInt = (fromName.find("int") == 0 || fromName.find("uint") == 0);
+    bool fromIsSignedInt = (fromName.find("int") == 0 && fromName.find("uint") != 0);
     bool toIsStdInt = (toName.find("int") == 0 || toName.find("uint") == 0);
     
-    if ((fromIsTBB && toIsStdInt) || (fromIsStdInt && toIsTBB)) {
+    // Allow signed int → TBB (e.g., int64 → tbb8)
+    if (fromIsSignedInt && toIsTBB) {
+        // Runtime will check range and set ERR on overflow
+        return true;
+    }
+    
+    // Forbid TBB → standard integer (would lose ERR sentinel)
+    if (fromIsTBB && toIsStdInt) {
         return false;  // Explicit cast required
     }
     
-    // Balanced ↔ Standard Integer: FORBIDDEN (Phase 3.2.5)
+    // Forbid unsigned → TBB (unsigned can't represent negative values)
+    if (fromName.find("uint") == 0 && toIsTBB) {
+        return false;  // Explicit cast required
+    }
+    
+    // Balanced ↔ Standard Integer: Partially allowed (Session 15)
     // Balanced types (trit, tryte, nit, nyte) use symmetric digit sets
-    // Standard integers use modular arithmetic
-    // Mixing them requires explicit conversion
+    // Allow int → balanced for literals (comparison, assignment)
+    // Forbid balanced → int (would lose semantic meaning)
     bool fromIsBalanced = (fromName == "trit" || fromName == "tryte" || 
                           fromName == "nit" || fromName == "nyte");
     bool toIsBalanced = (toName == "trit" || toName == "tryte" || 
                         toName == "nit" || toName == "nyte");
+    bool fromIsStdInt = (fromName.find("int") == 0 && fromName.find("uint") != 0);
+    bool fromIsStdIntOrUint = (fromName.find("int") == 0 || fromName.find("uint") == 0);
     
-    if ((fromIsBalanced && toIsStdInt) || (fromIsStdInt && toIsBalanced)) {
+    // Allow signed int → balanced (for literals and comparisons)
+    if (fromIsStdInt && toIsBalanced) {
+        return true;  // Runtime will check range
+    }
+    
+    // Forbid balanced → standard int (explicit cast required)
+    if (fromIsBalanced && fromIsStdIntOrUint) {
         return false;  // Explicit cast required
     }
     
@@ -2456,6 +3694,14 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             checkReturnStmt(static_cast<ReturnStmt*>(stmt));
             break;
         
+        case ASTNode::NodeType::PASS:
+            checkPassStmt(static_cast<PassStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::FAIL:
+            checkFailStmt(static_cast<FailStmt*>(stmt));
+            break;
+        
         case ASTNode::NodeType::IF:
             checkIfStmt(static_cast<IfStmt*>(stmt));
             break;
@@ -2466,6 +3712,18 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
         
         case ASTNode::NodeType::FOR:
             checkForStmt(static_cast<ForStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::TILL:
+            checkTillStmt(static_cast<TillStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::LOOP:
+            checkLoopStmt(static_cast<LoopStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::WHEN:
+            checkWhenStmt(static_cast<WhenStmt*>(stmt));
             break;
         
         case ASTNode::NodeType::BLOCK:
@@ -2481,9 +3739,164 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             // No type checking needed for break/continue
             break;
         
+        case ASTNode::NodeType::USE:
+            checkUseStmt(static_cast<UseStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::MOD:
+            checkModStmt(static_cast<ModStmt*>(stmt));
+            break;
+        
         default:
             // Other statement types not yet implemented
             break;
+    }
+}
+
+// ============================================================================
+// Type Resolution from AST Nodes
+// ============================================================================
+
+Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
+    if (!typeNode) {
+        return typeSystem->getErrorType();
+    }
+    
+    switch (typeNode->type) {
+        case ASTNode::NodeType::TYPE_ANNOTATION: {
+            // Simple type: int32, string, etc.
+            aria::SimpleType* simpleType = static_cast<aria::SimpleType*>(typeNode);
+            
+            // Try struct first
+            Type* type = typeSystem->getStructType(simpleType->typeName);
+            if (type) {
+                return type;
+            }
+            
+            // Try primitive type
+            type = typeSystem->getPrimitiveType(simpleType->typeName);
+            if (type && type->getKind() != TypeKind::ERROR) {
+                return type;
+            }
+            
+            addError("Unknown type: '" + simpleType->typeName + "'", typeNode);
+            return typeSystem->getErrorType();
+        }
+        
+        case ASTNode::NodeType::ARRAY_TYPE: {
+            // Array type: int32[], int32[10], etc.
+            aria::ArrayType* arrayType = static_cast<aria::ArrayType*>(typeNode);
+            
+            // Resolve element type
+            Type* elementType = resolveTypeNode(arrayType->elementType.get());
+            if (elementType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            // For now, return the element type with a note that it's an array
+            // TODO: Create proper ArrayType in TypeSystem
+            // Temporary: Use pointer type to represent arrays (common in many languages)
+            return typeSystem->getPointerType(elementType);
+        }
+        
+        case ASTNode::NodeType::POINTER_TYPE: {
+            // Pointer type: int32@, string@, etc.
+            aria::PointerType* ptrType = static_cast<aria::PointerType*>(typeNode);
+            
+            // Resolve base type
+            Type* baseType = resolveTypeNode(ptrType->baseType.get());
+            if (baseType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            return typeSystem->getPointerType(baseType);
+        }
+        
+        case ASTNode::NodeType::GENERIC_TYPE: {
+            // Generic type instantiation: Box<int64>, Result<int32, string>, etc.
+            aria::GenericType* genericType = static_cast<aria::GenericType*>(typeNode);
+            
+            // Phase 3.4: Generic Struct Instantiation (Session 13)
+            // Resolve all type arguments
+            std::vector<Type*> resolvedTypeArgs;
+            TypeSubstitution substitution;
+            
+            for (const auto& typeArg : genericType->typeArgs) {
+                Type* argType = resolveTypeNode(typeArg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+                resolvedTypeArgs.push_back(argType);
+            }
+            
+            // Look up the generic struct declaration
+            auto it = genericStructRegistry.find(genericType->baseName);
+            if (it == genericStructRegistry.end()) {
+                // Not a generic struct - check if it's a regular struct
+                Type* baseStructType = typeSystem->getStructType(genericType->baseName);
+                if (baseStructType) {
+                    addError("'" + genericType->baseName + "' is not a generic type", typeNode);
+                } else {
+                    addError("Unknown generic type: '" + genericType->baseName + "'", typeNode);
+                }
+                return typeSystem->getErrorType();
+            }
+            
+            StructDeclStmt* genericStructDecl = it->second;
+            
+            // Validate type argument count
+            if (resolvedTypeArgs.size() != genericStructDecl->genericParams.size()) {
+                std::ostringstream msg;
+                msg << "Generic type '" << genericType->baseName << "' expects "
+                    << genericStructDecl->genericParams.size() << " type arguments, got "
+                    << resolvedTypeArgs.size();
+                addError(msg.str(), typeNode);
+                return typeSystem->getErrorType();
+            }
+            
+            // Build type substitution map
+            for (size_t i = 0; i < genericStructDecl->genericParams.size(); i++) {
+                substitution[genericStructDecl->genericParams[i].name] = resolvedTypeArgs[i];
+            }
+            
+            // Check if monomorphizer is available
+            if (!monomorphizer) {
+                addError("Monomorphizer not initialized for generic type instantiation", typeNode);
+                return typeSystem->getErrorType();
+            }
+            
+            // Request monomorphization
+            std::string mangledName = monomorphizer->requestStructSpecialization(
+                genericStructDecl, substitution);
+            
+            if (mangledName.empty()) {
+                // Error occurred during monomorphization
+                if (monomorphizer->hasErrors()) {
+                    for (const auto& err : monomorphizer->getErrors()) {
+                        addError(err.message, err.line, err.column);
+                    }
+                }
+                return typeSystem->getErrorType();
+            }
+            
+            // Look up or create the specialized struct type
+            Type* specializedType = typeSystem->getStructType(mangledName);
+            if (!specializedType) {
+                // Need to create the specialized struct type in TypeSystem
+                // Get the specialized struct declaration from monomorphizer
+                // For now, create a placeholder
+                // TODO: Register specialized struct properly
+                addError("Specialized struct type registration not yet implemented: '" + 
+                        mangledName + "'", typeNode);
+                return typeSystem->getErrorType();
+            }
+            
+            return specializedType;
+        }
+        
+        default:
+            addError("Unsupported type node in type resolution", typeNode);
+            return typeSystem->getErrorType();
     }
 }
 
@@ -2492,16 +3905,34 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
 // ============================================================================
 
 void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
-    // Get declared type (try struct first to avoid auto-creating primitive types)
-    Type* declaredType = typeSystem->getStructType(stmt->typeName);
+    Type* declaredType = nullptr;
     
-    if (!declaredType) {
-        // Try primitive type
-        declaredType = typeSystem->getPrimitiveType(stmt->typeName);
-        
+    // Handle new typeNode or legacy typeName
+    if (stmt->typeNode) {
+        // Resolve type from AST node (supports arrays, pointers, etc.)
+        declaredType = resolveTypeNode(stmt->typeNode.get());
         if (!declaredType || declaredType->getKind() == TypeKind::ERROR) {
-            addError("Unknown type: '" + stmt->typeName + "'", stmt);
+            addError("Cannot resolve type in variable declaration", stmt);
             return;
+        }
+        
+        // CRITICAL: Update typeName to resolved type name for IR generation
+        // For generic structs, this will be the mangled name (_Aria_M_Box_<hash>_int64)
+        // For other types, this will be the canonical name (int64, string, etc.)
+        stmt->typeName = declaredType->toString();
+    } else {
+        // Legacy path: Get declared type from typeName string
+        // Try struct first to avoid auto-creating primitive types
+        declaredType = typeSystem->getStructType(stmt->typeName);
+        
+        if (!declaredType) {
+            // Try primitive type
+            declaredType = typeSystem->getPrimitiveType(stmt->typeName);
+            
+            if (!declaredType || declaredType->getKind() == TypeKind::ERROR) {
+                addError("Unknown type: '" + stmt->typeName + "'", stmt);
+                return;
+            }
         }
     }
     
@@ -2657,7 +4088,20 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
 // ============================================================================
 
 void TypeChecker::checkStructDecl(StructDeclStmt* stmt) {
-    // Check if already defined as a struct
+    // Session 13: Check if this is a generic struct
+    if (!stmt->genericParams.empty()) {
+        // Generic struct - register for later monomorphization
+        // Don't create the type yet - it will be created when instantiated
+        auto it = genericStructRegistry.find(stmt->structName);
+        if (it != genericStructRegistry.end()) {
+            addError("Generic struct '" + stmt->structName + "' is already defined", stmt);
+            return;
+        }
+        genericStructRegistry[stmt->structName] = stmt;
+        return;  // Don't register with TypeSystem yet
+    }
+    
+    // Non-generic struct - check if already defined
     Type* existingStruct = typeSystem->getStructType(stmt->structName);
     if (existingStruct) {
         addError("Struct '" + stmt->structName + "' is already defined", stmt);
@@ -2851,6 +4295,71 @@ void TypeChecker::checkReturnStmt(ReturnStmt* stmt) {
         }
     }
 }
+
+// ============================================================================
+// Pass/Fail Statement Type Checking (Result Types)
+// ============================================================================
+
+void TypeChecker::checkPassStmt(PassStmt* stmt) {
+    // Check if we're inside a function
+    if (!currentFunctionReturnType) {
+        addError("pass statement outside of function", stmt);
+        return;
+    }
+    
+    // Get the primitive type "void" for comparison
+    Type* voidType = typeSystem->getPrimitiveType("void");
+    bool isVoidFunction = currentFunctionReturnType->equals(voidType);
+    
+    // void function cannot use pass
+    if (isVoidFunction) {
+        addError("void function cannot use pass statement", stmt);
+        return;
+    }
+    
+    // Infer type of the pass value
+    Type* valueType = inferType(stmt->value.get());
+    
+    if (valueType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // Check if value type matches function return type
+    if (!valueType->isAssignableTo(currentFunctionReturnType) && 
+        !canCoerce(valueType, currentFunctionReturnType)) {
+        addError("Pass value type '" + valueType->toString() + 
+                "' does not match function return type '" + 
+                currentFunctionReturnType->toString() + "'", stmt);
+    }
+}
+
+void TypeChecker::checkFailStmt(FailStmt* stmt) {
+    // Check if we're inside a function
+    if (!currentFunctionReturnType) {
+        addError("fail statement outside of function", stmt);
+        return;
+    }
+    
+    // Infer type of the error code
+    Type* errorType = inferType(stmt->errorCode.get());
+    
+    if (errorType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // For now, just ensure error code is an integer type
+    // TODO: When full result types are implemented, this will be more sophisticated
+    if (errorType->getKind() != TypeKind::PRIMITIVE) {
+        addError("Fail error code must be an integer type", stmt);
+        return;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(errorType);
+    if (!isStandardIntType(primType)) {
+        addError("Fail error code must be an integer type, got '" + errorType->toString() + "'", stmt);
+    }
+}
+
 
 // ============================================================================
 // If Statement Type Checking
@@ -3302,742 +4811,876 @@ bool TypeChecker::canLiteralFitInIntType(int64_t value, Type* type, ASTNode* nod
     return true;
 }
 
+// ============================================================================
+// Module System Type Checking
+// ============================================================================
+
+void TypeChecker::checkUseStmt(UseStmt* stmt) {
+    if (!stmt) {
+        return;
+    }
+    
+    // Basic validation of use statement structure
+    // Detailed module resolution is handled by module_resolver
+    
+    if (stmt->path.empty()) {
+        addError("Empty module path in use statement", stmt);
+        return;
+    }
+    
+    // For file path imports, validate the path format
+    if (stmt->isFilePath) {
+        const std::string& filePath = stmt->path[0];
+        
+        // Check for valid file extensions
+        if (!filePath.empty()) {
+            // File paths should end with .aria
+            if (filePath.length() > 5) {
+                std::string ext = filePath.substr(filePath.length() - 5);
+                if (ext != ".aria") {
+                    // Allow paths without extensions (will be resolved by module system)
+                    // This is just a warning, not an error
+                }
+            }
+        }
+    }
+    
+    // Validate selective imports and wildcards
+    if (stmt->isWildcard && !stmt->items.empty()) {
+        addError("Cannot have both wildcard (*) and selective imports in use statement", stmt);
+        return;
+    }
+    
+    // Note: Actual symbol resolution and import validation happens during
+    // symbol table construction and module linking phases
+}
+
+void TypeChecker::checkModStmt(ModStmt* stmt) {
+    if (!stmt) {
+        return;
+    }
+    
+    // Validate module name
+    if (stmt->name.empty()) {
+        addError("Module name cannot be empty", stmt);
+        return;
+    }
+    
+    // Check for invalid characters in module name
+    // Module names should be valid identifiers
+    for (char c : stmt->name) {
+        if (!std::isalnum(c) && c != '_') {
+            addError("Invalid character '" + std::string(1, c) + "' in module name '" + 
+                    stmt->name + "'. Module names must be valid identifiers.", stmt);
+            return;
+        }
+    }
+    
+    // If it's an inline module, type check all declarations in its body
+    if (stmt->isInline) {
+        // Enter module scope (for nested symbol resolution)
+        // For now, just check each declaration
+        for (const auto& decl : stmt->body) {
+            if (decl) {
+                checkStatement(decl.get());
+            }
+        }
+    }
+    
+    // External module declarations (mod name;) don't need further checking
+    // The module resolver will validate they exist
+}
+
+// ============================================================================
+// Advanced Loop Type Checking
+// ============================================================================
+
+void TypeChecker::checkTillStmt(TillStmt* stmt) {
+    // Check limit expression - must be integer type
+    Type* limitType = inferType(stmt->limit.get());
+    if (limitType->getKind() != TypeKind::ERROR) {
+        PrimitiveType* limitPrim = dynamic_cast<PrimitiveType*>(limitType);
+        if (!limitPrim || (limitPrim->getName().find("int") == std::string::npos && 
+                           limitPrim->getName().find("uint") == std::string::npos)) {
+            addError("till limit must be integer type, got '" + limitType->toString() + "'", 
+                    stmt->limit.get());
+        }
+    }
+    
+    // Check step expression - must be integer type
+    Type* stepType = inferType(stmt->step.get());
+    if (stepType->getKind() != TypeKind::ERROR) {
+        PrimitiveType* stepPrim = dynamic_cast<PrimitiveType*>(stepType);
+        if (!stepPrim || (stepPrim->getName().find("int") == std::string::npos && 
+                          stepPrim->getName().find("uint") == std::string::npos)) {
+            addError("till step must be integer type, got '" + stepType->toString() + "'", 
+                    stmt->step.get());
+        }
+    }
+    
+    // Check body
+    checkStatement(stmt->body.get());
+}
+
+void TypeChecker::checkLoopStmt(LoopStmt* stmt) {
+    // Check start expression - must be integer type
+    Type* startType = inferType(stmt->start.get());
+    if (startType->getKind() != TypeKind::ERROR) {
+        PrimitiveType* startPrim = dynamic_cast<PrimitiveType*>(startType);
+        if (!startPrim || (startPrim->getName().find("int") == std::string::npos && 
+                           startPrim->getName().find("uint") == std::string::npos)) {
+            addError("loop start must be integer type, got '" + startType->toString() + "'", 
+                    stmt->start.get());
+        }
+    }
+    
+    // Check limit expression - must be integer type
+    Type* limitType = inferType(stmt->limit.get());
+    if (limitType->getKind() != TypeKind::ERROR) {
+        PrimitiveType* limitPrim = dynamic_cast<PrimitiveType*>(limitType);
+        if (!limitPrim || (limitPrim->getName().find("int") == std::string::npos && 
+                           limitPrim->getName().find("uint") == std::string::npos)) {
+            addError("loop limit must be integer type, got '" + limitType->toString() + "'", 
+                    stmt->limit.get());
+        }
+    }
+    
+    // Check step expression - must be integer type
+    Type* stepType = inferType(stmt->step.get());
+    if (stepType->getKind() != TypeKind::ERROR) {
+        PrimitiveType* stepPrim = dynamic_cast<PrimitiveType*>(stepType);
+        if (!stepPrim || (stepPrim->getName().find("int") == std::string::npos && 
+                          stepPrim->getName().find("uint") == std::string::npos)) {
+            addError("loop step must be integer type, got '" + stepType->toString() + "'", 
+                    stmt->step.get());
+        }
+    }
+    
+    // Check body
+    checkStatement(stmt->body.get());
+}
+
+void TypeChecker::checkWhenStmt(WhenStmt* stmt) {
+    // Check condition - must be boolean type
+    Type* condType = inferType(stmt->condition.get());
+    if (condType->getKind() != TypeKind::ERROR) {
+        PrimitiveType* condPrim = dynamic_cast<PrimitiveType*>(condType);
+        if (!condPrim || condPrim->getName() != "bool") {
+            addError("when condition must be 'bool' type, got '" + condType->toString() + "'", 
+                    stmt->condition.get());
+        }
+    }
+    
+    // Check body
+    checkStatement(stmt->body.get());
+    
+    // Check then block if present
+    if (stmt->then_block) {
+        checkStatement(stmt->then_block.get());
+    }
+    
+    // Check end block if present
+    if (stmt->end_block) {
+        checkStatement(stmt->end_block.get());
+    }
+}
+
 } // namespace sema
 } // namespace aria
 
-
-FILE: include/frontend/sema/symbol_table.h
+FILE: src/frontend/sema/module_table.cpp
 ================================================================================
-#ifndef ARIA_SYMBOL_TABLE_H
-#define ARIA_SYMBOL_TABLE_H
-
-#include <string>
-#include <memory>
-#include <unordered_map>
-#include <vector>
-
-namespace aria {
-
-// Forward declarations from AST
-class FuncDeclStmt;
-
-namespace sema {
-
-// Forward declarations
-class Type;
-class Scope;
-class SymbolTable;
-class ComptimeValue;
-
-// ============================================================================
-// Symbol - Represents a named entity in the program
-// ============================================================================
-// A symbol can be a variable, function, type, or module
-// Each symbol has a name, type, scope, and source location
-
-enum class SymbolKind {
-    VARIABLE,       // Variable declaration
-    FUNCTION,       // Function declaration
-    PARAMETER,      // Function parameter
-    TYPE,           // Type definition (struct, enum, etc.)
-    MODULE,         // Module declaration
-    CONSTANT,       // Compile-time constant
-};
-
-struct Symbol {
-    std::string name;           // Symbol identifier
-    SymbolKind kind;            // What kind of symbol this is
-    Type* type;                 // Type information (owned by TypeSystem)
-    Scope* scope;               // Scope where this symbol is defined
-    int line;                   // Source line number
-    int column;                 // Source column number
-    bool isPublic;              // Visibility (pub keyword)
-    bool isMutable;             // Mutability (const vs mutable)
-    bool isInitialized;         // Has been initialized
-    
-    // CTFE Integration (Task 8: Symbol Table Integration)
-    // These fields support compile-time evaluation:
-    ComptimeValue* comptimeValue;   // For CONSTANT symbols - compile-time value
-    FuncDeclStmt* funcDecl;         // For FUNCTION symbols - AST for CTFE
-    
-    // Constructor
-    Symbol(const std::string& name, SymbolKind kind, Type* type,
-           Scope* scope, int line = 0, int column = 0);
-    
-    // CTFE Helpers
-    void setComptimeValue(ComptimeValue* value);
-    void setFuncDecl(FuncDeclStmt* decl);
-    ComptimeValue* getComptimeValue() const { return comptimeValue; }
-    FuncDeclStmt* getFuncDecl() const { return funcDecl; }
-    bool hasComptimeValue() const { return comptimeValue != nullptr; }
-    bool isCTFEFunction() const { return kind == SymbolKind::FUNCTION && funcDecl != nullptr; }
-    
-    // Helpers
-    std::string toString() const;
-};
-
-// ============================================================================
-// Scope - Represents a lexical scope with symbols
-// ============================================================================
-// Scopes form a tree structure where each scope can have:
-// - Parent scope (enclosing scope)
-// - Child scopes (nested scopes like blocks, functions)
-// - Symbols defined in this scope
-
-enum class ScopeKind {
-    GLOBAL,         // Global/module scope
-    FUNCTION,       // Function scope
-    BLOCK,          // Block scope (if, while, for bodies, etc.)
-    STRUCT,         // Struct/type scope
-    MODULE,         // Module scope
-};
-
-class Scope {
-private:
-    ScopeKind kind;
-    Scope* parent;
-    std::vector<std::unique_ptr<Scope>> children;
-    std::unordered_map<std::string, Symbol*> symbols;
-    std::string name;           // Optional name (for functions, modules)
-    int depth;                  // Nesting depth (0 = global)
-    
-public:
-    // Constructor
-    explicit Scope(ScopeKind kind, Scope* parent = nullptr, 
-                   const std::string& name = "");
-    
-    // Scope management
-    Scope* enterScope(ScopeKind kind, const std::string& name = "");
-    Scope* exitScope();
-    Scope* getParent() const { return parent; }
-    ScopeKind getKind() const { return kind; }
-    int getDepth() const { return depth; }
-    const std::string& getName() const { return name; }
-    
-    // Symbol operations
-    bool define(Symbol* symbol);                    // Add symbol to this scope
-    Symbol* lookup(const std::string& name) const;  // Look up in this scope only
-    Symbol* resolve(const std::string& name) const; // Look up in this and parent scopes
-    bool isInScope(const std::string& name) const;  // Check if name exists in this scope
-    bool isDuplicate(const std::string& name) const;// Check if symbol already defined
-    
-    // Iteration
-    const std::unordered_map<std::string, Symbol*>& getSymbols() const { return symbols; }
-    const std::vector<std::unique_ptr<Scope>>& getChildren() const { return children; }
-    
-    // Debugging
-    std::string toString(int indent = 0) const;
-};
-
-// ============================================================================
-// SymbolTable - Manages the entire symbol table hierarchy
-// ============================================================================
-// The symbol table maintains:
-// - Root scope (global scope)
-// - Current scope (for adding new symbols)
-// - All allocated symbols (for memory management)
-
-class SymbolTable {
-private:
-    std::unique_ptr<Scope> rootScope;
-    Scope* currentScope;
-    std::vector<std::unique_ptr<Symbol>> symbols;  // Owns all symbols
-    
-public:
-    // Constructor
-    SymbolTable();
-    
-    // Scope navigation
-    void enterScope(ScopeKind kind, const std::string& name = "");
-    void exitScope();
-    Scope* getCurrentScope() const { return currentScope; }
-    Scope* getRootScope() const { return rootScope.get(); }
-    
-    // Symbol operations
-    Symbol* defineSymbol(const std::string& name, SymbolKind kind, Type* type,
-                         int line = 0, int column = 0);
-    Symbol* lookupSymbol(const std::string& name) const;      // Current scope only
-    Symbol* resolveSymbol(const std::string& name) const;     // Current + parent scopes
-    bool isDefined(const std::string& name) const;            // Check if already defined
-    
-    // Error handling
-    std::vector<std::string> errors;
-    void error(const std::string& message);
-    bool hasErrors() const { return !errors.empty(); }
-    const std::vector<std::string>& getErrors() const { return errors; }
-    
-    // Debugging
-    std::string toString() const;
-};
-
-} // namespace sema
-} // namespace aria
-
-#endif // ARIA_SYMBOL_TABLE_H
-
-
-FILE: src/frontend/sema/symbol_table.cpp
-================================================================================
-#include "frontend/sema/symbol_table.h"
-#include "frontend/sema/type.h"
+#include "frontend/sema/module_table.h"
 #include <sstream>
+#include <algorithm>
 
 namespace aria {
 namespace sema {
 
 // ============================================================================
-// Symbol Implementation
+// Module Implementation
 // ============================================================================
 
-Symbol::Symbol(const std::string& name, SymbolKind kind, Type* type,
-               Scope* scope, int line, int column)
-    : name(name), kind(kind), type(type), scope(scope),
-      line(line), column(column), isPublic(false),
-      isMutable(true), isInitialized(false),
-      comptimeValue(nullptr), funcDecl(nullptr) {}
+Module::Module(const std::string& name, const std::string& path, Module* parent)
+    : name(name), path(path), parent(parent), fullyResolved(false) {}
 
-void Symbol::setComptimeValue(ComptimeValue* value) {
-    comptimeValue = value;
+std::string Module::getFullPath() const {
+    if (!parent) {
+        return name;  // Root module
+    }
+    return parent->getFullPath() + "." + name;
 }
 
-void Symbol::setFuncDecl(FuncDeclStmt* decl) {
-    funcDecl = decl;
+void Module::addSubmodule(std::unique_ptr<Module> submodule) {
+    submodules.push_back(std::move(submodule));
 }
 
-std::string Symbol::toString() const {
+Module* Module::getSubmodule(const std::string& name) const {
+    for (const auto& submodule : submodules) {
+        if (submodule->getName() == name) {
+            return submodule.get();
+        }
+    }
+    return nullptr;
+}
+
+void Module::addImport(const Import& import) {
+    imports.push_back(import);
+}
+
+void Module::exportSymbol(const std::string& name, Symbol* symbol, Visibility visibility) {
+    exports[name] = ExportEntry{symbol, visibility, false};
+}
+
+void Module::reexportSymbol(const std::string& name, Symbol* symbol, Visibility visibility) {
+    exports[name] = ExportEntry{symbol, visibility, true};
+}
+
+Symbol* Module::lookupExport(const std::string& name) const {
+    auto it = exports.find(name);
+    if (it != exports.end()) {
+        return it->second.symbol;
+    }
+    return nullptr;
+}
+
+bool Module::isExported(const std::string& name) const {
+    return exports.find(name) != exports.end();
+}
+
+Visibility Module::getExportVisibility(const std::string& name) const {
+    auto it = exports.find(name);
+    if (it != exports.end()) {
+        return it->second.visibility;
+    }
+    return Visibility::PRIVATE;
+}
+
+std::string Module::toString(int indent) const {
     std::stringstream ss;
-    ss << name << ": ";
-    if (type) {
-        ss << type->toString();
-    } else {
-        ss << "<no type>";
+    std::string indentStr(indent * 2, ' ');
+    
+    ss << indentStr << "Module: " << name << " (" << path << ")\n";
+    ss << indentStr << "  Full Path: " << getFullPath() << "\n";
+    
+    // Imports
+    if (!imports.empty()) {
+        ss << indentStr << "  Imports:\n";
+        for (const auto& import : imports) {
+            ss << indentStr << "    - " << import.path;
+            if (!import.alias.empty()) {
+                ss << " as " << import.alias;
+            }
+            if (import.isWildcard) {
+                ss << " (wildcard)";
+            }
+            if (!import.selectiveItems.empty()) {
+                ss << " {";
+                for (size_t i = 0; i < import.selectiveItems.size(); i++) {
+                    if (i > 0) ss << ", ";
+                    ss << import.selectiveItems[i];
+                }
+                ss << "}";
+            }
+            ss << "\n";
+        }
     }
-    ss << " (";
-    switch (kind) {
-        case SymbolKind::VARIABLE: ss << "variable"; break;
-        case SymbolKind::FUNCTION: ss << "function"; break;
-        case SymbolKind::PARAMETER: ss << "parameter"; break;
-        case SymbolKind::TYPE: ss << "type"; break;
-        case SymbolKind::MODULE: ss << "module"; break;
-        case SymbolKind::CONSTANT: ss << "constant"; break;
+    
+    // Exports
+    if (!exports.empty()) {
+        ss << indentStr << "  Exports:\n";
+        for (const auto& pair : exports) {
+            ss << indentStr << "    - " << pair.first;
+            switch (pair.second.visibility) {
+                case Visibility::PUBLIC: ss << " (pub)"; break;
+                case Visibility::PACKAGE: ss << " (pub(package))"; break;
+                case Visibility::SUPER: ss << " (pub(super))"; break;
+                case Visibility::PRIVATE: ss << " (private)"; break;
+            }
+            if (pair.second.isReexport) {
+                ss << " [re-export]";
+            }
+            ss << "\n";
+        }
     }
-    ss << ")";
+    
+    // Submodules
+    if (!submodules.empty()) {
+        ss << indentStr << "  Submodules:\n";
+        for (const auto& submodule : submodules) {
+            ss << submodule->toString(indent + 2);
+        }
+    }
+    
     return ss.str();
 }
 
 // ============================================================================
-// Scope Implementation
+// ModuleTable Implementation
 // ============================================================================
 
-Scope::Scope(ScopeKind kind, Scope* parent, const std::string& name)
-    : kind(kind), parent(parent), name(name) {
-    depth = parent ? parent->depth + 1 : 0;
+ModuleTable::ModuleTable() {
+    // Create root module (global scope)
+    rootModule = std::make_unique<Module>("root", "<root>", nullptr);
+    moduleRegistry["root"] = rootModule.get();
 }
 
-Scope* Scope::enterScope(ScopeKind kind, const std::string& name) {
-    auto child = std::make_unique<Scope>(kind, this, name);
-    Scope* childPtr = child.get();
-    children.push_back(std::move(child));
-    return childPtr;
-}
-
-Scope* Scope::exitScope() {
-    return parent;
-}
-
-bool Scope::define(Symbol* symbol) {
-    if (isDuplicate(symbol->name)) {
-        return false;  // Symbol already exists in this scope
+Module* ModuleTable::createModule(const std::string& name, const std::string& path, Module* parent) {
+    auto module = std::make_unique<Module>(name, path, parent);
+    Module* modulePtr = module.get();
+    
+    // Register module by full path
+    std::string fullPath = module->getFullPath();
+    moduleRegistry[fullPath] = modulePtr;
+    
+    // Add as submodule to parent
+    if (parent) {
+        parent->addSubmodule(std::move(module));
+    } else {
+        // If no parent specified, add to root
+        rootModule->addSubmodule(std::move(module));
     }
-    symbols[symbol->name] = symbol;
-    symbol->scope = this;
-    return true;
+    
+    return modulePtr;
 }
 
-Symbol* Scope::lookup(const std::string& name) const {
-    auto it = symbols.find(name);
-    if (it != symbols.end()) {
+Module* ModuleTable::getModule(const std::string& fullPath) const {
+    auto it = moduleRegistry.find(fullPath);
+    if (it != moduleRegistry.end()) {
         return it->second;
     }
     return nullptr;
 }
 
-Symbol* Scope::resolve(const std::string& name) const {
-    // First check this scope
-    Symbol* symbol = lookup(name);
-    if (symbol) {
-        return symbol;
+Module* ModuleTable::resolveImport(const std::string& importPath, Module* fromModule) {
+    // research_028 Section 3.2: Import Resolution Algorithm
+    
+    // Handle relative imports (starting with ./ or ../)
+    if (importPath.find("./") == 0 || importPath.find("../") == 0) {
+        // TODO: In Phase 3.2, implement file-based resolution
+        // For now, just error
+        error("Relative imports not yet implemented: " + importPath);
+        return nullptr;
     }
     
-    // Then check parent scopes
-    if (parent) {
-        return parent->resolve(name);
+    // Handle logical path (e.g., "std.io")
+    // Tokenize path by '.'
+    std::vector<std::string> segments;
+    std::stringstream ss(importPath);
+    std::string segment;
+    while (std::getline(ss, segment, '.')) {
+        segments.push_back(segment);
+    }
+    
+    if (segments.empty()) {
+        error("Invalid import path: " + importPath);
+        return nullptr;
+    }
+    
+    // Try to resolve from root
+    Module* current = rootModule.get();
+    for (const auto& seg : segments) {
+        current = current->getSubmodule(seg);
+        if (!current) {
+            error("Module not found: " + importPath + " (failed at segment: " + seg + ")");
+            return nullptr;
+        }
+    }
+    
+    return current;
+}
+
+Symbol* ModuleTable::resolveImportedSymbol(const std::string& symbolName, Module* fromModule) {
+    // Search through imports in the current module
+    for (const auto& import : fromModule->getImports()) {
+        Module* importedModule = resolveImport(import.path, fromModule);
+        if (!importedModule) {
+            continue;  // Skip failed imports (error already reported)
+        }
+        
+        // Check if this import provides the symbol
+        if (import.isWildcard) {
+            // Wildcard import - check all exports
+            Symbol* symbol = importedModule->lookupExport(symbolName);
+            if (symbol && canAccess(symbol, fromModule)) {
+                return symbol;
+            }
+        } else if (!import.selectiveItems.empty()) {
+            // Selective import - check if symbol is in the list
+            auto it = std::find(import.selectiveItems.begin(), import.selectiveItems.end(), symbolName);
+            if (it != import.selectiveItems.end()) {
+                Symbol* symbol = importedModule->lookupExport(symbolName);
+                if (symbol && canAccess(symbol, fromModule)) {
+                    return symbol;
+                }
+            }
+        } else {
+            // Regular import - symbol must be qualified with module name or alias
+            std::string moduleName = import.alias.empty() ? 
+                                    importedModule->getName() : import.alias;
+            // This case is handled by qualified lookup (module.symbol)
+            // Not applicable for simple symbol lookup
+        }
     }
     
     return nullptr;
 }
 
-bool Scope::isInScope(const std::string& name) const {
-    return symbols.find(name) != symbols.end();
+bool ModuleTable::canAccess(Symbol* symbol, Module* fromModule) const {
+    // research_028 Section 5.3: Visibility Enforcement
+    
+    if (!symbol || !symbol->scope) {
+        return false;
+    }
+    
+    // Find which module owns this symbol by checking symbol tables
+    Module* owningModule = nullptr;
+    for (const auto& pair : moduleRegistry) {
+        // Check if this module's symbol table contains the symbol's scope
+        const SymbolTable* moduleSymbolTable = pair.second->getSymbolTable();
+        Scope* moduleScope = moduleSymbolTable->getRootScope();
+        
+        // Walk up the scope hierarchy from symbol's scope to see if it's in this module
+        Scope* currentScope = symbol->scope;
+        while (currentScope) {
+            if (currentScope == moduleScope) {
+                owningModule = pair.second;
+                break;
+            }
+            currentScope = currentScope->getParent();
+        }
+        
+        if (owningModule) {
+            break;
+        }
+    }
+    
+    if (!owningModule) {
+        return false;  // Can't determine ownership
+    }
+    
+    // Check if symbol is exported
+    if (!owningModule->isExported(symbol->name)) {
+        // Not exported - only accessible from within owning module
+        return owningModule == fromModule;
+    }
+    
+    // Check visibility level
+    Visibility visibility = owningModule->getExportVisibility(symbol->name);
+    
+    switch (visibility) {
+        case Visibility::PUBLIC:
+            return true;  // Accessible from anywhere
+            
+        case Visibility::PRIVATE:
+            return owningModule == fromModule;
+            
+        case Visibility::PACKAGE:
+            // TODO: In Phase 3.2, implement package-level access
+            // For now, treat as public
+            return true;
+            
+        case Visibility::SUPER:
+            // Accessible from parent module
+            return fromModule == owningModule->getParent();
+    }
+    
+    return false;
 }
 
-bool Scope::isDuplicate(const std::string& name) const {
-    return isInScope(name);
+bool ModuleTable::hasCircularDependency(Module* module) {
+    // research_028 Section 3.3: Circular Dependency Detection
+    
+    visitedModules.clear();
+    recursionStack.clear();
+    
+    return checkCircularDependencyRecursive(module);
 }
 
-std::string Scope::toString(int indent) const {
+bool ModuleTable::checkCircularDependencyRecursive(Module* module) {
+    if (!module) {
+        return false;
+    }
+    
+    // If in recursion stack, we found a cycle
+    if (recursionStack.find(module) != recursionStack.end()) {
+        error("Circular dependency detected: " + module->getFullPath());
+        return true;
+    }
+    
+    // If already visited and not in stack, no cycle from this path
+    if (visitedModules.find(module) != visitedModules.end()) {
+        return false;
+    }
+    
+    // Add to stack and visited
+    recursionStack.insert(module);
+    visitedModules.insert(module);
+    
+    // Check all imported modules
+    for (const auto& import : module->getImports()) {
+        Module* importedModule = resolveImport(import.path, module);
+        if (importedModule && checkCircularDependencyRecursive(importedModule)) {
+            return true;  // Cycle found
+        }
+    }
+    
+    // Remove from recursion stack (backtrack)
+    recursionStack.erase(module);
+    
+    return false;
+}
+
+void ModuleTable::error(const std::string& message) {
+    errors.push_back(message);
+}
+
+std::string ModuleTable::toString() const {
     std::stringstream ss;
-    std::string indentStr(indent * 2, ' ');
+    ss << "ModuleTable:\n";
+    ss << "  Total Modules: " << moduleRegistry.size() << "\n";
+    ss << "\nModule Tree:\n";
+    ss << rootModule->toString(1);
     
-    ss << indentStr << "Scope(";
-    switch (kind) {
-        case ScopeKind::GLOBAL: ss << "global"; break;
-        case ScopeKind::FUNCTION: ss << "function"; break;
-        case ScopeKind::BLOCK: ss << "block"; break;
-        case ScopeKind::STRUCT: ss << "struct"; break;
-        case ScopeKind::MODULE: ss << "module"; break;
-    }
-    if (!name.empty()) {
-        ss << " " << name;
-    }
-    ss << ", depth=" << depth << ")\n";
-    
-    // Print symbols
-    for (const auto& pair : symbols) {
-        ss << indentStr << "  " << pair.second->toString() << "\n";
-    }
-    
-    // Print child scopes
-    for (const auto& child : children) {
-        ss << child->toString(indent + 1);
+    if (!errors.empty()) {
+        ss << "\nErrors:\n";
+        for (const auto& err : errors) {
+            ss << "  - " << err << "\n";
+        }
     }
     
     return ss.str();
 }
 
-// ============================================================================
-// SymbolTable Implementation
-// ============================================================================
-
-SymbolTable::SymbolTable() {
-    rootScope = std::make_unique<Scope>(ScopeKind::GLOBAL, nullptr, "global");
-    currentScope = rootScope.get();
-}
-
-void SymbolTable::enterScope(ScopeKind kind, const std::string& name) {
-    currentScope = currentScope->enterScope(kind, name);
-}
-
-void SymbolTable::exitScope() {
-    if (currentScope->getParent()) {
-        currentScope = currentScope->exitScope();
-    } else {
-        error("Cannot exit global scope");
-    }
-}
-
-Symbol* SymbolTable::defineSymbol(const std::string& name, SymbolKind kind,
-                                   Type* type, int line, int column) {
-    // Check for duplicates in current scope
-    if (currentScope->isDuplicate(name)) {
-        std::stringstream ss;
-        ss << "Symbol '" << name << "' already defined in current scope";
-        if (line > 0) {
-            ss << " at line " << line << ", column " << column;
-        }
-        error(ss.str());
-        return nullptr;
-    }
-    
-    // Create new symbol
-    auto symbol = std::make_unique<Symbol>(name, kind, type, currentScope, line, column);
-    Symbol* symbolPtr = symbol.get();
-    symbols.push_back(std::move(symbol));
-    
-    // Add to current scope
-    currentScope->define(symbolPtr);
-    
-    return symbolPtr;
-}
-
-Symbol* SymbolTable::lookupSymbol(const std::string& name) const {
-    return currentScope->resolve(name);  // Use resolve() to traverse parent scopes
-}
-
-Symbol* SymbolTable::resolveSymbol(const std::string& name) const {
-    return currentScope->resolve(name);
-}
-
-bool SymbolTable::isDefined(const std::string& name) const {
-    return currentScope->resolve(name) != nullptr;
-}
-
-void SymbolTable::error(const std::string& message) {
-    errors.push_back(message);
-}
-
-std::string SymbolTable::toString() const {
-    return rootScope->toString(0);
-}
-
 } // namespace sema
 } // namespace aria
 
-
-FILE: include/frontend/sema/generic_resolver.h
+FILE: src/frontend/sema/module_resolver.cpp
 ================================================================================
-#ifndef ARIA_GENERIC_RESOLVER_H
-#define ARIA_GENERIC_RESOLVER_H
+#include "frontend/sema/module_resolver.h"
+#include <filesystem>
+#include <algorithm>
+#include <cstdlib>
+#include <sstream>
 
-#include "frontend/ast/ast_node.h"
-#include "frontend/ast/stmt.h"
-#include "frontend/ast/expr.h"
-#include "frontend/sema/type.h"
-#include "frontend/sema/symbol_table.h"
-#include <string>
-#include <vector>
-#include <unordered_map>
-#include <unordered_set>
-#include <memory>
-
-// Forward declarations
-namespace aria {
-    struct GenericParamInfo;  // Defined in frontend/ast/stmt.h
-}
+namespace fs = std::filesystem;
 
 namespace aria {
 namespace sema {
 
-// ============================================================================
-// Generic Type System
-// ============================================================================
-// This module implements Aria's zero-cost generic system via monomorphization.
-// Based on research_027_generics_templates.txt
-//
-// Key Features:
-// - Compile-time monomorphization (like C++/Rust templates)
-// - Lazy instantiation on demand
-// - Bidirectional type inference
-// - Trait-based constraints
-// - Deep integration with TBB types and hybrid memory model
-//
-// Syntax: func<T, U>:name = *T(*U:param) { ... }
-// - <T, U> declares type parameters
-// - *T, *U references them in body (explicit sigil)
-// ============================================================================
-
-/**
- * Represents a single generic type parameter
- */
-struct GenericParam {
-    std::string name;                    // e.g., "T"
-    std::vector<std::string> constraints; // Trait bounds: "T: Addable & Display"
-    int line;
-    int column;
+ModuleResolver::ModuleResolver(const std::string& rootPath)
+    : rootPath(normalizePath(rootPath)) {
+    // Add root path as first search location
+    searchPaths.push_back(this->rootPath);
     
-    GenericParam(const std::string& n, int l = 0, int c = 0)
-        : name(n), line(l), column(c) {}
+    // Add standard library paths
+    // /usr/lib/aria is the default system-wide installation
+    #ifdef __linux__
+    searchPaths.push_back("/usr/lib/aria");
+    searchPaths.push_back("/usr/local/lib/aria");
+    #endif
     
-    bool hasConstraints() const { return !constraints.empty(); }
-};
+    // Add paths from ARIA_PATH environment variable
+    auto ariaPathDirs = readAriaPath();
+    searchPaths.insert(searchPaths.end(), ariaPathDirs.begin(), ariaPathDirs.end());
+}
 
-/**
- * Represents a type argument provided at a call site
- */
-struct TypeArg {
-    Type* type;            // The concrete type
-    std::string source;    // "inferred" or "explicit"
-    int line;
-    int column;
-    
-    TypeArg(Type* t, const std::string& src = "inferred", int l = 0, int c = 0)
-        : type(t), source(src), line(l), column(c) {}
-};
-
-/**
- * Represents a mapping from type parameters to concrete types
- * Example: {T -> int32, U -> string}
- */
-using TypeSubstitution = std::unordered_map<std::string, Type*>;
-
-/**
- * Cache key for specialized functions
- * Format: (function_name, [type1, type2, ...])
- */
-struct SpecializationKey {
-    std::string funcName;
-    std::vector<std::string> typeNames;  // Canonical type names
-    
-    bool operator==(const SpecializationKey& other) const {
-        return funcName == other.funcName && typeNames == other.typeNames;
+std::string ModuleResolver::resolveImport(const UseStmt* useStmt, 
+                                          const std::string& currentModulePath) {
+    if (!useStmt) {
+        addError("Null use statement");
+        return "";
     }
-};
-
-// Hash function for SpecializationKey
-struct SpecializationKeyHash {
-    std::size_t operator()(const SpecializationKey& key) const {
-        std::size_t h = std::hash<std::string>{}(key.funcName);
-        for (const auto& typeName : key.typeNames) {
-            h ^= std::hash<std::string>{}(typeName) + 0x9e3779b9 + (h << 6) + (h >> 2);
+    
+    // Resolve the module path
+    std::string resolvedPath = resolveModulePath(useStmt->path, 
+                                                  useStmt->isFilePath,
+                                                  currentModulePath);
+    
+    if (resolvedPath.empty()) {
+        std::ostringstream oss;
+        oss << "Could not resolve module '";
+        if (useStmt->isFilePath) {
+            oss << useStmt->path[0];
+        } else {
+            for (size_t i = 0; i < useStmt->path.size(); ++i) {
+                if (i > 0) oss << ".";
+                oss << useStmt->path[i];
+            }
         }
-        return h;
-    }
-};
-
-/**
- * Stores a specialized (monomorphized) version of a generic function
- */
-struct Specialization {
-    FuncDeclStmt* funcDecl;        // The specialized AST
-    std::string mangledName;       // Unique symbol name
-    TypeSubstitution substitution; // Type parameter bindings
-    bool analyzed;                 // Has type checking been performed?
-    
-    Specialization(FuncDeclStmt* decl, const std::string& name,
-                   const TypeSubstitution& sub)
-        : funcDecl(decl), mangledName(name), substitution(sub), analyzed(false) {}
-};
-
-/**
- * Error reported during generic resolution
- */
-struct GenericError {
-    int line;
-    int column;
-    std::string message;
-    std::string context;  // Additional context information
-    
-    GenericError(const std::string& msg, int l = 0, int c = 0,
-                 const std::string& ctx = "")
-        : line(l), column(c), message(msg), context(ctx) {}
-};
-
-// ============================================================================
-// GenericResolver: Type Inference and Validation
-// ============================================================================
-
-class GenericResolver {
-public:
-    GenericResolver();
-    ~GenericResolver() = default;
-    
-    // ========================================================================
-    // Type Inference (Phase 3.4.1)
-    // ========================================================================
-    
-    /**
-     * Infer type arguments from a function call
-     * 
-     * Uses bidirectional type inference:
-     * 1. Generate constraints from arguments
-     * 2. Unify to solve for type parameters
-     * 3. Validate and return substitution
-     * 
-     * @param funcDecl The generic function being called
-     * @param callExpr The call expression
-     * @param argTypes The types of the arguments
-     * @return TypeSubstitution mapping type params to concrete types
-     */
-    TypeSubstitution inferTypeArgs(FuncDeclStmt* funcDecl,
-                                   CallExpr* callExpr,
-                                   const std::vector<Type*>& argTypes);
-    
-    /**
-     * Explicitly resolve type arguments from turbofish syntax
-     * Example: identity::<int32>(42)
-     * 
-     * @param funcDecl The generic function
-     * @param typeArgs The explicit type arguments
-     * @return TypeSubstitution
-     */
-    TypeSubstitution resolveExplicitTypeArgs(FuncDeclStmt* funcDecl,
-                                            const std::vector<std::string>& typeArgs);
-    
-    /**
-     * Validate that a type substitution is complete and valid
-     * 
-     * @param funcDecl The generic function
-     * @param substitution The type parameter bindings
-     * @return true if valid
-     */
-    bool validateSubstitution(FuncDeclStmt* funcDecl,
-                             const TypeSubstitution& substitution);
-    
-    // ========================================================================
-    // Constraint Checking (Phase 3.4.3)
-    // ========================================================================
-    
-    /**
-     * Check that a concrete type satisfies the constraints on a type parameter
-     * 
-     * Example: If T: Addable, verify that int32 implements Addable
-     * 
-     * @param param The generic parameter with constraints
-     * @param concreteType The type being checked
-     * @return true if all constraints satisfied
-     */
-    bool checkConstraints(const GenericParamInfo& param, Type* concreteType);
-    
-    /**
-     * Validate that all type parameters' constraints are satisfied
-     * 
-     * @param genericParams The list of parameters with constraints
-     * @param substitution The concrete type bindings
-     * @return true if all constraints satisfied
-     */
-    bool validateConstraints(const std::vector<GenericParamInfo>& genericParams,
-                            const TypeSubstitution& substitution);
-    
-    // ========================================================================
-    // Utilities
-    // ========================================================================
-    
-    /**
-     * Canonicalize a type name for cache key generation
-     * Resolves aliases: type MyInt = int32 -> "int32"
-     */
-    std::string canonicalizeTypeName(Type* type) const;
-    
-    /**
-     * Create a specialization key for caching
-     */
-    SpecializationKey makeSpecializationKey(const std::string& funcName,
-                                           const TypeSubstitution& substitution) const;
-    
-    // Error handling
-    bool hasErrors() const { return !errors.empty(); }
-    const std::vector<GenericError>& getErrors() const { return errors; }
-    void clearErrors() { errors.clear(); }
-    
-private:
-    std::vector<GenericError> errors;
-    
-    // Helper: Add an error
-    void addError(const std::string& message, int line = 0, int column = 0,
-                  const std::string& context = "");
-    
-    // Helper: Unify two types during inference
-    bool unifyTypes(Type* expected, Type* actual,
-                   TypeSubstitution& substitution,
-                   const std::string& paramName);
-    
-    // Helper: Check if a type implements a trait
-    bool implementsTrait(Type* type, const std::string& traitName);
-};
-
-// ============================================================================
-// Monomorphizer: Specialization Engine (Phase 3.4.2)
-// ============================================================================
-
-class Monomorphizer {
-public:
-    Monomorphizer(GenericResolver* resolver);
-    ~Monomorphizer() = default;
-    
-    /**
-     * Request a specialized version of a generic function
-     * 
-     * This is the main entry point for the monomorphization engine:
-     * 1. Check cache for existing specialization
-     * 2. If not found, create new specialized copy
-     * 3. Perform type substitution on the cloned AST
-     * 4. Return the specialized function
-     * 
-     * @param funcDecl The generic function template
-     * @param substitution Type parameter bindings
-     * @return Specialized function (cached or newly created)
-     */
-    Specialization* requestSpecialization(FuncDeclStmt* funcDecl,
-                                         const TypeSubstitution& substitution);
-    
-    /**
-     * Generate a mangled name for a specialized function
-     * 
-     * Format: _Aria_M_<FuncName>_<TypeHash>_<TypeDesc>
-     * Example: _Aria_M_identity_F4A19C88_int32
-     * 
-     * @param funcName The base function name
-     * @param substitution The type bindings
-     * @return Mangled symbol name
-     */
-    std::string mangleName(const std::string& funcName,
-                          const TypeSubstitution& substitution) const;
-    
-    /**
-     * Clone a generic function AST and substitute types
-     * 
-     * Creates a deep copy of the AST, replacing all *T references
-     * with the concrete type from the substitution
-     * 
-     * @param funcDecl The generic function to clone
-     * @param substitution Type parameter bindings
-     * @return New specialized FuncDeclStmt
-     */
-    FuncDeclStmt* cloneAndSubstitute(FuncDeclStmt* funcDecl,
-                                     const TypeSubstitution& substitution);
-    
-    /**
-     * Get all specializations created so far
-     * Used for code generation phase
-     */
-    const std::vector<Specialization*>& getSpecializations() const {
-        return specializations;
+        oss << "'. Searched in: ";
+        auto paths = getSearchPaths();
+        for (size_t i = 0; i < paths.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << paths[i];
+        }
+        addError(oss.str());
+        return "";
     }
     
-    /**
-     * Check if instantiation depth limit exceeded
-     * Prevents infinite recursive instantiation
-     */
-    bool checkDepthLimit() const;
-    
-    /**
-     * Get current instantiation stack depth (for testing)
-     */
-    size_t getInstantiationDepth() const {
-        return instantiationStack.size();
+    // Check for circular dependencies (research_028 Section 3.3)
+    if (isCurrentlyLoading(resolvedPath)) {
+        std::ostringstream oss;
+        oss << "Circular dependency detected: ";
+        for (size_t i = 0; i < loadingStack.size(); ++i) {
+            if (i > 0) oss << " -> ";
+            oss << loadingStack[i];
+        }
+        oss << " -> " << resolvedPath;
+        addError(oss.str());
+        return "";
     }
     
-    // Error handling
-    bool hasErrors() const { return !errors.empty(); }
-    const std::vector<GenericError>& getErrors() const { return errors; }
+    return resolvedPath;
+}
+
+std::string ModuleResolver::resolveModulePath(const std::vector<std::string>& path,
+                                               bool isFilePath,
+                                               const std::string& currentModulePath) {
+    if (path.empty()) {
+        addError("Empty module path");
+        return "";
+    }
     
-    // Public for testing: Deep clone an AST node
-    ASTNodePtr cloneAST(ASTNode* node);
+    // File path imports (use "./file.aria", use "../other/mod.aria")
+    // research_028 Section 3.1.5
+    if (isFilePath) {
+        std::string filePath = path[0]; // File paths are stored as single string in path[0]
+        
+        // Relative to current module
+        std::string currentDir = getDirectory(currentModulePath);
+        std::string resolved = normalizePath(filePath, currentDir);
+        
+        if (isValidAriaFile(resolved)) {
+            return resolved;
+        }
+        
+        addError("File path '" + filePath + "' does not exist or is not a .aria file");
+        return "";
+    }
     
-    // Public for testing: Substitute types in an AST node
-    void substituteTypes(ASTNode* node, const TypeSubstitution& substitution);
+    // Logical path imports (use std.io, use math.calc)
+    // research_028 Section 3.2
     
-private:
-    GenericResolver* resolver;
+    // Try each search path in order
+    for (const auto& searchPath : getSearchPaths()) {
+        std::string found = tryFindModule(searchPath, path);
+        if (!found.empty()) {
+            return found;
+        }
+    }
     
-    // Cache: (function_name, type_args) -> Specialization
-    std::unordered_map<SpecializationKey, Specialization*,
-                       SpecializationKeyHash> specializationCache;
+    // Not found in any search path
+    return "";
+}
+
+bool ModuleResolver::isCurrentlyLoading(const std::string& modulePath) const {
+    return loadingSet.find(normalizePath(modulePath)) != loadingSet.end();
+}
+
+void ModuleResolver::beginLoading(const std::string& modulePath) {
+    std::string normalized = normalizePath(modulePath);
+    loadingStack.push_back(normalized);
+    loadingSet.insert(normalized);
+}
+
+void ModuleResolver::endLoading(const std::string& modulePath) {
+    std::string normalized = normalizePath(modulePath);
     
-    // All specializations created (for code generation)
-    std::vector<Specialization*> specializations;
+    if (!loadingStack.empty() && loadingStack.back() == normalized) {
+        loadingStack.pop_back();
+        loadingSet.erase(normalized);
+    }
+}
+
+void ModuleResolver::addSearchPath(const std::string& path) {
+    std::string normalized = normalizePath(path);
+    if (std::find(searchPaths.begin(), searchPaths.end(), normalized) == searchPaths.end()) {
+        searchPaths.push_back(normalized);
+    }
+}
+
+std::vector<std::string> ModuleResolver::getSearchPaths() const {
+    return searchPaths;
+}
+
+bool ModuleResolver::isValidAriaFile(const std::string& path) {
+    if (path.empty()) return false;
     
-    // Instantiation stack (for cycle detection)
-    std::vector<SpecializationKey> instantiationStack;
+    try {
+        fs::path p(path);
+        return fs::exists(p) && fs::is_regular_file(p) && p.extension() == ".aria";
+    } catch (...) {
+        return false;
+    }
+}
+
+std::string ModuleResolver::logicalToFilePath(const std::vector<std::string>& components,
+                                               const std::string& baseDir) {
+    return tryFindModule(baseDir, components);
+}
+
+std::string ModuleResolver::normalizePath(const std::string& path, 
+                                          const std::string& relativeTo) {
+    if (path.empty()) return "";
     
-    // Errors
-    std::vector<GenericError> errors;
+    try {
+        fs::path p(path);
+        
+        // If path is relative and we have a base, resolve it
+        if (p.is_relative() && !relativeTo.empty()) {
+            fs::path base(relativeTo);
+            if (fs::is_regular_file(base)) {
+                base = base.parent_path();
+            }
+            p = base / p;
+        }
+        
+        // Normalize (resolve .., ., etc.)
+        return fs::absolute(p).lexically_normal().string();
+    } catch (...) {
+        return path;
+    }
+}
+
+std::string ModuleResolver::getDirectory(const std::string& filePath) {
+    if (filePath.empty()) return ".";
     
-    // Configuration
-    static const int MAX_INSTANTIATION_DEPTH = 64;
+    try {
+        fs::path p(filePath);
+        if (fs::is_directory(p)) {
+            return p.string();
+        }
+        return p.parent_path().string();
+    } catch (...) {
+        // Fallback to string manipulation
+        size_t pos = filePath.find_last_of("/\\");
+        if (pos != std::string::npos) {
+            return filePath.substr(0, pos);
+        }
+        return ".";
+    }
+}
+
+bool ModuleResolver::isAbsolutePath(const std::string& path) {
+    if (path.empty()) return false;
     
-    // Helper: Add an error
-    void addError(const std::string& message, int line = 0, int column = 0);
+    // Unix absolute path
+    if (path[0] == '/') return true;
     
-    // Helper: Compute hash for mangling
-    uint64_t computeTypeHash(const TypeSubstitution& substitution) const;
-};
+    // Windows absolute path (C:\ or similar)
+    if (path.length() >= 2 && path[1] == ':') return true;
+    
+    return false;
+}
+
+bool ModuleResolver::isRelativePath(const std::string& path) {
+    if (path.empty()) return false;
+    
+    // Starts with ./ or ../
+    if (path[0] == '.') {
+        if (path.length() == 1) return true;  // Just "."
+        if (path[1] == '/' || path[1] == '\\') return true;  // "./"
+        if (path[1] == '.') {
+            if (path.length() == 2) return true;  // Just ".."
+            if (path.length() > 2 && (path[2] == '/' || path[2] == '\\')) return true;  // "../"
+        }
+    }
+    
+    return false;
+}
+
+std::string ModuleResolver::tryFindModule(const std::string& baseDir,
+                                          const std::vector<std::string>& components) {
+    if (components.empty()) return "";
+    
+    // Try pattern 1: <base>/path/to/module.aria
+    // Example: std.io -> /usr/lib/aria/std/io.aria
+    std::string filePath = buildPath(baseDir, components, ".aria");
+    if (isValidAriaFile(filePath)) {
+        return filePath;
+    }
+    
+    // Try pattern 2: <base>/path/to/module/mod.aria
+    // Example: std.io -> /usr/lib/aria/std/io/mod.aria
+    // research_028 Section 3.2 step 3
+    std::vector<std::string> modComponents = components;
+    modComponents.push_back("mod");
+    std::string modPath = buildPath(baseDir, modComponents, ".aria");
+    if (isValidAriaFile(modPath)) {
+        return modPath;
+    }
+    
+    return "";
+}
+
+std::string ModuleResolver::buildPath(const std::string& baseDir,
+                                      const std::vector<std::string>& components,
+                                      const std::string& extension) {
+    if (components.empty()) return baseDir;
+    
+    try {
+        fs::path result(baseDir);
+        for (const auto& comp : components) {
+            result /= comp;
+        }
+        
+        // Add extension if not already present
+        if (!extension.empty() && result.extension() != extension) {
+            result += extension;
+        }
+        
+        return result.string();
+    } catch (...) {
+        // Fallback to string concatenation
+        std::string result = baseDir;
+        for (const auto& comp : components) {
+            if (!result.empty() && result.back() != '/' && result.back() != '\\') {
+                result += '/';
+            }
+            result += comp;
+        }
+        if (!extension.empty()) {
+            result += extension;
+        }
+        return result;
+    }
+}
+
+void ModuleResolver::addError(const std::string& message) {
+    errors.push_back(message);
+}
+
+std::vector<std::string> ModuleResolver::readAriaPath() {
+    std::vector<std::string> paths;
+    
+    const char* ariaPathEnv = std::getenv("ARIA_PATH");
+    if (!ariaPathEnv) {
+        return paths;
+    }
+    
+    std::string ariaPath(ariaPathEnv);
+    
+    // Split by : on Unix or ; on Windows
+    #ifdef _WIN32
+    const char delimiter = ';';
+    #else
+    const char delimiter = ':';
+    #endif
+    
+    std::istringstream iss(ariaPath);
+    std::string path;
+    while (std::getline(iss, path, delimiter)) {
+        if (!path.empty()) {
+            paths.push_back(normalizePath(path));
+        }
+    }
+    
+    return paths;
+}
 
 } // namespace sema
 } // namespace aria
-
-#endif // ARIA_GENERIC_RESOLVER_H
-
 
 FILE: src/frontend/sema/generic_resolver.cpp
 ================================================================================
@@ -4290,8 +5933,8 @@ bool GenericResolver::implementsTrait(Type* type, const std::string& traitName) 
 // Monomorphizer Implementation
 // ============================================================================
 
-Monomorphizer::Monomorphizer(GenericResolver* resolver)
-    : resolver(resolver) {}
+Monomorphizer::Monomorphizer(GenericResolver* resolver, TypeSystem* ts)
+    : resolver(resolver), typeSystem(ts) {}
 
 Specialization* Monomorphizer::requestSpecialization(
     FuncDeclStmt* funcDecl,
@@ -4717,15 +6360,130 @@ uint64_t Monomorphizer::computeTypeHash(const TypeSubstitution& substitution) co
     return hash;
 }
 
+// ============================================================================
+// Struct Specialization (Session 13)
+// ============================================================================
+
+std::string Monomorphizer::requestStructSpecialization(
+    StructDeclStmt* structDecl,
+    const TypeSubstitution& substitution) {
+    
+    if (!structDecl) {
+        addError("Invalid struct declaration");
+        return "";
+    }
+    
+    if (!typeSystem) {
+        addError("TypeSystem not initialized for struct specialization");
+        return "";
+    }
+    
+    // Create cache key using the same format as functions
+    SpecializationKey key = resolver->makeSpecializationKey(
+        structDecl->structName, substitution);
+    
+    // Generate mangled name
+    std::string mangledName = mangleName(structDecl->structName, substitution);
+    
+    // Check if already specialized
+    Type* existing = typeSystem->getStructType(mangledName);
+    if (existing) {
+        return mangledName;  // Already instantiated
+    }
+    
+    // Clone and substitute the struct
+    StructDeclStmt* specialized = cloneStructAndSubstitute(structDecl, substitution);
+    if (!specialized) {
+        return "";
+    }
+    
+    // Update the struct name to the mangled name
+    specialized->structName = mangledName;
+    
+    // Register the specialized struct with TypeSystem
+    // Extract field information
+    std::vector<StructType::Field> fields;
+    for (const auto& field : specialized->fields) {
+        VarDeclStmt* fieldDecl = static_cast<VarDeclStmt*>(field.get());
+        
+        // Look up field type
+        Type* fieldType = typeSystem->getStructType(fieldDecl->typeName);
+        if (!fieldType) {
+            fieldType = typeSystem->getPrimitiveType(fieldDecl->typeName);
+        }
+        
+        if (!fieldType || fieldType->getKind() == TypeKind::ERROR) {
+            addError("Unknown field type '" + fieldDecl->typeName + 
+                    "' in specialized struct '" + mangledName + "'");
+            return "";
+        }
+        
+        fields.push_back(StructType::Field(fieldDecl->varName, fieldType, 0, false));
+    }
+    
+    // Create the struct type in TypeSystem
+    typeSystem->createStructType(mangledName, fields, 0, 0, false);
+    
+    // Clean up the cloned AST (it's no longer needed after registration)
+    delete specialized;
+    
+    return mangledName;
+}
+
+StructDeclStmt* Monomorphizer::cloneStructAndSubstitute(
+    StructDeclStmt* structDecl,
+    const TypeSubstitution& substitution) {
+    
+    if (!structDecl) return nullptr;
+    
+    // Clone all fields
+    std::vector<ASTNodePtr> clonedFields;
+    for (const auto& field : structDecl->fields) {
+        VarDeclStmt* fieldDecl = static_cast<VarDeclStmt*>(field.get());
+        
+        // Substitute the field type if it's a generic type reference (*T)
+        std::string fieldType = fieldDecl->typeName;
+        if (!fieldType.empty() && fieldType[0] == '*') {
+            std::string typeParamName = fieldType.substr(1);
+            auto it = substitution.find(typeParamName);
+            if (it != substitution.end()) {
+                fieldType = resolver->canonicalizeTypeName(it->second);
+            }
+        }
+        
+        // Create cloned field with substituted type
+        auto clonedField = std::make_unique<VarDeclStmt>(
+            fieldType,
+            fieldDecl->varName,
+            nullptr,  // Struct fields don't have initializers
+            fieldDecl->line,
+            fieldDecl->column
+        );
+        
+        clonedField->isWild = fieldDecl->isWild;
+        clonedField->isConst = fieldDecl->isConst;
+        clonedField->isStack = fieldDecl->isStack;
+        clonedField->isGC = fieldDecl->isGC;
+        
+        clonedFields.push_back(std::move(clonedField));
+    }
+    
+    // Create new struct declaration
+    StructDeclStmt* cloned = new StructDeclStmt(
+        structDecl->structName,  // Will be updated with mangled name by caller
+        clonedFields,
+        structDecl->line,
+        structDecl->column
+    );
+    
+    // Do NOT copy genericParams - this is now a concrete struct
+    
+    return cloned;
+}
+
 } // namespace sema
 } // namespace aria
-
-
-FILE: include/frontend/sema/monomorphizer.h
-================================================================================
-[FILE NOT FOUND]
 
 FILE: src/frontend/sema/monomorphizer.cpp
 ================================================================================
 [FILE NOT FOUND]
-

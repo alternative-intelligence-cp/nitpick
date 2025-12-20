@@ -46,6 +46,8 @@ public:
         FUNC_DECL,            // Function declaration: func:name = returnType(params) { body };
         STRUCT_DECL,          // Struct declaration: struct Name { fields };
         RETURN,               // return statement
+        PASS,                 // pass statement (result success)
+        FAIL,                 // fail statement (result error)
         BREAK,                // break statement
         CONTINUE,             // continue statement
         DEFER,                // defer statement (RAII cleanup)
@@ -118,7 +120,6 @@ using ASTNodePtr = std::shared_ptr<ASTNode>;
 std::ostream& operator<<(std::ostream& os, aria::ASTNode::NodeType type);
 
 #endif // ARIA_AST_NODE_H
-
 
 FILE: include/frontend/ast/expr.h
 ================================================================================
@@ -217,6 +218,7 @@ public:
     ASTNodePtr callee;
     std::vector<ASTNodePtr> arguments;
     std::vector<std::string> explicitTypeArgs;  // For turbofish syntax: ::<T, U>
+    std::string specializedMangledName;  // For generic calls: resolved mangled name
     
     CallExpr(ASTNodePtr callee, const std::vector<ASTNodePtr>& args, int line = 0, int column = 0)
         : ASTNode(NodeType::CALL, line, column), callee(callee), arguments(args) {}
@@ -403,174 +405,30 @@ public:
     std::string toString() const override;
 };
 
+/**
+ * Unwrap expression node (? operator)
+ * Represents: result ? default_value
+ * 
+ * Unwraps a result type, returning the value if successful,
+ * or the default value if there was an error.
+ * 
+ * Example: string:content = readFile("config.txt") ? "default";
+ */
+class UnwrapExpr : public ASTNode {
+public:
+    ASTNodePtr result;        // Expression that returns a result type
+    ASTNodePtr defaultValue;  // Default value if result contains error
+    
+    UnwrapExpr(ASTNodePtr res, ASTNodePtr defVal, int line = 0, int column = 0)
+        : ASTNode(NodeType::UNWRAP, line, column),
+          result(res), defaultValue(defVal) {}
+    
+    std::string toString() const override;
+};
+
 } // namespace aria
 
 #endif // ARIA_EXPR_H
-
-
-FILE: src/frontend/ast/expr.cpp
-================================================================================
-#include "frontend/ast/expr.h"
-#include <sstream>
-
-namespace aria {
-
-std::string LiteralExpr::toString() const {
-    std::ostringstream oss;
-    oss << "Literal(";
-    
-    std::visit([&oss](auto&& arg) {
-        using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, int64_t>) {
-            oss << arg;
-        } else if constexpr (std::is_same_v<T, double>) {
-            oss << arg;
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            oss << "\"" << arg << "\"";
-        } else if constexpr (std::is_same_v<T, bool>) {
-            oss << (arg ? "true" : "false");
-        } else if constexpr (std::is_same_v<T, std::monostate>) {
-            oss << "null";
-        }
-    }, value);
-    
-    oss << ")";
-    return oss.str();
-}
-
-std::string IdentifierExpr::toString() const {
-    return "Identifier(" + name + ")";
-}
-
-std::string BinaryExpr::toString() const {
-    return "Binary(" + left->toString() + " " + aria::frontend::tokenTypeToString(op.type) + " " + right->toString() + ")";
-}
-
-std::string UnaryExpr::toString() const {
-    return "Unary(" + aria::frontend::tokenTypeToString(op.type) + " " + operand->toString() + ")";
-}
-
-std::string CallExpr::toString() const {
-    std::ostringstream oss;
-    oss << "Call(" << callee->toString();
-    
-    // Display explicit type arguments if present (turbofish)
-    if (!explicitTypeArgs.empty()) {
-        oss << "::<";
-        for (size_t i = 0; i < explicitTypeArgs.size(); ++i) {
-            if (i > 0) oss << ", ";
-            oss << explicitTypeArgs[i];
-        }
-        oss << ">";
-    }
-    
-    oss << ", [";
-    for (size_t i = 0; i < arguments.size(); ++i) {
-        if (i > 0) oss << ", ";
-        oss << arguments[i]->toString();
-    }
-    oss << "])";
-    return oss.str();
-}
-
-std::string IndexExpr::toString() const {
-    return "Index(" + array->toString() + "[" + index->toString() + "])";
-}
-
-std::string MemberAccessExpr::toString() const {
-    std::string op = isPointerAccess ? "->" : ".";
-    return "MemberAccess(" + object->toString() + op + member + ")";
-}
-
-std::string TernaryExpr::toString() const {
-    return "Ternary(" + condition->toString() + " ? " + 
-           trueValue->toString() + " : " + falseValue->toString() + ")";
-}
-
-std::string AssignmentExpr::toString() const {
-    return "Assignment(" + target->toString() + " " + 
-           aria::frontend::tokenTypeToString(op.type) + " " + value->toString() + ")";
-}
-
-std::string ArrayLiteralExpr::toString() const {
-    std::ostringstream oss;
-    oss << "ArrayLiteral([";
-    for (size_t i = 0; i < elements.size(); ++i) {
-        if (i > 0) oss << ", ";
-        oss << elements[i]->toString();
-    }
-    oss << "])";
-    return oss.str();
-}
-
-std::string ObjectLiteralExpr::toString() const {
-    std::ostringstream oss;
-    if (!type_name.empty()) {
-        oss << type_name;
-    } else {
-        oss << "obj";
-    }
-    oss << "{ ";
-    for (size_t i = 0; i < fields.size(); ++i) {
-        if (i > 0) oss << ", ";
-        oss << fields[i].name << ": " << fields[i].value->toString();
-    }
-    oss << " }";
-    return oss.str();
-}
-
-std::string LambdaExpr::toString() const {
-    std::ostringstream oss;
-    oss << "Lambda(";
-    
-    // Parameters
-    oss << "params=[";
-    for (size_t i = 0; i < parameters.size(); ++i) {
-        if (i > 0) oss << ", ";
-        oss << parameters[i]->toString();
-    }
-    oss << "]";
-    
-    // Return type
-    if (!returnTypeName.empty()) {
-        oss << ", returnType=" << returnTypeName;
-    }
-    
-    // Captured variables
-    if (!capturedVars.empty()) {
-        oss << ", captures=[";
-        for (size_t i = 0; i < capturedVars.size(); ++i) {
-            if (i > 0) oss << ", ";
-            oss << capturedVars[i].name;
-            switch (capturedVars[i].mode) {
-                case CaptureMode::BY_VALUE: oss << "(copy)"; break;
-                case CaptureMode::BY_REFERENCE: oss << "(ref)"; break;
-                case CaptureMode::BY_MOVE: oss << "(move)"; break;
-            }
-        }
-        oss << "]";
-    }
-    
-    // Async flag
-    if (isAsync) {
-        oss << ", async";
-    }
-    
-    // Body
-    oss << ", body=" << body->toString();
-    
-    oss << ")";
-    return oss.str();
-}
-
-std::string AwaitExpr::toString() const {
-    std::ostringstream oss;
-    oss << "Await(" << operand->toString() << ")";
-    return oss.str();
-}
-
-} // namespace aria
-
 
 FILE: include/frontend/ast/stmt.h
 ================================================================================
@@ -588,7 +446,8 @@ namespace aria {
  */
 class VarDeclStmt : public ASTNode {
 public:
-    std::string typeName;      // e.g., "int8", "string"
+    std::string typeName;      // e.g., "int8", "string" (legacy, kept for simple types)
+    ASTNodePtr typeNode;       // Type AST node (for complex types like arrays)
     std::string varName;
     ASTNodePtr initializer;    // Can be nullptr
     bool isWild;               // wild keyword (opt-out of GC)
@@ -599,7 +458,14 @@ public:
     VarDeclStmt(const std::string& type, const std::string& name, 
                 ASTNodePtr init = nullptr, int line = 0, int column = 0)
         : ASTNode(NodeType::VAR_DECL, line, column),
-          typeName(type), varName(name), initializer(init),
+          typeName(type), typeNode(nullptr), varName(name), initializer(init),
+          isWild(false), isConst(false), isStack(false), isGC(false) {}
+    
+    // Constructor with typeNode support
+    VarDeclStmt(ASTNodePtr typeN, const std::string& name,
+                ASTNodePtr init = nullptr, int line = 0, int column = 0)
+        : ASTNode(NodeType::VAR_DECL, line, column),
+          typeName(""), typeNode(typeN), varName(name), initializer(init),
           isWild(false), isConst(false), isStack(false), isGC(false) {}
     
     std::string toString() const override;
@@ -649,11 +515,13 @@ public:
 /**
  * Struct declaration node
  * Represents: struct Name { type:field1; type:field2; };
+ * Or: struct<T, U> Name { *T:field1; *U:field2; };
  */
 class StructDeclStmt : public ASTNode {
 public:
     std::string structName;
     std::vector<ASTNodePtr> fields;  // VarDeclStmt instances (field declarations)
+    std::vector<GenericParamInfo> genericParams;  // For generics: struct<T, U>
     
     StructDeclStmt(const std::string& name, const std::vector<ASTNodePtr>& fieldList,
                    int line = 0, int column = 0)
@@ -722,6 +590,36 @@ public:
     
     ReturnStmt(ASTNodePtr val = nullptr, int line = 0, int column = 0)
         : ASTNode(NodeType::RETURN, line, column), value(val) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Pass statement node (result success)
+ * Represents: pass(value);
+ * Returns a result type with err=0 and val=value
+ */
+class PassStmt : public ASTNode {
+public:
+    ASTNodePtr value;  // The success value to return
+    
+    PassStmt(ASTNodePtr val, int line = 0, int column = 0)
+        : ASTNode(NodeType::PASS, line, column), value(val) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Fail statement node (result error)
+ * Represents: fail(error_code);
+ * Returns a result type with err=error_code and val=0
+ */
+class FailStmt : public ASTNode {
+public:
+    ASTNodePtr errorCode;  // The error code to return
+    
+    FailStmt(ASTNodePtr code, int line = 0, int column = 0)
+        : ASTNode(NodeType::FAIL, line, column), errorCode(code) {}
     
     std::string toString() const override;
 };
@@ -1012,6 +910,374 @@ public:
 
 #endif // ARIA_STMT_H
 
+FILE: include/frontend/ast/type.h
+================================================================================
+#ifndef ARIA_TYPE_H
+#define ARIA_TYPE_H
+
+#include "ast_node.h"
+#include <vector>
+
+namespace aria {
+
+/**
+ * Base class for type annotations
+ * Represents type information in variable/function declarations
+ */
+class TypeNode : public ASTNode {
+public:
+    TypeNode(NodeType type, int line = 0, int column = 0)
+        : ASTNode(type, line, column) {}
+    
+    virtual ~TypeNode() = default;
+};
+
+/**
+ * Simple type annotation
+ * Represents: int8, string, bool, etc.
+ */
+class SimpleType : public TypeNode {
+public:
+    std::string typeName;  // e.g., "int8", "string", "bool"
+    
+    SimpleType(const std::string& name, int line = 0, int column = 0)
+        : TypeNode(NodeType::TYPE_ANNOTATION, line, column), typeName(name) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Pointer type annotation
+ * Represents: int8@, string@, obj@ (Aria native pointer syntax)
+ * Note: extern blocks use C-style * for FFI compatibility
+ */
+class PointerType : public TypeNode {
+public:
+    ASTNodePtr baseType;  // The type being pointed to
+    
+    PointerType(ASTNodePtr base, int line = 0, int column = 0)
+        : TypeNode(NodeType::POINTER_TYPE, line, column), baseType(base) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Array type annotation
+ * Represents: int8[], int8[100], string[]
+ */
+class ArrayType : public TypeNode {
+public:
+    ASTNodePtr elementType;  // Type of array elements
+    ASTNodePtr sizeExpr;     // Size expression (nullptr for dynamic arrays)
+    bool isDynamic;          // true for int8[], false for int8[100]
+    
+    ArrayType(ASTNodePtr elemType, ASTNodePtr size, int line = 0, int column = 0)
+        : TypeNode(NodeType::ARRAY_TYPE, line, column),
+          elementType(elemType), sizeExpr(size), isDynamic(size == nullptr) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Generic type annotation
+ * Represents: Array<int8>, Map<string, int32>
+ */
+class GenericType : public TypeNode {
+public:
+    std::string baseName;              // e.g., "Array", "Map"
+    std::vector<ASTNodePtr> typeArgs;  // Type arguments
+    
+    GenericType(const std::string& base, const std::vector<ASTNodePtr>& args,
+                int line = 0, int column = 0)
+        : TypeNode(NodeType::GENERIC_TYPE, line, column),
+          baseName(base), typeArgs(args) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Function type annotation
+ * Represents: func type in parameters or variables
+ */
+class FunctionType : public TypeNode {
+public:
+    ASTNodePtr returnType;              // Return type (can be another TypeNode)
+    std::vector<ASTNodePtr> paramTypes; // Parameter types
+    
+    FunctionType(ASTNodePtr retType, const std::vector<ASTNodePtr>& params,
+                 int line = 0, int column = 0)
+        : TypeNode(NodeType::FUNCTION_TYPE, line, column),
+          returnType(retType), paramTypes(params) {}
+    
+    std::string toString() const override;
+};
+
+} // namespace aria
+
+#endif // ARIA_TYPE_H
+
+FILE: src/frontend/ast/ast_node.cpp
+================================================================================
+#include "frontend/ast/ast_node.h"
+#include <ostream>
+
+// Stream output operator for NodeType (for testing)
+std::ostream& operator<<(std::ostream& os, aria::ASTNode::NodeType type) {
+    os << aria::ASTNode::nodeTypeToString(type);
+    return os;
+}
+
+namespace aria {
+
+std::string ASTNode::nodeTypeToString(NodeType type) {
+    switch (type) {
+        // Expressions
+        case NodeType::LITERAL: return "LITERAL";
+        case NodeType::IDENTIFIER: return "IDENTIFIER";
+        case NodeType::BINARY_OP: return "BINARY_OP";
+        case NodeType::UNARY_OP: return "UNARY_OP";
+        case NodeType::CALL: return "CALL";
+        case NodeType::INDEX: return "INDEX";
+        case NodeType::MEMBER_ACCESS: return "MEMBER_ACCESS";
+        case NodeType::POINTER_MEMBER: return "POINTER_MEMBER";
+        case NodeType::LAMBDA: return "LAMBDA";
+        case NodeType::TEMPLATE_LITERAL: return "TEMPLATE_LITERAL";
+        case NodeType::RANGE: return "RANGE";
+        case NodeType::TERNARY: return "TERNARY";
+        case NodeType::SAFE_NAV: return "SAFE_NAV";
+        case NodeType::NULL_COALESCE: return "NULL_COALESCE";
+        case NodeType::PIPELINE: return "PIPELINE";
+        case NodeType::UNWRAP: return "UNWRAP";
+        case NodeType::ARRAY_LITERAL: return "ARRAY_LITERAL";
+        case NodeType::OBJECT_LITERAL: return "OBJECT_LITERAL";
+        
+        // Statements
+        case NodeType::VAR_DECL: return "VAR_DECL";
+        case NodeType::FUNC_DECL: return "FUNC_DECL";
+        case NodeType::RETURN: return "RETURN";
+        case NodeType::PASS: return "PASS";
+        case NodeType::FAIL: return "FAIL";
+        case NodeType::BREAK: return "BREAK";
+        case NodeType::CONTINUE: return "CONTINUE";
+        case NodeType::DEFER: return "DEFER";
+        case NodeType::BLOCK: return "BLOCK";
+        case NodeType::EXPRESSION_STMT: return "EXPRESSION_STMT";
+        
+        // Control Flow
+        case NodeType::IF: return "IF";
+        case NodeType::WHILE: return "WHILE";
+        case NodeType::FOR: return "FOR";
+        case NodeType::LOOP: return "LOOP";
+        case NodeType::TILL: return "TILL";
+        case NodeType::WHEN: return "WHEN";
+        case NodeType::PICK: return "PICK";
+        case NodeType::PICK_CASE: return "PICK_CASE";
+        
+        // Types
+        case NodeType::TYPE_ANNOTATION: return "TYPE_ANNOTATION";
+        case NodeType::GENERIC_TYPE: return "GENERIC_TYPE";
+        case NodeType::ARRAY_TYPE: return "ARRAY_TYPE";
+        case NodeType::POINTER_TYPE: return "POINTER_TYPE";
+        case NodeType::FUNCTION_TYPE: return "FUNCTION_TYPE";
+        
+        // Modules
+        case NodeType::USE: return "USE";
+        case NodeType::MOD: return "MOD";
+        case NodeType::EXTERN: return "EXTERN";
+        case NodeType::PROGRAM: return "PROGRAM";
+        
+        // Special
+        case NodeType::ASSIGNMENT: return "ASSIGNMENT";
+        case NodeType::PARAMETER: return "PARAMETER";
+        case NodeType::ARGUMENT: return "ARGUMENT";
+        
+        default: return "UNKNOWN";
+    }
+}
+
+bool ASTNode::isExpression() const {
+    return type >= NodeType::LITERAL && type <= NodeType::OBJECT_LITERAL;
+}
+
+bool ASTNode::isStatement() const {
+    return (type >= NodeType::VAR_DECL && type <= NodeType::EXPRESSION_STMT) ||
+           (type >= NodeType::IF && type <= NodeType::PICK_CASE);
+}
+
+bool ASTNode::isType() const {
+    return type >= NodeType::TYPE_ANNOTATION && type <= NodeType::FUNCTION_TYPE;
+}
+
+} // namespace aria
+
+FILE: src/frontend/ast/expr.cpp
+================================================================================
+#include "frontend/ast/expr.h"
+#include <sstream>
+
+namespace aria {
+
+std::string LiteralExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Literal(";
+    
+    std::visit([&oss](auto&& arg) {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, int64_t>) {
+            oss << arg;
+        } else if constexpr (std::is_same_v<T, double>) {
+            oss << arg;
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            oss << "\"" << arg << "\"";
+        } else if constexpr (std::is_same_v<T, bool>) {
+            oss << (arg ? "true" : "false");
+        } else if constexpr (std::is_same_v<T, std::monostate>) {
+            oss << "null";
+        }
+    }, value);
+    
+    oss << ")";
+    return oss.str();
+}
+
+std::string IdentifierExpr::toString() const {
+    return "Identifier(" + name + ")";
+}
+
+std::string BinaryExpr::toString() const {
+    return "Binary(" + left->toString() + " " + aria::frontend::tokenTypeToString(op.type) + " " + right->toString() + ")";
+}
+
+std::string UnaryExpr::toString() const {
+    return "Unary(" + aria::frontend::tokenTypeToString(op.type) + " " + operand->toString() + ")";
+}
+
+std::string CallExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Call(" << callee->toString();
+    
+    // Display explicit type arguments if present (turbofish)
+    if (!explicitTypeArgs.empty()) {
+        oss << "::<";
+        for (size_t i = 0; i < explicitTypeArgs.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << explicitTypeArgs[i];
+        }
+        oss << ">";
+    }
+    
+    oss << ", [";
+    for (size_t i = 0; i < arguments.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << arguments[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
+std::string IndexExpr::toString() const {
+    return "Index(" + array->toString() + "[" + index->toString() + "])";
+}
+
+std::string MemberAccessExpr::toString() const {
+    std::string op = isPointerAccess ? "->" : ".";
+    return "MemberAccess(" + object->toString() + op + member + ")";
+}
+
+std::string TernaryExpr::toString() const {
+    return "Ternary(" + condition->toString() + " ? " + 
+           trueValue->toString() + " : " + falseValue->toString() + ")";
+}
+
+std::string AssignmentExpr::toString() const {
+    return "Assignment(" + target->toString() + " " + 
+           aria::frontend::tokenTypeToString(op.type) + " " + value->toString() + ")";
+}
+
+std::string ArrayLiteralExpr::toString() const {
+    std::ostringstream oss;
+    oss << "ArrayLiteral([";
+    for (size_t i = 0; i < elements.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << elements[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
+std::string ObjectLiteralExpr::toString() const {
+    std::ostringstream oss;
+    if (!type_name.empty()) {
+        oss << type_name;
+    } else {
+        oss << "obj";
+    }
+    oss << "{ ";
+    for (size_t i = 0; i < fields.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << fields[i].name << ": " << fields[i].value->toString();
+    }
+    oss << " }";
+    return oss.str();
+}
+
+std::string LambdaExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Lambda(";
+    
+    // Parameters
+    oss << "params=[";
+    for (size_t i = 0; i < parameters.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << parameters[i]->toString();
+    }
+    oss << "]";
+    
+    // Return type
+    if (!returnTypeName.empty()) {
+        oss << ", returnType=" << returnTypeName;
+    }
+    
+    // Captured variables
+    if (!capturedVars.empty()) {
+        oss << ", captures=[";
+        for (size_t i = 0; i < capturedVars.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << capturedVars[i].name;
+            switch (capturedVars[i].mode) {
+                case CaptureMode::BY_VALUE: oss << "(copy)"; break;
+                case CaptureMode::BY_REFERENCE: oss << "(ref)"; break;
+                case CaptureMode::BY_MOVE: oss << "(move)"; break;
+            }
+        }
+        oss << "]";
+    }
+    
+    // Async flag
+    if (isAsync) {
+        oss << ", async";
+    }
+    
+    // Body
+    oss << ", body=" << body->toString();
+    
+    oss << ")";
+    return oss.str();
+}
+
+std::string AwaitExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Await(" << operand->toString() << ")";
+    return oss.str();
+}
+
+std::string UnwrapExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Unwrap(" << result->toString() << " ? " << defaultValue->toString() << ")";
+    return oss.str();
+}
+
+} // namespace aria
 
 FILE: src/frontend/ast/stmt.cpp
 ================================================================================
@@ -1027,7 +1293,15 @@ std::string VarDeclStmt::toString() const {
     if (isConst) oss << "const ";
     if (isStack) oss << "stack ";
     if (isGC) oss << "gc ";
-    oss << typeName << ":" << varName;
+    
+    // Use typeNode if available, otherwise typeName
+    if (typeNode) {
+        oss << typeNode->toString();
+    } else {
+        oss << typeName;
+    }
+    
+    oss << ":" << varName;
     if (initializer) {
         oss << " = " << initializer->toString();
     }
@@ -1069,7 +1343,25 @@ std::string FuncDeclStmt::toString() const {
 
 std::string StructDeclStmt::toString() const {
     std::ostringstream oss;
-    oss << "StructDecl(struct " << structName << " { ";
+    oss << "StructDecl(struct";
+    
+    if (!genericParams.empty()) {
+        oss << "<";
+        for (size_t i = 0; i < genericParams.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << genericParams[i].name;
+            if (!genericParams[i].constraints.empty()) {
+                oss << ": ";
+                for (size_t j = 0; j < genericParams[i].constraints.size(); ++j) {
+                    if (j > 0) oss << " & ";
+                    oss << genericParams[i].constraints[j];
+                }
+            }
+        }
+        oss << ">";
+    }
+    
+    oss << ":" << structName << " { ";
     for (size_t i = 0; i < fields.size(); ++i) {
         if (i > 0) oss << "; ";
         oss << fields[i]->toString();
@@ -1106,6 +1398,14 @@ std::string ReturnStmt::toString() const {
         return "Return(" + value->toString() + ")";
     }
     return "Return()";
+}
+
+std::string PassStmt::toString() const {
+    return "Pass(" + value->toString() + ")";
+}
+
+std::string FailStmt::toString() const {
+    return "Fail(" + errorCode->toString() + ")";
 }
 
 std::string IfStmt::toString() const {
@@ -1289,4 +1589,78 @@ std::string ProgramNode::toString() const {
 
 } // namespace aria
 
+FILE: src/frontend/ast/type.cpp
+================================================================================
+#include "frontend/ast/type.h"
+#include <sstream>
 
+namespace aria {
+
+std::string SimpleType::toString() const {
+    return typeName;
+}
+
+std::string PointerType::toString() const {
+    std::ostringstream oss;
+    if (baseType) {
+        oss << baseType->toString() << "@";  // Aria uses @ for pointers
+    } else {
+        oss << "unknown@";
+    }
+    return oss.str();
+}
+
+std::string ArrayType::toString() const {
+    std::ostringstream oss;
+    if (elementType) {
+        oss << elementType->toString();
+    } else {
+        oss << "unknown";
+    }
+    
+    oss << "[";
+    if (!isDynamic && sizeExpr) {
+        oss << sizeExpr->toString();
+    }
+    oss << "]";
+    
+    return oss.str();
+}
+
+std::string GenericType::toString() const {
+    std::ostringstream oss;
+    oss << baseName << "<";
+    
+    for (size_t i = 0; i < typeArgs.size(); i++) {
+        if (i > 0) oss << ", ";
+        if (typeArgs[i]) {
+            oss << typeArgs[i]->toString();
+        }
+    }
+    
+    oss << ">";
+    return oss.str();
+}
+
+std::string FunctionType::toString() const {
+    std::ostringstream oss;
+    oss << "func(";
+    
+    for (size_t i = 0; i < paramTypes.size(); i++) {
+        if (i > 0) oss << ", ";
+        if (paramTypes[i]) {
+            oss << paramTypes[i]->toString();
+        }
+    }
+    
+    oss << ") -> ";
+    if (returnType) {
+        oss << returnType->toString();
+    } else {
+        oss << "void";
+    }
+    
+    return oss.str();
+}
+
+} // namespace aria

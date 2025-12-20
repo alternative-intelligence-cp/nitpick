@@ -111,7 +111,6 @@ public:
 
 #endif // ARIA_PARSER_H
 
-
 FILE: src/frontend/parser/parser.cpp
 ================================================================================
 #include "frontend/parser/parser.h"
@@ -338,8 +337,8 @@ bool Parser::isUnaryOperator(TokenType type) const {
            type == TokenType::TOKEN_BANG ||
            type == TokenType::TOKEN_TILDE ||
            type == TokenType::TOKEN_AT ||
-           type == TokenType::TOKEN_HASH ||
-           type == TokenType::TOKEN_DOLLAR;
+           type == TokenType::TOKEN_HASH;
+           // Note: TOKEN_DOLLAR is NOT a unary operator - it's the iteration variable
 }
 
 bool Parser::isAssignmentOperator(TokenType type) const {
@@ -459,6 +458,14 @@ ASTNodePtr Parser::parsePrimary() {
         int col = token.column;
         advance();
         return std::make_shared<IdentifierExpr>(lexeme, line, col);
+    }
+    
+    // $ iteration variable (for till/loop constructs)
+    if (token.type == TokenType::TOKEN_DOLLAR) {
+        int line = token.line;
+        int col = token.column;
+        advance();
+        return std::make_shared<IdentifierExpr>("$", line, col);
     }
 
     // Ternary expression: is (condition) : true_value : false_value
@@ -694,12 +701,24 @@ ASTNodePtr Parser::parsePostfix(ASTNodePtr expr) {
             continue;
         }
         
-        // Unwrap operator
+        // Unwrap operator: result ? default_value
         if (token.type == TokenType::TOKEN_QUESTION) {
-            advance();
-            // For now, treat as unary postfix operator
-            Token unwrapOp = token;
-            expr = std::make_shared<UnaryExpr>(unwrapOp, expr, true, token.line, token.column);
+            Token unwrapToken = advance(); // consume '?'
+            
+            // Parse the default value expression
+            ASTNodePtr defaultValue = parseExpression();
+            if (!defaultValue) {
+                error("Expected default value after '?' operator");
+                return nullptr;
+            }
+            
+            // Create UnwrapExpr with result on left, default on right
+            expr = std::make_shared<UnwrapExpr>(
+                expr, 
+                defaultValue,
+                unwrapToken.line,
+                unwrapToken.column
+            );
             continue;
         }
         
@@ -974,6 +993,8 @@ ASTNodePtr Parser::parseStatement() {
     if (peek().type == TokenType::TOKEN_KW_PUB) {
         size_t saved = current;
         advance(); // consume 'pub'
+        
+        // Check for pub mod
         if (match(TokenType::TOKEN_KW_MOD)) {
             auto modStmt = parseModStatement();
             // Set public flag
@@ -982,10 +1003,21 @@ ASTNodePtr Parser::parseStatement() {
                 mod->isPublic = true;
             }
             return modStmt;
-        } else {
-            // Not pub mod, restore position and continue
-            current = saved;
         }
+        
+        // Check for pub func
+        if (match(TokenType::TOKEN_KW_FUNC)) {
+            auto funcStmt = parseFuncDecl();
+            // Set public flag
+            if (funcStmt && funcStmt->type == ASTNode::NodeType::FUNC_DECL) {
+                auto func = std::static_pointer_cast<FuncDeclStmt>(funcStmt);
+                func->isPublic = true;
+            }
+            return funcStmt;
+        }
+        
+        // Not pub mod or pub func, restore position and continue
+        current = saved;
     }
     
     // Check for module definitions
@@ -1017,12 +1049,28 @@ ASTNodePtr Parser::parseStatement() {
     }
     
     // Check for custom type reference (variable declaration): CustomType:name = ...
+    // Also handles generic type instantiation: Box<int64>:name = ...
     // This allows struct types and other custom types in variable declarations
     if (peek().type == TokenType::TOKEN_IDENTIFIER) {
         size_t saved = current;
         advance(); // consume identifier
+        
+        // Check for generic type arguments: <...>
+        if (check(TokenType::TOKEN_LESS)) {
+            advance(); // consume '<'
+            
+            // Skip generic type arguments
+            int angleDepth = 1;
+            while (angleDepth > 0 && !isAtEnd()) {
+                if (check(TokenType::TOKEN_LESS)) angleDepth++;
+                if (check(TokenType::TOKEN_GREATER)) angleDepth--;
+                advance();
+            }
+        }
+        
+        // Now check for colon (variable declaration) or other tokens
         if (check(TokenType::TOKEN_COLON)) {
-            // It's a type annotation with custom type: CustomType:name
+            // It's a type annotation: CustomType:name or Box<int64>:name
             current = saved; // reset position
             return parseVarDecl();
         } else {
@@ -1033,20 +1081,47 @@ ASTNodePtr Parser::parseStatement() {
     }
     
     // Check for type annotation (variable declaration)
-    // Must be followed by colon to avoid ambiguity with identifiers
-    // Example: "obj:x = 5" is variable declaration, "obj.field" is member access
+    // Must be followed by colon or array bracket to avoid ambiguity with identifiers
+    // Examples: "int32:x = 5", "int32[]:arr = ...", "int32[10]:arr = ..."
     if (isTypeKeyword(peek().type)) {
         size_t saved = current;
         advance(); // consume type keyword
-        if (check(TokenType::TOKEN_COLON)) {
-            // It's a type annotation: type:name
+        
+        // Check for array type suffix: type[] or type[size]
+        if (check(TokenType::TOKEN_LEFT_BRACKET)) {
+            advance(); // consume '['
+            
+            // Skip size expression if present
+            if (!check(TokenType::TOKEN_RIGHT_BRACKET)) {
+                // Skip the size expression (simple lookahead, just scan tokens)
+                int bracketDepth = 1;
+                while (bracketDepth > 0 && !isAtEnd()) {
+                    if (check(TokenType::TOKEN_LEFT_BRACKET)) bracketDepth++;
+                    if (check(TokenType::TOKEN_RIGHT_BRACKET)) bracketDepth--;
+                    if (bracketDepth > 0) advance();
+                }
+            }
+            
+            // Should be at ']' now
+            if (check(TokenType::TOKEN_RIGHT_BRACKET)) {
+                advance(); // consume ']'
+                
+                // Now check for colon after array type
+                if (check(TokenType::TOKEN_COLON)) {
+                    // It's an array type annotation: type[]:name or type[size]:name
+                    current = saved; // reset position
+                    return parseVarDecl();
+                }
+            }
+        } else if (check(TokenType::TOKEN_COLON)) {
+            // It's a simple type annotation: type:name
             current = saved; // reset position
             return parseVarDecl();
-        } else {
-            // It's an identifier used in an expression, restore position
-            current = saved;
-            // Fall through to expression statement
         }
+        
+        // Not a variable declaration, restore position
+        current = saved;
+        // Fall through to expression statement
     }
     
     // Check for async function declaration: async func:name = ...
@@ -1232,31 +1307,11 @@ ASTNodePtr Parser::parseVarDecl() {
         }
     }
     
-    // Get type (could be *T for generic, identifier for custom types, or type keyword)
-    std::string typeName;
-    int typeLine, typeColumn;
-    if (isGenericTypeReference()) {
-        // Generic type reference: *T
-        Token starToken = advance(); // consume '*'
-        typeLine = starToken.line;
-        typeColumn = starToken.column;
-        Token typeParamToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name after '*'");
-        typeName = "*" + typeParamToken.lexeme;
-    } else if (peek().type == TokenType::TOKEN_IDENTIFIER) {
-        // Custom type (e.g., struct name): Point, Duration, etc.
-        Token typeToken = advance();
-        typeName = typeToken.lexeme;
-        typeLine = typeToken.line;
-        typeColumn = typeToken.column;
-    } else {
-        Token typeToken = advance();
-        if (!isTypeKeyword(typeToken.type)) {
-            error("Expected type keyword or identifier in variable declaration");
-            return nullptr;
-        }
-        typeName = typeToken.lexeme;
-        typeLine = typeToken.line;
-        typeColumn = typeToken.column;
+    // Parse the type (handles simple types, arrays, pointers, generics, etc.)
+    ASTNodePtr typeNode = parseType();
+    if (!typeNode) {
+        error("Expected type in variable declaration");
+        return nullptr;
     }
     
     // Consume colon
@@ -1284,11 +1339,11 @@ ASTNodePtr Parser::parseVarDecl() {
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after variable declaration");
     
     auto varDecl = std::make_shared<VarDeclStmt>(
-        typeName,
+        typeNode,
         nameToken.lexeme,
         initializer,
-        typeLine,
-        typeColumn
+        typeNode->line,
+        typeNode->column
     );
     
     varDecl->isWild = isWild;
@@ -1401,10 +1456,19 @@ ASTNodePtr Parser::parseFuncDecl() {
 }
 
 // Parse struct declaration: struct Name { type:field1; type:field2; };
+// Or generic: struct<T, E>:Name { *T:field1; *E:field2; };
 ASTNodePtr Parser::parseStructDecl() {
     using namespace frontend;
     
     Token structToken = previous(); // 'struct' keyword
+    
+    // Phase 3.4: Parse generic parameters if present: struct<T, E>
+    std::vector<GenericParamInfo> genericParams = parseGenericParams();
+    
+    // Consume colon after generic params if present, or before name
+    if (!genericParams.empty()) {
+        consume(TokenType::TOKEN_COLON, "Expected ':' after generic parameters");
+    }
     
     // Get struct name
     Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected struct name");
@@ -1414,9 +1478,18 @@ ASTNodePtr Parser::parseStructDecl() {
     
     std::vector<ASTNodePtr> fields;
     while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
-        // Parse field type
+        // Parse field type (could be *T for generic or regular type)
+        std::string fieldTypeName;
         Token fieldTypeToken = advance();
-        if (!isTypeKeyword(fieldTypeToken.type)) {
+        
+        if (fieldTypeToken.type == TokenType::TOKEN_STAR) {
+            // Generic type reference: *T
+            Token typeParamToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name after '*'");
+            fieldTypeName = "*" + typeParamToken.lexeme;
+        } else if (isTypeKeyword(fieldTypeToken.type) || fieldTypeToken.type == TokenType::TOKEN_IDENTIFIER) {
+            // Regular type or custom type
+            fieldTypeName = fieldTypeToken.lexeme;
+        } else {
             error("Expected field type in struct");
             return nullptr;
         }
@@ -1429,7 +1502,7 @@ ASTNodePtr Parser::parseStructDecl() {
         
         // Create a VarDeclStmt for the field (without initializer)
         auto fieldDecl = std::make_shared<VarDeclStmt>(
-            fieldTypeToken.lexeme,
+            fieldTypeName,
             fieldNameToken.lexeme,
             nullptr,  // No initializer for struct fields
             structToken.line,
@@ -1447,12 +1520,17 @@ ASTNodePtr Parser::parseStructDecl() {
     // Consume semicolon after struct declaration
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after struct declaration");
     
-    return std::make_shared<StructDeclStmt>(
+    auto structDecl = std::make_shared<StructDeclStmt>(
         nameToken.lexeme,
         fields,
         structToken.line,
         structToken.column
     );
+    
+    // Store generic parameters
+    structDecl->genericParams = genericParams;
+    
+    return structDecl;
 }
 
 // Parse block: { stmt1; stmt2; ... }
@@ -1878,8 +1956,6 @@ ASTNodePtr Parser::parsePassStatement() {
     Token passToken = previous(); // We already consumed 'pass'
     
     // Parse: pass(expr);
-    // Desugars to: return { err: 0, val: expr }
-    // TODO: Once ObjectLiteralExpr is implemented, create proper result object
     consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'pass'");
     
     ASTNodePtr value = parseExpression();
@@ -1891,9 +1967,7 @@ ASTNodePtr Parser::parsePassStatement() {
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after pass value");
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after pass statement");
     
-    // For now, just return the value directly
-    // Full implementation: return { err: 0, val: value }
-    return std::make_shared<ReturnStmt>(value, passToken.line, passToken.column);
+    return std::make_shared<PassStmt>(value, passToken.line, passToken.column);
 }
 
 ASTNodePtr Parser::parseFailStatement() {
@@ -1902,8 +1976,6 @@ ASTNodePtr Parser::parseFailStatement() {
     Token failToken = previous(); // We already consumed 'fail'
     
     // Parse: fail(error_code);
-    // Desugars to: return { err: error_code, val: 0 }
-    // TODO: Once ObjectLiteralExpr is implemented, create proper result object
     consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'fail'");
     
     ASTNodePtr errorCode = parseExpression();
@@ -1915,9 +1987,7 @@ ASTNodePtr Parser::parseFailStatement() {
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after fail error code");
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after fail statement");
     
-    // For now, just return the error code directly
-    // Full implementation: return { err: error_code, val: 0 }
-    return std::make_shared<ReturnStmt>(errorCode, failToken.line, failToken.column);
+    return std::make_shared<FailStmt>(errorCode, failToken.line, failToken.column);
 }
 
 // Parse if statement: if (condition) thenBranch [else elseBranch]
@@ -2572,5 +2642,3 @@ const std::vector<std::string>& Parser::getErrors() const {
 }
 
 } // namespace aria
-
-

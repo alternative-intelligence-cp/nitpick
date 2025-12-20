@@ -290,6 +290,14 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     if (type_name == "tbb32") return builder.getInt32Ty();
     if (type_name == "tbb64") return builder.getInt64Ty();
     
+    // Balanced Ternary types
+    if (type_name == "trit") return builder.getIntNTy(2);   // Single trit (-1, 0, 1) in 2 bits
+    if (type_name == "tryte") return builder.getInt16Ty();  // 10 trits in 16 bits
+    
+    // Nonary types  
+    if (type_name == "nit") return builder.getIntNTy(4);    // Single nit (-4 to 4) in 4 bits
+    if (type_name == "nyte") return builder.getInt16Ty();   // 5 nits in 16 bits
+    
     // String type - represented as i8* (pointer to null-terminated char array)
     if (type_name == "string") {
         return llvm::PointerType::get(context, 0);
