@@ -1512,6 +1512,46 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
         }
         
+        case ASTNode::NodeType::RANGE: {
+            // Range expression: start..end or start...end
+            // For now, we'll create a simple struct {start, end, isExclusive}
+            // This can be used by for loops and slicing operations
+            RangeExpr* range = static_cast<RangeExpr*>(expr);
+            
+            llvm::Value* start = codegenExpression(range->start.get());
+            llvm::Value* end = codegenExpression(range->end.get());
+            
+            if (!start || !end) {
+                return nullptr;
+            }
+            
+            // Create a {i64, i64, i1} struct for the range
+            llvm::Type* rangeType = llvm::StructType::get(
+                context,
+                {builder.getInt64Ty(), builder.getInt64Ty(), builder.getInt1Ty()}
+            );
+            
+            // Create alloca for the range struct
+            llvm::Value* rangeAlloca = builder.CreateAlloca(rangeType, nullptr, "range");
+            
+            // Store start value
+            llvm::Value* startPtr = builder.CreateStructGEP(rangeType, rangeAlloca, 0, "range.start.ptr");
+            llvm::Value* startExt = builder.CreateSExtOrTrunc(start, builder.getInt64Ty(), "start.ext");
+            builder.CreateStore(startExt, startPtr);
+            
+            // Store end value
+            llvm::Value* endPtr = builder.CreateStructGEP(rangeType, rangeAlloca, 1, "range.end.ptr");
+            llvm::Value* endExt = builder.CreateSExtOrTrunc(end, builder.getInt64Ty(), "end.ext");
+            builder.CreateStore(endExt, endPtr);
+            
+            // Store isExclusive flag
+            llvm::Value* exclusivePtr = builder.CreateStructGEP(rangeType, rangeAlloca, 2, "range.exclusive.ptr");
+            builder.CreateStore(builder.getInt1(range->isExclusive), exclusivePtr);
+            
+            // Return the pointer to the range struct
+            return rangeAlloca;
+        }
+        
         case ASTNode::NodeType::BINARY_OP: {
             // Binary operation
             BinaryExpr* binop = static_cast<BinaryExpr*>(expr);

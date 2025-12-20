@@ -266,6 +266,24 @@ ASTNodePtr Parser::parseExpression(int minPrecedence) {
         // Binary operator
         if (isBinaryOperator(op.type)) {
             advance(); // consume operator
+            
+            // Special case: Range operators (.., ...)
+            if (op.type == TokenType::TOKEN_DOT_DOT || op.type == TokenType::TOKEN_DOT_DOT_DOT) {
+                ASTNodePtr right = parseExpression(prec + 1);
+                
+                if (!right) {
+                    error("Expected expression after range operator");
+                    return nullptr;
+                }
+                
+                bool isExclusive = (op.type == TokenType::TOKEN_DOT_DOT_DOT);
+                left = std::make_shared<RangeExpr>(
+                    left, right, isExclusive,
+                    op.line, op.column
+                );
+                continue;
+            }
+            
             ASTNodePtr right = parseExpression(prec + 1);
             
             if (!right) {

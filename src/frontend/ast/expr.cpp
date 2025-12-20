@@ -34,6 +34,11 @@ std::string BinaryExpr::toString() const {
     return "Binary(" + left->toString() + " " + aria::frontend::tokenTypeToString(op.type) + " " + right->toString() + ")";
 }
 
+std::string RangeExpr::toString() const {
+    std::string op = isExclusive ? "..." : "..";
+    return "Range(" + start->toString() + " " + op + " " + end->toString() + ")";
+}
+
 std::string UnaryExpr::toString() const {
     return "Unary(" + aria::frontend::tokenTypeToString(op.type) + " " + operand->toString() + ")";
 }
