@@ -67,23 +67,23 @@ llvm::Value* TernaryCodegen::getMaxValue(Type* type) {
     std::string typeName = type->toString();
     
     if (typeName == "trit") {
-        // trit max: 1
-        return llvm::ConstantInt::get(llvmType, 1);
+        // trit max: 1 (use signed to ensure proper comparison)
+        return llvm::ConstantInt::getSigned(llvmType, 1);
     } else if (typeName == "nit") {
         // nit max: 4
-        return llvm::ConstantInt::get(llvmType, 4);
+        return llvm::ConstantInt::getSigned(llvmType, 4);
     } else if (typeName == "tryte") {
         // tryte: 10 trits packed = 3^10 - 1 / 2 = 29524
         // (3^10 = 59049, balanced range is symmetric around 0)
-        return llvm::ConstantInt::get(llvmType, 29524);
+        return llvm::ConstantInt::getSigned(llvmType, 29524);
     } else if (typeName == "nyte") {
         // nyte: 5 nits packed = 9^5 - 1 / 2 = 29524
         // (9^5 = 59049, balanced range is symmetric around 0)
-        return llvm::ConstantInt::get(llvmType, 29524);
+        return llvm::ConstantInt::getSigned(llvmType, 29524);
     }
     
     // Fallback
-    return llvm::ConstantInt::get(llvmType, 1);
+    return llvm::ConstantInt::getSigned(llvmType, 1);
 }
 
 llvm::Value* TernaryCodegen::getMinValue(Type* type) {
@@ -112,7 +112,7 @@ llvm::IntegerType* TernaryCodegen::getTernaryLLVMType(Type* type) {
     std::string typeName = type->toString();
     
     if (typeName == "trit") {
-        return builder.getIntNTy(2);  // 2-bit signed
+        return builder.getIntNTy(3);  // 3-bit signed for overflow detection
     } else if (typeName == "nit") {
         return builder.getIntNTy(4);  // 4-bit signed
     } else if (typeName == "tryte" || typeName == "nyte") {

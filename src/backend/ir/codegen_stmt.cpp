@@ -76,7 +76,7 @@ llvm::Type* StmtCodegen::getLLVMTypeFromString(const std::string& type_name) {
     if (type_name == "tbb64") return llvm::Type::getInt64Ty(context);
     
     // Balanced Ternary types (Session 15)
-    if (type_name == "trit") return llvm::Type::getIntNTy(context, 2);   // Single trit (-1, 0, 1)
+    if (type_name == "trit") return llvm::Type::getIntNTy(context, 3);   // Single trit (-1, 0, 1) in 3 bits
     if (type_name == "tryte") return llvm::Type::getInt16Ty(context);    // 10 trits
     if (type_name == "nit") return llvm::Type::getIntNTy(context, 4);    // Single nit (-4 to 4)
     if (type_name == "nyte") return llvm::Type::getInt16Ty(context);     // 5 nits

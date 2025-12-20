@@ -292,7 +292,7 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     if (type_name == "tbb64") return builder.getInt64Ty();
     
     // Balanced Ternary types
-    if (type_name == "trit") return builder.getIntNTy(2);   // Single trit (-1, 0, 1) in 2 bits
+    if (type_name == "trit") return builder.getIntNTy(3);   // Single trit (-1, 0, 1) in 3 bits for overflow
     if (type_name == "tryte") return builder.getInt16Ty();  // 10 trits in 16 bits
     
     // Nonary types  
@@ -695,6 +695,22 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             if (varDecl->initializer) {
                 llvm::Value* initVal = codegenExpression(varDecl->initializer.get());
                 if (initVal) {
+                    // Cast initializer to match variable type if necessary (Session 15: balanced ternary support)
+                    if (initVal->getType() != varType) {
+                        // For integer types, use trunc or sext/zext
+                        if (initVal->getType()->isIntegerTy() && varType->isIntegerTy()) {
+                            llvm::IntegerType* initIntTy = llvm::cast<llvm::IntegerType>(initVal->getType());
+                            llvm::IntegerType* varIntTy = llvm::cast<llvm::IntegerType>(varType);
+                            
+                            if (initIntTy->getBitWidth() > varIntTy->getBitWidth()) {
+                                // Truncate (narrowing conversion)
+                                initVal = builder.CreateTrunc(initVal, varType, "init_trunc");
+                            } else {
+                                // Sign extend (widening conversion for signed types)
+                                initVal = builder.CreateSExt(initVal, varType, "init_sext");
+                            }
+                        }
+                    }
                     builder.CreateStore(initVal, alloca);
                 }
             }
@@ -931,6 +947,26 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // Generate code for the value expression
             llvm::Value* value = codegenExpression(passStmt->value.get());
             if (value) {
+                // Convert value to match function return type if necessary (Session 15: ternary support)
+                llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                llvm::Type* returnType = currentFunc->getReturnType();
+                
+                if (value->getType() != returnType) {
+                    // Handle integer conversions
+                    if (value->getType()->isIntegerTy() && returnType->isIntegerTy()) {
+                        llvm::IntegerType* valIntTy = llvm::cast<llvm::IntegerType>(value->getType());
+                        llvm::IntegerType* retIntTy = llvm::cast<llvm::IntegerType>(returnType);
+                        
+                        if (valIntTy->getBitWidth() < retIntTy->getBitWidth()) {
+                            // Sign extend for widening
+                            value = builder.CreateSExt(value, returnType, "ret_sext");
+                        } else if (valIntTy->getBitWidth() > retIntTy->getBitWidth()) {
+                            // Truncate for narrowing
+                            value = builder.CreateTrunc(value, returnType, "ret_trunc");
+                        }
+                    }
+                }
+                
                 builder.CreateRet(value);
             }
             return nullptr;
@@ -946,6 +982,26 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // Generate code for the error code expression
             llvm::Value* errorCode = codegenExpression(failStmt->errorCode.get());
             if (errorCode) {
+                // Convert error code to match function return type if necessary (Session 15: ternary support)
+                llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                llvm::Type* returnType = currentFunc->getReturnType();
+                
+                if (errorCode->getType() != returnType) {
+                    // Handle integer conversions
+                    if (errorCode->getType()->isIntegerTy() && returnType->isIntegerTy()) {
+                        llvm::IntegerType* valIntTy = llvm::cast<llvm::IntegerType>(errorCode->getType());
+                        llvm::IntegerType* retIntTy = llvm::cast<llvm::IntegerType>(returnType);
+                        
+                        if (valIntTy->getBitWidth() < retIntTy->getBitWidth()) {
+                            // Sign extend for widening
+                            errorCode = builder.CreateSExt(errorCode, returnType, "ret_sext");
+                        } else if (valIntTy->getBitWidth() > retIntTy->getBitWidth()) {
+                            // Truncate for narrowing
+                            errorCode = builder.CreateTrunc(errorCode, returnType, "ret_trunc");
+                        }
+                    }
+                }
+                
                 builder.CreateRet(errorCode);
             }
             return nullptr;
