@@ -576,6 +576,24 @@ ASTNodePtr Parser::parseUnary() {
         return std::make_shared<MoveExpr>(varName, varExpr, line, col);
     }
     
+    // Special case: bare $ (iteration variable)
+    // If we see $ followed by a token that can't be an operand (like ; , ) etc.),
+    // then $ is the iteration variable, not a unary operator.
+    if (token.type == TokenType::TOKEN_DOLLAR) {
+        Token next_token = peekNext();
+        // Check if next token can't be an operand
+        if (next_token.type == TokenType::TOKEN_SEMICOLON ||
+            next_token.type == TokenType::TOKEN_COMMA ||
+            next_token.type == TokenType::TOKEN_RIGHT_PAREN ||
+            next_token.type == TokenType::TOKEN_RIGHT_BRACE ||
+            next_token.type == TokenType::TOKEN_RIGHT_BRACKET ||
+            isBinaryOperator(next_token.type)) {
+            // Bare $ - treat as iteration variable (let parsePrimary handle it)
+            return parsePrimary();
+        }
+        // Otherwise, $ is a unary operator (fall through to normal handling)
+    }
+    
     if (isUnaryOperator(token.type)) {
         advance();
         ASTNodePtr operand = parseUnary(); // Right-associative
