@@ -24,6 +24,7 @@ private:
     
     // Utility methods
     frontend::Token peek() const;
+    frontend::Token peekNext() const;  // Look ahead two tokens
     frontend::Token previous() const;
     frontend::Token advance();
     bool isAtEnd() const;

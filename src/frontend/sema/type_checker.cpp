@@ -86,6 +86,9 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         case ASTNode::NodeType::ARRAY_LITERAL:
             return inferArrayLiteral(static_cast<ArrayLiteralExpr*>(expr));
         
+        case ASTNode::NodeType::RANGE:
+            return inferRangeExpr(static_cast<RangeExpr*>(expr));
+        
         default:
             addError("Type inference not implemented for node type: " + 
                     ASTNode::nodeTypeToString(expr->type), expr);
@@ -802,6 +805,52 @@ Type* TypeChecker::inferArrayLiteral(ArrayLiteralExpr* expr) {
     
     // Return pointer to element type (arrays decay to pointers)
     return typeSystem->getPointerType(elementType);
+}
+
+// ============================================================================
+// Range Expression Type Inference
+// ============================================================================
+
+Type* TypeChecker::inferRangeExpr(RangeExpr* expr) {
+    // Check start expression
+    Type* startType = inferType(expr->start.get());
+    if (startType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Check end expression
+    Type* endType = inferType(expr->end.get());
+    if (endType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Verify both are integer types (ranges only work with integers)
+    PrimitiveType* startPrim = dynamic_cast<PrimitiveType*>(startType);
+    PrimitiveType* endPrim = dynamic_cast<PrimitiveType*>(endType);
+    
+    if (!startPrim || !endPrim) {
+        addError("Range expressions require integer types, got '" + 
+                startType->toString() + "' and '" + endType->toString() + "'", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // Check if both are integer types
+    bool startIsInt = (startPrim->getName().find("int") != std::string::npos || 
+                       startPrim->getName().find("tbb") != std::string::npos ||
+                       startPrim->getName().find("bal") != std::string::npos);
+    bool endIsInt = (endPrim->getName().find("int") != std::string::npos ||
+                     endPrim->getName().find("tbb") != std::string::npos ||
+                     endPrim->getName().find("bal") != std::string::npos);
+    
+    if (!startIsInt || !endIsInt) {
+        addError("Range expressions require integer types, got '" + 
+                startType->toString() + "' and '" + endType->toString() + "'", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // Range type is opaque - just return int64 as a placeholder
+    // The actual range is a struct {int64, int64, bool} created during codegen
+    return typeSystem->getPrimitiveType("int64");
 }
 
 // ============================================================================
@@ -1733,6 +1782,42 @@ void TypeChecker::checkWhileStmt(WhileStmt* stmt) {
 // ============================================================================
 
 void TypeChecker::checkForStmt(ForStmt* stmt) {
+    if (stmt->isRangeBased) {
+        // Range-based for loop: for (var in range) { body }
+        // Check the range expression
+        inferType(stmt->rangeExpr.get());
+        // Range expressions currently always return a range struct, no need to validate further
+        
+        // Enter new scope for the loop body
+        symbolTable->enterScope(ScopeKind::BLOCK, "forrange");
+        
+        // Add iterator variable to symbol table
+        // If iteratorType is specified, use it; otherwise default to int64
+        std::string iterType = stmt->iteratorType.empty() ? "int64" : stmt->iteratorType;
+        Type* varType = typeSystem->getPrimitiveType(iterType);
+        if (!varType || varType->getKind() == TypeKind::ERROR) {
+            // Try as struct type
+            varType = typeSystem->getStructType(iterType);
+            if (!varType || varType->getKind() == TypeKind::ERROR) {
+                addError("Unknown type for iterator: '" + iterType + "'", stmt);
+                symbolTable->exitScope();
+                return;
+            }
+        }
+        
+        // Define iterator as a variable in the loop scope
+        symbolTable->defineSymbol(stmt->iteratorName, SymbolKind::VARIABLE, varType, 
+                                  stmt->line, stmt->column);
+        
+        // Check body with iterator in scope
+        checkStatement(stmt->body.get());
+        
+        // Exit scope
+        symbolTable->exitScope();
+        return;
+    }
+    
+    // C-style for loop
     // Check initializer if present
     if (stmt->initializer) {
         checkStatement(stmt->initializer.get());

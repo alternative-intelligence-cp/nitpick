@@ -129,6 +129,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_ASYNC: return "ASYNC";
         case TokenType::TOKEN_KW_AWAIT: return "AWAIT";
         case TokenType::TOKEN_KW_CATCH: return "CATCH";
+        case TokenType::TOKEN_KW_IN: return "IN";
         
         // Declarations
         case TokenType::TOKEN_KW_FUNC: return "FUNC";

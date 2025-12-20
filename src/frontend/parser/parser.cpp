@@ -92,6 +92,13 @@ Token Parser::peek() const {
     return tokens.back(); // Return EOF
 }
 
+Token Parser::peekNext() const {
+    if (current + 1 < tokens.size()) {
+        return tokens[current + 1];
+    }
+    return tokens.back(); // Return EOF
+}
+
 Token Parser::previous() const {
     if (current > 0) {
         return tokens[current - 1];
@@ -1999,6 +2006,78 @@ ASTNodePtr Parser::parseForStatement() {
     
     consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'for'");
     
+    // Check if this is a range-based for loop: for (var in range) or for (type:var in range)
+    // Look ahead to detect: IDENTIFIER IN or TYPE COLON IDENTIFIER IN
+    bool isRangeBased = false;
+    std::string iteratorType = "";
+    std::string iteratorName = "";
+    
+    // Check for range-based loop pattern (peek only, don't consume yet)
+    if (isTypeKeyword(peek().type)) {
+        // Might be: for (int64:i in range)
+        Token typeToken = peek();
+        Token nextToken = peekNext();
+        if (nextToken.type == TokenType::TOKEN_COLON) {
+            // Look further ahead to check for IN keyword
+            // Save current position
+            size_t savedPos = current;
+            
+            advance(); // consume type
+            consume(TokenType::TOKEN_COLON, "Expected ':' after type");
+            Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected identifier after ':'");
+            
+            if (check(TokenType::TOKEN_KW_IN)) {
+                // Confirmed: range-based for loop with type annotation
+                isRangeBased = true;
+                iteratorType = typeToken.lexeme;
+                iteratorName = nameToken.lexeme;
+            } else {
+                // Not range-based, restore position and parse as C-style
+                current = savedPos;
+            }
+        }
+    } else if (peek().type == TokenType::TOKEN_IDENTIFIER) {
+        // Might be: for (i in range) without type annotation
+        Token nameToken = peek();
+        Token nextToken = peekNext();
+        if (nextToken.type == TokenType::TOKEN_KW_IN) {
+            isRangeBased = true;
+            iteratorName = nameToken.lexeme;
+            advance(); // consume identifier
+        }
+    }
+    
+    // Parse range-based for loop
+    if (isRangeBased) {
+        consume(TokenType::TOKEN_KW_IN, "Expected 'in' keyword");
+        
+        // Parse range expression
+        ASTNodePtr rangeExpr = parseExpression();
+        if (!rangeExpr) {
+            error("Expected range expression after 'in'");
+            return nullptr;
+        }
+        
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after range expression");
+        
+        // Parse body
+        ASTNodePtr body = nullptr;
+        if (match(TokenType::TOKEN_LEFT_BRACE)) {
+            body = parseBlock();
+        } else {
+            body = parseStatement();
+        }
+        
+        if (!body) {
+            error("Expected statement or block after for clause");
+            return nullptr;
+        }
+        
+        return ForStmt::createRangeBased(iteratorName, iteratorType, rangeExpr, body,
+                                          forToken.line, forToken.column);
+    }
+    
+    // Parse C-style for loop: for (init; cond; update)
     // Parse initializer (optional)
     ASTNodePtr initializer = nullptr;
     if (match(TokenType::TOKEN_SEMICOLON)) {

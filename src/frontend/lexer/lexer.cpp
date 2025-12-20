@@ -39,6 +39,8 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     // Async
     {"async", TokenType::TOKEN_KW_ASYNC},
     {"await", TokenType::TOKEN_KW_AWAIT},
+    {"catch", TokenType::TOKEN_KW_CATCH},
+    {"in", TokenType::TOKEN_KW_IN},
     
     // Module system
     {"use", TokenType::TOKEN_KW_USE},

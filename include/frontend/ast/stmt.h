@@ -230,15 +230,38 @@ public:
  */
 class ForStmt : public ASTNode {
 public:
+    // C-style for loop: for (init; cond; update) { body }
     ASTNodePtr initializer;   // Can be nullptr or VarDecl
     ASTNodePtr condition;
     ASTNodePtr update;
     ASTNodePtr body;
     
+    // Range-based for loop: for (var in range) { body }
+    bool isRangeBased;        // true if range-based for loop
+    std::string iteratorName; // Variable name for range iteration
+    std::string iteratorType; // Type annotation for iterator (optional, can be empty)
+    ASTNodePtr rangeExpr;     // Range expression (e.g., 0..10)
+    
+    // C-style constructor (4-6 params with last 2 optional)
     ForStmt(ASTNodePtr init, ASTNodePtr cond, ASTNodePtr upd, ASTNodePtr bodyBlock,
             int line = 0, int column = 0)
         : ASTNode(NodeType::FOR, line, column),
-          initializer(init), condition(cond), update(upd), body(bodyBlock) {}
+          initializer(std::move(init)), condition(std::move(cond)), 
+          update(std::move(upd)), body(std::move(bodyBlock)),
+          isRangeBased(false) {}
+    
+    // Range-based constructor (needs strings, so clearly different from C-style)
+    // Use named params to avoid confusion: iterName and iterType are strings
+    static std::unique_ptr<ForStmt> createRangeBased(
+            const std::string& iterName, const std::string& iterType,
+            ASTNodePtr range, ASTNodePtr bodyBlock, int line = 0, int column = 0) {
+        auto stmt = std::make_unique<ForStmt>(nullptr, nullptr, nullptr, std::move(bodyBlock), line, column);
+        stmt->isRangeBased = true;
+        stmt->iteratorName = iterName;
+        stmt->iteratorType = iterType;
+        stmt->rangeExpr = std::move(range);
+        return stmt;
+    }
     
     std::string toString() const override;
 };

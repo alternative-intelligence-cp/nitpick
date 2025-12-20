@@ -50,6 +50,7 @@ enum class TokenType {
     TOKEN_KW_ASYNC,     // async
     TOKEN_KW_AWAIT,     // await
     TOKEN_KW_CATCH,     // catch
+    TOKEN_KW_IN,        // in - for range-based loops (for x in range)
     
     // ========================================================================
     // Keywords - Declarations
