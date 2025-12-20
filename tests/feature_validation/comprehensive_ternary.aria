@@ -3,7 +3,7 @@
 // Expected exit code: 125 (sum of all test results)
 
 // Test 1: Simple max function
-func:test_simple = int32() {
+func:test_simple = int64() {
     int32:a = 10;
     int32:b = 20;
     int32:max = is (a > b) : a : b;
@@ -11,7 +11,7 @@ func:test_simple = int32() {
 };
 
 // Test 2: Min function
-func:test_min = int32() {
+func:test_min = int64() {
     int32:a = 15;
     int32:b = 8;
     int32:min = is (a < b) : a : b;
@@ -19,7 +19,7 @@ func:test_min = int32() {
 };
 
 // Test 3: Conditional sign flip
-func:test_sign = int32() {
+func:test_sign = int64() {
     int32:x = 5;
     int32:y = 7;
     // If x < y, add them; else subtract
@@ -28,7 +28,7 @@ func:test_sign = int32() {
 };
 
 // Test 4: Nested ternary (max of 3)
-func:test_nested = int32() {
+func:test_nested = int64() {
     int32:a = 5;
     int32:b = 25;
     int32:c = 15;
@@ -37,7 +37,7 @@ func:test_nested = int32() {
 };
 
 // Test 5: Ternary in computation
-func:test_computation = int32() {
+func:test_computation = int64() {
     int32:x = 7;
     int32:y = 3;
     int32:value = (is (x > y) : x : y) + 10;
@@ -45,22 +45,22 @@ func:test_computation = int32() {
 };
 
 // Test 6: Ternary with function calls
-func:helper_true = int32() {
+func:helper_true = int64() {
     pass(30);
 };
 
-func:helper_false = int32() {
+func:helper_false = int64() {
     pass(40);
 };
 
-func:test_with_calls = int32() {
+func:test_with_calls = int64() {
     int32:flag = 1;
     int32:answer = is (flag > 0) : helper_true() : helper_false();
     pass(answer);  // Returns 30
 };
 
 // Test 7: Multiple ternaries in same statement
-func:test_multiple = int32() {
+func:test_multiple = int64() {
     int32:a = 1;
     int32:b = 2;
     int32:three = 3;
@@ -73,7 +73,7 @@ func:test_multiple = int32() {
     pass(x + y);  // Returns 8 (3 + 5)
 };
 
-func:main = int32() {
+func:main = int64() {
     int32:r1 = test_simple();       // 20
     int32:r2 = test_min();          // 8
     int32:r3 = test_sign();         // 12

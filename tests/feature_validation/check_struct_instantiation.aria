@@ -12,7 +12,7 @@ struct Duration {
     int64:nanos;
 };
 
-func:test_point_creation = int32() {
+func:test_point_creation = int64() {
     // Test 1: Create struct with literal syntax
     Point:p = Point{ x: 10, y: 20 };
     
@@ -28,7 +28,7 @@ func:test_point_creation = int32() {
     pass(0);  // Success
 };
 
-func:test_duration = int32() {
+func:test_duration = int64() {
     // Test 3: Create Duration struct
     Duration:d = Duration{ nanos: 5000000000 };
     
@@ -40,7 +40,7 @@ func:test_duration = int32() {
     pass(0);  // Success
 };
 
-func:test_struct_in_function = int32() {
+func:test_struct_in_function = int64() {
     // Test 5: Create struct and pass to function
     Point:origin = Point{ x: 0, y: 0 };
     
@@ -57,7 +57,7 @@ func:add_coords = int32(Point:p) {
     return p.x + p.y;
 };
 
-func:main = int32() {
+func:main = int64() {
     int32:result = 0;
     
     result = test_point_creation();
