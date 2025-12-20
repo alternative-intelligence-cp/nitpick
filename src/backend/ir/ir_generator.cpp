@@ -1339,6 +1339,84 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             
             IdentifierExpr* callee = static_cast<IdentifierExpr*>(call->callee.get());
             
+            // Builtin: print() - outputs a single value to stdout
+            if (callee->name == "print") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;  // print() requires exactly one argument
+                }
+                
+                // Declare printf if not already present
+                llvm::Function* printf_func = module->getFunction("printf");
+                if (!printf_func) {
+                    llvm::FunctionType* printf_type = llvm::FunctionType::get(
+                        builder.getInt32Ty(),
+                        llvm::PointerType::get(context, 0),
+                        true  // vararg
+                    );
+                    printf_func = llvm::Function::Create(
+                        printf_type,
+                        llvm::Function::ExternalLinkage,
+                        "printf",
+                        module.get()
+                    );
+                }
+                
+                // Generate argument
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg) {
+                    return nullptr;
+                }
+                
+                // Determine format string based on argument type
+                llvm::Value* format_str = nullptr;
+                std::vector<llvm::Value*> printf_args;
+                printf_args.push_back(nullptr);  // Placeholder for format string
+                
+                llvm::Type* arg_type = arg->getType();
+                
+                if (arg_type->isPointerTy()) {
+                    // String (char*)
+                    format_str = builder.CreateGlobalStringPtr("%s\n", "str_fmt");
+                    printf_args.push_back(arg);
+                } else if (arg_type->isIntegerTy()) {
+                    // Integer type - determine format based on bit width
+                    unsigned bit_width = arg_type->getIntegerBitWidth();
+                    
+                    if (bit_width < 32) {
+                        // Sign-extend to int32 for printf
+                        arg = builder.CreateSExt(arg, builder.getInt32Ty());
+                        format_str = builder.CreateGlobalStringPtr("%d\n", "int_fmt");
+                    } else if (bit_width == 32) {
+                        format_str = builder.CreateGlobalStringPtr("%d\n", "int_fmt");
+                    } else if (bit_width == 64) {
+                        format_str = builder.CreateGlobalStringPtr("%lld\n", "int64_fmt");
+                    } else {
+                        // For larger integers (128+), print as unsigned 64-bit
+                        arg = builder.CreateTrunc(arg, builder.getInt64Ty());
+                        format_str = builder.CreateGlobalStringPtr("%llu\n", "int64_fmt");
+                    }
+                    
+                    printf_args.push_back(arg);
+                } else if (arg_type->isFloatingPointTy()) {
+                    // Float or double
+                    if (arg_type->isFloatTy()) {
+                        // Promote float to double for printf
+                        arg = builder.CreateFPExt(arg, builder.getDoubleTy());
+                    }
+                    format_str = builder.CreateGlobalStringPtr("%g\n", "float_fmt");
+                    printf_args.push_back(arg);
+                } else {
+                    // Unsupported type
+                    return nullptr;
+                }
+                
+                // Set the format string as first argument
+                printf_args[0] = format_str;
+                
+                // Create printf call
+                return builder.CreateCall(printf_func, printf_args, "print_call");
+            }
+            
             // Check if this is a specialized generic call
             std::string functionName = callee->name;
             if (!call->specializedMangledName.empty()) {

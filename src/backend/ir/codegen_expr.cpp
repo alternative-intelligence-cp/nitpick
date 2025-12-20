@@ -593,6 +593,83 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         throw std::runtime_error("Function callee must be an identifier");
     }
     
+    // ====================================================================
+    // BUILTIN FUNCTION: print()
+    // ====================================================================
+    if (callee_ident->name == "print") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("print() requires exactly one argument");
+        }
+        
+        // Evaluate the argument
+        llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!arg) {
+            throw std::runtime_error("Failed to generate code for print argument");
+        }
+        
+        // Declare printf if not already declared
+        llvm::Function* printf_func = module->getFunction("printf");
+        if (!printf_func) {
+            // printf signature: i32 (i8*, ...)
+            llvm::FunctionType* printf_type = llvm::FunctionType::get(
+                builder.getInt32Ty(),
+                llvm::PointerType::get(context, 0),
+                true  // vararg
+            );
+            printf_func = llvm::Function::Create(
+                printf_type,
+                llvm::Function::ExternalLinkage,
+                "printf",
+                module
+            );
+        }
+        
+        // Handle different argument types
+        llvm::Type* arg_type = arg->getType();
+        llvm::Value* format_str = nullptr;
+        std::vector<llvm::Value*> printf_args;
+        
+        if (arg_type->isPointerTy()) {
+            // Assume it's a string - use "%s" format
+            format_str = builder.CreateGlobalStringPtr("%s", "str_fmt");
+            printf_args.push_back(format_str);
+            printf_args.push_back(arg);
+        } else if (arg_type->isIntegerTy()) {
+            // Integer type - use appropriate format based on bit width
+            unsigned bit_width = arg_type->getIntegerBitWidth();
+            
+            // Convert smaller ints to i32 or i64 for printf
+            if (bit_width < 32) {
+                arg = builder.CreateSExt(arg, builder.getInt32Ty(), "print_ext");
+                format_str = builder.CreateGlobalStringPtr("%d", "int_fmt");
+            } else if (bit_width == 32) {
+                format_str = builder.CreateGlobalStringPtr("%d", "int_fmt");
+            } else {
+                // 64-bit or larger
+                if (bit_width > 64) {
+                    arg = builder.CreateTrunc(arg, builder.getInt64Ty(), "print_trunc");
+                }
+                format_str = builder.CreateGlobalStringPtr("%lld", "int64_fmt");
+            }
+            
+            printf_args.push_back(format_str);
+            printf_args.push_back(arg);
+        } else if (arg_type->isFloatingPointTy()) {
+            // Float type - convert to double for printf
+            if (arg_type->isFloatTy()) {
+                arg = builder.CreateFPExt(arg, builder.getDoubleTy(), "print_fpext");
+            }
+            format_str = builder.CreateGlobalStringPtr("%g", "float_fmt");
+            printf_args.push_back(format_str);
+            printf_args.push_back(arg);
+        } else {
+            throw std::runtime_error("print() does not support this type yet");
+        }
+        
+        // Call printf and return the result
+        return builder.CreateCall(printf_func, printf_args, "print_call");
+    }
+    
     // Check if this is a direct function call or a closure call
     // Try to find a direct function first
     llvm::Function* direct_func = module->getFunction(callee_ident->name);
