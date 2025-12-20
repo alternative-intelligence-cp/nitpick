@@ -175,6 +175,18 @@ private:
     Type* inferUnwrapExpr(UnwrapExpr* expr);
     
     /**
+     * Infer the type of a move expression
+     * 
+     * Syntax: move(variable)
+     * 
+     * Rules:
+     * - Variable must be a valid identifier
+     * - Returns the same type as the source variable
+     * - Move tracking and invalidation is handled by the borrow checker
+     */
+    Type* inferMoveExpr(MoveExpr* expr);
+    
+    /**
      * Infer the type of an object literal expression
      * 
      * Rules:

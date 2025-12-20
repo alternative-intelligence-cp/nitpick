@@ -2,17 +2,17 @@
 // Focus ONLY on generic parsing, not on other features
 
 // Test 1: Basic generic function declaration
-func<T>:identity = result(*T:value) {
+func<T>:identity = *T(*T:value) {
     pass(value);
 };
 
 // Test 2: Generic with multiple parameters
-func<T,U>:first_of_pair = result(*T:a, *U:b) {
+func<T,U>:first_of_pair = *T(*T:a, *U:b) {
     pass(a);
 };
 
-// Test 3: Generic with constraints
-func<T: Comparable>:max = result(*T:a, *T:b) {
+// Test 3: Generic max (no constraints for now)
+func<T>:max = *T(*T:a, *T:b) {
     if (a > b) {
         pass(a);
     }

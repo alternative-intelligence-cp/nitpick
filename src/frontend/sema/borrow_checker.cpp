@@ -1,6 +1,7 @@
 #include "frontend/sema/borrow_checker.h"
 #include <sstream>
 #include <algorithm>
+#include <iostream>
 
 namespace aria {
 namespace sema {
@@ -32,6 +33,7 @@ LifetimeContext LifetimeContext::snapshot() const {
     snap.active_pins = this->active_pins;
     snap.pending_wild_frees = this->pending_wild_frees;
     snap.wild_states = this->wild_states;
+    snap.moved_variables = this->moved_variables;
     snap.current_depth = this->current_depth;
     snap.scope_stack = this->scope_stack;
     return snap;
@@ -44,6 +46,7 @@ void LifetimeContext::restore(const LifetimeContext& snap) {
     this->active_pins = snap.active_pins;
     this->pending_wild_frees = snap.pending_wild_frees;
     this->wild_states = snap.wild_states;
+    this->moved_variables = snap.moved_variables;
     this->current_depth = snap.current_depth;
     this->scope_stack = snap.scope_stack;
 }
@@ -370,6 +373,26 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
         case ASTNode::NodeType::VAR_DECL:
             checkVarDecl(static_cast<VarDeclStmt*>(stmt));
             break;
+        
+        case ASTNode::NodeType::FUNC_DECL: {
+            // Check function body
+            auto* funcDecl = static_cast<FuncDeclStmt*>(stmt);
+            if (funcDecl->body) {
+                ctx.enterScope();
+                checkStatement(funcDecl->body.get());
+                ctx.exitScope();
+            }
+            break;
+        }
+        
+        case ASTNode::NodeType::PROGRAM: {
+            // Program is a container of declarations
+            auto* program = static_cast<ProgramNode*>(stmt);
+            for (const auto& decl : program->declarations) {
+                checkStatement(decl.get());
+            }
+            break;
+        }
             
         case ASTNode::NodeType::IF:
             checkIfStmt(static_cast<IfStmt*>(stmt));
@@ -429,6 +452,10 @@ void BorrowChecker::checkExpression(ASTNode* expr) {
             checkCallExpr(static_cast<CallExpr*>(expr));
             break;
             
+        case ASTNode::NodeType::MOVE:
+            checkMoveExpr(static_cast<MoveExpr*>(expr));
+            break;
+            
         default:
             // Other expression types don't require borrow checking
             break;
@@ -442,6 +469,9 @@ void BorrowChecker::checkExpression(ASTNode* expr) {
 void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
     if (!stmt) return;
     
+    // Set scope depth for Appendage Theory tracking
+    stmt->scope_depth = ctx.getScopeDepth();
+    
     // Register the variable first
     registerVariable(stmt->varName, stmt);
     
@@ -449,25 +479,31 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
     if (stmt->initializer) {
         checkExpression(stmt->initializer.get());
         
-        // Check if initializer is a borrow or pin operation
+        // Check if initializer is a borrow or pin operation using AST annotations
         if (stmt->initializer->type == ASTNode::NodeType::UNARY_OP) {
             UnaryExpr* unary = static_cast<UnaryExpr*>(stmt->initializer.get());
             
-            // Check for $ (borrow) or # (pin)
-            if (unary->op.type == frontend::TokenType::TOKEN_DOLLAR) {
-                // Borrow operation: int32$:ref = $x
-                if (unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
-                    IdentifierExpr* host = static_cast<IdentifierExpr*>(unary->operand.get());
-                    bool is_mutable = stmt->typeName.find("$mut") != std::string::npos;
-                    recordBorrow(host->name, stmt->varName, is_mutable, stmt);
+            // Check for !$x pattern (immutable borrow)
+            bool is_negated_borrow = false;
+            if (unary->op.type == frontend::TokenType::TOKEN_BANG && 
+                unary->operand && unary->operand->type == ASTNode::NodeType::UNARY_OP) {
+                UnaryExpr* inner = static_cast<UnaryExpr*>(unary->operand.get());
+                if (inner->creates_loan && !inner->loan_target.empty()) {
+                    // This is !$x - immutable borrow
+                    is_negated_borrow = true;
+                    recordBorrow(inner->loan_target, stmt->varName, false, stmt);
                 }
-            } else if (unary->op.type == frontend::TokenType::TOKEN_HASH) {
-                // Pin operation: wild int32*:ptr = #x
-                // This creates a pointer to GC memory, NOT a wild allocation
-                if (unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
-                    IdentifierExpr* host = static_cast<IdentifierExpr*>(unary->operand.get());
-                    recordPin(host->name, stmt->varName, stmt);
-                }
+            }
+            
+            // Use AST annotations set by parser
+            if (!is_negated_borrow && unary->creates_loan && !unary->loan_target.empty()) {
+                // Borrow operation: int32$:ref = $x (mutable by default)
+                recordBorrow(unary->loan_target, stmt->varName, true, stmt);
+            } else if (unary->creates_pin && !unary->pin_target.empty()) {
+                // Pin operation: wild int32@:ptr = #x
+                stmt->is_pinned_shadow = true;
+                stmt->pinned_target = unary->pin_target;
+                recordPin(unary->pin_target, stmt->varName, stmt);
                 // Don't record as wild allocation - it's just a pin
                 return;
             }
@@ -476,20 +512,10 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
     
     // Check if this is a wild allocation (only if NOT a pin operation)
     // A pin creates a wild pointer to GC memory, not a wild allocation
-    if (stmt->typeName.find("wild") == 0 && stmt->initializer) {
-        // Check if initializer is not a pin operation
-        bool is_pin = false;
-        if (stmt->initializer->type == ASTNode::NodeType::UNARY_OP) {
-            UnaryExpr* unary = static_cast<UnaryExpr*>(stmt->initializer.get());
-            if (unary->op.type == frontend::TokenType::TOKEN_HASH) {
-                is_pin = true;
-            }
-        }
-        
-        if (!is_pin) {
-            // This is an actual wild allocation (e.g., wild int32:ptr = malloc(...))
-            recordWildAlloc(stmt->varName, stmt);
-        }
+    if (stmt->typeName.find("wild") == 0 && stmt->initializer && !stmt->is_pinned_shadow) {
+        // This is an actual wild allocation (e.g., wild int8@:ptr = malloc(...))
+        stmt->requires_drop = true;
+        recordWildAlloc(stmt->varName, stmt);
     }
 }
 
@@ -628,6 +654,9 @@ void BorrowChecker::checkBlockStmt(BlockStmt* stmt) {
             releaseBorrows(var);
             releasePin(var);
             
+            // Remove moved state for variables going out of scope
+            ctx.moved_variables.erase(var);
+            
             // Check for dangling references
             for (const auto& [ref, origins] : ctx.loan_origins) {
                 if (origins.count(var) > 0) {
@@ -689,6 +718,12 @@ void BorrowChecker::checkUnaryExpr(UnaryExpr* expr) {
 void BorrowChecker::checkIdentifier(IdentifierExpr* expr) {
     if (!expr) return;
     
+    // Check for use-after-move
+    if (ctx.moved_variables.find(expr->name) != ctx.moved_variables.end()) {
+        addError("Use after move: variable '" + expr->name + "' was moved", expr);
+        return;
+    }
+    
     // Check for use-after-free on wild pointers
     checkWildUse(expr->name, expr);
 }
@@ -704,6 +739,31 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
     // TODO: Check function signature for ownership transfer
     // Some functions may take ownership (move) of arguments
     // This requires function signature analysis
+}
+
+void BorrowChecker::checkMoveExpr(MoveExpr* expr) {
+    if (!expr) return;
+    
+    const std::string& varName = expr->variableName;
+    
+    // Check if the variable can be used (not already moved or freed)
+    if (ctx.moved_variables.find(varName) != ctx.moved_variables.end()) {
+        addError("Cannot move variable '" + varName + "' (already moved)", expr);
+        return;
+    }
+    
+    checkWildUse(varName, expr);
+    
+    // Mark the variable as moved (invalidate it for all types)
+    ctx.moved_variables.insert(varName);
+    
+    // For wild pointers, also update the wild state
+    auto it = ctx.wild_states.find(varName);
+    if (it != ctx.wild_states.end()) {
+        ctx.wild_states[varName] = WildState::MOVED;
+        // Remove from pending frees since ownership transferred
+        ctx.pending_wild_frees.erase(varName);
+    }
 }
 
 // ============================================================================

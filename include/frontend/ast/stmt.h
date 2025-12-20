@@ -21,18 +21,26 @@ public:
     bool isStack;              // stack keyword
     bool isGC;                 // gc keyword (explicit)
     
+    // Borrow checker annotations (set during borrow checking phase)
+    int scope_depth;           // Scope depth where variable is declared (for Appendage Theory)
+    bool requires_drop;        // True if variable needs explicit cleanup (wild/stack)
+    bool is_pinned_shadow;     // True if this variable is a pinning reference (#x)
+    std::string pinned_target; // Name of the variable this one pins (if is_pinned_shadow)
+    
     VarDeclStmt(const std::string& type, const std::string& name, 
                 ASTNodePtr init = nullptr, int line = 0, int column = 0)
         : ASTNode(NodeType::VAR_DECL, line, column),
           typeName(type), typeNode(nullptr), varName(name), initializer(init),
-          isWild(false), isConst(false), isStack(false), isGC(false) {}
+          isWild(false), isConst(false), isStack(false), isGC(false),
+          scope_depth(0), requires_drop(false), is_pinned_shadow(false), pinned_target("") {}
     
     // Constructor with typeNode support
     VarDeclStmt(ASTNodePtr typeN, const std::string& name,
                 ASTNodePtr init = nullptr, int line = 0, int column = 0)
         : ASTNode(NodeType::VAR_DECL, line, column),
           typeName(""), typeNode(typeN), varName(name), initializer(init),
-          isWild(false), isConst(false), isStack(false), isGC(false) {}
+          isWild(false), isConst(false), isStack(false), isGC(false),
+          scope_depth(0), requires_drop(false), is_pinned_shadow(false), pinned_target("") {}
     
     std::string toString() const override;
 };
