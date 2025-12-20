@@ -139,17 +139,18 @@ public:
 
 /**
  * Member access expression node
- * Represents: obj.member
+ * Represents: obj.member, obj->member, obj?.member
  */
 class MemberAccessExpr : public ASTNode {
 public:
     ASTNodePtr object;
     std::string member;
     bool isPointerAccess;  // true for ->, false for .
+    bool isSafeNavigation; // true for ?., false otherwise
     
-    MemberAccessExpr(ASTNodePtr obj, const std::string& mem, bool isPtr = false, int line = 0, int column = 0)
+    MemberAccessExpr(ASTNodePtr obj, const std::string& mem, bool isPtr = false, bool isSafeNav = false, int line = 0, int column = 0)
         : ASTNode(isPtr ? NodeType::POINTER_MEMBER : NodeType::MEMBER_ACCESS, line, column),
-          object(obj), member(mem), isPointerAccess(isPtr) {}
+          object(obj), member(mem), isPointerAccess(isPtr), isSafeNavigation(isSafeNav) {}
     
     std::string toString() const override;
 };

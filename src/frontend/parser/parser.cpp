@@ -700,11 +700,10 @@ ASTNodePtr Parser::parseMemberExpression(ASTNodePtr object) {
     std::string memberName = memberToken.lexeme;
     
     auto memberExpr = std::make_shared<MemberAccessExpr>(
-        object, memberName, isPointerAccess,
+        object, memberName, isPointerAccess, isSafeNav,
         op.line, op.column
     );
     
-    // TODO: Handle safe navigation differently if needed
     return memberExpr;
 }
 
