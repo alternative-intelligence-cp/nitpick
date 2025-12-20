@@ -992,6 +992,14 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             // No type checking needed for break/continue
             break;
         
+        case ASTNode::NodeType::USE:
+            checkUseStmt(static_cast<UseStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::MOD:
+            checkModStmt(static_cast<ModStmt*>(stmt));
+            break;
+        
         default:
             // Other statement types not yet implemented
             break;
@@ -1954,6 +1962,86 @@ bool TypeChecker::canLiteralFitInIntType(int64_t value, Type* type, ASTNode* nod
     }
     
     return true;
+}
+
+// ============================================================================
+// Module System Type Checking
+// ============================================================================
+
+void TypeChecker::checkUseStmt(UseStmt* stmt) {
+    if (!stmt) {
+        return;
+    }
+    
+    // Basic validation of use statement structure
+    // Detailed module resolution is handled by module_resolver
+    
+    if (stmt->path.empty()) {
+        addError("Empty module path in use statement", stmt);
+        return;
+    }
+    
+    // For file path imports, validate the path format
+    if (stmt->isFilePath) {
+        const std::string& filePath = stmt->path[0];
+        
+        // Check for valid file extensions
+        if (!filePath.empty()) {
+            // File paths should end with .aria
+            if (filePath.length() > 5) {
+                std::string ext = filePath.substr(filePath.length() - 5);
+                if (ext != ".aria") {
+                    // Allow paths without extensions (will be resolved by module system)
+                    // This is just a warning, not an error
+                }
+            }
+        }
+    }
+    
+    // Validate selective imports and wildcards
+    if (stmt->isWildcard && !stmt->items.empty()) {
+        addError("Cannot have both wildcard (*) and selective imports in use statement", stmt);
+        return;
+    }
+    
+    // Note: Actual symbol resolution and import validation happens during
+    // symbol table construction and module linking phases
+}
+
+void TypeChecker::checkModStmt(ModStmt* stmt) {
+    if (!stmt) {
+        return;
+    }
+    
+    // Validate module name
+    if (stmt->name.empty()) {
+        addError("Module name cannot be empty", stmt);
+        return;
+    }
+    
+    // Check for invalid characters in module name
+    // Module names should be valid identifiers
+    for (char c : stmt->name) {
+        if (!std::isalnum(c) && c != '_') {
+            addError("Invalid character '" + std::string(1, c) + "' in module name '" + 
+                    stmt->name + "'. Module names must be valid identifiers.", stmt);
+            return;
+        }
+    }
+    
+    // If it's an inline module, type check all declarations in its body
+    if (stmt->isInline) {
+        // Enter module scope (for nested symbol resolution)
+        // For now, just check each declaration
+        for (const auto& decl : stmt->body) {
+            if (decl) {
+                checkStatement(decl.get());
+            }
+        }
+    }
+    
+    // External module declarations (mod name;) don't need further checking
+    // The module resolver will validate they exist
 }
 
 } // namespace sema

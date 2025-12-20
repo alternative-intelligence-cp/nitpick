@@ -572,6 +572,18 @@ public:
     void checkExpressionStmt(ExpressionStmt* stmt);
     
     /**
+     * Check use statement (module import)
+     * Validates import path structure and format
+     */
+    void checkUseStmt(UseStmt* stmt);
+    
+    /**
+     * Check mod statement (module declaration)
+     * Validates module name and recursively checks inline module bodies
+     */
+    void checkModStmt(ModStmt* stmt);
+    
+    /**
      * Get accumulated type errors
      */
     const std::vector<std::string>& getErrors() const { return errors; }
