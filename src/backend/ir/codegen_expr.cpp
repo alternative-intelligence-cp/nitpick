@@ -930,8 +930,66 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
         throw std::runtime_error("Null member access expression");
     }
     
-    // TODO: Implement later with struct support
-    throw std::runtime_error("Member access not yet implemented");
+    // Generate code for the object
+    llvm::Value* objectVal = codegenExpressionNode(expr->object.get(), this);
+    if (!objectVal) {
+        throw std::runtime_error("Failed to generate code for member access object");
+    }
+    
+    // For safe navigation (?.), we need to check if the object is null
+    if (expr->isSafeNavigation) {
+        // Create blocks for conditional access
+        llvm::Function* func = builder.GetInsertBlock()->getParent();
+        llvm::BasicBlock* checkBB = builder.GetInsertBlock();
+        llvm::BasicBlock* accessBB = llvm::BasicBlock::Create(context, "safe_nav_access", func);
+        llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "safe_nav_merge", func);
+        
+        // Check if object is null
+        llvm::Value* isNull;
+        if (objectVal->getType()->isPointerTy()) {
+            // For pointers, check against nullptr
+            isNull = builder.CreateIsNull(objectVal, "is_null");
+        } else {
+            // For other types, assume not null (TODO: handle optional types)
+            isNull = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
+        }
+        
+        // Branch: if null, skip to merge with null result; otherwise access member
+        builder.CreateCondBr(isNull, mergeBB, accessBB);
+        
+        // Access block: perform the actual member access
+        builder.SetInsertPoint(accessBB);
+        llvm::Value* memberVal = nullptr;
+        
+        // TODO: Implement actual member access based on type
+        // For now, this is a placeholder that needs struct support
+        // For structs, we would use getelementptr to get the field offset
+        
+        // Temporary: just return a zero value
+        // In reality, we need to:
+        // 1. Get the struct type from type system
+        // 2. Find the member field index
+        // 3. Use getelementptr to compute field address
+        // 4. Load the value from that address
+        llvm::Type* resultType = llvm::Type::getInt64Ty(context); // Placeholder
+        memberVal = llvm::ConstantInt::get(resultType, 0);
+        
+        llvm::BasicBlock* accessEndBB = builder.GetInsertBlock();
+        builder.CreateBr(mergeBB);
+        
+        // Merge block: use phi node to select between null and actual value
+        builder.SetInsertPoint(mergeBB);
+        llvm::PHINode* phi = builder.CreatePHI(resultType, 2, "safe_nav_result");
+        phi->addIncoming(llvm::ConstantInt::get(resultType, 0), checkBB); // NIL/null case
+        phi->addIncoming(memberVal, accessEndBB); // Successful access
+        
+        return phi;
+    }
+    
+    // For regular member access (. or ->)
+    // TODO: Implement struct field access with getelementptr
+    // For now, this needs struct type support to be fully implemented
+    throw std::runtime_error("Member access not yet fully implemented - needs struct support");
 }
 
 // ============================================================================
