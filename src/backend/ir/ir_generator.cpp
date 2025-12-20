@@ -2338,15 +2338,147 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
         }
         
         case ASTNode::NodeType::INDEX: {
-            // Array indexing: arr[i]
-            IndexExpr* index = static_cast<IndexExpr*>(expr);
+            // Array indexing: arr[i] or array slicing: arr[start..end]
+            IndexExpr* indexExpr = static_cast<IndexExpr*>(expr);
             
+            // Check if this is array slicing (index is a range expression)
+            if (indexExpr->index->type == ASTNode::NodeType::RANGE) {
+                // Array slicing: arr[start..end] or arr[start...end]
+                RangeExpr* rangeExpr = static_cast<RangeExpr*>(indexExpr->index.get());
+                
+                // Generate code for the array (should be a pointer)
+                llvm::Value* array_ptr = nullptr;
+                
+                // Get array pointer
+                if (indexExpr->array->type == ASTNode::NodeType::IDENTIFIER) {
+                    IdentifierExpr* ident = static_cast<IdentifierExpr*>(indexExpr->array.get());
+                    auto it = named_values.find(ident->name);
+                    if (it != named_values.end()) {
+                        llvm::Value* var = it->second;
+                        if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
+                            llvm::Type* allocated_type = allocaInst->getAllocatedType();
+                            if (allocated_type->isPointerTy()) {
+                                array_ptr = builder.CreateLoad(allocated_type, var, ident->name + ".ptr");
+                            } else {
+                                array_ptr = var;
+                            }
+                        } else {
+                            array_ptr = var;
+                        }
+                    }
+                } else {
+                    array_ptr = codegenExpression(indexExpr->array.get());
+                }
+                
+                if (!array_ptr) {
+                    return nullptr;
+                }
+                
+                // Generate range start and end values
+                llvm::Value* startVal = codegenExpression(rangeExpr->start.get());
+                llvm::Value* endVal = codegenExpression(rangeExpr->end.get());
+                
+                if (!startVal || !endVal) {
+                    return nullptr;
+                }
+                
+                // Ensure start and end are int64 for arithmetic
+                startVal = builder.CreateSExtOrTrunc(startVal, builder.getInt64Ty(), "start.i64");
+                endVal = builder.CreateSExtOrTrunc(endVal, builder.getInt64Ty(), "end.i64");
+                
+                // Calculate slice length
+                // For inclusive range (..): length = end - start + 1
+                // For exclusive range (...): length = end - start
+                llvm::Value* length = nullptr;
+                if (rangeExpr->isExclusive) {
+                    length = builder.CreateSub(endVal, startVal, "slice.len");
+                } else {
+                    llvm::Value* endPlusOne = builder.CreateAdd(endVal, 
+                        llvm::ConstantInt::get(builder.getInt64Ty(), 1), "end.plus.one");
+                    length = builder.CreateSub(endPlusOne, startVal, "slice.len");
+                }
+                
+                // Get element type (assume int64 for now - should track this properly)
+                llvm::Type* elem_type = builder.getInt64Ty();
+                
+                // Allocate memory for the new slice
+                // Call malloc(length * sizeof(element))
+                llvm::Value* elem_size = llvm::ConstantInt::get(builder.getInt64Ty(), 8); // sizeof(int64)
+                llvm::Value* byte_count = builder.CreateMul(length, elem_size, "slice.bytes");
+                
+                llvm::Function* malloc_func = module->getFunction("malloc");
+                if (!malloc_func) {
+                    // Declare malloc if not already present
+                    llvm::FunctionType* malloc_type = llvm::FunctionType::get(
+                        builder.getPtrTy(),
+                        {builder.getInt64Ty()},
+                        false
+                    );
+                    malloc_func = llvm::Function::Create(
+                        malloc_type,
+                        llvm::Function::ExternalLinkage,
+                        "malloc",
+                        module.get()
+                    );
+                }
+                
+                llvm::Value* slice_ptr = builder.CreateCall(malloc_func, {byte_count}, "slice.ptr");
+                
+                // Copy elements from source array to slice
+                // Create loop: for (i = 0; i < length; i++) slice[i] = arr[start + i]
+                llvm::Function* function = builder.GetInsertBlock()->getParent();
+                llvm::BasicBlock* loopCond = llvm::BasicBlock::Create(context, "slice.cond", function);
+                llvm::BasicBlock* loopBody = llvm::BasicBlock::Create(context, "slice.body");
+                llvm::BasicBlock* loopEnd = llvm::BasicBlock::Create(context, "slice.end");
+                
+                // Allocate loop counter
+                llvm::Value* counter = builder.CreateAlloca(builder.getInt64Ty(), nullptr, "slice.i");
+                builder.CreateStore(llvm::ConstantInt::get(builder.getInt64Ty(), 0), counter);
+                
+                // Jump to loop condition
+                builder.CreateBr(loopCond);
+                
+                // Loop condition: i < length
+                builder.SetInsertPoint(loopCond);
+                llvm::Value* i_val = builder.CreateLoad(builder.getInt64Ty(), counter, "i");
+                llvm::Value* cmp = builder.CreateICmpSLT(i_val, length, "slice.cond");
+                builder.CreateCondBr(cmp, loopBody, loopEnd);
+                
+                // Loop body: slice[i] = arr[start + i]
+                function->insert(function->end(), loopBody);
+                builder.SetInsertPoint(loopBody);
+                llvm::Value* i_curr = builder.CreateLoad(builder.getInt64Ty(), counter, "i.curr");
+                llvm::Value* src_idx = builder.CreateAdd(startVal, i_curr, "src.idx");
+                
+                // Load from source array
+                llvm::Value* src_elem_ptr = builder.CreateGEP(elem_type, array_ptr, src_idx, "src.elem.ptr");
+                llvm::Value* elem_val = builder.CreateLoad(elem_type, src_elem_ptr, "elem.val");
+                
+                // Store to slice
+                llvm::Value* dst_elem_ptr = builder.CreateGEP(elem_type, slice_ptr, i_curr, "dst.elem.ptr");
+                builder.CreateStore(elem_val, dst_elem_ptr);
+                
+                // Increment counter and loop back
+                llvm::Value* i_next = builder.CreateAdd(i_curr, 
+                    llvm::ConstantInt::get(builder.getInt64Ty(), 1), "i.next");
+                builder.CreateStore(i_next, counter);
+                builder.CreateBr(loopCond);
+                
+                // After loop
+                function->insert(function->end(), loopEnd);
+                builder.SetInsertPoint(loopEnd);
+                
+                // Return pointer to the slice
+                return slice_ptr;
+            }
+            
+            // Regular array indexing: arr[i]
             // Generate code for the array (should be a pointer)
             llvm::Value* array_ptr = nullptr;
             
             // Special handling for identifiers to get the alloca/pointer directly
-            if (index->array->type == ASTNode::NodeType::IDENTIFIER) {
-                IdentifierExpr* ident = static_cast<IdentifierExpr*>(index->array.get());
+            if (indexExpr->array->type == ASTNode::NodeType::IDENTIFIER) {
+                IdentifierExpr* ident = static_cast<IdentifierExpr*>(indexExpr->array.get());
                 auto it = named_values.find(ident->name);
                 if (it != named_values.end()) {
                     llvm::Value* var = it->second;
@@ -2367,7 +2499,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 }
             } else {
                 // For complex expressions, generate code normally
-                array_ptr = codegenExpression(index->array.get());
+                array_ptr = codegenExpression(indexExpr->array.get());
             }
             
             if (!array_ptr) {
@@ -2375,7 +2507,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
             
             // Generate code for the index
-            llvm::Value* index_value = codegenExpression(index->index.get());
+            llvm::Value* index_value = codegenExpression(indexExpr->index.get());
             if (!index_value) {
                 return nullptr;
             }
