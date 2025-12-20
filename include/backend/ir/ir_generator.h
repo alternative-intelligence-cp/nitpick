@@ -9,6 +9,7 @@
 #include <llvm/IR/DIBuilder.h>
 #include <llvm/IR/DebugInfoMetadata.h>
 #include "backend/ir/tbb_codegen.h"
+#include "backend/ir/ternary_codegen.h"
 #include <map>
 #include <string>
 #include <memory>
@@ -54,6 +55,9 @@ private:
     
     // TBB codegen for safe arithmetic with overflow detection
     TBBCodegen tbb_codegen;
+    
+    // Ternary codegen for balanced ternary/nonary arithmetic
+    TernaryCodegen ternary_codegen;
     
     // Loop context stack for break/continue support
     struct LoopContext {

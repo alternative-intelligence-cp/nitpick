@@ -33,19 +33,58 @@ void StmtCodegen::setMonomorphizer(Monomorphizer* mono) {
 
 // Helper: Get LLVM type from Aria type string
 llvm::Type* StmtCodegen::getLLVMTypeFromString(const std::string& type_name) {
-    // Primitive types
-    if (type_name == "i8") return llvm::Type::getInt8Ty(context);
-    if (type_name == "i16") return llvm::Type::getInt16Ty(context);
-    if (type_name == "i32") return llvm::Type::getInt32Ty(context);
-    if (type_name == "i64") return llvm::Type::getInt64Ty(context);
-    if (type_name == "u8") return llvm::Type::getInt8Ty(context);
-    if (type_name == "u16") return llvm::Type::getInt16Ty(context);
-    if (type_name == "u32") return llvm::Type::getInt32Ty(context);
-    if (type_name == "u64") return llvm::Type::getInt64Ty(context);
-    if (type_name == "f32") return llvm::Type::getFloatTy(context);
-    if (type_name == "f64") return llvm::Type::getDoubleTy(context);
+    // Boolean
     if (type_name == "bool") return llvm::Type::getInt1Ty(context);
+    
+    // Void
     if (type_name == "void") return llvm::Type::getVoidTy(context);
+    
+    // Floating point types
+    if (type_name == "flt16") return llvm::Type::getHalfTy(context);
+    if (type_name == "flt32") return llvm::Type::getFloatTy(context);
+    if (type_name == "flt64") return llvm::Type::getDoubleTy(context);
+    if (type_name == "flt128") return llvm::Type::getFP128Ty(context);
+    
+    // Integer types - signed
+    if (type_name == "int1") return llvm::Type::getInt1Ty(context);
+    if (type_name == "int2") return llvm::Type::getIntNTy(context, 2);
+    if (type_name == "int4") return llvm::Type::getIntNTy(context, 4);
+    if (type_name == "int8") return llvm::Type::getInt8Ty(context);
+    if (type_name == "int16") return llvm::Type::getInt16Ty(context);
+    if (type_name == "int32") return llvm::Type::getInt32Ty(context);
+    if (type_name == "int64") return llvm::Type::getInt64Ty(context);
+    if (type_name == "int128") return llvm::Type::getInt128Ty(context);
+    if (type_name == "int256") return llvm::Type::getIntNTy(context, 256);
+    if (type_name == "int512") return llvm::Type::getIntNTy(context, 512);
+    
+    // Integer types - unsigned (same representation in LLVM)
+    if (type_name == "uint1") return llvm::Type::getInt1Ty(context);
+    if (type_name == "uint2") return llvm::Type::getIntNTy(context, 2);
+    if (type_name == "uint4") return llvm::Type::getIntNTy(context, 4);
+    if (type_name == "uint8") return llvm::Type::getInt8Ty(context);
+    if (type_name == "uint16") return llvm::Type::getInt16Ty(context);
+    if (type_name == "uint32") return llvm::Type::getInt32Ty(context);
+    if (type_name == "uint64") return llvm::Type::getInt64Ty(context);
+    if (type_name == "uint128") return llvm::Type::getInt128Ty(context);
+    if (type_name == "uint256") return llvm::Type::getIntNTy(context, 256);
+    if (type_name == "uint512") return llvm::Type::getIntNTy(context, 512);
+    
+    // TBB types
+    if (type_name == "tbb8") return llvm::Type::getInt8Ty(context);
+    if (type_name == "tbb16") return llvm::Type::getInt16Ty(context);
+    if (type_name == "tbb32") return llvm::Type::getInt32Ty(context);
+    if (type_name == "tbb64") return llvm::Type::getInt64Ty(context);
+    
+    // Balanced Ternary types (Session 15)
+    if (type_name == "trit") return llvm::Type::getIntNTy(context, 2);   // Single trit (-1, 0, 1)
+    if (type_name == "tryte") return llvm::Type::getInt16Ty(context);    // 10 trits
+    if (type_name == "nit") return llvm::Type::getIntNTy(context, 4);    // Single nit (-4 to 4)
+    if (type_name == "nyte") return llvm::Type::getInt16Ty(context);     // 5 nits
+    
+    // String
+    if (type_name == "string") {
+        return llvm::PointerType::get(context, 0);
+    }
     
     // Default to i32 for unknown types (will be handled by semantic analysis)
     return llvm::Type::getInt32Ty(context);
@@ -386,6 +425,23 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
         
         if (!init_value) {
             throw std::runtime_error("Failed to generate code for initializer expression");
+        }
+        
+        // Cast initializer to match variable type if necessary
+        if (init_value->getType() != var_type) {
+            // For integer types, use trunc or sext/zext
+            if (init_value->getType()->isIntegerTy() && var_type->isIntegerTy()) {
+                llvm::IntegerType* init_int_ty = llvm::cast<llvm::IntegerType>(init_value->getType());
+                llvm::IntegerType* var_int_ty = llvm::cast<llvm::IntegerType>(var_type);
+                
+                if (init_int_ty->getBitWidth() > var_int_ty->getBitWidth()) {
+                    // Truncate (narrowing conversion)
+                    init_value = builder.CreateTrunc(init_value, var_type, "init_trunc");
+                } else {
+                    // Sign extend (widening conversion for signed types)
+                    init_value = builder.CreateSExt(init_value, var_type, "init_sext");
+                }
+            }
         }
         
         // Store the initial value in the allocated memory

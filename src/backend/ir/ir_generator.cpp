@@ -26,7 +26,8 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
       di_compile_unit(nullptr),
       di_file(nullptr),
       debug_enabled(enable_debug),
-      tbb_codegen(context, builder) {
+      tbb_codegen(context, builder),
+      ternary_codegen(context, builder) {
     // Set source filename for better debug info
     module->setSourceFileName(module_name.empty() ? "aria_module" : module_name);
     
@@ -1608,6 +1609,26 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 }
             }
             
+            // Check if either operand is a balanced ternary/nonary type
+            bool isTernary = false;
+            Type* ternaryType = nullptr;
+            if (leftType && leftType->isPrimitive()) {
+                PrimitiveType* prim = static_cast<PrimitiveType*>(leftType);
+                const std::string& name = prim->getName();
+                if (name == "trit" || name == "tryte" || name == "nit" || name == "nyte") {
+                    isTernary = true;
+                    ternaryType = leftType;
+                }
+            }
+            if (!isTernary && rightType && rightType->isPrimitive()) {
+                PrimitiveType* prim = static_cast<PrimitiveType*>(rightType);
+                const std::string& name = prim->getName();
+                if (name == "trit" || name == "tryte" || name == "nit" || name == "nyte") {
+                    isTernary = true;
+                    ternaryType = rightType;
+                }
+            }
+            
             // Generate appropriate operation based on operator
             switch (binop->op.type) {
                 // Arithmetic operators
@@ -1626,6 +1647,20 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         value_types[result] = tbbType;  // Track type for result
                         return result;
                     }
+                    if (isTernary && ternaryType) {
+                        // Ensure both operands are the same type as the ternary type
+                        llvm::Type* ternaryLLVMType = ternary_codegen.getTernaryLLVMType(ternaryType);
+                        if (L->getType() != ternaryLLVMType) {
+                            L = builder.CreateIntCast(L, ternaryLLVMType, true, "cast_lhs");
+                        }
+                        if (R->getType() != ternaryLLVMType) {
+                            R = builder.CreateIntCast(R, ternaryLLVMType, true, "cast_rhs");
+                        }
+                        
+                        llvm::Value* result = ternary_codegen.generateAdd(L, R, ternaryType);
+                        value_types[result] = ternaryType;  // Track type for result
+                        return result;
+                    }
                     return builder.CreateAdd(L, R, "addtmp");
                 case frontend::TokenType::TOKEN_MINUS:
                     if (isTBB && tbbType) {
@@ -1640,6 +1675,20 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         
                         llvm::Value* result = tbb_codegen.generateSub(L, R, tbbType);
                         value_types[result] = tbbType;  // Track type for result
+                        return result;
+                    }
+                    if (isTernary && ternaryType) {
+                        // Ensure both operands are the same type as the ternary type
+                        llvm::Type* ternaryLLVMType = ternary_codegen.getTernaryLLVMType(ternaryType);
+                        if (L->getType() != ternaryLLVMType) {
+                            L = builder.CreateIntCast(L, ternaryLLVMType, true, "cast_lhs");
+                        }
+                        if (R->getType() != ternaryLLVMType) {
+                            R = builder.CreateIntCast(R, ternaryLLVMType, true, "cast_rhs");
+                        }
+                        
+                        llvm::Value* result = ternary_codegen.generateSub(L, R, ternaryType);
+                        value_types[result] = ternaryType;  // Track type for result
                         return result;
                     }
                     return builder.CreateSub(L, R, "subtmp");
@@ -1658,6 +1707,20 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         value_types[result] = tbbType;  // Track type for result
                         return result;
                     }
+                    if (isTernary && ternaryType) {
+                        // Ensure both operands are the same type as the ternary type
+                        llvm::Type* ternaryLLVMType = ternary_codegen.getTernaryLLVMType(ternaryType);
+                        if (L->getType() != ternaryLLVMType) {
+                            L = builder.CreateIntCast(L, ternaryLLVMType, true, "cast_lhs");
+                        }
+                        if (R->getType() != ternaryLLVMType) {
+                            R = builder.CreateIntCast(R, ternaryLLVMType, true, "cast_rhs");
+                        }
+                        
+                        llvm::Value* result = ternary_codegen.generateMul(L, R, ternaryType);
+                        value_types[result] = ternaryType;  // Track type for result
+                        return result;
+                    }
                     return builder.CreateMul(L, R, "multmp");
                 case frontend::TokenType::TOKEN_SLASH:
                     if (isTBB && tbbType) {
@@ -1672,6 +1735,20 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         
                         llvm::Value* result = tbb_codegen.generateDiv(L, R, tbbType);
                         value_types[result] = tbbType;  // Track type for result
+                        return result;
+                    }
+                    if (isTernary && ternaryType) {
+                        // Ensure both operands are the same type as the ternary type
+                        llvm::Type* ternaryLLVMType = ternary_codegen.getTernaryLLVMType(ternaryType);
+                        if (L->getType() != ternaryLLVMType) {
+                            L = builder.CreateIntCast(L, ternaryLLVMType, true, "cast_lhs");
+                        }
+                        if (R->getType() != ternaryLLVMType) {
+                            R = builder.CreateIntCast(R, ternaryLLVMType, true, "cast_rhs");
+                        }
+                        
+                        llvm::Value* result = ternary_codegen.generateDiv(L, R, ternaryType);
+                        value_types[result] = ternaryType;  // Track type for result
                         return result;
                     }
                     return builder.CreateSDiv(L, R, "divtmp");
