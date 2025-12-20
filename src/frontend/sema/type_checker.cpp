@@ -615,6 +615,29 @@ Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
         return typeSystem->getErrorType();
     }
     
+    // Check if this is array slicing (index is a range)
+    if (expr->index->type == ASTNode::NodeType::RANGE) {
+        // Array slicing: arr[start..end] returns an array of same element type
+        RangeExpr* rangeExpr = static_cast<RangeExpr*>(expr->index.get());
+        
+        // Type check the range expression
+        Type* rangeType = inferType(rangeExpr);
+        if (rangeType->getKind() == TypeKind::ERROR) {
+            return typeSystem->getErrorType();
+        }
+        
+        // Verify we're slicing an array (pointer type)
+        if (arrayType->getKind() != TypeKind::POINTER) {
+            addError("Cannot slice non-array type '" + arrayType->toString() + "'", expr);
+            return typeSystem->getErrorType();
+        }
+        
+        // Slicing returns the same type (pointer to element type)
+        // arr[0..5] where arr is int64[] returns int64[]
+        return arrayType;
+    }
+    
+    // Regular indexing: arr[i]
     // Infer index type
     Type* indexType = inferType(expr->index.get());
     
