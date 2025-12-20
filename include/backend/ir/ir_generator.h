@@ -162,6 +162,14 @@ public:
     void clearDebugLocation();
     
     /**
+     * Process module declarations recursively, generating IR for all functions
+     * @param declarations Vector of declarations (may include nested modules)
+     * @param modulePrefix Qualified module name prefix (e.g., "math", "network.http")
+     */
+    void processModuleDeclarations(const std::vector<std::shared_ptr<ASTNode>>& declarations, 
+                                    const std::string& modulePrefix = "");
+    
+    /**
      * Set the TypeSystem for looking up custom types (structs, unions, etc.)
      * Must be called before codegen if the code uses custom types
      * @param ts Pointer to TypeSystem (must remain valid for lifetime of IR generation)
