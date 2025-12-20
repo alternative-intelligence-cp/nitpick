@@ -250,6 +250,13 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
         return builder.getVoidTy();
     }
     
+    // Check for pointer types (e.g., "int64@", "string@")
+    // Arrays are represented as pointers in the type system
+    if (type_name.size() >= 1 && type_name.back() == '@') {
+        // Pointer type (including arrays)
+        return llvm::PointerType::get(context, 0);
+    }
+    
     // Boolean
     if (type_name == "bool") {
         return builder.getInt1Ty();
@@ -674,6 +681,9 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     actualTypeName = simpleType->typeName;
                 }
             }
+            
+            // DEBUG: Print the actual type name
+            // llvm::errs() << "DEBUG: Variable '" << varDecl->varName << "' has type: '" << actualTypeName << "'\n";
             
             // Allocate stack space for the variable with proper type mapping
             llvm::Type* varType = mapTypeFromName(actualTypeName);
@@ -1365,9 +1375,9 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Handle different literal types
             if (std::holds_alternative<int64_t>(lit->value)) {
                 int64_t val = std::get<int64_t>(lit->value);
-                // Default to int32 for integer literals (most common case)
-                // TODO: Infer type from context (return type, parameter type, etc.)
-                return llvm::ConstantInt::get(builder.getInt32Ty(), val);
+                // Default to int64 for integer literals to match Aria's default integer type
+                // Type inference during semantic analysis determines the actual type needed
+                return llvm::ConstantInt::get(builder.getInt64Ty(), val);
             } else if (std::holds_alternative<double>(lit->value)) {
                 double val = std::get<double>(lit->value);
                 return llvm::ConstantFP::get(builder.getDoubleTy(), val);
