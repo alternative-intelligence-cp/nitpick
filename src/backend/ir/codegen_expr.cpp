@@ -475,6 +475,53 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         return phi;
     }
     
+    // NULL COALESCING OPERATOR (??) with short-circuit evaluation
+    // Pattern: a ?? b returns a if a is not NIL/null, otherwise returns b
+    if (op == TokenType::TOKEN_NULL_COALESCE) {
+        // For now, without proper optional types, we implement a simplified version
+        // that checks if left is zero/null (for pointers) or a sentinel value
+        // TODO: Enhance when optional types are fully implemented
+        
+        // Save left value for later
+        llvm::Value* leftVal = left;
+        llvm::BasicBlock* leftBB = builder.GetInsertBlock();
+        
+        // Create blocks for conditional evaluation
+        llvm::Function* func = builder.GetInsertBlock()->getParent();
+        llvm::BasicBlock* useRightBB = llvm::BasicBlock::Create(context, "coalesce_right", func);
+        llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "coalesce_merge", func);
+        
+        // Check if left is null/NIL (depends on type)
+        llvm::Value* isNull;
+        if (left->getType()->isPointerTy()) {
+            // For pointers, check against nullptr
+            isNull = builder.CreateIsNull(left, "isnull");
+        } else if (left->getType()->isIntegerTy()) {
+            // For integers, check against 0 (NIL sentinel)
+            isNull = builder.CreateICmpEQ(left, llvm::ConstantInt::get(left->getType(), 0), "isnull");
+        } else {
+            // For other types, assume not null (TODO: proper optional type support)
+            isNull = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
+        }
+        
+        // If left is null, evaluate and use right; otherwise use left
+        builder.CreateCondBr(isNull, useRightBB, mergeBB);
+        
+        // Evaluate right side only if left was null
+        builder.SetInsertPoint(useRightBB);
+        llvm::Value* rightVal = right;
+        llvm::BasicBlock* rightBB = builder.GetInsertBlock();
+        builder.CreateBr(mergeBB);
+        
+        // Merge with phi node
+        builder.SetInsertPoint(mergeBB);
+        llvm::PHINode* phi = builder.CreatePHI(left->getType(), 2, "coalesce_result");
+        phi->addIncoming(leftVal, leftBB);
+        phi->addIncoming(rightVal, rightBB);
+        
+        return phi;
+    }
+    
     // BITWISE OPERATORS
     if (op == TokenType::TOKEN_AMPERSAND) {
         return builder.CreateAnd(left, right, "andtmp");
