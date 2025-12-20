@@ -5,6 +5,7 @@
 # Test runner executable
 add_executable(test_runner
     test_runner.cpp
+    test_assembler.cpp
     unit/test_sample.cpp
     unit/test_token.cpp
     unit/test_lexer.cpp

@@ -1,0 +1,208 @@
+/**
+ * Aria Runtime Assembler Bindings
+ * 
+ * Exposes the C runtime assembler API to Aria code.
+ * Provides safe, high-level interface for JIT code generation.
+ */
+
+// =============================================================================
+// Foreign Function Interface - Runtime Assembler
+// =============================================================================
+
+// WildX Allocator
+extern "C" func:aria_alloc_exec = wildx void@(int64:size);
+extern "C" func:aria_free_exec = void(wildx void@:guard);
+extern "C" func:aria_mem_protect_exec = int32(wildx void@:guard);
+
+// Assembler Context
+extern "C" func:aria_asm_create = wild void@();
+extern "C" func:aria_asm_destroy = void(wild void@:asm_ctx);
+extern "C" func:aria_asm_has_error = bool(wild void@:asm_ctx);
+extern "C" func:aria_asm_get_error = string@(wild void@:asm_ctx);
+
+// Label Management
+extern "C" func:aria_asm_new_label = int32(wild void@:asm_ctx);
+extern "C" func:aria_asm_bind_label = void(wild void@:asm_ctx, int32:label_id);
+
+// Instruction Emission
+extern "C" func:aria_asm_mov_reg_imm = void(wild void@:asm_ctx, int32:dst_reg, int64:value);
+extern "C" func:aria_asm_mov_reg_reg = void(wild void@:asm_ctx, int32:dst_reg, int32:src_reg);
+extern "C" func:aria_asm_add_reg_reg = void(wild void@:asm_ctx, int32:dst_reg, int32:src_reg);
+extern "C" func:aria_asm_sub_reg_reg = void(wild void@:asm_ctx, int32:dst_reg, int32:src_reg);
+extern "C" func:aria_asm_ret = void(wild void@:asm_ctx);
+extern "C" func:aria_asm_jmp = void(wild void@:asm_ctx, int32:label_id);
+
+// Finalization and Execution
+extern "C" func:aria_asm_finalize = wildx void@(wild void@:asm_ctx);
+extern "C" func:aria_asm_execute = int64(wildx void@:guard);
+extern "C" func:aria_asm_execute_i64 = int64(wildx void@:guard, int64:arg1);
+extern "C" func:aria_asm_execute_i64_i64 = int64(wildx void@:guard, int64:arg1, int64:arg2);
+
+// =============================================================================
+// Register Constants (x86-64)
+// =============================================================================
+
+int32:REG_RAX = 0;
+int32:REG_RCX = 1;
+int32:REG_RDX = 2;
+int32:REG_RBX = 3;
+int32:REG_RSP = 4;
+int32:REG_RBP = 5;
+int32:REG_RSI = 6;
+int32:REG_RDI = 7;
+int32:REG_R8  = 8;
+int32:REG_R9  = 9;
+int32:REG_R10 = 10;
+int32:REG_R11 = 11;
+int32:REG_R12 = 12;
+int32:REG_R13 = 13;
+int32:REG_R14 = 14;
+int32:REG_R15 = 15;
+
+// =============================================================================
+// High-Level Assembler Wrapper
+// =============================================================================
+
+/**
+ * Assembler - High-level wrapper for runtime code generation
+ */
+struct Assembler {
+    wild void@:ctx;
+    bool:has_error;
+};
+
+/**
+ * Create new assembler instance
+ */
+func:asm_new = Assembler() {
+    wild void@:ctx = aria_asm_create();
+    
+    if (ctx == NULL) {
+        Assembler:asm = Assembler{ctx: NULL, has_error: true};
+        pass(asm);
+    }
+    
+    Assembler:asm = Assembler{ctx: ctx, has_error: false};
+    pass(asm);
+};
+
+/**
+ * Destroy assembler and free resources
+ */
+func:asm_destroy = void(Assembler:asm) {
+    if (asm.ctx != NULL) {
+        aria_asm_destroy(asm.ctx);
+    }
+};
+
+/**
+ * Check if assembler has encountered an error
+ */
+func:asm_check_error = bool(Assembler:asm) {
+    if (asm.ctx == NULL) {
+        pass(true);
+    }
+    pass(aria_asm_has_error(asm.ctx));
+};
+
+/**
+ * Get error message
+ */
+func:asm_get_error_msg = string@(Assembler:asm) {
+    if (asm.ctx == NULL) {
+        pass("Assembler not initialized");
+    }
+    pass(aria_asm_get_error(asm.ctx));
+};
+
+/**
+ * Emit MOV instruction: dst = value
+ */
+func:asm_mov = void(Assembler:asm, int32:dst, int64:value) {
+    aria_asm_mov_reg_imm(asm.ctx, dst, value);
+};
+
+/**
+ * Emit MOV instruction: dst = src
+ */
+func:asm_mov_reg = void(Assembler:asm, int32:dst, int32:src) {
+    aria_asm_mov_reg_reg(asm.ctx, dst, src);
+};
+
+/**
+ * Emit ADD instruction: dst += src
+ */
+func:asm_add = void(Assembler:asm, int32:dst, int32:src) {
+    aria_asm_add_reg_reg(asm.ctx, dst, src);
+};
+
+/**
+ * Emit SUB instruction: dst -= src
+ */
+func:asm_sub = void(Assembler:asm, int32:dst, int32:src) {
+    aria_asm_sub_reg_reg(asm.ctx, dst, src);
+};
+
+/**
+ * Emit RET instruction
+ */
+func:asm_return = void(Assembler:asm) {
+    aria_asm_ret(asm.ctx);
+};
+
+/**
+ * Create new label for jumps
+ */
+func:asm_label = int32(Assembler:asm) {
+    pass(aria_asm_new_label(asm.ctx));
+};
+
+/**
+ * Bind label to current position
+ */
+func:asm_bind = void(Assembler:asm, int32:label_id) {
+    aria_asm_bind_label(asm.ctx, label_id);
+};
+
+/**
+ * Emit JMP instruction to label
+ */
+func:asm_jump = void(Assembler:asm, int32:label_id) {
+    aria_asm_jmp(asm.ctx, label_id);
+};
+
+/**
+ * Finalize and generate executable code
+ * Returns WildX guard with executable memory
+ */
+func:asm_finalize = wildx void@(Assembler:asm) {
+    pass(aria_asm_finalize(asm.ctx));
+};
+
+/**
+ * Execute JIT-compiled function with no arguments
+ */
+func:asm_call = int64(wildx void@:guard) {
+    pass(aria_asm_execute(guard));
+};
+
+/**
+ * Execute JIT-compiled function with one int64 argument
+ */
+func:asm_call_i64 = int64(wildx void@:guard, int64:arg) {
+    pass(aria_asm_execute_i64(guard, arg));
+};
+
+/**
+ * Execute JIT-compiled function with two int64 arguments
+ */
+func:asm_call_i64_i64 = int64(wildx void@:guard, int64:a, int64:b) {
+    pass(aria_asm_execute_i64_i64(guard, a, b));
+};
+
+/**
+ * Free executable memory
+ */
+func:asm_free = void(wildx void@:guard) {
+    aria_free_exec(guard);
+};
