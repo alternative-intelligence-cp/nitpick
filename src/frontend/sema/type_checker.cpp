@@ -1188,6 +1188,11 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             addError("Cannot resolve type in variable declaration", stmt);
             return;
         }
+        
+        // CRITICAL: Update typeName to resolved type name for IR generation
+        // For generic structs, this will be the mangled name (_Aria_M_Box_<hash>_int64)
+        // For other types, this will be the canonical name (int64, string, etc.)
+        stmt->typeName = declaredType->toString();
     } else {
         // Legacy path: Get declared type from typeName string
         // Try struct first to avoid auto-creating primitive types
