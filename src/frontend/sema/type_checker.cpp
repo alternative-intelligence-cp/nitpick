@@ -341,6 +341,25 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
     }
     
     // ========================================================================
+    // Null Coalescing Operator: ??
+    // ========================================================================
+    if (op == TokenType::TOKEN_NULL_COALESCE) {
+        // Returns left side if not NIL, otherwise right side
+        // Result type is the union of both types, but for simplicity we use left type
+        // TODO: Proper optional type support would make this more precise
+        
+        // Both types should be compatible
+        if (!leftType->equals(rightType) && !canCoerce(rightType, leftType)) {
+            addError("Null coalescing operator requires compatible types: '" + 
+                    leftType->toString() + "' and '" + rightType->toString() + "'", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        // Result is the left type (or common type if different)
+        return leftType;
+    }
+    
+    // ========================================================================
     // Spaceship Operator: <=>
     // ========================================================================
     if (op == TokenType::TOKEN_SPACESHIP) {
