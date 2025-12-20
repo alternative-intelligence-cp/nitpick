@@ -94,8 +94,15 @@ public:
     ASTNodePtr operand;
     bool isPostfix;
     
+    // Borrow checker annotations
+    bool creates_loan;      // True if this is a $ (borrow) operator
+    std::string loan_target; // Variable name being borrowed (for $ operator)
+    bool creates_pin;       // True if this is a # (pin) operator
+    std::string pin_target;  // Variable name being pinned (for # operator)
+    
     UnaryExpr(const Token& o, ASTNodePtr operand, bool isPost = false, int line = 0, int column = 0)
-        : ASTNode(NodeType::UNARY_OP, line, column), op(o), operand(operand), isPostfix(isPost) {}
+        : ASTNode(NodeType::UNARY_OP, line, column), op(o), operand(operand), isPostfix(isPost),
+          creates_loan(false), loan_target(""), creates_pin(false), pin_target("") {}
     
     std::string toString() const override;
 };
@@ -217,6 +224,31 @@ public:
     
     AwaitExpr(ASTNodePtr expr, int line = 0, int column = 0)
         : ASTNode(NodeType::AWAIT, line, column), operand(expr) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Move expression node
+ * Represents: move(x) - explicit ownership transfer
+ * 
+ * Transfer ownership of a variable to the destination, invalidating the source.
+ * Primarily used for wild memory to prevent use-after-free and double-free.
+ * The borrow checker tracks moved variables and reports use-after-move errors.
+ * 
+ * Example:
+ *   wild buffer:data = allocate(1024);
+ *   wild buffer:moved = move(data);  // data is now invalid
+ *   // use(data);  // ERROR: value used after move
+ */
+class MoveExpr : public ASTNode {
+public:
+    std::string variableName;  // Name of the variable being moved
+    ASTNodePtr variable;       // Expression representing the variable (typically IdentifierExpr)
+    
+    MoveExpr(const std::string& varName, ASTNodePtr var, int line = 0, int column = 0)
+        : ASTNode(NodeType::MOVE, line, column), 
+          variableName(varName), variable(std::move(var)) {}
     
     std::string toString() const override;
 };

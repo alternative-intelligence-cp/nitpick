@@ -91,6 +91,10 @@ struct LifetimeContext {
     // Tracks the state of wild pointers (allocated, freed, moved)
     std::unordered_map<std::string, WildState> wild_states;
     
+    // Tracks all variables that have been moved (not just wild)
+    // Used to detect use-after-move for all types
+    std::unordered_set<std::string> moved_variables;
+    
     // Current traversal depth (0 = global, 1 = function body, etc.)
     int current_depth;
     
@@ -100,6 +104,13 @@ struct LifetimeContext {
     
     LifetimeContext() : current_depth(0) {
         scope_stack.push_back({}); // Global scope
+    }
+    
+    /**
+     * Get current scope depth
+     */
+    int getScopeDepth() const {
+        return current_depth;
     }
     
     /**
@@ -282,6 +293,7 @@ private:
     void checkUnaryExpr(UnaryExpr* expr);
     void checkIdentifier(IdentifierExpr* expr);
     void checkCallExpr(CallExpr* expr);
+    void checkMoveExpr(MoveExpr* expr);
     
     // ========================================================================
     // Error Reporting

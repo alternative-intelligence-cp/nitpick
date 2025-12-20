@@ -546,6 +546,36 @@ ASTNodePtr Parser::parseUnary() {
         return std::make_shared<AwaitExpr>(operand, token.line, token.column);
     }
     
+    // Check for move expression: move(variable)
+    if (token.type == TokenType::TOKEN_KW_MOVE) {
+        int line = token.line;
+        int col = token.column;
+        advance(); // consume 'move'
+        
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'move'");
+        
+        // Parse the variable being moved
+        ASTNodePtr varExpr = parseExpression();
+        
+        if (!varExpr) {
+            error("Expected variable expression in move()");
+            return nullptr;
+        }
+        
+        // Extract variable name - must be an identifier
+        std::string varName = "";
+        if (IdentifierExpr* ident = dynamic_cast<IdentifierExpr*>(varExpr.get())) {
+            varName = ident->name;
+        } else {
+            error("move() requires a simple variable name, not a complex expression");
+            return nullptr;
+        }
+        
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after variable in move()");
+        
+        return std::make_shared<MoveExpr>(varName, varExpr, line, col);
+    }
+    
     if (isUnaryOperator(token.type)) {
         advance();
         ASTNodePtr operand = parseUnary(); // Right-associative
@@ -556,7 +586,26 @@ ASTNodePtr Parser::parseUnary() {
         }
         
         // FIX: Explicitly pass false for isPostfix, otherwise token.line (int) is converted to true
-        return std::make_shared<UnaryExpr>(token, operand, false, token.line, token.column);
+        auto unaryExpr = std::make_shared<UnaryExpr>(token, operand, false, token.line, token.column);
+        
+        // Set borrow checker annotations for $ and # operators
+        if (token.type == TokenType::TOKEN_DOLLAR) {
+            unaryExpr->creates_loan = true;
+            // Extract target variable name from operand if it's an identifier
+            if (operand && operand->type == ASTNode::NodeType::IDENTIFIER) {
+                auto identExpr = std::static_pointer_cast<IdentifierExpr>(operand);
+                unaryExpr->loan_target = identExpr->name;
+            }
+        } else if (token.type == TokenType::TOKEN_HASH) {
+            unaryExpr->creates_pin = true;
+            // Extract target variable name from operand if it's an identifier
+            if (operand && operand->type == ASTNode::NodeType::IDENTIFIER) {
+                auto identExpr = std::static_pointer_cast<IdentifierExpr>(operand);
+                unaryExpr->pin_target = identExpr->name;
+            }
+        }
+        
+        return unaryExpr;
     }
     
     return parsePrimary();
@@ -771,7 +820,7 @@ ASTNodePtr Parser::parseArrayLiteral() {
 }
 
 ASTNodePtr Parser::parseObjectLiteral() {
-    Token braceToken = previous(); // '{'
+    Token braceToken = advance(); // consume '{'
     
     std::vector<ObjectLiteralExpr::Field> fields;
     

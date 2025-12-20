@@ -17,6 +17,7 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"stack", TokenType::TOKEN_KW_STACK},
     {"gc", TokenType::TOKEN_KW_GC},
     {"defer", TokenType::TOKEN_KW_DEFER},
+    {"move", TokenType::TOKEN_KW_MOVE},
     
     // Control flow
     {"if", TokenType::TOKEN_KW_IF},

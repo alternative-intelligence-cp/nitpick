@@ -1,81 +1,88 @@
 // Pinning Tests - # operator for stable GC pointers
 
-func test_basic_pinning() -> int32 {
+func:test_basic_pinning = int32() {
     // Test 1: Basic pinning with # operator
-    int32:gc_var = 42;               // GC-allocated variable
-    wild int32*:pinned = #gc_var;    // Pin it to get stable pointer
+    int32:gc_var = 42;            // GC-allocated variable
+    wild int32@:pinned = #gc_var;      // Pin it to get stable pointer
     
-    // Use the pinned pointer
-    @pinned = 100;  // Dereference and modify
+    // Use the pinned value
+    int32:result = gc_var;        // Access original value
     
-    return 0;
-}
+    int32:zero = 0;
+    pass(zero);
+};
 
-func test_pinned_assignment() -> int32 {
+func:test_pinned_assignment = int32() {
     // Test 2: Cannot assign to pinned variable
     // This should FAIL at compile time
     int32:x = 10;
-    wild int32*:pin = #x;
+    wild int32@:pin = #x;
     x = 20;  // ERROR: Cannot assign to pinned variable
     
-    return 1;  // Should not reach here
-}
+    int32:one = 1;
+    pass(one);
+};
 
-func test_double_pinning() -> int32 {
+func:test_double_pinning = int32() {
     // Test 3: Cannot pin an already pinned variable
     // This should FAIL at compile time
     int32:x = 10;
-    wild int32*:pin1 = #x;
-    wild int32*:pin2 = #x;  // ERROR: x is already pinned by pin1
+    wild int32@:pin1 = #x;
+    wild int32@:pin2 = #x;  // ERROR: x is already pinned by pin1
     
-    return 1;  // Should not reach here
-}
+    int32:one = 1;
+    pass(one);
+};
 
-func test_pin_lifetime() -> int32 {
+func:test_pin_lifetime = int32() {
     // Test 4: Pin released when reference goes out of scope
     int32:x = 10;
     
     {
-        wild int32*:pin = #x;
+        wild int32@:pin = #x;
     }  // pin goes out of scope, x is unpinned
     
     x = 20;  // OK: no longer pinned
-    return 0;
-}
+    int32:zero = 0;
+    pass(zero);
+};
 
-func test_pin_invalid_lifetime() -> int32 {
+func:test_pin_invalid_lifetime = int32() {
     // Test 5: Pin cannot outlive host
     // This should FAIL at compile time
-    wild int32*:pin;
+    wild int32@:pin;
     
     {
         int32:inner = 100;
         pin = #inner;  // ERROR: pin outlives inner
     }
     
-    return 1;  // Should not reach here
-}
+    int32:one = 1;
+    pass(one);
+};
 
-func test_borrow_pinned_immutable() -> int32 {
+func:test_borrow_pinned_immutable = int32() {
     // Test 6: Can borrow pinned variable immutably
     int32:x = 10;
-    wild int32*:pin = #x;
-    int32$:ref = $x;  // Should be OK - immutable borrow of pinned var
+    wild int32@:pin = #x;
+    int32$:ref = !$x;  // Should be OK - immutable borrow of pinned var
     
-    return 0;
-}
+    int32:zero = 0;
+    pass(zero);
+};
 
-func test_borrow_pinned_mutable() -> int32 {
+func:test_borrow_pinned_mutable = int32() {
     // Test 7: Cannot borrow pinned variable mutably
     // This should FAIL at compile time
     int32:x = 10;
-    wild int32*:pin = #x;
-    int32$mut:mut_ref = $x;  // ERROR: Cannot mutably borrow pinned variable
+    wild int32@:pin = #x;
+    int32$:mut_ref = $x;  // ERROR: Cannot mutably borrow pinned variable
     
-    return 1;  // Should not reach here
-}
+    int32:one = 1;
+    pass(one);
+};
 
-func main() -> int32 {
+func:main = int32() {
     // Run tests that should succeed
     int32:result1 = test_basic_pinning();
     int32:result4 = test_pin_lifetime();
@@ -88,5 +95,6 @@ func main() -> int32 {
     // int32:result5 = test_pin_invalid_lifetime();
     // int32:result7 = test_borrow_pinned_mutable();
     
-    return 0;
-}
+    int32:zero = 0;
+    pass(zero);
+};

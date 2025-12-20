@@ -677,10 +677,24 @@ defer aria.free(raw_ptr); // RAII-style cleanup
 wild buffer:raw_buffer = aria.alloc_buffer(4096);
 wild string:unmanaged_str = aria.alloc_string(256);
 
-//# Pinning for borrow checker bridge, $ for safe reference
-wild string:critical_data = "must not move";
-string$:safe_ref = #critical_data; // Pin and create safe reference
-// After pinning, critical_data cannot be moved by GC
+// PINNING AND BORROWING INTERACTION
+// Pin (#) prevents GC from moving memory - needed for FFI, hardware access, self-referential structs
+// Borrow ($, !$) creates safe references - needed for memory safety
+
+wild string:ffi_data = "passed to C library";
+string#:pinned = #ffi_data;  // Pin it - GC won't move it, address is stable
+
+// ✅ ALLOWED: Immutable borrows of pinned data (safe, read-only)
+string$:read_ref = !$ffi_data;  // OK - just reading
+string$:read_ref2 = !$ffi_data; // OK - multiple immutable borrows allowed
+
+// ❌ REJECTED: Mutable borrows of pinned data (unsafe - external code may depend on it)
+// string$:mut_ref = $ffi_data;  // ERROR: Cannot borrow pinned variable as mutable
+
+// After pinning:
+// 1. GC will not move ffi_data in memory (stable address for C code)
+// 2. Can create immutable borrows (read-only access is safe)
+// 3. Cannot create mutable borrows (external code may expect data unchanged)
 
 // GC-managed allocation (default, but explicit)
 // NOTE: Aria uses @ for pointer types in ALL native code
@@ -979,7 +993,8 @@ ARIA_ALLOC_STRING, ARIA_ALLOC_ARRAY,
 !! Returns: pass(value) and fail(error) NOT Ok()/Err() or return !!
 !! I/O: stdin,stdout,stderr,stddbg,stddati,stddato NOT IN/OUT/ERR !!
 !! Pointers: type@ and @var NOT * and & !!
-!! Pinning: # and $ NOT &/&mut !!
+!! Borrowing: $x (mutable) and !$x (immutable) NOT &mut/& !!
+!! Pinning: #x prevents GC movement, restricts mutable borrows !!
 
 !! batteries included, but only if you want, must have way to opt in , shouldn't bloat core when not used !!
 !! REMINDER: These are opt-in extras, but still must be implemented for v0.1.0 !!

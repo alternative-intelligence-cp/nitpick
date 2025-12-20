@@ -80,6 +80,9 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         case ASTNode::NodeType::UNWRAP:
             return inferUnwrapExpr(static_cast<UnwrapExpr*>(expr));
         
+        case ASTNode::NodeType::MOVE:
+            return inferMoveExpr(static_cast<MoveExpr*>(expr));
+        
         case ASTNode::NodeType::OBJECT_LITERAL:
             return inferObjectLiteral(static_cast<ObjectLiteralExpr*>(expr));
         
@@ -417,6 +420,16 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
 // ============================================================================
 
 Type* TypeChecker::inferUnaryOp(UnaryExpr* expr) {
+    // Special case: !$x is immutable borrow syntax, not logical NOT
+    if (expr->op.type == frontend::TokenType::TOKEN_BANG &&
+        expr->operand && expr->operand->type == ASTNode::NodeType::UNARY_OP) {
+        UnaryExpr* innerExpr = static_cast<UnaryExpr*>(expr->operand.get());
+        if (innerExpr->op.type == frontend::TokenType::TOKEN_DOLLAR) {
+            // This is !$x - immutable borrow, treat like $x
+            return inferUnaryOp(innerExpr);
+        }
+    }
+    
     // Infer operand type
     Type* operandType = inferType(expr->operand.get());
     
@@ -827,6 +840,20 @@ Type* TypeChecker::inferUnwrapExpr(UnwrapExpr* expr) {
     
     // The unwrap expression returns the common type of result and default
     return commonType;
+}
+
+Type* TypeChecker::inferMoveExpr(MoveExpr* expr) {
+    // Move expression transfers ownership of a variable
+    // The type is the same as the variable being moved
+    Type* varType = inferType(expr->variable.get());
+    
+    if (varType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // For now, we just return the same type
+    // The borrow checker will handle tracking the move and invalidation
+    return varType;
 }
 
 Type* TypeChecker::inferObjectLiteral(ObjectLiteralExpr* expr) {

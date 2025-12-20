@@ -23,6 +23,7 @@ enum class TokenType {
     TOKEN_KW_STACK,     // stack - explicit stack allocation
     TOKEN_KW_GC,        // gc - explicit GC allocation
     TOKEN_KW_DEFER,     // defer - RAII-style cleanup
+    TOKEN_KW_MOVE,      // move - transfer ownership
     
     // ========================================================================
     // Keywords - Control Flow
