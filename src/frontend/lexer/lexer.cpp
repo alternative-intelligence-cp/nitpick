@@ -597,6 +597,62 @@ void Lexer::scanNumber() {
             addToken(TokenType::TOKEN_INTEGER, value);
             return;
         }
+        
+        // Ternary (Balanced Ternary): 0t
+        if (next == 't' || next == 'T') {
+            advance(); // consume 't' (0 already consumed)
+            
+            // Check for at least one ternary digit
+            char c = peek();
+            if (c != '0' && c != '1' && c != 'T' && c != 't') {
+                error("Expected ternary digits (0, 1, T) after '0t'");
+                return;
+            }
+            
+            // Consume all ternary digits (0, 1, T/t)
+            while (!isAtEnd()) {
+                c = peek();
+                if (c == '0' || c == '1' || c == 'T' || c == 't' || c == '_') {
+                    advance();
+                } else {
+                    break;
+                }
+            }
+            
+            // Extract ternary string and convert to integer
+            std::string text = source.substr(start, current - start);
+            // Remove '0t' prefix and underscores
+            text = text.substr(2);
+            text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
+            
+            // Convert balanced ternary to integer
+            // T/t represents -1, 0 represents 0, 1 represents 1
+            int64_t value = 0;
+            int64_t power = 1;
+            
+            // Process from right to left
+            for (int i = text.length() - 1; i >= 0; i--) {
+                char digit = text[i];
+                int trit_value;
+                
+                if (digit == '0') {
+                    trit_value = 0;
+                } else if (digit == '1') {
+                    trit_value = 1;
+                } else if (digit == 'T' || digit == 't') {
+                    trit_value = -1;
+                } else {
+                    error("Invalid ternary digit: " + std::string(1, digit));
+                    return;
+                }
+                
+                value += trit_value * power;
+                power *= 3;
+            }
+            
+            addToken(TokenType::TOKEN_TERNARY, value);
+            return;
+        }
     }
     
     // Decimal number (integer or float)

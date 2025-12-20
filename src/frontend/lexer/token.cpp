@@ -288,6 +288,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_FLOAT: return "FLOAT";
         case TokenType::TOKEN_STRING: return "STRING";
         case TokenType::TOKEN_CHAR: return "CHAR";
+        case TokenType::TOKEN_TERNARY: return "TERNARY";
         
         // Special tokens
         case TokenType::TOKEN_IDENTIFIER: return "IDENTIFIER";
