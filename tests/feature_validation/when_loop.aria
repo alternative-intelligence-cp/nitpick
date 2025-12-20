@@ -1,0 +1,37 @@
+// Test when loop with then/end blocks
+// when executes then on normal completion, end on break or initial false
+
+func:test_when_completes = int64() {
+    int64:i = 0;
+    int64:result = 0;
+    
+    when(i < 5) {
+        i = i + 1;
+    } then {
+        result = 1;  // Executed because loop completed normally
+    } end {
+        result = 2;  // Not executed
+    }
+    
+    pass(result);  // Should be 1
+};
+
+func:test_when_fails = int64() {
+    int64:i = 10;
+    int64:result = 0;
+    
+    when(i < 5) {
+        i = i + 1;  // Never executes
+    } then {
+        result = 1;  // Not executed
+    } end {
+        result = 2;  // Executed because condition was initially false
+    }
+    
+    pass(result);  // Should be 2
+};
+
+func:main = int64() {
+    int64:result = test_when_completes();
+    pass(result);
+};

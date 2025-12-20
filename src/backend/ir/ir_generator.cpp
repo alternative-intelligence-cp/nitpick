@@ -2,6 +2,7 @@
 #include "frontend/ast/ast_node.h"
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/expr.h"
+#include "frontend/ast/type.h"  // For SimpleType
 #include "frontend/token.h"
 #include "frontend/sema/type.h"  // Full type definitions needed
 #include "frontend/sema/generic_resolver.h"  // For Specialization
@@ -10,6 +11,7 @@
 #include <llvm/IR/DataLayout.h>     // For getTypeAllocSize
 #include <llvm/IR/DebugLoc.h>       // For debug locations
 #include <llvm/BinaryFormat/Dwarf.h>  // For DWARF constants
+#include <iostream>  // For debug output
 #include <cassert>
 
 namespace aria {
@@ -80,7 +82,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
         }
         
         case TypeKind::POINTER: {
-            auto* ptr_type = static_cast<PointerType*>(aria_type);
+            auto* ptr_type = static_cast<sema::PointerType*>(aria_type);
             llvm::Type* pointee = mapType(ptr_type->getPointeeType());
             // LLVM uses opaque pointers in newer versions
             llvm_type = llvm::PointerType::get(context, 0);
@@ -88,7 +90,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
         }
         
         case TypeKind::ARRAY: {
-            auto* arr_type = static_cast<ArrayType*>(aria_type);
+            auto* arr_type = static_cast<sema::ArrayType*>(aria_type);
             llvm::Type* elem_type = mapType(arr_type->getElementType());
             if (arr_type->getSize() > 0) {
                 // Fixed-size array
@@ -123,7 +125,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
         case TypeKind::FUNCTION: {
             // Function types: func(params) -> return
             // Reference: research_016
-            auto* func_type = static_cast<FunctionType*>(aria_type);
+            auto* func_type = static_cast<sema::FunctionType*>(aria_type);
             
             // Map return type
             llvm::Type* return_type = mapType(func_type->getReturnType());
@@ -647,8 +649,19 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // Variable declaration
             VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(stmt);
             
+            // Get the type name - might be in typeName or need to extract from typeNode
+            std::string actualTypeName = varDecl->typeName;
+            if (actualTypeName.empty() && varDecl->typeNode) {
+                // Extract type from typeNode (SimpleType)
+                if (varDecl->typeNode->type == ASTNode::NodeType::TYPE_ANNOTATION) {
+                    SimpleType* simpleType = static_cast<SimpleType*>(varDecl->typeNode.get());
+                    actualTypeName = simpleType->typeName;
+                }
+            }
+            
             // Allocate stack space for the variable with proper type mapping
-            llvm::Type* varType = mapTypeFromName(varDecl->typeName);
+            llvm::Type* varType = mapTypeFromName(actualTypeName);
+            
             llvm::AllocaInst* alloca = builder.CreateAlloca(varType, nullptr, varDecl->varName);
             
             // Track the Aria type of this alloca (needed for member access)
@@ -919,6 +932,252 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             if (errorCode) {
                 builder.CreateRet(errorCode);
             }
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::TILL: {
+            // Till loop: till(limit, step) { body }
+            TillStmt* tillStmt = static_cast<TillStmt*>(stmt);
+            
+            // Evaluate limit and step
+            llvm::Value* limitVal = codegenExpression(tillStmt->limit.get());
+            llvm::Value* stepVal = codegenExpression(tillStmt->step.get());
+            if (!limitVal || !stepVal) return nullptr;
+            
+            llvm::Function* function = builder.GetInsertBlock()->getParent();
+            llvm::Type* counterType = limitVal->getType();
+            
+            // Create basic blocks
+            llvm::BasicBlock* condBB = llvm::BasicBlock::Create(context, "till.cond", function);
+            llvm::BasicBlock* bodyBB = llvm::BasicBlock::Create(context, "till.body");
+            llvm::BasicBlock* incBB = llvm::BasicBlock::Create(context, "till.inc");
+            llvm::BasicBlock* afterBB = llvm::BasicBlock::Create(context, "till.end");
+            
+            // Save predecessor block
+            llvm::BasicBlock* predBB = builder.GetInsertBlock();
+            
+            // Jump to condition
+            builder.CreateBr(condBB);
+            
+            // Condition block with PHI node for $
+            builder.SetInsertPoint(condBB);
+            llvm::PHINode* counterPhi = builder.CreatePHI(counterType, 2, "$");
+            llvm::Value* initVal = llvm::ConstantInt::get(counterType, 0);
+            counterPhi->addIncoming(initVal, predBB);
+            
+            // Save old $ value
+            llvm::Value* oldDollar = nullptr;
+            auto it = named_values.find("$");
+            if (it != named_values.end()) {
+                oldDollar = it->second;
+            }
+            
+            // Create alloca for $ variable
+            llvm::AllocaInst* dollarAlloca = builder.CreateAlloca(counterType, nullptr, "$");
+            builder.CreateStore(counterPhi, dollarAlloca);
+            named_values["$"] = dollarAlloca;
+            
+            // Condition: $ != limit
+            llvm::Value* condVal = builder.CreateICmpNE(counterPhi, limitVal, "till.cond");
+            builder.CreateCondBr(condVal, bodyBB, afterBB);
+            
+            // Push loop context
+            loop_stack.push_back(LoopContext(incBB, afterBB));
+            
+            // Generate body
+            function->insert(function->end(), bodyBB);
+            builder.SetInsertPoint(bodyBB);
+            codegenStatement(tillStmt->body.get());
+            if (!builder.GetInsertBlock()->getTerminator()) {
+                builder.CreateBr(incBB);
+            }
+            
+            // Increment block
+            function->insert(function->end(), incBB);
+            builder.SetInsertPoint(incBB);
+            llvm::Value* currentVal = builder.CreateLoad(counterType, dollarAlloca, "$");
+            llvm::Value* nextVal = builder.CreateAdd(currentVal, stepVal, "$.next");
+            counterPhi->addIncoming(nextVal, incBB);
+            builder.CreateBr(condBB);
+            
+            // Pop loop context
+            loop_stack.pop_back();
+            
+            // Restore old $ value
+            if (oldDollar) {
+                named_values["$"] = oldDollar;
+            } else {
+                named_values.erase("$");
+            }
+            
+            // Continue after loop
+            function->insert(function->end(), afterBB);
+            builder.SetInsertPoint(afterBB);
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::LOOP: {
+            // Loop: loop(start, limit, step) { body }
+            LoopStmt* loopStmt = static_cast<LoopStmt*>(stmt);
+            
+            // Evaluate start, limit, and step
+            llvm::Value* startVal = codegenExpression(loopStmt->start.get());
+            llvm::Value* limitVal = codegenExpression(loopStmt->limit.get());
+            llvm::Value* stepVal = codegenExpression(loopStmt->step.get());
+            if (!startVal || !limitVal || !stepVal) return nullptr;
+            
+            llvm::Function* function = builder.GetInsertBlock()->getParent();
+            llvm::Type* counterType = startVal->getType();
+            
+            // Create basic blocks
+            llvm::BasicBlock* condBB = llvm::BasicBlock::Create(context, "loop.cond", function);
+            llvm::BasicBlock* bodyBB = llvm::BasicBlock::Create(context, "loop.body");
+            llvm::BasicBlock* incBB = llvm::BasicBlock::Create(context, "loop.inc");
+            llvm::BasicBlock* afterBB = llvm::BasicBlock::Create(context, "loop.end");
+            
+            // Save predecessor block
+            llvm::BasicBlock* predBB = builder.GetInsertBlock();
+            
+            // Jump to condition
+            builder.CreateBr(condBB);
+            
+            // Condition block with PHI node for $
+            builder.SetInsertPoint(condBB);
+            llvm::PHINode* counterPhi = builder.CreatePHI(counterType, 2, "$");
+            counterPhi->addIncoming(startVal, predBB);
+            
+            // Save old $ value
+            llvm::Value* oldDollar = nullptr;
+            auto it = named_values.find("$");
+            if (it != named_values.end()) {
+                oldDollar = it->second;
+            }
+            
+            // Create alloca for $ variable
+            llvm::AllocaInst* dollarAlloca = builder.CreateAlloca(counterType, nullptr, "$");
+            builder.CreateStore(counterPhi, dollarAlloca);
+            named_values["$"] = dollarAlloca;
+            
+            // Condition: $ != limit
+            llvm::Value* condVal = builder.CreateICmpNE(counterPhi, limitVal, "loop.cond");
+            builder.CreateCondBr(condVal, bodyBB, afterBB);
+            
+            // Push loop context
+            loop_stack.push_back(LoopContext(incBB, afterBB));
+            
+            // Generate body
+            function->insert(function->end(), bodyBB);
+            builder.SetInsertPoint(bodyBB);
+            codegenStatement(loopStmt->body.get());
+            if (!builder.GetInsertBlock()->getTerminator()) {
+                builder.CreateBr(incBB);
+            }
+            
+            // Increment block
+            function->insert(function->end(), incBB);
+            builder.SetInsertPoint(incBB);
+            llvm::Value* currentVal = builder.CreateLoad(counterType, dollarAlloca, "$");
+            llvm::Value* nextVal = builder.CreateAdd(currentVal, stepVal, "$.next");
+            counterPhi->addIncoming(nextVal, incBB);
+            builder.CreateBr(condBB);
+            
+            // Pop loop context
+            loop_stack.pop_back();
+            
+            // Restore old $ value
+            if (oldDollar) {
+                named_values["$"] = oldDollar;
+            } else {
+                named_values.erase("$");
+            }
+            
+            // Continue after loop
+            function->insert(function->end(), afterBB);
+            builder.SetInsertPoint(afterBB);
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::WHEN: {
+            // When loop: when(cond) { body } then { } end { }
+            WhenStmt* whenStmt = static_cast<WhenStmt*>(stmt);
+            
+            llvm::Function* function = builder.GetInsertBlock()->getParent();
+            
+            // Create completion flag
+            llvm::AllocaInst* completedFlag = builder.CreateAlloca(builder.getInt1Ty(), nullptr, "when.completed");
+            builder.CreateStore(builder.getInt1(false), completedFlag);
+            
+            // Create basic blocks
+            llvm::BasicBlock* condBB = llvm::BasicBlock::Create(context, "when.cond", function);
+            llvm::BasicBlock* bodyBB = llvm::BasicBlock::Create(context, "when.body");
+            llvm::BasicBlock* decisionBB = llvm::BasicBlock::Create(context, "when.decision");
+            llvm::BasicBlock* thenBB = whenStmt->then_block ? llvm::BasicBlock::Create(context, "when.then") : nullptr;
+            llvm::BasicBlock* endBB = whenStmt->end_block ? llvm::BasicBlock::Create(context, "when.end") : nullptr;
+            llvm::BasicBlock* exitBB = llvm::BasicBlock::Create(context, "when.exit");
+            
+            // Jump to condition
+            builder.CreateBr(condBB);
+            
+            // Push loop context
+            loop_stack.push_back(LoopContext(condBB, decisionBB));
+            
+            // Condition block
+            builder.SetInsertPoint(condBB);
+            llvm::Value* condVal = codegenExpression(whenStmt->condition.get());
+            if (!condVal) return nullptr;
+            condVal = builder.CreateICmpNE(condVal, llvm::ConstantInt::get(condVal->getType(), 0), "when.cond");
+            builder.CreateCondBr(condVal, bodyBB, decisionBB);
+            
+            // Body block
+            function->insert(function->end(), bodyBB);
+            builder.SetInsertPoint(bodyBB);
+            codegenStatement(whenStmt->body.get());
+            if (!builder.GetInsertBlock()->getTerminator()) {
+                builder.CreateBr(condBB);
+            }
+            
+            // Decision block
+            function->insert(function->end(), decisionBB);
+            builder.SetInsertPoint(decisionBB);
+            builder.CreateStore(builder.getInt1(true), completedFlag);
+            llvm::Value* completed = builder.CreateLoad(builder.getInt1Ty(), completedFlag, "completed");
+            
+            if (thenBB && endBB) {
+                builder.CreateCondBr(completed, thenBB, endBB);
+            } else if (thenBB) {
+                builder.CreateCondBr(completed, thenBB, exitBB);
+            } else if (endBB) {
+                builder.CreateBr(endBB);
+            } else {
+                builder.CreateBr(exitBB);
+            }
+            
+            // Then block
+            if (thenBB) {
+                function->insert(function->end(), thenBB);
+                builder.SetInsertPoint(thenBB);
+                codegenStatement(whenStmt->then_block.get());
+                if (!builder.GetInsertBlock()->getTerminator()) {
+                    builder.CreateBr(exitBB);
+                }
+            }
+            
+            // End block
+            if (endBB) {
+                function->insert(function->end(), endBB);
+                builder.SetInsertPoint(endBB);
+                codegenStatement(whenStmt->end_block.get());
+                if (!builder.GetInsertBlock()->getTerminator()) {
+                    builder.CreateBr(exitBB);
+                }
+            }
+            
+            // Pop loop context
+            loop_stack.pop_back();
+            
+            // Exit block
+            function->insert(function->end(), exitBB);
+            builder.SetInsertPoint(exitBB);
             return nullptr;
         }
         
@@ -1785,7 +2044,7 @@ llvm::DIType* aria::IRGenerator::mapDebugType(Type* aria_type) {
         }
         
         case TypeKind::POINTER: {
-            auto* ptr_type = static_cast<PointerType*>(aria_type);
+            auto* ptr_type = static_cast<sema::PointerType*>(aria_type);
             llvm::DIType* pointee = mapDebugType(ptr_type->getPointeeType());
             
             // Check for memory qualifier (gc vs wild)
@@ -1803,7 +2062,7 @@ llvm::DIType* aria::IRGenerator::mapDebugType(Type* aria_type) {
         }
         
         case TypeKind::ARRAY: {
-            auto* arr_type = static_cast<ArrayType*>(aria_type);
+            auto* arr_type = static_cast<sema::ArrayType*>(aria_type);
             llvm::DIType* elem_type = mapDebugType(arr_type->getElementType());
             
             if (arr_type->getSize() > 0) {

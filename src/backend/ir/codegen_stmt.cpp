@@ -11,6 +11,7 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/Intrinsics.h>  // Phase 4.5.3: Coroutine intrinsics
+#include <iostream>  // For debug output
 #include <stdexcept>
 
 using namespace aria;
@@ -1140,6 +1141,9 @@ void StmtCodegen::codegenTill(TillStmt* stmt) {
     // Push new defer scope for loop body
     defer_stack.push_back(std::vector<BlockStmt*>());
     
+    // Save predecessor block before branching
+    llvm::BasicBlock* pred_block = builder.GetInsertBlock();
+    
     // Branch to condition block
     builder.CreateBr(cond_block);
     
@@ -1149,7 +1153,7 @@ void StmtCodegen::codegenTill(TillStmt* stmt) {
     
     // Initial value is 0
     llvm::Value* init_value = llvm::ConstantInt::get(counter_type, 0);
-    counter_phi->addIncoming(init_value, func->getEntryBlock().getTerminator()->getParent());
+    counter_phi->addIncoming(init_value, pred_block);
     
     // Store $ in named_values so body can reference it
     std::string dollar_var = "$";
@@ -1270,6 +1274,9 @@ void StmtCodegen::codegenLoop(LoopStmt* stmt) {
     // Push new defer scope for loop body
     defer_stack.push_back(std::vector<BlockStmt*>());
     
+    // Save predecessor block before branching
+    llvm::BasicBlock* pred_block = builder.GetInsertBlock();
+    
     // Branch to condition block
     builder.CreateBr(cond_block);
     
@@ -1278,7 +1285,7 @@ void StmtCodegen::codegenLoop(LoopStmt* stmt) {
     llvm::PHINode* counter_phi = builder.CreatePHI(counter_type, 2, "$");
     
     // Initial value is start
-    counter_phi->addIncoming(start_value, func->getEntryBlock().getTerminator()->getParent());
+    counter_phi->addIncoming(start_value, pred_block);
     
     // Store $ in named_values so body can reference it
     std::string dollar_var = "$";

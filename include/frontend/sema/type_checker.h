@@ -562,6 +562,37 @@ public:
     void checkForStmt(ForStmt* stmt);
     
     /**
+     * Check till statement
+     * 
+     * Rules:
+     * - Limit must be integer type
+     * - Step must be integer type
+     * - $ variable is automatically available as iteration value
+     */
+    void checkTillStmt(TillStmt* stmt);
+    
+    /**
+     * Check loop statement
+     * 
+     * Rules:
+     * - Start must be integer type
+     * - Limit must be integer type
+     * - Step must be integer type
+     * - $ variable is automatically available as iteration value
+     */
+    void checkLoopStmt(LoopStmt* stmt);
+    
+    /**
+     * Check when statement (tri-state loop)
+     * 
+     * Rules:
+     * - Condition must be bool type
+     * - then block executes on normal completion
+     * - end block executes on break or initial false
+     */
+    void checkWhenStmt(WhenStmt* stmt);
+    
+    /**
      * Check block statement (recursively check all statements)
      */
     void checkBlockStmt(BlockStmt* stmt);
