@@ -140,13 +140,22 @@ std::string WhileStmt::toString() const {
 
 std::string ForStmt::toString() const {
     std::ostringstream oss;
-    oss << "For(";
-    if (initializer) oss << initializer->toString();
-    oss << "; ";
-    if (condition) oss << condition->toString();
-    oss << "; ";
-    if (update) oss << update->toString();
-    oss << ", " << body->toString() << ")";
+    if (isRangeBased) {
+        oss << "ForRange(";
+        if (!iteratorType.empty()) {
+            oss << iteratorType << ":";
+        }
+        oss << iteratorName << " in " << rangeExpr->toString();
+        oss << ", " << body->toString() << ")";
+    } else {
+        oss << "For(";
+        if (initializer) oss << initializer->toString();
+        oss << "; ";
+        if (condition) oss << condition->toString();
+        oss << "; ";
+        if (update) oss << update->toString();
+        oss << ", " << body->toString() << ")";
+    }
     return oss.str();
 }
 

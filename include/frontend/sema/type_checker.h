@@ -195,6 +195,15 @@ private:
      */
     Type* inferArrayLiteral(ArrayLiteralExpr* expr);
     
+    /**
+     * Infer type of range expression (start..end or start...end)
+     * 
+     * Rules:
+     * - Start and end must be integer types
+     * - Returns int64 as placeholder (actual type is opaque struct)
+     */
+    Type* inferRangeExpr(RangeExpr* expr);
+    
     // ========================================================================
     // Type Compatibility and Coercion
     // ========================================================================

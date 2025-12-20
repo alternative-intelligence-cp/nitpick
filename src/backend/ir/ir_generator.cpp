@@ -809,9 +809,98 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
         }
         
         case ASTNode::NodeType::FOR: {
-            // For loop: for (init; cond; update) { body }
             ForStmt* forStmt = static_cast<ForStmt*>(stmt);
             
+            if (forStmt->isRangeBased) {
+                // Range-based for loop: for (var in range) { body }
+                
+                // Generate the range expression
+                llvm::Value* rangePtr = codegenExpression(forStmt->rangeExpr.get());
+                if (!rangePtr) {
+                    return nullptr;
+                }
+                
+                // Extract range components: {start, end, isExclusive}
+                llvm::Type* rangeType = llvm::StructType::get(
+                    context,
+                    {builder.getInt64Ty(), builder.getInt64Ty(), builder.getInt1Ty()}
+                );
+                
+                llvm::Value* startPtr = builder.CreateStructGEP(rangeType, rangePtr, 0, "range.start.ptr");
+                llvm::Value* endPtr = builder.CreateStructGEP(rangeType, rangePtr, 1, "range.end.ptr");
+                llvm::Value* exclusivePtr = builder.CreateStructGEP(rangeType, rangePtr, 2, "range.exclusive.ptr");
+                
+                llvm::Value* startVal = builder.CreateLoad(builder.getInt64Ty(), startPtr, "range.start");
+                llvm::Value* endVal = builder.CreateLoad(builder.getInt64Ty(), endPtr, "range.end");
+                llvm::Value* isExclusive = builder.CreateLoad(builder.getInt1Ty(), exclusivePtr, "range.exclusive");
+                
+                // Create iterator variable
+                llvm::Value* iteratorVar = builder.CreateAlloca(builder.getInt64Ty(), nullptr, forStmt->iteratorName);
+                builder.CreateStore(startVal, iteratorVar);
+                
+                // Add iterator to symbol table
+                named_values[forStmt->iteratorName] = iteratorVar;
+                
+                // Adjust end value if inclusive (end+1 for comparison)
+                llvm::Value* limit = builder.CreateSelect(
+                    isExclusive,
+                    endVal,
+                    builder.CreateAdd(endVal, llvm::ConstantInt::get(builder.getInt64Ty(), 1)),
+                    "loop.limit"
+                );
+                
+                llvm::Function* function = builder.GetInsertBlock()->getParent();
+                
+                // Create blocks
+                llvm::BasicBlock* condBB = llvm::BasicBlock::Create(context, "forrange.cond", function);
+                llvm::BasicBlock* bodyBB = llvm::BasicBlock::Create(context, "forrange.body");
+                llvm::BasicBlock* updateBB = llvm::BasicBlock::Create(context, "forrange.update");
+                llvm::BasicBlock* afterBB = llvm::BasicBlock::Create(context, "afterforrange");
+                
+                // Push loop context
+                loop_stack.push_back(LoopContext(updateBB, afterBB));
+                
+                // Jump to condition
+                builder.CreateBr(condBB);
+                
+                // Generate condition: iterator < limit
+                builder.SetInsertPoint(condBB);
+                llvm::Value* currentVal = builder.CreateLoad(builder.getInt64Ty(), iteratorVar, forStmt->iteratorName);
+                llvm::Value* condVal = builder.CreateICmpSLT(currentVal, limit, "forrange.cond");
+                builder.CreateCondBr(condVal, bodyBB, afterBB);
+                
+                // Generate body
+                function->insert(function->end(), bodyBB);
+                builder.SetInsertPoint(bodyBB);
+                codegenStatement(forStmt->body.get());
+                if (!builder.GetInsertBlock()->getTerminator()) {
+                    builder.CreateBr(updateBB);
+                }
+                
+                // Generate update: iterator++
+                function->insert(function->end(), updateBB);
+                builder.SetInsertPoint(updateBB);
+                llvm::Value* nextVal = builder.CreateAdd(
+                    builder.CreateLoad(builder.getInt64Ty(), iteratorVar, forStmt->iteratorName),
+                    llvm::ConstantInt::get(builder.getInt64Ty(), 1),
+                    "forrange.next"
+                );
+                builder.CreateStore(nextVal, iteratorVar);
+                builder.CreateBr(condBB);
+                
+                // Pop loop context
+                loop_stack.pop_back();
+                
+                // Remove iterator from symbol table
+                named_values.erase(forStmt->iteratorName);
+                
+                // Continue after loop
+                function->insert(function->end(), afterBB);
+                builder.SetInsertPoint(afterBB);
+                return nullptr;
+            }
+            
+            // C-style for loop: for (init; cond; update) { body }
             // Generate initializer
             if (forStmt->initializer) {
                 codegenStatement(forStmt->initializer.get());
