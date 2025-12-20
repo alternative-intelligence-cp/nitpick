@@ -111,6 +111,12 @@ What ACTUALLY works (verified Dec 19, 2025):
   • Monomorphizer: Creates specialized types with name mangling
   • IR generation: Proper struct allocation in LLVM (not i32!)
   • Test: tests/generic_struct_basic.aria compiles and runs
+✅ TBB types with type coercion (tbb8, tbb16, tbb32, tbb64) - Session 14
+  • Tokens: TOKEN_KW_TBB8/16/32/64 recognized
+  • TypeSystem: PrimitiveType with isTBB=true flag
+  • Type coercion: int64 → tbb8 allowed (runtime validates range)
+  • Variable declarations: tbb8:x = 100 works
+  • Test: tests/tbb_basic.aria compiles and runs
 
 What has ISSUES (needs fixing):
 ⚠️ Many tests broken by int64 literal default (were written for int32)
@@ -119,6 +125,9 @@ What has ISSUES (needs fixing):
 ⚠️ Generic tests fail due to int64 vs int32 type mismatches
 
 What DOES NOT work (critical for v0.1.0):
+❌ TBB ERR sentinel semantics - ERR literal parses but not enforced
+❌ TBB sticky error propagation - Arithmetic doesn't propagate ERR
+❌ TBB overflow detection - No runtime range checking yet
 ❌ Borrow checker - Not functional
 ❌ Balanced ternary - Not implemented
 ❌ Runtime assembler - Not implemented

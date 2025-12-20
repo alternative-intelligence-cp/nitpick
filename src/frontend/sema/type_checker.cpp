@@ -878,19 +878,29 @@ bool TypeChecker::canCoerce(Type* from, Type* to) {
     }
     
     // ========================================================================
-    // Disallowed Coercions (Explicit Cast Required)
+    // Integer to TBB Coercion (Session 14)
     // ========================================================================
-    
-    // TBB ↔ Standard Integer: FORBIDDEN (Phase 3.2.4)
-    // TBB types have error sentinels and sticky error semantics
-    // Standard integers use modular arithmetic
-    // Mixing them requires explicit conversion
+    // Allow signed integers to coerce to TBB types (int64 → tbb8, tbb16, tbb32, tbb64)
+    // This is safe because runtime will validate range and convert to ERR on overflow
+    // TBB → integer is FORBIDDEN (would lose error sentinel)
     bool fromIsTBB = (fromName.find("tbb") == 0);
     bool toIsTBB = (toName.find("tbb") == 0);
-    bool fromIsStdInt = (fromName.find("int") == 0 || fromName.find("uint") == 0);
+    bool fromIsSignedInt = (fromName.find("int") == 0 && fromName.find("uint") != 0);
     bool toIsStdInt = (toName.find("int") == 0 || toName.find("uint") == 0);
     
-    if ((fromIsTBB && toIsStdInt) || (fromIsStdInt && toIsTBB)) {
+    // Allow signed int → TBB (e.g., int64 → tbb8)
+    if (fromIsSignedInt && toIsTBB) {
+        // Runtime will check range and set ERR on overflow
+        return true;
+    }
+    
+    // Forbid TBB → standard integer (would lose ERR sentinel)
+    if (fromIsTBB && toIsStdInt) {
+        return false;  // Explicit cast required
+    }
+    
+    // Forbid unsigned → TBB (unsigned can't represent negative values)
+    if (fromName.find("uint") == 0 && toIsTBB) {
         return false;  // Explicit cast required
     }
     
@@ -902,8 +912,9 @@ bool TypeChecker::canCoerce(Type* from, Type* to) {
                           fromName == "nit" || fromName == "nyte");
     bool toIsBalanced = (toName == "trit" || toName == "tryte" || 
                         toName == "nit" || toName == "nyte");
+    bool fromIsStdIntOrUint = (fromName.find("int") == 0 || fromName.find("uint") == 0);
     
-    if ((fromIsBalanced && toIsStdInt) || (fromIsStdInt && toIsBalanced)) {
+    if ((fromIsBalanced && toIsStdInt) || (fromIsStdIntOrUint && toIsBalanced)) {
         return false;  // Explicit cast required
     }
     
