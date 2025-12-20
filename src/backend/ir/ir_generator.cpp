@@ -314,6 +314,89 @@ llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
         
         // Generate code for each declaration
         for (const auto& decl : program->declarations) {
+            // Skip module system declarations (structural only, no codegen needed)
+            if (decl->type == ASTNode::NodeType::USE) {
+                continue;  // Import statements don't generate code
+            }
+            
+            if (decl->type == ASTNode::NodeType::MOD) {
+                // Module declarations - process their bodies
+                ModStmt* modStmt = static_cast<ModStmt*>(decl.get());
+                if (modStmt->isInline) {
+                    // Process inline module body recursively
+                    for (const auto& mod_decl : modStmt->body) {
+                        if (mod_decl->type == ASTNode::NodeType::FUNC_DECL) {
+                            FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(mod_decl.get());
+                            
+                            // Skip generic functions
+                            if (!funcDecl->genericParams.empty()) {
+                                continue;
+                            }
+                            
+                            // Create function (same code as below, but for module functions)
+                            std::vector<llvm::Type*> param_types;
+                            for (const auto& param : funcDecl->parameters) {
+                                ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+                                param_types.push_back(mapTypeFromName(pnode->typeName));
+                            }
+                            
+                            llvm::Type* return_type = mapTypeFromName(funcDecl->returnType);
+                            llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
+                            
+                            // Use module-qualified name for non-main functions
+                            std::string qualified_name = modStmt->name + "." + funcDecl->funcName;
+                            
+                            llvm::Function* func = llvm::Function::Create(
+                                func_type,
+                                modStmt->isPublic ? llvm::Function::ExternalLinkage : llvm::Function::InternalLinkage,
+                                qualified_name,
+                                module.get()
+                            );
+                            
+                            // Skip if no body
+                            if (!funcDecl->body) {
+                                continue;
+                            }
+                            
+                            // Create entry block
+                            llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+                            builder.SetInsertPoint(entry);
+                            
+                            // Map parameters
+                            size_t idx = 0;
+                            for (auto& arg : func->args()) {
+                                if (idx < funcDecl->parameters.size()) {
+                                    ParameterNode* param = static_cast<ParameterNode*>(funcDecl->parameters[idx].get());
+                                    arg.setName(param->paramName);
+                                    named_values[param->paramName] = &arg;
+                                }
+                                idx++;
+                            }
+                            
+                            // Generate body
+                            llvm::Value* bodyVal = codegenStatement(funcDecl->body.get());
+                            (void)bodyVal;
+                            
+                            // Add terminator if missing
+                            if (!builder.GetInsertBlock()->getTerminator()) {
+                                if (return_type->isVoidTy()) {
+                                    builder.CreateRetVoid();
+                                } else {
+                                    builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
+                                }
+                            }
+                            
+                            // Clean up symbol table
+                            for (const auto& param : funcDecl->parameters) {
+                                ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+                                named_values.erase(pnode->paramName);
+                            }
+                        }
+                    }
+                }
+                continue;  // External module references don't generate code
+            }
+            
             if (decl->type == ASTNode::NodeType::FUNC_DECL) {
                 FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(decl.get());
                 
