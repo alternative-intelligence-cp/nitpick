@@ -134,6 +134,14 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
 // ============================================================================
 
 Type* TypeChecker::inferIdentifier(IdentifierExpr* expr) {
+    // Special case: $ is the implicit iteration variable in till/loop constructs
+    // Its type is determined by the loop parameters (usually int64)
+    if (expr->name == "$") {
+        // For type checking purposes, assume int64
+        // The actual type will be determined by the loop parameters during IR generation
+        return typeSystem->getPrimitiveType("int64");
+    }
+    
     // Lookup symbol in symbol table
     Symbol* symbol = symbolTable->lookupSymbol(expr->name);
     
@@ -977,6 +985,18 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
         
         case ASTNode::NodeType::FOR:
             checkForStmt(static_cast<ForStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::TILL:
+            checkTillStmt(static_cast<TillStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::LOOP:
+            checkLoopStmt(static_cast<LoopStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::WHEN:
+            checkWhenStmt(static_cast<WhenStmt*>(stmt));
             break;
         
         case ASTNode::NodeType::BLOCK:
@@ -2042,6 +2062,100 @@ void TypeChecker::checkModStmt(ModStmt* stmt) {
     
     // External module declarations (mod name;) don't need further checking
     // The module resolver will validate they exist
+}
+
+// ============================================================================
+// Advanced Loop Type Checking
+// ============================================================================
+
+void TypeChecker::checkTillStmt(TillStmt* stmt) {
+    // Check limit expression - must be integer type
+    Type* limitType = inferType(stmt->limit.get());
+    if (limitType->getKind() != TypeKind::ERROR) {
+        PrimitiveType* limitPrim = dynamic_cast<PrimitiveType*>(limitType);
+        if (!limitPrim || (limitPrim->getName().find("int") == std::string::npos && 
+                           limitPrim->getName().find("uint") == std::string::npos)) {
+            addError("till limit must be integer type, got '" + limitType->toString() + "'", 
+                    stmt->limit.get());
+        }
+    }
+    
+    // Check step expression - must be integer type
+    Type* stepType = inferType(stmt->step.get());
+    if (stepType->getKind() != TypeKind::ERROR) {
+        PrimitiveType* stepPrim = dynamic_cast<PrimitiveType*>(stepType);
+        if (!stepPrim || (stepPrim->getName().find("int") == std::string::npos && 
+                          stepPrim->getName().find("uint") == std::string::npos)) {
+            addError("till step must be integer type, got '" + stepType->toString() + "'", 
+                    stmt->step.get());
+        }
+    }
+    
+    // Check body
+    checkStatement(stmt->body.get());
+}
+
+void TypeChecker::checkLoopStmt(LoopStmt* stmt) {
+    // Check start expression - must be integer type
+    Type* startType = inferType(stmt->start.get());
+    if (startType->getKind() != TypeKind::ERROR) {
+        PrimitiveType* startPrim = dynamic_cast<PrimitiveType*>(startType);
+        if (!startPrim || (startPrim->getName().find("int") == std::string::npos && 
+                           startPrim->getName().find("uint") == std::string::npos)) {
+            addError("loop start must be integer type, got '" + startType->toString() + "'", 
+                    stmt->start.get());
+        }
+    }
+    
+    // Check limit expression - must be integer type
+    Type* limitType = inferType(stmt->limit.get());
+    if (limitType->getKind() != TypeKind::ERROR) {
+        PrimitiveType* limitPrim = dynamic_cast<PrimitiveType*>(limitType);
+        if (!limitPrim || (limitPrim->getName().find("int") == std::string::npos && 
+                           limitPrim->getName().find("uint") == std::string::npos)) {
+            addError("loop limit must be integer type, got '" + limitType->toString() + "'", 
+                    stmt->limit.get());
+        }
+    }
+    
+    // Check step expression - must be integer type
+    Type* stepType = inferType(stmt->step.get());
+    if (stepType->getKind() != TypeKind::ERROR) {
+        PrimitiveType* stepPrim = dynamic_cast<PrimitiveType*>(stepType);
+        if (!stepPrim || (stepPrim->getName().find("int") == std::string::npos && 
+                          stepPrim->getName().find("uint") == std::string::npos)) {
+            addError("loop step must be integer type, got '" + stepType->toString() + "'", 
+                    stmt->step.get());
+        }
+    }
+    
+    // Check body
+    checkStatement(stmt->body.get());
+}
+
+void TypeChecker::checkWhenStmt(WhenStmt* stmt) {
+    // Check condition - must be boolean type
+    Type* condType = inferType(stmt->condition.get());
+    if (condType->getKind() != TypeKind::ERROR) {
+        PrimitiveType* condPrim = dynamic_cast<PrimitiveType*>(condType);
+        if (!condPrim || condPrim->getName() != "bool") {
+            addError("when condition must be 'bool' type, got '" + condType->toString() + "'", 
+                    stmt->condition.get());
+        }
+    }
+    
+    // Check body
+    checkStatement(stmt->body.get());
+    
+    // Check then block if present
+    if (stmt->then_block) {
+        checkStatement(stmt->then_block.get());
+    }
+    
+    // Check end block if present
+    if (stmt->end_block) {
+        checkStatement(stmt->end_block.get());
+    }
 }
 
 } // namespace sema

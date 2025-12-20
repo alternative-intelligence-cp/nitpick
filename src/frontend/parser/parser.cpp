@@ -222,8 +222,8 @@ bool Parser::isUnaryOperator(TokenType type) const {
            type == TokenType::TOKEN_BANG ||
            type == TokenType::TOKEN_TILDE ||
            type == TokenType::TOKEN_AT ||
-           type == TokenType::TOKEN_HASH ||
-           type == TokenType::TOKEN_DOLLAR;
+           type == TokenType::TOKEN_HASH;
+           // Note: TOKEN_DOLLAR is NOT a unary operator - it's the iteration variable
 }
 
 bool Parser::isAssignmentOperator(TokenType type) const {
@@ -343,6 +343,14 @@ ASTNodePtr Parser::parsePrimary() {
         int col = token.column;
         advance();
         return std::make_shared<IdentifierExpr>(lexeme, line, col);
+    }
+    
+    // $ iteration variable (for till/loop constructs)
+    if (token.type == TokenType::TOKEN_DOLLAR) {
+        int line = token.line;
+        int col = token.column;
+        advance();
+        return std::make_shared<IdentifierExpr>("$", line, col);
     }
 
     // Ternary expression: is (condition) : true_value : false_value
