@@ -247,8 +247,8 @@ bool GenericResolver::implementsTrait(Type* type, const std::string& traitName) 
 // Monomorphizer Implementation
 // ============================================================================
 
-Monomorphizer::Monomorphizer(GenericResolver* resolver)
-    : resolver(resolver) {}
+Monomorphizer::Monomorphizer(GenericResolver* resolver, TypeSystem* ts)
+    : resolver(resolver), typeSystem(ts) {}
 
 Specialization* Monomorphizer::requestSpecialization(
     FuncDeclStmt* funcDecl,
@@ -672,6 +672,127 @@ uint64_t Monomorphizer::computeTypeHash(const TypeSubstitution& substitution) co
     }
     
     return hash;
+}
+
+// ============================================================================
+// Struct Specialization (Session 13)
+// ============================================================================
+
+std::string Monomorphizer::requestStructSpecialization(
+    StructDeclStmt* structDecl,
+    const TypeSubstitution& substitution) {
+    
+    if (!structDecl) {
+        addError("Invalid struct declaration");
+        return "";
+    }
+    
+    if (!typeSystem) {
+        addError("TypeSystem not initialized for struct specialization");
+        return "";
+    }
+    
+    // Create cache key using the same format as functions
+    SpecializationKey key = resolver->makeSpecializationKey(
+        structDecl->structName, substitution);
+    
+    // Generate mangled name
+    std::string mangledName = mangleName(structDecl->structName, substitution);
+    
+    // Check if already specialized
+    Type* existing = typeSystem->getStructType(mangledName);
+    if (existing) {
+        return mangledName;  // Already instantiated
+    }
+    
+    // Clone and substitute the struct
+    StructDeclStmt* specialized = cloneStructAndSubstitute(structDecl, substitution);
+    if (!specialized) {
+        return "";
+    }
+    
+    // Update the struct name to the mangled name
+    specialized->structName = mangledName;
+    
+    // Register the specialized struct with TypeSystem
+    // Extract field information
+    std::vector<StructType::Field> fields;
+    for (const auto& field : specialized->fields) {
+        VarDeclStmt* fieldDecl = static_cast<VarDeclStmt*>(field.get());
+        
+        // Look up field type
+        Type* fieldType = typeSystem->getStructType(fieldDecl->typeName);
+        if (!fieldType) {
+            fieldType = typeSystem->getPrimitiveType(fieldDecl->typeName);
+        }
+        
+        if (!fieldType || fieldType->getKind() == TypeKind::ERROR) {
+            addError("Unknown field type '" + fieldDecl->typeName + 
+                    "' in specialized struct '" + mangledName + "'");
+            return "";
+        }
+        
+        fields.push_back(StructType::Field(fieldDecl->varName, fieldType, 0, false));
+    }
+    
+    // Create the struct type in TypeSystem
+    typeSystem->createStructType(mangledName, fields, 0, 0, false);
+    
+    // Clean up the cloned AST (it's no longer needed after registration)
+    delete specialized;
+    
+    return mangledName;
+}
+
+StructDeclStmt* Monomorphizer::cloneStructAndSubstitute(
+    StructDeclStmt* structDecl,
+    const TypeSubstitution& substitution) {
+    
+    if (!structDecl) return nullptr;
+    
+    // Clone all fields
+    std::vector<ASTNodePtr> clonedFields;
+    for (const auto& field : structDecl->fields) {
+        VarDeclStmt* fieldDecl = static_cast<VarDeclStmt*>(field.get());
+        
+        // Substitute the field type if it's a generic type reference (*T)
+        std::string fieldType = fieldDecl->typeName;
+        if (!fieldType.empty() && fieldType[0] == '*') {
+            std::string typeParamName = fieldType.substr(1);
+            auto it = substitution.find(typeParamName);
+            if (it != substitution.end()) {
+                fieldType = resolver->canonicalizeTypeName(it->second);
+            }
+        }
+        
+        // Create cloned field with substituted type
+        auto clonedField = std::make_unique<VarDeclStmt>(
+            fieldType,
+            fieldDecl->varName,
+            nullptr,  // Struct fields don't have initializers
+            fieldDecl->line,
+            fieldDecl->column
+        );
+        
+        clonedField->isWild = fieldDecl->isWild;
+        clonedField->isConst = fieldDecl->isConst;
+        clonedField->isStack = fieldDecl->isStack;
+        clonedField->isGC = fieldDecl->isGC;
+        
+        clonedFields.push_back(std::move(clonedField));
+    }
+    
+    // Create new struct declaration
+    StructDeclStmt* cloned = new StructDeclStmt(
+        structDecl->structName,  // Will be updated with mangled name by caller
+        clonedFields,
+        structDecl->line,
+        structDecl->column
+    );
+    
+    // Do NOT copy genericParams - this is now a concrete struct
+    
+    return cloned;
 }
 
 } // namespace sema
