@@ -5,6 +5,7 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Value.h>
 #include <llvm/IR/Module.h>
+#include "backend/ir/tbb_codegen.h"
 #include <map>
 #include <string>
 
@@ -53,6 +54,9 @@ private:
     // Statement codegen (for lambda body generation)
     StmtCodegen* stmt_codegen;
     
+    // TBB codegen for safe arithmetic with overflow detection
+    TBBCodegen tbb_codegen;
+    
     // Helper: Get LLVM type from Aria type
     llvm::Type* getLLVMType(sema::Type* type);
     
@@ -61,6 +65,9 @@ private:
     
     // Helper: Get size of Aria type in bytes
     size_t getTypeSize(sema::Type* type);
+    
+    // Helper: Check if type is TBB type
+    bool isTBBType(sema::Type* type);
     
 public:
     /**

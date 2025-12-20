@@ -82,6 +82,11 @@ public:
      */
     llvm::Value* getMinValue(Type* type);
 
+    /**
+     * @brief Get LLVM integer type for TBB type
+     */
+    llvm::IntegerType* getTBBLLVMType(Type* type);
+
 private:
     llvm::LLVMContext& context;
     llvm::IRBuilder<>& builder;
@@ -111,11 +116,6 @@ private:
      * Returns true if overflow would occur
      */
     llvm::Value* checkMulOverflow(llvm::Value* lhs, llvm::Value* rhs, Type* type);
-
-    /**
-     * @brief Get LLVM integer type for TBB type
-     */
-    llvm::IntegerType* getTBBLLVMType(Type* type);
 
     /**
      * @brief Get bit width for TBB type (8, 16, 32, or 64)

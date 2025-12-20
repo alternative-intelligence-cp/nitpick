@@ -1,0 +1,29 @@
+// Test TBB sticky error propagation (Session 14 Part 2)
+// ERR is sticky: ERR + x = ERR, x + ERR = ERR
+
+func:main = int64() {
+    // Create an ERR value through overflow
+    tbb8:x = 64;
+    tbb8:two = 2;
+    tbb8:err_val = x * two;  // Overflow -> ERR
+    
+    // Test ERR + normal = ERR
+    tbb8:normal = 10;
+    tbb8:result1 = err_val + normal;
+    
+    // Test normal + ERR = ERR
+    tbb8:result2 = normal + err_val;
+    
+    // Test ERR + ERR = ERR
+    tbb8:result3 = err_val + err_val;
+    
+    // ERR sentinel
+    tbb8:err = -128;
+    
+    // All results should be ERR
+    if (result1 == err && result2 == err && result3 == err) {
+        pass(42);  // Success: Sticky error works!
+    }
+    
+    pass(1);  // Failure
+};

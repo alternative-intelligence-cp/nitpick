@@ -25,7 +25,8 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
       di_builder(nullptr),
       di_compile_unit(nullptr),
       di_file(nullptr),
-      debug_enabled(enable_debug) {
+      debug_enabled(enable_debug),
+      tbb_codegen(context, builder) {
     // Set source filename for better debug info
     module->setSourceFileName(module_name.empty() ? "aria_module" : module_name);
     
@@ -282,6 +283,12 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     if (type_name == "uint128") return builder.getInt128Ty();
     if (type_name == "uint256") return builder.getIntNTy(256);
     if (type_name == "uint512") return builder.getIntNTy(512);
+    
+    // TBB types - Ternary Balanced Binary (symmetric signed integers with ERR sentinel)
+    if (type_name == "tbb8") return builder.getInt8Ty();
+    if (type_name == "tbb16") return builder.getInt16Ty();
+    if (type_name == "tbb32") return builder.getInt32Ty();
+    if (type_name == "tbb64") return builder.getInt64Ty();
     
     // String type - represented as i8* (pointer to null-terminated char array)
     if (type_name == "string") {
@@ -664,11 +671,11 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             
             llvm::AllocaInst* alloca = builder.CreateAlloca(varType, nullptr, varDecl->varName);
             
-            // Track the Aria type of this alloca (needed for member access)
+            // Track the Aria type of this alloca (needed for member access and TBB overflow detection)
             if (type_system) {
-                Type* aria_type = type_system->getStructType(varDecl->typeName);
+                Type* aria_type = type_system->getStructType(actualTypeName);
                 if (!aria_type) {
-                    aria_type = type_system->getPrimitiveType(varDecl->typeName);
+                    aria_type = type_system->getPrimitiveType(actualTypeName);
                 }
                 if (aria_type) {
                     value_types[alloca] = aria_type;
@@ -1231,7 +1238,22 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 // If it's a pointer (alloca or parameter), load it
                 if (val->getType()->isPointerTy()) {
-                    return builder.CreateLoad(builder.getInt32Ty(), val, ident->name);
+                    // Get the allocated type from the alloca
+                    llvm::Type* loadType = builder.getInt32Ty();  // Default
+                    if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(val)) {
+                        loadType = allocaInst->getAllocatedType();
+                    }
+                    
+                    // Create the load instruction
+                    llvm::Value* loaded = builder.CreateLoad(loadType, val, ident->name);
+                    
+                    // Track the Aria type for the loaded value (same as alloca)
+                    auto typeIt = value_types.find(val);
+                    if (typeIt != value_types.end()) {
+                        value_types[loaded] = typeIt->second;
+                    }
+                    
+                    return loaded;
                 }
                 
                 // Otherwise return the value directly (e.g., function parameter)
@@ -1543,32 +1565,179 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 return nullptr;
             }
             
+            // Check if operands are TBB types (requires overflow detection)
+            Type* leftType = nullptr;
+            Type* rightType = nullptr;
+            
+            // Try to get types from value_types map
+            auto leftIt = value_types.find(L);
+            if (leftIt != value_types.end()) {
+                leftType = leftIt->second;
+            }
+            
+            auto rightIt = value_types.find(R);
+            if (rightIt != value_types.end()) {
+                rightType = rightIt->second;
+            }
+            
+            // Check if either operand is a TBB type
+            bool isTBB = false;
+            Type* tbbType = nullptr;
+            if (leftType && leftType->isPrimitive()) {
+                PrimitiveType* prim = static_cast<PrimitiveType*>(leftType);
+                const std::string& name = prim->getName();
+                if (name == "tbb8" || name == "tbb16" || name == "tbb32" || name == "tbb64") {
+                    isTBB = true;
+                    tbbType = leftType;
+                }
+            }
+            if (!isTBB && rightType && rightType->isPrimitive()) {
+                PrimitiveType* prim = static_cast<PrimitiveType*>(rightType);
+                const std::string& name = prim->getName();
+                if (name == "tbb8" || name == "tbb16" || name == "tbb32" || name == "tbb64") {
+                    isTBB = true;
+                    tbbType = rightType;
+                }
+            }
+            
             // Generate appropriate operation based on operator
             switch (binop->op.type) {
                 // Arithmetic operators
                 case frontend::TokenType::TOKEN_PLUS:
+                    if (isTBB && tbbType) {
+                        // Ensure both operands are the same type as the TBB type
+                        llvm::Type* tbbLLVMType = tbb_codegen.getTBBLLVMType(tbbType);
+                        if (L->getType() != tbbLLVMType) {
+                            L = builder.CreateIntCast(L, tbbLLVMType, true, "cast_lhs");
+                        }
+                        if (R->getType() != tbbLLVMType) {
+                            R = builder.CreateIntCast(R, tbbLLVMType, true, "cast_rhs");
+                        }
+                        
+                        llvm::Value* result = tbb_codegen.generateAdd(L, R, tbbType);
+                        value_types[result] = tbbType;  // Track type for result
+                        return result;
+                    }
                     return builder.CreateAdd(L, R, "addtmp");
                 case frontend::TokenType::TOKEN_MINUS:
+                    if (isTBB && tbbType) {
+                        // Ensure both operands are the same type as the TBB type
+                        llvm::Type* tbbLLVMType = tbb_codegen.getTBBLLVMType(tbbType);
+                        if (L->getType() != tbbLLVMType) {
+                            L = builder.CreateIntCast(L, tbbLLVMType, true, "cast_lhs");
+                        }
+                        if (R->getType() != tbbLLVMType) {
+                            R = builder.CreateIntCast(R, tbbLLVMType, true, "cast_rhs");
+                        }
+                        
+                        llvm::Value* result = tbb_codegen.generateSub(L, R, tbbType);
+                        value_types[result] = tbbType;  // Track type for result
+                        return result;
+                    }
                     return builder.CreateSub(L, R, "subtmp");
                 case frontend::TokenType::TOKEN_STAR:
+                    if (isTBB && tbbType) {
+                        // Ensure both operands are the same type as the TBB type
+                        llvm::Type* tbbLLVMType = tbb_codegen.getTBBLLVMType(tbbType);
+                        if (L->getType() != tbbLLVMType) {
+                            L = builder.CreateIntCast(L, tbbLLVMType, true, "cast_lhs");
+                        }
+                        if (R->getType() != tbbLLVMType) {
+                            R = builder.CreateIntCast(R, tbbLLVMType, true, "cast_rhs");
+                        }
+                        
+                        llvm::Value* result = tbb_codegen.generateMul(L, R, tbbType);
+                        value_types[result] = tbbType;  // Track type for result
+                        return result;
+                    }
                     return builder.CreateMul(L, R, "multmp");
                 case frontend::TokenType::TOKEN_SLASH:
+                    if (isTBB && tbbType) {
+                        // Ensure both operands are the same type as the TBB type
+                        llvm::Type* tbbLLVMType = tbb_codegen.getTBBLLVMType(tbbType);
+                        if (L->getType() != tbbLLVMType) {
+                            L = builder.CreateIntCast(L, tbbLLVMType, true, "cast_lhs");
+                        }
+                        if (R->getType() != tbbLLVMType) {
+                            R = builder.CreateIntCast(R, tbbLLVMType, true, "cast_rhs");
+                        }
+                        
+                        llvm::Value* result = tbb_codegen.generateDiv(L, R, tbbType);
+                        value_types[result] = tbbType;  // Track type for result
+                        return result;
+                    }
                     return builder.CreateSDiv(L, R, "divtmp");
                 case frontend::TokenType::TOKEN_PERCENT:
                     return builder.CreateSRem(L, R, "modtmp");
                 
                 // Comparison operators (return i1)
                 case frontend::TokenType::TOKEN_EQUAL_EQUAL:
+                    // Ensure operands have same type for comparison
+                    if (L->getType() != R->getType()) {
+                        // Promote to larger type (only for integer types)
+                        if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
+                            if (L->getType()->getIntegerBitWidth() > R->getType()->getIntegerBitWidth()) {
+                                R = builder.CreateIntCast(R, L->getType(), true, "cmp_cast");
+                            } else {
+                                L = builder.CreateIntCast(L, R->getType(), true, "cmp_cast");
+                            }
+                        }
+                    }
                     return builder.CreateICmpEQ(L, R, "eqtmp");
                 case frontend::TokenType::TOKEN_BANG_EQUAL:
+                    if (L->getType() != R->getType()) {
+                        if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
+                            if (L->getType()->getIntegerBitWidth() > R->getType()->getIntegerBitWidth()) {
+                                R = builder.CreateIntCast(R, L->getType(), true, "cmp_cast");
+                            } else {
+                                L = builder.CreateIntCast(L, R->getType(), true, "cmp_cast");
+                            }
+                        }
+                    }
                     return builder.CreateICmpNE(L, R, "netmp");
                 case frontend::TokenType::TOKEN_LESS:
+                    if (L->getType() != R->getType()) {
+                        if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
+                            if (L->getType()->getIntegerBitWidth() > R->getType()->getIntegerBitWidth()) {
+                                R = builder.CreateIntCast(R, L->getType(), true, "cmp_cast");
+                            } else {
+                                L = builder.CreateIntCast(L, R->getType(), true, "cmp_cast");
+                            }
+                        }
+                    }
                     return builder.CreateICmpSLT(L, R, "lttmp");
                 case frontend::TokenType::TOKEN_LESS_EQUAL:
+                    if (L->getType() != R->getType()) {
+                        if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
+                            if (L->getType()->getIntegerBitWidth() > R->getType()->getIntegerBitWidth()) {
+                                R = builder.CreateIntCast(R, L->getType(), true, "cmp_cast");
+                            } else {
+                                L = builder.CreateIntCast(L, R->getType(), true, "cmp_cast");
+                            }
+                        }
+                    }
                     return builder.CreateICmpSLE(L, R, "letmp");
                 case frontend::TokenType::TOKEN_GREATER:
+                    if (L->getType() != R->getType()) {
+                        if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
+                            if (L->getType()->getIntegerBitWidth() > R->getType()->getIntegerBitWidth()) {
+                                R = builder.CreateIntCast(R, L->getType(), true, "cmp_cast");
+                            } else {
+                                L = builder.CreateIntCast(L, R->getType(), true, "cmp_cast");
+                            }
+                        }
+                    }
                     return builder.CreateICmpSGT(L, R, "gttmp");
                 case frontend::TokenType::TOKEN_GREATER_EQUAL:
+                    if (L->getType() != R->getType()) {
+                        if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
+                            if (L->getType()->getIntegerBitWidth() > R->getType()->getIntegerBitWidth()) {
+                                R = builder.CreateIntCast(R, L->getType(), true, "cmp_cast");
+                            } else {
+                                L = builder.CreateIntCast(L, R->getType(), true, "cmp_cast");
+                            }
+                        }
+                    }
                     return builder.CreateICmpSGE(L, R, "getmp");
                 
                 // Note: Logical operators (&&, ||) handled before switch via early return
