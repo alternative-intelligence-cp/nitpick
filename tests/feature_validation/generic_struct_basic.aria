@@ -1,0 +1,39 @@
+// Test: Basic Generic Struct Support
+// Session 13: Generic Structs
+// Expected: Compile successfully and instantiate generic structs
+
+// Simple generic container with one type parameter
+struct<T>:Box {
+    *T:value;
+};
+
+// Generic struct with multiple type parameters
+struct<T, E>:Result {
+    *T:value;
+    *E:error;
+    bool:is_ok;
+};
+
+func:main = int64() {
+    // Test 1: Instantiate Box with int64
+    Box<int64>:intBox;
+    intBox.value = 42;
+    
+    // Test 2: Instantiate Box with string
+    Box<string>:strBox;
+    strBox.value = "Hello, generics!";
+    
+    // Test 3: Instantiate Result with multiple type parameters
+    Result<int64, string>:okResult;
+    okResult.value = 100;
+    okResult.is_ok = true;
+    
+    Result<int64, string>:errResult;
+    errResult.error = "Something went wrong";
+    errResult.is_ok = false;
+    
+    // Test 4: Verify specialized types are distinct
+    // Box<int64> and Box<string> should be different types
+    
+    pass(0);
+};

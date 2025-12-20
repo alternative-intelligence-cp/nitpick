@@ -934,12 +934,28 @@ ASTNodePtr Parser::parseStatement() {
     }
     
     // Check for custom type reference (variable declaration): CustomType:name = ...
+    // Also handles generic type instantiation: Box<int64>:name = ...
     // This allows struct types and other custom types in variable declarations
     if (peek().type == TokenType::TOKEN_IDENTIFIER) {
         size_t saved = current;
         advance(); // consume identifier
+        
+        // Check for generic type arguments: <...>
+        if (check(TokenType::TOKEN_LESS)) {
+            advance(); // consume '<'
+            
+            // Skip generic type arguments
+            int angleDepth = 1;
+            while (angleDepth > 0 && !isAtEnd()) {
+                if (check(TokenType::TOKEN_LESS)) angleDepth++;
+                if (check(TokenType::TOKEN_GREATER)) angleDepth--;
+                advance();
+            }
+        }
+        
+        // Now check for colon (variable declaration) or other tokens
         if (check(TokenType::TOKEN_COLON)) {
-            // It's a type annotation with custom type: CustomType:name
+            // It's a type annotation: CustomType:name or Box<int64>:name
             current = saved; // reset position
             return parseVarDecl();
         } else {
@@ -1325,10 +1341,19 @@ ASTNodePtr Parser::parseFuncDecl() {
 }
 
 // Parse struct declaration: struct Name { type:field1; type:field2; };
+// Or generic: struct<T, E>:Name { *T:field1; *E:field2; };
 ASTNodePtr Parser::parseStructDecl() {
     using namespace frontend;
     
     Token structToken = previous(); // 'struct' keyword
+    
+    // Phase 3.4: Parse generic parameters if present: struct<T, E>
+    std::vector<GenericParamInfo> genericParams = parseGenericParams();
+    
+    // Consume colon after generic params if present, or before name
+    if (!genericParams.empty()) {
+        consume(TokenType::TOKEN_COLON, "Expected ':' after generic parameters");
+    }
     
     // Get struct name
     Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected struct name");
@@ -1338,9 +1363,18 @@ ASTNodePtr Parser::parseStructDecl() {
     
     std::vector<ASTNodePtr> fields;
     while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
-        // Parse field type
+        // Parse field type (could be *T for generic or regular type)
+        std::string fieldTypeName;
         Token fieldTypeToken = advance();
-        if (!isTypeKeyword(fieldTypeToken.type)) {
+        
+        if (fieldTypeToken.type == TokenType::TOKEN_STAR) {
+            // Generic type reference: *T
+            Token typeParamToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name after '*'");
+            fieldTypeName = "*" + typeParamToken.lexeme;
+        } else if (isTypeKeyword(fieldTypeToken.type) || fieldTypeToken.type == TokenType::TOKEN_IDENTIFIER) {
+            // Regular type or custom type
+            fieldTypeName = fieldTypeToken.lexeme;
+        } else {
             error("Expected field type in struct");
             return nullptr;
         }
@@ -1353,7 +1387,7 @@ ASTNodePtr Parser::parseStructDecl() {
         
         // Create a VarDeclStmt for the field (without initializer)
         auto fieldDecl = std::make_shared<VarDeclStmt>(
-            fieldTypeToken.lexeme,
+            fieldTypeName,
             fieldNameToken.lexeme,
             nullptr,  // No initializer for struct fields
             structToken.line,
@@ -1371,12 +1405,17 @@ ASTNodePtr Parser::parseStructDecl() {
     // Consume semicolon after struct declaration
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after struct declaration");
     
-    return std::make_shared<StructDeclStmt>(
+    auto structDecl = std::make_shared<StructDeclStmt>(
         nameToken.lexeme,
         fields,
         structToken.line,
         structToken.column
     );
+    
+    // Store generic parameters
+    structDecl->genericParams = genericParams;
+    
+    return structDecl;
 }
 
 // Parse block: { stmt1; stmt2; ... }
