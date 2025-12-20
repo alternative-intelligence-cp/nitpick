@@ -47,6 +47,10 @@ private:
     // Current function return type (for return statement checking)
     Type* currentFunctionReturnType;
     
+    // Generic struct registry (Session 13)
+    // Maps struct name -> generic struct declaration AST
+    std::unordered_map<std::string, StructDeclStmt*> genericStructRegistry;
+    
     // ========================================================================
     // Expression Type Inference
     // ========================================================================

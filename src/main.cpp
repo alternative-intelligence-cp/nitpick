@@ -312,9 +312,9 @@ llvm::Module* compile_to_module(
     aria::sema::TypeSystem type_system;
     aria::sema::SymbolTable symbol_table;
     
-    // Create generic resolver and monomorphizer
+    // Create generic resolver and monomorphizer (Session 13: pass TypeSystem for struct specialization)
     aria::sema::GenericResolver generic_resolver;
-    aria::sema::Monomorphizer monomorphizer(&generic_resolver);
+    aria::sema::Monomorphizer monomorphizer(&generic_resolver, &type_system);
     
     // Type checker with generic support
     aria::sema::TypeChecker type_checker(&type_system, &symbol_table, &generic_resolver, &monomorphizer);

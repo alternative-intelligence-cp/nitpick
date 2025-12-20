@@ -243,8 +243,11 @@ private:
 
 class Monomorphizer {
 public:
-    Monomorphizer(GenericResolver* resolver);
+    Monomorphizer(GenericResolver* resolver, TypeSystem* ts = nullptr);
     ~Monomorphizer() = default;
+    
+    // Set TypeSystem (needed for struct registration)
+    void setTypeSystem(TypeSystem* ts) { typeSystem = ts; }
     
     /**
      * Request a specialized version of a generic function
@@ -261,6 +264,23 @@ public:
      */
     Specialization* requestSpecialization(FuncDeclStmt* funcDecl,
                                          const TypeSubstitution& substitution);
+    
+    /**
+     * Request a specialized version of a generic struct (Session 13)
+     * 
+     * Similar to function specialization, but for structs:
+     * 1. Check cache for existing struct specialization
+     * 2. If not found, clone the generic struct AST
+     * 3. Substitute type parameters (*T) with concrete types
+     * 4. Register specialized struct with TypeSystem
+     * 5. Return the specialized struct name
+     * 
+     * @param structDecl The generic struct template
+     * @param substitution Type parameter bindings (T -> int64, etc.)
+     * @return Mangled name of specialized struct, or empty string on error
+     */
+    std::string requestStructSpecialization(StructDeclStmt* structDecl,
+                                           const TypeSubstitution& substitution);
     
     /**
      * Generate a mangled name for a specialized function
@@ -287,6 +307,19 @@ public:
      */
     FuncDeclStmt* cloneAndSubstitute(FuncDeclStmt* funcDecl,
                                      const TypeSubstitution& substitution);
+    
+    /**
+     * Clone a generic struct AST and substitute types (Session 13)
+     * 
+     * Creates a deep copy of the struct, replacing all *T references
+     * in field types with concrete types from the substitution
+     * 
+     * @param structDecl The generic struct to clone
+     * @param substitution Type parameter bindings
+     * @return New specialized StructDeclStmt
+     */
+    StructDeclStmt* cloneStructAndSubstitute(StructDeclStmt* structDecl,
+                                            const TypeSubstitution& substitution);
     
     /**
      * Get all specializations created so far
@@ -321,6 +354,7 @@ public:
     
 private:
     GenericResolver* resolver;
+    TypeSystem* typeSystem;
     
     // Cache: (function_name, type_args) -> Specialization
     std::unordered_map<SpecializationKey, Specialization*,

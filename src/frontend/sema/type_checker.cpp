@@ -1089,9 +1089,11 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             // Generic type instantiation: Box<int64>, Result<int32, string>, etc.
             aria::GenericType* genericType = static_cast<aria::GenericType*>(typeNode);
             
-            // Phase 3.4: Generic Struct Instantiation
+            // Phase 3.4: Generic Struct Instantiation (Session 13)
             // Resolve all type arguments
             std::vector<Type*> resolvedTypeArgs;
+            TypeSubstitution substitution;
+            
             for (const auto& typeArg : genericType->typeArgs) {
                 Type* argType = resolveTypeNode(typeArg.get());
                 if (argType->getKind() == TypeKind::ERROR) {
@@ -1100,27 +1102,69 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 resolvedTypeArgs.push_back(argType);
             }
             
-            // Look up the generic struct definition
-            // For now, look up by base name in the struct registry
-            // TODO: Check if it's actually a generic struct
-            Type* baseStructType = typeSystem->getStructType(genericType->baseName);
-            
-            if (!baseStructType) {
-                addError("Unknown generic type: '" + genericType->baseName + "'", typeNode);
+            // Look up the generic struct declaration
+            auto it = genericStructRegistry.find(genericType->baseName);
+            if (it == genericStructRegistry.end()) {
+                // Not a generic struct - check if it's a regular struct
+                Type* baseStructType = typeSystem->getStructType(genericType->baseName);
+                if (baseStructType) {
+                    addError("'" + genericType->baseName + "' is not a generic type", typeNode);
+                } else {
+                    addError("Unknown generic type: '" + genericType->baseName + "'", typeNode);
+                }
                 return typeSystem->getErrorType();
             }
             
-            // TODO: Trigger monomorphization to create specialized struct
-            // For now, return the base struct type (this is incomplete)
-            // The monomorphizer will need to:
-            // 1. Clone the generic struct AST
-            // 2. Substitute type parameters with concrete types
-            // 3. Register the specialized struct with a mangled name
-            // 4. Return the specialized struct type
+            StructDeclStmt* genericStructDecl = it->second;
             
-            addError("Generic struct instantiation not yet fully implemented: '" + 
-                    genericType->baseName + "<...>'", typeNode);
-            return typeSystem->getErrorType();
+            // Validate type argument count
+            if (resolvedTypeArgs.size() != genericStructDecl->genericParams.size()) {
+                std::ostringstream msg;
+                msg << "Generic type '" << genericType->baseName << "' expects "
+                    << genericStructDecl->genericParams.size() << " type arguments, got "
+                    << resolvedTypeArgs.size();
+                addError(msg.str(), typeNode);
+                return typeSystem->getErrorType();
+            }
+            
+            // Build type substitution map
+            for (size_t i = 0; i < genericStructDecl->genericParams.size(); i++) {
+                substitution[genericStructDecl->genericParams[i].name] = resolvedTypeArgs[i];
+            }
+            
+            // Check if monomorphizer is available
+            if (!monomorphizer) {
+                addError("Monomorphizer not initialized for generic type instantiation", typeNode);
+                return typeSystem->getErrorType();
+            }
+            
+            // Request monomorphization
+            std::string mangledName = monomorphizer->requestStructSpecialization(
+                genericStructDecl, substitution);
+            
+            if (mangledName.empty()) {
+                // Error occurred during monomorphization
+                if (monomorphizer->hasErrors()) {
+                    for (const auto& err : monomorphizer->getErrors()) {
+                        addError(err.message, err.line, err.column);
+                    }
+                }
+                return typeSystem->getErrorType();
+            }
+            
+            // Look up or create the specialized struct type
+            Type* specializedType = typeSystem->getStructType(mangledName);
+            if (!specializedType) {
+                // Need to create the specialized struct type in TypeSystem
+                // Get the specialized struct declaration from monomorphizer
+                // For now, create a placeholder
+                // TODO: Register specialized struct properly
+                addError("Specialized struct type registration not yet implemented: '" + 
+                        mangledName + "'", typeNode);
+                return typeSystem->getErrorType();
+            }
+            
+            return specializedType;
         }
         
         default:
@@ -1312,7 +1356,20 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
 // ============================================================================
 
 void TypeChecker::checkStructDecl(StructDeclStmt* stmt) {
-    // Check if already defined as a struct
+    // Session 13: Check if this is a generic struct
+    if (!stmt->genericParams.empty()) {
+        // Generic struct - register for later monomorphization
+        // Don't create the type yet - it will be created when instantiated
+        auto it = genericStructRegistry.find(stmt->structName);
+        if (it != genericStructRegistry.end()) {
+            addError("Generic struct '" + stmt->structName + "' is already defined", stmt);
+            return;
+        }
+        genericStructRegistry[stmt->structName] = stmt;
+        return;  // Don't register with TypeSystem yet
+    }
+    
+    // Non-generic struct - check if already defined
     Type* existingStruct = typeSystem->getStructType(stmt->structName);
     if (existingStruct) {
         addError("Struct '" + stmt->structName + "' is already defined", stmt);
