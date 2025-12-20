@@ -1921,6 +1921,70 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 return phi;
             }
             
+            // NULL COALESCING OPERATOR (??) with short-circuit evaluation
+            // Pattern: optional ?? default returns value if has value, otherwise default
+            if (binop->op.type == frontend::TokenType::TOKEN_NULL_COALESCE) {
+                llvm::Function* function = builder.GetInsertBlock()->getParent();
+                
+                // Create blocks for conditional evaluation
+                llvm::BasicBlock* useRightBB = llvm::BasicBlock::Create(context, "coalesce.right");
+                llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "coalesce.merge");
+                
+                // Evaluate left operand
+                llvm::Value* leftVal = codegenExpression(binop->left.get());
+                if (!leftVal) return nullptr;
+                
+                // Remember the block where left was evaluated
+                llvm::BasicBlock* leftBB = builder.GetInsertBlock();
+                
+                // Check if left is optional type
+                llvm::Value* isNull;
+                llvm::Value* unwrappedLeft;
+                
+                if (leftVal->getType()->isStructTy()) {
+                    // Left is optional type { i1 hasValue, T value }
+                    // Extract hasValue field
+                    llvm::Value* hasValue = builder.CreateExtractValue(leftVal, {0}, "opt.has_value");
+                    isNull = builder.CreateNot(hasValue, "isNone");
+                    
+                    // Extract value for use if has value
+                    unwrappedLeft = builder.CreateExtractValue(leftVal, {1}, "opt.value");
+                } else if (leftVal->getType()->isPointerTy()) {
+                    // For pointers, check against nullptr
+                    isNull = builder.CreateIsNull(leftVal, "isnull");
+                    unwrappedLeft = leftVal;
+                } else if (leftVal->getType()->isIntegerTy()) {
+                    // For integers, check against 0 (NIL sentinel)
+                    isNull = builder.CreateICmpEQ(leftVal, llvm::ConstantInt::get(leftVal->getType(), 0), "isnull");
+                    unwrappedLeft = leftVal;
+                } else {
+                    // For other types, assume not null
+                    isNull = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
+                    unwrappedLeft = leftVal;
+                }
+                
+                // If left is null, evaluate and use right; otherwise use unwrapped left
+                builder.CreateCondBr(isNull, useRightBB, mergeBB);
+                
+                // Evaluate right side only if left was null
+                function->insert(function->end(), useRightBB);
+                builder.SetInsertPoint(useRightBB);
+                llvm::Value* rightVal = codegenExpression(binop->right.get());
+                if (!rightVal) return nullptr;
+                llvm::BasicBlock* rightBB = builder.GetInsertBlock();
+                builder.CreateBr(mergeBB);
+                
+                // Merge with phi node - use unwrapped type
+                function->insert(function->end(), mergeBB);
+                builder.SetInsertPoint(mergeBB);
+                llvm::Type* resultType = unwrappedLeft->getType();
+                llvm::PHINode* phi = builder.CreatePHI(resultType, 2, "coalesce.result");
+                phi->addIncoming(unwrappedLeft, leftBB);
+                phi->addIncoming(rightVal, rightBB);
+                
+                return phi;
+            }
+            
             // For all other operators, evaluate both operands
             llvm::Value* L = codegenExpression(binop->left.get());
             llvm::Value* R = codegenExpression(binop->right.get());
