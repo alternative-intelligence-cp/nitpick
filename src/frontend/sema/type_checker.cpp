@@ -506,6 +506,26 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
 // ============================================================================
 
 Type* TypeChecker::inferCallExpr(CallExpr* expr) {
+    // Check for builtin functions first
+    if (expr->callee->type == ASTNode::NodeType::IDENTIFIER) {
+        IdentifierExpr* idExpr = static_cast<IdentifierExpr*>(expr->callee.get());
+        
+        // Builtin: print() - accepts any single argument, returns void
+        if (idExpr->name == "print") {
+            if (expr->arguments.size() != 1) {
+                addError("print() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            // Infer argument type to validate it
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // print() returns i32 (printf's return value)
+            return typeSystem->getPrimitiveType("int32");
+        }
+    }
+    
     // Infer callee type (should be function type or callable object)
     Type* calleeType = inferType(expr->callee.get());
     
