@@ -135,6 +135,24 @@ private:
      */
     llvm::DIScope* getCurrentDebugScope();
     
+    // ========================================================================
+    // Optional Type Helper Methods (Session 23 - Phase 2)
+    // ========================================================================
+    
+    /**
+     * Create an optional value with a present value (Some)
+     * @param value The value to wrap in the optional
+     * @return LLVM struct { i1 true, T value }
+     */
+    llvm::Value* createOptionalSome(llvm::Value* value);
+    
+    /**
+     * Create an optional value representing absence (None/NIL)
+     * @param optionalType The full optional struct type { i1, T }
+     * @return LLVM struct { i1 false, T undef }
+     */
+    llvm::Value* createOptionalNone(llvm::Type* optionalType);
+    
 public:
     /**
      * Constructor
