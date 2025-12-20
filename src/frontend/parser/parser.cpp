@@ -291,6 +291,49 @@ ASTNodePtr Parser::parseExpression(int minPrecedence) {
                 continue;
             }
             
+            // Special case: Forward Pipeline (|>)
+            // Transforms: data |> func into func(data)
+            //            data |> func(args) into func(data, args)
+            if (op.type == TokenType::TOKEN_PIPE_RIGHT) {
+                ASTNodePtr funcExpr = parseExpression(prec + 1);
+                
+                if (!funcExpr) {
+                    error("Expected function expression after |>");
+                    return nullptr;
+                }
+                
+                // Check if funcExpr is already a CallExpr
+                if (CallExpr* call = dynamic_cast<CallExpr*>(funcExpr.get())) {
+                    // Insert left as first argument: data |> func(a, b) → func(data, a, b)
+                    call->arguments.insert(call->arguments.begin(), left);
+                    left = funcExpr;
+                } else {
+                    // Create new CallExpr: data |> func → func(data)
+                    std::vector<ASTNodePtr> args;
+                    args.push_back(left);
+                    left = std::make_shared<CallExpr>(funcExpr, args, op.line, op.column);
+                }
+                continue;
+            }
+            
+            // Special case: Backward Pipeline (<|)
+            // Transforms: func <| data into func(data)
+            if (op.type == TokenType::TOKEN_PIPE_LEFT) {
+                // Right-associative: parse with same precedence for chaining
+                ASTNodePtr argExpr = parseExpression(prec);
+                
+                if (!argExpr) {
+                    error("Expected argument expression after <|");
+                    return nullptr;
+                }
+                
+                // Left should be the function, right is the argument
+                std::vector<ASTNodePtr> args;
+                args.push_back(argExpr);
+                left = std::make_shared<CallExpr>(left, args, op.line, op.column);
+                continue;
+            }
+            
             ASTNodePtr right = parseExpression(prec + 1);
             
             if (!right) {
