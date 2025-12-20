@@ -69,6 +69,22 @@ public:
 };
 
 /**
+ * Range expression node
+ * Represents: start..end (inclusive), start...end (exclusive)
+ */
+class RangeExpr : public ASTNode {
+public:
+    ASTNodePtr start;
+    ASTNodePtr end;
+    bool isExclusive;  // true for ..., false for ..
+    
+    RangeExpr(ASTNodePtr s, ASTNodePtr e, bool exclusive, int line = 0, int column = 0)
+        : ASTNode(NodeType::RANGE, line, column), start(s), end(e), isExclusive(exclusive) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Unary operation expression node
  * Represents: -x, !flag, ~bits, @ptr, #ref, $iter
  */
