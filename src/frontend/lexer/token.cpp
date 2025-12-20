@@ -208,6 +208,7 @@ std::string tokenTypeToString(TokenType type) {
         // Special keywords
         case TokenType::TOKEN_KW_IS: return "IS";
         case TokenType::TOKEN_KW_NULL: return "NULL";
+        case TokenType::TOKEN_KW_NIL: return "NIL";
         case TokenType::TOKEN_KW_TRUE: return "TRUE";
         case TokenType::TOKEN_KW_FALSE: return "FALSE";
         case TokenType::TOKEN_KW_ERR: return "ERR";

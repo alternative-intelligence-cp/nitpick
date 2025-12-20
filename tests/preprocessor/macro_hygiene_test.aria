@@ -1,0 +1,26 @@
+// Test macro hygiene - prevent variable collision
+// Based on gem3_06.txt research
+
+// Macro that generates absolute value function
+%macro GEN_ABS 1
+func abs_%1(int32:x) -> int32 {
+    int32:temp = x
+    if temp < 0 {
+        temp = -temp
+    }
+    result temp
+}
+%endmacro
+
+// Generate two absolute value functions
+// Each invocation should have unique temp_hN variables
+GEN_ABS(int8)
+GEN_ABS(int32)
+
+func main() -> int32 {
+    int32:a = abs_int8(-5)
+    int32:b = abs_int32(-10)
+    
+    // Both should work correctly (5 + 10 = 15)
+    result a + b
+}

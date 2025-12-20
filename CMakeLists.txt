@@ -110,6 +110,11 @@ include_directories(${CMAKE_SOURCE_DIR}/vendor/json/include)
 # Source files (will be populated as we implement each phase)
 # ============================================================================
 
+# Phase 0: Preprocessor (NASM-style macro system)
+set(PREPROCESSOR_SOURCES
+    src/frontend/preprocessor/preprocessor.cpp
+)
+
 # Phase 1: Lexer
 set(LEXER_SOURCES
     src/frontend/lexer/token.cpp
@@ -227,6 +232,7 @@ set(DOC_SOURCES
 
 # Combine all sources
 set(ARIA_SOURCES
+    ${PREPROCESSOR_SOURCES}
     ${LEXER_SOURCES}
     ${AST_SOURCES}
     ${PARSER_SOURCES}

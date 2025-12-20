@@ -1,0 +1,44 @@
+// Test: Basic pass/fail statements without ? operator
+// Phase: Session 8 - Result Types (Simplified)
+
+// Test 1: Simple pass statement
+func:get_value = int32() {
+    int32:x = 42;
+    pass(x);
+};
+
+// Test 2: Simple fail statement (returns error code)
+func:get_error = int32() {
+    int32:err = 1;
+    fail(err);
+};
+
+// Test 3: Conditional pass/fail
+func:divide = int32(int32:a, int32:b) {
+    int32:zero = 0;
+    if (b == zero) {
+        int32:one = 1;
+        int32:err = zero - one;  // -1 error code
+        fail(err);  // Division by zero error code
+    }
+    pass(a);  // Just return a for now
+};
+
+// Test 4: Main using pass/fail
+func:main = int32() {
+    int32:val = get_value();
+    int32:expected = 42;
+    
+    if (val == expected) {
+        int32:hundred = 100;
+        int32:two = 2;
+        int32:result = divide(hundred, two);
+        if (result == hundred) {
+            int32:success = 0;
+            pass(success);  // All tests passed
+        }
+    }
+    
+    int32:failure = 1;
+    fail(failure);  // Test failed
+};

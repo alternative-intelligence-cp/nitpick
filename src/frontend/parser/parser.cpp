@@ -364,8 +364,16 @@ ASTNodePtr Parser::parsePrimary() {
         return std::make_shared<LiteralExpr>(value, line, col);
     }
     
-    // Null literal
+    // Null literal (C FFI only)
     if (token.type == TokenType::TOKEN_KW_NULL) {
+        int line = token.line;
+        int col = token.column;
+        advance();
+        return std::make_shared<LiteralExpr>(std::monostate{}, line, col);
+    }
+    
+    // NIL literal (Aria native - absence of value)
+    if (token.type == TokenType::TOKEN_KW_NIL) {
         int line = token.line;
         int col = token.column;
         advance();

@@ -89,17 +89,17 @@ func:test_inference = result() {
 // };
 
 // Main test runner
-func:main = int32() {
+func:main = int64() {
     // Test explicit type parameters
     result:r1 = test_explicit();
     if (r1.err != NULL) {
-        ret 1;
+        pass(1);
     }
     
     // Test type inference
     result:r2 = test_inference();
     if (r2.err != NULL) {
-        ret 2;
+        pass(2);
     }
     
     // Test arrays (commented out - arrays not fully implemented)
@@ -108,7 +108,7 @@ func:main = int32() {
     //     ret 3;
     // }
     
-    ret 0;
+    pass(0);
 };
 
 // EXPECTED COMPILATION RESULT (current state):

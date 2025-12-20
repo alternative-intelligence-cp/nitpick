@@ -1,0 +1,117 @@
+// Comprehensive break and continue test
+// Tests various scenarios for loop control flow
+
+// Test 1: Simple break exits loop early
+func:test_simple_break = int32() {
+    int32:count = 0;
+    
+    while (count < 100) {
+        count += 1;
+        if (count == 10) {
+            break;  // Exit when count reaches 10
+        }
+    }
+    
+    pass(count);  // Returns 10
+};
+
+// Test 2: Continue skips loop iteration
+func:test_simple_continue = int32() {
+    int32:sum = 0;
+    int32:i = 0;
+    
+    while (i < 10) {
+        i += 1;
+        
+        if (i % 2 == 0) {
+            continue;  // Skip even numbers
+        }
+        
+        sum += i;  // Only adds odd numbers: 1+3+5+7+9 = 25
+    }
+    
+    pass(sum);  // Returns 25
+};
+
+// Test 3: Break in nested condition
+func:test_conditional_break = int32() {
+    int32:total = 0;
+    int32:i = 0;
+    
+    while (i < 20) {
+        i += 1;
+        total += i;
+        
+        if (total > 50) {
+            break;  // Stop when total exceeds 50
+        }
+    }
+    
+    pass(total);  // Returns 55 (1+2+...+10)
+};
+
+// Test 4: Multiple continues in same loop
+func:test_multiple_continues = int32() {
+    int32:count = 0;
+    int32:i = 0;
+    
+    while (i < 20) {
+        i += 1;
+        
+        if (i < 5) {
+            continue;  // Skip numbers less than 5
+        }
+        
+        if (i > 15) {
+            continue;  // Skip numbers greater than 15
+        }
+        
+        count += 1;  // Only counts 5-15 (11 numbers)
+    }
+    
+    pass(count);  // Returns 11
+};
+
+// Test 5: Break immediately at loop start
+func:test_immediate_break = int32() {
+    int32:executed = 0;
+    
+    while (1 == 1) {
+        break;  // Break immediately
+        executed = 1;  // This should never execute
+    }
+    
+    pass(executed);  // Returns 0
+};
+
+// Test 6: Continue at end of loop (no effect)
+func:test_continue_at_end = int32() {
+    int32:count = 0;
+    int32:i = 0;
+    
+    while (i < 5) {
+        i += 1;
+        count += 1;
+        continue;  // Continue at end has no effect
+    }
+    
+    pass(count);  // Returns 5
+};
+
+func:main = int32() {
+    int32:r1 = test_simple_break();       // Should be 10
+    int32:r2 = test_simple_continue();    // Should be 25
+    int32:r3 = test_conditional_break();  // Should be 55
+    int32:r4 = test_multiple_continues(); // Should be 11
+    int32:r5 = test_immediate_break();    // Should be 0
+    int32:r6 = test_continue_at_end();    // Should be 5
+    
+    // Return sum as validation: 10 + 25 + 55 + 11 + 0 + 5 = 106
+    int32:total = r1 + r2;
+    total += r3;
+    total += r4;
+    total += r5;
+    total += r6;
+    
+    pass(total);
+};
