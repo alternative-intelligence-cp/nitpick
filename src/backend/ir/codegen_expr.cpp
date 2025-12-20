@@ -19,7 +19,8 @@ using namespace aria::sema;
 
 ExprCodegen::ExprCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr,
                          llvm::Module* mod, std::map<std::string, llvm::Value*>& values)
-    : context(ctx), builder(bldr), module(mod), named_values(values), stmt_codegen(nullptr) {}
+    : context(ctx), builder(bldr), module(mod), named_values(values), 
+      stmt_codegen(nullptr), tbb_codegen(ctx, bldr) {}
 
 void ExprCodegen::setStmtCodegen(StmtCodegen* stmt_gen) {
     stmt_codegen = stmt_gen;
@@ -156,6 +157,19 @@ size_t ExprCodegen::getTypeSize(Type* type) {
     if (type_name == "str") return 8;  // Pointer size on 64-bit
     
     return 8;  // Default pointer size
+}
+
+// Helper: Check if type is TBB type
+bool ExprCodegen::isTBBType(Type* type) {
+    if (!type || !type->isPrimitive()) {
+        return false;
+    }
+    
+    PrimitiveType* prim_type = static_cast<PrimitiveType*>(type);
+    const std::string& type_name = prim_type->getName();
+    
+    return type_name == "tbb8" || type_name == "tbb16" || 
+           type_name == "tbb32" || type_name == "tbb64";
 }
 
 /**

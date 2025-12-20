@@ -1,0 +1,12 @@
+// Debug TBB overflow
+func:main = int64() {
+    tbb8:x = 127;
+    tbb8:sum = x + 1;  // Should be ERR (-128)
+    
+    // Check sum value
+    if (sum == -128) {
+        pass(42);  // Overflow detected correctly!
+    }
+    
+    pass(1);  // Overflow not detected
+};

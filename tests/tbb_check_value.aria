@@ -1,0 +1,20 @@
+// Check what 127 + 1 produces
+func:main = int64() {
+    tbb8:x = 127;
+    tbb8:one = 1;
+    tbb8:sum = x + one;
+    
+    // Check if it's -128 (ERR)
+    tbb8:neg128 = -128;
+    if (sum == neg128) {
+        pass(100);  // It IS ERR!
+    }
+    
+    // Check if it's -127 (overflow wraparound)
+    tbb8:neg127 = -127;
+    if (sum == neg127) {
+        pass(101);  // Wrapped to -127
+    }
+    
+    pass(1);  // Some other value
+};

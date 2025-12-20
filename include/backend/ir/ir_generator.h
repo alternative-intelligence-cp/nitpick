@@ -8,6 +8,7 @@
 #include <llvm/IR/Type.h>
 #include <llvm/IR/DIBuilder.h>
 #include <llvm/IR/DebugInfoMetadata.h>
+#include "backend/ir/tbb_codegen.h"
 #include <map>
 #include <string>
 #include <memory>
@@ -50,6 +51,9 @@ private:
     
     // Type mapping cache (Aria types -> LLVM types)
     std::map<std::string, llvm::Type*> type_map;
+    
+    // TBB codegen for safe arithmetic with overflow detection
+    TBBCodegen tbb_codegen;
     
     // Loop context stack for break/continue support
     struct LoopContext {

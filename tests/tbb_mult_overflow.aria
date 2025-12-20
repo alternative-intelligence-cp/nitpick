@@ -1,0 +1,25 @@
+// Systematically test overflow
+func:main = int64() {
+    tbb8:max = 127;
+    tbb8:one = 1;
+    tbb8:result = max + one;
+    
+    // If overflow IS working, result should be -128
+    // If overflow NOT working, result wraps around normally (platform dependent)
+    // On two's complement, 127 + 1 = -128 anyway!
+    
+    // So 127 + 1 in i8 = -128, which is same as ERR
+    // This means we can't tell if overflow detection is working with this test!
+    
+    // Let's try a different test: 64 * 2 = 128, which is overflow for tbb8
+    tbb8:x = 64;
+    tbb8:two = 2;
+    tbb8:prod = x * two;
+    
+    tbb8:err = -128;
+    if (prod == err) {
+        pass(42);  // Overflow detected!
+    }
+    
+    pass(1);  // No overflow
+};

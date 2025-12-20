@@ -111,12 +111,21 @@ What ACTUALLY works (verified Dec 19, 2025):
   • Monomorphizer: Creates specialized types with name mangling
   • IR generation: Proper struct allocation in LLVM (not i32!)
   • Test: tests/generic_struct_basic.aria compiles and runs
-✅ TBB types with type coercion (tbb8, tbb16, tbb32, tbb64) - Session 14
+✅ TBB types with type coercion (tbb8, tbb16, tbb32, tbb64) - Session 14 Part 1
   • Tokens: TOKEN_KW_TBB8/16/32/64 recognized
   • TypeSystem: PrimitiveType with isTBB=true flag
   • Type coercion: int64 → tbb8 allowed (runtime validates range)
   • Variable declarations: tbb8:x = 100 works
   • Test: tests/tbb_basic.aria compiles and runs
+✅ TBB overflow detection with sticky ERR - Session 14 Part 2
+  • TBBCodegen: Complete overflow detection for add/sub/mul/div
+  • ERR sentinel: -128 (tbb8), -32768 (tbb16), -2147483648 (tbb32), INT64_MIN (tbb64)
+  • Sticky propagation: ERR + x = ERR, x + ERR = ERR
+  • Range checking: All operations validate bounds before execution
+  • Integration: IRGenerator detects TBB types and uses TBBCodegen
+  • Type system: mapTypeFromName() correctly maps tbb8→i8, tbb16→i16, etc.
+  • Comparison operators: Handle type casting for mixed-width integers
+  • Tests: tests/tbb_overflow.aria, tests/tbb_sticky_error.aria, tests/tbb_division.aria ALL PASS
 
 What has ISSUES (needs fixing):
 ⚠️ Many tests broken by int64 literal default (were written for int32)
@@ -125,9 +134,6 @@ What has ISSUES (needs fixing):
 ⚠️ Generic tests fail due to int64 vs int32 type mismatches
 
 What DOES NOT work (critical for v0.1.0):
-❌ TBB ERR sentinel semantics - ERR literal parses but not enforced
-❌ TBB sticky error propagation - Arithmetic doesn't propagate ERR
-❌ TBB overflow detection - No runtime range checking yet
 ❌ Borrow checker - Not functional
 ❌ Balanced ternary - Not implemented
 ❌ Runtime assembler - Not implemented
