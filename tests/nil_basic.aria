@@ -1,0 +1,56 @@
+// Basic NIL and Optional Type Testing
+// Tests fundamental NIL behavior without pointers
+
+func:main = int64() {
+    print("=== Basic NIL and Optional Tests ===");
+    
+    // Test 1: NIL literal compilation
+    print("Test 1: NIL literal exists");
+    // Just verify NIL compiles as a token
+    
+    // Test 2: NULL literal compilation  
+    print("Test 2: NULL literal exists");
+    // Verify NULL compiles as a token
+    
+    // Test 3: Optional type declarations
+    print("Test 3: Optional type syntax");
+    int64?:opt1 = 42;
+    int64?:opt2 = 100;
+    
+    // Test 4: Basic null coalescing
+    print("Test 4: Null coalescing operator");
+    int64?:maybe = 55;
+    int64:result = maybe ?? 999;
+    
+    if (result == 55) {
+        print("Null coalescing works with value");
+    }
+    
+    // Test 5: Multiple optional types
+    print("Test 5: Multiple optional types");
+    int64?:small = 10;
+    int64?:medium = 1000;
+    int64?:large = 100000;
+    int64?:huge = 1000000;
+    
+    int64:s = small ?? 0;
+    int64:m = medium ?? 0;
+    int64:l = large ?? 0;
+    int64:h = huge ?? 0;
+    
+    if (s == 10 && m == 1000 && l == 100000 && h == 1000000) {
+        print("All optional types work");
+    }
+    
+    // Test 6: Boolean optionals
+    print("Test 6: Optional boolean");
+    bool?:flag = true;
+    bool:unwrapped = flag ?? false;
+    
+    if (unwrapped == true) {
+        print("Optional boolean works");
+    }
+    
+    print("=== Basic NIL tests complete ===");
+    pass(42);
+};

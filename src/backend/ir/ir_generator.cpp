@@ -243,11 +243,47 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
     return llvm_type;
 }
 
+// ============================================================================
+// Optional Type Helper Methods (Session 23 - Phase 2)
+// ============================================================================
+
+llvm::Value* IRGenerator::createOptionalSome(llvm::Value* value) {
+    // Create optional struct: { i1 true, T value }
+    llvm::Type* valueType = value->getType();
+    llvm::StructType* optionalType = llvm::StructType::get(context, {builder.getInt1Ty(), valueType});
+    
+    // Create the struct with hasValue=true and the actual value
+    llvm::Value* hasValue = builder.getInt1(true);
+    llvm::Value* optStruct = llvm::UndefValue::get(optionalType);
+    optStruct = builder.CreateInsertValue(optStruct, hasValue, {0}, "opt.has_value");
+    optStruct = builder.CreateInsertValue(optStruct, value, {1}, "opt.some");
+    
+    return optStruct;
+}
+
+llvm::Value* IRGenerator::createOptionalNone(llvm::Type* optionalType) {
+    // Create optional struct: { i1 false, T undef }
+    // optionalType should already be the full struct type { i1, T }
+    llvm::Value* hasValue = builder.getInt1(false);
+    llvm::Value* optStruct = llvm::UndefValue::get(optionalType);
+    optStruct = builder.CreateInsertValue(optStruct, hasValue, {0}, "opt.none");
+    
+    return optStruct;
+}
+
 // Helper function to map type name strings to LLVM types
 llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     // Check for void
     if (type_name == "void") {
         return builder.getVoidTy();
+    }
+    
+    // Check for optional types (e.g., "int64?", "string?")
+    // Optional types are represented as structs: { i1 hasValue, T value }
+    if (type_name.size() >= 2 && type_name.back() == '?') {
+        std::string wrapped_type = type_name.substr(0, type_name.size() - 1);
+        llvm::Type* valueType = mapTypeFromName(wrapped_type);
+        return llvm::StructType::get(context, {builder.getInt1Ty(), valueType});
     }
     
     // Check for pointer types (e.g., "int64@", "string@")
@@ -682,6 +718,9 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 }
             }
             
+            // Check if this is an optional type
+            bool isOptional = !actualTypeName.empty() && actualTypeName.back() == '?';
+            
             // DEBUG: Print the actual type name
             // llvm::errs() << "DEBUG: Variable '" << varDecl->varName << "' has type: '" << actualTypeName << "'\n";
             
@@ -705,24 +744,67 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             if (varDecl->initializer) {
                 llvm::Value* initVal = codegenExpression(varDecl->initializer.get());
                 if (initVal) {
-                    // Cast initializer to match variable type if necessary (Session 15: balanced ternary support)
-                    if (initVal->getType() != varType) {
-                        // For integer types, use trunc or sext/zext
-                        if (initVal->getType()->isIntegerTy() && varType->isIntegerTy()) {
-                            llvm::IntegerType* initIntTy = llvm::cast<llvm::IntegerType>(initVal->getType());
-                            llvm::IntegerType* varIntTy = llvm::cast<llvm::IntegerType>(varType);
+                    // For optional types, need to construct the { i1, T } struct
+                    if (isOptional) {
+                        // Check if initializer is NIL keyword
+                        bool isNil = false;
+                        if (varDecl->initializer->type == ASTNode::NodeType::IDENTIFIER) {
+                            IdentifierExpr* idExpr = static_cast<IdentifierExpr*>(varDecl->initializer.get());
+                            isNil = (idExpr->name == "NIL");
+                        }
+                        
+                        llvm::Value* optionalValue;
+                        if (isNil) {
+                            // Create { i1 false, T undef } for NIL
+                            optionalValue = createOptionalNone(varType);
+                        } else {
+                            // Create { i1 true, T value } for actual value
+                            // Need to extract wrapped type from optional struct type
+                            llvm::StructType* optStructTy = llvm::cast<llvm::StructType>(varType);
+                            llvm::Type* wrappedType = optStructTy->getElementType(1);
                             
-                            if (initIntTy->getBitWidth() > varIntTy->getBitWidth()) {
-                                // Truncate (narrowing conversion)
-                                initVal = builder.CreateTrunc(initVal, varType, "init_trunc");
-                            } else {
-                                // Sign extend (widening conversion for signed types)
-                                initVal = builder.CreateSExt(initVal, varType, "init_sext");
+                            // Cast initVal to wrapped type if necessary
+                            if (initVal->getType() != wrappedType) {
+                                if (initVal->getType()->isIntegerTy() && wrappedType->isIntegerTy()) {
+                                    llvm::IntegerType* initIntTy = llvm::cast<llvm::IntegerType>(initVal->getType());
+                                    llvm::IntegerType* wrapIntTy = llvm::cast<llvm::IntegerType>(wrappedType);
+                                    
+                                    if (initIntTy->getBitWidth() > wrapIntTy->getBitWidth()) {
+                                        initVal = builder.CreateTrunc(initVal, wrappedType, "init_trunc");
+                                    } else {
+                                        initVal = builder.CreateSExt(initVal, wrappedType, "init_sext");
+                                    }
+                                }
+                            }
+                            
+                            optionalValue = createOptionalSome(initVal);
+                        }
+                        
+                        builder.CreateStore(optionalValue, alloca);
+                    } else {
+                        // Non-optional type - cast initializer to match variable type if necessary
+                        if (initVal->getType() != varType) {
+                            // For integer types, use trunc or sext/zext
+                            if (initVal->getType()->isIntegerTy() && varType->isIntegerTy()) {
+                                llvm::IntegerType* initIntTy = llvm::cast<llvm::IntegerType>(initVal->getType());
+                                llvm::IntegerType* varIntTy = llvm::cast<llvm::IntegerType>(varType);
+                                
+                                if (initIntTy->getBitWidth() > varIntTy->getBitWidth()) {
+                                    // Truncate (narrowing conversion)
+                                    initVal = builder.CreateTrunc(initVal, varType, "init_trunc");
+                                } else {
+                                    // Sign extend (widening conversion for signed types)
+                                    initVal = builder.CreateSExt(initVal, varType, "init_sext");
+                                }
                             }
                         }
+                        builder.CreateStore(initVal, alloca);
                     }
-                    builder.CreateStore(initVal, alloca);
                 }
+            } else if (isOptional) {
+                // No initializer for optional type - default to NIL (None)
+                llvm::Value* noneValue = createOptionalNone(varType);
+                builder.CreateStore(noneValue, alloca);
             }
             
             // Add to symbol table
