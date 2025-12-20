@@ -695,6 +695,11 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
         return typeSystem->getErrorType();
     }
     
+    // For safe navigation (?.), the object can be null/NIL
+    // In that case, the result type should be the same as normal access
+    // but the IR generation will handle the null check
+    // TODO: When optional types are implemented, safe navigation should return optional<T>
+    
     // Handle struct member access
     if (objectType->getKind() == TypeKind::STRUCT) {
         StructType* structType = static_cast<StructType*>(objectType);
@@ -702,6 +707,8 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
         // Look up member in struct fields
         for (const auto& field : structType->getFields()) {
             if (field.name == expr->member) {
+                // For safe navigation, result type is the same for now
+                // TODO: Return optional<field.type> when optional types are implemented
                 return field.type;
             }
         }
@@ -710,6 +717,28 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
         addError("Struct '" + structType->getName() + "' has no member named '" + 
                 expr->member + "'", expr);
         return typeSystem->getErrorType();
+    }
+    
+    // For pointer types with safe navigation, check if it's a pointer to struct
+    if (objectType->getKind() == TypeKind::POINTER) {
+        PointerType* ptrType = static_cast<PointerType*>(objectType);
+        Type* pointeeType = ptrType->getPointeeType();
+        
+        if (pointeeType->getKind() == TypeKind::STRUCT) {
+            StructType* structType = static_cast<StructType*>(pointeeType);
+            
+            // Look up member in struct fields
+            for (const auto& field : structType->getFields()) {
+                if (field.name == expr->member) {
+                    return field.type;
+                }
+            }
+            
+            // Member not found
+            addError("Struct '" + structType->getName() + "' has no member named '" + 
+                    expr->member + "'", expr);
+            return typeSystem->getErrorType();
+        }
     }
     
     // TODO: Handle other types (obj, dyn, etc.)
