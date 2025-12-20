@@ -23,7 +23,8 @@
 - ✅ **Live documentation** - https://aria.docs.ai-liberation-platform.org/
 
 ### Language Features (Status) 🔧
-- ✅ **TBB Types (tbb8/16/32/64)** - Symmetric signed integers with overflow detection ⭐ NEW!
+- ✅ **TBB Types (tbb8/16/32/64)** - Symmetric signed integers with overflow detection
+- ✅ **Balanced Ternary/Nonary** - trit/tryte/nit/nyte with automatic range clamping ⭐ NEW!
 - ✅ **Generic Functions** - Monomorphization with type inference
 - ✅ **Generic Structs** - struct<T> declarations with specialization
 - ✅ **Module System** - use, mod, pub, extern keywords
@@ -71,7 +72,30 @@ tbb8:val = 10;
 tbb8:sum = err + val;   // sum = ERR (error propagates)
 tbb8:prod = val * err;  // prod = ERR (error propagates)
 ```
+**🔢 Balanced Ternary/Nonary Types - Symmetric Arithmetic**
+Balanced ternary uses digits {-1, 0, 1} instead of {0, 1, 2}, providing symmetric signed arithmetic:
+- **trit** - Single balanced ternary digit (-1, 0, 1) in 3 bits
+- **tryte** - 10 trits packed in 16 bits (range: -29524 to 29524)
+- **nit** - Single nonary digit (-4 to 4) in 4 bits
+- **nyte** - 5 nits packed in 16 bits (range: -29524 to 29524)
 
+**Automatic Range Clamping:**
+```aria
+func:main = int64() {
+    trit:x = 1;
+    trit:y = 1;
+    trit:sum = x + y;  // 1+1 clamped to 1 (max value)
+    
+    nit:a = 4;
+    nit:b = 2;
+    nit:product = a * b;  // 4*2=8 clamped to 4 (max value)
+    
+    pass(sum);  // Returns 1
+};
+```
+
+**Why 3 bits for trit?**
+The extra bit beyond the minimum 2 enables overflow detection before clamping. Without it, signed arithmetic wraps (1+1=2 becomes -2 in i2), breaking the clamping logic.
 **�🌊 Six-Stream I/O Model**
 Traditional programs use 3 streams (stdin, stdout, stderr). Aria programs use 6:
 - **stdin/stdout/stderr** - Standard I/O (compatible with existing systems)

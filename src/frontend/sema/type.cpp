@@ -523,8 +523,8 @@ TypeSystem::TypeSystem() {
     }
     
     // Balanced Ternary types (trit, tryte) and Nonary types (nit, nyte)
-    // trit: Single balanced ternary digit (-1, 0, 1) - 3 states in 2 bits
-    auto tritType = std::make_unique<PrimitiveType>("trit", 2, true, false, false);
+    // trit: Single balanced ternary digit (-1, 0, 1) - 3 states in 3 bits (extra bit for overflow detection)
+    auto tritType = std::make_unique<PrimitiveType>("trit", 3, true, false, false);
     primitiveCache["trit"] = tritType.get();
     types.push_back(std::move(tritType));
     
