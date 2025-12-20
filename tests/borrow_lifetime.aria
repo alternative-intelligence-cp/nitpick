@@ -1,0 +1,68 @@
+// Lifetime Tests - Appendage Theory: Depth(Host) <= Depth(Reference)
+
+func test_valid_lifetime() -> int32 {
+    // Test 1: Reference at same depth as host - should be OK
+    int32:outer = 42;
+    int32$:ref = $outer;
+    return 0;
+}
+
+func test_inner_host_invalid() -> int32 {
+    // Test 2: Reference cannot outlive host
+    // This should FAIL at compile time
+    int32$:ref;
+    
+    {
+        int32:inner = 100;
+        ref = $inner;   // ERROR: inner is at deeper scope, ref outlives it
+    }
+    
+    return 1;  // Should not reach here
+}
+
+func test_nested_scopes_valid() -> int32 {
+    // Test 3: Reference in inner scope to outer variable - should be OK
+    int32:outer = 50;
+    
+    {
+        int32$:ref = $outer;  // OK: outer is at equal or shallower scope
+    }
+    
+    return 0;
+}
+
+func test_assignment_while_borrowed() -> int32 {
+    // Test 4: Cannot assign to borrowed variable
+    // This should FAIL at compile time
+    int32:x = 10;
+    int32$:ref = $x;
+    x = 20;  // ERROR: Cannot assign to x while borrowed
+    
+    return 1;  // Should not reach here
+}
+
+func test_assignment_after_borrow_scope() -> int32 {
+    // Test 5: Can assign after borrow goes out of scope
+    int32:x = 10;
+    
+    {
+        int32$:ref = $x;
+    }  // ref goes out of scope
+    
+    x = 20;  // OK: no active borrows
+    return 0;
+}
+
+func main() -> int32 {
+    // Run tests that should succeed
+    int32:result1 = test_valid_lifetime();
+    int32:result3 = test_nested_scopes_valid();
+    int32:result5 = test_assignment_after_borrow_scope();
+    
+    // Tests 2 and 4 should fail at compile time
+    // Uncomment one at a time to test error reporting:
+    // int32:result2 = test_inner_host_invalid();
+    // int32:result4 = test_assignment_while_borrowed();
+    
+    return 0;
+}

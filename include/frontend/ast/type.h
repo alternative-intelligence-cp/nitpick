@@ -48,6 +48,20 @@ public:
 };
 
 /**
+ * Safe reference type annotation
+ * Represents: int64$, string$, obj$ (safe references for borrow checker)
+ */
+class SafeRefType : public TypeNode {
+public:
+    ASTNodePtr baseType;  // The type being referenced
+    
+    SafeRefType(ASTNodePtr base, int line = 0, int column = 0)
+        : TypeNode(NodeType::SAFE_REF_TYPE, line, column), baseType(base) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Optional type annotation
  * Represents: int64?, string?, obj? (types that can be NIL)
  */

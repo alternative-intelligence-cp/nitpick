@@ -17,6 +17,16 @@ std::string PointerType::toString() const {
     return oss.str();
 }
 
+std::string SafeRefType::toString() const {
+    std::ostringstream oss;
+    if (baseType) {
+        oss << baseType->toString() << "$";  // Aria uses $ for safe references
+    } else {
+        oss << "unknown$";
+    }
+    return oss.str();
+}
+
 std::string OptionalTypeNode::toString() const {
     std::ostringstream oss;
     if (wrappedType) {

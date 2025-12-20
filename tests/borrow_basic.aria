@@ -1,0 +1,65 @@
+// Basic Borrow Checker Tests - Rule: 1 mutable XOR N immutable
+
+func test_immutable_borrows() -> int32 {
+    // Test 1: Multiple immutable borrows are allowed
+    int32:x = 42;
+    int32$:ref1 = $x;   // First immutable borrow
+    int32$:ref2 = $x;   // Second immutable borrow - should be OK
+    int32$:ref3 = $x;   // Third immutable borrow - should be OK
+    
+    return 0;
+}
+
+func test_single_mutable_borrow() -> int32 {
+    // Test 2: Single mutable borrow is allowed
+    int32:y = 100;
+    int32$mut:mut_ref = $y;  // Mutable borrow - should be OK
+    
+    return 0;
+}
+
+func test_mutable_blocks_immutable() -> int32 {
+    // Test 3: Cannot create immutable borrow when mutable exists
+    // This should FAIL at compile time
+    int32:z = 50;
+    int32$mut:mut_ref = $z;   // Mutable borrow
+    int32$:imm_ref = $z;      // ERROR: Cannot borrow as immutable while mutably borrowed
+    
+    return 1;  // Should not reach here
+}
+
+func test_immutable_blocks_mutable() -> int32 {
+    // Test 4: Cannot create mutable borrow when immutable exists
+    // This should FAIL at compile time
+    int32:w = 75;
+    int32$:ref1 = $w;        // Immutable borrow
+    int32$mut:mut_ref = $w;  // ERROR: Cannot borrow as mutable while immutably borrowed
+    
+    return 1;  // Should not reach here
+}
+
+func test_scope_releases_borrows() -> int32 {
+    // Test 5: Borrows are released when they go out of scope
+    int32:a = 10;
+    
+    {
+        int32$:ref = $a;     // Borrow in inner scope
+    }  // ref goes out of scope here
+    
+    int32$mut:mut_ref = $a;  // Should be OK - no active borrows
+    return 0;
+}
+
+func main() -> int32 {
+    // Run tests that should succeed
+    int32:result1 = test_immutable_borrows();
+    int32:result2 = test_single_mutable_borrow();
+    int32:result5 = test_scope_releases_borrows();
+    
+    // Tests 3 and 4 should fail at compile time
+    // Uncomment one at a time to test error reporting:
+    // int32:result3 = test_mutable_blocks_immutable();
+    // int32:result4 = test_immutable_blocks_mutable();
+    
+    return 0;
+}
