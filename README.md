@@ -1,4 +1,4 @@
-# Aria Programming Language v0.0.6
+# Aria Programming Language v0.0.7-dev
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Commercial License Available](https://img.shields.io/badge/Commercial-License_Available-green.svg)](LICENSE.md)
@@ -11,25 +11,28 @@
 
 ## 🚀 Current Status (December 19, 2025)
 
-**⚠️ ACTIVE DEVELOPMENT - Phase 7 Complete, Feature Implementation In Progress**
+**⚠️ ACTIVE DEVELOPMENT - Core Features Implementation In Progress**
 
-### Compiler Toolchain (Partial) 🔧
+### Compiler Toolchain 🔧
 - ✅ **ariac** - Full-featured compiler with LLVM 20 backend
 - ✅ **aria-doc** - Beautiful HTML documentation generator  
 - ✅ **aria-pkg** - Package manager with registry
 - ✅ **aria-dap** - Debug Adapter Protocol server
-- ✅ **aria-lsp** - Language Server Protocol (optional)
-- ✅ **Comprehensive test suite** - All integration tests passing
+- ✅ **aria-lsp** - Language Server Protocol implementation
+- ✅ **Comprehensive test suite** - 48/64 tests passing
 - ✅ **Live documentation** - https://aria.docs.ai-liberation-platform.org/
 
 ### Language Features (Status) 🔧
+- ✅ **TBB Types (tbb8/16/32/64)** - Symmetric signed integers with overflow detection ⭐ NEW!
+- ✅ **Generic Functions** - Monomorphization with type inference
+- ✅ **Generic Structs** - struct<T> declarations with specialization
+- ✅ **Module System** - use, mod, pub, extern keywords
+- ✅ **Result Types** - pass/fail statements with ? operator
+- ✅ **Arrays** - Fixed and dynamic size with literals
 - 🔧 **Six-Stream I/O Model** - Specified, implementation in progress
-- 🔧 **Type-Bounded Behaviors (TBB)** - Specified, parser support needed
 - 🔧 **Async/Await** - Specified, implementation in progress
 - 🔧 **Memory Safety** - Specified, borrow checker in development
-- ❌ **Generics** - Specified, parser support needed
 - 🔧 **Const Evaluation** - Specified, implementation in progress
-- ❌ **Module System** - Specified, parser support needed (use/mod/pub)
 
 ---
 
@@ -39,7 +42,37 @@ Aria is a modern systems programming language that reimagines how we think about
 
 ### Key Innovations
 
-**🌊 Six-Stream I/O Model**
+**� TBB Types - Symmetric Signed Integers with Error Sentinels**
+Twisted Balanced Binary (TBB) types provide symmetric signed ranges with automatic overflow detection:
+- **tbb8** - Range: -127 to +127, ERR sentinel at -128
+- **tbb16** - Range: -32767 to +32767, ERR sentinel at -32768  
+- **tbb32** - Range: -2147483647 to +2147483647, ERR sentinel at -2147483648
+- **tbb64** - Symmetric 64-bit range with ERR sentinel
+
+**Automatic Overflow Detection:**
+```aria
+func:main = int64() {
+    tbb8:x = 120;
+    tbb8:y = 10;
+    tbb8:result = x + y;  // Overflow! result = ERR (-128)
+    
+    tbb8:err = -128;
+    if (result == err) {
+        print("Overflow detected!");  // This prints
+    }
+    pass(0);
+};
+```
+
+**Sticky Error Propagation:**
+```aria
+tbb8:err = ERR;
+tbb8:val = 10;
+tbb8:sum = err + val;   // sum = ERR (error propagates)
+tbb8:prod = val * err;  // prod = ERR (error propagates)
+```
+
+**�🌊 Six-Stream I/O Model**
 Traditional programs use 3 streams (stdin, stdout, stderr). Aria programs use 6:
 - **stdin/stdout/stderr** - Standard I/O (compatible with existing systems)
 - **stddbg** - Debug output separate from stderr
@@ -65,8 +98,30 @@ Borrow checker ensures memory safety at compile time:
 
 ### Hello World
 ```aria
-func:main = int8() {
+func:main = int64() {
     print("Hello, World!");
+    pass(0);
+};
+```
+
+### TBB Types with Overflow Detection
+```aria
+func:main = int64() {
+    // TBB arithmetic with automatic overflow detection
+    tbb8:a = 64;
+    tbb8:b = 2;
+    tbb8:result = a * b;  // 128 exceeds tbb8 max (127), returns ERR
+    
+    tbb8:err = -128;  // ERR sentinel
+    if (result == err) {
+        print("Overflow detected: 64 * 2 exceeds tbb8 range!");
+        pass(42);  // Error code
+    }
+    
+    // Sticky error propagation
+    tbb8:x = 10;
+    tbb8:propagated = result + x;  // ERR + 10 = ERR
+    
     pass(0);
 };
 ```
