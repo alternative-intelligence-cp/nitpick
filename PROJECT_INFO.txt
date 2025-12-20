@@ -105,6 +105,12 @@ What ACTUALLY works (verified Dec 19, 2025):
 ✅ Array literals [1, 2, 3]
 ✅ Array indexing arr[i]
 ✅ Module system (use, mod, pub, extern)
+✅ Generic structs (struct<T>:Box { *T:value; }) - Session 13
+  • Parser: struct<T> declarations with generic type parameters
+  • Type checker: Validates generic instantiations (Box<int64>)
+  • Monomorphizer: Creates specialized types with name mangling
+  • IR generation: Proper struct allocation in LLVM (not i32!)
+  • Test: tests/generic_struct_basic.aria compiles and runs
 
 What has ISSUES (needs fixing):
 ⚠️ Many tests broken by int64 literal default (were written for int32)
@@ -113,7 +119,6 @@ What has ISSUES (needs fixing):
 ⚠️ Generic tests fail due to int64 vs int32 type mismatches
 
 What DOES NOT work (critical for v0.1.0):
-❌ Generic structs - struct<T>:Container { *T:value; }
 ❌ Borrow checker - Not functional
 ❌ Balanced ternary - Not implemented
 ❌ Runtime assembler - Not implemented
