@@ -1,0 +1,36 @@
+// TBB Types - Type Coercion Test
+// Tests that integer literals can be assigned to TBB types
+
+func:main = int64() {
+    // TBB8: Range [-127, +127], ERR = -128
+    // With type coercion, these should now work!
+    tbb8:a = 100;
+    tbb8:b = 50;
+    tbb8:c = -127;       // Maximum negative (symmetric!)
+    tbb8:d = 127;        // Maximum positive
+    
+    // TBB16: Range [-32767, +32767], ERR = -32768
+    tbb16:medium = 30000;
+    tbb16:neg_medium = -30000;
+    
+    // TBB32: Symmetric 32-bit range
+    tbb32:large = 2000000000;
+    tbb32:neg_large = -2000000000;
+    
+    // TBB64: Symmetric 64-bit range
+    tbb64:huge = 9000000000000;
+    tbb64:neg_huge = -9000000000000;
+    
+    // Basic arithmetic expressions
+    tbb8:sum = 10 + 20;
+    tbb8:diff = 50 - 20;
+    tbb8:prod = 10 * 5;
+    tbb8:quot = 100 / 2;
+    
+    // Test symmetric range advantage
+    tbb8:sym_val = -127;
+    tbb8:negated = -sym_val;   // Should be 127
+    
+    // Success if we got here - type coercion works!
+    pass(42);
+};

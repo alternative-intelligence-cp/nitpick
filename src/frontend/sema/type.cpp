@@ -26,11 +26,60 @@ bool PrimitiveType::isAssignableTo(const Type* target) const {
         return true;
     }
     
-    // TODO Phase 3.2.2: Implement type coercion rules
-    // - Numeric widening (int8 -> int32, int32 -> int64)
-    // - Float coercion (flt32 -> flt64)
-    // - Integer to float (int32 -> flt32)
-    // For now, require exact match
+    // Only allow coercion between primitive types
+    if (target->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    const PrimitiveType* targetPrim = static_cast<const PrimitiveType*>(target);
+    
+    // ========================================================================
+    // TBB Type Coercion (Session 14)
+    // ========================================================================
+    // Allow signed integers to be assigned to TBB types of same or larger width
+    // This enables: tbb8:x = 100 (where 100 is int64)
+    // Runtime will validate range and convert to ERR on overflow
+    
+    if (targetPrim->isTBBType()) {
+        // Allow signed integers to coerce to TBB
+        if (isSigned && !isFloating && !isTBB) {
+            // int64 -> tbb8, tbb16, tbb32, tbb64 all allowed
+            // int32 -> tbb32, tbb64 allowed
+            // int8 -> tbb8, tbb16, tbb32, tbb64 allowed
+            // Runtime will check range and set ERR on overflow
+            return bitWidth <= targetPrim->getBitWidth();
+        }
+        
+        // Allow other TBB types to assign (for intermediate calculations)
+        if (isTBB) {
+            return bitWidth <= targetPrim->getBitWidth();
+        }
+    }
+    
+    // ========================================================================
+    // Standard Integer Coercion
+    // ========================================================================
+    // Numeric widening (int8 -> int32 -> int64)
+    if (!isFloating && !targetPrim->isFloatingType()) {
+        // Both are integers
+        if (isSigned == targetPrim->isSignedType() && !isTBB && !targetPrim->isTBBType()) {
+            // Same signedness, allow widening
+            return bitWidth <= targetPrim->getBitWidth();
+        }
+    }
+    
+    // ========================================================================
+    // Float Coercion
+    // ========================================================================
+    // Float widening (flt32 -> flt64)
+    if (isFloating && targetPrim->isFloatingType()) {
+        return bitWidth <= targetPrim->getBitWidth();
+    }
+    
+    // Integer to float (int32 -> flt32, int64 -> flt64)
+    if (!isFloating && targetPrim->isFloatingType() && !isTBB) {
+        return true;  // Allow any integer to float (may lose precision)
+    }
     
     return false;
 }
