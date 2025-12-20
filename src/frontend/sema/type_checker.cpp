@@ -2,6 +2,7 @@
 #include "frontend/sema/generic_resolver.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
+#include "frontend/ast/type.h"  // For ArrayType, SimpleType, etc.
 #include <sstream>
 #include <variant>
 
@@ -81,6 +82,9 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         
         case ASTNode::NodeType::OBJECT_LITERAL:
             return inferObjectLiteral(static_cast<ObjectLiteralExpr*>(expr));
+        
+        case ASTNode::NodeType::ARRAY_LITERAL:
+            return inferArrayLiteral(static_cast<ArrayLiteralExpr*>(expr));
         
         default:
             addError("Type inference not implemented for node type: " + 
@@ -589,10 +593,16 @@ Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
         return typeSystem->getErrorType();
     }
     
-    // TODO: Check that arrayType is array type, return element type
-    // For now, return UnknownType
-    addError("Array indexing type checking not yet fully implemented", expr);
-    return typeSystem->getUnknownType();
+    // Arrays are represented as pointer types
+    // Extract element type from pointer
+    if (arrayType->getKind() == TypeKind::POINTER) {
+        PointerType* ptrType = static_cast<PointerType*>(arrayType);
+        return ptrType->getPointeeType();
+    }
+    
+    // Not an array/pointer type
+    addError("Cannot index non-array type '" + arrayType->toString() + "'", expr);
+    return typeSystem->getErrorType();
 }
 
 // ============================================================================
@@ -723,6 +733,42 @@ Type* TypeChecker::inferObjectLiteral(ObjectLiteralExpr* expr) {
     }
     
     return objType;
+}
+
+// ============================================================================
+// Array Literal Type Inference
+// ============================================================================
+
+Type* TypeChecker::inferArrayLiteral(ArrayLiteralExpr* expr) {
+    // Empty array literal: type cannot be inferred without context
+    if (expr->elements.empty()) {
+        addError("Cannot infer type of empty array literal", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // Infer type from first element
+    Type* elementType = inferType(expr->elements[0].get());
+    if (elementType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Check all elements have compatible types
+    for (size_t i = 1; i < expr->elements.size(); ++i) {
+        Type* elemType = inferType(expr->elements[i].get());
+        if (elemType->getKind() == TypeKind::ERROR) {
+            return typeSystem->getErrorType();
+        }
+        
+        if (!elemType->equals(elementType) && !canCoerce(elemType, elementType)) {
+            addError("Array element " + std::to_string(i) + " has incompatible type: " +
+                    "expected '" + elementType->toString() + "', got '" + elemType->toString() + "'", 
+                    expr->elements[i].get());
+            return typeSystem->getErrorType();
+        }
+    }
+    
+    // Return pointer to element type (arrays decay to pointers)
+    return typeSystem->getPointerType(elementType);
 }
 
 // ============================================================================
@@ -953,20 +999,98 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
 }
 
 // ============================================================================
+// Type Resolution from AST Nodes
+// ============================================================================
+
+Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
+    if (!typeNode) {
+        return typeSystem->getErrorType();
+    }
+    
+    switch (typeNode->type) {
+        case ASTNode::NodeType::TYPE_ANNOTATION: {
+            // Simple type: int32, string, etc.
+            aria::SimpleType* simpleType = static_cast<aria::SimpleType*>(typeNode);
+            
+            // Try struct first
+            Type* type = typeSystem->getStructType(simpleType->typeName);
+            if (type) {
+                return type;
+            }
+            
+            // Try primitive type
+            type = typeSystem->getPrimitiveType(simpleType->typeName);
+            if (type && type->getKind() != TypeKind::ERROR) {
+                return type;
+            }
+            
+            addError("Unknown type: '" + simpleType->typeName + "'", typeNode);
+            return typeSystem->getErrorType();
+        }
+        
+        case ASTNode::NodeType::ARRAY_TYPE: {
+            // Array type: int32[], int32[10], etc.
+            aria::ArrayType* arrayType = static_cast<aria::ArrayType*>(typeNode);
+            
+            // Resolve element type
+            Type* elementType = resolveTypeNode(arrayType->elementType.get());
+            if (elementType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            // For now, return the element type with a note that it's an array
+            // TODO: Create proper ArrayType in TypeSystem
+            // Temporary: Use pointer type to represent arrays (common in many languages)
+            return typeSystem->getPointerType(elementType);
+        }
+        
+        case ASTNode::NodeType::POINTER_TYPE: {
+            // Pointer type: int32@, string@, etc.
+            aria::PointerType* ptrType = static_cast<aria::PointerType*>(typeNode);
+            
+            // Resolve base type
+            Type* baseType = resolveTypeNode(ptrType->baseType.get());
+            if (baseType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            return typeSystem->getPointerType(baseType);
+        }
+        
+        default:
+            addError("Unsupported type node in type resolution", typeNode);
+            return typeSystem->getErrorType();
+    }
+}
+
+// ============================================================================
 // Variable Declaration Type Checking
 // ============================================================================
 
 void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
-    // Get declared type (try struct first to avoid auto-creating primitive types)
-    Type* declaredType = typeSystem->getStructType(stmt->typeName);
+    Type* declaredType = nullptr;
     
-    if (!declaredType) {
-        // Try primitive type
-        declaredType = typeSystem->getPrimitiveType(stmt->typeName);
-        
+    // Handle new typeNode or legacy typeName
+    if (stmt->typeNode) {
+        // Resolve type from AST node (supports arrays, pointers, etc.)
+        declaredType = resolveTypeNode(stmt->typeNode.get());
         if (!declaredType || declaredType->getKind() == TypeKind::ERROR) {
-            addError("Unknown type: '" + stmt->typeName + "'", stmt);
+            addError("Cannot resolve type in variable declaration", stmt);
             return;
+        }
+    } else {
+        // Legacy path: Get declared type from typeName string
+        // Try struct first to avoid auto-creating primitive types
+        declaredType = typeSystem->getStructType(stmt->typeName);
+        
+        if (!declaredType) {
+            // Try primitive type
+            declaredType = typeSystem->getPrimitiveType(stmt->typeName);
+            
+            if (!declaredType || declaredType->getKind() == TypeKind::ERROR) {
+                addError("Unknown type: '" + stmt->typeName + "'", stmt);
+                return;
+            }
         }
     }
     

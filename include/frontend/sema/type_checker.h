@@ -180,6 +180,17 @@ private:
      */
     Type* inferObjectLiteral(ObjectLiteralExpr* expr);
     
+    /**
+     * Infer the type of an array literal expression
+     * 
+     * Rules:
+     * - Empty array: cannot infer type (error)
+     * - Non-empty: infer from first element
+     * - All elements must have compatible types
+     * - Returns pointer to element type (arrays decay to pointers)
+     */
+    Type* inferArrayLiteral(ArrayLiteralExpr* expr);
+    
     // ========================================================================
     // Type Compatibility and Coercion
     // ========================================================================
@@ -435,6 +446,25 @@ public:
      * Validates type safety for all statement constructs.
      */
     void checkStatement(ASTNode* stmt);
+    
+    // ========================================================================
+    // Type Resolution
+    // ========================================================================
+    
+    /**
+     * Resolve a Type from an AST type node
+     * 
+     * Rules:
+     * - TYPE_ANNOTATION: Simple type (int32, string, etc.)
+     * - ARRAY_TYPE: Array type (int32[], int32[10], etc.)
+     * - POINTER_TYPE: Pointer type (int32@, string@, etc.)
+     * - Returns ERROR type if resolution fails
+     */
+    Type* resolveTypeNode(ASTNode* typeNode);
+    
+    // ========================================================================
+    // Statement Type Checking
+    // ========================================================================
     
     /**
      * Check variable declaration statement
