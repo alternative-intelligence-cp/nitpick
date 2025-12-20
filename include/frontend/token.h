@@ -249,6 +249,7 @@ enum class TokenType {
     TOKEN_FLOAT,        // Float literal
     TOKEN_STRING,       // String literal "..."
     TOKEN_CHAR,         // Character literal '...'
+    TOKEN_TERNARY,      // Ternary literal 0t[01T]+ (balanced ternary)
     
     // ========================================================================
     // Identifiers and Special Tokens

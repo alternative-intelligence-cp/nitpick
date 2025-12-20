@@ -299,6 +299,17 @@ ASTNodePtr Parser::parsePrimary() {
         return std::make_shared<LiteralExpr>(value, line, col);
     }
     
+    // Ternary literal (balanced ternary)
+    if (token.type == TokenType::TOKEN_TERNARY) {
+        int line = token.line;
+        int col = token.column;
+        advance();
+        // The lexer has already converted the ternary string to int64_t
+        // and stored it in the token's value.int_value
+        int64_t value = token.value.int_value;
+        return std::make_shared<LiteralExpr>(value, line, col);
+    }
+    
     // Float literal
     if (token.type == TokenType::TOKEN_FLOAT) {
         std::string lexeme = token.lexeme;  // Save before advance()
