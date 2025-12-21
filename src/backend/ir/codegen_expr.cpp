@@ -831,6 +831,86 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return builder.CreateCall(printf_func, printf_args, "print_call");
     }
     
+    // ====================================================================
+    // BUILTIN FUNCTIONS: 6-Stream I/O System
+    // ====================================================================
+    
+    // Helper lambda to create stream write functions
+    auto create_stream_write = [&](const std::string& func_name, const std::string& stream_func) -> llvm::Value* {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error(func_name + " requires exactly one argument");
+        }
+        
+        llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!arg) {
+            throw std::runtime_error("Failed to generate code for " + func_name + " argument");
+        }
+        
+        // Ensure argument is a string
+        if (!arg->getType()->isPointerTy()) {
+            throw std::runtime_error(func_name + " requires a string argument");
+        }
+        
+        // Declare the C runtime function if not already declared
+        // Signature: int64_t aria_xxx_write(const char* str)
+        llvm::Function* stream_func_ptr = module->getFunction(stream_func);
+        if (!stream_func_ptr) {
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt64Ty(),  // returns int64_t
+                {llvm::PointerType::get(context, 0)},  // takes const char*
+                false  // not vararg
+            );
+            stream_func_ptr = llvm::Function::Create(
+                func_type,
+                llvm::Function::ExternalLinkage,
+                stream_func,
+                module
+            );
+        }
+        
+        // Call the stream function
+        return builder.CreateCall(stream_func_ptr, {arg}, func_name + "_call");
+    };
+    
+    // stdout_write(string) -> int64
+    if (callee_ident->name == "stdout_write") {
+        return create_stream_write("stdout_write", "aria_stdout_write");
+    }
+    
+    // stderr_write(string) -> int64
+    if (callee_ident->name == "stderr_write") {
+        return create_stream_write("stderr_write", "aria_stderr_write");
+    }
+    
+    // stddbg_write(string) -> int64
+    if (callee_ident->name == "stddbg_write") {
+        return create_stream_write("stddbg_write", "aria_stddbg_write");
+    }
+    
+    // stdin_read_line() -> string
+    if (callee_ident->name == "stdin_read_line") {
+        if (expr->arguments.size() != 0) {
+            throw std::runtime_error("stdin_read_line() takes no arguments");
+        }
+        
+        llvm::Function* read_func = module->getFunction("aria_stdin_read_line");
+        if (!read_func) {
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(context, 0),  // returns char*
+                {},  // no arguments
+                false
+            );
+            read_func = llvm::Function::Create(
+                func_type,
+                llvm::Function::ExternalLinkage,
+                "aria_stdin_read_line",
+                module
+            );
+        }
+        
+        return builder.CreateCall(read_func, {}, "stdin_read_call");
+    }
+    
     // Check if this is a direct function call or a closure call
     // Try to find a direct function first
     llvm::Function* direct_func = module->getFunction(callee_ident->name);

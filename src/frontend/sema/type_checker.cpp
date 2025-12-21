@@ -572,6 +572,56 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             // print() returns i32 (printf's return value)
             return typeSystem->getPrimitiveType("int32");
         }
+        
+        // Builtin: stdout_write(string) -> int64
+        if (idExpr->name == "stdout_write") {
+            if (expr->arguments.size() != 1) {
+                addError("stdout_write() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Should be string type
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // Builtin: stderr_write(string) -> int64
+        if (idExpr->name == "stderr_write") {
+            if (expr->arguments.size() != 1) {
+                addError("stderr_write() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // Builtin: stddbg_write(string) -> int64
+        if (idExpr->name == "stddbg_write") {
+            if (expr->arguments.size() != 1) {
+                addError("stddbg_write() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // Builtin: stdin_read_line() -> string
+        if (idExpr->name == "stdin_read_line") {
+            if (expr->arguments.size() != 0) {
+                addError("stdin_read_line() takes no arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            // Returns string (char*)
+            return typeSystem->getPrimitiveType("string");
+        }
     }
     
     // Infer callee type (should be function type or callable object)
