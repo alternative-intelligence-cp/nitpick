@@ -1,0 +1,35 @@
+// Test balanced ternary types (trit/tryte)
+// Part of Phase 3.3: Balanced Ternary/Nonary Types
+
+func:main = int32() {
+    // Test trit - single balanced ternary digit (-1, 0, 1)
+    trit:neg = -1;  // T in balanced ternary
+    trit:zero = 0;  // 0
+    trit:pos = 1;   // 1
+    
+    // Test tryte - 10 trits packed in 16 bits
+    tryte:small = 5;
+    tryte:medium = 100;
+    
+    // Test basic arithmetic on trits
+    trit:sum = pos + pos;  // 1 + 1 (may overflow/wrap)
+    
+    // Test comparisons
+    bool:eq = (zero == 0);
+    bool:lt = (neg < pos);
+    bool:gt = (pos > neg);
+    
+    // Verify basic operations work
+    if (!eq) {
+        int32:one = 1;
+        pass(one);
+    }
+    
+    if (!lt) {
+        int32:one = 1;
+        pass(one);
+    }
+
+    int32:ret = 0;
+    pass(ret);
+};

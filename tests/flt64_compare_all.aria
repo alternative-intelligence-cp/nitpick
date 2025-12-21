@@ -1,0 +1,54 @@
+// Test all float comparison operators
+// Verifies that fcmp is used instead of icmp
+
+func:main = int32() {
+    flt64:a = 1.0;
+    flt64:b = 2.0;
+    flt64:c = 1.0;
+    
+    // Test !=
+    if (a != b) {
+        // Should be true (1.0 != 2.0)
+    } else {
+        int32:tmp1 = 1; pass(tmp1);  // Fail
+    }
+    
+    // Test ==
+    if (a == c) {
+        // Should be true (1.0 == 1.0)
+    } else {
+        int32:tmp2 = 2; pass(tmp2);  // Fail
+    }
+    
+    // Test <
+    if (a < b) {
+        // Should be true (1.0 < 2.0)
+    } else {
+        int32:tmp3 = 3; pass(tmp3);  // Fail
+    }
+    
+    // Test <=
+    if (a <= c) {
+        // Should be true (1.0 <= 1.0)
+    } else {
+        int32:tmp4 = 4; pass(tmp4);  // Fail
+    }
+    
+    // Test >
+    if (b > a) {
+        // Should be true (2.0 > 1.0)
+    } else {
+        int32:tmp5 = 5; pass(tmp5);  // Fail
+    }
+    
+    // Test >=
+    if (c >= a) {
+        // Should be true (1.0 >= 1.0)
+    } else {
+        int32:tmp6 = 6; pass(tmp6);  // Fail
+    }
+    
+    // All tests passed
+    int32:tmp0 = 0;
+    pass(tmp0);
+};

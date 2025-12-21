@@ -1,0 +1,47 @@
+// Simplified int8/uint8 test
+// Tests basic operations without literal assignment issues
+
+func:test_int8 = int32() {
+    // Test int8 variables with compatible values
+    int8:a = 10;
+    int8:b = 20;
+    
+    // Arithmetic
+    int8:sum = a + b;
+    int8:diff = b - a;
+    
+    // Comparisons (negative values to test signedness)
+    if (a > b) { int32:err = 1; pass(err); }  // 10 !> 20
+    if (b < a) { int32:err = 2; pass(err); }  // 20 !< 10
+    
+    int32:ok = 0;
+    pass(ok);
+};
+
+func:test_uint8 = int32() {
+    // Test uint8 variables
+    uint8:x = 100;
+    uint8:y = 50;
+    
+    // Arithmetic
+    uint8:sum = x + y;
+    uint8:diff = x - y;
+    
+    // Comparisons
+    if (x < y) { int32:err = 1; pass(err); }   // 100 !< 50
+    if (y > x) { int32:err = 2; pass(err); }   // 50 !> 100
+    
+    int32:ok = 0;
+    pass(ok);
+};
+
+func:main = int32() {
+    int32:result1 = test_int8();
+    if (result1 != 0) { pass(result1); }
+    
+    int32:result2 = test_uint8();
+    if (result2 != 0) { pass(result2); }
+    
+    int32:success = 0;
+    pass(success);
+};

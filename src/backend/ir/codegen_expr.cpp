@@ -5,12 +5,15 @@
 #include "frontend/ast/ast_node.h"
 #include "frontend/sema/type.h"
 #include "frontend/token.h"
+#include "semantic/literal_converter.h"
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Intrinsics.h>  // Phase 4.5.3: Coroutine intrinsics for await
+#include <llvm/Support/raw_ostream.h>
 #include <stdexcept>
+#include <iostream>
 
 using namespace aria;
 using namespace aria::frontend;
@@ -183,12 +186,70 @@ bool ExprCodegen::isTBBType(Type* type) {
 /**
  * Generate code for literal expressions
  * Handles: integers, floats, strings, booleans, null
+ * Phase 3.2.5: High-precision literals use String-as-Truth architecture
  */
 llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
     if (!expr) {
         throw std::runtime_error("Null literal expression");
     }
     
+    std::cerr << "[DEBUG] codegenLiteral called, hasRawValue=" << expr->hasRawValue() << std::endl;
+    
+    // Phase 3.2.5: Check for high-precision literal with raw string value
+    // For now, we'll infer the type from the variant - in future we could pass target type as parameter
+    if (expr->hasRawValue()) {
+        const std::string& raw = expr->getRawValue();
+        
+        // Detect if this is a float or int from the raw string
+        bool is_float = (raw.find('.') != std::string::npos || 
+                        raw.find('e') != std::string::npos || 
+                        raw.find('E') != std::string::npos ||
+                        raw == "inf" || raw == "-inf" || raw == "nan");
+        
+        if (is_float) {
+            // High-precision float literal - for now use FLT128 if many digits, else FLT64
+            aria::semantic::FloatPrecision precision;
+            if (raw.length() > 17) {  // More digits than float64 can represent
+                precision = aria::semantic::FloatPrecision::FLT128;
+            } else {
+                precision = aria::semantic::FloatPrecision::FLT64;
+            }
+            
+            // Convert using LiteralConverter
+            auto apfloat_opt = aria::semantic::LiteralConverter::convertFloatLiteral(raw, precision);
+            if (apfloat_opt) {
+                llvm::Value* result = llvm::ConstantFP::get(context, *apfloat_opt);
+                std::cerr << "[DEBUG] codegenLiteral: high-precision float '" << raw << "' -> type: ";
+                result->getType()->print(llvm::errs());
+                std::cerr << std::endl;
+                return result;
+            }
+            // Fall through to variant handling on conversion failure
+        } else {
+            // High-precision integer literal - use INT128 if large, else INT64
+            unsigned bit_width = 64;
+            bool is_signed = true;
+            
+            // Check if value needs more than 64 bits
+            // For now, simple heuristic: if more than 19 digits, use 128 bits
+            if (raw.length() > 19) {
+                bit_width = 128;
+            }
+            
+            // Convert using LiteralConverter
+            auto apint_opt = aria::semantic::LiteralConverter::convertIntLiteral(raw, bit_width, is_signed);
+            if (apint_opt) {
+                llvm::Value* result = llvm::ConstantInt::get(context, *apint_opt);
+                std::cerr << "[DEBUG] codegenLiteral: high-precision int '" << raw << "' -> type: ";
+                result->getType()->print(llvm::errs());
+                std::cerr << std::endl;
+                return result;
+            }
+            // Fall through to variant handling on conversion failure
+        }
+    }
+    
+    // Standard precision: Use existing variant-based logic
     // Integer literal
     if (std::holds_alternative<int64_t>(expr->value)) {
         int64_t val = std::get<int64_t>(expr->value);
@@ -205,7 +266,11 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
     // Float literal
     if (std::holds_alternative<double>(expr->value)) {
         double val = std::get<double>(expr->value);
-        return llvm::ConstantFP::get(context, llvm::APFloat(val));
+        llvm::Value* result = llvm::ConstantFP::get(context, llvm::APFloat(val));
+        std::cerr << "[DEBUG] codegenLiteral: float " << val << " -> type: ";
+        result->getType()->print(llvm::errs());
+        std::cerr << std::endl;
+        return result;
     }
     
     // String literal
@@ -268,12 +333,401 @@ llvm::Value* ExprCodegen::codegenIdentifier(IdentifierExpr* expr) {
         llvm::Type* allocated_type = alloca->getAllocatedType();
         
         // Create a load instruction
-        return builder.CreateLoad(allocated_type, var_ptr, expr->name);
+        llvm::Value* loaded = builder.CreateLoad(allocated_type, var_ptr, expr->name);
+        std::cerr << "[DEBUG] codegenIdentifier: " << expr->name << " -> type: ";
+        loaded->getType()->print(llvm::errs());
+        std::cerr << std::endl;
+        return loaded;
     }
     
     // If it's not an alloca, return the value directly
     // (could be a function parameter or constant)
     return var_ptr;
+}
+
+/**
+ * Generate code for template literals with interpolation
+ * Handles: `text &{expr} more text`
+ * 
+ * Strategy:
+ * 1. Convert each string part to LLVM string constant
+ * 2. Evaluate each interpolated expression
+ * 3. Convert non-string expressions to strings (using sprintf for numbers)
+ * 4. Concatenate all parts using aria_string_concat runtime function
+ */
+llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
+    if (!expr) {
+        throw std::runtime_error("Null template literal expression");
+    }
+    
+    // Helper function: Create an AriaString struct from a string constant
+    auto createAriaString = [this](const std::string& str) -> llvm::Value* {
+        // Create string constant
+        llvm::Constant* strConstant = llvm::ConstantDataArray::getString(context, str, true);
+        llvm::GlobalVariable* gv = new llvm::GlobalVariable(
+            *module,
+            strConstant->getType(),
+            true,
+            llvm::GlobalValue::PrivateLinkage,
+            strConstant,
+            ".str"
+        );
+        llvm::Value* strPtr = builder.CreatePointerCast(gv, llvm::PointerType::get(context, 0));
+        
+        // Create AriaString struct { const char* data, int64_t length }
+        llvm::StructType* ariaStringType = llvm::StructType::get(
+            context,
+            { llvm::PointerType::get(context, 0), llvm::Type::getInt64Ty(context) }
+        );
+        
+        // Allocate on stack
+        llvm::Value* ariaStr = builder.CreateAlloca(ariaStringType, nullptr, "aria_str");
+        
+        // Set data field
+        llvm::Value* dataPtr = builder.CreateStructGEP(ariaStringType, ariaStr, 0, "data_ptr");
+        builder.CreateStore(strPtr, dataPtr);
+        
+        // Set length field  
+        llvm::Value* lengthPtr = builder.CreateStructGEP(ariaStringType, ariaStr, 1, "length_ptr");
+        builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), str.length()), lengthPtr);
+        
+        // Load and return the struct value
+        return builder.CreateLoad(ariaStringType, ariaStr, "aria_str_val");
+    };
+    
+    // Helper function: Convert int64 to string using sprintf
+    auto int64ToString = [this](llvm::Value* intVal) -> llvm::Value* {
+        // Allocate buffer for sprintf (32 bytes is enough for int64)
+        llvm::ArrayType* bufferType = llvm::ArrayType::get(llvm::Type::getInt8Ty(context), 32);
+        llvm::Value* buffer = builder.CreateAlloca(bufferType, nullptr, "int_str_buffer");
+        llvm::Value* bufferPtr = builder.CreatePointerCast(buffer, llvm::PointerType::get(context, 0));
+        
+        // Create format string "%lld"
+        llvm::Constant* formatStr = llvm::ConstantDataArray::getString(context, "%lld", true);
+        llvm::GlobalVariable* formatGV = new llvm::GlobalVariable(
+            *module,
+            formatStr->getType(),
+            true,
+            llvm::GlobalValue::PrivateLinkage,
+            formatStr,
+            ".fmt_lld"
+        );
+        llvm::Value* formatPtr = builder.CreatePointerCast(formatGV, llvm::PointerType::get(context, 0));
+        
+        // Declare sprintf if not already declared
+        llvm::Function* sprintfFn = module->getFunction("sprintf");
+        if (!sprintfFn) {
+            llvm::FunctionType* sprintfType = llvm::FunctionType::get(
+                llvm::Type::getInt32Ty(context),
+                { llvm::PointerType::get(context, 0), llvm::PointerType::get(context, 0) },
+                true  // varargs
+            );
+            sprintfFn = llvm::Function::Create(
+                sprintfType,
+                llvm::Function::ExternalLinkage,
+                "sprintf",
+                module
+            );
+        }
+        
+        // Call sprintf(buffer, "%lld", intVal)
+        builder.CreateCall(sprintfFn, { bufferPtr, formatPtr, intVal });
+        
+        // Declare strlen if not already declared
+        llvm::Function* strlenFn = module->getFunction("strlen");
+        if (!strlenFn) {
+            llvm::FunctionType* strlenType = llvm::FunctionType::get(
+                llvm::Type::getInt64Ty(context),
+                { llvm::PointerType::get(context, 0) },
+                false
+            );
+            strlenFn = llvm::Function::Create(
+                strlenType,
+                llvm::Function::ExternalLinkage,
+                "strlen",
+                module
+            );
+        }
+        
+        // Get length with strlen(buffer)
+        llvm::Value* length = builder.CreateCall(strlenFn, { bufferPtr });
+        
+        // Create AriaString struct
+        llvm::StructType* ariaStringType = llvm::StructType::get(
+            context,
+            { llvm::PointerType::get(context, 0), llvm::Type::getInt64Ty(context) }
+        );
+        llvm::Value* ariaStr = builder.CreateAlloca(ariaStringType, nullptr, "int_aria_str");
+        
+        // Set fields
+        llvm::Value* dataPtr = builder.CreateStructGEP(ariaStringType, ariaStr, 0);
+        builder.CreateStore(bufferPtr, dataPtr);
+        llvm::Value* lengthPtr = builder.CreateStructGEP(ariaStringType, ariaStr, 1);
+        builder.CreateStore(length, lengthPtr);
+        
+        // Load and return
+        return builder.CreateLoad(ariaStringType, ariaStr, "int_str_val");
+    };
+    
+    // Helper function: Convert float to string using sprintf
+    auto floatToString = [this](llvm::Value* floatVal) -> llvm::Value* {
+        // Allocate buffer for sprintf (64 bytes for floating point)
+        llvm::ArrayType* bufferType = llvm::ArrayType::get(llvm::Type::getInt8Ty(context), 64);
+        llvm::Value* buffer = builder.CreateAlloca(bufferType, nullptr, "float_str_buffer");
+        llvm::Value* bufferPtr = builder.CreatePointerCast(buffer, llvm::PointerType::get(context, 0));
+        
+        // Create format string "%g" (shortest representation)
+        llvm::Constant* formatStr = llvm::ConstantDataArray::getString(context, "%g", true);
+        llvm::GlobalVariable* formatGV = new llvm::GlobalVariable(
+            *module,
+            formatStr->getType(),
+            true,
+            llvm::GlobalValue::PrivateLinkage,
+            formatStr,
+            ".fmt_g"
+        );
+        llvm::Value* formatPtr = builder.CreatePointerCast(formatGV, llvm::PointerType::get(context, 0));
+        
+        // Declare sprintf if not already declared
+        llvm::Function* sprintfFn = module->getFunction("sprintf");
+        if (!sprintfFn) {
+            llvm::FunctionType* sprintfType = llvm::FunctionType::get(
+                llvm::Type::getInt32Ty(context),
+                { llvm::PointerType::get(context, 0), llvm::PointerType::get(context, 0) },
+                true  // varargs
+            );
+            sprintfFn = llvm::Function::Create(
+                sprintfType,
+                llvm::Function::ExternalLinkage,
+                "sprintf",
+                module
+            );
+        }
+        
+        // Convert float to double if needed (sprintf expects double for %g)
+        llvm::Value* doubleVal = floatVal;
+        if (floatVal->getType()->isFloatTy()) {
+            doubleVal = builder.CreateFPExt(floatVal, llvm::Type::getDoubleTy(context), "to_double");
+        }
+        
+        // Call sprintf(buffer, "%g", doubleVal)
+        builder.CreateCall(sprintfFn, { bufferPtr, formatPtr, doubleVal });
+        
+        // Declare strlen if not already declared
+        llvm::Function* strlenFn = module->getFunction("strlen");
+        if (!strlenFn) {
+            llvm::FunctionType* strlenType = llvm::FunctionType::get(
+                llvm::Type::getInt64Ty(context),
+                { llvm::PointerType::get(context, 0) },
+                false
+            );
+            strlenFn = llvm::Function::Create(
+                strlenType,
+                llvm::Function::ExternalLinkage,
+                "strlen",
+                module
+            );
+        }
+        
+        // Get length with strlen(buffer)
+        llvm::Value* length = builder.CreateCall(strlenFn, { bufferPtr });
+        
+        // Create AriaString struct
+        llvm::StructType* ariaStringType = llvm::StructType::get(
+            context,
+            { llvm::PointerType::get(context, 0), llvm::Type::getInt64Ty(context) }
+        );
+        llvm::Value* ariaStr = builder.CreateAlloca(ariaStringType, nullptr, "float_aria_str");
+        
+        // Set fields
+        llvm::Value* dataPtr = builder.CreateStructGEP(ariaStringType, ariaStr, 0);
+        builder.CreateStore(bufferPtr, dataPtr);
+        llvm::Value* lengthPtr = builder.CreateStructGEP(ariaStringType, ariaStr, 1);
+        builder.CreateStore(length, lengthPtr);
+        
+        // Load and return
+        return builder.CreateLoad(ariaStringType, ariaStr, "float_str_val");
+    };
+    
+    // Helper function: Convert bool to string ("true" or "false")
+    auto boolToString = [this, &createAriaString](llvm::Value* boolVal) -> llvm::Value* {
+        // Create basic blocks for conditional
+        llvm::Function* func = builder.GetInsertBlock()->getParent();
+        llvm::BasicBlock* trueBB = llvm::BasicBlock::Create(context, "bool_true", func);
+        llvm::BasicBlock* falseBB = llvm::BasicBlock::Create(context, "bool_false", func);
+        llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "bool_merge", func);
+        
+        // Convert to i1 if needed
+        if (!boolVal->getType()->isIntegerTy(1)) {
+            boolVal = builder.CreateICmpNE(boolVal, llvm::ConstantInt::get(boolVal->getType(), 0), "tobool");
+        }
+        
+        // Branch based on boolean value
+        builder.CreateCondBr(boolVal, trueBB, falseBB);
+        
+        // True branch: create "true" string
+        builder.SetInsertPoint(trueBB);
+        llvm::Value* trueStr = createAriaString("true");
+        builder.CreateBr(mergeBB);
+        
+        // False branch: create "false" string
+        builder.SetInsertPoint(falseBB);
+        llvm::Value* falseStr = createAriaString("false");
+        builder.CreateBr(mergeBB);
+        
+        // Merge with PHI node
+        builder.SetInsertPoint(mergeBB);
+        llvm::StructType* ariaStringType = llvm::StructType::get(
+            context,
+            { llvm::PointerType::get(context, 0), llvm::Type::getInt64Ty(context) }
+        );
+        llvm::PHINode* phi = builder.CreatePHI(ariaStringType, 2, "bool_str");
+        phi->addIncoming(trueStr, trueBB);
+        phi->addIncoming(falseStr, falseBB);
+        
+        return phi;
+    };
+    
+    // Helper function: Convert string pointer to AriaString struct
+    auto ptrToAriaString = [this](llvm::Value* strPtr) -> llvm::Value* {
+        // Declare strlen if not already declared
+        llvm::Function* strlenFn = module->getFunction("strlen");
+        if (!strlenFn) {
+            llvm::FunctionType* strlenType = llvm::FunctionType::get(
+                llvm::Type::getInt64Ty(context),
+                { llvm::PointerType::get(context, 0) },
+                false
+            );
+            strlenFn = llvm::Function::Create(
+                strlenType,
+                llvm::Function::ExternalLinkage,
+                "strlen",
+                module
+            );
+        }
+        
+        // Get length with strlen(strPtr)
+        llvm::Value* length = builder.CreateCall(strlenFn, { strPtr });
+        
+        // Create AriaString struct
+        llvm::StructType* ariaStringType = llvm::StructType::get(
+            context,
+            { llvm::PointerType::get(context, 0), llvm::Type::getInt64Ty(context) }
+        );
+        llvm::Value* ariaStr = builder.CreateAlloca(ariaStringType, nullptr, "ptr_aria_str");
+        
+        // Set fields
+        llvm::Value* dataPtr = builder.CreateStructGEP(ariaStringType, ariaStr, 0);
+        builder.CreateStore(strPtr, dataPtr);
+        llvm::Value* lengthPtr = builder.CreateStructGEP(ariaStringType, ariaStr, 1);
+        builder.CreateStore(length, lengthPtr);
+        
+        // Load and return
+        return builder.CreateLoad(ariaStringType, ariaStr, "ptr_str_val");
+    };
+    
+    // Start with first part (empty string if no parts)
+    llvm::Value* result;
+    if (expr->parts.empty()) {
+        result = createAriaString("");
+    } else {
+        result = createAriaString(expr->parts[0]);
+    }
+    
+    // Declare aria_string_concat runtime function
+    llvm::StructType* ariaStringType = llvm::StructType::get(
+        context,
+        { llvm::PointerType::get(context, 0), llvm::Type::getInt64Ty(context) }
+    );
+    
+    // aria_string_concat returns AriaResultPtr (void*)
+    llvm::FunctionType* concatType = llvm::FunctionType::get(
+        llvm::PointerType::get(context, 0),  // Returns AriaResultPtr
+        { ariaStringType, ariaStringType },   // Takes two AriaString values
+        false
+    );
+    
+    llvm::Function* concatFn = module->getFunction("aria_string_concat");
+    if (!concatFn) {
+        concatFn = llvm::Function::Create(
+            concatType,
+            llvm::Function::ExternalLinkage,
+            "aria_string_concat",
+            module
+        );
+    }
+    
+    // Iterate through interpolations and remaining parts
+    for (size_t i = 0; i < expr->interpolations.size(); i++) {
+        // Evaluate interpolated expression
+        llvm::Value* interpVal = codegenExpressionNode(expr->interpolations[i].get(), this);
+        
+        // Convert to AriaString based on type
+        llvm::Value* interpStr;
+        llvm::Type* valType = interpVal->getType();
+        
+        if (valType->isIntegerTy(1)) {
+            // Boolean type
+            interpStr = boolToString(interpVal);
+        } else if (valType->isIntegerTy()) {
+            // Integer type (int8, int16, int32, int64, etc.)
+            interpStr = int64ToString(interpVal);
+        } else if (valType->isFloatingPointTy()) {
+            // Float or double type
+            interpStr = floatToString(interpVal);
+        } else if (valType->isPointerTy()) {
+            // String pointer - convert to AriaString
+            interpStr = ptrToAriaString(interpVal);
+        } else {
+            throw std::runtime_error("Unsupported type in template literal interpolation");
+        }
+        
+        // Concatenate: result = concat(result, interpStr)
+        llvm::Value* concatResultPtr = builder.CreateCall(concatFn, { result, interpStr });
+        
+        // Extract AriaString* from AriaResultPtr
+        // AriaResultPtr is a void* pointing to AriaResult struct: { void* val, AriaError* err }
+        // We need to:
+        // 1. Cast to AriaResult*
+        // 2. Check if err is NULL
+        // 3. Extract val and cast to AriaString*
+        
+        // For now, simplified version - assume success and load directly
+        // TODO: Full error handling would check err field
+        llvm::StructType* ariaResultType = llvm::StructType::get(
+            context,
+            { llvm::PointerType::get(context, 0), llvm::PointerType::get(context, 0) }
+        );
+        
+        // Cast AriaResultPtr to AriaResult*
+        llvm::Value* resultStructPtr = concatResultPtr;
+        
+        // Extract val field (first field of AriaResult)
+        llvm::Value* valFieldPtr = builder.CreateStructGEP(ariaResultType, resultStructPtr, 0, "result_val_ptr");
+        llvm::Value* ariaStringPtr = builder.CreateLoad(llvm::PointerType::get(context, 0), valFieldPtr, "aria_str_ptr");
+        
+        // Load the AriaString struct
+        result = builder.CreateLoad(ariaStringType, ariaStringPtr, "concat_str");
+        
+        // If there's another part after this interpolation, concatenate it
+        if (i + 1 < expr->parts.size()) {
+            llvm::Value* partStr = createAriaString(expr->parts[i + 1]);
+            llvm::Value* partConcatResultPtr = builder.CreateCall(concatFn, { result, partStr });
+            
+            // Extract result again
+            llvm::Value* partValFieldPtr = builder.CreateStructGEP(ariaResultType, partConcatResultPtr, 0, "result_val_ptr");
+            llvm::Value* partAriaStringPtr = builder.CreateLoad(llvm::PointerType::get(context, 0), partValFieldPtr, "aria_str_ptr");
+            result = builder.CreateLoad(ariaStringType, partAriaStringPtr, "concat_str");
+        }
+    }
+    
+    // For now, return the result struct directly
+    // In the future, we might want to extract just the char* pointer
+    // Extract data pointer from AriaString struct
+    llvm::Value* resultAlloca = builder.CreateAlloca(ariaStringType, nullptr, "result_tmp");
+    builder.CreateStore(result, resultAlloca);
+    llvm::Value* dataPtr = builder.CreateStructGEP(ariaStringType, resultAlloca, 0);
+    return builder.CreateLoad(llvm::PointerType::get(context, 0), dataPtr, "result_str_ptr");
 }
 
 /**
@@ -297,8 +751,12 @@ llvm::Value* ExprCodegen::codegenExpressionNode(ASTNode* node, ExprCodegen* code
             return codegen->codegenUnary(static_cast<UnaryExpr*>(node));
         case ASTNode::NodeType::CALL:
             return codegen->codegenCall(static_cast<CallExpr*>(node));
+        case ASTNode::NodeType::VECTOR_CONSTRUCTOR:
+            return codegen->codegenVectorConstructor(static_cast<VectorConstructorExpr*>(node));
         case ASTNode::NodeType::TERNARY:
             return codegen->codegenTernary(static_cast<TernaryExpr*>(node));
+        case ASTNode::NodeType::TEMPLATE_LITERAL:
+            return codegen->codegenTemplateLiteral(static_cast<TemplateLiteralExpr*>(node));
         case ASTNode::NodeType::LAMBDA:
             return codegen->codegenLambda(static_cast<LambdaExpr*>(node));
         case ASTNode::NodeType::AWAIT:
@@ -328,8 +786,53 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     // Get the operator type
     TokenType op = expr->op.type;
     
-    // Check if operands are floating point
-    bool isFloat = left->getType()->isFloatingPointTy() || right->getType()->isFloatingPointTy();
+    // Check if operands are vectors
+    bool leftIsVector = left->getType()->isVectorTy();
+    bool rightIsVector = right->getType()->isVectorTy();
+    bool isVector = leftIsVector || rightIsVector;
+    
+    // For vector-scalar operations, broadcast scalar to vector
+    if (leftIsVector && !rightIsVector) {
+        // Right is scalar, left is vector - broadcast right
+        llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(left->getType());
+        llvm::Value* vec = llvm::UndefValue::get(vecType);
+        unsigned numElements = vecType->getElementCount().getKnownMinValue();
+        for (unsigned i = 0; i < numElements; ++i) {
+            vec = builder.CreateInsertElement(vec, right, i);
+        }
+        right = vec;
+        rightIsVector = true;
+    } else if (!leftIsVector && rightIsVector) {
+        // Left is scalar, right is vector - broadcast left
+        llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(right->getType());
+        llvm::Value* vec = llvm::UndefValue::get(vecType);
+        unsigned numElements = vecType->getElementCount().getKnownMinValue();
+        for (unsigned i = 0; i < numElements; ++i) {
+            vec = builder.CreateInsertElement(vec, left, i);
+        }
+        left = vec;
+        leftIsVector = true;
+    }
+    
+    // Check if operands are floating point (check AFTER broadcast)
+    bool isFloat = false;
+    if (leftIsVector) {
+        llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(left->getType());
+        isFloat = vecType->getElementType()->isFloatingPointTy();
+    } else if (rightIsVector) {
+        llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(right->getType());
+        isFloat = vecType->getElementType()->isFloatingPointTy();
+    } else {
+        // Both are scalars - check either one
+        isFloat = left->getType()->isFloatingPointTy() || right->getType()->isFloatingPointTy();
+    }
+    
+    // DEBUG: Print types
+    std::cerr << "Binary op: left type = ";
+    left->getType()->print(llvm::errs());
+    std::cerr << ", right type = ";
+    right->getType()->print(llvm::errs());
+    std::cerr << ", isFloat = " << isFloat << std::endl;
     
     // ARITHMETIC OPERATORS
     if (op == TokenType::TOKEN_PLUS) {
@@ -420,6 +923,31 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         } else {
             return builder.CreateICmpSGE(left, right, "getmp");
         }
+    }
+    
+    // SPACESHIP OPERATOR (<=>)
+    // Three-way comparison: returns -1 if left < right, 0 if equal, 1 if left > right
+    if (op == TokenType::TOKEN_SPACESHIP) {
+        llvm::Value* ltCmp, *gtCmp;
+        
+        if (isFloat) {
+            ltCmp = builder.CreateFCmpOLT(left, right, "spaceship.lt");
+            gtCmp = builder.CreateFCmpOGT(left, right, "spaceship.gt");
+        } else {
+            ltCmp = builder.CreateICmpSLT(left, right, "spaceship.lt");
+            gtCmp = builder.CreateICmpSGT(left, right, "spaceship.gt");
+        }
+        
+        // Use select instructions:
+        // result = select(lt, -1, select(gt, 1, 0))
+        llvm::Value* negOne = llvm::ConstantInt::getSigned(llvm::Type::getInt64Ty(context), -1);
+        llvm::Value* zero = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 0);
+        llvm::Value* one = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 1);
+        
+        llvm::Value* gtResult = builder.CreateSelect(gtCmp, one, zero, "spaceship.gt_sel");
+        llvm::Value* result = builder.CreateSelect(ltCmp, negOne, gtResult, "spaceship.result");
+        
+        return result;
     }
     
     // LOGICAL OPERATORS (short-circuit evaluation with phi nodes)
@@ -1112,7 +1640,39 @@ llvm::Value* ExprCodegen::codegenIndex(IndexExpr* expr) {
         throw std::runtime_error("Null index expression");
     }
     
-    // TODO: Implement later with array support
+    // Generate code for the array/vector
+    llvm::Value* arrayVal = codegenExpressionNode(expr->array.get(), this);
+    if (!arrayVal) {
+        throw std::runtime_error("Failed to generate code for indexed object");
+    }
+    
+    // Generate code for the index
+    llvm::Value* indexVal = codegenExpressionNode(expr->index.get(), this);
+    if (!indexVal) {
+        throw std::runtime_error("Failed to generate code for index");
+    }
+    
+    llvm::Type* arrayType = arrayVal->getType();
+    
+    // Handle vector indexing
+    if (arrayType->isVectorTy() || (arrayType->isStructTy() && arrayType->getStructNumElements() == 9)) {
+        // For vec2/vec3 (LLVM FixedVectorType): use ExtractElement
+        if (arrayType->isVectorTy()) {
+            return builder.CreateExtractElement(arrayVal, indexVal, "vec.index");
+        }
+        
+        // For vec9 (struct): Extract with constant index
+        // Note: vec9[i] where i is not constant requires a different approach
+        if (llvm::ConstantInt* constIndex = llvm::dyn_cast<llvm::ConstantInt>(indexVal)) {
+            int idx = constIndex->getSExtValue();
+            return builder.CreateExtractValue(arrayVal, idx, "vec9.index");
+        } else {
+            // Dynamic index into vec9 struct - needs switch/select pattern
+            throw std::runtime_error("Dynamic indexing into vec9 not yet implemented");
+        }
+    }
+    
+    // TODO: Implement array indexing when arrays are added
     throw std::runtime_error("Array indexing not yet implemented");
 }
 
@@ -1128,6 +1688,30 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
     llvm::Value* objectVal = codegenExpressionNode(expr->object.get(), this);
     if (!objectVal) {
         throw std::runtime_error("Failed to generate code for member access object");
+    }
+    
+    llvm::Type* objectType = objectVal->getType();
+    
+    // Handle vector component access (.x, .y, .z)
+    if (objectType->isVectorTy() || (objectType->isStructTy() && objectType->getStructNumElements() == 9)) {
+        int index = -1;
+        
+        if (expr->member == "x") index = 0;
+        else if (expr->member == "y") index = 1;
+        else if (expr->member == "z") index = 2;
+        else {
+            throw std::runtime_error("Invalid vector component: " + expr->member);
+        }
+        
+        // For vec2/vec3 (LLVM FixedVectorType): use ExtractElement
+        if (objectType->isVectorTy()) {
+            return builder.CreateExtractElement(objectVal, index, expr->member);
+        }
+        
+        // For vec9 (struct): use ExtractValue
+        if (objectType->isStructTy()) {
+            return builder.CreateExtractValue(objectVal, index, expr->member);
+        }
     }
     
     // For safe navigation (?.), we need to check if the object is null
@@ -1788,4 +2372,67 @@ llvm::Value* ExprCodegen::unwrapOptional(llvm::Value* optional) {
     // Extract value field (index 1)
     return builder.CreateExtractValue(optional, 1, "optional.value");
 }
+
+/**
+ * Generate code for vector constructor
+ * vec2(x, y), vec3(x, y, z), vec9(c0, ..., c8)
+ */
+llvm::Value* ExprCodegen::codegenVectorConstructor(VectorConstructorExpr* expr) {
+    if (!expr) {
+        throw std::runtime_error("Null vector constructor expression");
+    }
+    
+    int dimension = expr->dimension;
+    
+    // Generate code for all components
+    std::vector<llvm::Value*> componentValues;
+    llvm::Type* componentType = nullptr;
+    
+    for (const auto& comp : expr->components) {
+        llvm::Value* val = codegenExpressionNode(comp.get(), this);
+        if (!val) {
+            throw std::runtime_error("Failed to generate code for vector component");
+        }
+        componentValues.push_back(val);
+        
+        // Get component type from first element
+        if (!componentType) {
+            componentType = val->getType();
+        }
+    }
+    
+    // For vec2 and vec3: Use LLVM FixedVectorType (SIMD)
+    if (dimension == 2 || dimension == 3) {
+        llvm::Type* vecType = llvm::FixedVectorType::get(componentType, dimension);
+        
+        // Start with undef vector
+        llvm::Value* vec = llvm::UndefValue::get(vecType);
+        
+        // Insert each component
+        for (int i = 0; i < dimension; ++i) {
+            vec = builder.CreateInsertElement(vec, componentValues[i], i, "vec.insert");
+        }
+        
+        return vec;
+    }
+    
+    // For vec9: Use struct with 9 components
+    if (dimension == 9) {
+        std::vector<llvm::Type*> componentTypes(9, componentType);
+        llvm::StructType* vec9Type = llvm::StructType::get(context, componentTypes);
+        
+        // Start with undef struct
+        llvm::Value* vec = llvm::UndefValue::get(vec9Type);
+        
+        // Insert each component
+        for (int i = 0; i < 9; ++i) {
+            vec = builder.CreateInsertValue(vec, componentValues[i], i, "vec9.insert");
+        }
+        
+        return vec;
+    }
+    
+    throw std::runtime_error("Unsupported vector dimension: " + std::to_string(dimension));
+}
+
 

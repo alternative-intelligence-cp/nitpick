@@ -7,20 +7,25 @@ std::string LiteralExpr::toString() const {
     std::ostringstream oss;
     oss << "Literal(";
     
-    std::visit([&oss](auto&& arg) {
-        using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, int64_t>) {
-            oss << arg;
-        } else if constexpr (std::is_same_v<T, double>) {
-            oss << arg;
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            oss << "\"" << arg << "\"";
-        } else if constexpr (std::is_same_v<T, bool>) {
-            oss << (arg ? "true" : "false");
-        } else if constexpr (std::is_same_v<T, std::monostate>) {
-            oss << "null";
-        }
-    }, value);
+    // If we have a raw value string (high-precision literal), show that instead
+    if (!raw_value_string.empty()) {
+        oss << "raw=\"" << raw_value_string << "\"";
+    } else {
+        std::visit([&oss](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, int64_t>) {
+                oss << arg;
+            } else if constexpr (std::is_same_v<T, double>) {
+                oss << arg;
+            } else if constexpr (std::is_same_v<T, std::string>) {
+                oss << "\"" << arg << "\"";
+            } else if constexpr (std::is_same_v<T, bool>) {
+                oss << (arg ? "true" : "false");
+            } else if constexpr (std::is_same_v<T, std::monostate>) {
+                oss << "null";
+            }
+        }, value);
+    }
     
     oss << ")";
     return oss.str();
@@ -28,6 +33,22 @@ std::string LiteralExpr::toString() const {
 
 std::string IdentifierExpr::toString() const {
     return "Identifier(" + name + ")";
+}
+
+std::string TemplateLiteralExpr::toString() const {
+    std::ostringstream oss;
+    oss << "TemplateLiteral(`";
+    
+    // Alternate between parts and interpolations
+    for (size_t i = 0; i < parts.size(); ++i) {
+        oss << parts[i];
+        if (i < interpolations.size()) {
+            oss << "&{" << interpolations[i]->toString() << "}";
+        }
+    }
+    
+    oss << "`)";
+    return oss.str();
 }
 
 std::string BinaryExpr::toString() const {
@@ -171,6 +192,17 @@ std::string MoveExpr::toString() const {
 std::string UnwrapExpr::toString() const {
     std::ostringstream oss;
     oss << "Unwrap(" << result->toString() << " ? " << defaultValue->toString() << ")";
+    return oss.str();
+}
+
+std::string VectorConstructorExpr::toString() const {
+    std::ostringstream oss;
+    oss << "vec" << dimension << "(";
+    for (size_t i = 0; i < components.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << components[i]->toString();
+    }
+    oss << ")";
     return oss.str();
 }
 

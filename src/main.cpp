@@ -401,7 +401,9 @@ llvm::Module* compile_to_module(
     }
     
     // Now generate the main module code (which can call specialized functions)
+    std::cerr << "[DEBUG] About to call ir_gen.codegen()...\n";
     auto value = ir_gen.codegen(module_node.get());
+    std::cerr << "[DEBUG] ir_gen.codegen() completed\n";
     
     if (!value) {
         diags.error(aria::SourceLocation(filename, 0, 0), "IR generation failed");
@@ -490,6 +492,11 @@ bool emit_assembly(llvm::Module* module, const std::string& output_file) {
         std::cerr << "Error: Target machine can't emit a file of this type\n";
         return false;
     }
+
+    // DEBUG: Dump module IR before running passes
+    std::cerr << "\n========== MODULE IR DUMP ==========\n";
+    module->print(llvm::errs(), nullptr);
+    std::cerr << "====================================\n\n";
 
     pass.run(*module);
     out.flush();
@@ -609,6 +616,11 @@ int main(int argc, char** argv) {
             diags.printAll();
             return 1;
         }
+        
+        // DEBUG: Dump IR immediately after generation
+        std::cerr << "\n[DEBUG] Module IR after generation:\n";
+        module->print(llvm::errs(), nullptr);
+        std::cerr << "\n";
         
         modules.push_back(module);
     }

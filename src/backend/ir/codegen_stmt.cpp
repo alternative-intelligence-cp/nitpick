@@ -11,6 +11,7 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/Intrinsics.h>  // Phase 4.5.3: Coroutine intrinsics
+#include <llvm/Support/raw_ostream.h>
 #include <iostream>  // For debug output
 #include <stdexcept>
 
@@ -420,12 +421,20 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
             throw std::runtime_error("ExprCodegen not set in StmtCodegen");
         }
         
+        std::cerr << "[DEBUG] codegenVarDecl: Generating initializer for " << stmt->varName << std::endl;
+        
         // Generate code for initializer expression
         llvm::Value* init_value = expr_codegen->codegenExpressionNode(stmt->initializer.get(), expr_codegen);
         
         if (!init_value) {
             throw std::runtime_error("Failed to generate code for initializer expression");
         }
+        
+        std::cerr << "[DEBUG] codegenVarDecl: Initializer type for " << stmt->varName << " = ";
+        init_value->getType()->print(llvm::errs());
+        std::cerr << ", expected type = ";
+        var_type->print(llvm::errs());
+        std::cerr << std::endl;
         
         // Cast initializer to match variable type if necessary
         if (init_value->getType() != var_type) {
@@ -817,17 +826,27 @@ void StmtCodegen::codegenIf(IfStmt* stmt) {
         throw std::runtime_error("Failed to generate code for if condition");
     }
     
+    std::cerr << "[DEBUG] codegenIf: condition type = ";
+    cond_value->getType()->print(llvm::errs());
+    std::cerr << ", isInt1 = " << (cond_value->getType() == llvm::Type::getInt1Ty(context));
+    std::cerr << ", isIntegerTy = " << cond_value->getType()->isIntegerTy();
+    std::cerr << ", isFloatingPointTy = " << cond_value->getType()->isFloatingPointTy();
+    std::cerr << std::endl;
+    
     // Convert condition to boolean (i1) if needed
     // LLVM expects i1 for branch instructions
     if (cond_value->getType() != llvm::Type::getInt1Ty(context)) {
+        std::cerr << "[DEBUG] codegenIf: Converting condition to i1..." << std::endl;
         // Compare against zero for integer types
         if (cond_value->getType()->isIntegerTy()) {
+            std::cerr << "[DEBUG] codegenIf: Using ICmpNE for integer" << std::endl;
             cond_value = builder.CreateICmpNE(
                 cond_value,
                 llvm::ConstantInt::get(cond_value->getType(), 0),
                 "tobool"
             );
         } else if (cond_value->getType()->isFloatingPointTy()) {
+            std::cerr << "[DEBUG] codegenIf: Using FCmpONE for float" << std::endl;
             // Compare against 0.0 for floating point types
             cond_value = builder.CreateFCmpONE(
                 cond_value,

@@ -521,16 +521,16 @@ TypeSystem::TypeSystem() {
     // Pre-create common primitive types
     // Reference: research_012 (integers), research_013 (floats), research_002 (TBB)
     
-    // Signed integers: int1 through int512
-    for (int bits : {1, 8, 16, 32, 64, 128, 256, 512}) {
+    // Signed integers: int1 through int512 (full power-of-two coverage)
+    for (int bits : {1, 2, 4, 8, 16, 32, 64, 128, 256, 512}) {
         std::string name = "int" + std::to_string(bits);
         auto type = std::make_unique<PrimitiveType>(name, bits, true, false, false);
         primitiveCache[name] = type.get();
         types.push_back(std::move(type));
     }
     
-    // Unsigned integers: uint8 through uint512
-    for (int bits : {8, 16, 32, 64, 128, 256, 512}) {
+    // Unsigned integers: uint1 through uint512 (full power-of-two coverage)
+    for (int bits : {1, 2, 4, 8, 16, 32, 64, 128, 256, 512}) {
         std::string name = "uint" + std::to_string(bits);
         auto type = std::make_unique<PrimitiveType>(name, bits, false, false, false);
         primitiveCache[name] = type.get();
@@ -590,6 +590,37 @@ TypeSystem::TypeSystem() {
     auto dynType = std::make_unique<PrimitiveType>("dyn", 0, false, false, false);
     primitiveCache["dyn"] = dynType.get();
     types.push_back(std::move(dynType));
+    
+    // I/O and System types (Phase 3.4)
+    auto binaryType = std::make_unique<PrimitiveType>("binary", 0, false, false, false);
+    primitiveCache["binary"] = binaryType.get();
+    types.push_back(std::move(binaryType));
+    
+    auto bufferType = std::make_unique<PrimitiveType>("buffer", 0, false, false, false);
+    primitiveCache["buffer"] = bufferType.get();
+    types.push_back(std::move(bufferType));
+    
+    auto streamType = std::make_unique<PrimitiveType>("stream", 0, false, false, false);
+    primitiveCache["stream"] = streamType.get();
+    types.push_back(std::move(streamType));
+    
+    auto processType = std::make_unique<PrimitiveType>("process", 0, false, false, false);
+    primitiveCache["process"] = processType.get();
+    types.push_back(std::move(processType));
+    
+    auto pipeType = std::make_unique<PrimitiveType>("pipe", 0, false, false, false);
+    primitiveCache["pipe"] = pipeType.get();
+    types.push_back(std::move(pipeType));
+    
+    // Mathematical types (Phase 3.3) - infrastructure only
+    // Full matrix/tensor implementation deferred
+    auto matrixType = std::make_unique<PrimitiveType>("matrix", 0, false, false, false);
+    primitiveCache["matrix"] = matrixType.get();
+    types.push_back(std::move(matrixType));
+    
+    auto tensorType = std::make_unique<PrimitiveType>("tensor", 0, false, false, false);
+    primitiveCache["tensor"] = tensorType.get();
+    types.push_back(std::move(tensorType));
 }
 
 PrimitiveType* TypeSystem::getPrimitiveType(const std::string& name) {

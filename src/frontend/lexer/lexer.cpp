@@ -71,6 +71,9 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"int512", TokenType::TOKEN_KW_INT512},
     
     // Type keywords - unsigned integers
+    {"uint1", TokenType::TOKEN_KW_UINT1},
+    {"uint2", TokenType::TOKEN_KW_UINT2},
+    {"uint4", TokenType::TOKEN_KW_UINT4},
     {"uint8", TokenType::TOKEN_KW_UINT8},
     {"uint16", TokenType::TOKEN_KW_UINT16},
     {"uint32", TokenType::TOKEN_KW_UINT32},
@@ -113,6 +116,14 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"vec9", TokenType::TOKEN_KW_VEC9},
     {"tensor", TokenType::TOKEN_KW_TENSOR},
     {"matrix", TokenType::TOKEN_KW_MATRIX},
+    
+    // Type keywords - I/O and system
+    {"binary", TokenType::TOKEN_KW_BINARY},
+    {"buffer", TokenType::TOKEN_KW_BUFFER},
+    {"stream", TokenType::TOKEN_KW_STREAM},
+    {"process", TokenType::TOKEN_KW_PROCESS},
+    {"pipe", TokenType::TOKEN_KW_PIPE},
+    {"debug", TokenType::TOKEN_KW_DEBUG},
     
     // Literals
     {"true", TokenType::TOKEN_KW_TRUE},
@@ -477,6 +488,17 @@ void Lexer::addToken(TokenType type, const std::string& value) {
     tokens.push_back(Token(type, lexeme, start_line, start_column, value));
 }
 
+// High-precision literal support (Phase 3.2.5)
+void Lexer::addToken(TokenType type, int64_t value, const std::string& raw_text) {
+    std::string lexeme = source.substr(start, current - start);
+    tokens.push_back(Token(type, lexeme, start_line, start_column, value, raw_text));
+}
+
+void Lexer::addToken(TokenType type, double value, const std::string& raw_text) {
+    std::string lexeme = source.substr(start, current - start);
+    tokens.push_back(Token(type, lexeme, start_line, start_column, value, raw_text));
+}
+
 // ============================================================================
 // Error Reporting
 // ============================================================================
@@ -549,8 +571,14 @@ void Lexer::scanNumber() {
             text = text.substr(2);
             text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
             
-            int64_t value = std::stoll(text, nullptr, 16);
-            addToken(TokenType::TOKEN_INTEGER, value);
+            // Try to convert, but store raw string if overflow
+            try {
+                int64_t value = std::stoll(text, nullptr, 16);
+                addToken(TokenType::TOKEN_INTEGER, value);
+            } catch (std::out_of_range&) {
+                // Value exceeds int64 range, store as raw string for high-precision handling
+                addToken(TokenType::TOKEN_INTEGER, (int64_t)0, text);
+            }
             return;
         }
         
@@ -573,8 +601,14 @@ void Lexer::scanNumber() {
             text = text.substr(2);
             text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
             
-            int64_t value = std::stoll(text, nullptr, 2);
-            addToken(TokenType::TOKEN_INTEGER, value);
+            // Try to convert, but store raw string if overflow
+            try {
+                int64_t value = std::stoll(text, nullptr, 2);
+                addToken(TokenType::TOKEN_INTEGER, value);
+            } catch (std::out_of_range&) {
+                // Value exceeds int64 range, store as raw string for high-precision handling
+                addToken(TokenType::TOKEN_INTEGER, (int64_t)0, text);
+            }
             return;
         }
         
@@ -597,8 +631,14 @@ void Lexer::scanNumber() {
             text = text.substr(2);
             text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
             
-            int64_t value = std::stoll(text, nullptr, 8);
-            addToken(TokenType::TOKEN_INTEGER, value);
+            // Try to convert, but store raw string if overflow
+            try {
+                int64_t value = std::stoll(text, nullptr, 8);
+                addToken(TokenType::TOKEN_INTEGER, value);
+            } catch (std::out_of_range&) {
+                // Value exceeds int64 range, store as raw string for high-precision handling
+                addToken(TokenType::TOKEN_INTEGER, (int64_t)0, text);
+            }
             return;
         }
         
@@ -694,17 +734,25 @@ void Lexer::scanNumber() {
         }
     }
     
-    // Convert string to number
+    // Convert string to number (Phase 3.2.5: Store raw string for high-precision literals)
     std::string text = source.substr(start, current - start);
-    // Remove underscores
-    text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
+    // Remove underscores for cleaned text
+    std::string cleaned_text = text;
+    cleaned_text.erase(std::remove(cleaned_text.begin(), cleaned_text.end(), '_'), cleaned_text.end());
     
     if (isFloat) {
-        double value = std::stod(text);
-        addToken(TokenType::TOKEN_FLOAT, value);
+        // Always store raw string for floats to preserve full precision
+        // The 0.0 is a placeholder; semantic analysis will use the raw string
+        addToken(TokenType::TOKEN_FLOAT, 0.0, cleaned_text);
     } else {
-        int64_t value = std::stoll(text);
-        addToken(TokenType::TOKEN_INTEGER, value);
+        // Try to convert integer, store raw string if overflow
+        try {
+            int64_t value = std::stoll(cleaned_text);
+            addToken(TokenType::TOKEN_INTEGER, value);
+        } catch (std::out_of_range&) {
+            // Value exceeds int64 range, store as raw string for high-precision handling
+            addToken(TokenType::TOKEN_INTEGER, (int64_t)0, cleaned_text);
+        }
     }
 }
 
@@ -822,11 +870,80 @@ void Lexer::scanCharacter() {
 
 void Lexer::scanTemplateLiteral() {
     int startLine = line;
-    std::string value;
     
     // Opening backtick already consumed by scanToken()
+    // Emit TOKEN_TEMPLATE_START
+    addToken(TokenType::TOKEN_TEMPLATE_START);
     
-    while (!isAtEnd() && peek() != '`') {
+    // Now scan template parts and interpolations
+    std::string currentPart;
+    
+    while (!isAtEnd()) {
+        // Check for interpolation start: &{
+        if (peek() == '&' && peekNext() == '{') {
+            // Emit current template part (even if empty)
+            addToken(TokenType::TOKEN_TEMPLATE_PART, currentPart);
+            currentPart.clear();
+            
+            // Consume &{
+            advance();
+            advance();
+            
+            // Emit TOKEN_INTERP_START
+            addToken(TokenType::TOKEN_INTERP_START);
+            
+            // Now tokenize the expression inside until we hit }
+            // Track brace depth for nested braces in the expression
+            int braceDepth = 1;
+            
+            while (!isAtEnd() && braceDepth > 0) {
+                // Scan one token
+                scanToken();
+                
+                // Check if the last token was a brace
+                if (!tokens.empty()) {
+                    TokenType lastType = tokens.back().type;
+                    if (lastType == TokenType::TOKEN_LEFT_BRACE) {
+                        braceDepth++;
+                    } else if (lastType == TokenType::TOKEN_RIGHT_BRACE) {
+                        braceDepth--;
+                        if (braceDepth == 0) {
+                            // This } closes the interpolation
+                            // Remove it from tokens (we'll emit TOKEN_INTERP_END instead)
+                            tokens.pop_back();
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (braceDepth > 0) {
+                error("Unterminated interpolation in template literal");
+                return;
+            }
+            
+            // Emit TOKEN_INTERP_END
+            addToken(TokenType::TOKEN_INTERP_END);
+            
+            // Continue scanning template text
+            continue;
+        }
+        
+        // Check for template end: `
+        if (peek() == '`') {
+            // Emit final template part
+            addToken(TokenType::TOKEN_TEMPLATE_PART, currentPart);
+            currentPart.clear();
+            
+            // Consume closing backtick
+            advance();
+            
+            // Emit TOKEN_TEMPLATE_END
+            addToken(TokenType::TOKEN_TEMPLATE_END);
+            
+            return;
+        }
+        
         // Handle escape sequences
         if (peek() == '\\') {
             advance(); // consume backslash
@@ -838,77 +955,31 @@ void Lexer::scanTemplateLiteral() {
             
             char escaped = advance();
             switch (escaped) {
-                case 'n': value += '\n'; break;
-                case 't': value += '\t'; break;
-                case 'r': value += '\r'; break;
-                case '\\': value += '\\'; break;
-                case '`': value += '`'; break;  // Escaped backtick
-                case '0': value += '\0'; break;
+                case 'n': currentPart += '\n'; break;
+                case 't': currentPart += '\t'; break;
+                case 'r': currentPart += '\r'; break;
+                case '\\': currentPart += '\\'; break;
+                case '`': currentPart += '`'; break;  // Escaped backtick
+                case '&': currentPart += '&'; break;  // Escaped ampersand
+                case '0': currentPart += '\0'; break;
                 default:
                     std::ostringstream oss;
                     oss << "Unknown escape sequence: \\" << escaped;
                     error(oss.str());
-                    value += escaped; // Include the character anyway
+                    currentPart += escaped; // Include the character anyway
                     break;
             }
         }
-        // Handle interpolation syntax &{expression}
-        else if (peek() == '&' && peekNext() == '{') {
-            advance(); // consume '&'
-            advance(); // consume '{'
-            
-            // For now, we'll store the interpolation markers in the string
-            // The parser will need to handle the actual expression parsing
-            // This is a simplified approach - a full implementation would
-            // need to recursively tokenize the expression inside &{}
-            
-            value += "${"; // Convert &{ to ${ for easier processing later
-            
-            int braceDepth = 1;
-            while (!isAtEnd() && braceDepth > 0) {
-                char c = peek();
-                if (c == '{') {
-                    braceDepth++;
-                } else if (c == '}') {
-                    braceDepth--;
-                    if (braceDepth == 0) {
-                        value += '}';
-                        advance(); // consume closing '}'
-                        break;
-                    }
-                }
-                value += advance();
-            }
-            
-            if (braceDepth > 0) {
-                error("Unterminated interpolation expression in template literal");
-                return;
-            }
-        }
-        // Handle newlines (templates can be multi-line)
-        else if (peek() == '\n') {
-            value += advance();
-            // Note: line tracking already handled in advance()
-        }
+        // Regular character - add to current part
         else {
-            value += advance();
+            currentPart += advance();
         }
     }
     
-    if (isAtEnd()) {
-        std::ostringstream oss;
-        oss << "Unterminated template literal starting at line " << startLine;
-        error(oss.str());
-        return;
-    }
-    
-    // Consume closing backtick
-    advance();
-    
-    // For now, we use TOKEN_STRING to store template literals
-    // A more sophisticated approach would use a dedicated TOKEN_TEMPLATE type
-    // and parse interpolations into separate tokens
-    addToken(TokenType::TOKEN_STRING, value);
+    // Reached end of file without closing backtick
+    std::ostringstream oss;
+    oss << "Unterminated template literal starting at line " << startLine;
+    error(oss.str());
 }
 
 // ============================================================================

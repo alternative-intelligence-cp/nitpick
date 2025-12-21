@@ -3,6 +3,7 @@
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/type.h"  // For ArrayType, SimpleType, etc.
+#include "semantic/literal_converter.h"
 #include <sstream>
 #include <variant>
 
@@ -55,6 +56,9 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         case ASTNode::NodeType::LITERAL:
             return inferLiteral(static_cast<LiteralExpr*>(expr));
         
+        case ASTNode::NodeType::TEMPLATE_LITERAL:
+            return inferTemplateLiteral(static_cast<TemplateLiteralExpr*>(expr));
+        
         case ASTNode::NodeType::IDENTIFIER:
             return inferIdentifier(static_cast<IdentifierExpr*>(expr));
         
@@ -92,6 +96,9 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         case ASTNode::NodeType::RANGE:
             return inferRangeExpr(static_cast<RangeExpr*>(expr));
         
+        case ASTNode::NodeType::VECTOR_CONSTRUCTOR:
+            return inferVectorConstructor(static_cast<VectorConstructorExpr*>(expr));
+        
         default:
             addError("Type inference not implemented for node type: " + 
                     ASTNode::nodeTypeToString(expr->type), expr);
@@ -104,7 +111,28 @@ Type* TypeChecker::inferType(ASTNode* expr) {
 // ============================================================================
 
 Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
-    // Use std::visit to handle variant
+    // Check if this is a high-precision literal (has raw string)
+    if (expr->hasRawValue()) {
+        // High-precision literal - type will be determined by context
+        // For now, return the default types (flt64/int64)
+        // The actual conversion will happen in VAR_DECL when we know the target type
+        
+        // Determine if it's a float or integer based on the raw string
+        const std::string& raw = expr->getRawValue();
+        bool is_float = (raw.find('.') != std::string::npos || 
+                        raw.find('e') != std::string::npos ||
+                        raw.find('E') != std::string::npos);
+        
+        if (is_float) {
+            // Default to flt64, but can be coerced to flt32/flt128 in context
+            return typeSystem->getPrimitiveType("flt64");
+        } else {
+            // Default to int64, but can be coerced to int128/256/512 in context
+            return typeSystem->getPrimitiveType("int64");
+        }
+    }
+    
+    // Use std::visit to handle variant (standard literals without raw strings)
     return std::visit([this](auto&& arg) -> Type* {
         using T = std::decay_t<decltype(arg)>;
         
@@ -133,6 +161,29 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
             return typeSystem->getErrorType();
         }
     }, expr->value);
+}
+
+// ============================================================================
+// Template Literal Type Inference
+// ============================================================================
+
+Type* TypeChecker::inferTemplateLiteral(TemplateLiteralExpr* expr) {
+    // Template literals always result in a string type
+    // But we need to type-check all interpolated expressions
+    
+    for (const auto& interpolation : expr->interpolations) {
+        // Infer the type of each interpolated expression
+        Type* interpType = inferType(interpolation.get());
+        
+        // For now, we'll allow any type in interpolations
+        // The IR generator will handle converting to string
+        // TODO: Add implicit toString() conversion or require convertible-to-string types
+        
+        (void)interpType; // Suppress unused variable warning
+    }
+    
+    // Template literals always produce strings
+    return typeSystem->getPrimitiveType("string");
 }
 
 // ============================================================================
@@ -228,6 +279,43 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
     if (op == TokenType::TOKEN_PLUS || op == TokenType::TOKEN_MINUS ||
         op == TokenType::TOKEN_STAR || op == TokenType::TOKEN_SLASH ||
         op == TokenType::TOKEN_PERCENT) {
+        
+        // Vector arithmetic: component-wise operations
+        // vec2 + vec2 → vec2, vec3 * vec3 → vec3, etc.
+        if (leftType->getKind() == TypeKind::VECTOR && rightType->getKind() == TypeKind::VECTOR) {
+            VectorType* leftVec = static_cast<VectorType*>(leftType);
+            VectorType* rightVec = static_cast<VectorType*>(rightType);
+            
+            // Vectors must have same dimension and component type
+            if (!leftType->equals(rightType)) {
+                addError("Vector arithmetic requires same vector type on both sides, got '" + 
+                        leftType->toString() + "' and '" + rightType->toString() + "'", 0, 0);
+                return typeSystem->getErrorType();
+            }
+            
+            // Result is the same vector type
+            return leftType;
+        }
+        
+        // Scalar * vector or vector * scalar
+        if ((leftType->getKind() == TypeKind::VECTOR && rightType->getKind() == TypeKind::PRIMITIVE) ||
+            (leftType->getKind() == TypeKind::PRIMITIVE && rightType->getKind() == TypeKind::VECTOR)) {
+            
+            VectorType* vecType = (leftType->getKind() == TypeKind::VECTOR) ? 
+                                  static_cast<VectorType*>(leftType) : 
+                                  static_cast<VectorType*>(rightType);
+            Type* scalarType = (leftType->getKind() == TypeKind::PRIMITIVE) ? leftType : rightType;
+            
+            // Scalar must match vector component type
+            if (!scalarType->equals(vecType->getComponentType())) {
+                addError("Scalar-vector arithmetic requires scalar type to match vector component type, got scalar '" + 
+                        scalarType->toString() + "' and vector component '" + vecType->getComponentType()->toString() + "'", 0, 0);
+                return typeSystem->getErrorType();
+            }
+            
+            // Result is the vector type
+            return vecType;
+        }
         
         // Both operands must be numeric (int*, uint*, flt*, tbb*)
         PrimitiveType* leftPrim = dynamic_cast<PrimitiveType*>(leftType);
@@ -550,6 +638,36 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
 }
 
 // ============================================================================
+// Vector Constructor Type Inference - Phase 3.3
+// ============================================================================
+
+Type* TypeChecker::inferVectorConstructor(VectorConstructorExpr* expr) {
+    // Infer component types (all must match)
+    if (expr->components.empty()) {
+        addError("Vector constructor requires components", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // Infer first component type
+    Type* componentType = inferType(expr->components[0].get());
+    if (componentType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Verify all components have the same type
+    for (size_t i = 1; i < expr->components.size(); ++i) {
+        Type* compType = inferType(expr->components[i].get());
+        if (!compType->equals(componentType)) {
+            addError("All vector components must have the same type", expr);
+            return typeSystem->getErrorType();
+        }
+    }
+    
+    // Return vec2/vec3/vec9 type
+    return typeSystem->getVectorType(componentType, expr->dimension);
+}
+
+// ============================================================================
 // Function Call Type Inference
 // ============================================================================
 
@@ -747,6 +865,12 @@ Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
         return typeSystem->getErrorType();
     }
     
+    // Vectors support index access: vec[i]
+    if (arrayType->getKind() == TypeKind::VECTOR) {
+        VectorType* vecType = static_cast<VectorType*>(arrayType);
+        return vecType->getComponentType();
+    }
+    
     // Arrays are represented as pointer types
     // Extract element type from pointer
     if (arrayType->getKind() == TypeKind::POINTER) {
@@ -754,7 +878,7 @@ Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
         return ptrType->getPointeeType();
     }
     
-    // Not an array/pointer type
+    // Not an array/pointer/vector type
     addError("Cannot index non-array type '" + arrayType->toString() + "'", expr);
     return typeSystem->getErrorType();
 }
@@ -768,6 +892,36 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
     Type* objectType = inferType(expr->object.get());
     
     if (objectType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Handle vector component access (.x, .y, .z for vec2/vec3, [i] for all)
+    if (objectType->getKind() == TypeKind::VECTOR) {
+        VectorType* vecType = static_cast<VectorType*>(objectType);
+        int dimension = vecType->getDimension();
+        
+        // Check valid component names
+        if (expr->member == "x" && dimension >= 1) {
+            return vecType->getComponentType();
+        }
+        if (expr->member == "y" && dimension >= 2) {
+            return vecType->getComponentType();
+        }
+        if (expr->member == "z" && dimension >= 3) {
+            return vecType->getComponentType();
+        }
+        
+        // Invalid component for this vector dimension
+        std::ostringstream oss;
+        oss << "vec" << dimension << " has no component '" << expr->member << "'";
+        if (dimension == 2) {
+            oss << " (valid: x, y)";
+        } else if (dimension == 3) {
+            oss << " (valid: x, y, z)";
+        } else {
+            oss << " (use index access [i] for vec9)";
+        }
+        addError(oss.str(), expr);
         return typeSystem->getErrorType();
     }
     
@@ -1293,6 +1447,49 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             // Simple type: int32, string, etc.
             aria::SimpleType* simpleType = static_cast<aria::SimpleType*>(typeNode);
             
+            // Handle vector types specially (vec2, vec3, vec9)
+            // Default to flt64 components to match float literal inference
+            if (simpleType->typeName == "vec2" || simpleType->typeName == "dvec2") {
+                Type* componentType = typeSystem->getPrimitiveType("flt64");
+                return typeSystem->getVectorType(componentType, 2);
+            }
+            if (simpleType->typeName == "vec3" || simpleType->typeName == "dvec3") {
+                Type* componentType = typeSystem->getPrimitiveType("flt64");
+                return typeSystem->getVectorType(componentType, 3);
+            }
+            if (simpleType->typeName == "vec9" || simpleType->typeName == "dvec9") {
+                Type* componentType = typeSystem->getPrimitiveType("flt64");
+                return typeSystem->getVectorType(componentType, 9);
+            }
+            
+            // Float vector types (fvec2, fvec3, fvec9)
+            if (simpleType->typeName == "fvec2") {
+                Type* componentType = typeSystem->getPrimitiveType("flt32");
+                return typeSystem->getVectorType(componentType, 2);
+            }
+            if (simpleType->typeName == "fvec3") {
+                Type* componentType = typeSystem->getPrimitiveType("flt32");
+                return typeSystem->getVectorType(componentType, 3);
+            }
+            if (simpleType->typeName == "fvec9") {
+                Type* componentType = typeSystem->getPrimitiveType("flt32");
+                return typeSystem->getVectorType(componentType, 9);
+            }
+            
+            // Integer vector types (ivec2, ivec3, ivec9)
+            if (simpleType->typeName == "ivec2") {
+                Type* componentType = typeSystem->getPrimitiveType("int32");
+                return typeSystem->getVectorType(componentType, 2);
+            }
+            if (simpleType->typeName == "ivec3") {
+                Type* componentType = typeSystem->getPrimitiveType("int32");
+                return typeSystem->getVectorType(componentType, 3);
+            }
+            if (simpleType->typeName == "ivec9") {
+                Type* componentType = typeSystem->getPrimitiveType("int32");
+                return typeSystem->getVectorType(componentType, 9);
+            }
+            
             // Try struct first
             Type* type = typeSystem->getStructType(simpleType->typeName);
             if (type) {
@@ -1540,6 +1737,44 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             }
         }
         
+        // High-Precision Literal Conversion (Phase 3.2.5)
+        // Handle raw literal strings when target type is known
+        bool highPrecisionLiteralAssignment = false;
+        if (stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+            if (literal->hasRawValue()) {
+                // We have a high-precision literal and know the target type
+                // Validate the conversion is possible
+                const std::string& raw = literal->getRawValue();
+                std::string typeName = declaredType->toString();
+                
+                // Check if target type is a high-precision type
+                if (typeName == "flt128" || typeName == "flt256" || typeName == "flt512" ||
+                    typeName == "int128" || typeName == "int256" || typeName == "int512" ||
+                    typeName == "uint128" || typeName == "uint256" || typeName == "uint512") {
+                    
+                    // Validate that the literal can be converted
+                    // The actual conversion will happen in IR generation
+                    bool is_float = (raw.find('.') != std::string::npos || 
+                                    raw.find('e') != std::string::npos ||
+                                    raw.find('E') != std::string::npos);
+                    
+                    bool type_is_float = (typeName.find("flt") == 0);
+                    
+                    if (is_float && !type_is_float) {
+                        addError("Cannot assign float literal to integer type '" + typeName + "'", stmt);
+                        return;
+                    }
+                    
+                    if (!is_float && type_is_float) {
+                        // Integer to float is okay (will be converted)
+                    }
+                    
+                    highPrecisionLiteralAssignment = true;
+                }
+            }
+        }
+        
         // Standard Integer Type Validation
         // Special handling for integer literals assigned to smaller integer types
         // This allows safe narrowing conversions when the literal value fits at compile time
@@ -1558,8 +1793,8 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         }
         
         // Check if initializer type is assignable to declared type
-        // Skip this check if we handled TBB, balanced, or standard int literal assignment above
-        if (!tbbLiteralAssignment && !balancedLiteralAssignment && !standardIntLiteralAssignment) {
+        // Skip this check if we handled TBB, balanced, standard int, or high-precision literal assignment above
+        if (!tbbLiteralAssignment && !balancedLiteralAssignment && !standardIntLiteralAssignment && !highPrecisionLiteralAssignment) {
             // Special case: Allow T to be initialized to T? (wrapping)
             bool optionalWrapping = false;
             if (declaredType->getKind() == TypeKind::OPTIONAL) {

@@ -83,6 +83,9 @@ enum class TokenType {
     // ========================================================================
     // Type Keywords - Integers (Unsigned)
     // ========================================================================
+    TOKEN_KW_UINT1,     // uint1 - 1-bit unsigned
+    TOKEN_KW_UINT2,     // uint2 - 2-bit unsigned
+    TOKEN_KW_UINT4,     // uint4 - 4-bit unsigned
     TOKEN_KW_UINT8,     // uint8 - 8-bit unsigned
     TOKEN_KW_UINT16,    // uint16 - 16-bit unsigned
     TOKEN_KW_UINT32,    // uint32 - 32-bit unsigned
@@ -285,7 +288,8 @@ struct Token {
         bool bool_value;
     } value;
     
-    std::string string_value; // For strings (separate due to complex type)
+    std::string string_value;      // For strings (separate due to complex type)
+    std::string raw_literal_text;  // For high-precision numeric literals (Phase 3.2.5)
     
     // Constructors
     Token();
@@ -294,6 +298,10 @@ struct Token {
     Token(TokenType t, const std::string& lex, int ln, int col, double val);
     Token(TokenType t, const std::string& lex, int ln, int col, bool val);
     Token(TokenType t, const std::string& lex, int ln, int col, const std::string& str_val);
+    
+    // Constructor for high-precision numeric literals (Phase 3.2.5)
+    Token(TokenType t, const std::string& lex, int ln, int col, int64_t val, const std::string& raw_text);
+    Token(TokenType t, const std::string& lex, int ln, int col, double val, const std::string& raw_text);
     
     // Helper methods
     bool isKeyword() const;
