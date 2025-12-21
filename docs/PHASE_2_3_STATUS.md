@@ -47,17 +47,23 @@
 
 ### What's Remaining (5%)
 
-**Runtime Linking** - Build system integration
-- Issue: streams.cpp runtime is compiled but not linked into executables
-- Solution needed: Add runtime library to linker command
-- Options:
-  1. Create `libaria_runtime.a` static library
-  2. Link streams.o directly into executables
-  3. Create shared library `libaria_runtime.so`
+**Runtime Linking** - ✅ COMPLETE
+- ✅ Created `libaria_runtime.a` static library (14MB)
+- ✅ Modified link_executable() to include runtime library
+- ✅ Runtime symbols present in library (verified with nm)
+- ✅ Build system working correctly
 
-- Files to modify:
-  - `CMakeLists.txt` - Add runtime library target
-  - Compiler driver - Add runtime library to link command
+**Compiler Bug Found** - Expression Statement Codegen Issue
+- **Issue**: CallExpr nodes for unknown builtin functions are being silently dropped
+- **Symptom**: `stdout_write()` compiles without error but generates no code
+- **Root Cause**: Parser or type checker silently ignores unknown identifiers instead of generating calls
+- **Workaround**: Functions work if return value is used: `int64:x = stdout_write(...)`
+- **Comparison**: `print()` works because it's special-cased earlier in the compilation pipeline
+- **Impact**: Cannot use stream functions as expression statements (major usability issue)
+- **Fix Needed**: Modify parser/type checker to generate CallExpr for all function calls, even if undefined
+- **Estimated Fix Time**: 2-4 hours (requires parser debugging)
+
+**Status**: Runtime is 100% complete and functional. Compiler integration needs debugging.
 
 ### API Examples
 

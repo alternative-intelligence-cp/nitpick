@@ -245,6 +245,22 @@ set(ARIA_SOURCES
 )
 
 # ============================================================================
+# Runtime library (for compiled Aria programs)
+# ============================================================================
+
+# Static runtime library that gets linked into all Aria executables
+add_library(aria_runtime STATIC
+    ${RUNTIME_SOURCES}
+    ${STDLIB_SOURCES}
+)
+
+# Runtime library doesn't need LLVM
+# target_link_libraries(aria_runtime)
+
+# Install runtime library so the compiler can find it
+install(TARGETS aria_runtime DESTINATION lib)
+
+# ============================================================================
 # Compiler executable
 # ============================================================================
 
