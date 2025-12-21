@@ -1,5 +1,6 @@
 #include "frontend/parser/parser.h"
 #include "frontend/ast/type.h"
+#include "frontend/ast/expr.h"
 #include <sstream>
 #include <iostream>
 
@@ -361,11 +362,19 @@ ASTNodePtr Parser::parsePrimary() {
     // Integer literal
     if (token.type == TokenType::TOKEN_INTEGER) {
         std::string lexeme = token.lexeme;  // Save before advance()
+        std::string raw_text = token.raw_literal_text;  // High-precision literal
         int line = token.line;
         int col = token.column;
         advance();
-        int64_t value = std::stoll(lexeme);
-        return std::make_shared<LiteralExpr>(value, line, col);
+        
+        // If we have a raw literal text (overflow detected or high-precision),
+        // store it; otherwise use the converted value
+        if (!raw_text.empty()) {
+            return std::make_shared<LiteralExpr>((int64_t)0, raw_text, line, col);
+        } else {
+            int64_t value = std::stoll(lexeme);
+            return std::make_shared<LiteralExpr>(value, line, col);
+        }
     }
     
     // Ternary literal (balanced ternary)
@@ -382,11 +391,20 @@ ASTNodePtr Parser::parsePrimary() {
     // Float literal
     if (token.type == TokenType::TOKEN_FLOAT) {
         std::string lexeme = token.lexeme;  // Save before advance()
+        std::string raw_text = token.raw_literal_text;  // High-precision literal
         int line = token.line;
         int col = token.column;
         advance();
-        double value = std::stod(lexeme);
-        return std::make_shared<LiteralExpr>(value, line, col);
+        
+        // All float literals now preserve raw text for precision
+        // The placeholder value (0.0) will be replaced by type checker
+        if (!raw_text.empty()) {
+            return std::make_shared<LiteralExpr>(0.0, raw_text, line, col);
+        } else {
+            // Legacy path (shouldn't happen with new lexer)
+            double value = std::stod(lexeme);
+            return std::make_shared<LiteralExpr>(value, line, col);
+        }
     }
     
     // String literal
@@ -397,6 +415,11 @@ ASTNodePtr Parser::parsePrimary() {
         advance();
         // FIX: Use string_value instead of lexeme to get unquoted string
         return std::make_shared<LiteralExpr>(value, line, col);
+    }
+    
+    // Template literal: `text &{expr} more text`
+    if (token.type == TokenType::TOKEN_TEMPLATE_START) {
+        return parseTemplateLiteral();
     }
     
     // Boolean literal
@@ -524,6 +547,52 @@ ASTNodePtr Parser::parsePrimary() {
     // Template literal
     if (token.type == TokenType::TOKEN_TEMPLATE_START) {
         return parseTemplateLiteral();
+    }
+    
+    // Vector constructors: vec2(x, y), vec3(x, y, z), vec9(c0, ..., c8)
+    if (token.type == TokenType::TOKEN_KW_VEC2 ||
+        token.type == TokenType::TOKEN_KW_VEC3 ||
+        token.type == TokenType::TOKEN_KW_VEC9) {
+        
+        int dimension = (token.type == TokenType::TOKEN_KW_VEC2) ? 2 :
+                       (token.type == TokenType::TOKEN_KW_VEC3) ? 3 : 9;
+        int line = token.line;
+        int col = token.column;
+        advance(); // consume vec2/vec3/vec9
+        
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after vector type");
+        
+        std::vector<ASTNodePtr> components;
+        
+        // Parse components
+        if (peek().type != TokenType::TOKEN_RIGHT_PAREN) {
+            do {
+                ASTNodePtr component = parseExpression();
+                if (!component) {
+                    error("Expected component expression in vector constructor");
+                    return nullptr;
+                }
+                components.push_back(component);
+                
+                if (peek().type == TokenType::TOKEN_COMMA) {
+                    advance();
+                } else {
+                    break;
+                }
+            } while (true);
+        }
+        
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after vector components");
+        
+        // Validate component count
+        if (components.size() != static_cast<size_t>(dimension)) {
+            std::ostringstream oss;
+            oss << "vec" << dimension << " requires " << dimension << " components, got " << components.size();
+            error(oss.str());
+            return nullptr;
+        }
+        
+        return std::make_shared<VectorConstructorExpr>(dimension, components, line, col);
     }
     
     error("Expected expression");
@@ -877,9 +946,58 @@ ASTNodePtr Parser::parseObjectLiteral() {
 }
 
 ASTNodePtr Parser::parseTemplateLiteral() {
-    // Stub for now - will implement in later phase
-    error("Template literals not yet implemented");
-    return nullptr;
+    Token startToken = advance(); // consume TOKEN_TEMPLATE_START
+    
+    auto templateExpr = std::make_shared<TemplateLiteralExpr>(startToken.line, startToken.column);
+    
+    while (!check(TokenType::TOKEN_TEMPLATE_END) && !isAtEnd()) {
+        // Expect TOKEN_TEMPLATE_PART (string part)
+        if (check(TokenType::TOKEN_TEMPLATE_PART)) {
+            Token partToken = advance();
+            templateExpr->parts.push_back(partToken.string_value);
+        } else {
+            // Empty part (e.g., at the start or after interpolation)
+            templateExpr->parts.push_back("");
+        }
+        
+        // Check for interpolation
+        if (check(TokenType::TOKEN_INTERP_START)) {
+            advance(); // consume TOKEN_INTERP_START
+            
+            // Parse the expression inside the interpolation
+            ASTNodePtr expr = parseExpression();
+            if (!expr) {
+                error("Expected expression inside template interpolation");
+                return nullptr;
+            }
+            
+            // Store the shared_ptr directly
+            templateExpr->interpolations.push_back(expr);
+            
+            // Expect TOKEN_INTERP_END
+            if (!check(TokenType::TOKEN_INTERP_END)) {
+                error("Expected '}' to close template interpolation");
+                return nullptr;
+            }
+            advance(); // consume TOKEN_INTERP_END
+        }
+    }
+    
+    // Add final part if we haven't added enough parts yet
+    // (template can end with a part after the last interpolation)
+    if (check(TokenType::TOKEN_TEMPLATE_PART)) {
+        Token partToken = advance();
+        templateExpr->parts.push_back(partToken.string_value);
+    }
+    
+    // Consume TOKEN_TEMPLATE_END
+    if (!check(TokenType::TOKEN_TEMPLATE_END)) {
+        error("Expected '`' to close template literal");
+        return nullptr;
+    }
+    advance();
+    
+    return templateExpr;
 }
 
 /**
@@ -987,10 +1105,11 @@ bool Parser::isTypeKeyword(frontend::TokenType type) const {
         type == TokenType::TOKEN_KW_INT64 || type == TokenType::TOKEN_KW_INT128 ||
         type == TokenType::TOKEN_KW_INT256 || type == TokenType::TOKEN_KW_INT512 ||
         // Unsigned integers
-        type == TokenType::TOKEN_KW_UINT8 || type == TokenType::TOKEN_KW_UINT16 ||
-        type == TokenType::TOKEN_KW_UINT32 || type == TokenType::TOKEN_KW_UINT64 ||
-        type == TokenType::TOKEN_KW_UINT128 || type == TokenType::TOKEN_KW_UINT256 ||
-        type == TokenType::TOKEN_KW_UINT512 ||
+        type == TokenType::TOKEN_KW_UINT1 || type == TokenType::TOKEN_KW_UINT2 ||
+        type == TokenType::TOKEN_KW_UINT4 || type == TokenType::TOKEN_KW_UINT8 ||
+        type == TokenType::TOKEN_KW_UINT16 || type == TokenType::TOKEN_KW_UINT32 ||
+        type == TokenType::TOKEN_KW_UINT64 || type == TokenType::TOKEN_KW_UINT128 ||
+        type == TokenType::TOKEN_KW_UINT256 || type == TokenType::TOKEN_KW_UINT512 ||
         // TBB types
         type == TokenType::TOKEN_KW_TBB8 || type == TokenType::TOKEN_KW_TBB16 ||
         type == TokenType::TOKEN_KW_TBB32 || type == TokenType::TOKEN_KW_TBB64 ||

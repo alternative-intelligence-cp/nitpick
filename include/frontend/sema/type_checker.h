@@ -70,6 +70,16 @@ private:
     Type* inferLiteral(LiteralExpr* expr);
     
     /**
+     * Infer the type of a template literal expression
+     * 
+     * Rules:
+     * - Template literals always produce string type
+     * - Type-check all interpolated expressions
+     * - TODO: Add toString() conversion requirements
+     */
+    Type* inferTemplateLiteral(TemplateLiteralExpr* expr);
+    
+    /**
      * Infer the type of an identifier expression
      * 
      * Rules:
@@ -133,6 +143,17 @@ private:
      * - Return function's return type
      */
     Type* inferCallExpr(CallExpr* expr);
+    
+    /**
+     * Infer the type of a vector constructor expression
+     * 
+     * Rules:
+     * - All component types must match
+     * - Component count must match dimension (2, 3, or 9)
+     * - Default component type is flt32 if inferred from float literals
+     * - Result type is vec2/vec3/vec9 with inferred component type
+     */
+    Type* inferVectorConstructor(VectorConstructorExpr* expr);
     
     /**
      * Infer the type of an array index expression

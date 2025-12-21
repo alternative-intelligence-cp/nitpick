@@ -1956,6 +1956,30 @@ src/runtime/timer/timer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/timer/timer.cpp.s
 .PHONY : src/runtime/timer/timer.cpp.s
 
+src/semantic/literal_converter.o: src/semantic/literal_converter.cpp.o
+.PHONY : src/semantic/literal_converter.o
+
+# target to build an object file
+src/semantic/literal_converter.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/semantic/literal_converter.cpp.o
+.PHONY : src/semantic/literal_converter.cpp.o
+
+src/semantic/literal_converter.i: src/semantic/literal_converter.cpp.i
+.PHONY : src/semantic/literal_converter.i
+
+# target to preprocess a source file
+src/semantic/literal_converter.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/semantic/literal_converter.cpp.i
+.PHONY : src/semantic/literal_converter.cpp.i
+
+src/semantic/literal_converter.s: src/semantic/literal_converter.cpp.s
+.PHONY : src/semantic/literal_converter.s
+
+# target to generate assembly for a file
+src/semantic/literal_converter.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/semantic/literal_converter.cpp.s
+.PHONY : src/semantic/literal_converter.cpp.s
+
 src/tools/debugger/aria_dap.o: src/tools/debugger/aria_dap.cpp.o
 .PHONY : src/tools/debugger/aria_dap.o
 
@@ -2608,6 +2632,9 @@ help:
 	@echo "... src/runtime/timer/timer.o"
 	@echo "... src/runtime/timer/timer.i"
 	@echo "... src/runtime/timer/timer.s"
+	@echo "... src/semantic/literal_converter.o"
+	@echo "... src/semantic/literal_converter.i"
+	@echo "... src/semantic/literal_converter.s"
 	@echo "... src/tools/debugger/aria_dap.o"
 	@echo "... src/tools/debugger/aria_dap.i"
 	@echo "... src/tools/debugger/aria_dap.s"

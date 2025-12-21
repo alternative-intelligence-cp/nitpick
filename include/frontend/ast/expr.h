@@ -18,6 +18,7 @@ using aria::frontend::TokenType;
 class LiteralExpr : public ASTNode {
 public:
     std::variant<int64_t, double, std::string, bool, std::monostate> value;
+    std::string raw_value_string;  // For high-precision literals (flt128, int128, etc.)
     
     explicit LiteralExpr(int64_t val, int line = 0, int column = 0)
         : ASTNode(NodeType::LITERAL, line, column), value(val) {}
@@ -35,6 +36,17 @@ public:
     explicit LiteralExpr(std::monostate, int line = 0, int column = 0)
         : ASTNode(NodeType::LITERAL, line, column), value(std::monostate{}) {}
     
+    // High-precision constructors (for flt128, int128, etc.)
+    explicit LiteralExpr(int64_t val, const std::string& raw_text, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(val), raw_value_string(raw_text) {}
+    
+    explicit LiteralExpr(double val, const std::string& raw_text, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(val), raw_value_string(raw_text) {}
+    
+    // Helper methods
+    bool hasRawValue() const { return !raw_value_string.empty(); }
+    const std::string& getRawValue() const { return raw_value_string; }
+    
     std::string toString() const override;
 };
 
@@ -48,6 +60,22 @@ public:
     
     IdentifierExpr(const std::string& n, int line = 0, int column = 0)
         : ASTNode(NodeType::IDENTIFIER, line, column), name(n) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Template literal expression node
+ * Represents: `text &{expr} more text`
+ * Contains alternating string parts and interpolated expressions
+ */
+class TemplateLiteralExpr : public ASTNode {
+public:
+    std::vector<std::string> parts;              // String parts
+    std::vector<std::shared_ptr<ASTNode>> interpolations;  // Expressions to interpolate
+    
+    TemplateLiteralExpr(int line = 0, int column = 0)
+        : ASTNode(NodeType::TEMPLATE_LITERAL, line, column) {}
     
     std::string toString() const override;
 };
@@ -346,6 +374,30 @@ public:
     UnwrapExpr(ASTNodePtr res, ASTNodePtr defVal, int line = 0, int column = 0)
         : ASTNode(NodeType::UNWRAP, line, column),
           result(res), defaultValue(defVal) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Vector constructor expression node
+ * Represents: vec2(x, y), vec3(x, y, z), vec9(c0, c1, ..., c8)
+ * 
+ * Constructs a vector from component values.
+ * Component types are inferred from the literals (default: flt32).
+ * 
+ * Examples:
+ *   vec2(1.0, 2.0)           - 2D vector with flt32 components
+ *   vec3(10.0, 20.0, 30.0)   - 3D vector with flt32 components
+ *   vec9(1.0, 2.0, ..., 9.0) - 9D vector with flt32 components
+ */
+class VectorConstructorExpr : public ASTNode {
+public:
+    int dimension;                        // 2, 3, or 9
+    std::vector<ASTNodePtr> components;   // Component expressions
+    
+    VectorConstructorExpr(int dim, const std::vector<ASTNodePtr>& comps, int line = 0, int column = 0)
+        : ASTNode(NodeType::VECTOR_CONSTRUCTOR, line, column),
+          dimension(dim), components(comps) {}
     
     std::string toString() const override;
 };

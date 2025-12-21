@@ -37,6 +37,17 @@ Token::Token(TokenType t, const std::string& lex, int ln, int col, const std::st
     : type(t), lexeme(lex), line(ln), column(col), value{0}, string_value(str_val) {
 }
 
+// Constructors for high-precision numeric literals (Phase 3.2.5)
+Token::Token(TokenType t, const std::string& lex, int ln, int col, int64_t val, const std::string& raw_text)
+    : type(t), lexeme(lex), line(ln), column(col), raw_literal_text(raw_text) {
+    value.int_value = val;
+}
+
+Token::Token(TokenType t, const std::string& lex, int ln, int col, double val, const std::string& raw_text)
+    : type(t), lexeme(lex), line(ln), column(col), raw_literal_text(raw_text) {
+    value.float_value = val;
+}
+
 // ============================================================================
 // Token Helper Methods
 // ============================================================================
@@ -81,9 +92,17 @@ std::string Token::toString() const {
     
     // Add value if present
     if (type == TokenType::TOKEN_INTEGER) {
-        oss << ", value=" << value.int_value;
+        if (!raw_literal_text.empty()) {
+            oss << ", raw=\"" << raw_literal_text << "\"";
+        } else {
+            oss << ", value=" << value.int_value;
+        }
     } else if (type == TokenType::TOKEN_FLOAT) {
-        oss << ", value=" << value.float_value;
+        if (!raw_literal_text.empty()) {
+            oss << ", raw=\"" << raw_literal_text << "\"";
+        } else {
+            oss << ", value=" << value.float_value;
+        }
     } else if (type == TokenType::TOKEN_KW_TRUE || type == TokenType::TOKEN_KW_FALSE) {
         oss << ", value=" << (value.bool_value ? "true" : "false");
     } else if (type == TokenType::TOKEN_STRING || type == TokenType::TOKEN_CHAR) {
@@ -154,6 +173,9 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_INT512: return "INT512";
         
         // Unsigned integer types
+        case TokenType::TOKEN_KW_UINT1: return "UINT1";
+        case TokenType::TOKEN_KW_UINT2: return "UINT2";
+        case TokenType::TOKEN_KW_UINT4: return "UINT4";
         case TokenType::TOKEN_KW_UINT8: return "UINT8";
         case TokenType::TOKEN_KW_UINT16: return "UINT16";
         case TokenType::TOKEN_KW_UINT32: return "UINT32";

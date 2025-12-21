@@ -22,6 +22,8 @@ namespace aria {
     class MemberAccessExpr;
     class LambdaExpr;
     class AwaitExpr;
+    class TemplateLiteralExpr;
+    class VectorConstructorExpr;
     
     namespace sema {
         class Type;
@@ -132,6 +134,14 @@ public:
     llvm::Value* codegenTernary(TernaryExpr* expr);
     
     /**
+     * Generate code for template literals with interpolation
+     * Handles: `text &{expr} more text`
+     * @param expr Template literal expression node
+     * @return LLVM pointer to concatenated string
+     */
+    llvm::Value* codegenTemplateLiteral(TemplateLiteralExpr* expr);
+    
+    /**
      * Generate code for an array index operation
      * @param expr Index expression node
      * @return LLVM value at indexed location
@@ -203,6 +213,18 @@ public:
      * @return The wrapped value
      */
     llvm::Value* unwrapOptional(llvm::Value* optional);
+    
+    // ========================================================================
+    // Phase 3.3: Mathematical Types - Vectors
+    // ========================================================================
+    
+    /**
+     * Generate code for vector constructor
+     * Handles: vec2(x, y), vec3(x, y, z), vec9(c0, ..., c8)
+     * @param expr Vector constructor expression node
+     * @return LLVM vector value (FixedVectorType for vec2/vec3, struct for vec9)
+     */
+    llvm::Value* codegenVectorConstructor(VectorConstructorExpr* expr);
     
     /**
      * Generate code for any expression (dispatcher)

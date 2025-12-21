@@ -85,6 +85,10 @@ private:
     void addToken(TokenType type, bool value);
     void addToken(TokenType type, const std::string& value);
     
+    // High-precision literal support (Phase 3.2.5)
+    void addToken(TokenType type, int64_t value, const std::string& raw_text);
+    void addToken(TokenType type, double value, const std::string& raw_text);
+    
     // Report lexer error
     void error(const std::string& message);
     

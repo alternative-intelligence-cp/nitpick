@@ -157,6 +157,7 @@ set(SEMA_SOURCES
     src/frontend/sema/async_analyzer.cpp
     src/frontend/sema/const_evaluator.cpp
     src/frontend/sema/safety_checker.cpp
+    src/semantic/literal_converter.cpp
 )
 
 # Phase 4: IR Generation

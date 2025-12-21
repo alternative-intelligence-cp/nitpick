@@ -1,0 +1,43 @@
+// Test basic int256 operations
+// Part of Phase 3.1: Extended Precision Integers
+
+func:main = int32() {
+    // Test int256 with int64 range values
+    int256:a = 1000000000000000;
+    int256:b = 2000000000000000;
+    int256:c = -3000000000000000;
+
+    // Test basic arithmetic
+    int256:sum = a + b;
+    int256:diff = b - a;
+    int256:prod = a * 2;
+    int256:quot = b / a;
+
+    // Test comparisons
+    bool:lt = (a < b);
+    bool:gt = (a > b);
+    bool:eq = (a == a);
+    bool:neg_lt = (c < a);
+
+    // Verify results
+    int256:expected_sum = 3000000000000000;
+    int256:expected_diff = 1000000000000000;
+    
+    if (sum != expected_sum) {
+        int32:one = 1;
+        pass(one);
+    }
+    
+    if (!lt) {
+        int32:one = 1;
+        pass(one);
+    }
+    
+    if (!neg_lt) {
+        int32:one = 1;
+        pass(one);
+    }
+
+    int32:zero = 0;
+    pass(zero);
+};

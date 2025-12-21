@@ -16688,4 +16688,516 @@ Thread
    27. Extension Manifest - Visual Studio Code, accessed December 18, 2025, https://code.visualstudio.com/api/references/extension-manifest
    28. Activation events - vscode-docs, accessed December 18, 2025, https://vscode-docs.readthedocs.io/en/stable/extensionAPI/activation-events/
    29. Extension points - vscode-docs, accessed December 18, 2025, https://vscode-docs.readthedocs.io/en/stable/extensionAPI/extension-points/
-   30. Language Configuration Guide | Visual Studio Code Extension API, accessed December 18, 2025, https://code.visualstudio.com/api/language-extensions/language-configuration-guide
+   30. Language Configuration Guide | Visual Studio Code Extension API, accessed December 18, 2025, https://code.visualstudio.com/api/language-extensions/language-configuration-guide﻿Architectural Specification for High-Precision Numeric Systems in Compiler Design
+1. Introduction: The Crisis of Precision in Modern Systems Programming
+The evolution of systems programming languages has historically been tethered to the physical constraints of the hardware they target. For decades, the definition of a "number" in languages like C, C++, and Java was synonymous with the register width of the underlying CPU architecture—typically 32 or 64 bits. This isomorphism between language semantics and hardware reality provided performance predictability but imposed rigid boundaries on the fidelity of numerical computation. As modern workloads shift toward high-stakes domains such as cryptography, scientific simulation, and decentralized finance, the limitations of standard IEEE 754 double-precision arithmetic have precipitated a crisis of precision. The architectural challenge facing the Aria compiler infrastructure is to transcend these hardware limitations by treating extended precision types—int256, int512, flt256, and flt512—not as library add-ons, but as first-class primitives deeply integrated into the language's syntax, semantics, and runtime environment.
+This report articulates a rigorous architectural specification for implementing these high-precision types within the Aria ecosystem. The scope of this analysis extends from the earliest phases of lexical analysis, where the "double bottleneck" threatens to truncate literal values before they are even parsed, to the final stages of code generation, where abstract mathematical intent must be lowered into efficient machine code sequences or runtime library calls. Central to this architecture is the rejection of "eager conversion" in favor of a "String-as-Truth" model for literal handling, leveraging the llvm::APFloat infrastructure to maintain arbitrary precision during compile-time evaluation.1 Furthermore, the report delineates a hybrid runtime strategy that synthesizes the correctness guarantees of the MPFR library for floating-point operations 3 with the raw throughput of LLVM’s arbitrary-width integer support 5, augmented by custom intrinsics where backend support fractures.
+The implications of this design are profound. By embedding 256-bit and 512-bit types into the core language, Aria positions itself to handle the "Infected Hypercube" scenarios of TBB error propagation with bit-perfect determinism, ensuring that the arithmetic safety guarantees promised by the language specification are not undermined by the silent inaccuracies of the translation layer.
+________________
+2. Theoretical Framework of Numerical Representation
+To construct a compiler capable of handling ultra-wide numeric types, one must first deconstruct the theoretical and practical limitations of standard floating-point arithmetic. The disconnect between human-readable decimal representations and machine-readable binary approximations is the primary source of "silent corruption" in software systems.
+2.1 The "Double Bottleneck" and Eager Conversion
+In the standard compiler pipeline, a lexer scans the source code and identifies sequences of characters as tokens. When a numeric literal such as 0.1 or 3.14159265358979323846 is encountered, the conventional approach—inherited from decades of C compiler tradition—is to immediately convert this substring into a native binary format, typically a double (IEEE 754 binary64). This practice is known as "Eager Conversion," and it represents a catastrophic loss of information for a language targeting extended precision.
+The fundamental issue lies in the finite precision of the double format. An IEEE 754 double-precision number allocates 53 bits for the significand, providing approximately 15 to 17 significant decimal digits.7 Any digits beyond this threshold are effectively discarded during the conversion process. If a developer explicitly writes a literal with 30 digits of precision intended for a flt128 variable, an eager lexer utilizing strtod or atof will irrecoverably truncate the value to 17 digits before the parser or semantic analyzer has an opportunity to intervene.8 The compiler effectively "lies" to the program, substituting the user's high-precision constant with a lower-precision approximation. This truncation is silent; no warning is issued because the conversion to double is technically valid, albeit semantically destructive.
+Consider the following Aria source code snippet:
+
+
+Code snippet
+
+
+
+
+flt256:pi_high = 3.14159265358979323846264338327950288419716939937510;
+
+If the Aria compiler were to use standard C++ conversion functions like std::stod during lexing, the value stored in the AST would be 3.1415926535897931. The remaining digits—representing the specific precision required for the algorithm—would be replaced by zeros or binary noise when the double is later cast to flt256.10 This phenomenon undermines the very purpose of having extended precision types. It renders the flt256 type effectively useless for constants defined in source code, forcing developers to resort to cumbersome runtime parsing of string literals (e.g., parse("3.14...")) to bypass the compiler's flawed frontend.
+2.2 The "String-as-Truth" Architectural Pattern
+To mitigate the Double Bottleneck, the Aria compiler must adopt the "String-as-Truth" architectural pattern. This philosophy posits that the source code string is the only canonical representation of a numeric literal until the exact destination type is known. The conversion from text to binary is deferred until the Semantic Analysis phase, where type inference has resolved the storage requirements of the target variable.
+In this model, the Lexer's responsibility is strictly limited to validation. It verifies that the character sequence conforms to the grammar of a floating-point literal (digits, optional decimal point, optional exponent, optional type suffix) but performs no mathematical operations. The token produced by the lexer contains the raw substring (e.g., "3.14159...") rather than a double value.11
+The Abstract Syntax Tree (AST) node for a float literal must effectively be a wrapper around this string.
+
+
+C++
+
+
+
+
+// Conceptual C++ representation of the AST node
+class FloatLiteral : public Expression {
+   std::string raw_value; // The exact characters typed by the user
+public:
+   FloatLiteral(std::string val) : raw_value(std::move(val)) {}
+   // Conversion happens only when requested with specific semantics
+   llvm::APFloat getValue(const llvm::fltSemantics& semantics) const;
+};
+
+This design aligns with the approach taken by advanced compiler frontends like Clang, which retain spelling information to support diverse floating-point semantics and precise diagnostic reporting.13 By preserving the string, the compiler retains the flexibility to parse the literal as flt32, flt64, flt128, or flt256 without bias.
+2.3 Arbitrary Precision at Compile-Time via LLVM APFloat
+The mechanism for converting the stored string into a binary representation must support arbitrary precision. Standard hardware instructions are insufficient for this task. Instead, the Aria compiler leverages llvm::APFloat, a sophisticated software floating-point engine provided by the LLVM support libraries. APFloat is designed to simulate floating-point arithmetic of arbitrary width and semantics, independent of the host machine's hardware capabilities.1
+APFloat operates by treating the floating-point number as a multiprecision integer significand paired with a signed exponent. It supports initialization directly from a string reference (llvm::StringRef), parsing the decimal input and rounding it according to specified semantics (e.g., IEEE 754). Crucially, APFloat does not default to double. The compiler engineer must explicitly provide a llvm::fltSemantics object that defines the bit-width of the exponent and significand. For standard types, LLVM provides IEEEsingle, IEEEdouble, and IEEEquad.2 For Aria's flt256 and flt512, custom semantics must be defined or composed, ensuring that the compile-time constant folding engine respects the extended precision of the runtime environment.
+The convertFromString method of APFloat is the critical bridge. It takes the raw string from the AST and populates the internal binary representation. It returns an opStatus flag, indicating whether the conversion was exact, inexact (rounded), or overflowed.14 This allows the Aria compiler to emit precise warnings to the user: "Warning: Literal value 0.1 cannot be represented exactly in flt32," or "Error: Literal magnitude exceeds range of flt256." This level of diagnostic fidelity is impossible with atof.
+2.4 Decimal to Binary Conversion Algorithms
+The algorithm used by APFloat (and fundamentally required for any correct implementation) is significantly more complex than simple digit accumulation. Accurate conversion requires creating a big integer representation of the significant digits and the exponent, then performing a high-precision division or multiplication by powers of 10. The complexity arises because $10$ is not a power of $2$; most decimal fractions have infinite binary expansions.7
+For example, $0.1_{10}$ is $0.0001100110011..._2$. To represent this in a flt256, the compiler must calculate the first 237 bits (assuming a specific format) of this infinite series correctly rounded to the last bit. Algorithms like the "Clinger's exact path" or the "Eisel-Lemire" algorithm are often employed for standard precisions to speed up this process 15, but for arbitrary precision flt512, the fallback is essentially a BigInt calculation. APFloat handles this complexity, shielding the compiler author from implementing the multiprecision arithmetic required just to read a literal.1
+________________
+3. The Literal Parsing Pipeline: Implementation Architecture
+Implementing the "String-as-Truth" model requires a coordinated effort across the Lexer, Parser, and Semantic Analysis phases. This section details the architectural changes required in src/frontend to support lossless literal parsing for Aria.
+3.1 Lexical Analysis: Identifying without Interpreting
+The Lexer's role is to recognize the shape of a number. In Aria, the grammar for floating-point literals allows for standard notation (1.0), scientific notation (1.0e-10), and typed suffixes (1.0f32, 1.0f256).
+The Lexer loop scans the input buffer. Upon detecting a digit, it enters the SCAN_NUMBER state. It consumes digits, checks for a single decimal point, consumes more digits, checks for e or E, checks for + or -, and consumes the exponent. Crucially, it must also consume any valid type suffix (e.g., f256) as part of the token or as a separate suffix token, depending on the grammar strategy.
+The resulting Token object stores the text span.
+
+
+C++
+
+
+
+
+struct Token {
+   TokenType type; // TOKEN_FLOAT_LITERAL
+   std::string_view text; // "3.14159f256"
+   SourceLocation loc;
+};
+
+The Lexer does not call strtod. It does not validate ranges. It merely asserts that the text looks like a number.
+3.2 Parsing: Preserving the Source
+The Parser consumes tokens to build the AST. When it encounters TOKEN_FLOAT_LITERAL, it creates a LiteralExpr node.
+In the previous Aria architecture (v0.0.7), literals might have been stored as int64_t or double. This must be refactored. The LiteralExpr should effectively become a variant or a specialized hierarchy capable of holding the raw string.
+
+
+C++
+
+
+
+
+// src/frontend/ast/Expr.h modification
+class FloatLiteralExpr : public Expr {
+   std::string valueStr;
+   Type* explicitType; // Null unless suffix was present
+public:
+   FloatLiteralExpr(std::string val, Type* type = nullptr) 
+       : valueStr(std::move(val)), explicitType(type) {}
+   
+   const std::string& getRawValue() const { return valueStr; }
+};
+
+If the user wrote 3.14f256, the Parser strips the suffix f256, resolves it to the flt256 Type object, and stores 3.14 in valueStr and the type in explicitType. If no suffix is present, explicitType is null, implying inference is needed.
+3.3 Semantic Analysis: The Conversion Nexus
+The Type Checker (Semantic Analysis) is where the conversion occurs. This phase has the context required to determine the target type.
+Scenario 1: Explicit Assignment
+
+
+Code snippet
+
+
+
+
+flt256:x = 0.1;
+
+The Type Checker analyzes the assignment. The LHS is flt256. The RHS is a FloatLiteralExpr with no explicit type. The system infers the target type flt256. It then calls a conversion routine: ConvertLiteral(literalNode, type_flt256).
+Scenario 2: Suffix Usage
+
+
+Code snippet
+
+
+
+
+auto:x = 0.1f256;
+
+The FloatLiteralExpr has explicitType set to flt256. The Type Checker uses this type.
+Scenario 3: Binary Operation
+
+
+Code snippet
+
+
+
+
+flt512:y = x * 2.5;
+
+The Type Checker sees flt256 * literal. It promotes the literal to flt256 (or flt512 if x was flt512) following Aria's type promotion rules, then performs the conversion.
+3.4 Implementation of the Converter using APFloat
+The core conversion logic utilizes llvm::APFloat. Since LLVM's built-in semantics (IEEEquad, etc.) do not natively include 256-bit or 512-bit IEEE-like formats, we must either map these types to an array of integers (software emulation) or define a custom semantic if we want APFloat to simulate them mathematically.
+However, APFloat is primarily for the compiler's internal calculations (Constant Folding). If the target architecture (runtime) uses MPFR for flt256, the compiler's compile-time values must match MPFR's behavior. APFloat is IEEE-compliant; MPFR is also IEEE-compliant but with arbitrary precision.
+For flt32, flt64, and flt128, we use standard LLVM semantics.
+For flt256 and flt512, we have two choices for Constant Folding:
+1. Extend APFloat: Add a new fltSemantics for 256-bit floats. This is invasive to LLVM.
+2. MPFR in Compiler: Link the compiler itself against MPFR and use mpfr_t to evaluate flt256 constants.
+Given the requirement to integrate with modern C++ and MPFR, using MPFR inside the compiler for constant folding of flt256 types is the most robust solution. It guarantees that compile-time constants ($1.0/3.0$) are bit-identical to runtime results calculated by the Aria runtime (which also uses MPFR).
+Code Snippet: The Semantic Converter
+
+
+C++
+
+
+
+
+// src/frontend/sema/LiteralConverter.cpp
+
+llvm::Constant* Converter::convertFloatLiteral(const FloatLiteralExpr* expr, Type* targetType) {
+   std::string raw = expr->getRawValue();
+   
+   if (targetType->isFlt32()) {
+       llvm::APFloat val(llvm::APFloat::IEEEsingle(), raw);
+       return llvm::ConstantFP::get(context, val);
+   } 
+   else if (targetType->isFlt64()) {
+       llvm::APFloat val(llvm::APFloat::IEEEdouble(), raw);
+       return llvm::ConstantFP::get(context, val);
+   }
+   else if (targetType->isFlt256()) {
+       // Special handling for software types
+       // Use MPFR to parse the string into a binary payload
+       mpfr_t temp;
+       mpfr_init2(temp, 256); // 256 bits of precision
+       mpfr_set_str(temp, raw.c_str(), 10, MPFR_RNDN);
+       
+       // Export the raw bits to an array of integers (limbs)
+       // Aria flt256 is likely represented as { i64, i64, i64, i64 } in LLVM IR
+       std::vector<llvm::Constant*> limbs = ExportMPFRToLLVMConstants(temp, 256);
+       mpfr_clear(temp);
+       
+       llvm::StructType* ty = GetFlt256StructType();
+       return llvm::ConstantStruct::get(ty, limbs);
+   }
+   //... handle other types
+}
+
+This hybrid approach uses APFloat where hardware support exists (mappings to standard LLVM IR floats) and MPFR where the type is a software abstraction.3
+________________
+4. Extended Floating Point Architecture: flt256 and flt512
+The implementation of flt256 and flt512 requires a complete software emulation stack. Unlike flt64, which maps to the x86 XMM registers and addsd instructions, flt256 has no hardware equivalent on general-purpose CPUs. The compiler must lower operations on these types to calls into a runtime library.
+4.1 Data Layout and LLVM IR Representation
+To LLVM IR, flt256 is not a floating-point type; it is an aggregate. We must define a structure that holds the bits. The most efficient representation for multiprecision libraries is an array of machine words ("limbs").
+LLVM IR Definitions:
+
+
+Code snippet
+
+
+
+
+; 256 bits = 4 x 64-bit integers
+%struct.flt256 = type { [4 x i64] }
+
+; 512 bits = 8 x 64-bit integers
+%struct.flt512 = type { [8 x i64] }
+
+This layout is chosen to align with the internal representation of GMP/MPFR, which store data as arrays of mp_limb_t (typically uint64_t on 64-bit systems). By matching the layout, we minimize marshalling overhead at the boundary between Aria code and the runtime library.16
+4.2 The Runtime Library (libaria_rt) Architecture
+The Aria runtime library must provide C-callable functions for every operator supported by the language: addition, subtraction, multiplication, division, comparison, printing, etc. These functions will act as wrappers around the MPFR library.
+Library Dependency: The runtime will link statically or dynamically against libmpfr and libgmp.
+The C++ Wrapper Implementation:
+Directly using mpfr_t in the runtime API is problematic because mpfr_t is a struct containing pointers to heap memory. We want flt256 in Aria to behave like a value type (living on the stack), not a reference type managing a heap allocation.
+To reconcile this, we use MPFR's Custom Allocation Interface (Stack Allocation). This allows us to map an MPFR object onto a fixed-size buffer on the stack, avoiding malloc/free for every arithmetic operation—a critical optimization for performance.16
+4.3 Detailed Implementation: Stack-Allocated MPFR Wrappers
+The following C++ implementation demonstrates how to perform flt256 addition without heap allocation.
+
+
+C++
+
+
+
+
+// runtime/flt256_core.cpp
+#include <mpfr.h>
+#include <cstdint>
+#include <cstring>
+
+// The binary layout matching LLVM %struct.flt256
+struct aria_flt256_t {
+   uint64_t limbs;
+};
+
+extern "C" {
+
+// Helper: MPFR requires a header + limb space.
+// We compute the size needed for 256 bits of precision.
+// mpfr_custom_get_size returns bytes needed for significand.
+static size_t get_stack_size_256() {
+   return mpfr_custom_get_size(256);
+}
+
+// ARIA RUNTIME INTRINSIC: __aria_flt256_add
+// Result is passed by pointer (sret convention)
+void __aria_flt256_add(aria_flt256_t* result, 
+                      const aria_flt256_t* op1, 
+                      const aria_flt256_t* op2) {
+   
+   // 1. Allocate MPFR stack space (alloca is very fast, stack-based)
+   // We need space for the significands of 3 numbers (op1, op2, res)
+   size_t size = get_stack_size_256();
+   void* stack_op1 = __builtin_alloca(size);
+   void* stack_op2 = __builtin_alloca(size);
+   void* stack_res = __builtin_alloca(size);
+
+   // 2. Initialize MPFR objects on the stack
+   mpfr_t m_op1, m_op2, m_res;
+   
+   // Setup dummy exponents/signs/NaN flags initially
+   mpfr_custom_init(stack_op1, 256);
+   mpfr_custom_init(stack_op2, 256);
+   mpfr_custom_init(stack_res, 256);
+
+   // 3. Deserialize: Convert raw limbs to MPFR representation
+   // Note: This step is complex. MPFR's internal format is opaque.
+   // Ideally, we store the data in Aria format (IEEE-like) and convert 
+   // to MPFR on the fly, OR we just store MPFR's serialization.
+   // Optimization: If we define flt256 storage format as exactly 
+   // "what mpfr_custom_get_size returns", we can just memcpy.
+   // Let's assume standard IEEE packing for interoperability, 
+   // requiring import/export.
+   
+   // Use mpfr_set_ui_2exp or raw limb import if internal format matches GMP.
+   // For safety/portability, we treat input as binary blob.
+   import_from_aria_layout(m_op1, op1);
+   import_from_aria_layout(m_op2, op2);
+
+   // 4. Perform Addition
+   mpfr_add(m_res, m_op1, m_op2, MPFR_RNDN); // Round to Nearest
+
+   // 5. Serialize back to result
+   export_to_aria_layout(result, m_res);
+
+   // No mpfr_clear needed because memory was on stack!
+}
+
+} // extern "C"
+
+Optimization Note: The import/export steps are the bottleneck. A highly optimized implementation might choose to adopt MPFR's internal representation as the native flt256 storage format, provided the endianness and limb size are consistent across target platforms. This "Zero-Copy" approach allows the memcpy of the struct to effectively "load" the number.16
+4.4 Comparison with Other Libraries
+* mpreal (MPFR C++ Wrapper): This library encapsulates mpfr_t in a class. However, it typically relies on dynamic allocation because it supports variable precision at runtime. Aria's flt256 is fixed precision, which unlocks the stack allocation optimization mpreal cannot easily assume.3
+* Boost.Multiprecision: Boost offers cpp_dec_float and GMP backends. While robust, its heavy template metaprogramming machinery makes it difficult to expose via a clean C ABI to the LLVM backend. A custom C-linkage wrapper around MPFR is tighter and easier to debug.9
+________________
+5. Extended Integer Architecture: int256 and int512
+The implementation of int256 and int512 presents a paradox: LLVM IR natively supports them, but physical processors do not. The challenge is "Legalization"—transforming operations on these illegal types into sequences of legal operations on registers.
+5.1 The LLVM Backend Limits
+LLVM IR allows types like i256 and i512. One can write %sum = add i256 %a, %b. The backend (Instruction Selection) attempts to lower this.
+* Addition/Subtraction: Generally supported. The backend splits i256 into four i64 adds, linked by "Add with Carry" (adc) instructions. This is efficient and handled natively by the x86 backend.18
+* Bitwise Logic: Supported. and, or, xor are lowered to parallel instructions on the constituent parts.
+* Multiplication/Division: NOT Supported. The x86 backend generally does not implement 256-bit multiplication or division inline. Instead, it emits a library call (libcall) to a function it expects to exist, such as __multi3 or __divti3.20
+The Crash: If the Aria compiler emits sdiv i256 and the linked runtime does not provide the corresponding symbol, the link will fail. Worse, some LLVM versions might crash during instruction selection with "Unsupported library call operation" if the backend doesn't even know how to call the library function.20
+5.2 The _BitInt (formerly _ExtInt) Revolution
+Clang recently introduced _BitInt(N) to support arbitrary bit widths. This pushed LLVM to improve support for large integers. Recent versions (Clang 16+) support division for large _BitInt by emitting calls to a new set of runtime functions (e.g., __udivmodxi4 for some architectures, or generic __divBitInt).20
+Aria should leverage this by checking the target LLVM version. If using LLVM 16+, we can rely on the backend's default legalization if we provide the runtime library. If using older LLVM, we must manually lower these operations in the frontend (IR Generator).22
+5.3 Runtime Implementation: Native C++ Templates vs. GMP
+We need to implement the runtime functions (e.g., __aria_udiv256) that perform the actual math.
+Strategy A: Native C++ (Knuth's Algorithm D)
+We can implement fixed-width division in standard C++ without external dependencies. This is often faster than GMP for "small" large numbers (256/512 bits) because it avoids function call overhead and memory allocation.
+
+
+C++
+
+
+
+
+// runtime/int256.cpp
+
+// A fixed-size bigint struct
+template<int Limbs>
+struct BigUInt {
+   uint64_t data[Limbs];
+};
+
+// Knuth's Algorithm D implementation for multi-precision division
+// This is complex to get right but highly performant for stack data.
+void divide_256(BigUInt& quotient, BigUInt& remainder, 
+               const BigUInt& dividend, const BigUInt& divisor) {
+   // Implementation of shift-subtract or Knuth D
+   //...
+}
+
+This approach is used by Rust's compiler_builtins and LLVM's compiler-rt for 128-bit integers (__divti3).23 Extending this to 256/512 is feasible and keeps the runtime dependency-free.
+Strategy B: GMP Wrapper
+Using GMP (mpz_t) guarantees correctness and uses asymptotically optimal algorithms (Karatsuba) for very large numbers. However, mpz_t allocates on the heap.
+
+
+C++
+
+
+
+
+extern "C" void __aria_sdiv256(void* ret, void* a, void* b) {
+   mpz_t ma, mb, mq;
+   mpz_init(mq);
+   // Import 256-bit data from 'a' and 'b' pointers
+   mpz_import_limbs(ma, a, 4); 
+   mpz_import_limbs(mb, b, 4);
+   
+   mpz_tdiv_q(mq, ma, mb); // Divide
+   
+   // Export to 'ret'
+   mpz_export_limbs(ret, mq, 4);
+   mpz_clears(ma, mb, mq, NULL);
+}
+
+Decision: For int256 and int512, the Native C++ Template approach (Strategy A) is superior. The overhead of malloc in GMP dominates the execution time for 256-bit operations. GMP becomes faster only at much larger sizes (2048+ bits).25 Aria should ship a "compiler-rt extension" library written in C++ that implements __div256, __mul256, etc., using unrolled loops and add-with-carry intrinsics (__builtin_add_overflow).27
+5.4 Integration with Twisted Balanced Binary (TBB)
+Aria's TBB types (e.g., tbb256) introduce error sentinels. The runtime library functions must be "TBB-aware."
+1. Wrapper Layer: The compiler lowers tbb256 math to a specific intrinsic: @aria.tbb.add.256.
+2. Sentinel Check: The runtime implementation of this intrinsic must start with a check:
+C++
+if (is_err(op1) |
+
+
+| is_err(op2)) return ERR_SENTINEL;
+```
+3. Operation: Perform the int256 addition (using the Native C++ logic).
+4. Overflow Check: If the addition overflows the 256-bit range (checked via __builtin_add_overflow on the high limb), return ERR_SENTINEL. This implements the "Sticky Error" semantic required by the Aria spec.28
+________________
+6. Integration and ABI Considerations
+6.1 Calling Convention and Struct Return (sret)
+When passing int256 or flt256 to functions, they are too large for standard registers (x86 RAX is 64-bit, XMM is 128-bit, YMM is 256-bit but usually reserved for vectors, not scalar integers).
+The compiler must utilize the sret (Struct Return) calling convention. The caller allocates stack space for the return value and passes a pointer to this space as a hidden first argument to the callee.
+
+
+Code snippet
+
+
+
+
+; LLVM IR for: flt256 result = add(a, b);
+call void @__aria_flt256_add(%struct.flt256* sret %result, %struct.flt256* %a, %struct.flt256* %b)
+
+This avoids copying large structs between registers and memory, effectively treating them as reference types at the ABI level.29
+6.2 Debugging Support (DWARF)
+To make these types usable in a debugger (GDB/LLDB), the compiler must emit correct DWARF metadata.
+   * For flt256, since no DWARF standard encoding exists for 256-bit IEEE, the compiler should emit it as a DW_TAG_structure_type containing a byte array. A custom LLDB formatter script (python) will be required to interpret these bytes and display a human-readable decimal number using APFloat or Python's decimal module.31
+   * For int256, modern DWARF supports large integer bit sizes (DW_ATE_signed, byte_size=32). GDB and LLDB handles strictly large integers better than custom floats.
+6.3 Performance Optimization Summary
+   1. Constant Folding: Use APFloat (with MPFR backing if needed) to compute constants at compile time.
+   2. Stack Allocation: Use mpfr_custom_init for runtime flt256 to eliminate heap churn.
+   3. Native Ints: Use unrolled C++ loop implementations for int256 math instead of GMP to avoid overhead.
+   4. Inlining: Mark the native integer math routines as inline or always_inline in the runtime headers to allow LLVM to optimize across the boundary where possible (e.g., if one operand is constant).
+________________
+7. Conclusion
+The architecture proposed herein bridges the gap between Aria's high-level precision requirements and the low-level reality of hardware limitations. By adopting the String-as-Truth pattern for parsing, we eliminate the silent precision loss inherent in standard C++ conversion tools. By implementing a Hybrid Runtime—leveraging stack-allocated MPFR for floats and native C++ algorithms for large integers—we achieve a balance of correctness and performance suitable for a systems language. This strategy transforms flt512 and int512 from theoretical curiosities into robust, usable primitives, empowering Aria developers to push the boundaries of computational accuracy.
+________________
+8. Works Cited
+   * 1
+LLVM Project. "APFloat Class Reference." LLVM Documentation.
+   * 2
+LLVM Project. "APFloat.h Source Code."
+   * 3
+Holoborodko, Pavel. "MPFR C++ Interface."
+   * 17
+GNU MPFR. "MPFR Manual: Custom Allocation."
+   * 5
+Yang, Shang-Yi. "LLVM Backend Support for Large Integers." LLVM-Dev.
+   * 18
+LLVM Discourse. "Mul/Div Support for Wider Types."
+   * 7
+Wikipedia. "Floating-point arithmetic."
+   * 10
+CodeRanch. "Precision loss String Float double."
+   * 15
+Lemire, Daniel. "Fast float parsing in practice."
+   * 3
+Holoborodko, Pavel. "MPFR C++ Wrapper."
+   * 14
+LLVM Source. "APFloat.cpp Implementation."
+   * 33
+StackOverflow. "Check for precision loss string to float."
+   * 20
+StackOverflow. "256-bit arithmetic in Clang extended integers."
+   * **** GNU MPFR. "MPFR 3.1.2 Documentation."
+   * 8
+StackOverflow. "Loss of precision casting float to double."
+   * 15
+Reddit. "Significance of last bit in finance."
+   * 34
+Kanthak, Stefan. "LLVM Integer Division Performance."
+   * 22
+LLVM Discourse. "Pass for lowering non-linear arithmetics."
+   * 20
+LLVM Blog. "The New Clang _ExtInt Feature."
+   * 23
+StackOverflow. "Efficiency of 128-bit division."
+   * 9
+StackOverflow. "Declaring octuple precision variables."
+   * 1
+LLVM Documentation. "APFloat Class Description."
+   * 2
+LLVM Source. "APFloat Semantics."
+   * 21
+LLVM Discourse. "Backend support for divisions > 128 bits."
+   * 24
+Lark, Dan. "128-bit Division Optimization."
+   * 16
+GNU MPFR. "Nomenclature and Types."
+   * 1
+LLVM Documentation. "APFloat Parsing."
+   * 17
+MPFR. "Custom Allocation Interface."
+   * 16
+MPFR. "Stack Allocation Details."
+   * 27
+StackOverflow. "256-bit integer type in GCC."
+   * 35
+Rust Documentation. "rustc_apfloat."
+   * 6
+LLVM LangRef. "Integer Type."
+   * 19
+StackOverflow. "LLVM arbitrary precision integer lowering."
+   * 36
+Rust Internals. "Integer Intrinsics for Arbitrary Integers."
+   * 14
+LLVM Doxygen. "APFloat Conversion Status."
+   * 11
+GitHub. "APFloat String Constructor Precision."
+   * 12
+LLVM Tutorial. "Kaleidoscope AST."
+   * 13
+Clang Doxygen. "NumericLiteralParser."
+   * 29
+Peterse, Yorick. "Handling Structure Arguments in LLVM."
+   * 30
+LLVM Discourse. "Passing Structs to C Functions."
+   * 37
+StackOverflow. "Passing structs by value in LLVM IR."
+   * 25
+ArchLinux Forums. "GMP vs Native Performance."
+   * 26
+NU42. "Excellent Optimization Story."
+   * 28
+Aria Programming Language v0.0.7 Guide.
+   * 28
+Aria Language Server Architecture Report.
+Works cited
+      1. class APFloat: LLVM/Clang 15.x documentation, accessed December 21, 2025, https://docs.hdoc.io/hdoc/llvm-project/r66A1A9331FF88FE0.html
+      2. llvm-project/llvm/include/llvm/ADT/APFloat.h at main - GitHub, accessed December 21, 2025, https://github.com/llvm/llvm-project/blob/main/llvm/include/llvm/ADT/APFloat.h
+      3. MPFR C++ - Pavel Holoborodko, accessed December 21, 2025, http://www.holoborodko.com/pavel/mpfr/
+      4. mpfr.pdf, accessed December 21, 2025, https://www.mpfr.org/mpfr-3.1.2/mpfr.pdf
+      5. [LLVMdev] Modular arithmetic processors - Google Groups, accessed December 21, 2025, https://groups.google.com/g/llvm-dev/c/TsRaelAQWzg/m/sCDWmRt8SgQJ
+      6. LLVM Language Reference Manual — LLVM 22.0.0git documentation, accessed December 21, 2025, https://llvm.org/docs/LangRef.html
+      7. Floating-point arithmetic - Wikipedia, accessed December 21, 2025, https://en.wikipedia.org/wiki/Floating-point_arithmetic
+      8. Loss of precision when casting float to double - c++ - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/66868379/loss-of-precision-when-casting-float-to-double
+      9. Declaring an octuple precision floating point variable in C++ - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/46038461/declaring-an-octuple-precision-floating-point-variable-in-c
+      10. Precision loss in String to Float and double to float (Beginning Java forum at Coderanch), accessed December 21, 2025, https://coderanch.com/t/564234/java/Precision-loss-String-Float-double
+      11. Precision loss in Apfloat(double, long, int) constructor · Issue #3 - GitHub, accessed December 21, 2025, https://github.com/mtommila/apfloat/issues/3
+      12. 2. Kaleidoscope: Implementing a Parser and AST — LLVM 22.0.0git documentation, accessed December 21, 2025, https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl02.html
+      13. clang::NumericLiteralParser Class Reference - LLVM, accessed December 21, 2025, https://clang.llvm.org/doxygen/classclang_1_1NumericLiteralParser.html
+      14. APFloat Class Reference - LLVM, accessed December 21, 2025, https://llvm.org/doxygen/classllvm_1_1APFloat.html
+      15. Fast float parsing in practice : r/cpp - Reddit, accessed December 21, 2025, https://www.reddit.com/r/cpp/comments/fgcufa/fast_float_parsing_in_practice/
+      16. This manual documents how to install and use the Multiple Precision Floating-Point Reliable Library, version 4.2.2., accessed December 21, 2025, https://www.mpfr.org/mpfr-current/mpfr.html
+      17. mpfr.pdf, accessed December 21, 2025, https://www.mpfr.org/mpfr-4.1.1/mpfr.pdf
+      18. Mul & div support for wider-than-legal types - LLVM Discussion Forums, accessed December 21, 2025, https://discourse.llvm.org/t/mul-div-support-for-wider-than-legal-types/35928
+      19. LLVM arbitrary precision integer - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/22255634/llvm-arbitrary-precision-integer
+      20. 256-bit arithmetic in Clang (extended integers) - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/63226753/256-bit-arithmetic-in-clang-extended-integers
+      21. Backend support for divisions > 128 bits - LLVM Discussion Forums, accessed December 21, 2025, https://discourse.llvm.org/t/backend-support-for-divisions-128-bits/53669
+      22. RFC: Pass for lowering "non-linear" arithmetics of illegal types - LLVM Discussion Forums, accessed December 21, 2025, https://discourse.llvm.org/t/rfc-pass-for-lowering-non-linear-arithmetics-of-illegal-types/38454
+      23. Why is __int128_t faster than long long on x86-64 GCC? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/63029428/why-is-int128-t-faster-than-long-long-on-x86-64-gcc
+      24. Optimizing 128-bit Division - Experimental chill, accessed December 21, 2025, https://danlark.org/2020/06/14/128-bit-division/
+      25. [SOLVED] GMP performance question. / Programming & Scripting / Arch Linux Forums, accessed December 21, 2025, https://bbs.archlinux.org/viewtopic.php?id=138780
+      26. An Excellent Optimization Story - ν42, accessed December 21, 2025, https://www.nu42.com/2016/01/excellent-optimization-story.html
+      27. Is there a 256-bit integer type in C? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/55802309/is-there-a-256-bit-integer-type-in-c
+      28. rcfull.txt
+      29. The mess that is handling structure arguments and returns in LLVM - Yorick Peterse, accessed December 21, 2025, https://yorickpeterse.com/articles/the-mess-that-is-handling-structure-arguments-and-returns-in-llvm/
+      30. Passing structs to C functions - Beginners - LLVM Discussion Forums, accessed December 21, 2025, https://discourse.llvm.org/t/passing-structs-to-c-functions/83938
+      31. [RFC] Memref of custom types - MLIR - LLVM Discussion Forums, accessed December 21, 2025, https://discourse.llvm.org/t/rfc-memref-of-custom-types/3558
+      32. Advice on mapping a custom-designed datatype to custom hardware : r/LLVM - Reddit, accessed December 21, 2025, https://www.reddit.com/r/LLVM/comments/1n1qgm2/advice_on_mapping_a_customdesigned_datatype_to/
+      33. Check for precision loss when converting string to float - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/73013913/check-for-precision-loss-when-converting-string-to-float
+      34. “True Lies” – or “What LLVM Claims, but Fails to Deliver”, accessed December 21, 2025, https://skanthak.hier-im-netz.de/llvm.html
+      35. rustc_apfloat - Rust - Docs.rs, accessed December 21, 2025, https://docs.rs/rustc_apfloat
+      36. Expose LLVM integer intrinsics for arbitrarily-large integers - compiler - Rust Internals, accessed December 21, 2025, https://internals.rust-lang.org/t/expose-llvm-integer-intrinsics-for-arbitrarily-large-integers/18907
+      37. LLVM IR How to pass struct to function - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/64322365/llvm-ir-how-to-pass-struct-to-function

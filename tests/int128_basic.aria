@@ -1,0 +1,51 @@
+// Test basic int128 operations
+// Part of Phase 3.1: Extended Precision Integers
+// NOTE: Using smaller values due to lexer limitation (currently int64_t based)
+
+func:main = int32() {
+    // Test int128 variables with values that fit in int64
+    int128:a = 1000000000000000;      // 1 quadrillion
+    int128:b = 2000000000000000;      // 2 quadrillion
+    int128:c = -5000000000000000;     // Negative test
+
+    // Test basic arithmetic
+    int128:sum = a + b;
+    int128:diff = b - a;
+    int128:prod = a * 2;  // Small multiplier
+    int128:quot = b / a;
+    int128:neg = -a;
+
+    // Test comparisons
+    bool:eq = (a == b);
+    bool:ne = (a != b);
+    bool:lt = (a < b);
+    bool:gt = (a > b);
+    bool:le = (a <= a);
+    bool:ge = (a >= a);
+
+    // Test signed operations
+    int128:abs_c = c * -1;  // Manual abs
+
+    // Verify some results
+    int128:expected_sum = 3000000000000000;
+    int128:expected_diff = 1000000000000000;
+    
+    if (sum != expected_sum) {
+        int32:one = 1;
+        pass(one);  // Fail
+    }
+    
+    if (diff != expected_diff) {
+        int32:one = 1;
+        pass(one);  // Fail
+    }
+    
+    if (!lt) {  // a should be less than b
+        int32:one = 1;
+        pass(one);  // Fail
+    }
+
+    // All tests passed
+    int32:zero = 0;
+    pass(zero);
+};
