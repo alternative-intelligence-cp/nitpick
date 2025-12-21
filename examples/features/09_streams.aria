@@ -1,0 +1,33 @@
+// ============================================================================
+// Example 09: 6-Stream I/O System
+// ============================================================================
+// Demonstrates:
+// - stdout_write() for standard output
+// - stderr_write() for error messages
+// - stddbg_write() for debug information
+// - stdin_read_line() for reading user input
+// - Separation of data, error, and debug channels
+// ============================================================================
+
+func:main = int64(){
+    // Write to different output streams
+    stdout_write("This goes to standard output\n");
+    stderr_write("This goes to standard error\n");
+    stddbg_write("This goes to debug output\n");
+    
+    // Read from standard input
+    stdout_write("Enter your name: ");
+    string:name = stdin_read_line();
+    
+    // Use the input
+    stdout_write("Hello, ");
+    stdout_write(name);
+    stdout_write("\n");
+    
+    // Demonstrate stream separation
+    stdout_write("Data output\n");
+    stderr_write("Error output\n");
+    stddbg_write("Debug output\n");
+    
+    pass(0);
+};
