@@ -498,15 +498,45 @@ bool emit_assembly(llvm::Module* module, const std::string& output_file) {
 }
 
 /**
- * Link object file to executable (placeholder)
+ * Link object file to executable
  */
 bool link_executable(const std::string& object_file, const std::string& output_file) {
-    // For now, use system linker
-    std::string cmd = "clang " + object_file + " -o " + output_file;
+    // Try to find the runtime library in several locations
+    std::vector<std::string> search_paths = {
+        "build/libaria_runtime.a",           // Build directory (development)
+        "../build/libaria_runtime.a",        // Relative to executable
+        "libaria_runtime.a",                 // Current directory
+        "/usr/local/lib/libaria_runtime.a",  // Installation directory
+        "/usr/lib/libaria_runtime.a"         // System installation
+    };
+    
+    std::string runtime_lib;
+    for (const auto& path : search_paths) {
+        if (std::system(("test -f " + path + " 2>/dev/null").c_str()) == 0) {
+            runtime_lib = path;
+            break;
+        }
+    }
+    
+    if (runtime_lib.empty()) {
+        std::cerr << "Warning: Could not find libaria_runtime.a, linking without runtime library\n";
+        std::cerr << "  Searched paths:\n";
+        for (const auto& path : search_paths) {
+            std::cerr << "    " << path << "\n";
+        }
+        // Link without runtime (will fail if runtime functions are used)
+        std::string cmd = "clang " + object_file + " -o " + output_file;
+        int result = std::system(cmd.c_str());
+        return result == 0;
+    }
+    
+    // Link with clang, including runtime library
+    std::string cmd = "clang " + object_file + " " + runtime_lib + " -o " + output_file;
     int result = std::system(cmd.c_str());
     
     if (result != 0) {
         std::cerr << "Error: Linking failed\n";
+        std::cerr << "  Command: " << cmd << "\n";
         return false;
     }
     

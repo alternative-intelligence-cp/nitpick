@@ -83,6 +83,7 @@ set(CMAKE_DEPEND_INFO_FILES
   "CMakeFiles/ARMTargetParserTableGen.dir/DependInfo.cmake"
   "CMakeFiles/AArch64TargetParserTableGen.dir/DependInfo.cmake"
   "CMakeFiles/RISCVTargetParserTableGen.dir/DependInfo.cmake"
+  "CMakeFiles/aria_runtime.dir/DependInfo.cmake"
   "CMakeFiles/ariac.dir/DependInfo.cmake"
   "CMakeFiles/aria-ls.dir/DependInfo.cmake"
   "CMakeFiles/aria-dap.dir/DependInfo.cmake"

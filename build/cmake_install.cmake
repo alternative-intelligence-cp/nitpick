@@ -47,6 +47,14 @@ if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   include("/home/randy/._____RANDY_____/REPOS/aria/build/vendor/toml11/cmake_install.cmake")
 endif()
 
+if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/randy/._____RANDY_____/REPOS/aria/build/libaria_runtime.a")
+endif()
+
+if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+  include("/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles/aria_runtime.dir/install-cxx-module-bmi-Debug.cmake" OPTIONAL)
+endif()
+
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
   include("/home/randy/._____RANDY_____/REPOS/aria/build/tests/cmake_install.cmake")

@@ -95,6 +95,51 @@ rebuild_cache:
 rebuild_cache/fast: rebuild_cache
 .PHONY : rebuild_cache/fast
 
+# Special rule for the target list_install_components
+list_install_components:
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Available install components are: \"Unspecified\""
+.PHONY : list_install_components
+
+# Special rule for the target list_install_components
+list_install_components/fast: list_install_components
+.PHONY : list_install_components/fast
+
+# Special rule for the target install
+install: preinstall
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Install the project..."
+	/usr/bin/cmake -P cmake_install.cmake
+.PHONY : install
+
+# Special rule for the target install
+install/fast: preinstall/fast
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Install the project..."
+	/usr/bin/cmake -P cmake_install.cmake
+.PHONY : install/fast
+
+# Special rule for the target install/local
+install/local: preinstall
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Installing only the local directory..."
+	/usr/bin/cmake -DCMAKE_INSTALL_LOCAL_ONLY=1 -P cmake_install.cmake
+.PHONY : install/local
+
+# Special rule for the target install/local
+install/local/fast: preinstall/fast
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Installing only the local directory..."
+	/usr/bin/cmake -DCMAKE_INSTALL_LOCAL_ONLY=1 -P cmake_install.cmake
+.PHONY : install/local/fast
+
+# Special rule for the target install/strip
+install/strip: preinstall
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Installing the project stripped..."
+	/usr/bin/cmake -DCMAKE_INSTALL_DO_STRIP=1 -P cmake_install.cmake
+.PHONY : install/strip
+
+# Special rule for the target install/strip
+install/strip/fast: preinstall/fast
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Installing the project stripped..."
+	/usr/bin/cmake -DCMAKE_INSTALL_DO_STRIP=1 -P cmake_install.cmake
+.PHONY : install/strip/fast
+
 # The main all target
 all: cmake_check_build_system
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles /home/randy/._____RANDY_____/REPOS/aria/build//CMakeFiles/progress.marks
@@ -216,6 +261,19 @@ RISCVTargetParserTableGen: cmake_check_build_system
 RISCVTargetParserTableGen/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/RISCVTargetParserTableGen.dir/build.make CMakeFiles/RISCVTargetParserTableGen.dir/build
 .PHONY : RISCVTargetParserTableGen/fast
+
+#=============================================================================
+# Target rules for targets named aria_runtime
+
+# Build rule for target.
+aria_runtime: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 aria_runtime
+.PHONY : aria_runtime
+
+# fast build rule for target.
+aria_runtime/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/build
+.PHONY : aria_runtime/fast
 
 #=============================================================================
 # Target rules for targets named ariac
@@ -1363,6 +1421,7 @@ src/runtime/allocators/wild_alloc.o: src/runtime/allocators/wild_alloc.cpp.o
 
 # target to build an object file
 src/runtime/allocators/wild_alloc.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/wild_alloc.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/wild_alloc.cpp.o
 .PHONY : src/runtime/allocators/wild_alloc.cpp.o
 
@@ -1371,6 +1430,7 @@ src/runtime/allocators/wild_alloc.i: src/runtime/allocators/wild_alloc.cpp.i
 
 # target to preprocess a source file
 src/runtime/allocators/wild_alloc.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/wild_alloc.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/wild_alloc.cpp.i
 .PHONY : src/runtime/allocators/wild_alloc.cpp.i
 
@@ -1379,6 +1439,7 @@ src/runtime/allocators/wild_alloc.s: src/runtime/allocators/wild_alloc.cpp.s
 
 # target to generate assembly for a file
 src/runtime/allocators/wild_alloc.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/wild_alloc.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/wild_alloc.cpp.s
 .PHONY : src/runtime/allocators/wild_alloc.cpp.s
 
@@ -1387,6 +1448,7 @@ src/runtime/allocators/wildx_alloc.o: src/runtime/allocators/wildx_alloc.cpp.o
 
 # target to build an object file
 src/runtime/allocators/wildx_alloc.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/wildx_alloc.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/wildx_alloc.cpp.o
 .PHONY : src/runtime/allocators/wildx_alloc.cpp.o
 
@@ -1395,6 +1457,7 @@ src/runtime/allocators/wildx_alloc.i: src/runtime/allocators/wildx_alloc.cpp.i
 
 # target to preprocess a source file
 src/runtime/allocators/wildx_alloc.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/wildx_alloc.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/wildx_alloc.cpp.i
 .PHONY : src/runtime/allocators/wildx_alloc.cpp.i
 
@@ -1403,6 +1466,7 @@ src/runtime/allocators/wildx_alloc.s: src/runtime/allocators/wildx_alloc.cpp.s
 
 # target to generate assembly for a file
 src/runtime/allocators/wildx_alloc.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/wildx_alloc.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/wildx_alloc.cpp.s
 .PHONY : src/runtime/allocators/wildx_alloc.cpp.s
 
@@ -1411,6 +1475,7 @@ src/runtime/assembler/assembler.o: src/runtime/assembler/assembler.cpp.o
 
 # target to build an object file
 src/runtime/assembler/assembler.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/assembler/assembler.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/assembler.cpp.o
 .PHONY : src/runtime/assembler/assembler.cpp.o
 
@@ -1419,6 +1484,7 @@ src/runtime/assembler/assembler.i: src/runtime/assembler/assembler.cpp.i
 
 # target to preprocess a source file
 src/runtime/assembler/assembler.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/assembler/assembler.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/assembler.cpp.i
 .PHONY : src/runtime/assembler/assembler.cpp.i
 
@@ -1427,6 +1493,7 @@ src/runtime/assembler/assembler.s: src/runtime/assembler/assembler.cpp.s
 
 # target to generate assembly for a file
 src/runtime/assembler/assembler.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/assembler/assembler.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/assembler.cpp.s
 .PHONY : src/runtime/assembler/assembler.cpp.s
 
@@ -1435,6 +1502,7 @@ src/runtime/assembler/code_cache.o: src/runtime/assembler/code_cache.cpp.o
 
 # target to build an object file
 src/runtime/assembler/code_cache.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/assembler/code_cache.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/code_cache.cpp.o
 .PHONY : src/runtime/assembler/code_cache.cpp.o
 
@@ -1443,6 +1511,7 @@ src/runtime/assembler/code_cache.i: src/runtime/assembler/code_cache.cpp.i
 
 # target to preprocess a source file
 src/runtime/assembler/code_cache.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/assembler/code_cache.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/code_cache.cpp.i
 .PHONY : src/runtime/assembler/code_cache.cpp.i
 
@@ -1451,6 +1520,7 @@ src/runtime/assembler/code_cache.s: src/runtime/assembler/code_cache.cpp.s
 
 # target to generate assembly for a file
 src/runtime/assembler/code_cache.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/assembler/code_cache.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/code_cache.cpp.s
 .PHONY : src/runtime/assembler/code_cache.cpp.s
 
@@ -1459,6 +1529,7 @@ src/runtime/assembler/llvm_jit.o: src/runtime/assembler/llvm_jit.cpp.o
 
 # target to build an object file
 src/runtime/assembler/llvm_jit.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/assembler/llvm_jit.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/llvm_jit.cpp.o
 .PHONY : src/runtime/assembler/llvm_jit.cpp.o
 
@@ -1467,6 +1538,7 @@ src/runtime/assembler/llvm_jit.i: src/runtime/assembler/llvm_jit.cpp.i
 
 # target to preprocess a source file
 src/runtime/assembler/llvm_jit.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/assembler/llvm_jit.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/llvm_jit.cpp.i
 .PHONY : src/runtime/assembler/llvm_jit.cpp.i
 
@@ -1475,6 +1547,7 @@ src/runtime/assembler/llvm_jit.s: src/runtime/assembler/llvm_jit.cpp.s
 
 # target to generate assembly for a file
 src/runtime/assembler/llvm_jit.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/assembler/llvm_jit.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/llvm_jit.cpp.s
 .PHONY : src/runtime/assembler/llvm_jit.cpp.s
 
@@ -1483,6 +1556,7 @@ src/runtime/async/coroutine.o: src/runtime/async/coroutine.cpp.o
 
 # target to build an object file
 src/runtime/async/coroutine.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/coroutine.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/coroutine.cpp.o
 .PHONY : src/runtime/async/coroutine.cpp.o
 
@@ -1491,6 +1565,7 @@ src/runtime/async/coroutine.i: src/runtime/async/coroutine.cpp.i
 
 # target to preprocess a source file
 src/runtime/async/coroutine.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/coroutine.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/coroutine.cpp.i
 .PHONY : src/runtime/async/coroutine.cpp.i
 
@@ -1499,6 +1574,7 @@ src/runtime/async/coroutine.s: src/runtime/async/coroutine.cpp.s
 
 # target to generate assembly for a file
 src/runtime/async/coroutine.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/coroutine.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/coroutine.cpp.s
 .PHONY : src/runtime/async/coroutine.cpp.s
 
@@ -1507,6 +1583,7 @@ src/runtime/async/executor.o: src/runtime/async/executor.cpp.o
 
 # target to build an object file
 src/runtime/async/executor.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/executor.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/executor.cpp.o
 .PHONY : src/runtime/async/executor.cpp.o
 
@@ -1515,6 +1592,7 @@ src/runtime/async/executor.i: src/runtime/async/executor.cpp.i
 
 # target to preprocess a source file
 src/runtime/async/executor.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/executor.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/executor.cpp.i
 .PHONY : src/runtime/async/executor.cpp.i
 
@@ -1523,6 +1601,7 @@ src/runtime/async/executor.s: src/runtime/async/executor.cpp.s
 
 # target to generate assembly for a file
 src/runtime/async/executor.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/executor.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/executor.cpp.s
 .PHONY : src/runtime/async/executor.cpp.s
 
@@ -1531,6 +1610,7 @@ src/runtime/atomic/atomic.o: src/runtime/atomic/atomic.cpp.o
 
 # target to build an object file
 src/runtime/atomic/atomic.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/atomic/atomic.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/atomic/atomic.cpp.o
 .PHONY : src/runtime/atomic/atomic.cpp.o
 
@@ -1539,6 +1619,7 @@ src/runtime/atomic/atomic.i: src/runtime/atomic/atomic.cpp.i
 
 # target to preprocess a source file
 src/runtime/atomic/atomic.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/atomic/atomic.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/atomic/atomic.cpp.i
 .PHONY : src/runtime/atomic/atomic.cpp.i
 
@@ -1547,6 +1628,7 @@ src/runtime/atomic/atomic.s: src/runtime/atomic/atomic.cpp.s
 
 # target to generate assembly for a file
 src/runtime/atomic/atomic.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/atomic/atomic.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/atomic/atomic.cpp.s
 .PHONY : src/runtime/atomic/atomic.cpp.s
 
@@ -1555,6 +1637,7 @@ src/runtime/collections/collections.o: src/runtime/collections/collections.cpp.o
 
 # target to build an object file
 src/runtime/collections/collections.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/collections.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections.cpp.o
 .PHONY : src/runtime/collections/collections.cpp.o
 
@@ -1563,6 +1646,7 @@ src/runtime/collections/collections.i: src/runtime/collections/collections.cpp.i
 
 # target to preprocess a source file
 src/runtime/collections/collections.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/collections.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections.cpp.i
 .PHONY : src/runtime/collections/collections.cpp.i
 
@@ -1571,6 +1655,7 @@ src/runtime/collections/collections.s: src/runtime/collections/collections.cpp.s
 
 # target to generate assembly for a file
 src/runtime/collections/collections.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/collections.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections.cpp.s
 .PHONY : src/runtime/collections/collections.cpp.s
 
@@ -1579,6 +1664,7 @@ src/runtime/gc/allocator.o: src/runtime/gc/allocator.cpp.o
 
 # target to build an object file
 src/runtime/gc/allocator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/gc/allocator.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/gc/allocator.cpp.o
 .PHONY : src/runtime/gc/allocator.cpp.o
 
@@ -1587,6 +1673,7 @@ src/runtime/gc/allocator.i: src/runtime/gc/allocator.cpp.i
 
 # target to preprocess a source file
 src/runtime/gc/allocator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/gc/allocator.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/gc/allocator.cpp.i
 .PHONY : src/runtime/gc/allocator.cpp.i
 
@@ -1595,6 +1682,7 @@ src/runtime/gc/allocator.s: src/runtime/gc/allocator.cpp.s
 
 # target to generate assembly for a file
 src/runtime/gc/allocator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/gc/allocator.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/gc/allocator.cpp.s
 .PHONY : src/runtime/gc/allocator.cpp.s
 
@@ -1603,6 +1691,7 @@ src/runtime/gc/gc.o: src/runtime/gc/gc.cpp.o
 
 # target to build an object file
 src/runtime/gc/gc.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/gc/gc.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/gc/gc.cpp.o
 .PHONY : src/runtime/gc/gc.cpp.o
 
@@ -1611,6 +1700,7 @@ src/runtime/gc/gc.i: src/runtime/gc/gc.cpp.i
 
 # target to preprocess a source file
 src/runtime/gc/gc.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/gc/gc.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/gc/gc.cpp.i
 .PHONY : src/runtime/gc/gc.cpp.i
 
@@ -1619,6 +1709,7 @@ src/runtime/gc/gc.s: src/runtime/gc/gc.cpp.s
 
 # target to generate assembly for a file
 src/runtime/gc/gc.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/gc/gc.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/gc/gc.cpp.s
 .PHONY : src/runtime/gc/gc.cpp.s
 
@@ -1627,6 +1718,7 @@ src/runtime/io/io.o: src/runtime/io/io.cpp.o
 
 # target to build an object file
 src/runtime/io/io.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/io.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/io/io.cpp.o
 .PHONY : src/runtime/io/io.cpp.o
 
@@ -1635,6 +1727,7 @@ src/runtime/io/io.i: src/runtime/io/io.cpp.i
 
 # target to preprocess a source file
 src/runtime/io/io.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/io.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/io/io.cpp.i
 .PHONY : src/runtime/io/io.cpp.i
 
@@ -1643,6 +1736,7 @@ src/runtime/io/io.s: src/runtime/io/io.cpp.s
 
 # target to generate assembly for a file
 src/runtime/io/io.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/io.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/io/io.cpp.s
 .PHONY : src/runtime/io/io.cpp.s
 
@@ -1651,6 +1745,7 @@ src/runtime/math/math.o: src/runtime/math/math.cpp.o
 
 # target to build an object file
 src/runtime/math/math.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/math/math.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/math.cpp.o
 .PHONY : src/runtime/math/math.cpp.o
 
@@ -1659,6 +1754,7 @@ src/runtime/math/math.i: src/runtime/math/math.cpp.i
 
 # target to preprocess a source file
 src/runtime/math/math.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/math/math.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/math.cpp.i
 .PHONY : src/runtime/math/math.cpp.i
 
@@ -1667,6 +1763,7 @@ src/runtime/math/math.s: src/runtime/math/math.cpp.s
 
 # target to generate assembly for a file
 src/runtime/math/math.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/math/math.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/math.cpp.s
 .PHONY : src/runtime/math/math.cpp.s
 
@@ -1675,6 +1772,7 @@ src/runtime/process/process.o: src/runtime/process/process.cpp.o
 
 # target to build an object file
 src/runtime/process/process.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/process/process.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/process/process.cpp.o
 .PHONY : src/runtime/process/process.cpp.o
 
@@ -1683,6 +1781,7 @@ src/runtime/process/process.i: src/runtime/process/process.cpp.i
 
 # target to preprocess a source file
 src/runtime/process/process.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/process/process.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/process/process.cpp.i
 .PHONY : src/runtime/process/process.cpp.i
 
@@ -1691,6 +1790,7 @@ src/runtime/process/process.s: src/runtime/process/process.cpp.s
 
 # target to generate assembly for a file
 src/runtime/process/process.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/process/process.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/process/process.cpp.s
 .PHONY : src/runtime/process/process.cpp.s
 
@@ -1699,6 +1799,7 @@ src/runtime/result/result.o: src/runtime/result/result.cpp.o
 
 # target to build an object file
 src/runtime/result/result.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/result/result.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/result/result.cpp.o
 .PHONY : src/runtime/result/result.cpp.o
 
@@ -1707,6 +1808,7 @@ src/runtime/result/result.i: src/runtime/result/result.cpp.i
 
 # target to preprocess a source file
 src/runtime/result/result.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/result/result.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/result/result.cpp.i
 .PHONY : src/runtime/result/result.cpp.i
 
@@ -1715,6 +1817,7 @@ src/runtime/result/result.s: src/runtime/result/result.cpp.s
 
 # target to generate assembly for a file
 src/runtime/result/result.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/result/result.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/result/result.cpp.s
 .PHONY : src/runtime/result/result.cpp.s
 
@@ -1723,6 +1826,7 @@ src/runtime/stdlib/stdlib.o: src/runtime/stdlib/stdlib.cpp.o
 
 # target to build an object file
 src/runtime/stdlib/stdlib.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/stdlib/stdlib.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/stdlib/stdlib.cpp.o
 .PHONY : src/runtime/stdlib/stdlib.cpp.o
 
@@ -1731,6 +1835,7 @@ src/runtime/stdlib/stdlib.i: src/runtime/stdlib/stdlib.cpp.i
 
 # target to preprocess a source file
 src/runtime/stdlib/stdlib.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/stdlib/stdlib.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/stdlib/stdlib.cpp.i
 .PHONY : src/runtime/stdlib/stdlib.cpp.i
 
@@ -1739,6 +1844,7 @@ src/runtime/stdlib/stdlib.s: src/runtime/stdlib/stdlib.cpp.s
 
 # target to generate assembly for a file
 src/runtime/stdlib/stdlib.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/stdlib/stdlib.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/stdlib/stdlib.cpp.s
 .PHONY : src/runtime/stdlib/stdlib.cpp.s
 
@@ -1747,6 +1853,7 @@ src/runtime/streams/streams.o: src/runtime/streams/streams.cpp.o
 
 # target to build an object file
 src/runtime/streams/streams.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/streams/streams.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/streams/streams.cpp.o
 .PHONY : src/runtime/streams/streams.cpp.o
 
@@ -1755,6 +1862,7 @@ src/runtime/streams/streams.i: src/runtime/streams/streams.cpp.i
 
 # target to preprocess a source file
 src/runtime/streams/streams.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/streams/streams.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/streams/streams.cpp.i
 .PHONY : src/runtime/streams/streams.cpp.i
 
@@ -1763,6 +1871,7 @@ src/runtime/streams/streams.s: src/runtime/streams/streams.cpp.s
 
 # target to generate assembly for a file
 src/runtime/streams/streams.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/streams/streams.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/streams/streams.cpp.s
 .PHONY : src/runtime/streams/streams.cpp.s
 
@@ -1771,6 +1880,7 @@ src/runtime/strings/strings.o: src/runtime/strings/strings.cpp.o
 
 # target to build an object file
 src/runtime/strings/strings.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/strings/strings.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings.cpp.o
 .PHONY : src/runtime/strings/strings.cpp.o
 
@@ -1779,6 +1889,7 @@ src/runtime/strings/strings.i: src/runtime/strings/strings.cpp.i
 
 # target to preprocess a source file
 src/runtime/strings/strings.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/strings/strings.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings.cpp.i
 .PHONY : src/runtime/strings/strings.cpp.i
 
@@ -1787,6 +1898,7 @@ src/runtime/strings/strings.s: src/runtime/strings/strings.cpp.s
 
 # target to generate assembly for a file
 src/runtime/strings/strings.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/strings/strings.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings.cpp.s
 .PHONY : src/runtime/strings/strings.cpp.s
 
@@ -1795,6 +1907,7 @@ src/runtime/thread/thread.o: src/runtime/thread/thread.cpp.o
 
 # target to build an object file
 src/runtime/thread/thread.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/thread/thread.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/thread/thread.cpp.o
 .PHONY : src/runtime/thread/thread.cpp.o
 
@@ -1803,6 +1916,7 @@ src/runtime/thread/thread.i: src/runtime/thread/thread.cpp.i
 
 # target to preprocess a source file
 src/runtime/thread/thread.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/thread/thread.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/thread/thread.cpp.i
 .PHONY : src/runtime/thread/thread.cpp.i
 
@@ -1811,6 +1925,7 @@ src/runtime/thread/thread.s: src/runtime/thread/thread.cpp.s
 
 # target to generate assembly for a file
 src/runtime/thread/thread.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/thread/thread.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/thread/thread.cpp.s
 .PHONY : src/runtime/thread/thread.cpp.s
 
@@ -1819,6 +1934,7 @@ src/runtime/timer/timer.o: src/runtime/timer/timer.cpp.o
 
 # target to build an object file
 src/runtime/timer/timer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/timer/timer.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/timer/timer.cpp.o
 .PHONY : src/runtime/timer/timer.cpp.o
 
@@ -1827,6 +1943,7 @@ src/runtime/timer/timer.i: src/runtime/timer/timer.cpp.i
 
 # target to preprocess a source file
 src/runtime/timer/timer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/timer/timer.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/timer/timer.cpp.i
 .PHONY : src/runtime/timer/timer.cpp.i
 
@@ -1835,6 +1952,7 @@ src/runtime/timer/timer.s: src/runtime/timer/timer.cpp.s
 
 # target to generate assembly for a file
 src/runtime/timer/timer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/timer/timer.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/timer/timer.cpp.s
 .PHONY : src/runtime/timer/timer.cpp.s
 
@@ -2298,6 +2416,10 @@ help:
 	@echo "... clean"
 	@echo "... depend"
 	@echo "... edit_cache"
+	@echo "... install"
+	@echo "... install/local"
+	@echo "... install/strip"
+	@echo "... list_install_components"
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... AArch64TargetParserTableGen"
@@ -2339,6 +2461,7 @@ help:
 	@echo "... aria-doc"
 	@echo "... aria-ls"
 	@echo "... aria-pkg"
+	@echo "... aria_runtime"
 	@echo "... ariac"
 	@echo "... test_runner"
 	@echo "... src/backend/ir/codegen_expr.o"
