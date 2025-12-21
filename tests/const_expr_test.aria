@@ -1,0 +1,20 @@
+// Test const expressions - compile-time evaluation
+
+const int64:BASE = 10;
+const int64:MULTIPLIER = 3;
+const int64:RESULT = BASE * MULTIPLIER;  // Should be 30 at compile time
+
+func:main = int32() {
+    int64:value = RESULT;
+    
+    // This should be 30
+    int64:expected = 30;
+    
+    int32:zero = 0;
+    if (value == expected) {
+        pass(zero);  // Success
+    }
+    
+    int32:one = 1;
+    pass(one);  // Failure - values don't match
+};

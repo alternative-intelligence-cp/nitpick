@@ -1528,12 +1528,28 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         }
     }
     
+    // Phase 2.2: Evaluate const expressions at compile time
+    ComptimeValue* evaluatedConstValue = nullptr;
+    if (stmt->isConst && stmt->initializer) {
+        ComptimeValue constValue = constEvaluator->evaluate(stmt->initializer.get());
+        // Store evaluated value on heap so it persists
+        evaluatedConstValue = new ComptimeValue(constValue);
+    }
+    
     // Define symbol in symbol table
     symbolTable->defineSymbol(stmt->varName, 
                              stmt->isConst ? SymbolKind::CONSTANT : SymbolKind::VARIABLE,
                              declaredType, 
                              stmt->line, 
                              stmt->column);
+    
+    // If we evaluated a const value, store it in the symbol
+    if (evaluatedConstValue) {
+        Symbol* sym = symbolTable->resolveSymbol(stmt->varName);
+        if (sym) {
+            sym->setComptimeValue(evaluatedConstValue);
+        }
+    }
 }
 
 // ============================================================================
