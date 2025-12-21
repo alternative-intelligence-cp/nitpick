@@ -4,6 +4,7 @@
 #include "type.h"
 #include "symbol_table.h"
 #include "generic_resolver.h"
+#include "const_evaluator.h"  // Phase 2.2: Compile-time evaluation
 #include "frontend/ast/ast_node.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
@@ -42,6 +43,7 @@ private:
     SymbolTable* symbolTable;
     GenericResolver* genericResolver;
     Monomorphizer* monomorphizer;
+    ConstEvaluator* constEvaluator;  // Phase 2.2: Compile-time evaluation
     std::vector<std::string> errors;  // Accumulated type errors
     
     // Current function return type (for return statement checking)
@@ -438,7 +440,12 @@ public:
                 GenericResolver* resolver = nullptr, Monomorphizer* morpher = nullptr)
         : typeSystem(typeSystem), symbolTable(symbolTable),
           genericResolver(resolver), monomorphizer(morpher),
+          constEvaluator(new ConstEvaluator(symbolTable)),  // Phase 2.2
           currentFunctionReturnType(nullptr) {}
+    
+    ~TypeChecker() {
+        delete constEvaluator;  // Clean up
+    }
     
     /**
      * Main entry point: Type check entire module AST
