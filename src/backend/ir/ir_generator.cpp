@@ -1598,6 +1598,121 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 return builder.CreateCall(printf_func, printf_args, "print_call");
             }
             
+            // Builtin: stdout_write(string) -> int64
+            if (callee->name == "stdout_write") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg || !arg->getType()->isPointerTy()) {
+                    return nullptr;
+                }
+                
+                // Declare aria_stdout_write if not already present
+                llvm::Function* func = module->getFunction("aria_stdout_write");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(),
+                        {llvm::PointerType::get(context, 0)},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_stdout_write",
+                        module.get()
+                    );
+                }
+                
+                return builder.CreateCall(func, {arg}, "stdout_write_call");
+            }
+            
+            // Builtin: stderr_write(string) -> int64
+            if (callee->name == "stderr_write") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg || !arg->getType()->isPointerTy()) {
+                    return nullptr;
+                }
+                
+                // Declare aria_stderr_write if not already present
+                llvm::Function* func = module->getFunction("aria_stderr_write");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(),
+                        {llvm::PointerType::get(context, 0)},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_stderr_write",
+                        module.get()
+                    );
+                }
+                
+                return builder.CreateCall(func, {arg}, "stderr_write_call");
+            }
+            
+            // Builtin: stddbg_write(string) -> int64
+            if (callee->name == "stddbg_write") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg || !arg->getType()->isPointerTy()) {
+                    return nullptr;
+                }
+                
+                // Declare aria_stddbg_write if not already present
+                llvm::Function* func = module->getFunction("aria_stddbg_write");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(),
+                        {llvm::PointerType::get(context, 0)},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_stddbg_write",
+                        module.get()
+                    );
+                }
+                
+                return builder.CreateCall(func, {arg}, "stddbg_write_call");
+            }
+            
+            // Builtin: stdin_read_line() -> string
+            if (callee->name == "stdin_read_line") {
+                if (call->arguments.size() != 0) {
+                    return nullptr;
+                }
+                
+                // Declare aria_stdin_read_line if not already present
+                llvm::Function* func = module->getFunction("aria_stdin_read_line");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        llvm::PointerType::get(context, 0),
+                        {},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_stdin_read_line",
+                        module.get()
+                    );
+                }
+                
+                return builder.CreateCall(func, {}, "stdin_read_line_call");
+            }
+            
             // Check if this is a specialized generic call
             std::string functionName = callee->name;
             if (!call->specializedMangledName.empty()) {
