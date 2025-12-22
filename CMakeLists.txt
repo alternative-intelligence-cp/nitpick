@@ -181,6 +181,7 @@ set(RUNTIME_SOURCES
     src/runtime/allocators/pool_alloc.cpp
     src/runtime/allocators/slab_alloc.cpp
     src/runtime/allocators/arena_builtins.cpp
+    src/runtime/allocators/pool_builtins.cpp
     src/runtime/assembler/assembler.cpp
     src/runtime/assembler/llvm_jit.cpp
     src/runtime/assembler/code_cache.cpp

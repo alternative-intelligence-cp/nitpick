@@ -827,6 +827,93 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             }
             return typeSystem->getPrimitiveType("int64");
         }
+        
+        // Pool allocator builtins
+        if (idExpr->name == "pool_new") {
+            if (expr->arguments.size() != 2) {
+                addError("pool_new() requires exactly two arguments (block_size, initial_capacity)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* blockSizeType = inferType(expr->arguments[0].get());
+            Type* capacityType = inferType(expr->arguments[1].get());
+            if (blockSizeType->getKind() == TypeKind::ERROR || capacityType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        if (idExpr->name == "pool_alloc") {
+            if (expr->arguments.size() != 1) {
+                addError("pool_alloc() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        if (idExpr->name == "pool_free") {
+            if (expr->arguments.size() != 2) {
+                addError("pool_free() requires exactly two arguments (handle, ptr)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* handleType = inferType(expr->arguments[0].get());
+            Type* ptrType = inferType(expr->arguments[1].get());
+            if (handleType->getKind() == TypeKind::ERROR || ptrType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        if (idExpr->name == "pool_reset") {
+            if (expr->arguments.size() != 1) {
+                addError("pool_reset() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        if (idExpr->name == "pool_destroy") {
+            if (expr->arguments.size() != 1) {
+                addError("pool_destroy() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        if (idExpr->name == "pool_get_total_blocks") {
+            if (expr->arguments.size() != 1) {
+                addError("pool_get_total_blocks() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        if (idExpr->name == "pool_get_used_blocks") {
+            if (expr->arguments.size() != 1) {
+                addError("pool_get_used_blocks() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
     }
     
     // Infer callee type (should be function type or callable object)
