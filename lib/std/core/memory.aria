@@ -1,0 +1,242 @@
+/**
+ * Aria Standard Library - Core Memory Management
+ * 
+ * This module provides type-safe wrappers around the wild memory allocator.
+ * These functions enable manual memory management for performance-critical code
+ * or interoperability with C libraries.
+ * 
+ * Usage:
+ *   use std.core.memory;
+ * 
+ *   wild int64@:ptr = alloc<int64>();
+ *   if (ptr == null) { error("Out of memory"); }
+ *   defer free<int64>(ptr);
+ *   
+ *   ptr@ = 42;
+ * 
+ * Reference: docs/stdlib/memory_api.md
+ * Phase: 4.1 - Core Memory Functions
+ */
+
+// =============================================================================
+// Type-Safe Allocation (Generic Functions)
+// =============================================================================
+
+/**
+ * Allocate memory for a single value of type T
+ * 
+ * Returns wild pointer to uninitialized memory. Use defer to ensure cleanup.
+ * 
+ * Example:
+ *   wild float64@:temperature = alloc<float64>();
+ *   defer free<float64>(temperature);
+ *   temperature@ = 98.6;
+ */
+func:alloc<T> = wild T@() {
+    // Get size of type T at compile time
+    int64:size = @sizeof(T);
+    
+    // Call runtime allocator
+    wild void@:raw_ptr = @extern("aria_alloc", size);
+    
+    // Cast to typed pointer
+    wild T@:typed_ptr = @cast<wild T@>(raw_ptr);
+    
+    return typed_ptr;
+}
+
+/**
+ * Allocate array of count elements of type T
+ * 
+ * Includes overflow protection - will return null if count * sizeof(T) overflows.
+ * 
+ * Example:
+ *   wild int32@:numbers = alloc_array<int32>(100);
+ *   if (numbers == null) { error("Allocation failed"); }
+ *   defer free<int32>(numbers);
+ *   
+ *   // Fill array
+ *   int64:i = 0;
+ *   loop {
+ *       if (i >= 100) { break; }
+ *       (numbers + i)@ = @cast<int32>(i * 2);
+ *       i = i + 1;
+ *   }
+ */
+func:alloc_array<T> = wild T@(count: int64) {
+    // Get element size at compile time
+    int64:elem_size = @sizeof(T);
+    
+    // Call runtime array allocator (has overflow protection)
+    wild void@:raw_ptr = @extern("aria_alloc_array", elem_size, count);
+    
+    // Cast to typed pointer
+    wild T@:typed_ptr = @cast<wild T@>(raw_ptr);
+    
+    return typed_ptr;
+}
+
+/**
+ * Allocate aligned memory for type T
+ * 
+ * Use this for SIMD types or when cache-line alignment is required.
+ * 
+ * Example:
+ *   // Allocate 32-byte aligned memory for SIMD vector
+ *   wild flt32@:vector = alloc_aligned<flt32>(32);
+ *   defer free<flt32>(vector);
+ */
+func:alloc_aligned<T> = wild T@(alignment: int64) {
+    // Get size of type T
+    int64:size = @sizeof(T);
+    
+    // Call runtime aligned allocator
+    // Note: aria_alloc_buffer signature is (size, alignment, zero_init)
+    wild void@:raw_ptr = @extern("aria_alloc_buffer", size, alignment, false);
+    
+    // Cast to typed pointer
+    wild T@:typed_ptr = @cast<wild T@>(raw_ptr);
+    
+    return typed_ptr;
+}
+
+/**
+ * Free memory allocated by alloc/alloc_array/alloc_aligned
+ * 
+ * Safe to call with null pointer (no-op). Use defer for automatic cleanup.
+ * 
+ * Example:
+ *   wild int64@:data = alloc<int64>();
+ *   defer free<int64>(data);  // Automatic cleanup at scope exit
+ */
+func:free<T> = void(ptr: wild T@) {
+    // Cast to void pointer
+    wild void@:raw_ptr = @cast<wild void@>(ptr);
+    
+    // Call runtime free
+    @extern("aria_free", raw_ptr);
+}
+
+// =============================================================================
+// Allocation Patterns
+// =============================================================================
+
+/**
+ * Allocate and zero-initialize
+ * 
+ * Example:
+ *   wild int64@:counter = alloc_zeroed<int64>();
+ *   // counter@ == 0
+ */
+func:alloc_zeroed<T> = wild T@() {
+    wild T@:ptr = alloc<T>();
+    if (ptr != null) {
+        // Zero-initialize
+        int64:size = @sizeof(T);
+        @extern("memset", ptr, 0, size);
+    }
+    return ptr;
+}
+
+/**
+ * Allocate array and zero-initialize
+ * 
+ * Example:
+ *   wild int32@:flags = alloc_array_zeroed<int32>(1000);
+ *   // All elements are 0
+ */
+func:alloc_array_zeroed<T> = wild T@(count: int64) {
+    // Use aria_alloc_buffer with zero_init=true
+    int64:elem_size = @sizeof(T);
+    
+    // Check overflow
+    if (count > 9223372036854775807 / elem_size) {
+        return null;
+    }
+    
+    int64:total_size = elem_size * count;
+    
+    // Call with zero_init=true
+    wild void@:raw_ptr = @extern("aria_alloc_buffer", total_size, 0, true);
+    wild T@:typed_ptr = @cast<wild T@>(raw_ptr);
+    
+    return typed_ptr;
+}
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+/**
+ * Check if pointer is null (allocation failed)
+ * 
+ * Example:
+ *   wild int64@:ptr = alloc<int64>();
+ *   if (is_null(ptr)) {
+ *       error("Out of memory");
+ *   }
+ */
+func:is_null<T> = bool(ptr: wild T@) {
+    return ptr == null;
+}
+
+/**
+ * Require successful allocation (panic on null)
+ * 
+ * Example:
+ *   wild int64@:ptr = require_alloc<int64>();
+ *   // Guaranteed non-null or program aborted
+ */
+func:require_alloc<T> = wild T@() {
+    wild T@:ptr = alloc<T>();
+    if (ptr == null) {
+        @extern("abort");  // Panic
+    }
+    return ptr;
+}
+
+// =============================================================================
+// Documentation Notes
+// =============================================================================
+
+/**
+ * IMPORTANT: Memory Safety Rules
+ * 
+ * 1. Always use defer for cleanup:
+ *    wild T@:ptr = alloc<T>();
+ *    defer free<T>(ptr);
+ * 
+ * 2. Never access after free:
+ *    wild int64@:x = alloc<int64>();
+ *    free<int64>(x);
+ *    x@ = 42;  // ERROR: use-after-free (borrow checker detects)
+ * 
+ * 3. Never double-free:
+ *    wild int64@:x = alloc<int64>();
+ *    free<int64>(x);
+ *    free<int64>(x);  // ERROR: double-free (borrow checker detects)
+ * 
+ * 4. Null checks before dereferencing:
+ *    wild int64@:x = alloc<int64>();
+ *    if (x == null) { return; }
+ *    x@ = 42;  // Safe
+ * 
+ * 5. Pin GC objects when storing in wild memory:
+ *    gc string:s = "hello";
+ *    wild string@:ptr = alloc<string>();
+ *    ptr@ = #s;  # Pin operator prevents GC from moving s
+ */
+
+/**
+ * PERFORMANCE NOTES:
+ * 
+ * - alloc<T>() is O(1) - simple malloc wrapper
+ * - alloc_array<T>(n) includes overflow check - still O(1)
+ * - alloc_aligned<T>(align) may be slower on some platforms
+ * - free<T>() is O(1) - simple free wrapper
+ * 
+ * For high-performance scenarios, consider:
+ * - Arena allocators (bulk allocation + single free)
+ * - Object pools (reuse instead of alloc/free)
+ * - GC allocation (gc keyword) for short-lived objects
+ */

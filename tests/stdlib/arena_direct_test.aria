@@ -1,0 +1,171 @@
+/**
+ * Direct Arena Allocator Test - Phase 4.2
+ * 
+ * Tests arena allocator using direct extern calls to C++ runtime.
+ * Uses only confirmed working syntax.
+ */
+
+// Test allocation and basic operations
+func:test_arena_basic = int64() {
+    // Create arena with 4096 bytes capacity
+    wild void@:arena = @extern("aria_arena_new", 4096);
+    
+    if (arena == NULL) {
+        return 1;  // Arena creation failed
+    }
+    
+    // Allocate space for an int64 (8 bytes, 8-byte aligned)
+    wild void@:ptr_raw = @extern("aria_arena_alloc", arena, 8, 8);
+    
+    if (ptr_raw == NULL) {
+        @extern("aria_arena_destroy", arena);
+        return 2;  // Allocation failed
+    }
+    
+    // Cast to int64 pointer and use it
+    wild int64@:ptr = @cast<wild int64@>(ptr_raw);
+    ptr@ = 42;
+    
+    if (ptr@ != 42) {
+        @extern("aria_arena_destroy", arena);
+        return 3;  // Value mismatch
+    }
+    
+    // Allocate another value
+    wild void@:ptr2_raw = @extern("aria_arena_alloc", arena, 8, 8);
+    
+    if (ptr2_raw == NULL) {
+        @extern("aria_arena_destroy", arena);
+        return 4;  // Second allocation failed
+    }
+    
+    wild int64@:ptr2 = @cast<wild int64@>(ptr2_raw);
+    ptr2@ = 100;
+    
+    if (ptr2@ != 100) {
+        @extern("aria_arena_destroy", arena);
+        return 5;  // Second value mismatch
+    }
+    
+    // Verify first allocation still valid
+    if (ptr@ != 42) {
+        @extern("aria_arena_destroy", arena);
+        return 6;  // First value corrupted
+    }
+    
+    // Clean up
+    @extern("aria_arena_destroy", arena);
+    
+    return 0;  // Success
+}
+
+// Test arena reset functionality
+func:test_arena_reset = int64() {
+    // Create arena
+    wild void@:arena = @extern("aria_arena_new", 4096);
+    
+    if (arena == NULL) {
+        return 1;  // Creation failed
+    }
+    
+    // Allocate value
+    wild void@:ptr1_raw = @extern("aria_arena_alloc", arena, 8, 8);
+    
+    if (ptr1_raw == NULL) {
+        @extern("aria_arena_destroy", arena);
+        return 2;  // Allocation failed
+    }
+    
+    wild int64@:ptr1 = @cast<wild int64@>(ptr1_raw);
+    ptr1@ = 99;
+    
+    // Reset arena (invalidates ptr1)
+    @extern("aria_arena_reset", arena);
+    
+    // Allocate again (should reuse same memory)
+    wild void@:ptr2_raw = @extern("aria_arena_alloc", arena, 8, 8);
+    
+    if (ptr2_raw == NULL) {
+        @extern("aria_arena_destroy", arena);
+        return 3;  // Allocation after reset failed
+    }
+    
+    wild int64@:ptr2 = @cast<wild int64@>(ptr2_raw);
+    ptr2@ = 200;
+    
+    if (ptr2@ != 200) {
+        @extern("aria_arena_destroy", arena);
+        return 4;  // Value after reset incorrect
+    }
+    
+    // Clean up
+    @extern("aria_arena_destroy", arena);
+    
+    return 0;  // Success
+}
+
+// Test array allocation
+func:test_arena_array = int64() {
+    wild void@:arena = @extern("aria_arena_new", 8192);
+    
+    if (arena == NULL) {
+        return 1;  // Creation failed
+    }
+    
+    // Allocate array of 10 int64s (80 bytes total, 8-byte aligned)
+    wild void@:arr_raw = @extern("aria_arena_alloc", arena, 80, 8);
+    
+    if (arr_raw == NULL) {
+        @extern("aria_arena_destroy", arena);
+        return 2;  // Array allocation failed
+    }
+    
+    wild int64@:arr = @cast<wild int64@>(arr_raw);
+    
+    // Write to array elements
+    int64:i = 0;
+    while (i < 10) {
+        wild int64@:elem = @extern("pointer_add", arr, i * 8);
+        elem@ = i * 10;
+        i = i + 1;
+    }
+    
+    // Read back and verify
+    i = 0;
+    while (i < 10) {
+        wild int64@:elem = @extern("pointer_add", arr, i * 8);
+        int64:expected = i * 10;
+        if (elem@ != expected) {
+            @extern("aria_arena_destroy", arena);
+            return 3;  // Array value mismatch
+        }
+        i = i + 1;
+    }
+    
+    @extern("aria_arena_destroy", arena);
+    return 0;  // Success
+}
+
+func:main = int64() {
+    int64:result = 0;
+    
+    // Run basic test
+    result = test_arena_basic();
+    if (result != 0) {
+        return result;
+    }
+    
+    // Run reset test
+    result = test_arena_reset();
+    if (result != 0) {
+        return 100 + result;  // 100-series errors
+    }
+    
+    // Run array test
+    result = test_arena_array();
+    if (result != 0) {
+        return 200 + result;  // 200-series errors
+    }
+    
+    return 0;  // All tests passed
+}

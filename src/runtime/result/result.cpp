@@ -291,3 +291,52 @@ double aria_result_unwrap_or_f64(AriaResultF64 result, double default_value) {
 bool aria_result_unwrap_or_bool(AriaResultBool result, bool default_value) {
     return result.is_error ? default_value : result.value;
 }
+
+// ============================================================================
+// Allocation Result Functions (Phase 4.2)
+// ============================================================================
+
+AriaAllocResult aria_alloc_result_ok(void* ptr, size_t size, size_t align) {
+    AriaAllocResult result;
+    result.value = ptr;
+    result.error_code = ARIA_ALLOC_OK;
+    result.requested_size = size;
+    result.requested_align = align;
+    return result;
+}
+
+AriaAllocResult aria_alloc_result_err(AriaAllocError error, size_t size, size_t align) {
+    AriaAllocResult result;
+    result.value = NULL;
+    result.error_code = error;
+    result.requested_size = size;
+    result.requested_align = align;
+    return result;
+}
+
+bool aria_alloc_result_is_ok(AriaAllocResult result) {
+    return result.error_code == ARIA_ALLOC_OK;
+}
+
+bool aria_alloc_result_is_err(AriaAllocResult result) {
+    return result.error_code != ARIA_ALLOC_OK;
+}
+
+const char* aria_alloc_error_message(AriaAllocError error) {
+    switch (error) {
+        case ARIA_ALLOC_OK:
+            return "Success";
+        case ARIA_ALLOC_ERR_OUT_OF_MEMORY:
+            return "Out of memory";
+        case ARIA_ALLOC_ERR_INVALID_SIZE:
+            return "Invalid size (must be > 0)";
+        case ARIA_ALLOC_ERR_INVALID_ALIGNMENT:
+            return "Invalid alignment (must be power of 2)";
+        case ARIA_ALLOC_ERR_SIZE_OVERFLOW:
+            return "Size overflow (size * count too large)";
+        case ARIA_ALLOC_ERR_UNSUPPORTED:
+            return "Operation not supported";
+        default:
+            return "Unknown error";
+    }
+}

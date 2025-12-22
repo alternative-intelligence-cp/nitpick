@@ -1668,16 +1668,17 @@ ASTNodePtr Parser::parseStructDecl() {
     // Phase 3.4: Parse generic parameters if present: struct<T, E>
     std::vector<GenericParamInfo> genericParams = parseGenericParams();
     
-    // Consume colon after generic params if present, or before name
-    if (!genericParams.empty()) {
-        consume(TokenType::TOKEN_COLON, "Expected ':' after generic parameters");
-    }
+    // ALWAYS consume colon before struct name (consistent with func:name syntax)
+    consume(TokenType::TOKEN_COLON, "Expected ':' after 'struct' keyword");
     
     // Get struct name
     Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected struct name");
     
+    // Consume equals sign before struct body (consistent with func:name = returnType() {} syntax)
+    consume(TokenType::TOKEN_EQUAL, "Expected '=' after struct name");
+    
     // Parse struct body: { type:field; type:field; ... }
-    consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after struct name");
+    consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after '='");
     
     std::vector<ASTNodePtr> fields;
     while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {

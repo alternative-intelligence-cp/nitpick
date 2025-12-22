@@ -19,7 +19,17 @@ The parser does NOT yet support:
 
 ### Fully Implemented (Can Compile) ✅
 
-**None yet** - Awaiting parser features
+#### core/memory.aria (Phase 4.1) - December 21, 2025
+- `alloc<T>()` - Type-safe allocation
+- `alloc_array<T>(count)` - Array allocation
+- `alloc_aligned<T>(alignment)` - Aligned allocation
+- `free<T>(ptr)` - Deallocation
+- `alloc_zeroed<T>()` - Zero-initialized allocation
+- `alloc_array_zeroed<T>(count)` - Zero-initialized array
+- `is_null<T>(ptr)` - NULL check helper
+- `require_alloc<T>()` - Panic on allocation failure
+- **Status**: Specification complete, runtime implemented, tests written
+- **Blocked by**: Generics parser for `<T>` syntax
 
 ### Specifications Complete (Awaiting Parser) 📋
 

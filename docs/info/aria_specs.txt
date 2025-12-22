@@ -507,6 +507,67 @@ obj:config = {
     highTime:420
 }
 
+// STRUCT DECLARATIONS (CRITICAL: Consistent syntax with func and var declarations)
+// !! SYNTAX: struct:name = { type:field; type:field; }; !!
+// !! ALWAYS use colon before name, equals before body, semicolon after !!
+// !! This maintains consistency with func:name = type() {} and var:name = value !!
+
+// Simple struct without generics
+struct:Point = {
+    int64:x;
+    int64:y;
+};
+
+// Struct with multiple fields and mixed types
+struct:Person = {
+    string:name;
+    int32:age;
+    bool:active;
+    wild string@:nickname;  // Pointer field
+};
+
+// Struct with generic type parameters
+struct<T>:Box = {
+    *T:value;           // *T indicates generic type usage
+    int64:timestamp;
+};
+
+// Multiple generic parameters
+struct<T, E>:Result = {
+    *T:value;
+    *E:error;
+    bool:success;
+};
+
+// Struct with pointer and array fields
+struct:Node = {
+    int64:data;
+    wild Node@:next;    // Self-referential pointer
+    int32[10]:buffer;   // Fixed-size array field
+};
+
+// Struct with nested types
+struct:Config = {
+    string:name;
+    obj:settings;       // Object field
+    Person:owner;       // Custom type field
+};
+
+// USING STRUCTS
+Point:p1 = { x: 10, y: 20 };
+Person:user = { name: "Alice", age: 30, active: true, nickname: NULL };
+Box<int32>:intBox = { value: 42, timestamp: 1234567890 };
+
+// Accessing struct fields
+int64:x_val = p1.x;
+string:username = user.name;
+user.age = user.age + 1;
+
+// Pointer to struct
+wild Person@:userPtr = @user;
+string:name_via_ptr = userPtr->name;  // Arrow operator for pointer member access
+userPtr->age = 31;
+
 // NULL COALESCING AND SAFE NAVIGATION (must work or pipeline operators break)
 user:current_user = getUser();
 string:name = current_user?.profile?.name ?? "Guest";
