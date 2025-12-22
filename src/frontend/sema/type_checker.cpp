@@ -914,6 +914,81 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             }
             return typeSystem->getPrimitiveType("int64");
         }
+        
+        // Slab allocator builtins
+        if (idExpr->name == "slab_new") {
+            if (expr->arguments.size() != 2) {
+                addError("slab_new() requires exactly two arguments (object_size, slab_size)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* objectSizeType = inferType(expr->arguments[0].get());
+            Type* slabSizeType = inferType(expr->arguments[1].get());
+            if (objectSizeType->getKind() == TypeKind::ERROR || slabSizeType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        if (idExpr->name == "slab_alloc") {
+            if (expr->arguments.size() != 1) {
+                addError("slab_alloc() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        if (idExpr->name == "slab_free") {
+            if (expr->arguments.size() != 2) {
+                addError("slab_free() requires exactly two arguments (handle, ptr)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* handleType = inferType(expr->arguments[0].get());
+            Type* ptrType = inferType(expr->arguments[1].get());
+            if (handleType->getKind() == TypeKind::ERROR || ptrType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        if (idExpr->name == "slab_destroy") {
+            if (expr->arguments.size() != 1) {
+                addError("slab_destroy() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        if (idExpr->name == "slab_get_total_objects") {
+            if (expr->arguments.size() != 1) {
+                addError("slab_get_total_objects() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        if (idExpr->name == "slab_get_allocated_objects") {
+            if (expr->arguments.size() != 1) {
+                addError("slab_get_allocated_objects() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
     }
     
     // Infer callee type (should be function type or callable object)

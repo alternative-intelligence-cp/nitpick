@@ -1732,6 +1732,144 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     // END POOL BUILTINS
     // ====================================================================
     
+    // ====================================================================
+    // SLAB ALLOCATOR BUILTINS (Phase 4.2.5.4)
+    // ====================================================================
+    
+    if (callee_ident->name == "slab_new") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("slab_new() requires exactly two arguments");
+        }
+        
+        llvm::Function* slab_new_func = module->getFunction("aria_slab_cache_new_handle");
+        if (!slab_new_func) {
+            llvm::FunctionType* slab_new_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
+            slab_new_func = llvm::Function::Create(slab_new_type,
+                llvm::Function::ExternalLinkage, "aria_slab_cache_new_handle", module);
+        }
+        
+        llvm::Value* object_size = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* slab_size = codegenExpressionNode(expr->arguments[1].get(), this);
+        if (!object_size->getType()->isIntegerTy(64)) {
+            object_size = builder.CreateSExtOrTrunc(object_size, builder.getInt64Ty());
+        }
+        if (!slab_size->getType()->isIntegerTy(64)) {
+            slab_size = builder.CreateSExtOrTrunc(slab_size, builder.getInt64Ty());
+        }
+        return builder.CreateCall(slab_new_func, {object_size, slab_size}, "slab_handle");
+    }
+    
+    if (callee_ident->name == "slab_alloc") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("slab_alloc() requires one argument");
+        }
+        
+        llvm::Function* slab_alloc_func = module->getFunction("aria_slab_cache_alloc_handle");
+        if (!slab_alloc_func) {
+            llvm::FunctionType* slab_alloc_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            slab_alloc_func = llvm::Function::Create(slab_alloc_type,
+                llvm::Function::ExternalLinkage, "aria_slab_cache_alloc_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        return builder.CreateCall(slab_alloc_func, {handle}, "alloc_ptr");
+    }
+    
+    if (callee_ident->name == "slab_free") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("slab_free() requires two arguments");
+        }
+        
+        llvm::Function* slab_free_func = module->getFunction("aria_slab_cache_free_handle");
+        if (!slab_free_func) {
+            llvm::FunctionType* slab_free_type = llvm::FunctionType::get(
+                builder.getVoidTy(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
+            slab_free_func = llvm::Function::Create(slab_free_type,
+                llvm::Function::ExternalLinkage, "aria_slab_cache_free_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        if (!ptr->getType()->isIntegerTy(64)) {
+            ptr = builder.CreateSExtOrTrunc(ptr, builder.getInt64Ty());
+        }
+        builder.CreateCall(slab_free_func, {handle, ptr});
+        return builder.getInt32(0);
+    }
+    
+    if (callee_ident->name == "slab_destroy") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("slab_destroy() requires one argument");
+        }
+        
+        llvm::Function* slab_destroy_func = module->getFunction("aria_slab_cache_destroy_handle");
+        if (!slab_destroy_func) {
+            llvm::FunctionType* slab_destroy_type = llvm::FunctionType::get(
+                builder.getVoidTy(), {builder.getInt64Ty()}, false);
+            slab_destroy_func = llvm::Function::Create(slab_destroy_type,
+                llvm::Function::ExternalLinkage, "aria_slab_cache_destroy_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        builder.CreateCall(slab_destroy_func, {handle});
+        return builder.getInt32(0);
+    }
+    
+    if (callee_ident->name == "slab_get_total_objects") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("slab_get_total_objects() requires one argument");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_slab_cache_get_total_objects_handle");
+        if (!func) {
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_slab_cache_get_total_objects_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        return builder.CreateCall(func, {handle}, "total_objects");
+    }
+    
+    if (callee_ident->name == "slab_get_allocated_objects") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("slab_get_allocated_objects() requires one argument");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_slab_cache_get_allocated_objects_handle");
+        if (!func) {
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_slab_cache_get_allocated_objects_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        return builder.CreateCall(func, {handle}, "allocated_objects");
+    }
+    
+    // ====================================================================
+    // END SLAB BUILTINS
+    // ====================================================================
+    
     // Check if this is a direct function call or a closure call
     // Try to find a direct function first
     llvm::Function* direct_func = module->getFunction(callee_ident->name);
