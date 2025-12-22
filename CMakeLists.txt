@@ -177,6 +177,10 @@ set(RUNTIME_SOURCES
     src/runtime/gc/gc.cpp
     src/runtime/allocators/wild_alloc.cpp
     src/runtime/allocators/wildx_alloc.cpp
+    src/runtime/allocators/arena_alloc.cpp
+    src/runtime/allocators/pool_alloc.cpp
+    src/runtime/allocators/slab_alloc.cpp
+    src/runtime/allocators/arena_builtins.cpp
     src/runtime/assembler/assembler.cpp
     src/runtime/assembler/llvm_jit.cpp
     src/runtime/assembler/code_cache.cpp

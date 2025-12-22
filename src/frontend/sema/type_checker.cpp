@@ -740,6 +740,93 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             // Returns string (char*)
             return typeSystem->getPrimitiveType("string");
         }
+        
+        // ====================================================================
+        // ARENA ALLOCATOR BUILTINS (Phase 4.2.5.2)
+        // ====================================================================
+        
+        // Builtin: arena_new(int64) -> int64 (opaque handle)
+        if (idExpr->name == "arena_new") {
+            if (expr->arguments.size() != 1) {
+                addError("arena_new() requires exactly one argument (capacity)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Returns int64 handle (0 = error)
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // Builtin: arena_alloc(int64 handle, int64 size) -> int64 (pointer)
+        if (idExpr->name == "arena_alloc") {
+            if (expr->arguments.size() != 2) {
+                addError("arena_alloc() requires two arguments (handle, size)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            if (arg1Type->getKind() == TypeKind::ERROR || arg2Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Returns int64 pointer (0 = error)
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // Builtin: arena_reset(int64 handle) -> void
+        if (idExpr->name == "arena_reset") {
+            if (expr->arguments.size() != 1) {
+                addError("arena_reset() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Returns void (no result) - but we'll return int32 for now
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        // Builtin: arena_destroy(int64 handle) -> void
+        if (idExpr->name == "arena_destroy") {
+            if (expr->arguments.size() != 1) {
+                addError("arena_destroy() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Returns void
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        // Builtin: arena_get_allocated(int64 handle) -> int64
+        if (idExpr->name == "arena_get_allocated") {
+            if (expr->arguments.size() != 1) {
+                addError("arena_get_allocated() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // Builtin: arena_get_reserved(int64 handle) -> int64
+        if (idExpr->name == "arena_get_reserved") {
+            if (expr->arguments.size() != 1) {
+                addError("arena_get_reserved() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
     }
     
     // Infer callee type (should be function type or callable object)
