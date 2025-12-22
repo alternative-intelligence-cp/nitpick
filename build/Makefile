@@ -1551,6 +1551,33 @@ src/runtime/allocators/slab_alloc.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/slab_alloc.cpp.s
 .PHONY : src/runtime/allocators/slab_alloc.cpp.s
 
+src/runtime/allocators/slab_builtins.o: src/runtime/allocators/slab_builtins.cpp.o
+.PHONY : src/runtime/allocators/slab_builtins.o
+
+# target to build an object file
+src/runtime/allocators/slab_builtins.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/slab_builtins.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/slab_builtins.cpp.o
+.PHONY : src/runtime/allocators/slab_builtins.cpp.o
+
+src/runtime/allocators/slab_builtins.i: src/runtime/allocators/slab_builtins.cpp.i
+.PHONY : src/runtime/allocators/slab_builtins.i
+
+# target to preprocess a source file
+src/runtime/allocators/slab_builtins.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/slab_builtins.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/slab_builtins.cpp.i
+.PHONY : src/runtime/allocators/slab_builtins.cpp.i
+
+src/runtime/allocators/slab_builtins.s: src/runtime/allocators/slab_builtins.cpp.s
+.PHONY : src/runtime/allocators/slab_builtins.s
+
+# target to generate assembly for a file
+src/runtime/allocators/slab_builtins.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/slab_builtins.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/slab_builtins.cpp.s
+.PHONY : src/runtime/allocators/slab_builtins.cpp.s
+
 src/runtime/allocators/wild_alloc.o: src/runtime/allocators/wild_alloc.cpp.o
 .PHONY : src/runtime/allocators/wild_alloc.o
 
@@ -2722,6 +2749,9 @@ help:
 	@echo "... src/runtime/allocators/slab_alloc.o"
 	@echo "... src/runtime/allocators/slab_alloc.i"
 	@echo "... src/runtime/allocators/slab_alloc.s"
+	@echo "... src/runtime/allocators/slab_builtins.o"
+	@echo "... src/runtime/allocators/slab_builtins.i"
+	@echo "... src/runtime/allocators/slab_builtins.s"
 	@echo "... src/runtime/allocators/wild_alloc.o"
 	@echo "... src/runtime/allocators/wild_alloc.i"
 	@echo "... src/runtime/allocators/wild_alloc.s"
