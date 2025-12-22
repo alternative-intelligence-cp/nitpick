@@ -1439,6 +1439,140 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return builder.CreateCall(read_func, {}, "stdin_read_call");
     }
     
+    // ====================================================================
+    // ARENA ALLOCATOR BUILTINS (Phase 4.2.5.2)
+    // ====================================================================
+    
+    if (callee_ident->name == "arena_new") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("arena_new() requires exactly one argument");
+        }
+        
+        llvm::Function* arena_new_func = module->getFunction("aria_arena_new_handle");
+        if (!arena_new_func) {
+            llvm::FunctionType* arena_new_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            arena_new_func = llvm::Function::Create(arena_new_type,
+                llvm::Function::ExternalLinkage, "aria_arena_new_handle", module);
+        }
+        
+        llvm::Value* capacity = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!capacity->getType()->isIntegerTy(64)) {
+            capacity = builder.CreateSExtOrTrunc(capacity, builder.getInt64Ty());
+        }
+        return builder.CreateCall(arena_new_func, {capacity}, "arena_handle");
+    }
+    
+    if (callee_ident->name == "arena_alloc") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("arena_alloc() requires two arguments");
+        }
+        
+        llvm::Function* arena_alloc_func = module->getFunction("aria_arena_alloc_handle");
+        if (!arena_alloc_func) {
+            llvm::FunctionType* arena_alloc_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
+            arena_alloc_func = llvm::Function::Create(arena_alloc_type,
+                llvm::Function::ExternalLinkage, "aria_arena_alloc_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* size = codegenExpressionNode(expr->arguments[1].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        if (!size->getType()->isIntegerTy(64)) {
+            size = builder.CreateSExtOrTrunc(size, builder.getInt64Ty());
+        }
+        return builder.CreateCall(arena_alloc_func, {handle, size}, "alloc_ptr");
+    }
+    
+    if (callee_ident->name == "arena_reset") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("arena_reset() requires one argument");
+        }
+        
+        llvm::Function* arena_reset_func = module->getFunction("aria_arena_reset_handle");
+        if (!arena_reset_func) {
+            llvm::FunctionType* arena_reset_type = llvm::FunctionType::get(
+                builder.getVoidTy(), {builder.getInt64Ty()}, false);
+            arena_reset_func = llvm::Function::Create(arena_reset_type,
+                llvm::Function::ExternalLinkage, "aria_arena_reset_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        builder.CreateCall(arena_reset_func, {handle});
+        return builder.getInt32(0);
+    }
+    
+    if (callee_ident->name == "arena_destroy") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("arena_destroy() requires one argument");
+        }
+        
+        llvm::Function* arena_destroy_func = module->getFunction("aria_arena_destroy_handle");
+        if (!arena_destroy_func) {
+            llvm::FunctionType* arena_destroy_type = llvm::FunctionType::get(
+                builder.getVoidTy(), {builder.getInt64Ty()}, false);
+            arena_destroy_func = llvm::Function::Create(arena_destroy_type,
+                llvm::Function::ExternalLinkage, "aria_arena_destroy_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        builder.CreateCall(arena_destroy_func, {handle});
+        return builder.getInt32(0);
+    }
+    
+    if (callee_ident->name == "arena_get_allocated") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("arena_get_allocated() requires one argument");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_arena_get_allocated_handle");
+        if (!func) {
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_arena_get_allocated_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        return builder.CreateCall(func, {handle}, "allocated_bytes");
+    }
+    
+    if (callee_ident->name == "arena_get_reserved") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("arena_get_reserved() requires one argument");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_arena_get_reserved_handle");
+        if (!func) {
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_arena_get_reserved_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        return builder.CreateCall(func, {handle}, "reserved_bytes");
+    }
+    
+    // ====================================================================
+    // END ARENA BUILTINS
+    // ====================================================================
+    
     // Check if this is a direct function call or a closure call
     // Try to find a direct function first
     llvm::Function* direct_func = module->getFunction(callee_ident->name);

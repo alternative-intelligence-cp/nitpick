@@ -1416,6 +1416,114 @@ src/main.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/main.cpp.s
 .PHONY : src/main.cpp.s
 
+src/runtime/allocators/arena_alloc.o: src/runtime/allocators/arena_alloc.cpp.o
+.PHONY : src/runtime/allocators/arena_alloc.o
+
+# target to build an object file
+src/runtime/allocators/arena_alloc.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/arena_alloc.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/arena_alloc.cpp.o
+.PHONY : src/runtime/allocators/arena_alloc.cpp.o
+
+src/runtime/allocators/arena_alloc.i: src/runtime/allocators/arena_alloc.cpp.i
+.PHONY : src/runtime/allocators/arena_alloc.i
+
+# target to preprocess a source file
+src/runtime/allocators/arena_alloc.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/arena_alloc.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/arena_alloc.cpp.i
+.PHONY : src/runtime/allocators/arena_alloc.cpp.i
+
+src/runtime/allocators/arena_alloc.s: src/runtime/allocators/arena_alloc.cpp.s
+.PHONY : src/runtime/allocators/arena_alloc.s
+
+# target to generate assembly for a file
+src/runtime/allocators/arena_alloc.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/arena_alloc.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/arena_alloc.cpp.s
+.PHONY : src/runtime/allocators/arena_alloc.cpp.s
+
+src/runtime/allocators/arena_builtins.o: src/runtime/allocators/arena_builtins.cpp.o
+.PHONY : src/runtime/allocators/arena_builtins.o
+
+# target to build an object file
+src/runtime/allocators/arena_builtins.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/arena_builtins.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/arena_builtins.cpp.o
+.PHONY : src/runtime/allocators/arena_builtins.cpp.o
+
+src/runtime/allocators/arena_builtins.i: src/runtime/allocators/arena_builtins.cpp.i
+.PHONY : src/runtime/allocators/arena_builtins.i
+
+# target to preprocess a source file
+src/runtime/allocators/arena_builtins.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/arena_builtins.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/arena_builtins.cpp.i
+.PHONY : src/runtime/allocators/arena_builtins.cpp.i
+
+src/runtime/allocators/arena_builtins.s: src/runtime/allocators/arena_builtins.cpp.s
+.PHONY : src/runtime/allocators/arena_builtins.s
+
+# target to generate assembly for a file
+src/runtime/allocators/arena_builtins.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/arena_builtins.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/arena_builtins.cpp.s
+.PHONY : src/runtime/allocators/arena_builtins.cpp.s
+
+src/runtime/allocators/pool_alloc.o: src/runtime/allocators/pool_alloc.cpp.o
+.PHONY : src/runtime/allocators/pool_alloc.o
+
+# target to build an object file
+src/runtime/allocators/pool_alloc.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/pool_alloc.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/pool_alloc.cpp.o
+.PHONY : src/runtime/allocators/pool_alloc.cpp.o
+
+src/runtime/allocators/pool_alloc.i: src/runtime/allocators/pool_alloc.cpp.i
+.PHONY : src/runtime/allocators/pool_alloc.i
+
+# target to preprocess a source file
+src/runtime/allocators/pool_alloc.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/pool_alloc.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/pool_alloc.cpp.i
+.PHONY : src/runtime/allocators/pool_alloc.cpp.i
+
+src/runtime/allocators/pool_alloc.s: src/runtime/allocators/pool_alloc.cpp.s
+.PHONY : src/runtime/allocators/pool_alloc.s
+
+# target to generate assembly for a file
+src/runtime/allocators/pool_alloc.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/pool_alloc.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/pool_alloc.cpp.s
+.PHONY : src/runtime/allocators/pool_alloc.cpp.s
+
+src/runtime/allocators/slab_alloc.o: src/runtime/allocators/slab_alloc.cpp.o
+.PHONY : src/runtime/allocators/slab_alloc.o
+
+# target to build an object file
+src/runtime/allocators/slab_alloc.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/slab_alloc.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/slab_alloc.cpp.o
+.PHONY : src/runtime/allocators/slab_alloc.cpp.o
+
+src/runtime/allocators/slab_alloc.i: src/runtime/allocators/slab_alloc.cpp.i
+.PHONY : src/runtime/allocators/slab_alloc.i
+
+# target to preprocess a source file
+src/runtime/allocators/slab_alloc.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/slab_alloc.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/slab_alloc.cpp.i
+.PHONY : src/runtime/allocators/slab_alloc.cpp.i
+
+src/runtime/allocators/slab_alloc.s: src/runtime/allocators/slab_alloc.cpp.s
+.PHONY : src/runtime/allocators/slab_alloc.s
+
+# target to generate assembly for a file
+src/runtime/allocators/slab_alloc.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/slab_alloc.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/slab_alloc.cpp.s
+.PHONY : src/runtime/allocators/slab_alloc.cpp.s
+
 src/runtime/allocators/wild_alloc.o: src/runtime/allocators/wild_alloc.cpp.o
 .PHONY : src/runtime/allocators/wild_alloc.o
 
@@ -2572,6 +2680,18 @@ help:
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"
+	@echo "... src/runtime/allocators/arena_alloc.o"
+	@echo "... src/runtime/allocators/arena_alloc.i"
+	@echo "... src/runtime/allocators/arena_alloc.s"
+	@echo "... src/runtime/allocators/arena_builtins.o"
+	@echo "... src/runtime/allocators/arena_builtins.i"
+	@echo "... src/runtime/allocators/arena_builtins.s"
+	@echo "... src/runtime/allocators/pool_alloc.o"
+	@echo "... src/runtime/allocators/pool_alloc.i"
+	@echo "... src/runtime/allocators/pool_alloc.s"
+	@echo "... src/runtime/allocators/slab_alloc.o"
+	@echo "... src/runtime/allocators/slab_alloc.i"
+	@echo "... src/runtime/allocators/slab_alloc.s"
 	@echo "... src/runtime/allocators/wild_alloc.o"
 	@echo "... src/runtime/allocators/wild_alloc.i"
 	@echo "... src/runtime/allocators/wild_alloc.s"
