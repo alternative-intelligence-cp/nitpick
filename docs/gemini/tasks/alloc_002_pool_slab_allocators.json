@@ -1,0 +1,85 @@
+{
+    "task_id": "alloc_002_pool_slab_allocators",
+    "title": "Pool and Slab Allocator Patterns",
+    "priority": "medium",
+    "category": "memory_management",
+    "dependencies": [
+        "alloc_001_arena_allocator_patterns",
+        "research_022_wild_wildx_memory"
+    ],
+    "estimated_complexity": "medium",
+    "description": "Research pool allocator (fixed-size object pools) and slab allocator (kernel-style object caching) patterns for Aria Phase 4.2 Stage 1.3, focusing on patterns NOT present in our existing SegFit segregated allocator.",
+    "scope": {
+        "pool_allocator": "Fixed-size object pools for high-frequency allocation/deallocation",
+        "slab_allocator": "Kernel-style object caching with constructor/destructor optimization",
+        "allocator_interface": "Common allocator trait/interface abstraction for composability",
+        "composition_patterns": "Combining allocators (fallback, statistics, debugging wrappers)"
+    },
+    "key_questions": {
+        "pool_allocator": [
+            "What is a pool allocator vs segregated-fit (like our SegFit)?",
+            "How do pool allocators optimize for fixed-size objects?",
+            "What data structures are used (bitmap, free list, stack)?",
+            "How are pools initialized (pre-allocate N objects)?",
+            "What is the allocation/deallocation algorithm?",
+            "How do pool allocators handle pool exhaustion (grow, error, fallback)?",
+            "What performance characteristics exist (ns per alloc/free)?",
+            "What are real-world use cases (network packet pools, database row pools)?"
+        ],
+        "slab_allocator": [
+            "What is a slab allocator (Linux kernel slub/slab)?",
+            "How does slab differ from pool allocator?",
+            "What is object caching (reuse initialized objects)?",
+            "How do slab allocators optimize constructor/destructor calls?",
+            "What is a slab, cache, and object in slab terminology?",
+            "What data structures track slabs (full, partial, empty)?",
+            "How does slab coloring reduce cache conflicts?",
+            "What performance benefits exist over malloc (avoid initialization overhead)?",
+            "How does slab integrate with kernel memory management (kmalloc, vmalloc)?"
+        ],
+        "allocator_interface": [
+            "What allocator trait/interface patterns exist (Rust, Zig, C++)?",
+            "What methods should an allocator interface define (alloc, free, realloc)?",
+            "How do type-safe allocator interfaces work?",
+            "What are allocator requirements for generic code?",
+            "How do allocators compose (wrapper pattern)?",
+            "What is C++20 pmr::memory_resource?",
+            "What is Rust's std::alloc::Allocator trait?",
+            "What is Zig's std.mem.Allocator interface?"
+        ],
+        "composition_patterns": [
+            "What allocator composition patterns exist (fallback, cascade)?",
+            "How do debugging allocators wrap other allocators (bounds checking, leak detection)?",
+            "How do statistics allocators track usage (bytes allocated, peak usage)?",
+            "How do thread-safe allocators wrap unsafe allocators (locks, atomics)?",
+            "What is allocator chaining (try arena, fallback to malloc)?",
+            "How do allocators delegate to backing allocators?"
+        ]
+    },
+    "deliverables": [
+        "Pool allocator fundamentals and architecture (300-400 lines)",
+        "Slab allocator fundamentals and kernel implementation analysis (400-500 lines)",
+        "Comparison: Pool vs Slab vs Segregated-Fit (like our SegFit)",
+        "Allocator interface/trait design patterns (Rust, Zig, C++, proposed Aria)",
+        "Allocator composition patterns with examples",
+        "Performance benchmarks (pool vs slab vs malloc)",
+        "Use case recommendations (when to use pool vs slab vs arena)",
+        "Integration with Aria's type system and wild pointers",
+        "Code examples in Rust, Zig, C++, and proposed Aria syntax"
+    ],
+    "context_files": [
+        "/docs/stdlib/ALLOCATOR_RESEARCH_FINDINGS.txt",
+        "/educational/allocators/segfit_advanced/segfit_consciousness_allocator.h",
+        "/docs/stdlib/arena_allocator_design.txt",
+        "/docs/stdlib/memory_api.txt"
+    ],
+    "existing_baseline": {
+        "segfit_segregated": "56ns allocation, 15 size classes, NOT a pool allocator (general-purpose)",
+        "note": "SegFit is segregated-fit, NOT pool or slab. Research should focus on pool/slab-specific optimizations."
+    },
+    "performance_targets": {
+        "pool_allocation": "<20ns per allocation (faster than SegFit's 56ns)",
+        "slab_allocation": "<30ns per allocation with object reuse",
+        "interface_overhead": "<5ns for allocator trait abstraction"
+    }
+}

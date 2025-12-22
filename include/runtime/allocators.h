@@ -17,6 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "result.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -109,6 +110,67 @@ char* aria_alloc_string(size_t size);
  * Safety: Checks for size_t overflow (elem_size * count)
  */
 void* aria_alloc_array(size_t elem_size, size_t count);
+
+// =============================================================================
+// Result-Based Allocations (Phase 4.2)
+// =============================================================================
+
+/**
+ * Allocate memory with result-based error handling
+ * 
+ * Returns AriaAllocResult with rich error context instead of NULL.
+ * 
+ * @param size Number of bytes to allocate
+ * @return Result containing pointer or error details
+ * 
+ * Advantages over aria_alloc():
+ * - Distinguishes out-of-memory from invalid size
+ * - Provides diagnostic info (requested size/alignment)
+ * - Type-safe error codes (not generic NULL)
+ * 
+ * Error cases:
+ * - ARIA_ALLOC_ERR_INVALID_SIZE: size == 0
+ * - ARIA_ALLOC_ERR_OUT_OF_MEMORY: System allocator failed
+ */
+AriaAllocResult aria_alloc_result(size_t size);
+
+/**
+ * Allocate array with result-based error handling
+ * 
+ * @param elem_size Size of each element
+ * @param count Number of elements
+ * @return Result containing pointer or error details
+ * 
+ * Error cases:
+ * - ARIA_ALLOC_ERR_INVALID_SIZE: elem_size or count is 0
+ * - ARIA_ALLOC_ERR_SIZE_OVERFLOW: elem_size * count overflows size_t
+ * - ARIA_ALLOC_ERR_OUT_OF_MEMORY: System allocator failed
+ */
+AriaAllocResult aria_alloc_array_result(size_t elem_size, size_t count);
+
+/**
+ * Allocate aligned memory with result-based error handling
+ * 
+ * @param size Number of bytes to allocate
+ * @param alignment Power-of-2 alignment requirement
+ * @return Result containing pointer or error details
+ * 
+ * Error cases:
+ * - ARIA_ALLOC_ERR_INVALID_SIZE: size == 0
+ * - ARIA_ALLOC_ERR_INVALID_ALIGNMENT: alignment not power of 2
+ * - ARIA_ALLOC_ERR_OUT_OF_MEMORY: System allocator failed
+ */
+AriaAllocResult aria_alloc_aligned_result(size_t size, size_t alignment);
+
+/**
+ * Allocate buffer with result-based error handling
+ * 
+ * @param size Buffer size in bytes
+ * @param alignment Power of 2 alignment (0 = default)
+ * @param zero_init If true, zero-initialize the buffer
+ * @return Result containing pointer or error details
+ */
+AriaAllocResult aria_alloc_buffer_result(size_t size, size_t alignment, bool zero_init);
 
 // =============================================================================
 // WildX Executable Memory (JIT Support)

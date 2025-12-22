@@ -158,6 +158,40 @@ AriaError* aria_error_new(int32_t code, const char* message, const char* file, i
 AriaError* aria_error_msg(const char* message);
 
 // ============================================================================
+// Allocation Result Types (Phase 4.2)
+// ============================================================================
+
+/**
+ * Allocation error codes
+ * Maps to Aria's alloc_error enum
+ */
+typedef enum {
+    ARIA_ALLOC_OK = 0,                    // Success (not an error)
+    ARIA_ALLOC_ERR_OUT_OF_MEMORY = 1,     // System allocator returned NULL
+    ARIA_ALLOC_ERR_INVALID_SIZE = 2,      // Size is 0 or exceeds limits
+    ARIA_ALLOC_ERR_INVALID_ALIGNMENT = 3, // Alignment not power of 2
+    ARIA_ALLOC_ERR_SIZE_OVERFLOW = 4,     // size * count overflow
+    ARIA_ALLOC_ERR_UNSUPPORTED = 5        // Operation not supported
+} AriaAllocError;
+
+/**
+ * Allocation result structure
+ * Used for result-based allocation functions that provide rich error context
+ * 
+ * Layout matches Aria's result<wild T@, alloc_error>:
+ * - value: Allocated pointer (valid when error_code == ARIA_ALLOC_OK)
+ * - error_code: Error variant (0 = success)
+ * - requested_size: Size requested by caller (for diagnostics)
+ * - requested_align: Alignment requested (0 = default)
+ */
+typedef struct {
+    void* value;               // Allocated pointer (NULL if error)
+    AriaAllocError error_code; // Error code (ARIA_ALLOC_OK = success)
+    size_t requested_size;     // Size parameter from caller
+    size_t requested_align;    // Alignment parameter (0 = default)
+} AriaAllocResult;
+
+// ============================================================================
 // Common Error Codes
 // ============================================================================
 
@@ -222,6 +256,42 @@ void* aria_result_unwrap_or_ptr(AriaResultPtr result, void* default_value);
 int64_t aria_result_unwrap_or_i64(AriaResultI64 result, int64_t default_value);
 double aria_result_unwrap_or_f64(AriaResultF64 result, double default_value);
 bool aria_result_unwrap_or_bool(AriaResultBool result, bool default_value);
+
+// ============================================================================
+// Allocation Result Functions (Phase 4.2)
+// ============================================================================
+
+/**
+ * Create successful allocation result
+ * @param ptr Allocated pointer
+ * @param size Size that was allocated
+ * @param align Alignment that was used (0 = default)
+ */
+AriaAllocResult aria_alloc_result_ok(void* ptr, size_t size, size_t align);
+
+/**
+ * Create error allocation result
+ * @param error Error code variant
+ * @param size Size that was requested
+ * @param align Alignment that was requested
+ */
+AriaAllocResult aria_alloc_result_err(AriaAllocError error, size_t size, size_t align);
+
+/**
+ * Check if allocation result is Ok
+ */
+bool aria_alloc_result_is_ok(AriaAllocResult result);
+
+/**
+ * Check if allocation result is Err
+ */
+bool aria_alloc_result_is_err(AriaAllocResult result);
+
+/**
+ * Get error message for allocation error
+ * @return Static string describing the error
+ */
+const char* aria_alloc_error_message(AriaAllocError error);
 
 #ifdef __cplusplus
 }

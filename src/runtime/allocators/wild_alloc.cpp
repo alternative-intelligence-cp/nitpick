@@ -151,6 +151,110 @@ void* aria_alloc_array(size_t elem_size, size_t count) {
 }
 
 // =============================================================================
+// Result-Based Allocations (Phase 4.2)
+// =============================================================================
+
+/**
+ * Helper: Check if value is power of 2
+ */
+static inline bool is_power_of_2(size_t x) {
+    return x != 0 && (x & (x - 1)) == 0;
+}
+
+AriaAllocResult aria_alloc_result(size_t size) {
+    // Validate size
+    if (size == 0) {
+        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, size, 0);
+    }
+
+    // Attempt allocation
+    void* ptr = aria_alloc(size);
+    if (!ptr) {
+        return aria_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, 0);
+    }
+
+    return aria_alloc_result_ok(ptr, size, 0);
+}
+
+AriaAllocResult aria_alloc_array_result(size_t elem_size, size_t count) {
+    // Validate inputs
+    if (elem_size == 0 || count == 0) {
+        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, elem_size * count, 0);
+    }
+
+    // Check for overflow
+    if (count > SIZE_MAX / elem_size) {
+        return aria_alloc_result_err(ARIA_ALLOC_ERR_SIZE_OVERFLOW, elem_size * count, 0);
+    }
+
+    size_t total_size = elem_size * count;
+    
+    // Attempt allocation
+    void* ptr = aria_alloc(total_size);
+    if (!ptr) {
+        return aria_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, total_size, 0);
+    }
+
+    return aria_alloc_result_ok(ptr, total_size, 0);
+}
+
+AriaAllocResult aria_alloc_aligned_result(size_t size, size_t alignment) {
+    // Validate size
+    if (size == 0) {
+        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, size, alignment);
+    }
+
+    // Validate alignment (must be power of 2)
+    if (alignment != 0 && !is_power_of_2(alignment)) {
+        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_ALIGNMENT, size, alignment);
+    }
+
+    // Attempt allocation
+    void* ptr = nullptr;
+    if (alignment == 0) {
+        ptr = aria_alloc(size);
+    } else {
+#ifdef _WIN32
+        ptr = _aligned_malloc(size, alignment);
+#else
+        size_t adjusted_size = (size + alignment - 1) & ~(alignment - 1);
+        ptr = aligned_alloc(alignment, adjusted_size);
+#endif
+        if (ptr) {
+            g_alloc_state.total_wild_allocated.fetch_add(size);
+            g_alloc_state.num_wild_allocations.fetch_add(1);
+            update_peak_usage();
+        }
+    }
+
+    if (!ptr) {
+        return aria_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, alignment);
+    }
+
+    return aria_alloc_result_ok(ptr, size, alignment);
+}
+
+AriaAllocResult aria_alloc_buffer_result(size_t size, size_t alignment, bool zero_init) {
+    // Validate size
+    if (size == 0) {
+        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, size, alignment);
+    }
+
+    // Validate alignment
+    if (alignment != 0 && !is_power_of_2(alignment)) {
+        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_ALIGNMENT, size, alignment);
+    }
+
+    // Attempt allocation (using existing buffer allocator)
+    void* ptr = aria_alloc_buffer(size, alignment, zero_init);
+    if (!ptr) {
+        return aria_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, alignment);
+    }
+
+    return aria_alloc_result_ok(ptr, size, alignment);
+}
+
+// =============================================================================
 // Statistics Query (Wild portion)
 // =============================================================================
 

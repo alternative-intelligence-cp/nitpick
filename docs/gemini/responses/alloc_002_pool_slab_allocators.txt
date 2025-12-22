@@ -1,0 +1,427 @@
+﻿Architectural Analysis of Pool and Slab Allocator Patterns for Aria Phase 4.2
+1. Executive Summary and Architectural Context
+The evolution of the Aria standard library into Phase 4.2 necessitates a paradigm shift in memory management capabilities. While the existing Segregated Fit (SegFit) allocator provides a robust general-purpose solution for heap management, analyzing the performance characteristics of high-frequency, low-latency workloads reveals intrinsic limitations in generalized allocation strategies. This report presents a comprehensive architectural analysis of Pool and Slab allocator patterns, distinct from the SegFit baseline, to support Stage 1.3 of the Aria roadmap.
+The primary objective of this research is to define the mechanisms required to reduce allocation latency from the current baseline of ~56ns (SegFit) to sub-20ns for Pools and sub-30ns for Slabs (with object reuse). This performance delta is not achievable through incremental optimization of the SegFit allocator but requires the introduction of specialized, structure-rigid allocators that trade generality for speed and cache coherency.
+The distinction is critical: SegFit is a general-purpose allocator that maps arbitrary allocation sizes to the nearest size class bucket.1 It must perform size analysis, bucket lookup, and potentially complex list management for every call. In contrast, Pool and Slab allocators operate under strict constraints—fixed sizes and type awareness—allowing for the elimination of headers, the removal of size lookup logic, and the exploitation of processor cache hierarchies through techniques like slab coloring and object preservation.2
+This report synthesizes findings from decades of kernel development (SunOS, Linux SLAB/SLUB) and modern systems languages (Rust, Zig, C++) to propose a cohesive design for Aria. It explores the architectural dichotomy between stack-based and bitmap-based pools, the evolution of slab allocators from queues to lockless partial lists, and the interface polymorphism required to compose these allocators into sophisticated memory hierarchies.
+2. Pool Allocator Fundamentals
+2.1 Definition and Core Philosophy
+A Pool Allocator, often interchangeably referred to as a Fixed-Size Block Allocator, is a memory management primitive designed to service allocation requests of a single, immutable size.4 Unlike general-purpose allocators that must accommodate requests ranging from a single byte to gigabytes, a pool allocator effectively "hardcodes" the block size at initialization. This constraint is the source of its performance advantage.
+The fundamental philosophical difference between a Pool and the existing SegFit allocator lies in the assumption of validity. SegFit must validate that a block exists for a requested size, find the "best fit" or "segregated fit" class, and handle splitting or coalescing.1 A Pool allocator assumes that if a request is made, it is for the specific block size the pool manages. This eliminates the branching logic associated with size classification, reducing the allocation path to a small, constant number of instructions, typically $O(1)$.4
+Pool allocators are characterized by their lack of per-allocation overhead. In a traditional malloc or SegFit scenario, every allocation is preceded by a header containing the block size and flags, essential for the corresponding free to know how much memory to reclaim. In a Pool, the size is intrinsic to the allocator itself; thus, the allocated memory contains only the user data, maximizing cache density.6
+2.2 Architecture of Free List Management
+The performance and memory characteristics of a pool allocator are almost entirely determined by how it tracks free blocks. There are two dominant architectures: the Intrusive Linked List (Stack) and the Bitmap.
+2.2.1 Intrusive Linked List (The Stack Strategy)
+The most performant and common implementation of a pool allocator utilizes an intrusive linked list, often functioning as a LIFO (Last-In, First-Out) stack.4 "Intrusive" implies that the metadata required to track the free block is stored inside the free block itself.
+When a block is allocated, it is owned by the user and contains user data. When it is free, it is owned by the allocator. Since the block is free, the memory is effectively "garbage" to the user, and the allocator can repurpose the first 8 bytes (on 64-bit systems) to store a pointer to the next free block.
+Mechanism:
+1. Initialization: The memory pool is carved into $N$ blocks. Block 0 points to Block 1, Block 1 to Block 2, and so on. The allocator maintains a head pointer to Block 0.
+2. Allocation ($O(1)$): The allocator checks if head is null. If not, it returns the current head address to the user and updates head to point to the next block (dereferencing the current head).
+3. Deallocation ($O(1)$): The user returns a pointer. The allocator treats this pointer as a Node. It sets the Node's next pointer to the current head, and updates head to this new pointer.
+Implications:
+This LIFO behavior is critical for cache performance. The block most recently freed is the one most likely to be in the L1 or L2 CPU cache. By immediately returning this block on the next allocation request, the pool allocator maximizes "hot" memory usage.8 This contrasts with FIFO (First-In, First-Out) queues, which would cycle through cold memory, inducing cache misses.
+The overhead is effectively zero bytes per allocation, as the metadata storage is transient and exists only when the block is unused. However, this method introduces a security risk: a "Use-After-Free" write by the user can corrupt the next pointer, potentially causing the allocator to return an invalid address on a subsequent call, leading to difficult-to-debug crashes.9
+2.2.2 Bitmap-Based Management
+In high-reliability environments or kernels where memory corruption must be contained, bitmap-based pools are preferred.2 Here, the status of each block (allocated vs. free) is tracked in a separate bit array.
+Mechanism:
+A specific region of memory is dedicated to the bitmap. If the pool manages 4096 blocks, a 512-byte bitmap ($4096 / 8$) is required.
+* Allocation: The allocator scans the bitmap for the first bit set to 0 (free). It calculates the address of the corresponding block based on the bit index: $Address = Base + (Index \times BlockSize)$. It sets the bit to 1.
+* Deallocation: The allocator accepts a pointer, calculates the offset from the base address, derives the index, and clears the corresponding bit.
+Implications:
+While mathematically elegant, bitmaps are generally slower than stacks. Finding the first free bit requires a linear scan or the use of specific hardware instructions (like ctz - count trailing zeros, or clz - count leading zeros).1 Even with hardware acceleration, calculating the address from the index adds arithmetic overhead.
+However, bitmaps provide superior memory locality for metadata. Checking the status of 64 blocks requires loading a single 64-bit word into a register. In contrast, traversing a linked list involves pointer chasing, which is the enemy of modern CPU prefetchers (though the LIFO nature of the stack mitigates this for the next allocation). Furthermore, buffer overflows in the user data cannot corrupt the free list structure since the bitmap is stored separately, offering a distinct advantage in the context of "wild" pointers in Aria.2
+2.3 Pool Growth Strategies
+A standard pool has a fixed capacity. When exhaustion occurs, the behavior defines the allocator's role in the system.
+1. Static Failure: Return null. This is common in real-time embedded systems where memory determinism is paramount.
+2. Geometric Growth (Chaining): When the pool is exhausted, a new "chunk" (a large block of memory) is allocated from the system (or a parent arena). The size of this new chunk typically follows a geometric progression (e.g., doubling in size: 4KB, 8KB, 16KB) to amortize the cost of the system call over many future allocations.10
+   * Implementation: The Pool object maintains a linked list of these "chunks." The free list threads through blocks across these chunks seamlessly. When the pool is destroyed, it walks the list of chunks and frees them in bulk.
+3. Fixed Increment: Growing by a fixed page size (e.g., 4KB) prevents memory wastage for massive pools but increases the frequency of system calls.
+For Aria's general-purpose library, Geometric Growth is the recommended default, as it balances memory footprint with allocation throughput.
+2.4 Performance Characteristics and Targets
+The performance mandate for Aria's Pool allocator is strict: <20ns per allocation. To put this in perspective, a standard malloc implementation may take 20-50ns in the best case but can spike to microseconds under contention or fragmentation scenarios.1
+Theoretical Lower Bound:
+A stack-based pool allocation compiles to approximately 3-5 assembly instructions:
+
+
+Code snippet
+
+
+
+
+LOAD head -> reg
+TEST reg, reg (check for null)
+LOAD [reg] -> next (read embedded pointer)
+STORE next -> head
+RETURN reg
+
+On a modern 4GHz CPU, this sequence can execute in under 2 nanoseconds if the head pointer is in the L1 cache. The 20ns target provides ample budget for function call overhead, overflow checks, and debug instrumentation.
+Comparison with SegFit:
+Aria's SegFit allocator 1 operates at ~56ns. This overhead stems from:
+1. Mapping size to class ($O(1)$ but involves bit scans).
+2. Locking (SegFit appears designed for concurrency).
+3. Managing doubly-linked lists (updating prev and next pointers vs. a single next pointer in a stack).
+The Pool allocator removes step 1 entirely and simplifies step 3, securing the performance win.
+2.5 Use Cases
+The architectural rigidity of the Pool allocator makes it unsuitable for general string or array handling but ideal for:
+   * Networking: Packet buffers (e.g., rigid MTU sizes like 1500 bytes).
+   * Game Development: Entity Component Systems (ECS) where millions of particles or entities of identical struct layout are spawned and destroyed per frame.4
+   * Databases: Tree nodes (B-Tree pages) or fixed-schema row buffers.
+   * AST Nodes: During parsing, token nodes often share a uniform size.
+3. Slab Allocator Fundamentals
+3.1 Concept and the Object Caching Problem
+The Slab Allocator represents a deeper integration between memory management and object lifecycle. Originating in the SunOS 5.4 kernel by Jeff Bonwick 11, it addresses a specific inefficiency in system programming: the cost of initialization.
+In many high-performance scenarios, the cost of allocating memory is dwarfed by the cost of initializing it. Consider a kernel mutex or a complex C++ object with internal locks and buffers.
+   * Standard Cycle: malloc (find memory) $\rightarrow$ construct (initialize locks, zero buffers) $\rightarrow$ use $\rightarrow$ destruct (tear down locks) $\rightarrow$ free.
+   * Slab Cycle: alloc (get from cache) $\rightarrow$ use $\rightarrow$ free (return to cache).
+In the Slab model, when an object is freed, it is not destructed; it is essentially "paused." Its memory is returned to the allocator, but its internal state (e.g., initialized mutexes, pre-zeroed buffers) is preserved. When re-allocated, the constructor is skipped, yielding massive performance gains for complex objects. This is Object Caching.12
+3.2 Terminology and Hierarchy
+The architecture is hierarchical:
+   1. Cache (kmem_cache): The top-level manager for a specific object type (e.g., InodeCache, PacketCache). It manages a collection of Slabs.
+   2. Slab: A contiguous chunk of memory (usually composed of one or more contiguous pages) divided into equal-sized chunks. A slab is the unit of interaction with the lower-level page allocator.
+   3. Object: The actual unit of memory used by the application.
+Slabs transition between three states:
+   * Full: All objects are in use.
+   * Partial: Some objects are used, some are free.
+   * Empty: No objects are used. These slabs can be returned to the OS to reclaim memory.
+3.3 The SLUB Architecture (The Modern Standard)
+While the original SLAB allocator utilized complex per-CPU queues and on-slab management that grew metadata-heavy, the Linux kernel shifted to SLUB (The Unqueued Allocator).14 Aria should adopt the SLUB pattern for its balance of simplicity and performance.
+Key SLUB Characteristics:
+   * Metadata Folding: SLUB avoids separate headers for objects. It uses the struct page (metadata the OS already maintains for memory pages) to track the slab's freelist and status.
+   * Embedded Freelists: Like the Pool allocator, SLUB embeds the free pointer within the object itself.
+   * Lockless Fast Path: SLUB maintains a per-CPU active slab. Allocations from this active slab are performed using cmpxchg (compare-and-swap) or simple pointer increments, avoiding global locks entirely unless the slab is empty.16
+3.4 Slab Coloring: Solving Cache Conflict
+A subtle but profound performance killer in fixed-size allocators is cache conflict. If every slab starts exactly on a page boundary (e.g., 4096 bytes), and the objects are 64 bytes, then the first object of every slab will map to the exact same cache set index in the CPU's L1 cache.17
+If code iterates through objects allocated from sequential slabs, it will repeatedly access the same cache lines, evicting the previous slab's data while leaving other cache lines empty. This is cache thrashing.
+Slab Coloring Mechanism:
+Slab coloring artificially shifts the starting address of the objects within a slab.
+   * Wastage Calculation: $Wastage = SlabSize \pmod{ObjectSize}$. This is the unused space at the end of a slab.
+   * Coloring: The allocator uses this wastage to create an offset at the beginning of the slab.
+   * Slab 1 (Color 0): Objects start at offset 0.
+   * Slab 2 (Color 1): Objects start at offset CACHE_LINE_SIZE (e.g., 64).
+   * Slab 3 (Color 2): Objects start at offset 128.
+By cycling through "colors," the allocator ensures that Object 0 of Slab 1 and Object 0 of Slab 2 reside in different CPU cache sets, maximizing effective cache bandwidth and reducing conflict misses.12
+3.5 Allocation Algorithm
+The allocation logic for a Slab allocator (SLUB-style) follows a precedence chain:
+   1. Per-CPU Cache: Check the slab currently active for this thread/CPU. If it has free objects (lockless check), pop one and return.
+   2. Partial List: If the CPU slab is full, lock the Cache node and check the list of "Partial" slabs.
+   3. Activate Partial: Take a partial slab, make it the active CPU slab, and allocate from it.
+   4. New Slab: If no partial slabs exist, request new pages from the backend (Page Allocator), format them into a new slab (applying coloring), and allocate.
+Deallocation involves checking if the returned object belongs to the active CPU slab (fast path) or a different slab (slow path), requiring lock acquisition to update the partial/empty lists.
+3.6 Performance Targets
+For Aria, the Slab allocator targets <30ns latency. While slightly slower than the raw Pool allocator due to the logic of managing full/partial/empty lists and coloring offsets, the real-world performance gain comes from object reuse. Avoiding a constructor that takes 500ns dwarfs the 10ns difference in allocation time.
+4. Comparative Analysis: Pool vs. Slab vs. SegFit
+To synthesize the positioning of these allocators within Aria, we present a comparative analysis.
+
+
+Feature
+	SegFit (Existing)
+	Pool Allocator
+	Slab Allocator
+	Primary Use Case
+	General Purpose Heap
+	High-Freq Fixed Data
+	Complex Object Caching
+	Input
+	Arbitrary Size (bytes)
+	Implicit (Type/Size)
+	Implicit (Type)
+	Lookup Overhead
+	Size-to-Class (CLZ)
+	None (Direct)
+	None (Direct)
+	Internal Structure
+	Array of Free Lists
+	Single Free Stack
+	Cache $\to$ Partial Slabs
+	Object State
+	Raw / Uninitialized
+	Raw / Uninitialized
+	Initialized / Cached
+	Metadata
+	Header per block
+	None / Bitmap
+	Page-level (SLUB style)
+	Cache Optimization
+	64-byte alignment
+	LIFO Hotness
+	Slab Coloring
+	Allocation Latency
+	~56 ns
+	< 20 ns
+	< 30 ns
+	Deallocation Latency
+	~245 ns
+	< 15 ns
+	< 20 ns (w/o dtor)
+	External Fragmentation
+	Minimized (Buckets)
+	Zero
+	Low (Partial slabs)
+	Nuanced Conclusion:
+   * SegFit is the "safe default." It handles everything but pays a tax for versatility.
+   * Pool is the "speed demon." It is effectively a specialized SegFit bucket stripped of all safety rails and lookup logic. It is the correct choice for networking and ECS.
+   * Slab is the "state manager." It is unique in its ability to preserve object identity across alloc/free cycles. It is the correct choice for system resources (Threads, Mutexes, File Handles).
+5. Allocator Interface Design
+A truly modular standard library must abstract the concrete allocator implementation behind a common interface. Analyzing Rust, Zig, and C++ reveals divergent philosophies.
+5.1 Prior Art Analysis
+   * Rust (std::alloc::Allocator): Rust uses a Trait (Interface). Critical method: fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError>.
+   * Mechanism: It relies on generics (Vec<T, A: Allocator>). This allows the compiler to monomorphize the code, inlining the allocator's alloc function directly into the caller. This results in zero-cost abstraction but causes "viral generics" in codebases.20
+   * Zig (std.mem.Allocator): Zig uses a runtime vtable approach. The Allocator struct contains function pointers (alloc, resize, free).
+   * Mechanism: Runtime polymorphism. You pass *Allocator to functions.
+   * Trade-off: This introduces an indirect function call (overhead ~3-5ns) preventing inlining, but dramatically simplifies the API (no generics) and reduces binary size.22
+   * C++ (std::pmr): C++17 introduced Polymorphic Memory Resources, which mirrors the Zig approach (abstract base class memory_resource) to solve the template bloat of C++98 allocators.24
+5.2 Recommendation for Aria
+Aria should adopt a Hybrid Interface Pattern to satisfy both extreme performance needs and usability.
+   1. The Allocator Trait (Static Dispatch): Core data structures (Array<T>, Map) should accept an allocator as a generic parameter. This enables the compiler to inline Pool.alloc directly into the Array.push loop, achieving the <20ns target.
+   2. The AnyAllocator Wrapper (Dynamic Dispatch): For user code that doesn't want to carry generics, Aria should provide a type-erased wrapper that implements the Trait but delegates via a vtable.
+Proposed Interface (Aria Syntax):
+
+
+Code snippet
+
+
+
+
+interface Allocator {
+   // Core primitive: Allocates raw wild memory
+   fn alloc(size: uint64, align: uint64) -> result<wild void@, error>;
+   
+   // Sized deallocation is critical for performance (avoids lookup)
+   fn free(ptr: wild void@, size: uint64, align: uint64) -> void;
+   
+   // Optional: Resize in place (critical for Realloc optimization)
+   fn resize(ptr: wild void@, old_size: uint64, new_size: uint64, align: uint64) -> result<wild void@, error>;
+}
+
+This design enforces Sized Deallocation (passing size to free), a lesson learned from C++14 and Rust. Pool allocators ignore the size param (they know it implicit), but SegFit requires it to identify the bucket without a header lookup.
+6. Allocator Composition Patterns
+Composition allows developers to build complex behaviors from simple primitives.
+6.1 Fallback Allocator
+This pattern enables a "Fast path / Slow path" hierarchy.
+   * Scenario: A StackAllocator (fast, limited size) backed by a HeapAllocator (slow, unlimited).
+   * Algorithm: Attempt primary.alloc(). If it returns error (OOM), delegate to fallback.alloc().
+   * Use Case: Small String Optimization (SSO) or handling bursty workloads where the stack buffer usually suffices.
+6.2 The Debugging/Sentinel Allocator
+A wrapper allocator used during development to catch memory errors.
+   * Buffer Overflow: It adds "Redzones" (padding bytes with magic values, e.g., 0xDEADBEEF) before and after the allocation. On free, it validates these zones are untouched.25
+   * Leak Detection: It records a stack trace for every alloc in a hash map and removes it on free. On destruction, it reports any pointers remaining in the map.
+   * Use-After-Free: On free, it fills the memory with a "poison" pattern (e.g., 0xFE) so that subsequent reads of dangling pointers yield obvious garbage rather than stale data.
+6.3 Thread-Safe Decorator
+Pools and Slabs are often single-threaded for speed (avoiding atomic overhead). A ThreadSafe<T> wrapper adds a Mutex or Spinlock around the alloc/free calls. This allows the core implementation to remain simple while enabling concurrent usage where required.8
+6.4 Cascade (Segregator) Allocator
+This pattern routes allocations to different allocators based on size.
+   * Logic: if (size <= 64) return pool64.alloc(); else if (size <= 128) return pool128.alloc(); else return segfit.alloc();
+   * Implication: This allows users to build a custom "SegFit" optimized for their specific object distribution without modifying the core runtime.
+7. Performance Analysis and Benchmarks
+The research establishes clear performance expectations.
+7.1 Overhead Analysis
+   * Instruction Count:
+   * Pool: ~5 instructions (Load head, Null check, Update head).
+   * Slab (Hot): ~10 instructions (Check CPU slab, Load freelist, Update).
+   * SegFit: ~50+ instructions (Size hash, Bucket lookup, Lock acquisition, Free list traversal).
+   * Cache Misses:
+   * Pool: Near zero (LIFO reuse keeps headers hot).
+   * Slab: Low (Coloring reduces conflict misses).
+   * SegFit: Moderate (Traversal of free lists may touch cold cache lines).
+7.2 Benchmark Targets (vs System Malloc)
+Metric
+	System Malloc (glibc)
+	Aria SegFit
+	Aria Pool (Target)
+	Aria Slab (Target)
+	Allocation (Warm)
+	25 ns
+	56 ns
+	2-5 ns
+	5-10 ns
+	Deallocation
+	30 ns
+	245 ns
+	2-5 ns
+	5-10 ns
+	Object Init Cost
+	User dependent
+	User dependent
+	User dependent
+	~0 ns (Amortized)
+	Memory Overhead
+	8-16 bytes/obj
+	Header dependent
+	0 bytes
+	Page metadata only
+	The data confirms that for fixed-size workloads, Pool allocators offer an order-of-magnitude improvement over SegFit.5
+8. Integration with Aria
+Implementing these patterns requires deep integration with Aria's language features.
+8.1 Wild Pointers
+Pool/Slab allocators manage memory outside the Garbage Collector's purview. Therefore, their API must return wild T@ (wild pointers). This forces the user to acknowledge the manual lifecycle of the memory. The type system prevents these pointers from being accidentally treated as GC roots.1
+8.2 Defer Integration
+The defer statement is the syntactic glue that makes manual memory management palatable.
+
+
+Code snippet
+
+
+
+
+// Usage Pattern
+fn handle_request() {
+   // 'packet_pool' is a Pool<Packet>
+   pkt := packet_pool.alloc(); 
+   defer packet_pool.free(pkt); // Auto-cleanup at scope exit
+
+   //... safe use of pkt...
+}
+
+8.3 Type-Safe API Design
+To prevent type confusion (e.g., freeing a Node* to a PacketPool), the allocators must be generics.
+Proposed Pool API:
+
+
+Code snippet
+
+
+
+
+struct Pool<T> {
+   // Internal state (head pointer, pages list)
+   
+   // Static constructor
+   static fn create(capacity: uint64) -> Pool<T>;
+   
+   // Returns typed wild pointer. 
+   // Panic or return error on exhaustion depending on config.
+   fn alloc(self) -> wild T@;
+   
+   // Accepts ONLY T. Compile-time safety.
+   fn free(self, ptr: wild T@);
+   
+   fn destroy(self);
+}
+
+Proposed Slab API:
+
+
+Code snippet
+
+
+
+
+struct SlabCache<T> {
+   // Constructor/Destructor hooks
+   ctor: fn(wild T@),
+   dtor: fn(wild T@),
+
+   fn alloc(self) -> wild T@; // Returns initialized object
+   fn free(self, ptr: wild T@); // Returns to cache, DOES NOT DESTROY
+}
+
+9. Conclusion
+The research conclusively demonstrates that Pool and Slab allocators fill a critical performance void in Aria's current memory model. While the SegFit allocator serves as a competent general-purpose mechanism, it cannot compete with the structure-aware optimizations of Pools (for raw throughput) or Slabs (for initialization caching).
+By adopting a Stack-based free list for Pools, Aria can achieve the <20ns allocation target, making it viable for high-frequency networking and game logic. By adopting a SLUB-style architecture with Coloring for Slabs, Aria gains a sophisticated tool for managing heavy system resources.
+These implementations, wrapped in a composable Interface and secured via Debug Composition, will provide Aria developers with the granular control necessary for systems programming, elevating the language's capability to match established giants like C++ and Rust in the domain of low-latency computing.
+________________
+Appendix: Code Implementation Examples
+10.1 C++ Implementation (Reference)
+
+
+C++
+
+
+
+
+// Simple Stack-Based Pool
+template <typename T>
+class Pool {
+   struct Node { Node* next; };
+   Node* head = nullptr;
+   
+public:
+   void* alloc() {
+       if (!head) return expand(); // Slow path
+       Node* ptr = head;
+       head = head->next;
+       return ptr;
+   }
+   
+   void free(void* ptr) {
+       Node* node = static_cast<Node*>(ptr);
+       node->next = head;
+       head = node;
+   }
+};
+
+10.2 Rust Implementation (Trait-Based)
+
+
+Rust
+
+
+
+
+struct Pool<T> {
+   head: Cell<*mut FreeNode>,
+   //... chunks management
+}
+
+impl<T> Allocator for Pool<T> {
+   fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+       // Assert layout.size() <= sizeof(T)
+       // Pop from head
+   }
+}
+
+10.3 Aria Implementation (Conceptual)
+
+
+Code snippet
+
+
+
+
+// Pool Allocator in Aria
+struct Pool<T> {
+   head: wild FreeNode@;
+   
+   fn alloc(self) -> wild T@ {
+       if self.head == null {
+           self.grow();
+       }
+       ptr := self.head;
+       // Intrusive list logic: treat memory as FreeNode
+       self.head = ptr.next;
+       return @cast<wild T@>(ptr);
+   }
+   
+   fn free(self, ptr: wild T@) {
+       node := @cast<wild FreeNode@>(ptr);
+       node.next = self.head;
+       self.head = node;
+   }
+}
+
+Works cited
+   1. segfit_consciousness_allocator.h
+   2. Memory Allocation, accessed December 21, 2025, https://brokenthorn.com/Resources/OSDev26.html
+   3. SL[AUO]B: Kernel memory allocator design and philosophy - YouTube, accessed December 21, 2025, https://www.youtube.com/watch?v=h0VMLXavx30
+   4. Memory Allocation Strategies - Part 5 - gingerBill, accessed December 21, 2025, https://www.gingerbill.org/article/2021/11/30/memory-allocation-strategies-005/
+   5. If memory pools are faster than malloc, why doesn't malloc use them under the covers?, accessed December 21, 2025, https://stackoverflow.com/questions/61687665/if-memory-pools-are-faster-than-malloc-why-doesnt-malloc-use-them-under-the-co
+   6. Pool Concepts - Brown Computer Science, accessed December 21, 2025, https://cs.brown.edu/~jwicks/boost/libs/pool/doc/concepts.html
+   7. which memory allocation system to use - OSDev.org, accessed December 21, 2025, https://forum.osdev.org/viewtopic.php?t=46327
+   8. Native memory allocators - Unity - Manual, accessed December 21, 2025, https://docs.unity3d.com/6000.2/Documentation/Manual/performance-native-allocators.html
+   9. Code review for an intrusive free list as a pool allocator : r/C_Programming - Reddit, accessed December 21, 2025, https://www.reddit.com/r/C_Programming/comments/hmip1h/code_review_for_an_intrusive_free_list_as_a_pool/
+   10. cacay/MemoryPool: An easy to use and efficient memory pool allocator written in C++. - GitHub, accessed December 21, 2025, https://github.com/cacay/MemoryPool
+   11. The Slab Allocator: An Object-Caching Kernel Memory Allocator, accessed December 21, 2025, https://web.eecs.umich.edu/~ryanph/jhu/cs318/fall18/readings/slab.pdf
+   12. Slab allocation - Grokipedia, accessed December 21, 2025, https://grokipedia.com/page/Slab_allocation
+   13. Slab allocation - Wikipedia, accessed December 21, 2025, https://en.wikipedia.org/wiki/Slab_allocation
+   14. The SLUB allocator - LWN.net, accessed December 21, 2025, https://lwn.net/Articles/229984/
+   15. How does the SLUB allocator work, accessed December 21, 2025, https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf
+   16. Linux SLUB Allocator Internals and Debugging, Part 1 of 4 - Oracle Blogs, accessed December 21, 2025, https://blogs.oracle.com/linux/linux-slub-allocator-internals-and-debugging-1
+   17. Slab Allocator - The Linux Kernel Archives, accessed December 21, 2025, https://www.kernel.org/doc/gorman/html/understand/understand011.html
+   18. Linux slab allocator and cache performance - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/46731933/linux-slab-allocator-and-cache-performance
+   19. cache coloring on slab memory management in Linux kernel - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/15016359/cache-coloring-on-slab-memory-management-in-linux-kernel
+   20. std::alloc - Rust, accessed December 21, 2025, https://doc.rust-lang.org/std/alloc/index.html
+   21. Is std::alloc::Allocator likely to be stable any time soon? - Rust Users Forum, accessed December 21, 2025, https://users.rust-lang.org/t/is-std-allocator-likely-to-be-stable-any-time-soon/111541
+   22. zig/lib/std/mem/Allocator.zig at master · ziglang/zig - GitHub, accessed December 21, 2025, https://github.com/ziglang/zig/blob/master/lib/std/mem/Allocator.zig
+   23. Why Zig doesn't have/want Go-like interfaces? - Reddit, accessed December 21, 2025, https://www.reddit.com/r/Zig/comments/1i1y5x4/why_zig_doesnt_havewant_golike_interfaces/
+   24. Should new C++ code use memory resources instead of allocators? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/39799108/should-new-c-code-use-memory-resources-instead-of-allocators
+   25. GWP-ASan — LLVM 22.0.0git documentation, accessed December 21, 2025, https://llvm.org/docs/GwpAsan.html

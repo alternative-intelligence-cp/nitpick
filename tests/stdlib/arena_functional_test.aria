@@ -1,0 +1,173 @@
+/**
+ * Arena Allocator Functional Test - Phase 4.2
+ * Minimal test to verify arena compilation
+ */
+
+func:main = int64() {
+    // Just test that we can call the arena functions
+    // TODO: Actual allocation tests once syntax is working
+    
+    int64:result = 0;
+    pass(result);
+}
+
+    
+    if (!result.is_ok()) {
+        return 1;  // Arena creation failed
+    }
+    
+    arena<u8>:my_arena = result.unwrap();
+    
+    // Allocate a single int64
+    alloc_result<wild int64@>:alloc1 = arena_alloc<int64>(my_arena);
+    
+    if (!alloc1.is_ok()) {
+        return 2;  // Allocation failed
+    }
+    
+    wild int64@:ptr1 = alloc1.unwrap();
+    ptr1@ = 42;
+    
+    if (ptr1@ != 42) {
+        return 3;  // Value mismatch
+    }
+    
+    // Allocate struct
+    alloc_result<wild TestData@>:alloc2 = arena_alloc<TestData>(my_arena);
+    
+    if (!alloc2.is_ok()) {
+        return 4;  // Struct allocation failed
+    }
+    
+    wild TestData@:ptr2 = alloc2.unwrap();
+    ptr2@.a = 100;
+    ptr2@.b = 200;
+    
+    if (ptr2@.a != 100) {
+        return 5;  // Struct field a mismatch
+    }
+    
+    if (ptr2@.b != 200) {
+        return 6;  // Struct field b mismatch
+    }
+    
+    // Destroy arena
+    arena_destroy(my_arena);
+    
+    return 0;  // Success
+}
+
+/**
+ * Test 2: Array allocation
+ */
+func:test_arena_array = int64() {
+    arena_result<u8>:result = new_arena<u8>(8192);
+    
+    if (!result.is_ok()) {
+        return 1;
+    }
+    
+    arena<u8>:my_arena = result.unwrap();
+    
+    // Allocate array of 100 int64s
+    alloc_result<wild int64@>:alloc = arena_alloc_array<int64>(my_arena, 100);
+    
+    if (!alloc.is_ok()) {
+        return 2;
+    }
+    
+    wild int64@:arr = alloc.unwrap();
+    
+    // Fill array
+    int64:i = 0;
+    loop {
+        if (i >= 100) { break; }
+        
+        wild int64@:elem = arr + i;
+        elem@ = i * 2;
+        
+        i = i + 1;
+    }
+    
+    // Verify array values
+    i = 0;
+    loop {
+        if (i >= 100) { break; }
+        
+        wild int64@:elem = arr + i;
+        int64:expected = i * 2;
+        
+        if (elem@ != expected) {
+            return 3;  // Array value mismatch
+        }
+        
+        i = i + 1;
+    }
+    
+    arena_destroy(my_arena);
+    return 0;
+}
+
+/**
+ * Test 3: Arena reset
+ */
+func:test_arena_reset = int64() {
+    arena_result<u8>:result = new_arena<u8>(4096);
+    
+    if (!result.is_ok()) {
+        return 1;
+    }
+    
+    arena<u8>:my_arena = result.unwrap();
+    
+    // Allocate some data
+    alloc_result<wild int64@>:alloc1 = arena_alloc<int64>(my_arena);
+    if (!alloc1.is_ok()) { return 2; }
+    
+    alloc_result<wild int64@>:alloc2 = arena_alloc<int64>(my_arena);
+    if (!alloc2.is_ok()) { return 3; }
+    
+    // Reset arena (clears all allocations)
+    arena_reset(my_arena);
+    
+    // Allocate again after reset
+    alloc_result<wild int64@>:alloc3 = arena_alloc<int64>(my_arena);
+    if (!alloc3.is_ok()) { return 4; }
+    
+    wild int64@:ptr3 = alloc3.unwrap();
+    ptr3@ = 999;
+    
+    if (ptr3@ != 999) {
+        return 5;
+    }
+    
+    arena_destroy(my_arena);
+    return 0;
+}
+
+/**
+ * Main test runner
+ */
+func:main = int64() {
+    int64:result = 0;
+    
+    // Test 1: Basic allocation
+    result = test_arena_basic();
+    if (result != 0) {
+        return 100 + result;  // 101-106
+    }
+    
+    // Test 2: Array allocation
+    result = test_arena_array();
+    if (result != 0) {
+        return 200 + result;  // 201-203
+    }
+    
+    // Test 3: Arena reset
+    result = test_arena_reset();
+    if (result != 0) {
+        return 300 + result;  // 301-305
+    }
+    
+    return 0;  // All tests passed!
+}

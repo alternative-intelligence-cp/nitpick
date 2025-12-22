@@ -1,0 +1,95 @@
+{
+    "task_id": "alloc_001_arena_allocator_patterns",
+    "title": "Arena Allocator Block Chaining Patterns",
+    "priority": "high",
+    "category": "memory_management",
+    "dependencies": [
+        "research_021_garbage_collection_system",
+        "research_022_wild_wildx_memory"
+    ],
+    "estimated_complexity": "medium",
+    "description": "Research arena/bump allocator patterns from Rust bumpalo, Zig ArenaAllocator, and C++ implementations, focusing on multi-block chaining strategies, reset with memory reuse, and type-safe API design for Aria Phase 4.2.",
+    "scope": {
+        "arena_fundamentals": "Arena/region/bump allocator core concepts and use cases",
+        "block_chaining": "Multi-block arena growth strategies (fixed-size, exponential, hybrid)",
+        "memory_reuse": "Arena reset() patterns that preserve allocated blocks for reuse",
+        "type_safety": "Type-safe arena API design leveraging language features"
+    },
+    "key_questions": {
+        "rust_bumpalo": [
+            "How does bumpalo implement multi-block chaining (overflow to new chunks)?",
+            "What is bumpalo's block allocation strategy (initial size, growth policy)?",
+            "How does bumpalo handle alignment for mixed-type allocations?",
+            "What is bumpalo's reset() behavior (memory reuse vs deallocation)?",
+            "How does bumpalo integrate with Rust's type system (lifetime safety)?",
+            "What zero-cost abstractions does bumpalo provide?",
+            "How does bumpalo handle allocations larger than chunk size?",
+            "What performance characteristics does bumpalo achieve (ns per allocation)?"
+        ],
+        "zig_arena": [
+            "How does Zig's ArenaAllocator implement block chaining?",
+            "What backing allocator pattern does Zig use (delegation to std.heap.page_allocator)?",
+            "How does Zig track multiple blocks (linked list, array)?",
+            "What is Zig's deinit() behavior (bulk deallocation of all blocks)?",
+            "How does Zig's allocator interface work (std.mem.Allocator trait)?",
+            "What alignment guarantees does Zig's arena provide?",
+            "How does Zig handle allocation failures (error unions)?",
+            "What reset() or reuse mechanisms exist in Zig arenas?"
+        ],
+        "cpp_patterns": [
+            "What C++ arena allocator patterns exist (single-block, linked-list, pool-based)?",
+            "How do C++ arenas handle alignment (alignof, align_to)?",
+            "What RAII patterns exist for arena cleanup (unique_ptr, defer-like)?",
+            "How do modern C++ arenas integrate with STL allocators?",
+            "What thread-local arena patterns exist?",
+            "How do C++ arenas handle large allocations (>chunk size)?",
+            "What memory mapping strategies exist (mmap, VirtualAlloc, huge pages)?",
+            "What benchmarks exist comparing arena vs malloc performance?"
+        ],
+        "aria_integration": [
+            "How should Aria's Arena.alloc<T>() provide type safety?",
+            "How can Aria's defer integrate with arena cleanup?",
+            "What API should Arena.reset() provide (zero-copy reuse)?",
+            "How should Arena handle @alignof(T) for mixed types?",
+            "What statistics API should Arena provide (bytes_allocated, bytes_reserved)?",
+            "How should Arena handle allocations > block_size (error vs oversized block)?",
+            "What validation mechanisms should Arena provide (magic numbers)?",
+            "How should Arena integrate with wild pointer semantics (not GC-tracked)?"
+        ]
+    },
+    "deliverables": [
+        "Arena allocator fundamentals and use cases (300-400 lines)",
+        "Rust bumpalo architecture analysis with code examples",
+        "Zig ArenaAllocator architecture analysis with code examples",
+        "C++ arena patterns survey (modern C++17/20)",
+        "Block chaining strategy comparison table",
+        "Memory reuse patterns (reset vs destroy)",
+        "Type-safe API design recommendations for Aria",
+        "Alignment handling algorithms and examples",
+        "Performance benchmarks and targets (ns per allocation)",
+        "Large allocation handling strategies",
+        "Thread-local vs shared arena patterns",
+        "Integration with Aria's defer and wild pointers",
+        "Recommended block size selection (4KB, 64KB, 1MB analysis)",
+        "Code examples in Rust, Zig, C++, and proposed Aria syntax"
+    ],
+    "context_files": [
+        "/docs/stdlib/arena_allocator_design.txt",
+        "/docs/stdlib/ALLOCATOR_RESEARCH_FINDINGS.txt",
+        "/educational/allocators/stabilized/sm_consciousness_stabilized.c",
+        "/educational/allocators/segfit_advanced/segfit_consciousness_allocator.h",
+        "/docs/stdlib/memory_api.txt",
+        "/src/runtime/allocators/wild_alloc.cpp"
+    ],
+    "existing_baseline": {
+        "stabilized_bump": "1.6-45ns allocation, pure bump (no chaining), single pool",
+        "segfit_segregated": "56ns allocation, 15 size classes, doubly-linked free lists",
+        "wild_alloc": "~100ns allocation, TBB sticky errors, individual free()"
+    },
+    "performance_targets": {
+        "allocation_speed": "<5ns per allocation (pointer bump + alignment)",
+        "memory_overhead": "0-15 bytes per allocation (alignment padding only)",
+        "block_chaining_overhead": "<10ns when triggering new block allocation",
+        "reset_speed": "O(1) time to reset arena for reuse"
+    }
+}
