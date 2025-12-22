@@ -538,7 +538,7 @@ bool link_executable(const std::string& object_file, const std::string& output_f
     }
     
     // Link with clang, including runtime library
-    std::string cmd = "clang " + object_file + " " + runtime_lib + " -o " + output_file;
+    std::string cmd = "clang++ " + object_file + " " + runtime_lib + " -o " + output_file;
     int result = std::system(cmd.c_str());
     
     if (result != 0) {

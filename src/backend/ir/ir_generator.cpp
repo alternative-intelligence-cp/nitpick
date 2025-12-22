@@ -1851,6 +1851,429 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 return builder.CreateCall(func, {}, "stdin_read_line_call");
             }
             
+            // ====================================================================
+            // ARENA ALLOCATOR BUILTINS (Phase 4.2.5.2)
+            // ====================================================================
+            
+            if (callee->name == "arena_new") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* arena_new_func = module->getFunction("aria_arena_new_handle");
+                if (!arena_new_func) {
+                    llvm::FunctionType* arena_new_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+                    arena_new_func = llvm::Function::Create(arena_new_type,
+                        llvm::Function::ExternalLinkage, "aria_arena_new_handle", module.get());
+                }
+                
+                llvm::Value* capacity = codegenExpression(call->arguments[0].get());
+                if (!capacity->getType()->isIntegerTy(64)) {
+                    capacity = builder.CreateSExtOrTrunc(capacity, builder.getInt64Ty());
+                }
+                return builder.CreateCall(arena_new_func, {capacity}, "arena_handle");
+            }
+            
+            if (callee->name == "arena_alloc") {
+                if (call->arguments.size() != 2) {
+                    return nullptr;
+                }
+                
+                llvm::Function* arena_alloc_func = module->getFunction("aria_arena_alloc_handle");
+                if (!arena_alloc_func) {
+                    llvm::FunctionType* arena_alloc_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
+                    arena_alloc_func = llvm::Function::Create(arena_alloc_type,
+                        llvm::Function::ExternalLinkage, "aria_arena_alloc_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                llvm::Value* size = codegenExpression(call->arguments[1].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                if (!size->getType()->isIntegerTy(64)) {
+                    size = builder.CreateSExtOrTrunc(size, builder.getInt64Ty());
+                }
+                return builder.CreateCall(arena_alloc_func, {handle, size}, "alloc_ptr");
+            }
+            
+            if (callee->name == "arena_reset") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* arena_reset_func = module->getFunction("aria_arena_reset_handle");
+                if (!arena_reset_func) {
+                    llvm::FunctionType* arena_reset_type = llvm::FunctionType::get(
+                        builder.getVoidTy(), {builder.getInt64Ty()}, false);
+                    arena_reset_func = llvm::Function::Create(arena_reset_type,
+                        llvm::Function::ExternalLinkage, "aria_arena_reset_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                builder.CreateCall(arena_reset_func, {handle});
+                return builder.getInt32(0);
+            }
+            
+            if (callee->name == "arena_destroy") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* arena_destroy_func = module->getFunction("aria_arena_destroy_handle");
+                if (!arena_destroy_func) {
+                    llvm::FunctionType* arena_destroy_type = llvm::FunctionType::get(
+                        builder.getVoidTy(), {builder.getInt64Ty()}, false);
+                    arena_destroy_func = llvm::Function::Create(arena_destroy_type,
+                        llvm::Function::ExternalLinkage, "aria_arena_destroy_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                builder.CreateCall(arena_destroy_func, {handle});
+                return builder.getInt32(0);
+            }
+            
+            if (callee->name == "arena_get_allocated") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* func = module->getFunction("aria_arena_get_allocated_handle");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                        "aria_arena_get_allocated_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                return builder.CreateCall(func, {handle}, "allocated_bytes");
+            }
+            
+            if (callee->name == "arena_get_reserved") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* func = module->getFunction("aria_arena_get_reserved_handle");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                        "aria_arena_get_reserved_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                return builder.CreateCall(func, {handle}, "reserved_bytes");
+            }
+            
+            // ====================================================================
+            // POOL ALLOCATOR BUILTINS (Phase 4.2.5.3)
+            // ====================================================================
+            
+            if (callee->name == "pool_new") {
+                if (call->arguments.size() != 2) {
+                    return nullptr;
+                }
+                
+                llvm::Function* pool_new_func = module->getFunction("aria_pool_new_handle");
+                if (!pool_new_func) {
+                    llvm::FunctionType* pool_new_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
+                    pool_new_func = llvm::Function::Create(pool_new_type,
+                        llvm::Function::ExternalLinkage, "aria_pool_new_handle", module.get());
+                }
+                
+                llvm::Value* block_size = codegenExpression(call->arguments[0].get());
+                llvm::Value* capacity = codegenExpression(call->arguments[1].get());
+                if (!block_size->getType()->isIntegerTy(64)) {
+                    block_size = builder.CreateSExtOrTrunc(block_size, builder.getInt64Ty());
+                }
+                if (!capacity->getType()->isIntegerTy(64)) {
+                    capacity = builder.CreateSExtOrTrunc(capacity, builder.getInt64Ty());
+                }
+                return builder.CreateCall(pool_new_func, {block_size, capacity}, "pool_handle");
+            }
+            
+            if (callee->name == "pool_alloc") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* pool_alloc_func = module->getFunction("aria_pool_alloc_handle");
+                if (!pool_alloc_func) {
+                    llvm::FunctionType* pool_alloc_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+                    pool_alloc_func = llvm::Function::Create(pool_alloc_type,
+                        llvm::Function::ExternalLinkage, "aria_pool_alloc_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                return builder.CreateCall(pool_alloc_func, {handle}, "alloc_ptr");
+            }
+            
+            if (callee->name == "pool_free") {
+                if (call->arguments.size() != 2) {
+                    return nullptr;
+                }
+                
+                llvm::Function* pool_free_func = module->getFunction("aria_pool_free_handle");
+                if (!pool_free_func) {
+                    llvm::FunctionType* pool_free_type = llvm::FunctionType::get(
+                        builder.getVoidTy(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
+                    pool_free_func = llvm::Function::Create(pool_free_type,
+                        llvm::Function::ExternalLinkage, "aria_pool_free_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                llvm::Value* ptr = codegenExpression(call->arguments[1].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                if (!ptr->getType()->isIntegerTy(64)) {
+                    ptr = builder.CreateSExtOrTrunc(ptr, builder.getInt64Ty());
+                }
+                builder.CreateCall(pool_free_func, {handle, ptr});
+                return builder.getInt32(0);
+            }
+            
+            if (callee->name == "pool_reset") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* pool_reset_func = module->getFunction("aria_pool_reset_handle");
+                if (!pool_reset_func) {
+                    llvm::FunctionType* pool_reset_type = llvm::FunctionType::get(
+                        builder.getVoidTy(), {builder.getInt64Ty()}, false);
+                    pool_reset_func = llvm::Function::Create(pool_reset_type,
+                        llvm::Function::ExternalLinkage, "aria_pool_reset_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                builder.CreateCall(pool_reset_func, {handle});
+                return builder.getInt32(0);
+            }
+            
+            if (callee->name == "pool_destroy") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* pool_destroy_func = module->getFunction("aria_pool_destroy_handle");
+                if (!pool_destroy_func) {
+                    llvm::FunctionType* pool_destroy_type = llvm::FunctionType::get(
+                        builder.getVoidTy(), {builder.getInt64Ty()}, false);
+                    pool_destroy_func = llvm::Function::Create(pool_destroy_type,
+                        llvm::Function::ExternalLinkage, "aria_pool_destroy_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                builder.CreateCall(pool_destroy_func, {handle});
+                return builder.getInt32(0);
+            }
+            
+            if (callee->name == "pool_get_total_blocks") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* func = module->getFunction("aria_pool_get_total_blocks_handle");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                        "aria_pool_get_total_blocks_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                return builder.CreateCall(func, {handle}, "total_blocks");
+            }
+            
+            if (callee->name == "pool_get_used_blocks") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* func = module->getFunction("aria_pool_get_used_blocks_handle");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                        "aria_pool_get_used_blocks_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                return builder.CreateCall(func, {handle}, "used_blocks");
+            }
+            
+            // ====================================================================
+            // SLAB ALLOCATOR BUILTINS (Phase 4.2.5.4)
+            // ====================================================================
+            
+            if (callee->name == "slab_new") {
+                if (call->arguments.size() != 2) {
+                    return nullptr;
+                }
+                
+                llvm::Function* slab_new_func = module->getFunction("aria_slab_cache_new_handle");
+                if (!slab_new_func) {
+                    llvm::FunctionType* slab_new_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
+                    slab_new_func = llvm::Function::Create(slab_new_type,
+                        llvm::Function::ExternalLinkage, "aria_slab_cache_new_handle", module.get());
+                }
+                
+                llvm::Value* object_size = codegenExpression(call->arguments[0].get());
+                llvm::Value* slab_size = codegenExpression(call->arguments[1].get());
+                if (!object_size->getType()->isIntegerTy(64)) {
+                    object_size = builder.CreateSExtOrTrunc(object_size, builder.getInt64Ty());
+                }
+                if (!slab_size->getType()->isIntegerTy(64)) {
+                    slab_size = builder.CreateSExtOrTrunc(slab_size, builder.getInt64Ty());
+                }
+                return builder.CreateCall(slab_new_func, {object_size, slab_size}, "slab_handle");
+            }
+            
+            if (callee->name == "slab_alloc") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* slab_alloc_func = module->getFunction("aria_slab_cache_alloc_handle");
+                if (!slab_alloc_func) {
+                    llvm::FunctionType* slab_alloc_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+                    slab_alloc_func = llvm::Function::Create(slab_alloc_type,
+                        llvm::Function::ExternalLinkage, "aria_slab_cache_alloc_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                return builder.CreateCall(slab_alloc_func, {handle}, "alloc_ptr");
+            }
+            
+            if (callee->name == "slab_free") {
+                if (call->arguments.size() != 2) {
+                    return nullptr;
+                }
+                
+                llvm::Function* slab_free_func = module->getFunction("aria_slab_cache_free_handle");
+                if (!slab_free_func) {
+                    llvm::FunctionType* slab_free_type = llvm::FunctionType::get(
+                        builder.getVoidTy(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
+                    slab_free_func = llvm::Function::Create(slab_free_type,
+                        llvm::Function::ExternalLinkage, "aria_slab_cache_free_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                llvm::Value* ptr = codegenExpression(call->arguments[1].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                if (!ptr->getType()->isIntegerTy(64)) {
+                    ptr = builder.CreateSExtOrTrunc(ptr, builder.getInt64Ty());
+                }
+                builder.CreateCall(slab_free_func, {handle, ptr});
+                return builder.getInt32(0);
+            }
+            
+            if (callee->name == "slab_destroy") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* slab_destroy_func = module->getFunction("aria_slab_cache_destroy_handle");
+                if (!slab_destroy_func) {
+                    llvm::FunctionType* slab_destroy_type = llvm::FunctionType::get(
+                        builder.getVoidTy(), {builder.getInt64Ty()}, false);
+                    slab_destroy_func = llvm::Function::Create(slab_destroy_type,
+                        llvm::Function::ExternalLinkage, "aria_slab_cache_destroy_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                builder.CreateCall(slab_destroy_func, {handle});
+                return builder.getInt32(0);
+            }
+            
+            if (callee->name == "slab_get_total_objects") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* func = module->getFunction("aria_slab_cache_get_total_objects_handle");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                        "aria_slab_cache_get_total_objects_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                return builder.CreateCall(func, {handle}, "total_objects");
+            }
+            
+            if (callee->name == "slab_get_allocated_objects") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Function* func = module->getFunction("aria_slab_cache_get_allocated_objects_handle");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                        "aria_slab_cache_get_allocated_objects_handle", module.get());
+                }
+                
+                llvm::Value* handle = codegenExpression(call->arguments[0].get());
+                if (!handle->getType()->isIntegerTy(64)) {
+                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+                }
+                return builder.CreateCall(func, {handle}, "allocated_objects");
+            }
+            
+            // ====================================================================
+            // END ALLOCATOR BUILTINS
+            // ====================================================================
+            
             // Check if this is a specialized generic call
             std::string functionName = callee->name;
             if (!call->specializedMangledName.empty()) {
