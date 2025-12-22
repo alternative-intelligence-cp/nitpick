@@ -1,0 +1,89 @@
+ARIA LANGUAGE RESEARCH: Core Type System, Memory Model & Error Handling
+
+You are an expert programming language designer with deep knowledge of type systems, memory management, and error handling patterns. You are helping design the Aria programming language.
+
+CONTEXT:
+- Aria is a modern systems language with LLVM backend
+- Compiles to native code, links with C runtime library (libaria_runtime.a)
+- Has unique features: Type-Based Bounded integers (TBB), Result<T> monadic errors, Wild memory model
+- Supports 6-stream I/O topology (FDs 0-5)
+- See attached files for compiler architecture and runtime library design
+
+YOUR TASK:
+Provide comprehensive research and design recommendations for the following 7 topics. For each topic, analyze trade-offs, provide detailed implementation strategies, and give concrete code examples.
+
+TOPICS:
+
+1. TYPE-BASED BOUNDED (TBB) INTEGERS - DESIGN & VERIFICATION
+   - Design philosophy: Why bounded integers at type level vs runtime checks?
+   - Compile-time vs runtime verification strategies
+   - Overflow behavior: ERR sentinel propagation mechanics
+   - TBB arithmetic operations: When to verify at compile time vs runtime?
+   - Integration with type inference (how to infer TBB ranges)
+   - Performance implications vs safety guarantees
+   - Example: `tbb8:x = 100; tbb8:y = 50; tbb8:z = x + y;` → How to verify 150 fits in tbb8?
+
+2. RESULT<T> MONAD - IMPLEMENTATION & ERROR PROPAGATION PATTERNS
+   - Monad semantics: How Result<T> implements bind, return, fail
+   - Memory management: Who owns the error/value pointers? When to copy vs transfer?
+   - Error propagation patterns: `?` operator vs explicit checking
+   - Compiler enforcement: Should unchecked Result<T> be a warning or error?
+   - Integration with TBB: Can Result<tbb8> contain ERR sentinel?
+   - Performance: Stack vs heap allocation for Result<T>
+   - Example: `result<string>:data = read_file("x.txt"); if (data.is_err()) ...`
+
+3. WILD MEMORY MODEL - PHILOSOPHY & USAGE PATTERNS
+   - Wild vs Arena vs Pool vs Slab: Decision framework for choosing allocator
+   - Explicit allocation syntax: `wild byte*:ptr = alloc(1024);`
+   - Ownership semantics: Who is responsible for freeing wild memory?
+   - RAII integration: Can wild pointers be auto-freed with destructors?
+   - Interaction with GC: Can wild and GC coexist safely?
+   - Safety analysis: How to prevent use-after-free with wild memory?
+   - Performance: Wild allocation overhead vs arena bump-pointer speed
+
+4. TYPE INFERENCE - RULES, LIMITATIONS & INTERACTION WITH TBB/RESULT
+   - When can types be inferred vs when must they be explicit?
+   - TBB inference: `tbb8:x = 5;` → infer tbb8, but can we infer from usage like `x = get_age();`?
+   - Result<T> inference: If function returns result<string>, can we infer from `data = read_file(...)`?
+   - Generic type inference: How to infer type parameters in `vector<T>`?
+   - Limitations: When does inference become ambiguous?
+   - Error messages: How to guide users when inference fails?
+   - Example: `data = read_file("x.txt");` → Can we infer `result<string>:data`?
+
+5. GENERIC TYPES - MONOMORPHIZATION VS TYPE ERASURE
+   - Generic syntax: `struct:Vector<T> = { wild T*:data; ... }`
+   - Monomorphization (C++ template model): Generate specialized code for each T
+   - Type erasure (Java/Go model): Use void* and runtime type information
+   - Trade-offs: Code bloat vs runtime overhead vs type safety
+   - Constraints: How to constrain T (e.g., T must support addition)?
+   - Integration with TBB: Can we have `Vector<tbb8>`? How do ERR sentinels propagate?
+   - FFI implications: How do generics map to C API?
+
+6. OWNERSHIP & LIFETIME TRACKING (IF ANY)
+   - Does Aria need Rust-style ownership/borrowing?
+   - Lifetime annotations for wild pointers?
+   - Borrow checker feasibility with LLVM backend
+   - Alternative: Explicit ownership transfer syntax?
+   - Integration with Result<T>: Who owns the value/error?
+   - Arena allocators and lifetimes: Can compiler track arena scope?
+   - Trade-off: Safety vs complexity for users
+
+7. TYPE SYSTEM INTEGRATION WITH 6-STREAM I/O
+   - Stream types: Should stdin/stdout be types (TextStream) or just FDs?
+   - Type-safe stream operations: `io.stdout.write(...)` → what is type of io.stdout?
+   - Binary vs text streams: How to prevent writing binary to text stream?
+   - Result<T> from I/O operations: `result<string>:line = io.stdin.read_line();`
+   - Stream generics: Can we have generic read/write for T?
+   - 6-stream type safety: Prevent accidental writes to wrong stream
+   - Example: `io.stddato.write(binary_data);` → how to enforce binary-only?
+
+OUTPUT FORMAT:
+For each topic, provide:
+1. **Design Philosophy**: Why this approach?
+2. **Implementation Strategy**: How to implement in compiler/runtime?
+3. **Code Examples**: Concrete Aria syntax demonstrating the feature
+4. **Trade-offs**: Pros and cons of different approaches
+5. **Integration**: How this interacts with other language features
+6. **Recommendations**: Specific design decisions you recommend
+
+Be thorough but practical. Focus on actionable guidance for implementation.

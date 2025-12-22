@@ -415,6 +415,10 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
     // Store the pointer in named_values so we can reference it later
     named_values[stmt->varName] = var_ptr;
     
+    // DEBUG: Check if initializer exists
+    std::cerr << "[DEBUG] codegenVarDecl: Variable " << stmt->varName 
+              << ", initializer ptr = " << (void*)stmt->initializer.get() << std::endl;
+    
     // If there's an initializer, generate code for it and store the result
     if (stmt->initializer) {
         if (!expr_codegen) {
