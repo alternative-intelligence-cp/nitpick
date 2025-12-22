@@ -1497,6 +1497,33 @@ src/runtime/allocators/pool_alloc.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/pool_alloc.cpp.s
 .PHONY : src/runtime/allocators/pool_alloc.cpp.s
 
+src/runtime/allocators/pool_builtins.o: src/runtime/allocators/pool_builtins.cpp.o
+.PHONY : src/runtime/allocators/pool_builtins.o
+
+# target to build an object file
+src/runtime/allocators/pool_builtins.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/pool_builtins.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/pool_builtins.cpp.o
+.PHONY : src/runtime/allocators/pool_builtins.cpp.o
+
+src/runtime/allocators/pool_builtins.i: src/runtime/allocators/pool_builtins.cpp.i
+.PHONY : src/runtime/allocators/pool_builtins.i
+
+# target to preprocess a source file
+src/runtime/allocators/pool_builtins.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/pool_builtins.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/pool_builtins.cpp.i
+.PHONY : src/runtime/allocators/pool_builtins.cpp.i
+
+src/runtime/allocators/pool_builtins.s: src/runtime/allocators/pool_builtins.cpp.s
+.PHONY : src/runtime/allocators/pool_builtins.s
+
+# target to generate assembly for a file
+src/runtime/allocators/pool_builtins.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/allocators/pool_builtins.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/allocators/pool_builtins.cpp.s
+.PHONY : src/runtime/allocators/pool_builtins.cpp.s
+
 src/runtime/allocators/slab_alloc.o: src/runtime/allocators/slab_alloc.cpp.o
 .PHONY : src/runtime/allocators/slab_alloc.o
 
@@ -2689,6 +2716,9 @@ help:
 	@echo "... src/runtime/allocators/pool_alloc.o"
 	@echo "... src/runtime/allocators/pool_alloc.i"
 	@echo "... src/runtime/allocators/pool_alloc.s"
+	@echo "... src/runtime/allocators/pool_builtins.o"
+	@echo "... src/runtime/allocators/pool_builtins.i"
+	@echo "... src/runtime/allocators/pool_builtins.s"
 	@echo "... src/runtime/allocators/slab_alloc.o"
 	@echo "... src/runtime/allocators/slab_alloc.i"
 	@echo "... src/runtime/allocators/slab_alloc.s"

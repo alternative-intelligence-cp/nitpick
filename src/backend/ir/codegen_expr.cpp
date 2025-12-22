@@ -1573,6 +1573,165 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     // END ARENA BUILTINS
     // ====================================================================
     
+    // ====================================================================
+    // POOL ALLOCATOR BUILTINS (Phase 4.2.5.3)
+    // ====================================================================
+    
+    if (callee_ident->name == "pool_new") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("pool_new() requires exactly two arguments");
+        }
+        
+        llvm::Function* pool_new_func = module->getFunction("aria_pool_new_handle");
+        if (!pool_new_func) {
+            llvm::FunctionType* pool_new_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
+            pool_new_func = llvm::Function::Create(pool_new_type,
+                llvm::Function::ExternalLinkage, "aria_pool_new_handle", module);
+        }
+        
+        llvm::Value* block_size = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* capacity = codegenExpressionNode(expr->arguments[1].get(), this);
+        if (!block_size->getType()->isIntegerTy(64)) {
+            block_size = builder.CreateSExtOrTrunc(block_size, builder.getInt64Ty());
+        }
+        if (!capacity->getType()->isIntegerTy(64)) {
+            capacity = builder.CreateSExtOrTrunc(capacity, builder.getInt64Ty());
+        }
+        return builder.CreateCall(pool_new_func, {block_size, capacity}, "pool_handle");
+    }
+    
+    if (callee_ident->name == "pool_alloc") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("pool_alloc() requires one argument");
+        }
+        
+        llvm::Function* pool_alloc_func = module->getFunction("aria_pool_alloc_handle");
+        if (!pool_alloc_func) {
+            llvm::FunctionType* pool_alloc_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            pool_alloc_func = llvm::Function::Create(pool_alloc_type,
+                llvm::Function::ExternalLinkage, "aria_pool_alloc_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        return builder.CreateCall(pool_alloc_func, {handle}, "alloc_ptr");
+    }
+    
+    if (callee_ident->name == "pool_free") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("pool_free() requires two arguments");
+        }
+        
+        llvm::Function* pool_free_func = module->getFunction("aria_pool_free_handle");
+        if (!pool_free_func) {
+            llvm::FunctionType* pool_free_type = llvm::FunctionType::get(
+                builder.getVoidTy(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
+            pool_free_func = llvm::Function::Create(pool_free_type,
+                llvm::Function::ExternalLinkage, "aria_pool_free_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        if (!ptr->getType()->isIntegerTy(64)) {
+            ptr = builder.CreateSExtOrTrunc(ptr, builder.getInt64Ty());
+        }
+        builder.CreateCall(pool_free_func, {handle, ptr});
+        return builder.getInt32(0);
+    }
+    
+    if (callee_ident->name == "pool_reset") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("pool_reset() requires one argument");
+        }
+        
+        llvm::Function* pool_reset_func = module->getFunction("aria_pool_reset_handle");
+        if (!pool_reset_func) {
+            llvm::FunctionType* pool_reset_type = llvm::FunctionType::get(
+                builder.getVoidTy(), {builder.getInt64Ty()}, false);
+            pool_reset_func = llvm::Function::Create(pool_reset_type,
+                llvm::Function::ExternalLinkage, "aria_pool_reset_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        builder.CreateCall(pool_reset_func, {handle});
+        return builder.getInt32(0);
+    }
+    
+    if (callee_ident->name == "pool_destroy") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("pool_destroy() requires one argument");
+        }
+        
+        llvm::Function* pool_destroy_func = module->getFunction("aria_pool_destroy_handle");
+        if (!pool_destroy_func) {
+            llvm::FunctionType* pool_destroy_type = llvm::FunctionType::get(
+                builder.getVoidTy(), {builder.getInt64Ty()}, false);
+            pool_destroy_func = llvm::Function::Create(pool_destroy_type,
+                llvm::Function::ExternalLinkage, "aria_pool_destroy_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        builder.CreateCall(pool_destroy_func, {handle});
+        return builder.getInt32(0);
+    }
+    
+    if (callee_ident->name == "pool_get_total_blocks") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("pool_get_total_blocks() requires one argument");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_pool_get_total_blocks_handle");
+        if (!func) {
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_pool_get_total_blocks_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        return builder.CreateCall(func, {handle}, "total_blocks");
+    }
+    
+    if (callee_ident->name == "pool_get_used_blocks") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("pool_get_used_blocks() requires one argument");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_pool_get_used_blocks_handle");
+        if (!func) {
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_pool_get_used_blocks_handle", module);
+        }
+        
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+        return builder.CreateCall(func, {handle}, "used_blocks");
+    }
+    
+    // ====================================================================
+    // END POOL BUILTINS
+    // ====================================================================
+    
     // Check if this is a direct function call or a closure call
     // Try to find a direct function first
     llvm::Function* direct_func = module->getFunction(callee_ident->name);
