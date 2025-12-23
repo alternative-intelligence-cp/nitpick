@@ -551,6 +551,17 @@ public:
     void checkStructDecl(StructDeclStmt* stmt);
     
     /**
+     * Check enum declaration
+     * 
+     * Rules:
+     * - Enum name must be unique
+     * - All variant names must be unique within the enum
+     * - All variant values must be integer literals
+     * - Register enum variants in symbol table
+     */
+    void checkEnumDecl(EnumDeclStmt* stmt);
+    
+    /**
      * Check assignment expression
      * 
      * Rules:

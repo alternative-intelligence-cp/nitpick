@@ -62,6 +62,7 @@ private:
     ASTNodePtr parseVarDecl();
     ASTNodePtr parseFuncDecl();
     ASTNodePtr parseStructDecl();
+    ASTNodePtr parseEnumDecl();
     ASTNodePtr parseBlock();
     
     // Phase 3.4: Generic syntax parsing

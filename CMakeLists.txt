@@ -6,6 +6,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# liburing configuration
+set(LIBURING_ROOT ${CMAKE_SOURCE_DIR}/third_party/liburing-master/install)
+include_directories(${LIBURING_ROOT}/include)
+link_directories(${LIBURING_ROOT}/lib)
+
 # Compiler warnings
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pedantic")
 
@@ -194,6 +199,15 @@ set(RUNTIME_SOURCES
     src/runtime/timer/timer.cpp
     src/runtime/async/executor.cpp
     src/runtime/async/coroutine.cpp
+    src/runtime/async/runtime_api.cpp
+    src/runtime/async/async_io.cpp
+    src/runtime/async/async_io_api.cpp
+    src/runtime/async/event_loop.cpp
+    src/runtime/async/async_net.cpp
+    src/runtime/async/io_uring.cpp
+    src/runtime/async/file_stream.cpp
+    src/runtime/async/work_stealing.cpp
+    src/runtime/async/gc_integration.cpp
 )
 
 # Phase 6: Standard Library Runtime Support
@@ -273,7 +287,7 @@ install(TARGETS aria_runtime DESTINATION lib)
 
 # Main compiler executable
 add_executable(ariac src/main.cpp ${ARIA_SOURCES})
-target_link_libraries(ariac ${llvm_libs})
+target_link_libraries(ariac ${llvm_libs} uring)
 
 # LSP server executable (Phase 7.3)
 add_executable(aria-ls src/tools/lsp/aria-ls.cpp 

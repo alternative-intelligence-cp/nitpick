@@ -43,6 +43,7 @@ public:
         VAR_DECL,             // Variable declaration: type:name = value;
         FUNC_DECL,            // Function declaration: func:name = returnType(params) { body };
         STRUCT_DECL,          // Struct declaration: struct Name { fields };
+        ENUM_DECL,            // Enum declaration: enum Name { VARIANT = value };
         RETURN,               // return statement
         PASS,                 // pass statement (result success)
         FAIL,                 // fail statement (result error)

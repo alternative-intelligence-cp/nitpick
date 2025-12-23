@@ -87,6 +87,19 @@ std::string StructDeclStmt::toString() const {
     return oss.str();
 }
 
+std::string EnumDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "EnumDecl(enum:" << enumName << " = { ";
+    bool first = true;
+    for (const auto& [name, value] : variants) {
+        if (!first) oss << ", ";
+        oss << name << " = " << value;
+        first = false;
+    }
+    oss << " })";
+    return oss.str();
+}
+
 std::string ParameterNode::toString() const {
     std::string result = typeName + ":" + paramName;
     if (defaultValue) {

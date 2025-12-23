@@ -206,6 +206,7 @@ void Parser::synchronize() {
             case TokenType::TOKEN_KW_MOD:
             case TokenType::TOKEN_KW_EXTERN:
             case TokenType::TOKEN_KW_STRUCT:
+            case TokenType::TOKEN_KW_ENUM:
                 return;
             default:
                 advance();
@@ -605,12 +606,17 @@ ASTNodePtr Parser::parseUnary() {
     // Check for await expression: await <expression>
     if (token.type == TokenType::TOKEN_KW_AWAIT) {
         advance(); // consume 'await'
-        ASTNodePtr operand = parseUnary(); // Right-associative
         
+        // Parse the operand as a complete postfix expression (including calls)
+        // This ensures await wraps the entire expression, not just the identifier
+        ASTNodePtr operand = parsePrimary();
         if (!operand) {
             error("Expected expression after 'await'");
             return nullptr;
         }
+        
+        // Apply postfix operators to the operand (function calls, indexing, etc.)
+        operand = parsePostfix(operand);
         
         return std::make_shared<AwaitExpr>(operand, token.line, token.column);
     }
@@ -1193,6 +1199,11 @@ ASTNodePtr Parser::parseStatement() {
         return parseStructDecl();
     }
     
+    // Check for enum declarations
+    if (match(TokenType::TOKEN_KW_ENUM)) {
+        return parseEnumDecl();
+    }
+    
     // Check for qualifiers (wild, const, stack, gc) followed by type
     if (peek().type == TokenType::TOKEN_KW_WILD ||
         peek().type == TokenType::TOKEN_KW_CONST ||
@@ -1735,6 +1746,66 @@ ASTNodePtr Parser::parseStructDecl() {
     structDecl->genericParams = genericParams;
     
     return structDecl;
+}
+
+ASTNodePtr Parser::parseEnumDecl() {
+    using namespace frontend;
+    
+    Token enumToken = previous(); // 'enum' keyword
+    
+    // ALWAYS consume colon before enum name (consistent with struct:name syntax)
+    consume(TokenType::TOKEN_COLON, "Expected ':' after 'enum' keyword");
+    
+    // Get enum name
+    Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected enum name");
+    
+    // Consume equals sign before enum body
+    consume(TokenType::TOKEN_EQUAL, "Expected '=' after enum name");
+    
+    // Parse enum body: { VARIANT1 = value1, VARIANT2 = value2, ... }
+    consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after '='");
+    
+    std::map<std::string, int64_t> variants;
+    while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        // Get variant name (should be an identifier)
+        Token variantToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected variant name");
+        std::string variantName = variantToken.lexeme;
+        
+        // Check for duplicate variant names
+        if (variants.find(variantName) != variants.end()) {
+            error("Duplicate variant name '" + variantName + "' in enum");
+            return nullptr;
+        }
+        
+        // Consume equals sign
+        consume(TokenType::TOKEN_EQUAL, "Expected '=' after variant name");
+        
+        // Get variant value (must be an integer literal)
+        Token valueToken = consume(TokenType::TOKEN_INTEGER, "Expected integer value for enum variant");
+        int64_t value = std::stoll(valueToken.lexeme);
+        
+        // Store the variant
+        variants[variantName] = value;
+        
+        // Check for comma (optional for last variant)
+        if (!check(TokenType::TOKEN_RIGHT_BRACE)) {
+            consume(TokenType::TOKEN_COMMA, "Expected ',' or '}' after enum variant");
+        }
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after enum variants");
+    
+    // Consume semicolon after enum declaration
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after enum declaration");
+    
+    auto enumDecl = std::make_shared<EnumDeclStmt>(
+        nameToken.lexeme,
+        variants,
+        enumToken.line,
+        enumToken.column
+    );
+    
+    return enumDecl;
 }
 
 // Parse block: { stmt1; stmt2; ... }
