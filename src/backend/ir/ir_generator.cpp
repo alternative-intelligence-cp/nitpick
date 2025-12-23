@@ -611,6 +611,18 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             continue;
         }
         
+        // Handle ENUM_DECL statements - register enum constants before processing functions
+        if (decl->type == ASTNode::NodeType::ENUM_DECL) {
+            EnumDeclStmt* enumDecl = static_cast<EnumDeclStmt*>(decl.get());
+            
+            // Register each variant in the enum_constants map
+            for (const auto& [variantName, variantValue] : enumDecl->variants) {
+                std::string fullName = enumDecl->enumName + "." + variantName;
+                enum_constants[fullName] = variantValue;
+            }
+            continue;
+        }
+        
         // Handle FUNC_DECL statements
         if (decl->type == ASTNode::NodeType::FUNC_DECL) {
             FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(decl.get());
@@ -628,7 +640,15 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             }
             
             llvm::Type* return_type = mapTypeFromName(funcDecl->returnType);
-            llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
+            
+            // Phase 4.6: Async functions return i8* (coroutine handle)
+            llvm::Type* actual_return_type = return_type;
+            if (funcDecl->isAsync) {
+                actual_return_type = llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0);
+                std::cerr << "[DEBUG] Async function detected: " << funcDecl->funcName << ", changing return type to i8*" << std::endl;
+            }
+            
+            llvm::FunctionType* func_type = llvm::FunctionType::get(actual_return_type, param_types, false);
             
             // Determine function name (qualified if in a module)
             std::string func_name = modulePrefix.empty() 
@@ -663,6 +683,67 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
             builder.SetInsertPoint(entry);
             
+            // Phase 4.6: Async function coroutine setup
+            llvm::Value* coro_id = nullptr;
+            llvm::Value* coro_handle = nullptr;
+            llvm::BasicBlock* coro_suspend_block = nullptr;
+            llvm::BasicBlock* coro_cleanup_block = nullptr;
+            
+            if (funcDecl->isAsync) {
+                // 1. Generate coroutine ID: token @llvm.coro.id(i32 align, i8* promise, i8* coroaddr, i8* fnaddr)
+                llvm::Function* coroIdFunc = llvm::Intrinsic::getDeclaration(
+                    module.get(),
+                    llvm::Intrinsic::coro_id
+                );
+                
+                llvm::Value* align = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 8);
+                llvm::Value* null_ptr = llvm::ConstantPointerNull::get(
+                    llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)
+                );
+                
+                coro_id = builder.CreateCall(
+                    coroIdFunc,
+                    {align, null_ptr, null_ptr, null_ptr},
+                    "coro.id"
+                );
+                
+                // 2. Get coroutine frame size
+                llvm::Function* coroSizeFunc = llvm::Intrinsic::getDeclaration(
+                    module.get(),
+                    llvm::Intrinsic::coro_size,
+                    {llvm::Type::getInt64Ty(context)}
+                );
+                llvm::Value* coro_size = builder.CreateCall(coroSizeFunc, {}, "coro.size");
+                
+                // 3. Allocate coroutine frame
+                llvm::Function* malloc_func = module->getFunction("malloc");
+                if (!malloc_func) {
+                    llvm::FunctionType* malloc_type = llvm::FunctionType::get(
+                        llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                        {llvm::Type::getInt64Ty(context)},
+                        false
+                    );
+                    malloc_func = llvm::Function::Create(
+                        malloc_type,
+                        llvm::Function::ExternalLinkage,
+                        "malloc",
+                        module.get()
+                    );
+                }
+                llvm::Value* coro_mem = builder.CreateCall(malloc_func, {coro_size}, "coro.alloc");
+                
+                // 4. Begin coroutine
+                llvm::Function* coroBeginFunc = llvm::Intrinsic::getDeclaration(
+                    module.get(),
+                    llvm::Intrinsic::coro_begin
+                );
+                coro_handle = builder.CreateCall(coroBeginFunc, {coro_id, coro_mem}, "coro.handle");
+                
+                // Create suspend and cleanup blocks for later use
+                coro_suspend_block = llvm::BasicBlock::Create(context, "coro.suspend", func);
+                coro_cleanup_block = llvm::BasicBlock::Create(context, "coro.cleanup", func);
+            }
+            
             // Map parameters to symbol table
             size_t idx = 0;
             for (auto& arg : func->args()) {
@@ -682,11 +763,80 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             
             // Add terminator if missing
             if (!builder.GetInsertBlock()->getTerminator()) {
-                if (return_type->isVoidTy()) {
+                if (funcDecl->isAsync) {
+                    // Async function: Jump to final suspend instead of returning directly
+                    builder.CreateBr(coro_suspend_block);
+                } else if (return_type->isVoidTy()) {
                     builder.CreateRetVoid();
                 } else {
                     builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
                 }
+            }
+            
+            // Phase 4.6: Generate coroutine suspend and cleanup blocks for async functions
+            if (funcDecl->isAsync) {
+                // Final suspend point (where all returns converge)
+                builder.SetInsertPoint(coro_suspend_block);
+                
+                // Save coroutine state before final suspend
+                llvm::Function* coroSaveFunc = llvm::Intrinsic::getDeclaration(
+                    module.get(),
+                    llvm::Intrinsic::coro_save
+                );
+                llvm::Value* save_token = builder.CreateCall(coroSaveFunc, {coro_handle}, "coro.save");
+                
+                // Final suspend: i8 @llvm.coro.suspend(token save, i1 final)
+                llvm::Function* coroSuspendFunc = llvm::Intrinsic::getDeclaration(
+                    module.get(),
+                    llvm::Intrinsic::coro_suspend
+                );
+                llvm::Value* is_final = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 1);
+                llvm::Value* suspend_result = builder.CreateCall(
+                    coroSuspendFunc,
+                    {save_token, is_final},
+                    "coro.suspend.result"
+                );
+                
+                // Switch on suspend result
+                llvm::SwitchInst* suspend_switch = builder.CreateSwitch(suspend_result, coro_cleanup_block, 1);
+                
+                // Cleanup block: free coroutine frame
+                builder.SetInsertPoint(coro_cleanup_block);
+                
+                // Get memory to free
+                llvm::Function* coroFreeFunc = llvm::Intrinsic::getDeclaration(
+                    module.get(),
+                    llvm::Intrinsic::coro_free
+                );
+                llvm::Value* free_mem = builder.CreateCall(coroFreeFunc, {coro_id, coro_handle}, "coro.free.mem");
+                
+                // Free the memory
+                llvm::Function* free_func = module->getFunction("free");
+                if (!free_func) {
+                    llvm::FunctionType* free_type = llvm::FunctionType::get(
+                        llvm::Type::getVoidTy(context),
+                        {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)},
+                        false
+                    );
+                    free_func = llvm::Function::Create(
+                        free_type,
+                        llvm::Function::ExternalLinkage,
+                        "free",
+                        module.get()
+                    );
+                }
+                builder.CreateCall(free_func, {free_mem});
+                
+                // End coroutine
+                llvm::Function* coroEndFunc = llvm::Intrinsic::getDeclaration(
+                    module.get(),
+                    llvm::Intrinsic::coro_end
+                );
+                llvm::Value* unwind = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
+                builder.CreateCall(coroEndFunc, {coro_handle, unwind});
+                
+                // Return coroutine handle
+                builder.CreateRet(coro_handle);
             }
             
             // Clean up symbol table
@@ -1207,6 +1357,22 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // Struct declaration - type is already registered in TypeChecker
             // IR generation happens lazily in mapType() when the type is first used
             // No code needs to be generated for the declaration itself
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::ENUM_DECL: {
+            // Enum declaration - variants should already be registered in processModuleDeclarations
+            // This case handles enums declared inside function bodies (edge case)
+            EnumDeclStmt* enumDecl = static_cast<EnumDeclStmt*>(stmt);
+            
+            // Register each variant in the enum_constants map
+            for (const auto& [variantName, variantValue] : enumDecl->variants) {
+                std::string fullName = enumDecl->enumName + "." + variantName;
+                enum_constants[fullName] = variantValue;
+            }
+            
+            // No code needs to be generated for the declaration itself
+            // Enum values are compile-time constants that will be inlined
             return nullptr;
         }
         
@@ -2274,6 +2440,419 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // END ALLOCATOR BUILTINS
             // ====================================================================
             
+            // ====================================================================
+            // STRING LIBRARY BUILTINS (Phase 4.3) - Delegate to ExprCodegen
+            // ====================================================================
+            
+            // Check if this is a string builtin - delegate to ExprCodegen which has full implementation
+            if (callee->name == "string_length" || callee->name == "string_is_empty" ||
+                callee->name == "string_equals" || callee->name == "string_concat" ||
+                callee->name == "string_substring" || callee->name == "string_contains" ||
+                callee->name == "string_starts_with" || callee->name == "string_ends_with" ||
+                callee->name == "string_trim" || callee->name == "string_to_upper" ||
+                callee->name == "string_to_lower" || callee->name == "string_from_cstr") {
+                
+                // Create ExprCodegen instance (same pattern as TEMPLATE_LITERAL case)
+                backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values);
+                return expr_codegen_inst.codegenCall(call);
+            }
+            
+            // ====================================================================
+            // MATH LIBRARY BUILTINS (Phase 4.4)
+            // ====================================================================
+            
+            // abs() - Absolute value
+            if (callee->name == "abs") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg) {
+                    return nullptr;
+                }
+                
+                // For integers, use select with negation
+                if (arg->getType()->isIntegerTy()) {
+                    llvm::Value* zero = llvm::ConstantInt::get(arg->getType(), 0);
+                    llvm::Value* neg = builder.CreateNeg(arg);
+                    llvm::Value* cmp = builder.CreateICmpSLT(arg, zero);
+                    return builder.CreateSelect(cmp, neg, arg, "abs");
+                }
+                // For floats, use llvm.fabs intrinsic
+                else if (arg->getType()->isFloatingPointTy()) {
+                    llvm::Function* fabs_intrinsic = llvm::Intrinsic::getDeclaration(
+                        module.get(), llvm::Intrinsic::fabs, {arg->getType()});
+                    return builder.CreateCall(fabs_intrinsic, {arg}, "abs");
+                }
+                
+                return nullptr;
+            }
+            
+            // min() - Minimum of two values
+            if (callee->name == "min") {
+                if (call->arguments.size() != 2) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg1 = codegenExpression(call->arguments[0].get());
+                llvm::Value* arg2 = codegenExpression(call->arguments[1].get());
+                if (!arg1 || !arg2) {
+                    return nullptr;
+                }
+                
+                // For integers, use ICmp + Select
+                if (arg1->getType()->isIntegerTy() && arg2->getType()->isIntegerTy()) {
+                    llvm::Value* cmp = builder.CreateICmpSLT(arg1, arg2);
+                    return builder.CreateSelect(cmp, arg1, arg2, "min");
+                }
+                // For floats, use llvm.minnum intrinsic
+                else if (arg1->getType()->isFloatingPointTy() && arg2->getType()->isFloatingPointTy()) {
+                    llvm::Function* minnum_intrinsic = llvm::Intrinsic::getDeclaration(
+                        module.get(), llvm::Intrinsic::minnum, {arg1->getType()});
+                    return builder.CreateCall(minnum_intrinsic, {arg1, arg2}, "min");
+                }
+                
+                return nullptr;
+            }
+            
+            // max() - Maximum of two values
+            if (callee->name == "max") {
+                if (call->arguments.size() != 2) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg1 = codegenExpression(call->arguments[0].get());
+                llvm::Value* arg2 = codegenExpression(call->arguments[1].get());
+                if (!arg1 || !arg2) {
+                    return nullptr;
+                }
+                
+                // For integers, use ICmp + Select
+                if (arg1->getType()->isIntegerTy() && arg2->getType()->isIntegerTy()) {
+                    llvm::Value* cmp = builder.CreateICmpSGT(arg1, arg2);
+                    return builder.CreateSelect(cmp, arg1, arg2, "max");
+                }
+                // For floats, use llvm.maxnum intrinsic
+                else if (arg1->getType()->isFloatingPointTy() && arg2->getType()->isFloatingPointTy()) {
+                    llvm::Function* maxnum_intrinsic = llvm::Intrinsic::getDeclaration(
+                        module.get(), llvm::Intrinsic::maxnum, {arg1->getType()});
+                    return builder.CreateCall(maxnum_intrinsic, {arg1, arg2}, "max");
+                }
+                
+                return nullptr;
+            }
+            
+            // Rounding functions: floor, ceil, round, trunc
+            if (callee->name == "floor" || callee->name == "ceil" || 
+                callee->name == "round" || callee->name == "trunc") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg) {
+                    return nullptr;
+                }
+                
+                // Convert int to double if needed
+                if (arg->getType()->isIntegerTy()) {
+                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+                }
+                
+                if (!arg->getType()->isFloatingPointTy()) {
+                    return nullptr;
+                }
+                
+                llvm::Intrinsic::ID intrinsic_id;
+                if (callee->name == "floor") intrinsic_id = llvm::Intrinsic::floor;
+                else if (callee->name == "ceil") intrinsic_id = llvm::Intrinsic::ceil;
+                else if (callee->name == "round") intrinsic_id = llvm::Intrinsic::round;
+                else intrinsic_id = llvm::Intrinsic::trunc;
+                
+                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
+                    module.get(), intrinsic_id, {arg->getType()});
+                return builder.CreateCall(intrinsic, {arg}, callee->name);
+            }
+            
+            // Exponential and logarithmic functions
+            if (callee->name == "sqrt") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg) {
+                    return nullptr;
+                }
+                
+                if (arg->getType()->isIntegerTy()) {
+                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+                }
+                
+                if (!arg->getType()->isFloatingPointTy()) {
+                    return nullptr;
+                }
+                
+                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
+                    module.get(), llvm::Intrinsic::sqrt, {arg->getType()});
+                return builder.CreateCall(intrinsic, {arg}, "sqrt");
+            }
+            
+            if (callee->name == "pow") {
+                if (call->arguments.size() != 2) {
+                    return nullptr;
+                }
+                
+                llvm::Value* base = codegenExpression(call->arguments[0].get());
+                llvm::Value* exp = codegenExpression(call->arguments[1].get());
+                if (!base || !exp) {
+                    return nullptr;
+                }
+                
+                if (base->getType()->isIntegerTy()) {
+                    base = builder.CreateSIToFP(base, builder.getDoubleTy());
+                }
+                if (exp->getType()->isIntegerTy()) {
+                    exp = builder.CreateSIToFP(exp, builder.getDoubleTy());
+                }
+                
+                if (!base->getType()->isFloatingPointTy() || !exp->getType()->isFloatingPointTy()) {
+                    return nullptr;
+                }
+                
+                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
+                    module.get(), llvm::Intrinsic::pow, {base->getType()});
+                return builder.CreateCall(intrinsic, {base, exp}, "pow");
+            }
+            
+            if (callee->name == "exp") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg) {
+                    return nullptr;
+                }
+                
+                if (arg->getType()->isIntegerTy()) {
+                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+                }
+                
+                if (!arg->getType()->isFloatingPointTy()) {
+                    return nullptr;
+                }
+                
+                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
+                    module.get(), llvm::Intrinsic::exp, {arg->getType()});
+                return builder.CreateCall(intrinsic, {arg}, "exp");
+            }
+            
+            if (callee->name == "log") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg) {
+                    return nullptr;
+                }
+                
+                if (arg->getType()->isIntegerTy()) {
+                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+                }
+                
+                if (!arg->getType()->isFloatingPointTy()) {
+                    return nullptr;
+                }
+                
+                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
+                    module.get(), llvm::Intrinsic::log, {arg->getType()});
+                return builder.CreateCall(intrinsic, {arg}, "log");
+            }
+            
+            if (callee->name == "log10") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg) {
+                    return nullptr;
+                }
+                
+                if (arg->getType()->isIntegerTy()) {
+                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+                }
+                
+                if (!arg->getType()->isFloatingPointTy()) {
+                    return nullptr;
+                }
+                
+                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
+                    module.get(), llvm::Intrinsic::log10, {arg->getType()});
+                return builder.CreateCall(intrinsic, {arg}, "log10");
+            }
+            
+            if (callee->name == "log2") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg) {
+                    return nullptr;
+                }
+                
+                if (arg->getType()->isIntegerTy()) {
+                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+                }
+                
+                if (!arg->getType()->isFloatingPointTy()) {
+                    return nullptr;
+                }
+                
+                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
+                    module.get(), llvm::Intrinsic::log2, {arg->getType()});
+                return builder.CreateCall(intrinsic, {arg}, "log2");
+            }
+            
+            // Trigonometric functions
+            if (callee->name == "sin") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg) {
+                    return nullptr;
+                }
+                
+                if (arg->getType()->isIntegerTy()) {
+                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+                }
+                
+                if (!arg->getType()->isFloatingPointTy()) {
+                    return nullptr;
+                }
+                
+                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
+                    module.get(), llvm::Intrinsic::sin, {arg->getType()});
+                return builder.CreateCall(intrinsic, {arg}, "sin");
+            }
+            
+            if (callee->name == "cos") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg) {
+                    return nullptr;
+                }
+                
+                if (arg->getType()->isIntegerTy()) {
+                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+                }
+                
+                if (!arg->getType()->isFloatingPointTy()) {
+                    return nullptr;
+                }
+                
+                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
+                    module.get(), llvm::Intrinsic::cos, {arg->getType()});
+                return builder.CreateCall(intrinsic, {arg}, "cos");
+            }
+            
+            // Trig functions that need libm (no LLVM intrinsics)
+            if (callee->name == "tan" || callee->name == "asin" || callee->name == "acos" || 
+                callee->name == "atan") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* arg = codegenExpression(call->arguments[0].get());
+                if (!arg) {
+                    return nullptr;
+                }
+                
+                if (arg->getType()->isIntegerTy()) {
+                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+                }
+                
+                if (!arg->getType()->isFloatingPointTy()) {
+                    return nullptr;
+                }
+                
+                // Declare external libm function
+                llvm::Function* libm_func = module->getFunction(callee->name);
+                if (!libm_func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        builder.getDoubleTy(), {builder.getDoubleTy()}, false);
+                    libm_func = llvm::Function::Create(func_type,
+                        llvm::Function::ExternalLinkage, callee->name, module.get());
+                }
+                
+                return builder.CreateCall(libm_func, {arg}, callee->name + "_result");
+            }
+            
+            if (callee->name == "atan2") {
+                if (call->arguments.size() != 2) {
+                    return nullptr;
+                }
+                
+                llvm::Value* y = codegenExpression(call->arguments[0].get());
+                llvm::Value* x = codegenExpression(call->arguments[1].get());
+                if (!y || !x) {
+                    return nullptr;
+                }
+                
+                if (y->getType()->isIntegerTy()) {
+                    y = builder.CreateSIToFP(y, builder.getDoubleTy());
+                }
+                if (x->getType()->isIntegerTy()) {
+                    x = builder.CreateSIToFP(x, builder.getDoubleTy());
+                }
+                
+                if (!y->getType()->isFloatingPointTy() || !x->getType()->isFloatingPointTy()) {
+                    return nullptr;
+                }
+                
+                // Declare external atan2 from libm
+                llvm::Function* atan2_func = module->getFunction("atan2");
+                if (!atan2_func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        builder.getDoubleTy(), {builder.getDoubleTy(), builder.getDoubleTy()}, false);
+                    atan2_func = llvm::Function::Create(func_type,
+                        llvm::Function::ExternalLinkage, "atan2", module.get());
+                }
+                
+                return builder.CreateCall(atan2_func, {y, x}, "atan2_result");
+            }
+            
+            // Math constants
+            if (callee->name == "PI") {
+                if (call->arguments.size() != 0) {
+                    return nullptr;
+                }
+                return llvm::ConstantFP::get(builder.getDoubleTy(), 3.14159265358979323846);
+            }
+            
+            if (callee->name == "E") {
+                if (call->arguments.size() != 0) {
+                    return nullptr;
+                }
+                return llvm::ConstantFP::get(builder.getDoubleTy(), 2.71828182845904523536);
+            }
+            
+            if (callee->name == "TAU") {
+                if (call->arguments.size() != 0) {
+                    return nullptr;
+                }
+                return llvm::ConstantFP::get(builder.getDoubleTy(), 6.28318530717958647692);
+            }
+            
             // Check if this is a specialized generic call
             std::string functionName = callee->name;
             if (!call->specializedMangledName.empty()) {
@@ -3220,8 +3799,21 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
         }
         
         case ASTNode::NodeType::MEMBER_ACCESS: {
-            // Member access - p.x, p.y for structs and vectors
+            // Member access - enum variants, struct fields, vector components
             MemberAccessExpr* member = static_cast<MemberAccessExpr*>(expr);
+            
+            // Check if this is an enum variant access (EnumName.VARIANT)
+            if (member->object->type == ASTNode::NodeType::IDENTIFIER) {
+                IdentifierExpr* ident = static_cast<IdentifierExpr*>(member->object.get());
+                std::string fullName = ident->name + "." + member->member;
+                
+                // Check if this is an enum variant (registered in enum_constants map)
+                auto enum_it = enum_constants.find(fullName);
+                if (enum_it != enum_constants.end()) {
+                    // Return the constant integer value for this enum variant
+                    return llvm::ConstantInt::get(builder.getInt64Ty(), enum_it->second);
+                }
+            }
             
             // Get the pointer to the object (NOT the loaded value)
             // Special handling for identifiers to get the alloca directly
@@ -3619,6 +4211,85 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 }
                 return result;
             }
+        }
+        
+        case ASTNode::NodeType::AWAIT: {
+            // Phase 4.6: Await expression - suspend coroutine until operand completes
+            AwaitExpr* awaitExpr = static_cast<AwaitExpr*>(expr);
+            
+            // Step 1: Evaluate the operand (should be an async function call returning coroutine handle)
+            llvm::Value* future_value = codegenExpression(awaitExpr->operand.get());
+            if (!future_value) return nullptr;
+            
+            // Get coroutine intrinsics
+            llvm::Function* coroResumeFunc = llvm::Intrinsic::getDeclaration(
+                module.get(),
+                llvm::Intrinsic::coro_resume
+            );
+            
+            llvm::Function* coroSaveFunc = llvm::Intrinsic::getDeclaration(
+                module.get(),
+                llvm::Intrinsic::coro_save
+            );
+            
+            llvm::Function* coroSuspendFunc = llvm::Intrinsic::getDeclaration(
+                module.get(),
+                llvm::Intrinsic::coro_suspend
+            );
+            
+            // Step 2: If the operand is a coroutine handle (ptr), resume it
+            if (future_value->getType()->isPointerTy()) {
+                builder.CreateCall(coroResumeFunc, {future_value});
+            }
+            
+            // Get current function (we're inside an async function)
+            llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+            
+            // Use the awaited coroutine handle as the current handle for now
+            // TODO: Proper handle management when we have full Future<T> system
+            llvm::Value* current_handle = future_value;
+            
+            // Step 3: Save state and suspend
+            llvm::Value* save_token = builder.CreateCall(coroSaveFunc, {current_handle}, "await.save");
+            
+            // Suspend (not final - this is an intermediate suspension point)
+            llvm::Value* is_final = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
+            llvm::Value* suspend_result = builder.CreateCall(
+                coroSuspendFunc,
+                {save_token, is_final},
+                "await.suspend"
+            );
+            
+            // Step 4: Create resume and cleanup blocks
+            llvm::BasicBlock* resume_block = llvm::BasicBlock::Create(
+                context,
+                "await.resume",
+                currentFunc
+            );
+            
+            llvm::BasicBlock* cleanup_block = llvm::BasicBlock::Create(
+                context,
+                "await.cleanup",
+                currentFunc
+            );
+            
+            // Step 5: Switch on suspend result
+            llvm::SwitchInst* suspend_switch = builder.CreateSwitch(suspend_result, resume_block, 1);
+            suspend_switch->addCase(
+                llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 1),
+                cleanup_block
+            );
+            
+            // Step 6: Generate cleanup block
+            builder.SetInsertPoint(cleanup_block);
+            builder.CreateUnreachable();  // LLVM's coroutine pass will handle this
+            
+            // Step 7: Generate resume block - continue execution here
+            builder.SetInsertPoint(resume_block);
+            
+            // For now, return the future value itself
+            // TODO: Extract actual result from Future<T> when trait system is ready
+            return future_value;
         }
         
         default:

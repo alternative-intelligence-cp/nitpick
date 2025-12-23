@@ -82,9 +82,18 @@ llvm::Type* StmtCodegen::getLLVMTypeFromString(const std::string& type_name) {
     if (type_name == "nit") return llvm::Type::getIntNTy(context, 4);    // Single nit (-4 to 4)
     if (type_name == "nyte") return llvm::Type::getInt16Ty(context);     // 5 nits
     
-    // String
+    // String - AriaString struct { i8* data, i64 length }
     if (type_name == "string") {
-        return llvm::PointerType::get(context, 0);
+        llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
+        if (!aria_string_type) {
+            std::vector<llvm::Type*> fields = {
+                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                llvm::Type::getInt64Ty(context)
+            };
+            aria_string_type = llvm::StructType::create(context, fields, "struct.AriaString");
+        }
+        // Return pointer to AriaString struct (strings are heap-allocated)
+        return llvm::PointerType::get(aria_string_type, 0);
     }
     
     // Default to i32 for unknown types (will be handled by semantic analysis)
@@ -508,6 +517,7 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
     llvm::Type* actual_return_type = return_type;
     if (stmt->isAsync) {
         actual_return_type = llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0);
+        std::cerr << "[DEBUG] Changed return type to i8* for coroutine" << std::endl;
     }
     
     // Build parameter types
@@ -2003,12 +2013,28 @@ void StmtCodegen::codegenReturn(ReturnStmt* stmt) {
     executeFunctionDefers();
     
     if (stmt->value) {
+        std::cerr << "[DEBUG RETURN] Return statement has a value expression\n";
+        
+        // Check if it's a CallExpr
+        CallExpr* callExpr = dynamic_cast<CallExpr*>(stmt->value.get());
+        if (callExpr) {
+            std::cerr << "[DEBUG RETURN] Expression is a CallExpr\n";
+            IdentifierExpr* idExpr = dynamic_cast<IdentifierExpr*>(callExpr->callee.get());
+            if (idExpr) {
+                std::cerr << "[DEBUG RETURN] CallExpr callee: " << idExpr->name << "\n";
+            }
+        } else {
+            std::cerr << "[DEBUG RETURN] Expression is NOT a CallExpr\n";
+        }
+        
         if (!expr_codegen) {
             throw std::runtime_error("ExprCodegen not set in StmtCodegen");
         }
         
         // Generate code for return value expression
         llvm::Value* ret_value = expr_codegen->codegenExpressionNode(stmt->value.get(), expr_codegen);
+        
+        std::cerr << "[DEBUG RETURN] Generated ret_value: " << (ret_value ? "non-null" : "NULL") << "\n";
         
         if (!ret_value) {
             throw std::runtime_error("Failed to generate code for return value");

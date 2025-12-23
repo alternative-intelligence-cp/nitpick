@@ -65,6 +65,7 @@ add_executable(test_runner
     runtime/test_timer.cpp
     runtime/test_async_executor.cpp
     runtime/test_async_future.cpp
+    runtime/test_async_runtime_api.cpp
     integration/test_runtime_stress.cpp
     stdlib/test_stdlib.cpp
     stdlib/test_result.cpp
@@ -117,6 +118,7 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/runtime/timer/timer.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/async/executor.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/async/coroutine.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/async/runtime_api.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/stdlib/stdlib.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/result/result.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/collections/collections.cpp

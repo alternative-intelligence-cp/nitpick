@@ -3,6 +3,7 @@
 
 #include "ast_node.h"
 #include "expr.h"
+#include <map>
 
 namespace aria {
 
@@ -101,6 +102,23 @@ public:
                    int line = 0, int column = 0)
         : ASTNode(NodeType::STRUCT_DECL, line, column),
           structName(name), fields(fieldList) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Enum declaration node
+ * Represents: enum:Name = { VARIANT1 = value1, VARIANT2 = value2, ... };
+ */
+class EnumDeclStmt : public ASTNode {
+public:
+    std::string enumName;
+    std::map<std::string, int64_t> variants;  // variant name -> integer value
+    
+    EnumDeclStmt(const std::string& name, const std::map<std::string, int64_t>& variantMap,
+                 int line = 0, int column = 0)
+        : ASTNode(NodeType::ENUM_DECL, line, column),
+          enumName(name), variants(variantMap) {}
     
     std::string toString() const override;
 };

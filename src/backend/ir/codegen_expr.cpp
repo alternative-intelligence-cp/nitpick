@@ -273,25 +273,49 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
         return result;
     }
     
-    // String literal
+    // String literal - create global AriaString struct
     if (std::holds_alternative<std::string>(expr->value)) {
         const std::string& str = std::get<std::string>(expr->value);
         
-        // Create a global constant for the string
-        llvm::Constant* str_constant = llvm::ConstantDataArray::getString(context, str, true);
-        
-        // Create a global variable to hold the string
-        llvm::GlobalVariable* gv = new llvm::GlobalVariable(
+        // Create a global constant for the string data  
+        llvm::Constant* str_data = llvm::ConstantDataArray::getString(context, str, true);
+        llvm::GlobalVariable* str_gv = new llvm::GlobalVariable(
             *module,
-            str_constant->getType(),
+            str_data->getType(),
             true,  // isConstant
             llvm::GlobalValue::PrivateLinkage,
-            str_constant,
+            str_data,
+            ".str.data"
+        );
+        
+        // Get or create AriaString struct type
+        llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
+        if (!aria_string_type) {
+            std::vector<llvm::Type*> fields = {
+                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                llvm::Type::getInt64Ty(context)
+            };
+            aria_string_type = llvm::StructType::create(context, fields, "struct.AriaString");
+        }
+        
+        // Create a global AriaString struct constant
+        std::vector<llvm::Constant*> struct_values = {
+            llvm::ConstantExpr::getPointerCast(str_gv, llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)),
+            builder.getInt64(str.length())
+        };
+        llvm::Constant* string_struct = llvm::ConstantStruct::get(aria_string_type, struct_values);
+        
+        llvm::GlobalVariable* string_gv = new llvm::GlobalVariable(
+            *module,
+            aria_string_type,
+            true,  // isConstant
+            llvm::GlobalValue::PrivateLinkage,
+            string_struct,
             ".str"
         );
         
-        // Return pointer to the string (cast to i8*)
-        return builder.CreatePointerCast(gv, llvm::PointerType::get(context, 0));
+        // Return pointer to the global AriaString struct
+        return string_gv;
     }
     
     // Boolean literal
@@ -1867,7 +1891,543 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     }
     
     // ====================================================================
-    // END SLAB BUILTINS
+    // STRING LIBRARY BUILTINS (Phase 4.3)
+    // ====================================================================
+    
+    // Note: AriaString struct is { const char* data, int64_t length }
+    // In LLVM IR, this is { i8*, i64 }
+    
+    // Helper: Get or create AriaString struct type
+    auto getAriaStringType = [&]() -> llvm::StructType* {
+        llvm::StructType* strType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+        if (!strType) {
+            std::vector<llvm::Type*> fields = {
+                llvm::PointerType::get(builder.getInt8Ty(), 0),
+                builder.getInt64Ty()
+            };
+            strType = llvm::StructType::create(context, fields, "struct.AriaString");
+        }
+        return strType;
+    };
+    
+    // string_from_cstr(char*) -> string
+    if (callee_ident->name == "string_from_cstr") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("string_from_cstr() requires one argument");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_string_from_cstr");
+        if (!func) {
+            // Returns AriaResultPtr (we'll treat as AriaString* for now)
+            std::vector<llvm::Type*> params = {llvm::PointerType::get(builder.getInt8Ty(), 0)};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(getAriaStringType(), 0), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_from_cstr", module);
+        }
+        
+        llvm::Value* cstr = codegenExpressionNode(expr->arguments[0].get(), this);
+        // Cast to i8* if needed
+        if (!cstr->getType()->isPointerTy()) {
+            cstr = builder.CreateIntToPtr(cstr, llvm::PointerType::get(builder.getInt8Ty(), 0));
+        }
+        return builder.CreateCall(func, {cstr}, "str_result");
+    }
+    
+    // string_length(string) -> int64
+    if (callee_ident->name == "string_length") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("string_length() requires one argument");
+        }
+        
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        // Load the AriaString struct from pointer
+        llvm::Value* str_struct = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
+        // Extract length field (index 1)
+        llvm::Value* length = builder.CreateExtractValue(str_struct, {1}, "length");
+        return length;
+    }
+    
+    // string_is_empty(string) -> bool
+    if (callee_ident->name == "string_is_empty") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("string_is_empty() requires one argument");
+        }
+        
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* str_struct = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
+        llvm::Value* length = builder.CreateExtractValue(str_struct, {1}, "length");
+        llvm::Value* zero = builder.getInt64(0);
+        return builder.CreateICmpEQ(length, zero, "is_empty");
+    }
+    
+    // string_equals(string, string) -> bool
+    if (callee_ident->name == "string_equals") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("string_equals() requires two arguments");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_string_equals");
+        if (!func) {
+            std::vector<llvm::Type*> params = {getAriaStringType(), getAriaStringType()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt1Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_equals", module);
+        }
+        
+        llvm::Value* str1_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* str2_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Value* str1 = builder.CreateLoad(getAriaStringType(), str1_ptr, "str1");
+        llvm::Value* str2 = builder.CreateLoad(getAriaStringType(), str2_ptr, "str2");
+        return builder.CreateCall(func, {str1, str2}, "equals");
+    }
+    
+    // string_concat(string, string) -> string
+    if (callee_ident->name == "string_concat") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("string_concat() requires two arguments");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_string_concat");
+        if (!func) {
+            std::vector<llvm::Type*> params = {getAriaStringType(), getAriaStringType()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(getAriaStringType(), 0), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_concat", module);
+        }
+        
+        llvm::Value* str1_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* str2_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Value* str1 = builder.CreateLoad(getAriaStringType(), str1_ptr, "str1");
+        llvm::Value* str2 = builder.CreateLoad(getAriaStringType(), str2_ptr, "str2");
+        return builder.CreateCall(func, {str1, str2}, "concat_result");
+    }
+    
+    // string_substring(string, int64, int64) -> string
+    if (callee_ident->name == "string_substring") {
+        if (expr->arguments.size() != 3) {
+            throw std::runtime_error("string_substring() requires three arguments");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_string_substring");
+        if (!func) {
+            std::vector<llvm::Type*> params = {getAriaStringType(), builder.getInt64Ty(), builder.getInt64Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(getAriaStringType(), 0), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_substring", module);
+        }
+        
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* start = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Value* end = codegenExpressionNode(expr->arguments[2].get(), this);
+        llvm::Value* str = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
+        return builder.CreateCall(func, {str, start, end}, "substr_result");
+    }
+    
+    // string_contains(string, string) -> bool
+    if (callee_ident->name == "string_contains") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("string_contains() requires two arguments");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_string_contains");
+        if (!func) {
+            std::vector<llvm::Type*> params = {getAriaStringType(), getAriaStringType()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt1Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_contains", module);
+        }
+        
+        llvm::Value* haystack_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* needle_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Value* haystack = builder.CreateLoad(getAriaStringType(), haystack_ptr, "haystack");
+        llvm::Value* needle = builder.CreateLoad(getAriaStringType(), needle_ptr, "needle");
+        return builder.CreateCall(func, {haystack, needle}, "contains");
+    }
+    
+    // string_starts_with(string, string) -> bool
+    if (callee_ident->name == "string_starts_with") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("string_starts_with() requires two arguments");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_string_starts_with");
+        if (!func) {
+            std::vector<llvm::Type*> params = {getAriaStringType(), getAriaStringType()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt1Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_starts_with", module);
+        }
+        
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* prefix_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Value* str = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
+        llvm::Value* prefix = builder.CreateLoad(getAriaStringType(), prefix_ptr, "prefix");
+        return builder.CreateCall(func, {str, prefix}, "starts_with");
+    }
+    
+    // string_ends_with(string, string) -> bool
+    if (callee_ident->name == "string_ends_with") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("string_ends_with() requires two arguments");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_string_ends_with");
+        if (!func) {
+            std::vector<llvm::Type*> params = {getAriaStringType(), getAriaStringType()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt1Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_ends_with", module);
+        }
+        
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* suffix_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Value* str = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
+        llvm::Value* suffix = builder.CreateLoad(getAriaStringType(), suffix_ptr, "suffix");
+        return builder.CreateCall(func, {str, suffix}, "ends_with");
+    }
+    
+    // string_trim(string) -> string
+    if (callee_ident->name == "string_trim") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("string_trim() requires one argument");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_string_trim");
+        if (!func) {
+            std::vector<llvm::Type*> params = {getAriaStringType()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(getAriaStringType(), 0), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_trim", module);
+        }
+        
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* str = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
+        return builder.CreateCall(func, {str}, "trim_result");
+    }
+    
+    // string_to_upper(string) -> string
+    if (callee_ident->name == "string_to_upper") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("string_to_upper() requires one argument");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_string_to_upper");
+        if (!func) {
+            std::vector<llvm::Type*> params = {getAriaStringType()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(getAriaStringType(), 0), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_to_upper", module);
+        }
+        
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* str = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
+        return builder.CreateCall(func, {str}, "upper_result");
+    }
+    
+    // string_to_lower(string) -> string
+    if (callee_ident->name == "string_to_lower") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("string_to_lower() requires one argument");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_string_to_lower");
+        if (!func) {
+            std::vector<llvm::Type*> params = {getAriaStringType()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(getAriaStringType(), 0), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_to_lower", module);
+        }
+        
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* str = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
+        return builder.CreateCall(func, {str}, "lower_result");
+    }
+    
+    // ====================================================================
+    // MATH LIBRARY BUILTINS (Phase 4.4)
+    // ====================================================================
+    
+    // abs() - absolute value (works with int and float types)
+    if (callee_ident->name == "abs") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("abs() requires one argument");
+        }
+        llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
+        
+        if (arg->getType()->isIntegerTy()) {
+            // Integer absolute value: select(x < 0, -x, x)
+            llvm::Value* zero = llvm::ConstantInt::get(arg->getType(), 0);
+            llvm::Value* is_negative = builder.CreateICmpSLT(arg, zero, "is_neg");
+            llvm::Value* negated = builder.CreateNeg(arg, "negated");
+            return builder.CreateSelect(is_negative, negated, arg, "abs");
+        } else if (arg->getType()->isDoubleTy()) {
+            // Float absolute value: llvm.fabs intrinsic
+            llvm::Function* fabs_func = llvm::Intrinsic::getDeclaration(
+                module, llvm::Intrinsic::fabs, {arg->getType()});
+            return builder.CreateCall(fabs_func, {arg}, "abs");
+        } else if (arg->getType()->isFloatTy()) {
+            llvm::Function* fabs_func = llvm::Intrinsic::getDeclaration(
+                module, llvm::Intrinsic::fabs, {arg->getType()});
+            return builder.CreateCall(fabs_func, {arg}, "abs");
+        }
+        throw std::runtime_error("abs() requires numeric type");
+    }
+    
+    // min() and max()
+    if (callee_ident->name == "min" || callee_ident->name == "max") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error(callee_ident->name + "() requires two arguments");
+        }
+        llvm::Value* arg1 = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* arg2 = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        bool is_min = (callee_ident->name == "min");
+        
+        if (arg1->getType()->isIntegerTy()) {
+            llvm::Value* cmp = is_min ? 
+                builder.CreateICmpSLT(arg1, arg2, "cmp") :
+                builder.CreateICmpSGT(arg1, arg2, "cmp");
+            return builder.CreateSelect(cmp, arg1, arg2, callee_ident->name);
+        } else if (arg1->getType()->isFloatingPointTy()) {
+            // Use LLVM intrinsics for float min/max
+            llvm::Intrinsic::ID intrinsic_id = is_min ? 
+                llvm::Intrinsic::minnum : llvm::Intrinsic::maxnum;
+            llvm::Function* minmax_func = llvm::Intrinsic::getDeclaration(
+                module, intrinsic_id, {arg1->getType()});
+            return builder.CreateCall(minmax_func, {arg1, arg2}, callee_ident->name);
+        }
+        throw std::runtime_error(callee_ident->name + "() requires numeric types");
+    }
+    
+    // Rounding functions: floor, ceil, round, trunc
+    if (callee_ident->name == "floor" || callee_ident->name == "ceil" ||
+        callee_ident->name == "round" || callee_ident->name == "trunc") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error(callee_ident->name + "() requires one argument");
+        }
+        llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
+        
+        // Convert to double if needed
+        if (!arg->getType()->isDoubleTy()) {
+            if (arg->getType()->isFloatTy()) {
+                arg = builder.CreateFPExt(arg, builder.getDoubleTy());
+            } else if (arg->getType()->isIntegerTy()) {
+                arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+            }
+        }
+        
+        llvm::Intrinsic::ID intrinsic_id;
+        if (callee_ident->name == "floor") intrinsic_id = llvm::Intrinsic::floor;
+        else if (callee_ident->name == "ceil") intrinsic_id = llvm::Intrinsic::ceil;
+        else if (callee_ident->name == "round") intrinsic_id = llvm::Intrinsic::round;
+        else intrinsic_id = llvm::Intrinsic::trunc;
+        
+        llvm::Function* func = llvm::Intrinsic::getDeclaration(
+            module, intrinsic_id, {builder.getDoubleTy()});
+        return builder.CreateCall(func, {arg}, callee_ident->name);
+    }
+    
+    // sqrt()
+    if (callee_ident->name == "sqrt") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("sqrt() requires one argument");
+        }
+        llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!arg->getType()->isDoubleTy()) {
+            if (arg->getType()->isFloatTy()) {
+                arg = builder.CreateFPExt(arg, builder.getDoubleTy());
+            } else if (arg->getType()->isIntegerTy()) {
+                arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+            }
+        }
+        llvm::Function* sqrt_func = llvm::Intrinsic::getDeclaration(
+            module, llvm::Intrinsic::sqrt, {builder.getDoubleTy()});
+        return builder.CreateCall(sqrt_func, {arg}, "sqrt");
+    }
+    
+    // pow()
+    if (callee_ident->name == "pow") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("pow() requires two arguments");
+        }
+        llvm::Value* base = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* exp = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        if (!base->getType()->isDoubleTy()) {
+            if (base->getType()->isFloatTy()) {
+                base = builder.CreateFPExt(base, builder.getDoubleTy());
+            } else if (base->getType()->isIntegerTy()) {
+                base = builder.CreateSIToFP(base, builder.getDoubleTy());
+            }
+        }
+        if (!exp->getType()->isDoubleTy()) {
+            if (exp->getType()->isFloatTy()) {
+                exp = builder.CreateFPExt(exp, builder.getDoubleTy());
+            } else if (exp->getType()->isIntegerTy()) {
+                exp = builder.CreateSIToFP(exp, builder.getDoubleTy());
+            }
+        }
+        
+        llvm::Function* pow_func = llvm::Intrinsic::getDeclaration(
+            module, llvm::Intrinsic::pow, {builder.getDoubleTy()});
+        return builder.CreateCall(pow_func, {base, exp}, "pow");
+    }
+    
+    // exp()
+    if (callee_ident->name == "exp") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("exp() requires one argument");
+        }
+        llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!arg->getType()->isDoubleTy()) {
+            if (arg->getType()->isFloatTy()) {
+                arg = builder.CreateFPExt(arg, builder.getDoubleTy());
+            } else if (arg->getType()->isIntegerTy()) {
+                arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+            }
+        }
+        llvm::Function* exp_func = llvm::Intrinsic::getDeclaration(
+            module, llvm::Intrinsic::exp, {builder.getDoubleTy()});
+        return builder.CreateCall(exp_func, {arg}, "exp");
+    }
+    
+    // log(), log10(), log2()
+    if (callee_ident->name == "log" || callee_ident->name == "log10" || callee_ident->name == "log2") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error(callee_ident->name + "() requires one argument");
+        }
+        llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!arg->getType()->isDoubleTy()) {
+            if (arg->getType()->isFloatTy()) {
+                arg = builder.CreateFPExt(arg, builder.getDoubleTy());
+            } else if (arg->getType()->isIntegerTy()) {
+                arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+            }
+        }
+        
+        llvm::Intrinsic::ID intrinsic_id;
+        if (callee_ident->name == "log") intrinsic_id = llvm::Intrinsic::log;
+        else if (callee_ident->name == "log10") intrinsic_id = llvm::Intrinsic::log10;
+        else intrinsic_id = llvm::Intrinsic::log2;
+        
+        llvm::Function* log_func = llvm::Intrinsic::getDeclaration(
+            module, intrinsic_id, {builder.getDoubleTy()});
+        return builder.CreateCall(log_func, {arg}, callee_ident->name);
+    }
+    
+    // Trigonometric functions: sin, cos
+    if (callee_ident->name == "sin" || callee_ident->name == "cos") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error(callee_ident->name + "() requires one argument");
+        }
+        llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!arg->getType()->isDoubleTy()) {
+            if (arg->getType()->isFloatTy()) {
+                arg = builder.CreateFPExt(arg, builder.getDoubleTy());
+            } else if (arg->getType()->isIntegerTy()) {
+                arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+            }
+        }
+        
+        llvm::Intrinsic::ID intrinsic_id = (callee_ident->name == "sin") ? 
+            llvm::Intrinsic::sin : llvm::Intrinsic::cos;
+        llvm::Function* trig_func = llvm::Intrinsic::getDeclaration(
+            module, intrinsic_id, {builder.getDoubleTy()});
+        return builder.CreateCall(trig_func, {arg}, callee_ident->name);
+    }
+    
+    // Trigonometric functions requiring libm: tan, asin, acos, atan, atan2
+    if (callee_ident->name == "tan" || callee_ident->name == "asin" || 
+        callee_ident->name == "acos" || callee_ident->name == "atan") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error(callee_ident->name + "() requires one argument");
+        }
+        llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!arg->getType()->isDoubleTy()) {
+            if (arg->getType()->isFloatTy()) {
+                arg = builder.CreateFPExt(arg, builder.getDoubleTy());
+            } else if (arg->getType()->isIntegerTy()) {
+                arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
+            }
+        }
+        
+        // Declare libm function
+        llvm::Function* libm_func = module->getFunction(callee_ident->name);
+        if (!libm_func) {
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getDoubleTy(), {builder.getDoubleTy()}, false);
+            libm_func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                callee_ident->name, module);
+        }
+        return builder.CreateCall(libm_func, {arg}, callee_ident->name);
+    }
+    
+    if (callee_ident->name == "atan2") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("atan2() requires two arguments");
+        }
+        llvm::Value* y = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* x = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        if (!y->getType()->isDoubleTy()) {
+            if (y->getType()->isFloatTy()) {
+                y = builder.CreateFPExt(y, builder.getDoubleTy());
+            } else if (y->getType()->isIntegerTy()) {
+                y = builder.CreateSIToFP(y, builder.getDoubleTy());
+            }
+        }
+        if (!x->getType()->isDoubleTy()) {
+            if (x->getType()->isFloatTy()) {
+                x = builder.CreateFPExt(x, builder.getDoubleTy());
+            } else if (x->getType()->isIntegerTy()) {
+                x = builder.CreateSIToFP(x, builder.getDoubleTy());
+            }
+        }
+        
+        llvm::Function* atan2_func = module->getFunction("atan2");
+        if (!atan2_func) {
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getDoubleTy(), {builder.getDoubleTy(), builder.getDoubleTy()}, false);
+            atan2_func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "atan2", module);
+        }
+        return builder.CreateCall(atan2_func, {y, x}, "atan2");
+    }
+    
+    // Mathematical constants: PI, E, TAU
+    if (callee_ident->name == "PI") {
+        if (expr->arguments.size() != 0) {
+            throw std::runtime_error("PI() takes no arguments");
+        }
+        return llvm::ConstantFP::get(builder.getDoubleTy(), 3.14159265358979323846);
+    }
+    
+    if (callee_ident->name == "E") {
+        if (expr->arguments.size() != 0) {
+            throw std::runtime_error("E() takes no arguments");
+        }
+        return llvm::ConstantFP::get(builder.getDoubleTy(), 2.71828182845904523536);
+    }
+    
+    if (callee_ident->name == "TAU") {
+        if (expr->arguments.size() != 0) {
+            throw std::runtime_error("TAU() takes no arguments");
+        }
+        return llvm::ConstantFP::get(builder.getDoubleTy(), 6.28318530717958647692);
+    }
+    
+    // ====================================================================
+    // END MATH BUILTINS
     // ====================================================================
     
     // Check if this is a direct function call or a closure call

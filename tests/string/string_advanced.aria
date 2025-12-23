@@ -1,0 +1,48 @@
+// Test advanced string operations
+// Phase 4.3 String Library Testing
+
+func:main = int64() {
+    // Test 1: Multiple concatenations
+    string:a = "A";
+    string:b = "B";
+    string:c = "C";
+    string:ab = string_concat(a, b);
+    string:abc = string_concat(ab, c);
+    int64:len = string_length(abc);
+    print(len);  // Should print 3
+    
+    // Test 2: Nested substrings
+    string:long_text = "0123456789";
+    string:mid = string_substring(long_text, 2, 8);  // "234567"
+    string:inner = string_substring(mid, 1, 5);       // "3456"
+    int64:inner_len = string_length(inner);
+    print(inner_len);  // Should print 4
+    
+    // Test 3: Case conversion round-trip
+    string:orig = "Test String";
+    string:upper = string_to_upper(orig);
+    string:lower_again = string_to_lower(upper);
+    bool:contains_test = string_contains(lower_again, "test");
+    if (contains_test) {
+        print(1);  // Should print 1
+    }
+    
+    // Test 4: Empty string operations
+    string:empty = "";
+    string:result = string_concat(empty, empty);
+    bool:still_empty = string_is_empty(result);
+    if (still_empty) {
+        print(1);  // Should print 1
+    }
+    
+    // Test 5: Pattern matching
+    string:email = "user@example.com";
+    bool:has_at = string_contains(email, "@");
+    bool:has_dot = string_contains(email, ".");
+    bool:ends_com = string_ends_with(email, ".com");
+    if (has_at && has_dot && ends_com) {
+        print(1);  // Should print 1 (looks like valid email pattern)
+    }
+    
+    pass(0);
+};

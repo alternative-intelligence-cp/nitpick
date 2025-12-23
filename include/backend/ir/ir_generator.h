@@ -53,6 +53,9 @@ private:
     // Type mapping cache (Aria types -> LLVM types)
     std::map<std::string, llvm::Type*> type_map;
     
+    // Enum constants (maps enum.variant to integer value)
+    std::map<std::string, int64_t> enum_constants;
+    
     // TBB codegen for safe arithmetic with overflow detection
     TBBCodegen tbb_codegen;
     

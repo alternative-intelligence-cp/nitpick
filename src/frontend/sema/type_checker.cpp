@@ -6,6 +6,7 @@
 #include "semantic/literal_converter.h"
 #include <sstream>
 #include <variant>
+#include <iostream>
 
 namespace aria {
 namespace sema {
@@ -98,6 +99,19 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         
         case ASTNode::NodeType::VECTOR_CONSTRUCTOR:
             return inferVectorConstructor(static_cast<VectorConstructorExpr*>(expr));
+        
+        case ASTNode::NodeType::AWAIT: {
+            // Await expression: infer type from awaited operand
+            // For async functions that return T, await returns T
+            // For Future<T>, await returns T
+            AwaitExpr* awaitExpr = static_cast<AwaitExpr*>(expr);
+            Type* operandType = inferType(awaitExpr->operand.get());
+            
+            // TODO: When we have Future<T> trait system, unwrap the Future
+            // For now, async functions compile to i8* but semantically return T
+            // So we just return the operand's semantic type
+            return operandType;
+        }
         
         default:
             addError("Type inference not implemented for node type: " + 
@@ -989,6 +1003,284 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             }
             return typeSystem->getPrimitiveType("int64");
         }
+        
+        // ====================================================================
+        // STRING LIBRARY BUILTINS (Phase 4.3)
+        // ====================================================================
+        
+        // String creation: string_from_cstr(char*) -> string
+        if (idExpr->name == "string_from_cstr") {
+            if (expr->arguments.size() != 1) {
+                addError("string_from_cstr() requires exactly one argument (cstr)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+        
+        // String basic: string_length(string) -> int64
+        if (idExpr->name == "string_length") {
+            if (expr->arguments.size() != 1) {
+                addError("string_length() requires exactly one argument (str)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // String basic: string_is_empty(string) -> bool
+        if (idExpr->name == "string_is_empty") {
+            if (expr->arguments.size() != 1) {
+                addError("string_is_empty() requires exactly one argument (str)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // String comparison: string_equals(string, string) -> bool
+        if (idExpr->name == "string_equals") {
+            if (expr->arguments.size() != 2) {
+                addError("string_equals() requires exactly two arguments (a, b)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            if (arg1Type->getKind() == TypeKind::ERROR || arg2Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // String operations: string_concat(string, string) -> string
+        if (idExpr->name == "string_concat") {
+            if (expr->arguments.size() != 2) {
+                addError("string_concat() requires exactly two arguments (a, b)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            if (arg1Type->getKind() == TypeKind::ERROR || arg2Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+        
+        // String operations: string_substring(string, int64, int64) -> string
+        if (idExpr->name == "string_substring") {
+            if (expr->arguments.size() != 3) {
+                addError("string_substring() requires exactly three arguments (str, start, end)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            Type* arg3Type = inferType(expr->arguments[2].get());
+            if (arg1Type->getKind() == TypeKind::ERROR || 
+                arg2Type->getKind() == TypeKind::ERROR || 
+                arg3Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+        
+        // String search: string_contains(string, string) -> bool
+        if (idExpr->name == "string_contains") {
+            if (expr->arguments.size() != 2) {
+                addError("string_contains() requires exactly two arguments (haystack, needle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            if (arg1Type->getKind() == TypeKind::ERROR || arg2Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // String search: string_starts_with(string, string) -> bool
+        if (idExpr->name == "string_starts_with") {
+            if (expr->arguments.size() != 2) {
+                addError("string_starts_with() requires exactly two arguments (str, prefix)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            if (arg1Type->getKind() == TypeKind::ERROR || arg2Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // String search: string_ends_with(string, string) -> bool
+        if (idExpr->name == "string_ends_with") {
+            if (expr->arguments.size() != 2) {
+                addError("string_ends_with() requires exactly two arguments (str, suffix)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            if (arg1Type->getKind() == TypeKind::ERROR || arg2Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // String manipulation: string_trim(string) -> string
+        if (idExpr->name == "string_trim") {
+            if (expr->arguments.size() != 1) {
+                addError("string_trim() requires exactly one argument (str)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+        
+        // String manipulation: string_to_upper(string) -> string
+        if (idExpr->name == "string_to_upper") {
+            if (expr->arguments.size() != 1) {
+                addError("string_to_upper() requires exactly one argument (str)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+        
+        // String manipulation: string_to_lower(string) -> string
+        if (idExpr->name == "string_to_lower") {
+            if (expr->arguments.size() != 1) {
+                addError("string_to_lower() requires exactly one argument (str)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+        
+        // ====================================================================
+        // MATH LIBRARY BUILTINS (Phase 4.4)
+        // ====================================================================
+        
+        // Basic math functions
+        if (idExpr->name == "abs") {
+            if (expr->arguments.size() != 1) {
+                addError("abs() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Return same type as input
+            return argType;
+        }
+        
+        if (idExpr->name == "min" || idExpr->name == "max") {
+            if (expr->arguments.size() != 2) {
+                addError(idExpr->name + "() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            if (arg1Type->getKind() == TypeKind::ERROR || arg2Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Both arguments should be same type
+            return arg1Type;
+        }
+        
+        // Rounding functions - all return flt64
+        if (idExpr->name == "floor" || idExpr->name == "ceil" || 
+            idExpr->name == "round" || idExpr->name == "trunc") {
+            if (expr->arguments.size() != 1) {
+                addError(idExpr->name + "() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("flt64");
+        }
+        
+        // Exponential and logarithmic functions - all take/return flt64
+        if (idExpr->name == "sqrt" || idExpr->name == "exp" || 
+            idExpr->name == "log" || idExpr->name == "log10" || idExpr->name == "log2") {
+            if (expr->arguments.size() != 1) {
+                addError(idExpr->name + "() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("flt64");
+        }
+        
+        if (idExpr->name == "pow") {
+            if (expr->arguments.size() != 2) {
+                addError("pow() requires exactly two arguments (base, exponent)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* baseType = inferType(expr->arguments[0].get());
+            Type* expType = inferType(expr->arguments[1].get());
+            if (baseType->getKind() == TypeKind::ERROR || expType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("flt64");
+        }
+        
+        // Trigonometric functions - all take/return flt64
+        if (idExpr->name == "sin" || idExpr->name == "cos" || idExpr->name == "tan" ||
+            idExpr->name == "asin" || idExpr->name == "acos" || idExpr->name == "atan") {
+            if (expr->arguments.size() != 1) {
+                addError(idExpr->name + "() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("flt64");
+        }
+        
+        if (idExpr->name == "atan2") {
+            if (expr->arguments.size() != 2) {
+                addError("atan2() requires exactly two arguments (y, x)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* yType = inferType(expr->arguments[0].get());
+            Type* xType = inferType(expr->arguments[1].get());
+            if (yType->getKind() == TypeKind::ERROR || xType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("flt64");
+        }
+        
+        // Mathematical constants - no arguments, return flt64
+        if (idExpr->name == "PI" || idExpr->name == "E" || idExpr->name == "TAU") {
+            if (expr->arguments.size() != 0) {
+                addError(idExpr->name + "() is a constant and takes no arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("flt64");
+        }
     }
     
     // Infer callee type (should be function type or callable object)
@@ -1137,6 +1429,20 @@ Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
 // ============================================================================
 
 Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
+    // Check if this is enum variant access (EnumName.VARIANT)
+    // If the object is a simple identifier, try looking up EnumName.Member in symbol table
+    if (expr->object->type == ASTNode::NodeType::IDENTIFIER) {
+        IdentifierExpr* identExpr = static_cast<IdentifierExpr*>(expr->object.get());
+        std::string fullName = identExpr->name + "." + expr->member;
+        
+        // Try to look up as enum variant
+        Symbol* variantSym = symbolTable->resolveSymbol(fullName);
+        if (variantSym) {
+            // Found enum variant - return its type (should be int64)
+            return variantSym->type;
+        }
+    }
+    
     // Infer object type
     Type* objectType = inferType(expr->object.get());
     
@@ -1617,6 +1923,10 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
         
         case ASTNode::NodeType::STRUCT_DECL:
             checkStructDecl(static_cast<StructDeclStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::ENUM_DECL:
+            checkEnumDecl(static_cast<EnumDeclStmt*>(stmt));
             break;
         
         case ASTNode::NodeType::RETURN:
@@ -2201,6 +2511,29 @@ void TypeChecker::checkStructDecl(StructDeclStmt* stmt) {
     
     // Register struct type in type system with field information
     typeSystem->createStructType(stmt->structName, fields, 0, 0, false);
+}
+
+void TypeChecker::checkEnumDecl(EnumDeclStmt* stmt) {
+    // Check if enum name already exists
+    // Note: For now, we just register enum variants as constants in the symbol table
+    // Full enum type support can be added later
+    
+    // Register each enum variant as a constant
+    for (const auto& [variantName, variantValue] : stmt->variants) {
+        std::string fullName = stmt->enumName + "." + variantName;
+        
+        // Check if this variant name already exists in the enum
+        if (symbolTable->isDefined(fullName)) {
+            addError("Enum variant '" + variantName + "' is already defined in enum '" + 
+                    stmt->enumName + "'", stmt);
+            continue;
+        }
+        
+        // For now, register the variant as an int64 constant in the symbol table
+        // This allows code like: int32:x = MyEnum.VARIANT;
+        // TODO: Create a proper EnumType when type system is extended
+        symbolTable->defineSymbol(fullName, SymbolKind::VARIABLE, typeSystem->getPrimitiveType("int64"));
+    }
 }
 
 // ============================================================================

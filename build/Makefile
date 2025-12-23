@@ -1713,6 +1713,87 @@ src/runtime/assembler/llvm_jit.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/assembler/llvm_jit.cpp.s
 .PHONY : src/runtime/assembler/llvm_jit.cpp.s
 
+src/runtime/async/async_io.o: src/runtime/async/async_io.cpp.o
+.PHONY : src/runtime/async/async_io.o
+
+# target to build an object file
+src/runtime/async/async_io.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/async_io.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/async_io.cpp.o
+.PHONY : src/runtime/async/async_io.cpp.o
+
+src/runtime/async/async_io.i: src/runtime/async/async_io.cpp.i
+.PHONY : src/runtime/async/async_io.i
+
+# target to preprocess a source file
+src/runtime/async/async_io.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/async_io.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/async_io.cpp.i
+.PHONY : src/runtime/async/async_io.cpp.i
+
+src/runtime/async/async_io.s: src/runtime/async/async_io.cpp.s
+.PHONY : src/runtime/async/async_io.s
+
+# target to generate assembly for a file
+src/runtime/async/async_io.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/async_io.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/async_io.cpp.s
+.PHONY : src/runtime/async/async_io.cpp.s
+
+src/runtime/async/async_io_api.o: src/runtime/async/async_io_api.cpp.o
+.PHONY : src/runtime/async/async_io_api.o
+
+# target to build an object file
+src/runtime/async/async_io_api.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/async_io_api.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/async_io_api.cpp.o
+.PHONY : src/runtime/async/async_io_api.cpp.o
+
+src/runtime/async/async_io_api.i: src/runtime/async/async_io_api.cpp.i
+.PHONY : src/runtime/async/async_io_api.i
+
+# target to preprocess a source file
+src/runtime/async/async_io_api.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/async_io_api.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/async_io_api.cpp.i
+.PHONY : src/runtime/async/async_io_api.cpp.i
+
+src/runtime/async/async_io_api.s: src/runtime/async/async_io_api.cpp.s
+.PHONY : src/runtime/async/async_io_api.s
+
+# target to generate assembly for a file
+src/runtime/async/async_io_api.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/async_io_api.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/async_io_api.cpp.s
+.PHONY : src/runtime/async/async_io_api.cpp.s
+
+src/runtime/async/async_net.o: src/runtime/async/async_net.cpp.o
+.PHONY : src/runtime/async/async_net.o
+
+# target to build an object file
+src/runtime/async/async_net.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/async_net.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/async_net.cpp.o
+.PHONY : src/runtime/async/async_net.cpp.o
+
+src/runtime/async/async_net.i: src/runtime/async/async_net.cpp.i
+.PHONY : src/runtime/async/async_net.i
+
+# target to preprocess a source file
+src/runtime/async/async_net.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/async_net.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/async_net.cpp.i
+.PHONY : src/runtime/async/async_net.cpp.i
+
+src/runtime/async/async_net.s: src/runtime/async/async_net.cpp.s
+.PHONY : src/runtime/async/async_net.s
+
+# target to generate assembly for a file
+src/runtime/async/async_net.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/async_net.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/async_net.cpp.s
+.PHONY : src/runtime/async/async_net.cpp.s
+
 src/runtime/async/coroutine.o: src/runtime/async/coroutine.cpp.o
 .PHONY : src/runtime/async/coroutine.o
 
@@ -1740,6 +1821,33 @@ src/runtime/async/coroutine.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/coroutine.cpp.s
 .PHONY : src/runtime/async/coroutine.cpp.s
 
+src/runtime/async/event_loop.o: src/runtime/async/event_loop.cpp.o
+.PHONY : src/runtime/async/event_loop.o
+
+# target to build an object file
+src/runtime/async/event_loop.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/event_loop.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/event_loop.cpp.o
+.PHONY : src/runtime/async/event_loop.cpp.o
+
+src/runtime/async/event_loop.i: src/runtime/async/event_loop.cpp.i
+.PHONY : src/runtime/async/event_loop.i
+
+# target to preprocess a source file
+src/runtime/async/event_loop.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/event_loop.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/event_loop.cpp.i
+.PHONY : src/runtime/async/event_loop.cpp.i
+
+src/runtime/async/event_loop.s: src/runtime/async/event_loop.cpp.s
+.PHONY : src/runtime/async/event_loop.s
+
+# target to generate assembly for a file
+src/runtime/async/event_loop.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/event_loop.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/event_loop.cpp.s
+.PHONY : src/runtime/async/event_loop.cpp.s
+
 src/runtime/async/executor.o: src/runtime/async/executor.cpp.o
 .PHONY : src/runtime/async/executor.o
 
@@ -1766,6 +1874,141 @@ src/runtime/async/executor.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/executor.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/executor.cpp.s
 .PHONY : src/runtime/async/executor.cpp.s
+
+src/runtime/async/file_stream.o: src/runtime/async/file_stream.cpp.o
+.PHONY : src/runtime/async/file_stream.o
+
+# target to build an object file
+src/runtime/async/file_stream.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/file_stream.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/file_stream.cpp.o
+.PHONY : src/runtime/async/file_stream.cpp.o
+
+src/runtime/async/file_stream.i: src/runtime/async/file_stream.cpp.i
+.PHONY : src/runtime/async/file_stream.i
+
+# target to preprocess a source file
+src/runtime/async/file_stream.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/file_stream.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/file_stream.cpp.i
+.PHONY : src/runtime/async/file_stream.cpp.i
+
+src/runtime/async/file_stream.s: src/runtime/async/file_stream.cpp.s
+.PHONY : src/runtime/async/file_stream.s
+
+# target to generate assembly for a file
+src/runtime/async/file_stream.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/file_stream.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/file_stream.cpp.s
+.PHONY : src/runtime/async/file_stream.cpp.s
+
+src/runtime/async/gc_integration.o: src/runtime/async/gc_integration.cpp.o
+.PHONY : src/runtime/async/gc_integration.o
+
+# target to build an object file
+src/runtime/async/gc_integration.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/gc_integration.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/gc_integration.cpp.o
+.PHONY : src/runtime/async/gc_integration.cpp.o
+
+src/runtime/async/gc_integration.i: src/runtime/async/gc_integration.cpp.i
+.PHONY : src/runtime/async/gc_integration.i
+
+# target to preprocess a source file
+src/runtime/async/gc_integration.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/gc_integration.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/gc_integration.cpp.i
+.PHONY : src/runtime/async/gc_integration.cpp.i
+
+src/runtime/async/gc_integration.s: src/runtime/async/gc_integration.cpp.s
+.PHONY : src/runtime/async/gc_integration.s
+
+# target to generate assembly for a file
+src/runtime/async/gc_integration.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/gc_integration.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/gc_integration.cpp.s
+.PHONY : src/runtime/async/gc_integration.cpp.s
+
+src/runtime/async/io_uring.o: src/runtime/async/io_uring.cpp.o
+.PHONY : src/runtime/async/io_uring.o
+
+# target to build an object file
+src/runtime/async/io_uring.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/io_uring.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/io_uring.cpp.o
+.PHONY : src/runtime/async/io_uring.cpp.o
+
+src/runtime/async/io_uring.i: src/runtime/async/io_uring.cpp.i
+.PHONY : src/runtime/async/io_uring.i
+
+# target to preprocess a source file
+src/runtime/async/io_uring.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/io_uring.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/io_uring.cpp.i
+.PHONY : src/runtime/async/io_uring.cpp.i
+
+src/runtime/async/io_uring.s: src/runtime/async/io_uring.cpp.s
+.PHONY : src/runtime/async/io_uring.s
+
+# target to generate assembly for a file
+src/runtime/async/io_uring.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/io_uring.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/io_uring.cpp.s
+.PHONY : src/runtime/async/io_uring.cpp.s
+
+src/runtime/async/runtime_api.o: src/runtime/async/runtime_api.cpp.o
+.PHONY : src/runtime/async/runtime_api.o
+
+# target to build an object file
+src/runtime/async/runtime_api.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/runtime_api.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/runtime_api.cpp.o
+.PHONY : src/runtime/async/runtime_api.cpp.o
+
+src/runtime/async/runtime_api.i: src/runtime/async/runtime_api.cpp.i
+.PHONY : src/runtime/async/runtime_api.i
+
+# target to preprocess a source file
+src/runtime/async/runtime_api.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/runtime_api.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/runtime_api.cpp.i
+.PHONY : src/runtime/async/runtime_api.cpp.i
+
+src/runtime/async/runtime_api.s: src/runtime/async/runtime_api.cpp.s
+.PHONY : src/runtime/async/runtime_api.s
+
+# target to generate assembly for a file
+src/runtime/async/runtime_api.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/runtime_api.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/runtime_api.cpp.s
+.PHONY : src/runtime/async/runtime_api.cpp.s
+
+src/runtime/async/work_stealing.o: src/runtime/async/work_stealing.cpp.o
+.PHONY : src/runtime/async/work_stealing.o
+
+# target to build an object file
+src/runtime/async/work_stealing.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/work_stealing.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/work_stealing.cpp.o
+.PHONY : src/runtime/async/work_stealing.cpp.o
+
+src/runtime/async/work_stealing.i: src/runtime/async/work_stealing.cpp.i
+.PHONY : src/runtime/async/work_stealing.i
+
+# target to preprocess a source file
+src/runtime/async/work_stealing.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/work_stealing.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/work_stealing.cpp.i
+.PHONY : src/runtime/async/work_stealing.cpp.i
+
+src/runtime/async/work_stealing.s: src/runtime/async/work_stealing.cpp.s
+.PHONY : src/runtime/async/work_stealing.s
+
+# target to generate assembly for a file
+src/runtime/async/work_stealing.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/async/work_stealing.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/async/work_stealing.cpp.s
+.PHONY : src/runtime/async/work_stealing.cpp.s
 
 src/runtime/atomic/atomic.o: src/runtime/atomic/atomic.cpp.o
 .PHONY : src/runtime/atomic/atomic.o
@@ -2767,12 +3010,39 @@ help:
 	@echo "... src/runtime/assembler/llvm_jit.o"
 	@echo "... src/runtime/assembler/llvm_jit.i"
 	@echo "... src/runtime/assembler/llvm_jit.s"
+	@echo "... src/runtime/async/async_io.o"
+	@echo "... src/runtime/async/async_io.i"
+	@echo "... src/runtime/async/async_io.s"
+	@echo "... src/runtime/async/async_io_api.o"
+	@echo "... src/runtime/async/async_io_api.i"
+	@echo "... src/runtime/async/async_io_api.s"
+	@echo "... src/runtime/async/async_net.o"
+	@echo "... src/runtime/async/async_net.i"
+	@echo "... src/runtime/async/async_net.s"
 	@echo "... src/runtime/async/coroutine.o"
 	@echo "... src/runtime/async/coroutine.i"
 	@echo "... src/runtime/async/coroutine.s"
+	@echo "... src/runtime/async/event_loop.o"
+	@echo "... src/runtime/async/event_loop.i"
+	@echo "... src/runtime/async/event_loop.s"
 	@echo "... src/runtime/async/executor.o"
 	@echo "... src/runtime/async/executor.i"
 	@echo "... src/runtime/async/executor.s"
+	@echo "... src/runtime/async/file_stream.o"
+	@echo "... src/runtime/async/file_stream.i"
+	@echo "... src/runtime/async/file_stream.s"
+	@echo "... src/runtime/async/gc_integration.o"
+	@echo "... src/runtime/async/gc_integration.i"
+	@echo "... src/runtime/async/gc_integration.s"
+	@echo "... src/runtime/async/io_uring.o"
+	@echo "... src/runtime/async/io_uring.i"
+	@echo "... src/runtime/async/io_uring.s"
+	@echo "... src/runtime/async/runtime_api.o"
+	@echo "... src/runtime/async/runtime_api.i"
+	@echo "... src/runtime/async/runtime_api.s"
+	@echo "... src/runtime/async/work_stealing.o"
+	@echo "... src/runtime/async/work_stealing.i"
+	@echo "... src/runtime/async/work_stealing.s"
 	@echo "... src/runtime/atomic/atomic.o"
 	@echo "... src/runtime/atomic/atomic.i"
 	@echo "... src/runtime/atomic/atomic.s"
