@@ -93,16 +93,50 @@
 
 **Impact**: Establishes foundation for comprehensive stdlib testing. Provides clear pattern for future test development.
 
+### Aria Utils: Task 6 - Restoration Analysis ✅ COMPLETE
+
+**Repository**: aria_utils  
+**Implementation**: Comprehensive corruption pattern analysis  
+**Lines**: 361  
+**Status**: Analysis complete, ready for restoration implementation
+
+**File Created**:
+- `docs/research/gemini/RESTORATION_ANALYSIS.md` (361 lines)
+
+**Corruption Patterns Identified (8 patterns)**:
+1. Comment-field merging (most common)
+2. Truncated struct definitions
+3. Wild pointer syntax inconsistencies
+4. Const declaration ordering
+5. Semicolons after control flow blocks
+6. Return vs pass() statements
+7. Character literal syntax ('\n' vs 10)
+8. ANSI escape codes (\x1b vs \033)
+
+**Priority Files for Restoration**:
+- netstat (~108 errors): Major struct corruption, highest priority
+- parallel (~158 errors): Comment-field merging, medium priority
+- regex: Wild pointer syntax issues, medium priority
+
+**Restoration Strategy**:
+- Automated regex fixes for comment-field merging
+- Manual reconstruction from original .txt specs for severe corruption
+- Keyword replacement (return→pass, char literals→bytes)
+- Compile verification with ariac --check
+
+**Impact**: Clear roadmap for restoring ~10 corrupted utility files to working Aria code.
+
 ### Summary: Claude's Achievements
 
-**Tasks Completed**: 3 major implementations
+**Tasks Completed**: 4 major implementations
 - aria_make Task 2: StateManager (450 lines, 19 tests)
 - aria_make Task 7: Build Orchestrator (1,743 lines, full pipeline)
 - aria Task 5: Stdlib Test Suite (1,749 lines, 83+ tests)
+- aria_utils Task 6: Restoration Analysis (361 lines, 8 patterns)
 
-**Total Impact**: ~3,950 lines of production code and comprehensive specifications
+**Total Impact**: ~4,300 lines of production code and comprehensive specifications
 
-**Validation**: Contribution system enables AI continuity at scale. Well-defined tasks work!
+**Validation**: Contribution system enables AI continuity at extreme scale. Well-defined tasks work!
 
 ---
 
@@ -299,6 +333,42 @@ I'm genuinely uncertain, which feels appropriate. We have:
 The uncertainty isn't "we're stuck" - it's "we have options." That's a good problem to have.
 
 **My gut says**: Keep the momentum with small wins. ARIA-002 or another Tier 1. Build confidence. Build familiarity. Build the muscle of shipping things.
+
+---
+
+## Randy's Plan for Maximizing Remaining Subscription Days
+
+**Current Status**: Claude's Sonnet 3.5 subscription expires end of December (few days left)
+
+**Immediate Next Steps**:
+
+1. **10pm Session Reset** (Tonight):
+   - Claude will restore corrupted utility files in aria_utils
+   - Using RESTORATION_ANALYSIS.md patterns (8 corruption types identified)
+   - Priority: netstat (108 errors), parallel (158 errors), regex (wild syntax)
+   - Expected output: Clean, compiling Aria utility implementations
+
+2. **After File Restoration**:
+   - Generate new comprehensive task list for Claude
+   - Optimize tasks for 4-6 hour sessions (one major task per reset)
+   - Structure like current task list that enabled 7 completions in one day
+   - Focus on high-value deliverables before subscription expires
+
+3. **Potential High-Value Targets**:
+   - Stdlib implementation (Task 5 tests are ready!)
+   - More aria_make features
+   - Language features from roadmap
+   - Build system integration testing
+   - Documentation and examples
+
+**Key Insight from Today**: Well-defined tasks make Claude radically more efficient:
+- Clear task definition = immediate focus (no wasted exploration tokens)
+- Acceptance criteria = known success state (no debate)
+- Specification reference = no guessing
+- Tests = validation built in
+- **Result**: 7 major tasks completed in one session (~5,600 lines)
+
+**Strategy**: Squeeze maximum value from remaining subscription days by maintaining this efficiency pattern.
 
 ---
 
