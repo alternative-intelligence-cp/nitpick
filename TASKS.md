@@ -1,6 +1,6 @@
 # Aria Compiler Tasks
 
-**Last Updated**: 2024-12-24
+**Last Updated**: 2025-12-24
 
 This file tracks available work for contributors. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
@@ -28,7 +28,7 @@ Each task includes:
 ID: ARIA-001
 Status: COMPLETED
 Completed By: Aria Echo (AI)
-Completed Date: 2024-12-24
+Completed Date: 2025-12-24
 Spec: aria_ecosystem/MASTER_ROADMAP.md, Section 2.4
 Complexity: LOW
 Tier: 1
@@ -80,7 +80,7 @@ Note: ERR parsing is fixed, but pattern-specific tests needed
 ID: ARIA-003
 Status: COMPLETED
 Completed By: Aria Echo (AI)
-Completed Date: 2024-12-24
+Completed Date: 2025-12-24
 Spec: aria_ecosystem/specs/TBB_TYPES.md, Section 2
 Complexity: LOW
 Tier: 1
@@ -272,7 +272,7 @@ Note: Advanced metaprogramming feature
 ID: ARIA-000
 Status: COMPLETED
 Completed By: Aria Echo (AI)
-Completed Date: 2024-12-24
+Completed Date: 2025-12-24
 Description: Added ERR keyword parsing and semantic typing
 Files: src/frontend/parser/parser.cpp, src/frontend/sema/type_checker.cpp
 Note: ERR now recognized as TBB error sentinel literal
