@@ -205,16 +205,16 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
         
         case TypeKind::RESULT: {
             // Result type for error handling: result<T>
-            // Represented as { hasValue: i1, value: T, error: i8 }
-            // Reference: research_016
+            // Runtime layout: { T value, void* error, bool is_error }
+            // Reference: include/runtime/result.h (AriaResultPtr, AriaResultI64, etc.)
             auto* result_type = static_cast<ResultType*>(aria_type);
             
             llvm::Type* value_type = mapType(result_type->getValueType());
             
             std::vector<llvm::Type*> result_fields = {
-                builder.getInt1Ty(),    // hasValue flag
-                value_type,              // Success value
-                builder.getInt8Ty()     // Error code
+                value_type,                         // value (field 0)
+                llvm::PointerType::get(context, 0), // error (field 1) - void* pointer
+                builder.getInt1Ty()                 // is_error (field 2) - bool
             };
             
             llvm_type = llvm::StructType::get(context, result_fields);
@@ -503,13 +503,15 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
         FuncDeclStmt* funcDecl = spec->funcDecl;
         
         // Determine return type using proper type mapping
-        llvm::Type* returnType = mapTypeFromName(funcDecl->returnType);
+        std::string returnTypeStr = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
+        llvm::Type* returnType = mapTypeFromName(returnTypeStr);
         
         // Build parameter types with proper type mapping
         std::vector<llvm::Type*> paramTypes;
         for (const auto& param : funcDecl->parameters) {
             ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
-            paramTypes.push_back(mapTypeFromName(pnode->typeName));
+            std::string paramTypeStr = pnode->typeNode ? pnode->typeNode->toString() : "void";
+            paramTypes.push_back(mapTypeFromName(paramTypeStr));
         }
         
         // Create function type
@@ -636,10 +638,12 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             std::vector<llvm::Type*> param_types;
             for (const auto& param : funcDecl->parameters) {
                 ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
-                param_types.push_back(mapTypeFromName(pnode->typeName));
+                std::string paramTypeStr = pnode->typeNode ? pnode->typeNode->toString() : "void";
+                param_types.push_back(mapTypeFromName(paramTypeStr));
             }
             
-            llvm::Type* return_type = mapTypeFromName(funcDecl->returnType);
+            std::string returnTypeStr = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
+            llvm::Type* return_type = mapTypeFromName(returnTypeStr);
             
             // Phase 4.6: Async functions return i8* (coroutine handle)
             llvm::Type* actual_return_type = return_type;
@@ -682,6 +686,22 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             // Create entry block
             llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
             builder.SetInsertPoint(entry);
+            
+            // Initialize GC for main function before any user code runs
+            if (funcDecl->funcName == "main") {
+                // Declare aria_gc_init(size_t nursery_size, size_t old_gen_threshold)
+                llvm::FunctionType* gc_init_type = llvm::FunctionType::get(
+                    builder.getVoidTy(),
+                    {builder.getInt64Ty(), builder.getInt64Ty()},
+                    false
+                );
+                llvm::Function* gc_init = llvm::dyn_cast<llvm::Function>(
+                    module->getOrInsertFunction("aria_gc_init", gc_init_type).getCallee()
+                );
+                
+                // Call aria_gc_init(0, 0) to use default sizes (4MB nursery, 64MB old gen)
+                builder.CreateCall(gc_init, {builder.getInt64(0), builder.getInt64(0)});
+            }
             
             // Phase 4.6: Async function coroutine setup
             llvm::Value* coro_id = nullptr;
@@ -967,7 +987,9 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             
             // Generate initializer if present
             if (varDecl->initializer) {
+                std::cerr << "[DEBUG IR_GEN] Variable '" << varDecl->varName << "' HAS initializer, generating..." << std::endl;
                 llvm::Value* initVal = codegenExpression(varDecl->initializer.get());
+                std::cerr << "[DEBUG IR_GEN] Initializer generated, value = " << (void*)initVal << std::endl;
                 if (initVal) {
                     // For optional types, need to construct the { i1, T } struct
                     if (isOptional) {
@@ -1771,9 +1793,48 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 bool val = std::get<bool>(lit->value);
                 return builder.getInt1(val);
             } else if (std::holds_alternative<std::string>(lit->value)) {
-                // String literal - create global constant string
-                std::string val = std::get<std::string>(lit->value);
-                return builder.CreateGlobalStringPtr(val, "str");
+                // String literal - create global AriaString struct (Phase 4.3)
+                const std::string& str = std::get<std::string>(lit->value);
+                
+                // Create a global constant for the string data  
+                llvm::Constant* str_data = llvm::ConstantDataArray::getString(context, str, true);
+                llvm::GlobalVariable* str_gv = new llvm::GlobalVariable(
+                    *module,
+                    str_data->getType(),
+                    true,  // isConstant
+                    llvm::GlobalValue::PrivateLinkage,
+                    str_data,
+                    ".str.data"
+                );
+                
+                // Get or create AriaString struct type
+                llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                if (!aria_string_type) {
+                    std::vector<llvm::Type*> fields = {
+                        llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                        llvm::Type::getInt64Ty(context)
+                    };
+                    aria_string_type = llvm::StructType::create(context, fields, "struct.AriaString");
+                }
+                
+                // Create a global AriaString struct constant
+                std::vector<llvm::Constant*> struct_values = {
+                    llvm::ConstantExpr::getPointerCast(str_gv, llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)),
+                    builder.getInt64(str.length())
+                };
+                llvm::Constant* string_struct = llvm::ConstantStruct::get(aria_string_type, struct_values);
+                
+                llvm::GlobalVariable* string_gv = new llvm::GlobalVariable(
+                    *module,
+                    aria_string_type,
+                    true,  // isConstant
+                    llvm::GlobalValue::PrivateLinkage,
+                    string_struct,
+                    ".str"
+                );
+                
+                // Return the global AriaString struct (will be loaded when needed)
+                return string_gv;
             }
             return nullptr;
         }
@@ -1860,9 +1921,20 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 llvm::Type* arg_type = arg->getType();
                 
                 if (arg_type->isPointerTy()) {
-                    // String (char*)
-                    format_str = builder.CreateGlobalStringPtr("%s\n", "str_fmt");
-                    printf_args.push_back(arg);
+                    // String - check if it's AriaString pointer
+                    // Try to load as AriaString and extract data field
+                    llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                    if (aria_string_type) {
+                        // Load AriaString struct and extract data field
+                        llvm::Value* aria_str = builder.CreateLoad(aria_string_type, arg, "aria_str");
+                        llvm::Value* str_data = builder.CreateExtractValue(aria_str, 0, "str_data");
+                        format_str = builder.CreateGlobalStringPtr("%s\n", "str_fmt");
+                        printf_args.push_back(str_data);
+                    } else {
+                        // Fallback: treat as raw char*
+                        format_str = builder.CreateGlobalStringPtr("%s\n", "str_fmt");
+                        printf_args.push_back(arg);
+                    }
                 } else if (arg_type->isIntegerTy()) {
                     // Integer type - determine format based on bit width
                     unsigned bit_width = arg_type->getIntegerBitWidth();
@@ -2015,6 +2087,393 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 }
                 
                 return builder.CreateCall(func, {}, "stdin_read_line_call");
+            }
+            
+            // ====================================================================
+            // FILE I/O BUILTINS (Phase 4.2)
+            // ====================================================================
+            
+            // Helper lambda to extract char* from AriaString pointer
+            auto extractStringData = [&](llvm::Value* aria_str_ptr) -> llvm::Value* {
+                // Get AriaString struct type
+                llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                if (!aria_string_type) {
+                    std::vector<llvm::Type*> fields = {
+                        llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                        llvm::Type::getInt64Ty(context)
+                    };
+                    aria_string_type = llvm::StructType::create(context, fields, "struct.AriaString");
+                }
+                
+                // Load the AriaString struct from the pointer
+                llvm::Value* aria_str = builder.CreateLoad(aria_string_type, aria_str_ptr, "aria_str");
+                
+                // Extract field 0 (data: char*)
+                llvm::Value* data_ptr = builder.CreateExtractValue(aria_str, 0, "str_data");
+                
+                return data_ptr;
+            };
+            
+            // Builtin: writeFile(path: string, content: string) -> result<int64>
+            if (callee->name == "writeFile") {
+                if (call->arguments.size() != 2) {
+                    return nullptr;
+                }
+                
+                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
+                llvm::Value* content_arg = codegenExpression(call->arguments[1].get());
+                if (!path_arg || !content_arg) {
+                    return nullptr;
+                }
+                
+                // Extract char* from AriaString struct (path)
+                llvm::Value* path_cstr = extractStringData(path_arg);
+                
+                // Declare aria_write_file_result if not already present
+                // Returns AriaResultVoid struct: { void* error, bool is_error }
+                llvm::Function* func = module->getFunction("aria_write_file_result");
+                if (!func) {
+                    llvm::StructType* result_void_type = llvm::StructType::get(
+                        llvm::PointerType::get(context, 0),  // error
+                        builder.getInt1Ty()                   // is_error
+                    );
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        result_void_type,
+                        {llvm::PointerType::get(context, 0), llvm::PointerType::get(context, 0)},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_write_file_result",
+                        module.get()
+                    );
+                }
+                
+                // content_arg is AriaString*, pass directly
+                return builder.CreateCall(func, {path_cstr, content_arg}, "write_file_result");
+            }
+            
+            // Builtin: readFile(path: string) -> result<string>
+            if (callee->name == "readFile") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
+                if (!path_arg) {
+                    return nullptr;
+                }
+                
+                // Extract char* from AriaString
+                llvm::Value* path_cstr = extractStringData(path_arg);
+                
+                // Declare aria_read_file_result if not already present
+                // Returns AriaResultPtr struct: { void* value, void* error, bool is_error }
+                llvm::Function* func = module->getFunction("aria_read_file_result");
+                if (!func) {
+                    llvm::StructType* result_ptr_type = llvm::StructType::get(
+                        llvm::PointerType::get(context, 0),  // value
+                        llvm::PointerType::get(context, 0),  // error
+                        builder.getInt1Ty()                   // is_error
+                    );
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        result_ptr_type,
+                        {llvm::PointerType::get(context, 0)},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_read_file_result",
+                        module.get()
+                    );
+                }
+                
+                return builder.CreateCall(func, {path_cstr}, "read_file_result");
+            }
+            
+            // Builtin: fileExists(path: string) -> result<bool>
+            if (callee->name == "fileExists") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
+                if (!path_arg) {
+                    return nullptr;
+                }
+                
+                // Extract char* from AriaString
+                llvm::Value* path_cstr = extractStringData(path_arg);
+                
+                // Declare aria_file_exists_result if not already present
+                // Returns AriaResultBool struct: { bool value, void* error, bool is_error }
+                llvm::Function* func = module->getFunction("aria_file_exists_result");
+                if (!func) {
+                    llvm::StructType* result_bool_type = llvm::StructType::get(
+                        builder.getInt1Ty(),                  // value
+                        llvm::PointerType::get(context, 0),  // error
+                        builder.getInt1Ty()                   // is_error
+                    );
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        result_bool_type,
+                        {llvm::PointerType::get(context, 0)},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_file_exists_result",
+                        module.get()
+                    );
+                }
+                
+                return builder.CreateCall(func, {path_cstr}, "file_exists_result");
+            }
+            
+            // Builtin: fileSize(path: string) -> result<int64>
+            if (callee->name == "fileSize") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
+                if (!path_arg) {
+                    return nullptr;
+                }
+                
+                // Extract char* from AriaString
+                llvm::Value* path_cstr = extractStringData(path_arg);
+                
+                // Declare aria_file_size_result if not already present
+                // Returns AriaResultI64 struct: { int64 value, void* error, bool is_error }
+                llvm::Function* func = module->getFunction("aria_file_size_result");
+                if (!func) {
+                    llvm::StructType* result_i64_type = llvm::StructType::get(
+                        builder.getInt64Ty(),                 // value
+                        llvm::PointerType::get(context, 0),  // error
+                        builder.getInt1Ty()                   // is_error
+                    );
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        result_i64_type,
+                        {llvm::PointerType::get(context, 0)},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_file_size_result",
+                        module.get()
+                    );
+                }
+                
+                return builder.CreateCall(func, {path_cstr}, "file_size_result");
+            }
+            
+            // Builtin: deleteFile(path: string) -> result<int64>
+            if (callee->name == "deleteFile") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
+                if (!path_arg) {
+                    return nullptr;
+                }
+                
+                // Extract char* from AriaString
+                llvm::Value* path_cstr = extractStringData(path_arg);
+                
+                // Declare aria_delete_file_result if not already present
+                // Returns AriaResultVoid struct: { void* error, bool is_error }
+                llvm::Function* func = module->getFunction("aria_delete_file_result");
+                if (!func) {
+                    llvm::StructType* result_void_type = llvm::StructType::get(
+                        llvm::PointerType::get(context, 0),  // error
+                        builder.getInt1Ty()                   // is_error
+                    );
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        result_void_type,
+                        {llvm::PointerType::get(context, 0)},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_delete_file_result",
+                        module.get()
+                    );
+                }
+                
+                return builder.CreateCall(func, {path_cstr}, "delete_file_result");
+            }
+            
+            // Builtin: pathAbsolute(path: string) -> string
+            if (callee->name == "pathAbsolute") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
+                if (!path_arg) {
+                    return nullptr;
+                }
+                
+                // Extract char* from AriaString
+                llvm::Value* path_cstr = extractStringData(path_arg);
+                
+                // Declare aria_path_absolute_string if not already present
+                llvm::Function* func = module->getFunction("aria_path_absolute_string");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        llvm::PointerType::get(context, 0),
+                        {llvm::PointerType::get(context, 0)},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_path_absolute_string",
+                        module.get()
+                    );
+                }
+                
+                return builder.CreateCall(func, {path_cstr}, "path_absolute_call");
+            }
+            
+            // Builtin: pathDirname(path: string) -> string
+            if (callee->name == "pathDirname") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
+                if (!path_arg) {
+                    return nullptr;
+                }
+                
+                // Extract char* from AriaString
+                llvm::Value* path_cstr = extractStringData(path_arg);
+                
+                // Declare aria_path_dirname_string if not already present
+                llvm::Function* func = module->getFunction("aria_path_dirname_string");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        llvm::PointerType::get(context, 0),
+                        {llvm::PointerType::get(context, 0)},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_path_dirname_string",
+                        module.get()
+                    );
+                }
+                
+                return builder.CreateCall(func, {path_cstr}, "path_dirname_call");
+            }
+            
+            // Builtin: pathBasename(path: string) -> string
+            if (callee->name == "pathBasename") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
+                if (!path_arg) {
+                    return nullptr;
+                }
+                
+                // Extract char* from AriaString
+                llvm::Value* path_cstr = extractStringData(path_arg);
+                
+                // Declare aria_path_basename_string if not already present
+                llvm::Function* func = module->getFunction("aria_path_basename_string");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        llvm::PointerType::get(context, 0),
+                        {llvm::PointerType::get(context, 0)},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_path_basename_string",
+                        module.get()
+                    );
+                }
+                
+                return builder.CreateCall(func, {path_cstr}, "path_basename_call");
+            }
+            
+            // Builtin: pathJoin(dir: string, name: string) -> string
+            if (callee->name == "pathJoin") {
+                if (call->arguments.size() != 2) {
+                    return nullptr;
+                }
+                
+                llvm::Value* dir_arg = codegenExpression(call->arguments[0].get());
+                llvm::Value* name_arg = codegenExpression(call->arguments[1].get());
+                if (!dir_arg || !name_arg) {
+                    return nullptr;
+                }
+                
+                // Extract char* from AriaStrings
+                llvm::Value* dir_cstr = extractStringData(dir_arg);
+                llvm::Value* name_cstr = extractStringData(name_arg);
+                
+                // Declare aria_path_join_string if not already present
+                llvm::Function* func = module->getFunction("aria_path_join_string");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        llvm::PointerType::get(context, 0),
+                        {llvm::PointerType::get(context, 0), llvm::PointerType::get(context, 0)},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_path_join_string",
+                        module.get()
+                    );
+                }
+                
+                return builder.CreateCall(func, {dir_cstr, name_cstr}, "path_join_call");
+            }
+            
+            // Builtin: pathIsAbsolute(path: string) -> bool
+            if (callee->name == "pathIsAbsolute") {
+                if (call->arguments.size() != 1) {
+                    return nullptr;
+                }
+                
+                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
+                if (!path_arg) {
+                    return nullptr;
+                }
+                
+                // Extract char* from AriaString
+                llvm::Value* path_cstr = extractStringData(path_arg);
+                
+                // Declare aria_path_is_absolute if not already present
+                llvm::Function* func = module->getFunction("aria_path_is_absolute");
+                if (!func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        builder.getInt1Ty(),
+                        {llvm::PointerType::get(context, 0)},
+                        false
+                    );
+                    func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        "aria_path_is_absolute",
+                        module.get()
+                    );
+                }
+                
+                return builder.CreateCall(func, {path_cstr}, "path_is_absolute_call");
             }
             
             // ====================================================================
@@ -2450,7 +2909,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 callee->name == "string_substring" || callee->name == "string_contains" ||
                 callee->name == "string_starts_with" || callee->name == "string_ends_with" ||
                 callee->name == "string_trim" || callee->name == "string_to_upper" ||
-                callee->name == "string_to_lower" || callee->name == "string_from_cstr") {
+                callee->name == "string_to_lower" || callee->name == "string_from_cstr" ||
+                callee->name == "string_from_char") {
                 
                 // Create ExprCodegen instance (same pattern as TEMPLATE_LITERAL case)
                 backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values);

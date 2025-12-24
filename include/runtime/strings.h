@@ -65,6 +65,15 @@ AriaResultPtr aria_string_from_cstr(const char* cstr);
 AriaResultPtr aria_string_from_bytes(const char* data, int64_t length);
 
 /**
+ * Create a new string from a single byte (character).
+ * Makes a GC-allocated copy of the character.
+ * 
+ * @param ch Byte/character value
+ * @return Result containing AriaString* or error
+ */
+AriaResultPtr aria_string_from_char(uint8_t ch);
+
+/**
  * Create an empty string.
  * 
  * @return Empty AriaString (length=0, data points to empty string)

@@ -49,7 +49,7 @@ std::string FuncDeclStmt::toString() const {
         oss << ">";
     }
     
-    oss << " = " << returnType << "(";
+    oss << " = " << (returnType ? returnType->toString() : "unknown") << "(";
     for (size_t i = 0; i < parameters.size(); ++i) {
         if (i > 0) oss << ", ";
         oss << parameters[i]->toString();
@@ -101,7 +101,7 @@ std::string EnumDeclStmt::toString() const {
 }
 
 std::string ParameterNode::toString() const {
-    std::string result = typeName + ":" + paramName;
+    std::string result = (typeNode ? typeNode->toString() : "unknown") + ":" + paramName;
     if (defaultValue) {
         result += " = " + defaultValue->toString();
     }

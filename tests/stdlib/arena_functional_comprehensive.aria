@@ -1,0 +1,100 @@
+/**
+ * Arena Allocator Functional Test
+ * 
+ * Tests arena allocation, reset, and destroy functionality
+ */
+
+func:test_arena_lifecycle = int32() {
+    print("Test 1: Arena lifecycle\n");
+    
+    // Create arena
+    int64:arena = arena_new(4096);
+    if (arena == 0) {
+        print("ERROR: Arena creation failed\n");
+        int32:err = 1;
+        pass(err);
+    }
+    
+    // Reset arena
+    arena_reset(arena);
+    
+    // Destroy arena
+    arena_destroy(arena);
+    
+    print("SUCCESS: Arena lifecycle test passed\n");
+    int32:ok = 0;
+    pass(ok);
+};
+
+func:test_arena_stats = int32() {
+    print("Test 2: Arena statistics\n");
+    
+    int64:arena = arena_new(8192);
+    if (arena == 0) {
+        print("ERROR: Arena creation failed\n");
+        int32:err = 3;
+        pass(err);
+    }
+    
+    // TODO: Get stats when builtins available
+    // int64:total_blocks = arena_get_total_blocks(arena);
+    
+    print("Arena stats test (basic)\n");
+    
+    // Cleanup
+    arena_destroy(arena);
+    
+    print("SUCCESS: Arena stats test passed\n");
+    int32:ok = 0;
+    pass(ok);
+};
+
+func:test_arena_multiple = int32() {
+    print("Test 3: Multiple arenas\n");
+    
+    // Create multiple arenas
+    int64:arena1 = arena_new(2048);
+    int64:arena2 = arena_new(4096);
+    int64:arena3 = arena_new(8192);
+    
+    if (arena1 == 0 || arena2 == 0 || arena3 == 0) {
+        print("ERROR: Multi-arena creation failed\n");
+        if (arena1 != 0) { arena_destroy(arena1); }
+        if (arena2 != 0) { arena_destroy(arena2); }
+        if (arena3 != 0) { arena_destroy(arena3); }
+        int32:err = 4;
+        pass(err);
+    }
+    
+    // Destroy in reverse order
+    arena_destroy(arena3);
+    arena_destroy(arena2);
+    arena_destroy(arena1);
+    
+    print("SUCCESS: Multiple arenas test passed\n");
+    int32:ok = 0;
+    pass(ok);
+};
+
+func:main = int32() {
+    print("=== Arena Allocator Functional Tests ===\n\n");
+    
+    int32:result1 = test_arena_lifecycle();
+    if (result1 != 0) {
+        pass(result1);
+    }
+    
+    int32:result2 = test_arena_stats();
+    if (result2 != 0) {
+        pass(result2);
+    }
+    
+    int32:result3 = test_arena_multiple();
+    if (result3 != 0) {
+        pass(result3);
+    }
+    
+    print("\n=== All Arena Tests PASSED ===\n");
+    int32:success = 0;
+    pass(success);
+};

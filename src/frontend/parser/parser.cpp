@@ -448,6 +448,17 @@ ASTNodePtr Parser::parsePrimary() {
         return std::make_shared<LiteralExpr>(std::monostate{}, line, col);
     }
     
+    // ERR literal (TBB error sentinel value)
+    if (token.type == TokenType::TOKEN_KW_ERR) {
+        int line = token.line;
+        int col = token.column;
+        advance();
+        // ERR is represented as a special literal
+        // The semantic analyzer will handle type-specific ERR values
+        // (e.g., -128 for tbb8, -32768 for tbb16, etc.)
+        return std::make_shared<LiteralExpr>("ERR", line, col);
+    }
+    
     // Identifier
     if (token.type == TokenType::TOKEN_IDENTIFIER) {
         std::string lexeme = token.lexeme;  // Save before advance()
@@ -1048,22 +1059,25 @@ ASTNodePtr Parser::parseLambda() {
             return nullptr;
         }
         
-        // Consume the type keyword and get its lexeme
-        Token typeToken = advance();
-        std::string typeName = typeToken.lexeme;
+        // Parse parameter type using parseType() for full type support
+        ASTNodePtr paramTypeNode = parseType();
+        if (!paramTypeNode) {
+            error("Expected parameter type in lambda");
+            return nullptr;
+        }
         
         consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
         
         Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
         std::string paramName = nameToken.lexeme;
         
-        // Create parameter node: ParameterNode(typeName, paramName, defaultValue, line, column)
+        // Create parameter node: ParameterNode(typeNode, paramName, defaultValue, line, column)
         auto param = std::make_shared<ParameterNode>(
-            typeName, 
+            paramTypeNode,  // Pass ASTNodePtr instead of string
             paramName, 
             nullptr,  // No default value for lambda params
-            typeToken.line, 
-            typeToken.column
+            current > 0 ? tokens[current-1].line : 0, 
+            current > 0 ? tokens[current-1].column : 0
         );
         parameters.push_back(param);
         
@@ -1256,6 +1270,29 @@ ASTNodePtr Parser::parseStatement() {
         size_t saved = current;
         advance(); // consume type keyword
         
+        // Check for generic type parameters: array<T>, result<int32>
+        if (check(TokenType::TOKEN_LESS)) {
+            advance(); // consume '<'
+            
+            // Skip generic type arguments
+            int angleDepth = 1;
+            while (angleDepth > 0 && !isAtEnd()) {
+                if (check(TokenType::TOKEN_LESS)) angleDepth++;
+                if (check(TokenType::TOKEN_GREATER)) angleDepth--;
+                advance();
+            }
+            
+            // Now check for colon after generic type
+            if (check(TokenType::TOKEN_COLON)) {
+                // It's a generic type annotation: array<string>:name or result<int32>:name
+                current = saved; // reset position
+                return parseVarDecl();
+            }
+            
+            // Not a variable declaration, restore position
+            current = saved;
+            // Fall through to expression statement
+        }
         // Check for pointer type suffix: type@
         if (check(TokenType::TOKEN_AT)) {
             advance(); // consume '@'
@@ -1586,20 +1623,11 @@ ASTNodePtr Parser::parseFuncDecl() {
     // Consume equal sign
     consume(TokenType::TOKEN_EQUAL, "Expected '=' after function name");
     
-    // Get return type (could be *T for generic or regular type)
-    std::string returnTypeName;
-    if (isGenericTypeReference()) {
-        // Generic type reference: *T
-        advance(); // consume '*'
-        Token typeParamToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name after '*'");
-        returnTypeName = "*" + typeParamToken.lexeme;
-    } else {
-        Token returnTypeToken = advance();
-        if (!isTypeKeyword(returnTypeToken.type)) {
-            error("Expected return type");
-            return nullptr;
-        }
-        returnTypeName = returnTypeToken.lexeme;
+    // Parse return type (supports generics, pointers, etc.)
+    ASTNodePtr returnTypeNode = parseType();
+    if (!returnTypeNode) {
+        error("Expected return type");
+        return nullptr;
     }
     
     // Parse parameters: (type:name, type:name, ...)
@@ -1608,24 +1636,11 @@ ASTNodePtr Parser::parseFuncDecl() {
     std::vector<ASTNodePtr> parameters;
     if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
         do {
-            // Parse parameter type (could be *T for generic, identifier for custom type, or regular type)
-            std::string paramTypeName;
-            if (isGenericTypeReference()) {
-                // Generic type reference: *T
-                advance(); // consume '*'
-                Token typeParamToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name after '*'");
-                paramTypeName = "*" + typeParamToken.lexeme;
-            } else if (peek().type == TokenType::TOKEN_IDENTIFIER) {
-                // Custom type (e.g., struct name)
-                Token paramTypeToken = advance();
-                paramTypeName = paramTypeToken.lexeme;
-            } else {
-                Token paramTypeToken = advance();
-                if (!isTypeKeyword(paramTypeToken.type)) {
-                    error("Expected parameter type");
-                    return nullptr;
-                }
-                paramTypeName = paramTypeToken.lexeme;
+            // Parse parameter type using parseType() for full type support (including generics)
+            ASTNodePtr paramTypeNode = parseType();
+            if (!paramTypeNode) {
+                error("Expected parameter type");
+                return nullptr;
             }
             
             consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
@@ -1633,7 +1648,7 @@ ASTNodePtr Parser::parseFuncDecl() {
             Token paramNameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
             
             auto param = std::make_shared<ParameterNode>(
-                paramTypeName,
+                paramTypeNode,  // Pass ASTNodePtr instead of string
                 paramNameToken.lexeme,
                 nullptr, // No default values for now
                 funcToken.line,
@@ -1656,7 +1671,7 @@ ASTNodePtr Parser::parseFuncDecl() {
     
     auto funcDecl = std::make_shared<FuncDeclStmt>(
         nameToken.lexeme,
-        returnTypeName,
+        returnTypeNode,  // Changed from returnTypeName to returnTypeNode
         parameters,
         body,
         funcToken.line,
@@ -1693,18 +1708,9 @@ ASTNodePtr Parser::parseStructDecl() {
     
     std::vector<ASTNodePtr> fields;
     while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
-        // Parse field type (could be *T for generic or regular type)
-        std::string fieldTypeName;
-        Token fieldTypeToken = advance();
-        
-        if (fieldTypeToken.type == TokenType::TOKEN_STAR) {
-            // Generic type reference: *T
-            Token typeParamToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type parameter name after '*'");
-            fieldTypeName = "*" + typeParamToken.lexeme;
-        } else if (isTypeKeyword(fieldTypeToken.type) || fieldTypeToken.type == TokenType::TOKEN_IDENTIFIER) {
-            // Regular type or custom type
-            fieldTypeName = fieldTypeToken.lexeme;
-        } else {
+        // Parse field type (use parseType to handle generics, pointers, etc.)
+        ASTNodePtr fieldTypeNode = parseType();
+        if (!fieldTypeNode) {
             error("Expected field type in struct");
             return nullptr;
         }
@@ -1717,11 +1723,11 @@ ASTNodePtr Parser::parseStructDecl() {
         
         // Create a VarDeclStmt for the field (without initializer)
         auto fieldDecl = std::make_shared<VarDeclStmt>(
-            fieldTypeName,
+            fieldTypeNode,
             fieldNameToken.lexeme,
             nullptr,  // No initializer for struct fields
-            structToken.line,
-            structToken.column
+            fieldTypeNode->line,
+            fieldTypeNode->column
         );
         
         fields.push_back(fieldDecl);
@@ -2074,11 +2080,14 @@ ASTNodePtr Parser::parseExternStatement() {
             }
             
             // Handle pointer types: void*, int8*, etc.
-            std::string returnType = returnTypeToken.lexeme;
+            std::string returnTypeName = returnTypeToken.lexeme;
             while (check(TokenType::TOKEN_STAR)) {
                 advance(); // consume '*'
-                returnType += "*";
+                returnTypeName += "*";
             }
+            
+            // Create a SimpleType from the string for extern functions
+            auto returnType = std::make_shared<SimpleType>(returnTypeName, returnTypeToken.line, returnTypeToken.column);
             
             // Parse parameters: (type:name, type:name, ...)
             consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after return type");
@@ -2094,18 +2103,21 @@ ASTNodePtr Parser::parseExternStatement() {
                     }
                     
                     // Handle pointer types: void*, int8*, etc.
-                    std::string paramType = paramTypeToken.lexeme;
+                    std::string paramTypeName = paramTypeToken.lexeme;
                     while (check(TokenType::TOKEN_STAR)) {
                         advance(); // consume '*'
-                        paramType += "*";
+                        paramTypeName += "*";
                     }
+                    
+                    // Create a SimpleType from the string for extern functions
+                    auto paramType = std::make_shared<SimpleType>(paramTypeName, paramTypeToken.line, paramTypeToken.column);
                     
                     consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
                     
                     Token paramNameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
                     
                     auto param = std::make_shared<ParameterNode>(
-                        paramType, // Use the full type including pointer stars
+                        paramType,  // Pass SimpleType instead of string
                         paramNameToken.lexeme,
                         nullptr,
                         paramTypeToken.line,
@@ -2125,7 +2137,7 @@ ASTNodePtr Parser::parseExternStatement() {
             // Create function declaration WITHOUT a body
             auto funcDecl = std::make_shared<FuncDeclStmt>(
                 nameToken.lexeme,
-                returnType, // Use the full type including pointer stars
+                returnType,  // Now using ASTNodePtr (TypeNode) instead of string
                 parameters,
                 nullptr, // No body for extern functions
                 funcToken.line,

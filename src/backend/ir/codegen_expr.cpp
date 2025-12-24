@@ -276,6 +276,7 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
     // String literal - create global AriaString struct
     if (std::holds_alternative<std::string>(expr->value)) {
         const std::string& str = std::get<std::string>(expr->value);
+        std::cerr << "[DEBUG] String literal detected: \"" << str << "\"" << std::endl;
         
         // Create a global constant for the string data  
         llvm::Constant* str_data = llvm::ConstantDataArray::getString(context, str, true);
@@ -1934,6 +1935,54 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return builder.CreateCall(func, {cstr}, "str_result");
     }
     
+    // string_from_char(byte) -> string  
+    if (callee_ident->name == "string_from_char") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("string_from_char() requires one argument");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_string_from_char");
+        if (!func) {
+            // AriaResultPtr is returned via sret (struct return) due to size (24 bytes)
+            // On x86-64, structs > 16 bytes use hidden pointer parameter
+            llvm::Type* result_struct = llvm::StructType::get(
+                builder.getPtrTy(),   // void* value
+                builder.getPtrTy(),   // void* error  
+                builder.getInt1Ty()   // bool is_error
+            );
+            std::vector<llvm::Type*> params = {
+                builder.getPtrTy(),   // sret pointer (hidden first param)
+                builder.getInt8Ty()   // uint8_t ch
+            };
+            llvm::FunctionType* func_type = llvm::FunctionType::get(builder.getVoidTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_from_char", module);
+            
+            // Add sret attribute to first parameter (indicates it's the return value pointer)
+            func->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, result_struct));
+        }
+        
+        llvm::Value* ch = codegenExpressionNode(expr->arguments[0].get(), this);
+        // Truncate to i8 if needed
+        if (!ch->getType()->isIntegerTy(8)) {
+            ch = builder.CreateTrunc(ch, builder.getInt8Ty());
+        }
+        
+        // Allocate space for the return value
+        llvm::Type* result_struct = llvm::StructType::get(
+            builder.getPtrTy(), builder.getPtrTy(), builder.getInt1Ty()
+        );
+        llvm::Value* result_ptr = builder.CreateAlloca(result_struct, nullptr, "char_result_ptr");
+        
+        // Call with sret pointer and character argument
+        builder.CreateCall(func, {result_ptr, ch});
+        
+        // Load the result struct and extract the value pointer (field 0)
+        llvm::Value* result = builder.CreateLoad(result_struct, result_ptr, "char_result");
+        llvm::Value* str_ptr = builder.CreateExtractValue(result, {0}, "char_str");
+        return str_ptr;
+    }
+    
     // string_length(string) -> int64
     if (callee_ident->name == "string_length") {
         if (expr->arguments.size() != 1) {
@@ -2151,6 +2200,168 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
         llvm::Value* str = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
         return builder.CreateCall(func, {str}, "lower_result");
+    }
+    
+    // ====================================================================
+    // FILE I/O BUILTINS (Phase 4.2)
+    // ====================================================================
+    
+    // readFile(path: string) -> string
+    // Calls aria_read_file_simple which returns AriaString directly
+    if (callee_ident->name == "readFile") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("readFile() requires one argument (path)");
+        }
+        
+        // Get or declare aria_read_file_simple
+        llvm::Function* func = module->getFunction("aria_read_file_simple");
+        if (!func) {
+            // AriaString aria_read_file_simple(const char* path)
+            std::vector<llvm::Type*> params = {
+                llvm::PointerType::get(builder.getInt8Ty(), 0)  // const char*
+            };
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(getAriaStringType(), 0), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_read_file_simple", module);
+        }
+        
+        // Get path argument (should be AriaString)
+        llvm::Value* path_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* path_str = builder.CreateLoad(getAriaStringType(), path_ptr, "path_str");
+        
+        // Extract char* from AriaString
+        llvm::Value* path_data_ptr = builder.CreateStructGEP(getAriaStringType(), 
+            path_ptr, 0, "path_data_ptr");
+        llvm::Value* path_cstr = builder.CreateLoad(
+            llvm::PointerType::get(builder.getInt8Ty(), 0), path_data_ptr, "path_cstr");
+        
+        return builder.CreateCall(func, {path_cstr}, "read_result");
+    }
+    
+    // writeFile(path: string, content: string) -> int64
+    // Returns 0 on success, -1 on error
+    if (callee_ident->name == "writeFile") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("writeFile() requires two arguments (path, content)");
+        }
+        
+        // Get or declare aria_write_file_simple
+        llvm::Function* func = module->getFunction("aria_write_file_simple");
+        if (!func) {
+            // int64_t aria_write_file_simple(const char* path, const char* content)
+            std::vector<llvm::Type*> params = {
+                llvm::PointerType::get(builder.getInt8Ty(), 0),  // const char* path
+                llvm::PointerType::get(builder.getInt8Ty(), 0)   // const char* content
+            };
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_write_file_simple", module);
+        }
+        
+        // Get path argument
+        llvm::Value* path_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* path_data_ptr = builder.CreateStructGEP(getAriaStringType(), 
+            path_ptr, 0, "path_data_ptr");
+        llvm::Value* path_cstr = builder.CreateLoad(
+            llvm::PointerType::get(builder.getInt8Ty(), 0), path_data_ptr, "path_cstr");
+        
+        // Get content argument
+        llvm::Value* content_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Value* content_data_ptr = builder.CreateStructGEP(getAriaStringType(), 
+            content_ptr, 0, "content_data_ptr");
+        llvm::Value* content_cstr = builder.CreateLoad(
+            llvm::PointerType::get(builder.getInt8Ty(), 0), content_data_ptr, "content_cstr");
+        
+        return builder.CreateCall(func, {path_cstr, content_cstr}, "write_result");
+    }
+    
+    // fileExists(path: string) -> bool
+    if (callee_ident->name == "fileExists") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("fileExists() requires one argument (path)");
+        }
+        
+        // Get or declare aria_file_exists
+        llvm::Function* func = module->getFunction("aria_file_exists");
+        if (!func) {
+            // bool aria_file_exists(const char* path)
+            std::vector<llvm::Type*> params = {
+                llvm::PointerType::get(builder.getInt8Ty(), 0)
+            };
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt1Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_file_exists", module);
+        }
+        
+        // Get path argument
+        llvm::Value* path_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* path_data_ptr = builder.CreateStructGEP(getAriaStringType(), 
+            path_ptr, 0, "path_data_ptr");
+        llvm::Value* path_cstr = builder.CreateLoad(
+            llvm::PointerType::get(builder.getInt8Ty(), 0), path_data_ptr, "path_cstr");
+        
+        return builder.CreateCall(func, {path_cstr}, "exists_result");
+    }
+    
+    // fileSize(path: string) -> int64
+    if (callee_ident->name == "fileSize") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("fileSize() requires one argument (path)");
+        }
+        
+        // Get or declare aria_file_size
+        llvm::Function* func = module->getFunction("aria_file_size");
+        if (!func) {
+            // int64_t aria_file_size(const char* path)
+            std::vector<llvm::Type*> params = {
+                llvm::PointerType::get(builder.getInt8Ty(), 0)
+            };
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_file_size", module);
+        }
+        
+        // Get path argument
+        llvm::Value* path_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* path_data_ptr = builder.CreateStructGEP(getAriaStringType(), 
+            path_ptr, 0, "path_data_ptr");
+        llvm::Value* path_cstr = builder.CreateLoad(
+            llvm::PointerType::get(builder.getInt8Ty(), 0), path_data_ptr, "path_cstr");
+        
+        return builder.CreateCall(func, {path_cstr}, "size_result");
+    }
+    
+    // deleteFile(path: string) -> int64
+    if (callee_ident->name == "deleteFile") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("deleteFile() requires one argument (path)");
+        }
+        
+        // Get or declare aria_delete_file_simple
+        llvm::Function* func = module->getFunction("aria_delete_file_simple");
+        if (!func) {
+            // int64_t aria_delete_file_simple(const char* path)
+            std::vector<llvm::Type*> params = {
+                llvm::PointerType::get(builder.getInt8Ty(), 0)
+            };
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_delete_file_simple", module);
+        }
+        
+        // Get path argument
+        llvm::Value* path_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* path_data_ptr = builder.CreateStructGEP(getAriaStringType(), 
+            path_ptr, 0, "path_data_ptr");
+        llvm::Value* path_cstr = builder.CreateLoad(
+            llvm::PointerType::get(builder.getInt8Ty(), 0), path_data_ptr, "path_cstr");
+        
+        return builder.CreateCall(func, {path_cstr}, "delete_result");
     }
     
     // ====================================================================
@@ -2683,6 +2894,26 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
     
     llvm::Type* objectType = objectVal->getType();
     
+    // Handle Result type member access (.is_error, .value, .error)
+    // Reference: include/runtime/result.h - layout is { T value, void* error, bool is_error }
+    // The type checker has already validated that this is a Result type with valid members
+    if (objectType->isStructTy() && objectType->getStructNumElements() == 3) {
+        // Check if this looks like a Result struct based on member names
+        // (The type checker already validated this is a Result type)
+        if (expr->member == "is_error") {
+            // Field 2: is_error (bool)
+            return builder.CreateExtractValue(objectVal, 2, "is_error");
+        }
+        else if (expr->member == "value") {
+            // Field 0: value (T)
+            return builder.CreateExtractValue(objectVal, 0, "value");
+        }
+        else if (expr->member == "error") {
+            // Field 1: error (void*)
+            return builder.CreateExtractValue(objectVal, 1, "error");
+        }
+    }
+    
     // Handle vector component access (.x, .y, .z)
     if (objectType->isVectorTy() || (objectType->isStructTy() && objectType->getStructNumElements() == 9)) {
         int index = -1;
@@ -2906,7 +3137,8 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
     for (const auto& param : expr->parameters) {
         // Extract parameter type from AST
         if (auto paramNode = std::dynamic_pointer_cast<ParameterNode>(param)) {
-            llvm::Type* param_type = getLLVMTypeFromString(paramNode->typeName);
+            std::string paramTypeStr = paramNode->typeNode ? paramNode->typeNode->toString() : "void";
+            llvm::Type* param_type = getLLVMTypeFromString(paramTypeStr);
             param_types.push_back(param_type);
         } else {
             throw std::runtime_error("Invalid parameter node in lambda");

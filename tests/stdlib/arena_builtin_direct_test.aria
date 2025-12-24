@@ -1,0 +1,28 @@
+/**
+ * Arena Allocator Wrapper Test
+ * 
+ * Simplified version to test if we can call arena builtins directly
+ */
+
+// Test calling arena builtins directly (they're already registered)
+func:test_arena_basic = int32() {
+    // These should work if builtins are registered correctly
+    int64:handle = arena_new(4096);
+    
+    if (handle == 0) {
+        print("Arena creation failed\n");
+        int32:fail_code = 1;
+        pass(fail_code);
+    }
+    
+    print("Arena created successfully\n");
+    arena_destroy(handle);
+    
+    int32:success = 0;
+    pass(success);
+};
+
+func:main = int32() {
+    int32:result = test_arena_basic();
+    pass(result);
+};

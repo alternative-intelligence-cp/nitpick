@@ -510,7 +510,8 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
     }
     
     // Get return type
-    llvm::Type* return_type = getLLVMTypeFromString(stmt->returnType);
+    std::string returnTypeStr = stmt->returnType ? stmt->returnType->toString() : "void";
+    llvm::Type* return_type = getLLVMTypeFromString(returnTypeStr);
     
     // Phase 4.5.3: Async functions return i8* (coroutine handle)
     // The actual return type is wrapped in a Future<T> at runtime
@@ -524,7 +525,8 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
     std::vector<llvm::Type*> param_types;
     for (const auto& param : stmt->parameters) {
         ParameterNode* param_node = static_cast<ParameterNode*>(param.get());
-        llvm::Type* param_type = getLLVMTypeFromString(param_node->typeName);
+        std::string paramTypeStr = param_node->typeNode ? param_node->typeNode->toString() : "void";
+        llvm::Type* param_type = getLLVMTypeFromString(paramTypeStr);
         param_types.push_back(param_type);
     }
     

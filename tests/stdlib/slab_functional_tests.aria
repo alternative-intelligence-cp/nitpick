@@ -1,0 +1,85 @@
+func:test_slab_lifecycle = int32() {
+    print("Test 1: Slab lifecycle\n");
+    
+    // Create slab (64-byte objects, 4096-byte slabs)
+    int64:slab = slab_new(64, 4096);
+    if (slab == 0) {
+        print("ERROR: Slab creation failed\n");
+        int32:err = 1;
+        pass(err);
+    }
+    
+    // Destroy slab
+    slab_destroy(slab);
+    
+    print("SUCCESS: Slab lifecycle test passed\n");
+    int32:ok = 0;
+    pass(ok);
+};
+
+func:test_slab_stats = int32() {
+    print("Test 2: Slab statistics\n");
+    
+    int64:slab = slab_new(128, 8192);
+    if (slab == 0) {
+        print("ERROR: Slab creation failed\n");
+        int32:err = 3;
+        pass(err);
+    }
+    
+    // TODO: Get stats when builtins available
+    // int64:total = slab_get_total_objects(slab);
+    
+    print("Slab stats test (basic)\n");
+    
+    // Cleanup
+    slab_destroy(slab);
+    
+    print("SUCCESS: Slab stats test passed\n");
+    int32:ok = 0;
+    pass(ok);
+};
+
+func:test_slab_multiple = int32() {
+    print("Test 3: Multiple slabs\n");
+    
+    // Create different sized slabs (object_size, slab_size_bytes)
+    int64:slab1 = slab_new(32, 2048);
+    int64:slab2 = slab_new(64, 4096);
+    int64:slab3 = slab_new(256, 8192);
+    
+    if (slab1 == 0 || slab2 == 0 || slab3 == 0) {
+        print("ERROR: Multi-slab creation failed\n");
+        if (slab1 != 0) { slab_destroy(slab1); }
+        if (slab2 != 0) { slab_destroy(slab2); }
+        if (slab3 != 0) { slab_destroy(slab3); }
+        int32:err = 4;
+        pass(err);
+    }
+    
+    // Destroy in reverse order
+    slab_destroy(slab3);
+    slab_destroy(slab2);
+    slab_destroy(slab1);
+    
+    print("SUCCESS: Multiple slabs test passed\n");
+    int32:ok = 0;
+    pass(ok);
+};
+
+func:main = int32() {
+    print("=== Slab Allocator Functional Tests ===\n\n");
+    
+    int32:result1 = test_slab_lifecycle();
+    if (result1 != 0) { pass(result1); }
+    
+    int32:result2 = test_slab_stats();
+    if (result2 != 0) { pass(result2); }
+    
+    int32:result3 = test_slab_multiple();
+    if (result3 != 0) { pass(result3); }
+    
+    print("\n=== All Slab Tests PASSED ===\n");
+    int32:success = 0;
+    pass(success);
+};

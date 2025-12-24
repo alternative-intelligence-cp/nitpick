@@ -1,5 +1,6 @@
 #include "frontend/sema/type_checker.h"
 #include "frontend/sema/generic_resolver.h"
+#include "frontend/sema/exhaustiveness.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/type.h"  // For ArrayType, SimpleType, etc.
@@ -159,7 +160,14 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
             return typeSystem->getPrimitiveType("flt64");
         }
         else if constexpr (std::is_same_v<T, std::string>) {
-            // String literal
+            // Check if this is the special ERR literal
+            if (arg == "ERR") {
+                // ERR literal: represents TBB error sentinel
+                // Type will be resolved from context (tbb8/tbb16/tbb32/tbb64)
+                // For now, return unknown type to be resolved contextually
+                return typeSystem->getUnknownType();
+            }
+            // Regular string literal
             return typeSystem->getPrimitiveType("string");
         }
         else if constexpr (std::is_same_v<T, bool>) {
@@ -1021,6 +1029,19 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getPrimitiveType("string");
         }
         
+        // String creation: string_from_char(byte) -> string
+        if (idExpr->name == "string_from_char") {
+            if (expr->arguments.size() != 1) {
+                addError("string_from_char() requires exactly one argument (ch)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+        
         // String basic: string_length(string) -> int64
         if (idExpr->name == "string_length") {
             if (expr->arguments.size() != 1) {
@@ -1171,6 +1192,159 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 return typeSystem->getErrorType();
             }
             return typeSystem->getPrimitiveType("string");
+        }
+        
+        // ====================================================================
+        // FILE I/O BUILTINS (Phase 4.2)
+        // ====================================================================
+        
+        // readFile(path: string) -> result<string>
+        // Returns file content or error
+        if (idExpr->name == "readFile") {
+            if (expr->arguments.size() != 1) {
+                addError("readFile() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getResultType(typeSystem->getPrimitiveType("string"));
+        }
+        
+        // writeFile(path: string, content: string) -> result<void>
+        // Returns success/error only
+        if (idExpr->name == "writeFile") {
+            if (expr->arguments.size() != 2) {
+                addError("writeFile() requires exactly two arguments (path, content)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* pathType = inferType(expr->arguments[0].get());
+            Type* contentType = inferType(expr->arguments[1].get());
+            if (pathType->getKind() == TypeKind::ERROR || contentType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // For void results, we use result<void> (represented as ResultType with nullptr valueType or a VoidType)
+            // For now, we'll return result<int64> for compatibility (0 = success in val, err = NIL)
+            return typeSystem->getResultType(typeSystem->getPrimitiveType("int64"));
+        }
+        
+        // fileExists(path: string) -> result<bool>
+        // Returns whether file exists or error
+        if (idExpr->name == "fileExists") {
+            if (expr->arguments.size() != 1) {
+                addError("fileExists() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getResultType(typeSystem->getPrimitiveType("bool"));
+        }
+        
+        // fileSize(path: string) -> result<int64>
+        // Returns file size in bytes or error
+        if (idExpr->name == "fileSize") {
+            if (expr->arguments.size() != 1) {
+                addError("fileSize() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getResultType(typeSystem->getPrimitiveType("int64"));
+        }
+        
+        // deleteFile(path: string) -> result<void>
+        // Returns success/error only
+        if (idExpr->name == "deleteFile") {
+            if (expr->arguments.size() != 1) {
+                addError("deleteFile() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // For void results, return result<int64> for compatibility (0 = success in val, err = NIL)
+            return typeSystem->getResultType(typeSystem->getPrimitiveType("int64"));
+        }
+        
+        // ====================================================================
+        // PATH OPERATION BUILTINS (Phase 4.2 - Path Utils)
+        // ====================================================================
+        
+        // pathAbsolute(path: string) -> result<string>
+        // Converts a path to absolute form or returns error
+        if (idExpr->name == "pathAbsolute") {
+            if (expr->arguments.size() != 1) {
+                addError("pathAbsolute() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getResultType(typeSystem->getPrimitiveType("string"));
+        }
+        
+        // pathDirname(path: string) -> result<string>
+        // Returns the directory portion of a path or error
+        if (idExpr->name == "pathDirname") {
+            if (expr->arguments.size() != 1) {
+                addError("pathDirname() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getResultType(typeSystem->getPrimitiveType("string"));
+        }
+        
+        // pathBasename(path: string) -> result<string>
+        // Returns the filename portion of a path or error
+        if (idExpr->name == "pathBasename") {
+            if (expr->arguments.size() != 1) {
+                addError("pathBasename() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getResultType(typeSystem->getPrimitiveType("string"));
+        }
+        
+        // pathJoin(dir: string, name: string) -> result<string>
+        // Joins two path components or returns error
+        if (idExpr->name == "pathJoin") {
+            if (expr->arguments.size() != 2) {
+                addError("pathJoin() requires exactly two arguments (dir, name)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* dirType = inferType(expr->arguments[0].get());
+            Type* nameType = inferType(expr->arguments[1].get());
+            if (dirType->getKind() == TypeKind::ERROR || nameType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getResultType(typeSystem->getPrimitiveType("string"));
+        }
+        
+        // pathIsAbsolute(path: string) -> result<bool>
+        // Checks if a path is absolute or returns error
+        if (idExpr->name == "pathIsAbsolute") {
+            if (expr->arguments.size() != 1) {
+                addError("pathIsAbsolute() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getResultType(typeSystem->getPrimitiveType("bool"));
         }
         
         // ====================================================================
@@ -1477,6 +1651,34 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
             oss << " (use index access [i] for vec9)";
         }
         addError(oss.str(), expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // Handle Result type member access (.is_error, .value, .error)
+    // Reference: runtime/result/result.cpp, include/runtime/result.h
+    if (objectType->getKind() == TypeKind::RESULT) {
+        ResultType* resultType = static_cast<ResultType*>(objectType);
+        
+        // .is_error -> bool
+        if (expr->member == "is_error") {
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // .value -> T (the wrapped value type)
+        if (expr->member == "value") {
+            return resultType->getValueType();
+        }
+        
+        // .error -> error pointer (represented as int64 for now)
+        // TODO: Create proper Error type when error handling is expanded
+        if (expr->member == "error") {
+            // Return pointer to error (void* in C, int64 in Aria IR)
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // Invalid member
+        addError("result<T> has no member '" + expr->member + 
+                "' (valid: is_error, value, error)", expr);
         return typeSystem->getErrorType();
     }
     
@@ -1986,6 +2188,10 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             checkModStmt(static_cast<ModStmt*>(stmt));
             break;
         
+        case ASTNode::NodeType::PICK:
+            checkPickStmt(static_cast<PickStmt*>(stmt));
+            break;
+        
         default:
             // Other statement types not yet implemented
             break;
@@ -2140,6 +2346,44 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 resolvedTypeArgs.push_back(argType);
             }
             
+            // Check for built-in generic types first
+            if (genericType->baseName == "result" || genericType->baseName == "array") {
+                // Built-in generic types - handle specially
+                // For now, just return a placeholder struct type
+                // The actual implementation will be in stdlib once fully integrated
+                
+                // Create a mangled name for this instantiation
+                std::string mangledName = genericType->baseName;
+                for (const auto& argType : resolvedTypeArgs) {
+                    mangledName += "_" + argType->toString();
+                }
+                
+                // Check if we already have this specialization
+                Type* existingType = typeSystem->getStructType(mangledName);
+                if (existingType) {
+                    return existingType;
+                }
+                
+                // Create a new struct type for this specialization
+                // This is a placeholder - actual fields will be defined in stdlib
+                std::vector<StructType::Field> fields;
+                if (genericType->baseName == "result") {
+                    // result<T> has: bool is_error, T val, string err
+                    fields.push_back({"is_error", typeSystem->getPrimitiveType("bool"), 0});
+                    fields.push_back({"val", resolvedTypeArgs[0], 8});
+                    fields.push_back({"err", typeSystem->getPrimitiveType("string"), 16});
+                } else if (genericType->baseName == "array") {
+                    // array<T> has: T* data, int64 length, int64 capacity
+                    Type* elemType = resolvedTypeArgs[0];
+                    Type* ptrType = typeSystem->getPointerType(elemType);
+                    fields.push_back({"data", ptrType, 0});
+                    fields.push_back({"length", typeSystem->getPrimitiveType("int64"), 8});
+                    fields.push_back({"capacity", typeSystem->getPrimitiveType("int64"), 16});
+                }
+                
+                return typeSystem->createStructType(mangledName, fields);
+            }
+            
             // Look up the generic struct declaration
             auto it = genericStructRegistry.find(genericType->baseName);
             if (it == genericStructRegistry.end()) {
@@ -2279,6 +2523,21 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             }
         }
         
+        // ERR Literal Validation
+        // Special handling for ERR literals assigned to TBB types
+        bool errLiteralAssignment = false;
+        if (isTBBType(declaredType) && stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+            if (std::holds_alternative<std::string>(literal->value) && 
+                std::get<std::string>(literal->value) == "ERR") {
+                // ERR is valid for any TBB type
+                // The actual value (-128 for tbb8, -32768 for tbb16, etc.) will be 
+                // determined in IR generation based on the target type
+                errLiteralAssignment = true;
+                // No validation needed - ERR is always valid for TBB types
+            }
+        }
+        
         // Balanced Type Validation (Phase 3.2.5)
         // Special handling for integer literals assigned to balanced types
         bool balancedLiteralAssignment = false;
@@ -2352,8 +2611,8 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         }
         
         // Check if initializer type is assignable to declared type
-        // Skip this check if we handled TBB, balanced, standard int, or high-precision literal assignment above
-        if (!tbbLiteralAssignment && !balancedLiteralAssignment && !standardIntLiteralAssignment && !highPrecisionLiteralAssignment) {
+        // Skip this check if we handled TBB, ERR, balanced, standard int, or high-precision literal assignment above
+        if (!tbbLiteralAssignment && !errLiteralAssignment && !balancedLiteralAssignment && !standardIntLiteralAssignment && !highPrecisionLiteralAssignment) {
             // Special case: Allow T to be initialized to T? (wrapping)
             bool optionalWrapping = false;
             if (declaredType->getKind() == TypeKind::OPTIONAL) {
@@ -2401,17 +2660,16 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
 // ============================================================================
 
 void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
-    // Get return type (try struct first to avoid auto-creating primitive types)
-    Type* returnType = typeSystem->getStructType(stmt->returnType);
+    // Resolve return type from the type node
+    Type* returnType = resolveTypeNode(stmt->returnType.get());
     
     if (!returnType) {
-        // Try primitive type
-        returnType = typeSystem->getPrimitiveType(stmt->returnType);
-        
-        if (!returnType || returnType->getKind() == TypeKind::ERROR) {
-            addError("Unknown return type: '" + stmt->returnType + "'", stmt);
-            return;
+        if (stmt->returnType) {
+            addError("Unknown return type: '" + stmt->returnType->toString() + "'", stmt);
+        } else {
+            addError("Missing return type", stmt);
         }
+        return;
     }
     
     // Set current function return type for return statement checking
@@ -2422,16 +2680,17 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     for (const auto& param : stmt->parameters) {
         if (param->type == ASTNode::NodeType::PARAMETER) {
             ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
-            Type* paramType = typeSystem->getStructType(paramNode->typeName);
+            
+            // Resolve parameter type from the type node
+            Type* paramType = resolveTypeNode(paramNode->typeNode.get());
             
             if (!paramType) {
-                // Try primitive type
-                paramType = typeSystem->getPrimitiveType(paramNode->typeName);
-                
-                if (!paramType || paramType->getKind() == TypeKind::ERROR) {
-                    addError("Unknown parameter type: '" + paramNode->typeName + "'", param.get());
-                    continue;
+                if (paramNode->typeNode) {
+                    addError("Unknown parameter type: '" + paramNode->typeNode->toString() + "'", param.get());
+                } else {
+                    addError("Missing parameter type", param.get());
                 }
+                continue;
             }
             
             // Define parameter in symbol table (will be visible in function body)
@@ -2916,10 +3175,28 @@ void TypeChecker::checkExpressionStmt(ExpressionStmt* stmt) {
             checkAssignment(binExpr);
             return;
         }
+        
+        // Check for explicit discard syntax: _ = expr
+        if (binExpr->op.type == frontend::TokenType::TOKEN_EQUAL &&
+            binExpr->left->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* ident = static_cast<IdentifierExpr*>(binExpr->left.get());
+            if (ident->name == "_") {
+                // Explicit discard - skip nodiscard check
+                inferType(binExpr->right.get());
+                return;
+            }
+        }
     }
     
     // Otherwise just infer type (to check for errors)
-    inferType(stmt->expression.get());
+    Type* exprType = inferType(stmt->expression.get());
+    
+    // Phase 2.1: Must-Use Result Analysis
+    // Check if expression has nodiscard type and value is unused
+    if (exprType && exprType->isNodiscard()) {
+        addError("Unused result value. This function returns a result that must be checked.",
+              stmt->expression.get());
+    }
 }
 
 // ============================================================================
@@ -3424,6 +3701,30 @@ void TypeChecker::checkWhenStmt(WhenStmt* stmt) {
     // Check end block if present
     if (stmt->end_block) {
         checkStatement(stmt->end_block.get());
+    }
+}
+
+void TypeChecker::checkPickStmt(PickStmt* stmt) {
+    // Infer the selector type
+    Type* selectorType = inferType(stmt->selector.get());
+    
+    // Only perform exhaustiveness checking if selector type is valid
+    if (selectorType->getKind() != TypeKind::ERROR) {
+        // Check exhaustiveness
+        ExhaustivenessAnalyzer::Analysis result = ExhaustivenessAnalyzer::analyze(stmt, selectorType);
+        
+        // Report error if not exhaustive
+        if (!result.isExhaustive) {
+            addError(result.errorMessage, stmt);
+        }
+    }
+    
+    // Type-check all case bodies
+    for (const auto& caseNode : stmt->cases) {
+        PickCase* pickCase = static_cast<PickCase*>(caseNode.get());
+        if (pickCase->body) {
+            checkStatement(pickCase->body.get());
+        }
     }
 }
 

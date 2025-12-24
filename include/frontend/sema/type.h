@@ -39,9 +39,11 @@ enum class TypeKind {
 class Type {
 protected:
     TypeKind kind;
+    bool nodiscard;  // True if this type's value must be used (e.g., result types)
     
 public:
-    explicit Type(TypeKind kind) : kind(kind) {}
+    explicit Type(TypeKind kind, bool nodiscard = false) 
+        : kind(kind), nodiscard(nodiscard) {}
     virtual ~Type() = default;
     
     TypeKind getKind() const { return kind; }
@@ -60,6 +62,10 @@ public:
     virtual bool isVector() const { return kind == TypeKind::VECTOR; }
     virtual bool isGeneric() const { return kind == TypeKind::GENERIC; }
     virtual bool isOptional() const { return kind == TypeKind::OPTIONAL; }
+    
+    // Must-use checking (Phase 2.1 - research_011)
+    virtual bool isNodiscard() const { return nodiscard; }
+    virtual void setNodiscard(bool value) { nodiscard = value; }
 };
 
 // ============================================================================
@@ -314,6 +320,7 @@ public:
 // ResultType - Result type for error handling (result<T>)
 // ============================================================================
 // Reference: research_016 (result type and error propagation)
+// ResultType is ALWAYS nodiscard - unused results are a bug!
 
 class ResultType : public Type {
 private:
@@ -321,7 +328,7 @@ private:
     
 public:
     explicit ResultType(Type* valueType)
-        : Type(TypeKind::RESULT), valueType(valueType) {}
+        : Type(TypeKind::RESULT, true), valueType(valueType) {}  // nodiscard = true
     
     Type* getValueType() const { return valueType; }
     

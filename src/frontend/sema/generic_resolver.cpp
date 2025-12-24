@@ -1,6 +1,7 @@
 #include "frontend/sema/generic_resolver.h"
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/expr.h"
+#include "frontend/ast/type.h"
 #include <sstream>
 #include <algorithm>
 
@@ -47,7 +48,7 @@ TypeSubstitution GenericResolver::inferTypeArgs(
         
         // Check if parameter type contains a generic parameter
         // Format: *T means the parameter is of generic type T
-        const std::string& paramTypeName = param->typeName;
+        std::string paramTypeName = param->typeNode ? param->typeNode->toString() : "";
         
         if (paramTypeName.empty()) continue;
         
@@ -366,12 +367,16 @@ FuncDeclStmt* Monomorphizer::cloneAndSubstitute(
     }
     
     // Substitute return type
-    std::string returnType = funcDecl->returnType;
-    if (!returnType.empty() && returnType[0] == '*') {
-        std::string typeParamName = returnType.substr(1);
-        auto it = substitution.find(typeParamName);
-        if (it != substitution.end()) {
-            returnType = resolver->canonicalizeTypeName(it->second);
+    ASTNodePtr returnType = funcDecl->returnType;
+    if (funcDecl->returnType) {
+        std::string returnTypeStr = funcDecl->returnType->toString();
+        if (!returnTypeStr.empty() && returnTypeStr[0] == '*') {
+            std::string typeParamName = returnTypeStr.substr(1);
+            auto it = substitution.find(typeParamName);
+            if (it != substitution.end()) {
+                std::string newTypeName = resolver->canonicalizeTypeName(it->second);
+                returnType = std::make_shared<SimpleType>(newTypeName, funcDecl->line, funcDecl->column);
+            }
         }
     }
     
@@ -468,8 +473,9 @@ ASTNodePtr Monomorphizer::cloneAST(ASTNode* node) {
         case ASTNode::NodeType::PARAMETER: {
             ParameterNode* param = static_cast<ParameterNode*>(node);
             auto defVal = param->defaultValue ? cloneAST(param->defaultValue.get()) : nullptr;
+            auto clonedType = param->typeNode ? cloneAST(param->typeNode.get()) : nullptr;
             return std::make_unique<ParameterNode>(
-                param->typeName, param->paramName, std::move(defVal),
+                std::move(clonedType), param->paramName, std::move(defVal),
                 param->line, param->column);
         }
         
@@ -550,11 +556,15 @@ void Monomorphizer::substituteTypes(ASTNode* node,
         
         case ASTNode::NodeType::PARAMETER: {
             ParameterNode* param = static_cast<ParameterNode*>(node);
-            if (!param->typeName.empty() && param->typeName[0] == '*') {
-                std::string paramName = param->typeName.substr(1);
-                auto it = substitution.find(paramName);
-                if (it != substitution.end() && it->second) {
-                    param->typeName = it->second->toString();
+            if (param->typeNode) {
+                std::string typeStr = param->typeNode->toString();
+                if (!typeStr.empty() && typeStr[0] == '*') {
+                    std::string paramName = typeStr.substr(1);
+                    auto it = substitution.find(paramName);
+                    if (it != substitution.end() && it->second) {
+                        std::string newTypeName = it->second->toString();
+                        param->typeNode = std::make_shared<SimpleType>(newTypeName, param->line, param->column);
+                    }
                 }
             }
             if (param->defaultValue) {
@@ -566,11 +576,15 @@ void Monomorphizer::substituteTypes(ASTNode* node,
         case ASTNode::NodeType::FUNC_DECL: {
             FuncDeclStmt* func = static_cast<FuncDeclStmt*>(node);
             // Substitute return type
-            if (!func->returnType.empty() && func->returnType[0] == '*') {
-                std::string paramName = func->returnType.substr(1);
-                auto it = substitution.find(paramName);
-                if (it != substitution.end() && it->second) {
-                    func->returnType = it->second->toString();
+            if (func->returnType) {
+                std::string returnTypeStr = func->returnType->toString();
+                if (!returnTypeStr.empty() && returnTypeStr[0] == '*') {
+                    std::string paramName = returnTypeStr.substr(1);
+                    auto it = substitution.find(paramName);
+                    if (it != substitution.end() && it->second) {
+                        std::string newTypeName = it->second->toString();
+                        func->returnType = std::make_shared<SimpleType>(newTypeName, func->line, func->column);
+                    }
                 }
             }
             // Substitute parameter types

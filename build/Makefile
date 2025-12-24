@@ -1173,6 +1173,30 @@ src/frontend/sema/const_evaluator.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/const_evaluator.cpp.s
 .PHONY : src/frontend/sema/const_evaluator.cpp.s
 
+src/frontend/sema/exhaustiveness.o: src/frontend/sema/exhaustiveness.cpp.o
+.PHONY : src/frontend/sema/exhaustiveness.o
+
+# target to build an object file
+src/frontend/sema/exhaustiveness.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/exhaustiveness.cpp.o
+.PHONY : src/frontend/sema/exhaustiveness.cpp.o
+
+src/frontend/sema/exhaustiveness.i: src/frontend/sema/exhaustiveness.cpp.i
+.PHONY : src/frontend/sema/exhaustiveness.i
+
+# target to preprocess a source file
+src/frontend/sema/exhaustiveness.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/exhaustiveness.cpp.i
+.PHONY : src/frontend/sema/exhaustiveness.cpp.i
+
+src/frontend/sema/exhaustiveness.s: src/frontend/sema/exhaustiveness.cpp.s
+.PHONY : src/frontend/sema/exhaustiveness.s
+
+# target to generate assembly for a file
+src/frontend/sema/exhaustiveness.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/exhaustiveness.cpp.s
+.PHONY : src/frontend/sema/exhaustiveness.cpp.s
+
 src/frontend/sema/generic_resolver.o: src/frontend/sema/generic_resolver.cpp.o
 .PHONY : src/frontend/sema/generic_resolver.o
 
@@ -2947,6 +2971,9 @@ help:
 	@echo "... src/frontend/sema/const_evaluator.o"
 	@echo "... src/frontend/sema/const_evaluator.i"
 	@echo "... src/frontend/sema/const_evaluator.s"
+	@echo "... src/frontend/sema/exhaustiveness.o"
+	@echo "... src/frontend/sema/exhaustiveness.i"
+	@echo "... src/frontend/sema/exhaustiveness.s"
 	@echo "... src/frontend/sema/generic_resolver.o"
 	@echo "... src/frontend/sema/generic_resolver.i"
 	@echo "... src/frontend/sema/generic_resolver.s"
