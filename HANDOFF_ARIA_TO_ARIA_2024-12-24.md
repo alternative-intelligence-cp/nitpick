@@ -43,6 +43,11 @@
 
 **Next Step**: Integrate with build orchestration to wire into actual ariac compilation pipeline.
 
+**Claude's Next Target**: Task 7 - Integrate depgraph + StateManager into aria_make
+- Building build_orchestrator to wire StateManager into actual builds
+- Will enable real incremental compilation with parallel builds
+- Demonstrates contribution system works across sessions (Claude picks up from clear task definitions)
+
 **See**: `/home/randy/._____RANDY_____/REPOS/aria_make/CLAUDE_STATE_MANAGER_WORK.md` for full details.
 
 ---
