@@ -1,0 +1,155 @@
+// Test: ERR keyword in pick pattern matching
+// Spec: TBB_TYPES.md Section 3.2 - ERR in Pattern Matching
+// Task: ARIA-002
+// Status: Tests that ERR syntax works in pattern matching contexts
+//
+// NOTE: This test demonstrates that ERR parses correctly in patterns.
+// Full runtime testing of ERR matching behavior requires:
+// - ERR value initialization support (not yet implemented)
+// - I/O streams or other side-effect mechanisms
+// These tests verify ERR is accepted as a valid pattern syntactically.
+
+// Test 1: ERR in exhaustive tbb8 pattern
+// Acceptance: ERR recognized as valid pattern alongside value range
+func:test_err_pattern_tbb8 = int64() {
+    tbb8:value = 42;
+    
+    pick(value) {
+        (ERR) { pass(100); },
+        (0..127) { pass(200); }
+    }
+};
+
+// Test 2: ERR with specific literal patterns (tbb8)
+// Acceptance: ERR can coexist with literal value patterns
+func:test_err_with_literals_tbb8 = int64() {
+    tbb8:value = 0;
+    
+    pick(value) {
+        (ERR) { pass(100); },
+        (0) { pass(200); },
+        (1) { pass(300); },
+        (2..127) { pass(400); }
+    }
+};
+
+// Test 3: ERR pattern with tbb16
+// Acceptance: ERR works with tbb16 type
+func:test_err_pattern_tbb16 = int64() {
+    tbb16:value = 1000;
+    
+    pick(value) {
+        (ERR) { pass(100); },
+        (0..32767) { pass(200); }
+    }
+};
+
+// Test 4: ERR pattern with tbb32
+// Acceptance: ERR works with tbb32 type  
+func:test_err_pattern_tbb32 = int64() {
+    tbb32:value = 50000;
+    
+    pick(value) {
+        (ERR) { pass(100); },
+        (0..2147483647) { pass(200); }
+    }
+};
+
+// Test 5: ERR at different positions in pattern list
+// Acceptance: ERR can appear at beginning or end of patterns
+func:test_err_position_first = int64() {
+    tbb8:value = 50;
+    
+    pick(value) {
+        (ERR) { pass(100); },
+        (0..127) { pass(200); }
+    }
+};
+
+func:test_err_position_last = int64() {
+    tbb8:value = 50;
+    
+    pick(value) {
+        (0..127) { pass(200); },
+        (ERR) { pass(100); }
+    }
+};
+
+// Test 6: ERR with zero value pattern
+// Acceptance: ERR pattern works alongside explicit zero
+func:test_err_with_zero = int64() {
+    tbb8:value = 0;
+    
+    pick(value) {
+        (ERR) { pass(100); },
+        (0) { pass(200); },
+        (1..127) { pass(300); }
+    }
+};
+
+// Test 7: ERR with multiple range patterns
+// Acceptance: ERR works with multiple range-based patterns
+func:test_err_with_ranges = int64() {
+    tbb8:value = 75;
+    
+    pick(value) {
+        (ERR) { pass(100); },
+        (0..50) { pass(200); },
+        (51..127) { pass(300); }
+    }
+};
+
+// Test 8: ERR in multi-case pattern
+// Acceptance: ERR with several specific value patterns
+func:test_err_multi_case = int64() {
+    tbb8:value = 1;
+    
+    pick(value) {
+        (ERR) { pass(1); },
+        (0) { pass(2); },
+        (1) { pass(3); },
+        (2..127) { pass(4); }
+    }
+};
+
+// Test 9: Exhaustiveness check - WITH ERR pattern
+// Acceptance: ERR + full range = exhaustive, no warning
+func:test_exhaustive_with_err = int64() {
+    tbb8:value = 42;
+    
+    pick(value) {
+        (ERR) { pass(100); },
+        (0..127) { pass(200); }
+    }
+};
+
+// Test 10: Exhaustiveness check - WITHOUT ERR pattern  
+// Acceptance: Missing ERR = non-exhaustive, should warn
+// Expected: Compiler warning about non-exhaustive patterns
+func:test_non_exhaustive_no_err = int64() {
+    tbb8:value = 42;
+    
+    pick(value) {
+        (0..127) { pass(200); }
+    }
+};
+
+// Test 11: ERR pattern with wildcard
+// Acceptance: ERR can be used with wildcard pattern
+func:test_err_with_wildcard = int64() {
+    tbb8:value = 99;
+    
+    pick(value) {
+        (ERR) { pass(100); },
+        (*) { pass(200); }
+    }
+};
+
+// Main entry point
+func:main = int64() {
+    pass(0);
+};
+
+
+
+
