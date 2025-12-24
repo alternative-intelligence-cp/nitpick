@@ -356,6 +356,13 @@ llvm::Module* compile_to_module(
         return nullptr;
     }
     
+    // Report symbol table warnings (e.g., shadowing)
+    if (symbol_table.hasWarnings()) {
+        for (const auto& warn : symbol_table.getWarnings()) {
+            diags.warning(aria::SourceLocation(filename, 0, 0), warn);
+        }
+    }
+    
     // Phase 3.5: Borrow Checker (Phase 5b in research)
     if (opts.verbose) {
         std::cout << "Phase 3.5: Borrow checking...\n";
@@ -401,9 +408,7 @@ llvm::Module* compile_to_module(
     }
     
     // Now generate the main module code (which can call specialized functions)
-    std::cerr << "[DEBUG] About to call ir_gen.codegen()...\n";
     auto value = ir_gen.codegen(module_node.get());
-    std::cerr << "[DEBUG] ir_gen.codegen() completed\n";
     
     if (!value) {
         diags.error(aria::SourceLocation(filename, 0, 0), "IR generation failed");
@@ -617,12 +622,14 @@ int main(int argc, char** argv) {
             return 1;
         }
         
-        // DEBUG: Dump IR immediately after generation
-        std::cerr << "\n[DEBUG] Module IR after generation:\n";
-        module->print(llvm::errs(), nullptr);
-        std::cerr << "\n";
+
         
         modules.push_back(module);
+    }
+    
+    // Print any warnings that were collected during compilation
+    if (diags.hasWarnings()) {
+        diags.printAll();
     }
     
     // Link all modules together if we have more than one
@@ -689,6 +696,7 @@ int main(int argc, char** argv) {
         }
         
         if (!link_executable(asm_file, opts.output_file)) {
+            diags.printAll();
             return 1;
         }
         

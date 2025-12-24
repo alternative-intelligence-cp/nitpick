@@ -1,6 +1,7 @@
 #include "frontend/sema/symbol_table.h"
 #include "frontend/sema/type.h"
 #include <sstream>
+#include <iostream>
 
 namespace aria {
 namespace sema {
@@ -169,6 +170,22 @@ Symbol* SymbolTable::defineSymbol(const std::string& name, SymbolKind kind,
         return nullptr;
     }
     
+    // Check for shadowing in parent scopes
+    // Only warn if parent exists (not for global scope redefinitions)
+    if (currentScope->getParent()) {
+        Symbol* shadowedSymbol = currentScope->getParent()->resolve(name);
+        if (shadowedSymbol) {
+            std::stringstream ss;
+            ss << "Variable '" << name << "' shadows outer declaration";
+            if (line > 0) {
+                ss << " at line " << line << ", column " << column;
+            }
+            ss << " (original at line " << shadowedSymbol->line 
+               << ", column " << shadowedSymbol->column << ")";
+            warning(ss.str());
+        }
+    }
+    
     // Create new symbol
     auto symbol = std::make_unique<Symbol>(name, kind, type, currentScope, line, column);
     Symbol* symbolPtr = symbol.get();
@@ -194,6 +211,10 @@ bool SymbolTable::isDefined(const std::string& name) const {
 
 void SymbolTable::error(const std::string& message) {
     errors.push_back(message);
+}
+
+void SymbolTable::warning(const std::string& message) {
+    warnings.push_back(message);
 }
 
 std::string SymbolTable::toString() const {
