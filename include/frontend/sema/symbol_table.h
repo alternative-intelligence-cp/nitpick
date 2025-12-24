@@ -150,11 +150,15 @@ public:
     Symbol* resolveSymbol(const std::string& name) const;     // Current + parent scopes
     bool isDefined(const std::string& name) const;            // Check if already defined
     
-    // Error handling
+    // Error and warning handling
     std::vector<std::string> errors;
+    std::vector<std::string> warnings;
     void error(const std::string& message);
+    void warning(const std::string& message);
     bool hasErrors() const { return !errors.empty(); }
+    bool hasWarnings() const { return !warnings.empty(); }
     const std::vector<std::string>& getErrors() const { return errors; }
+    const std::vector<std::string>& getWarnings() const { return warnings; }
     
     // Debugging
     std::string toString() const;
