@@ -1,0 +1,60 @@
+// Test basic Result type member access
+// Tests .is_error, .value, and .error members
+
+func file_read(filename @ string) result<int64> {
+    // Simulate file reading - return success for now
+    pass(42);
+}
+
+func file_read_error(filename @ string) result<int64> {
+    // Simulate error case
+    fail("File not found");
+}
+
+func main() int64 {
+    // Test 1: Success case - check .is_error
+    result<int64> r1_success := file_read("test.txt");
+    
+    is r1_success.is_error:
+        print("ERROR: Should not be error\n");
+        pass(1);
+    :
+        print("SUCCESS: is_error is false\n");
+    
+    // Test 2: Success case - access .value
+    int64 value_result := r1_success.value;
+    is value_result == 42:
+        print("SUCCESS: value is 42\n");
+    :
+        print("ERROR: value should be 42\n");
+        pass(2);
+    
+    // Test 3: Error case - check .is_error
+    result<int64> r2_error := file_read_error("missing.txt");
+    
+    is r2_error.is_error:
+        print("SUCCESS: is_error is true\n");
+    :
+        print("ERROR: Should be error\n");
+        pass(3);
+    
+    // Test 4: Error case - access .error (non-null)
+    // Note: error is void* pointer, represented as int64 in IR
+    int64 err_ptr_value := r2_error.error;
+    is err_ptr_value != 0:
+        print("SUCCESS: error pointer is non-null\n");
+    :
+        print("ERROR: error should be non-null\n");
+        pass(4);
+    
+    // Test 5: Success case - check .error is null
+    int64 success_err_value := r1_success.error;
+    is success_err_value == 0:
+        print("SUCCESS: success result has null error\n");
+    :
+        print("ERROR: success should have null error\n");
+        pass(5);
+    
+    print("All Result member access tests passed!\n");
+    pass(0);
+}

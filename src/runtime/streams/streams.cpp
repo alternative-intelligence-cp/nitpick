@@ -10,6 +10,9 @@
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 // ============================================================================
 // Stream Structures
@@ -56,6 +59,49 @@ static bool g_streams_initialized = false;
 // ============================================================================
 // Internal Helpers
 // ============================================================================
+
+/**
+ * Safely open a file descriptor for six-stream I/O.
+ * 
+ * If the FD is already open (e.g., shell redirection), use it.
+ * Otherwise, dup() stderr for FD 3, or open /dev/null for FD 4 and 5.
+ * 
+ * @param fd The target file descriptor (3, 4, or 5)
+ * @param mode "r" for read (FD 4), "w" for write (FD 3, 5)
+ * @param fallback_fd FD to dup if target isn't open (-1 for /dev/null)
+ * @return FILE* for the opened FD, or NULL on error
+ */
+static FILE* open_reserved_fd(int fd, const char* mode, int fallback_fd) {
+    // Check if FD is already open (shell may have set up redirection)
+    struct stat st;
+    if (fstat(fd, &st) == 0) {
+        // FD exists, wrap it with FILE*
+        return fdopen(dup(fd), mode);
+    }
+    
+    // FD not open, set it up
+    if (fallback_fd >= 0) {
+        // Dup the fallback FD to our target FD
+        int new_fd = dup2(fallback_fd, fd);
+        if (new_fd < 0) {
+            return NULL;
+        }
+        return fdopen(dup(new_fd), mode);
+    } else {
+        // Open /dev/null and assign to target FD
+        int flags = (mode[0] == 'r') ? O_RDONLY : O_WRONLY;
+        int dev_null = open("/dev/null", flags);
+        if (dev_null < 0) {
+            return NULL;
+        }
+        int new_fd = dup2(dev_null, fd);
+        close(dev_null);
+        if (new_fd < 0) {
+            return NULL;
+        }
+        return fdopen(dup(new_fd), mode);
+    }
+}
 
 /**
  * Default buffer size for text streams
@@ -585,15 +631,41 @@ void aria_debug_session_close(AriaDebugSession* session) {
 void aria_streams_init(void) {
     if (g_streams_initialized) return;
     
-    // Initialize text streams
+    // Initialize standard text streams (FD 0, 1, 2)
     g_stdin = aria_text_stream_create(stdin, ARIA_STREAM_LINE_BUFFERED);
     g_stdout = aria_text_stream_create(stdout, ARIA_STREAM_LINE_BUFFERED);
     g_stderr = aria_text_stream_create(stderr, ARIA_STREAM_UNBUFFERED);
-    g_stddbg = aria_text_stream_create(stderr, ARIA_STREAM_UNBUFFERED); // Debug goes to stderr by default
     
-    // Initialize binary streams
-    g_stddati = aria_binary_stream_create(stdin, BINARY_BUFFER_SIZE);
-    g_stddato = aria_binary_stream_create(stdout, BINARY_BUFFER_SIZE);
+    // Initialize six-stream I/O (FD 3, 4, 5)
+    // FD 3: stddbg (debug output) - defaults to stderr if not redirected
+    FILE* fd3 = open_reserved_fd(3, "w", STDERR_FILENO);
+    if (fd3) {
+        g_stddbg = aria_text_stream_create(fd3, ARIA_STREAM_UNBUFFERED);
+        g_stddbg->owns_file = true;  // We created it, we close it
+    } else {
+        // Fallback to stderr
+        g_stddbg = aria_text_stream_create(stderr, ARIA_STREAM_UNBUFFERED);
+    }
+    
+    // FD 4: stddati (binary data input) - defaults to /dev/null if not redirected
+    FILE* fd4 = open_reserved_fd(4, "r", -1);
+    if (fd4) {
+        g_stddati = aria_binary_stream_create(fd4, BINARY_BUFFER_SIZE);
+        g_stddati->owns_file = true;
+    } else {
+        // Fallback to stdin (non-ideal, but safe)
+        g_stddati = aria_binary_stream_create(stdin, BINARY_BUFFER_SIZE);
+    }
+    
+    // FD 5: stddato (binary data output) - defaults to /dev/null if not redirected
+    FILE* fd5 = open_reserved_fd(5, "w", -1);
+    if (fd5) {
+        g_stddato = aria_binary_stream_create(fd5, BINARY_BUFFER_SIZE);
+        g_stddato->owns_file = true;
+    } else {
+        // Fallback to stdout (non-ideal, but safe)
+        g_stddato = aria_binary_stream_create(stdout, BINARY_BUFFER_SIZE);
+    }
     
     g_streams_initialized = true;
 }

@@ -170,6 +170,37 @@ AriaResultPtr aria_string_substring(AriaString str, int64_t start, int64_t end) 
     return aria_string_from_bytes(str.data + start, sub_length);
 }
 
+AriaResultPtr aria_string_from_char(uint8_t ch) {
+    // Create a single-character string
+    char* char_data = (char*)aria_gc_alloc(2, 0);  // 1 byte + null terminator
+    if (!char_data) {
+        AriaError* error = aria_error_new(
+            ARIA_ERR_OUT_OF_MEMORY,
+            "Failed to allocate character data",
+            __FILE__, __LINE__
+        );
+        return aria_result_err_ptr(error);
+    }
+    
+    char_data[0] = (char)ch;
+    char_data[1] = '\0';
+    
+    AriaString* str = (AriaString*)aria_gc_alloc(sizeof(AriaString), 0);
+    if (!str) {
+        AriaError* error = aria_error_new(
+            ARIA_ERR_OUT_OF_MEMORY,
+            "Failed to allocate string structure",
+            __FILE__, __LINE__
+        );
+        return aria_result_err_ptr(error);
+    }
+    
+    str->data = char_data;
+    str->length = 1;
+    
+    return aria_result_ok_ptr(str);
+}
+
 AriaResultI64 aria_string_index_of(AriaString haystack, AriaString needle) {
     if (needle.length == 0) {
         // Empty needle always matches at position 0

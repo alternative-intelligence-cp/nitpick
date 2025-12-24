@@ -69,7 +69,7 @@ struct GenericParamInfo {
 class FuncDeclStmt : public ASTNode {
 public:
     std::string funcName;
-    std::string returnType;
+    ASTNodePtr returnType;  // Changed from std::string to ASTNodePtr
     std::vector<ASTNodePtr> parameters;  // ParameterNode instances
     ASTNodePtr body;                      // BlockStmt
     bool isAsync;
@@ -77,7 +77,7 @@ public:
     bool isExtern;
     std::vector<GenericParamInfo> genericParams;  // For generics: func<T: Trait, U>
     
-    FuncDeclStmt(const std::string& name, const std::string& retType,
+    FuncDeclStmt(const std::string& name, ASTNodePtr retType,
                  const std::vector<ASTNodePtr>& params, ASTNodePtr body,
                  int line = 0, int column = 0)
         : ASTNode(NodeType::FUNC_DECL, line, column),
@@ -129,14 +129,14 @@ public:
  */
 class ParameterNode : public ASTNode {
 public:
-    std::string typeName;
+    ASTNodePtr typeNode;  // Changed from std::string to ASTNodePtr
     std::string paramName;
     ASTNodePtr defaultValue;  // Can be nullptr
     
-    ParameterNode(const std::string& type, const std::string& name,
+    ParameterNode(ASTNodePtr type, const std::string& name,
                   ASTNodePtr defVal = nullptr, int line = 0, int column = 0)
         : ASTNode(NodeType::PARAMETER, line, column),
-          typeName(type), paramName(name), defaultValue(defVal) {}
+          typeNode(type), paramName(name), defaultValue(defVal) {}
     
     std::string toString() const override;
 };

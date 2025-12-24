@@ -1,0 +1,221 @@
+/**
+ * Aria Standard Library - Core Generic Types
+ * 
+ * Defines fundamental generic types used throughout Aria:
+ * - result<T>: Error handling type (Result<T, String> simplified)
+ * - array<T>: Dynamic array type
+ * 
+ * These types are automatically available in all Aria programs.
+ */
+
+// =============================================================================
+// Result<T> - Error Handling Type
+// =============================================================================
+
+/**
+ * Result type for explicit error handling.
+ * 
+ * A result can either be:
+ * - OK: Contains a value of type T
+ * - ERR: Contains an error message (string)
+ * 
+ * Usage:
+ *   result<int32>:r = divide(10, 2);
+ *   if (r.is_error) {
+ *       std.io.stderr.write(r.error_msg);
+ *   } else {
+ *       int32:value = r.val;
+ *   }
+ */
+struct<T>:result {
+    bool:is_error;      // true if this is an error
+    *T:val;             // The value (if OK)
+    string:err;         // Error message (if ERR)
+};
+
+/**
+ * Create a successful result containing a value.
+ * 
+ * Example:
+ *   result<int32>:r = result_ok(42);
+ */
+pub func<T>:result_ok = result<*T>(*T:value) {
+    result<*T>:r;
+    r.is_error = false;
+    r.val = value;
+    r.err = "";
+    pass(r);
+};
+
+/**
+ * Create an error result with a message.
+ * 
+ * Example:
+ *   result<int32>:r = result_err<int32>("Division by zero");
+ */
+pub func<T>:result_err = result<*T>(string:error_msg) {
+    result<*T>:r;
+    r.is_error = true;
+    r.err = error_msg;
+    pass(r);
+};
+
+// =============================================================================
+// Array<T> - Dynamic Array Type
+// =============================================================================
+
+/**
+ * Dynamic array type with automatic memory management.
+ * 
+ * Arrays grow automatically as elements are added.
+ * 
+ * Usage:
+ *   array<int32>:nums = array_new<int32>(10);
+ *   nums.push(42);
+ *   int32:first = nums.at(0);
+ */
+struct<T>:array {
+    *T@:data;          // Pointer to heap-allocated data
+    int64:length;      // Number of elements currently stored
+    int64:capacity;    // Total allocated capacity
+};
+
+/**
+ * Create a new array with the specified initial capacity.
+ * 
+ * Example:
+ *   array<string>:names = array_new<string>(100);
+ */
+pub func<T>:array_new = result<array<*T>>(int64:initial_capacity) {
+    if (initial_capacity < 0) {
+        pass(result_err<array<*T>>("Array capacity cannot be negative"));
+    };
+    
+    array<*T>:arr;
+    arr.length = 0;
+    arr.capacity = initial_capacity;
+    
+    // Allocate memory if capacity > 0
+    if (initial_capacity > 0) {
+        // TODO: Need to calculate size based on sizeof(T)
+        // For now, this is a placeholder that will be replaced
+        // when proper generic sizeof is implemented
+        wild *T@:ptr = std.mem.alloc(initial_capacity * 8);  // Assume 8 bytes per element
+        arr.data = ptr;
+    };
+    
+    pass(result_ok(arr));
+};
+
+/**
+ * Get the length of an array.
+ * 
+ * Example:
+ *   int64:len = nums.length();
+ */
+pub func<T>:length = result<int64>(array<*T>:arr) {
+    pass(result_ok(arr.length));
+};
+
+/**
+ * Access an element at the specified index.
+ * 
+ * Returns an error if index is out of bounds.
+ * 
+ * Example:
+ *   result<int32>:r = nums.at(5);
+ *   if (!r.is_error) {
+ *       int32:value = r.val;
+ *   }
+ */
+pub func<T>:at = result<*T>(array<*T>:arr, int64:index) {
+    if (index < 0 || index >= arr.length) {
+        pass(result_err<*T>("Array index out of bounds"));
+    };
+    
+    // Access element from data pointer
+    *T:elem = arr.data[index];
+    pass(result_ok(elem));
+};
+
+/**
+ * Add an element to the end of the array.
+ * 
+ * Grows the array automatically if needed.
+ * 
+ * Example:
+ *   nums.push(42);
+ */
+pub func<T>:push = result<void>(array<*T>:arr, *T:element) {
+    // Check if we need to grow the array
+    if (arr.length >= arr.capacity) {
+        // Double the capacity (or start with 8 if empty)
+        int64:new_capacity = arr.capacity * 2;
+        if (new_capacity == 0) {
+            new_capacity = 8;
+        };
+        
+        // TODO: Realloc logic would go here
+        // For now, this is a placeholder
+    };
+    
+    // Add element
+    arr.data[arr.length] = element;
+    arr.length = arr.length + 1;
+    
+    pass(result_ok(NIL));
+};
+
+/**
+ * Check if the array is empty.
+ * 
+ * Example:
+ *   if (nums.is_empty()) { ... }
+ */
+pub func<T>:is_empty = result<bool>(array<*T>:arr) {
+    pass(result_ok(arr.length == 0));
+};
+
+/**
+ * Get a substring of a string.
+ * 
+ * This is a helper for string operations that return result<string>.
+ * 
+ * Example:
+ *   result<string>:r = s.substring(0, 5);
+ */
+pub func:substring = result<string>(string:s, int64:start, int64:len) {
+    // Bounds checking
+    if (start < 0 || len < 0) {
+        pass(result_err<string>("Invalid substring parameters"));
+    };
+    
+    // TODO: Actual substring implementation
+    // This is a placeholder that will call the runtime function
+    pass(result_ok(""));
+};
+
+/**
+ * Find a substring within a string.
+ * 
+ * Returns the index of the first occurrence, or -1 if not found.
+ * 
+ * Example:
+ *   result<int32>:r = s.find("hello");
+ */
+pub func:find = result<int32>(string:haystack, string:needle) {
+    // TODO: Actual find implementation
+    // This is a placeholder
+    pass(result_ok(-1));
+};
+
+/**
+ * Get a character at a specific index.
+ * 
+ * Example:
+ *   result<byte>:r = s.char_at(0);
+ */
+pub func:char_at = result<byte>(string:s, int64:index) {
+    // TODO: Bounds checking and actual implementation
+    pass(result_ok(0));
+};

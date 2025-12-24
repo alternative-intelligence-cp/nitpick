@@ -448,17 +448,6 @@ ASTNodePtr Parser::parsePrimary() {
         return std::make_shared<LiteralExpr>(std::monostate{}, line, col);
     }
     
-    // ERR literal (TBB error sentinel value)
-    if (token.type == TokenType::TOKEN_KW_ERR) {
-        int line = token.line;
-        int col = token.column;
-        advance();
-        // ERR is represented as a special literal
-        // The semantic analyzer will handle type-specific ERR values
-        // (e.g., -128 for tbb8, -32768 for tbb16, etc.)
-        return std::make_shared<LiteralExpr>("ERR", line, col);
-    }
-    
     // Identifier
     if (token.type == TokenType::TOKEN_IDENTIFIER) {
         std::string lexeme = token.lexeme;  // Save before advance()

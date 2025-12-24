@@ -657,6 +657,16 @@ public:
     void checkWhenStmt(WhenStmt* stmt);
     
     /**
+     * Check pick statement (pattern matching)
+     * 
+     * Rules:
+     * - Selector type determines valid patterns
+     * - Must be exhaustive (all cases covered)
+     * - TBB types must handle ERR sentinel
+     */
+    void checkPickStmt(PickStmt* stmt);
+    
+    /**
      * Check block statement (recursively check all statements)
      */
     void checkBlockStmt(BlockStmt* stmt);

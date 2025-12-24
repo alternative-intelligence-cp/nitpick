@@ -497,6 +497,133 @@ char* aria_path_join(const char* dir, const char* name);
  */
 bool aria_path_is_absolute(const char* path);
 
+// ============================================================================
+// Result-Based File I/O Functions for Aria Builtins (Phase 4.2)
+// ============================================================================
+
+#include "runtime/result.h"
+
+/**
+ * Read file and return result<string>
+ * 
+ * @param path File path (C string)
+ * @return AriaResultPtr with AriaString* on success, error on failure
+ */
+AriaResultPtr aria_read_file_result(const char* path);
+
+/**
+ * Write file and return result<void>
+ * 
+ * @param path File path (C string)
+ * @param content Content to write (AriaString*)
+ * @return AriaResultVoid with success/error status
+ */
+AriaResultVoid aria_write_file_result(const char* path, const void* content);
+
+/**
+ * Delete file and return result<void>
+ * 
+ * @param path File path (C string)
+ * @return AriaResultVoid with success/error status
+ */
+AriaResultVoid aria_delete_file_result(const char* path);
+
+/**
+ * Check if file exists and return result<bool>
+ * 
+ * @param path File path (C string)
+ * @return AriaResultBool with exists status or error
+ */
+AriaResultBool aria_file_exists_result(const char* path);
+
+/**
+ * Get file size and return result<int64>
+ * 
+ * @param path File path (C string)
+ * @return AriaResultI64 with file size in bytes or error
+ */
+AriaResultI64 aria_file_size_result(const char* path);
+
+/**
+ * Convert path to absolute and return result<string>
+ * 
+ * @param path File path (C string)
+ * @return AriaResultPtr with AriaString* on success, error on failure
+ */
+AriaResultPtr aria_path_absolute_result(const char* path);
+
+/**
+ * Get directory portion of path and return result<string>
+ * 
+ * @param path File path (C string)
+ * @return AriaResultPtr with AriaString* on success, error on failure
+ */
+AriaResultPtr aria_path_dirname_result(const char* path);
+
+/**
+ * Get filename portion of path and return result<string>
+ * 
+ * @param path File path (C string)
+ * @return AriaResultPtr with AriaString* on success, error on failure
+ */
+AriaResultPtr aria_path_basename_result(const char* path);
+
+/**
+ * Join path components and return result<string>
+ * 
+ * @param dir Directory path (C string)
+ * @param name File/directory name (C string)
+ * @return AriaResultPtr with AriaString* on success, error on failure
+ */
+AriaResultPtr aria_path_join_result(const char* dir, const char* name);
+
+/**
+ * Check if path is absolute and return result<bool>
+ * 
+ * @param path File path (C string)
+ * @return AriaResultBool with is_absolute status or error
+ */
+AriaResultBool aria_path_is_absolute_result(const char* path);
+
+// ============================================================================
+// Simplified Wrappers for Aria Builtins (DEPRECATED - will be removed)
+// ============================================================================
+
+/**
+ * Simplified readFile for Aria - returns AriaString directly
+ * Returns empty string on error (check length == 0)
+ * 
+ * @param path File path (C string)
+ * @return Pointer to AriaString with file contents (or empty on error)
+ */
+struct AriaString;  // Forward declaration
+struct AriaString* aria_read_file_simple(const char* path);
+
+/**
+ * Simplified writeFile for Aria - returns int64
+ * 
+ * @param path File path (C string)
+ * @param content Content to write (C string)
+ * @return 0 on success, -1 on error
+ */
+int64_t aria_write_file_simple(const char* path, const char* content);
+
+/**
+ * Simplified deleteFile for Aria - returns int64
+ * 
+ * @param path File path (C string)
+ * @return 0 on success, -1 on error
+ */
+int64_t aria_delete_file_simple(const char* path);
+
+/**
+ * Path operation wrappers that return AriaString*
+ */
+AriaString* aria_path_absolute_string(const char* path);
+AriaString* aria_path_dirname_string(const char* path);
+AriaString* aria_path_basename_string(const char* path);
+AriaString* aria_path_join_string(const char* dir, const char* name);
+
 #ifdef __cplusplus
 }
 #endif

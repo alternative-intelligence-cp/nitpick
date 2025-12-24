@@ -734,3 +734,412 @@ bool aria_path_is_absolute(const char* path) {
     return path[0] == '/';
 #endif
 }
+
+// ============================================================================
+// Simplified Wrappers for Aria Builtins (Phase 4.2)
+// ============================================================================
+
+/**
+ * AriaString structure definition (must match runtime/strings.h)
+ */
+struct AriaString {
+    const char* data;
+    int64_t length;
+};
+
+/**
+ * Simplified readFile - returns AriaString directly
+ * Returns empty string on error
+ */
+AriaString* aria_read_file_simple(const char* path) {
+    // Call existing aria_read_file
+    AriaResult* result = aria_read_file(path);
+    
+    // Allocate AriaString
+    AriaString* aria_str = (AriaString*)malloc(sizeof(AriaString));
+    if (!aria_str) {
+        aria_result_free(result);
+        // Return empty string on allocation failure
+        AriaString* empty = (AriaString*)malloc(sizeof(AriaString));
+        if (empty) {
+            empty->data = strdup("");
+            empty->length = 0;
+        }
+        return empty;
+    }
+    
+    // Check if read was successful
+    if (result->err == NULL && result->val != NULL) {
+        // Success - transfer ownership of string data
+        aria_str->data = (const char*)result->val;
+        aria_str->length = result->val_size;
+        
+        // Don't free val since we're taking ownership
+        if (result->err) free(result->err);
+        free(result);  // Free result struct only
+    } else {
+        // Error - return empty string
+        aria_str->data = strdup("");
+        aria_str->length = 0;
+        aria_result_free(result);
+    }
+    
+    return aria_str;
+}
+
+/**
+ * Simplified writeFile - returns int64
+ */
+int64_t aria_write_file_simple(const char* path, const char* content) {
+    AriaResult* result = aria_write_file(path, content);
+    
+    int64_t ret_val = (result->err == NULL) ? 0 : -1;
+    aria_result_free(result);
+    
+    return ret_val;
+}
+
+/**
+ * Simplified deleteFile - returns int64
+ */
+int64_t aria_delete_file_simple(const char* path) {
+    AriaResult* result = aria_delete_file(path);
+    
+    int64_t ret_val = (result->err == NULL) ? 0 : -1;
+    aria_result_free(result);
+    
+    return ret_val;
+}
+
+/**
+ * Path operation wrappers that return AriaString* instead of char*
+ */
+
+AriaString* aria_path_absolute_string(const char* path) {
+    char* result = aria_path_absolute(path);
+    if (!result) {
+        // Return empty string on error
+        AriaString* empty = (AriaString*)malloc(sizeof(AriaString));
+        if (empty) {
+            empty->data = strdup("");
+            empty->length = 0;
+        }
+        return empty;
+    }
+    
+    AriaString* aria_str = (AriaString*)malloc(sizeof(AriaString));
+    if (!aria_str) {
+        free(result);
+        AriaString* empty = (AriaString*)malloc(sizeof(AriaString));
+        if (empty) {
+            empty->data = strdup("");
+            empty->length = 0;
+        }
+        return empty;
+    }
+    
+    aria_str->data = result;
+    aria_str->length = strlen(result);
+    return aria_str;
+}
+
+AriaString* aria_path_dirname_string(const char* path) {
+    char* result = aria_path_dirname(path);
+    if (!result) {
+        AriaString* empty = (AriaString*)malloc(sizeof(AriaString));
+        if (empty) {
+            empty->data = strdup("");
+            empty->length = 0;
+        }
+        return empty;
+    }
+    
+    AriaString* aria_str = (AriaString*)malloc(sizeof(AriaString));
+    if (!aria_str) {
+        free(result);
+        AriaString* empty = (AriaString*)malloc(sizeof(AriaString));
+        if (empty) {
+            empty->data = strdup("");
+            empty->length = 0;
+        }
+        return empty;
+    }
+    
+    aria_str->data = result;
+    aria_str->length = strlen(result);
+    return aria_str;
+}
+
+AriaString* aria_path_basename_string(const char* path) {
+    char* result = aria_path_basename(path);
+    if (!result) {
+        AriaString* empty = (AriaString*)malloc(sizeof(AriaString));
+        if (empty) {
+            empty->data = strdup("");
+            empty->length = 0;
+        }
+        return empty;
+    }
+    
+    AriaString* aria_str = (AriaString*)malloc(sizeof(AriaString));
+    if (!aria_str) {
+        free(result);
+        AriaString* empty = (AriaString*)malloc(sizeof(AriaString));
+        if (empty) {
+            empty->data = strdup("");
+            empty->length = 0;
+        }
+        return empty;
+    }
+    
+    aria_str->data = result;
+    aria_str->length = strlen(result);
+    return aria_str;
+}
+
+AriaString* aria_path_join_string(const char* dir, const char* name) {
+    char* result = aria_path_join(dir, name);
+    if (!result) {
+        AriaString* empty = (AriaString*)malloc(sizeof(AriaString));
+        if (empty) {
+            empty->data = strdup("");
+            empty->length = 0;
+        }
+        return empty;
+    }
+    
+    AriaString* aria_str = (AriaString*)malloc(sizeof(AriaString));
+    if (!aria_str) {
+        free(result);
+        AriaString* empty = (AriaString*)malloc(sizeof(AriaString));
+        if (empty) {
+            empty->data = strdup("");
+            empty->length = 0;
+        }
+        return empty;
+    }
+    
+    aria_str->data = result;
+    aria_str->length = strlen(result);
+    return aria_str;
+}
+
+// ============================================================================
+// Result-Based File I/O Functions (Phase 4.2 - Proper Implementation)
+// ============================================================================
+
+AriaResultPtr aria_read_file_result(const char* path) {
+    if (!path) {
+        return aria_result_err_ptr(aria_error_msg("Path is NULL"));
+    }
+    
+    FILE* file = fopen(path, "r");
+    if (!file) {
+        char err_msg[512];
+        snprintf(err_msg, sizeof(err_msg), "Cannot open file '%s': %s", path, strerror(errno));
+        return aria_result_err_ptr(aria_error_msg(err_msg));
+    }
+    
+    // Get file size
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    if (size < 0) {
+        fclose(file);
+        char err_msg[512];
+        snprintf(err_msg, sizeof(err_msg), "Cannot get size of file '%s'", path);
+        return aria_result_err_ptr(aria_error_msg(err_msg));
+    }
+    
+    // Allocate AriaString
+    AriaString* aria_str = (AriaString*)malloc(sizeof(AriaString));
+    if (!aria_str) {
+        fclose(file);
+        return aria_result_err_ptr(aria_error_msg("Out of memory"));
+    }
+    
+    // Allocate buffer
+    char* buffer = (char*)malloc(size + 1);
+    if (!buffer) {
+        free(aria_str);
+        fclose(file);
+        return aria_result_err_ptr(aria_error_msg("Out of memory"));
+    }
+    
+    // Read file
+    size_t bytes_read = fread(buffer, 1, size, file);
+    fclose(file);
+    
+    if ((long)bytes_read != size) {
+        free(buffer);
+        free(aria_str);
+        char err_msg[512];
+        snprintf(err_msg, sizeof(err_msg), "Read error on file '%s'", path);
+        return aria_result_err_ptr(aria_error_msg(err_msg));
+    }
+    
+    buffer[size] = '\0';
+    aria_str->data = buffer;
+    aria_str->length = size;
+    
+    return aria_result_ok_ptr(aria_str);
+}
+
+AriaResultVoid aria_write_file_result(const char* path, const void* content) {
+    if (!path) {
+        return aria_result_err_void(aria_error_msg("Path is NULL"));
+    }
+    if (!content) {
+        return aria_result_err_void(aria_error_msg("Content is NULL"));
+    }
+    
+    // Assuming content is AriaString*
+    const AriaString* aria_str = (const AriaString*)content;
+    
+    FILE* file = fopen(path, "w");
+    if (!file) {
+        char err_msg[512];
+        snprintf(err_msg, sizeof(err_msg), "Cannot open file '%s' for writing: %s", path, strerror(errno));
+        return aria_result_err_void(aria_error_msg(err_msg));
+    }
+    
+    size_t written = fwrite(aria_str->data, 1, aria_str->length, file);
+    fclose(file);
+    
+    if (written != aria_str->length) {
+        char err_msg[512];
+        snprintf(err_msg, sizeof(err_msg), "Write error on file '%s'", path);
+        return aria_result_err_void(aria_error_msg(err_msg));
+    }
+    
+    return aria_result_ok_void();
+}
+
+AriaResultVoid aria_delete_file_result(const char* path) {
+    if (!path) {
+        return aria_result_err_void(aria_error_msg("Path is NULL"));
+    }
+    
+    if (remove(path) != 0) {
+        char err_msg[512];
+        snprintf(err_msg, sizeof(err_msg), "Cannot delete file '%s': %s", path, strerror(errno));
+        return aria_result_err_void(aria_error_msg(err_msg));
+    }
+    
+    return aria_result_ok_void();
+}
+
+AriaResultBool aria_file_exists_result(const char* path) {
+    if (!path) {
+        return aria_result_err_bool(aria_error_msg("Path is NULL"));
+    }
+    
+    struct stat st;
+    bool exists = (stat(path, &st) == 0 && S_ISREG(st.st_mode));
+    return aria_result_ok_bool(exists);
+}
+
+AriaResultI64 aria_file_size_result(const char* path) {
+    if (!path) {
+        return aria_result_err_i64(aria_error_msg("Path is NULL"));
+    }
+    
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        char err_msg[512];
+        snprintf(err_msg, sizeof(err_msg), "Cannot stat file '%s': %s", path, strerror(errno));
+        return aria_result_err_i64(aria_error_msg(err_msg));
+    }
+    
+    if (!S_ISREG(st.st_mode)) {
+        char err_msg[512];
+        snprintf(err_msg, sizeof(err_msg), "'%s' is not a regular file", path);
+        return aria_result_err_i64(aria_error_msg(err_msg));
+    }
+    
+    return aria_result_ok_i64((int64_t)st.st_size);
+}
+
+AriaResultPtr aria_path_absolute_result(const char* path) {
+    char* abs_path = aria_path_absolute(path);
+    if (!abs_path) {
+        char err_msg[512];
+        snprintf(err_msg, sizeof(err_msg), "Cannot get absolute path for '%s'", path ? path : "(null)");
+        return aria_result_err_ptr(aria_error_msg(err_msg));
+    }
+    
+    AriaString* aria_str = (AriaString*)malloc(sizeof(AriaString));
+    if (!aria_str) {
+        free(abs_path);
+        return aria_result_err_ptr(aria_error_msg("Out of memory"));
+    }
+    
+    aria_str->data = abs_path;
+    aria_str->length = strlen(abs_path);
+    return aria_result_ok_ptr(aria_str);
+}
+
+AriaResultPtr aria_path_dirname_result(const char* path) {
+    char* dir = aria_path_dirname(path);
+    if (!dir) {
+        char err_msg[512];
+        snprintf(err_msg, sizeof(err_msg), "Cannot get dirname for '%s'", path ? path : "(null)");
+        return aria_result_err_ptr(aria_error_msg(err_msg));
+    }
+    
+    AriaString* aria_str = (AriaString*)malloc(sizeof(AriaString));
+    if (!aria_str) {
+        free(dir);
+        return aria_result_err_ptr(aria_error_msg("Out of memory"));
+    }
+    
+    aria_str->data = dir;
+    aria_str->length = strlen(dir);
+    return aria_result_ok_ptr(aria_str);
+}
+
+AriaResultPtr aria_path_basename_result(const char* path) {
+    char* base = aria_path_basename(path);
+    if (!base) {
+        char err_msg[512];
+        snprintf(err_msg, sizeof(err_msg), "Cannot get basename for '%s'", path ? path : "(null)");
+        return aria_result_err_ptr(aria_error_msg(err_msg));
+    }
+    
+    AriaString* aria_str = (AriaString*)malloc(sizeof(AriaString));
+    if (!aria_str) {
+        free(base);
+        return aria_result_err_ptr(aria_error_msg("Out of memory"));
+    }
+    
+    aria_str->data = base;
+    aria_str->length = strlen(base);
+    return aria_result_ok_ptr(aria_str);
+}
+
+AriaResultPtr aria_path_join_result(const char* dir, const char* name) {
+    char* joined = aria_path_join(dir, name);
+    if (!joined) {
+        return aria_result_err_ptr(aria_error_msg("Cannot join paths (out of memory or invalid input)"));
+    }
+    
+    AriaString* aria_str = (AriaString*)malloc(sizeof(AriaString));
+    if (!aria_str) {
+        free(joined);
+        return aria_result_err_ptr(aria_error_msg("Out of memory"));
+    }
+    
+    aria_str->data = joined;
+    aria_str->length = strlen(joined);
+    return aria_result_ok_ptr(aria_str);
+}
+
+AriaResultBool aria_path_is_absolute_result(const char* path) {
+    if (!path) {
+        return aria_result_err_bool(aria_error_msg("Path is NULL"));
+    }
+    
+    bool is_abs = aria_path_is_absolute(path);
+    return aria_result_ok_bool(is_abs);
+}

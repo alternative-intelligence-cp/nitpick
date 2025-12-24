@@ -160,14 +160,7 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
             return typeSystem->getPrimitiveType("flt64");
         }
         else if constexpr (std::is_same_v<T, std::string>) {
-            // Check if this is the special ERR literal
-            if (arg == "ERR") {
-                // ERR literal: represents TBB error sentinel
-                // Type will be resolved from context (tbb8/tbb16/tbb32/tbb64)
-                // For now, return unknown type to be resolved contextually
-                return typeSystem->getUnknownType();
-            }
-            // Regular string literal
+            // String literal
             return typeSystem->getPrimitiveType("string");
         }
         else if constexpr (std::is_same_v<T, bool>) {
@@ -2523,21 +2516,6 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             }
         }
         
-        // ERR Literal Validation
-        // Special handling for ERR literals assigned to TBB types
-        bool errLiteralAssignment = false;
-        if (isTBBType(declaredType) && stmt->initializer->type == ASTNode::NodeType::LITERAL) {
-            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
-            if (std::holds_alternative<std::string>(literal->value) && 
-                std::get<std::string>(literal->value) == "ERR") {
-                // ERR is valid for any TBB type
-                // The actual value (-128 for tbb8, -32768 for tbb16, etc.) will be 
-                // determined in IR generation based on the target type
-                errLiteralAssignment = true;
-                // No validation needed - ERR is always valid for TBB types
-            }
-        }
-        
         // Balanced Type Validation (Phase 3.2.5)
         // Special handling for integer literals assigned to balanced types
         bool balancedLiteralAssignment = false;
@@ -2611,8 +2589,8 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         }
         
         // Check if initializer type is assignable to declared type
-        // Skip this check if we handled TBB, ERR, balanced, standard int, or high-precision literal assignment above
-        if (!tbbLiteralAssignment && !errLiteralAssignment && !balancedLiteralAssignment && !standardIntLiteralAssignment && !highPrecisionLiteralAssignment) {
+        // Skip this check if we handled TBB, balanced, standard int, or high-precision literal assignment above
+        if (!tbbLiteralAssignment && !balancedLiteralAssignment && !standardIntLiteralAssignment && !highPrecisionLiteralAssignment) {
             // Special case: Allow T to be initialized to T? (wrapping)
             bool optionalWrapping = false;
             if (declaredType->getKind() == TypeKind::OPTIONAL) {

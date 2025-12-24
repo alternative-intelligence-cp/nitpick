@@ -1,0 +1,90 @@
+// Basic File I/O Test
+// Tests readFile, writeFile, fileExists, fileSize, deleteFile
+
+func:main = int32() {
+    print("=== File I/O Basic Test ===\n");
+    
+    // Test 1: Write a file
+    print("Test 1: Writing file...\n");
+    string:content = "Hello, Aria!\n";
+    var:write_result = writeFile("/tmp/aria_test.txt", content);
+    
+    if (write_result.is_error) {
+        print("ERROR: Failed to write file\n");
+        int32:err = 1;
+        pass(err);
+    }
+    print("SUCCESS: File written\n");
+    
+    // Test 2: Check file exists
+    print("Test 2: Checking file exists...\n");
+    var:exists_result = fileExists("/tmp/aria_test.txt");
+    
+    if (exists_result.is_error) {
+        print("ERROR: fileExists failed\n");
+        int32:err = 2;
+        pass(err);
+    }
+    
+    if (!exists_result.value) {
+        print("ERROR: File doesn't exist\n");
+        int32:err = 3;
+        pass(err);
+    }
+    print("SUCCESS: File exists\n");
+    
+    // Test 3: Get file size
+    print("Test 3: Getting file size...\n");
+    var:size_result = fileSize("/tmp/aria_test.txt");
+    
+    if (size_result.is_error) {
+        print("ERROR: fileSize failed\n");
+        int32:err = 4;
+        pass(err);
+    }
+    print("File size OK\n");
+    
+    // Test 4: Read the file
+    print("Test 4: Reading file...\n");
+    var:read_result = readFile("/tmp/aria_test.txt");
+    
+    if (read_result.is_error) {
+        print("ERROR: Failed to read file\n");
+        int32:err = 5;
+        pass(err);
+    }
+    print("File content: ");
+    print(read_result.value);
+    
+    // Test 5: Delete the file
+    print("Test 5: Deleting file...\n");
+    var:delete_result = deleteFile("/tmp/aria_test.txt");
+    
+    if (delete_result.is_error) {
+        print("ERROR: Failed to delete file\n");
+        int32:err = 6;
+        pass(err);
+    }
+    print("SUCCESS: File deleted\n");
+    
+    // Test 6: Verify file is gone
+    print("Test 6: Verifying file deleted...\n");
+    var:exists2_result = fileExists("/tmp/aria_test.txt");
+    
+    if (exists2_result.is_error) {
+        print("ERROR: fileExists check failed\n");
+        int32:err = 7;
+        pass(err);
+    }
+    
+    if (exists2_result.value) {
+        print("ERROR: File still exists\n");
+        int32:err = 8;
+        pass(err);
+    }
+    print("SUCCESS: File confirmed deleted\n");
+    
+    print("\n=== All File I/O Tests PASSED ===\n");
+    int32:success = 0;
+    pass(success);
+};

@@ -1,0 +1,22 @@
+// Ultra simple Result member access test
+// Just test that .is_error, .value, .error compile
+
+func:get_ok = result<int64>() {
+    pass(42);
+}
+
+func:main = int32() {
+    result<int64>:r = get_ok();
+    
+    // Test .is_error member access
+    bool:err = r.is_error;
+    
+    // Test .value member access  
+    int64:val = r.value;
+    
+    // Test .error member access
+    int64:errptr = r.error;
+    
+    // If all compiled, we succeeded
+    pass(0);
+}
