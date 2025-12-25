@@ -1232,6 +1232,76 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getPrimitiveType("string");
         }
 
+        // String conversion: string_from_int(int64) -> string
+        if (idExpr->name == "string_from_int") {
+            if (expr->arguments.size() != 1) {
+                addError("string_from_int() requires exactly one argument (value)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
+        // String conversion: string_to_int(string) -> int64
+        if (idExpr->name == "string_to_int") {
+            if (expr->arguments.size() != 1) {
+                addError("string_to_int() requires exactly one argument (str)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // String conversion: string_to_hex(string) -> string
+        if (idExpr->name == "string_to_hex") {
+            if (expr->arguments.size() != 1) {
+                addError("string_to_hex() requires exactly one argument (str)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
+        // String manipulation: string_pad_right(string, int64, int8) -> string
+        if (idExpr->name == "string_pad_right") {
+            if (expr->arguments.size() != 3) {
+                addError("string_pad_right() requires exactly three arguments (str, total_length, pad_char)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            Type* arg3Type = inferType(expr->arguments[2].get());
+            if (arg1Type->getKind() == TypeKind::ERROR ||
+                arg2Type->getKind() == TypeKind::ERROR ||
+                arg3Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
+        // String conversion: string_format_float(float64, int32) -> string
+        if (idExpr->name == "string_format_float") {
+            if (expr->arguments.size() != 2) {
+                addError("string_format_float() requires exactly two arguments (value, precision)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            if (arg1Type->getKind() == TypeKind::ERROR || arg2Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
         // ====================================================================
         // TBB (Tagged Balanced Base) TYPE BUILTINS
         // ====================================================================

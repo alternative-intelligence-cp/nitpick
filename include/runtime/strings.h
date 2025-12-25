@@ -262,11 +262,71 @@ AriaResultPtr aria_string_join(const AriaArray* strings, AriaString delimiter);
 /**
  * Convert string to null-terminated C string.
  * Returns a GC-allocated copy with null terminator added.
- * 
+ *
  * @param str String to convert
  * @return Result containing char* (null-terminated) or error
  */
 AriaResultPtr aria_string_to_cstr(AriaString str);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Integer/Float String Conversion
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Convert integer to string.
+ *
+ * @param value Integer value to convert
+ * @return Result containing AriaString* or error
+ */
+AriaResultPtr aria_string_from_int(int64_t value);
+
+/**
+ * Parse string as integer.
+ *
+ * @param str String to parse
+ * @return Result containing int64_t or error if invalid format
+ */
+AriaResultI64 aria_string_to_int(AriaString str);
+
+/**
+ * Convert string bytes to hex representation.
+ *
+ * @param str String to convert
+ * @return Result containing AriaString* with hex characters
+ */
+AriaResultPtr aria_string_to_hex(AriaString str);
+
+/**
+ * Pad string on the right to reach total length.
+ *
+ * @param str String to pad
+ * @param total_length Desired total length
+ * @param pad_char Character to pad with
+ * @return Result containing AriaString* or error
+ */
+AriaResultPtr aria_string_pad_right(AriaString str, int64_t total_length, uint8_t pad_char);
+
+/**
+ * Format a floating-point value as string.
+ *
+ * @param value Float value to format
+ * @param precision Number of decimal places (0-17, default 6)
+ * @return Result containing AriaString* or error
+ */
+AriaResultPtr aria_string_format_float(double value, int32_t precision);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Simple Wrapper Functions (abort on error, for builtin use)
+// ═══════════════════════════════════════════════════════════════════════
+
+AriaString* aria_string_from_int_simple(int64_t value);
+int64_t aria_string_to_int_simple(AriaString* str);
+AriaString* aria_string_to_hex_simple(AriaString* str);
+AriaString* aria_string_pad_right_simple(AriaString* str, int64_t total_length, uint8_t pad_char);
+AriaString* aria_string_format_float_simple(double value, int32_t precision);
+AriaString* aria_string_from_char_simple(uint8_t ch);
+AriaString* aria_string_from_cstr_simple(const char* cstr);
+AriaString* aria_string_concat_simple(AriaString* a, AriaString* b);
 
 #ifdef __cplusplus
 }

@@ -9,6 +9,7 @@
 #include <cstring>
 #include <cctype>
 #include <cstdlib>
+#include <cstdio>
 
 // ═══════════════════════════════════════════════════════════════════════
 // Helper Functions
@@ -604,4 +605,203 @@ AriaResultPtr aria_string_to_cstr(AriaString str) {
     // String data is already null-terminated in aria_string_from_bytes
     // Just return the data pointer
     return aria_result_ok_ptr((void*)str.data);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Integer/Float String Conversion
+// ═══════════════════════════════════════════════════════════════════════
+
+AriaResultPtr aria_string_from_int(int64_t value) {
+    // Maximum length for int64 is 20 characters (including sign)
+    char buffer[32];
+    int len = snprintf(buffer, sizeof(buffer), "%ld", value);
+    if (len < 0 || len >= (int)sizeof(buffer)) {
+        AriaError* error = aria_error_new(
+            ARIA_ERR_INVALID_ARG,
+            "Failed to convert integer to string",
+            __FILE__, __LINE__
+        );
+        return aria_result_err_ptr(error);
+    }
+    return aria_string_from_bytes(buffer, len);
+}
+
+AriaResultI64 aria_string_to_int(AriaString str) {
+    if (str.length == 0) {
+        AriaError* error = aria_error_new(
+            ARIA_ERR_INVALID_ARG,
+            "Cannot parse empty string as integer",
+            __FILE__, __LINE__
+        );
+        return aria_result_err_i64(error);
+    }
+
+    // Create null-terminated copy for strtoll
+    char* temp = (char*)malloc(str.length + 1);
+    if (!temp) {
+        AriaError* error = aria_error_new(
+            ARIA_ERR_OUT_OF_MEMORY,
+            "Failed to allocate temporary buffer",
+            __FILE__, __LINE__
+        );
+        return aria_result_err_i64(error);
+    }
+    memcpy(temp, str.data, str.length);
+    temp[str.length] = '\0';
+
+    char* endptr;
+    int64_t result = strtoll(temp, &endptr, 10);
+
+    // Check if entire string was consumed
+    bool valid = (endptr == temp + str.length);
+    free(temp);
+
+    if (!valid) {
+        AriaError* error = aria_error_new(
+            ARIA_ERR_INVALID_ARG,
+            "Invalid integer format",
+            __FILE__, __LINE__
+        );
+        return aria_result_err_i64(error);
+    }
+
+    return aria_result_ok_i64(result);
+}
+
+AriaResultPtr aria_string_to_hex(AriaString str) {
+    if (str.length == 0) {
+        return aria_result_ok_ptr(aria_string_empty());
+    }
+
+    // Each byte becomes 2 hex characters
+    int64_t hex_len = str.length * 2;
+    char* hex_data = (char*)aria_gc_alloc(hex_len + 1, 0);
+    if (!hex_data) {
+        AriaError* error = aria_error_new(
+            ARIA_ERR_OUT_OF_MEMORY,
+            "Failed to allocate hex string",
+            __FILE__, __LINE__
+        );
+        return aria_result_err_ptr(error);
+    }
+
+    static const char hex_chars[] = "0123456789abcdef";
+    for (int64_t i = 0; i < str.length; i++) {
+        uint8_t byte = (uint8_t)str.data[i];
+        hex_data[i * 2] = hex_chars[byte >> 4];
+        hex_data[i * 2 + 1] = hex_chars[byte & 0x0F];
+    }
+    hex_data[hex_len] = '\0';
+
+    AriaString result = {hex_data, hex_len};
+    AriaString* heap_str = (AriaString*)aria_gc_alloc(sizeof(AriaString), 0);
+    if (!heap_str) {
+        return aria_result_err_ptr(aria_error_new(ARIA_ERR_OUT_OF_MEMORY, "Failed to allocate string", __FILE__, __LINE__));
+    }
+    *heap_str = result;
+    return aria_result_ok_ptr(heap_str);
+}
+
+AriaResultPtr aria_string_pad_right(AriaString str, int64_t total_length, uint8_t pad_char) {
+    if (total_length <= str.length) {
+        // Already long enough, return copy
+        return aria_string_from_bytes(str.data, str.length);
+    }
+
+    int64_t padding_needed = total_length - str.length;
+    char* padded_data = (char*)aria_gc_alloc(total_length + 1, 0);
+    if (!padded_data) {
+        AriaError* error = aria_error_new(
+            ARIA_ERR_OUT_OF_MEMORY,
+            "Failed to allocate padded string",
+            __FILE__, __LINE__
+        );
+        return aria_result_err_ptr(error);
+    }
+
+    // Copy original string
+    if (str.length > 0) {
+        memcpy(padded_data, str.data, str.length);
+    }
+
+    // Add padding
+    memset(padded_data + str.length, (char)pad_char, padding_needed);
+    padded_data[total_length] = '\0';
+
+    AriaString result = {padded_data, total_length};
+    AriaString* heap_str = (AriaString*)aria_gc_alloc(sizeof(AriaString), 0);
+    if (!heap_str) {
+        return aria_result_err_ptr(aria_error_new(ARIA_ERR_OUT_OF_MEMORY, "Failed to allocate string", __FILE__, __LINE__));
+    }
+    *heap_str = result;
+    return aria_result_ok_ptr(heap_str);
+}
+
+AriaResultPtr aria_string_format_float(double value, int32_t precision) {
+    if (precision < 0) precision = 6;  // Default precision
+    if (precision > 17) precision = 17;  // Max meaningful precision for double
+
+    char buffer[64];
+    int len = snprintf(buffer, sizeof(buffer), "%.*f", precision, value);
+    if (len < 0 || len >= (int)sizeof(buffer)) {
+        AriaError* error = aria_error_new(
+            ARIA_ERR_INVALID_ARG,
+            "Failed to format float",
+            __FILE__, __LINE__
+        );
+        return aria_result_err_ptr(error);
+    }
+    return aria_string_from_bytes(buffer, len);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Simple Wrapper Functions (abort on error, for builtin use)
+// ═══════════════════════════════════════════════════════════════════════
+
+AriaString* aria_string_from_int_simple(int64_t value) {
+    AriaResultPtr result = aria_string_from_int(value);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
+int64_t aria_string_to_int_simple(AriaString* str) {
+    AriaResultI64 result = aria_string_to_int(*str);
+    if (result.error != NULL) { std::abort(); }
+    return result.value;
+}
+
+AriaString* aria_string_to_hex_simple(AriaString* str) {
+    AriaResultPtr result = aria_string_to_hex(*str);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
+AriaString* aria_string_pad_right_simple(AriaString* str, int64_t total_length, uint8_t pad_char) {
+    AriaResultPtr result = aria_string_pad_right(*str, total_length, pad_char);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
+AriaString* aria_string_format_float_simple(double value, int32_t precision) {
+    AriaResultPtr result = aria_string_format_float(value, precision);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
+AriaString* aria_string_from_char_simple(uint8_t ch) {
+    AriaResultPtr result = aria_string_from_char(ch);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
+AriaString* aria_string_from_cstr_simple(const char* cstr) {
+    AriaResultPtr result = aria_string_from_cstr(cstr);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
+AriaString* aria_string_concat_simple(AriaString* a, AriaString* b) {
+    AriaResultPtr result = aria_string_concat(*a, *b);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
 }

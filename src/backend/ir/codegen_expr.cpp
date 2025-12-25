@@ -2253,6 +2253,115 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return builder.CreateCall(func, {str}, "lower_result");
     }
 
+    // string_from_int(int64) -> string
+    if (callee_ident->name == "string_from_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("string_from_int() requires one argument");
+        }
+
+        llvm::Function* func = module->getFunction("aria_string_from_int_simple");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getInt64Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(builder.getPtrTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_from_int_simple", module);
+        }
+
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        // Ensure value is i64 (sign extend if smaller)
+        if (val->getType() != builder.getInt64Ty()) {
+            val = builder.CreateSExt(val, builder.getInt64Ty(), "val_i64");
+        }
+        return builder.CreateCall(func, {val}, "from_int_result");
+    }
+
+    // string_to_int(string) -> int64
+    if (callee_ident->name == "string_to_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("string_to_int() requires one argument");
+        }
+
+        llvm::Function* func = module->getFunction("aria_string_to_int_simple");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getPtrTy()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(builder.getInt64Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_to_int_simple", module);
+        }
+
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        return builder.CreateCall(func, {str_ptr}, "to_int_result");
+    }
+
+    // string_to_hex(string) -> string
+    if (callee_ident->name == "string_to_hex") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("string_to_hex() requires one argument");
+        }
+
+        llvm::Function* func = module->getFunction("aria_string_to_hex_simple");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getPtrTy()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(builder.getPtrTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_to_hex_simple", module);
+        }
+
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        return builder.CreateCall(func, {str_ptr}, "to_hex_result");
+    }
+
+    // string_pad_right(string, int64, int8) -> string
+    if (callee_ident->name == "string_pad_right") {
+        if (expr->arguments.size() != 3) {
+            throw std::runtime_error("string_pad_right() requires three arguments");
+        }
+
+        llvm::Function* func = module->getFunction("aria_string_pad_right_simple");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getInt64Ty(), builder.getInt8Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(builder.getPtrTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_pad_right_simple", module);
+        }
+
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* total_len = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Value* pad_char = codegenExpressionNode(expr->arguments[2].get(), this);
+        // Extend total_len to i64 if needed
+        if (total_len->getType() != builder.getInt64Ty()) {
+            total_len = builder.CreateSExt(total_len, builder.getInt64Ty(), "len_i64");
+        }
+        // Truncate pad_char to i8 if needed
+        if (pad_char->getType() != builder.getInt8Ty()) {
+            pad_char = builder.CreateTrunc(pad_char, builder.getInt8Ty(), "pad_i8");
+        }
+        return builder.CreateCall(func, {str_ptr, total_len, pad_char}, "pad_right_result");
+    }
+
+    // string_format_float(float64, int32) -> string
+    if (callee_ident->name == "string_format_float") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("string_format_float() requires two arguments");
+        }
+
+        llvm::Function* func = module->getFunction("aria_string_format_float_simple");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getDoubleTy(), builder.getInt32Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(builder.getPtrTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_format_float_simple", module);
+        }
+
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* precision = codegenExpressionNode(expr->arguments[1].get(), this);
+        // Truncate precision to i32 if needed
+        if (precision->getType() != builder.getInt32Ty()) {
+            precision = builder.CreateTrunc(precision, builder.getInt32Ty(), "prec_i32");
+        }
+        return builder.CreateCall(func, {val, precision}, "format_float_result");
+    }
+
     // ====================================================================
     // TBB (Tagged Balanced Base) TYPE BUILTINS
     // ====================================================================
