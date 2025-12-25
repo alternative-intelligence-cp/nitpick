@@ -621,7 +621,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
         // Handle ENUM_DECL statements - register enum constants before processing functions
         if (decl->type == ASTNode::NodeType::ENUM_DECL) {
             EnumDeclStmt* enumDecl = static_cast<EnumDeclStmt*>(decl.get());
-            
+
             // Register each variant in the enum_constants map
             for (const auto& [variantName, variantValue] : enumDecl->variants) {
                 std::string fullName = enumDecl->enumName + "." + variantName;
@@ -629,7 +629,88 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             }
             continue;
         }
-        
+
+        // Handle EXTERN statements - generate external function declarations
+        if (decl->type == ASTNode::NodeType::EXTERN) {
+            ExternStmt* externStmt = static_cast<ExternStmt*>(decl.get());
+
+            // Helper lambda to map FFI type names to LLVM types
+            auto mapFFIType = [this](ASTNode* typeNode) -> llvm::Type* {
+                if (!typeNode) return builder.getVoidTy();
+
+                // Handle SimpleType (type name as string)
+                if (typeNode->type == ASTNode::NodeType::TYPE_ANNOTATION) {
+                    SimpleType* simpleType = static_cast<SimpleType*>(typeNode);
+                    std::string typeName = simpleType->typeName;
+
+                    // Check for pointer types (ending with *)
+                    bool isPointer = false;
+                    while (!typeName.empty() && typeName.back() == '*') {
+                        isPointer = true;
+                        typeName.pop_back();
+                    }
+
+                    // Map base type
+                    llvm::Type* baseType = nullptr;
+                    if (typeName == "void") baseType = builder.getVoidTy();
+                    else if (typeName == "int8" || typeName == "byte") baseType = builder.getInt8Ty();
+                    else if (typeName == "int16") baseType = builder.getInt16Ty();
+                    else if (typeName == "int32") baseType = builder.getInt32Ty();
+                    else if (typeName == "int64") baseType = builder.getInt64Ty();
+                    else if (typeName == "float32" || typeName == "flt32") baseType = builder.getFloatTy();
+                    else if (typeName == "float64" || typeName == "flt64") baseType = builder.getDoubleTy();
+                    else {
+                        // Unknown type (opaque) - treat as ptr
+                        return builder.getPtrTy();
+                    }
+
+                    if (isPointer || baseType == builder.getVoidTy()) {
+                        return builder.getPtrTy();
+                    }
+                    return baseType;
+                }
+
+                // Default to ptr for unknown types
+                return builder.getPtrTy();
+            };
+
+            for (const auto& externDecl : externStmt->declarations) {
+                if (externDecl->type == ASTNode::NodeType::FUNC_DECL) {
+                    // Generate extern function declaration
+                    FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(externDecl.get());
+
+                    // Get return type
+                    llvm::Type* returnType = mapFFIType(funcDecl->returnType.get());
+
+                    // Get parameter types
+                    std::vector<llvm::Type*> paramTypes;
+                    for (const auto& param : funcDecl->parameters) {
+                        if (param->type == ASTNode::NodeType::PARAMETER) {
+                            ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
+                            llvm::Type* paramType = mapFFIType(paramNode->typeNode.get());
+                            paramTypes.push_back(paramType);
+                        }
+                    }
+
+                    // Create function type
+                    llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
+
+                    // Create function declaration if it doesn't exist
+                    if (!module->getFunction(funcDecl->funcName)) {
+                        llvm::Function::Create(
+                            funcType,
+                            llvm::Function::ExternalLinkage,
+                            funcDecl->funcName,
+                            module.get()
+                        );
+                    }
+                }
+                // OPAQUE_STRUCT and STRUCT_DECL in extern don't need special handling here
+                // They're used for type resolution which happens at call sites
+            }
+            continue;
+        }
+
         // Handle FUNC_DECL statements
         if (decl->type == ASTNode::NodeType::FUNC_DECL) {
             FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(decl.get());
@@ -1398,18 +1479,115 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // Enum declaration - variants should already be registered in processModuleDeclarations
             // This case handles enums declared inside function bodies (edge case)
             EnumDeclStmt* enumDecl = static_cast<EnumDeclStmt*>(stmt);
-            
+
             // Register each variant in the enum_constants map
             for (const auto& [variantName, variantValue] : enumDecl->variants) {
                 std::string fullName = enumDecl->enumName + "." + variantName;
                 enum_constants[fullName] = variantValue;
             }
-            
+
             // No code needs to be generated for the declaration itself
             // Enum values are compile-time constants that will be inlined
             return nullptr;
         }
-        
+
+        case ASTNode::NodeType::EXTERN: {
+            // Extern block - generate declarations for all contained functions
+            ExternStmt* externStmt = static_cast<ExternStmt*>(stmt);
+
+            // Helper lambda to map FFI type names to LLVM types
+            auto mapFFIType = [this](ASTNode* typeNode) -> llvm::Type* {
+                if (!typeNode) return builder.getVoidTy();
+
+                // Handle SimpleType (type name as string)
+                if (typeNode->type == ASTNode::NodeType::TYPE_ANNOTATION) {
+                    SimpleType* simpleType = static_cast<SimpleType*>(typeNode);
+                    std::string typeName = simpleType->typeName;
+
+                    // Check for pointer types (ending with *)
+                    bool isPointer = false;
+                    while (!typeName.empty() && typeName.back() == '*') {
+                        isPointer = true;
+                        typeName.pop_back();
+                    }
+
+                    // Map base type
+                    llvm::Type* baseType = nullptr;
+                    if (typeName == "void") baseType = builder.getVoidTy();
+                    else if (typeName == "int8" || typeName == "byte") baseType = builder.getInt8Ty();
+                    else if (typeName == "int16") baseType = builder.getInt16Ty();
+                    else if (typeName == "int32") baseType = builder.getInt32Ty();
+                    else if (typeName == "int64") baseType = builder.getInt64Ty();
+                    else if (typeName == "float32" || typeName == "flt32") baseType = builder.getFloatTy();
+                    else if (typeName == "float64" || typeName == "flt64") baseType = builder.getDoubleTy();
+                    else {
+                        // Unknown type - treat as opaque (ptr)
+                        return builder.getPtrTy();
+                    }
+
+                    if (isPointer || baseType == builder.getVoidTy()) {
+                        return builder.getPtrTy();
+                    }
+                    return baseType;
+                }
+
+                // Default to ptr for unknown types
+                return builder.getPtrTy();
+            };
+
+            for (const auto& decl : externStmt->declarations) {
+                if (decl->type == ASTNode::NodeType::FUNC_DECL) {
+                    // Generate extern function declaration
+                    FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(decl.get());
+
+                    // Get return type
+                    llvm::Type* returnType = mapFFIType(funcDecl->returnType.get());
+
+                    // Get parameter types
+                    std::vector<llvm::Type*> paramTypes;
+                    for (const auto& param : funcDecl->parameters) {
+                        if (param->type == ASTNode::NodeType::PARAMETER) {
+                            ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
+                            llvm::Type* paramType = mapFFIType(paramNode->typeNode.get());
+                            paramTypes.push_back(paramType);
+                        }
+                    }
+
+                    // Create function type
+                    llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
+
+                    // Create or get function declaration
+                    llvm::Function* func = module->getFunction(funcDecl->funcName);
+                    if (!func) {
+                        func = llvm::Function::Create(
+                            funcType,
+                            llvm::Function::ExternalLinkage,
+                            funcDecl->funcName,
+                            module.get()
+                        );
+                    }
+                }
+                else if (decl->type == ASTNode::NodeType::OPAQUE_STRUCT) {
+                    // Opaque structs map to ptr (void*) in IR - no struct needed
+                    // The type name is registered for use in type resolution
+                    OpaqueStructDecl* opaqueDecl = static_cast<OpaqueStructDecl*>(decl.get());
+                    // Register as opaque type (handled by type system)
+                    (void)opaqueDecl; // Suppress unused warning
+                }
+                else if (decl->type == ASTNode::NodeType::STRUCT_DECL) {
+                    // Struct declaration in extern block - register the struct type
+                    // Handled same as regular struct declarations
+                }
+            }
+            return nullptr;
+        }
+
+        case ASTNode::NodeType::OPAQUE_STRUCT: {
+            // Opaque struct declaration - no IR generation needed
+            // The type is registered in the type system and maps to ptr/void*
+            return nullptr;
+        }
+
         case ASTNode::NodeType::PASS: {
             // Pass statement - return success with value
             PassStmt* passStmt = static_cast<PassStmt*>(stmt);
