@@ -111,6 +111,52 @@ Test Coverage:
 Note: Tests document that validation exists and provide regression coverage
 ```
 
+### ARIA-023: Definite Assignment Analysis
+```
+ID: ARIA-023
+Status: COMPLETED
+Completed By: Aria Echo (AI)
+Completed Date: 2025-12-25
+Spec: aria_ecosystem/MASTER_ROADMAP.md, Phase 2.3
+Complexity: MEDIUM
+Tier: 2
+Description: Implement dataflow analysis to detect use of uninitialized variables
+Acceptance Criteria:
+  - ✅ Detects read of variables before assignment
+  - ✅ Tracks definite assignment through control flow
+  - ✅ Handles if-else branches (both-branch = ASSIGNED, one-branch = MAYBE_ASSIGNED)
+  - ✅ Conservative loop analysis (assignments in loops = MAYBE_ASSIGNED)
+  - ✅ Declarations with initializers marked ASSIGNED immediately
+  - ✅ Reports "Use of uninitialized variable 'x'" for UNASSIGNED reads
+  - ✅ Reports "Use of possibly uninitialized variable 'x'" for MAYBE_ASSIGNED reads
+  - ✅ Comprehensive test suite (6 test cases)
+Files Created:
+  - include/frontend/sema/definite_assignment.h (120 lines)
+  - src/frontend/sema/definite_assignment.cpp (440 lines)
+  - tests/safety/test_definite_assignment_ok.aria
+  - tests/safety/test_definite_assignment_uninitialized.aria
+  - tests/safety/test_definite_assignment_partial_branch.aria
+  - tests/safety/test_definite_assignment_complete_branch.aria
+  - tests/safety/test_definite_assignment_loop.aria
+  - tests/safety/test_definite_assignment_initializer.aria
+Files Modified:
+  - src/frontend/sema/type_checker.cpp (integration at end of check())
+  - CMakeLists.txt (added definite_assignment.cpp to SEMA_SOURCES)
+Implementation Notes:
+  - Three-state analysis: UNASSIGNED, ASSIGNED, MAYBE_ASSIGNED
+  - Snapshot/restore/merge pattern for control flow (like BorrowChecker)
+  - AssignmentContext tracks variable states with conservative merging
+  - Integration: Called from TypeChecker::check() after type checking
+  - Error reporting via TypeChecker::addError() with line/column info
+Test Results:
+  - test_definite_assignment_ok.aria: ✅ Compiles (unconditional assignment)
+  - test_definite_assignment_initializer.aria: ✅ Compiles (declaration with initializer)
+  - test_definite_assignment_complete_branch.aria: ✅ Compiles (both branches assign)
+  - test_definite_assignment_uninitialized.aria: ✗ Error: "Use of uninitialized variable 'x'"
+  - test_definite_assignment_partial_branch.aria: ✗ Error: "Use of possibly uninitialized variable 'x'"
+  - test_definite_assignment_loop.aria: ✗ Error: "Use of possibly uninitialized variable 'x'"
+```
+
 ### ARIA-004: Must-Use Result Warning Message Improvement
 ```
 ID: ARIA-004

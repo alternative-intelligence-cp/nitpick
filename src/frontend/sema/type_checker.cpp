@@ -1,6 +1,7 @@
 #include "frontend/sema/type_checker.h"
 #include "frontend/sema/generic_resolver.h"
 #include "frontend/sema/exhaustiveness.h"
+#include "frontend/sema/definite_assignment.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/type.h"  // For ArrayType, SimpleType, etc.
@@ -42,6 +43,16 @@ void TypeChecker::check(ASTNode* module) {
     } else {
         // Single statement module (edge case)
         checkStatement(module);
+    }
+    
+    // Phase 2.3: Definite Assignment Analysis
+    // Check for uninitialized variable usage after type checking
+    DefiniteAssignmentAnalyzer defAssignAnalyzer;
+    std::vector<AssignmentError> assignmentErrors = defAssignAnalyzer.analyze(module);
+    
+    // Report definite assignment errors
+    for (const auto& err : assignmentErrors) {
+        addError(err.message, err.line, err.column);
     }
 }
 
@@ -1193,7 +1204,261 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             }
             return typeSystem->getPrimitiveType("string");
         }
-        
+
+        // ====================================================================
+        // TBB (Tagged Balanced Base) TYPE BUILTINS
+        // ====================================================================
+
+        // tbb64_from_int(int64) -> tbb64
+        if (idExpr->name == "tbb64_from_int") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb64_from_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb64");
+        }
+
+        // tbb64_is_err(tbb64) -> bool
+        if (idExpr->name == "tbb64_is_err") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb64_is_err() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+
+        // tbb64_to_int(tbb64) -> int64
+        if (idExpr->name == "tbb64_to_int") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb64_to_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // tbb32_from_int(int32) -> tbb32
+        if (idExpr->name == "tbb32_from_int") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb32_from_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+
+        // tbb32_is_err(tbb32) -> bool
+        if (idExpr->name == "tbb32_is_err") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb32_is_err() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+
+        // tbb32_to_int(tbb32) -> int32
+        if (idExpr->name == "tbb32_to_int") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb32_to_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+
+        // tbb16_from_int(int16) -> tbb16
+        if (idExpr->name == "tbb16_from_int") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb16_from_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb16");
+        }
+
+        // tbb16_is_err(tbb16) -> bool
+        if (idExpr->name == "tbb16_is_err") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb16_is_err() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+
+        // tbb16_to_int(tbb16) -> int16
+        if (idExpr->name == "tbb16_to_int") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb16_to_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int16");
+        }
+
+        // tbb8_from_int(int8) -> tbb8
+        if (idExpr->name == "tbb8_from_int") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb8_from_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb8");
+        }
+
+        // tbb8_is_err(tbb8) -> bool
+        if (idExpr->name == "tbb8_is_err") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb8_is_err() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+
+        // tbb8_to_int(tbb8) -> int8
+        if (idExpr->name == "tbb8_to_int") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb8_to_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int8");
+        }
+
+        // ====================================================================
+        // COLLECTION BUILTINS (Phase 6.2)
+        // ====================================================================
+
+        // array_new(element_size: int64) -> int8@
+        // Creates a new empty array with given element size
+        if (idExpr->name == "array_new") {
+            if (expr->arguments.size() != 1) {
+                addError("array_new() requires exactly one argument (element_size)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Returns a pointer to AriaArray (int8@ as generic pointer)
+            return typeSystem->getPointerType(typeSystem->getPrimitiveType("int8"));
+        }
+
+        // array_length(array: ptr) -> int64
+        // Returns the number of elements in the array
+        if (idExpr->name == "array_length") {
+            if (expr->arguments.size() != 1) {
+                addError("array_length() requires exactly one argument (array)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // array_push(array: ptr, value: ptr) -> int32
+        // Appends an element to the array (returns 0 on success)
+        if (idExpr->name == "array_push") {
+            if (expr->arguments.size() != 2) {
+                addError("array_push() requires exactly two arguments (array, value)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arrType = inferType(expr->arguments[0].get());
+            Type* valType = inferType(expr->arguments[1].get());
+            if (arrType->getKind() == TypeKind::ERROR || valType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+
+        // array_get(array: ptr, index: int64) -> int8@
+        // Returns pointer to element at index
+        if (idExpr->name == "array_get") {
+            if (expr->arguments.size() != 2) {
+                addError("array_get() requires exactly two arguments (array, index)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arrType = inferType(expr->arguments[0].get());
+            Type* idxType = inferType(expr->arguments[1].get());
+            if (arrType->getKind() == TypeKind::ERROR || idxType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPointerType(typeSystem->getPrimitiveType("int8"));
+        }
+
+        // array_set(array: ptr, index: int64, value: ptr) -> int32
+        // Sets element at index (returns 0 on success)
+        if (idExpr->name == "array_set") {
+            if (expr->arguments.size() != 3) {
+                addError("array_set() requires exactly three arguments (array, index, value)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arrType = inferType(expr->arguments[0].get());
+            Type* idxType = inferType(expr->arguments[1].get());
+            Type* valType = inferType(expr->arguments[2].get());
+            if (arrType->getKind() == TypeKind::ERROR || idxType->getKind() == TypeKind::ERROR ||
+                valType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+
+        // array_pop(array: ptr) -> int8@
+        // Removes and returns pointer to last element
+        if (idExpr->name == "array_pop") {
+            if (expr->arguments.size() != 1) {
+                addError("array_pop() requires exactly one argument (array)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPointerType(typeSystem->getPrimitiveType("int8"));
+        }
+
         // ====================================================================
         // FILE I/O BUILTINS (Phase 4.2)
         // ====================================================================
@@ -1526,8 +1791,56 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
     }
     
     // Non-generic function call or generics not available
-    // TODO: Check argument count and types match parameters
-    // For now, return UnknownType
+    // Validate argument count and types
+    
+    // If we have a function type, validate arguments
+    if (calleeType->getKind() == TypeKind::FUNCTION) {
+        FunctionType* funcType = static_cast<FunctionType*>(calleeType);
+        
+        // Check argument count
+        size_t expectedCount = funcType->getParamCount();
+        size_t actualCount = expr->arguments.size();
+        
+        if (!funcType->isVariadicFunction() && actualCount != expectedCount) {
+            addError("Function expects " + std::to_string(expectedCount) + 
+                    " argument(s), but " + std::to_string(actualCount) + " provided", expr);
+            return typeSystem->getErrorType();
+        }
+        
+        if (funcType->isVariadicFunction() && actualCount < expectedCount) {
+            addError("Variadic function expects at least " + std::to_string(expectedCount) + 
+                    " argument(s), but " + std::to_string(actualCount) + " provided", expr);
+            return typeSystem->getErrorType();
+        }
+        
+        // Check argument types
+        const auto& paramTypes = funcType->getParamTypes();
+        for (size_t i = 0; i < expectedCount && i < actualCount; ++i) {
+            Type* argType = inferType(expr->arguments[i].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            // Check if argument type is assignable to parameter type
+            if (!argType->isAssignableTo(paramTypes[i])) {
+                addError("Argument " + std::to_string(i + 1) + " has type '" + 
+                        argType->toString() + "', but function expects '" + 
+                        paramTypes[i]->toString() + "'", expr->arguments[i].get());
+                // Continue checking other arguments to report all errors
+            }
+        }
+        
+        // Return the function's return type
+        return funcType->getReturnType();
+    }
+    
+    // If callee type is not a function, it's an error
+    if (calleeType->getKind() != TypeKind::UNKNOWN) {
+        addError("Cannot call non-function type '" + calleeType->toString() + "'", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // Unknown type - return unknown (for cases where type hasn't been inferred yet)
     return typeSystem->getUnknownType();
 }
 
@@ -1603,13 +1916,36 @@ Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
 // ============================================================================
 
 Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
-    // Check if this is enum variant access (EnumName.VARIANT)
-    // If the object is a simple identifier, try looking up EnumName.Member in symbol table
+    // Check if this is module member access (module.function or module.symbol)
+    // This must come before type inference to handle MODULE symbols correctly
     if (expr->object->type == ASTNode::NodeType::IDENTIFIER) {
         IdentifierExpr* identExpr = static_cast<IdentifierExpr*>(expr->object.get());
-        std::string fullName = identExpr->name + "." + expr->member;
+        Symbol* baseSym = symbolTable->resolveSymbol(identExpr->name);
         
-        // Try to look up as enum variant
+        // If the base is a MODULE symbol, resolve member from the module
+        if (baseSym && baseSym->isModule()) {
+            Module* module = baseSym->getModuleRef();
+            if (!module) {
+                addError("Module '" + identExpr->name + "' has invalid module reference", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Look up member in module exports
+            const auto& exports = module->getExports();
+            auto it = exports.find(expr->member);
+            if (it != exports.end()) {
+                // Found exported symbol - return its type
+                return it->second.symbol->type;
+            }
+            
+            // Member not found in module exports
+            addError("Module '" + identExpr->name + "' has no exported member '" + 
+                    expr->member + "'", expr);
+            return typeSystem->getErrorType();
+        }
+        
+        // Also check for enum variant access (EnumName.VARIANT)
+        std::string fullName = identExpr->name + "." + expr->member;
         Symbol* variantSym = symbolTable->resolveSymbol(fullName);
         if (variantSym) {
             // Found enum variant - return its type (should be int64)
@@ -2707,10 +3043,27 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     // Restore previous function return type
     currentFunctionReturnType = previousReturnType;
     
-    // Define function symbol in symbol table with function declaration
-    // Note: Function type creation would need more work for full signature
+    // Build parameter types for function type
+    std::vector<Type*> paramTypes;
+    for (const auto& param : stmt->parameters) {
+        if (param->type == ASTNode::NodeType::PARAMETER) {
+            ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
+            Type* paramType = resolveTypeNode(paramNode->typeNode.get());
+            if (paramType && paramType->getKind() != TypeKind::ERROR) {
+                paramTypes.push_back(paramType);
+            } else {
+                // Use void as fallback for error types
+                paramTypes.push_back(typeSystem->getPrimitiveType("void"));
+            }
+        }
+    }
+    
+    // Create proper function type with parameters and return type
+    Type* funcType = new FunctionType(paramTypes, returnType, stmt->isAsync, false);
+    
+    // Define function symbol in symbol table with complete function type
     Symbol* funcSymbol = symbolTable->defineSymbol(stmt->funcName, SymbolKind::FUNCTION,
-                                                    returnType, stmt->line, stmt->column);
+                                                    funcType, stmt->line, stmt->column);
     if (funcSymbol) {
         funcSymbol->setFuncDecl(stmt);  // Store AST for generic resolution and CTFE
     }
@@ -2800,6 +3153,16 @@ void TypeChecker::checkEnumDecl(EnumDeclStmt* stmt) {
 // ============================================================================
 
 void TypeChecker::checkAssignment(BinaryExpr* expr) {
+    // Special case: Explicit discard with _
+    if (expr->left->type == ASTNode::NodeType::IDENTIFIER) {
+        IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr->left.get());
+        if (ident->name == "_") {
+            // Discard - just type check the right side, don't create symbol
+            inferType(expr->right.get());
+            return;
+        }
+    }
+    
     // Left side must be an lvalue (identifier, index, member access)
     if (expr->left->type != ASTNode::NodeType::IDENTIFIER &&
         expr->left->type != ASTNode::NodeType::INDEX &&
@@ -3167,24 +3530,23 @@ void TypeChecker::checkBlockStmt(BlockStmt* stmt) {
 // ============================================================================
 
 void TypeChecker::checkExpressionStmt(ExpressionStmt* stmt) {
-    // Just infer the expression type
-    // Special case: check if it's an assignment
+    // Special case: check if it's an assignment (including explicit discard)
     if (stmt->expression->type == ASTNode::NodeType::BINARY_OP) {
         BinaryExpr* binExpr = static_cast<BinaryExpr*>(stmt->expression.get());
         if (binExpr->op.type == frontend::TokenType::TOKEN_EQUAL) {
+            // Check for explicit discard syntax: _ = expr
+            if (binExpr->left->type == ASTNode::NodeType::IDENTIFIER) {
+                IdentifierExpr* ident = static_cast<IdentifierExpr*>(binExpr->left.get());
+                if (ident->name == "_") {
+                    // Explicit discard - infer type but skip nodiscard check
+                    inferType(binExpr->right.get());
+                    return;
+                }
+            }
+            
+            // Regular assignment
             checkAssignment(binExpr);
             return;
-        }
-        
-        // Check for explicit discard syntax: _ = expr
-        if (binExpr->op.type == frontend::TokenType::TOKEN_EQUAL &&
-            binExpr->left->type == ASTNode::NodeType::IDENTIFIER) {
-            IdentifierExpr* ident = static_cast<IdentifierExpr*>(binExpr->left.get());
-            if (ident->name == "_") {
-                // Explicit discard - skip nodiscard check
-                inferType(binExpr->right.get());
-                return;
-            }
         }
     }
     
@@ -3540,28 +3902,9 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
     }
     
     // Basic validation of use statement structure
-    // Detailed module resolution is handled by module_resolver
-    
     if (stmt->path.empty()) {
         addError("Empty module path in use statement", stmt);
         return;
-    }
-    
-    // For file path imports, validate the path format
-    if (stmt->isFilePath) {
-        const std::string& filePath = stmt->path[0];
-        
-        // Check for valid file extensions
-        if (!filePath.empty()) {
-            // File paths should end with .aria
-            if (filePath.length() > 5) {
-                std::string ext = filePath.substr(filePath.length() - 5);
-                if (ext != ".aria") {
-                    // Allow paths without extensions (will be resolved by module system)
-                    // This is just a warning, not an error
-                }
-            }
-        }
     }
     
     // Validate selective imports and wildcards
@@ -3570,8 +3913,90 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
         return;
     }
     
-    // Note: Actual symbol resolution and import validation happens during
-    // symbol table construction and module linking phases
+    // If no module loader is available, skip module loading (used in tests)
+    if (!moduleLoader) {
+        return;
+    }
+    
+    // Convert path vector to logical path string (e.g., ["std", "io"] -> "std.io")
+    std::string logicalPath;
+    if (stmt->isFilePath) {
+        // File paths are already in the first element
+        logicalPath = stmt->path[0];
+    } else {
+        // Join path components with dots
+        for (size_t i = 0; i < stmt->path.size(); ++i) {
+            if (i > 0) logicalPath += ".";
+            logicalPath += stmt->path[i];
+        }
+    }
+    
+    // Load the module using ModuleLoader
+    LoadedModule* module = moduleLoader->loadModule(logicalPath, currentModulePath);
+    if (!module) {
+        addError("Failed to load module '" + logicalPath + "'", stmt);
+        return;
+    }
+    
+    // Type-check the loaded module if not already done
+    // This populates the module's symbol table and exports
+    if (module->state == ModuleState::FULLY_LOADED && module->moduleInfo) {
+        // Check if we've already type-checked this module
+        // (Simple check: if exports is empty, we haven't type-checked yet)
+        if (module->moduleInfo->getExports().empty() && module->ast) {
+            // Temporarily export all top-level function declarations
+            // (Until we implement `pub` keyword parsing)
+            for (const auto& decl : module->ast->declarations) {
+                if (decl->type == ASTNode::NodeType::FUNC_DECL) {
+                    FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(decl.get());
+                    
+                    // Build the function type from the declaration
+                    // First, resolve parameter types
+                    std::vector<Type*> paramTypes;
+                    for (const auto& param : funcDecl->parameters) {
+                        if (param->type == ASTNode::NodeType::PARAMETER) {
+                            ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
+                            Type* paramType = resolveTypeNode(paramNode->typeNode.get());
+                            if (paramType && paramType->getKind() != TypeKind::ERROR) {
+                                paramTypes.push_back(paramType);
+                            } else {
+                                // If we can't resolve param type, use void as fallback
+                                paramTypes.push_back(typeSystem->getPrimitiveType("void"));
+                            }
+                        }
+                    }
+                    
+                    // Resolve return type
+                    Type* returnType = resolveTypeNode(funcDecl->returnType.get());
+                    if (!returnType || returnType->getKind() == TypeKind::ERROR) {
+                        returnType = typeSystem->getPrimitiveType("void");
+                    }
+                    
+                    // Create the function type
+                    Type* funcType = new FunctionType(paramTypes, returnType, funcDecl->isAsync, false);
+                    
+                    // Create a new symbol for export
+                    Symbol* funcSym = new Symbol(funcDecl->funcName, SymbolKind::FUNCTION, funcType, nullptr, funcDecl->line, funcDecl->column);
+                    funcSym->funcDecl = funcDecl;
+                    
+                    // Export the function (PUBLIC visibility by default for now)
+                    module->moduleInfo->exportSymbol(funcDecl->funcName, funcSym, Visibility::PUBLIC);
+                }
+            }
+        }
+    }
+    
+    // Import symbols based on import type
+    if (stmt->isWildcard) {
+        // Wildcard import: import all public symbols directly into current scope
+        importWildcardSymbols(module, stmt);
+    } else if (!stmt->items.empty()) {
+        // Selective import: import only specified symbols
+        importSelectiveSymbols(module, stmt);
+    } else {
+        // Namespace import: import module as a namespace
+        importModuleNamespace(module, stmt, logicalPath);
+    }
 }
 
 void TypeChecker::checkModStmt(ModStmt* stmt) {
@@ -3608,6 +4033,108 @@ void TypeChecker::checkModStmt(ModStmt* stmt) {
     
     // External module declarations (mod name;) don't need further checking
     // The module resolver will validate they exist
+}
+
+// ============================================================================
+// Module Symbol Importing (Phase 3 from research_module_loading_system)
+// ============================================================================
+
+void TypeChecker::importWildcardSymbols(LoadedModule* module, UseStmt* stmt) {
+    if (!module || !module->moduleInfo) {
+        return;
+    }
+    
+    // Get the module's export table via public getter
+    const auto& exports = module->moduleInfo->getExports();
+    
+    // Import all PUBLIC symbols into current scope
+    for (const auto& [name, exportEntry] : exports) {
+        if (exportEntry.visibility != Visibility::PUBLIC) {
+            continue;  // Skip non-public symbols
+        }
+        
+        // Check for name collision
+        if (symbolTable->isDefined(name)) {
+            addError("Symbol '" + name + "' already defined in current scope (wildcard import conflict)", stmt);
+            continue;
+        }
+        
+        // Add symbol to current scope
+        symbolTable->defineSymbol(name, exportEntry.symbol->kind, exportEntry.symbol->type);
+    }
+}
+
+void TypeChecker::importSelectiveSymbols(LoadedModule* module, UseStmt* stmt) {
+    if (!module || !module->moduleInfo) {
+        return;
+    }
+    
+    // Get the module's export table via public getter
+    const auto& exports = module->moduleInfo->getExports();
+    
+    // Import each specified symbol
+    // Note: items is a vector<string>, so we just import each name
+    for (const std::string& symbolName : stmt->items) {
+        // Check if symbol exists in module
+        auto it = exports.find(symbolName);
+        if (it == exports.end()) {
+            addError("Symbol '" + symbolName + "' not found in module", stmt);
+            continue;
+        }
+        
+        const auto& exportEntry = it->second;
+        
+        // Check visibility
+        if (exportEntry.visibility != Visibility::PUBLIC) {
+            addError("Symbol '" + symbolName + "' is not public and cannot be imported", stmt);
+            continue;
+        }
+        
+        // Check for name collision
+        if (symbolTable->isDefined(symbolName)) {
+            addError("Symbol '" + symbolName + "' already defined in current scope", stmt);
+            continue;
+        }
+        
+        // Add symbol to current scope
+        symbolTable->defineSymbol(symbolName, exportEntry.symbol->kind, exportEntry.symbol->type);
+    }
+}
+
+void TypeChecker::importModuleNamespace(LoadedModule* module, UseStmt* stmt, const std::string& modulePath) {
+    if (!module || !module->moduleInfo) {
+        return;
+    }
+    
+    // Determine namespace name (last component of module path or alias)
+    std::string namespaceName;
+    if (!stmt->alias.empty()) {
+        namespaceName = stmt->alias;
+    } else {
+        // Extract last component from module path (e.g., "std.io" -> "io")
+        size_t lastDot = modulePath.find_last_of('.');
+        if (lastDot != std::string::npos) {
+            namespaceName = modulePath.substr(lastDot + 1);
+        } else {
+            namespaceName = modulePath;
+        }
+    }
+    
+    // Check for namespace collision
+    if (symbolTable->isDefined(namespaceName)) {
+        addError("Namespace '" + namespaceName + "' already defined in current scope", stmt);
+        return;
+    }
+    
+    // Create a MODULE symbol with void type as placeholder
+    Type* namespaceType = typeSystem->getPrimitiveType("void");
+    Symbol* moduleSym = symbolTable->defineSymbol(namespaceName, SymbolKind::MODULE, namespaceType);
+    
+    // Store the module reference in the symbol for later resolution
+    if (moduleSym) {
+        moduleSym->setModuleRef(module->moduleInfo.get());
+        loadedModules[namespaceName] = module;  // Track loaded module
+    }
 }
 
 // ============================================================================
