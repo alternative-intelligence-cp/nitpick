@@ -1,0 +1,279 @@
+﻿Architectural Specification and Implementation Strategy for the Aria Documentation Ecosystem
+1. Executive Summary: The Documentation Imperative in Systems Programming
+The creation of the Aria programming language represents a significant advancement in the domain of systems engineering, synthesizing novel concepts such as Twisted Balanced Binary (TBB) arithmetic, a hybrid "Wild/GC" memory model, and a rigorous Appendage Theory for borrow checking.1 However, the adoption velocity of any new programming language is governed not merely by its theoretical capability or compiler performance, but by the accessibility, accuracy, and pedagogical quality of its documentation. For Aria, where core primitives like tbb8 introduce semantic behaviors (symmetric ranges, sticky error propagation) that diverge radically from the two's complement integers found in C or Rust 1, the documentation serves a critical safety function: it is the primary mechanism for preventing cognitive dissonance and resulting safety violations in developer code.
+This report articulates a comprehensive architectural specification for the Aria Documentation System, encompassing the aria-doc compiler toolchain, the "Aria Book" pedagogical framework, and a static-analysis-driven API reference. Drawing upon the "best-in-class" precedents set by Rust's rustdoc for API thoroughness 2, Zig's autodocs for minimalist clarity 3, and the Mozilla Developer Network (MDN) for holistic web standards education 4, this design targets a specific and ambitious success criterion: enabling a novice systems programmer to transition from zero knowledge to productive Aria development within one week.1
+The proposed architecture rejects the legacy approach of using standalone, regular-expression-based documentation generators (such as Doxygen). Instead, it mandates a Compiler-Integrated Documentation Pipeline. By instrumenting the Aria frontend (Lexer, Parser, and Semantic Analyzer) to treat documentation comments not as whitespace to be discarded, but as semantic metadata attached to the Abstract Syntax Tree (AST) 1, aria-doc ensures that the generated documentation shares a single source of truth with the compiler executable. This integration allows for the automatic propagation of TBB error semantics, memory model constraints (e.g., wild vs gc allocation strategies), and type inference rules directly into the generated artifacts—a level of fidelity impossible to achieve with external parsers.
+Furthermore, this report details the implementation of a privacy-first, client-side search engine utilizing Pagefind to meet the requirement for offline capability and speed 5; an interactive WebAssembly (WASM) playground that compiles the Aria toolchain itself for in-browser execution 6; and a strict content strategy that prioritizes "cookbook-style" examples for every standard library function. The resulting system is designed to be statically hosted, compatible with strictly offline environments (air-gapped engineering networks), and fully compliant with WCAG 2.1 AA accessibility standards 7, ensuring universal access for the global developer ecosystem.
+________________
+2. Architectural Principles and System Design
+The design of the Aria documentation ecosystem is predicated on three core architectural principles derived from a rigorous analysis of successful modern language ecosystems and the specific technical constraints of the Aria compiler infrastructure.
+2.1 Principle 1: The Compiler as the Sole Source of Truth
+In many legacy ecosystems, documentation tools operate as distinct entities from the compiler, parsing source code loosely to extract comments. This separation inevitably leads to "documentation rot," where the documentation describes a version of the language that no longer exists or fails to capture subtle semantic changes in type inference or macro expansion. For Aria, such drift is unacceptable. The specific behavior of TBB types—where an overflow results in a sticky ERR sentinel rather than a wrap-around—is a compile-time semantic property that must be accurately reflected in the API docs.1
+Therefore, aria-doc is architected not as a separate binary, but as a subcommand of the primary compiler driver (ariac doc). It utilizes the exact same C++ Lexer, Parser, and TypeChecker classes defined in src/frontend and src/backend.1 This approach offers several critical advantages:
+* Semantic Type Awareness: The documentation generator has access to the full type resolution table. It "knows" that a variable declared as tbb8 is not merely an 8-bit integer, but a semantic type with a valid range of [-127, +127] and a sentinel value of -128 (0x80).1 Consequently, the documentation tool can automatically annotate functions returning TBB types with "Throws ERR" badges and link to the sticky error propagation rules, reducing the manual burden on library authors.
+* Macro Expansion Visibility: Aria features a powerful NASM-style preprocessor with context stacks (%push, %pop) and hygienic variable renaming.1 A simple text parser would see only the macro invocations (e.g., GEN_ABS(int8)), missing the actual generated function signatures. The compiler-integrated approach allows aria-doc to tap into the pipeline after the preprocessing phase but before IR lowering, allowing it to document the expanded code that the user actually interacts with.
+* Memory Model Verification: The Aria compiler tracks allocation strategies (STACK, WILD, GC, WILDX) in its symbol table.1 The documentation tool leverages this metadata to automatically generate "Safety" warning blocks for functions that return wild pointers, explicitly instructing the user that manual deallocation via aria.free or defer is required.
+2.2 Principle 2: Decoupled Rendering via Intermediate Representation (IR)
+To support a diverse ecosystem of tools—ranging from the official static HTML site to IDE hover providers, dashboard widgets, and potential third-party documentation viewers—aria-doc will not output HTML directly from the C++ compiler. Instead, it will emit a standardized, machine-readable JSON Intermediate Representation, tentatively named aria-doc-json.
+This architectural decision mirrors the successful RFC 2963 strategy employed by the Rust project 2, which has enabled a rich ecosystem of documentation analysis tools. The JSON blob functions as a serialized graph of the crate's semantic structure: it contains modules, functions, structs, their associated documentation comments, type relations, and source locations. The HTML generator (the "Renderer") is merely one consumer of this data. This decoupling allows the analysis frontend (inside ariac) and the presentation backend (the Renderer) to evolve independently. For example, a change to the CSS styling of the documentation site does not require recompiling the Aria compiler itself.
+2.3 Principle 3: "Batteries-Included" Content Strategy
+Documentation is frequently treated as a monolith, but effective learning requires distinct modes of information retrieval. Following the "MDN model" 4 and the structural success of the Rust documentation ecosystem, the Aria system must provide a holistic learning platform that supports three distinct content types within a single searchable portal:
+* The Guide (Narrative): A linear, hand-written book ("The Aria Book") designed to teach the language from scratch. This content focuses on pedagogical progression, introducing concepts like "wild memory" only after the user is comfortable with the basic syntax.
+* The Reference (API): Autogenerated, exhaustive documentation of every symbol in the codebase. This is optimized for random access and lookup speed, prioritizing function signatures, type definitions, and ABI details.
+* The Cookbook (Applied): Task-oriented recipes (e.g., "How to read a file line-by-line," "How to spawn a thread"). These are self-contained examples that solve specific problems, bridging the gap between abstract syntax and concrete application.
+________________
+3. The aria-doc Toolchain Architecture
+The implementation of aria-doc requires specific, surgical modifications to the existing Aria compiler codebase to support the extraction, association, and serialization of documentation comments without compromising the performance of standard compilation builds.
+3.1 Frontend Modifications: The "Trivia" Preservation Strategy
+The current Aria compiler frontend is optimized for compilation speed; the Lexer is designed to aggressively discard whitespace and comments, feeding the Parser a clean stream of semantic tokens to minimize memory usage and processing time.1 However, for documentation generation, these discarded elements—specifically comments—are the primary data source. To reconcile these conflicting requirements, we propose a bifurcated frontend approach utilizing a "Doc Mode."
+3.1.1 Tokenization Updates and Lexical Analysis
+The TokenType enum in lexer.h already includes a TOKEN_COMMENT definition.1 However, the Lexer implementation needs refinement to distinguish between semantic documentation and standard code comments. We will introduce distinct token types:
+* Standard Comments (// or /*... */): These remain TOKEN_COMMENT and are ignored by the parser in all modes.
+* Documentation Comments (/// or /**... */): These will be tokenized as TOKEN_DOC_COMMENT. The Lexer will preserve the content of these comments, stripping the leading slashes or asterisks.
+* Inner Documentation Comments (//!): These will be tokenized as TOKEN_INNER_DOC_COMMENT. Following the convention set by Rust, these comments document the containing item (usually a module or the crate root) rather than the item following the comment.1
+In standard compilation mode, the Lexer will continue to skip these tokens. In "Doc Mode" (invoked via ariac doc), the Lexer will emit these tokens into the stream, allowing the Parser to consume them.
+3.1.2 AST Enhancement: The Sidecar Metadata Pattern
+The ASTNode base class in ast.h currently stores only minimal location data (line, column) and type information.1 Naively expanding every AST node to hold std::string members for documentation would significantly bloat the memory footprint of the compiler during standard builds, leading to cache pressure and reduced performance.
+To avoid this, we specify a Sidecar Metadata Approach. The Parser, when operating in Doc Mode, will maintain a separate auxiliary data structure—a std::map<ASTNode*, DocMetadata> or a parallel vector aligned with the AST node IDs. When the parser encounters a TOKEN_DOC_COMMENT (or a sequence of them) followed by a declaration (e.g., func, struct, mod), it parses the comment block and links the resulting metadata to the subsequent AST node in the map.
+C++ Structure for DocMetadata:
+
+
+C++
+
+
+
+
+struct DocAttribute {
+   std::string name;    // e.g., "param", "return", "safety", "deprecated"
+   std::string content; // The text following the tag
+};
+
+struct DocMetadata {
+   std::string raw_comment;       // The full extracted markdown text
+   std::string summary;           // The first paragraph (extracted for lists)
+   std::vector<DocAttribute> attributes; // Parsed @tags for structured data
+   std::string file_path;         // Origin file for deep linking
+   int line_number;               // Origin line for deep linking
+   bool is_internal;              // Track if @internal tag is present
+};
+
+This architecture ensures zero memory overhead for standard compilation builds while providing a rich, structured data layer for documentation generation.1
+3.2 The JSON Intermediate Representation (IR)
+The core output of the ariac doc command is the aria-doc-json file. This JSON schema serves as the stable public API for the documentation system. It must capture the complete semantic graph of the codebase, including type relationships that are resolved during the semantic analysis phase.
+Schema Specification (Draft):
+
+
+JSON
+
+
+
+
+{
+ "crate_info": {
+   "name": "std",
+   "version": "0.1.0",
+   "repo": "https://github.com/aria-lang/aria",
+   "generated_at": "2025-12-25T12:00:00Z"
+ },
+ "items": {
+   "0x1234": {
+     "id": "0x1234",
+     "name": "readFile",
+     "kind": "function",
+     "visibility": "pub",
+     "path": ["std", "io", "readFile"],
+     "docs": "Reads the entire contents of a file into a wild string...",
+     "location": {
+       "filename": "src/std/io.aria",
+       "line": 42
+     },
+     "signature": {
+       "generics":,
+       "params":,
+       "return": {
+         "type": "result<wild string>",
+         "tbb_safety": false,
+         "memory_strategy": "wild" 
+       }
+     },
+     "attributes": {
+       "safety": "Caller must free returned memory via aria.free().",
+       "example": "..."
+     }
+   }
+ },
+ "paths": {
+   "0x1234": ["std", "io", "readFile"]
+ }
+}
+
+Key Schema Features:
+* memory_strategy: Explicitly identifying if a returned type is wild, gc, or stack.1 This allows the renderer to add safety badges.
+* tbb_safety: A boolean flag derived from the exprTypeMap in CodeGenContext 1, indicating if the function involves TBB arithmetic that requires sticky error handling awareness.
+* attributes: Structured fields for safety, example, and panics, allowing the renderer to format these into distinct alert boxes rather than a monolithic text blob.
+3.3 The Renderer: Static Site Generator
+The Renderer consumes the aria-doc-json IR and produces a static directory of HTML, CSS, and JavaScript files. To meet the "Clean, minimal design" requirement 1 and ensure high performance, the Renderer will utilize a custom template engine (implemented in Aria or C++) rather than a heavy client-side framework like React. This ensures the output is pure, semantic HTML that loads instantly.
+Visual and Functional Features of the Renderer:
+* Source Linking: Every function and struct signature will include an icon linking directly to the source code definition on GitHub (or a local file view), leveraging the line_number metadata.
+* TBB Visualization: For TBB types, the renderer will generate a specific visual widget—a "Range Bar"—that graphically displays the valid range (e.g., -127 to +127) and the position of the ERR sentinel (-128) relative to that range. This visual aid is crucial for conveying the non-contiguous nature of TBB values compared to standard integers.1
+* Memory Model Badges: Functions returning wild pointers will be decorated with a prominent red "Manual Free" badge. Functions utilizing gc memory will receive a green "Managed" badge. This visual shorthand allows systems engineers to scan API docs and immediately identify memory ownership responsibilities.
+________________
+4. Documentation Standards and Content Strategy
+A robust toolchain is useless without high-quality content. We define a strict set of documentation standards and a style guide that will be enforced by linting tools within the aria-doc system.
+4.1 Documentation Comment Syntax
+Aria adopts a Markdown-based comment syntax, familiar to users of Rust, Swift, and Kotlin. The parser extracts these comments, and the Renderer processes the Markdown into HTML using a CommonMark-compliant parser.
+Syntax Rules:
+* ///: Single-line documentation comments. Used for documenting the immediately following item (function, variable, struct).
+* /**... */: Multi-line documentation blocks. Used for longer descriptions or extensive examples.
+* //!: Module-level documentation. These comments document the container (file or module) they reside in, rather than the item following them.
+Special Annotations (@tags):
+To facilitate structured data extraction for the JSON IR, aria-doc parses specific tags at the start of comment lines. These tags allow the system to separate semantic constraints from general description text:
+* @param name description: Documents a function parameter.
+* @return description: Documents the return value, including success and failure states.
+* @throws / @panics: Critical for documenting TBB sticky error triggers (e.g., "Returns ERR if input < 0") or wild memory allocation failures.
+* @safety: Mandatory for any function marked unsafe or returning wild memory. This tag must explain the specific contract (e.g., "Pointer must be pinned before calling," "Caller owns memory").
+* @example: Starts a code block that is treated as a testable unit. The build system will attempt to compile these examples to ensure documentation validity.
+4.2 The "Standard Library Template"
+To satisfy Success Criteria #3 ("Every stdlib function has a runnable example") 1, we mandate a rigorous documentation template for all public APIs in the standard library.
+Example Specification: std.io.readFile
+
+
+Code snippet
+
+
+
+
+/// Reads the entire contents of a file into a wild string.
+///
+/// This function allocates a buffer on the wild heap large enough to hold
+/// the file contents. The caller assumes full ownership of this memory and
+/// is strictly responsible for freeing it to prevent leaks.
+///
+/// @param path The filesystem path to the file to read.
+/// @return A `result` containing the wild string on success, or an error code.
+/// @safety The returned pointer is NOT managed by the GC. Do not let it escape
+///         the scope without freeing it or converting it to a managed string.
+///
+/// @example
+/// ```aria
+/// use std.io;
+/// use std.mem;
+///
+/// func main() {
+///     // Read config file; handle potential error
+///     wild string:data = try io.readFile("config.toml");
+///     
+///     print(data);
+///     
+///     // CRITICAL: Manual cleanup required for wild memory
+///     aria.free(data);
+/// }
+/// ```
+pub func readFile(string:path) -> result<wild string> {... }
+
+4.3 Documentation Linter (ariac doc --check)
+To enforce these standards programmatically, aria-doc includes a linter mode. This tool runs as part of the Continuous Integration (CI) pipeline and verifies:
+1. Coverage: All pub items must have a documentation block.
+2. Examples: All pub func items in the standard library (std) must include an @example block.
+3. Link Integrity: All intra-doc links (``) must resolve to valid definitions within the crate.
+4. Code Validity: All code blocks within @example tags are extracted, wrapped in a main function (if necessary), and compiled. If the example code fails to compile, the documentation build fails.
+________________
+5. Visual and Interactive Documentation Features
+Systems concepts like the "Hybrid Memory Model" and "TBB Sticky Errors" are abstract and often difficult to grasp through text alone. The Aria documentation system integrates visual aids and interactivity directly into the platform to bridge this gap.
+5.1 Dynamic Memory Layout Visualizations (Mermaid.js)
+Complex memory relationships and object lifecycles will be visualized using diagrams generated from Mermaid.js blocks embedded within documentation comments. The Renderer will detect ````mermaid` blocks and inject the necessary JavaScript to render them on the client side.
+Specific Visualizations:
+* Wild vs GC Heap: The documentation for std.mem will feature block diagrams contrasting the Stack (growing down), the GC Heap (split into Nursery/Gen0 and Old Gen), and the Wild Heap (fragmented blocks managed by mimalloc).
+* Object Pinning: A sequence diagram will illustrate the pin operation (#), visually demonstrating how an object is "pinned" in the GC heap to allow a wild pointer to reference it safely, and how it is unpinned upon scope exit.1
+This visual strategy directly addresses the user's need to understand "Memory layout (wild vs gc heap)" 1 by providing concrete mental models of abstract runtime behaviors.
+5.2 TBB Range Visualization Widget
+For TBB types (e.g., tbb8), a static text description "Range: -127 to 127" is insufficient to convey the semantic weight of the sentinel value. The HTML Renderer will include a custom CSS/SVG widget that draws a number line for every TBB type definition.
+* Visual Elements:
+   * Green Zone: Represents the valid symmetric range (e.g., -127 to +127).
+   * Red Zone: Distinctly marks the sentinel value (e.g., -128 / 0x80) outside the green zone.
+   * Tooltip: Hovering over the red zone triggers a tooltip explaining: "Sticky Error: Any arithmetic operation reaching this value propagates ERR."
+This widget solves the "TBB Type System" documentation need 1 by making the ERR sentinel visually distinct from valid data values.
+5.3 Interactive WebAssembly (WASM) Playground
+To satisfy the requirement for an "Interactive playground" 1, we leverage the cross-platform nature of LLVM to run Aria in the browser.
+Architecture:
+1. Compilation: The Aria compiler (ariac) is compiled to WebAssembly using Emscripten. Since the compiler is written in C++ 1, this path is well-supported.
+2. Integration: The documentation site embeds this WASM binary and a lightweight virtual file system.
+3. Execution: Code blocks in the documentation are augmented with a "Run" button. Clicking this button extracts the code, passes it to the in-browser ariac WASM instance, captures the standard output, and displays it in a console pane below the code block.
+Constraint Compliance: This approach runs entirely on the client side. No code is sent to a remote server, ensuring compliance with the "No tracking/analytics" and "Works offline" constraints.1
+________________
+6. Site Architecture, Navigation, and Search
+The utility of documentation is a function of its navigability. The Aria documentation site is designed to be fast, intuitive, and fully accessible.
+6.1 Site Structure and Hierarchy
+The site is organized into a unified portal with a consistent top-level navigation bar, dividing content into logical sections:
+* Home: A landing page with a high-level overview, installation instructions ("First Steps"), and feature highlights.
+* The Aria Book (Guide): A narrative tutorial.
+   * Getting Started: Installation, Hello World, Build System (aria.toml).
+   * Core Concepts: Basic Syntax, Control Flow (focusing on pick and fall), Functions.
+   * The Memory Model: Deep dive into GC vs Wild, Pinning (#), and References ($).
+   * The Type System: TBB Arithmetic, Result Types, Error Handling.
+   * Concurrency: Async/Await, Futures, The M:N Scheduler.
+   * Interoperability: FFI, C-Interop, unsafe blocks.
+* Standard Library (API): The generated reference.
+   * std.io: Documentation for the 6-stream topology (stddbg, stddati, etc.).
+   * std.mem: Documentation for allocators and memory tools.
+   * std.math: Documentation for TBB operations and math functions.
+* The Cookbook: A collection of problem-solution pairs ("How do I...?").
+6.2 Search Implementation: Pagefind
+Search is the most critical navigation tool. We explicitly reject server-side solutions like Algolia due to privacy/tracking concerns and the offline requirement. Instead, we select Pagefind.5
+Pagefind Integration Strategy:
+* Static Indexing: Pagefind scans the generated HTML files after the build process and creates a static search index. This index is hosted alongside the documentation files.
+* Client-Side Execution: The search logic runs entirely in the user's browser via a small WASM binary.
+* Bandwidth Efficiency: Pagefind is designed to load only the index chunks relevant to the user's query, ensuring fast performance even on slow connections (< 2s constraint).
+* Advanced Filtering: We will inject data- attributes into the HTML (e.g., data-aria-type="struct", data-aria-ns="std.io") to allow Pagefind to support faceted search (e.g., filtering results to show only functions in the io module).
+6.3 Accessibility Compliance (WCAG 2.1 AA)
+The HTML templates for the documentation are engineered for accessibility from the ground up 7:
+* Keyboard Navigation: All interactive elements, including menus, search results, and the "Run" button, are navigable via the Tab key with visible focus states.
+* Contrast Ratios: The color palette for both light and dark modes is verified to meet the 4.5:1 contrast ratio requirement for text.
+* Semantic HTML: The renderer uses proper semantic tags (<nav>, <main>, <article>, <h1>-<h6>) to ensure compatibility with screen readers.
+* ARIA Labels: Interactive components like the version selector and theme toggle include explicit aria-label attributes to describe their function to assistive technology users.
+________________
+7. Deployment, Versioning, and CI/CD
+To ensure the documentation remains current and accessible, its generation and deployment are fully automated.
+7.1 Continuous Integration (CI) Workflow
+The documentation is treated as a critical build artifact, equal in importance to the compiler binary. The CI pipeline is triggered on every commit to main or creation of a new Tag.
+CI Pipeline Steps:
+1. Lint: Run ariac doc --check to verify documentation coverage and link validity.
+2. Test: Run ariac test to compile and execute all @example code blocks found in the documentation.
+3. Generate: Run ariac doc to produce the aria-doc-json IR.
+4. Render: Run the aria-renderer to generate the static HTML site.
+5. Index: Run pagefind over the HTML output to generate the search index.
+6. Deploy: Push the resulting static files to GitHub Pages (or a custom CDN).
+7.2 Versioning Strategy
+Developers often need to reference documentation for older versions of the language. The site architecture supports multi-version hosting:
+* URL Structure:
+   * docs.aria-lang.org/latest/ (Tracks main branch or latest stable release).
+   * docs.aria-lang.org/v0.1/ (Frozen snapshot for v0.1).
+   * docs.aria-lang.org/v0.2/ (Frozen snapshot for v0.2).
+* Version Selector: A dropdown menu in the persistent navigation bar allows users to switch between available versions.
+* Deprecation Warnings: The renderer checks for #[deprecated] attributes in the JSON IR. If a user views a page for a deprecated API in the latest version, a prominent warning banner is displayed, linking to the recommended replacement.
+7.3 Contribution Workflow
+To foster community ownership of the documentation:
+1. Edit Links: Every page in the guide and API reference includes an "Edit this page on GitHub" button, linking directly to the source file.
+2. Style Guide: A CONTRIBUTING_DOCS.md file in the repository defines the tone, formatting rules, and guidelines for writing effective examples.
+3. Preview Builds: The CI pipeline generates a temporary preview URL for every Pull Request that modifies documentation, allowing authors and reviewers to verify visual changes before merging.
+________________
+8. Conclusion
+The Aria Documentation System defined in this specification moves beyond the role of a passive reference manual to become an active, integrated component of the language tooling. By embedding the documentation extraction logic directly into the compiler, we guarantee that the documentation remains a faithful representation of the language's "truth," accurately reflecting the nuances of TBB arithmetic, the hybrid memory model, and the macro system.
+The adoption of a decoupled architecture—using a JSON Intermediate Representation—future-proofs the system, allowing for the development of IDE integrations and alternative viewers without modifying the compiler core. The inclusion of "batteries-included" features like the client-side Pagefind search and the WASM playground ensures that the documentation is not only comprehensive but also highly accessible, performant, and privacy-respecting.
+This strategy directly addresses the unique challenges of the Aria language. By visualizing the memory model and enforcing strict safety documentation for FFI and wild pointers, the system actively guides developers away from potential pitfalls. Executing this plan will establish Aria's documentation as a "best-in-class" resource, meeting the high standards set by Rust and MDN and serving as a powerful catalyst for language adoption.
+Summary of Deliverables
+1. Tool: ariac doc (Compiler Subcommand).
+2. Format: aria-doc-json (Intermediate Representation).
+3. Renderer: Custom HTML generator with Mermaid/WASM support.
+4. Search: Pagefind (Client-side, Static).
+5. Host: GitHub Pages (Automated CI/CD).
+Works cited
+1. aria_source_full.txt
+2. 2963-rustdoc-json - The Rust RFC Book, accessed December 25, 2025, https://rust-lang.github.io/rfcs/2963-rustdoc-json.html
+3. ziglang/docgen: A tool for generating autotested documentation - GitHub, accessed December 25, 2025, https://github.com/ziglang/docgen
+4. MDN Web Docs, accessed December 25, 2025, https://developer.mozilla.org/en-US/
+5. Getting Started with Pagefind | Pagefind — Static low-bandwidth search at scale, accessed December 25, 2025, https://pagefind.app/docs/
+6. Build in-browser WordPress experiences with WordPress Playground and WebAssembly | Articles | web.dev, accessed December 25, 2025, https://web.dev/articles/wordpress-playground
+7. WCAG Level AA Checklist: Your Complete Guide to Web Accessibility - accessiBe, accessed December 25, 2025, https://accessibe.com/blog/knowledgebase/wcag-checklist
+8. Pagefind | Pagefind — Static low-bandwidth search at scale, accessed December 25, 2025, https://pagefind.app/
+9. Guide to Accessible Web Design & Development - Section508.gov, accessed December 25, 2025, https://www.section508.gov/develop/guide-accessible-web-design-development/

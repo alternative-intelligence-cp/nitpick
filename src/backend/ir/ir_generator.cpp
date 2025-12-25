@@ -28,6 +28,7 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
       di_compile_unit(nullptr),
       di_file(nullptr),
       debug_enabled(enable_debug),
+      current_module_name(""),
       tbb_codegen(context, builder),
       ternary_codegen(context, builder) {
     // Set source filename for better debug info
@@ -41,6 +42,10 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
 
 void IRGenerator::setTypeSystem(TypeSystem* ts) {
     type_system = ts;
+}
+
+void IRGenerator::setCurrentModuleName(const std::string& module_name) {
+    current_module_name = module_name;
 }
 
 llvm::Type* IRGenerator::mapType(Type* aria_type) {
@@ -660,11 +665,18 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 : modulePrefix + "." + funcDecl->funcName;
             
             // Determine linkage based on pub modifier
-            // Special case: main function always has external linkage
+            // Special case: main function and module init always have external linkage
+            // Temporary: Until pub keyword is implemented, all functions in modules are external
             llvm::Function::LinkageTypes linkage;
-            if (funcDecl->funcName == "main") {
+            if (funcDecl->funcName == "main" || funcDecl->funcName.find("__") == 0) {
+                // main and module init functions are always external
+                linkage = llvm::Function::ExternalLinkage;
+            } else if (!current_module_name.empty()) {
+                // Functions in modules are external (until pub keyword is implemented)
+                // This allows cross-module function calls
                 linkage = llvm::Function::ExternalLinkage;
             } else {
+                // Regular functions use pub modifier
                 linkage = funcDecl->isPublic 
                     ? llvm::Function::ExternalLinkage 
                     : llvm::Function::InternalLinkage;
@@ -1878,9 +1890,16 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Function call
             CallExpr* call = static_cast<CallExpr*>(expr);
             
-            // Get callee name
+            // Check if this is a member access call (e.g., math_utils.add(...))
+            if (call->callee->type == ASTNode::NodeType::MEMBER_ACCESS) {
+                // Delegate to ExprCodegen for member access calls
+                backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+                return expr_codegen.codegenCall(call);
+            }
+            
+            // Get callee name for identifier calls
             if (call->callee->type != ASTNode::NodeType::IDENTIFIER) {
-                return nullptr;  // Complex callees not yet supported
+                return nullptr;  // Other complex callees not yet supported
             }
             
             IdentifierExpr* callee = static_cast<IdentifierExpr*>(call->callee.get());
@@ -1922,19 +1941,18 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 if (arg_type->isPointerTy()) {
                     // String - check if it's AriaString pointer
-                    // Try to load as AriaString and extract data field
+                    // Get or create AriaString type (needed for string functions without literals)
                     llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
-                    if (aria_string_type) {
-                        // Load AriaString struct and extract data field
-                        llvm::Value* aria_str = builder.CreateLoad(aria_string_type, arg, "aria_str");
-                        llvm::Value* str_data = builder.CreateExtractValue(aria_str, 0, "str_data");
-                        format_str = builder.CreateGlobalStringPtr("%s\n", "str_fmt");
-                        printf_args.push_back(str_data);
-                    } else {
-                        // Fallback: treat as raw char*
-                        format_str = builder.CreateGlobalStringPtr("%s\n", "str_fmt");
-                        printf_args.push_back(arg);
+                    if (!aria_string_type) {
+                        // Create AriaString type: { ptr data, i64 length }
+                        std::vector<llvm::Type*> fields = {builder.getPtrTy(), builder.getInt64Ty()};
+                        aria_string_type = llvm::StructType::create(context, fields, "struct.AriaString");
                     }
+                    // Load AriaString struct and extract data field
+                    llvm::Value* aria_str = builder.CreateLoad(aria_string_type, arg, "aria_str");
+                    llvm::Value* str_data = builder.CreateExtractValue(aria_str, 0, "str_data");
+                    format_str = builder.CreateGlobalStringPtr("%s\n", "str_fmt");
+                    printf_args.push_back(str_data);
                 } else if (arg_type->isIntegerTy()) {
                     // Integer type - determine format based on bit width
                     unsigned bit_width = arg_type->getIntegerBitWidth();
@@ -2911,12 +2929,39 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 callee->name == "string_trim" || callee->name == "string_to_upper" ||
                 callee->name == "string_to_lower" || callee->name == "string_from_cstr" ||
                 callee->name == "string_from_char") {
-                
+
                 // Create ExprCodegen instance (same pattern as TEMPLATE_LITERAL case)
                 backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values);
                 return expr_codegen_inst.codegenCall(call);
             }
-            
+
+            // ====================================================================
+            // TBB TYPE BUILTINS - Delegate to ExprCodegen
+            // ====================================================================
+
+            // Check if this is a TBB builtin - delegate to ExprCodegen
+            if (callee->name == "tbb64_from_int" || callee->name == "tbb64_is_err" || callee->name == "tbb64_to_int" ||
+                callee->name == "tbb32_from_int" || callee->name == "tbb32_is_err" || callee->name == "tbb32_to_int" ||
+                callee->name == "tbb16_from_int" || callee->name == "tbb16_is_err" || callee->name == "tbb16_to_int" ||
+                callee->name == "tbb8_from_int" || callee->name == "tbb8_is_err" || callee->name == "tbb8_to_int") {
+
+                backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values);
+                return expr_codegen_inst.codegenCall(call);
+            }
+
+            // ====================================================================
+            // COLLECTION BUILTINS (Phase 6.2) - Delegate to ExprCodegen
+            // ====================================================================
+
+            // Check if this is a collection builtin - delegate to ExprCodegen
+            if (callee->name == "array_new" || callee->name == "array_length" ||
+                callee->name == "array_push" || callee->name == "array_get" ||
+                callee->name == "array_set" || callee->name == "array_pop") {
+
+                backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values);
+                return expr_codegen_inst.codegenCall(call);
+            }
+
             // ====================================================================
             // MATH LIBRARY BUILTINS (Phase 4.4)
             // ====================================================================

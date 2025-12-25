@@ -1,0 +1,595 @@
+﻿Architectural Specification and Implementation Strategy for the Aria Editor Ecosystem
+1. Executive Summary and Strategic Context
+The maturation of the Aria programming language ecosystem has reached a critical inflection point. With the foundational compiler infrastructure—specifically the Lexer, Parser, and Semantic Analysis phases—approaching stability, and the preliminary Language Server Protocol (LSP) implementation (aria-ls) successfully passing 1198 tests 1, the focus must now shift toward Developer Experience (DX). In the contemporary software engineering landscape, the viability of a systems programming language is determined not solely by its runtime performance or memory safety guarantees, but by the richness and responsiveness of its editing environment.
+This comprehensive research report outlines the architectural roadmap for "Post-LSP Phase 7.3.7." The objective is to construct a unified, high-fidelity editor support system that transcends basic syntax highlighting. The proposed system integrates Aria's unique semantic features—such as Twisted Balanced Binary (TBB) arithmetic, the hybrid wild/gc memory model, and the pick/fall control flow constructs—directly into the developer's workspace.
+The strategy necessitates a multi-platform approach, prioritizing Visual Studio Code as the primary target due to its market dominance and robust LSP client capabilities, while simultaneously delivering first-class support for Neovim (via Tree-sitter), Emacs, and other LSP-compliant editors. Furthermore, this report details the pioneering integration of the Model Context Protocol (MCP), positioning Aria as one of the first languages to offer native, standardized context bridging for AI-assisted development.2
+2. Visual Studio Code Extension Architecture
+The Visual Studio Code extension serves as the reference implementation for Aria's editor tooling. It acts as the bridge between the TypeScript-based editor environment and the C++-based aria-ls language server. The architecture must be robust, platform-agnostic, and capable of managing the lifecycle of the language server binary.
+2.1 Extension Manifest (package.json) Configuration
+The package.json file is the declarative core of the extension. It must be rigorously defined to ensure correct activation, file association, and configuration exposure. Based on the constraints of the VS Code API and the specific requirements of the Aria language, the following structure is mandated.
+2.1.1 Activation Events and Contributions
+To minimize startup overhead, the extension should utilize the onLanguage:aria activation event. This ensures the extension—and the resource-intensive LSP process—only loads when an Aria source file is opened.4
+
+
+JSON
+
+
+
+
+{
+ "name": "vscode-aria",
+ "displayName": "Aria Language Support",
+ "description": "Comprehensive language support for Aria, featuring LSP integration, TBB type visualization, and safety analysis.",
+ "version": "0.1.0",
+ "publisher": "aria-lang",
+ "engines": { "vscode": "^1.75.0" },
+ "categories": ["Programming Languages", "Linters", "Formatters"],
+ "activationEvents": [
+   "onLanguage:aria",
+   "workspaceContains:aria.toml"
+ ],
+ "main": "./dist/extension.js",
+ "contributes": {
+   "languages": [{
+     "id": "aria",
+     "aliases": ["Aria", "aria"],
+     "extensions": [".aria"],
+     "configuration": "./language-configuration.json",
+     "icon": {
+       "light": "./icons/aria-light.svg",
+       "dark": "./icons/aria-dark.svg"
+     }
+   }],
+   "grammars": [{
+     "language": "aria",
+     "scopeName": "source.aria",
+     "path": "./syntaxes/aria.tmLanguage.json"
+   }],
+   "configuration": {
+     "type": "object",
+     "title": "Aria Configuration",
+     "properties": {
+       "aria.server.path": {
+         "type": ["string", "null"],
+         "default": null,
+         "description": "Path to a custom aria-ls executable. If null, the bundled binary is used.",
+         "scope": "machine"
+       },
+       "aria.trace.server": {
+         "type": "string",
+         "enum": ["off", "messages", "verbose"],
+         "default": "off",
+         "description": "Trace the communication between VS Code and the Aria Language Server."
+       },
+       "aria.linting.level": {
+         "type": "string",
+         "enum": ["strict", "normal", "relaxed"],
+         "default": "normal",
+         "description": "Control the severity of memory safety and TBB semantic checks."
+       },
+       "aria.formatting.provider": {
+         "type": "string",
+         "enum": ["aria-fmt", "lsp"],
+         "default": "lsp",
+         "description": "Choose between the integrated LSP formatter or an external aria-fmt binary."
+       }
+     }
+   }
+ }
+}
+
+2.1.2 Binary Bundling Strategy
+Aria relies on a native C++ language server (aria-ls). To satisfy the "install and work" success criteria, the extension must bundle compiled binaries for all major platforms (Windows x64, Linux x64, macOS arm64/x64).4
+Directory Structure:
+
+
+
+
+
+
+extension/
+├── bin/
+│   ├── win32-x64/
+│   │   └── aria-ls.exe
+│   ├── linux-x64/
+│   │   └── aria-ls
+│   └── darwin-universal/
+│       └── aria-ls
+├── dist/
+│   └── extension.js
+└── package.json
+
+Runtime Resolution Logic:
+The extension's activate function (in TypeScript) must dynamically detect the host operating system and architecture to select the correct binary path. This logic should prioritize a user-defined aria.server.path if present, facilitating development and debugging of the server itself.5
+
+
+TypeScript
+
+
+
+
+import * as os from 'os';
+import * as path from 'path';
+import { workspace, ExtensionContext } from 'vscode';
+
+export function getServerPath(context: ExtensionContext): string {
+   const config = workspace.getConfiguration('aria');
+   const customPath = config.get<string>('server.path');
+   if (customPath) return customPath;
+
+   const platform = os.platform();
+   
+   let executable = 'aria-ls';
+   let folder = '';
+
+   if (platform === 'win32') {
+       folder = 'win32-x64';
+       executable += '.exe';
+   } else if (platform === 'linux') {
+       folder = 'linux-x64';
+   } else if (platform === 'darwin') {
+       folder = 'darwin-universal';
+   } else {
+       throw new Error(`Unsupported platform: ${platform}`);
+   }
+
+   return context.asAbsolutePath(path.join('bin', folder, executable));
+}
+
+2.2 Language Configuration (language-configuration.json)
+While the LSP handles complex semantics, the editor needs a declarative configuration for basic behaviors like commenting and bracket matching. Aria's syntax features unique constructs such as the string interpolation syntax &{...} and C-style comments.6
+
+
+JSON
+
+
+
+
+{
+ "comments": {
+   "lineComment": "//",
+   "blockComment": ["/*", "*/"]
+ },
+ "brackets": ["{", "}"],
+   ["[", "]"],
+   ["(", ")"],
+ "autoClosingPairs": [
+   { "open": "{", "close": "}" },
+   { "open": "[", "close": "]" },
+   { "open": "(", "close": ")" },
+   { "open": "\"", "close": "\"", "notIn": ["string"] },
+   { "open": "`", "close": "`", "notIn": ["string", "comment"] },
+   { "open": "&{", "close": "}", "notIn": ["string", "comment"] } 
+ ],
+ "surroundingPairs": ["{", "}"],
+   ["[", "]"],
+   ["(", ")"],
+   ["\"", "\""],
+   ["`", "`"],
+ "indentationRules": {
+   "increaseIndentPattern": "^.*(\\{|\\(|case\\s.*:|default:)\\s*$",
+   "decreaseIndentPattern": "^\\s*(\\}|\\)|\\]|fall\\(.*\\)|case\\s.*:|default:)"
+ }
+}
+
+Note on Indentation: The increaseIndentPattern triggers indent after opening braces or case labels. The decreaseIndentPattern handles closing braces and specifically accounts for Aria's fall() statement if it appears at the end of a block.1
+3. Syntactic Analysis: TextMate Grammar Engineering
+Visual Studio Code utilizes TextMate grammars for syntax highlighting. This regex-based approach must accurately capture Aria's lexical structure, defined in codegen_context.h and the Lexer specifications.1
+3.1 Scope Definitions and Token Mapping
+The grammar must map Aria's specific tokens to standard TextMate scopes to ensure compatibility with color themes.
+Aria Construct
+	Examples
+	TextMate Scope
+	Rationale
+	Control Flow
+	pick, fall, loop, break
+	keyword.control.aria
+	Defines execution flow.
+	Memory Qualifiers
+	wild, wildx, gc, stack
+	storage.modifier.memory.aria
+	Critical for visualizing memory safety.
+	Storage Types
+	int8, tbb64, flt128, bool
+	storage.type.aria
+	Primitive types.
+	Operators
+	@ (ptr), # (pin), `
+	>` (pipe)
+	keyword.operator.aria
+	Constants
+	null, true, false, ERR
+	constant.language.aria
+	Built-in literals.
+	String Interpolation
+	&{expr}
+	punctuation.section.embedded
+	Embedded expression handling.
+	3.2 Detailed Grammar Specification (tmLanguage.json)
+The following JSON structure implements the grammar. Special attention is paid to the recursive nature of Aria's string interpolation and the distinct highlighting of "Twisted Balanced Binary" (TBB) types versus standard integers.1
+
+
+JSON
+
+
+
+
+{
+ "scopeName": "source.aria",
+ "patterns": [
+   { "include": "#comments" },
+   { "include": "#keywords" },
+   { "include": "#types" },
+   { "include": "#literals" },
+   { "include": "#functions" }
+ ],
+ "repository": {
+   "comments": {
+     "patterns": [
+       {
+         "name": "comment.line.double-slash.aria",
+         "match": "//.*$"
+       },
+       {
+         "name": "comment.block.aria",
+         "begin": "/\\*",
+         "end": "\\*/"
+       }
+     ]
+   },
+   "keywords": {
+     "patterns": [
+       {
+         "name": "keyword.control.aria",
+         "match": "\\b(if|else|while|for|loop|break|continue|return|pick|fall|pass|fail|await|async)\\b"
+       },
+       {
+         "name": "keyword.other.memory.aria",
+         "match": "\\b(wild|wildx|gc|stack|defer)\\b"
+       },
+       {
+         "name": "keyword.declaration.aria",
+         "match": "\\b(func|struct|enum|module|use|mod|pub)\\b"
+       }
+     ]
+   },
+   "types": {
+     "patterns": [
+       {
+         "name": "storage.type.tbb.aria",
+         "match": "\\b(tbb(8|16|32|64))\\b"
+       },
+       {
+         "name": "storage.type.numeric.aria",
+         "match": "\\b((u)?int(8|16|32|64|128|256|512)|flt(32|64|128|256)|nit|trit|tryte|nyte|byte)\\b"
+       },
+       {
+         "name": "storage.type.primitive.aria",
+         "match": "\\b(bool|string|void|dyn)\\b"
+       }
+     ]
+   },
+   "literals": {
+     "patterns": [
+       {
+         "name": "string.quoted.double.aria",
+         "begin": "\"",
+         "end": "\"",
+         "patterns": [{ "include": "#string_interpolation" }]
+       },
+       {
+         "name": "string.quoted.template.aria",
+         "begin": "`",
+         "end": "`",
+         "patterns": [{ "include": "#string_interpolation" }]
+       }
+     ]
+   },
+   "string_interpolation": {
+     "name": "meta.embedded.line.aria",
+     "begin": "&\\{",
+     "end": "\\}",
+     "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.aria" } },
+     "endCaptures": { "0": { "name": "punctuation.section.embedded.end.aria" } },
+     "patterns": [{ "include": "$self" }]
+   }
+ }
+}
+
+Grammar Logic Analysis:
+The string_interpolation pattern uses #include: $self.7 This is critical for Aria because string interpolation allows arbitrary expressions, including nested strings or function calls. The TextMate engine must recursively apply the entire Aria grammar inside the &{... } block to ensure correct highlighting of code within strings.
+4. Modern Parsing: Tree-sitter and Neovim Integration
+While VS Code relies on TextMate, Neovim and increasingly Emacs leverage Tree-sitter for high-performance, incremental parsing. Tree-sitter generates a Concrete Syntax Tree (CST) that enables structural editing and precise code navigation.
+4.1 Tree-sitter Grammar Definition (grammar.js)
+The Tree-sitter grammar must define the operator precedence and structural rules of Aria. Based on the CodeGenContext and parser logic 1, the grammar hierarchy is established as follows:
+
+
+JavaScript
+
+
+
+
+module.exports = grammar({
+ name: 'aria',
+
+ extras: $ => [
+   /\s/,
+   $.comment,
+ ],
+
+ rules: {
+   source_file: $ => repeat($._statement),
+
+   _statement: $ => choice(
+     $.variable_declaration,
+     $.function_definition,
+     $.expression_statement,
+     $.return_statement,
+     $.block,
+     $.pick_statement, // Aria specific
+     $.defer_statement // Aria specific
+   ),
+
+   // Variable: wild int8* ptr =...;
+   variable_declaration: $ => seq(
+     optional(choice('wild', 'gc', 'stack')), // Memory qualifiers
+     field('type', $._type),
+     field('name', $.identifier),
+     optional(seq('=', field('value', $._expression))),
+     ';'
+   ),
+
+   // Pick Statement: pick value {... }
+   pick_statement: $ => seq(
+     'pick',
+     field('selector', $._expression),
+     field('body', $.pick_body)
+   ),
+
+   pick_body: $ => seq(
+     '{',
+     repeat($.pick_case),
+     optional($.pick_fall),
+     '}'
+   ),
+
+   // Fall Statement: fall(label)
+   pick_fall: $ => seq(
+     'fall', '(', $.identifier, ')', ';'
+   ),
+
+   // Types including TBB and Generics
+   _type: $ => choice(
+     $.primitive_type,
+     $.tbb_type,
+     $.pointer_type,
+     $.generic_type
+   ),
+
+   tbb_type: $ => /tbb(8|16|32|64)/,
+   
+   // Operator Precedence (inferred from common systems languages + Aria specs)
+   _expression: $ => choice(
+     $.identifier,
+     $.literal,
+     $.binary_expression,
+     $.unary_expression
+   ),
+
+   binary_expression: $ => choice(
+     prec.left(1, seq($._expression, '||', $._expression)),
+     prec.left(2, seq($._expression, '&&', $._expression)),
+     prec.left(3, seq($._expression, choice('==', '!='), $._expression)),
+     prec.left(4, seq($._expression, choice('<', '>', '<=', '>='), $._expression)),
+     prec.left(5, seq($._expression, choice('+', '-'), $._expression)),
+     prec.left(6, seq($._expression, choice('*', '/', '%'), $._expression)),
+     prec.left(7, seq($._expression, choice('|>', '?.', '!!'), $._expression)) // Pipe and Safe Nav
+   )
+ }
+});
+
+4.2 Query Definitions
+To activate highlighting in Neovim, specific Scheme-like queries (highlights.scm) map the CST nodes to capture groups.8
+
+
+Scheme
+
+
+
+
+; highlights.scm
+(variable_declaration type: (_) @type)
+(function_definition name: (identifier) @function)
+(call_expression function: (identifier) @function.call)
+["pick" "fall" "if" "else" "defer"] @keyword.control
+["wild" "gc" "stack"] @keyword.storage.modifier
+(tbb_type) @type.builtin
+(comment) @comment
+
+Implementation Strategy:
+1. Generate Parser: Use tree-sitter generate to create the C parser code.9
+2. WebAssembly: Compile to WASM for web-based editors or VS Code extensions (via vscode-anycode).
+3. Neovim Registry: Submit the grammar to nvim-treesitter to allow users to install via :TSInstall aria.
+5. Emacs and Vim Support
+5.1 Emacs (aria-mode.el)
+Emacs support requires a major mode that integrates with lsp-mode or eglot.
+
+
+Code snippet
+
+
+
+
+;; aria-mode.el
+(require 'lsp-mode)
+
+(defgroup aria nil "Support for Aria programming language" :group 'languages)
+
+(defcustom aria-server-path "aria-ls"
+ "Path to the Aria Language Server executable."
+ :type 'string
+ :group 'aria)
+
+(defconst aria-font-lock-keywords
+ (list
+  '("\\<\\(func\\|struct\\|enum\\|pick\\|fall\\|defer\\)\\>". font-lock-keyword-face)
+  '("\\<\\(wild\\|gc\\|stack\\)\\>". font-lock-warning-face) ;; Highlight memory qualifiers
+  '("\\<\\(tbb[0-9]+\\|int[0-9]+\\|flt[0-9]+\\)\\>". font-lock-type-face)
+  '("\\<\\(ERR\\)\\>". font-lock-constant-face)))
+
+(define-derived-mode aria-mode prog-mode "Aria"
+ "Major mode for editing Aria source code."
+ (setq-local comment-start "//")
+ (setq-local comment-start-skip "\\(//+\\|/\\*+\\)\\s *")
+ (setq-local font-lock-defaults '(aria-font-lock-keywords)))
+
+;; LSP Integration
+(add-to-list 'lsp-language-id-configuration '(aria-mode. "aria"))
+(lsp-register-client
+(make-lsp-client :new-connection (lsp-stdio-connection (lambda () aria-server-path))
+                 :activation-fn (lsp-activate-on "aria")
+                 :server-id 'aria-ls))
+
+(add-hook 'aria-mode-hook #'lsp)
+(provide 'aria-mode)
+
+Design Note: The wild keyword is mapped to font-lock-warning-face to visually alert the developer of unsafe memory usage, aligning with the language's safety philosophy.1
+5.2 Vim/Neovim (ftplugin/aria.vim)
+For native Vim support (without Tree-sitter), regex-based syntax highlighting is required.
+
+
+Vim Script
+
+
+
+
+" syntax/aria.vim
+if exists("b:current_syntax")
+ finish
+endif
+
+syn keyword ariaKeyword pick fall defer if else while loop break continue return
+syn keyword ariaType int8 int16 int32 int64 tbb8 tbb16 tbb32 tbb64
+syn keyword ariaStorage wild gc stack wildx
+syn match ariaOperator "|>"
+syn match ariaInterpolation "&{.\+}" contained
+
+syn region ariaString start='"' end='"' contains=ariaInterpolation
+syn region ariaBlock start="{" end="}" fold transparent
+
+hi def link ariaKeyword Keyword
+hi def link ariaType Type
+hi def link ariaStorage StorageClass
+hi def link ariaOperator Operator
+hi def link ariaInterpolation PreProc
+
+let b:current_syntax = "aria"
+
+6. Model Context Protocol (MCP) Integration
+The Model Context Protocol (MCP) represents a paradigm shift in how AI assistants interact with development environments. Unlike the LSP, which is designed for editor features (completion, diagnostics), MCP allows the Aria tooling to provide semantic context to LLMs (like Claude or Copilot).2
+6.1 Role of MCP in Aria
+Aria is a novel language with unique constraints (TBB arithmetic, memory qualifiers). General-purpose LLMs may hallucinate incorrect syntax or unsafe memory patterns. The aria-ls binary should function as a dual-protocol server, supporting both LSP and MCP, or a dedicated aria-mcp server should be created to bridge this gap.
+6.2 Context Offerings
+The Aria MCP server should expose the following resources and tools to the AI:
+1. Resources (resources/list):
+   * aria://docs/tbb: Returns the official specification for Twisted Balanced Binary arithmetic, explaining the ERR sentinel and sticky error propagation.1
+   * aria://docs/memory: Returns documentation on wild vs gc allocation strategies and the defer mechanism.
+   * aria://symbols/current_file: Returns the symbol table of the active file to help the AI understand available functions and structs.
+2. Tools (tools/call):
+   * explain_tbb_overflow(value, width): A tool that calculates whether a specific integer value would trigger an ERR state in a given TBB width (e.g., does 128 overflow tbb8?).
+   * convert_c_to_aria(c_code): A specialized transpiler tool that takes a snippet of C code and suggests the idiomatic Aria equivalent, correctly mapping pointers to wild references.
+6.3 Protocol Implementation
+The MCP server communicates via JSON-RPC, similar to LSP but with different method signatures.10
+* Request: tools/call
+* Method: explain_tbb_overflow
+* Params: { "value": 128, "width": "tbb8" }
+* Response:
+JSON
+{
+ "content":
+}
+
+7. Formatter and Linter Design (aria-fmt)
+Consistency is paramount. The aria-fmt tool should be implemented as a subcommand of the compiler or a standalone binary that modifies the source code to adhere to the official style.
+7.1 Implementation Strategy: Concrete Syntax Tree (CST)
+Unlike the compiler which discards whitespace/comments during AST generation, aria-fmt must use a Concrete Syntax Tree or a "Lossless AST" to preserve comments.12
+   * Algorithm:
+   1. Parse source into CST (preserving trivia).
+   2. Traverse CST.
+   3. Emit code using a strict set of rules.
+   4. Verify idempotence (output of formatting must not change if formatted again).
+7.2 Configuration Rules (aria.toml)
+Users should control formatting via a configuration file, though defaults should be opinionated.
+
+
+Ini, TOML
+
+
+
+
+[fmt]
+tab_size = 4
+use_spaces = true
+brace_style = "1tbs" # One True Brace Style (K&R)
+max_width = 100
+import_sorting = true
+
+7.3 Integration
+The VS Code extension uses the DocumentFormattingEditProvider interface. It spawns aria-fmt --stdin and applies the text edits returned via stdout.
+8. Snippets and Documentation
+8.1 Code Snippets (snippets.json)
+Snippets provide templates for common but verbose patterns.
+
+
+JSON
+
+
+
+
+{
+ "Pick Statement": {
+   "prefix": "pick",
+   "body": [
+     "pick ${1:value} {",
+     "    ${2:pattern} {",
+     "        $0",
+     "    }",
+     "    default {",
+     "        fall(next);",
+     "    }",
+     "}"
+   ],
+   "description": "Multi-way branching statement with explicit fallthrough"
+ },
+ "Wild Allocation": {
+   "prefix": "alloc_wild",
+   "body":,
+   "description": "Unsafe allocation with deferred cleanup"
+ }
+}
+
+8.2 Documentation Generation (aria-doc)
+The aria-doc tool extracts comments starting with /// or /** and generates HTML.
+   * Markdown Support: Doc comments should support standard Markdown.
+   * LSP Integration: The aria-ls server must parse these comments and return them in the textDocument/hover response as MarkupContent (markdown). This ensures that documentation written in the source is immediately visible in the editor.
+9. Conclusion and Release Roadmap
+This specification defines a mature, industrial-grade tooling ecosystem for Aria. By leveraging the Language Server Protocol for semantics, TextMate/Tree-sitter for syntax, and the Model Context Protocol for AI integration, Aria can offer a developer experience that rivals established languages like Rust and Go.
+Implementation Sequence:
+   1. Phase A: Bundle aria-ls and release vscode-aria with TextMate grammar. (Immediate functionality).
+   2. Phase B: Implement grammar.js for Tree-sitter and publish nvim-treesitter config. (Neovim support).
+   3. Phase C: Develop aria-fmt and integrate into the LSP as a formatting provider. (Consistency).
+   4. Phase D: Implement MCP endpoints within aria-ls to assist AI agents. (Future-proofing).
+This roadmap ensures that as the language evolves, the tooling scales in parallel, providing a stable foundation for the Aria developer community.
+Works cited
+   1. aria_shell_research_full.txt
+   2. What is Model Context Protocol (MCP)? - IBM, accessed December 25, 2025, https://www.ibm.com/think/topics/model-context-protocol
+   3. Model Context Protocol (MCP). MCP is an open protocol that… | by Aserdargun | Nov, 2025, accessed December 25, 2025, https://medium.com/@aserdargun/model-context-protocol-mcp-e453b47cf254
+   4. Bundling Extensions - Visual Studio Code, accessed December 25, 2025, https://code.visualstudio.com/api/working-with-extensions/bundling-extension
+   5. How to properly bundle a Language Server extension for VScode with client and server inside - Stack Overflow, accessed December 25, 2025, https://stackoverflow.com/questions/67247206/how-to-properly-bundle-a-language-server-extension-for-vscode-with-client-and-se
+   6. Language Extensions Overview - Visual Studio Code, accessed December 25, 2025, https://code.visualstudio.com/api/language-extensions/overview
+   7. How to define template strings in textmate language definitions for VSCode syntax highlighting? - Stack Overflow, accessed December 25, 2025, https://stackoverflow.com/questions/68906242/how-to-define-template-strings-in-textmate-language-definitions-for-vscode-synta
+   8. Let's create a Tree-sitter grammar - Jonas Hietala, accessed December 25, 2025, https://www.jonashietala.se/blog/2024/03/19/lets_create_a_tree-sitter_grammar
+   9. Guide to writing your first Tree-sitter grammar - GitHub Gist, accessed December 25, 2025, https://gist.github.com/Aerijo/df27228d70c633e088b0591b8857eeef
+   10. Specification - Model Context Protocol, accessed December 25, 2025, https://modelcontextprotocol.io/specification/2025-11-25
+   11. Architecture overview - Model Context Protocol, accessed December 25, 2025, https://modelcontextprotocol.io/docs/learn/architecture
+   12. Tree Sitter and the Complications of Parsing Languages - Mastering Emacs, accessed December 25, 2025, https://www.masteringemacs.org/article/tree-sitter-complications-of-parsing-languages

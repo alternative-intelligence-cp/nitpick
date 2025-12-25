@@ -1,0 +1,1936 @@
+=== ARIA SOURCE PART2 - FRONTEND - AST ===
+
+FILE: include/frontend/ast/ast_node.h
+================================================================================
+#ifndef ARIA_AST_NODE_H
+#define ARIA_AST_NODE_H
+
+#include <string>
+#include <memory>
+#include <vector>
+
+namespace aria {
+
+/**
+ * Base class for all Abstract Syntax Tree (AST) nodes.
+ * 
+ * The AST represents the hierarchical structure of Aria source code
+ * after parsing. Each node corresponds to a construct in the language.
+ */
+class ASTNode {
+public:
+    enum class NodeType {
+        // === EXPRESSIONS ===
+        LITERAL,              // Integer, float, string, boolean, null literals
+        IDENTIFIER,           // Variable/function names
+        BINARY_OP,            // Binary operations: +, -, *, /, etc.
+        UNARY_OP,             // Unary operations: -, !, ~, @, #, $
+        CALL,                 // Function calls
+        INDEX,                // Array indexing: arr[index]
+        MEMBER_ACCESS,        // Object member access: obj.member
+        POINTER_MEMBER,       // Pointer member access: ptr->member
+        LAMBDA,               // Lambda expressions: returnType(params) { body }
+        TEMPLATE_LITERAL,     // Template literals with interpolation
+        RANGE,                // Range expressions: start..end, start...end
+        TERNARY,              // Ternary operator: is cond : true_val : false_val
+        SAFE_NAV,             // Safe navigation: obj?.member
+        NULL_COALESCE,        // Null coalescing: value ?? default
+        PIPELINE,             // Pipeline operators: |>, <|
+        UNWRAP,               // Unwrap operator: result?
+        ARRAY_LITERAL,        // Array literal: [1, 2, 3]
+        OBJECT_LITERAL,       // Object literal: { key: value }
+        AWAIT,                // Await expression: await future (async/await)
+        MOVE,                 // Move expression: move(x) - ownership transfer
+        VECTOR_CONSTRUCTOR,   // Vector constructor: vec2(x, y), vec3(x, y, z), vec9(...)
+        
+        // === STATEMENTS ===
+        VAR_DECL,             // Variable declaration: type:name = value;
+        FUNC_DECL,            // Function declaration: func:name = returnType(params) { body };
+        STRUCT_DECL,          // Struct declaration: struct Name { fields };
+        ENUM_DECL,            // Enum declaration: enum Name { VARIANT = value };
+        RETURN,               // return statement
+        PASS,                 // pass statement (result success)
+        FAIL,                 // fail statement (result error)
+        BREAK,                // break statement
+        CONTINUE,             // continue statement
+        DEFER,                // defer statement (RAII cleanup)
+        BLOCK,                // Code block: { ... }
+        EXPRESSION_STMT,      // Expression as statement
+        
+        // === CONTROL FLOW ===
+        IF,                   // if/else if/else
+        WHILE,                // while loop
+        FOR,                  // for loop
+        LOOP,                 // loop(start, limit, step)
+        TILL,                 // till(limit, step)
+        WHEN,                 // when/then/end loop
+        PICK,                 // pick (pattern matching)
+        PICK_CASE,            // Individual pick case
+        FALL,                 // fall statement (explicit fallthrough)
+        
+        // === TYPES ===
+        TYPE_ANNOTATION,      // Type annotation: int8, string, etc.
+        GENERIC_TYPE,         // Generic type: Array<T>
+        ARRAY_TYPE,           // Array type: int8[], int8[100]
+        POINTER_TYPE,         // Pointer type: int8@
+        SAFE_REF_TYPE,        // Safe reference type: int64$, string$ (borrow checker)
+        OPTIONAL_TYPE,        // Optional type: int64?, string? (can be NIL)
+        FUNCTION_TYPE,        // Function type: func
+        
+        // === MODULES ===
+        USE,                  // use statement (import)
+        MOD,                  // mod statement (module definition)
+        EXTERN,               // extern block (FFI)
+        PROGRAM,              // Root node (entire program)
+        
+        // === SPECIAL ===
+        ASSIGNMENT,           // Assignment: =, +=, -=, etc.
+        PARAMETER,            // Function parameter
+        ARGUMENT,             // Function argument
+    };
+    
+    NodeType type;
+    int line;      // Source line number
+    int column;    // Source column number
+    
+    ASTNode(NodeType t, int l = 0, int c = 0) 
+        : type(t), line(l), column(c) {}
+    
+    virtual ~ASTNode() = default;
+    
+    /**
+     * Convert the node to a string representation (for debugging/testing)
+     */
+    virtual std::string toString() const = 0;
+    
+    /**
+     * Get the node type as a string
+     */
+    static std::string nodeTypeToString(NodeType type);
+    
+    /**
+     * Helper to check node type
+     */
+    bool isExpression() const;
+    bool isStatement() const;
+    bool isType() const;
+};
+
+// Smart pointer typedef for convenience
+using ASTNodePtr = std::shared_ptr<ASTNode>;
+
+} // namespace aria
+
+// Stream output operator for NodeType (for testing)
+std::ostream& operator<<(std::ostream& os, aria::ASTNode::NodeType type);
+
+#endif // ARIA_AST_NODE_H
+
+FILE: include/frontend/ast/expr.h
+================================================================================
+#ifndef ARIA_EXPR_H
+#define ARIA_EXPR_H
+
+#include "ast_node.h"
+#include "frontend/token.h"
+#include <variant>
+
+namespace aria {
+
+// Import Token from frontend namespace for convenience
+using aria::frontend::Token;
+using aria::frontend::TokenType;
+
+/**
+ * Literal expression node
+ * Represents: integer, float, string, boolean, null literals
+ */
+class LiteralExpr : public ASTNode {
+public:
+    std::variant<int64_t, double, std::string, bool, std::monostate> value;
+    std::string raw_value_string;  // For high-precision literals (flt128, int128, etc.)
+    
+    explicit LiteralExpr(int64_t val, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(val) {}
+    
+    explicit LiteralExpr(double val, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(val) {}
+    
+    explicit LiteralExpr(const std::string& val, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(val) {}
+    
+    explicit LiteralExpr(bool val, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(val) {}
+    
+    // Null literal
+    explicit LiteralExpr(std::monostate, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(std::monostate{}) {}
+    
+    // High-precision constructors (for flt128, int128, etc.)
+    explicit LiteralExpr(int64_t val, const std::string& raw_text, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(val), raw_value_string(raw_text) {}
+    
+    explicit LiteralExpr(double val, const std::string& raw_text, int line = 0, int column = 0)
+        : ASTNode(NodeType::LITERAL, line, column), value(val), raw_value_string(raw_text) {}
+    
+    // Helper methods
+    bool hasRawValue() const { return !raw_value_string.empty(); }
+    const std::string& getRawValue() const { return raw_value_string; }
+    
+    std::string toString() const override;
+};
+
+/**
+ * Identifier expression node
+ * Represents: variable names, function names
+ */
+class IdentifierExpr : public ASTNode {
+public:
+    std::string name;
+    
+    IdentifierExpr(const std::string& n, int line = 0, int column = 0)
+        : ASTNode(NodeType::IDENTIFIER, line, column), name(n) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Template literal expression node
+ * Represents: `text &{expr} more text`
+ * Contains alternating string parts and interpolated expressions
+ */
+class TemplateLiteralExpr : public ASTNode {
+public:
+    std::vector<std::string> parts;              // String parts
+    std::vector<std::shared_ptr<ASTNode>> interpolations;  // Expressions to interpolate
+    
+    TemplateLiteralExpr(int line = 0, int column = 0)
+        : ASTNode(NodeType::TEMPLATE_LITERAL, line, column) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Binary operation expression node
+ * Represents: a + b, x * y, etc.
+ */
+class BinaryExpr : public ASTNode {
+public:
+    ASTNodePtr left;
+    Token op;
+    ASTNodePtr right;
+    
+    BinaryExpr(ASTNodePtr l, const Token& o, ASTNodePtr r, int line = 0, int column = 0)
+        : ASTNode(NodeType::BINARY_OP, line, column), left(l), op(o), right(r) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Range expression node
+ * Represents: start..end (inclusive), start...end (exclusive)
+ */
+class RangeExpr : public ASTNode {
+public:
+    ASTNodePtr start;
+    ASTNodePtr end;
+    bool isExclusive;  // true for ..., false for ..
+    
+    RangeExpr(ASTNodePtr s, ASTNodePtr e, bool exclusive, int line = 0, int column = 0)
+        : ASTNode(NodeType::RANGE, line, column), start(s), end(e), isExclusive(exclusive) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Unary operation expression node
+ * Represents: -x, !flag, ~bits, @ptr, #ref, $iter
+ */
+class UnaryExpr : public ASTNode {
+public:
+    Token op;
+    ASTNodePtr operand;
+    bool isPostfix;
+    
+    // Borrow checker annotations
+    bool creates_loan;      // True if this is a $ (borrow) operator
+    std::string loan_target; // Variable name being borrowed (for $ operator)
+    bool creates_pin;       // True if this is a # (pin) operator
+    std::string pin_target;  // Variable name being pinned (for # operator)
+    
+    UnaryExpr(const Token& o, ASTNodePtr operand, bool isPost = false, int line = 0, int column = 0)
+        : ASTNode(NodeType::UNARY_OP, line, column), op(o), operand(operand), isPostfix(isPost),
+          creates_loan(false), loan_target(""), creates_pin(false), pin_target("") {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Function call expression node
+ * Represents: func(arg1, arg2, ...) or func::<T, U>(arg1, arg2, ...)
+ */
+class CallExpr : public ASTNode {
+public:
+    ASTNodePtr callee;
+    std::vector<ASTNodePtr> arguments;
+    std::vector<std::string> explicitTypeArgs;  // For turbofish syntax: ::<T, U>
+    std::string specializedMangledName;  // For generic calls: resolved mangled name
+    
+    CallExpr(ASTNodePtr callee, const std::vector<ASTNodePtr>& args, int line = 0, int column = 0)
+        : ASTNode(NodeType::CALL, line, column), callee(callee), arguments(args) {}
+    
+    CallExpr(ASTNodePtr callee, const std::vector<ASTNodePtr>& args, 
+             const std::vector<std::string>& typeArgs, int line = 0, int column = 0)
+        : ASTNode(NodeType::CALL, line, column), callee(callee), arguments(args), 
+          explicitTypeArgs(typeArgs) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Array index expression node
+ * Represents: arr[index]
+ */
+class IndexExpr : public ASTNode {
+public:
+    ASTNodePtr array;
+    ASTNodePtr index;
+    
+    IndexExpr(ASTNodePtr arr, ASTNodePtr idx, int line = 0, int column = 0)
+        : ASTNode(NodeType::INDEX, line, column), array(arr), index(idx) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Member access expression node
+ * Represents: obj.member, obj->member, obj?.member
+ */
+class MemberAccessExpr : public ASTNode {
+public:
+    ASTNodePtr object;
+    std::string member;
+    bool isPointerAccess;  // true for ->, false for .
+    bool isSafeNavigation; // true for ?., false otherwise
+    
+    MemberAccessExpr(ASTNodePtr obj, const std::string& mem, bool isPtr = false, bool isSafeNav = false, int line = 0, int column = 0)
+        : ASTNode(isPtr ? NodeType::POINTER_MEMBER : NodeType::MEMBER_ACCESS, line, column),
+          object(obj), member(mem), isPointerAccess(isPtr), isSafeNavigation(isSafeNav) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Ternary expression node
+ * Represents: is condition : true_value : false_value
+ */
+class TernaryExpr : public ASTNode {
+public:
+    ASTNodePtr condition;
+    ASTNodePtr trueValue;
+    ASTNodePtr falseValue;
+    
+    TernaryExpr(ASTNodePtr cond, ASTNodePtr trueVal, ASTNodePtr falseVal, int line = 0, int column = 0)
+        : ASTNode(NodeType::TERNARY, line, column),
+          condition(cond), trueValue(trueVal), falseValue(falseVal) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Assignment expression node
+ * Represents: x = 5, y += 3, etc.
+ */
+class AssignmentExpr : public ASTNode {
+public:
+    ASTNodePtr target;
+    Token op;  // =, +=, -=, *=, /=, %=
+    ASTNodePtr value;
+    
+    AssignmentExpr(ASTNodePtr tgt, const Token& o, ASTNodePtr val, int line = 0, int column = 0)
+        : ASTNode(NodeType::ASSIGNMENT, line, column), target(tgt), op(o), value(val) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Array literal expression node
+ * Represents: [1, 2, 3, 4]
+ */
+class ArrayLiteralExpr : public ASTNode {
+public:
+    std::vector<ASTNodePtr> elements;
+    
+    ArrayLiteralExpr(const std::vector<ASTNodePtr>& elems, int line = 0, int column = 0)
+        : ASTNode(NodeType::ARRAY_LITERAL, line, column), elements(elems) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Await expression node (Async/Await)
+ * Represents: await future_expression
+ * 
+ * Based on research_029_async_await_system.txt:
+ * - Suspends execution if the Future is not ready
+ * - Only valid within async functions or async blocks
+ * - Operand must be a type implementing the Future trait
+ */
+class AwaitExpr : public ASTNode {
+public:
+    ASTNodePtr operand;  // Expression that yields a Future
+    
+    AwaitExpr(ASTNodePtr expr, int line = 0, int column = 0)
+        : ASTNode(NodeType::AWAIT, line, column), operand(expr) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Move expression node
+ * Represents: move(x) - explicit ownership transfer
+ * 
+ * Transfer ownership of a variable to the destination, invalidating the source.
+ * Primarily used for wild memory to prevent use-after-free and double-free.
+ * The borrow checker tracks moved variables and reports use-after-move errors.
+ * 
+ * Example:
+ *   wild buffer:data = allocate(1024);
+ *   wild buffer:moved = move(data);  // data is now invalid
+ *   // use(data);  // ERROR: value used after move
+ */
+class MoveExpr : public ASTNode {
+public:
+    std::string variableName;  // Name of the variable being moved
+    ASTNodePtr variable;       // Expression representing the variable (typically IdentifierExpr)
+    
+    MoveExpr(const std::string& varName, ASTNodePtr var, int line = 0, int column = 0)
+        : ASTNode(NodeType::MOVE, line, column), 
+          variableName(varName), variable(std::move(var)) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Object literal expression node
+ * Represents: { key: value, ... } syntax for both dynamic objects and struct initialization
+ * 
+ * Based on research_014_composite_types_part1.txt:
+ * - When type_name is empty: Creates a dynamic obj (hash map)
+ * - When type_name is set: Initializes a struct (e.g., Point{ x:1, y:2 })
+ * - Fields are evaluated at runtime and added to the object
+ */
+class ObjectLiteralExpr : public ASTNode {
+public:
+    struct Field {
+        std::string name;
+        ASTNodePtr value;
+        
+        Field(const std::string& n, ASTNodePtr v)
+            : name(n), value(std::move(v)) {}
+    };
+    
+    std::vector<Field> fields;
+    std::string type_name;  // Empty for dynamic obj, set for struct constructors
+    
+    ObjectLiteralExpr(const std::vector<Field>& flds, 
+                      const std::string& typeName = "",
+                      int line = 0, int column = 0)
+        : ASTNode(NodeType::OBJECT_LITERAL, line, column), 
+          fields(flds), type_name(typeName) {}
+    
+    ObjectLiteralExpr(int line = 0, int column = 0)
+        : ASTNode(NodeType::OBJECT_LITERAL, line, column), type_name("") {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Lambda expression node (Closures)
+ * Represents: (x, y) => x + y  or  int64(int64 x, int64 y) { return x + y; }
+ * 
+ * Based on research_016_functional_types.txt:
+ * - Fat pointer representation: { method_ptr, env_ptr }
+ * - Captures can be by-value, by-reference, or by-move
+ * - Must respect Appendage Theory for lifetime safety
+ */
+class LambdaExpr : public ASTNode {
+public:
+    enum class CaptureMode {
+        BY_VALUE,      // Copy into closure environment
+        BY_REFERENCE,  // Capture as pointer (borrowing)
+        BY_MOVE        // Transfer ownership to closure
+    };
+    
+    struct CapturedVar {
+        std::string name;
+        CaptureMode mode;
+        ASTNodePtr typeAnnotation;  // Optional type hint
+        
+        CapturedVar(const std::string& n, CaptureMode m, ASTNodePtr type = nullptr)
+            : name(n), mode(m), typeAnnotation(type) {}
+    };
+    
+    std::vector<ASTNodePtr> parameters;      // Function parameters
+    std::string returnTypeName;              // Return type annotation (string like "int64", "string")
+    ASTNodePtr body;                         // Function body (BlockStmt)
+    std::vector<CapturedVar> capturedVars;   // Variables captured from outer scope (filled by semantic analysis)
+    bool isAsync;                            // true for async closures
+    
+    LambdaExpr(const std::vector<ASTNodePtr>& params, 
+               const std::string& retType,
+               ASTNodePtr bodyNode,
+               int line = 0, int column = 0)
+        : ASTNode(NodeType::LAMBDA, line, column),
+          parameters(params), returnTypeName(retType), body(bodyNode), isAsync(false) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Unwrap expression node (? operator)
+ * Represents: result ? default_value
+ * 
+ * Unwraps a result type, returning the value if successful,
+ * or the default value if there was an error.
+ * 
+ * Example: string:content = readFile("config.txt") ? "default";
+ */
+class UnwrapExpr : public ASTNode {
+public:
+    ASTNodePtr result;        // Expression that returns a result type
+    ASTNodePtr defaultValue;  // Default value if result contains error
+    
+    UnwrapExpr(ASTNodePtr res, ASTNodePtr defVal, int line = 0, int column = 0)
+        : ASTNode(NodeType::UNWRAP, line, column),
+          result(res), defaultValue(defVal) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Vector constructor expression node
+ * Represents: vec2(x, y), vec3(x, y, z), vec9(c0, c1, ..., c8)
+ * 
+ * Constructs a vector from component values.
+ * Component types are inferred from the literals (default: flt32).
+ * 
+ * Examples:
+ *   vec2(1.0, 2.0)           - 2D vector with flt32 components
+ *   vec3(10.0, 20.0, 30.0)   - 3D vector with flt32 components
+ *   vec9(1.0, 2.0, ..., 9.0) - 9D vector with flt32 components
+ */
+class VectorConstructorExpr : public ASTNode {
+public:
+    int dimension;                        // 2, 3, or 9
+    std::vector<ASTNodePtr> components;   // Component expressions
+    
+    VectorConstructorExpr(int dim, const std::vector<ASTNodePtr>& comps, int line = 0, int column = 0)
+        : ASTNode(NodeType::VECTOR_CONSTRUCTOR, line, column),
+          dimension(dim), components(comps) {}
+    
+    std::string toString() const override;
+};
+
+} // namespace aria
+
+#endif // ARIA_EXPR_H
+
+FILE: include/frontend/ast/stmt.h
+================================================================================
+#ifndef ARIA_STMT_H
+#define ARIA_STMT_H
+
+#include "ast_node.h"
+#include "expr.h"
+#include <map>
+
+namespace aria {
+
+/**
+ * Variable declaration statement node
+ * Represents: type:name = value;
+ */
+class VarDeclStmt : public ASTNode {
+public:
+    std::string typeName;      // e.g., "int8", "string" (legacy, kept for simple types)
+    ASTNodePtr typeNode;       // Type AST node (for complex types like arrays)
+    std::string varName;
+    ASTNodePtr initializer;    // Can be nullptr
+    bool isWild;               // wild keyword (opt-out of GC)
+    bool isConst;              // const keyword
+    bool isStack;              // stack keyword
+    bool isGC;                 // gc keyword (explicit)
+    
+    // Borrow checker annotations (set during borrow checking phase)
+    int scope_depth;           // Scope depth where variable is declared (for Appendage Theory)
+    bool requires_drop;        // True if variable needs explicit cleanup (wild/stack)
+    bool is_pinned_shadow;     // True if this variable is a pinning reference (#x)
+    std::string pinned_target; // Name of the variable this one pins (if is_pinned_shadow)
+    
+    VarDeclStmt(const std::string& type, const std::string& name, 
+                ASTNodePtr init = nullptr, int line = 0, int column = 0)
+        : ASTNode(NodeType::VAR_DECL, line, column),
+          typeName(type), typeNode(nullptr), varName(name), initializer(init),
+          isWild(false), isConst(false), isStack(false), isGC(false),
+          scope_depth(0), requires_drop(false), is_pinned_shadow(false), pinned_target("") {}
+    
+    // Constructor with typeNode support
+    VarDeclStmt(ASTNodePtr typeN, const std::string& name,
+                ASTNodePtr init = nullptr, int line = 0, int column = 0)
+        : ASTNode(NodeType::VAR_DECL, line, column),
+          typeName(""), typeNode(typeN), varName(name), initializer(init),
+          isWild(false), isConst(false), isStack(false), isGC(false),
+          scope_depth(0), requires_drop(false), is_pinned_shadow(false), pinned_target("") {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Generic parameter information
+ * Stores name and trait constraints for a type parameter
+ * Example: T: Addable & Display
+ */
+struct GenericParamInfo {
+    std::string name;                    // e.g., "T"
+    std::vector<std::string> constraints; // Trait bounds: ["Addable", "Display"]
+    
+    GenericParamInfo(const std::string& n) : name(n) {}
+    GenericParamInfo(const std::string& n, const std::vector<std::string>& c)
+        : name(n), constraints(c) {}
+    
+    bool hasConstraints() const { return !constraints.empty(); }
+};
+
+/**
+ * Function declaration statement node
+ * Represents: func:name = returnType(params) { body };
+ */
+class FuncDeclStmt : public ASTNode {
+public:
+    std::string funcName;
+    ASTNodePtr returnType;  // Changed from std::string to ASTNodePtr
+    std::vector<ASTNodePtr> parameters;  // ParameterNode instances
+    ASTNodePtr body;                      // BlockStmt
+    bool isAsync;
+    bool isPublic;
+    bool isExtern;
+    std::vector<GenericParamInfo> genericParams;  // For generics: func<T: Trait, U>
+    
+    FuncDeclStmt(const std::string& name, ASTNodePtr retType,
+                 const std::vector<ASTNodePtr>& params, ASTNodePtr body,
+                 int line = 0, int column = 0)
+        : ASTNode(NodeType::FUNC_DECL, line, column),
+          funcName(name), returnType(retType), parameters(params), body(body),
+          isAsync(false), isPublic(false), isExtern(false) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Struct declaration node
+ * Represents: struct Name { type:field1; type:field2; };
+ * Or: struct<T, U> Name { *T:field1; *U:field2; };
+ */
+class StructDeclStmt : public ASTNode {
+public:
+    std::string structName;
+    std::vector<ASTNodePtr> fields;  // VarDeclStmt instances (field declarations)
+    std::vector<GenericParamInfo> genericParams;  // For generics: struct<T, U>
+    
+    StructDeclStmt(const std::string& name, const std::vector<ASTNodePtr>& fieldList,
+                   int line = 0, int column = 0)
+        : ASTNode(NodeType::STRUCT_DECL, line, column),
+          structName(name), fields(fieldList) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Enum declaration node
+ * Represents: enum:Name = { VARIANT1 = value1, VARIANT2 = value2, ... };
+ */
+class EnumDeclStmt : public ASTNode {
+public:
+    std::string enumName;
+    std::map<std::string, int64_t> variants;  // variant name -> integer value
+    
+    EnumDeclStmt(const std::string& name, const std::map<std::string, int64_t>& variantMap,
+                 int line = 0, int column = 0)
+        : ASTNode(NodeType::ENUM_DECL, line, column),
+          enumName(name), variants(variantMap) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Function parameter node
+ * Represents: type:name in function parameters
+ */
+class ParameterNode : public ASTNode {
+public:
+    ASTNodePtr typeNode;  // Changed from std::string to ASTNodePtr
+    std::string paramName;
+    ASTNodePtr defaultValue;  // Can be nullptr
+    
+    ParameterNode(ASTNodePtr type, const std::string& name,
+                  ASTNodePtr defVal = nullptr, int line = 0, int column = 0)
+        : ASTNode(NodeType::PARAMETER, line, column),
+          typeNode(type), paramName(name), defaultValue(defVal) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Block statement node (code block)
+ * Represents: { stmt1; stmt2; ... }
+ */
+class BlockStmt : public ASTNode {
+public:
+    std::vector<ASTNodePtr> statements;
+    
+    BlockStmt(const std::vector<ASTNodePtr>& stmts, int line = 0, int column = 0)
+        : ASTNode(NodeType::BLOCK, line, column), statements(stmts) {}
+    
+    BlockStmt(int line = 0, int column = 0)
+        : ASTNode(NodeType::BLOCK, line, column) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Expression statement node
+ * Represents: any expression used as a statement
+ */
+class ExpressionStmt : public ASTNode {
+public:
+    ASTNodePtr expression;
+    
+    ExpressionStmt(ASTNodePtr expr, int line = 0, int column = 0)
+        : ASTNode(NodeType::EXPRESSION_STMT, line, column), expression(expr) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Return statement node
+ * Represents: return expr; or return;
+ */
+class ReturnStmt : public ASTNode {
+public:
+    ASTNodePtr value;  // Can be nullptr
+    
+    ReturnStmt(ASTNodePtr val = nullptr, int line = 0, int column = 0)
+        : ASTNode(NodeType::RETURN, line, column), value(val) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Pass statement node (result success)
+ * Represents: pass(value);
+ * Returns a result type with err=0 and val=value
+ */
+class PassStmt : public ASTNode {
+public:
+    ASTNodePtr value;  // The success value to return
+    
+    PassStmt(ASTNodePtr val, int line = 0, int column = 0)
+        : ASTNode(NodeType::PASS, line, column), value(val) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Fail statement node (result error)
+ * Represents: fail(error_code);
+ * Returns a result type with err=error_code and val=0
+ */
+class FailStmt : public ASTNode {
+public:
+    ASTNodePtr errorCode;  // The error code to return
+    
+    FailStmt(ASTNodePtr code, int line = 0, int column = 0)
+        : ASTNode(NodeType::FAIL, line, column), errorCode(code) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * If statement node
+ * Represents: if (condition) { thenBlock } else { elseBlock }
+ */
+class IfStmt : public ASTNode {
+public:
+    ASTNodePtr condition;
+    ASTNodePtr thenBranch;    // BlockStmt or single statement
+    ASTNodePtr elseBranch;    // Can be nullptr, or another IfStmt for else if
+    
+    IfStmt(ASTNodePtr cond, ASTNodePtr thenBlock, ASTNodePtr elseBlock = nullptr,
+           int line = 0, int column = 0)
+        : ASTNode(NodeType::IF, line, column),
+          condition(cond), thenBranch(thenBlock), elseBranch(elseBlock) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * While statement node
+ * Represents: while (condition) { body }
+ */
+class WhileStmt : public ASTNode {
+public:
+    ASTNodePtr condition;
+    ASTNodePtr body;
+    
+    WhileStmt(ASTNodePtr cond, ASTNodePtr bodyBlock, int line = 0, int column = 0)
+        : ASTNode(NodeType::WHILE, line, column),
+          condition(cond), body(bodyBlock) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * For statement node
+ * Represents: for (init; condition; update) { body }
+ */
+class ForStmt : public ASTNode {
+public:
+    // C-style for loop: for (init; cond; update) { body }
+    ASTNodePtr initializer;   // Can be nullptr or VarDecl
+    ASTNodePtr condition;
+    ASTNodePtr update;
+    ASTNodePtr body;
+    
+    // Range-based for loop: for (var in range) { body }
+    bool isRangeBased;        // true if range-based for loop
+    std::string iteratorName; // Variable name for range iteration
+    std::string iteratorType; // Type annotation for iterator (optional, can be empty)
+    ASTNodePtr rangeExpr;     // Range expression (e.g., 0..10)
+    
+    // C-style constructor (4-6 params with last 2 optional)
+    ForStmt(ASTNodePtr init, ASTNodePtr cond, ASTNodePtr upd, ASTNodePtr bodyBlock,
+            int line = 0, int column = 0)
+        : ASTNode(NodeType::FOR, line, column),
+          initializer(std::move(init)), condition(std::move(cond)), 
+          update(std::move(upd)), body(std::move(bodyBlock)),
+          isRangeBased(false) {}
+    
+    // Range-based constructor (needs strings, so clearly different from C-style)
+    // Use named params to avoid confusion: iterName and iterType are strings
+    static std::unique_ptr<ForStmt> createRangeBased(
+            const std::string& iterName, const std::string& iterType,
+            ASTNodePtr range, ASTNodePtr bodyBlock, int line = 0, int column = 0) {
+        auto stmt = std::make_unique<ForStmt>(nullptr, nullptr, nullptr, std::move(bodyBlock), line, column);
+        stmt->isRangeBased = true;
+        stmt->iteratorName = iterName;
+        stmt->iteratorType = iterType;
+        stmt->rangeExpr = std::move(range);
+        return stmt;
+    }
+    
+    std::string toString() const override;
+};
+
+/**
+ * Break statement node
+ * Represents: break; or break(label);
+ */
+class BreakStmt : public ASTNode {
+public:
+    std::string label;  // Empty string if unlabeled
+    
+    BreakStmt(const std::string& lbl = "", int line = 0, int column = 0)
+        : ASTNode(NodeType::BREAK, line, column), label(lbl) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Continue statement node
+ * Represents: continue; or continue(label);
+ */
+class ContinueStmt : public ASTNode {
+public:
+    std::string label;  // Empty string if unlabeled
+    
+    ContinueStmt(const std::string& lbl = "", int line = 0, int column = 0)
+        : ASTNode(NodeType::CONTINUE, line, column), label(lbl) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Defer statement node
+ * Represents: defer { block }
+ * Block-scoped RAII cleanup - executes at scope exit in LIFO order
+ */
+class DeferStmt : public ASTNode {
+public:
+    ASTNodePtr block;  // BlockStmt to execute on scope exit
+    
+    DeferStmt(ASTNodePtr blk, int line = 0, int column = 0)
+        : ASTNode(NodeType::DEFER, line, column), block(blk) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Till loop statement node
+ * Represents: till(limit, step) { body }
+ * Automatically tracks iteration via $ variable
+ * Directionality: positive step counts up from 0, negative counts down from limit
+ */
+class TillStmt : public ASTNode {
+public:
+    ASTNodePtr limit;  // Iteration limit
+    ASTNodePtr step;   // Step value (direction determined by sign)
+    ASTNodePtr body;   // Loop body
+    
+    TillStmt(ASTNodePtr lim, ASTNodePtr st, ASTNodePtr b, int line = 0, int column = 0)
+        : ASTNode(NodeType::TILL, line, column), limit(lim), step(st), body(b) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Loop statement node
+ * Represents: loop(start, limit, step) { body }
+ * Automatically tracks iteration via $ variable
+ * Direction determined by start vs limit comparison
+ */
+class LoopStmt : public ASTNode {
+public:
+    ASTNodePtr start;  // Starting value
+    ASTNodePtr limit;  // Limit value
+    ASTNodePtr step;   // Step value (always positive magnitude)
+    ASTNodePtr body;   // Loop body
+    
+    LoopStmt(ASTNodePtr st, ASTNodePtr lim, ASTNodePtr step_val, ASTNodePtr b, 
+             int line = 0, int column = 0)
+        : ASTNode(NodeType::LOOP, line, column), 
+          start(st), limit(lim), step(step_val), body(b) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * When loop statement node
+ * Represents: when(condition) { body } then { then_block } end { end_block }
+ * Tri-state: then executes on normal completion, end on break or initial false
+ */
+class WhenStmt : public ASTNode {
+public:
+    ASTNodePtr condition;     // Loop condition
+    ASTNodePtr body;          // Loop body
+    ASTNodePtr then_block;    // Executed on normal completion (optional)
+    ASTNodePtr end_block;     // Executed on break or no execution (optional)
+    
+    WhenStmt(ASTNodePtr cond, ASTNodePtr b, ASTNodePtr then_blk, ASTNodePtr end_blk,
+             int line = 0, int column = 0)
+        : ASTNode(NodeType::WHEN, line, column),
+          condition(cond), body(b), then_block(then_blk), end_block(end_blk) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Pick case node (individual case in pick statement)
+ * Represents: pattern { body } or label:pattern { body } or (!) { unreachable }
+ */
+class PickCase : public ASTNode {
+public:
+    std::string label;         // Optional label (empty if no label)
+    ASTNodePtr pattern;        // Pattern expression: (< 10), (9), (*), (!), etc.
+    ASTNodePtr body;           // Case body block
+    bool is_unreachable;       // True if pattern is (!)
+    
+    PickCase(const std::string& lbl, ASTNodePtr patt, ASTNodePtr b, bool unreachable = false,
+             int line = 0, int column = 0)
+        : ASTNode(NodeType::PICK_CASE, line, column),
+          label(lbl), pattern(patt), body(b), is_unreachable(unreachable) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Pick statement node (pattern matching)
+ * Represents: pick(selector) { case1, case2, ... }
+ */
+class PickStmt : public ASTNode {
+public:
+    ASTNodePtr selector;              // Expression being matched
+    std::vector<ASTNodePtr> cases;    // Vector of PickCase nodes
+    
+    PickStmt(ASTNodePtr sel, const std::vector<ASTNodePtr>& cs,
+             int line = 0, int column = 0)
+        : ASTNode(NodeType::PICK, line, column),
+          selector(sel), cases(cs) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Fall statement node (explicit fallthrough in pick)
+ * Represents: fall(label);
+ */
+class FallStmt : public ASTNode {
+public:
+    std::string target_label;     // Label to fall through to
+    
+    FallStmt(const std::string& label, int line = 0, int column = 0)
+        : ASTNode(NodeType::FALL, line, column),
+          target_label(label) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Use statement node (module import)
+ * Represents: use path.to.module;
+ *             use path.{item1, item2};
+ *             use path.*;
+ *             use "file.aria" as alias;
+ */
+class UseStmt : public ASTNode {
+public:
+    std::vector<std::string> path;    // ["std", "io"] for use std.io;
+    std::vector<std::string> items;   // ["array", "map"] for use std.{array, map};
+    bool isWildcard;                  // true for use math.*;
+    std::string alias;                // "utils" for use "./file.aria" as utils;
+    bool isFilePath;                  // true if path is a file path (quoted string)
+    
+    UseStmt(const std::vector<std::string>& p, int line = 0, int column = 0)
+        : ASTNode(NodeType::USE, line, column),
+          path(p), isWildcard(false), isFilePath(false) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Module statement node (module definition)
+ * Represents: mod name;                  (external file module)
+ *             mod name { ... }           (inline module)
+ *             pub mod name;              (public module)
+ */
+class ModStmt : public ASTNode {
+public:
+    std::string name;                     // Module name
+    bool isPublic;                        // true if pub mod
+    bool isInline;                        // true if inline module { }
+    std::vector<ASTNodePtr> body;         // Statements inside inline module
+    
+    ModStmt(const std::string& n, int line = 0, int column = 0)
+        : ASTNode(NodeType::MOD, line, column),
+          name(n), isPublic(false), isInline(false) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Extern block statement node (FFI declarations)
+ * Represents: extern "libname" { declarations }
+ *             extern "libc" { func:malloc = void*(uint64:size); }
+ */
+class ExternStmt : public ASTNode {
+public:
+    std::string libraryName;              // "libc", "kernel32", etc.
+    std::vector<ASTNodePtr> declarations; // Function/variable declarations
+    
+    ExternStmt(const std::string& libName, int line = 0, int column = 0)
+        : ASTNode(NodeType::EXTERN, line, column),
+          libraryName(libName) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Program node (root of AST)
+ * Represents: entire program
+ */
+class ProgramNode : public ASTNode {
+public:
+    std::vector<ASTNodePtr> declarations;
+    
+    ProgramNode(const std::vector<ASTNodePtr>& decls, int line = 0, int column = 0)
+        : ASTNode(NodeType::PROGRAM, line, column), declarations(decls) {}
+    
+    ProgramNode(int line = 0, int column = 0)
+        : ASTNode(NodeType::PROGRAM, line, column) {}
+    
+    std::string toString() const override;
+};
+
+} // namespace aria
+
+#endif // ARIA_STMT_H
+
+FILE: include/frontend/ast/type.h
+================================================================================
+#ifndef ARIA_TYPE_H
+#define ARIA_TYPE_H
+
+#include "ast_node.h"
+#include <vector>
+
+namespace aria {
+
+/**
+ * Base class for type annotations
+ * Represents type information in variable/function declarations
+ */
+class TypeNode : public ASTNode {
+public:
+    TypeNode(NodeType type, int line = 0, int column = 0)
+        : ASTNode(type, line, column) {}
+    
+    virtual ~TypeNode() = default;
+};
+
+/**
+ * Simple type annotation
+ * Represents: int8, string, bool, etc.
+ */
+class SimpleType : public TypeNode {
+public:
+    std::string typeName;  // e.g., "int8", "string", "bool"
+    
+    SimpleType(const std::string& name, int line = 0, int column = 0)
+        : TypeNode(NodeType::TYPE_ANNOTATION, line, column), typeName(name) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Pointer type annotation
+ * Represents: int8@, string@, obj@ (Aria native pointer syntax)
+ * Note: extern blocks use C-style * for FFI compatibility
+ */
+class PointerType : public TypeNode {
+public:
+    ASTNodePtr baseType;  // The type being pointed to
+    
+    PointerType(ASTNodePtr base, int line = 0, int column = 0)
+        : TypeNode(NodeType::POINTER_TYPE, line, column), baseType(base) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Safe reference type annotation
+ * Represents: int64$, string$, obj$ (safe references for borrow checker)
+ */
+class SafeRefType : public TypeNode {
+public:
+    ASTNodePtr baseType;  // The type being referenced
+    
+    SafeRefType(ASTNodePtr base, int line = 0, int column = 0)
+        : TypeNode(NodeType::SAFE_REF_TYPE, line, column), baseType(base) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Optional type annotation
+ * Represents: int64?, string?, obj? (types that can be NIL)
+ */
+class OptionalTypeNode : public TypeNode {
+public:
+    ASTNodePtr wrappedType;  // The underlying type (T in T?)
+    
+    OptionalTypeNode(ASTNodePtr wrapped, int line = 0, int column = 0)
+        : TypeNode(NodeType::OPTIONAL_TYPE, line, column), wrappedType(wrapped) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Array type annotation
+ * Represents: int8[], int8[100], string[]
+ */
+class ArrayType : public TypeNode {
+public:
+    ASTNodePtr elementType;  // Type of array elements
+    ASTNodePtr sizeExpr;     // Size expression (nullptr for dynamic arrays)
+    bool isDynamic;          // true for int8[], false for int8[100]
+    
+    ArrayType(ASTNodePtr elemType, ASTNodePtr size, int line = 0, int column = 0)
+        : TypeNode(NodeType::ARRAY_TYPE, line, column),
+          elementType(elemType), sizeExpr(size), isDynamic(size == nullptr) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Generic type annotation
+ * Represents: Array<int8>, Map<string, int32>
+ */
+class GenericType : public TypeNode {
+public:
+    std::string baseName;              // e.g., "Array", "Map"
+    std::vector<ASTNodePtr> typeArgs;  // Type arguments
+    
+    GenericType(const std::string& base, const std::vector<ASTNodePtr>& args,
+                int line = 0, int column = 0)
+        : TypeNode(NodeType::GENERIC_TYPE, line, column),
+          baseName(base), typeArgs(args) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Function type annotation
+ * Represents: func type in parameters or variables
+ */
+class FunctionType : public TypeNode {
+public:
+    ASTNodePtr returnType;              // Return type (can be another TypeNode)
+    std::vector<ASTNodePtr> paramTypes; // Parameter types
+    
+    FunctionType(ASTNodePtr retType, const std::vector<ASTNodePtr>& params,
+                 int line = 0, int column = 0)
+        : TypeNode(NodeType::FUNCTION_TYPE, line, column),
+          returnType(retType), paramTypes(params) {}
+    
+    std::string toString() const override;
+};
+
+} // namespace aria
+
+#endif // ARIA_TYPE_H
+
+FILE: src/frontend/ast/ast_node.cpp
+================================================================================
+#include "frontend/ast/ast_node.h"
+#include <ostream>
+
+// Stream output operator for NodeType (for testing)
+std::ostream& operator<<(std::ostream& os, aria::ASTNode::NodeType type) {
+    os << aria::ASTNode::nodeTypeToString(type);
+    return os;
+}
+
+namespace aria {
+
+std::string ASTNode::nodeTypeToString(NodeType type) {
+    switch (type) {
+        // Expressions
+        case NodeType::LITERAL: return "LITERAL";
+        case NodeType::IDENTIFIER: return "IDENTIFIER";
+        case NodeType::BINARY_OP: return "BINARY_OP";
+        case NodeType::UNARY_OP: return "UNARY_OP";
+        case NodeType::CALL: return "CALL";
+        case NodeType::INDEX: return "INDEX";
+        case NodeType::MEMBER_ACCESS: return "MEMBER_ACCESS";
+        case NodeType::POINTER_MEMBER: return "POINTER_MEMBER";
+        case NodeType::LAMBDA: return "LAMBDA";
+        case NodeType::TEMPLATE_LITERAL: return "TEMPLATE_LITERAL";
+        case NodeType::RANGE: return "RANGE";
+        case NodeType::TERNARY: return "TERNARY";
+        case NodeType::SAFE_NAV: return "SAFE_NAV";
+        case NodeType::NULL_COALESCE: return "NULL_COALESCE";
+        case NodeType::PIPELINE: return "PIPELINE";
+        case NodeType::UNWRAP: return "UNWRAP";
+        case NodeType::ARRAY_LITERAL: return "ARRAY_LITERAL";
+        case NodeType::OBJECT_LITERAL: return "OBJECT_LITERAL";
+        case NodeType::AWAIT: return "AWAIT";
+        case NodeType::MOVE: return "MOVE";
+        
+        // Statements
+        case NodeType::VAR_DECL: return "VAR_DECL";
+        case NodeType::FUNC_DECL: return "FUNC_DECL";
+        case NodeType::RETURN: return "RETURN";
+        case NodeType::PASS: return "PASS";
+        case NodeType::FAIL: return "FAIL";
+        case NodeType::BREAK: return "BREAK";
+        case NodeType::CONTINUE: return "CONTINUE";
+        case NodeType::DEFER: return "DEFER";
+        case NodeType::BLOCK: return "BLOCK";
+        case NodeType::EXPRESSION_STMT: return "EXPRESSION_STMT";
+        
+        // Control Flow
+        case NodeType::IF: return "IF";
+        case NodeType::WHILE: return "WHILE";
+        case NodeType::FOR: return "FOR";
+        case NodeType::LOOP: return "LOOP";
+        case NodeType::TILL: return "TILL";
+        case NodeType::WHEN: return "WHEN";
+        case NodeType::PICK: return "PICK";
+        case NodeType::PICK_CASE: return "PICK_CASE";
+        
+        // Types
+        case NodeType::TYPE_ANNOTATION: return "TYPE_ANNOTATION";
+        case NodeType::GENERIC_TYPE: return "GENERIC_TYPE";
+        case NodeType::ARRAY_TYPE: return "ARRAY_TYPE";
+        case NodeType::POINTER_TYPE: return "POINTER_TYPE";
+        case NodeType::FUNCTION_TYPE: return "FUNCTION_TYPE";
+        
+        // Modules
+        case NodeType::USE: return "USE";
+        case NodeType::MOD: return "MOD";
+        case NodeType::EXTERN: return "EXTERN";
+        case NodeType::PROGRAM: return "PROGRAM";
+        
+        // Special
+        case NodeType::ASSIGNMENT: return "ASSIGNMENT";
+        case NodeType::PARAMETER: return "PARAMETER";
+        case NodeType::ARGUMENT: return "ARGUMENT";
+        
+        default: return "UNKNOWN";
+    }
+}
+
+bool ASTNode::isExpression() const {
+    return type >= NodeType::LITERAL && type <= NodeType::MOVE;
+}
+
+bool ASTNode::isStatement() const {
+    return (type >= NodeType::VAR_DECL && type <= NodeType::EXPRESSION_STMT) ||
+           (type >= NodeType::IF && type <= NodeType::PICK_CASE);
+}
+
+bool ASTNode::isType() const {
+    return type >= NodeType::TYPE_ANNOTATION && type <= NodeType::FUNCTION_TYPE;
+}
+
+} // namespace aria
+
+FILE: src/frontend/ast/expr.cpp
+================================================================================
+#include "frontend/ast/expr.h"
+#include <sstream>
+
+namespace aria {
+
+std::string LiteralExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Literal(";
+    
+    // If we have a raw value string (high-precision literal), show that instead
+    if (!raw_value_string.empty()) {
+        oss << "raw=\"" << raw_value_string << "\"";
+    } else {
+        std::visit([&oss](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, int64_t>) {
+                oss << arg;
+            } else if constexpr (std::is_same_v<T, double>) {
+                oss << arg;
+            } else if constexpr (std::is_same_v<T, std::string>) {
+                oss << "\"" << arg << "\"";
+            } else if constexpr (std::is_same_v<T, bool>) {
+                oss << (arg ? "true" : "false");
+            } else if constexpr (std::is_same_v<T, std::monostate>) {
+                oss << "null";
+            }
+        }, value);
+    }
+    
+    oss << ")";
+    return oss.str();
+}
+
+std::string IdentifierExpr::toString() const {
+    return "Identifier(" + name + ")";
+}
+
+std::string TemplateLiteralExpr::toString() const {
+    std::ostringstream oss;
+    oss << "TemplateLiteral(`";
+    
+    // Alternate between parts and interpolations
+    for (size_t i = 0; i < parts.size(); ++i) {
+        oss << parts[i];
+        if (i < interpolations.size()) {
+            oss << "&{" << interpolations[i]->toString() << "}";
+        }
+    }
+    
+    oss << "`)";
+    return oss.str();
+}
+
+std::string BinaryExpr::toString() const {
+    return "Binary(" + left->toString() + " " + aria::frontend::tokenTypeToString(op.type) + " " + right->toString() + ")";
+}
+
+std::string RangeExpr::toString() const {
+    std::string op = isExclusive ? "..." : "..";
+    return "Range(" + start->toString() + " " + op + " " + end->toString() + ")";
+}
+
+std::string UnaryExpr::toString() const {
+    return "Unary(" + aria::frontend::tokenTypeToString(op.type) + " " + operand->toString() + ")";
+}
+
+std::string CallExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Call(" << callee->toString();
+    
+    // Display explicit type arguments if present (turbofish)
+    if (!explicitTypeArgs.empty()) {
+        oss << "::<";
+        for (size_t i = 0; i < explicitTypeArgs.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << explicitTypeArgs[i];
+        }
+        oss << ">";
+    }
+    
+    oss << ", [";
+    for (size_t i = 0; i < arguments.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << arguments[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
+std::string IndexExpr::toString() const {
+    return "Index(" + array->toString() + "[" + index->toString() + "])";
+}
+
+std::string MemberAccessExpr::toString() const {
+    std::string op = isPointerAccess ? "->" : ".";
+    return "MemberAccess(" + object->toString() + op + member + ")";
+}
+
+std::string TernaryExpr::toString() const {
+    return "Ternary(" + condition->toString() + " ? " + 
+           trueValue->toString() + " : " + falseValue->toString() + ")";
+}
+
+std::string AssignmentExpr::toString() const {
+    return "Assignment(" + target->toString() + " " + 
+           aria::frontend::tokenTypeToString(op.type) + " " + value->toString() + ")";
+}
+
+std::string ArrayLiteralExpr::toString() const {
+    std::ostringstream oss;
+    oss << "ArrayLiteral([";
+    for (size_t i = 0; i < elements.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << elements[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
+std::string ObjectLiteralExpr::toString() const {
+    std::ostringstream oss;
+    if (!type_name.empty()) {
+        oss << type_name;
+    } else {
+        oss << "obj";
+    }
+    oss << "{ ";
+    for (size_t i = 0; i < fields.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << fields[i].name << ": " << fields[i].value->toString();
+    }
+    oss << " }";
+    return oss.str();
+}
+
+std::string LambdaExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Lambda(";
+    
+    // Parameters
+    oss << "params=[";
+    for (size_t i = 0; i < parameters.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << parameters[i]->toString();
+    }
+    oss << "]";
+    
+    // Return type
+    if (!returnTypeName.empty()) {
+        oss << ", returnType=" << returnTypeName;
+    }
+    
+    // Captured variables
+    if (!capturedVars.empty()) {
+        oss << ", captures=[";
+        for (size_t i = 0; i < capturedVars.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << capturedVars[i].name;
+            switch (capturedVars[i].mode) {
+                case CaptureMode::BY_VALUE: oss << "(copy)"; break;
+                case CaptureMode::BY_REFERENCE: oss << "(ref)"; break;
+                case CaptureMode::BY_MOVE: oss << "(move)"; break;
+            }
+        }
+        oss << "]";
+    }
+    
+    // Async flag
+    if (isAsync) {
+        oss << ", async";
+    }
+    
+    // Body
+    oss << ", body=" << body->toString();
+    
+    oss << ")";
+    return oss.str();
+}
+
+std::string AwaitExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Await(" << operand->toString() << ")";
+    return oss.str();
+}
+
+std::string MoveExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Move(" << variableName << ")";
+    return oss.str();
+}
+
+std::string UnwrapExpr::toString() const {
+    std::ostringstream oss;
+    oss << "Unwrap(" << result->toString() << " ? " << defaultValue->toString() << ")";
+    return oss.str();
+}
+
+std::string VectorConstructorExpr::toString() const {
+    std::ostringstream oss;
+    oss << "vec" << dimension << "(";
+    for (size_t i = 0; i < components.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << components[i]->toString();
+    }
+    oss << ")";
+    return oss.str();
+}
+
+} // namespace aria
+
+FILE: src/frontend/ast/stmt.cpp
+================================================================================
+#include "frontend/ast/stmt.h"
+#include <sstream>
+
+namespace aria {
+
+std::string VarDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "VarDecl(";
+    if (isWild) oss << "wild ";
+    if (isConst) oss << "const ";
+    if (isStack) oss << "stack ";
+    if (isGC) oss << "gc ";
+    
+    // Use typeNode if available, otherwise typeName
+    if (typeNode) {
+        oss << typeNode->toString();
+    } else {
+        oss << typeName;
+    }
+    
+    oss << ":" << varName;
+    if (initializer) {
+        oss << " = " << initializer->toString();
+    }
+    oss << ")";
+    return oss.str();
+}
+
+std::string FuncDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "FuncDecl(";
+    if (isAsync) oss << "async ";
+    if (isPublic) oss << "pub ";
+    oss << "func:" << funcName;
+    
+    if (!genericParams.empty()) {
+        oss << "<";
+        for (size_t i = 0; i < genericParams.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << genericParams[i].name;
+            if (!genericParams[i].constraints.empty()) {
+                oss << ": ";
+                for (size_t j = 0; j < genericParams[i].constraints.size(); ++j) {
+                    if (j > 0) oss << " & ";
+                    oss << genericParams[i].constraints[j];
+                }
+            }
+        }
+        oss << ">";
+    }
+    
+    oss << " = " << (returnType ? returnType->toString() : "unknown") << "(";
+    for (size_t i = 0; i < parameters.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << parameters[i]->toString();
+    }
+    oss << ") { ... })";
+    return oss.str();
+}
+
+std::string StructDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "StructDecl(struct";
+    
+    if (!genericParams.empty()) {
+        oss << "<";
+        for (size_t i = 0; i < genericParams.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << genericParams[i].name;
+            if (!genericParams[i].constraints.empty()) {
+                oss << ": ";
+                for (size_t j = 0; j < genericParams[i].constraints.size(); ++j) {
+                    if (j > 0) oss << " & ";
+                    oss << genericParams[i].constraints[j];
+                }
+            }
+        }
+        oss << ">";
+    }
+    
+    oss << ":" << structName << " { ";
+    for (size_t i = 0; i < fields.size(); ++i) {
+        if (i > 0) oss << "; ";
+        oss << fields[i]->toString();
+    }
+    oss << " })";
+    return oss.str();
+}
+
+std::string EnumDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "EnumDecl(enum:" << enumName << " = { ";
+    bool first = true;
+    for (const auto& [name, value] : variants) {
+        if (!first) oss << ", ";
+        oss << name << " = " << value;
+        first = false;
+    }
+    oss << " })";
+    return oss.str();
+}
+
+std::string ParameterNode::toString() const {
+    std::string result = (typeNode ? typeNode->toString() : "unknown") + ":" + paramName;
+    if (defaultValue) {
+        result += " = " + defaultValue->toString();
+    }
+    return result;
+}
+
+std::string BlockStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Block([";
+    for (size_t i = 0; i < statements.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << statements[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
+std::string ExpressionStmt::toString() const {
+    return "ExprStmt(" + expression->toString() + ")";
+}
+
+std::string ReturnStmt::toString() const {
+    if (value) {
+        return "Return(" + value->toString() + ")";
+    }
+    return "Return()";
+}
+
+std::string PassStmt::toString() const {
+    return "Pass(" + value->toString() + ")";
+}
+
+std::string FailStmt::toString() const {
+    return "Fail(" + errorCode->toString() + ")";
+}
+
+std::string IfStmt::toString() const {
+    std::string result = "If(" + condition->toString() + ", " + thenBranch->toString();
+    if (elseBranch) {
+        result += ", " + elseBranch->toString();
+    }
+    result += ")";
+    return result;
+}
+
+std::string WhileStmt::toString() const {
+    return "While(" + condition->toString() + ", " + body->toString() + ")";
+}
+
+std::string ForStmt::toString() const {
+    std::ostringstream oss;
+    if (isRangeBased) {
+        oss << "ForRange(";
+        if (!iteratorType.empty()) {
+            oss << iteratorType << ":";
+        }
+        oss << iteratorName << " in " << rangeExpr->toString();
+        oss << ", " << body->toString() << ")";
+    } else {
+        oss << "For(";
+        if (initializer) oss << initializer->toString();
+        oss << "; ";
+        if (condition) oss << condition->toString();
+        oss << "; ";
+        if (update) oss << update->toString();
+        oss << ", " << body->toString() << ")";
+    }
+    return oss.str();
+}
+
+std::string DeferStmt::toString() const {
+    return "Defer(" + block->toString() + ")";
+}
+
+std::string BreakStmt::toString() const {
+    if (!label.empty()) {
+        return "Break(" + label + ")";
+    }
+    return "Break";
+}
+
+std::string ContinueStmt::toString() const {
+    if (!label.empty()) {
+        return "Continue(" + label + ")";
+    }
+    return "Continue";
+}
+
+std::string TillStmt::toString() const {
+    return "Till(" + limit->toString() + ", " + step->toString() + ", " + body->toString() + ")";
+}
+
+std::string LoopStmt::toString() const {
+    return "Loop(" + start->toString() + ", " + limit->toString() + ", " + 
+           step->toString() + ", " + body->toString() + ")";
+}
+
+std::string WhenStmt::toString() const {
+    std::string result = "When(" + condition->toString() + ", " + body->toString();
+    if (then_block) {
+        result += ", then: " + then_block->toString();
+    }
+    if (end_block) {
+        result += ", end: " + end_block->toString();
+    }
+    result += ")";
+    return result;
+}
+
+std::string PickCase::toString() const {
+    std::ostringstream oss;
+    oss << "PickCase(";
+    if (!label.empty()) {
+        oss << label << ":";
+    }
+    if (is_unreachable) {
+        oss << "(!)" << " { " << body->toString() << " }";
+    } else {
+        oss << pattern->toString() << " { " << body->toString() << " }";
+    }
+    oss << ")";
+    return oss.str();
+}
+
+std::string PickStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Pick(" << selector->toString() << ", [";
+    for (size_t i = 0; i < cases.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << cases[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
+std::string FallStmt::toString() const {
+    return "Fall(" + target_label + ")";
+}
+
+std::string UseStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Use(";
+    
+    // Path
+    if (isFilePath) {
+        oss << "\"" << path[0] << "\"";
+    } else {
+        for (size_t i = 0; i < path.size(); ++i) {
+            if (i > 0) oss << ".";
+            oss << path[i];
+        }
+    }
+    
+    // Items or wildcard
+    if (isWildcard) {
+        oss << ".*";
+    } else if (!items.empty()) {
+        oss << ".{";
+        for (size_t i = 0; i < items.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << items[i];
+        }
+        oss << "}";
+    }
+    
+    // Alias
+    if (!alias.empty()) {
+        oss << " as " << alias;
+    }
+    
+    oss << ")";
+    return oss.str();
+}
+
+std::string ModStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Mod(";
+    
+    // Public modifier
+    if (isPublic) {
+        oss << "pub ";
+    }
+    
+    // Module name
+    oss << name;
+    
+    // Inline module with body
+    if (isInline) {
+        oss << " { ";
+        for (size_t i = 0; i < body.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << body[i]->toString();
+        }
+        oss << " }";
+    }
+    
+    oss << ")";
+    return oss.str();
+}
+
+std::string ExternStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Extern(\"" << libraryName << "\" { ";
+    
+    for (size_t i = 0; i < declarations.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << declarations[i]->toString();
+    }
+    
+    oss << " })";
+    return oss.str();
+}
+
+std::string ProgramNode::toString() const {
+    std::ostringstream oss;
+    oss << "Program([";
+    for (size_t i = 0; i < declarations.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << declarations[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
+} // namespace aria
+
+FILE: src/frontend/ast/type.cpp
+================================================================================
+#include "frontend/ast/type.h"
+#include <sstream>
+
+namespace aria {
+
+std::string SimpleType::toString() const {
+    return typeName;
+}
+
+std::string PointerType::toString() const {
+    std::ostringstream oss;
+    if (baseType) {
+        oss << baseType->toString() << "@";  // Aria uses @ for pointers
+    } else {
+        oss << "unknown@";
+    }
+    return oss.str();
+}
+
+std::string SafeRefType::toString() const {
+    std::ostringstream oss;
+    if (baseType) {
+        oss << baseType->toString() << "$";  // Aria uses $ for safe references
+    } else {
+        oss << "unknown$";
+    }
+    return oss.str();
+}
+
+std::string OptionalTypeNode::toString() const {
+    std::ostringstream oss;
+    if (wrappedType) {
+        oss << wrappedType->toString() << "?";  // Aria uses ? for optional types
+    } else {
+        oss << "unknown?";
+    }
+    return oss.str();
+}
+
+std::string ArrayType::toString() const {
+    std::ostringstream oss;
+    if (elementType) {
+        oss << elementType->toString();
+    } else {
+        oss << "unknown";
+    }
+    
+    oss << "[";
+    if (!isDynamic && sizeExpr) {
+        oss << sizeExpr->toString();
+    }
+    oss << "]";
+    
+    return oss.str();
+}
+
+std::string GenericType::toString() const {
+    std::ostringstream oss;
+    oss << baseName << "<";
+    
+    for (size_t i = 0; i < typeArgs.size(); i++) {
+        if (i > 0) oss << ", ";
+        if (typeArgs[i]) {
+            oss << typeArgs[i]->toString();
+        }
+    }
+    
+    oss << ">";
+    return oss.str();
+}
+
+std::string FunctionType::toString() const {
+    std::ostringstream oss;
+    oss << "func(";
+    
+    for (size_t i = 0; i < paramTypes.size(); i++) {
+        if (i > 0) oss << ", ";
+        if (paramTypes[i]) {
+            oss << paramTypes[i]->toString();
+        }
+    }
+    
+    oss << ") -> ";
+    if (returnType) {
+        oss << returnType->toString();
+    } else {
+        oss << "void";
+    }
+    
+    return oss.str();
+}
+
+} // namespace aria

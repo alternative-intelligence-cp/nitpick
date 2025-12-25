@@ -1,0 +1,241 @@
+# RESEARCH TASK: Module Loading and Symbol Import System
+
+**Task ID:** research_module_loading_system  
+**Priority:** HIGH  
+**Status:** PENDING  
+**Created:** 2025-12-24  
+**Estimated Time:** 45-60 minutes
+
+---
+
+## PROBLEM STATEMENT
+
+Aria has a **partially implemented module system** but lacks the loader/importer that connects `use` statements to actual stdlib files and imports their symbols into scope.
+
+**Current State:**
+- ✅ `UseStmt` parsing works (parser.cpp:1926+)
+- ✅ Module syntax supported: `use std.io;`, `use std.io.*;`, `use std.io as io;`
+- ✅ Runtime library fully implemented (all C functions exist)
+- ✅ Stdlib modules created (`stdlib/io.aria`, `stdlib/core.aria`)
+- ❌ **Module loader missing** - compiler doesn't know how to load stdlib/io.aria
+- ❌ **Symbol importer missing** - exported symbols from modules not added to scope
+- ❌ **Extern linkage incomplete** - `extern func:aria_stdout_write` not linked to runtime
+
+**Test Case Failing:**
+```aria
+use std.io;
+
+func:main = int64() {
+    io.stdout.write("Hello, World!\n");  // Error: Undefined identifier 'io'
+    pass(0);
+};
+```
+
+Error: `Undefined identifier: 'io'` because module loading doesn't happen.
+
+---
+
+## CONTEXT
+
+### What We Have
+
+**1. UseStmt AST Node** (`include/frontend/ast/stmt.h`)
+```cpp
+class UseStmt : public Stmt {
+public:
+    std::vector<std::string> path;  // ["std", "io"]
+    std::string alias;               // "io" if aliased
+    bool isWildcard;                 // true for std.io.*
+    bool isFilePath;                 // true for "file.aria"
+};
+```
+
+**2. Stdlib Module Structure**
+```
+stdlib/
+  ├── core.aria    (result<T>, array<T>)
+  └── io.aria      (6-stream I/O, all extern declarations)
+```
+
+**3. Runtime Library** (libaria_runtime.a)
+- All C functions exist: `aria_stdout_write()`, `aria_stderr_write()`, etc.
+- Headers in `include/runtime/streams.h`
+
+**4. Module Syntax Examples**
+```aria
+use std.io;              // Import namespace
+use std.io.*;            // Import all symbols
+use std.io as io;        // Alias
+use "custom.aria";       // File path
+```
+
+### What We Need
+
+**Module Resolution:**
+1. When `use std.io;` is encountered, find `stdlib/io.aria`
+2. Parse the module file (full Aria source)
+3. Extract exported symbols (`pub func:`, `pub struct:`, etc.)
+4. Add symbols to current scope with proper namespace (`io.stdout`, `io.print`, etc.)
+
+**Extern Function Linking:**
+1. When `extern func:aria_stdout_write` is declared, mark it for linking
+2. During LLVM IR generation, create declaration (not definition)
+3. Let linker resolve to `libaria_runtime.a` at link time
+
+**Symbol Table Integration:**
+1. Module symbols live in separate namespace
+2. `use std.io;` creates `io` namespace with all pub symbols
+3. `use std.io.*;` imports symbols into current scope directly
+
+---
+
+## DELIVERABLES
+
+Please provide:
+
+### 1. Module Loading Algorithm (Step-by-Step)
+
+**Input:** `UseStmt* stmt` with path `["std", "io"]`  
+**Output:** Symbols from `stdlib/io.aria` added to scope
+
+Describe:
+- How to resolve `std.io` → filesystem path `stdlib/io.aria`
+- When to load/parse the module (type checking phase? before?)
+- How to handle circular dependencies (if A uses B, B uses A)
+- Caching strategy (don't re-parse same module multiple times)
+
+### 2. Symbol Import Strategy
+
+**Given:** Parsed module AST with pub/private symbols  
+**Need:** Add to symbol table with proper scoping
+
+Describe:
+- How to filter pub vs private symbols
+- Namespace creation (`io` namespace for `io.stdout`)
+- Wildcard imports (`use std.io.*;` imports all pub symbols)
+- Alias handling (`use std.io as myio;`)
+- Conflict detection (what if two modules export same name?)
+
+### 3. Extern Function Linkage
+
+**Given:** `extern func:aria_stdout_write = int64(string:str);`  
+**Need:** LLVM declaration + runtime library linkage
+
+Describe:
+- How to generate LLVM function declaration (not definition)
+- Name mangling (if any) for extern functions
+- Linking strategy with `libaria_runtime.a`
+- How to handle missing runtime functions (error at link time?)
+
+### 4. Implementation Roadmap
+
+Provide ordered steps:
+1. First: Implement module resolver (path → file)
+2. Second: Implement module parser/loader
+3. Third: Implement symbol importer
+4. Fourth: Implement extern linkage
+5. Fifth: Add caching and optimization
+
+For each step, suggest:
+- Which file to modify (e.g., `src/frontend/sema/module_loader.cpp`)
+- Which class to create (e.g., `ModuleLoader`, `SymbolImporter`)
+- Integration points (where to call from TypeChecker?)
+
+### 5. Reference Implementation Patterns
+
+Provide examples from other compilers:
+- **Rust:** How does `use std::io;` work in rustc?
+- **Go:** How does `import "fmt"` resolve and load packages?
+- **Python:** How does `import sys` find and load modules?
+
+Focus on:
+- Search path strategy (where to look for modules)
+- Symbol visibility rules (pub vs private)
+- Circular dependency handling
+
+---
+
+## EXISTING ARIA CODE TO REVIEW
+
+**Parser (src/frontend/parser/parser.cpp:1926-1970):**
+```cpp
+std::shared_ptr<Stmt> Parser::parseUseStatement() {
+    Token useToken = previous();
+    auto useStmt = std::make_shared<UseStmt>(...);
+    
+    // Parses: use std.io;
+    // Parses: use std.io.*;
+    // Parses: use "file.aria";
+    // Parses: use std.io as io;
+    
+    return useStmt;
+}
+```
+
+**Symbol Table (src/frontend/sema/symbol_table.cpp):**
+```cpp
+class Symbol {
+    std::string name;
+    Type* type;
+    bool isPublic;  // pub keyword
+    // ... need namespace support?
+};
+```
+
+**Type Checker Entry Point:**
+Likely needs to call module loader before type checking symbols.
+
+---
+
+## CONSTRAINTS
+
+1. **Simplicity First:** Start with basic loading, optimize later
+2. **No Package Manager:** Stdlib is just files in `stdlib/` directory
+3. **Statically Linked:** Runtime functions linked from `libaria_runtime.a`
+4. **LLVM IR:** Must generate proper declarations for extern functions
+5. **Error Messages:** Clear errors for missing modules, circular deps
+
+---
+
+## SUCCESS CRITERIA
+
+After implementing your recommendations, this should work:
+
+```aria
+use std.io;
+
+func:main = int64() {
+    io.stdout.write("Hello, World!\n");
+    io.stderr.write("Error message\n");
+    io.stddbg.write("Debug info\n");
+    
+    print("Using convenience function");
+    
+    pass(0);
+};
+```
+
+Compiles successfully and links with `libaria_runtime.a`.
+
+---
+
+## OUTPUT FORMAT
+
+Provide:
+1. **Algorithm Overview:** High-level flow diagram
+2. **Implementation Steps:** Ordered tasks with file/class names
+3. **Code Patterns:** Pseudocode or examples from other languages
+4. **Integration Points:** Where to hook into existing compiler
+5. **Testing Strategy:** How to validate each step works
+
+Be thorough but practical. Focus on actionable guidance for implementation.
+
+---
+
+**Review Context:**
+- Existing parser handles syntax ✅
+- Runtime library complete ✅
+- Stdlib modules written ✅
+- **Need:** Glue code to connect them all
+
+This is the final piece to make `use std.io;` actually work!

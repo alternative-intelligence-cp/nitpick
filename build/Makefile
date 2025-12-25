@@ -1173,6 +1173,30 @@ src/frontend/sema/const_evaluator.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/const_evaluator.cpp.s
 .PHONY : src/frontend/sema/const_evaluator.cpp.s
 
+src/frontend/sema/definite_assignment.o: src/frontend/sema/definite_assignment.cpp.o
+.PHONY : src/frontend/sema/definite_assignment.o
+
+# target to build an object file
+src/frontend/sema/definite_assignment.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/definite_assignment.cpp.o
+.PHONY : src/frontend/sema/definite_assignment.cpp.o
+
+src/frontend/sema/definite_assignment.i: src/frontend/sema/definite_assignment.cpp.i
+.PHONY : src/frontend/sema/definite_assignment.i
+
+# target to preprocess a source file
+src/frontend/sema/definite_assignment.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/definite_assignment.cpp.i
+.PHONY : src/frontend/sema/definite_assignment.cpp.i
+
+src/frontend/sema/definite_assignment.s: src/frontend/sema/definite_assignment.cpp.s
+.PHONY : src/frontend/sema/definite_assignment.s
+
+# target to generate assembly for a file
+src/frontend/sema/definite_assignment.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/definite_assignment.cpp.s
+.PHONY : src/frontend/sema/definite_assignment.cpp.s
+
 src/frontend/sema/exhaustiveness.o: src/frontend/sema/exhaustiveness.cpp.o
 .PHONY : src/frontend/sema/exhaustiveness.o
 
@@ -1220,6 +1244,30 @@ src/frontend/sema/generic_resolver.s: src/frontend/sema/generic_resolver.cpp.s
 src/frontend/sema/generic_resolver.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/generic_resolver.cpp.s
 .PHONY : src/frontend/sema/generic_resolver.cpp.s
+
+src/frontend/sema/module_loader.o: src/frontend/sema/module_loader.cpp.o
+.PHONY : src/frontend/sema/module_loader.o
+
+# target to build an object file
+src/frontend/sema/module_loader.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/module_loader.cpp.o
+.PHONY : src/frontend/sema/module_loader.cpp.o
+
+src/frontend/sema/module_loader.i: src/frontend/sema/module_loader.cpp.i
+.PHONY : src/frontend/sema/module_loader.i
+
+# target to preprocess a source file
+src/frontend/sema/module_loader.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/module_loader.cpp.i
+.PHONY : src/frontend/sema/module_loader.cpp.i
+
+src/frontend/sema/module_loader.s: src/frontend/sema/module_loader.cpp.s
+.PHONY : src/frontend/sema/module_loader.s
+
+# target to generate assembly for a file
+src/frontend/sema/module_loader.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/sema/module_loader.cpp.s
+.PHONY : src/frontend/sema/module_loader.cpp.s
 
 src/frontend/sema/module_resolver.o: src/frontend/sema/module_resolver.cpp.o
 .PHONY : src/frontend/sema/module_resolver.o
@@ -2971,12 +3019,18 @@ help:
 	@echo "... src/frontend/sema/const_evaluator.o"
 	@echo "... src/frontend/sema/const_evaluator.i"
 	@echo "... src/frontend/sema/const_evaluator.s"
+	@echo "... src/frontend/sema/definite_assignment.o"
+	@echo "... src/frontend/sema/definite_assignment.i"
+	@echo "... src/frontend/sema/definite_assignment.s"
 	@echo "... src/frontend/sema/exhaustiveness.o"
 	@echo "... src/frontend/sema/exhaustiveness.i"
 	@echo "... src/frontend/sema/exhaustiveness.s"
 	@echo "... src/frontend/sema/generic_resolver.o"
 	@echo "... src/frontend/sema/generic_resolver.i"
 	@echo "... src/frontend/sema/generic_resolver.s"
+	@echo "... src/frontend/sema/module_loader.o"
+	@echo "... src/frontend/sema/module_loader.i"
+	@echo "... src/frontend/sema/module_loader.s"
 	@echo "... src/frontend/sema/module_resolver.o"
 	@echo "... src/frontend/sema/module_resolver.i"
 	@echo "... src/frontend/sema/module_resolver.s"

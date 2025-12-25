@@ -55,6 +55,13 @@ struct Import {
  */
 class Module {
 public:
+    // Exported symbol entry (with visibility)
+    struct ExportEntry {
+        Symbol* symbol;
+        Visibility visibility;
+        bool isReexport;  // True if this is a pub use re-export
+    };
+    
     Module(const std::string& name, const std::string& path, Module* parent = nullptr);
     
     // Module identification
@@ -82,6 +89,9 @@ public:
     bool isExported(const std::string& name) const;
     Visibility getExportVisibility(const std::string& name) const;
     
+    // Get all exports (for wildcard imports)
+    const std::unordered_map<std::string, ExportEntry>& getExports() const { return exports; }
+    
     // Re-export support (pub use pattern from research_028 Section 5.2)
     void reexportSymbol(const std::string& name, Symbol* symbol, Visibility visibility = Visibility::PUBLIC);
     
@@ -99,13 +109,6 @@ private:
     std::vector<std::unique_ptr<Module>> submodules;  // Child modules
     SymbolTable symbolTable;    // Local symbol table
     std::vector<Import> imports;  // Import declarations
-    
-    // Exported symbols with visibility
-    struct ExportEntry {
-        Symbol* symbol;
-        Visibility visibility;
-        bool isReexport;  // True if this is a pub use re-export
-    };
     std::unordered_map<std::string, ExportEntry> exports;
     
     bool fullyResolved;  // True when all imports are resolved

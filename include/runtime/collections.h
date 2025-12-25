@@ -250,6 +250,39 @@ AriaResultVoid aria_array_reverse(AriaArray* array);
  */
 AriaResultPtr aria_array_unique(const AriaArray* array, AriaComparatorFn comparator, void* context);
 
+// ═══════════════════════════════════════════════════════════════════════
+// Simple Wrapper Functions (for builtin use - abort on error)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Create a new array (aborts on error).
+ *
+ * @param element_size Size of each element in bytes
+ * @param type_id Type ID for GC tracking (0 for generic)
+ * @return Pointer to AriaArray
+ */
+AriaArray* aria_array_new_simple(size_t element_size, int type_id);
+
+/**
+ * Push element to end of array (aborts on error).
+ */
+void aria_array_push_simple(AriaArray* array, const void* value);
+
+/**
+ * Get pointer to element at index (aborts on error).
+ */
+void* aria_array_get_simple(AriaArray* array, size_t index);
+
+/**
+ * Set element at index (aborts on error).
+ */
+void aria_array_set_simple(AriaArray* array, size_t index, const void* value);
+
+/**
+ * Pop element from end of array (aborts on error).
+ */
+void aria_array_pop_simple(AriaArray* array, void* out_value);
+
 #ifdef __cplusplus
 }
 #endif
