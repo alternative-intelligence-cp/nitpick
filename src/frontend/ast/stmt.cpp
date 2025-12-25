@@ -315,6 +315,10 @@ std::string ExternStmt::toString() const {
     return oss.str();
 }
 
+std::string OpaqueStructDecl::toString() const {
+    return "OpaqueStruct(" + structName + ")";
+}
+
 std::string ProgramNode::toString() const {
     std::ostringstream oss;
     oss << "Program([";

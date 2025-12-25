@@ -44,6 +44,7 @@ public:
         FUNC_DECL,            // Function declaration: func:name = returnType(params) { body };
         STRUCT_DECL,          // Struct declaration: struct Name { fields };
         ENUM_DECL,            // Enum declaration: enum Name { VARIANT = value };
+        OPAQUE_STRUCT,        // Opaque struct declaration: opaque struct:Name; (FFI)
         RETURN,               // return statement
         PASS,                 // pass statement (result success)
         FAIL,                 // fail statement (result error)

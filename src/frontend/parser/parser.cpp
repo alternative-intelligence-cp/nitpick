@@ -418,6 +418,23 @@ ASTNodePtr Parser::parsePrimary() {
         return std::make_shared<LiteralExpr>(value, line, col);
     }
     
+    // Character literal: 'a', '+', '&', etc.
+    // Convert to int64_t (byte value) for compatibility with type system
+    if (token.type == TokenType::TOKEN_CHAR) {
+        std::string char_str = token.string_value;  // Single character as string
+        int line = token.line;
+        int col = token.column;
+        advance();
+        
+        // Convert character to its numeric byte value
+        if (char_str.empty()) {
+            error("Empty character literal");
+            return std::make_shared<LiteralExpr>((int64_t)0, line, col);
+        }
+        int64_t byte_value = static_cast<int64_t>(static_cast<unsigned char>(char_str[0]));
+        return std::make_shared<LiteralExpr>(byte_value, line, col);
+    }
+    
     // Template literal: `text &{expr} more text`
     if (token.type == TokenType::TOKEN_TEMPLATE_START) {
         return parseTemplateLiteral();
@@ -2071,16 +2088,121 @@ ASTNodePtr Parser::parseExternStatement() {
     // Parse declarations inside the extern block
     // Note: extern blocks contain signatures (declarations without bodies), not statements
     while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        // Check for opaque struct declaration: opaque struct:Name;
+        if (match(TokenType::TOKEN_KW_OPAQUE)) {
+            Token opaqueToken = previous();
+
+            // Expect 'struct' keyword
+            consume(TokenType::TOKEN_KW_STRUCT, "Expected 'struct' after 'opaque'");
+
+            // Consume colon
+            consume(TokenType::TOKEN_COLON, "Expected ':' after 'struct'");
+
+            // Get struct name
+            Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected struct name");
+
+            // Consume semicolon
+            consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after opaque struct declaration");
+
+            // Create opaque struct declaration
+            auto opaqueDecl = std::make_shared<OpaqueStructDecl>(
+                nameToken.lexeme,
+                opaqueToken.line,
+                opaqueToken.column
+            );
+
+            externStmt->declarations.push_back(opaqueDecl);
+            continue;
+        }
+
+        // Check for struct declaration in extern block: struct:Name = { fields };
+        if (match(TokenType::TOKEN_KW_STRUCT)) {
+            Token structToken = previous();
+
+            // Consume colon
+            consume(TokenType::TOKEN_COLON, "Expected ':' after 'struct'");
+
+            // Get struct name
+            Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected struct name");
+
+            // Consume equal sign
+            consume(TokenType::TOKEN_EQUAL, "Expected '=' after struct name");
+
+            // Consume opening brace
+            consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' for struct fields");
+
+            // Parse fields
+            std::vector<ASTNodePtr> fields;
+            while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+                // Parse qualifiers (wild, const, etc.)
+                std::vector<std::string> qualifiers;
+                while (peek().type == TokenType::TOKEN_KW_WILD ||
+                       peek().type == TokenType::TOKEN_KW_CONST) {
+                    qualifiers.push_back(advance().lexeme);
+                }
+
+                // Get type (can be identifier for FFI types)
+                Token fieldTypeToken = advance();
+                std::string fieldTypeName = fieldTypeToken.lexeme;
+
+                // Handle pointer types
+                while (check(TokenType::TOKEN_STAR)) {
+                    advance();
+                    fieldTypeName += "*";
+                }
+
+                // Consume colon
+                consume(TokenType::TOKEN_COLON, "Expected ':' after field type");
+
+                // Get field name
+                Token fieldNameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected field name");
+
+                // Consume semicolon
+                consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after field");
+
+                // Create field as VarDeclStmt
+                auto fieldDecl = std::make_shared<VarDeclStmt>(
+                    fieldTypeName,
+                    fieldNameToken.lexeme,
+                    nullptr,
+                    fieldTypeToken.line,
+                    fieldTypeToken.column
+                );
+
+                // Apply qualifiers
+                for (const auto& qual : qualifiers) {
+                    if (qual == "wild") fieldDecl->isWild = true;
+                    else if (qual == "const") fieldDecl->isConst = true;
+                }
+
+                fields.push_back(fieldDecl);
+            }
+
+            consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after struct fields");
+            consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after struct declaration");
+
+            // Create struct declaration
+            auto structDecl = std::make_shared<StructDeclStmt>(
+                nameToken.lexeme,
+                fields,
+                structToken.line,
+                structToken.column
+            );
+
+            externStmt->declarations.push_back(structDecl);
+            continue;
+        }
+
         // Check for function declaration: func:name = returnType(params);
         if (match(TokenType::TOKEN_KW_FUNC)) {
             Token funcToken = previous();
-            
+
             // Consume colon
             consume(TokenType::TOKEN_COLON, "Expected ':' after 'func'");
-            
+
             // Get function name
             Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected function name");
-            
+
             // Consume equal sign
             consume(TokenType::TOKEN_EQUAL, "Expected '=' after function name");
             

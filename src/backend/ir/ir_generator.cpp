@@ -2928,7 +2928,9 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 callee->name == "string_starts_with" || callee->name == "string_ends_with" ||
                 callee->name == "string_trim" || callee->name == "string_to_upper" ||
                 callee->name == "string_to_lower" || callee->name == "string_from_cstr" ||
-                callee->name == "string_from_char") {
+                callee->name == "string_from_char" || callee->name == "string_from_int" ||
+                callee->name == "string_to_int" || callee->name == "string_to_hex" ||
+                callee->name == "string_pad_right" || callee->name == "string_format_float") {
 
                 // Create ExprCodegen instance (same pattern as TEMPLATE_LITERAL case)
                 backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values);

@@ -54,6 +54,7 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     // Type declaration
     {"struct", TokenType::TOKEN_KW_STRUCT},
     {"enum", TokenType::TOKEN_KW_ENUM},
+    {"opaque", TokenType::TOKEN_KW_OPAQUE},
     
     // Other
     {"const", TokenType::TOKEN_KW_CONST},

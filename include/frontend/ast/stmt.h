@@ -505,6 +505,22 @@ public:
 };
 
 /**
+ * Opaque struct declaration node (FFI)
+ * Represents: opaque struct:Name;
+ * Used for C types where the internal structure is unknown/opaque
+ */
+class OpaqueStructDecl : public ASTNode {
+public:
+    std::string structName;               // Name of the opaque type
+
+    OpaqueStructDecl(const std::string& name, int line = 0, int column = 0)
+        : ASTNode(NodeType::OPAQUE_STRUCT, line, column),
+          structName(name) {}
+
+    std::string toString() const override;
+};
+
+/**
  * Program node (root of AST)
  * Represents: entire program
  */
