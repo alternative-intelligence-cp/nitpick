@@ -18,6 +18,8 @@ class Type;
 class Scope;
 class SymbolTable;
 class ComptimeValue;
+class Module;  // Module from module_table.h
+struct LoadedModule;  // From module_loader.h
 
 // ============================================================================
 // Symbol - Represents a named entity in the program
@@ -50,6 +52,9 @@ struct Symbol {
     ComptimeValue* comptimeValue;   // For CONSTANT symbols - compile-time value
     FuncDeclStmt* funcDecl;         // For FUNCTION symbols - AST for CTFE
     
+    // Module System Integration
+    Module* moduleRef;              // For MODULE symbols - reference to loaded module
+    
     // Constructor
     Symbol(const std::string& name, SymbolKind kind, Type* type,
            Scope* scope, int line = 0, int column = 0);
@@ -61,6 +66,11 @@ struct Symbol {
     FuncDeclStmt* getFuncDecl() const { return funcDecl; }
     bool hasComptimeValue() const { return comptimeValue != nullptr; }
     bool isCTFEFunction() const { return kind == SymbolKind::FUNCTION && funcDecl != nullptr; }
+    
+    // Module System Helpers
+    void setModuleRef(Module* mod) { moduleRef = mod; }
+    Module* getModuleRef() const { return moduleRef; }
+    bool isModule() const { return kind == SymbolKind::MODULE && moduleRef != nullptr; }
     
     // Helpers
     std::string toString() const;

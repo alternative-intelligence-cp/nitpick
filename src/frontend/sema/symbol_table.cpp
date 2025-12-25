@@ -15,7 +15,7 @@ Symbol::Symbol(const std::string& name, SymbolKind kind, Type* type,
     : name(name), kind(kind), type(type), scope(scope),
       line(line), column(column), isPublic(false),
       isMutable(true), isInitialized(false),
-      comptimeValue(nullptr), funcDecl(nullptr) {}
+      comptimeValue(nullptr), funcDecl(nullptr), moduleRef(nullptr) {}
 
 void Symbol::setComptimeValue(ComptimeValue* value) {
     comptimeValue = value;
@@ -170,19 +170,38 @@ Symbol* SymbolTable::defineSymbol(const std::string& name, SymbolKind kind,
         return nullptr;
     }
     
-    // Check for shadowing in parent scopes
+    // Check for shadowing in parent scopes (Phase 2.4)
     // Only warn if parent exists (not for global scope redefinitions)
+    // Skip warning for hygiene-suffixed variables (macro-generated)
     if (currentScope->getParent()) {
         Symbol* shadowedSymbol = currentScope->getParent()->resolve(name);
         if (shadowedSymbol) {
-            std::stringstream ss;
-            ss << "Variable '" << name << "' shadows outer declaration";
-            if (line > 0) {
-                ss << " at line " << line << ", column " << column;
+            // Check if this is a hygiene-generated variable (ends with _h followed by digits)
+            bool isHygieneVar = false;
+            size_t hygiene_pos = name.find("_h");
+            if (hygiene_pos != std::string::npos) {
+                // Check if everything after _h is digits
+                bool allDigits = true;
+                for (size_t i = hygiene_pos + 2; i < name.length(); i++) {
+                    if (!std::isdigit(name[i])) {
+                        allDigits = false;
+                        break;
+                    }
+                }
+                isHygieneVar = allDigits && (hygiene_pos + 2 < name.length());
             }
-            ss << " (original at line " << shadowedSymbol->line 
-               << ", column " << shadowedSymbol->column << ")";
-            warning(ss.str());
+            
+            // Only warn if not a hygiene-generated variable
+            if (!isHygieneVar) {
+                std::stringstream ss;
+                ss << "Variable '" << name << "' shadows outer declaration";
+                if (line > 0) {
+                    ss << " at line " << line << ", column " << column;
+                }
+                ss << " (original at line " << shadowedSymbol->line 
+                   << ", column " << shadowedSymbol->column << ")";
+                warning(ss.str());
+            }
         }
     }
     

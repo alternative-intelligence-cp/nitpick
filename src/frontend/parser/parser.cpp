@@ -456,7 +456,8 @@ ASTNodePtr Parser::parsePrimary() {
         // ERR is represented as a special literal
         // The semantic analyzer will handle type-specific ERR values
         // (e.g., -128 for tbb8, -32768 for tbb16, etc.)
-        return std::make_shared<LiteralExpr>("ERR", line, col);
+        // IMPORTANT: Use std::string() constructor to avoid bool conversion!
+        return std::make_shared<LiteralExpr>(std::string("ERR"), line, col);
     }
     
     // Identifier
@@ -466,6 +467,17 @@ ASTNodePtr Parser::parsePrimary() {
         int col = token.column;
         advance();
         return std::make_shared<IdentifierExpr>(lexeme, line, col);
+    }
+    
+    // Type keywords as namespace expressions (for static method calls)
+    // Allow: string.from_char(), array.new(), etc.
+    if (isTypeKeyword(token.type) && peekNext().type == TokenType::TOKEN_DOT) {
+        std::string typeName = token.lexeme;  // e.g., "string", "array", "int64"
+        int line = token.line;
+        int col = token.column;
+        advance();  // consume type keyword
+        // Return as identifier so it can be used in member access chain
+        return std::make_shared<IdentifierExpr>(typeName, line, col);
     }
     
     // $ iteration variable (for till/loop constructs)

@@ -705,6 +705,33 @@ Type* TypeChecker::inferVectorConstructor(VectorConstructorExpr* expr) {
 // ============================================================================
 
 Type* TypeChecker::inferCallExpr(CallExpr* expr) {
+    // Check for namespace-qualified static method calls: Type.method()
+    // Example: string.from_char(65) -> resolves to builtin string_from_char
+    if (expr->callee->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        MemberAccessExpr* memberExpr = static_cast<MemberAccessExpr*>(expr->callee.get());
+        
+        // Check if the object is a type name (identifier representing a type)
+        if (memberExpr->object->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* typeExpr = static_cast<IdentifierExpr*>(memberExpr->object.get());
+            std::string typeName = typeExpr->name;
+            std::string methodName = memberExpr->member;
+            
+            // Construct the mangled builtin name: typename_methodname
+            std::string builtinName = typeName + "_" + methodName;
+            
+            // Create a temporary IdentifierExpr with the mangled name
+            auto tempIdExpr = std::make_shared<IdentifierExpr>(builtinName, expr->line, expr->column);
+            
+            // Create a new CallExpr with the mangled name as callee
+            CallExpr tempCall(tempIdExpr, expr->arguments, expr->line, expr->column);
+            tempCall.explicitTypeArgs = expr->explicitTypeArgs;
+            
+            // Recursively infer the type using the mangled name
+            // This will hit the builtin checks below (e.g., string_from_char)
+            return inferCallExpr(&tempCall);
+        }
+    }
+    
     // Check for builtin functions first
     if (expr->callee->type == ASTNode::NodeType::IDENTIFIER) {
         IdentifierExpr* idExpr = static_cast<IdentifierExpr*>(expr->callee.get());

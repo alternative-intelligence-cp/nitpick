@@ -526,3 +526,45 @@ AriaResultPtr aria_array_unique(const AriaArray* array, AriaComparatorFn compara
     
     return aria_result_ok_ptr(unique);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Simple Wrapper Functions (for builtin use - abort on error)
+// ═══════════════════════════════════════════════════════════════════════
+
+AriaArray* aria_array_new_simple(size_t element_size, int type_id) {
+    AriaResultPtr result = aria_array_new(element_size, ARIA_ARRAY_DEFAULT_CAPACITY, type_id);
+    if (result.is_error) {
+        // For now, just abort on error. In future, could propagate error.
+        std::abort();
+    }
+    return (AriaArray*)result.value;
+}
+
+void aria_array_push_simple(AriaArray* array, const void* value) {
+    AriaResultVoid result = aria_array_push(array, value);
+    if (result.is_error) {
+        std::abort();
+    }
+}
+
+void* aria_array_get_simple(AriaArray* array, size_t index) {
+    AriaResultPtr result = aria_array_get(array, index);
+    if (result.is_error) {
+        std::abort();
+    }
+    return result.value;
+}
+
+void aria_array_set_simple(AriaArray* array, size_t index, const void* value) {
+    AriaResultVoid result = aria_array_set(array, index, value);
+    if (result.is_error) {
+        std::abort();
+    }
+}
+
+void aria_array_pop_simple(AriaArray* array, void* out_value) {
+    AriaResultVoid result = aria_array_pop(array, out_value);
+    if (result.is_error) {
+        std::abort();
+    }
+}

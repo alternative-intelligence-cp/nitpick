@@ -83,6 +83,9 @@ private:
     std::map<std::string, llvm::DIType*> di_type_map;  // Aria types -> DWARF types
     bool debug_enabled;
     
+    // Current module name (for distinguishing module functions from main functions)
+    std::string current_module_name;
+    
     /**
      * Map Aria type to LLVM type
      * Reference: research_012-017 for type specifications
@@ -204,6 +207,13 @@ public:
      * @param ts Pointer to TypeSystem (must remain valid for lifetime of IR generation)
      */
     void setTypeSystem(sema::TypeSystem* ts);
+    
+    /**
+     * Set the current module name (for determining function linkage)
+     * Module functions get external linkage, main file functions follow isPublic
+     * @param module_name Name of current module being compiled (empty for main file)
+     */
+    void setCurrentModuleName(const std::string& module_name);
     
     /**
      * Generate LLVM IR for an AST node

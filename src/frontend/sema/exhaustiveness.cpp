@@ -240,6 +240,38 @@ CoverageSet ExhaustivenessAnalyzer::extractCoverage(
     return coverage;
 }
 
+// Helper: Extract integer value from pattern (handles negative numbers)
+static bool extractIntValue(ASTNode* node, int64_t& outValue) {
+    if (!node) return false;
+    
+    // Direct literal: 5, 127, etc.
+    if (node->type == ASTNode::NodeType::LITERAL) {
+        LiteralExpr* lit = static_cast<LiteralExpr*>(node);
+        if (std::holds_alternative<int64_t>(lit->value)) {
+            outValue = std::get<int64_t>(lit->value);
+            return true;
+        }
+        return false;
+    }
+    
+    // Negative literal: -5, -127, etc.
+    if (node->type == ASTNode::NodeType::UNARY_OP) {
+        UnaryExpr* unary = static_cast<UnaryExpr*>(node);
+        if (unary->op.lexeme == "-" &&
+            unary->operand->type == ASTNode::NodeType::LITERAL) {
+            
+            LiteralExpr* lit = static_cast<LiteralExpr*>(unary->operand.get());
+            if (std::holds_alternative<int64_t>(lit->value)) {
+                outValue = -std::get<int64_t>(lit->value);
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    return false;
+}
+
 void ExhaustivenessAnalyzer::analyzePattern(
     ASTNode* pattern, CoverageSet& coverage, const TypeDomain& domain) {
     
@@ -249,6 +281,7 @@ void ExhaustivenessAnalyzer::analyzePattern(
         case ASTNode::NodeType::IDENTIFIER: {
             // Could be: true, false, enum variant, or ERR
             IdentifierExpr* ident = static_cast<IdentifierExpr*>(pattern);
+            
             
             if (ident->name == "ERR") {
                 coverage.addERR();
@@ -262,61 +295,65 @@ void ExhaustivenessAnalyzer::analyzePattern(
             // Single value literal or wildcard
             LiteralExpr* lit = static_cast<LiteralExpr*>(pattern);
             
-            if (std::holds_alternative<int64_t>(lit->value)) {
-                int64_t value = std::get<int64_t>(lit->value);
-                coverage.addRange(value, value);
-            } else if (std::holds_alternative<bool>(lit->value)) {
-                bool boolValue = std::get<bool>(lit->value);
-                coverage.addSymbol(boolValue ? "true" : "false");
-            } else if (std::holds_alternative<std::string>(lit->value)) {
+            // Check if it's ERR sentinel (parsed as string literal)
+            if (std::holds_alternative<std::string>(lit->value)) {
                 std::string strVal = std::get<std::string>(lit->value);
-                if (strVal == "*") {
+                
+                if (strVal == "ERR") {
+                    coverage.addERR();
+                } else if (strVal == "*") {
                     // Wildcard (*) covers everything
                     coverage.addDefault();
                 } else {
                     // Enum variant or other symbolic pattern
                     coverage.addSymbol(strVal);
                 }
+            } else if (std::holds_alternative<int64_t>(lit->value)) {
+                int64_t value = std::get<int64_t>(lit->value);
+                coverage.addRange(value, value);
+            } else if (std::holds_alternative<bool>(lit->value)) {
+                bool boolValue = std::get<bool>(lit->value);
+                coverage.addSymbol(boolValue ? "true" : "false");
+            }
+            break;
+        }
+        
+        case ASTNode::NodeType::RANGE: {
+            // Range pattern: 0..10, -5..5, -127..-1, etc.
+            RangeExpr* rangeExpr = static_cast<RangeExpr*>(pattern);
+            
+            // Extract min and max from range (handles negative numbers)
+            int64_t min, max;
+            if (extractIntValue(rangeExpr->start.get(), min) &&
+                extractIntValue(rangeExpr->end.get(), max)) {
+                coverage.addRange(min, max);
             }
             break;
         }
         
         case ASTNode::NodeType::BINARY_OP: {
-            // Range pattern: 0..10, -5..5, etc.
+            // Range pattern: 0..10, -5..5, -127..-1, etc.
+            // NOTE: This might be legacy - RANGE NodeType is preferred
             BinaryExpr* binExpr = static_cast<BinaryExpr*>(pattern);
             
+            
             if (binExpr->op.lexeme == "..") {
-                // Extract min and max from range
-                if (binExpr->left->type == ASTNode::NodeType::LITERAL &&
-                    binExpr->right->type == ASTNode::NodeType::LITERAL) {
-                    
-                    LiteralExpr* leftLit = static_cast<LiteralExpr*>(binExpr->left.get());
-                    LiteralExpr* rightLit = static_cast<LiteralExpr*>(binExpr->right.get());
-                    
-                    if (std::holds_alternative<int64_t>(leftLit->value) &&
-                        std::holds_alternative<int64_t>(rightLit->value)) {
-                        
-                        int64_t min = std::get<int64_t>(leftLit->value);
-                        int64_t max = std::get<int64_t>(rightLit->value);
-                        coverage.addRange(min, max);
-                    }
+                // Extract min and max from range (handles negative numbers)
+                int64_t min, max;
+                if (extractIntValue(binExpr->left.get(), min) &&
+                    extractIntValue(binExpr->right.get(), max)) {
+                    coverage.addRange(min, max);
+                } else {
                 }
             }
             break;
         }
         
         case ASTNode::NodeType::UNARY_OP: {
-            // Negative literal: -5, -127, etc.
-            UnaryExpr* unary = static_cast<UnaryExpr*>(pattern);
-            
-            if (unary->op.lexeme == "-" &&
-                unary->operand->type == ASTNode::NodeType::LITERAL) {
-                
-                LiteralExpr* lit = static_cast<LiteralExpr*>(unary->operand.get());
-                if (std::holds_alternative<int64_t>(lit->value)) {
-                    int64_t value = -std::get<int64_t>(lit->value);
-                    coverage.addRange(value, value);
-                }
+            // Negative literal: -5, -127, etc. (single value, not a range)
+            int64_t value;
+            if (extractIntValue(pattern, value)) {
+                coverage.addRange(value, value);
             }
             break;
         }

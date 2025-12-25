@@ -29,6 +29,7 @@
 #include "frontend/sema/type_checker.h"
 #include "frontend/sema/generic_resolver.h"
 #include "frontend/sema/borrow_checker.h"
+#include "frontend/sema/module_loader.h"  // Module system
 #include "frontend/diagnostics.h"
 #include "frontend/warnings.h"
 #include "backend/ir/ir_generator.h"
@@ -343,8 +344,18 @@ llvm::Module* compile_to_module(
     aria::sema::GenericResolver generic_resolver;
     aria::sema::Monomorphizer monomorphizer(&generic_resolver, &type_system);
     
-    // Type checker with generic support
-    aria::sema::TypeChecker type_checker(&type_system, &symbol_table, &generic_resolver, &monomorphizer);
+    // Module system: Extract project root from input file path
+    std::string project_root = ".";
+    size_t last_slash = filename.find_last_of("/\\");
+    if (last_slash != std::string::npos) {
+        project_root = filename.substr(0, last_slash);
+    }
+    
+    // Create module loader for handling use statements
+    aria::sema::ModuleLoader module_loader(project_root);
+    
+    // Type checker with generic support and module loading
+    aria::sema::TypeChecker type_checker(&type_system, &symbol_table, &generic_resolver, &monomorphizer, &module_loader, filename);
     
     // Run type checking on entire module (activates generic specialization)
     type_checker.check(module_node.get());
@@ -354,6 +365,28 @@ llvm::Module* compile_to_module(
             diags.error(aria::SourceLocation(filename, 0, 0), err);
         }
         return nullptr;
+    }
+    
+    // Type check all loaded modules (for cross-module calls)
+    const auto& loaded_modules = module_loader.getLoadedModules();
+    for (const auto& [path, loaded_module] : loaded_modules) {
+        if (loaded_module && loaded_module->ast) {
+            if (opts.verbose) {
+                std::cout << "  Type checking module: " << path << "\n";
+            }
+            // Create a separate type checker for each module
+            // (They share the same type system but have separate symbol tables)
+            aria::sema::TypeChecker module_type_checker(&type_system, loaded_module->moduleInfo->getSymbolTable(), 
+                                                        &generic_resolver, &monomorphizer, &module_loader, path);
+            module_type_checker.check(loaded_module->ast.get());
+            
+            if (module_type_checker.hasErrors()) {
+                for (const auto& err : module_type_checker.getErrors()) {
+                    diags.error(aria::SourceLocation(path, 0, 0), err);
+                }
+                return nullptr;
+            }
+        }
     }
     
     // Report symbol table warnings (e.g., shadowing)
@@ -407,7 +440,39 @@ llvm::Module* compile_to_module(
         }
     }
     
-    // Now generate the main module code (which can call specialized functions)
+    // Generate IR for loaded modules (needed for cross-module function calls)
+    for (const auto& [path, loaded_module] : loaded_modules) {
+        if (loaded_module && loaded_module->ast) {
+            if (opts.verbose) {
+                std::cout << "  Generating IR for module: " << path << "\n";
+            }
+            
+            // Extract module name from path (e.g., "math_utils" from "tests/module_loading/math_utils.aria")
+            std::string module_name = path;
+            size_t last_slash = module_name.find_last_of("/\\");
+            if (last_slash != std::string::npos) {
+                module_name = module_name.substr(last_slash + 1);
+            }
+            size_t last_dot = module_name.find_last_of('.');
+            if (last_dot != std::string::npos) {
+                module_name = module_name.substr(0, last_dot);
+            }
+            
+            // Set the current module name so functions get external linkage
+            ir_gen.setCurrentModuleName(module_name);
+            
+            auto module_value = ir_gen.codegen(loaded_module->ast.get());
+            if (!module_value) {
+                diags.error(aria::SourceLocation(path, 0, 0), "Module IR generation failed");
+                return nullptr;
+            }
+            
+            // Clear module name for main module generation
+            ir_gen.setCurrentModuleName("");
+        }
+    }
+    
+    // Now generate the main module code (which can call specialized functions and imported modules)
     auto value = ir_gen.codegen(module_node.get());
     
     if (!value) {

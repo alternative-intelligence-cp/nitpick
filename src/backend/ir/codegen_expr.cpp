@@ -1301,10 +1301,34 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         throw std::runtime_error("Null call expression");
     }
     
+    // Handle module member function calls (e.g., math_utils.add(...))
+    // Also handles namespace-qualified static method calls (e.g., string.from_char(...))
+    MemberAccessExpr* member_access = dynamic_cast<MemberAccessExpr*>(expr->callee.get());
+    if (member_access) {
+        // The object should be an identifier (the module/type name)
+        IdentifierExpr* module_ident = dynamic_cast<IdentifierExpr*>(member_access->object.get());
+        if (!module_ident) {
+            throw std::runtime_error("Module member access must have identifier as base");
+        }
+        
+        // Construct the mangled function name: typename_methodname
+        // This matches the name mangling scheme used by the type checker
+        std::string mangled_func_name = module_ident->name + "_" + member_access->member;
+        
+        // Create a temporary IdentifierExpr with the mangled name
+        // and recursively call codegenCall to handle it as a regular function
+        // This allows builtin handling to work (e.g., string_from_char)
+        auto temp_ident = std::make_shared<IdentifierExpr>(mangled_func_name, expr->line, expr->column);
+        CallExpr temp_call(temp_ident, expr->arguments, expr->line, expr->column);
+        
+        // Recursively generate code for the call with the mangled name
+        return codegenCall(&temp_call);
+    }
+    
     // The callee should be an identifier (function name or func variable)
     IdentifierExpr* callee_ident = dynamic_cast<IdentifierExpr*>(expr->callee.get());
     if (!callee_ident) {
-        throw std::runtime_error("Function callee must be an identifier");
+        throw std::runtime_error("Function callee must be an identifier or module member access");
     }
     
     // ====================================================================
@@ -1988,9 +2012,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         if (expr->arguments.size() != 1) {
             throw std::runtime_error("string_length() requires one argument");
         }
-        
+
+        // codegenExpressionNode returns the loaded value (AriaString* for string variables)
         llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
-        // Load the AriaString struct from pointer
+        // Load the AriaString struct from that pointer
         llvm::Value* str_struct = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
         // Extract length field (index 1)
         llvm::Value* length = builder.CreateExtractValue(str_struct, {1}, "length");
@@ -2037,21 +2062,47 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         if (expr->arguments.size() != 2) {
             throw std::runtime_error("string_concat() requires two arguments");
         }
-        
+
         llvm::Function* func = module->getFunction("aria_string_concat");
         if (!func) {
-            std::vector<llvm::Type*> params = {getAriaStringType(), getAriaStringType()};
-            llvm::FunctionType* func_type = llvm::FunctionType::get(
-                llvm::PointerType::get(getAriaStringType(), 0), params, false);
+            // AriaResultPtr is returned via sret (struct return) - matches string_from_char pattern
+            llvm::Type* result_struct = llvm::StructType::get(
+                builder.getPtrTy(),   // void* value
+                builder.getPtrTy(),   // void* error
+                builder.getInt1Ty()   // bool is_error
+            );
+            std::vector<llvm::Type*> params = {
+                builder.getPtrTy(),       // sret pointer (hidden first param)
+                getAriaStringType(),      // AriaString a (by value)
+                getAriaStringType()       // AriaString b (by value)
+            };
+            llvm::FunctionType* func_type = llvm::FunctionType::get(builder.getVoidTy(), params, false);
             func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
                 "aria_string_concat", module);
+            // Add sret attribute to first parameter
+            func->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, result_struct));
         }
-        
+
+        // codegenExpressionNode returns loaded values (AriaString* for string variables)
         llvm::Value* str1_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
         llvm::Value* str2_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        // Load the AriaString structs from those pointers
         llvm::Value* str1 = builder.CreateLoad(getAriaStringType(), str1_ptr, "str1");
         llvm::Value* str2 = builder.CreateLoad(getAriaStringType(), str2_ptr, "str2");
-        return builder.CreateCall(func, {str1, str2}, "concat_result");
+
+        // Allocate space for the return value (Result struct)
+        llvm::Type* result_struct = llvm::StructType::get(
+            builder.getPtrTy(), builder.getPtrTy(), builder.getInt1Ty()
+        );
+        llvm::Value* result_ptr = builder.CreateAlloca(result_struct, nullptr, "concat_result_ptr");
+
+        // Call with sret pointer and string arguments
+        builder.CreateCall(func, {result_ptr, str1, str2});
+
+        // Load the result struct and extract the value pointer (field 0)
+        llvm::Value* result = builder.CreateLoad(result_struct, result_ptr, "concat_result");
+        llvm::Value* str_ptr = builder.CreateExtractValue(result, {0}, "concat_str");
+        return str_ptr;
     }
     
     // string_substring(string, int64, int64) -> string
@@ -2187,7 +2238,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         if (expr->arguments.size() != 1) {
             throw std::runtime_error("string_to_lower() requires one argument");
         }
-        
+
         llvm::Function* func = module->getFunction("aria_string_to_lower");
         if (!func) {
             std::vector<llvm::Type*> params = {getAriaStringType()};
@@ -2196,12 +2247,343 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
                 "aria_string_to_lower", module);
         }
-        
+
         llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
         llvm::Value* str = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
         return builder.CreateCall(func, {str}, "lower_result");
     }
-    
+
+    // ====================================================================
+    // TBB (Tagged Balanced Base) TYPE BUILTINS
+    // ====================================================================
+
+    // Helper lambda for TBB ERR sentinel values
+    auto getTBBErrSentinel = [&](unsigned bits) -> llvm::Value* {
+        llvm::IntegerType* ty = llvm::IntegerType::get(context, bits);
+        int64_t errVal;
+        switch (bits) {
+            case 8:  errVal = -128; break;
+            case 16: errVal = -32768; break;
+            case 32: errVal = -2147483648LL; break;
+            case 64: errVal = INT64_MIN; break;
+            default: errVal = INT64_MIN;
+        }
+        return llvm::ConstantInt::get(ty, errVal, true);
+    };
+
+    // tbb64_from_int(int64) -> tbb64
+    if (callee_ident->name == "tbb64_from_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb64_from_int() requires one argument");
+        }
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        // TBB64 uses INT64_MIN as ERR, so all int64 values except INT64_MIN are valid
+        // If input is INT64_MIN, return ERR
+        llvm::Value* errSentinel = getTBBErrSentinel(64);
+        llvm::Value* isErr = builder.CreateICmpEQ(val, errSentinel, "is_min");
+        return builder.CreateSelect(isErr, errSentinel, val, "tbb64_result");
+    }
+
+    // tbb64_is_err(tbb64) -> bool
+    if (callee_ident->name == "tbb64_is_err") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb64_is_err() requires one argument");
+        }
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* errSentinel = getTBBErrSentinel(64);
+        return builder.CreateICmpEQ(val, errSentinel, "is_err");
+    }
+
+    // tbb64_to_int(tbb64) -> int64
+    if (callee_ident->name == "tbb64_to_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb64_to_int() requires one argument");
+        }
+        // Simply return the value - caller should check is_err first
+        return codegenExpressionNode(expr->arguments[0].get(), this);
+    }
+
+    // tbb32_from_int(int32) -> tbb32
+    if (callee_ident->name == "tbb32_from_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb32_from_int() requires one argument");
+        }
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        // Truncate to i32 if needed
+        if (val->getType()->getIntegerBitWidth() > 32) {
+            val = builder.CreateTrunc(val, builder.getInt32Ty(), "trunc32");
+        } else if (val->getType()->getIntegerBitWidth() < 32) {
+            val = builder.CreateSExt(val, builder.getInt32Ty(), "sext32");
+        }
+        llvm::Value* errSentinel = getTBBErrSentinel(32);
+        llvm::Value* isErr = builder.CreateICmpEQ(val, errSentinel, "is_min");
+        return builder.CreateSelect(isErr, errSentinel, val, "tbb32_result");
+    }
+
+    // tbb32_is_err(tbb32) -> bool
+    if (callee_ident->name == "tbb32_is_err") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb32_is_err() requires one argument");
+        }
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* errSentinel = getTBBErrSentinel(32);
+        return builder.CreateICmpEQ(val, errSentinel, "is_err");
+    }
+
+    // tbb32_to_int(tbb32) -> int32
+    if (callee_ident->name == "tbb32_to_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb32_to_int() requires one argument");
+        }
+        return codegenExpressionNode(expr->arguments[0].get(), this);
+    }
+
+    // tbb16_from_int(int16) -> tbb16
+    if (callee_ident->name == "tbb16_from_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb16_from_int() requires one argument");
+        }
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        // Truncate/extend to i16
+        if (val->getType()->getIntegerBitWidth() > 16) {
+            val = builder.CreateTrunc(val, builder.getInt16Ty(), "trunc16");
+        } else if (val->getType()->getIntegerBitWidth() < 16) {
+            val = builder.CreateSExt(val, builder.getInt16Ty(), "sext16");
+        }
+        llvm::Value* errSentinel = getTBBErrSentinel(16);
+        llvm::Value* isErr = builder.CreateICmpEQ(val, errSentinel, "is_min");
+        return builder.CreateSelect(isErr, errSentinel, val, "tbb16_result");
+    }
+
+    // tbb16_is_err(tbb16) -> bool
+    if (callee_ident->name == "tbb16_is_err") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb16_is_err() requires one argument");
+        }
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* errSentinel = getTBBErrSentinel(16);
+        return builder.CreateICmpEQ(val, errSentinel, "is_err");
+    }
+
+    // tbb16_to_int(tbb16) -> int16
+    if (callee_ident->name == "tbb16_to_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb16_to_int() requires one argument");
+        }
+        return codegenExpressionNode(expr->arguments[0].get(), this);
+    }
+
+    // tbb8_from_int(int8) -> tbb8
+    if (callee_ident->name == "tbb8_from_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb8_from_int() requires one argument");
+        }
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        // Truncate/extend to i8
+        if (val->getType()->getIntegerBitWidth() > 8) {
+            val = builder.CreateTrunc(val, builder.getInt8Ty(), "trunc8");
+        }
+        llvm::Value* errSentinel = getTBBErrSentinel(8);
+        llvm::Value* isErr = builder.CreateICmpEQ(val, errSentinel, "is_min");
+        return builder.CreateSelect(isErr, errSentinel, val, "tbb8_result");
+    }
+
+    // tbb8_is_err(tbb8) -> bool
+    if (callee_ident->name == "tbb8_is_err") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb8_is_err() requires one argument");
+        }
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* errSentinel = getTBBErrSentinel(8);
+        return builder.CreateICmpEQ(val, errSentinel, "is_err");
+    }
+
+    // tbb8_to_int(tbb8) -> int8
+    if (callee_ident->name == "tbb8_to_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb8_to_int() requires one argument");
+        }
+        return codegenExpressionNode(expr->arguments[0].get(), this);
+    }
+
+    // ====================================================================
+    // COLLECTION BUILTINS (Phase 6.2)
+    // ====================================================================
+
+    // array_new(element_size: int64) -> ptr
+    if (callee_ident->name == "array_new") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("array_new() requires one argument (element_size)");
+        }
+
+        // Get or declare aria_array_new_simple
+        llvm::Function* func = module->getFunction("aria_array_new_simple");
+        if (!func) {
+            // AriaArray* aria_array_new_simple(size_t element_size, int type_id)
+            std::vector<llvm::Type*> params = {
+                builder.getInt64Ty(),  // element_size (size_t)
+                builder.getInt32Ty()   // type_id
+            };
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getPtrTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_array_new_simple", module);
+        }
+
+        llvm::Value* element_size = codegenExpressionNode(expr->arguments[0].get(), this);
+        // Ensure it's i64
+        if (element_size->getType()->getIntegerBitWidth() != 64) {
+            element_size = builder.CreateZExtOrTrunc(element_size, builder.getInt64Ty());
+        }
+        llvm::Value* type_id = llvm::ConstantInt::get(builder.getInt32Ty(), 0); // Generic type
+
+        return builder.CreateCall(func, {element_size, type_id}, "new_array");
+    }
+
+    // array_length(array: ptr) -> int64
+    if (callee_ident->name == "array_length") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("array_length() requires one argument (array)");
+        }
+
+        // Get or declare aria_array_length
+        llvm::Function* func = module->getFunction("aria_array_length");
+        if (!func) {
+            // size_t aria_array_length(const AriaArray* array)
+            std::vector<llvm::Type*> params = {builder.getPtrTy()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt64Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_array_length", module);
+        }
+
+        llvm::Value* array_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        return builder.CreateCall(func, {array_ptr}, "array_len");
+    }
+
+    // array_push(array: ptr, value: ptr) -> void
+    if (callee_ident->name == "array_push") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("array_push() requires two arguments (array, value)");
+        }
+
+        // Get or declare aria_array_push_simple
+        llvm::Function* func = module->getFunction("aria_array_push_simple");
+        if (!func) {
+            // void aria_array_push_simple(AriaArray* array, const void* value)
+            std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getPtrTy()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getVoidTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_array_push_simple", module);
+        }
+
+        llvm::Value* array_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* value_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+
+        // If value is not already a pointer, we need to allocate and store it
+        if (!value_ptr->getType()->isPointerTy()) {
+            llvm::Value* alloca = builder.CreateAlloca(value_ptr->getType(), nullptr, "push_temp");
+            builder.CreateStore(value_ptr, alloca);
+            value_ptr = alloca;
+        }
+
+        builder.CreateCall(func, {array_ptr, value_ptr});
+        return llvm::ConstantInt::get(builder.getInt32Ty(), 0);  // Return 0 on success
+    }
+
+    // array_get(array: ptr, index: int64) -> ptr
+    if (callee_ident->name == "array_get") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("array_get() requires two arguments (array, index)");
+        }
+
+        // Get or declare aria_array_get_simple
+        llvm::Function* func = module->getFunction("aria_array_get_simple");
+        if (!func) {
+            // void* aria_array_get_simple(AriaArray* array, size_t index)
+            std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getInt64Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getPtrTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_array_get_simple", module);
+        }
+
+        llvm::Value* array_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* index = codegenExpressionNode(expr->arguments[1].get(), this);
+        // Ensure index is i64
+        if (index->getType()->getIntegerBitWidth() != 64) {
+            index = builder.CreateZExtOrTrunc(index, builder.getInt64Ty());
+        }
+
+        return builder.CreateCall(func, {array_ptr, index}, "array_elem");
+    }
+
+    // array_set(array: ptr, index: int64, value: ptr) -> void
+    if (callee_ident->name == "array_set") {
+        if (expr->arguments.size() != 3) {
+            throw std::runtime_error("array_set() requires three arguments (array, index, value)");
+        }
+
+        // Get or declare aria_array_set_simple
+        llvm::Function* func = module->getFunction("aria_array_set_simple");
+        if (!func) {
+            // void aria_array_set_simple(AriaArray* array, size_t index, const void* value)
+            std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getInt64Ty(), builder.getPtrTy()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getVoidTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_array_set_simple", module);
+        }
+
+        llvm::Value* array_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* index = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Value* value_ptr = codegenExpressionNode(expr->arguments[2].get(), this);
+
+        // Ensure index is i64
+        if (index->getType()->getIntegerBitWidth() != 64) {
+            index = builder.CreateZExtOrTrunc(index, builder.getInt64Ty());
+        }
+
+        // If value is not already a pointer, we need to allocate and store it
+        if (!value_ptr->getType()->isPointerTy()) {
+            llvm::Value* alloca = builder.CreateAlloca(value_ptr->getType(), nullptr, "set_temp");
+            builder.CreateStore(value_ptr, alloca);
+            value_ptr = alloca;
+        }
+
+        builder.CreateCall(func, {array_ptr, index, value_ptr});
+        return llvm::ConstantInt::get(builder.getInt32Ty(), 0);  // Return 0 on success
+    }
+
+    // array_pop(array: ptr) -> ptr
+    if (callee_ident->name == "array_pop") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("array_pop() requires one argument (array)");
+        }
+
+        // Get or declare aria_array_pop_simple
+        llvm::Function* func = module->getFunction("aria_array_pop_simple");
+        if (!func) {
+            // void aria_array_pop_simple(AriaArray* array, void* out_value)
+            std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getPtrTy()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getVoidTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_array_pop_simple", module);
+        }
+
+        llvm::Value* array_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+
+        // Allocate space for the popped value (we'll use an i64-sized buffer)
+        llvm::Value* out_alloca = builder.CreateAlloca(builder.getInt64Ty(), nullptr, "pop_out");
+
+        builder.CreateCall(func, {array_ptr, out_alloca});
+
+        // Return the pointer to the buffer (caller should cast/load as appropriate)
+        return out_alloca;
+    }
+
     // ====================================================================
     // FILE I/O BUILTINS (Phase 4.2)
     // ====================================================================

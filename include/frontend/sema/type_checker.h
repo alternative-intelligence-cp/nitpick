@@ -5,6 +5,7 @@
 #include "symbol_table.h"
 #include "generic_resolver.h"
 #include "const_evaluator.h"  // Phase 2.2: Compile-time evaluation
+#include "module_loader.h"     // Module system integration
 #include "frontend/ast/ast_node.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
@@ -44,10 +45,17 @@ private:
     GenericResolver* genericResolver;
     Monomorphizer* monomorphizer;
     ConstEvaluator* constEvaluator;  // Phase 2.2: Compile-time evaluation
+    ModuleLoader* moduleLoader;       // Module loading and import resolution
     std::vector<std::string> errors;  // Accumulated type errors
+    
+    // Module tracking: maps module symbol names to their LoadedModule
+    std::unordered_map<std::string, LoadedModule*> loadedModules;
     
     // Current function return type (for return statement checking)
     Type* currentFunctionReturnType;
+    
+    // Current module path (for resolving relative imports)
+    std::string currentModulePath;
     
     // Generic struct registry (Session 13)
     // Maps struct name -> generic struct declaration AST
@@ -458,10 +466,13 @@ private:
     
 public:
     TypeChecker(TypeSystem* typeSystem, SymbolTable* symbolTable,
-                GenericResolver* resolver = nullptr, Monomorphizer* morpher = nullptr)
+                GenericResolver* resolver = nullptr, Monomorphizer* morpher = nullptr,
+                ModuleLoader* loader = nullptr, const std::string& modulePath = "")
         : typeSystem(typeSystem), symbolTable(symbolTable),
           genericResolver(resolver), monomorphizer(morpher),
           constEvaluator(new ConstEvaluator(symbolTable)),  // Phase 2.2
+          moduleLoader(loader),
+          currentModulePath(modulePath),
           currentFunctionReturnType(nullptr) {}
     
     ~TypeChecker() {
@@ -687,6 +698,47 @@ public:
      * Validates module name and recursively checks inline module bodies
      */
     void checkModStmt(ModStmt* stmt);
+    
+    // ========================================================================
+    // Module Symbol Importing (Phase 3 from research_module_loading_system)
+    // ========================================================================
+    
+    /**
+     * Import all public symbols from module into current scope (wildcard import)
+     * 
+     * Syntax: use std.io.*;
+     * 
+     * Rules:
+     * - Only PUBLIC visibility symbols are imported
+     * - Symbols are imported directly into current scope
+     * - Name collisions produce errors
+     */
+    void importWildcardSymbols(LoadedModule* module, UseStmt* stmt);
+    
+    /**
+     * Import selected symbols from module (selective import)
+     * 
+     * Syntax: use std.{array, map};
+     * 
+     * Rules:
+     * - Each symbol must exist in module
+     * - Symbol visibility must allow import
+     * - Aliases are supported: use std.{array as arr}
+     * - Importing non-existent symbol is an error
+     */
+    void importSelectiveSymbols(LoadedModule* module, UseStmt* stmt);
+    
+    /**
+     * Import module as namespace
+     * 
+     * Syntax: use std.io;
+     * 
+     * Rules:
+     * - Module is imported as a namespace
+     * - Symbols accessed via namespace: io.print()
+     * - Namespace can be aliased: use std.io as my_io;
+     */
+    void importModuleNamespace(LoadedModule* module, UseStmt* stmt, const std::string& modulePath);
     
     /**
      * Get accumulated type errors
