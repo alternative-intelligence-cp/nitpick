@@ -2,160 +2,59 @@
 //!
 //! This module provides fundamental string operations including
 //! searching, manipulation, and conversion functions.
+//!
+//! All functions are implemented as compiler builtins for optimal performance.
+//! Use the string_* naming convention for all operations.
+//!
+//! BUILTIN FUNCTIONS AVAILABLE:
+//!   string_from_cstr(cstr)          - Create string from C string literal
+//!   string_from_char(ch)            - Create string from character code
+//!   string_from_int(value)          - Convert integer to string
+//!   string_length(s)                - Get string length
+//!   string_is_empty(s)              - Check if string is empty
+//!   string_equals(a, b)             - Compare two strings
+//!   string_concat(a, b)             - Concatenate strings
+//!   string_substring(s, start, end) - Extract substring
+//!   string_contains(s, pattern)     - Check if contains substring
+//!   string_starts_with(s, prefix)   - Check if starts with prefix
+//!   string_ends_with(s, suffix)     - Check if ends with suffix
+//!   string_trim(s)                  - Trim whitespace
+//!   string_to_upper(s)              - Convert to uppercase
+//!   string_to_lower(s)              - Convert to lowercase
+//!   string_to_int(s)                - Parse string as integer
+//!   string_to_hex(s)                - Convert to hex string
+//!   string_pad_right(s, len, ch)    - Pad string on right
+//!   string_format_float(val, prec)  - Format float as string
 
-/// Calculate the length of a string
-/// @param s The string to measure
-/// @return The number of characters in the string
-/// @example
+/// Example usage:
 /// ```aria
-/// let greeting = "Hello, Aria!";
-/// let len = strlen(greeting);  // returns 12
+/// // Create strings
+/// string:hello = string_from_cstr("Hello");
+/// string:world = string_from_cstr("World");
+///
+/// // Get length
+/// int64:len = string_length(hello);  // 5
+///
+/// // Concatenate
+/// string:greeting = string_concat(hello, world);  // "HelloWorld"
+///
+/// // Case conversion
+/// string:upper = string_to_upper(hello);  // "HELLO"
+/// string:lower = string_to_lower(upper);  // "hello"
+///
+/// // Substring
+/// string:sub = string_substring(hello, 0, 3);  // "Hel"
+///
+/// // Search
+/// bool:has = string_contains(greeting, world);  // true
+/// bool:starts = string_starts_with(hello, string_from_cstr("He"));  // true
+/// bool:ends = string_ends_with(hello, string_from_cstr("lo"));  // true
+///
+/// // Trim whitespace
+/// string:padded = string_from_cstr("  hello  ");
+/// string:trimmed = string_trim(padded);  // "hello"
+///
+/// // Number conversion
+/// string:num_str = string_from_int(42);  // "42"
+/// int64:num = string_to_int(num_str);    // 42
 /// ```
-pub fn strlen(s: str) -> uint64 {
-    // Native implementation
-}
-
-/// Concatenate two strings
-/// @param s1 The first string
-/// @param s2 The second string
-/// @return A new string containing s1 followed by s2
-/// @example
-/// ```aria
-/// let hello = "Hello, ";
-/// let world = "World!";
-/// let greeting = strcat(hello, world);  // returns "Hello, World!"
-/// ```
-pub fn strcat(s1: str, s2: str) -> str {
-    // Native implementation
-}
-
-/// Convert a string to uppercase
-/// @param s The string to convert
-/// @return A new string with all lowercase letters converted to uppercase
-/// @example
-/// ```aria
-/// let lower = "hello aria";
-/// let upper = to_upper(lower);  // returns "HELLO ARIA"
-/// ```
-pub fn to_upper(s: str) -> str {
-    // Native implementation
-}
-
-/// Convert a string to lowercase
-/// @param s The string to convert
-/// @return A new string with all uppercase letters converted to lowercase
-/// @example
-/// ```aria
-/// let upper = "HELLO ARIA";
-/// let lower = to_lower(upper);  // returns "hello aria"
-/// ```
-pub fn to_lower(s: str) -> str {
-    // Native implementation
-}
-
-/// Check if a string starts with a given prefix
-/// @param s The string to check
-/// @param prefix The prefix to search for
-/// @return true if s starts with prefix, false otherwise
-/// @example
-/// ```aria
-/// let text = "Hello, World!";
-/// let result = starts_with(text, "Hello");  // returns true
-/// ```
-pub fn starts_with(s: str, prefix: str) -> bool {
-    // Native implementation
-}
-
-/// Check if a string ends with a given suffix
-/// @param s The string to check
-/// @param suffix The suffix to search for
-/// @return true if s ends with suffix, false otherwise
-/// @example
-/// ```aria
-/// let filename = "document.aria";
-/// let result = ends_with(filename, ".aria");  // returns true
-/// ```
-pub fn ends_with(s: str, suffix: str) -> bool {
-    // Native implementation
-}
-
-/// Find the first occurrence of a substring
-/// @param haystack The string to search in
-/// @param needle The substring to search for
-/// @return The index of the first occurrence, or -1 if not found
-/// @example
-/// ```aria
-/// let text = "Hello, World!";
-/// let pos = find(text, "World");  // returns 7
-/// let not_found = find(text, "xyz");  // returns -1
-/// ```
-pub fn find(haystack: str, needle: str) -> int64 {
-    // Native implementation
-}
-
-/// Replace all occurrences of a substring
-/// @param s The string to perform replacements in
-/// @param old The substring to replace
-/// @param new The replacement substring
-/// @return A new string with all occurrences of old replaced by new
-/// @example
-/// ```aria
-/// let text = "Hello, World! World!";
-/// let result = replace(text, "World", "Aria");  // returns "Hello, Aria! Aria!"
-/// ```
-pub fn replace(s: str, old: str, new: str) -> str {
-    // Native implementation
-}
-
-/// Split a string by a delimiter
-/// @param s The string to split
-/// @param delimiter The delimiter to split on
-/// @return An array of substrings
-/// @example
-/// ```aria
-/// let csv = "apple,banana,cherry";
-/// let fruits = split(csv, ",");  // returns ["apple", "banana", "cherry"]
-/// ```
-pub fn split(s: str, delimiter: str) -> [str] {
-    // Native implementation
-}
-
-/// Join an array of strings with a separator
-/// @param parts The array of strings to join
-/// @param separator The separator to insert between parts
-/// @return A single string with all parts joined
-/// @example
-/// ```aria
-/// let words = ["Hello", "Aria", "Language"];
-/// let sentence = join(words, " ");  // returns "Hello Aria Language"
-/// ```
-pub fn join(parts: [str], separator: str) -> str {
-    // Native implementation
-}
-
-/// Trim whitespace from both ends of a string
-/// @param s The string to trim
-/// @return A new string with leading and trailing whitespace removed
-/// @example
-/// ```aria
-/// let padded = "  hello  ";
-/// let trimmed = trim(padded);  // returns "hello"
-/// ```
-pub fn trim(s: str) -> str {
-    // Native implementation
-}
-
-/// Substring extraction
-/// @param s The source string
-/// @param start The starting index (inclusive)
-/// @param end The ending index (exclusive)
-/// @return A new string containing characters from start to end
-/// @throws Panics if indices are out of bounds
-/// @example
-/// ```aria
-/// let text = "Hello, World!";
-/// let greeting = substring(text, 0, 5);  // returns "Hello"
-/// ```
-pub fn substring(s: str, start: uint64, end: uint64) -> str {
-    // Native implementation
-}

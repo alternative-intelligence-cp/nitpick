@@ -1,0 +1,184 @@
+/**
+ * @file test_async_basic.cpp
+ * @brief Basic async/await tests - Phase 4.5.3
+ * 
+ * Tests the fundamental async/await machinery:
+ * - Async function declarations
+ * - Await expressions
+ * - LLVM coroutine lowering
+ * - Basic Future<T> behavior
+ * 
+ * Reference: research_029_async_await_system.txt
+ */
+
+#include "../test_helpers.h"
+#include "backend/ir/codegen_expr.h"
+#include "backend/ir/codegen_stmt.h"
+#include "frontend/parser/parser.h"
+#include "frontend/lexer/lexer.h"
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Verifier.h>
+
+using namespace aria;
+using namespace aria::frontend;
+using namespace aria::backend;
+
+/**
+ * Test 1: Async function returns immediately (no await)
+ * 
+ * async func:get_value = int64() {
+ *     return 42;
+ * }
+ * 
+ * This tests the basic coroutine frame generation without
+ * any suspension points. Should compile to a coroutine that
+ * immediately returns Ready(42).
+ */
+TEST_CASE(async_immediate_return) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("test", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    // For now, this test will fail until we implement async codegen
+    // Just verify the test infrastructure works
+    ASSERT(true, "Test infrastructure ready for async implementation");
+    
+    // TODO: Create async function AST
+    // TODO: Generate LLVM coroutine IR
+    // TODO: Verify module
+}
+
+/**
+ * Test 2: Async function with single await
+ * 
+ * async func:add_async = int64(int64:a, int64:b) {
+ *     int64:sum = a + b;
+ *     return sum;
+ * }
+ * 
+ * async func:caller = int64() {
+ *     int64:result = await add_async(10, 32);
+ *     return result;
+ * }
+ * 
+ * Tests:
+ * - Await expression suspension
+ * - Resumption after completion
+ * - Value propagation through await
+ */
+TEST_CASE(async_single_await) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("test", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    ASSERT(true, "Ready for async await implementation");
+    
+    // TODO: Create async function that calls another async function
+    // TODO: Generate await suspend/resume logic
+    // TODO: Verify coroutine state machine
+}
+
+/**
+ * Test 3: Multiple await points in sequence
+ * 
+ * async func:multi_await = int64() {
+ *     int64:a = await get_value();
+ *     int64:b = await get_value();
+ *     return a + b;
+ * }
+ * 
+ * Tests:
+ * - Multiple suspension points
+ * - State machine with multiple cases
+ * - Variable spilling across awaits
+ */
+TEST_CASE(async_multiple_awaits) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("test", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    ASSERT(true, "Ready for multiple await points");
+    
+    // TODO: Test sequential await operations
+    // TODO: Verify variable preservation across suspensions
+}
+
+/**
+ * Test 4: Async lambda/closure
+ * 
+ * auto:async_lambda = async func() {
+ *     return 42;
+ * };
+ * 
+ * int64:result = await async_lambda();
+ * 
+ * Tests:
+ * - Async closures
+ * - Async fat pointer structure
+ * - Integration with Phase 4.5.2 closures
+ */
+TEST_CASE(async_lambda) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("test", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    ASSERT(true, "Ready for async lambda implementation");
+    
+    // TODO: Combine async with closure capture
+    // TODO: Test async fat pointer structure
+}
+
+/**
+ * Test 5: NIL return type (no value)
+ * 
+ * async func:do_work = NIL() {
+ *     await some_operation();
+ *     // No return value
+ * }
+ * 
+ * Tests:
+ * - Async functions with NIL/void return
+ * - Await expressions that don't yield values
+ */
+TEST_CASE(async_nil_return) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("test", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    ASSERT(true, "Ready for NIL async functions");
+    
+    // TODO: Test async functions with no return value
+    // TODO: Verify NIL propagation through await
+}

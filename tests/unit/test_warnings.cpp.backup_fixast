@@ -1,0 +1,174 @@
+/**
+ * @file test_warnings.cpp
+ * @brief Unit tests for warning system
+ */
+
+#include "../test_helpers.h"
+#include "frontend/warnings.h"
+#include "frontend/diagnostics.h"
+
+using namespace aria;
+
+// ============================================================================
+// Test: Warning configuration
+// ============================================================================
+TEST_CASE(warning_config) {
+    WarningConfig config;
+    
+    // All warnings enabled by default
+    ASSERT_TRUE(config.isEnabled(WarningType::UNUSED_VARIABLE), "UNUSED_VARIABLE should be enabled by default");
+    ASSERT_TRUE(config.isEnabled(WarningType::DEAD_CODE), "DEAD_CODE should be enabled by default");
+    ASSERT_TRUE(config.isEnabled(WarningType::UNREACHABLE_CODE), "UNREACHABLE_CODE should be enabled by default");
+    
+    // Disable specific warning
+    config.disable(WarningType::UNUSED_VARIABLE);
+    ASSERT_FALSE(config.isEnabled(WarningType::UNUSED_VARIABLE), "UNUSED_VARIABLE should be disabled");
+    ASSERT_TRUE(config.isEnabled(WarningType::DEAD_CODE), "Other warnings should still be enabled");
+    
+    // Re-enable
+    config.enable(WarningType::UNUSED_VARIABLE);
+    ASSERT_TRUE(config.isEnabled(WarningType::UNUSED_VARIABLE), "UNUSED_VARIABLE should be re-enabled");
+    
+    // Disable all
+    config.disableAll();
+    ASSERT_FALSE(config.isEnabled(WarningType::UNUSED_VARIABLE), "All warnings should be disabled");
+    ASSERT_FALSE(config.isEnabled(WarningType::DEAD_CODE), "All warnings should be disabled");
+    
+    // Enable all
+    config.enableAll();
+    ASSERT_TRUE(config.isEnabled(WarningType::UNUSED_VARIABLE), "UNUSED_VARIABLE should be enabled");
+    ASSERT_TRUE(config.isEnabled(WarningType::DEAD_CODE), "DEAD_CODE should be enabled");
+}
+
+// ============================================================================
+// Test: Warnings as errors
+// ============================================================================
+TEST_CASE(warnings_as_errors_config) {
+    WarningConfig config;
+    
+    // Default: warnings are not errors
+    ASSERT_FALSE(config.treatWarningsAsErrors(), "Warnings should not be errors by default");
+    
+    // Enable -Werror
+    config.setWarningsAsErrors(true);
+    ASSERT_TRUE(config.treatWarningsAsErrors(), "Warnings should be errors after setWarningsAsErrors(true)");
+    
+    // Disable again
+    config.setWarningsAsErrors(false);
+    ASSERT_FALSE(config.treatWarningsAsErrors(), "Warnings should not be errors after setWarningsAsErrors(false)");
+}
+
+// ============================================================================
+// Test: Warning type to string conversion
+// ============================================================================
+TEST_CASE(warning_type_strings) {
+    ASSERT_EQ(WarningConfig::warningTypeToString(WarningType::UNUSED_VARIABLE), "unused-variable", "UNUSED_VARIABLE string");
+    ASSERT_EQ(WarningConfig::warningTypeToString(WarningType::UNUSED_PARAMETER), "unused-parameter", "UNUSED_PARAMETER string");
+    ASSERT_EQ(WarningConfig::warningTypeToString(WarningType::DEAD_CODE), "dead-code", "DEAD_CODE string");
+    ASSERT_EQ(WarningConfig::warningTypeToString(WarningType::UNREACHABLE_CODE), "unreachable-code", "UNREACHABLE_CODE string");
+    ASSERT_EQ(WarningConfig::warningTypeToString(WarningType::IMPLICIT_CONVERSION), "implicit-conversion", "IMPLICIT_CONVERSION string");
+    ASSERT_EQ(WarningConfig::warningTypeToString(WarningType::EMPTY_BLOCK), "empty-block", "EMPTY_BLOCK string");
+    ASSERT_EQ(WarningConfig::warningTypeToString(WarningType::CONSTANT_CONDITION), "constant-condition", "CONSTANT_CONDITION string");
+    ASSERT_EQ(WarningConfig::warningTypeToString(WarningType::SHADOWING), "shadowing", "SHADOWING string");
+}
+
+// ============================================================================
+// Test: Warning flag parsing - basic flags
+// ============================================================================
+TEST_CASE(flag_parsing_basic) {
+    WarningConfig config;
+    
+    // Start with all disabled
+    config.disableAll();
+    
+    // Test -Wall
+    WarningFlagParser::parseFlag("-Wall", config);
+    ASSERT_TRUE(config.isEnabled(WarningType::UNUSED_VARIABLE), "UNUSED_VARIABLE should be enabled by -Wall");
+    ASSERT_TRUE(config.isEnabled(WarningType::DEAD_CODE), "DEAD_CODE should be enabled by -Wall");
+    
+    // Test -Wno-all
+    WarningFlagParser::parseFlag("-Wno-all", config);
+    ASSERT_FALSE(config.isEnabled(WarningType::UNUSED_VARIABLE), "UNUSED_VARIABLE should be disabled by -Wno-all");
+    ASSERT_FALSE(config.isEnabled(WarningType::DEAD_CODE), "DEAD_CODE should be disabled by -Wno-all");
+    
+    // Test -Werror
+    ASSERT_FALSE(config.treatWarningsAsErrors(), "Warnings should not be errors before -Werror");
+    WarningFlagParser::parseFlag("-Werror", config);
+    ASSERT_TRUE(config.treatWarningsAsErrors(), "Warnings should be errors after -Werror");
+}
+
+// ============================================================================
+// Test: Warning flag parsing - specific warnings
+// ============================================================================
+TEST_CASE(flag_parsing_specific) {
+    WarningConfig config;
+    config.disableAll();
+    
+    // Enable specific warning
+    WarningFlagParser::parseFlag("-Wunused-variable", config);
+    ASSERT_TRUE(config.isEnabled(WarningType::UNUSED_VARIABLE), "UNUSED_VARIABLE should be enabled");
+    ASSERT_FALSE(config.isEnabled(WarningType::DEAD_CODE), "Others should still be disabled");
+    
+    // Disable specific warning
+    WarningFlagParser::parseFlag("-Wno-unused-variable", config);
+    ASSERT_FALSE(config.isEnabled(WarningType::UNUSED_VARIABLE), "UNUSED_VARIABLE should be disabled");
+    
+    // Enable multiple
+    WarningFlagParser::parseFlag("-Wdead-code", config);
+    WarningFlagParser::parseFlag("-Wunreachable-code", config);
+    ASSERT_TRUE(config.isEnabled(WarningType::DEAD_CODE), "DEAD_CODE should be enabled");
+    ASSERT_TRUE(config.isEnabled(WarningType::UNREACHABLE_CODE), "UNREACHABLE_CODE should be enabled");
+}
+
+// ============================================================================
+// Test: Warning analyzer initialization
+// ============================================================================
+TEST_CASE(warning_analyzer_init) {
+    DiagnosticEngine diags;
+    WarningConfig config;
+    
+    WarningAnalyzer analyzer(diags, config);
+    
+    // Should start with 0 warnings
+    ASSERT_EQ(analyzer.getWarningCount(), 0, "Warning count should start at 0");
+}
+
+// ============================================================================
+// Test: Supported flags list
+// ============================================================================
+TEST_CASE(supported_flags) {
+    auto flags = WarningFlagParser::getSupportedFlags();
+    
+    // Should have reasonable number of flags
+    ASSERT_TRUE(flags.size() > 10, "Should have at least 10 supported flags");
+    
+    // Should include basic ones
+    bool has_wall = false;
+    bool has_werror = false;
+    bool has_unused_var = false;
+    
+    for (const auto& flag : flags) {
+        if (flag == "-Wall") has_wall = true;
+        if (flag == "-Werror") has_werror = true;
+        if (flag == "-Wunused-variable") has_unused_var = true;
+    }
+    
+    ASSERT_TRUE(has_wall, "Should have -Wall flag");
+    ASSERT_TRUE(has_werror, "Should have -Werror flag");
+    ASSERT_TRUE(has_unused_var, "Should have -Wunused-variable flag");
+}
+
+// ============================================================================
+// Test: Warning analyzer with null AST (defensive)
+// ============================================================================
+TEST_CASE(analyzer_null_ast) {
+    DiagnosticEngine diags;
+    WarningConfig config;
+    WarningAnalyzer analyzer(diags, config);
+    
+    // Should not crash with null AST
+    analyzer.analyze(nullptr);
+    
+    // Should still have 0 warnings
+    ASSERT_EQ(analyzer.getWarningCount(), 0, "Warning count should still be 0");
+}

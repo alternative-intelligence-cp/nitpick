@@ -20,9 +20,10 @@ using namespace aria::backend;
 using namespace aria::sema;
 
 StmtCodegen::StmtCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr,
-                         llvm::Module* mod, std::map<std::string, llvm::Value*>& values)
-    : context(ctx), builder(bldr), module(mod), named_values(values), 
-      expr_codegen(nullptr), monomorphizer(nullptr) {}
+                         llvm::Module* mod, std::map<std::string, llvm::Value*>& values,
+                         std::map<std::string, std::string>& types)
+    : context(ctx), builder(bldr), module(mod), named_values(values),
+      var_aria_types(types), expr_codegen(nullptr), monomorphizer(nullptr) {}
 
 void StmtCodegen::setExprCodegen(ExprCodegen* expr_gen) {
     expr_codegen = expr_gen;
@@ -423,7 +424,10 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
     
     // Store the pointer in named_values so we can reference it later
     named_values[stmt->varName] = var_ptr;
-    
+
+    // Track Aria type name for UFCS method resolution
+    var_aria_types[stmt->varName] = stmt->typeName;
+
     // DEBUG: Check if initializer exists
     std::cerr << "[DEBUG] codegenVarDecl: Variable " << stmt->varName 
               << ", initializer ptr = " << (void*)stmt->initializer.get() << std::endl;
@@ -606,9 +610,11 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
         coro_cleanup_block = llvm::BasicBlock::Create(context, "coro.cleanup", func);
     }
     
-    // Save the old named_values (for nested functions/closures in the future)
+    // Save the old named_values and var_aria_types (for nested functions/closures in the future)
     std::map<std::string, llvm::Value*> old_named_values = named_values;
+    std::map<std::string, std::string> old_var_aria_types = var_aria_types;
     named_values.clear();
+    var_aria_types.clear();
     
     // Create allocas for parameters and store their values
     // This allows parameters to be mutable (can be reassigned in function body)
@@ -624,7 +630,12 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
         
         // Remember this allocation
         named_values[param_node->paramName] = alloca;
-        
+
+        // Track Aria type name for UFCS method resolution
+        if (param_node->typeNode) {
+            var_aria_types[param_node->paramName] = param_node->typeNode->toString();
+        }
+
         idx++;
     }
     
@@ -707,8 +718,9 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
         builder.CreateRet(coro_handle);
     }
     
-    // Restore old named_values
+    // Restore old named_values and var_aria_types
     named_values = old_named_values;
+    var_aria_types = old_var_aria_types;
     
     // Verify the function
     std::string error_msg;
@@ -2310,9 +2322,84 @@ void StmtCodegen::codegenStatement(ASTNode* stmt) {
         case ASTNode::NodeType::EXPRESSION_STMT:
             codegenExpressionStmt(static_cast<ExpressionStmt*>(stmt));
             break;
-        
+
+        // WP 005: Trait System
+        case ASTNode::NodeType::TRAIT_DECL:
+            codegenTraitDecl(static_cast<TraitDeclStmt*>(stmt));
+            break;
+
+        case ASTNode::NodeType::IMPL_DECL:
+            codegenImplDecl(static_cast<ImplDeclStmt*>(stmt));
+            break;
+
         default:
-            throw std::runtime_error("Unsupported statement type in codegen: " + 
+            throw std::runtime_error("Unsupported statement type in codegen: " +
                                      std::to_string(static_cast<int>(stmt->type)));
+    }
+}
+
+// ============================================================================
+// WP 005: Trait System Code Generation
+// ============================================================================
+
+/**
+ * Generate code for a trait declaration
+ *
+ * Trait declarations are compile-time constructs that define method signatures.
+ * No LLVM IR is generated for trait declarations - they only serve as templates
+ * for implementations.
+ *
+ * Example:
+ *   trait:Printable = {
+ *       func:print: void(int64:self);
+ *       func:format: string(int64:self);
+ *   };
+ */
+void StmtCodegen::codegenTraitDecl(TraitDeclStmt* stmt) {
+    // Trait declarations are compile-time only - no IR to generate
+    // The type checker has already validated the trait
+    // Method signatures are used during impl validation
+}
+
+/**
+ * Generate code for a trait implementation
+ *
+ * Generates mangled functions for each method in the implementation.
+ * Method names are mangled as: TypeName_methodName
+ *
+ * Example:
+ *   impl:Printable:for:Circle = {
+ *       func:print = void(int64:self) { ... };
+ *   };
+ *
+ * Generates: Circle_print(int64 self) -> void
+ *
+ * This enables UFCS-style method calls:
+ *   circle.print() -> Circle_print(circle)
+ */
+void StmtCodegen::codegenImplDecl(ImplDeclStmt* stmt) {
+    if (!stmt) {
+        return;
+    }
+
+    // Generate each method with mangled name
+    for (const auto& method : stmt->methods) {
+        FuncDeclStmt* func = dynamic_cast<FuncDeclStmt*>(method.get());
+        if (!func) {
+            continue;
+        }
+
+        // Save original function name
+        std::string originalName = func->funcName;
+
+        // Mangle the function name: TypeName_methodName
+        // This follows the UFCS naming convention so circle.print() works
+        func->funcName = stmt->typeName + "_" + originalName;
+
+        // Generate the function using the normal function codegen
+        codegenFuncDecl(func);
+
+        // Restore original name in case AST is reused
+        func->funcName = originalName;
     }
 }

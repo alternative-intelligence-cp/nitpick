@@ -33,7 +33,11 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
       ternary_codegen(context, builder) {
     // Set source filename for better debug info
     module->setSourceFileName(module_name.empty() ? "aria_module" : module_name);
-    
+
+    // Set module reference for TernaryCodegen to declare runtime intrinsics
+    // (ARIA-013: Balanced Ternary and Nonary Intrinsics)
+    ternary_codegen.setModule(module.get());
+
     if (debug_enabled) {
         // Create DIBuilder (initialization deferred to initDebugInfo)
         di_builder = std::make_unique<llvm::DIBuilder>(*module);
@@ -310,9 +314,17 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     if (type_name == "flt32") return builder.getFloatTy();
     if (type_name == "flt64") return builder.getDoubleTy();
     if (type_name == "flt128") return llvm::Type::getFP128Ty(context);
-    // Extended precision floats (library-based, represented as integer bits)
-    if (type_name == "flt256") return builder.getIntNTy(256);  // Placeholder: needs library support
-    if (type_name == "flt512") return builder.getIntNTy(512);  // Placeholder: needs library support
+    // ARIA-017: Extended precision floats (library-based, stored as limb arrays)
+    // flt256: 4 x i64 limbs (256 bits), 32-byte aligned
+    // flt512: 8 x i64 limbs (512 bits), 64-byte aligned
+    if (type_name == "flt256") {
+        llvm::Type* limbArray = llvm::ArrayType::get(builder.getInt64Ty(), 4);
+        return llvm::StructType::get(context, {limbArray}, false);
+    }
+    if (type_name == "flt512") {
+        llvm::Type* limbArray = llvm::ArrayType::get(builder.getInt64Ty(), 8);
+        return llvm::StructType::get(context, {limbArray}, false);
+    }
     
     // Integer types - signed
     if (type_name == "int1") return builder.getInt1Ty();
@@ -549,6 +561,11 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
                 ParameterNode* param = static_cast<ParameterNode*>(funcDecl->parameters[idx].get());
                 arg.setName(param->paramName);
                 named_values[param->paramName] = &arg;
+
+                // Track Aria type name for UFCS method resolution
+                if (param->typeNode) {
+                    var_aria_types[param->paramName] = param->typeNode->toString();
+                }
             }
             idx++;
         }
@@ -864,10 +881,15 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     ParameterNode* param = static_cast<ParameterNode*>(funcDecl->parameters[idx].get());
                     arg.setName(param->paramName);
                     named_values[param->paramName] = &arg;
+
+                    // Track Aria type name for UFCS method resolution
+                    if (param->typeNode) {
+                        var_aria_types[param->paramName] = param->typeNode->toString();
+                    }
                 }
                 idx++;
             }
-            
+
             // Generate function body
             std::cerr << "[DEBUG] Generating body for function: " << func_name << std::endl;
             llvm::Value* bodyVal = codegenStatement(funcDecl->body.get());
@@ -957,6 +979,96 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
                 named_values.erase(pnode->paramName);
             }
+        }
+
+        // WP 005: Handle TRAIT_DECL statements
+        // Trait declarations are compile-time only - no IR generated
+        if (decl->type == ASTNode::NodeType::TRAIT_DECL) {
+            continue;
+        }
+
+        // WP 005: Handle IMPL_DECL statements
+        // Generate mangled functions for each method: TypeName_methodName
+        if (decl->type == ASTNode::NodeType::IMPL_DECL) {
+            ImplDeclStmt* impl = static_cast<ImplDeclStmt*>(decl.get());
+
+            for (const auto& methodNode : impl->methods) {
+                FuncDeclStmt* funcDecl = dynamic_cast<FuncDeclStmt*>(methodNode.get());
+                if (!funcDecl) continue;
+
+                // Mangle name: TypeName_methodName
+                std::string mangledName = impl->typeName + "_" + funcDecl->funcName;
+
+                // Create function signature
+                std::vector<llvm::Type*> param_types;
+                for (const auto& param : funcDecl->parameters) {
+                    ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+                    std::string paramTypeStr = pnode->typeNode ? pnode->typeNode->toString() : "void";
+                    param_types.push_back(mapTypeFromName(paramTypeStr));
+                }
+
+                std::string returnTypeStr = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
+                llvm::Type* return_type = mapTypeFromName(returnTypeStr);
+
+                llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
+
+                // Create function with mangled name
+                llvm::Function* func = llvm::Function::Create(
+                    func_type,
+                    llvm::Function::ExternalLinkage,
+                    mangledName,
+                    module.get()
+                );
+
+                // Skip if no body
+                if (!funcDecl->body) {
+                    continue;
+                }
+
+                // Create entry block
+                llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+                builder.SetInsertPoint(entry);
+
+                // Map parameters to symbol table
+                size_t idx = 0;
+                for (auto& arg : func->args()) {
+                    if (idx < funcDecl->parameters.size()) {
+                        ParameterNode* param = static_cast<ParameterNode*>(funcDecl->parameters[idx].get());
+                        arg.setName(param->paramName);
+
+                        // Create alloca for parameter
+                        std::string paramTypeStr = param->typeNode ? param->typeNode->toString() : "void";
+                        llvm::Type* paramType = mapTypeFromName(paramTypeStr);
+                        llvm::AllocaInst* alloca = builder.CreateAlloca(paramType, nullptr, param->paramName);
+                        builder.CreateStore(&arg, alloca);
+                        named_values[param->paramName] = alloca;
+
+                        // Track Aria type name for UFCS method resolution
+                        var_aria_types[param->paramName] = paramTypeStr;
+                    }
+                    idx++;
+                }
+
+                // Generate function body
+                std::cerr << "[DEBUG] Generating impl method: " << mangledName << std::endl;
+                codegenStatement(funcDecl->body.get());
+
+                // Add terminator if missing
+                if (!builder.GetInsertBlock()->getTerminator()) {
+                    if (return_type->isVoidTy()) {
+                        builder.CreateRetVoid();
+                    } else {
+                        builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
+                    }
+                }
+
+                // Clean up symbol table
+                for (const auto& param : funcDecl->parameters) {
+                    ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+                    named_values.erase(pnode->paramName);
+                }
+            }
+            continue;
         }
     }
 }
@@ -1166,6 +1278,10 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             
             // Add to symbol table
             named_values[varDecl->varName] = alloca;
+
+            // Track Aria type name for UFCS method resolution
+            var_aria_types[varDecl->varName] = actualTypeName;
+
             return alloca;
         }
         
@@ -1903,7 +2019,97 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             builder.SetInsertPoint(exitBB);
             return nullptr;
         }
-        
+
+        // ========================================================================
+        // WP 005: Trait System
+        // ========================================================================
+
+        case ASTNode::NodeType::TRAIT_DECL: {
+            // Trait declarations are compile-time only - no IR to generate
+            return nullptr;
+        }
+
+        case ASTNode::NodeType::IMPL_DECL: {
+            // Generate functions for each method in the implementation
+            ImplDeclStmt* impl = static_cast<ImplDeclStmt*>(stmt);
+            for (const auto& method : impl->methods) {
+                FuncDeclStmt* func = dynamic_cast<FuncDeclStmt*>(method.get());
+                if (!func) continue;
+
+                // Save original name
+                std::string originalName = func->funcName;
+
+                // Mangle: TypeName_methodName for UFCS
+                func->funcName = impl->typeName + "_" + originalName;
+
+                // Generate the function (inline codegen here since we don't have separate method)
+                // Build parameter types
+                std::vector<llvm::Type*> paramTypes;
+                for (const auto& param : func->parameters) {
+                    ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
+                    std::string paramTypeStr = paramNode->typeNode ? paramNode->typeNode->toString() : "void";
+                    paramTypes.push_back(mapTypeFromName(paramTypeStr));
+                }
+
+                // Get return type
+                std::string returnTypeStr = func->returnType ? func->returnType->toString() : "void";
+                llvm::Type* returnType = mapTypeFromName(returnTypeStr);
+
+                // Create function type and function
+                llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
+                llvm::Function* llvmFunc = llvm::Function::Create(
+                    funcType, llvm::Function::ExternalLinkage, func->funcName, module.get());
+
+                // Set parameter names
+                unsigned idx = 0;
+                for (auto& arg : llvmFunc->args()) {
+                    ParameterNode* paramNode = static_cast<ParameterNode*>(func->parameters[idx].get());
+                    arg.setName(paramNode->paramName);
+                    idx++;
+                }
+
+                // Create entry block and generate body
+                llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", llvmFunc);
+                builder.SetInsertPoint(entry);
+
+                // Add parameters to named_values
+                idx = 0;
+                for (auto& arg : llvmFunc->args()) {
+                    ParameterNode* paramNode = static_cast<ParameterNode*>(func->parameters[idx].get());
+                    std::string paramTypeStr = paramNode->typeNode ? paramNode->typeNode->toString() : "void";
+                    llvm::Type* paramType = mapTypeFromName(paramTypeStr);
+                    llvm::AllocaInst* alloca = builder.CreateAlloca(paramType, nullptr, paramNode->paramName);
+                    builder.CreateStore(&arg, alloca);
+                    named_values[paramNode->paramName] = alloca;
+                    idx++;
+                }
+
+                // Generate body
+                if (func->body) {
+                    codegenStatement(func->body.get());
+                }
+
+                // Add implicit void return if needed
+                if (!builder.GetInsertBlock()->getTerminator()) {
+                    if (returnType->isVoidTy()) {
+                        builder.CreateRetVoid();
+                    } else {
+                        builder.CreateRet(llvm::Constant::getNullValue(returnType));
+                    }
+                }
+
+                // Restore original name
+                func->funcName = originalName;
+
+                // Clear named_values for next function
+                for (const auto& param : func->parameters) {
+                    ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
+                    named_values.erase(paramNode->paramName);
+                }
+            }
+            return nullptr;
+        }
+
         default:
             // Other statement types not yet implemented
             return nullptr;
@@ -2071,7 +2277,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Check if this is a member access call (e.g., math_utils.add(...))
             if (call->callee->type == ASTNode::NodeType::MEMBER_ACCESS) {
                 // Delegate to ExprCodegen for member access calls
-                backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+                backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values, var_aria_types);
                 return expr_codegen.codegenCall(call);
             }
             
@@ -3111,7 +3317,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 callee->name == "string_pad_right" || callee->name == "string_format_float") {
 
                 // Create ExprCodegen instance (same pattern as TEMPLATE_LITERAL case)
-                backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values);
+                backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values, var_aria_types);
                 return expr_codegen_inst.codegenCall(call);
             }
 
@@ -3125,7 +3331,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 callee->name == "tbb16_from_int" || callee->name == "tbb16_is_err" || callee->name == "tbb16_to_int" ||
                 callee->name == "tbb8_from_int" || callee->name == "tbb8_is_err" || callee->name == "tbb8_to_int") {
 
-                backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values);
+                backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values, var_aria_types);
                 return expr_codegen_inst.codegenCall(call);
             }
 
@@ -3138,8 +3344,113 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 callee->name == "array_push" || callee->name == "array_get" ||
                 callee->name == "array_set" || callee->name == "array_pop") {
 
-                backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values);
+                backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values, var_aria_types);
                 return expr_codegen_inst.codegenCall(call);
+            }
+
+            // ====================================================================
+            // FILE UFCS BUILTINS (for File.open(), stream.read(), etc.)
+            // ====================================================================
+
+            // Check if this is a File builtin - call external runtime function
+            if (callee->name == "File_open" || callee->name == "File_read_line" ||
+                callee->name == "File_read_bytes" || callee->name == "File_write" ||
+                callee->name == "File_write_bytes" || callee->name == "File_close" ||
+                callee->name == "File_eof" || callee->name == "File_flush" ||
+                callee->name == "File_seek" || callee->name == "File_tell" ||
+                callee->name == "File_read" || callee->name == "File_write_all" ||
+                callee->name == "File_delete" || callee->name == "File_exists" ||
+                callee->name == "File_size") {
+
+                // Get or declare the external function
+                llvm::Function* func = module->getFunction(callee->name);
+                if (!func) {
+                    // Build the function type based on the builtin
+                    std::vector<llvm::Type*> param_types;
+                    llvm::Type* return_type;
+
+                    if (callee->name == "File_open") {
+                        // File_open(path: i8*, mode: i8*) -> ptr
+                        param_types = {builder.getPtrTy(), builder.getPtrTy()};
+                        return_type = builder.getPtrTy();
+                    } else if (callee->name == "File_read_line") {
+                        // File_read_line(stream: ptr) -> ptr (char*)
+                        param_types = {builder.getPtrTy()};
+                        return_type = builder.getPtrTy();
+                    } else if (callee->name == "File_read_bytes") {
+                        // File_read_bytes(stream: ptr, buffer: ptr, size: i64) -> i64
+                        param_types = {builder.getPtrTy(), builder.getPtrTy(), builder.getInt64Ty()};
+                        return_type = builder.getInt64Ty();
+                    } else if (callee->name == "File_write") {
+                        // File_write(stream: ptr, str: ptr) -> i64
+                        param_types = {builder.getPtrTy(), builder.getPtrTy()};
+                        return_type = builder.getInt64Ty();
+                    } else if (callee->name == "File_write_bytes") {
+                        // File_write_bytes(stream: ptr, data: ptr, size: i64) -> i64
+                        param_types = {builder.getPtrTy(), builder.getPtrTy(), builder.getInt64Ty()};
+                        return_type = builder.getInt64Ty();
+                    } else if (callee->name == "File_close") {
+                        // File_close(stream: ptr) -> void
+                        param_types = {builder.getPtrTy()};
+                        return_type = builder.getVoidTy();
+                    } else if (callee->name == "File_eof") {
+                        // File_eof(stream: ptr) -> bool
+                        param_types = {builder.getPtrTy()};
+                        return_type = builder.getInt1Ty();
+                    } else if (callee->name == "File_flush") {
+                        // File_flush(stream: ptr) -> i32
+                        param_types = {builder.getPtrTy()};
+                        return_type = builder.getInt32Ty();
+                    } else if (callee->name == "File_seek") {
+                        // File_seek(stream: ptr, offset: i64, whence: i32) -> i32
+                        param_types = {builder.getPtrTy(), builder.getInt64Ty(), builder.getInt32Ty()};
+                        return_type = builder.getInt32Ty();
+                    } else if (callee->name == "File_tell") {
+                        // File_tell(stream: ptr) -> i64
+                        param_types = {builder.getPtrTy()};
+                        return_type = builder.getInt64Ty();
+                    } else if (callee->name == "File_read") {
+                        // File_read(path: ptr) -> ptr (AriaString*)
+                        param_types = {builder.getPtrTy()};
+                        return_type = builder.getPtrTy();
+                    } else if (callee->name == "File_write_all") {
+                        // File_write_all(path: ptr, content: ptr) -> i64
+                        param_types = {builder.getPtrTy(), builder.getPtrTy()};
+                        return_type = builder.getInt64Ty();
+                    } else if (callee->name == "File_delete") {
+                        // File_delete(path: ptr) -> i64
+                        param_types = {builder.getPtrTy()};
+                        return_type = builder.getInt64Ty();
+                    } else if (callee->name == "File_exists") {
+                        // File_exists(path: ptr) -> bool
+                        param_types = {builder.getPtrTy()};
+                        return_type = builder.getInt1Ty();
+                    } else if (callee->name == "File_size") {
+                        // File_size(path: ptr) -> i64
+                        param_types = {builder.getPtrTy()};
+                        return_type = builder.getInt64Ty();
+                    } else {
+                        return nullptr;
+                    }
+
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
+                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, callee->name, module.get());
+                }
+
+                // Generate arguments
+                std::vector<llvm::Value*> args;
+                for (auto& arg : call->arguments) {
+                    llvm::Value* val = codegenExpression(arg.get());
+                    if (!val) return nullptr;
+                    args.push_back(val);
+                }
+
+                // Call the function
+                if (func->getReturnType()->isVoidTy()) {
+                    builder.CreateCall(func, args);
+                    return llvm::Constant::getNullValue(builder.getPtrTy());
+                }
+                return builder.CreateCall(func, args, callee->name + "_result");
             }
 
             // ====================================================================
@@ -3627,7 +3938,46 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 case frontend::TokenType::TOKEN_TILDE:
                     // Bitwise NOT
                     return builder.CreateNot(operand, "nottmp");
-                
+
+                case frontend::TokenType::TOKEN_HASH: {
+                    // ARIA-016: Pin operator (#) - pins a GC object in memory
+                    // This prevents the GC from relocating the object, making it
+                    // safe to pass to FFI/DMA operations that need a stable address.
+                    //
+                    // The operand must be a pointer to a GC-managed object.
+                    // Returns the same pointer (now guaranteed to be stable).
+
+                    if (!operand->getType()->isPointerTy()) {
+                        // Error: cannot pin non-pointer type
+                        return nullptr;
+                    }
+
+                    // Get or declare the aria_gc_pin runtime function
+                    llvm::Function* pinFunc = module->getFunction("aria_gc_pin");
+                    if (!pinFunc) {
+                        // Declare: void aria_gc_pin(void* ptr)
+                        llvm::FunctionType* pinFuncType = llvm::FunctionType::get(
+                            builder.getVoidTy(),
+                            {builder.getPtrTy()},
+                            false
+                        );
+                        pinFunc = llvm::Function::Create(
+                            pinFuncType,
+                            llvm::Function::ExternalLinkage,
+                            "aria_gc_pin",
+                            module.get()
+                        );
+                    }
+
+                    // Cast operand to void* if needed and call pin function
+                    llvm::Value* ptrToPin = builder.CreateBitCast(operand, builder.getPtrTy());
+                    builder.CreateCall(pinFunc, {ptrToPin});
+
+                    // Return the original pointer (now pinned)
+                    // The type transitions from managed to "wild" at the AST level
+                    return operand;
+                }
+
                 default:
                     return nullptr;
             }
@@ -4175,6 +4525,21 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     return builder.CreateSDiv(L, R, "divtmp");
                 case frontend::TokenType::TOKEN_PERCENT:
+                    // TBB modulo operator lowering
+                    if (isTBB && tbbType) {
+                        // Ensure both operands are the same type as the TBB type
+                        llvm::Type* tbbLLVMType = tbb_codegen.getTBBLLVMType(tbbType);
+                        if (L->getType() != tbbLLVMType) {
+                            L = builder.CreateIntCast(L, tbbLLVMType, true, "cast_lhs");
+                        }
+                        if (R->getType() != tbbLLVMType) {
+                            R = builder.CreateIntCast(R, tbbLLVMType, true, "cast_rhs");
+                        }
+                        
+                        llvm::Value* result = tbb_codegen.generateMod(L, R, tbbType);
+                        value_types[result] = tbbType;  // Track type for result
+                        return result;
+                    }
                     return builder.CreateSRem(L, R, "modtmp");
                 
                 // Comparison operators (return i1)
@@ -4840,10 +5205,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Template literal with interpolation: `Hello &{name}!`
             // Delegate to ExprCodegen::codegenTemplateLiteral for detailed implementation
             TemplateLiteralExpr* templateLit = static_cast<TemplateLiteralExpr*>(expr);
-            
+
             // Create ExprCodegen instance
-            backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values);
-            
+            backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values, var_aria_types);
+
             // Generate template literal IR
             return expr_codegen.codegenTemplateLiteral(templateLit);
         }

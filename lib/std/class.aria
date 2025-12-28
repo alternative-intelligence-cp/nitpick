@@ -1,0 +1,144 @@
+// =============================================================================
+// Aria Standard Library: Class Macro System
+// =============================================================================
+//
+// Provides high-level OOP syntax via preprocessor macros.
+// These macros expand to standard struct and function definitions,
+// ensuring zero runtime overhead (purely syntactic sugar).
+//
+// Usage:
+//   %include "std/class.aria"
+//
+//   %CLASS Point
+//     x: int64,
+//     y: int64
+//   %END_CLASS
+//
+//   IMPL Point
+//     def new = Point(int64:x, int64:y) {
+//       Point:p;
+//       p.x = x;
+//       p.y = y;
+//       pass(p);
+//     }
+//
+//     def magnitude = int64(Point:self) {
+//       pass(self.x * self.x + self.y * self.y);
+//     }
+//   END_IMPL
+//
+//   // Usage:
+//   Point:p = Point.new(10, 20);
+//   int64:mag = p.magnitude();
+//
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// %CLASS macro: Begins a class definition (creates a struct)
+// Parameters:
+//   %1 - Class name
+//
+// Example:
+//   %CLASS Point
+//     x: int64,
+//     y: int64
+//   %END_CLASS
+//
+// Expands to:
+//   struct Point {
+//     x: int64,
+//     y: int64
+//   };
+// -----------------------------------------------------------------------------
+%macro CLASS 1
+%push class_context
+%define %$CURRENT_CLASS %1
+struct %1 {
+%endmacro
+
+// -----------------------------------------------------------------------------
+// %END_CLASS macro: Ends a class definition (closes the struct)
+// No parameters.
+// -----------------------------------------------------------------------------
+%macro END_CLASS 0
+};
+%pop
+%endmacro
+
+// -----------------------------------------------------------------------------
+// IMPL macro: Begins an implementation block for a class
+// Parameters:
+//   %1 - Class name to implement methods for
+//
+// Example:
+//   IMPL Point
+//     def new = Point(...) { ... }
+//     def magnitude = int64(...) { ... }
+//   END_IMPL
+// -----------------------------------------------------------------------------
+%macro IMPL 1
+%push impl_context
+%define %$IMPL_TYPE %1
+%endmacro
+
+// -----------------------------------------------------------------------------
+// END_IMPL macro: Ends an implementation block
+// No parameters.
+// -----------------------------------------------------------------------------
+%macro END_IMPL 0
+%pop
+%endmacro
+
+// -----------------------------------------------------------------------------
+// def macro: Defines a method within an IMPL block
+// Parameters:
+//   %1 - Method name (will be prefixed with TypeName_)
+//
+// Example:
+//   IMPL Point
+//     def new = Point(int64:x, int64:y) { ... }
+//   END_IMPL
+//
+// Expands to:
+//   func Point_new = Point(int64:x, int64:y) { ... }
+//
+// Note: The rest of the function definition (return type, params, body)
+// follows the 'def' macro call on the same line.
+// -----------------------------------------------------------------------------
+%macro def 1
+func %$IMPL_TYPE_%1
+%endmacro
+
+// -----------------------------------------------------------------------------
+// Constructor Pattern: new
+// By convention, use 'def new' for constructors:
+//   def new = TypeName(params...) { ... }
+//
+// This creates TypeName_new which can be called as:
+//   TypeName:instance = TypeName.new(args...);
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+// Destructor Pattern: free / drop
+// By convention, use 'def free' or 'def drop' for cleanup:
+//   def free = void(TypeName:self) { ... }
+//
+// This creates TypeName_free which can be called as:
+//   instance.free();
+//
+// For RAII-style cleanup, combine with defer:
+//   TypeName:instance = TypeName.new(...);
+//   defer instance.free();
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+// Static vs Instance Methods
+//
+// Instance methods take 'self' as first parameter:
+//   def magnitude = int64(Point:self) { ... }
+//   // Usage: p.magnitude()
+//
+// Static methods don't take 'self':
+//   def new = Point(int64:x, int64:y) { ... }
+//   // Usage: Point.new(10, 20)
+// -----------------------------------------------------------------------------

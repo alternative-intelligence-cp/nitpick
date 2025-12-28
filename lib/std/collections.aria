@@ -219,16 +219,21 @@ pub func<T>:vec_free = result(Vec<*T>@:vec) {
 ///
 /// @example
 /// ```aria
-/// // Create hash map
-/// HashMap<string,int32>:scores = HashMap::new();
-/// scores.insert("Alice", 95);
-/// scores.insert("Bob", 87);
+/// // Create hash map for int64 keys
+/// HashMap<int64,int32>:scores = hashmap_new<int64,int32>();
+/// hashmap_insert(&scores, 1, 95, hash_int64);
+/// hashmap_insert(&scores, 2, 87, hash_int64);
 /// 
 /// // Lookup
-/// result<int32>:alice_score = scores.get("Alice");
-/// if (alice_score.err == NULL) {
-///     stdout.write(`Alice scored: &{alice_score.val}\n`);
+/// result<int32>:score = hashmap_get(&scores, 1, hash_int64);
+/// if (score.err == NULL) {
+///     stdout.write(`Score: &{score.val}\n`);
 /// }
+/// 
+/// // String keys example
+/// HashMap<string,int32>:names = hashmap_new<string,int32>();
+/// hashmap_insert(&names, "Alice", 95, hash_string);
+/// hashmap_insert(&names, "Bob", 87, hash_string);
 /// ```
 pub struct HashMap<K,V> {
     wild HashEntry<K,V>@:entries;  // Array of entries
@@ -253,50 +258,221 @@ pub func<K,V>:hashmap_new = HashMap<*K,*V>() {
     pass(map);
 };
 
-/// Simple hash function for integers
-/// @param key The key to hash
-/// @return Hash value
-func hash_int = uint64(int64:key) {
-    // Simple multiplicative hash
+/// Generic hash functions for common types
+
+/// Hash function for int64
+pub func hash_int64 = uint64(int64:key) {
+    // Multiplicative hash with good distribution
     uint64:h = key * 2654435761;
     pass(h);
 };
+
+/// Hash function for uint64
+pub func hash_uint64 = uint64(uint64:key) {
+    // Multiplicative hash
+    uint64:h = key * 2654435761;
+    pass(h);
+};
+
+/// Hash function for int32
+pub func hash_int32 = uint64(int32:key) {
+    uint64:extended = key;
+    uint64:h = extended * 2654435761;
+    pass(h);
+};
+
+/// Hash function for uint32
+pub func hash_uint32 = uint64(uint32:key) {
+    uint64:extended = key;
+    uint64:h = extended * 2654435761;
+    pass(h);
+};
+
+/// Hash function for string (FNV-1a)
+pub func hash_string = uint64(string:key) {
+    uint64:hash = 14695981039346656037;  // FNV offset basis
+    uint64:prime = 1099511628211;        // FNV prime
+    
+    // Note: This assumes string has .length and indexable chars
+    // Actual implementation depends on Aria's string representation
+    loop(0, key.length, 1) {
+        hash = hash ^ key[$];
+        hash = hash * prime;
+    }
+    
+    pass(hash);
+};
+
+/// Hash function pointer type - maps a key to uint64
+pub type HashFunc<K> = func(uint64)(*K:key);
 
 /// Insert or update a key-value pair
 /// @param map The hash map
 /// @param key The key
 /// @param value The value
+/// @param hash_func Function to hash the key (e.g., hash_int64, hash_string)
 /// @return Result indicating success or allocation failure
-pub func<K,V>:hashmap_insert = result(HashMap<*K,*V>@:map, *K:key, *V:value) {
-    // TODO: Implement hash table insertion
-    // This is a placeholder showing the structure
+pub func<K,V>:hashmap_insert = result(HashMap<*K,*V>@:map, *K:key, *V:value, HashFunc<*K>:hash_func) {
+    // Check if we need to grow (load factor > 0.7)
+    if (map->capacity == 0 || map->length * 10 >= map->capacity * 7) {
+        // Double capacity (or start at 16)
+        uint64:new_cap = is map->capacity == 0 : 16 : map->capacity * 2;
+
+        // Allocate new entries array
+        wild HashEntry<*K,*V>@:new_entries = aria.alloc<HashEntry<*K,*V>>(new_cap);
+        if (new_entries == NULL) {
+            fail(ERR);  // Allocation failed
+        }
+
+        // Initialize all entries as unoccupied
+        loop(0, new_cap, 1) {
+            new_entries[$].occupied = false;
+        }
+
+        // Rehash existing entries
+        if (map->entries != NULL) {
+            loop(0, map->capacity, 1) {
+                if (map->entries[$].occupied) {
+                    // Find new slot
+                    uint64:hash = hash_func(map->entries[$].key);
+                    uint64:idx = hash % new_cap;
+                    while (new_entries[idx].occupied) {
+                        idx = (idx + 1) % new_cap;
+                    }
+                    new_entries[idx].key = map->entries[$].key;
+                    new_entries[idx].value = map->entries[$].value;
+                    new_entries[idx].occupied = true;
+                }
+            }
+            aria.free(map->entries);
+        }
+
+        map->entries = new_entries;
+        map->capacity = new_cap;
+    }
+
+    // Find slot using linear probing
+    uint64:hash = hash_func(key);
+    uint64:idx = hash % map->capacity;
+    uint64:start = idx;
+
+    // Look for existing key or empty slot
+    while (map->entries[idx].occupied) {
+        if (map->entries[idx].key == key) {
+            // Update existing entry
+            map->entries[idx].value = value;
+            pass(NIL);
+        }
+        idx = (idx + 1) % map->capacity;
+        if (idx == start) {
+            fail(ERR);  // Table is full (shouldn't happen with load factor check)
+        }
+    }
+
+    // Insert new entry
+    map->entries[idx].key = key;
+    map->entries[idx].value = value;
+    map->entries[idx].occupied = true;
+    map->length = map->length + 1;
+
     pass(NIL);
 };
 
 /// Get value for a key
 /// @param map The hash map
 /// @param key The key to look up
+/// @param hash_func Function to hash the key
 /// @return The value if found, or ERR if not present
-pub func<K,V>:hashmap_get = result<*V>(HashMap<*K,*V>@:map, *K:key) {
-    // TODO: Implement hash table lookup
-    fail(ERR);
+pub func<K,V>:hashmap_get = result<*V>(HashMap<*K,*V>@:map, *K:key, HashFunc<*K>:hash_func) {
+    if (map->capacity == 0) {
+        fail(ERR);  // Empty map
+    }
+
+    // Find slot using linear probing
+    uint64:hash = hash_func(key);
+    uint64:idx = hash % map->capacity;
+    uint64:start = idx;
+
+    // Search for key
+    while (map->entries[idx].occupied) {
+        if (map->entries[idx].key == key) {
+            pass(map->entries[idx].value);
+        }
+        idx = (idx + 1) % map->capacity;
+        if (idx == start) {
+            fail(ERR);  // Wrapped around, key not found
+        }
+    }
+
+    fail(ERR);  // Key not found
 };
 
 /// Remove a key-value pair
 /// @param map The hash map
 /// @param key The key to remove
+/// @param hash_func Function to hash the key
 /// @return Result indicating success
-pub func<K,V>:hashmap_remove = result(HashMap<*K,*V>@:map, *K:key) {
-    // TODO: Implement removal
-    pass(NIL);
+pub func<K,V>:hashmap_remove = result(HashMap<*K,*V>@:map, *K:key, HashFunc<*K>:hash_func) {
+    if (map->capacity == 0) {
+        fail(ERR);  // Empty map
+    }
+
+    // Find slot using linear probing
+    uint64:hash = hash_func(key);
+    uint64:idx = hash % map->capacity;
+    uint64:start = idx;
+
+    // Search for key
+    while (map->entries[idx].occupied) {
+        if (map->entries[idx].key == key) {
+            // Found the key - remove it
+            map->entries[idx].occupied = false;
+            map->length = map->length - 1;
+
+            // Rehash subsequent entries to fix probe chain
+            uint64:next = (idx + 1) % map->capacity;
+            while (map->entries[next].occupied) {
+                // Save entry data
+                *K:rehash_key = map->entries[next].key;
+                *V:rehash_value = map->entries[next].value;
+
+                // Clear entry
+                map->entries[next].occupied = false;
+                map->length = map->length - 1;
+
+                // Re-insert (will find correct position)
+                // Find new slot for this entry
+                uint64:new_hash = hash_func(rehash_key);
+                uint64:new_idx = new_hash % map->capacity;
+                while (map->entries[new_idx].occupied) {
+                    new_idx = (new_idx + 1) % map->capacity;
+                }
+                map->entries[new_idx].key = rehash_key;
+                map->entries[new_idx].value = rehash_value;
+                map->entries[new_idx].occupied = true;
+                map->length = map->length + 1;
+
+                next = (next + 1) % map->capacity;
+            }
+
+            pass(NIL);
+        }
+        idx = (idx + 1) % map->capacity;
+        if (idx == start) {
+            fail(ERR);  // Wrapped around, key not found
+        }
+    }
+
+    fail(ERR);  // Key not found
 };
 
 /// Check if key exists
 /// @param map The hash map
 /// @param key The key to check
+/// @param hash_func Function to hash the key
 /// @return true if key exists, false otherwise
-pub func<K,V>:hashmap_contains_key = bool(HashMap<*K,*V>@:map, *K:key) {
-    result<*V>:r = hashmap_get(map, key);
+pub func<K,V>:hashmap_contains_key = bool(HashMap<*K,*V>@:map, *K:key, HashFunc<*K>:hash_func) {
+    result<*V>:r = hashmap_get(map, key, hash_func);
     pass(r.err == NULL);
 };
 

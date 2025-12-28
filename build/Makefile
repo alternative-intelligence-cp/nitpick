@@ -837,6 +837,33 @@ src/backend/ir/ternary_codegen.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/ternary_codegen.cpp.s
 .PHONY : src/backend/ir/ternary_codegen.cpp.s
 
+src/backend/runtime/ternary_ops.o: src/backend/runtime/ternary_ops.cpp.o
+.PHONY : src/backend/runtime/ternary_ops.o
+
+# target to build an object file
+src/backend/runtime/ternary_ops.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/ternary_ops.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/ternary_ops.cpp.o
+.PHONY : src/backend/runtime/ternary_ops.cpp.o
+
+src/backend/runtime/ternary_ops.i: src/backend/runtime/ternary_ops.cpp.i
+.PHONY : src/backend/runtime/ternary_ops.i
+
+# target to preprocess a source file
+src/backend/runtime/ternary_ops.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/ternary_ops.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/ternary_ops.cpp.i
+.PHONY : src/backend/runtime/ternary_ops.cpp.i
+
+src/backend/runtime/ternary_ops.s: src/backend/runtime/ternary_ops.cpp.s
+.PHONY : src/backend/runtime/ternary_ops.s
+
+# target to generate assembly for a file
+src/backend/runtime/ternary_ops.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/ternary_ops.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/ternary_ops.cpp.s
+.PHONY : src/backend/runtime/ternary_ops.cpp.s
+
 src/frontend/ast/ast_node.o: src/frontend/ast/ast_node.cpp.o
 .PHONY : src/frontend/ast/ast_node.o
 
@@ -2136,6 +2163,33 @@ src/runtime/collections/collections.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections.cpp.s
 .PHONY : src/runtime/collections/collections.cpp.s
 
+src/runtime/collections/map.o: src/runtime/collections/map.cpp.o
+.PHONY : src/runtime/collections/map.o
+
+# target to build an object file
+src/runtime/collections/map.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/map.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/map.cpp.o
+.PHONY : src/runtime/collections/map.cpp.o
+
+src/runtime/collections/map.i: src/runtime/collections/map.cpp.i
+.PHONY : src/runtime/collections/map.i
+
+# target to preprocess a source file
+src/runtime/collections/map.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/map.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/map.cpp.i
+.PHONY : src/runtime/collections/map.cpp.i
+
+src/runtime/collections/map.s: src/runtime/collections/map.cpp.s
+.PHONY : src/runtime/collections/map.s
+
+# target to generate assembly for a file
+src/runtime/collections/map.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/map.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/map.cpp.s
+.PHONY : src/runtime/collections/map.cpp.s
+
 src/runtime/gc/allocator.o: src/runtime/gc/allocator.cpp.o
 .PHONY : src/runtime/gc/allocator.o
 
@@ -2190,6 +2244,54 @@ src/runtime/gc/gc.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/gc/gc.cpp.s
 .PHONY : src/runtime/gc/gc.cpp.s
 
+src/runtime/highprec_float.o: src/runtime/highprec_float.cpp.o
+.PHONY : src/runtime/highprec_float.o
+
+# target to build an object file
+src/runtime/highprec_float.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/highprec_float.cpp.o
+.PHONY : src/runtime/highprec_float.cpp.o
+
+src/runtime/highprec_float.i: src/runtime/highprec_float.cpp.i
+.PHONY : src/runtime/highprec_float.i
+
+# target to preprocess a source file
+src/runtime/highprec_float.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/highprec_float.cpp.i
+.PHONY : src/runtime/highprec_float.cpp.i
+
+src/runtime/highprec_float.s: src/runtime/highprec_float.cpp.s
+.PHONY : src/runtime/highprec_float.s
+
+# target to generate assembly for a file
+src/runtime/highprec_float.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/highprec_float.cpp.s
+.PHONY : src/runtime/highprec_float.cpp.s
+
+src/runtime/highprec_simd.o: src/runtime/highprec_simd.cpp.o
+.PHONY : src/runtime/highprec_simd.o
+
+# target to build an object file
+src/runtime/highprec_simd.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/highprec_simd.cpp.o
+.PHONY : src/runtime/highprec_simd.cpp.o
+
+src/runtime/highprec_simd.i: src/runtime/highprec_simd.cpp.i
+.PHONY : src/runtime/highprec_simd.i
+
+# target to preprocess a source file
+src/runtime/highprec_simd.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/highprec_simd.cpp.i
+.PHONY : src/runtime/highprec_simd.cpp.i
+
+src/runtime/highprec_simd.s: src/runtime/highprec_simd.cpp.s
+.PHONY : src/runtime/highprec_simd.s
+
+# target to generate assembly for a file
+src/runtime/highprec_simd.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/highprec_simd.cpp.s
+.PHONY : src/runtime/highprec_simd.cpp.s
+
 src/runtime/io/io.o: src/runtime/io/io.cpp.o
 .PHONY : src/runtime/io/io.o
 
@@ -2216,6 +2318,33 @@ src/runtime/io/io.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/io.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/io/io.cpp.s
 .PHONY : src/runtime/io/io.cpp.s
+
+src/runtime/io/zero_copy_bridge.o: src/runtime/io/zero_copy_bridge.cpp.o
+.PHONY : src/runtime/io/zero_copy_bridge.o
+
+# target to build an object file
+src/runtime/io/zero_copy_bridge.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/zero_copy_bridge.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/io/zero_copy_bridge.cpp.o
+.PHONY : src/runtime/io/zero_copy_bridge.cpp.o
+
+src/runtime/io/zero_copy_bridge.i: src/runtime/io/zero_copy_bridge.cpp.i
+.PHONY : src/runtime/io/zero_copy_bridge.i
+
+# target to preprocess a source file
+src/runtime/io/zero_copy_bridge.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/zero_copy_bridge.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/io/zero_copy_bridge.cpp.i
+.PHONY : src/runtime/io/zero_copy_bridge.cpp.i
+
+src/runtime/io/zero_copy_bridge.s: src/runtime/io/zero_copy_bridge.cpp.s
+.PHONY : src/runtime/io/zero_copy_bridge.s
+
+# target to generate assembly for a file
+src/runtime/io/zero_copy_bridge.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/zero_copy_bridge.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/io/zero_copy_bridge.cpp.s
+.PHONY : src/runtime/io/zero_copy_bridge.cpp.s
 
 src/runtime/math/math.o: src/runtime/math/math.cpp.o
 .PHONY : src/runtime/math/math.o
@@ -2378,6 +2507,60 @@ src/runtime/strings/strings.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/strings/strings.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings.cpp.s
 .PHONY : src/runtime/strings/strings.cpp.s
+
+src/runtime/tbb/tbb.o: src/runtime/tbb/tbb.cpp.o
+.PHONY : src/runtime/tbb/tbb.o
+
+# target to build an object file
+src/runtime/tbb/tbb.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/tbb/tbb.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/tbb/tbb.cpp.o
+.PHONY : src/runtime/tbb/tbb.cpp.o
+
+src/runtime/tbb/tbb.i: src/runtime/tbb/tbb.cpp.i
+.PHONY : src/runtime/tbb/tbb.i
+
+# target to preprocess a source file
+src/runtime/tbb/tbb.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/tbb/tbb.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/tbb/tbb.cpp.i
+.PHONY : src/runtime/tbb/tbb.cpp.i
+
+src/runtime/tbb/tbb.s: src/runtime/tbb/tbb.cpp.s
+.PHONY : src/runtime/tbb/tbb.s
+
+# target to generate assembly for a file
+src/runtime/tbb/tbb.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/tbb/tbb.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/tbb/tbb.cpp.s
+.PHONY : src/runtime/tbb/tbb.cpp.s
+
+src/runtime/telemetry/telemetry.o: src/runtime/telemetry/telemetry.cpp.o
+.PHONY : src/runtime/telemetry/telemetry.o
+
+# target to build an object file
+src/runtime/telemetry/telemetry.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/telemetry/telemetry.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/telemetry/telemetry.cpp.o
+.PHONY : src/runtime/telemetry/telemetry.cpp.o
+
+src/runtime/telemetry/telemetry.i: src/runtime/telemetry/telemetry.cpp.i
+.PHONY : src/runtime/telemetry/telemetry.i
+
+# target to preprocess a source file
+src/runtime/telemetry/telemetry.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/telemetry/telemetry.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/telemetry/telemetry.cpp.i
+.PHONY : src/runtime/telemetry/telemetry.cpp.i
+
+src/runtime/telemetry/telemetry.s: src/runtime/telemetry/telemetry.cpp.s
+.PHONY : src/runtime/telemetry/telemetry.s
+
+# target to generate assembly for a file
+src/runtime/telemetry/telemetry.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/telemetry/telemetry.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/telemetry/telemetry.cpp.s
+.PHONY : src/runtime/telemetry/telemetry.cpp.s
 
 src/runtime/thread/thread.o: src/runtime/thread/thread.cpp.o
 .PHONY : src/runtime/thread/thread.o
@@ -2980,6 +3163,9 @@ help:
 	@echo "... src/backend/ir/ternary_codegen.o"
 	@echo "... src/backend/ir/ternary_codegen.i"
 	@echo "... src/backend/ir/ternary_codegen.s"
+	@echo "... src/backend/runtime/ternary_ops.o"
+	@echo "... src/backend/runtime/ternary_ops.i"
+	@echo "... src/backend/runtime/ternary_ops.s"
 	@echo "... src/frontend/ast/ast_node.o"
 	@echo "... src/frontend/ast/ast_node.i"
 	@echo "... src/frontend/ast/ast_node.s"
@@ -3130,15 +3316,27 @@ help:
 	@echo "... src/runtime/collections/collections.o"
 	@echo "... src/runtime/collections/collections.i"
 	@echo "... src/runtime/collections/collections.s"
+	@echo "... src/runtime/collections/map.o"
+	@echo "... src/runtime/collections/map.i"
+	@echo "... src/runtime/collections/map.s"
 	@echo "... src/runtime/gc/allocator.o"
 	@echo "... src/runtime/gc/allocator.i"
 	@echo "... src/runtime/gc/allocator.s"
 	@echo "... src/runtime/gc/gc.o"
 	@echo "... src/runtime/gc/gc.i"
 	@echo "... src/runtime/gc/gc.s"
+	@echo "... src/runtime/highprec_float.o"
+	@echo "... src/runtime/highprec_float.i"
+	@echo "... src/runtime/highprec_float.s"
+	@echo "... src/runtime/highprec_simd.o"
+	@echo "... src/runtime/highprec_simd.i"
+	@echo "... src/runtime/highprec_simd.s"
 	@echo "... src/runtime/io/io.o"
 	@echo "... src/runtime/io/io.i"
 	@echo "... src/runtime/io/io.s"
+	@echo "... src/runtime/io/zero_copy_bridge.o"
+	@echo "... src/runtime/io/zero_copy_bridge.i"
+	@echo "... src/runtime/io/zero_copy_bridge.s"
 	@echo "... src/runtime/math/math.o"
 	@echo "... src/runtime/math/math.i"
 	@echo "... src/runtime/math/math.s"
@@ -3157,6 +3355,12 @@ help:
 	@echo "... src/runtime/strings/strings.o"
 	@echo "... src/runtime/strings/strings.i"
 	@echo "... src/runtime/strings/strings.s"
+	@echo "... src/runtime/tbb/tbb.o"
+	@echo "... src/runtime/tbb/tbb.i"
+	@echo "... src/runtime/tbb/tbb.s"
+	@echo "... src/runtime/telemetry/telemetry.o"
+	@echo "... src/runtime/telemetry/telemetry.i"
+	@echo "... src/runtime/telemetry/telemetry.s"
 	@echo "... src/runtime/thread/thread.o"
 	@echo "... src/runtime/thread/thread.i"
 	@echo "... src/runtime/thread/thread.s"

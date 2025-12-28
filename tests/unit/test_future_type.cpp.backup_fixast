@@ -1,0 +1,156 @@
+// Test file for Future<T> type system
+#include "../test_helpers.h"
+#include "frontend/sema/type.h"
+
+using namespace aria::sema;
+
+TEST_CASE(future_type_basic_creation) {
+    TypeSystem typeSystem;
+    
+    // Get int32 type
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    ASSERT(int32Type != nullptr, "int32Type should not be null");
+    
+    // Create future<int32>
+    FutureType* futureInt32 = typeSystem.getFutureType(int32Type);
+    ASSERT(futureInt32 != nullptr, "futureInt32 should not be null");
+    ASSERT(futureInt32->getKind() == TypeKind::FUTURE, "Kind should be FUTURE");
+    ASSERT(futureInt32->getOutputType() == int32Type, "Output type should be int32");
+}
+
+TEST_CASE(future_type_toString_int32) {
+    TypeSystem typeSystem;
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    FutureType* futureInt32 = typeSystem.getFutureType(int32Type);
+    ASSERT(futureInt32->toString() == "future<int32>", "toString should be 'future<int32>'");
+}
+
+TEST_CASE(future_type_toString_string) {
+    TypeSystem typeSystem;
+    Type* stringType = typeSystem.getPrimitiveType("string");
+    FutureType* futureString = typeSystem.getFutureType(stringType);
+    ASSERT(futureString->toString() == "future<string>", "toString should be 'future<string>'");
+}
+
+TEST_CASE(future_type_toString_bool) {
+    TypeSystem typeSystem;
+    Type* boolType = typeSystem.getPrimitiveType("bool");
+    FutureType* futureBool = typeSystem.getFutureType(boolType);
+    ASSERT(futureBool->toString() == "future<bool>", "toString should be 'future<bool>'");
+}
+
+TEST_CASE(future_type_equality) {
+    TypeSystem typeSystem;
+    
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    Type* int64Type = typeSystem.getPrimitiveType("int64");
+    Type* stringType = typeSystem.getPrimitiveType("string");
+    
+    FutureType* futureInt32_1 = typeSystem.getFutureType(int32Type);
+    FutureType* futureInt32_2 = typeSystem.getFutureType(int32Type);
+    FutureType* futureInt64 = typeSystem.getFutureType(int64Type);
+    FutureType* futureString = typeSystem.getFutureType(stringType);
+    
+    // Same output type should be equal
+    ASSERT(futureInt32_1->equals(futureInt32_2), "future<int32> should equal future<int32>");
+    ASSERT(futureInt32_2->equals(futureInt32_1), "Equality should be symmetric");
+    
+    // Different output types should not be equal
+    ASSERT(!futureInt32_1->equals(futureInt64), "future<int32> should not equal future<int64>");
+    ASSERT(!futureInt32_1->equals(futureString), "future<int32> should not equal future<string>");
+    ASSERT(!futureInt64->equals(futureString), "future<int64> should not equal future<string>");
+    
+    // Should not equal non-future types
+    ASSERT(!futureInt32_1->equals(int32Type), "future<int32> should not equal int32");
+    
+    // Should not equal nullptr
+    ASSERT(!futureInt32_1->equals(nullptr), "future<int32> should not equal nullptr");
+}
+
+TEST_CASE(future_type_assignability) {
+    TypeSystem typeSystem;
+    
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    Type* int64Type = typeSystem.getPrimitiveType("int64");
+    
+    FutureType* futureInt32_1 = typeSystem.getFutureType(int32Type);
+    FutureType* futureInt32_2 = typeSystem.getFutureType(int32Type);
+    FutureType* futureInt64 = typeSystem.getFutureType(int64Type);
+    
+    // Same type should be assignable
+    ASSERT(futureInt32_1->isAssignableTo(futureInt32_2), "future<int32> should be assignable to future<int32>");
+    
+    // Different types should not be assignable
+    ASSERT(!futureInt32_1->isAssignableTo(futureInt64), "future<int32> should not be assignable to future<int64>");
+    ASSERT(!futureInt64->isAssignableTo(futureInt32_1), "future<int64> should not be assignable to future<int32>");
+    
+    // Future types should not be assignable to non-future types
+    ASSERT(!futureInt32_1->isAssignableTo(int32Type), "future<int32> should not be assignable to int32");
+    
+    // Should handle nullptr
+    ASSERT(!futureInt32_1->isAssignableTo(nullptr), "Should handle nullptr assignment check");
+}
+
+TEST_CASE(future_type_nested_futures) {
+    TypeSystem typeSystem;
+    
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    
+    // Create future<int32>
+    FutureType* futureInt32 = typeSystem.getFutureType(int32Type);
+    ASSERT(futureInt32->toString() == "future<int32>", "Should create future<int32>");
+    
+    // Create future<future<int32>>
+    FutureType* futureFutureInt32 = typeSystem.getFutureType(futureInt32);
+    ASSERT(futureFutureInt32->getKind() == TypeKind::FUTURE, "Nested future should have FUTURE kind");
+    ASSERT(futureFutureInt32->getOutputType() == futureInt32, "Output type should be future<int32>");
+    ASSERT(futureFutureInt32->toString() == "future<future<int32>>", "Should create future<future<int32>>");
+}
+
+TEST_CASE(future_type_with_pointer_types) {
+    TypeSystem typeSystem;
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    PointerType* ptrInt32 = typeSystem.getPointerType(int32Type);
+    
+    FutureType* futurePtrInt32 = typeSystem.getFutureType(ptrInt32);
+    ASSERT(futurePtrInt32->getOutputType() == ptrInt32, "Output type should be int32@");
+    ASSERT(futurePtrInt32->toString() == "future<int32@>", "Should create future<int32@>");
+}
+
+TEST_CASE(future_type_with_array_types) {
+    TypeSystem typeSystem;
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    ArrayType* arrayInt32 = typeSystem.getArrayType(int32Type, 10);
+    
+    FutureType* futureArrayInt32 = typeSystem.getFutureType(arrayInt32);
+    ASSERT(futureArrayInt32->getOutputType() == arrayInt32, "Output type should be int32[10]");
+    ASSERT(futureArrayInt32->toString() == "future<int32[10]>", "Should create future<int32[10]>");
+}
+
+TEST_CASE(future_type_with_result_types) {
+    TypeSystem typeSystem;
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    ResultType* resultInt32 = typeSystem.getResultType(int32Type);
+    
+    FutureType* futureResultInt32 = typeSystem.getFutureType(resultInt32);
+    ASSERT(futureResultInt32->getOutputType() == resultInt32, "Output type should be result<int32>");
+    ASSERT(futureResultInt32->toString() == "future<result<int32>>", "Should create future<result<int32>>");
+}
+
+TEST_CASE(future_type_with_tbb32) {
+    TypeSystem typeSystem;
+    Type* tbb32Type = typeSystem.getPrimitiveType("tbb32");
+    FutureType* futureTbb32 = typeSystem.getFutureType(tbb32Type);
+    
+    ASSERT(futureTbb32->getOutputType() == tbb32Type, "Output type should be tbb32");
+    ASSERT(futureTbb32->toString() == "future<tbb32>", "Should create future<tbb32>");
+}
+
+TEST_CASE(future_type_with_tbb_result) {
+    TypeSystem typeSystem;
+    Type* tbb32Type = typeSystem.getPrimitiveType("tbb32");
+    ResultType* resultTbb32 = typeSystem.getResultType(tbb32Type);
+    FutureType* futureResultTbb32 = typeSystem.getFutureType(resultTbb32);
+    
+    ASSERT(futureResultTbb32->toString() == "future<result<tbb32>>", "Should create future<result<tbb32>>");
+}

@@ -104,6 +104,37 @@ add_subdirectory(vendor/toml11)
 # No add_subdirectory needed - just include headers
 
 # ============================================================================
+# aglob - GlobEngine for file pattern matching (ARIA-010)
+# ============================================================================
+# Located in aria_utils repository, provides FFI-safe glob pattern matching
+# for the std.fs.glob module and aria_make build system.
+
+set(AGLOB_ROOT ${CMAKE_SOURCE_DIR}/../aria_utils/src/aglob)
+if(EXISTS ${AGLOB_ROOT}/include)
+    message(STATUS "Found aglob at: ${AGLOB_ROOT}")
+    include_directories(${AGLOB_ROOT}/include)
+
+    # Add aglob as external project (build if not already built)
+    if(EXISTS ${AGLOB_ROOT}/build/libaglob.a)
+        # Use pre-built library
+        add_library(aglob STATIC IMPORTED)
+        set_target_properties(aglob PROPERTIES
+            IMPORTED_LOCATION ${AGLOB_ROOT}/build/libaglob.a
+        )
+        message(STATUS "Using pre-built aglob library")
+    else()
+        # Build aglob as part of aria build
+        add_subdirectory(${AGLOB_ROOT} ${CMAKE_BINARY_DIR}/aglob)
+        message(STATUS "Building aglob from source")
+    endif()
+
+    set(AGLOB_FOUND TRUE)
+else()
+    message(WARNING "aglob not found at ${AGLOB_ROOT} - std.fs.glob will not be available")
+    set(AGLOB_FOUND FALSE)
+endif()
+
+# ============================================================================
 # Include directories
 # ============================================================================
 
@@ -195,9 +226,11 @@ set(RUNTIME_SOURCES
     src/runtime/assembler/llvm_jit.cpp
     src/runtime/assembler/code_cache.cpp
     src/runtime/io/io.cpp
+    src/runtime/io/zero_copy_bridge.cpp
     src/runtime/streams/streams.cpp
     src/runtime/process/process.cpp
     src/runtime/thread/thread.cpp
+    src/backend/runtime/ternary_ops.cpp
     src/runtime/atomic/atomic.cpp
     src/runtime/timer/timer.cpp
     src/runtime/async/executor.cpp
@@ -211,6 +244,7 @@ set(RUNTIME_SOURCES
     src/runtime/async/file_stream.cpp
     src/runtime/async/work_stealing.cpp
     src/runtime/async/gc_integration.cpp
+    src/runtime/telemetry/telemetry.cpp
 )
 
 # Phase 6: Standard Library Runtime Support
@@ -218,8 +252,16 @@ set(STDLIB_SOURCES
     src/runtime/stdlib/stdlib.cpp
     src/runtime/result/result.cpp
     src/runtime/collections/collections.cpp
+    src/runtime/collections/map.cpp
     src/runtime/strings/strings.cpp
     src/runtime/math/math.cpp
+    src/runtime/tbb/tbb.cpp
+)
+
+# ARIA-017: High-Precision Floating-Point (flt256, flt512)
+set(HIGHPREC_SOURCES
+    src/runtime/highprec_float.cpp
+    src/runtime/highprec_simd.cpp
 )
 
 # Phase 7: Tooling
@@ -276,10 +318,35 @@ set(ARIA_SOURCES
 add_library(aria_runtime STATIC
     ${RUNTIME_SOURCES}
     ${STDLIB_SOURCES}
+    ${HIGHPREC_SOURCES}
 )
 
-# Runtime library doesn't need LLVM
-# target_link_libraries(aria_runtime)
+# ARIA-017: Enable AVX-512 and ADX intrinsics for high-precision floating-point
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-mavx512f" COMPILER_SUPPORTS_AVX512F)
+check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
+check_cxx_compiler_flag("-madx" COMPILER_SUPPORTS_ADX)
+check_cxx_compiler_flag("-mbmi2" COMPILER_SUPPORTS_BMI2)
+
+if(COMPILER_SUPPORTS_AVX512F)
+    set_source_files_properties(src/runtime/highprec_simd.cpp PROPERTIES
+        COMPILE_FLAGS "-mavx512f -mavx512vl -mavx512dq -mavx2 -madx -mbmi2"
+    )
+    message(STATUS "ARIA-017: AVX-512 SIMD enabled for high-precision arithmetic")
+elseif(COMPILER_SUPPORTS_AVX2)
+    set_source_files_properties(src/runtime/highprec_simd.cpp PROPERTIES
+        COMPILE_FLAGS "-mavx2 -madx -mbmi2"
+    )
+    message(STATUS "ARIA-017: AVX2 enabled for high-precision arithmetic (AVX-512 not available)")
+else()
+    message(STATUS "ARIA-017: Using portable implementation for high-precision arithmetic")
+endif()
+
+# Link aglob for std.fs.glob support (ARIA-010)
+if(AGLOB_FOUND)
+    target_link_libraries(aria_runtime aglob)
+    message(STATUS "aria_runtime linked with aglob for glob support")
+endif()
 
 # Install runtime library so the compiler can find it
 install(TARGETS aria_runtime DESTINATION lib)

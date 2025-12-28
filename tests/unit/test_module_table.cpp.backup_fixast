@@ -1,0 +1,329 @@
+#include "../test_helpers.h"
+#include "frontend/sema/module_table.h"
+#include "frontend/sema/type.h"
+
+using namespace aria::sema;
+
+// ============================================================================
+// Module Table Creation Tests
+// ============================================================================
+
+TEST_CASE(module_table_create) {
+    ModuleTable table;
+    
+    ASSERT(table.getRootModule() != nullptr, "Root module should exist");
+    ASSERT(table.getRootModule()->getName() == "root", "Root module name");
+    ASSERT(!table.hasErrors(), "No errors on creation");
+}
+
+TEST_CASE(module_create) {
+    ModuleTable table;
+    
+    auto stdModule = table.createModule("std", "std/mod.aria");
+    
+    ASSERT(stdModule != nullptr, "Module created");
+    ASSERT(stdModule->getName() == "std", "Module name");
+    ASSERT(stdModule->getPath() == "std/mod.aria", "Module path");
+    ASSERT(stdModule->getFullPath() == "std", "Full path");
+}
+
+TEST_CASE(module_hierarchy) {
+    ModuleTable table;
+    
+    auto stdModule = table.createModule("std", "std/mod.aria");
+    auto ioModule = table.createModule("io", "std/io.aria", stdModule);
+    
+    ASSERT(ioModule->getParent() == stdModule, "Parent relationship");
+    ASSERT(ioModule->getFullPath() == "std.io", "Hierarchical path");
+    ASSERT(stdModule->getSubmodule("io") == ioModule, "Child lookup");
+}
+
+// ============================================================================
+// Import Tests
+// ============================================================================
+
+TEST_CASE(module_import_basic) {
+    ModuleTable table;
+    
+    auto mainModule = table.createModule("main", "main.aria");
+    
+    Import import("std.io", 1, 5);
+    mainModule->addImport(import);
+    
+    const auto& imports = mainModule->getImports();
+    ASSERT(imports.size() == 1, "One import added");
+    ASSERT(imports[0].path == "std.io", "Import path");
+    ASSERT(imports[0].alias.empty(), "No alias");
+    ASSERT(!imports[0].isWildcard, "Not wildcard");
+}
+
+TEST_CASE(module_import_alias) {
+    ModuleTable table;
+    
+    auto mainModule = table.createModule("main", "main.aria");
+    
+    Import import("std.io", 1, 5);
+    import.alias = "stdio";
+    mainModule->addImport(import);
+    
+    const auto& imports = mainModule->getImports();
+    ASSERT(imports[0].alias == "stdio", "Import alias");
+}
+
+TEST_CASE(module_import_wildcard) {
+    ModuleTable table;
+    
+    auto mainModule = table.createModule("main", "main.aria");
+    
+    Import import("math", 1, 5);
+    import.isWildcard = true;
+    mainModule->addImport(import);
+    
+    const auto& imports = mainModule->getImports();
+    ASSERT(imports[0].isWildcard, "Wildcard import");
+}
+
+TEST_CASE(module_import_selective) {
+    ModuleTable table;
+    
+    auto mainModule = table.createModule("main", "main.aria");
+    
+    Import import("std.collections", 1, 5);
+    import.selectiveItems.push_back("array");
+    import.selectiveItems.push_back("map");
+    mainModule->addImport(import);
+    
+    const auto& imports = mainModule->getImports();
+    ASSERT(imports[0].selectiveItems.size() == 2, "Two selective items");
+    ASSERT(imports[0].selectiveItems[0] == "array", "First item");
+    ASSERT(imports[0].selectiveItems[1] == "map", "Second item");
+}
+
+// ============================================================================
+// Export Tests
+// ============================================================================
+
+TEST_CASE(module_export_basic) {
+    TypeSystem types;
+    ModuleTable table;
+    
+    auto mathModule = table.createModule("math", "math.aria");
+    auto intType = types.getPrimitiveType("int32");
+    
+    auto symbol = mathModule->getSymbolTable()->defineSymbol("add", SymbolKind::FUNCTION, intType);
+    mathModule->exportSymbol("add", symbol, Visibility::PUBLIC);
+    
+    ASSERT(mathModule->isExported("add"), "Symbol exported");
+    ASSERT(mathModule->lookupExport("add") == symbol, "Export lookup");
+    ASSERT(mathModule->getExportVisibility("add") == Visibility::PUBLIC, "Public visibility");
+}
+
+TEST_CASE(module_export_private) {
+    TypeSystem types;
+    ModuleTable table;
+    
+    auto utilsModule = table.createModule("utils", "utils.aria");
+    auto intType = types.getPrimitiveType("int32");
+    
+    auto symbol = utilsModule->getSymbolTable()->defineSymbol("helper", SymbolKind::FUNCTION, intType);
+    // Don't export - should be private
+    
+    ASSERT(!utilsModule->isExported("helper"), "Symbol not exported");
+    ASSERT(utilsModule->lookupExport("helper") == nullptr, "No export found");
+}
+
+TEST_CASE(module_export_visibility_levels) {
+    TypeSystem types;
+    ModuleTable table;
+    
+    auto pkgModule = table.createModule("pkg", "pkg.aria");
+    auto intType = types.getPrimitiveType("int32");
+    
+    auto pubSymbol = pkgModule->getSymbolTable()->defineSymbol("public_func", SymbolKind::FUNCTION, intType);
+    auto pkgSymbol = pkgModule->getSymbolTable()->defineSymbol("package_func", SymbolKind::FUNCTION, intType);
+    auto superSymbol = pkgModule->getSymbolTable()->defineSymbol("super_func", SymbolKind::FUNCTION, intType);
+    
+    pkgModule->exportSymbol("public_func", pubSymbol, Visibility::PUBLIC);
+    pkgModule->exportSymbol("package_func", pkgSymbol, Visibility::PACKAGE);
+    pkgModule->exportSymbol("super_func", superSymbol, Visibility::SUPER);
+    
+    ASSERT(pkgModule->getExportVisibility("public_func") == Visibility::PUBLIC, "Public visibility");
+    ASSERT(pkgModule->getExportVisibility("package_func") == Visibility::PACKAGE, "Package visibility");
+    ASSERT(pkgModule->getExportVisibility("super_func") == Visibility::SUPER, "Super visibility");
+}
+
+TEST_CASE(module_reexport) {
+    TypeSystem types;
+    ModuleTable table;
+    
+    auto internalModule = table.createModule("internal", "internal.aria");
+    auto publicModule = table.createModule("public", "public.aria");
+    
+    auto intType = types.getPrimitiveType("int32");
+    auto symbol = internalModule->getSymbolTable()->defineSymbol("func", SymbolKind::FUNCTION, intType);
+    
+    // Public module re-exports symbol from internal module
+    publicModule->reexportSymbol("func", symbol, Visibility::PUBLIC);
+    
+    ASSERT(publicModule->isExported("func"), "Re-exported");
+    ASSERT(publicModule->lookupExport("func") == symbol, "Re-export lookup");
+}
+
+// ============================================================================
+// Import Resolution Tests
+// ============================================================================
+
+TEST_CASE(module_resolve_import) {
+    ModuleTable table;
+    
+    auto stdModule = table.createModule("std", "std/mod.aria");
+    auto ioModule = table.createModule("io", "std/io.aria", stdModule);
+    
+    auto mainModule = table.createModule("main", "main.aria");
+    Import import("std.io", 1, 5);
+    mainModule->addImport(import);
+    
+    Module* resolved = table.resolveImport("std.io", mainModule);
+    
+    ASSERT(resolved == ioModule, "Import resolved correctly");
+    ASSERT(!table.hasErrors(), "No resolution errors");
+}
+
+TEST_CASE(module_resolve_import_not_found) {
+    ModuleTable table;
+    
+    auto mainModule = table.createModule("main", "main.aria");
+    
+    Module* resolved = table.resolveImport("nonexistent", mainModule);
+    
+    ASSERT(resolved == nullptr, "Import not found");
+    ASSERT(table.hasErrors(), "Error reported");
+}
+
+// ============================================================================
+// Circular Dependency Tests
+// ============================================================================
+
+TEST_CASE(module_no_circular_dependency) {
+    ModuleTable table;
+    
+    auto moduleA = table.createModule("a", "a.aria");
+    auto moduleB = table.createModule("b", "b.aria");
+    
+    // A imports B (no cycle)
+    Import import("b", 1, 5);
+    moduleA->addImport(import);
+    
+    ASSERT(!table.hasCircularDependency(moduleA), "No circular dependency");
+    ASSERT(!table.hasErrors(), "No errors");
+}
+
+TEST_CASE(module_circular_dependency_direct) {
+    ModuleTable table;
+    
+    auto moduleA = table.createModule("a", "a.aria");
+    auto moduleB = table.createModule("b", "b.aria");
+    
+    // A imports B, B imports A (direct cycle)
+    Import importB("b", 1, 5);
+    moduleA->addImport(importB);
+    
+    Import importA("a", 1, 5);
+    moduleB->addImport(importA);
+    
+    ASSERT(table.hasCircularDependency(moduleA), "Circular dependency detected");
+    ASSERT(table.hasErrors(), "Error reported");
+}
+
+TEST_CASE(module_circular_dependency_indirect) {
+    ModuleTable table;
+    
+    auto moduleA = table.createModule("a", "a.aria");
+    auto moduleB = table.createModule("b", "b.aria");
+    auto moduleC = table.createModule("c", "c.aria");
+    
+    // A imports B, B imports C, C imports A (indirect cycle)
+    Import importB("b", 1, 5);
+    moduleA->addImport(importB);
+    
+    Import importC("c", 1, 5);
+    moduleB->addImport(importC);
+    
+    Import importA("a", 1, 5);
+    moduleC->addImport(importA);
+    
+    ASSERT(table.hasCircularDependency(moduleA), "Indirect circular dependency detected");
+    ASSERT(table.hasErrors(), "Error reported");
+}
+
+// ============================================================================
+// Symbol Access Tests
+// ============================================================================
+
+TEST_CASE(module_symbol_access_public) {
+    TypeSystem types;
+    ModuleTable table;
+    
+    auto libModule = table.createModule("lib", "lib.aria");
+    auto appModule = table.createModule("app", "app.aria");
+    
+    auto intType = types.getPrimitiveType("int32");
+    auto symbol = libModule->getSymbolTable()->defineSymbol("public_func", SymbolKind::FUNCTION, intType);
+    libModule->exportSymbol("public_func", symbol, Visibility::PUBLIC);
+    
+    // Public symbols should be accessible from any module
+    ASSERT(table.canAccess(symbol, appModule), "Public symbol accessible");
+}
+
+TEST_CASE(module_symbol_access_private) {
+    TypeSystem types;
+    ModuleTable table;
+    
+    auto libModule = table.createModule("lib", "lib.aria");
+    auto appModule = table.createModule("app", "app.aria");
+    
+    auto intType = types.getPrimitiveType("int32");
+    auto symbol = libModule->getSymbolTable()->defineSymbol("private_func", SymbolKind::FUNCTION, intType);
+    // Not exported - private
+    
+    // Private symbols only accessible from owning module
+    ASSERT(table.canAccess(symbol, libModule), "Private symbol accessible from owner");
+    ASSERT(!table.canAccess(symbol, appModule), "Private symbol not accessible from other module");
+}
+
+// ============================================================================
+// Module State Tests
+// ============================================================================
+
+TEST_CASE(module_resolution_state) {
+    ModuleTable table;
+    
+    auto module = table.createModule("test", "test.aria");
+    
+    ASSERT(!module->isFullyResolved(), "Initially not resolved");
+    
+    module->markResolved();
+    
+    ASSERT(module->isFullyResolved(), "Marked as resolved");
+}
+
+TEST_CASE(module_to_string) {
+    TypeSystem types;
+    ModuleTable table;
+    
+    auto stdModule = table.createModule("std", "std/mod.aria");
+    auto intType = types.getPrimitiveType("int32");
+    
+    auto symbol = stdModule->getSymbolTable()->defineSymbol("func", SymbolKind::FUNCTION, intType);
+    stdModule->exportSymbol("func", symbol, Visibility::PUBLIC);
+    
+    Import import("io", 1, 5);
+    stdModule->addImport(import);
+    
+    std::string str = stdModule->toString();
+    
+    ASSERT(str.find("Module: std") != std::string::npos, "Module name in string");
+    ASSERT(str.find("std/mod.aria") != std::string::npos, "Path in string");
+    ASSERT(str.find("Imports:") != std::string::npos, "Imports section");
+    ASSERT(str.find("Exports:") != std::string::npos, "Exports section");
+}

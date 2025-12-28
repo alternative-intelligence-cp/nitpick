@@ -10,6 +10,8 @@ namespace aria {
 
 // Forward declarations from AST
 class FuncDeclStmt;
+class TraitDeclStmt;
+class ImplDeclStmt;
 
 namespace sema {
 
@@ -32,6 +34,7 @@ enum class SymbolKind {
     FUNCTION,       // Function declaration
     PARAMETER,      // Function parameter
     TYPE,           // Type definition (struct, enum, etc.)
+    TRAIT,          // Trait definition (WP 005)
     MODULE,         // Module declaration
     CONSTANT,       // Compile-time constant
 };
@@ -54,7 +57,11 @@ struct Symbol {
     
     // Module System Integration
     Module* moduleRef;              // For MODULE symbols - reference to loaded module
-    
+
+    // Trait System Integration (WP 005)
+    TraitDeclStmt* traitDecl;       // For TRAIT symbols - trait declaration AST
+    std::vector<ImplDeclStmt*> implDecls;  // Implementations of this trait
+
     // Constructor
     Symbol(const std::string& name, SymbolKind kind, Type* type,
            Scope* scope, int line = 0, int column = 0);
@@ -71,7 +78,14 @@ struct Symbol {
     void setModuleRef(Module* mod) { moduleRef = mod; }
     Module* getModuleRef() const { return moduleRef; }
     bool isModule() const { return kind == SymbolKind::MODULE && moduleRef != nullptr; }
-    
+
+    // Trait System Helpers (WP 005)
+    void setTraitDecl(TraitDeclStmt* decl) { traitDecl = decl; }
+    TraitDeclStmt* getTraitDecl() const { return traitDecl; }
+    void addImplDecl(ImplDeclStmt* impl) { implDecls.push_back(impl); }
+    const std::vector<ImplDeclStmt*>& getImplDecls() const { return implDecls; }
+    bool isTrait() const { return kind == SymbolKind::TRAIT && traitDecl != nullptr; }
+
     // Helpers
     std::string toString() const;
 };

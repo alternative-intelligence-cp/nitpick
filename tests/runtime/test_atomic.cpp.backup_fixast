@@ -1,0 +1,499 @@
+/**
+ * Aria Atomics Library Tests
+ * Comprehensive test suite for Phase 5.8 atomic operations
+ */
+
+#include "runtime/atomic.h"
+#include "runtime/thread.h"
+#include "test_helpers.h"
+#include <cstdio>
+#include <cstdlib>
+
+/* ============================================================================
+ * Test: Lock-Free Properties
+ * ============================================================================ */
+
+TEST_CASE(atomic_lock_free_properties) {
+    bool bool_lock_free = aria_atomic_is_lock_free_bool();
+    bool int8_lock_free = aria_atomic_is_lock_free_int8();
+    bool int32_lock_free = aria_atomic_is_lock_free_int32();
+    bool int64_lock_free = aria_atomic_is_lock_free_int64();
+    bool ptr_lock_free = aria_atomic_is_lock_free_ptr();
+    
+    printf("  Lock-free properties: bool=%d int8=%d int32=%d int64=%d ptr=%d\n",
+           bool_lock_free, int8_lock_free, int32_lock_free, int64_lock_free, ptr_lock_free);
+    
+    // On modern architectures, these should all be lock-free
+    ASSERT(bool_lock_free, "Bool atomics should be lock-free");
+    ASSERT(int32_lock_free, "Int32 atomics should be lock-free");
+}
+
+/* ============================================================================
+ * Test: Atomic Bool Operations
+ * ============================================================================ */
+
+TEST_CASE(atomic_bool_load_store) {
+    AriaAtomicBool* atomic = aria_atomic_bool_create(false);
+    ASSERT(atomic != nullptr, "Bool atomic creation should succeed");
+    
+    bool value = aria_atomic_bool_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == false, "Initial value should be false");
+    
+    aria_atomic_bool_store(atomic, true, ARIA_MEMORY_ORDER_SEQ_CST);
+    value = aria_atomic_bool_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == true, "Stored value should be true");
+    
+    aria_atomic_bool_destroy(atomic);
+}
+
+TEST_CASE(atomic_bool_exchange) {
+    AriaAtomicBool* atomic = aria_atomic_bool_create(false);
+    ASSERT(atomic != nullptr, "Bool atomic creation should succeed");
+    
+    bool old = aria_atomic_bool_exchange(atomic, true, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(old == false, "Exchange should return old value");
+    
+    bool current = aria_atomic_bool_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(current == true, "Exchange should set new value");
+    
+    aria_atomic_bool_destroy(atomic);
+}
+
+TEST_CASE(atomic_bool_compare_exchange) {
+    AriaAtomicBool* atomic = aria_atomic_bool_create(false);
+    ASSERT(atomic != nullptr, "Bool atomic creation should succeed");
+    
+    bool expected = false;
+    bool success = aria_atomic_bool_compare_exchange_strong(atomic, &expected, true,
+                                                             ARIA_MEMORY_ORDER_SEQ_CST,
+                                                             ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(success, "CAS should succeed when expected matches");
+    ASSERT(expected == false, "Expected should be unchanged on success");
+    
+    expected = false;
+    success = aria_atomic_bool_compare_exchange_strong(atomic, &expected, false,
+                                                        ARIA_MEMORY_ORDER_SEQ_CST,
+                                                        ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(!success, "CAS should fail when expected doesn't match");
+    ASSERT(expected == true, "Expected should be updated on failure");
+    
+    aria_atomic_bool_destroy(atomic);
+}
+
+/* ============================================================================
+ * Test: Atomic Int32 Operations
+ * ============================================================================ */
+
+TEST_CASE(atomic_int32_load_store) {
+    AriaAtomicInt32* atomic = aria_atomic_int32_create(42);
+    ASSERT(atomic != nullptr, "Int32 atomic creation should succeed");
+    
+    int32_t value = aria_atomic_int32_load(atomic, ARIA_MEMORY_ORDER_RELAXED);
+    ASSERT(value == 42, "Initial value should be 42");
+    
+    aria_atomic_int32_store(atomic, 99, ARIA_MEMORY_ORDER_RELEASE);
+    value = aria_atomic_int32_load(atomic, ARIA_MEMORY_ORDER_ACQUIRE);
+    ASSERT(value == 99, "Stored value should be 99");
+    
+    aria_atomic_int32_destroy(atomic);
+}
+
+TEST_CASE(atomic_int32_fetch_add) {
+    AriaAtomicInt32* atomic = aria_atomic_int32_create(10);
+    ASSERT(atomic != nullptr, "Int32 atomic creation should succeed");
+    
+    int32_t old = aria_atomic_int32_fetch_add(atomic, 5, ARIA_MEMORY_ORDER_RELAXED);
+    ASSERT(old == 10, "Fetch_add should return old value");
+    
+    int32_t current = aria_atomic_int32_load(atomic, ARIA_MEMORY_ORDER_RELAXED);
+    ASSERT(current == 15, "Fetch_add should increment value");
+    
+    aria_atomic_int32_destroy(atomic);
+}
+
+TEST_CASE(atomic_int32_fetch_sub) {
+    AriaAtomicInt32* atomic = aria_atomic_int32_create(20);
+    ASSERT(atomic != nullptr, "Int32 atomic creation should succeed");
+    
+    int32_t old = aria_atomic_int32_fetch_sub(atomic, 7, ARIA_MEMORY_ORDER_RELAXED);
+    ASSERT(old == 20, "Fetch_sub should return old value");
+    
+    int32_t current = aria_atomic_int32_load(atomic, ARIA_MEMORY_ORDER_RELAXED);
+    ASSERT(current == 13, "Fetch_sub should decrement value");
+    
+    aria_atomic_int32_destroy(atomic);
+}
+
+/* ============================================================================
+ * Test: Atomic Int64 Operations
+ * ============================================================================ */
+
+TEST_CASE(atomic_int64_operations) {
+    AriaAtomicInt64* atomic = aria_atomic_int64_create(1000000000LL);
+    ASSERT(atomic != nullptr, "Int64 atomic creation should succeed");
+    
+    int64_t value = aria_atomic_int64_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == 1000000000LL, "Initial value should be correct");
+    
+    int64_t old = aria_atomic_int64_fetch_add(atomic, 500000000LL, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(old == 1000000000LL, "Fetch_add should return old value");
+    
+    value = aria_atomic_int64_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == 1500000000LL, "Value should be updated");
+    
+    aria_atomic_int64_destroy(atomic);
+}
+
+/* ============================================================================
+ * Test: Atomic Pointer Operations
+ * ============================================================================ */
+
+TEST_CASE(atomic_ptr_operations) {
+    int data1 = 42;
+    int data2 = 99;
+    
+    AriaAtomicPtr* atomic = aria_atomic_ptr_create(&data1);
+    ASSERT(atomic != nullptr, "Ptr atomic creation should succeed");
+    
+    void* ptr = aria_atomic_ptr_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(ptr == &data1, "Initial pointer should be correct");
+    
+    void* old = aria_atomic_ptr_exchange(atomic, &data2, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(old == &data1, "Exchange should return old pointer");
+    
+    ptr = aria_atomic_ptr_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(ptr == &data2, "Pointer should be updated");
+    
+    aria_atomic_ptr_destroy(atomic);
+}
+
+/* ============================================================================
+ * Test: TBB8 Sticky Error Propagation
+ * ============================================================================ */
+
+TEST_CASE(atomic_tbb8_basic_operations) {
+    AriaAtomicTBB8* atomic = aria_atomic_tbb8_create(50);
+    ASSERT(atomic != nullptr, "TBB8 atomic creation should succeed");
+    
+    int8_t value = aria_atomic_tbb8_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == 50, "Initial value should be 50");
+    
+    aria_atomic_tbb8_store(atomic, 100, ARIA_MEMORY_ORDER_SEQ_CST);
+    value = aria_atomic_tbb8_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == 100, "Stored value should be 100");
+    
+    aria_atomic_tbb8_destroy(atomic);
+}
+
+TEST_CASE(atomic_tbb8_overflow_to_err) {
+    AriaAtomicTBB8* atomic = aria_atomic_tbb8_create(ARIA_TBB8_MAX);  // 127
+    ASSERT(atomic != nullptr, "TBB8 atomic creation should succeed");
+    
+    int8_t old = aria_atomic_tbb8_fetch_add(atomic, 1, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(old == ARIA_TBB8_MAX, "Fetch_add should return old value");
+    
+    int8_t value = aria_atomic_tbb8_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == ARIA_TBB8_ERR, "Overflow should produce ERR sentinel");
+    
+    aria_atomic_tbb8_destroy(atomic);
+}
+
+TEST_CASE(atomic_tbb8_underflow_to_err) {
+    AriaAtomicTBB8* atomic = aria_atomic_tbb8_create(ARIA_TBB8_MIN);  // -127
+    ASSERT(atomic != nullptr, "TBB8 atomic creation should succeed");
+    
+    int8_t old = aria_atomic_tbb8_fetch_sub(atomic, 1, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(old == ARIA_TBB8_MIN, "Fetch_sub should return old value");
+    
+    int8_t value = aria_atomic_tbb8_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == ARIA_TBB8_ERR, "Underflow should produce ERR sentinel");
+    
+    aria_atomic_tbb8_destroy(atomic);
+}
+
+TEST_CASE(atomic_tbb8_sticky_error) {
+    AriaAtomicTBB8* atomic = aria_atomic_tbb8_create(ARIA_TBB8_ERR);
+    ASSERT(atomic != nullptr, "TBB8 atomic creation should succeed");
+    
+    // Adding to ERR should keep it as ERR
+    int8_t old = aria_atomic_tbb8_fetch_add(atomic, 10, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(old == ARIA_TBB8_ERR, "Fetch_add from ERR should return ERR");
+    
+    int8_t value = aria_atomic_tbb8_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == ARIA_TBB8_ERR, "ERR should be sticky");
+    
+    // Subtracting from ERR should keep it as ERR
+    old = aria_atomic_tbb8_fetch_sub(atomic, 5, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(old == ARIA_TBB8_ERR, "Fetch_sub from ERR should return ERR");
+    
+    value = aria_atomic_tbb8_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == ARIA_TBB8_ERR, "ERR should remain sticky");
+    
+    aria_atomic_tbb8_destroy(atomic);
+}
+
+/* ============================================================================
+ * Test: TBB32 Sticky Error Propagation
+ * ============================================================================ */
+
+TEST_CASE(atomic_tbb32_overflow_to_err) {
+    AriaAtomicTBB32* atomic = aria_atomic_tbb32_create(ARIA_TBB32_MAX);
+    ASSERT(atomic != nullptr, "TBB32 atomic creation should succeed");
+    
+    int32_t old = aria_atomic_tbb32_fetch_add(atomic, 1, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(old == ARIA_TBB32_MAX, "Fetch_add should return old value");
+    
+    int32_t value = aria_atomic_tbb32_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == ARIA_TBB32_ERR, "Overflow should produce ERR sentinel");
+    
+    aria_atomic_tbb32_destroy(atomic);
+}
+
+TEST_CASE(atomic_tbb32_sticky_error) {
+    AriaAtomicTBB32* atomic = aria_atomic_tbb32_create(ARIA_TBB32_ERR);
+    ASSERT(atomic != nullptr, "TBB32 atomic creation should succeed");
+    
+    int32_t old = aria_atomic_tbb32_fetch_add(atomic, 100, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(old == ARIA_TBB32_ERR, "Operation on ERR should return ERR");
+    
+    int32_t value = aria_atomic_tbb32_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == ARIA_TBB32_ERR, "ERR should be sticky");
+    
+    aria_atomic_tbb32_destroy(atomic);
+}
+
+/* ============================================================================
+ * Test: TBB64 Sticky Error Propagation
+ * ============================================================================ */
+
+TEST_CASE(atomic_tbb64_overflow_to_err) {
+    AriaAtomicTBB64* atomic = aria_atomic_tbb64_create(ARIA_TBB64_MAX);
+    ASSERT(atomic != nullptr, "TBB64 atomic creation should succeed");
+    
+    int64_t old = aria_atomic_tbb64_fetch_add(atomic, 1, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(old == ARIA_TBB64_MAX, "Fetch_add should return old value");
+    
+    int64_t value = aria_atomic_tbb64_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == ARIA_TBB64_ERR, "Overflow should produce ERR sentinel");
+    
+    aria_atomic_tbb64_destroy(atomic);
+}
+
+TEST_CASE(atomic_tbb64_sticky_error) {
+    AriaAtomicTBB64* atomic = aria_atomic_tbb64_create(ARIA_TBB64_ERR);
+    ASSERT(atomic != nullptr, "TBB64 atomic creation should succeed");
+    
+    int64_t old = aria_atomic_tbb64_fetch_add(atomic, 1000, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(old == ARIA_TBB64_ERR, "Operation on ERR should return ERR");
+    
+    int64_t value = aria_atomic_tbb64_load(atomic, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(value == ARIA_TBB64_ERR, "ERR should be sticky");
+    
+    aria_atomic_tbb64_destroy(atomic);
+}
+
+/* ============================================================================
+ * Test: Concurrent Counter (Multi-threaded)
+ * ============================================================================ */
+
+typedef struct {
+    AriaAtomicInt32* counter;
+    int iterations;
+} CounterTestData;
+
+static void* increment_counter_thread(void* arg) {
+    CounterTestData* data = (CounterTestData*)arg;
+    for (int i = 0; i < data->iterations; i++) {
+        aria_atomic_int32_fetch_add(data->counter, 1, ARIA_MEMORY_ORDER_RELAXED);
+    }
+    return NULL;
+}
+
+TEST_CASE(atomic_concurrent_counter) {
+    const int NUM_THREADS = 4;
+    const int ITERATIONS = 10000;
+    
+    AriaAtomicInt32* counter = aria_atomic_int32_create(0);
+    ASSERT(counter != nullptr, "Counter creation should succeed");
+    
+    CounterTestData data;
+    data.counter = counter;
+    data.iterations = ITERATIONS;
+    
+    AriaThread* threads[NUM_THREADS];
+    
+    // Create threads
+    for (int i = 0; i < NUM_THREADS; i++) {
+        AriaResult* result = aria_thread_create(increment_counter_thread, &data);
+        ASSERT(result->err == nullptr, "Thread creation should succeed");
+        threads[i] = (AriaThread*)result->val;
+    }
+    
+    // Join threads
+    for (int i = 0; i < NUM_THREADS; i++) {
+        AriaResult* result = aria_thread_join(threads[i], NULL);
+        ASSERT(result->err == nullptr, "Thread join should succeed");
+    }
+    
+    int32_t final_value = aria_atomic_int32_load(counter, ARIA_MEMORY_ORDER_SEQ_CST);
+    ASSERT(final_value == NUM_THREADS * ITERATIONS, "Counter should have exact value");
+    
+    aria_atomic_int32_destroy(counter);
+}
+
+/* ============================================================================
+ * Test: Memory Ordering (Acquire-Release)
+ * ============================================================================ */
+
+typedef struct {
+    AriaAtomicInt32* data;
+    AriaAtomicBool* flag;
+} AcqRelTestData;
+
+static void* producer_thread(void* arg) {
+    AcqRelTestData* test_data = (AcqRelTestData*)arg;
+    
+    // Write data
+    aria_atomic_int32_store(test_data->data, 42, ARIA_MEMORY_ORDER_RELAXED);
+    
+    // Release: Publish data availability
+    aria_atomic_bool_store(test_data->flag, true, ARIA_MEMORY_ORDER_RELEASE);
+    
+    return NULL;
+}
+
+static void* consumer_thread(void* arg) {
+    AcqRelTestData* test_data = (AcqRelTestData*)arg;
+    
+    // Acquire: Wait for data availability
+    while (!aria_atomic_bool_load(test_data->flag, ARIA_MEMORY_ORDER_ACQUIRE)) {
+        // Spin (in real code, use proper synchronization)
+    }
+    
+    // Read data (guaranteed to see 42 due to acquire-release ordering)
+    int32_t value = aria_atomic_int32_load(test_data->data, ARIA_MEMORY_ORDER_RELAXED);
+    
+    return (void*)(intptr_t)value;
+}
+
+TEST_CASE(atomic_acquire_release_ordering) {
+    AcqRelTestData test_data;
+    test_data.data = aria_atomic_int32_create(0);
+    test_data.flag = aria_atomic_bool_create(false);
+    
+    ASSERT(test_data.data != nullptr, "Data atomic creation should succeed");
+    ASSERT(test_data.flag != nullptr, "Flag atomic creation should succeed");
+    
+    // Create producer and consumer
+    AriaResult* result1 = aria_thread_create(producer_thread, &test_data);
+    AriaResult* result2 = aria_thread_create(consumer_thread, &test_data);
+    
+    ASSERT(result1->err == nullptr, "Producer thread creation should succeed");
+    ASSERT(result2->err == nullptr, "Consumer thread creation should succeed");
+    
+    AriaThread* producer = (AriaThread*)result1->val;
+    AriaThread* consumer = (AriaThread*)result2->val;
+    
+    // Join threads
+    aria_thread_join(producer, NULL);
+    
+    void* consumer_result = NULL;
+    aria_thread_join(consumer, &consumer_result);
+    
+    // Consumer should have seen the value 42
+    ASSERT((intptr_t)consumer_result == 42, "Consumer should see published data");
+    
+    aria_atomic_int32_destroy(test_data.data);
+    aria_atomic_bool_destroy(test_data.flag);
+}
+
+/* ============================================================================
+ * Test: Compare-Exchange in Lock Implementation
+ * ============================================================================ */
+
+typedef struct {
+    AriaAtomicBool* lock;
+    int* shared_counter;
+    int iterations;
+} SpinlockTestData;
+
+static void* spinlock_increment_thread(void* arg) {
+    SpinlockTestData* data = (SpinlockTestData*)arg;
+    
+    for (int i = 0; i < data->iterations; i++) {
+        // Acquire spinlock using CAS
+        bool expected = false;
+        while (!aria_atomic_bool_compare_exchange_weak(data->lock, &expected, true,
+                                                        ARIA_MEMORY_ORDER_ACQUIRE,
+                                                        ARIA_MEMORY_ORDER_RELAXED)) {
+            expected = false;  // Reset for next attempt
+        }
+        
+        // Critical section
+        (*data->shared_counter)++;
+        
+        // Release spinlock
+        aria_atomic_bool_store(data->lock, false, ARIA_MEMORY_ORDER_RELEASE);
+    }
+    
+    return NULL;
+}
+
+TEST_CASE(atomic_spinlock_implementation) {
+    const int NUM_THREADS = 4;
+    const int ITERATIONS = 1000;
+    
+    AriaAtomicBool* lock = aria_atomic_bool_create(false);
+    ASSERT(lock != nullptr, "Lock creation should succeed");
+    
+    int shared_counter = 0;
+    
+    SpinlockTestData data;
+    data.lock = lock;
+    data.shared_counter = &shared_counter;
+    data.iterations = ITERATIONS;
+    
+    AriaThread* threads[NUM_THREADS];
+    
+    // Create threads
+    for (int i = 0; i < NUM_THREADS; i++) {
+        AriaResult* result = aria_thread_create(spinlock_increment_thread, &data);
+        ASSERT(result->err == nullptr, "Thread creation should succeed");
+        threads[i] = (AriaThread*)result->val;
+    }
+    
+    // Join threads
+    for (int i = 0; i < NUM_THREADS; i++) {
+        AriaResult* result = aria_thread_join(threads[i], NULL);
+        ASSERT(result->err == nullptr, "Thread join should succeed");
+    }
+    
+    ASSERT(shared_counter == NUM_THREADS * ITERATIONS, "Spinlock should protect counter");
+    
+    aria_atomic_bool_destroy(lock);
+}
+
+/* ============================================================================
+ * Test: Memory Fences
+ * ============================================================================ */
+
+TEST_CASE(atomic_memory_fences) {
+    // These are compile-time operations that prevent reordering
+    // Hard to test directly, but we can verify they don't crash
+    
+    aria_atomic_thread_fence(ARIA_MEMORY_ORDER_ACQUIRE);
+    aria_atomic_thread_fence(ARIA_MEMORY_ORDER_RELEASE);
+    aria_atomic_thread_fence(ARIA_MEMORY_ORDER_ACQ_REL);
+    aria_atomic_thread_fence(ARIA_MEMORY_ORDER_SEQ_CST);
+    
+    aria_atomic_signal_fence(ARIA_MEMORY_ORDER_ACQUIRE);
+    aria_atomic_signal_fence(ARIA_MEMORY_ORDER_SEQ_CST);
+    
+    // If we got here without crashing, consider it a success
+    ASSERT(true, "Memory fences should execute without error");
+}
+
+/* ============================================================================
+ * Note: Test registration happens automatically via TEST_CASE macro.
+ * These tests are run by the main test_runner executable.
+ * ============================================================================ */

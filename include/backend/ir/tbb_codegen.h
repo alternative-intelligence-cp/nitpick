@@ -53,6 +53,11 @@ public:
     llvm::Value* generateDiv(llvm::Value* lhs, llvm::Value* rhs, Type* type);
 
     /**
+     * @brief Generate safe TBB modulo with ERR checking
+     */
+    llvm::Value* generateMod(llvm::Value* lhs, llvm::Value* rhs, Type* type);
+
+    /**
      * @brief Generate safe TBB negation
      */
     llvm::Value* generateNeg(llvm::Value* operand, Type* type);

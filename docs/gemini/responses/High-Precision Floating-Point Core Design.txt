@@ -1,0 +1,294 @@
+﻿Architectural Specification and Implementation Strategy for High-Precision Floating-Point Primitives (flt256/flt512) in the Aria 1.0 Core
+1. Executive Summary
+1.1 The Imperative of Numerical Integrity in the Aria 1.0 Core
+The Aria programming language is approaching a pivotal implementation phase: the permanent solidification of its core language features for the version 1.0 release. This release represents an immutable contract with the future, adhering to a philosophy of strict backward compatibility comparable to the stability of C from 1972 to the present. Unlike dynamic languages or research prototypes where breaking changes are permissible, Aria 1.0 mandates that code authored in 2025 must compile and execute with bit-exact determinism in 2050. This "One Shot" paradigm necessitates a departure from standard agile methodologies in favor of a rigorous, front-loaded engineering approach, particularly regarding the fundamental data types that underpin the language's computational capabilities.
+The implementation of flt256 (256-bit) and flt512 (512-bit) floating-point primitives is not merely a feature addition; it is the establishment of a "Research Tier" of arithmetic precision designed to support high-stakes domains such as post-quantum cryptography, chaotic system simulation, and high-frequency algorithmic trading. These domains demand numerical fidelity far exceeding the standard IEEE 754 binary64 (double) and binary128 (quad) formats currently available in hardware. Furthermore, the deployment context of the Nikola AI system—which will utilize Aria to interact with vulnerable populations including children, the elderly, and disabled individuals—elevates numerical stability to a matter of physical safety. A floating-point error resulting in a silent NaN (Not-a-Number) propagation that bypasses a safety guardrail, or a timing side-channel that leaks private cognitive data, constitutes an unacceptable failure mode. Consequently, the design philosophy for these primitives is one of "Paranoid Correctness," where security, determinism, and precision are non-negotiable.
+1.2 Breaking the Performance-Precision Trade-off
+Historically, the adoption of software-emulated arbitrary-precision arithmetic (such as that provided by GMP or MPFR) incurs a performance penalty of two to three orders of magnitude compared to hardware-accelerated operations. This report outlines a strategy to fundamentally disrupt this trade-off. By treating flt256 and flt512 as first-class SIMD (Single Instruction, Multiple Data) citizens rather than opaque software objects, Aria aims to achieve cycle counts competitive with hardware operations.
+The target performance metrics—specifically addition within 6 cycles and multiplication within 8 cycles—are achievable through the aggressive exploitation of the AVX-512 instruction set architecture. By mapping the "limbs" of these high-precision types directly into the 512-bit ZMM registers of modern processors (Intel Skylake-X, AMD Zen 4), we can parallelize the internal components of multi-precision arithmetic. This report details the specific algorithmic transforms, including Karatsuba multiplication and Newton-Raphson division, required to realize these targets while strictly adhering to the "String-as-Truth" architecture that guarantees zero precision loss during literal parsing.1
+________________
+2. Theoretical Foundation and Type Specifications
+The foundation of the Aria numerical system lies in the rigorous definition of its data types. To ensure forward compatibility and interoperability with global standards, flt256 and flt512 are constructed as extensions of the IEEE 754-2008 standard. These types fill the void between hardware-native precision and the unbounded, heap-allocated "BigInt" types found in dynamic languages, providing a deterministic, stack-allocated alternative for systems programming.
+2.1 flt256 (Octuple Precision) Architecture
+The flt256 type is engineered to provide approximately 71 decimal digits of precision, sufficient to measure the diameter of the observable universe with precision finer than the Planck length, while retaining a buffer for rounding errors.
+Table 1: flt256 Specification
+Component
+	Width
+	Bit Indices
+	Derivation / Notes
+	Total Width
+	256 bits
+	0–255
+	Aligned to 32 bytes (YMM/ZMM split).
+	Sign Bit
+	1 bit
+	255
+	Adheres to IEEE 754 sign-magnitude convention.
+	Exponent
+	19 bits
+	236–254
+	Scaling law: $4 \times$ width $\approx$ log-linear growth. Bias: $2^{18} - 1 = 262,143$.
+	Mantissa
+	236 bits
+	0–235
+	Effective precision: 237 bits (implicit leading 1).
+	Dynamic Range
+	$\approx 10^{\pm 78913}$
+	-
+	Sufficient for cosmological and sub-atomic simulations without overflow.
+	Memory Layout:
+The physical representation utilizes a "Limb-Based" approach, decomposing the 256-bit value into an array of four 64-bit integers. This aligns perfectly with the 64-bit General Purpose Registers (GPRs) of x86-64 and ARM64 architectures, as well as the 64-bit lanes within AVX-512 vectors.
+
+
+C
+
+
+
+
+// Aligned to 32 bytes to fit a YMM register or half a ZMM register
+// This alignment is critical for vmovdqa (aligned load) efficiency.
+typedef struct alignas(32) {
+   uint64_t limbs; 
+   // limbs: Bits 0-63   (Mantissa Low)
+   // limbs: Bits 64-127 (Mantissa Mid-Low)
+   // limbs: Bits 128-191 (Mantissa Mid-High)
+   // limbs: Bits 192-255 (Sign + Exponent + Mantissa High)
+} flt256;
+
+This layout allows the type to be lowered directly to the stack, avoiding the non-deterministic latency of heap allocation and garbage collection. In LLVM IR, this corresponds to a %struct.flt256 = type { [4 x i64] } aggregate, enabling the compiler to optimize limb access via extractvalue and insertvalue instructions.1
+2.2 flt512 (Sedecim Precision) Architecture
+The flt512 type represents the upper bound of fixed-size precision in Aria 1.0, utilizing the full width of a single AVX-512 ZMM register. This type is designed for extreme number-theoretic research and highly sensitive chaotic dynamics where error accumulation over $10^7$ timesteps would render lower precisions useless.
+Table 2: flt512 Specification
+Component
+	Width
+	Bit Indices
+	Derivation / Notes
+	Total Width
+	512 bits
+	0–511
+	Aligned to 64 bytes (Full ZMM register).
+	Sign Bit
+	1 bit
+	511
+	-
+	Exponent
+	23 bits
+	488–510
+	Bias: $2^{22} - 1 = 4,194,303$.
+	Mantissa
+	488 bits
+	0–487
+	Effective precision: 489 bits.
+	Decimal Precision
+	$\approx 147.2$ digits
+	-
+	$\log_{10}(2^{489}) \approx 147.2$.
+	Dynamic Range
+	$\approx 10^{\pm 1,262,611}$
+	-
+	Exceeds the entropic capacity of the universe.
+	Memory Layout:
+
+
+C
+
+
+
+
+// Aligned to 64 bytes to fit a single ZMM register
+typedef struct alignas(64) {
+   uint64_t limbs;
+   // limbs[0..6]: Full 64-bit mantissa segments
+   // limbs:    Sign + Exponent + High Mantissa
+} flt512;
+
+Strict 64-byte alignment is mandatory. Misaligned accesses on 512-bit loads can incur significant performance penalties (split cache line accesses) or faults on strict microarchitectures, compromising the cycle-count targets.1
+2.3 Semantic Integration with TBB Types
+Aria’s core type system includes Twisted Balanced Binary (TBB) integers (tbb8, tbb64, etc.), which utilize a symmetric range centered on zero and reserve the most negative two's complement value as a "Sticky Error" (ERR) sentinel. Integrating flt256 with TBB requires a rigorous semantic bridge to ensure error states are preserved across type boundaries.
+* TBB $\rightarrow$ Float: If a TBB value is ERR (e.g., tbb8 = -128), conversion to flt256 must produce a canonical Quiet NaN (qNaN). This NaN should carry a specific payload in its mantissa indicating "Source: TBB Error," facilitating debugging.
+* Float $\rightarrow$ TBB: If a flt256 is NaN, Infinity, or exceeds the representable range of the target TBB type, the conversion must result in the TBB ERR sentinel. This prevents undefined behavior (UB) common in C/C++ where float-to-int overflow is undefined.
+* Implementation: The CodeGenContext maintains an exprTypeMap to track the provenance of values. When arithmetic operations involve mixed TBB/Float operands, the compiler injects branchless select logic (using vpternlogd in assembly) to check for sentinel patterns and propagate the "poison" value without execution branching, preserving constant-time security guarantees.
+________________
+3. The AVX-512 Acceleration Strategy
+Achieving the mandated performance targets (e.g., Addition $\le 6$ cycles) is physically impossible using standard scalar code, which typically incurs loop overheads and serial ALU processing dependencies. We must adopt a "SIMD-First" strategy, treating the limbs of our large numbers as elements of a vector. However, standard SIMD operations are designed for "vertical" parallelism (operating on many independent numbers), whereas high-precision arithmetic requires "horizontal" parallelism (operating on the dependent limbs of a single number).
+3.1 The "Limb-Parallel" Paradigm
+To utilize AVX-512 for a single flt256 operation, we map the four 64-bit limbs of the number into the lower 256 bits of a ZMM register (or a full YMM register). This allows us to perform operations on all limbs simultaneously, subject to carry propagation constraints.
+* Vertical Parallelism (Ideal): Operating on vectors of numbers (e.g., adding four flt256 numbers to four other flt256 numbers simultaneously). AVX-512 excels here.
+* Horizontal Parallelism (Required): Operating on the limbs of a single flt256 (e.g., adding limbs[0..3] of A to limbs[0..3] of B). This is our primary challenge, requiring specialized instruction usage to manage carry chains.
+3.2 Key AVX-512 Instructions for High-Precision Arithmetic
+We leverage specific instructions that allow us to synthesize wide arithmetic efficiently:
+1. vpternlogd / vpternlogq (Bitwise Ternary Logic): This instruction is the "Swiss Army Knife" of the AVX-512 set. It accepts three operands (A, B, C) and an 8-bit immediate truth table to perform any boolean function in a single cycle.3
+   * Application: Branchless sign manipulation, conditional moves, and synthesizing complex carry generation logic without branching.
+   * Efficiency: A bitwise select (A & B) | (~A & C) which traditionally takes 3-4 instructions (AND, ANDN, OR) is executed in one cycle.
+2. vpmuludq (Multiply Unsigned Doubleword): This instruction multiplies packed unsigned 64-bit integers. It is essential for constructing the limb-multiplication grid required for the Karatsuba algorithm.
+3. vplzcntq (Leading Zero Count): This is critical for the normalization phase of floating-point addition/subtraction. It allows the algorithm to determine the necessary bit-shift for normalization in constant time, avoiding data-dependent loops.
+4. vpcmp (Compare): This instruction generates mask registers (k1–k7) rather than setting CPU flags. This allows for conditional operations to be handled via mask-merging, enabling branchless flow control that is immune to branch misprediction penalties.
+5. vpmadd52luq / vpmadd52huq (Integer Fused Multiply-Add): Available in AVX-512 IFMA, these instructions allow for efficient processing of 52-bit limbs. While our primary layout uses 64-bit limbs, these instructions offer an alternative optimization path for flt512 multiplication by using a redundant 52-bit representation to defer carry processing.7
+3.3 Hardware Targets and Fallbacks
+While AVX-512 is the primary target ensuring optimal performance, the Aria runtime must support older hardware.
+* Primary (AVX-512): Intel Skylake-X, Ice Lake, Tiger Lake, AMD Zen 4. Utilizes full 512-bit registers and vpternlogd.
+* Secondary (AVX2): Intel Haswell, AMD Ryzen 1-3. Uses 256-bit YMM registers. Lacks vpternlogd and mask registers; logic must be emulated with standard boolean ops.
+* Fallback (SSE4.2): Universal x86-64 support. Operations are scalar or 128-bit vectorized. Performance targets will likely not be met here, but correctness is maintained.
+________________
+4. Algorithmic Core: Arithmetic Operation Implementation
+4.1 Addition and Subtraction
+Target: $\le 6$ cycles.
+Floating-point addition is complex because it requires alignment of the mantissas before addition and normalization afterwards.
+The Algorithm:
+1. Exponent Extraction & Diff: Load flt256 A and B into registers. Use vpsrlq (shift) and vpandq (mask) to extract the 19-bit exponents. Compute the difference delta = expA - expB.
+2. Alignment: Identify the smaller number. Use vpsllvq (variable shift) to right-shift the mantissa of the smaller number by delta bits. This aligns the binary points.
+3. Mantissa Addition: Add the aligned 256-bit mantissas.
+   * Challenge: vpaddq performs parallel 64-bit additions but does not propagate carries between lanes.
+   * Solution (Software Pipelined Carry-Select):
+      * Compute raw sums: S = A + B.
+      * Generate Carry Signals: G = (S < A). This unsigned comparison generates a mask bit for every limb that overflowed.8
+      * Propagate: Shift the mask G left by one limb position to align carries with the next limb.
+      * Apply: Add the shifted carry mask to S.
+      * Note: For 4 limbs, a second pass of carry resolution may be needed if a carry ripples (e.g., adding 1 to FFFF...). However, using a parallel prefix adder logic within registers is faster than a loop.
+4. Normalization: Use vplzcntq on the result. If the result overflowed (bit 237 set), shift right 1 and increment exponent. If underflowed (leading zeros), shift left and decrement exponent.
+5. Packing: Use vpternlogd to combine the new sign, exponent, and mantissa into the final vector.
+4.2 Multiplication
+Target: $\le 8$ cycles.
+Algorithm: Karatsuba Decomposition.
+Standard schoolbook multiplication for four 64-bit limbs requires $4 \times 4 = 16$ multiplications. Karatsuba reduces this complexity to $O(N^{1.585})$, requiring only $\approx 9$ multiplications for $N=4$.
+SIMD Implementation:
+We decompose the 256-bit mantissa into two 128-bit halves ($H, L$).
+
+
+
+
+$$A = A_H \cdot 2^{128} + A_L$$
+
+
+$$B = B_H \cdot 2^{128} + B_L$$
+
+
+The product is:
+
+
+
+
+$$P = A_H B_H \cdot 2^{256} + ((A_H+A_L)(B_H+B_L) - A_H B_H - A_L B_L) \cdot 2^{128} + A_L B_L$$
+* Parallel Partial Products: AVX-512's vpmuludq can perform 8 parallel 64x64 multiplications in a single cycle. We can compute the components of $A_H B_H$ and $A_L B_L$ simultaneously within a ZMM register.
+* Cross Terms: The middle term is computed using the remaining slots in the vector or a second dependent instruction.
+* Accumulation: The partial products are summed using the same carry-propagation logic defined in the Addition section. By utilizing the 512-bit width of ZMM registers, we can keep the intermediate 512-bit result (product of two 256-bit numbers) entirely in registers without spilling to L1 cache, significantly reducing latency.10
+4.3 Division
+Target: $\le 20$ cycles.
+Algorithm: Newton-Raphson Iteration.
+Standard hardware division (divsd) is scalar, slow (14-20 cycles), and limited to 64-bit precision. We implement division $Q = A / B$ as multiplication by the reciprocal: $Q = A \cdot (1/B)$.
+1. Initial Estimate: Use vrcp14pd (Reciprocal Approximation) to get an initial 14-bit estimate of $1/B$. This instruction executes in ~4 cycles on Skylake-X.12
+2. Iteration: Apply the Newton-Raphson update step: $x_{i+1} = x_i(2 - B x_i)$.
+   * Each iteration doubles the bits of precision.
+   * Initial: 14 bits.
+   * Iter 1: 28 bits.
+   * Iter 2: 56 bits.
+   * Iter 3: 112 bits.
+   * Iter 4: 224 bits.
+   * Iter 5: 448 bits (Sufficient for flt256 and nearly flt512).
+3. Performance: Each iteration consists of 2 multiplications and 1 subtraction. With our optimized Karatsuba multiplication ($\approx 8$ cycles but pipelinable), 5 iterations fit within the budget if independent operations are interleaved to hide ALU latency.12
+4.4 Square Root
+Target: $\le 18$ cycles.
+Algorithm: Goldschmidt’s Algorithm or Newton-Raphson.
+We compute the reciprocal square root $R \approx 1/\sqrt{A}$ and then derive $\sqrt{A} = A \cdot R$.
+1. Estimate: vrsqrt14pd provides a 14-bit initial approximation of $1/\sqrt{A}$.12
+2. Iteration: Newton-Raphson for inverse square root: $x_{i+1} = \frac{1}{2} x_i (3 - A x_i^2)$.
+3. Convergence: Quadratic convergence allows us to reach the required 236 bits of precision in 4-5 iterations. The parallel nature of the limb updates allows for efficient vectorization.
+________________
+5. Security Architecture: Determinism and Constant-Time Execution
+The Nikola AI system's interaction with vulnerable populations mandates a security posture that goes beyond correctness. The implementation must be immune to timing side-channel attacks and guarantee absolute determinism.
+5.1 Constant-Time Execution via Branchless Logic
+Timing attacks exploit variations in execution time to infer secret data values. For example, a standard optimization that "early exits" when an operand is zero leaks information about that operand.
+The Rule: The execution time of any flt256/flt512 operation must be independent of the input values (assuming fixed message length).
+* Branchless Implementation: We strictly forbid data-dependent branching (e.g., if (x == 0)).
+* Masking and Blending: Instead of branches, we use vpternlogd and vpcmp to generate masks and blend results.
+   * Vulnerable: if (exponent == 0) return handle_denormal(x);
+   * Secure: mask = (exponent == 0); result = blend(normal_path_result, denormal_path_result, mask);
+   * This forces the CPU to execute both the normal and denormal paths (or a unified path) every time, ensuring the cycle count remains constant regardless of whether the input is Zero, Infinity, or NaN.14
+5.2 NaN Propagation and "Sticky" Logic
+As per the TBB integration requirements, error states must be preserved.
+* NaN Payloads: IEEE 754 allows NaNs to carry a "payload" in the mantissa. Aria utilizes this to encode the source of the error (e.g., "Invalid Cast from TBB").
+* Sticky Logic: Arithmetic operations check inputs for NaNs using _mm512_fpclass_pd_mask. If a NaN is detected, the operation does not abort; instead, the NaN payload is propagated to the result using bitwise logic (OR-ing the payloads). This ensures that a calculation chain produces a meaningful error report at the end without requiring exception handling control flow.
+________________
+6. The "String-as-Truth" Literal System
+A critical failure mode in high-precision libraries is the "Double Bottleneck," where literals in source code (e.g., flt256 x = 0.1) are parsed by the C++ compiler as standard double types before being promoted. This truncates the value to 53 bits of precision, destroying the accuracy of the 256-bit type before the program even begins execution.
+6.1 Architecture
+Aria implements a "String-as-Truth" architecture to guarantee zero conversion loss.
+1. Lexer: The lexer does not convert numeric literals to binary. It captures the literal as a raw string slice (e.g., "3.1415926535...") and tags it with a high-precision token type.
+2. Parser: The string is stored verbatim in the Abstract Syntax Tree (AST).
+3. Type Checker: Upon type inference (determining the target is flt256), the compiler invokes a specialized parsing routine.
+4. Codegen: The compiler uses LLVM::APFloat (Arbitrary Precision Float) or a custom arbitrary-precision parser to convert the string at compile time into the exact 256-bit binary representation.
+5. Output: The 256-bit constant is emitted into the data segment as an array of four i64 integers.
+This ensures that if a developer provides 70 digits of $\pi$, the resulting flt256 value matches those 70 digits exactly, rather than the 15-digit approximation of a standard double.
+________________
+7. Implementation Roadmap
+The development of this core feature set follows a phased approach to ensure correctness before optimization.
+7.1 Phase 1: Core Structs and Scalar Correctness
+* Define flt256.h and flt512.h with strict alignment attributes (alignas(32) / alignas(64)).
+* Implement basic arithmetic (Add, Sub, Mul, Div) using scalar C++ code.
+* Validate against SoftFloat and MPFR reference implementations to ensure bit-exact correctness.
+7.2 Phase 2: SIMD Vectorization
+* Replace scalar arrays with __m256i and __m512i intrinsics.
+* Implement the carry-select addition logic and Karatsuba multiplication using vpaddq and vpmuludq.
+* Verify performance gains and validate that no regressions in correctness have occurred.
+7.3 Phase 3: Assembly Tuning and Branchless Logic
+* Analyze compiler output using objdump. If the compiler introduces branches or suboptimal instruction scheduling, rewrite critical paths in inline assembly.
+* Replace all control flow with vpternlogd based masking logic to enforce constant-time execution.
+* Profile using perf to identify pipeline stalls and execution port contention.
+7.4 Phase 4: Portability and Dispatch
+* Implement CPUID detection at runtime startup.
+* Use Function Multi-Versioning (FMV) or function pointers to dispatch to the optimal implementation (AVX-512, AVX2, or Scalar) based on the host processor's capabilities.17
+________________
+8. Validation and Quality Assurance
+Given the security imperatives, the validation strategy is exhaustive.
+8.1 Fuzzing and Random Testing
+* Fuzzing: Use AFL (American Fuzzy Lop) to feed random bit patterns into the arithmetic operations for 72+ hours, looking for crashes, hangs, or assertion failures.
+* Differential Testing: Generate 10 million random inputs. Compute the result using Aria's flt256 and MPFR (configured to 256-bit precision). Compare the results bit-for-bit. Any discrepancy is a critical failure.
+8.2 Formal Methods
+* Where feasible, employ formal verification tools (e.g., Coq) to prove the correctness of the carry-propagation logic and the normalization algorithms. This provides a mathematical guarantee that the implementation matches the IEEE 754 specification.
+8.3 Security Audit
+* Timing Analysis: Use valgrind --tool=cachegrind and statistical analysis of cycle counts to verify that operations take constant time regardless of input (Normal vs Subnormal vs Zero).
+* Undefined Behavior: Compile and run the test suite with Undefined Behavior Sanitizer (UBSan) and AddressSanitizer (ASan) enabled to catch memory safety violations and integer overflows.
+________________
+9. Conclusion
+The implementation of flt256 and flt512 in Aria 1.0 represents a significant engineering challenge that requires abandoning the convenience of standard hardware primitives. By rebuilding the numerical engine from first principles—treating floating-point numbers as "limbs" in a wide SIMD vector—Aria can achieve the paradoxical goal of software-emulated precision at hardware-competitive speeds.
+This report demonstrates that through the use of AVX-512's advanced instructions (vpternlogd, vpmuludq), algorithmic innovations (Karatsuba, Newton-Raphson), and a strict "String-as-Truth" architecture, it is possible to deliver a high-precision, secure, and deterministic foundation for the next generation of critical software. This foundation will serve the Nikola AI system and its vulnerable users with unwavering reliability for decades to come.
+________________
+Citations
+* "Emulating flt256 in Aria Runtime.txt"
+* "aria_source_full.txt"
+* 1 "aria_research_full.txt"
+* 3 vpternlogd usage and branchless logic.
+* 8 AVX-512 Integer Addition and Carry Propagation.
+* 6 Karatsuba multiplication on AVX-512.
+* 12 Newton-Raphson division and approximation.
+* 17 Portable optimized binary compilation.
+* 15 Constant-time programming and branchless logic.
+* AriaBuild Architecture.
+* 1 TBB Types, Sticky Errors, and exprTypeMap.
+* 7 AVX-512 IFMA for large integer multiplication.
+* 11 Karatsuba multiplication performance on AVX-512.
+* AVX-512 downclocking and 512-bit register usage.
+* 12 vrsqrt14pd for square root estimation.
+* 20 Goldschmidt division algorithm alternatives.
+* 1 Memory layout and alignment of flt256.
+Works cited
+1. compiled.txt
+2. AVX-512: when and how to use these new instructions - Daniel Lemire's blog, accessed December 26, 2025, https://lemire.me/blog/2018/09/07/avx-512-when-and-how-to-use-these-new-instructions/
+3. AVX512: ternary functions evaluation - Wojciech Muła, accessed December 26, 2025, http://0x80.pl/articles/avx512-ternary-functions.html
+4. AVX Bitwise ternary logic instruction busted!, accessed December 26, 2025, https://arnaud-carre.github.io/2024-10-06-vpternlogd/
+5. VPTERNLOGD/VPTERNLOGQ — Bitwise Ternary Logic, accessed December 26, 2025, https://www.felixcloutier.com/x86/vpternlogd:vpternlogq
+6. Is it really efficient to use Karatsuba algorithm in 64-bit x 64-bit multiplication?, accessed December 26, 2025, https://stackoverflow.com/questions/31069291/is-it-really-efficient-to-use-karatsuba-algorithm-in-64-bit-x-64-bit-multiplicat
+7. Accelerating Large Integer Multiplication Using Intel AVX-512IFMA - ResearchGate, accessed December 26, 2025, https://www.researchgate.net/publication/338744357_Accelerating_Large_Integer_Multiplication_Using_Intel_AVX-512IFMA
+8. Multiword addition in C - Stack Overflow, accessed December 26, 2025, https://stackoverflow.com/questions/22126073/multiword-addition-in-c
+9. AVX 512 intrinsics to add 512 bits of 128 bit elements - Stack Overflow, accessed December 26, 2025, https://stackoverflow.com/questions/78988442/avx-512-intrinsics-to-add-512-bits-of-128-bit-elements
+10. Can AVX-512 be used to calculate the multiplication of two 256-bit Integers on a 64 bit computer in C++? Whether using Assembly Language or not - Stack Overflow, accessed December 26, 2025, https://stackoverflow.com/questions/78600571/can-avx-512-be-used-to-calculate-the-multiplication-of-two-256-bit-integers-on-a
+11. Faster Multiplication over F2[X] using AVX512 instruction set and VPCLMULQDQ instruction - arXiv, accessed December 26, 2025, https://arxiv.org/pdf/2201.10473
+12. Intel® AVX-512 - FP16 Instruction Set for Intel® Xeon® Processor-Based Products Technology Guide - Intel® Network Builders, accessed December 26, 2025, https://builders.intel.com/docs/networkbuilders/intel-avx-512-fp16-instruction-set-for-intel-xeon-processor-based-products-technology-guide-1710148129.pdf
+13. FP16 Instruction Set for Intel® Xeon® Processor Based Products Technology Guide, accessed December 26, 2025, https://builders.intel.com/docs/networkbuilders/intel-avx-512-fp16-instruction-set-for-intel-xeon-processor-based-products-technology-guide-1651874188.pdf
+14. AVX-512 and Branching - Stack Overflow, accessed December 26, 2025, https://stackoverflow.com/questions/47481762/avx-512-and-branching
+15. Branchless Code With AVX-512 - Sneller, accessed December 26, 2025, https://sneller.ai/blog/branchless-code-avx-512/
+16. New Efficient, Constant-Time Implementations of Falcon 1 Introduction, accessed December 26, 2025, https://falcon-sign.info/falcon-impl-20190802.pdf
+17. Compile a Portable Optimized Binary with the Latest Instruction Set - Intel, accessed December 26, 2025, https://www.intel.com/content/www/us/en/docs/vtune-profiler/cookbook/2024-1/compile-portable-optimized-binary.html
+18. Integer Addition and Carryout - Numberworld.org, accessed December 26, 2025, https://www.numberworld.org/y-cruncher/internals/addition.html
+19. A Study of High Performance Multiple-Precision Integer Multiplication and Division Using SIMD Instructions, accessed December 26, 2025, https://tsukuba.repo.nii.ac.jp/record/2008120/files/DA010794.pdf
+20. Picking good first estimates for Goldschmidt division - Stack Overflow, accessed December 26, 2025, https://stackoverflow.com/questions/2661541/picking-good-first-estimates-for-goldschmidt-division

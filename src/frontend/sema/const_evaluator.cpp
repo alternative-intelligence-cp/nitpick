@@ -91,6 +91,24 @@ ComptimeValue ComptimeValue::makeERR(const std::string& type, int bits) {
     return result;
 }
 
+ComptimeValue ComptimeValue::makeStruct(const std::map<std::string, ComptimeValue>& fields, const std::string& typeName) {
+    ComptimeValue result;
+    result.kind = Kind::STRUCT;
+    result.value = fields;
+    result.typeName = typeName;
+    result.bitWidth = 0;
+    return result;
+}
+
+ComptimeValue ComptimeValue::makeArray(const std::vector<ComptimeValue>& elements, const std::string& elementType) {
+    ComptimeValue result;
+    result.kind = Kind::ARRAY;
+    result.value = elements;
+    result.typeName = elementType + "[]";
+    result.bitWidth = 0;
+    return result;
+}
+
 int64_t ComptimeValue::getInt() const {
     return std::get<int64_t>(value);
 }
@@ -113,6 +131,14 @@ const std::string& ComptimeValue::getString() const {
 
 const ComptimeValue::PointerHandle& ComptimeValue::getPointer() const {
     return std::get<PointerHandle>(value);
+}
+
+const std::map<std::string, ComptimeValue>& ComptimeValue::getStruct() const {
+    return std::get<std::map<std::string, ComptimeValue>>(value);
+}
+
+const std::vector<ComptimeValue>& ComptimeValue::getArray() const {
+    return std::get<std::vector<ComptimeValue>>(value);
 }
 
 bool ComptimeValue::isTBBInRange() const {
@@ -452,11 +478,38 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
     }
     
     const std::string& funcName = callee->name;
-    
+
+    // === Builtin Intrinsics ===
+    // Handle @typeInfo(TypeName) - returns TypeInfo struct
+    if (funcName == "@typeInfo" || funcName == "typeInfo") {
+        if (call->arguments.size() != 1) {
+            addError("@typeInfo expects exactly 1 argument (type name)");
+            return ComptimeValue();
+        }
+        // Argument should be an identifier (type name) or string literal
+        ASTNode* arg = call->arguments[0].get();
+        std::string typeName;
+        if (arg->type == ASTNode::NodeType::IDENTIFIER) {
+            typeName = static_cast<IdentifierExpr*>(arg)->name;
+        } else if (arg->type == ASTNode::NodeType::LITERAL) {
+            ComptimeValue argVal = evalLiteral(static_cast<LiteralExpr*>(arg));
+            if (argVal.isString()) {
+                typeName = argVal.getString();
+            } else {
+                addError("@typeInfo argument must be a type name or string");
+                return ComptimeValue();
+            }
+        } else {
+            addError("@typeInfo argument must be a type name");
+            return ComptimeValue();
+        }
+        return getTypeInfo(typeName);
+    }
+
     // Evaluate arguments
     std::vector<ComptimeValue> argValues;
     argValues.reserve(call->arguments.size());
-    
+
     for (const auto& arg : call->arguments) {
         ComptimeValue argVal = evaluateExpr(arg.get());
         if (hasErrors()) {
@@ -464,13 +517,13 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
         }
         argValues.push_back(argVal);
     }
-    
+
     // Check memoization cache (research_030 Section 5.2)
     if (hasMemoizedResult(funcName, argValues)) {
         // Cache hit - return memoized result
         return getMemoizedResult(funcName, argValues);
     }
-    
+
     // Lookup function definition
     FuncDeclStmt* funcDecl = lookupFunction(funcName);
     if (!funcDecl) {
@@ -574,6 +627,15 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
                     break;
                 }
             }
+            // Handle while loops
+            else if (stmt->type == ASTNode::NodeType::WHILE) {
+                ComptimeValue loopResult = evalWhileLoop(stmt.get());
+                // If while loop returned a value (via return statement), use it
+                if (loopResult.getKind() != ComptimeValue::Kind::NULL_VALUE || hasErrors()) {
+                    result = loopResult;
+                    break;
+                }
+            }
             else {
                 // Execute other statements (e.g., variable declarations, nested blocks)
                 evaluateStmt(stmt.get());
@@ -593,6 +655,163 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
         memoizeResult(funcName, argValues, result);
     }
     
+    return result;
+}
+
+// ============================================================================
+// Builtin Intrinsics (research_010-011)
+// ============================================================================
+
+ComptimeValue ConstEvaluator::getTypeInfo(const std::string& typeName) {
+    // @typeInfo returns a struct with type metadata
+    // Reference: research_010-011 Section 4.4
+
+    std::map<std::string, ComptimeValue> typeInfo;
+
+    // Type name
+    typeInfo["name"] = ComptimeValue::makeString(typeName);
+
+    // Determine type category and properties
+    bool isTBB = typeName.find("tbb") == 0;
+    bool isInt = typeName.find("int") == 0 || typeName.find("uint") == 0;
+    bool isFloat = typeName.find("flt") == 0;
+    bool isBool = typeName == "bool";
+    bool isString = typeName == "string";
+
+    // Set type category
+    if (isTBB) {
+        typeInfo["category"] = ComptimeValue::makeString("tbb");
+        typeInfo["is_signed"] = ComptimeValue::makeBool(true);
+        typeInfo["has_err_sentinel"] = ComptimeValue::makeBool(true);
+
+        // Get bit width
+        int bits = 0;
+        if (typeName == "tbb8") bits = 8;
+        else if (typeName == "tbb16") bits = 16;
+        else if (typeName == "tbb32") bits = 32;
+        else if (typeName == "tbb64") bits = 64;
+
+        typeInfo["bit_width"] = ComptimeValue::makeInteger(bits, "int64", 64);
+        typeInfo["alignment"] = ComptimeValue::makeInteger(bits / 8, "int64", 64);
+
+        // TBB-specific: ERR sentinel and symmetric range
+        int64_t tbbMax = (bits == 8) ? 127 : (bits == 16) ? 32767 :
+                         (bits == 32) ? 2147483647 : 9223372036854775807LL;
+        typeInfo["min"] = ComptimeValue::makeInteger(-tbbMax, "int64", 64);
+        typeInfo["max"] = ComptimeValue::makeInteger(tbbMax, "int64", 64);
+    }
+    else if (isInt) {
+        typeInfo["category"] = ComptimeValue::makeString("integer");
+        typeInfo["is_signed"] = ComptimeValue::makeBool(typeName.find("uint") != 0);
+        typeInfo["has_err_sentinel"] = ComptimeValue::makeBool(false);
+
+        // Get bit width from type name
+        int bits = 0;
+        if (typeName.find("8") != std::string::npos) bits = 8;
+        else if (typeName.find("16") != std::string::npos) bits = 16;
+        else if (typeName.find("32") != std::string::npos) bits = 32;
+        else if (typeName.find("64") != std::string::npos) bits = 64;
+        else if (typeName.find("128") != std::string::npos) bits = 128;
+
+        typeInfo["bit_width"] = ComptimeValue::makeInteger(bits, "int64", 64);
+        typeInfo["alignment"] = ComptimeValue::makeInteger(bits / 8, "int64", 64);
+    }
+    else if (isFloat) {
+        typeInfo["category"] = ComptimeValue::makeString("float");
+        typeInfo["is_signed"] = ComptimeValue::makeBool(true);
+        typeInfo["has_err_sentinel"] = ComptimeValue::makeBool(false);
+
+        int bits = 0;
+        if (typeName == "flt32") bits = 32;
+        else if (typeName == "flt64") bits = 64;
+        else if (typeName == "flt128") bits = 128;
+
+        typeInfo["bit_width"] = ComptimeValue::makeInteger(bits, "int64", 64);
+        typeInfo["alignment"] = ComptimeValue::makeInteger(bits / 8, "int64", 64);
+    }
+    else if (isBool) {
+        typeInfo["category"] = ComptimeValue::makeString("bool");
+        typeInfo["bit_width"] = ComptimeValue::makeInteger(1, "int64", 64);
+        typeInfo["alignment"] = ComptimeValue::makeInteger(1, "int64", 64);
+    }
+    else if (isString) {
+        typeInfo["category"] = ComptimeValue::makeString("string");
+        typeInfo["bit_width"] = ComptimeValue::makeInteger(0, "int64", 64);  // Variable
+        typeInfo["alignment"] = ComptimeValue::makeInteger(8, "int64", 64);  // Pointer alignment
+    }
+    else {
+        // Assume struct type - query symbol table for fields
+        typeInfo["category"] = ComptimeValue::makeString("struct");
+        typeInfo["bit_width"] = ComptimeValue::makeInteger(0, "int64", 64);  // Unknown without layout
+        typeInfo["alignment"] = ComptimeValue::makeInteger(8, "int64", 64);  // Default alignment
+
+        // TODO: If symbolTable is available, look up struct fields and add them
+        // For now, just mark as struct type
+    }
+
+    return ComptimeValue::makeStruct(typeInfo, "TypeInfo");
+}
+
+ComptimeValue ConstEvaluator::evalWhileLoop(ASTNode* whileStmt) {
+    // Evaluate while loop at compile time
+    // Reference: research_010-011 Section 6.2
+
+    // Get the actual WhileStmt - need to include the header
+    auto* ws = static_cast<WhileStmt*>(whileStmt);
+
+    ComptimeValue result;
+    size_t maxIterations = 10000;  // Safety limit
+    size_t iteration = 0;
+
+    while (iteration < maxIterations) {
+        iteration++;
+        incrementInstructions();
+
+        if (hasErrors()) break;
+
+        // Evaluate condition
+        ComptimeValue condValue = evaluateExpr(ws->condition.get());
+        if (hasErrors()) break;
+
+        if (!condValue.isBool()) {
+            addError("While loop condition must evaluate to bool");
+            break;
+        }
+
+        // Check if loop should continue
+        if (!condValue.getBool()) {
+            break;  // Exit loop
+        }
+
+        // Execute body
+        if (ws->body) {
+            if (ws->body->type == ASTNode::NodeType::BLOCK) {
+                BlockStmt* block = static_cast<BlockStmt*>(ws->body.get());
+                for (const auto& stmt : block->statements) {
+                    // Check for return
+                    if (stmt->type == ASTNode::NodeType::RETURN) {
+                        ReturnStmt* retStmt = static_cast<ReturnStmt*>(stmt.get());
+                        if (retStmt->value) {
+                            return evaluateExpr(retStmt->value.get());
+                        }
+                        return ComptimeValue();
+                    }
+                    // Execute statement
+                    evaluateStmt(stmt.get());
+                    if (hasErrors()) break;
+                }
+            } else {
+                evaluateStmt(ws->body.get());
+            }
+        }
+
+        if (hasErrors()) break;
+    }
+
+    if (iteration >= maxIterations) {
+        addError("While loop exceeded maximum iteration limit in const evaluation");
+    }
+
     return result;
 }
 

@@ -1,0 +1,216 @@
+// Test file for basic async executor
+// Phase 4.5.3 Task #6: Single-threaded executor tests
+#include "../test_helpers.h"
+#include "runtime/async/executor.h"
+
+using namespace aria::runtime;
+
+TEST_CASE(executor_creation) {
+    Executor executor;
+    
+    ASSERT(executor.getStatus() == ExecutorStatus::IDLE, "Should start in IDLE state");
+    ASSERT(executor.getTasksExecuted() == 0, "No tasks executed yet");
+    ASSERT(executor.getTasksCompleted() == 0, "No tasks completed yet");
+    ASSERT(executor.getTasksFailed() == 0, "No tasks failed yet");
+    ASSERT(executor.getPendingTasks() == 0, "No pending tasks");
+}
+
+TEST_CASE(spawn_single_task) {
+    Executor executor;
+    
+    // Create dummy coroutine handle (in real use, this comes from LLVM codegen)
+    void* dummyHandle = (void*)0x1000;
+    
+    Task::TaskId id = executor.spawn(dummyHandle);
+    
+    ASSERT(id == 1, "First task should have ID 1");
+    ASSERT(executor.getPendingTasks() == 1, "Should have 1 pending task");
+    
+    Task* task = executor.getTask(id);
+    ASSERT(task != nullptr, "Task should exist");
+    ASSERT(task->getId() == id, "Task ID should match");
+    ASSERT(task->getHandle() == dummyHandle, "Task handle should match");
+    ASSERT(task->isReady(), "New task should be ready");
+}
+
+TEST_CASE(spawn_multiple_tasks) {
+    Executor executor;
+    
+    void* handle1 = (void*)0x1000;
+    void* handle2 = (void*)0x2000;
+    void* handle3 = (void*)0x3000;
+    
+    Task::TaskId id1 = executor.spawn(handle1);
+    Task::TaskId id2 = executor.spawn(handle2);
+    Task::TaskId id3 = executor.spawn(handle3);
+    
+    ASSERT(id1 == 1, "First task ID is 1");
+    ASSERT(id2 == 2, "Second task ID is 2");
+    ASSERT(id3 == 3, "Third task ID is 3");
+    ASSERT(executor.getPendingTasks() == 3, "Should have 3 pending tasks");
+}
+
+TEST_CASE(executor_step) {
+    Executor executor;
+    
+    void* handle = (void*)0x1000;
+    Task::TaskId id = executor.spawn(handle);
+    
+    ASSERT(executor.getPendingTasks() == 1, "1 task pending before step");
+    
+    bool hasMore = executor.step();
+    
+    ASSERT(hasMore == true, "Step should succeed");
+    ASSERT(executor.getTasksExecuted() == 1, "1 task executed");
+    ASSERT(executor.getTasksCompleted() == 1, "1 task completed");
+    ASSERT(executor.getPendingTasks() == 0, "No more pending tasks");
+    
+    Task* task = executor.getTask(id);
+    ASSERT(task->isCompleted(), "Task should be completed");
+}
+
+TEST_CASE(executor_run_to_completion_single) {
+    Executor executor;
+    
+    void* handle = (void*)0x1000;
+    executor.spawn(handle);
+    
+    executor.runToCompletion();
+    
+    ASSERT(executor.getStatus() == ExecutorStatus::COMPLETED, "Should be COMPLETED");
+    ASSERT(executor.getTasksExecuted() == 1, "1 task executed");
+    ASSERT(executor.getTasksCompleted() == 1, "1 task completed");
+    ASSERT(executor.getPendingTasks() == 0, "No pending tasks");
+}
+
+TEST_CASE(executor_run_to_completion_multiple) {
+    Executor executor;
+    
+    void* handle1 = (void*)0x1000;
+    void* handle2 = (void*)0x2000;
+    void* handle3 = (void*)0x3000;
+    
+    executor.spawn(handle1);
+    executor.spawn(handle2);
+    executor.spawn(handle3);
+    
+    executor.runToCompletion();
+    
+    ASSERT(executor.getStatus() == ExecutorStatus::COMPLETED, "Should be COMPLETED");
+    ASSERT(executor.getTasksExecuted() == 3, "3 tasks executed");
+    ASSERT(executor.getTasksCompleted() == 3, "3 tasks completed");
+    ASSERT(executor.getPendingTasks() == 0, "No pending tasks");
+}
+
+TEST_CASE(task_states) {
+    Executor executor;
+    
+    void* handle = (void*)0x1000;
+    Task::TaskId id = executor.spawn(handle);
+    
+    Task* task = executor.getTask(id);
+    
+    // Task starts in READY state (added to ready queue)
+    ASSERT(task->isReady(), "Should be ready initially");
+    ASSERT(!task->isPending(), "Should not be pending");
+    ASSERT(!task->isRunning(), "Should not be running");
+    ASSERT(!task->isSuspended(), "Should not be suspended");
+    ASSERT(!task->isCompleted(), "Should not be completed");
+    ASSERT(!task->isFailed(), "Should not be failed");
+}
+
+TEST_CASE(task_state_after_execution) {
+    Executor executor;
+    
+    void* handle = (void*)0x1000;
+    Task::TaskId id = executor.spawn(handle);
+    
+    executor.step();
+    
+    Task* task = executor.getTask(id);
+    
+    // After execution, task should be completed
+    ASSERT(task->isCompleted(), "Should be completed");
+    ASSERT(!task->isReady(), "Should not be ready");
+    ASSERT(!task->isRunning(), "Should not be running");
+    ASSERT(!task->isSuspended(), "Should not be suspended");
+    ASSERT(!task->isFailed(), "Should not be failed");
+}
+
+TEST_CASE(get_nonexistent_task) {
+    Executor executor;
+    
+    Task* task = executor.getTask(999);
+    
+    ASSERT(task == nullptr, "Should return nullptr for nonexistent task");
+}
+
+TEST_CASE(task_result_storage) {
+    Executor executor;
+    
+    void* handle = (void*)0x1000;
+    Task::TaskId id = executor.spawn(handle);
+    
+    Task* task = executor.getTask(id);
+    
+    ASSERT(task->getResultStorage() == nullptr, "Initially no result storage");
+    
+    void* storage = (void*)0xABCD;
+    task->setResultStorage(storage);
+    
+    ASSERT(task->getResultStorage() == storage, "Result storage should be set");
+}
+
+TEST_CASE(task_error_flag) {
+    Executor executor;
+    
+    void* handle = (void*)0x1000;
+    Task::TaskId id = executor.spawn(handle);
+    
+    Task* task = executor.getTask(id);
+    
+    ASSERT(!task->hasErrorFlag(), "Initially no error");
+    
+    task->setError(true);
+    
+    ASSERT(task->hasErrorFlag(), "Error flag should be set");
+}
+
+TEST_CASE(executor_statistics) {
+    Executor executor;
+    
+    executor.spawn((void*)0x1000);
+    executor.spawn((void*)0x2000);
+    executor.spawn((void*)0x3000);
+    executor.spawn((void*)0x4000);
+    executor.spawn((void*)0x5000);
+    
+    ASSERT(executor.getTasksExecuted() == 0, "No tasks executed yet");
+    ASSERT(executor.getTasksCompleted() == 0, "No tasks completed yet");
+    ASSERT(executor.getPendingTasks() == 5, "5 pending tasks");
+    
+    executor.runToCompletion();
+    
+    ASSERT(executor.getTasksExecuted() == 5, "5 tasks executed");
+    ASSERT(executor.getTasksCompleted() == 5, "5 tasks completed");
+    ASSERT(executor.getTasksFailed() == 0, "No failed tasks");
+    ASSERT(executor.getPendingTasks() == 0, "No pending tasks");
+}
+
+TEST_CASE(executor_empty_run) {
+    Executor executor;
+    
+    // Run with no tasks
+    executor.runToCompletion();
+    
+    ASSERT(executor.getStatus() == ExecutorStatus::COMPLETED, "Should complete successfully");
+    ASSERT(executor.getTasksExecuted() == 0, "No tasks executed");
+}
+
+TEST_CASE(step_on_empty_executor) {
+    Executor executor;
+    
+    bool result = executor.step();
+    
+    ASSERT(result == false, "Step should return false on empty executor");
+}

@@ -63,6 +63,9 @@ enum class TokenType {
     TOKEN_KW_FUNC,      // func - function declaration
     TOKEN_KW_STRUCT,    // struct - structure declaration
     TOKEN_KW_ENUM,      // enum - enumeration declaration
+    TOKEN_KW_OPAQUE,    // opaque - opaque type declaration (FFI)
+    TOKEN_KW_TRAIT,     // trait - trait declaration
+    TOKEN_KW_IMPL,      // impl - trait implementation
     TOKEN_KW_USE,       // use - import module
     TOKEN_KW_MOD,       // mod - define module
     TOKEN_KW_PUB,       // pub - public visibility
@@ -633,6 +636,9 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_FUNC: return "FUNC";
         case TokenType::TOKEN_KW_STRUCT: return "STRUCT";
         case TokenType::TOKEN_KW_ENUM: return "ENUM";
+        case TokenType::TOKEN_KW_OPAQUE: return "OPAQUE";
+        case TokenType::TOKEN_KW_TRAIT: return "TRAIT";
+        case TokenType::TOKEN_KW_IMPL: return "IMPL";
         case TokenType::TOKEN_KW_USE: return "USE";
         case TokenType::TOKEN_KW_MOD: return "MOD";
         case TokenType::TOKEN_KW_PUB: return "PUB";
@@ -866,7 +872,10 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     // Type declaration
     {"struct", TokenType::TOKEN_KW_STRUCT},
     {"enum", TokenType::TOKEN_KW_ENUM},
-    
+    {"opaque", TokenType::TOKEN_KW_OPAQUE},
+    {"trait", TokenType::TOKEN_KW_TRAIT},
+    {"impl", TokenType::TOKEN_KW_IMPL},
+
     // Other
     {"const", TokenType::TOKEN_KW_CONST},
     {"is", TokenType::TOKEN_KW_IS},
@@ -1554,9 +1563,9 @@ void Lexer::scanNumber() {
     cleaned_text.erase(std::remove(cleaned_text.begin(), cleaned_text.end(), '_'), cleaned_text.end());
     
     if (isFloat) {
-        // Always store raw string for floats to preserve full precision
-        // The 0.0 is a placeholder; semantic analysis will use the raw string
-        addToken(TokenType::TOKEN_FLOAT, 0.0, cleaned_text);
+        // Parse float value for immediate use, also store raw string for high-precision scenarios
+        double float_value = std::stod(cleaned_text);
+        addToken(TokenType::TOKEN_FLOAT, float_value, cleaned_text);
     } else {
         // Try to convert integer, store raw string if overflow
         try {
@@ -1683,89 +1692,103 @@ void Lexer::scanCharacter() {
 
 void Lexer::scanTemplateLiteral() {
     int startLine = line;
-    
+
     // Opening backtick already consumed by scanToken()
-    // Emit TOKEN_TEMPLATE_START
-    addToken(TokenType::TOKEN_TEMPLATE_START);
-    
-    // Now scan template parts and interpolations
+    // Emit TOKEN_TEMPLATE_START to signal start of template literal
+    tokens.push_back(Token(TokenType::TOKEN_TEMPLATE_START,
+                           "`", startLine, start_column, ""));
+
+    // Build current string part
     std::string currentPart;
-    
+
     while (!isAtEnd()) {
         // Check for interpolation start: &{
         if (peek() == '&' && peekNext() == '{') {
-            // Emit current template part (even if empty)
-            addToken(TokenType::TOKEN_TEMPLATE_PART, currentPart);
+            // Emit the accumulated string part (may be empty)
+            tokens.push_back(Token(TokenType::TOKEN_TEMPLATE_PART,
+                                   currentPart, line, column, currentPart));
             currentPart.clear();
-            
+
             // Consume &{
-            advance();
-            advance();
-            
+            advance();  // consume '&'
+            advance();  // consume '{'
+
             // Emit TOKEN_INTERP_START
-            addToken(TokenType::TOKEN_INTERP_START);
-            
-            // Now tokenize the expression inside until we hit }
-            // Track brace depth for nested braces in the expression
+            tokens.push_back(Token(TokenType::TOKEN_INTERP_START,
+                                   "&{", line, column - 2, ""));
+
+            // Now scan the interpolation expression
+            // We need to re-lex the tokens inside the interpolation
             int braceDepth = 1;
-            
+
             while (!isAtEnd() && braceDepth > 0) {
-                // Scan one token
-                scanToken();
-                
-                // Check if the last token was a brace
-                if (!tokens.empty()) {
-                    TokenType lastType = tokens.back().type;
-                    if (lastType == TokenType::TOKEN_LEFT_BRACE) {
-                        braceDepth++;
-                    } else if (lastType == TokenType::TOKEN_RIGHT_BRACE) {
-                        braceDepth--;
-                        if (braceDepth == 0) {
-                            // This } closes the interpolation
-                            // Remove it from tokens (we'll emit TOKEN_INTERP_END instead)
-                            tokens.pop_back();
-                            break;
-                        }
+                char c = peek();
+
+                if (c == '{') {
+                    braceDepth++;
+                    // Let the regular lexer handle this
+                    scanToken();
+                } else if (c == '}') {
+                    braceDepth--;
+                    if (braceDepth == 0) {
+                        // This } closes the interpolation - don't scan as regular token
+                        advance();
+                        break;
+                    } else {
+                        scanToken();
                     }
+                } else if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+                    // Skip whitespace in interpolation
+                    if (c == '\n') {
+                        line++;
+                        column = 1;
+                    }
+                    advance();
+                } else {
+                    // Regular token - scan it
+                    start = current;
+                    start_line = line;
+                    start_column = column;
+                    scanToken();
                 }
             }
-            
+
             if (braceDepth > 0) {
                 error("Unterminated interpolation in template literal");
                 return;
             }
-            
+
             // Emit TOKEN_INTERP_END
-            addToken(TokenType::TOKEN_INTERP_END);
-            
-            // Continue scanning template text
+            tokens.push_back(Token(TokenType::TOKEN_INTERP_END,
+                                   "}", line, column, ""));
+
             continue;
         }
-        
+
         // Check for template end: `
         if (peek() == '`') {
-            // Emit final template part
-            addToken(TokenType::TOKEN_TEMPLATE_PART, currentPart);
-            currentPart.clear();
-            
+            // Emit final string part
+            tokens.push_back(Token(TokenType::TOKEN_TEMPLATE_PART,
+                                   currentPart, line, column, currentPart));
+
             // Consume closing backtick
             advance();
-            
+
             // Emit TOKEN_TEMPLATE_END
-            addToken(TokenType::TOKEN_TEMPLATE_END);
-            
+            tokens.push_back(Token(TokenType::TOKEN_TEMPLATE_END,
+                                   "`", line, column, ""));
             return;
         }
-        
+
         // Handle escape sequences
         if (peek() == '\\') {
             advance(); // consume backslash
-            
+
             if (isAtEnd()) {
                 error("Unterminated template literal");
                 return;
             }
-            
+
             char escaped = advance();
             switch (escaped) {
                 case 'n': currentPart += '\n'; break;
@@ -1776,19 +1799,17 @@ void Lexer::scanTemplateLiteral() {
                 case '&': currentPart += '&'; break;  // Escaped ampersand
                 case '0': currentPart += '\0'; break;
                 default:
-                    std::ostringstream oss;
-                    oss << "Unknown escape sequence: \\" << escaped;
-                    error(oss.str());
-                    currentPart += escaped; // Include the character anyway
+                    // For unknown escapes, just include the character
+                    currentPart += escaped;
                     break;
             }
+            continue;
         }
+
         // Regular character - add to current part
-        else {
-            currentPart += advance();
-        }
+        currentPart += advance();
     }
-    
+
     // Reached end of file without closing backtick
     std::ostringstream oss;
     oss << "Unterminated template literal starting at line " << startLine;

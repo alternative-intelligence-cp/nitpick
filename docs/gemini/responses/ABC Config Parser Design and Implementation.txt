@@ -1,0 +1,191 @@
+﻿Architectural Specification: Design and Implementation of the Aria Build Configuration (ABC) Parser
+1. Executive Summary and Architectural Philosophy
+The evolution of software engineering has been inextricably linked to the maturation of build systems. From the imperative shell scripts of the early UNIX era to the complex meta-build generators of the modern C++ ecosystem, the mechanism by which source code is transformed into executable artifacts defines the developer experience. For the Aria programming language, currently at version v0.0.7, reliance on legacy tools such as GNU Make presents a significant friction point.1 While Make established the paradigm of dependency-based compilation, its rigid adherence to significant whitespace—specifically the distinction between tabs and spaces—violates the Principle of Least Astonishment and introduces a class of "invisible" syntax errors that hinder productivity.1 Furthermore, the arcane syntax of Makefiles, which blends declarative dependency rules with imperative shell scripting, creates a steep learning curve and reduces maintainability for complex projects.1
+This report articulates the comprehensive design and architectural specification for the Aria Build Configuration (ABC) format parser. The core design philosophy of the ABC format is "Configuration as Data," fundamentally rejecting the "Configuration as Code" model that often leads to non-deterministic build states in systems like Gradle or SCons.1 By enforcing a strict separation between the definition of the build graph and the logic used to execute it, the ABC format ensures that build definitions are portable, statically analyzable, and free from the side effects of Turing-complete execution during the configuration phase.1
+The parser design presented herein is a lightweight, recursive-descent implementation tailored specifically for this format. It is engineered to meet three critical operational requirements: robust, whitespace-insensitive lexical analysis to eliminate invisible errors; high-performance Abstract Syntax Tree (AST) construction utilizing linear arena allocation to minimize heap fragmentation; and a sophisticated variable interpolation subsystem capable of resolving &{VAR} references across Local, Global, and Environment scopes while guaranteeing cycle-free evaluation through graph-theoretic verification.1 This architecture addresses the specific limitations of legacy tools, offering the expressiveness required for complex projects without the fragility of imperative scripting.1
+2. Historical Context and Design Imperatives
+To understand the architectural decisions underpinning the ABC parser, one must first analyze the deficiencies of existing configuration formats that necessitated its creation. The industry standard JSON (RFC 8259), while excellent for data interchange, fails as a configuration language due to its prohibition of comments and its strict, noisy syntax requiring quotes around all keys.1 YAML, often the successor to JSON for configuration, introduces significant complexity through its whitespace-sensitivity, where the nesting level of a block is determined by invisible indentation characters. This leads to the notorious "YAML hell" where visually identical files parse differently due to mixed tabs and spaces.
+The ABC format synthesizes the structural rigor of JSON with the ergonomic flexibility of C-style block delimiters. By adopting {} for objects and `` for lists, the format becomes entirely whitespace-insensitive.1 This decision effectively eliminates the class of syntax errors caused by invisible characters, a primary source of developer frustration in Makefiles and YAML.1 Furthermore, the inclusion of C++ style comments (//) allows for inline documentation, a feature critical for maintainable build configurations but absent in standard JSON.1
+The implementation of the parser is driven by the need for speed and low memory overhead. Modern build systems for monorepos may need to parse thousands of configuration files spanning millions of lines of code. A heavy-weight parser generator (like ANTLR) or a DOM-based parsing approach (which constructs a heavy tree of heap-allocated objects) would introduce unacceptable latency during the "configure" phase of the build. The proposed solution leverages a hand-written recursive-descent parser coupled with a custom memory arena, ensuring that the parsing phase is both CPU-cache friendly and memory efficient.1
+3. Lexical Analysis and Tokenization Strategy
+The lexical analyzer, or Lexer, is the first stage of the compilation pipeline. Its responsibility is to transmute the raw stream of characters from the configuration file into a linear sequence of semantic tokens. For the ABC format, the Lexer must be more than a simple regular expression engine; it requires a context-aware state machine to handle the specific complexities of string interpolation and identifier resolution.1
+3.1 Token Definition and Type System
+The Token structure is the fundamental unit of communication between the Lexer and the Parser. To support the high-performance requirements of the build system, the Token must be a lightweight, trivially copyable structure (POD - Plain Old Data). It encapsulates the TokenType, a view into the source buffer (lexeme), and precise location metadata (line and column number) to facilitate compiler-grade error reporting.1
+The TokenType enumeration defines the vocabulary of the ABC format. Unlike generic JSON parsers, the ABC lexer defines specific tokens to handle its interpolation micro-syntax and structural delimiters.
+Token Category
+	Token Type
+	Semantics
+	Example
+	Structure
+	LEFT_BRACE
+	Initiates an object scope or map.
+	{
+	
+
+	RIGHT_BRACE
+	Terminates an object scope.
+	}
+	
+
+	LEFT_BRACKET
+	Initiates a list or array.
+	``
+	Separators
+	COLON
+	Separates keys from values.
+	:
+	
+
+	COMMA
+	Separates elements in a collection.
+	,
+	Data
+	STRING_LITERAL
+	Raw textual content.
+	`src/main`
+	
+
+	IDENTIFIER
+	Unquoted key names.
+	targets
+	Interpolation
+	INTERP_START
+	Marks the start of a variable substitution.
+	&{
+	
+
+	INTERP_END
+	Marks the end of a variable substitution.
+	}
+	Control
+	EOF
+	End of the input stream.
+	\0
+	
+
+	INVALID
+	Signals a lexical error.
+	
+
+	This rich set of tokens allows the parser to operate at a higher level of abstraction, dealing with semantic units rather than raw characters.
+3.2 The Lexical State Machine
+The Lexer operates as a deterministic finite automaton (DFA). While the transitions for structural tokens like braces are straightforward, the handling of string literals and interpolation requires a modal architecture. The ABC format utilizes backticks (`) to delimit strings, aligning with the template literal syntax of the Aria programming language itself.1 This design choice is not merely aesthetic; it signals to the developer that the string is capable of interpolation, distinct from standard static strings.
+3.2.1 The String Scanning Mode and Interpolation Detection
+When the Lexer encounters a backtick, it transitions from the STATE_ROOT to the STATE_STRING. In a standard JSON lexer, this state would simply consume characters until a closing quote is found. However, the ABC Lexer must actively scan for the interpolation initiator &{.1
+The scanning logic proceeds as follows:
+1. Consumption: The Lexer consumes characters, appending them to the current token's lexeme.
+2. Lookahead: Upon encountering the & character, the Lexer performs a single-character lookahead.
+3. Transition: If the next character is {, the Lexer identifies an interpolation sequence.
+   * It immediately terminates the current STRING_LITERAL token, effectively "pausing" the string parsing.
+   * It emits an INTERP_START token (&{).
+   * It transitions the state machine to STATE_INTERPOLATION.
+4. Interpolation: Inside this state, the Lexer expects a valid identifier. It scans alphanumeric characters until it encounters the closing brace }.
+5. Termination: Upon finding }, it emits an INTERP_END token and transitions back to STATE_STRING to resume scanning the remainder of the literal.
+This mechanism effectively decomposes a complex interpolated string like `src/&{lib_name}/v1` into a granular stream of tokens: STRING_LITERAL ("src/") $\rightarrow$ INTERP_START $\rightarrow$ IDENTIFIER ("lib_name") $\rightarrow$ INTERP_END $\rightarrow$ STRING_LITERAL ("/v1"). This granular tokenization is the prerequisite for the Parser to construct a CompositeStringNode in the AST, moving the complexity of string concatenation from runtime to parse-time.1
+3.3 Identifier Syntax and Unquoted Keys
+To improve readability and reduce syntactic noise, the ABC format permits unquoted keys in object definitions (e.g., sources: [...] instead of "sources": [...]).1 This feature requires precise rules to prevent ambiguity between identifiers and values.
+An IDENTIFIER token is generated if and only if a sequence of characters meets the following criteria:
+* It begins with an alphabetic character (a-z, A-Z) or an underscore _.
+* It continues with alphanumeric characters or underscores.
+* It does not match a reserved keyword (such as true, false, or null).
+The Lexer distinguishes these from numeric literals (which start with digits) and string literals (which start with backticks). This strict definition ensures that the parser can unambiguously determine whether a token is a key or a value without needing complex backtracking logic.1
+3.4 Whitespace and Comment Handling
+A central tenet of the ABC format is whitespace independence. The Lexer treats all whitespace characters—spaces, tabs, line feeds, and carriage returns—as strictly insignificant token separators.1 When the Lexer encounters whitespace in STATE_ROOT, it simply advances the read cursor without emitting any token. This behavior is fundamental to the robustness of the format, ensuring that a build file's validity is never determined by invisible indentation characters.1
+Similarly, comments are handled at the lexical level. The ABC format supports single-line comments initiated by //. When the Lexer detects this sequence, it enters a STATE_COMMENT where it consumes and discards all characters until a newline is reached.1 This effectively erases comments from the token stream seen by the Parser, allowing developers to richly document their configuration files without impacting the parse tree structure or performance.
+4. Syntactic Analysis: The Recursive-Descent Parser
+The parsing engine is the core logic that imposes structure on the token stream. For the ABC format, a recursive-descent architecture is the optimal choice. Unlike table-driven parsers (LALR) generated by tools like Bison, a hand-written recursive-descent parser is easier to debug, allows for superior error recovery strategies, and can directly construct the custom C++ AST nodes required by the build system.1
+4.1 Formal Grammar Definition (EBNF)
+The structure of the ABC format can be formally defined using Extended Backus-Naur Form (EBNF). This grammar serves as the blueprint for the parser's method structure.1
+
+
+EBNF
+
+
+
+
+BuildFile       ::= Section*
+Section         ::= ProjectSection | VariablesSection | TargetsSection
+ProjectSection  ::= "project" ":" ObjectLiteral
+VariablesSection::= "variables" ":" ObjectLiteral
+TargetsSection  ::= "targets" ":" ArrayLiteral
+ObjectLiteral   ::= "{" (Member ("," Member)* ","?)? "}"
+Member          ::= (Identifier | StringLiteral) ":" Value
+ArrayLiteral    ::= "[" (Value ("," Value)* ","?)? "]"
+Value           ::= StringLiteral | Integer | Boolean | ObjectLiteral | ArrayLiteral
+StringLiteral   ::= BacktickString (InterpSequence BacktickString)*
+InterpSequence  ::= "&{" Identifier "}"
+
+This grammar highlights the hierarchical nature of the format, where ObjectLiteral and ArrayLiteral are mutually recursive definitions.
+4.2 The Parser Class Architecture
+The ConfigParser class encapsulates the parsing state. It maintains a reference to the Lexer, a buffer for the current Token (lookahead), and a reference to the ArenaAllocator used for node creation.
+The parser implements a series of methods that map 1:1 with the non-terminals in the EBNF grammar: parseObject(), parseArray(), parseValue(), and parseString(). Each method is responsible for consuming tokens that match its grammar rule and returning a pointer to the corresponding AST node.
+4.3 Parsing Maps (Objects)
+The parseObject method implements the logic for the {} structure. This is the most complex parsing routine, as it must handle key-value pairs, optional commas, and structural termination.
+Algorithmic Implementation:
+1. Initialization: The method begins by consuming the LEFT_BRACE. It allocates a new ObjectNode from the memory arena.
+2. The Parsing Loop: It enters a while loop that continues as long as the current token is not RIGHT_BRACE and not EOF.
+3. Key Extraction: It expects the current token to be either an IDENTIFIER or a STRING_LITERAL. This polymorphism supports the "unquoted key" feature. If the token matches, the key string is extracted; otherwise, a syntax error is raised.
+4. Separator Verification: The parser expects and consumes a COLON token. Absence of this token triggers the error recovery mechanism.
+5. Value Recursion: The method calls parseValue() to handle the right-hand side of the assignment. This recursive call allows for arbitrary nesting of objects and arrays.
+6. Association: The resulting key-value pair is inserted into the ObjectNode. Note that the implementation uses a std::vector of pairs rather than a std::map to preserve the insertion order of keys, which is critical for deterministic build steps.1
+7. Delimiter Handling: The parser checks for a COMMA. If present, it is consumed, and the loop continues. If absent, the parser checks if the next token is RIGHT_BRACE. If not, it raises an "Expected comma or closing brace" error.
+8. Termination: The loop exits when RIGHT_BRACE is consumed, and the fully constructed ObjectNode is returned.
+4.4 Parsing Lists (Arrays)
+The parseArray method handles `` sequences. Its logic mirrors parseObject but focuses on values rather than pairs.
+Algorithmic Implementation:
+1. Consumption: The method consumes the LEFT_BRACKET.
+2. Iteration: It iterates until RIGHT_BRACKET is encountered.
+3. Element Parsing: It calls parseValue() to obtain the next element.
+4. Trailing Comma Support: The parser specifically handles the trailing comma case allowed by the ABC specification.1 After parsing a value, if a COMMA is found, it is consumed. The loop condition then checks for RIGHT_BRACKET. If found immediately after the comma, the loop terminates gracefully without expecting another value. This prevents the common JSON error where a trailing comma invalidates the file.
+4.5 Panic Mode Error Recovery
+In a production build tool, the ability to report multiple errors in a single pass is vital. The ConfigParser implements "Panic Mode" recovery to achieve this.1 When a syntax error is detected (e.g., a missing colon or an invalid token), the parser does not abort. Instead, it enters a panic state.
+While in panic mode, the parser aggressively consumes and discards tokens until it reaches a "synchronization point." For the ABC format, safe synchronization points are the structural delimiters }, ], and ;. Once a synchronization token is found, the parser exits panic mode and attempts to resume parsing the next construct. This strategy allows the developer to see a comprehensive list of syntax errors (e.g., "Error on line 10", "Error on line 45") rather than fixing them one by one.1
+5. Abstract Syntax Tree (AST) and Memory Strategy
+The parser output is not a generic data structure but a strongly typed Abstract Syntax Tree (AST). The design of the AST and its memory management is critical for the performance of the build system.
+5.1 The AST Node Hierarchy
+The AST is composed of a hierarchy of classes inheriting from a base ASTNode.
+* ASTNode: The virtual base class. It stores the line and column number of the token that initiated the node, ensuring that semantic errors generated later (e.g., during variable resolution) can still point to the exact location in the source file.1
+* ObjectNode: Represents a map. Contains a vector of KeyValuePair structs.
+* ArrayNode: Represents a list. Contains a vector of ASTNode* pointers.
+* StringNode: Represents a string. This is a base class for two subtypes:
+   * LiteralStringNode: Contains a simple std::string payload.
+   * CompositeStringNode: Represents an interpolated string. It contains a vector of segments, where each segment is either a LiteralStringNode or a VariableReferenceNode. This structure preserves the interpolation semantics for the resolution phase.1
+* VariableReferenceNode: Stores the name of the variable to be resolved (e.g., "out_dir").
+5.2 Arena Allocation Strategy
+Parsing a large configuration file can involve creating thousands of small AST node objects. Allocating each of these on the heap using new or std::make_unique leads to significant performance penalties due to allocator overhead and memory fragmentation. Furthermore, traversing a pointer-linked tree of heap-allocated nodes causes frequent CPU cache misses.
+To mitigate this, the ABC parser utilizes a Linear Arena Allocator (also known as a Bump Pointer Allocator).1 The arena reserves a large, contiguous block of memory upfront. When an AST node is needed, the allocator simply returns the current pointer and increments an offset counter by the size of the object. This allocation is an $O(1)$ operation, typically taking only a few CPU cycles.
+Benefits of Arena Allocation:
+1. Performance: Allocation is instantaneous compared to malloc.
+2. Cache Locality: Since nodes are allocated sequentially in memory, they are likely to reside in the same CPU cache lines. This significantly speeds up the interpolation phase, which involves traversing the AST.
+3. Cleanup: Deallocation is trivial. Instead of calling destructors for every single node, the entire arena memory block is freed at once when the parsing context is destroyed. This prevents memory leaks and reduces the overhead of the build system's shutdown phase.1
+6. The Interpolation Engine and Scope Resolution
+The interpolation logic is the dynamic heart of the ABC format. It transforms the static AST produced by the parser into a fully resolved build configuration by substituting &{VAR} references with concrete values. This subsystem is designed to balance flexibility with determinism, ensuring that builds are reproducible across different environments.
+6.1 Hierarchical Scope Resolution
+The resolution of a variable identifier follows a strict hierarchical lookup sequence involving three distinct scopes. This "shadowing" logic allows for precise control over build parameters.1
+1. Local Scope (Target Level):
+The search begins at the most granular level: the Local Scope. This scope contains variables defined within the specific target currently being processed. For example, if a target defines variables: { cflags: "-O3" }, any reference to &{cflags} within that target will resolve to -O3, overriding any global definition. This allows individual targets to specialize their configuration without affecting the rest of the project.1
+2. Global Scope (Project Level):
+If the identifier is not found locally, the resolution engine queries the Global Scope. This scope is populated from the variables section defined at the root of the ABC file. It acts as the "master symbol table" for the project, holding shared constants such as source directories (src_dir), common include paths, or default compiler flags.1 This centralization prevents magic strings and duplication across the build file.
+3. Environment Scope (System Level):
+If the variable remains unresolved, the engine checks for the ENV. prefix. References like &{ENV.HOME} or &{ENV.PATH} trigger a lookup in the host operating system's environment variables. The logic strips the ENV. prefix and queries the OS (e.g., via std::getenv). This mechanism bridges the gap between the hermetic build configuration and the external build environment, enabling portability across developer machines and CI pipelines.1
+6.2 Cycle Detection via Graph Coloring
+A critical risk in any recursive interpolation system is the presence of circular dependencies (e.g., A is defined as &{B}, and B is defined as &{A}). A naive implementation would enter an infinite recursion, causing a stack overflow and crashing the build tool. To prevent this, the AriaBuild specification mandates a Three-Color Depth-First Search (DFS) algorithm for cycle detection.1
+The algorithm maintains a state map for every variable being resolved, assigning it one of three colors:
+   * WHITE: The variable has not yet been visited.
+   * GRAY: The variable is currently being visited (i.e., it is in the active recursion stack).
+   * BLACK: The variable has been successfully resolved and its value is cached.
+The Resolution Algorithm:
+   1. Initiation: When resolving a variable V, the engine checks its color.
+   2. Cycle Check: If the color is GRAY, a cycle is detected. The engine immediately aborts and throws a CircularDependencyException. The error message reconstructs the resolution path (e.g., Cycle detected: A -> B -> A), providing the developer with actionable debugging information.1
+   3. Memoization: If the color is BLACK, the resolved value is already known. The engine returns the cached value immediately, pruning the traversal graph. This memoization ensures that each variable is resolved exactly once, guaranteeing linear time complexity $O(V+E)$ for the interpolation phase.1
+   4. Traversal: If the color is WHITE, the engine marks it as GRAY and proceeds to resolve the variable's value. This may involve recursively resolving other variables found within its definition string.
+   5. Completion: Once the value is fully resolved, the variable is marked BLACK, and the result is stored.
+This rigorous approach ensures that the configuration evaluation is always finite and deterministic, protecting the build process from malformed logic.1
+7. Integration and Validation
+The parsing and interpolation subsystems do not operate in a vacuum. They are integrated into the wider AriaBuild ecosystem through a Binder phase. Once the AST is fully resolved, the Binder traverses the tree to map the configuration data into the internal C++ domain objects of the build system (Target, Rule, Project).
+This phase performs semantic validation beyond the syntax checking of the parser. It verifies that required fields (like output or sources) are present for every target. It validates types, ensuring that sources is indeed a list of strings and not an integer. Crucially, it constructs the Build Dependency Graph (DAG) by converting the logical dependencies named in depends_on arrays into pointers between Target objects.1
+Furthermore, the parser integrates with the Globbing Subsystem described in.1 When the Binder encounters a string in a sources list that contains wildcard characters (like src/**/*.aria), it delegates this pattern to the GlobEngine. The GlobEngine expands the pattern into a list of concrete file paths, which are then fed back into the build graph. This seamless integration allows the ABC format to be concise (using globs) while the underlying build engine operates on explicit file lists.
+8. Conclusion
+The architectural design of the ABC parser represents a precise solution to the specific challenges of the Aria build ecosystem. By rejecting the fragility of whitespace-sensitive formats and the limitations of standard JSON, the ABC format offers a robust, developer-friendly configuration language. The recursive-descent parser, backed by an arena allocator and a custom lexer, ensures high-performance loading of build configurations. The interpolation engine, grounded in graph theory and hierarchical scoping, transforms static data into dynamic build definitions without the risks associated with imperative scripting. This comprehensive specification provides the blueprint for a build tool that is both powerful and reliable, capable of scaling to meet the demands of modern software development.
+Works cited
+   1. compiled.txt

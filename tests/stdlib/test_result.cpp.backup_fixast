@@ -1,0 +1,454 @@
+/**
+ * Phase 6 Standard Library Tests - Result Type
+ * 
+ * Tests for Aria's result<T> error handling system.
+ */
+
+#include "test_helpers.h"
+#include "runtime/result.h"
+#include "runtime/gc.h"
+#include <cstring>
+
+// ============================================================================
+// Result Construction Tests
+// ============================================================================
+
+TEST_CASE(result_ok_ptr_basic) {
+    char* value = (char*)"test";
+    AriaResultPtr result = aria_result_ok_ptr(value);
+    
+    ASSERT_MSG(!result.is_error, "Ok result should not be error");
+    ASSERT_MSG(result.value == value, "Ok result should contain value");
+    ASSERT_MSG(result.error == NULL, "Ok result should have NULL error");
+}
+
+TEST_CASE(result_err_ptr_basic) {
+    aria_gc_init(1024 * 1024, 256 * 1024);
+    
+    AriaError* error = aria_error_msg("test error");
+    AriaResultPtr result = aria_result_err_ptr(error);
+    
+    ASSERT_MSG(result.is_error, "Err result should be error");
+    ASSERT_MSG(result.value == NULL, "Err result should have NULL value");
+    ASSERT_MSG(result.error == error, "Err result should contain error");
+    
+    aria_gc_shutdown();
+}
+
+TEST_CASE(result_ok_i64_basic) {
+    AriaResultI64 result = aria_result_ok_i64(42);
+    
+    ASSERT_MSG(!result.is_error, "Ok result should not be error");
+    ASSERT_EQ_MSG(result.value, 42, "Ok result should contain value");
+    ASSERT_MSG(result.error == NULL, "Ok result should have NULL error");
+}
+
+TEST_CASE(result_err_i64_basic) {
+    aria_gc_init(1024 * 1024, 256 * 1024);
+    
+    AriaError* error = aria_error_msg("integer error");
+    AriaResultI64 result = aria_result_err_i64(error);
+    
+    ASSERT_MSG(result.is_error, "Err result should be error");
+    ASSERT_EQ_MSG(result.value, 0, "Err result should have 0 value");
+    ASSERT_MSG(result.error == error, "Err result should contain error");
+    
+    aria_gc_shutdown();
+}
+
+TEST_CASE(result_ok_f64_basic) {
+    AriaResultF64 result = aria_result_ok_f64(3.14);
+    
+    ASSERT_MSG(!result.is_error, "Ok result should not be error");
+    ASSERT_NEAR_MSG(result.value, 3.14, 0.0001, "Ok result should contain value");
+    ASSERT_MSG(result.error == NULL, "Ok result should have NULL error");
+}
+
+TEST_CASE(result_ok_bool_basic) {
+    AriaResultBool result = aria_result_ok_bool(true);
+    
+    ASSERT_MSG(!result.is_error, "Ok result should not be error");
+    ASSERT_MSG(result.value == true, "Ok result should contain value");
+    ASSERT_MSG(result.error == NULL, "Ok result should have NULL error");
+}
+
+TEST_CASE(result_ok_void_basic) {
+    AriaResultVoid result = aria_result_ok_void();
+    
+    ASSERT_MSG(!result.is_error, "Ok result should not be error");
+    ASSERT_MSG(result.error == NULL, "Ok result should have NULL error");
+}
+
+// ============================================================================
+// Error Construction Tests
+// ============================================================================
+
+TEST_CASE(error_new_full) {
+    aria_gc_init(1024 * 1024, 256 * 1024);
+    
+    AriaError* error = aria_error_new(ARIA_ERR_NOT_FOUND, "File not found", "test.aria", 42);
+    
+    ASSERT_MSG(error != NULL, "Error should be allocated");
+    ASSERT_EQ_MSG(error->code, ARIA_ERR_NOT_FOUND, "Error code should match");
+    ASSERT_EQ_MSG(strcmp(error->message, "File not found"), 0, "Error message should match");
+    ASSERT_EQ_MSG(strcmp(error->file, "test.aria"), 0, "Error file should match");
+    ASSERT_EQ_MSG(error->line, 42, "Error line should match");
+    
+    aria_gc_shutdown();
+}
+
+TEST_CASE(error_msg_simple) {
+    aria_gc_init(1024 * 1024, 256 * 1024);
+    
+    AriaError* error = aria_error_msg("simple error");
+    
+    ASSERT_MSG(error != NULL, "Error should be allocated");
+    ASSERT_EQ_MSG(error->code, ARIA_ERR_UNKNOWN, "Error code should be UNKNOWN");
+    ASSERT_EQ_MSG(strcmp(error->message, "simple error"), 0, "Error message should match");
+    ASSERT_MSG(error->file == NULL, "Error file should be NULL");
+    ASSERT_EQ_MSG(error->line, 0, "Error line should be 0");
+    
+    aria_gc_shutdown();
+}
+
+// ============================================================================
+// Result Query Tests
+// ============================================================================
+
+TEST_CASE(result_is_ok_ptr) {
+    char* value = (char*)"test";
+    AriaResultPtr ok_result = aria_result_ok_ptr(value);
+    
+    ASSERT_MSG(aria_result_is_ok_ptr(ok_result), "Ok result should return true for is_ok");
+    ASSERT_MSG(!aria_result_is_err_ptr(ok_result), "Ok result should return false for is_err");
+    
+    aria_gc_init(1024 * 1024, 256 * 1024);
+    AriaError* error = aria_error_msg("error");
+    AriaResultPtr err_result = aria_result_err_ptr(error);
+    
+    ASSERT_MSG(!aria_result_is_ok_ptr(err_result), "Err result should return false for is_ok");
+    ASSERT_MSG(aria_result_is_err_ptr(err_result), "Err result should return true for is_err");
+    
+    aria_gc_shutdown();
+}
+
+TEST_CASE(result_get_error) {
+    aria_gc_init(1024 * 1024, 256 * 1024);
+    
+    // Ok result should return NULL error
+    AriaResultI64 ok_result = aria_result_ok_i64(42);
+    AriaError* ok_error = aria_result_get_error_i64(ok_result);
+    ASSERT_MSG(ok_error == NULL, "Ok result should have NULL error");
+    
+    // Err result should return error
+    AriaError* error = aria_error_msg("test error");
+    AriaResultI64 err_result = aria_result_err_i64(error);
+    AriaError* err_error = aria_result_get_error_i64(err_result);
+    ASSERT_MSG(err_error == error, "Err result should return error");
+    
+    aria_gc_shutdown();
+}
+
+// ============================================================================
+// Unwrap-or Tests
+// ============================================================================
+
+TEST_CASE(result_unwrap_or_i64_ok) {
+    AriaResultI64 result = aria_result_ok_i64(42);
+    int64_t value = aria_result_unwrap_or_i64(result, 99);
+    ASSERT_EQ_MSG(value, 42, "Unwrap-or should return value for Ok result");
+}
+
+TEST_CASE(result_unwrap_or_i64_err) {
+    aria_gc_init(1024 * 1024, 256 * 1024);
+    
+    AriaError* error = aria_error_msg("error");
+    AriaResultI64 result = aria_result_err_i64(error);
+    int64_t value = aria_result_unwrap_or_i64(result, 99);
+    ASSERT_EQ_MSG(value, 99, "Unwrap-or should return default for Err result");
+    
+    aria_gc_shutdown();
+}
+
+TEST_CASE(result_unwrap_or_ptr_ok) {
+    char* test_value = (char*)"test";
+    AriaResultPtr result = aria_result_ok_ptr(test_value);
+    void* value = aria_result_unwrap_or_ptr(result, NULL);
+    ASSERT_MSG(value == test_value, "Unwrap-or should return value for Ok result");
+}
+
+TEST_CASE(result_unwrap_or_ptr_err) {
+    aria_gc_init(1024 * 1024, 256 * 1024);
+    
+    char* default_value = (char*)"default";
+    AriaError* error = aria_error_msg("error");
+    AriaResultPtr result = aria_result_err_ptr(error);
+    void* value = aria_result_unwrap_or_ptr(result, default_value);
+    ASSERT_MSG(value == default_value, "Unwrap-or should return default for Err result");
+    
+    aria_gc_shutdown();
+}
+
+TEST_CASE(result_unwrap_or_f64_values) {
+    // Ok case
+    AriaResultF64 ok_result = aria_result_ok_f64(3.14);
+    double ok_value = aria_result_unwrap_or_f64(ok_result, 2.71);
+    ASSERT_NEAR_MSG(ok_value, 3.14, 0.0001, "Unwrap-or should return Ok value");
+    
+    // Err case
+    aria_gc_init(1024 * 1024, 256 * 1024);
+    AriaError* error = aria_error_msg("error");
+    AriaResultF64 err_result = aria_result_err_f64(error);
+    double err_value = aria_result_unwrap_or_f64(err_result, 2.71);
+    ASSERT_NEAR_MSG(err_value, 2.71, 0.0001, "Unwrap-or should return default value");
+    aria_gc_shutdown();
+}
+
+TEST_CASE(result_unwrap_or_bool_values) {
+    // Ok case - true
+    AriaResultBool ok_true = aria_result_ok_bool(true);
+    bool value_true = aria_result_unwrap_or_bool(ok_true, false);
+    ASSERT_MSG(value_true == true, "Unwrap-or should return true");
+    
+    // Ok case - false  
+    AriaResultBool ok_false = aria_result_ok_bool(false);
+    bool value_false = aria_result_unwrap_or_bool(ok_false, true);
+    ASSERT_MSG(value_false == false, "Unwrap-or should return false");
+    
+    // Err case
+    aria_gc_init(1024 * 1024, 256 * 1024);
+    AriaError* error = aria_error_msg("error");
+    AriaResultBool err_result = aria_result_err_bool(error);
+    bool err_value = aria_result_unwrap_or_bool(err_result, true);
+    ASSERT_MSG(err_value == true, "Unwrap-or should return default");
+    aria_gc_shutdown();
+}
+
+// ============================================================================
+// Integration Tests
+// ============================================================================
+
+TEST_CASE(result_error_code_constants) {
+    // Just verify error codes are defined
+    ASSERT_EQ_MSG(ARIA_ERR_UNKNOWN, -1, "UNKNOWN error code");
+    ASSERT_EQ_MSG(ARIA_ERR_INVALID_ARG, -2, "INVALID_ARG error code");
+    ASSERT_EQ_MSG(ARIA_ERR_OUT_OF_MEMORY, -3, "OUT_OF_MEMORY error code");
+    ASSERT_EQ_MSG(ARIA_ERR_NOT_FOUND, -4, "NOT_FOUND error code");
+    ASSERT_EQ_MSG(ARIA_ERR_PERMISSION, -5, "PERMISSION error code");
+    ASSERT_EQ_MSG(ARIA_ERR_IO, -6, "IO error code");
+}
+
+TEST_CASE(result_multiple_types) {
+    aria_gc_init(1024 * 1024, 256 * 1024);
+    
+    // Create different result types
+    AriaResultPtr ptr_result = aria_result_ok_ptr((void*)0x1234);
+    AriaResultI64 i64_result = aria_result_ok_i64(42);
+    AriaResultF64 f64_result = aria_result_ok_f64(3.14);
+    AriaResultBool bool_result = aria_result_ok_bool(true);
+    AriaResultVoid void_result = aria_result_ok_void();
+    
+    // Verify all are Ok
+    ASSERT_MSG(aria_result_is_ok_ptr(ptr_result), "Ptr result should be Ok");
+    ASSERT_MSG(aria_result_is_ok_i64(i64_result), "I64 result should be Ok");
+    ASSERT_MSG(aria_result_is_ok_f64(f64_result), "F64 result should be Ok");
+    ASSERT_MSG(aria_result_is_ok_bool(bool_result), "Bool result should be Ok");
+    ASSERT_MSG(aria_result_is_ok_void(void_result), "Void result should be Ok");
+    
+    aria_gc_shutdown();
+}
+
+// ============================================================================
+// Allocation Result Tests (Phase 4.2)
+// ============================================================================
+
+TEST_CASE(alloc_result_ok_basic) {
+    void* ptr = (void*)0x1000;
+    AriaAllocResult result = aria_alloc_result_ok(ptr, 64, 16);
+    
+    ASSERT_MSG(aria_alloc_result_is_ok(result), "Result should be Ok");
+    ASSERT_MSG(!aria_alloc_result_is_err(result), "Result should not be Err");
+    ASSERT_MSG(result.value == ptr, "Value should match");
+    ASSERT_EQ_MSG(result.error_code, ARIA_ALLOC_OK, "Error code should be ARIA_ALLOC_OK");
+    ASSERT_EQ_MSG(result.requested_size, 64, "Size should be 64");
+    ASSERT_EQ_MSG(result.requested_align, 16, "Alignment should be 16");
+}
+
+TEST_CASE(alloc_result_err_out_of_memory) {
+    AriaAllocResult result = aria_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, 1024, 0);
+    
+    ASSERT_MSG(aria_alloc_result_is_err(result), "Result should be Err");
+    ASSERT_MSG(!aria_alloc_result_is_ok(result), "Result should not be Ok");
+    ASSERT_MSG(result.value == NULL, "Value should be NULL");
+    ASSERT_EQ_MSG(result.error_code, ARIA_ALLOC_ERR_OUT_OF_MEMORY, "Error code should be OUT_OF_MEMORY");
+    ASSERT_EQ_MSG(result.requested_size, 1024, "Size should be 1024");
+}
+
+TEST_CASE(alloc_result_err_invalid_size) {
+    AriaAllocResult result = aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, 0, 0);
+    
+    ASSERT_MSG(aria_alloc_result_is_err(result), "Result should be Err");
+    ASSERT_EQ_MSG(result.error_code, ARIA_ALLOC_ERR_INVALID_SIZE, "Error code should be INVALID_SIZE");
+}
+
+TEST_CASE(alloc_result_err_invalid_alignment) {
+    AriaAllocResult result = aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_ALIGNMENT, 64, 15);
+    
+    ASSERT_MSG(aria_alloc_result_is_err(result), "Result should be Err");
+    ASSERT_EQ_MSG(result.error_code, ARIA_ALLOC_ERR_INVALID_ALIGNMENT, "Error code should be INVALID_ALIGNMENT");
+    ASSERT_EQ_MSG(result.requested_align, 15, "Alignment should be 15 (invalid)");
+}
+
+TEST_CASE(alloc_result_err_size_overflow) {
+    AriaAllocResult result = aria_alloc_result_err(ARIA_ALLOC_ERR_SIZE_OVERFLOW, 0, 0);
+    
+    ASSERT_MSG(aria_alloc_result_is_err(result), "Result should be Err");
+    ASSERT_EQ_MSG(result.error_code, ARIA_ALLOC_ERR_SIZE_OVERFLOW, "Error code should be SIZE_OVERFLOW");
+}
+
+TEST_CASE(alloc_error_messages) {
+    const char* msg;
+    
+    msg = aria_alloc_error_message(ARIA_ALLOC_OK);
+    ASSERT_MSG(strcmp(msg, "Success") == 0, "ARIA_ALLOC_OK message");
+    
+    msg = aria_alloc_error_message(ARIA_ALLOC_ERR_OUT_OF_MEMORY);
+    ASSERT_MSG(strcmp(msg, "Out of memory") == 0, "OUT_OF_MEMORY message");
+    
+    msg = aria_alloc_error_message(ARIA_ALLOC_ERR_INVALID_SIZE);
+    ASSERT_MSG(strcmp(msg, "Invalid size (must be > 0)") == 0, "INVALID_SIZE message");
+    
+    msg = aria_alloc_error_message(ARIA_ALLOC_ERR_INVALID_ALIGNMENT);
+    ASSERT_MSG(strcmp(msg, "Invalid alignment (must be power of 2)") == 0, "INVALID_ALIGNMENT message");
+    
+    msg = aria_alloc_error_message(ARIA_ALLOC_ERR_SIZE_OVERFLOW);
+    ASSERT_MSG(strcmp(msg, "Size overflow (size * count too large)") == 0, "SIZE_OVERFLOW message");
+    
+    msg = aria_alloc_error_message(ARIA_ALLOC_ERR_UNSUPPORTED);
+    ASSERT_MSG(strcmp(msg, "Operation not supported") == 0, "UNSUPPORTED message");
+}
+
+// ============================================================================
+// Allocation Result Integration Tests
+// ============================================================================
+
+TEST_CASE(aria_alloc_result_success) {
+    AriaAllocResult result = aria_alloc_result(64);
+    
+    ASSERT_MSG(aria_alloc_result_is_ok(result), "Allocation should succeed");
+    ASSERT_MSG(result.value != NULL, "Pointer should not be NULL");
+    ASSERT_EQ_MSG(result.requested_size, 64, "Size should be 64");
+    
+    // Clean up
+    free(result.value);
+}
+
+TEST_CASE(aria_alloc_result_invalid_size) {
+    AriaAllocResult result = aria_alloc_result(0);
+    
+    ASSERT_MSG(aria_alloc_result_is_err(result), "Should fail with invalid size");
+    ASSERT_EQ_MSG(result.error_code, ARIA_ALLOC_ERR_INVALID_SIZE, "Error should be INVALID_SIZE");
+    ASSERT_MSG(result.value == NULL, "Pointer should be NULL");
+}
+
+TEST_CASE(aria_alloc_array_result_success) {
+    AriaAllocResult result = aria_alloc_array_result(sizeof(int64_t), 100);
+    
+    ASSERT_MSG(aria_alloc_result_is_ok(result), "Array allocation should succeed");
+    ASSERT_MSG(result.value != NULL, "Pointer should not be NULL");
+    ASSERT_EQ_MSG(result.requested_size, sizeof(int64_t) * 100, "Size should be elem_size * count");
+    
+    // Clean up
+    free(result.value);
+}
+
+TEST_CASE(aria_alloc_array_result_invalid_size) {
+    // Zero element size
+    AriaAllocResult result1 = aria_alloc_array_result(0, 100);
+    ASSERT_MSG(aria_alloc_result_is_err(result1), "Should fail with zero elem_size");
+    ASSERT_EQ_MSG(result1.error_code, ARIA_ALLOC_ERR_INVALID_SIZE, "Error should be INVALID_SIZE");
+    
+    // Zero count
+    AriaAllocResult result2 = aria_alloc_array_result(sizeof(int64_t), 0);
+    ASSERT_MSG(aria_alloc_result_is_err(result2), "Should fail with zero count");
+    ASSERT_EQ_MSG(result2.error_code, ARIA_ALLOC_ERR_INVALID_SIZE, "Error should be INVALID_SIZE");
+}
+
+TEST_CASE(aria_alloc_array_result_overflow) {
+    // Try to allocate SIZE_MAX elements of 2 bytes each (will overflow)
+    AriaAllocResult result = aria_alloc_array_result(2, SIZE_MAX);
+    
+    ASSERT_MSG(aria_alloc_result_is_err(result), "Should fail with overflow");
+    ASSERT_EQ_MSG(result.error_code, ARIA_ALLOC_ERR_SIZE_OVERFLOW, "Error should be SIZE_OVERFLOW");
+}
+
+TEST_CASE(aria_alloc_aligned_result_success) {
+    AriaAllocResult result = aria_alloc_aligned_result(64, 16);
+    
+    ASSERT_MSG(aria_alloc_result_is_ok(result), "Aligned allocation should succeed");
+    ASSERT_MSG(result.value != NULL, "Pointer should not be NULL");
+    
+    // Verify alignment
+    ASSERT_MSG(((uintptr_t)result.value % 16) == 0, "Pointer should be 16-byte aligned");
+    
+    // Clean up
+    free(result.value);
+}
+
+TEST_CASE(aria_alloc_aligned_result_invalid_alignment) {
+    // Non-power-of-2 alignment
+    AriaAllocResult result = aria_alloc_aligned_result(64, 15);
+    
+    ASSERT_MSG(aria_alloc_result_is_err(result), "Should fail with invalid alignment");
+    ASSERT_EQ_MSG(result.error_code, ARIA_ALLOC_ERR_INVALID_ALIGNMENT, "Error should be INVALID_ALIGNMENT");
+}
+
+TEST_CASE(aria_alloc_buffer_result_success) {
+    AriaAllocResult result = aria_alloc_buffer_result(4096, 16, true);
+    
+    ASSERT_MSG(aria_alloc_result_is_ok(result), "Buffer allocation should succeed");
+    ASSERT_MSG(result.value != NULL, "Pointer should not be NULL");
+    
+    // Verify alignment
+    ASSERT_MSG(((uintptr_t)result.value % 16) == 0, "Pointer should be 16-byte aligned");
+    
+    // Verify zeroing
+    uint8_t* bytes = (uint8_t*)result.value;
+    bool all_zero = true;
+    for (size_t i = 0; i < 4096; i++) {
+        if (bytes[i] != 0) {
+            all_zero = false;
+            break;
+        }
+    }
+    ASSERT_MSG(all_zero, "Buffer should be zero-initialized");
+    
+    // Clean up
+    free(result.value);
+}
+
+TEST_CASE(alloc_result_error_propagation_pattern) {
+    // Simulate error propagation pattern
+    AriaAllocResult result1 = aria_alloc_result(1024);
+    if (aria_alloc_result_is_err(result1)) {
+        FAIL_MSG("First allocation should succeed");
+    }
+    
+    // Use the allocation
+    int64_t* ptr = (int64_t*)result1.value;
+    *ptr = 42;
+    ASSERT_EQ_MSG(*ptr, 42, "Value should be set");
+    
+    // Clean up
+    free(result1.value);
+    
+    // Test error case
+    AriaAllocResult result2 = aria_alloc_result(0);  // Invalid size
+    if (aria_alloc_result_is_ok(result2)) {
+        free(result2.value);
+        FAIL_MSG("Zero-size allocation should fail");
+    }
+    
+    // Error was detected correctly
+    ASSERT_EQ_MSG(result2.error_code, ARIA_ALLOC_ERR_INVALID_SIZE, "Should be INVALID_SIZE error");
+}

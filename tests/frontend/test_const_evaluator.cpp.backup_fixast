@@ -1,0 +1,357 @@
+#include "test_helpers.h"
+#include "frontend/sema/const_evaluator.h"
+#include "frontend/ast/expr.h"
+#include "frontend/ast/stmt.h"
+#include <memory>
+
+using namespace aria;
+using namespace aria::sema;
+
+// ============================================================================
+// Const Evaluator Tests - Phase 4.5.4
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// Literal Evaluation Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(const_eval_integer_literal) {
+    ConstEvaluator evaluator;
+    
+    auto lit = std::make_unique<LiteralExpr>(static_cast<int64_t>(42));
+    ComptimeValue result = evaluator.evaluateExpr(lit.get());
+    
+    ASSERT(result.isInteger(), "Result should be integer");
+    ASSERT_EQ(result.getInt(), 42, "Value should be 42");
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+}
+
+TEST_CASE(const_eval_float_literal) {
+    ConstEvaluator evaluator;
+    
+    auto lit = std::make_unique<LiteralExpr>(3.14);
+    ComptimeValue result = evaluator.evaluateExpr(lit.get());
+    
+    ASSERT(result.isFloat(), "Result should be float");
+    ASSERT_EQ(result.getFloat(), 3.14, "Value should be 3.14");
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+}
+
+TEST_CASE(const_eval_bool_literal) {
+    ConstEvaluator evaluator;
+    
+    auto lit = std::make_unique<LiteralExpr>(true);
+    ComptimeValue result = evaluator.evaluateExpr(lit.get());
+    
+    ASSERT(result.isBool(), "Result should be bool");
+    ASSERT_EQ(result.getBool(), true, "Value should be true");
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+}
+
+TEST_CASE(const_eval_string_literal) {
+    ConstEvaluator evaluator;
+    
+    auto lit = std::make_unique<LiteralExpr>(std::string("hello"));
+    ComptimeValue result = evaluator.evaluateExpr(lit.get());
+    
+    ASSERT(result.isString(), "Result should be string");
+    ASSERT_EQ(result.getString(), "hello", "Value should be 'hello'");
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+}
+
+// ----------------------------------------------------------------------------
+// Binary Operation Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(const_eval_addition) {
+    ConstEvaluator evaluator;
+    
+    auto left = std::make_unique<LiteralExpr>(static_cast<int64_t>(10));
+    auto right = std::make_unique<LiteralExpr>(static_cast<int64_t>(32));
+    auto binOp = std::make_unique<BinaryExpr>(
+        std::move(left), Token(TokenType::TOKEN_PLUS, "+", 0, 0), std::move(right)
+    );
+    
+    ComptimeValue result = evaluator.evaluateExpr(binOp.get());
+    
+    ASSERT(result.isInteger(), "Result should be integer");
+    ASSERT_EQ(result.getInt(), 42, "10 + 32 should be 42");
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+}
+
+TEST_CASE(const_eval_multiplication) {
+    ConstEvaluator evaluator;
+    
+    auto left = std::make_unique<LiteralExpr>(static_cast<int64_t>(6));
+    auto right = std::make_unique<LiteralExpr>(static_cast<int64_t>(7));
+    auto binOp = std::make_unique<BinaryExpr>(
+        std::move(left), Token(TokenType::TOKEN_STAR, "*", 0, 0), std::move(right)
+    );
+    
+    ComptimeValue result = evaluator.evaluateExpr(binOp.get());
+    
+    ASSERT(result.isInteger(), "Result should be integer");
+    ASSERT_EQ(result.getInt(), 42, "6 * 7 should be 42");
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+}
+
+// ----------------------------------------------------------------------------
+// TBB Arithmetic Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(const_eval_tbb_addition) {
+    ConstEvaluator evaluator;
+    
+    auto left = ComptimeValue::makeTBB(100, "tbb8", 8);
+    auto right = ComptimeValue::makeTBB(20, "tbb8", 8);
+    ComptimeValue result = evaluator.tbbAdd(left, right);
+    
+    ASSERT(result.isTBB(), "Result should be TBB");
+    ASSERT_EQ(result.getInt(), 120, "100 + 20 should be 120");
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+}
+
+TEST_CASE(const_eval_tbb_overflow) {
+    ConstEvaluator evaluator;
+    
+    auto left = ComptimeValue::makeTBB(100, "tbb8", 8);
+    auto right = ComptimeValue::makeTBB(50, "tbb8", 8);
+    ComptimeValue result = evaluator.tbbAdd(left, right);
+    
+    ASSERT(result.isERR(), "Result should be ERR sentinel");
+    ASSERT(!evaluator.hasErrors(), "Overflow is not an error, it's ERR value");
+}
+
+TEST_CASE(const_eval_tbb_sticky_error) {
+    ConstEvaluator evaluator;
+    
+    auto err = ComptimeValue::makeERR("tbb8", 8);
+    auto val = ComptimeValue::makeTBB(10, "tbb8", 8);
+    ComptimeValue result = evaluator.tbbAdd(err, val);
+    
+    ASSERT(result.isERR(), "ERR + value should be ERR (sticky)");
+}
+
+// ----------------------------------------------------------------------------
+// Const Variable Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(const_eval_const_variable) {
+    ConstEvaluator evaluator;
+    
+    // Define a const
+    evaluator.defineConstant("ANSWER", ComptimeValue::makeInteger(42, "int64", 64));
+    
+    // Look it up
+    ComptimeValue result = evaluator.lookupConstant("ANSWER");
+    
+    ASSERT(result.isInteger(), "Result should be integer");
+    ASSERT_EQ(result.getInt(), 42, "Value should be 42");
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+}
+
+TEST_CASE(const_eval_undefined_variable) {
+    ConstEvaluator evaluator;
+    
+    ComptimeValue result = evaluator.lookupConstant("UNDEFINED");
+    
+    ASSERT(evaluator.hasErrors(), "Should have error for undefined variable");
+}
+
+// ----------------------------------------------------------------------------
+// Function Evaluation Tests (Task 7)
+// ----------------------------------------------------------------------------
+
+TEST_CASE(const_eval_simple_function) {
+    ConstEvaluator evaluator;
+    
+    // Create function: func:add = int64(int64:a, int64:b) { return a + b; }
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>("int64", "a"));
+    params.push_back(std::make_unique<ParameterNode>("int64", "b"));
+    
+    // Function body: { return a + b; }
+    auto aRef = std::make_unique<IdentifierExpr>("a");
+    auto bRef = std::make_unique<IdentifierExpr>("b");
+    auto addExpr = std::make_unique<BinaryExpr>(
+        std::move(aRef), Token(TokenType::TOKEN_PLUS, "+", 0, 0), std::move(bRef)
+    );
+    auto retStmt = std::make_unique<ReturnStmt>(std::move(addExpr));
+    
+    std::vector<ASTNodePtr> stmts;
+    stmts.push_back(std::move(retStmt));
+    auto body = std::make_unique<BlockStmt>(std::move(stmts));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "add", "int64", params, std::move(body)
+    );
+    
+    // Register function
+    evaluator.registerFunction("add", funcDecl.get());
+    
+    // Call function: add(10, 32)
+    auto callee = std::make_unique<IdentifierExpr>("add");
+    std::vector<ASTNodePtr> args;
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(10)));
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(32)));
+    auto callExpr = std::make_unique<CallExpr>(std::move(callee), std::move(args));
+    
+    ComptimeValue result = evaluator.evaluateExpr(callExpr.get());
+    
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+    ASSERT(result.isInteger(), "Result should be integer");
+    ASSERT_EQ(result.getInt(), 42, "add(10, 32) should be 42");
+}
+
+TEST_CASE(const_eval_recursive_factorial) {
+    ConstEvaluator evaluator;
+    
+    // Create recursive factorial function:
+    // func:factorial = int64(int64:n) {
+    //     if (n <= 1) return 1;
+    //     return n * factorial(n - 1);
+    // }
+    
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>("int64", "n"));
+    
+    // Base case: if (n <= 1) return 1;
+    auto nRef1 = std::make_unique<IdentifierExpr>("n");
+    auto one1 = std::make_unique<LiteralExpr>(static_cast<int64_t>(1));
+    auto condition = std::make_unique<BinaryExpr>(
+        std::move(nRef1), Token(TokenType::TOKEN_LESS_EQUAL, "<=", 0, 0), std::move(one1)
+    );
+    auto baseReturn = std::make_unique<LiteralExpr>(static_cast<int64_t>(1));
+    auto thenBranch = std::make_unique<ReturnStmt>(std::move(baseReturn));
+    
+    // Recursive case: return n * factorial(n - 1);
+    auto nRef2 = std::make_unique<IdentifierExpr>("n");
+    auto nRef3 = std::make_unique<IdentifierExpr>("n");
+    auto one2 = std::make_unique<LiteralExpr>(static_cast<int64_t>(1));
+    auto nMinus1 = std::make_unique<BinaryExpr>(
+        std::move(nRef3), Token(TokenType::TOKEN_MINUS, "-", 0, 0), std::move(one2)
+    );
+    
+    auto factCallee = std::make_unique<IdentifierExpr>("factorial");
+    std::vector<ASTNodePtr> recArgs;
+    recArgs.push_back(std::move(nMinus1));
+    auto factCall = std::make_unique<CallExpr>(std::move(factCallee), std::move(recArgs));
+    
+    auto multiply = std::make_unique<BinaryExpr>(
+        std::move(nRef2), Token(TokenType::TOKEN_STAR, "*", 0, 0), std::move(factCall)
+    );
+    auto recReturn = std::make_unique<ReturnStmt>(std::move(multiply));
+    
+    // Complete function body with if statement and recursive return
+    std::vector<ASTNodePtr> bodyStmts;
+    bodyStmts.push_back(std::make_unique<IfStmt>(
+        std::move(condition), std::move(thenBranch), nullptr
+    ));
+    bodyStmts.push_back(std::move(recReturn));
+    auto body = std::make_unique<BlockStmt>(std::move(bodyStmts));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "factorial", "int64", params, std::move(body)
+    );
+    
+    // Register function
+    evaluator.registerFunction("factorial", funcDecl.get());
+    
+    // Call factorial(5) = 120
+    auto callee = std::make_unique<IdentifierExpr>("factorial");
+    std::vector<ASTNodePtr> args;
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(5)));
+    auto callExpr = std::make_unique<CallExpr>(std::move(callee), std::move(args));
+    
+    ComptimeValue result = evaluator.evaluateExpr(callExpr.get());
+    
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+    ASSERT(result.isInteger(), "Result should be integer");
+    ASSERT_EQ(result.getInt(), 120, "factorial(5) should be 120");
+}
+
+// ----------------------------------------------------------------------------
+// Memoization Tests (Task 7)
+// ----------------------------------------------------------------------------
+
+TEST_CASE(const_eval_memoization_cache) {
+    ConstEvaluator evaluator;
+    
+    // Create a simple function
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>("int64", "x"));
+    
+    auto xRef = std::make_unique<IdentifierExpr>("x");
+    auto retStmt = std::make_unique<ReturnStmt>(std::move(xRef));
+    
+    std::vector<ASTNodePtr> stmts;
+    stmts.push_back(std::move(retStmt));
+    auto body = std::make_unique<BlockStmt>(std::move(stmts));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "identity", "int64", params, std::move(body)
+    );
+    
+    evaluator.registerFunction("identity", funcDecl.get());
+    
+    // First call - should compute
+    auto callee1 = std::make_unique<IdentifierExpr>("identity");
+    std::vector<ASTNodePtr> args1;
+    args1.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(42)));
+    auto call1 = std::make_unique<CallExpr>(std::move(callee1), std::move(args1));
+    
+    ComptimeValue result1 = evaluator.evaluateExpr(call1.get());
+    ASSERT_EQ(result1.getInt(), 42, "First call should return 42");
+    
+    // Second call with same argument - should use cache
+    auto callee2 = std::make_unique<IdentifierExpr>("identity");
+    std::vector<ASTNodePtr> args2;
+    args2.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(42)));
+    auto call2 = std::make_unique<CallExpr>(std::move(callee2), std::move(args2));
+    
+    ComptimeValue result2 = evaluator.evaluateExpr(call2.get());
+    ASSERT_EQ(result2.getInt(), 42, "Cached call should return 42");
+    
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+}
+
+// ----------------------------------------------------------------------------
+// Resource Limit Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(const_eval_stack_depth_limit) {
+    ConstEvaluator evaluator;
+    evaluator.setStackDepthLimit(10);  // Very low limit
+    
+    // Create infinite recursion function:
+    // func:infinite = int64(int64:n) { return infinite(n); }
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>("int64", "n"));
+    
+    auto nRef = std::make_unique<IdentifierExpr>("n");
+    auto callee = std::make_unique<IdentifierExpr>("infinite");
+    std::vector<ASTNodePtr> recArgs;
+    recArgs.push_back(std::move(nRef));
+    auto recCall = std::make_unique<CallExpr>(std::move(callee), std::move(recArgs));
+    auto retStmt = std::make_unique<ReturnStmt>(std::move(recCall));
+    
+    std::vector<ASTNodePtr> stmts;
+    stmts.push_back(std::move(retStmt));
+    auto body = std::make_unique<BlockStmt>(std::move(stmts));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "infinite", "int64", params, std::move(body)
+    );
+    
+    evaluator.registerFunction("infinite", funcDecl.get());
+    
+    // Call should hit stack depth limit
+    auto callee2 = std::make_unique<IdentifierExpr>("infinite");
+    std::vector<ASTNodePtr> args;
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(1)));
+    auto callExpr = std::make_unique<CallExpr>(std::move(callee2), std::move(args));
+    
+    evaluator.evaluateExpr(callExpr.get());
+    
+    ASSERT(evaluator.hasErrors(), "Should hit stack depth limit");
+}

@@ -238,10 +238,44 @@ bool GenericResolver::unifyTypes(Type* expected, Type* actual,
 }
 
 bool GenericResolver::implementsTrait(Type* type, const std::string& traitName) {
-    // TODO: Implement proper trait resolution
-    // For now, we'll assume all types implement all traits
-    // This will be implemented when we add the trait system
-    return true;
+    // Task 4 Completion: Proper trait resolution via symbol table
+    if (!type) {
+        return false;
+    }
+
+    // If no symbol table available, fall back to permissive behavior
+    // (allows compilation to continue without trait checking in edge cases)
+    if (!symbolTable) {
+        return true;
+    }
+
+    // Look up the trait in the symbol table
+    Symbol* traitSymbol = symbolTable->resolveSymbol(traitName);
+    if (!traitSymbol || traitSymbol->kind != SymbolKind::TRAIT) {
+        // Trait not found - this is an error, but report it rather than assume
+        addError("Unknown trait '" + traitName + "'");
+        return false;
+    }
+
+    // Get the concrete type name
+    std::string typeName = type->toString();
+
+    // Check if this type has an impl for this trait
+    // The impl declarations are stored on the trait symbol
+    const auto& implDecls = traitSymbol->getImplDecls();
+    for (const auto* implDecl : implDecls) {
+        if (implDecl && implDecl->typeName == typeName) {
+            // Found a matching impl!
+            return true;
+        }
+    }
+
+    // No impl found for this type
+    // Provide a helpful error message
+    addError("Type '" + typeName + "' does not implement trait '" + traitName + "'",
+             0, 0,
+             "Add an impl block: impl:" + traitName + ":for:" + typeName + " = { ... }");
+    return false;
 }
 
 // ============================================================================
@@ -524,9 +558,149 @@ ASTNodePtr Monomorphizer::cloneAST(ASTNode* node) {
             return std::make_unique<ExpressionStmt>(
                 std::move(expr), exprStmt->line, exprStmt->column);
         }
-        
+
+        // === For Statements ===
+        case ASTNode::NodeType::FOR: {
+            ForStmt* forStmt = static_cast<ForStmt*>(node);
+            auto init = forStmt->initializer ? cloneAST(forStmt->initializer.get()) : nullptr;
+            auto cond = forStmt->condition ? cloneAST(forStmt->condition.get()) : nullptr;
+            auto update = forStmt->update ? cloneAST(forStmt->update.get()) : nullptr;
+            auto body = forStmt->body ? cloneAST(forStmt->body.get()) : nullptr;
+            return std::make_unique<ForStmt>(
+                std::move(init), std::move(cond), std::move(update), std::move(body),
+                forStmt->line, forStmt->column);
+        }
+
+        // === Defer Statements ===
+        case ASTNode::NodeType::DEFER: {
+            DeferStmt* deferStmt = static_cast<DeferStmt*>(node);
+            auto block = deferStmt->block ? cloneAST(deferStmt->block.get()) : nullptr;
+            return std::make_unique<DeferStmt>(std::move(block), deferStmt->line, deferStmt->column);
+        }
+
+        // === Break/Continue Statements ===
+        case ASTNode::NodeType::BREAK: {
+            BreakStmt* breakStmt = static_cast<BreakStmt*>(node);
+            return std::make_unique<BreakStmt>(breakStmt->label, breakStmt->line, breakStmt->column);
+        }
+
+        case ASTNode::NodeType::CONTINUE: {
+            ContinueStmt* contStmt = static_cast<ContinueStmt*>(node);
+            return std::make_unique<ContinueStmt>(contStmt->label, contStmt->line, contStmt->column);
+        }
+
+        // === Ternary Expressions ===
+        case ASTNode::NodeType::TERNARY: {
+            TernaryExpr* tern = static_cast<TernaryExpr*>(node);
+            auto cond = cloneAST(tern->condition.get());
+            auto trueVal = cloneAST(tern->trueValue.get());
+            auto falseVal = cloneAST(tern->falseValue.get());
+            return std::make_unique<TernaryExpr>(
+                std::move(cond), std::move(trueVal), std::move(falseVal),
+                tern->line, tern->column);
+        }
+
+        // === Index Expressions ===
+        case ASTNode::NodeType::INDEX: {
+            IndexExpr* idx = static_cast<IndexExpr*>(node);
+            auto arr = cloneAST(idx->array.get());
+            auto index = cloneAST(idx->index.get());
+            return std::make_unique<IndexExpr>(std::move(arr), std::move(index), idx->line, idx->column);
+        }
+
+        // === Member Access Expressions ===
+        case ASTNode::NodeType::MEMBER_ACCESS: {
+            MemberAccessExpr* memAccess = static_cast<MemberAccessExpr*>(node);
+            auto obj = cloneAST(memAccess->object.get());
+            return std::make_unique<MemberAccessExpr>(
+                std::move(obj), memAccess->member, false, memAccess->isSafeNavigation,
+                memAccess->line, memAccess->column);
+        }
+
+        case ASTNode::NodeType::POINTER_MEMBER: {
+            MemberAccessExpr* memAccess = static_cast<MemberAccessExpr*>(node);
+            auto obj = cloneAST(memAccess->object.get());
+            return std::make_unique<MemberAccessExpr>(
+                std::move(obj), memAccess->member, true, memAccess->isSafeNavigation,
+                memAccess->line, memAccess->column);
+        }
+
+        // === Array Literal Expressions ===
+        case ASTNode::NodeType::ARRAY_LITERAL: {
+            ArrayLiteralExpr* arrLit = static_cast<ArrayLiteralExpr*>(node);
+            std::vector<ASTNodePtr> clonedElements;
+            for (const auto& elem : arrLit->elements) {
+                clonedElements.push_back(cloneAST(elem.get()));
+            }
+            return std::make_unique<ArrayLiteralExpr>(
+                std::move(clonedElements), arrLit->line, arrLit->column);
+        }
+
+        // === Assignment Expressions ===
+        case ASTNode::NodeType::ASSIGNMENT: {
+            AssignmentExpr* assign = static_cast<AssignmentExpr*>(node);
+            auto target = cloneAST(assign->target.get());
+            auto value = cloneAST(assign->value.get());
+            return std::make_unique<AssignmentExpr>(
+                std::move(target), assign->op, std::move(value),
+                assign->line, assign->column);
+        }
+
+        // === Move Expressions ===
+        case ASTNode::NodeType::MOVE: {
+            MoveExpr* moveExpr = static_cast<MoveExpr*>(node);
+            auto var = cloneAST(moveExpr->variable.get());
+            return std::make_unique<MoveExpr>(moveExpr->variableName, std::move(var),
+                                              moveExpr->line, moveExpr->column);
+        }
+
+        // === Range Expressions ===
+        case ASTNode::NodeType::RANGE: {
+            RangeExpr* rangeExpr = static_cast<RangeExpr*>(node);
+            auto start = rangeExpr->start ? cloneAST(rangeExpr->start.get()) : nullptr;
+            auto end = rangeExpr->end ? cloneAST(rangeExpr->end.get()) : nullptr;
+            return std::make_unique<RangeExpr>(
+                std::move(start), std::move(end), rangeExpr->isExclusive,
+                rangeExpr->line, rangeExpr->column);
+        }
+
+        // === Type Annotations ===
+        case ASTNode::NodeType::TYPE_ANNOTATION: {
+            SimpleType* simpleType = static_cast<SimpleType*>(node);
+            return std::make_unique<SimpleType>(simpleType->typeName, simpleType->line, simpleType->column);
+        }
+
+        // === Pass/Fail Statements (Result types) ===
+        case ASTNode::NodeType::PASS: {
+            PassStmt* passStmt = static_cast<PassStmt*>(node);
+            auto val = passStmt->value ? cloneAST(passStmt->value.get()) : nullptr;
+            return std::make_unique<PassStmt>(std::move(val), passStmt->line, passStmt->column);
+        }
+
+        case ASTNode::NodeType::FAIL: {
+            FailStmt* failStmt = static_cast<FailStmt*>(node);
+            auto code = failStmt->errorCode ? cloneAST(failStmt->errorCode.get()) : nullptr;
+            return std::make_unique<FailStmt>(std::move(code), failStmt->line, failStmt->column);
+        }
+
+        // === Await Expressions (Async) ===
+        case ASTNode::NodeType::AWAIT: {
+            AwaitExpr* awaitExpr = static_cast<AwaitExpr*>(node);
+            auto operand = cloneAST(awaitExpr->operand.get());
+            return std::make_unique<AwaitExpr>(std::move(operand), awaitExpr->line, awaitExpr->column);
+        }
+
+        // === Unwrap Expressions ===
+        case ASTNode::NodeType::UNWRAP: {
+            UnwrapExpr* unwrapExpr = static_cast<UnwrapExpr*>(node);
+            auto result = cloneAST(unwrapExpr->result.get());
+            auto defaultVal = unwrapExpr->defaultValue ? cloneAST(unwrapExpr->defaultValue.get()) : nullptr;
+            return std::make_unique<UnwrapExpr>(std::move(result), std::move(defaultVal),
+                                                unwrapExpr->line, unwrapExpr->column);
+        }
+
         default:
-            addError("Cannot clone AST node of type: " + 
+            addError("Cannot clone AST node of type: " +
                     std::to_string(static_cast<int>(node->type)),
                     node->line, node->column);
             return nullptr;

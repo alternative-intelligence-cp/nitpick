@@ -319,6 +319,36 @@ std::string OpaqueStructDecl::toString() const {
     return "OpaqueStruct(" + structName + ")";
 }
 
+std::string TraitDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Trait(" << traitName;
+    if (!superTraits.empty()) {
+        oss << " : ";
+        for (size_t i = 0; i < superTraits.size(); ++i) {
+            if (i > 0) oss << " + ";
+            oss << superTraits[i];
+        }
+    }
+    oss << ", [";
+    for (size_t i = 0; i < methods.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << methods[i].name << ":" << methods[i].returnType;
+    }
+    oss << "])";
+    return oss.str();
+}
+
+std::string ImplDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Impl(" << traitName << " for " << typeName << ", [";
+    for (size_t i = 0; i < methods.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << methods[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
 std::string ProgramNode::toString() const {
     std::ostringstream oss;
     oss << "Program([";

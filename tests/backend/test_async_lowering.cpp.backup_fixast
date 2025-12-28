@@ -1,0 +1,363 @@
+#include "../test_helpers.h"
+#include "frontend/parser/parser.h"
+#include "frontend/ast/ast_node.h"
+#include "frontend/ast/stmt.h"
+#include "frontend/ast/expr.h"
+#include "backend/ir/codegen_stmt.h"
+#include "backend/ir/codegen_expr.h"
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/Support/raw_ostream.h>
+#include <memory>
+#include <sstream>
+
+using namespace aria;
+using namespace aria::frontend;
+using namespace aria::backend;
+
+/**
+ * Check if IR contains a specific string
+ */
+bool irContains(llvm::Module* module, const std::string& str) {
+    std::string ir_str;
+    llvm::raw_string_ostream rso(ir_str);
+    module->print(rso, nullptr);
+    rso.flush();
+    return ir_str.find(str) != std::string::npos;
+}
+
+/**
+ * Count occurrences of a string in IR
+ */
+size_t countInIR(llvm::Module* module, const std::string& str) {
+    std::string ir_str;
+    llvm::raw_string_ostream rso(ir_str);
+    module->print(rso, nullptr);
+    rso.flush();
+    
+    size_t count = 0;
+    size_t pos = 0;
+    while ((pos = ir_str.find(str, pos)) != std::string::npos) {
+        count++;
+        pos += str.length();
+    }
+    return count;
+}
+
+/**
+ * Test that async functions generate valid coroutine IR structure
+ * 
+ * This test validates that our codegen produces IR that:
+ * - Uses LLVM coroutine intrinsics correctly
+ * - Has proper basic block structure
+ * - Passes LLVM verification (ready for lowering passes)
+ */
+TEST_CASE(async_coroutine_structure) {
+    // Create LLVM context and module
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    auto module = std::make_unique<llvm::Module>("test_coro_structure", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    // Create async function: async func:testCoro = NIL() { }
+    std::vector<ASTNodePtr> body_stmts;
+    auto body = std::make_shared<BlockStmt>(body_stmts);
+    
+    auto func_decl = std::make_shared<FuncDeclStmt>(
+        "testCoro",
+        "NIL",
+        std::vector<ASTNodePtr>(),
+        body
+    );
+    func_decl->isAsync = true;
+    
+    // Generate IR
+    llvm::Function* func = stmt_codegen.codegenFuncDecl(func_decl.get());
+    
+    // Verify function was created
+    ASSERT(func != nullptr, "Async function should be generated");
+    
+    // Verify module before any transformations
+    std::string verify_error;
+    llvm::raw_string_ostream error_stream(verify_error);
+    bool has_error = llvm::verifyModule(*module, &error_stream);
+    if (has_error) {
+        // Print IR and error for debugging
+        std::string ir_dump;
+        llvm::raw_string_ostream ir_stream(ir_dump);
+        module->print(ir_stream, nullptr);
+        ir_stream.flush();
+        std::cout << "\n=== MODULE IR ===\n" << ir_dump << "\n";
+        std::cout << "\n=== VERIFICATION ERROR ===\n" << verify_error << "\n";
+    }
+    ASSERT_FALSE(has_error, "Module should verify (ready for LLVM lowering passes)");
+    
+    // Verify coroutine structure is correct:
+    // 1. Has required coroutine intrinsics
+    ASSERT(irContains(module.get(), "@llvm.coro.id"), 
+           "Should have @llvm.coro.id (coroutine identification)");
+    ASSERT(irContains(module.get(), "@llvm.coro.begin"), 
+           "Should have @llvm.coro.begin (frame initialization)");
+    ASSERT(irContains(module.get(), "@llvm.coro.suspend"),
+           "Should have @llvm.coro.suspend (suspension point)");
+    ASSERT(irContains(module.get(), "@llvm.coro.end"),
+           "Should have @llvm.coro.end (coroutine termination)");
+    
+    // 2. Has proper basic block structure for coroutines
+    ASSERT(irContains(module.get(), "entry:"),
+           "Should have entry block");
+    ASSERT(irContains(module.get(), "coro.suspend:"),
+           "Should have coro.suspend block");
+    ASSERT(irContains(module.get(), "coro.cleanup:"),
+           "Should have coro.cleanup block");
+    
+    // 3. Returns coroutine handle (i8*)
+    ASSERT(func->getReturnType()->isPointerTy(),
+           "Async function should return i8* (coroutine handle)");
+}
+
+/**
+ * Test async function with await generates correct suspension structure
+ * 
+ * Validates that await expressions create proper suspension points that
+ * LLVM's coroutine passes can transform into a state machine.
+ */
+TEST_CASE(async_await_suspension_structure) {
+    // Create LLVM context and module
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    auto module = std::make_unique<llvm::Module>("test_await_structure", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    // First create an async function to await
+    std::vector<ASTNodePtr> awaited_body;
+    auto awaited_block = std::make_shared<BlockStmt>(awaited_body);
+    auto awaited_func = std::make_shared<FuncDeclStmt>(
+        "asyncOp",
+        "NIL",
+        std::vector<ASTNodePtr>(),
+        awaited_block
+    );
+    awaited_func->isAsync = true;
+    stmt_codegen.codegenFuncDecl(awaited_func.get());
+    
+    // Create async function with await: async func:caller = NIL() { await asyncOp() }
+    auto callee = std::make_shared<IdentifierExpr>("asyncOp");
+    auto call = std::make_shared<CallExpr>(callee, std::vector<ASTNodePtr>(), std::vector<std::string>());
+    auto await_expr = std::make_shared<AwaitExpr>(call);
+    auto expr_stmt = std::make_shared<ExpressionStmt>(await_expr);
+    
+    std::vector<ASTNodePtr> body_stmts;
+    body_stmts.push_back(expr_stmt);
+    auto body = std::make_shared<BlockStmt>(body_stmts);
+    
+    auto func_decl = std::make_shared<FuncDeclStmt>(
+        "caller",
+        "NIL",
+        std::vector<ASTNodePtr>(),
+        body
+    );
+    func_decl->isAsync = true;
+    
+    // Generate IR
+    llvm::Function* func = stmt_codegen.codegenFuncDecl(func_decl.get());
+    
+    // Verify function was created
+    ASSERT(func != nullptr, "Async function with await should be generated");
+    
+    // Verify module
+    std::string verify_error;
+    llvm::raw_string_ostream error_stream(verify_error);
+    bool has_error = llvm::verifyModule(*module, &error_stream);
+    if (has_error) {
+        std::string ir_dump;
+        llvm::raw_string_ostream ir_stream(ir_dump);
+        module->print(ir_stream, nullptr);
+        ir_stream.flush();
+        std::cout << "\n=== MODULE IR ===\n" << ir_dump << "\n";
+        std::cout << "\n=== VERIFICATION ERROR ===\n" << verify_error << "\n";
+    }
+    ASSERT_FALSE(has_error, "Module with await should verify");
+    
+    // Verify suspension point structure
+    ASSERT(irContains(module.get(), "@llvm.coro.save"),
+           "Should have @llvm.coro.save (prepare for suspension)");
+    ASSERT(irContains(module.get(), "@llvm.coro.suspend"),
+           "Should have @llvm.coro.suspend (suspension point)");
+    ASSERT(irContains(module.get(), "@llvm.coro.resume"),
+           "Should have @llvm.coro.resume (resume awaited coroutine)");
+    
+    // Verify await blocks
+    ASSERT(irContains(module.get(), "await.resume"),
+           "Should have await.resume block");
+    ASSERT(irContains(module.get(), "await.cleanup"),
+           "Should have await.cleanup block");
+    
+    // Count suspension points (at least 2: one for await, one for final)
+    size_t suspend_count = countInIR(module.get(), "@llvm.coro.suspend");
+    ASSERT(suspend_count >= 2, "Should have at least 2 suspension points");
+}
+
+/**
+ * Test multiple await expressions create distinct suspension points
+ * 
+ * Validates that multiple await expressions in the same function each
+ * create their own suspension point with unique labels.
+ */
+TEST_CASE(multiple_awaits_distinct_suspensions) {
+    // Create LLVM context and module
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    auto module = std::make_unique<llvm::Module>("test_multi_await", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    // Create async function to await
+    std::vector<ASTNodePtr> task_body;
+    auto task_block = std::make_shared<BlockStmt>(task_body);
+    auto task_func = std::make_shared<FuncDeclStmt>(
+        "task",
+        "NIL",
+        std::vector<ASTNodePtr>(),
+        task_block
+    );
+    task_func->isAsync = true;
+    stmt_codegen.codegenFuncDecl(task_func.get());
+    
+    // Create function with 3 await expressions
+    auto callee1 = std::make_shared<IdentifierExpr>("task");
+    auto call1 = std::make_shared<CallExpr>(callee1, std::vector<ASTNodePtr>(), std::vector<std::string>());
+    auto await1 = std::make_shared<AwaitExpr>(call1);
+    auto expr_stmt1 = std::make_shared<ExpressionStmt>(await1);
+    
+    auto callee2 = std::make_shared<IdentifierExpr>("task");
+    auto call2 = std::make_shared<CallExpr>(callee2, std::vector<ASTNodePtr>(), std::vector<std::string>());
+    auto await2 = std::make_shared<AwaitExpr>(call2);
+    auto expr_stmt2 = std::make_shared<ExpressionStmt>(await2);
+    
+    auto callee3 = std::make_shared<IdentifierExpr>("task");
+    auto call3 = std::make_shared<CallExpr>(callee3, std::vector<ASTNodePtr>(), std::vector<std::string>());
+    auto await3 = std::make_shared<AwaitExpr>(call3);
+    auto expr_stmt3 = std::make_shared<ExpressionStmt>(await3);
+    
+    std::vector<ASTNodePtr> body_stmts;
+    body_stmts.push_back(expr_stmt1);
+    body_stmts.push_back(expr_stmt2);
+    body_stmts.push_back(expr_stmt3);
+    auto body = std::make_shared<BlockStmt>(body_stmts);
+    
+    auto func_decl = std::make_shared<FuncDeclStmt>(
+        "multiAwait",
+        "NIL",
+        std::vector<ASTNodePtr>(),
+        body
+    );
+    func_decl->isAsync = true;
+    
+    // Generate IR
+    llvm::Function* func = stmt_codegen.codegenFuncDecl(func_decl.get());
+    ASSERT(func != nullptr, "Multi-await function should be generated");
+    
+    // Verify module
+    std::string verify_error;
+    llvm::raw_string_ostream error_stream(verify_error);
+    bool has_error = llvm::verifyModule(*module, &error_stream);
+    ASSERT_FALSE(has_error, "Multi-await module should verify");
+    
+    // Count suspension points (3 awaits + 1 final = 4 total)
+    size_t suspend_count = countInIR(module.get(), "@llvm.coro.suspend");
+    ASSERT(suspend_count >= 4, "Should have at least 4 suspension points (3 awaits + final)");
+    
+    // Verify distinct await blocks (each await should have unique labels)
+    // We generate blocks like: await.resume, await.resume2, await.resume3
+    std::string ir_str;
+    llvm::raw_string_ostream rso(ir_str);
+    module->print(rso, nullptr);
+    rso.flush();
+    
+    // Count unique await.resume blocks  
+    // Note: LLVM may optimize or reorder blocks, so just verify we have multiple suspension points
+    // Each await creates at least 2 blocks (resume + cleanup)
+    size_t resume_count = 0;
+    size_t pos = 0;
+    while ((pos = ir_str.find("await.resume", pos)) != std::string::npos) {
+        resume_count++;
+        pos += 12; // length of "await.resume"
+    }
+    
+    ASSERT(resume_count >= 3, "Should have at least 3 await.resume blocks (one per await)");
+}
+
+/**
+ * Test that coroutine intrinsics are properly declared
+ * 
+ * Validates that all required LLVM intrinsics are declared in the module
+ * with correct signatures for LLVM's coroutine transformation passes.
+ */
+TEST_CASE(coroutine_intrinsics_declared) {
+    // Create LLVM context and module
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    auto module = std::make_unique<llvm::Module>("test_intrinsics", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    // Generate simple async function
+    std::vector<ASTNodePtr> body_stmts;
+    auto body = std::make_shared<BlockStmt>(body_stmts);
+    auto func_decl = std::make_shared<FuncDeclStmt>(
+        "intrinsicTest",
+        "NIL",
+        std::vector<ASTNodePtr>(),
+        body
+    );
+    func_decl->isAsync = true;
+    
+    stmt_codegen.codegenFuncDecl(func_decl.get());
+    
+    // Check all required intrinsics are declared
+    std::string ir_str;
+    llvm::raw_string_ostream rso(ir_str);
+    module->print(rso, nullptr);
+    rso.flush();
+    
+    // These intrinsics must be present for LLVM coroutine lowering
+    ASSERT(ir_str.find("declare token @llvm.coro.id") != std::string::npos,
+           "@llvm.coro.id should be declared");
+    ASSERT(ir_str.find("declare i64 @llvm.coro.size") != std::string::npos,
+           "@llvm.coro.size should be declared");
+    ASSERT(ir_str.find("declare ptr @llvm.coro.begin") != std::string::npos ||
+           ir_str.find("declare i8* @llvm.coro.begin") != std::string::npos,
+           "@llvm.coro.begin should be declared");
+    ASSERT(ir_str.find("declare i8 @llvm.coro.suspend") != std::string::npos,
+           "@llvm.coro.suspend should be declared");
+    ASSERT(ir_str.find("declare i1 @llvm.coro.end") != std::string::npos,
+           "@llvm.coro.end should be declared");
+    ASSERT(ir_str.find("declare ptr @llvm.coro.free") != std::string::npos ||
+           ir_str.find("declare i8* @llvm.coro.free") != std::string::npos,
+           "@llvm.coro.free should be declared");
+}

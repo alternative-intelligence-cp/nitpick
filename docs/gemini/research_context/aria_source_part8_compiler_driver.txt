@@ -33,6 +33,7 @@ FILE: src/main.cpp
 #include "frontend/sema/type_checker.h"
 #include "frontend/sema/generic_resolver.h"
 #include "frontend/sema/borrow_checker.h"
+#include "frontend/sema/module_loader.h"  // Module system
 #include "frontend/diagnostics.h"
 #include "frontend/warnings.h"
 #include "backend/ir/ir_generator.h"
@@ -63,6 +64,7 @@ struct CompilerOptions {
     bool emit_llvm_ir = false;
     bool emit_llvm_bc = false;
     bool emit_asm = false;
+    bool emit_deps = false;           // ARIA-011: Emit JSON dependency manifest
     bool dump_ast = false;
     bool dump_tokens = false;
     bool preprocess_only = false;  // NEW: -E flag for preprocessed output
@@ -92,6 +94,7 @@ void print_help() {
     std::cout << "  --emit-llvm       Emit LLVM IR text (.ll)\n";
     std::cout << "  --emit-llvm-bc    Emit LLVM bitcode (.bc)\n";
     std::cout << "  --emit-asm        Emit assembly (.s)\n";
+    std::cout << "  --emit-deps       Emit JSON dependency manifest (for aria_make)\n";
     std::cout << "  --ast-dump        Dump AST and exit\n";
     std::cout << "  --tokens          Dump tokens and exit\n";
     std::cout << "  -O<level>         Optimization level (0-3)\n";
@@ -140,6 +143,8 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.emit_llvm_bc = true;
         } else if (arg == "--emit-asm") {
             opts.emit_asm = true;
+        } else if (arg == "--emit-deps") {
+            opts.emit_deps = true;
         } else if (arg == "-E") {
             opts.preprocess_only = true;
         } else if (arg == "--ast-dump") {
@@ -200,6 +205,134 @@ bool read_source_file(const std::string& filename, std::string& source, aria::Di
     }
 
     source.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    return true;
+}
+
+/**
+ * ARIA-011: Extract and emit dependencies as JSON
+ *
+ * Parses the source file and extracts all 'use' statements,
+ * resolving them to file paths. Outputs JSON to stdout.
+ *
+ * Output format:
+ * {
+ *   "source": "/path/to/file.aria",
+ *   "imports": [
+ *     {"module": "std.io", "path": "/path/to/std/io.aria"},
+ *     {"module": "./utils", "path": "/path/to/utils.aria"}
+ *   ],
+ *   "error": null
+ * }
+ */
+bool emit_dependencies(
+    const std::string& source,
+    const std::string& filename,
+    const CompilerOptions& opts,
+    aria::DiagnosticEngine& diags
+) {
+    // Phase 0: Preprocessing
+    std::string preprocessed_source = source;
+    try {
+        aria::frontend::Preprocessor preprocessor;
+        preprocessed_source = preprocessor.process(source, filename);
+    } catch (const std::exception& e) {
+        // Output error as JSON
+        std::cout << "{\n";
+        std::cout << "  \"source\": \"" << filename << "\",\n";
+        std::cout << "  \"imports\": [],\n";
+        std::cout << "  \"error\": \"Preprocessor error: " << e.what() << "\"\n";
+        std::cout << "}\n";
+        return false;
+    }
+
+    // Phase 1: Lexical Analysis
+    aria::frontend::Lexer lexer(preprocessed_source);
+    auto tokens = lexer.tokenize();
+
+    if (!lexer.getErrors().empty()) {
+        std::cout << "{\n";
+        std::cout << "  \"source\": \"" << filename << "\",\n";
+        std::cout << "  \"imports\": [],\n";
+        std::cout << "  \"error\": \"Lexer errors\"\n";
+        std::cout << "}\n";
+        return false;
+    }
+
+    // Phase 2: Parsing
+    aria::Parser parser(tokens);
+    auto module_node = parser.parse();
+
+    if (!module_node || parser.hasErrors()) {
+        std::cout << "{\n";
+        std::cout << "  \"source\": \"" << filename << "\",\n";
+        std::cout << "  \"imports\": [],\n";
+        std::cout << "  \"error\": \"Parser errors\"\n";
+        std::cout << "}\n";
+        return false;
+    }
+
+    // Extract project root from filename
+    std::string project_root = ".";
+    size_t last_slash = filename.find_last_of("/\\");
+    if (last_slash != std::string::npos) {
+        project_root = filename.substr(0, last_slash);
+    }
+
+    // Create module loader to discover and resolve imports
+    aria::sema::ModuleLoader module_loader(project_root);
+
+    // Get absolute path for the source file
+    std::string abs_filename = filename;
+    try {
+        abs_filename = std::filesystem::canonical(filename).string();
+    } catch (...) {
+        // Keep relative path if canonical fails
+    }
+
+    // Output JSON header
+    std::cout << "{\n";
+    std::cout << "  \"source\": \"" << abs_filename << "\",\n";
+    std::cout << "  \"imports\": [";
+
+    // Cast to ProgramNode to access declarations
+    auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+    if (!program) {
+        std::cout << "{\n";
+        std::cout << "  \"source\": \"" << filename << "\",\n";
+        std::cout << "  \"imports\": [],\n";
+        std::cout << "  \"error\": \"Failed to parse program\"\n";
+        std::cout << "}\n";
+        return false;
+    }
+
+    // Scan for use statements in the AST declarations
+    bool first = true;
+    for (const auto& decl : program->declarations) {
+        if (auto* use_stmt = dynamic_cast<aria::UseStmt*>(decl.get())) {
+            // Resolve the import to a file path
+            std::string resolved_path = module_loader.getResolver().resolveImport(use_stmt, filename);
+
+            // Build module name from path components
+            std::string module_name;
+            for (size_t i = 0; i < use_stmt->path.size(); ++i) {
+                if (i > 0) module_name += ".";
+                module_name += use_stmt->path[i];
+            }
+
+            if (!first) std::cout << ",";
+            first = false;
+
+            std::cout << "\n    {";
+            std::cout << "\"module\": \"" << module_name << "\", ";
+            std::cout << "\"path\": \"" << resolved_path << "\"";
+            std::cout << "}";
+        }
+    }
+
+    std::cout << "\n  ],\n";
+    std::cout << "  \"error\": null\n";
+    std::cout << "}\n";
+
     return true;
 }
 
@@ -345,10 +478,21 @@ llvm::Module* compile_to_module(
     
     // Create generic resolver and monomorphizer (Session 13: pass TypeSystem for struct specialization)
     aria::sema::GenericResolver generic_resolver;
+    generic_resolver.setSymbolTable(&symbol_table);  // Task 4: Enable trait constraint checking
     aria::sema::Monomorphizer monomorphizer(&generic_resolver, &type_system);
     
-    // Type checker with generic support
-    aria::sema::TypeChecker type_checker(&type_system, &symbol_table, &generic_resolver, &monomorphizer);
+    // Module system: Extract project root from input file path
+    std::string project_root = ".";
+    size_t last_slash = filename.find_last_of("/\\");
+    if (last_slash != std::string::npos) {
+        project_root = filename.substr(0, last_slash);
+    }
+    
+    // Create module loader for handling use statements
+    aria::sema::ModuleLoader module_loader(project_root);
+    
+    // Type checker with generic support and module loading
+    aria::sema::TypeChecker type_checker(&type_system, &symbol_table, &generic_resolver, &monomorphizer, &module_loader, filename);
     
     // Run type checking on entire module (activates generic specialization)
     type_checker.check(module_node.get());
@@ -358,6 +502,28 @@ llvm::Module* compile_to_module(
             diags.error(aria::SourceLocation(filename, 0, 0), err);
         }
         return nullptr;
+    }
+    
+    // Type check all loaded modules (for cross-module calls)
+    const auto& loaded_modules = module_loader.getLoadedModules();
+    for (const auto& [path, loaded_module] : loaded_modules) {
+        if (loaded_module && loaded_module->ast) {
+            if (opts.verbose) {
+                std::cout << "  Type checking module: " << path << "\n";
+            }
+            // Create a separate type checker for each module
+            // (They share the same type system but have separate symbol tables)
+            aria::sema::TypeChecker module_type_checker(&type_system, loaded_module->moduleInfo->getSymbolTable(), 
+                                                        &generic_resolver, &monomorphizer, &module_loader, path);
+            module_type_checker.check(loaded_module->ast.get());
+            
+            if (module_type_checker.hasErrors()) {
+                for (const auto& err : module_type_checker.getErrors()) {
+                    diags.error(aria::SourceLocation(path, 0, 0), err);
+                }
+                return nullptr;
+            }
+        }
     }
     
     // Report symbol table warnings (e.g., shadowing)
@@ -411,7 +577,39 @@ llvm::Module* compile_to_module(
         }
     }
     
-    // Now generate the main module code (which can call specialized functions)
+    // Generate IR for loaded modules (needed for cross-module function calls)
+    for (const auto& [path, loaded_module] : loaded_modules) {
+        if (loaded_module && loaded_module->ast) {
+            if (opts.verbose) {
+                std::cout << "  Generating IR for module: " << path << "\n";
+            }
+            
+            // Extract module name from path (e.g., "math_utils" from "tests/module_loading/math_utils.aria")
+            std::string module_name = path;
+            size_t last_slash = module_name.find_last_of("/\\");
+            if (last_slash != std::string::npos) {
+                module_name = module_name.substr(last_slash + 1);
+            }
+            size_t last_dot = module_name.find_last_of('.');
+            if (last_dot != std::string::npos) {
+                module_name = module_name.substr(0, last_dot);
+            }
+            
+            // Set the current module name so functions get external linkage
+            ir_gen.setCurrentModuleName(module_name);
+            
+            auto module_value = ir_gen.codegen(loaded_module->ast.get());
+            if (!module_value) {
+                diags.error(aria::SourceLocation(path, 0, 0), "Module IR generation failed");
+                return nullptr;
+            }
+            
+            // Clear module name for main module generation
+            ir_gen.setCurrentModuleName("");
+        }
+    }
+    
+    // Now generate the main module code (which can call specialized functions and imported modules)
     auto value = ir_gen.codegen(module_node.get());
     
     if (!value) {
@@ -596,6 +794,23 @@ int main(int argc, char** argv) {
             return 1;
         }
         return module ? 1 : 0;
+    }
+
+    // ARIA-011: For --emit-deps, extract and output dependencies as JSON
+    // Used by aria_make for accurate dependency scanning using the proper parser
+    if (opts.emit_deps) {
+        // Process first input file only (aria_make calls per-file)
+        const auto& input_file = opts.input_files[0];
+
+        std::string source;
+        if (!read_source_file(input_file, source, diags)) {
+            // Output error JSON
+            std::cout << "{\"source\": \"" << input_file << "\", \"imports\": [], \"error\": \"Could not read file\"}\n";
+            return 1;
+        }
+
+        bool success = emit_dependencies(source, input_file, opts, diags);
+        return success ? 0 : 1;
     }
 
     // Compile each input file into a separate module

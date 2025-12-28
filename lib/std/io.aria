@@ -1,107 +1,591 @@
-// Aria Standard Library - Input/Output Module
-// File: lib/std/io.aria
-// Reference: research_031_essential_stdlib.txt Section 4
-// 
-// This module provides safe I/O operations built on the runtime foundation.
-// It implements the six-channel I/O system and provides high-level wrappers
-// for file operations, stream handling, and formatted output.
+/// Input/Output Module
+//!
+//! This module provides safe I/O operations including:
+//! - Six-channel I/O (print, eprint, debug)
+//! - File operations with RAII-style cleanup
+//! - TBB-integrated seeking for safe offset calculations
+//! - Buffered readers and writers
+//!
+//! Reference: research_031_essential_stdlib.txt Section 4
 
 use std.sys;
-use std.mem;
-use std.result;
+use std.math;
 
-// ============================================================================
-// Core Print Functions (Phase 6.1.1)
-// ============================================================================
+// =============================================================================
+// External C Library Functions (POSIX)
+// =============================================================================
 
-// Print string to stdout (no newline)
-// This is the most basic output function in the standard library
+extern "libc" {
+    func write(fd: int32, buf: wild void*, count: int64) -> int64;
+    func read(fd: int32, buf: wild void*, count: int64) -> int64;
+    func open(pathname: wild byte@, flags: int32, mode: int32) -> int32;
+    func close(fd: int32) -> int32;
+    func lseek(fd: int32, offset: int64, whence: int32) -> int64;
+    func fstat(fd: int32, statbuf: wild void*) -> int32;
+    func fsync(fd: int32) -> int32;
+    func ftruncate(fd: int32, length: int64) -> int32;
+}
+
+// Open flags (Linux)
+pub const O_RDONLY: int32 = 0;
+pub const O_WRONLY: int32 = 1;
+pub const O_RDWR: int32 = 2;
+pub const O_CREAT: int32 = 64;
+pub const O_TRUNC: int32 = 512;
+pub const O_APPEND: int32 = 1024;
+pub const O_EXCL: int32 = 128;
+
+// Seek whence values
+pub const SEEK_SET: int32 = 0;  // From beginning
+pub const SEEK_CUR: int32 = 1;  // From current position
+pub const SEEK_END: int32 = 2;  // From end
+
+// Default file permissions (rw-r--r--)
+const DEFAULT_MODE: int32 = 0644;
+
+// =============================================================================
+// Core Print Functions (Six-Channel I/O)
+// =============================================================================
+
+/// Print string to stdout (no newline)
 pub func:print = void(string:msg) {
-    // Get stdout file descriptor (1)
     wild int32:fd = 1;
-    
-    // Pin the string for system call (requires stable address)
     wild string@:pinned = #msg;
-    
-    // Get string length (strings have null terminator)
     int64:len = msg.length();
-    
-    // Call system write (unsafe FFI call to POSIX write)
-    // write(fd, buffer, count) -> ssize_t
-    extern "libc" {
-        func write(fd: int32, buf: wild void*, count: int64) -> int64;
-    }
-    
-    // Write the string (ignore error for basic print)
     write(fd, pinned, len);
 };
 
-// Print string to stdout with newline
+/// Print string to stdout with newline
 pub func:println = void(string:msg) {
     print(msg);
     print("\n");
 };
 
-// Print to stderr (no newline)
+/// Print to stderr (no newline)
 pub func:eprint = void(string:msg) {
     wild int32:fd = 2;
     wild string@:pinned = #msg;
     int64:len = msg.length();
-    
-    extern "libc" {
-        func write(fd: int32, buf: wild void*, count: int64) -> int64;
-    }
-    
     write(fd, pinned, len);
 };
 
-// Print to stderr with newline
+/// Print to stderr with newline
 pub func:eprintln = void(string:msg) {
     eprint(msg);
     eprint("\n");
 };
 
-// Print to debug channel (stddbg - fd 3)
+/// Print to debug channel (stddbg - fd 3)
 pub func:debug = void(string:msg) {
     wild int32:fd = 3;
     wild string@:pinned = #msg;
     int64:len = msg.length();
-    
-    extern "libc" {
-        func write(fd: int32, buf: wild void*, count: int64) -> int64;
-    }
-    
     write(fd, pinned, len);
 };
 
-// Debug print with newline
+/// Debug print with newline
 pub func:debugln = void(string:msg) {
     debug(msg);
     debug("\n");
 };
 
-// ============================================================================
-// TODO: Advanced I/O (Future Phases)
-// ============================================================================
+// =============================================================================
+// File Struct (research_031 Section 4.1)
+// =============================================================================
+// File wraps a file descriptor with RAII-style cleanup via defer
 
-// File struct will wrap file descriptors with RAII
-// pub struct:File {
-//     wild int32:fd;
-//     bool:is_open;
-// };
+/// File handle with descriptor and state tracking
+pub struct File {
+    wild int32:fd;      // File descriptor
+    bool:is_open;       // Whether file is currently open
+    bool:is_readable;   // Can read from file
+    bool:is_writable;   // Can write to file
+}
 
-// pub func:open = result<File>(string:path, string:mode) {
-//     // Implementation in future phase
-// };
+/// Open mode for files
+pub enum OpenMode {
+    READ = 0,           // Open for reading only
+    WRITE = 1,          // Open for writing (create/truncate)
+    APPEND = 2,         // Open for appending
+    READ_WRITE = 3,     // Open for reading and writing
+    CREATE = 4          // Create new file (fail if exists)
+}
 
-// pub func:close = result<void>(File@:f) {
-//     // Implementation in future phase
-// };
+/// Open a file with specified mode
+/// @param path Path to the file
+/// @param mode Opening mode
+/// @return File handle or error
+/// @example
+/// ```aria
+/// result<File>:f = io.open("data.txt", OpenMode.READ);
+/// if (f.is_ok()) {
+///     File:file = f.unwrap();
+///     defer file.close();
+///     // ... use file ...
+/// }
+/// ```
+pub func:open = result<File>(string:path, OpenMode:mode) {
+    wild byte@:path_cstr = #path;
 
-// pub func:read = result<string>(File@:f, int64:count) {
-//     // Implementation in future phase
-// };
+    int32:flags = 0;
+    bool:readable = false;
+    bool:writable = false;
 
-// pub func:write = result<int64>(File@:f, string:data) {
-//     // Implementation in future phase
-// };
+    // Set flags based on mode
+    if (mode == OpenMode.READ) {
+        flags = O_RDONLY;
+        readable = true;
+    } else if (mode == OpenMode.WRITE) {
+        flags = O_WRONLY | O_CREAT | O_TRUNC;
+        writable = true;
+    } else if (mode == OpenMode.APPEND) {
+        flags = O_WRONLY | O_CREAT | O_APPEND;
+        writable = true;
+    } else if (mode == OpenMode.READ_WRITE) {
+        flags = O_RDWR | O_CREAT;
+        readable = true;
+        writable = true;
+    } else if (mode == OpenMode.CREATE) {
+        flags = O_WRONLY | O_CREAT | O_EXCL;
+        writable = true;
+    }
+
+    int32:fd = open(path_cstr, flags, DEFAULT_MODE);
+
+    if (fd < 0) {
+        fail(ERR);  // Open failed
+    }
+
+    File:file = {
+        fd: fd,
+        is_open: true,
+        is_readable: readable,
+        is_writable: writable
+    };
+
+    pass(file);
+};
+
+/// Close a file
+/// @param f The file to close
+pub func:close = result<void>(File@:f) {
+    if (!f->is_open) {
+        pass(NIL);  // Already closed
+    }
+
+    int32:ret = close(f->fd);
+    f->is_open = false;
+
+    if (ret < 0) {
+        fail(ERR);
+    }
+
+    pass(NIL);
+};
+
+/// Read from a file into a buffer
+/// @param f The file to read from
+/// @param buffer Buffer to read into
+/// @param count Maximum bytes to read
+/// @return Number of bytes read
+pub func:read = result<int64>(File@:f, wild byte@:buffer, int64:count) {
+    if (!f->is_open) {
+        fail(ERR);  // File not open
+    }
+    if (!f->is_readable) {
+        fail(ERR);  // File not readable
+    }
+
+    int64:bytes_read = read(f->fd, buffer, count);
+
+    if (bytes_read < 0) {
+        fail(ERR);
+    }
+
+    pass(bytes_read);
+};
+
+/// Write data to a file
+/// @param f The file to write to
+/// @param data Data to write
+/// @return Number of bytes written
+pub func:write = result<int64>(File@:f, string:data) {
+    if (!f->is_open) {
+        fail(ERR);  // File not open
+    }
+    if (!f->is_writable) {
+        fail(ERR);  // File not writable
+    }
+
+    wild string@:pinned = #data;
+    int64:len = data.length();
+
+    int64:written = write(f->fd, pinned, len);
+
+    if (written < 0) {
+        fail(ERR);
+    }
+
+    pass(written);
+};
+
+/// Write bytes to a file
+/// @param f The file to write to
+/// @param buffer Buffer containing data
+/// @param count Number of bytes to write
+/// @return Number of bytes written
+pub func:write_bytes = result<int64>(File@:f, wild byte@:buffer, int64:count) {
+    if (!f->is_open) {
+        fail(ERR);
+    }
+    if (!f->is_writable) {
+        fail(ERR);
+    }
+
+    int64:written = write(f->fd, buffer, count);
+
+    if (written < 0) {
+        fail(ERR);
+    }
+
+    pass(written);
+};
+
+// =============================================================================
+// TBB-Integrated Seeking (research_031 Section 4.2)
+// =============================================================================
+// Seek operations use TBB types to prevent integer overflow vulnerabilities.
+// If the offset calculation resulted in ERR, seek will fail early without
+// issuing a system call.
+
+/// Seek to a position in the file using TBB offset
+/// This prevents integer overflow vulnerabilities in offset calculations
+/// @param f The file
+/// @param offset TBB offset - if ERR, operation fails immediately
+/// @param whence SEEK_SET, SEEK_CUR, or SEEK_END
+/// @return New position, or error if offset was ERR or seek failed
+/// @example
+/// ```aria
+/// // Safe calculation that could overflow
+/// tbb64:offset = base + (index * record_size);
+/// // If overflow occurred, offset is ERR and seek fails safely
+/// result<tbb64>:pos = io.seek(@file, offset, SEEK_SET);
+/// ```
+pub func:seek = result<tbb64>(File@:f, tbb64:offset, int32:whence) {
+    if (!f->is_open) {
+        fail(ERR);  // File not open
+    }
+
+    // Check for TBB error sentinel - this is the key safety feature!
+    // If the offset calculation overflowed, offset will be TBB64_ERR
+    // and we reject the seek WITHOUT issuing the syscall
+    if (offset == math.TBB64_ERR) {
+        fail(ERR);  // Offset calculation failed
+    }
+
+    // Safe to proceed - offset is a valid value
+    int64:new_pos = lseek(f->fd, offset, whence);
+
+    if (new_pos < 0) {
+        fail(ERR);
+    }
+
+    // Return as tbb64 (will be valid since lseek returns valid offset)
+    pass(new_pos);
+};
+
+/// Get current file position
+pub func:tell = result<tbb64>(File@:f) {
+    pass(seek(f, 0, SEEK_CUR));
+};
+
+/// Seek to beginning of file
+pub func:rewind = result<void>(File@:f) {
+    result<tbb64>:pos = seek(f, 0, SEEK_SET);
+    if (pos.is_err()) {
+        fail(ERR);
+    }
+    pass(NIL);
+};
+
+/// Seek to end of file
+pub func:seek_end = result<tbb64>(File@:f) {
+    pass(seek(f, 0, SEEK_END));
+};
+
+// =============================================================================
+// File Utilities
+// =============================================================================
+
+/// Sync file data to disk
+pub func:sync = result<void>(File@:f) {
+    if (!f->is_open) {
+        fail(ERR);
+    }
+
+    int32:ret = fsync(f->fd);
+    if (ret < 0) {
+        fail(ERR);
+    }
+
+    pass(NIL);
+};
+
+/// Truncate file to specified length
+pub func:truncate = result<void>(File@:f, int64:length) {
+    if (!f->is_open) {
+        fail(ERR);
+    }
+    if (!f->is_writable) {
+        fail(ERR);
+    }
+
+    int32:ret = ftruncate(f->fd, length);
+    if (ret < 0) {
+        fail(ERR);
+    }
+
+    pass(NIL);
+};
+
+// =============================================================================
+// Buffered I/O (research_031 Section 4.4)
+// =============================================================================
+
+/// Buffer size for buffered I/O (4KB default)
+const BUFFER_SIZE: int64 = 4096;
+
+/// Buffered reader for efficient character/line reading
+pub struct BufReader {
+    File:file;
+    wild byte[4096]:buffer;   // Internal buffer
+    int64:buffer_pos;         // Current position in buffer
+    int64:buffer_len;         // Valid bytes in buffer
+    bool:eof;                 // End of file reached
+}
+
+/// Create a buffered reader from a file
+pub func:buf_reader = result<BufReader>(File:file) {
+    if (!file.is_readable) {
+        fail(ERR);
+    }
+
+    BufReader:reader = {
+        file: file,
+        buffer: [0; 4096],
+        buffer_pos: 0,
+        buffer_len: 0,
+        eof: false
+    };
+
+    pass(reader);
+};
+
+/// Read a single byte from buffered reader
+pub func:buf_read_byte = result<int32>(BufReader@:r) {
+    // Refill buffer if needed
+    if (r->buffer_pos >= r->buffer_len) {
+        if (r->eof) {
+            fail(ERR);  // EOF
+        }
+
+        // Read more data into buffer
+        result<int64>:bytes = read(@r->file, @r->buffer[0], BUFFER_SIZE);
+        if (bytes.is_err()) {
+            fail(ERR);
+        }
+
+        r->buffer_len = bytes.unwrap();
+        r->buffer_pos = 0;
+
+        if (r->buffer_len == 0) {
+            r->eof = true;
+            fail(ERR);  // EOF
+        }
+    }
+
+    // Return next byte
+    int32:b = r->buffer[r->buffer_pos];
+    r->buffer_pos = r->buffer_pos + 1;
+    pass(b);
+};
+
+/// Check if buffered reader has reached EOF
+pub func:buf_is_eof = bool(BufReader@:r) {
+    pass(r->eof && r->buffer_pos >= r->buffer_len);
+};
+
+/// Buffered writer for efficient output
+pub struct BufWriter {
+    File:file;
+    wild byte[4096]:buffer;   // Internal buffer
+    int64:buffer_len;         // Bytes currently in buffer
+}
+
+/// Create a buffered writer from a file
+pub func:buf_writer = result<BufWriter>(File:file) {
+    if (!file.is_writable) {
+        fail(ERR);
+    }
+
+    BufWriter:writer = {
+        file: file,
+        buffer: [0; 4096],
+        buffer_len: 0
+    };
+
+    pass(writer);
+};
+
+/// Write a byte to buffered writer
+pub func:buf_write_byte = result<void>(BufWriter@:w, byte:b) {
+    // Flush if buffer is full
+    if (w->buffer_len >= BUFFER_SIZE) {
+        result<void>:r = buf_flush(w);
+        if (r.is_err()) {
+            fail(ERR);
+        }
+    }
+
+    w->buffer[w->buffer_len] = b;
+    w->buffer_len = w->buffer_len + 1;
+    pass(NIL);
+};
+
+/// Write bytes to buffered writer
+pub func:buf_write = result<int64>(BufWriter@:w, string:data) {
+    int64:len = data.length();
+    wild string@:pinned = #data;
+
+    int64:written = 0;
+    while (written < len) {
+        // Flush if buffer is full
+        if (w->buffer_len >= BUFFER_SIZE) {
+            result<void>:r = buf_flush(w);
+            if (r.is_err()) {
+                fail(ERR);
+            }
+        }
+
+        // Copy byte to buffer
+        w->buffer[w->buffer_len] = pinned[written];
+        w->buffer_len = w->buffer_len + 1;
+        written = written + 1;
+    }
+
+    pass(written);
+};
+
+/// Flush buffered writer to disk
+pub func:buf_flush = result<void>(BufWriter@:w) {
+    if (w->buffer_len == 0) {
+        pass(NIL);  // Nothing to flush
+    }
+
+    result<int64>:written = write_bytes(@w->file, @w->buffer[0], w->buffer_len);
+    if (written.is_err()) {
+        fail(ERR);
+    }
+
+    w->buffer_len = 0;
+    pass(NIL);
+};
+
+/// Close buffered writer (flushes first)
+pub func:buf_close = result<void>(BufWriter@:w) {
+    result<void>:r = buf_flush(w);
+    if (r.is_err()) {
+        fail(ERR);
+    }
+
+    pass(close(@w->file));
+};
+
+// =============================================================================
+// Convenience Functions
+// =============================================================================
+
+/// Read entire file into a string
+/// @param path Path to the file
+/// @return File contents as string
+pub func:read_file = result<string>(string:path) {
+    result<File>:f = open(path, OpenMode.READ);
+    if (f.is_err()) {
+        fail(ERR);
+    }
+
+    File:file = f.unwrap();
+    defer close(@file);
+
+    // Get file size
+    result<tbb64>:end_pos = seek_end(@file);
+    if (end_pos.is_err()) {
+        fail(ERR);
+    }
+
+    int64:size = end_pos.unwrap();
+
+    // Seek back to beginning
+    result<void>:r = rewind(@file);
+    if (r.is_err()) {
+        fail(ERR);
+    }
+
+    // Allocate buffer
+    wild byte@:buffer = alloc<byte>(size + 1);
+    if (buffer == NULL) {
+        fail(ERR);
+    }
+    defer free<byte>(buffer);
+
+    // Read file contents
+    result<int64>:bytes = read(@file, buffer, size);
+    if (bytes.is_err()) {
+        fail(ERR);
+    }
+
+    // Null-terminate
+    buffer[size] = 0;
+
+    // Convert to string
+    string:contents = @from_cstr(buffer);
+    pass(contents);
+};
+
+/// Write string to a file
+/// @param path Path to the file
+/// @param data Data to write
+pub func:write_file = result<void>(string:path, string:data) {
+    result<File>:f = open(path, OpenMode.WRITE);
+    if (f.is_err()) {
+        fail(ERR);
+    }
+
+    File:file = f.unwrap();
+    defer close(@file);
+
+    result<int64>:written = write(@file, data);
+    if (written.is_err()) {
+        fail(ERR);
+    }
+
+    pass(NIL);
+};
+
+/// Append string to a file
+pub func:append_file = result<void>(string:path, string:data) {
+    result<File>:f = open(path, OpenMode.APPEND);
+    if (f.is_err()) {
+        fail(ERR);
+    }
+
+    File:file = f.unwrap();
+    defer close(@file);
+
+    result<int64>:written = write(@file, data);
+    if (written.is_err()) {
+        fail(ERR);
+    }
+
+    pass(NIL);
+};

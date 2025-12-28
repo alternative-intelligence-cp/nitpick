@@ -411,6 +411,69 @@ AriaResultPtr aria_string_concat(AriaString a, AriaString b) {
     { AriaString* heap_str = (AriaString*)aria_gc_alloc(sizeof(AriaString), 0); if (!heap_str) return aria_result_err_ptr(aria_error_new(ARIA_ERR_OUT_OF_MEMORY, "Failed to allocate string", __FILE__, __LINE__)); *heap_str = result; return aria_result_ok_ptr(heap_str); }
 }
 
+AriaResultPtr aria_string_concat_n(AriaString* strings, int64_t count) {
+    // Optimized multi-string concatenation: O(n) instead of O(n²)
+    // Single allocation pass - no intermediate allocations
+
+    if (count <= 0 || !strings) {
+        return aria_result_ok_ptr(aria_string_empty());
+    }
+
+    if (count == 1) {
+        // Single string - just copy it
+        return aria_string_from_bytes(strings[0].data, strings[0].length);
+    }
+
+    // Phase 1: Calculate total length
+    int64_t total_length = 0;
+    for (int64_t i = 0; i < count; i++) {
+        total_length += strings[i].length;
+    }
+
+    if (total_length == 0) {
+        return aria_result_ok_ptr(aria_string_empty());
+    }
+
+    // Phase 2: Single allocation for entire result
+    char* concat_data = (char*)aria_gc_alloc(total_length + 1, 0);
+    if (!concat_data) {
+        AriaError* error = aria_error_new(
+            ARIA_ERR_OUT_OF_MEMORY,
+            "Failed to allocate concatenated string",
+            __FILE__, __LINE__
+        );
+        return aria_result_err_ptr(error);
+    }
+
+    // Phase 3: Copy all strings in one pass
+    int64_t offset = 0;
+    for (int64_t i = 0; i < count; i++) {
+        if (strings[i].length > 0) {
+            memcpy(concat_data + offset, strings[i].data, strings[i].length);
+            offset += strings[i].length;
+        }
+    }
+    concat_data[total_length] = '\0';
+
+    AriaString result = {concat_data, total_length};
+    AriaString* heap_str = (AriaString*)aria_gc_alloc(sizeof(AriaString), 0);
+    if (!heap_str) {
+        return aria_result_err_ptr(aria_error_new(
+            ARIA_ERR_OUT_OF_MEMORY,
+            "Failed to allocate string structure",
+            __FILE__, __LINE__
+        ));
+    }
+    *heap_str = result;
+    return aria_result_ok_ptr(heap_str);
+}
+
+AriaString* aria_string_concat_n_simple(AriaString* strings, int64_t count) {
+    AriaResultPtr result = aria_string_concat_n(strings, count);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
 AriaResultPtr aria_string_repeat(AriaString str, int64_t count) {
     if (count < 0) {
         AriaError* error = aria_error_new(

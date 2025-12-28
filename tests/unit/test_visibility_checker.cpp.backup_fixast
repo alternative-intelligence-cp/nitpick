@@ -1,0 +1,265 @@
+#include "../test_helpers.h"
+#include "frontend/sema/visibility_checker.h"
+#include "frontend/sema/symbol_table.h"
+#include "frontend/sema/module_table.h"
+#include "frontend/sema/type.h"
+
+using namespace aria::sema;
+
+// ============================================================================
+// Test 1: PUBLIC symbols accessible from any module
+// ============================================================================
+TEST_CASE(visibility_public_symbol_access) {
+    TypeSystem typeSystem;
+    ModuleTable moduleTable;
+    SymbolTable symTable;
+    VisibilityChecker checker(&moduleTable);
+    
+    Module* moduleA = moduleTable.createModule("moduleA", "/path/to/moduleA.aria");
+    Module* moduleB = moduleTable.createModule("moduleB", "/path/to/moduleB.aria");
+    
+    Symbol* publicSymbol = symTable.defineSymbol("publicFunc", SymbolKind::FUNCTION, 
+                                                 typeSystem.getPrimitiveType("int32"), 1, 1);
+    publicSymbol->isPublic = true;
+    
+    bool allowed = checker.checkAccess(publicSymbol, moduleA, moduleB, 5, 10);
+    
+    ASSERT(allowed, "Public symbol should be accessible from any module");
+    ASSERT(!checker.hasErrors(), "No errors should occur for public access");
+}
+
+// ============================================================================
+// Test 2: PRIVATE symbols NOT accessible from other modules
+// ============================================================================
+TEST_CASE(visibility_private_symbol_blocked) {
+    TypeSystem typeSystem;
+    ModuleTable moduleTable;
+    SymbolTable symTable;
+    VisibilityChecker checker(&moduleTable);
+    
+    Module* moduleA = moduleTable.createModule("moduleA", "/path/to/moduleA.aria");
+    Module* moduleB = moduleTable.createModule("moduleB", "/path/to/moduleB.aria");
+    
+    Symbol* privateSymbol = symTable.defineSymbol("privateFunc", SymbolKind::FUNCTION,
+                                                  typeSystem.getPrimitiveType("int32"), 1, 1);
+    privateSymbol->isPublic = false;
+    
+    bool allowed = checker.checkAccess(privateSymbol, moduleA, moduleB, 5, 10);
+    
+    ASSERT(!allowed, "Private symbol should be blocked from other modules");
+    ASSERT(checker.hasErrors(), "Error should be generated for private access");
+    
+    const auto& errors = checker.getErrors();
+    bool hasE002 = !errors.empty() && errors[0].find("E002") != std::string::npos;
+    ASSERT(hasE002, "Error message should contain E002 code");
+}
+
+// ============================================================================
+// Test 3: PRIVATE symbols accessible within same module
+// ============================================================================
+TEST_CASE(visibility_private_symbol_same_module) {
+    TypeSystem typeSystem;
+    ModuleTable moduleTable;
+    SymbolTable symTable;
+    VisibilityChecker checker(&moduleTable);
+    
+    Module* moduleA = moduleTable.createModule("moduleA", "/path/to/moduleA.aria");
+    
+    Symbol* privateSymbol = symTable.defineSymbol("privateFunc", SymbolKind::FUNCTION,
+                                                  typeSystem.getPrimitiveType("int32"), 1, 1);
+    privateSymbol->isPublic = false;
+    
+    bool allowed = checker.checkAccess(privateSymbol, moduleA, moduleA, 5, 10);
+    
+    ASSERT(allowed, "Private symbol should be accessible within same module");
+    ASSERT(!checker.hasErrors(), "No errors should occur for same-module access");
+}
+
+// ============================================================================
+// Test 4: Visibility level detection
+// ============================================================================
+TEST_CASE(visibility_level_detection) {
+    TypeSystem typeSystem;
+    ModuleTable moduleTable;
+    SymbolTable symTable;
+    VisibilityChecker checker(&moduleTable);
+    
+    Symbol* publicSym = symTable.defineSymbol("publicFunc", SymbolKind::FUNCTION,
+                                              typeSystem.getPrimitiveType("int32"), 1, 1);
+    publicSym->isPublic = true;
+    
+    Symbol* privateSym = symTable.defineSymbol("privateFunc", SymbolKind::FUNCTION,
+                                               typeSystem.getPrimitiveType("int32"), 2, 1);
+    privateSym->isPublic = false;
+    
+    VisibilityLevel pubLevel = checker.getVisibility(publicSym);
+    VisibilityLevel privLevel = checker.getVisibility(privateSym);
+    
+    ASSERT(pubLevel == VisibilityLevel::PUBLIC, "Public symbol detected as PUBLIC");
+    ASSERT(privLevel == VisibilityLevel::PRIVATE, "Private symbol detected as PRIVATE");
+}
+
+// ============================================================================
+// Test 5: Multiple access violations accumulate errors
+// ============================================================================
+TEST_CASE(visibility_multiple_violations) {
+    TypeSystem typeSystem;
+    ModuleTable moduleTable;
+    SymbolTable symTable;
+    VisibilityChecker checker(&moduleTable);
+    
+    Module* moduleA = moduleTable.createModule("moduleA", "/path/to/moduleA.aria");
+    Module* moduleB = moduleTable.createModule("moduleB", "/path/to/moduleB.aria");
+    
+    Symbol* privateSym1 = symTable.defineSymbol("private1", SymbolKind::FUNCTION,
+                                                typeSystem.getPrimitiveType("int32"), 1, 1);
+    privateSym1->isPublic = false;
+    
+    Symbol* privateSym2 = symTable.defineSymbol("private2", SymbolKind::FUNCTION,
+                                                typeSystem.getPrimitiveType("int32"), 2, 1);
+    privateSym2->isPublic = false;
+    
+    checker.checkAccess(privateSym1, moduleA, moduleB, 5, 10);
+    checker.checkAccess(privateSym2, moduleA, moduleB, 6, 10);
+    
+    ASSERT(checker.getErrors().size() == 2, "Should have 2 errors");
+}
+
+// ============================================================================
+// Test 6: Clear errors functionality
+// ============================================================================
+TEST_CASE(visibility_clear_errors) {
+    TypeSystem typeSystem;
+    ModuleTable moduleTable;
+    SymbolTable symTable;
+    VisibilityChecker checker(&moduleTable);
+    
+    Module* moduleA = moduleTable.createModule("moduleA", "/path/to/moduleA.aria");
+    Module* moduleB = moduleTable.createModule("moduleB", "/path/to/moduleB.aria");
+    
+    Symbol* privateSym = symTable.defineSymbol("privateFunc", SymbolKind::FUNCTION,
+                                               typeSystem.getPrimitiveType("int32"), 1, 1);
+    privateSym->isPublic = false;
+    
+    checker.checkAccess(privateSym, moduleA, moduleB, 5, 10);
+    ASSERT(checker.hasErrors(), "Should have errors after violation");
+    
+    checker.clearErrors();
+    ASSERT(!checker.hasErrors(), "Should have no errors after clear");
+}
+
+// ============================================================================
+// Test 7: isAccessAllowed direct check
+// ============================================================================
+TEST_CASE(visibility_is_access_allowed) {
+    ModuleTable moduleTable;
+    VisibilityChecker checker(&moduleTable);
+    
+    Module* moduleA = moduleTable.createModule("moduleA", "/path/to/moduleA.aria");
+    Module* moduleB = moduleTable.createModule("moduleB", "/path/to/moduleB.aria");
+    
+    bool pubAllowed = checker.isAccessAllowed(VisibilityLevel::PUBLIC, moduleA, moduleB);
+    ASSERT(pubAllowed, "PUBLIC accessible from different module");
+    
+    bool privDenied = checker.isAccessAllowed(VisibilityLevel::PRIVATE, moduleA, moduleB);
+    ASSERT(!privDenied, "PRIVATE denied from different module");
+    
+    bool privAllowed = checker.isAccessAllowed(VisibilityLevel::PRIVATE, moduleA, moduleA);
+    ASSERT(privAllowed, "PRIVATE allowed from same module");
+}
+
+// ============================================================================
+// Test 8: Null parameter handling
+// ============================================================================
+TEST_CASE(visibility_null_parameters) {
+    TypeSystem typeSystem;
+    ModuleTable moduleTable;
+    SymbolTable symTable;
+    VisibilityChecker checker(&moduleTable);
+    
+    Module* moduleA = moduleTable.createModule("moduleA", "/path/to/moduleA.aria");
+    Symbol* symbol = symTable.defineSymbol("func", SymbolKind::FUNCTION,
+                                          typeSystem.getPrimitiveType("int32"), 1, 1);
+    
+    bool result1 = checker.checkAccess(nullptr, moduleA, moduleA, 1, 1);
+    ASSERT(!result1, "Null symbol handled gracefully");
+    ASSERT(checker.hasErrors(), "Error generated for null symbol");
+    checker.clearErrors();
+    
+    bool result2 = checker.checkAccess(symbol, nullptr, moduleA, 1, 1);
+    ASSERT(!result2, "Null symbol module handled gracefully");
+    checker.clearErrors();
+    
+    bool result3 = checker.checkAccess(symbol, moduleA, nullptr, 1, 1);
+    ASSERT(!result3, "Null current module handled gracefully");
+}
+
+// ============================================================================
+// Test 9: Error message format validation
+// ============================================================================
+TEST_CASE(visibility_error_message_format) {
+    TypeSystem typeSystem;
+    ModuleTable moduleTable;
+    SymbolTable symTable;
+    VisibilityChecker checker(&moduleTable);
+    
+    Module* moduleA = moduleTable.createModule("moduleA", "/path/to/moduleA.aria");
+    Module* moduleB = moduleTable.createModule("moduleB", "/path/to/moduleB.aria");
+    
+    Symbol* privateSym = symTable.defineSymbol("secretFunc", SymbolKind::FUNCTION,
+                                               typeSystem.getPrimitiveType("int32"), 1, 1);
+    privateSym->isPublic = false;
+    
+    checker.checkAccess(privateSym, moduleA, moduleB, 10, 25);
+    
+    const auto& errors = checker.getErrors();
+    ASSERT(!errors.empty(), "Error message generated");
+    
+    if (!errors.empty()) {
+        const std::string& err = errors[0];
+        bool hasE002 = err.find("E002") != std::string::npos;
+        bool hasSymbolName = err.find("secretFunc") != std::string::npos;
+        bool hasLocation = err.find("line 10") != std::string::npos;
+        bool hasHelp = err.find("Help:") != std::string::npos;
+        
+        ASSERT(hasE002, "Error contains E002 code");
+        ASSERT(hasSymbolName, "Error contains symbol name");
+        ASSERT(hasLocation, "Error contains location");
+        ASSERT(hasHelp, "Error contains help message");
+    }
+}
+
+// ============================================================================
+// Test 10: Different symbol kinds
+// ============================================================================
+TEST_CASE(visibility_different_symbol_kinds) {
+    TypeSystem typeSystem;
+    ModuleTable moduleTable;
+    SymbolTable symTable;
+    VisibilityChecker checker(&moduleTable);
+    
+    Module* moduleA = moduleTable.createModule("moduleA", "/path/to/moduleA.aria");
+    Module* moduleB = moduleTable.createModule("moduleB", "/path/to/moduleB.aria");
+    
+    Symbol* varSym = symTable.defineSymbol("privateVar", SymbolKind::VARIABLE,
+                                           typeSystem.getPrimitiveType("int32"), 1, 1);
+    varSym->isPublic = false;
+    
+    Symbol* funcSym = symTable.defineSymbol("privateFunc", SymbolKind::FUNCTION,
+                                            typeSystem.getPrimitiveType("int32"), 2, 1);
+    funcSym->isPublic = false;
+    
+    Symbol* typeSym = symTable.defineSymbol("PrivateType", SymbolKind::TYPE,
+                                            typeSystem.getPrimitiveType("int32"), 3, 1);
+    typeSym->isPublic = false;
+    
+    bool varBlocked = !checker.checkAccess(varSym, moduleA, moduleB, 5, 1);
+    checker.clearErrors();
+    bool funcBlocked = !checker.checkAccess(funcSym, moduleA, moduleB, 6, 1);
+    checker.clearErrors();
+    bool typeBlocked = !checker.checkAccess(typeSym, moduleA, moduleB, 7, 1);
+    
+    ASSERT(varBlocked, "Private variable blocked");
+    ASSERT(funcBlocked, "Private function blocked");
+    ASSERT(typeBlocked, "Private type blocked");
+}

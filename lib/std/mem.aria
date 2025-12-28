@@ -1,0 +1,246 @@
+/**
+ * Aria Standard Library - Memory Module
+ *
+ * Provides memory management utilities for both GC and wild memory.
+ * This module is the primary interface for manual memory management.
+ *
+ * ARIA-018: Standard Library Wrapper Pattern Design
+ *
+ * Key Types:
+ * - WildBuffer: Zero-copy buffer wrapper for wild memory
+ *
+ * Usage:
+ *   use std.mem;
+ *
+ *   // Zero-copy file read
+ *   result<WildBuffer>:res = fs.readFileWild("large_file.bin");
+ *   if (res.is_ok()) {
+ *       WildBuffer:buf = res.unwrap();
+ *       defer mem.free(buf.ptr);  // CRITICAL: must free!
+ *       process_bytes(buf.ptr, buf.len);
+ *   }
+ */
+
+module std.mem;
+
+use std.internal.runtime;
+
+// =============================================================================
+// WildBuffer - Zero-Copy Buffer Wrapper
+// =============================================================================
+
+/**
+ * WildBuffer - Safe wrapper for wild memory buffers
+ *
+ * This struct provides a type-safe abstraction over raw wild pointers.
+ * It pairs a pointer with its length for bounds-aware operations.
+ *
+ * MEMORY CONTRACT:
+ * - The caller OWNS this buffer when received from zero-copy APIs
+ * - The caller MUST call free(buf.ptr) when done
+ * - Using defer is strongly recommended for automatic cleanup
+ *
+ * TBB Integration:
+ * - len is typed as tbb64 for arithmetic overflow protection
+ * - Any overflow in size calculations becomes ERR sentinel
+ * - Runtime detects ERR before memory corruption can occur
+ *
+ * Example:
+ *   result<WildBuffer>:res = fs.readFileWild("/var/log/syslog");
+ *   if (res.is_ok()) {
+ *       WildBuffer:buf = res.unwrap();
+ *       defer mem.free(buf.ptr);  // Automatic cleanup
+ *
+ *       // Process without copy
+ *       process_log_bytes(buf.ptr, buf.len);
+ *   }
+ */
+pub struct WildBuffer {
+    ptr: wild byte*,  // Pointer to raw data (wild memory)
+    len: tbb64        // Size in bytes (TBB for overflow safety)
+}
+
+// =============================================================================
+// WildBuffer Methods
+// =============================================================================
+
+/**
+ * Create an empty WildBuffer
+ *
+ * @return Empty buffer with null pointer and zero length
+ */
+pub func:buffer_empty = WildBuffer() {
+    WildBuffer:buf;
+    buf.ptr = null;
+    buf.len = 0;
+    return buf;
+};
+
+/**
+ * Create a WildBuffer from raw components
+ *
+ * @param ptr Pointer to data
+ * @param len Length in bytes
+ * @return WildBuffer wrapping the pointer
+ */
+pub func:buffer_from = WildBuffer(wild byte*:ptr, tbb64:len) {
+    WildBuffer:buf;
+    buf.ptr = ptr;
+    buf.len = len;
+    return buf;
+};
+
+/**
+ * Check if buffer is empty
+ *
+ * @param buf Buffer to check
+ * @return true if ptr is null or len is 0
+ */
+pub func:buffer_is_empty = bool(WildBuffer:buf) {
+    return buf.ptr == null || buf.len == 0;
+};
+
+/**
+ * Allocate a new WildBuffer of specified size
+ *
+ * The buffer is allocated but NOT zero-initialized for performance.
+ * Use buffer_alloc_zeroed() if you need zero-initialization.
+ *
+ * @param size Size in bytes
+ * @return Allocated buffer, or empty buffer on failure
+ */
+pub func:buffer_alloc = WildBuffer(tbb64:size) {
+    // Check for ERR sentinel (TBB overflow)
+    if (size < 0) {
+        return buffer_empty();
+    }
+
+    wild byte*:ptr = runtime.aria_alloc(size);
+    if (ptr == null) {
+        return buffer_empty();
+    }
+
+    return buffer_from(ptr, size);
+};
+
+/**
+ * Allocate a zero-initialized WildBuffer
+ *
+ * @param size Size in bytes
+ * @return Allocated and zeroed buffer, or empty on failure
+ */
+pub func:buffer_alloc_zeroed = WildBuffer(tbb64:size) {
+    WildBuffer:buf = buffer_alloc(size);
+    if (!buffer_is_empty(buf)) {
+        runtime.memset(buf.ptr, 0, size);
+    }
+    return buf;
+};
+
+// =============================================================================
+// Memory Operations
+// =============================================================================
+
+/**
+ * Free a wild memory pointer
+ *
+ * This is a thin wrapper around the runtime free function.
+ * Safe to call with NULL (no-op).
+ *
+ * @param ptr Pointer to free
+ */
+pub func:free = void(wild byte*:ptr) {
+    runtime.aria_free(ptr);
+};
+
+/**
+ * Free a WildBuffer
+ *
+ * Convenience function that frees the buffer's pointer.
+ *
+ * @param buf Buffer to free
+ */
+pub func:buffer_free = void(WildBuffer:buf) {
+    runtime.aria_free(buf.ptr);
+};
+
+/**
+ * Copy memory from source to destination
+ *
+ * @param dest Destination buffer
+ * @param src Source buffer
+ * @param size Number of bytes to copy
+ * @return dest pointer
+ */
+pub func:memcpy = wild byte*(wild byte*:dest, wild byte*:src, uint64:size) {
+    return runtime.memcpy(dest, src, size);
+};
+
+/**
+ * Set memory to a value
+ *
+ * @param dest Destination buffer
+ * @param value Byte value to set
+ * @param size Number of bytes
+ * @return dest pointer
+ */
+pub func:memset = wild byte*(wild byte*:dest, int32:value, uint64:size) {
+    return runtime.memset(dest, value, size);
+};
+
+// =============================================================================
+// Buffer-to-Buffer Copy
+// =============================================================================
+
+/**
+ * Copy data between WildBuffers
+ *
+ * Copies min(src.len, dest.len) bytes.
+ *
+ * @param dest Destination buffer
+ * @param src Source buffer
+ * @return Number of bytes copied
+ */
+pub func:buffer_copy = tbb64(WildBuffer:dest, WildBuffer:src) {
+    if (buffer_is_empty(dest) || buffer_is_empty(src)) {
+        return 0;
+    }
+
+    // Copy minimum of both lengths
+    tbb64:copy_len = dest.len;
+    if (src.len < copy_len) {
+        copy_len = src.len;
+    }
+
+    runtime.memcpy(dest.ptr, src.ptr, copy_len);
+    return copy_len;
+};
+
+// =============================================================================
+// Conversion Functions
+// =============================================================================
+
+/**
+ * Convert WildBuffer to managed string (COPIES data to GC heap)
+ *
+ * This is the bridge from zero-copy APIs to GC-managed strings.
+ * Use when you need to store the buffer long-term or pass to GC-aware code.
+ *
+ * @param buf Wild buffer to convert
+ * @return GC-managed string (copy of buffer data)
+ */
+pub func:buffer_to_string = string(WildBuffer:buf) {
+    if (buffer_is_empty(buf)) {
+        return "";
+    }
+
+    // Allocate GC string
+    string:result = string.allocate(buf.len);
+
+    // Copy from wild to GC
+    unsafe {
+        runtime.memcpy(#result.data, buf.ptr, buf.len);
+    }
+
+    return result;
+};

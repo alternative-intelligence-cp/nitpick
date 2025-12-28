@@ -1,0 +1,411 @@
+/**
+ * Aria Runtime - Streams Tests
+ * 
+ * Test suite for the 6-channel modern streams system.
+ */
+
+#include "runtime/streams.h"
+#include "test_helpers.h"
+#include <cstring>
+#include <cstdio>
+
+// Test file paths
+static const char* TEST_TEXT_FILE = "/tmp/aria_test_text_stream.txt";
+static const char* TEST_BINARY_FILE = "/tmp/aria_test_binary_stream.dat";
+
+// ============================================================================
+// Stream Initialization Tests
+// ============================================================================
+
+TEST_CASE(streams_init_cleanup) {
+    // Initialize
+    aria_streams_init();
+    
+    ASSERT(aria_get_stdin() != nullptr, "stdin should be initialized");
+    ASSERT(aria_get_stdout() != nullptr, "stdout should be initialized");
+    ASSERT(aria_get_stderr() != nullptr, "stderr should be initialized");
+    ASSERT(aria_get_stddbg() != nullptr, "stddbg should be initialized");
+    ASSERT(aria_get_stddati() != nullptr, "stddati should be initialized");
+    ASSERT(aria_get_stddato() != nullptr, "stddato should be initialized");
+    
+    // Cleanup
+    aria_streams_cleanup();
+}
+
+// ============================================================================
+// Text Stream Tests
+// ============================================================================
+
+TEST_CASE(text_stream_create_close) {
+    FILE* file = fopen(TEST_TEXT_FILE, "w");
+    ASSERT(file != nullptr, "File should open");
+    
+    AriaTextStream* stream = aria_text_stream_create(file, ARIA_STREAM_LINE_BUFFERED);
+    ASSERT(stream != nullptr, "Text stream should be created");
+    
+    aria_text_stream_close(stream);
+    fclose(file);
+    
+    // Cleanup
+    remove(TEST_TEXT_FILE);
+}
+
+TEST_CASE(text_stream_write) {
+    FILE* file = fopen(TEST_TEXT_FILE, "w");
+    ASSERT(file != nullptr, "File should open");
+    
+    AriaTextStream* stream = aria_text_stream_create(file, ARIA_STREAM_UNBUFFERED);
+    ASSERT(stream != nullptr, "Text stream should be created");
+    
+    int64_t written = aria_text_stream_write(stream, "Hello, World!");
+    ASSERT(written == 13, "Should write 13 bytes");
+    
+    aria_text_stream_close(stream);
+    fclose(file);
+    
+    // Read back
+    FILE* read_file = fopen(TEST_TEXT_FILE, "r");
+    char buffer[100];
+    fgets(buffer, sizeof(buffer), read_file);
+    fclose(read_file);
+    
+    ASSERT(strcmp(buffer, "Hello, World!") == 0, "Content should match");
+    
+    // Cleanup
+    remove(TEST_TEXT_FILE);
+}
+
+TEST_CASE(text_stream_printf) {
+    FILE* file = fopen(TEST_TEXT_FILE, "w");
+    AriaTextStream* stream = aria_text_stream_create(file, ARIA_STREAM_UNBUFFERED);
+    
+    int64_t written = aria_text_stream_printf(stream, "Number: %d, String: %s", 42, "test");
+    ASSERT(written > 0, "Should write formatted data");
+    
+    aria_text_stream_close(stream);
+    fclose(file);
+    
+    // Read back
+    FILE* read_file = fopen(TEST_TEXT_FILE, "r");
+    char buffer[100];
+    fgets(buffer, sizeof(buffer), read_file);
+    fclose(read_file);
+    
+    ASSERT(strcmp(buffer, "Number: 42, String: test") == 0, "Formatted content should match");
+    
+    // Cleanup
+    remove(TEST_TEXT_FILE);
+}
+
+TEST_CASE(text_stream_line_buffered) {
+    FILE* file = fopen(TEST_TEXT_FILE, "w");
+    AriaTextStream* stream = aria_text_stream_create(file, ARIA_STREAM_LINE_BUFFERED);
+    
+    // Write without newline - should be buffered
+    aria_text_stream_write(stream, "Line 1");
+    
+    // Write with newline - should flush
+    aria_text_stream_write(stream, "\nLine 2\n");
+    
+    aria_text_stream_close(stream);
+    fclose(file);
+    
+    // Read back all content
+    FILE* read_file = fopen(TEST_TEXT_FILE, "r");
+    char buffer[100];
+    size_t total_read = fread(buffer, 1, sizeof(buffer) - 1, read_file);
+    buffer[total_read] = '\0';
+    fclose(read_file);
+    
+    ASSERT(strstr(buffer, "Line 1") != nullptr, "Should contain Line 1");
+    ASSERT(strstr(buffer, "Line 2") != nullptr, "Should contain Line 2");
+    
+    // Cleanup
+    remove(TEST_TEXT_FILE);
+}
+
+TEST_CASE(text_stream_read_line) {
+    // Create test file
+    FILE* file = fopen(TEST_TEXT_FILE, "w");
+    fprintf(file, "First line\nSecond line\nThird line");
+    fclose(file);
+    
+    // Read lines
+    file = fopen(TEST_TEXT_FILE, "r");
+    AriaTextStream* stream = aria_text_stream_create(file, ARIA_STREAM_LINE_BUFFERED);
+    
+    char* line1 = aria_text_stream_read_line(stream);
+    ASSERT(line1 != nullptr, "First line should not be NULL");
+    ASSERT(strcmp(line1, "First line\n") == 0, "First line should match");
+    free(line1);
+    
+    char* line2 = aria_text_stream_read_line(stream);
+    ASSERT(line2 != nullptr, "Second line should not be NULL");
+    ASSERT(strcmp(line2, "Second line\n") == 0, "Second line should match");
+    free(line2);
+    
+    char* line3 = aria_text_stream_read_line(stream);
+    ASSERT(line3 != nullptr, "Third line should not be NULL");
+    ASSERT(strcmp(line3, "Third line") == 0, "Third line should match");
+    free(line3);
+    
+    char* line4 = aria_text_stream_read_line(stream);
+    ASSERT(line4 == nullptr, "EOF should return NULL");
+    
+    aria_text_stream_close(stream);
+    fclose(file);
+    
+    // Cleanup
+    remove(TEST_TEXT_FILE);
+}
+
+TEST_CASE(text_stream_flush) {
+    FILE* file = fopen(TEST_TEXT_FILE, "w");
+    AriaTextStream* stream = aria_text_stream_create(file, ARIA_STREAM_FULLY_BUFFERED);
+    
+    aria_text_stream_write(stream, "Buffered data");
+    
+    int result = aria_text_stream_flush(stream);
+    ASSERT(result == 0, "Flush should succeed");
+    
+    aria_text_stream_close(stream);
+    fclose(file);
+    
+    // Read back
+    FILE* read_file = fopen(TEST_TEXT_FILE, "r");
+    char buffer[100];
+    fgets(buffer, sizeof(buffer), read_file);
+    fclose(read_file);
+    
+    ASSERT(strcmp(buffer, "Buffered data") == 0, "Flushed content should match");
+    
+    // Cleanup
+    remove(TEST_TEXT_FILE);
+}
+
+// ============================================================================
+// Binary Stream Tests
+// ============================================================================
+
+TEST_CASE(binary_stream_create_close) {
+    FILE* file = fopen(TEST_BINARY_FILE, "wb");
+    ASSERT(file != nullptr, "File should open");
+    
+    AriaBinaryStream* stream = aria_binary_stream_create(file, 4096);
+    ASSERT(stream != nullptr, "Binary stream should be created");
+    
+    aria_binary_stream_close(stream);
+    fclose(file);
+    
+    // Cleanup
+    remove(TEST_BINARY_FILE);
+}
+
+TEST_CASE(binary_stream_write_read) {
+    // Write binary data
+    uint8_t write_data[] = {0x01, 0x02, 0x03, 0x04, 0x05, 0xFF, 0xFE, 0xFD};
+    
+    FILE* file = fopen(TEST_BINARY_FILE, "wb");
+    AriaBinaryStream* stream = aria_binary_stream_create(file, 0); // Unbuffered
+    
+    int64_t written = aria_binary_stream_write(stream, write_data, 8);
+    ASSERT(written == 8, "Should write 8 bytes");
+    
+    aria_binary_stream_close(stream);
+    fclose(file);
+    
+    // Read binary data
+    file = fopen(TEST_BINARY_FILE, "rb");
+    stream = aria_binary_stream_create(file, 0);
+    
+    uint8_t read_data[8];
+    int64_t bytes_read = aria_binary_stream_read(stream, read_data, 8);
+    ASSERT(bytes_read == 8, "Should read 8 bytes");
+    
+    bool match = true;
+    for (int i = 0; i < 8; i++) {
+        if (read_data[i] != write_data[i]) {
+            match = false;
+            break;
+        }
+    }
+    ASSERT(match, "Binary data should match");
+    
+    aria_binary_stream_close(stream);
+    fclose(file);
+    
+    // Cleanup
+    remove(TEST_BINARY_FILE);
+}
+
+TEST_CASE(binary_stream_buffered) {
+    // Write with buffering
+    uint8_t data[1000];
+    for (int i = 0; i < 1000; i++) {
+        data[i] = (uint8_t)(i % 256);
+    }
+    
+    FILE* file = fopen(TEST_BINARY_FILE, "wb");
+    AriaBinaryStream* stream = aria_binary_stream_create(file, 512); // 512-byte buffer
+    
+    int64_t written = aria_binary_stream_write(stream, data, 1000);
+    ASSERT(written == 1000, "Should write 1000 bytes");
+    
+    aria_binary_stream_flush(stream);
+    aria_binary_stream_close(stream);
+    fclose(file);
+    
+    // Read back and verify
+    file = fopen(TEST_BINARY_FILE, "rb");
+    stream = aria_binary_stream_create(file, 512);
+    
+    uint8_t read_data[1000];
+    int64_t bytes_read = aria_binary_stream_read(stream, read_data, 1000);
+    ASSERT(bytes_read == 1000, "Should read 1000 bytes");
+    
+    bool match = true;
+    for (int i = 0; i < 1000; i++) {
+        if (read_data[i] != data[i]) {
+            match = false;
+            break;
+        }
+    }
+    ASSERT(match, "Buffered binary data should match");
+    
+    aria_binary_stream_close(stream);
+    fclose(file);
+    
+    // Cleanup
+    remove(TEST_BINARY_FILE);
+}
+
+// ============================================================================
+// Global Stream Convenience Tests
+// ============================================================================
+
+TEST_CASE(stdout_convenience) {
+    // These just test that the functions don't crash
+    // We can't easily verify stdout output in tests
+    
+    int64_t written = aria_stdout_write("Test stdout\n");
+    ASSERT(written > 0, "stdout write should succeed");
+    
+    written = aria_stdout_printf("Formatted: %d\n", 42);
+    ASSERT(written > 0, "stdout printf should succeed");
+    
+    int result = aria_stdout_flush();
+    ASSERT(result == 0, "stdout flush should succeed");
+}
+
+TEST_CASE(stderr_convenience) {
+    int64_t written = aria_stderr_write("Test stderr\n");
+    ASSERT(written > 0, "stderr write should succeed");
+    
+    written = aria_stderr_printf("Error: %s\n", "test");
+    ASSERT(written > 0, "stderr printf should succeed");
+    
+    int result = aria_stderr_flush();
+    ASSERT(result == 0, "stderr flush should succeed");
+}
+
+TEST_CASE(stddbg_convenience) {
+    int64_t written = aria_stddbg_write("Test debug\n");
+    ASSERT(written > 0, "stddbg write should succeed");
+    
+    written = aria_stddbg_printf("Debug: %s = %d\n", "value", 123);
+    ASSERT(written > 0, "stddbg printf should succeed");
+    
+    int result = aria_stddbg_flush();
+    ASSERT(result == 0, "stddbg flush should succeed");
+}
+
+// ============================================================================
+// Debug Session Tests
+// ============================================================================
+
+TEST_CASE(debug_session_create_close) {
+    AriaDebugSession* session = aria_debug_session_create("test_session");
+    ASSERT(session != nullptr, "Debug session should be created");
+    
+    aria_debug_session_close(session);
+}
+
+TEST_CASE(debug_session_log) {
+    AriaDebugSession* session = aria_debug_session_create("test");
+    ASSERT(session != nullptr, "Debug session should be created");
+    
+    // These should not crash
+    aria_debug_session_log(session, ARIA_LOG_DEBUG, "Debug message");
+    aria_debug_session_log(session, ARIA_LOG_INFO, "Info message");
+    aria_debug_session_log(session, ARIA_LOG_WARN, "Warning message");
+    aria_debug_session_log(session, ARIA_LOG_ERROR, "Error message");
+    aria_debug_session_log(session, ARIA_LOG_FATAL, "Fatal message");
+    
+    aria_debug_session_close(session);
+}
+
+TEST_CASE(debug_session_logf) {
+    AriaDebugSession* session = aria_debug_session_create("formatted");
+    ASSERT(session != nullptr, "Debug session should be created");
+    
+    aria_debug_session_logf(session, ARIA_LOG_INFO, "User: %s, ID: %d", "alice", 42);
+    aria_debug_session_logf(session, ARIA_LOG_WARN, "Low memory: %d MB", 128);
+    
+    aria_debug_session_close(session);
+}
+
+TEST_CASE(debug_session_min_level) {
+    AriaDebugSession* session = aria_debug_session_create("filtered");
+    ASSERT(session != nullptr, "Debug session should be created");
+    
+    // Set minimum level to WARN
+    aria_debug_session_set_min_level(session, ARIA_LOG_WARN);
+    
+    // These should be filtered (DEBUG, INFO below WARN)
+    aria_debug_session_log(session, ARIA_LOG_DEBUG, "Should not appear");
+    aria_debug_session_log(session, ARIA_LOG_INFO, "Should not appear");
+    
+    // These should appear (WARN, ERROR, FATAL >= WARN)
+    aria_debug_session_log(session, ARIA_LOG_WARN, "Should appear");
+    aria_debug_session_log(session, ARIA_LOG_ERROR, "Should appear");
+    
+    aria_debug_session_close(session);
+}
+
+TEST_CASE(debug_session_timestamps) {
+    AriaDebugSession* session = aria_debug_session_create("timestamps");
+    ASSERT(session != nullptr, "Debug session should be created");
+    
+    // Enable timestamps (default)
+    aria_debug_session_set_timestamps(session, true);
+    aria_debug_session_log(session, ARIA_LOG_INFO, "With timestamp");
+    
+    // Disable timestamps
+    aria_debug_session_set_timestamps(session, false);
+    aria_debug_session_log(session, ARIA_LOG_INFO, "Without timestamp");
+    
+    aria_debug_session_close(session);
+}
+
+// ============================================================================
+// Convenience Logging Tests
+// ============================================================================
+
+TEST_CASE(convenience_logging) {
+    // These test that convenience logging functions don't crash
+    
+    aria_log_debug("Debug message");
+    aria_log_debugf("Debug: %s", "formatted");
+    
+    aria_log_info("Info message");
+    aria_log_infof("Info: %d", 42);
+    
+    aria_log_warn("Warning message");
+    aria_log_warnf("Warn: %s = %d", "code", 404);
+    
+    aria_log_error("Error message");
+    aria_log_errorf("Error: %s", "failed");
+    
+    aria_log_fatal("Fatal message");
+    aria_log_fatalf("Fatal: code %d", -1);
+}

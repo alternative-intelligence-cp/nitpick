@@ -1,0 +1,226 @@
+// Test file for Future<T> runtime implementation
+#include "../test_helpers.h"
+#include "runtime/async/future.h"
+#include "runtime/async/coroutine.h"
+
+using namespace aria::runtime;
+
+TEST_CASE(future_creation) {
+    Future future(sizeof(int32_t));
+    
+    ASSERT(future.isPending(), "New future should be pending");
+    ASSERT(!future.isReady(), "New future should not be ready");
+    ASSERT(!future.hasErrorFlag(), "New future should not have error");
+    ASSERT(future.getState() == FutureState::PENDING, "State should be PENDING");
+}
+
+TEST_CASE(future_poll_pending) {
+    Future future(sizeof(int32_t));
+    
+    PollResult result = future.poll();
+    
+    ASSERT(result == PollResult::PENDING, "Pending future should poll PENDING");
+}
+
+TEST_CASE(future_set_value) {
+    Future future(sizeof(int32_t));
+    
+    int32_t value = 42;
+    future.setValue(&value, sizeof(value));
+    
+    ASSERT(future.isReady(), "Future should be ready after setValue");
+    ASSERT(!future.isPending(), "Future should not be pending");
+    ASSERT(future.getState() == FutureState::READY, "State should be READY");
+    
+    int32_t* result = static_cast<int32_t*>(future.getValue());
+    ASSERT(result != nullptr, "Value should not be null");
+    ASSERT(*result == 42, "Value should be 42");
+}
+
+TEST_CASE(future_poll_ready) {
+    Future future(sizeof(int32_t));
+    
+    int32_t value = 100;
+    future.setValue(&value, sizeof(value));
+    
+    PollResult result = future.poll();
+    
+    ASSERT(result == PollResult::READY, "Ready future should poll READY");
+}
+
+TEST_CASE(future_set_error) {
+    Future future(sizeof(int32_t));
+    
+    future.setError(true);
+    
+    ASSERT(future.hasErrorFlag(), "Future should have error flag");
+    ASSERT(future.isReady(), "Error future is considered ready");
+    ASSERT(future.getState() == FutureState::ERROR, "State should be ERROR");
+}
+
+TEST_CASE(future_poll_error) {
+    Future future(sizeof(int32_t));
+    
+    future.setError(true);
+    
+    PollResult result = future.poll();
+    
+    ASSERT(result == PollResult::READY, "Error future should poll READY");
+}
+
+TEST_CASE(future_extract_value) {
+    Future future(sizeof(int32_t));
+    
+    int32_t value = 123;
+    future.setValue(&value, sizeof(value));
+    
+    void* extracted = future.extractValue();
+    
+    ASSERT(extracted != nullptr, "Extracted value should not be null");
+    
+    int32_t* result = static_cast<int32_t*>(extracted);
+    ASSERT(*result == 123, "Extracted value should be 123");
+    
+    // After extraction, future's value is null
+    ASSERT(future.getValue() == nullptr, "Future value should be null after extraction");
+    
+    // Clean up extracted value
+    free(extracted);
+}
+
+TEST_CASE(future_with_different_types) {
+    // Test with int64_t
+    Future futureInt64(sizeof(int64_t));
+    int64_t val64 = 9876543210LL;
+    futureInt64.setValue(&val64, sizeof(val64));
+    
+    int64_t* result64 = static_cast<int64_t*>(futureInt64.getValue());
+    ASSERT(*result64 == 9876543210LL, "int64 value should match");
+    
+    // Test with float
+    Future futureFloat(sizeof(float));
+    float valFloat = 3.14159f;
+    futureFloat.setValue(&valFloat, sizeof(valFloat));
+    
+    float* resultFloat = static_cast<float*>(futureFloat.getValue());
+    ASSERT(*resultFloat == 3.14159f, "float value should match");
+}
+
+TEST_CASE(future_move_semantics) {
+    Future future1(sizeof(int32_t));
+    int32_t value = 42;
+    future1.setValue(&value, sizeof(value));
+    
+    // Move construct
+    Future future2(std::move(future1));
+    
+    ASSERT(future2.isReady(), "Moved future should be ready");
+    
+    int32_t* result = static_cast<int32_t*>(future2.getValue());
+    ASSERT(*result == 42, "Moved value should be 42");
+}
+
+TEST_CASE(future_box_creation) {
+    FutureBox box(sizeof(int32_t));
+    
+    ASSERT(box.get() != nullptr, "FutureBox should have future");
+    ASSERT(box->isPending(), "Boxed future should be pending");
+}
+
+TEST_CASE(future_box_set_value) {
+    FutureBox box(sizeof(int32_t));
+    
+    int32_t value = 999;
+    box->setValue(&value, sizeof(value));
+    
+    ASSERT(box->isReady(), "Boxed future should be ready");
+    
+    int32_t* result = static_cast<int32_t*>(box->getValue());
+    ASSERT(*result == 999, "Boxed value should be 999");
+}
+
+TEST_CASE(coroutine_handle_creation) {
+    void* dummyHandle = (void*)0x1000;
+    CoroutineHandle coro(dummyHandle);
+    
+    ASSERT(coro.valid(), "Coroutine handle should be valid");
+    ASSERT(coro.get() == dummyHandle, "Handle should match");
+}
+
+TEST_CASE(coroutine_handle_invalid) {
+    CoroutineHandle coro(nullptr);
+    
+    ASSERT(!coro.valid(), "Null coroutine handle should be invalid");
+}
+
+TEST_CASE(coroutine_support_allocate_frame) {
+    void* frame = coro_support::allocate_frame(1024);
+    
+    ASSERT(frame != nullptr, "Frame allocation should succeed");
+    
+    coro_support::free_frame(frame);
+}
+
+TEST_CASE(coroutine_support_create_future) {
+    void* futurePtr = coro_support::create_future(sizeof(int32_t));
+    
+    ASSERT(futurePtr != nullptr, "Future creation should succeed");
+    
+    Future* future = static_cast<Future*>(futurePtr);
+    ASSERT(future->isPending(), "Created future should be pending");
+    
+    delete future;
+}
+
+TEST_CASE(coroutine_support_complete_future) {
+    void* futurePtr = coro_support::create_future(sizeof(int32_t));
+    Future* future = static_cast<Future*>(futurePtr);
+    
+    int32_t value = 777;
+    coro_support::complete_future(futurePtr, &value, sizeof(value));
+    
+    ASSERT(future->isReady(), "Completed future should be ready");
+    
+    int32_t* result = static_cast<int32_t*>(future->getValue());
+    ASSERT(*result == 777, "Completed value should be 777");
+    
+    delete future;
+}
+
+TEST_CASE(coroutine_support_complete_future_error) {
+    void* futurePtr = coro_support::create_future(sizeof(int32_t));
+    Future* future = static_cast<Future*>(futurePtr);
+    
+    coro_support::complete_future_error(futurePtr);
+    
+    ASSERT(future->hasErrorFlag(), "Future should have error");
+    ASSERT(future->isReady(), "Error future should be ready");
+    
+    delete future;
+}
+
+TEST_CASE(future_tbb_error_propagation) {
+    // Simulate TBB ERR propagation through futures
+    Future future(sizeof(int32_t));
+    
+    // Simulate ERR value (for tbb32, this would be INT32_MIN)
+    int32_t errValue = INT32_MIN;
+    future.setValue(&errValue, sizeof(errValue));
+    future.setError(true);
+    
+    ASSERT(future.hasErrorFlag(), "TBB ERR should set error flag");
+    ASSERT(future.isReady(), "ERR future should be ready");
+    
+    int32_t* result = static_cast<int32_t*>(future.getValue());
+    ASSERT(*result == INT32_MIN, "ERR value should be preserved");
+}
+
+TEST_CASE(future_zero_size_type) {
+    // Test with zero size (like void return)
+    Future future(0);
+    
+    future.setValue(nullptr, 0);
+    
+    ASSERT(future.isReady(), "Zero-size future should be ready");
+    ASSERT(future.getValueSize() == 0, "Value size should be 0");
+}

@@ -1,0 +1,39 @@
+// Test TBB Automatic Operator Lowering (Phase 1 Task 1)
+// Tests that arithmetic operators on TBB types are automatically
+// lowered to safe runtime functions with sticky error propagation
+
+func:main = int64() {
+    // Basic arithmetic on TBB8 variables
+    tbb8:a = 50;
+    tbb8:b = 30;
+
+    // These should be lowered to tbb8_add, tbb8_sub, tbb8_mul, tbb8_div
+    tbb8:sum = a + b;       // 50 + 30 = 80
+    tbb8:diff = a - b;      // 50 - 30 = 20
+    tbb8:prod = 6 * 10;     // 6 * 10 = 60 (literals, may not be lowered)
+    tbb8:quot = a / 2;      // 50 / 2 = 25
+
+    // Test negation lowering to tbb8_neg
+    tbb8:neg_val = -a;      // -(50) = -50
+
+    // Test overflow -> ERR via automatic lowering
+    tbb8:big = 100;
+    tbb8:overflow = big + big;  // 100 + 100 = 200 > 127 -> ERR
+
+    // ERR sentinel for comparison
+    tbb8:err = -128;
+
+    // Verify overflow produced ERR
+    if (overflow == err) {
+        // Overflow correctly detected, test sticky propagation
+        tbb8:sticky = overflow + a;  // ERR + 50 = ERR
+
+        if (sticky == err) {
+            // Sticky error works!
+            pass(42);
+        }
+    }
+
+    // If we get here, something failed
+    pass(1);
+};

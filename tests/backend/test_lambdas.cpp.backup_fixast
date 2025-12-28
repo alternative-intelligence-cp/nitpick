@@ -1,0 +1,74 @@
+/**
+ * @file test_lambdas.cpp
+ * @brief Unit tests for lambda/closure code generation
+ * 
+ * Phase 4.5.2: Closures/Lambdas
+ * Note: Basic structure tests only. Full execution tests deferred.
+ */
+
+#include "../test_helpers.h"
+#include "backend/ir/codegen_expr.h"
+#include "backend/ir/codegen_stmt.h"
+#include "frontend/ast/expr.h"
+#include "frontend/ast/stmt.h"
+#include "frontend/sema/closure_analyzer.h"
+#include "frontend/sema/symbol_table.h"
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/Support/raw_ostream.h>
+
+using namespace aria;
+using namespace aria::backend;
+using namespace aria::sema;
+
+/**
+ * Test: Simple lambda structure - verify fat pointer codegen
+ * Tests that codegenLambda creates a {i8*, i8*} struct (method_ptr, env_ptr)
+ */
+TEST_CASE(lambda_fat_pointer_structure) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("test", context);
+    std::map<std::string, llvm::Value*> named_values;
+    SymbolTable symTable;
+    
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    // Create test function to hold lambda
+    llvm::FunctionType* test_func_type = llvm::FunctionType::get(
+        llvm::Type::getInt64Ty(context), {}, false
+    );
+    llvm::Function* test_func = llvm::Function::Create(
+        test_func_type, llvm::Function::ExternalLinkage, "test_lambda_struct", module.get()
+    );
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", test_func);
+    builder.SetInsertPoint(entry);
+    
+    // Manually create simple lambda: int64() { pass(42); }
+    auto lambda = std::make_unique<LambdaExpr>(
+        std::vector<std::shared_ptr<ASTNode>>{},  // no parameters
+        "int64",  // return type
+        std::make_shared<BlockStmt>(std::vector<std::shared_ptr<ASTNode>>{}),  // empty body
+        1, 1
+    );
+    
+    llvm::Value* lambda_value = expr_codegen.codegenLambda(lambda.get());
+    ASSERT(lambda_value != nullptr, "Lambda codegen should produce value");
+    ASSERT(lambda_value->getType()->isStructTy(), "Lambda should be fat pointer struct {i8*, i8*}");
+    
+    // Add terminator to test function
+    builder.CreateRet(llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 0));
+    
+    // Verify module validity
+    std::string error_str;
+    llvm::raw_string_ostream error_stream(error_str);
+    ASSERT(!llvm::verifyModule(*module, &error_stream), 
+           "Module should be valid: " + error_str);
+}
+
+/* TODO: Additional lambda tests deferred to full runtime integration */

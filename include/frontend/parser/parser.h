@@ -18,6 +18,11 @@ private:
     std::vector<frontend::Token> tokens;
     size_t current;
     std::vector<std::string> errors;
+
+    // ARIA-015: Track FFI context for pointer syntax enforcement
+    // - When true: * is allowed (FFI thin pointers)
+    // - When false: only @ is allowed (Aria fat pointers)
+    bool isInsideExternBlock = false;
     
     // Operator precedence map (higher number = higher precedence)
     static const std::unordered_map<frontend::TokenType, int> precedence;
@@ -63,6 +68,8 @@ private:
     ASTNodePtr parseFuncDecl();
     ASTNodePtr parseStructDecl();
     ASTNodePtr parseEnumDecl();
+    ASTNodePtr parseTraitDecl();     // WP 005: Parse trait:Name = { methods };
+    ASTNodePtr parseImplDecl();      // WP 005: Parse impl:Trait:for:Type = { methods };
     ASTNodePtr parseBlock();
     
     // Phase 3.4: Generic syntax parsing

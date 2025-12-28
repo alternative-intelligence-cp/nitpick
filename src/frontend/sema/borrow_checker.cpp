@@ -52,38 +52,44 @@ void LifetimeContext::restore(const LifetimeContext& snap) {
 }
 
 void LifetimeContext::merge(const LifetimeContext& then_state, const LifetimeContext& else_state) {
-    // Conservative merging for safety
+    // Conservative merging for safety (ARIA-014)
     // A variable is valid only if valid in ALL branches
-    
-    // Merge wild states: variable is freed only if freed in BOTH branches
+
+    // Merge wild states: conservative approach for state machine
     for (auto& [var, state] : then_state.wild_states) {
         auto else_it = else_state.wild_states.find(var);
         if (else_it != else_state.wild_states.end()) {
             // Variable exists in both branches
-            if (state == WildState::FREED && else_it->second == WildState::FREED) {
-                wild_states[var] = WildState::FREED;
-            } else if (state == WildState::MOVED && else_it->second == WildState::MOVED) {
+            if (state == else_it->second) {
+                // Same state in both branches - use that state
+                wild_states[var] = state;
+            } else if (state == WildState::FREED || else_it->second == WildState::FREED) {
+                // If freed in ANY branch, conservative: treat as potentially freed
+                // This is unsafe to use - mark as UNKNOWN
+                wild_states[var] = WildState::UNKNOWN;
+            } else if (state == WildState::MOVED || else_it->second == WildState::MOVED) {
+                // If moved in ANY branch, treat as moved (unsafe to use)
                 wild_states[var] = WildState::MOVED;
             } else {
-                // Conservative: if states differ, treat as allocated
-                wild_states[var] = WildState::ALLOCATED;
+                // States differ but neither freed/moved - mark as UNKNOWN
+                wild_states[var] = WildState::UNKNOWN;
             }
         }
     }
-    
+
     // Merge pending frees: variable needs free if it needs free in ANY branch
     pending_wild_frees = then_state.pending_wild_frees;
     for (const auto& var : else_state.pending_wild_frees) {
         pending_wild_frees.insert(var);
     }
-    
+
     // Remove variables that were freed in both branches
     for (auto& [var, state] : wild_states) {
         if (state == WildState::FREED) {
             pending_wild_frees.erase(var);
         }
     }
-    
+
     // Merge loan origins: union of origins from both branches (phi node logic)
     for (auto& [ref, origins] : then_state.loan_origins) {
         auto else_it = else_state.loan_origins.find(ref);
@@ -93,6 +99,191 @@ void LifetimeContext::merge(const LifetimeContext& then_state, const LifetimeCon
             loan_origins[ref].insert(else_it->second.begin(), else_it->second.end());
         }
     }
+}
+
+bool LifetimeContext::mergeLoopBackEdge(const LifetimeContext& back_edge_state) {
+    // Fixpoint iteration: merge back-edge state into loop header
+    // Returns true if state changed (need another iteration)
+    // Uses set UNION for May-Analysis (loan may be active)
+
+    bool changed = false;
+
+    // Merge active loans: union (if loan exists on any path, it may be active)
+    for (const auto& [host, loans] : back_edge_state.active_loans) {
+        auto& our_loans = active_loans[host];
+        for (const auto& loan : loans) {
+            // Check if this exact loan already exists
+            bool found = false;
+            for (const auto& existing : our_loans) {
+                if (existing.borrower == loan.borrower &&
+                    existing.is_mutable == loan.is_mutable &&
+                    existing.creation_line == loan.creation_line) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                our_loans.push_back(loan);
+                changed = true;
+            }
+        }
+    }
+
+    // Merge loan origins: union
+    for (const auto& [ref, origins] : back_edge_state.loan_origins) {
+        auto& our_origins = loan_origins[ref];
+        size_t old_size = our_origins.size();
+        our_origins.insert(origins.begin(), origins.end());
+        if (our_origins.size() > old_size) {
+            changed = true;
+        }
+    }
+
+    // Merge wild states: conservative lattice join
+    for (const auto& [var, state] : back_edge_state.wild_states) {
+        auto it = wild_states.find(var);
+        if (it == wild_states.end()) {
+            wild_states[var] = state;
+            changed = true;
+        } else if (it->second != state) {
+            // States differ - apply conservative merge
+            WildState merged;
+            if (it->second == WildState::ALLOCATED && state == WildState::FREED) {
+                // ALLOC + FREED = MAY_FREED (loop may have freed it)
+                merged = WildState::MAY_FREED;
+            } else if (it->second == WildState::FREED && state == WildState::ALLOCATED) {
+                merged = WildState::MAY_FREED;
+            } else if (it->second == WildState::ALLOCATED && state == WildState::ALLOCATED) {
+                merged = WildState::ALLOCATED;
+            } else {
+                // Any other combination goes to UNKNOWN
+                merged = WildState::UNKNOWN;
+            }
+            if (it->second != merged) {
+                it->second = merged;
+                changed = true;
+            }
+        }
+    }
+
+    // Merge pending wild frees: union
+    for (const auto& var : back_edge_state.pending_wild_frees) {
+        if (pending_wild_frees.insert(var).second) {
+            changed = true;
+        }
+    }
+
+    // Merge moved variables: union
+    for (const auto& var : back_edge_state.moved_variables) {
+        if (moved_variables.insert(var).second) {
+            changed = true;
+        }
+    }
+
+    return changed;
+}
+
+void LifetimeContext::widen() {
+    // Widening operator: promote uncertain states to conservative top
+    // Called after WIDENING_THRESHOLD iterations to force convergence
+
+    // For wild states, promote any non-terminal state to UNKNOWN
+    for (auto& [var, state] : wild_states) {
+        if (state == WildState::MAY_FREED) {
+            state = WildState::UNKNOWN;  // Conservative: might be freed
+        }
+    }
+
+    // For loans, we keep what we have - the set is already conservative
+    // (union over-approximates the actual loans)
+}
+
+/**
+ * Helper to establish structural equality between two Loan objects.
+ *
+ * Verifies that the borrower identity, mutability permissions, and
+ * source provenance are identical. This is critical for correct fixpoint
+ * convergence - comparing only counts can cause premature termination
+ * when different loans exist but the count stays the same.
+ */
+static bool are_loans_equal(const Loan& a, const Loan& b) {
+    // Check Borrower Identity (Variable Name)
+    if (a.borrower != b.borrower) return false;
+
+    // Check Mutability Permission (Read-Only vs Read-Write)
+    if (a.is_mutable != b.is_mutable) return false;
+
+    // Check Provenance (Source Location)
+    // This distinguishes between the same variable being borrowed
+    // at different points in the code.
+    if (a.creation_line != b.creation_line) return false;
+    if (a.creation_column != b.creation_column) return false;
+
+    return true;
+}
+
+bool LifetimeContext::equivalent(const LifetimeContext& other) const {
+    // Check if two states are equivalent for fixpoint detection
+    // CRITICAL: Must use structural equality, not just counts!
+
+    // ==========================================================
+    // 1. Compare Wild Memory States
+    // ==========================================================
+    if (wild_states.size() != other.wild_states.size()) return false;
+    for (const auto& [var, state] : wild_states) {
+        auto it = other.wild_states.find(var);
+        if (it == other.wild_states.end() || it->second != state) return false;
+    }
+
+    // ==========================================================
+    // 2. Compare Active Loans (STRUCTURAL EQUALITY)
+    // ==========================================================
+    // PREVIOUS DEFECT: Only checked size().
+    // FIX: Checks structural identity of every loan.
+    if (active_loans.size() != other.active_loans.size()) return false;
+    for (const auto& [host, my_loans] : active_loans) {
+        // Find the same host in the other context
+        auto it = other.active_loans.find(host);
+
+        // If host is missing in the other context, states are not equivalent
+        if (it == other.active_loans.end()) return false;
+
+        const auto& other_loans = it->second;
+
+        // Fast path: Count mismatch implies inequality
+        if (my_loans.size() != other_loans.size()) return false;
+
+        // Deep Path: Structural Comparison
+        // We assume deterministic ordering from AST traversal.
+        for (size_t i = 0; i < my_loans.size(); ++i) {
+            if (!are_loans_equal(my_loans[i], other_loans[i])) {
+                // Identity mismatch found (e.g. different borrower name)
+                return false;
+            }
+        }
+    }
+
+    // ==========================================================
+    // 3. Compare Loan Origins (Phi Node Merging)
+    // ==========================================================
+    if (loan_origins.size() != other.loan_origins.size()) return false;
+    for (const auto& [ref, origins] : loan_origins) {
+        auto it = other.loan_origins.find(ref);
+        if (it == other.loan_origins.end() || it->second != origins) return false;
+    }
+
+    // ==========================================================
+    // 4. Compare Pending Frees (Leak Detection)
+    // ==========================================================
+    if (pending_wild_frees != other.pending_wild_frees) return false;
+
+    // ==========================================================
+    // 5. Compare Moved Variables (Use-After-Move)
+    // ==========================================================
+    if (moved_variables != other.moved_variables) return false;
+
+    // If all checks pass, the states are mathematically equivalent.
+    return true;
 }
 
 // ============================================================================
@@ -334,17 +525,34 @@ bool BorrowChecker::checkWildUse(const std::string& var, ASTNode* node) {
         // Not a wild variable, no check needed
         return true;
     }
-    
-    if (it->second == WildState::FREED) {
-        addError("Use after free: variable '" + var + "' was already freed", node);
-        return false;
+
+    switch (it->second) {
+        case WildState::FREED:
+            addError("Use after free: variable '" + var + "' was already freed", node);
+            return false;
+
+        case WildState::MOVED:
+            addError("Use after move: variable '" + var + "' was moved", node);
+            return false;
+
+        case WildState::UNINITIALIZED:
+            addError("Use of uninitialized wild pointer '" + var + "'", node);
+            return false;
+
+        case WildState::UNKNOWN:
+            addError("Use of wild pointer '" + var + "' with unknown state " +
+                    "(may have been freed or moved in a branch)", node);
+            return false;
+
+        case WildState::MAY_FREED:
+            addError("Use of wild pointer '" + var + "' that may have been freed " +
+                    "in a previous loop iteration", node);
+            return false;
+
+        case WildState::ALLOCATED:
+            return true;
     }
-    
-    if (it->second == WildState::MOVED) {
-        addError("Use after move: variable '" + var + "' was moved", node);
-        return false;
-    }
-    
+
     return true;
 }
 
@@ -352,11 +560,47 @@ void BorrowChecker::checkForLeaks() {
     // Check for wild memory that wasn't freed
     if (!ctx.scope_stack.empty()) {
         const auto& current_scope_vars = ctx.scope_stack.back();
-        
+
         for (const auto& var : current_scope_vars) {
             if (ctx.pending_wild_frees.count(var) > 0) {
                 addError("Memory leak: wild variable '" + var + "' was not freed before scope exit",
                         1, 1);  // We don't have node info at scope exit, use line 1
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Defer Enforcement (ARIA-014)
+// ============================================================================
+
+void BorrowChecker::recordDeferFree(const std::string& var, int line) {
+    ctx.defer_obligations[var] = line;
+    // Remove from pending_wild_frees since we have a defer
+    ctx.pending_wild_frees.erase(var);
+}
+
+bool BorrowChecker::hasDeferObligation(const std::string& var) const {
+    return ctx.defer_obligations.find(var) != ctx.defer_obligations.end();
+}
+
+void BorrowChecker::verifyDeferObligations() {
+    // ARIA-014: Every wild allocation must be paired with defer free
+    // Check that all wild variables in current scope have defer obligations
+    if (!ctx.scope_stack.empty()) {
+        const auto& current_scope_vars = ctx.scope_stack.back();
+
+        for (const auto& var : current_scope_vars) {
+            auto state_it = ctx.wild_states.find(var);
+            if (state_it != ctx.wild_states.end() &&
+                state_it->second == WildState::ALLOCATED) {
+                // Check if this wild var has a matching defer
+                if (!hasDeferObligation(var) &&
+                    ctx.pending_wild_frees.count(var) > 0) {
+                    addError("Safety Violation: Wild allocation '" + var +
+                            "' is missing a mandatory 'defer free(" + var + ")' statement",
+                            1, 1);
+                }
             }
         }
     }
@@ -413,7 +657,11 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
         case ASTNode::NodeType::RETURN:
             checkReturnStmt(static_cast<ReturnStmt*>(stmt));
             break;
-            
+
+        case ASTNode::NodeType::DEFER:
+            checkDeferStmt(static_cast<DeferStmt*>(stmt));
+            break;
+
         case ASTNode::NodeType::EXPRESSION_STMT: {
             auto* exprStmt = static_cast<ExpressionStmt*>(stmt);
             if (exprStmt->expression) {
@@ -468,48 +716,91 @@ void BorrowChecker::checkExpression(ASTNode* expr) {
 
 void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
     if (!stmt) return;
-    
+
     // Set scope depth for Appendage Theory tracking
     stmt->scope_depth = ctx.getScopeDepth();
-    
+
     // Register the variable first
     registerVariable(stmt->varName, stmt);
-    
+
     // Check initializer if present
     if (stmt->initializer) {
         checkExpression(stmt->initializer.get());
-        
-        // Check if initializer is a borrow or pin operation using AST annotations
+
+        // Check if initializer is a borrow or pin operation
         if (stmt->initializer->type == ASTNode::NodeType::UNARY_OP) {
             UnaryExpr* unary = static_cast<UnaryExpr*>(stmt->initializer.get());
-            
-            // Check for !$x pattern (immutable borrow)
+
+            // Determine mutability from variable type name
+            // int32$mut -> mutable, int32$ -> immutable
+            bool is_mutable_type = stmt->typeName.find("$mut") != std::string::npos;
+            bool is_ref_type = stmt->typeName.find("$") != std::string::npos;
+
+            // Check for !$x pattern (immutable borrow - alternative syntax)
             bool is_negated_borrow = false;
-            if (unary->op.type == frontend::TokenType::TOKEN_BANG && 
+            if (unary->op.type == frontend::TokenType::TOKEN_BANG &&
                 unary->operand && unary->operand->type == ASTNode::NodeType::UNARY_OP) {
                 UnaryExpr* inner = static_cast<UnaryExpr*>(unary->operand.get());
-                if (inner->creates_loan && !inner->loan_target.empty()) {
+                // Detect borrow by AST flags OR by token type
+                bool inner_is_borrow = inner->creates_loan ||
+                                       inner->op.type == frontend::TokenType::TOKEN_DOLLAR;
+                std::string inner_target = inner->loan_target;
+
+                // If loan_target not set, extract from operand
+                if (inner_target.empty() && inner->operand &&
+                    inner->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                    inner_target = static_cast<IdentifierExpr*>(inner->operand.get())->name;
+                }
+
+                if (inner_is_borrow && !inner_target.empty()) {
                     // This is !$x - immutable borrow
                     is_negated_borrow = true;
-                    recordBorrow(inner->loan_target, stmt->varName, false, stmt);
+                    recordBorrow(inner_target, stmt->varName, false, stmt);
                 }
             }
-            
-            // Use AST annotations set by parser
-            if (!is_negated_borrow && unary->creates_loan && !unary->loan_target.empty()) {
-                // Borrow operation: int32$:ref = $x (mutable by default)
-                recordBorrow(unary->loan_target, stmt->varName, true, stmt);
-            } else if (unary->creates_pin && !unary->pin_target.empty()) {
-                // Pin operation: wild int32@:ptr = #x
+
+            // Detect borrow by AST flags OR by token type (TOKEN_DOLLAR)
+            bool is_borrow = unary->creates_loan ||
+                             unary->op.type == frontend::TokenType::TOKEN_DOLLAR;
+            std::string borrow_target = unary->loan_target;
+
+            // If loan_target not set, extract from operand
+            if (borrow_target.empty() && unary->operand &&
+                unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                borrow_target = static_cast<IdentifierExpr*>(unary->operand.get())->name;
+            }
+
+            if (!is_negated_borrow && is_borrow && !borrow_target.empty()) {
+                // Borrow operation: determine mutability from type name
+                // If type contains $mut -> mutable borrow
+                // If type contains $ but not $mut -> immutable borrow
+                // Default (plain $ operator without type annotation) -> mutable borrow
+                bool is_mutable = is_mutable_type || (!is_ref_type);
+                recordBorrow(borrow_target, stmt->varName, is_mutable, stmt);
+            }
+
+            // Detect pin by AST flags OR by token type (TOKEN_HASH)
+            bool is_pin = unary->creates_pin ||
+                          unary->op.type == frontend::TokenType::TOKEN_HASH;
+            std::string pin_target = unary->pin_target;
+
+            // If pin_target not set, extract from operand
+            if (pin_target.empty() && unary->operand &&
+                unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                pin_target = static_cast<IdentifierExpr*>(unary->operand.get())->name;
+            }
+
+            if (is_pin && !pin_target.empty()) {
+                // Pin operation: wild int8@:ptr = #x
                 stmt->is_pinned_shadow = true;
-                stmt->pinned_target = unary->pin_target;
-                recordPin(unary->pin_target, stmt->varName, stmt);
+                stmt->pinned_target = pin_target;
+                recordPin(pin_target, stmt->varName, stmt);
                 // Don't record as wild allocation - it's just a pin
                 return;
             }
         }
     }
-    
+
     // Check if this is a wild allocation (only if NOT a pin operation)
     // A pin creates a wild pointer to GC memory, not a wild allocation
     if (stmt->typeName.find("wild") == 0 && stmt->initializer && !stmt->is_pinned_shadow) {
@@ -587,48 +878,176 @@ void BorrowChecker::checkIfStmt(IfStmt* stmt) {
 
 void BorrowChecker::checkWhileStmt(WhileStmt* stmt) {
     if (!stmt) return;
-    
-    // Check condition
-    checkExpression(stmt->condition.get());
-    
-    // Enter loop scope
-    ctx.enterScope();
-    
-    // Check body
-    if (stmt->body) {
-        checkStatement(stmt->body.get());
+
+    // ========================================================================
+    // FIXPOINT ITERATION FOR LOOP ANALYSIS
+    // ========================================================================
+    // The problem: A single pass cannot detect loop-carried dependencies where
+    // a reference created in iteration N conflicts with one from iteration N-1.
+    //
+    // Solution: Iterate until the borrow state stabilizes (reaches a fixed point).
+    // At each iteration, we merge the back-edge state into the loop header.
+    // ========================================================================
+
+    // 1. Snapshot entry state (state before entering loop)
+    LifetimeContext entry_state = ctx.snapshot();
+    LifetimeContext loop_head_state = entry_state;
+
+    bool changed = true;
+    int iterations = 0;
+
+    // 2. Fixpoint loop
+    while (changed && iterations < MAX_FIXPOINT_ITERATIONS) {
+        changed = false;
+        iterations++;
+
+        // Start analysis with current loop header state
+        ctx.restore(loop_head_state);
+
+        // Analyze condition (may create borrows)
+        checkExpression(stmt->condition.get());
+
+        // Analyze body in its own scope
+        ctx.enterScope();
+        if (stmt->body) {
+            checkStatement(stmt->body.get());
+        }
+
+        // Capture back-edge state (state at end of loop body, before scope exit cleanup)
+        LifetimeContext back_edge_state = ctx.snapshot();
+        ctx.exitScope();
+
+        // 3. Merge back-edge into header (The Join Operation)
+        // If back_edge_state adds new loans/states to loop_head_state, iterate again
+        if (loop_head_state.mergeLoopBackEdge(back_edge_state)) {
+            changed = true;
+        }
+
+        // 4. Widening safeguard: after threshold, force convergence
+        if (iterations >= WIDENING_THRESHOLD && changed) {
+            loop_head_state.widen();
+            // Do one more iteration with widened state, then stop
+            if (iterations >= MAX_FIXPOINT_ITERATIONS - 1) {
+                changed = false;
+            }
+        }
     }
-    
-    // Exit loop scope
-    ctx.exitScope();
+
+    // 5. Final state: the fixed point header state
+    // This represents the conservative approximation of all possible loop executions
+    ctx.restore(loop_head_state);
+
+    // Check for loop-carried borrow conflicts
+    // After fixpoint, if a variable has multiple mutable borrows, report error
+    for (const auto& [host, loans] : ctx.active_loans) {
+        int mutable_count = 0;
+        const Loan* first_mutable = nullptr;
+        for (const auto& loan : loans) {
+            if (loan.is_mutable) {
+                mutable_count++;
+                if (!first_mutable) first_mutable = &loan;
+            }
+        }
+        if (mutable_count > 1) {
+            addError("Loop-carried borrow conflict: '" + host +
+                    "' is mutably borrowed multiple times across loop iterations",
+                    stmt,
+                    "First mutable borrow here",
+                    first_mutable->creation_line, first_mutable->creation_column);
+        }
+    }
 }
 
 void BorrowChecker::checkForStmt(ForStmt* stmt) {
     if (!stmt) return;
-    
-    // Enter loop scope
+
+    // ========================================================================
+    // FIXPOINT ITERATION FOR FOR-LOOP ANALYSIS
+    // ========================================================================
+    // For loops have: initializer; condition; update; body
+    // The initializer runs once, then (condition, body, update) repeats.
+    // We need fixpoint iteration on the repeating part.
+    // ========================================================================
+
+    // Enter loop scope (initializer variables are in loop scope)
     ctx.enterScope();
-    
-    // Check initializer
+
+    // Check initializer (runs once before loop)
     if (stmt->initializer) {
         checkStatement(stmt->initializer.get());
     }
-    
-    // Check condition
-    if (stmt->condition) {
-        checkExpression(stmt->condition.get());
+
+    // Snapshot state after initializer (this is the entry to the repeating part)
+    LifetimeContext entry_state = ctx.snapshot();
+    LifetimeContext loop_head_state = entry_state;
+
+    bool changed = true;
+    int iterations = 0;
+
+    // Fixpoint loop for the repeating part
+    while (changed && iterations < MAX_FIXPOINT_ITERATIONS) {
+        changed = false;
+        iterations++;
+
+        // Start with current loop header state
+        ctx.restore(loop_head_state);
+
+        // Analyze condition
+        if (stmt->condition) {
+            checkExpression(stmt->condition.get());
+        }
+
+        // Analyze body in its own nested scope
+        ctx.enterScope();
+        if (stmt->body) {
+            checkStatement(stmt->body.get());
+        }
+        ctx.exitScope();
+
+        // Analyze update expression
+        if (stmt->update) {
+            checkExpression(stmt->update.get());
+        }
+
+        // Capture back-edge state
+        LifetimeContext back_edge_state = ctx.snapshot();
+
+        // Merge back-edge into header
+        if (loop_head_state.mergeLoopBackEdge(back_edge_state)) {
+            changed = true;
+        }
+
+        // Widening safeguard
+        if (iterations >= WIDENING_THRESHOLD && changed) {
+            loop_head_state.widen();
+            if (iterations >= MAX_FIXPOINT_ITERATIONS - 1) {
+                changed = false;
+            }
+        }
     }
-    
-    // Check body
-    if (stmt->body) {
-        checkStatement(stmt->body.get());
+
+    // Final state
+    ctx.restore(loop_head_state);
+
+    // Check for loop-carried borrow conflicts
+    for (const auto& [host, loans] : ctx.active_loans) {
+        int mutable_count = 0;
+        const Loan* first_mutable = nullptr;
+        for (const auto& loan : loans) {
+            if (loan.is_mutable) {
+                mutable_count++;
+                if (!first_mutable) first_mutable = &loan;
+            }
+        }
+        if (mutable_count > 1) {
+            addError("Loop-carried borrow conflict: '" + host +
+                    "' is mutably borrowed multiple times across loop iterations",
+                    stmt,
+                    "First mutable borrow here",
+                    first_mutable->creation_line, first_mutable->creation_column);
+        }
     }
-    
-    // Check update
-    if (stmt->update) {
-        checkExpression(stmt->update.get());
-    }
-    
+
     // Exit loop scope
     ctx.exitScope();
 }
@@ -676,15 +1095,238 @@ void BorrowChecker::checkBlockStmt(BlockStmt* stmt) {
 
 void BorrowChecker::checkReturnStmt(ReturnStmt* stmt) {
     if (!stmt) return;
-    
+
     // Check return value
     if (stmt->value) {
         checkExpression(stmt->value.get());
-        
+
         // TODO: Check that returned references don't point to local variables
         // This requires analyzing the return value to see if it's a reference
         // and validating that it doesn't borrow from local scope
     }
+}
+
+void BorrowChecker::checkDeferStmt(DeferStmt* stmt) {
+    if (!stmt) return;
+
+    // ARIA-014: Deep scan the defer block for free() calls
+    // Handles: direct free(), wrapper functions, conditionals, method cleanup
+    if (stmt->block) {
+        // Perform deep AST scan - this will call recordDeferFree for each found free
+        std::unordered_set<std::string> freed = scanDeferBlockForFree(stmt->block.get(), stmt->line, false);
+
+        // Debug: track what was found (can be removed later)
+        // For now, the recordDeferFree calls inside scanDeferBlockForFree handle the tracking
+        (void)freed;  // Suppress unused warning
+    }
+}
+
+// ============================================================================
+// Deep AST Scanning for Defer Blocks
+// ============================================================================
+
+// Known deallocator function names
+static const std::unordered_set<std::string> KNOWN_DEALLOCATORS = {
+    "free", "aria.free", "aria_free",
+    "deallocate", "dealloc",
+    "release", "destroy",
+    "close", "aria.close",
+    "dispose", "cleanup",
+    "arena_reset", "arena_destroy",
+    "buffer_free", "string_free",
+    "wildx_free"
+};
+
+// Known cleanup method names (for x.method() style)
+static const std::unordered_set<std::string> CLEANUP_METHODS = {
+    "dispose", "close", "release", "destroy", "free", "cleanup", "drop"
+};
+
+bool BorrowChecker::isDeallocator(const std::string& funcName) const {
+    // Check against known deallocators
+    if (KNOWN_DEALLOCATORS.count(funcName) > 0) {
+        return true;
+    }
+
+    // Check for common patterns in function names
+    // Functions ending with "_free", "_destroy", "_release", "_close"
+    if (funcName.length() > 5) {
+        std::string suffix = funcName.substr(funcName.length() - 5);
+        if (suffix == "_free" || suffix == "_close") return true;
+    }
+    if (funcName.length() > 8) {
+        std::string suffix = funcName.substr(funcName.length() - 8);
+        if (suffix == "_destroy" || suffix == "_release") return true;
+    }
+
+    return false;
+}
+
+std::string BorrowChecker::checkMethodCleanup(CallExpr* call) const {
+    // Check for method-style cleanup: obj.dispose(), ptr.close(), etc.
+    if (!call || !call->callee) return "";
+
+    // Check for member access pattern: obj.method()
+    if (call->callee->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        auto* memberAccess = static_cast<MemberAccessExpr*>(call->callee.get());
+        if (memberAccess->object && memberAccess->object->type == ASTNode::NodeType::IDENTIFIER) {
+            // Check if the method name is a known cleanup method
+            if (CLEANUP_METHODS.count(memberAccess->member) > 0) {
+                auto* obj = static_cast<IdentifierExpr*>(memberAccess->object.get());
+                return obj->name;  // Return the object being cleaned up
+            }
+        }
+    }
+
+    return "";
+}
+
+std::unordered_set<std::string> BorrowChecker::scanDeferBlockForFree(ASTNode* node, int deferLine, bool must_free) {
+    // Deep AST scanning for free() calls in defer blocks
+    // Returns the set of variables that are freed in this subtree
+    //
+    // Handles:
+    // - Block statements (recursive)
+    // - Conditional statements (if/else)
+    // - Loop statements (while/for) - conservative: assume may execute
+    // - Direct free() calls
+    // - Wrapper function calls
+    // - Method-style cleanup (x.dispose())
+
+    std::unordered_set<std::string> freed_vars;
+
+    if (!node) return freed_vars;
+
+    switch (node->type) {
+        case ASTNode::NodeType::BLOCK: {
+            // Recursively scan all statements in the block
+            auto* block = static_cast<BlockStmt*>(node);
+            for (const auto& s : block->statements) {
+                auto sub_freed = scanDeferBlockForFree(s.get(), deferLine, must_free);
+                freed_vars.insert(sub_freed.begin(), sub_freed.end());
+            }
+            break;
+        }
+
+        case ASTNode::NodeType::EXPRESSION_STMT: {
+            // Unwrap expression statement
+            auto* exprStmt = static_cast<ExpressionStmt*>(node);
+            if (exprStmt->expression) {
+                auto sub_freed = scanDeferBlockForFree(exprStmt->expression.get(), deferLine, must_free);
+                freed_vars.insert(sub_freed.begin(), sub_freed.end());
+            }
+            break;
+        }
+
+        case ASTNode::NodeType::IF: {
+            // Handle conditional free: if (cond) { free(x); }
+            // For defer blocks, we use may-analysis: free on ANY path counts
+            auto* ifStmt = static_cast<IfStmt*>(node);
+
+            // Scan then branch
+            std::unordered_set<std::string> then_freed;
+            if (ifStmt->thenBranch) {
+                then_freed = scanDeferBlockForFree(ifStmt->thenBranch.get(), deferLine, must_free);
+            }
+
+            // Scan else branch
+            std::unordered_set<std::string> else_freed;
+            if (ifStmt->elseBranch) {
+                else_freed = scanDeferBlockForFree(ifStmt->elseBranch.get(), deferLine, must_free);
+            }
+
+            if (must_free) {
+                // Must-analysis: only count variables freed on ALL paths
+                // Intersection of then and else
+                for (const auto& var : then_freed) {
+                    if (else_freed.count(var) > 0 || !ifStmt->elseBranch) {
+                        // Freed in both branches, or no else branch (then is the only path that frees)
+                        freed_vars.insert(var);
+                    }
+                }
+            } else {
+                // May-analysis: count variables freed on ANY path
+                // Union of then and else
+                freed_vars.insert(then_freed.begin(), then_freed.end());
+                freed_vars.insert(else_freed.begin(), else_freed.end());
+            }
+            break;
+        }
+
+        case ASTNode::NodeType::WHILE:
+        case ASTNode::NodeType::FOR: {
+            // Loops in defer blocks: conservative - assume the loop may execute
+            // Scan the body for frees
+            ASTNode* body = nullptr;
+            if (node->type == ASTNode::NodeType::WHILE) {
+                body = static_cast<WhileStmt*>(node)->body.get();
+            } else {
+                body = static_cast<ForStmt*>(node)->body.get();
+            }
+            if (body) {
+                auto sub_freed = scanDeferBlockForFree(body, deferLine, must_free);
+                freed_vars.insert(sub_freed.begin(), sub_freed.end());
+            }
+            break;
+        }
+
+        case ASTNode::NodeType::CALL: {
+            auto* call = static_cast<CallExpr*>(node);
+
+            // Check for method-style cleanup: obj.dispose()
+            std::string method_obj = checkMethodCleanup(call);
+            if (!method_obj.empty()) {
+                freed_vars.insert(method_obj);
+                recordDeferFree(method_obj, deferLine);
+                break;
+            }
+
+            // Check for direct or wrapper function calls
+            if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                auto* callee = static_cast<IdentifierExpr*>(call->callee.get());
+
+                if (isDeallocator(callee->name)) {
+                    // Found a deallocator call - extract the freed variable
+                    if (!call->arguments.empty()) {
+                        ASTNode* arg = call->arguments[0].get();
+
+                        // Handle direct variable: free(ptr)
+                        if (arg->type == ASTNode::NodeType::IDENTIFIER) {
+                            auto* argIdent = static_cast<IdentifierExpr*>(arg);
+                            freed_vars.insert(argIdent->name);
+                            recordDeferFree(argIdent->name, deferLine);
+                        }
+                        // Handle member access: free(obj.ptr)
+                        else if (arg->type == ASTNode::NodeType::MEMBER_ACCESS) {
+                            auto* member = static_cast<MemberAccessExpr*>(arg);
+                            if (member->object && member->object->type == ASTNode::NodeType::IDENTIFIER) {
+                                auto* obj = static_cast<IdentifierExpr*>(member->object.get());
+                                // Record the base object as having cleanup
+                                freed_vars.insert(obj->name);
+                                recordDeferFree(obj->name, deferLine);
+                            }
+                        }
+                        // Handle unary dereference: free(*ptrToPtr) - record the pointer
+                        else if (arg->type == ASTNode::NodeType::UNARY_OP) {
+                            auto* unary = static_cast<UnaryExpr*>(arg);
+                            if (unary->operand && unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                                auto* innerIdent = static_cast<IdentifierExpr*>(unary->operand.get());
+                                freed_vars.insert(innerIdent->name);
+                                recordDeferFree(innerIdent->name, deferLine);
+                            }
+                        }
+                    }
+                }
+            }
+            break;
+        }
+
+        default:
+            // Other node types don't contain free calls
+            break;
+    }
+
+    return freed_vars;
 }
 
 // ============================================================================
@@ -743,15 +1385,34 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
 
 void BorrowChecker::checkMoveExpr(MoveExpr* expr) {
     if (!expr) return;
-    
+
     const std::string& varName = expr->variableName;
-    
+
     // Check if the variable can be used (not already moved or freed)
     if (ctx.moved_variables.find(varName) != ctx.moved_variables.end()) {
         addError("Cannot move variable '" + varName + "' (already moved)", expr);
         return;
     }
-    
+
+    // ARIA-016: Check for active pins - cannot move pinned objects
+    // Pinning locks the object's memory address for FFI/DMA stability
+    if (isPinned(varName)) {
+        addError("Cannot move variable '" + varName +
+                 "' because it is currently pinned. Pinned objects must remain "
+                 "at a stable address while wild pointers reference them.", expr);
+        return;
+    }
+
+    // Check for active borrows - cannot move borrowed objects
+    auto loans_it = ctx.active_loans.find(varName);
+    if (loans_it != ctx.active_loans.end() && !loans_it->second.empty()) {
+        const Loan& loan = loans_it->second.front();
+        addError("Cannot move variable '" + varName +
+                 "' because it is currently borrowed by '" + loan.borrower + "'", expr,
+                 "Variable was borrowed here", loan.creation_line, loan.creation_column);
+        return;
+    }
+
     checkWildUse(varName, expr);
     
     // Mark the variable as moved (invalidate it for all types)

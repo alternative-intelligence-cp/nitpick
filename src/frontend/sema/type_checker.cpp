@@ -9,9 +9,144 @@
 #include <sstream>
 #include <variant>
 #include <iostream>
+#include <unordered_set>
+#include <set>
 
 namespace aria {
 namespace sema {
+
+// ============================================================================
+// Enhanced Error Messages - Helper Functions
+// ============================================================================
+
+// Levenshtein distance for typo detection (find similar names)
+static size_t levenshteinDistance(const std::string& a, const std::string& b) {
+    const size_t m = a.size();
+    const size_t n = b.size();
+
+    if (m == 0) return n;
+    if (n == 0) return m;
+
+    std::vector<std::vector<size_t>> dp(m + 1, std::vector<size_t>(n + 1));
+
+    for (size_t i = 0; i <= m; ++i) dp[i][0] = i;
+    for (size_t j = 0; j <= n; ++j) dp[0][j] = j;
+
+    for (size_t i = 1; i <= m; ++i) {
+        for (size_t j = 1; j <= n; ++j) {
+            size_t cost = (a[i-1] == b[j-1]) ? 0 : 1;
+            dp[i][j] = std::min({
+                dp[i-1][j] + 1,      // deletion
+                dp[i][j-1] + 1,      // insertion
+                dp[i-1][j-1] + cost  // substitution
+            });
+        }
+    }
+
+    return dp[m][n];
+}
+
+// Method registry for common types
+static const std::unordered_map<std::string, std::vector<std::string>>& getTypeMethodRegistry() {
+    static const std::unordered_map<std::string, std::vector<std::string>> registry = {
+        // String methods
+        {"string", {
+            "from_char", "from_cstr", "from_int",
+            "length", "is_empty", "equals",
+            "contains", "starts_with", "ends_with", "substring",
+            "concat", "trim", "to_upper", "to_lower",
+            "to_int", "to_hex", "pad_right", "format_float"
+        }},
+        // Array methods
+        {"array", {
+            "new", "length", "push", "get", "set", "pop"
+        }},
+        // Map methods
+        {"map", {
+            "new", "length", "insert", "get", "has", "remove"
+        }},
+        // File methods
+        {"File", {
+            "open", "read_line", "read_bytes", "write", "write_bytes",
+            "close", "eof", "flush", "seek", "tell",
+            "read", "write_all", "delete", "exists", "size"
+        }},
+        // TBB type methods (tbb8, tbb16, tbb32, tbb64 share these)
+        {"tbb8", {"add", "sub", "mul", "div", "mod", "neg", "abs", "is_err", "to_int"}},
+        {"tbb16", {"add", "sub", "mul", "div", "mod", "neg", "abs", "is_err", "to_int"}},
+        {"tbb32", {"add", "sub", "mul", "div", "mod", "neg", "abs", "is_err", "to_int"}},
+        {"tbb64", {"add", "sub", "mul", "div", "mod", "neg", "abs", "is_err", "to_int"}},
+    };
+    return registry;
+}
+
+// Find similar method name for "Did you mean X?" suggestions
+static std::string findSimilarMethod(const std::string& typeName, const std::string& methodName) {
+    const auto& registry = getTypeMethodRegistry();
+    auto it = registry.find(typeName);
+    if (it == registry.end()) {
+        return "";
+    }
+
+    const std::vector<std::string>& methods = it->second;
+    std::string bestMatch;
+    size_t bestDistance = SIZE_MAX;
+
+    // Threshold: allow up to 3 character edits for short names, or 40% of length
+    size_t maxDistance = std::max(size_t(3), methodName.length() * 2 / 5);
+
+    for (const std::string& method : methods) {
+        size_t dist = levenshteinDistance(methodName, method);
+        if (dist < bestDistance && dist <= maxDistance) {
+            bestDistance = dist;
+            bestMatch = method;
+        }
+    }
+
+    return bestMatch;
+}
+
+// Get formatted list of available methods for a type
+static std::string getAvailableMethods(const std::string& typeName) {
+    const auto& registry = getTypeMethodRegistry();
+    auto it = registry.find(typeName);
+    if (it == registry.end()) {
+        return "";
+    }
+
+    const std::vector<std::string>& methods = it->second;
+    if (methods.empty()) {
+        return "";
+    }
+
+    std::string result;
+    for (size_t i = 0; i < methods.size(); ++i) {
+        if (i > 0) {
+            result += ", ";
+        }
+        result += methods[i];
+    }
+    return result;
+}
+
+// Helper to check if a string is a type keyword (for UFCS disambiguation)
+static bool isTypeKeyword(const std::string& name) {
+    static const std::unordered_set<std::string> typeKeywords = {
+        // Signed integers
+        "int1", "int2", "int4", "int8", "int16", "int32", "int64", "int128", "int256", "int512",
+        // Unsigned integers
+        "uint1", "uint2", "uint4", "uint8", "uint16", "uint32", "uint64", "uint128", "uint256", "uint512",
+        // TBB types
+        "tbb8", "tbb16", "tbb32", "tbb64",
+        // Floating point
+        "flt32", "flt64", "flt128", "flt256",
+        // Other primitives
+        "bool", "string", "void", "NIL", "obj", "dyn",
+        // Collections
+        "array", "map", "result", "option"
+    };
+    return typeKeywords.count(name) > 0;
+}
 
 // ============================================================================
 // AST Traversal: Main Entry Point
@@ -231,15 +366,44 @@ Type* TypeChecker::inferIdentifier(IdentifierExpr* expr) {
         // The actual type will be determined by the loop parameters during IR generation
         return typeSystem->getPrimitiveType("int64");
     }
-    
+
     // Lookup symbol in symbol table
     Symbol* symbol = symbolTable->lookupSymbol(expr->name);
-    
+
     if (!symbol) {
+        // Enhanced error message: check if this looks like a UFCS method call
+        // Pattern: TypeName_methodName (e.g., string_lenght, array_pussh)
+        size_t underscorePos = expr->name.find('_');
+        if (underscorePos != std::string::npos && underscorePos > 0) {
+            std::string typeName = expr->name.substr(0, underscorePos);
+            std::string methodName = expr->name.substr(underscorePos + 1);
+
+            // Check if the prefix is a known type
+            if (isTypeKeyword(typeName) || typeName == "File") {
+                // Try to find a similar method name
+                std::string suggestion = findSimilarMethod(typeName, methodName);
+                std::string availableMethods = getAvailableMethods(typeName);
+
+                std::string errorMsg = "Type '" + typeName + "' has no method '" + methodName + "'";
+
+                if (!suggestion.empty()) {
+                    errorMsg += ". Did you mean '" + suggestion + "'?";
+                }
+
+                if (!availableMethods.empty()) {
+                    errorMsg += "\n  Available methods: " + availableMethods;
+                }
+
+                addError(errorMsg, expr);
+                return typeSystem->getErrorType();
+            }
+        }
+
+        // Standard undefined identifier error
         addError("Undefined identifier: '" + expr->name + "'", expr);
         return typeSystem->getErrorType();
     }
-    
+
     return symbol->type;
 }
 
@@ -707,28 +871,69 @@ Type* TypeChecker::inferVectorConstructor(VectorConstructorExpr* expr) {
 Type* TypeChecker::inferCallExpr(CallExpr* expr) {
     // Check for namespace-qualified static method calls: Type.method()
     // Example: string.from_char(65) -> resolves to builtin string_from_char
+    // Also handles UFCS instance method calls: obj.method() -> Type_method(obj)
     if (expr->callee->type == ASTNode::NodeType::MEMBER_ACCESS) {
         MemberAccessExpr* memberExpr = static_cast<MemberAccessExpr*>(expr->callee.get());
-        
-        // Check if the object is a type name (identifier representing a type)
+
+        // Check if the object is an identifier (type name or variable)
         if (memberExpr->object->type == ASTNode::NodeType::IDENTIFIER) {
-            IdentifierExpr* typeExpr = static_cast<IdentifierExpr*>(memberExpr->object.get());
-            std::string typeName = typeExpr->name;
+            IdentifierExpr* identExpr = static_cast<IdentifierExpr*>(memberExpr->object.get());
+            std::string name = identExpr->name;
             std::string methodName = memberExpr->member;
-            
-            // Construct the mangled builtin name: typename_methodname
-            std::string builtinName = typeName + "_" + methodName;
-            
-            // Create a temporary IdentifierExpr with the mangled name
-            auto tempIdExpr = std::make_shared<IdentifierExpr>(builtinName, expr->line, expr->column);
-            
-            // Create a new CallExpr with the mangled name as callee
-            CallExpr tempCall(tempIdExpr, expr->arguments, expr->line, expr->column);
-            tempCall.explicitTypeArgs = expr->explicitTypeArgs;
-            
-            // Recursively infer the type using the mangled name
-            // This will hit the builtin checks below (e.g., string_from_char)
-            return inferCallExpr(&tempCall);
+
+            // Check if this is a type name (static method call) or a variable (UFCS)
+            // Type keywords: string, int64, array, etc.
+            // Also check if it's a user-defined type (struct name)
+            Symbol* typeSymbol = symbolTable->resolveSymbol(name);
+            bool isTypeName = isTypeKeyword(name) ||
+                              (typeSymbol && typeSymbol->kind == SymbolKind::TYPE);
+
+            if (isTypeName) {
+                // Static method call: Type.method() -> Type_method()
+                std::string builtinName = name + "_" + methodName;
+
+                auto tempIdExpr = std::make_shared<IdentifierExpr>(builtinName, expr->line, expr->column);
+                CallExpr tempCall(tempIdExpr, expr->arguments, expr->line, expr->column);
+                tempCall.explicitTypeArgs = expr->explicitTypeArgs;
+
+                return inferCallExpr(&tempCall);
+            } else {
+                // UFCS: obj.method() -> Type_method(obj)
+                // Look up the variable to get its type
+                Symbol* varSymbol = symbolTable->resolveSymbol(name);
+                if (varSymbol && varSymbol->type) {
+                    // Get the type name from the variable's type
+                    std::string typeName = varSymbol->type->toString();
+
+                    // Handle pointer types - strip the pointer for method lookup
+                    if (!typeName.empty() && (typeName.back() == '*' || typeName.back() == '@')) {
+                        typeName = typeName.substr(0, typeName.length() - 1);
+                    }
+
+                    // Handle generic types - use base type for method lookup
+                    // e.g., array<string> -> array
+                    size_t anglePos = typeName.find('<');
+                    if (anglePos != std::string::npos) {
+                        typeName = typeName.substr(0, anglePos);
+                    }
+
+                    // Construct the UFCS function name: typename_methodname
+                    std::string ufcsName = typeName + "_" + methodName;
+
+                    // Create the UFCS call with the object as the first argument
+                    std::vector<ASTNodePtr> newArgs;
+                    newArgs.push_back(memberExpr->object);  // Inject object as first arg
+                    for (auto& arg : expr->arguments) {
+                        newArgs.push_back(arg);  // Append original arguments
+                    }
+
+                    auto tempIdExpr = std::make_shared<IdentifierExpr>(ufcsName, expr->line, expr->column);
+                    CallExpr tempCall(tempIdExpr, newArgs, expr->line, expr->column);
+                    tempCall.explicitTypeArgs = expr->explicitTypeArgs;
+
+                    return inferCallExpr(&tempCall);
+                }
+            }
         }
     }
     
@@ -1303,6 +1508,63 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
 
         // ====================================================================
+        // FILE I/O BUILTINS
+        // ====================================================================
+
+        // aria_write_file_simple(path: int8*, content: int8*) -> int64
+        if (idExpr->name == "aria_write_file_simple") {
+            if (expr->arguments.size() != 2) {
+                addError("aria_write_file_simple() requires exactly two arguments (path, content)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            if (arg1Type->getKind() == TypeKind::ERROR || arg2Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // aria_file_exists(path: int8*) -> bool
+        if (idExpr->name == "aria_file_exists") {
+            if (expr->arguments.size() != 1) {
+                addError("aria_file_exists() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+
+        // aria_delete_file_simple(path: int8*) -> int64
+        if (idExpr->name == "aria_delete_file_simple") {
+            if (expr->arguments.size() != 1) {
+                addError("aria_delete_file_simple() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // aria_read_file_simple(path: int8*) -> string
+        if (idExpr->name == "aria_read_file_simple") {
+            if (expr->arguments.size() != 1) {
+                addError("aria_read_file_simple() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
+        // ====================================================================
         // TBB (Tagged Balanced Base) TYPE BUILTINS
         // ====================================================================
 
@@ -1463,6 +1725,226 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
 
         // ====================================================================
+        // TBB ARITHMETIC OPERATIONS
+        // ====================================================================
+
+        // tbb64_add(tbb64, tbb64) -> tbb64
+        if (idExpr->name == "tbb64_add") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb64_add() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb64");
+        }
+
+        // tbb64_sub(tbb64, tbb64) -> tbb64
+        if (idExpr->name == "tbb64_sub") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb64_sub() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb64");
+        }
+
+        // tbb64_mul(tbb64, tbb64) -> tbb64
+        if (idExpr->name == "tbb64_mul") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb64_mul() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb64");
+        }
+
+        // tbb64_div(tbb64, tbb64) -> tbb64
+        if (idExpr->name == "tbb64_div") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb64_div() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb64");
+        }
+
+        // tbb64_neg(tbb64) -> tbb64
+        if (idExpr->name == "tbb64_neg") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb64_neg() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb64");
+        }
+
+        // tbb64_abs(tbb64) -> tbb64
+        if (idExpr->name == "tbb64_abs") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb64_abs() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb64");
+        }
+
+        // tbb32_add(tbb32, tbb32) -> tbb32
+        if (idExpr->name == "tbb32_add") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb32_add() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+
+        // tbb32_sub(tbb32, tbb32) -> tbb32
+        if (idExpr->name == "tbb32_sub") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb32_sub() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+
+        // tbb32_mul(tbb32, tbb32) -> tbb32
+        if (idExpr->name == "tbb32_mul") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb32_mul() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+
+        // tbb32_div(tbb32, tbb32) -> tbb32
+        if (idExpr->name == "tbb32_div") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb32_div() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+
+        // tbb32_neg(tbb32) -> tbb32
+        if (idExpr->name == "tbb32_neg") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb32_neg() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+
+        // tbb32_abs(tbb32) -> tbb32
+        if (idExpr->name == "tbb32_abs") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb32_abs() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+
+        // tbb16_add(tbb16, tbb16) -> tbb16
+        if (idExpr->name == "tbb16_add") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb16_add() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb16");
+        }
+
+        // tbb16_sub(tbb16, tbb16) -> tbb16
+        if (idExpr->name == "tbb16_sub") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb16_sub() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb16");
+        }
+
+        // tbb16_mul(tbb16, tbb16) -> tbb16
+        if (idExpr->name == "tbb16_mul") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb16_mul() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb16");
+        }
+
+        // tbb16_div(tbb16, tbb16) -> tbb16
+        if (idExpr->name == "tbb16_div") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb16_div() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb16");
+        }
+
+        // tbb16_neg(tbb16) -> tbb16
+        if (idExpr->name == "tbb16_neg") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb16_neg() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb16");
+        }
+
+        // tbb16_abs(tbb16) -> tbb16
+        if (idExpr->name == "tbb16_abs") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb16_abs() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb16");
+        }
+
+        // tbb8_add(tbb8, tbb8) -> tbb8
+        if (idExpr->name == "tbb8_add") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb8_add() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb8");
+        }
+
+        // tbb8_sub(tbb8, tbb8) -> tbb8
+        if (idExpr->name == "tbb8_sub") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb8_sub() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb8");
+        }
+
+        // tbb8_mul(tbb8, tbb8) -> tbb8
+        if (idExpr->name == "tbb8_mul") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb8_mul() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb8");
+        }
+
+        // tbb8_div(tbb8, tbb8) -> tbb8
+        if (idExpr->name == "tbb8_div") {
+            if (expr->arguments.size() != 2) {
+                addError("tbb8_div() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb8");
+        }
+
+        // tbb8_neg(tbb8) -> tbb8
+        if (idExpr->name == "tbb8_neg") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb8_neg() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb8");
+        }
+
+        // tbb8_abs(tbb8) -> tbb8
+        if (idExpr->name == "tbb8_abs") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb8_abs() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb8");
+        }
+
+        // ====================================================================
         // COLLECTION BUILTINS (Phase 6.2)
         // ====================================================================
 
@@ -1554,6 +2036,102 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 return typeSystem->getErrorType();
             }
             return typeSystem->getPointerType(typeSystem->getPrimitiveType("int8"));
+        }
+
+        // ====================================================================
+        // MAP BUILTINS
+        // ====================================================================
+
+        // map_new(key_size: int64, value_size: int64) -> int8@
+        // Creates a new empty map with given key and value sizes
+        if (idExpr->name == "map_new") {
+            if (expr->arguments.size() != 2) {
+                addError("map_new() requires exactly two arguments (key_size, value_size)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* keySizeType = inferType(expr->arguments[0].get());
+            Type* valSizeType = inferType(expr->arguments[1].get());
+            if (keySizeType->getKind() == TypeKind::ERROR || valSizeType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Returns a pointer to AriaMap (int8@ as generic pointer)
+            return typeSystem->getPointerType(typeSystem->getPrimitiveType("int8"));
+        }
+
+        // map_length(map: ptr) -> int64
+        // Returns the number of key-value pairs in the map
+        if (idExpr->name == "map_length") {
+            if (expr->arguments.size() != 1) {
+                addError("map_length() requires exactly one argument (map)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // map_insert(map: ptr, key: ptr, value: ptr) -> void
+        // Inserts or updates a key-value pair in the map
+        if (idExpr->name == "map_insert") {
+            if (expr->arguments.size() != 3) {
+                addError("map_insert() requires exactly three arguments (map, key, value)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* mapType = inferType(expr->arguments[0].get());
+            Type* keyType = inferType(expr->arguments[1].get());
+            Type* valType = inferType(expr->arguments[2].get());
+            if (mapType->getKind() == TypeKind::ERROR || keyType->getKind() == TypeKind::ERROR ||
+                valType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("void");
+        }
+
+        // map_get(map: ptr, key: ptr) -> int8@
+        // Returns pointer to value associated with key, or nullptr if not found
+        if (idExpr->name == "map_get") {
+            if (expr->arguments.size() != 2) {
+                addError("map_get() requires exactly two arguments (map, key)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* mapType = inferType(expr->arguments[0].get());
+            Type* keyType = inferType(expr->arguments[1].get());
+            if (mapType->getKind() == TypeKind::ERROR || keyType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPointerType(typeSystem->getPrimitiveType("int8"));
+        }
+
+        // map_has(map: ptr, key: ptr) -> bool
+        // Returns true if the key exists in the map
+        if (idExpr->name == "map_has") {
+            if (expr->arguments.size() != 2) {
+                addError("map_has() requires exactly two arguments (map, key)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* mapType = inferType(expr->arguments[0].get());
+            Type* keyType = inferType(expr->arguments[1].get());
+            if (mapType->getKind() == TypeKind::ERROR || keyType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+
+        // map_remove(map: ptr, key: ptr) -> void
+        // Removes a key-value pair from the map
+        if (idExpr->name == "map_remove") {
+            if (expr->arguments.size() != 2) {
+                addError("map_remove() requires exactly two arguments (map, key)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* mapType = inferType(expr->arguments[0].get());
+            Type* keyType = inferType(expr->arguments[1].get());
+            if (mapType->getKind() == TypeKind::ERROR || keyType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("void");
         }
 
         // ====================================================================
@@ -1708,7 +2286,160 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             }
             return typeSystem->getResultType(typeSystem->getPrimitiveType("bool"));
         }
-        
+
+        // ====================================================================
+        // FILE UFCS BUILTINS (for File.open(), stream.read(), etc.)
+        // ====================================================================
+
+        // File_open(path: string, mode: string) -> ptr (AriaStream*)
+        // Static method: File.open("path", "r")
+        if (idExpr->name == "File_open") {
+            if (expr->arguments.size() != 2) {
+                addError("File_open() requires exactly two arguments (path, mode)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* pathType = inferType(expr->arguments[0].get());
+            Type* modeType = inferType(expr->arguments[1].get());
+            if (pathType->getKind() == TypeKind::ERROR || modeType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPointerType(typeSystem->getPrimitiveType("int8"));  // ptr
+        }
+
+        // File_read_line(stream: ptr) -> string
+        // Instance method: stream.read_line()
+        if (idExpr->name == "File_read_line") {
+            if (expr->arguments.size() != 1) {
+                addError("File_read_line() requires exactly one argument (stream)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
+        // File_read_bytes(stream: ptr, buffer: ptr, size: int64) -> int64
+        if (idExpr->name == "File_read_bytes") {
+            if (expr->arguments.size() != 3) {
+                addError("File_read_bytes() requires exactly three arguments (stream, buffer, size)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // File_write(stream: ptr, str: string) -> int64
+        // Instance method: stream.write("text")
+        if (idExpr->name == "File_write") {
+            if (expr->arguments.size() != 2) {
+                addError("File_write() requires exactly two arguments (stream, str)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // File_write_bytes(stream: ptr, data: ptr, size: int64) -> int64
+        if (idExpr->name == "File_write_bytes") {
+            if (expr->arguments.size() != 3) {
+                addError("File_write_bytes() requires exactly three arguments (stream, data, size)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // File_close(stream: ptr) -> void
+        // Instance method: stream.close()
+        if (idExpr->name == "File_close") {
+            if (expr->arguments.size() != 1) {
+                addError("File_close() requires exactly one argument (stream)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("void");
+        }
+
+        // File_eof(stream: ptr) -> bool
+        // Instance method: stream.eof()
+        if (idExpr->name == "File_eof") {
+            if (expr->arguments.size() != 1) {
+                addError("File_eof() requires exactly one argument (stream)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+
+        // File_flush(stream: ptr) -> int32
+        if (idExpr->name == "File_flush") {
+            if (expr->arguments.size() != 1) {
+                addError("File_flush() requires exactly one argument (stream)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+
+        // File_seek(stream: ptr, offset: int64, whence: int32) -> int32
+        if (idExpr->name == "File_seek") {
+            if (expr->arguments.size() != 3) {
+                addError("File_seek() requires exactly three arguments (stream, offset, whence)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+
+        // File_tell(stream: ptr) -> int64
+        if (idExpr->name == "File_tell") {
+            if (expr->arguments.size() != 1) {
+                addError("File_tell() requires exactly one argument (stream)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // File_read(path: string) -> string (static, reads whole file)
+        if (idExpr->name == "File_read") {
+            if (expr->arguments.size() != 1) {
+                addError("File_read() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
+        // File_write_all(path: string, content: string) -> int64
+        if (idExpr->name == "File_write_all") {
+            if (expr->arguments.size() != 2) {
+                addError("File_write_all() requires exactly two arguments (path, content)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // File_delete(path: string) -> int64
+        if (idExpr->name == "File_delete") {
+            if (expr->arguments.size() != 1) {
+                addError("File_delete() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // File_exists(path: string) -> bool
+        if (idExpr->name == "File_exists") {
+            if (expr->arguments.size() != 1) {
+                addError("File_exists() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+
+        // File_size(path: string) -> int64
+        if (idExpr->name == "File_size") {
+            if (expr->arguments.size() != 1) {
+                addError("File_size() requires exactly one argument (path)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
         // ====================================================================
         // MATH LIBRARY BUILTINS (Phase 4.4)
         // ====================================================================
@@ -2123,19 +2854,47 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
     // Handle struct member access
     if (objectType->getKind() == TypeKind::STRUCT) {
         StructType* structType = static_cast<StructType*>(objectType);
-        
+        const auto& fields = structType->getFields();
+
         // Look up member in struct fields
-        for (const auto& field : structType->getFields()) {
+        for (const auto& field : fields) {
             if (field.name == expr->member) {
                 // For safe navigation, result type is the same for now
                 // TODO: Return optional<field.type> when optional types are implemented
                 return field.type;
             }
         }
-        
-        // Member not found
-        addError("Struct '" + structType->getName() + "' has no member named '" + 
-                expr->member + "'", expr);
+
+        // Member not found - provide enhanced error with suggestions
+        std::string bestMatch;
+        size_t bestDistance = SIZE_MAX;
+        size_t maxDistance = std::max(size_t(2), expr->member.length() / 2);
+
+        std::string availableFields;
+        for (size_t i = 0; i < fields.size(); ++i) {
+            if (i > 0) availableFields += ", ";
+            availableFields += fields[i].name;
+
+            // Check for similar field name
+            size_t dist = levenshteinDistance(expr->member, fields[i].name);
+            if (dist < bestDistance && dist <= maxDistance) {
+                bestDistance = dist;
+                bestMatch = fields[i].name;
+            }
+        }
+
+        std::string errorMsg = "Struct '" + structType->getName() + "' has no member named '" +
+                expr->member + "'";
+
+        if (!bestMatch.empty()) {
+            errorMsg += ". Did you mean '" + bestMatch + "'?";
+        }
+
+        if (!availableFields.empty()) {
+            errorMsg += "\n  Available fields: " + availableFields;
+        }
+
+        addError(errorMsg, expr);
         return typeSystem->getErrorType();
     }
     
@@ -2143,20 +2902,47 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
     if (objectType->getKind() == TypeKind::POINTER) {
         PointerType* ptrType = static_cast<PointerType*>(objectType);
         Type* pointeeType = ptrType->getPointeeType();
-        
+
         if (pointeeType->getKind() == TypeKind::STRUCT) {
             StructType* structType = static_cast<StructType*>(pointeeType);
-            
+            const auto& fields = structType->getFields();
+
             // Look up member in struct fields
-            for (const auto& field : structType->getFields()) {
+            for (const auto& field : fields) {
                 if (field.name == expr->member) {
                     return field.type;
                 }
             }
-            
-            // Member not found
-            addError("Struct '" + structType->getName() + "' has no member named '" + 
-                    expr->member + "'", expr);
+
+            // Member not found - provide enhanced error with suggestions
+            std::string bestMatch;
+            size_t bestDistance = SIZE_MAX;
+            size_t maxDistance = std::max(size_t(2), expr->member.length() / 2);
+
+            std::string availableFields;
+            for (size_t i = 0; i < fields.size(); ++i) {
+                if (i > 0) availableFields += ", ";
+                availableFields += fields[i].name;
+
+                size_t dist = levenshteinDistance(expr->member, fields[i].name);
+                if (dist < bestDistance && dist <= maxDistance) {
+                    bestDistance = dist;
+                    bestMatch = fields[i].name;
+                }
+            }
+
+            std::string errorMsg = "Struct '" + structType->getName() + "' has no member named '" +
+                    expr->member + "'";
+
+            if (!bestMatch.empty()) {
+                errorMsg += ". Did you mean '" + bestMatch + "'?";
+            }
+
+            if (!availableFields.empty()) {
+                errorMsg += "\n  Available fields: " + availableFields;
+            }
+
+            addError(errorMsg, expr);
             return typeSystem->getErrorType();
         }
     }
@@ -2563,7 +3349,15 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
         case ASTNode::NodeType::ENUM_DECL:
             checkEnumDecl(static_cast<EnumDeclStmt*>(stmt));
             break;
-        
+
+        case ASTNode::NodeType::TRAIT_DECL:
+            checkTraitDecl(static_cast<TraitDeclStmt*>(stmt));
+            break;
+
+        case ASTNode::NodeType::IMPL_DECL:
+            checkImplDecl(static_cast<ImplDeclStmt*>(stmt));
+            break;
+
         case ASTNode::NodeType::RETURN:
             checkReturnStmt(static_cast<ReturnStmt*>(stmt));
             break;
@@ -3243,6 +4037,113 @@ void TypeChecker::checkEnumDecl(EnumDeclStmt* stmt) {
         // TODO: Create a proper EnumType when type system is extended
         symbolTable->defineSymbol(fullName, SymbolKind::VARIABLE, typeSystem->getPrimitiveType("int64"));
     }
+}
+
+// ============================================================================
+// Trait System Type Checking (WP 005)
+// ============================================================================
+
+void TypeChecker::checkTraitDecl(TraitDeclStmt* stmt) {
+    // Check if trait name already exists
+    if (symbolTable->isDefined(stmt->traitName)) {
+        addError("Trait '" + stmt->traitName + "' is already defined", stmt);
+        return;
+    }
+
+    // Register the trait in the symbol table
+    Symbol* traitSymbol = symbolTable->defineSymbol(
+        stmt->traitName,
+        SymbolKind::TRAIT,
+        nullptr  // Traits don't have a direct Type representation yet
+    );
+
+    if (traitSymbol) {
+        traitSymbol->setTraitDecl(stmt);
+    }
+
+    // Validate method signatures (basic validation)
+    for (const auto& method : stmt->methods) {
+        // Check that return type is valid
+        // For now, just log the method for debugging
+        // TODO: Validate parameter types exist
+    }
+}
+
+void TypeChecker::checkImplDecl(ImplDeclStmt* stmt) {
+    // Look up the trait
+    Symbol* traitSymbol = symbolTable->lookupSymbol(stmt->traitName);
+    if (!traitSymbol || traitSymbol->kind != SymbolKind::TRAIT) {
+        addError("Trait '" + stmt->traitName + "' is not defined", stmt);
+        return;
+    }
+
+    // Look up the type (struct) being implemented for
+    Symbol* typeSymbol = symbolTable->lookupSymbol(stmt->typeName);
+    if (!typeSymbol || typeSymbol->kind != SymbolKind::TYPE) {
+        // Type might be a primitive - that's ok for now
+        // TODO: Better type resolution
+    }
+
+    // Get the trait declaration
+    TraitDeclStmt* traitDecl = traitSymbol->getTraitDecl();
+    if (!traitDecl) {
+        addError("Internal error: Trait '" + stmt->traitName + "' has no declaration", stmt);
+        return;
+    }
+
+    // Register this impl with the trait
+    traitSymbol->addImplDecl(stmt);
+
+    // Check that all trait methods are implemented
+    std::set<std::string> implementedMethods;
+    for (const auto& methodNode : stmt->methods) {
+        if (auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(methodNode)) {
+            implementedMethods.insert(funcDecl->funcName);
+
+            // Register the mangled function name: TypeName_methodName
+            // This allows UFCS-style calls like object.method() -> TypeName_method(object)
+            std::string mangledName = stmt->typeName + "_" + funcDecl->funcName;
+
+            // Create a function type for the mangled function
+            std::vector<Type*> paramTypes;
+            for (const auto& param : funcDecl->parameters) {
+                if (param->type == ASTNode::NodeType::PARAMETER) {
+                    ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+                    if (pnode->typeNode) {
+                        std::string paramTypeName = pnode->typeNode->toString();
+                        Type* ptype = typeSystem->getPrimitiveType(paramTypeName);
+                        if (!ptype) ptype = typeSystem->getPrimitiveType("int64");  // fallback
+                        paramTypes.push_back(ptype);
+                    }
+                }
+            }
+
+            std::string retTypeName = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
+            Type* retType = typeSystem->getPrimitiveType(retTypeName);
+            if (!retType) retType = typeSystem->getPrimitiveType("void");
+
+            Type* funcType = typeSystem->getFunctionType(paramTypes, retType, false);
+
+            Symbol* funcSymbol = symbolTable->defineSymbol(mangledName, SymbolKind::FUNCTION, funcType);
+            if (funcSymbol) {
+                funcSymbol->setFuncDecl(funcDecl.get());
+            }
+
+            // Type check the method implementation
+            checkFuncDecl(funcDecl.get());
+        }
+    }
+
+    // Verify all required methods are present
+    for (const auto& requiredMethod : traitDecl->methods) {
+        if (implementedMethods.find(requiredMethod.name) == implementedMethods.end()) {
+            addError("Missing implementation of method '" + requiredMethod.name +
+                    "' from trait '" + stmt->traitName + "' for type '" + stmt->typeName + "'", stmt);
+        }
+    }
+
+    // TODO: Verify method signatures match
+    // This requires comparing parameter types and return types
 }
 
 // ============================================================================

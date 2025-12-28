@@ -48,6 +48,9 @@ public:
         FUNC_DECL,            // Function declaration: func:name = returnType(params) { body };
         STRUCT_DECL,          // Struct declaration: struct Name { fields };
         ENUM_DECL,            // Enum declaration: enum Name { VARIANT = value };
+        OPAQUE_STRUCT,        // Opaque struct declaration: opaque struct:Name; (FFI)
+        TRAIT_DECL,           // Trait declaration: trait:Name = { methods };
+        IMPL_DECL,            // Trait implementation: impl:Trait:for:Type = { methods };
         RETURN,               // return statement
         PASS,                 // pass statement (result success)
         FAIL,                 // fail statement (result error)
@@ -1045,6 +1048,73 @@ public:
 };
 
 /**
+ * Opaque struct declaration node (FFI)
+ * Represents: opaque struct:Name;
+ * Used for C types where the internal structure is unknown/opaque
+ */
+class OpaqueStructDecl : public ASTNode {
+public:
+    std::string structName;               // Name of the opaque type
+
+    OpaqueStructDecl(const std::string& name, int line = 0, int column = 0)
+        : ASTNode(NodeType::OPAQUE_STRUCT, line, column),
+          structName(name) {}
+
+    std::string toString() const override;
+};
+
+/**
+ * Trait method signature (WP 005: Trait System)
+ * Represents a method signature in a trait declaration
+ */
+struct TraitMethod {
+    std::string name;
+    std::vector<ParameterNode> parameters;
+    std::string returnType;
+    bool autoWrap = false;
+
+    TraitMethod(const std::string& n, std::vector<ParameterNode> params, const std::string& ret)
+        : name(n), parameters(std::move(params)), returnType(ret) {}
+};
+
+/**
+ * Trait declaration node (WP 005: Trait System)
+ * Represents: trait:Name = { func:method = returnType(params); ... };
+ * Example: trait:Drawable = { func:draw = void(self); func:area = flt64(self); };
+ */
+class TraitDeclStmt : public ASTNode {
+public:
+    std::string traitName;
+    std::vector<TraitMethod> methods;
+    std::vector<std::string> superTraits;  // Trait inheritance
+
+    TraitDeclStmt(const std::string& name, std::vector<TraitMethod> m, int line = 0, int column = 0)
+        : ASTNode(NodeType::TRAIT_DECL, line, column),
+          traitName(name), methods(std::move(m)) {}
+
+    std::string toString() const override;
+};
+
+/**
+ * Trait implementation node (WP 005: Trait System)
+ * Represents: impl:Trait:for:Type = { func:method = returnType(params) { body }; ... };
+ * Example: impl:Drawable:for:Circle = { func:draw = void(self) { ... }; };
+ */
+class ImplDeclStmt : public ASTNode {
+public:
+    std::string traitName;
+    std::string typeName;
+    std::vector<ASTNodePtr> methods;  // FuncDeclStmt instances
+
+    ImplDeclStmt(const std::string& trait, const std::string& type,
+                 std::vector<ASTNodePtr> m, int line = 0, int column = 0)
+        : ASTNode(NodeType::IMPL_DECL, line, column),
+          traitName(trait), typeName(type), methods(std::move(m)) {}
+
+    std::string toString() const override;
+};
+
+/**
  * Program node (root of AST)
  * Represents: entire program
  */
@@ -1103,16 +1173,23 @@ public:
 
 /**
  * Pointer type annotation
- * Represents: int8@, string@, obj@ (Aria native pointer syntax)
- * Note: extern blocks use C-style * for FFI compatibility
+ * ARIA-015: Pointer Syntax Enforcement
+ *
+ * - isNative=true (@):  Fat pointer (32 bytes) - native Aria code
+ *   Struct: {i8* ptr, i8* base, i64 size, i64 alloc_id}
+ *   Used for: Borrow checking, bounds checking, Appendage Theory
+ *
+ * - isNative=false (*): Thin pointer (8 bytes) - extern blocks only
+ *   Standard C-compatible pointer for FFI
  */
 class PointerType : public TypeNode {
 public:
     ASTNodePtr baseType;  // The type being pointed to
-    
+    bool isNative = true; // true=fat pointer (@), false=thin pointer (*)
+
     PointerType(ASTNodePtr base, int line = 0, int column = 0)
-        : TypeNode(NodeType::POINTER_TYPE, line, column), baseType(base) {}
-    
+        : TypeNode(NodeType::POINTER_TYPE, line, column), baseType(base), isNative(true) {}
+
     std::string toString() const override;
 };
 
@@ -1826,6 +1903,40 @@ std::string ExternStmt::toString() const {
     return oss.str();
 }
 
+std::string OpaqueStructDecl::toString() const {
+    return "OpaqueStruct(" + structName + ")";
+}
+
+std::string TraitDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Trait(" << traitName;
+    if (!superTraits.empty()) {
+        oss << " : ";
+        for (size_t i = 0; i < superTraits.size(); ++i) {
+            if (i > 0) oss << " + ";
+            oss << superTraits[i];
+        }
+    }
+    oss << ", [";
+    for (size_t i = 0; i < methods.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << methods[i].name << ":" << methods[i].returnType;
+    }
+    oss << "])";
+    return oss.str();
+}
+
+std::string ImplDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "Impl(" << traitName << " for " << typeName << ", [";
+    for (size_t i = 0; i < methods.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << methods[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
+}
+
 std::string ProgramNode::toString() const {
     std::ostringstream oss;
     oss << "Program([";
@@ -1853,9 +1964,10 @@ std::string SimpleType::toString() const {
 std::string PointerType::toString() const {
     std::ostringstream oss;
     if (baseType) {
-        oss << baseType->toString() << "@";  // Aria uses @ for pointers
+        // ARIA-015: @ for native fat pointers, * for FFI thin pointers
+        oss << baseType->toString() << (isNative ? "@" : "*");
     } else {
-        oss << "unknown@";
+        oss << "unknown" << (isNative ? "@" : "*");
     }
     return oss.str();
 }

@@ -521,6 +521,57 @@ public:
 };
 
 /**
+ * Trait method signature (WP 005: Trait System)
+ * Represents a method signature in a trait declaration
+ */
+struct TraitMethod {
+    std::string name;
+    std::vector<ParameterNode> parameters;
+    std::string returnType;
+    bool autoWrap = false;
+
+    TraitMethod(const std::string& n, std::vector<ParameterNode> params, const std::string& ret)
+        : name(n), parameters(std::move(params)), returnType(ret) {}
+};
+
+/**
+ * Trait declaration node (WP 005: Trait System)
+ * Represents: trait:Name = { func:method = returnType(params); ... };
+ * Example: trait:Drawable = { func:draw = void(self); func:area = flt64(self); };
+ */
+class TraitDeclStmt : public ASTNode {
+public:
+    std::string traitName;
+    std::vector<TraitMethod> methods;
+    std::vector<std::string> superTraits;  // Trait inheritance
+
+    TraitDeclStmt(const std::string& name, std::vector<TraitMethod> m, int line = 0, int column = 0)
+        : ASTNode(NodeType::TRAIT_DECL, line, column),
+          traitName(name), methods(std::move(m)) {}
+
+    std::string toString() const override;
+};
+
+/**
+ * Trait implementation node (WP 005: Trait System)
+ * Represents: impl:Trait:for:Type = { func:method = returnType(params) { body }; ... };
+ * Example: impl:Drawable:for:Circle = { func:draw = void(self) { ... }; };
+ */
+class ImplDeclStmt : public ASTNode {
+public:
+    std::string traitName;
+    std::string typeName;
+    std::vector<ASTNodePtr> methods;  // FuncDeclStmt instances
+
+    ImplDeclStmt(const std::string& trait, const std::string& type,
+                 std::vector<ASTNodePtr> m, int line = 0, int column = 0)
+        : ASTNode(NodeType::IMPL_DECL, line, column),
+          traitName(trait), typeName(type), methods(std::move(m)) {}
+
+    std::string toString() const override;
+};
+
+/**
  * Program node (root of AST)
  * Represents: entire program
  */

@@ -1,0 +1,1466 @@
+#include "../test_helpers.h"
+#include "backend/ir/codegen_expr.h"
+#include "frontend/ast/expr.h"
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/IR/Constants.h>
+#include <map>
+#include <string>
+
+using namespace aria;
+using namespace aria::backend;
+
+/**
+ * Test: Integer literal code generation
+ */
+TEST_CASE(codegen_expr_int_literal) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a test function to hold the code
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_int", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Test integer literal: 42
+    LiteralExpr int_expr(static_cast<int64_t>(42));
+    llvm::Value* result = codegen.codegenLiteral(&int_expr);
+    
+    ASSERT(result != nullptr, "Integer literal should produce a value");
+    ASSERT(llvm::isa<llvm::ConstantInt>(result), "Integer literal should produce ConstantInt");
+    
+    llvm::ConstantInt* ci = llvm::cast<llvm::ConstantInt>(result);
+    ASSERT_EQ(ci->getSExtValue(), 42, "Integer value should be 42");
+    
+    // Complete the function
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Float literal code generation
+ */
+TEST_CASE(codegen_expr_float_literal) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a test function
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getDoubleTy(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_float", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Test float literal: 3.14
+    LiteralExpr float_expr(3.14);
+    llvm::Value* result = codegen.codegenLiteral(&float_expr);
+    
+    ASSERT(result != nullptr, "Float literal should produce a value");
+    ASSERT(llvm::isa<llvm::ConstantFP>(result), "Float literal should produce ConstantFP");
+    
+    llvm::ConstantFP* cf = llvm::cast<llvm::ConstantFP>(result);
+    ASSERT(cf->getValueAPF().convertToDouble() == 3.14, "Float value should be 3.14");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Boolean literal code generation
+ */
+TEST_CASE(codegen_expr_bool_literal) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a test function
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt1Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_bool", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Test true literal
+    LiteralExpr bool_expr(true);
+    llvm::Value* result = codegen.codegenLiteral(&bool_expr);
+    
+    ASSERT(result != nullptr, "Boolean literal should produce a value");
+    ASSERT(llvm::isa<llvm::ConstantInt>(result), "Boolean literal should produce ConstantInt");
+    
+    llvm::ConstantInt* ci = llvm::cast<llvm::ConstantInt>(result);
+    ASSERT_EQ(ci->getZExtValue(), 1, "True value should be 1");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: String literal code generation
+ */
+TEST_CASE(codegen_expr_string_literal) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a test function
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::PointerType::get(context, 0), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_string", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Test string literal: "Hello, Aria!"
+    LiteralExpr string_expr(std::string("Hello, Aria!"));
+    llvm::Value* result = codegen.codegenLiteral(&string_expr);
+    
+    ASSERT(result != nullptr, "String literal should produce a value");
+    ASSERT(result->getType()->isPointerTy(), "String literal should produce a pointer");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Null literal code generation
+ */
+TEST_CASE(codegen_expr_null_literal) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a test function
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::PointerType::get(context, 0), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_null", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Test null literal
+    LiteralExpr null_expr(std::monostate{});
+    llvm::Value* result = codegen.codegenLiteral(&null_expr);
+    
+    ASSERT(result != nullptr, "Null literal should produce a value");
+    ASSERT(llvm::isa<llvm::ConstantPointerNull>(result), "Null literal should produce null pointer");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Large integer literal (i64)
+ */
+TEST_CASE(codegen_expr_large_int_literal) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a test function
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt64Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_large_int", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Test large integer literal that requires i64
+    int64_t large_val = 9223372036854775807LL;  // INT64_MAX
+    LiteralExpr int_expr(large_val);
+    llvm::Value* result = codegen.codegenLiteral(&int_expr);
+    
+    ASSERT(result != nullptr, "Large integer literal should produce a value");
+    ASSERT(llvm::isa<llvm::ConstantInt>(result), "Large integer literal should produce ConstantInt");
+    
+    llvm::ConstantInt* ci = llvm::cast<llvm::ConstantInt>(result);
+    ASSERT_EQ(ci->getSExtValue(), large_val, "Large integer value should match");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Negative integer literal
+ */
+TEST_CASE(codegen_expr_negative_int_literal) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a test function
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_neg_int", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Test negative integer literal: -42
+    LiteralExpr int_expr(static_cast<int64_t>(-42));
+    llvm::Value* result = codegen.codegenLiteral(&int_expr);
+    
+    ASSERT(result != nullptr, "Negative integer literal should produce a value");
+    ASSERT(llvm::isa<llvm::ConstantInt>(result), "Negative integer literal should produce ConstantInt");
+    
+    llvm::ConstantInt* ci = llvm::cast<llvm::ConstantInt>(result);
+    ASSERT_EQ(ci->getSExtValue(), -42, "Negative integer value should be -42");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Variable reference (integer)
+ */
+TEST_CASE(codegen_expr_variable_reference_int) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a test function
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_var_ref", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create a variable (alloca) and store a value
+    llvm::AllocaInst* var = builder.CreateAlloca(llvm::Type::getInt32Ty(context), nullptr, "x");
+    builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 42), var);
+    
+    // Add to symbol table
+    named_values["x"] = var;
+    
+    // Generate code for variable reference
+    IdentifierExpr id_expr("x");
+    llvm::Value* result = codegen.codegenIdentifier(&id_expr);
+    
+    ASSERT(result != nullptr, "Variable reference should produce a value");
+    ASSERT(llvm::isa<llvm::LoadInst>(result), "Variable reference should produce LoadInst");
+    
+    llvm::LoadInst* load = llvm::cast<llvm::LoadInst>(result);
+    ASSERT(load->getPointerOperand() == var, "Load should reference the alloca");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Variable reference (float)
+ */
+TEST_CASE(codegen_expr_variable_reference_float) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a test function
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getDoubleTy(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_var_float", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create a float variable
+    llvm::AllocaInst* var = builder.CreateAlloca(llvm::Type::getDoubleTy(context), nullptr, "pi");
+    builder.CreateStore(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context), 3.14159), var);
+    
+    named_values["pi"] = var;
+    
+    // Generate code for variable reference
+    IdentifierExpr id_expr("pi");
+    llvm::Value* result = codegen.codegenIdentifier(&id_expr);
+    
+    ASSERT(result != nullptr, "Float variable reference should produce a value");
+    ASSERT(llvm::isa<llvm::LoadInst>(result), "Float variable reference should produce LoadInst");
+    ASSERT(result->getType()->isDoubleTy(), "Loaded value should be double type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Variable reference (boolean)
+ */
+TEST_CASE(codegen_expr_variable_reference_bool) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a test function
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt1Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_var_bool", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create a boolean variable
+    llvm::AllocaInst* var = builder.CreateAlloca(llvm::Type::getInt1Ty(context), nullptr, "flag");
+    builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 1), var);
+    
+    named_values["flag"] = var;
+    
+    // Generate code for variable reference
+    IdentifierExpr id_expr("flag");
+    llvm::Value* result = codegen.codegenIdentifier(&id_expr);
+    
+    ASSERT(result != nullptr, "Boolean variable reference should produce a value");
+    ASSERT(llvm::isa<llvm::LoadInst>(result), "Boolean variable reference should produce LoadInst");
+    ASSERT(result->getType()->isIntegerTy(1), "Loaded value should be i1 type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Variable reference (pointer/string)
+ */
+TEST_CASE(codegen_expr_variable_reference_pointer) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a test function
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::PointerType::get(context, 0), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_var_ptr", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create a pointer variable
+    llvm::AllocaInst* var = builder.CreateAlloca(llvm::PointerType::get(context, 0), nullptr, "ptr");
+    llvm::Value* null_ptr = llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
+    builder.CreateStore(null_ptr, var);
+    
+    named_values["ptr"] = var;
+    
+    // Generate code for variable reference
+    IdentifierExpr id_expr("ptr");
+    llvm::Value* result = codegen.codegenIdentifier(&id_expr);
+    
+    ASSERT(result != nullptr, "Pointer variable reference should produce a value");
+    ASSERT(llvm::isa<llvm::LoadInst>(result), "Pointer variable reference should produce LoadInst");
+    ASSERT(result->getType()->isPointerTy(), "Loaded value should be pointer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Undefined variable error
+ */
+TEST_CASE(codegen_expr_undefined_variable) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a test function
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_undef", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Try to reference undefined variable
+    IdentifierExpr id_expr("undefined_var");
+    
+    bool caught_error = false;
+    try {
+        codegen.codegenIdentifier(&id_expr);
+    } catch (const std::runtime_error& e) {
+        caught_error = true;
+        std::string msg = e.what();
+        ASSERT(msg.find("Undefined variable") != std::string::npos, "Error message should mention undefined variable");
+    }
+    
+    ASSERT(caught_error, "Should throw error for undefined variable");
+}
+
+/**
+ * Test: Non-alloca value (function parameter simulation)
+ */
+TEST_CASE(codegen_expr_function_parameter) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a function with a parameter
+    llvm::FunctionType* ft = llvm::FunctionType::get(
+        llvm::Type::getInt32Ty(context),
+        {llvm::Type::getInt32Ty(context)},
+        false
+    );
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_param", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Get the parameter
+    llvm::Argument* param = func->arg_begin();
+    param->setName("n");
+    
+    // Add parameter to symbol table (parameters are not allocas!)
+    named_values["n"] = param;
+    
+    // Generate code for parameter reference
+    IdentifierExpr id_expr("n");
+    llvm::Value* result = codegen.codegenIdentifier(&id_expr);
+    
+    ASSERT(result != nullptr, "Parameter reference should produce a value");
+    ASSERT(result == param, "Parameter reference should return the parameter directly (no load)");
+    ASSERT(!llvm::isa<llvm::LoadInst>(result), "Parameter should not be loaded");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Binary addition (integer)
+ */
+TEST_CASE(codegen_expr_binary_add_int) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a test function
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_add", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create binary expression: 10 + 32
+    auto left = std::make_unique<LiteralExpr>(static_cast<int64_t>(10));
+    auto right = std::make_unique<LiteralExpr>(static_cast<int64_t>(32));
+    Token op_token{TokenType::TOKEN_PLUS, "+", 0, 0};
+    BinaryExpr bin_expr(std::move(left), op_token, std::move(right));
+    
+    llvm::Value* result = codegen.codegenBinary(&bin_expr);
+    
+    ASSERT(result != nullptr, "Binary addition should produce a value");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Binary subtraction (integer)
+ */
+TEST_CASE(codegen_expr_binary_sub_int) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_sub", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: 50 - 8
+    auto left = std::make_unique<LiteralExpr>(static_cast<int64_t>(50));
+    auto right = std::make_unique<LiteralExpr>(static_cast<int64_t>(8));
+    Token op_token{TokenType::TOKEN_MINUS, "-", 0, 0};
+    BinaryExpr bin_expr(std::move(left), op_token, std::move(right));
+    
+    llvm::Value* result = codegen.codegenBinary(&bin_expr);
+    
+    ASSERT(result != nullptr, "Binary subtraction should produce a value");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Binary multiplication (integer)
+ */
+TEST_CASE(codegen_expr_binary_mul_int) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_mul", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: 7 * 6
+    auto left = std::make_unique<LiteralExpr>(static_cast<int64_t>(7));
+    auto right = std::make_unique<LiteralExpr>(static_cast<int64_t>(6));
+    Token op_token{TokenType::TOKEN_STAR, "*", 0, 0};
+    BinaryExpr bin_expr(std::move(left), op_token, std::move(right));
+    
+    llvm::Value* result = codegen.codegenBinary(&bin_expr);
+    
+    ASSERT(result != nullptr, "Binary multiplication should produce a value");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Binary division (integer)
+ */
+TEST_CASE(codegen_expr_binary_div_int) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_div", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: 84 / 2
+    auto left = std::make_unique<LiteralExpr>(static_cast<int64_t>(84));
+    auto right = std::make_unique<LiteralExpr>(static_cast<int64_t>(2));
+    Token op_token{TokenType::TOKEN_SLASH, "/", 0, 0};
+    BinaryExpr bin_expr(std::move(left), op_token, std::move(right));
+    
+    llvm::Value* result = codegen.codegenBinary(&bin_expr);
+    
+    ASSERT(result != nullptr, "Binary division should produce a value");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Binary float arithmetic
+ */
+TEST_CASE(codegen_expr_binary_float_ops) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getDoubleTy(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_float_add", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: 3.14 + 2.86
+    auto left = std::make_unique<LiteralExpr>(3.14);
+    auto right = std::make_unique<LiteralExpr>(2.86);
+    Token op_token{TokenType::TOKEN_PLUS, "+", 0, 0};
+    BinaryExpr bin_expr(std::move(left), op_token, std::move(right));
+    
+    llvm::Value* result = codegen.codegenBinary(&bin_expr);
+    
+    ASSERT(result != nullptr, "Float addition should produce a value");
+    ASSERT(result->getType()->isFloatingPointTy(), "Result should be floating point type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Comparison operators
+ */
+TEST_CASE(codegen_expr_binary_comparison) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt1Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_cmp", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: 42 == 42
+    auto left = std::make_unique<LiteralExpr>(static_cast<int64_t>(42));
+    auto right = std::make_unique<LiteralExpr>(static_cast<int64_t>(42));
+    Token op_token{TokenType::TOKEN_EQUAL_EQUAL, "==", 0, 0};
+    BinaryExpr bin_expr(std::move(left), op_token, std::move(right));
+    
+    llvm::Value* result = codegen.codegenBinary(&bin_expr);
+    
+    ASSERT(result != nullptr, "Comparison should produce a value");
+    ASSERT(result->getType()->isIntegerTy(1), "Comparison result should be i1 (bool)");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Less than comparison
+ */
+TEST_CASE(codegen_expr_binary_less_than) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt1Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_lt", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: 10 < 20
+    auto left = std::make_unique<LiteralExpr>(static_cast<int64_t>(10));
+    auto right = std::make_unique<LiteralExpr>(static_cast<int64_t>(20));
+    Token op_token{TokenType::TOKEN_LESS, "<", 0, 0};
+    BinaryExpr bin_expr(std::move(left), op_token, std::move(right));
+    
+    llvm::Value* result = codegen.codegenBinary(&bin_expr);
+    
+    ASSERT(result != nullptr, "Less than should produce a value");
+    ASSERT(result->getType()->isIntegerTy(1), "Result should be i1 (bool)");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Bitwise AND
+ */
+TEST_CASE(codegen_expr_binary_bitwise_and) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_bitand", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: 15 & 7  (0b1111 & 0b0111 = 0b0111 = 7)
+    auto left = std::make_unique<LiteralExpr>(static_cast<int64_t>(15));
+    auto right = std::make_unique<LiteralExpr>(static_cast<int64_t>(7));
+    Token op_token{TokenType::TOKEN_AMPERSAND, "&", 0, 0};
+    BinaryExpr bin_expr(std::move(left), op_token, std::move(right));
+    
+    llvm::Value* result = codegen.codegenBinary(&bin_expr);
+    
+    ASSERT(result != nullptr, "Bitwise AND should produce a value");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Bitwise OR
+ */
+TEST_CASE(codegen_expr_binary_bitwise_or) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_bitor", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: 8 | 4  (0b1000 | 0b0100 = 0b1100 = 12)
+    auto left = std::make_unique<LiteralExpr>(static_cast<int64_t>(8));
+    auto right = std::make_unique<LiteralExpr>(static_cast<int64_t>(4));
+    Token op_token{TokenType::TOKEN_PIPE, "|", 0, 0};
+    BinaryExpr bin_expr(std::move(left), op_token, std::move(right));
+    
+    llvm::Value* result = codegen.codegenBinary(&bin_expr);
+    
+    ASSERT(result != nullptr, "Bitwise OR should produce a value");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Bitwise XOR
+ */
+TEST_CASE(codegen_expr_binary_bitwise_xor) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_bitxor", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: 15 ^ 7  (0b1111 ^ 0b0111 = 0b1000 = 8)
+    auto left = std::make_unique<LiteralExpr>(static_cast<int64_t>(15));
+    auto right = std::make_unique<LiteralExpr>(static_cast<int64_t>(7));
+    Token op_token{TokenType::TOKEN_CARET, "^", 0, 0};
+    BinaryExpr bin_expr(std::move(left), op_token, std::move(right));
+    
+    llvm::Value* result = codegen.codegenBinary(&bin_expr);
+    
+    ASSERT(result != nullptr, "Bitwise XOR should produce a value");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Shift left
+ */
+TEST_CASE(codegen_expr_binary_shift_left) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_shl", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: 5 << 2  (5 * 4 = 20)
+    auto left = std::make_unique<LiteralExpr>(static_cast<int64_t>(5));
+    auto right = std::make_unique<LiteralExpr>(static_cast<int64_t>(2));
+    Token op_token{TokenType::TOKEN_SHIFT_LEFT, "<<", 0, 0};
+    BinaryExpr bin_expr(std::move(left), op_token, std::move(right));
+    
+    llvm::Value* result = codegen.codegenBinary(&bin_expr);
+    
+    ASSERT(result != nullptr, "Shift left should produce a value");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+/**
+ * Test: Nested binary operations
+ */
+TEST_CASE(codegen_expr_binary_nested) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    llvm::Module module("test_module", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    llvm::FunctionType* ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "test_nested", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: (10 + 5) * 2
+    auto inner_left = std::make_unique<LiteralExpr>(static_cast<int64_t>(10));
+    auto inner_right = std::make_unique<LiteralExpr>(static_cast<int64_t>(5));
+    Token add_token{TokenType::TOKEN_PLUS, "+", 0, 0};
+    auto inner_expr = std::make_unique<BinaryExpr>(std::move(inner_left), add_token, std::move(inner_right));
+    
+    auto outer_right = std::make_unique<LiteralExpr>(static_cast<int64_t>(2));
+    Token mul_token{TokenType::TOKEN_STAR, "*", 0, 0};
+    BinaryExpr outer_expr(std::move(inner_expr), mul_token, std::move(outer_right));
+    
+    llvm::Value* result = codegen.codegenBinary(&outer_expr);
+    
+    ASSERT(result != nullptr, "Nested expression should produce a value");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+// ============================================================================
+// PHASE 4.2.4: UNARY OPERATOR CODE GENERATION TESTS
+// ============================================================================
+
+TEST_CASE(codegen_expr_unary_neg_int) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create function and entry block
+    llvm::FunctionType* func_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: -42
+    auto operand = std::make_unique<LiteralExpr>(static_cast<int64_t>(42));
+    Token neg_token{TokenType::TOKEN_MINUS, "-", 0, 0};
+    UnaryExpr unary_expr(neg_token, std::move(operand));
+    
+    llvm::Value* result = codegen.codegenUnary(&unary_expr);
+    
+    ASSERT(result != nullptr, "Unary negation should produce a value");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_unary_neg_float) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create function and entry block
+    llvm::FunctionType* func_type = llvm::FunctionType::get(llvm::Type::getDoubleTy(context), false);
+    llvm::Function* func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: -3.14
+    auto operand = std::make_unique<LiteralExpr>(3.14);
+    Token neg_token{TokenType::TOKEN_MINUS, "-", 0, 0};
+    UnaryExpr unary_expr(neg_token, std::move(operand));
+    
+    llvm::Value* result = codegen.codegenUnary(&unary_expr);
+    
+    ASSERT(result != nullptr, "Unary negation should produce a value");
+    ASSERT(result->getType()->isFloatingPointTy(), "Result should be float type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_unary_not_bool) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create function and entry block
+    llvm::FunctionType* func_type = llvm::FunctionType::get(llvm::Type::getInt1Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: !true
+    auto operand = std::make_unique<LiteralExpr>(true);
+    Token not_token{TokenType::TOKEN_BANG, "!", 0, 0};
+    UnaryExpr unary_expr(not_token, std::move(operand));
+    
+    llvm::Value* result = codegen.codegenUnary(&unary_expr);
+    
+    ASSERT(result != nullptr, "Logical NOT should produce a value");
+    ASSERT(result->getType()->isIntegerTy(1), "Result should be boolean type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_unary_not_int) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create function and entry block
+    llvm::FunctionType* func_type = llvm::FunctionType::get(llvm::Type::getInt1Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: !42 (should be false because 42 != 0)
+    auto operand = std::make_unique<LiteralExpr>(static_cast<int64_t>(42));
+    Token not_token{TokenType::TOKEN_BANG, "!", 0, 0};
+    UnaryExpr unary_expr(not_token, std::move(operand));
+    
+    llvm::Value* result = codegen.codegenUnary(&unary_expr);
+    
+    ASSERT(result != nullptr, "Logical NOT on integer should produce a value");
+    ASSERT(result->getType()->isIntegerTy(1), "Result should be boolean type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_unary_not_float) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create function and entry block
+    llvm::FunctionType* func_type = llvm::FunctionType::get(llvm::Type::getInt1Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: !0.0 (should be true)
+    auto operand = std::make_unique<LiteralExpr>(0.0);
+    Token not_token{TokenType::TOKEN_BANG, "!", 0, 0};
+    UnaryExpr unary_expr(not_token, std::move(operand));
+    
+    llvm::Value* result = codegen.codegenUnary(&unary_expr);
+    
+    ASSERT(result != nullptr, "Logical NOT on float should produce a value");
+    ASSERT(result->getType()->isIntegerTy(1), "Result should be boolean type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_unary_bitwise_not) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create function and entry block
+    llvm::FunctionType* func_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: ~15 (bitwise NOT of 15)
+    auto operand = std::make_unique<LiteralExpr>(static_cast<int64_t>(15));
+    Token bnot_token{TokenType::TOKEN_TILDE, "~", 0, 0};
+    UnaryExpr unary_expr(bnot_token, std::move(operand));
+    
+    llvm::Value* result = codegen.codegenUnary(&unary_expr);
+    
+    ASSERT(result != nullptr, "Bitwise NOT should produce a value");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_unary_nested_operations) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create function and entry block
+    llvm::FunctionType* func_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: -(-42) = 42
+    auto inner_operand = std::make_unique<LiteralExpr>(static_cast<int64_t>(42));
+    Token neg_token1{TokenType::TOKEN_MINUS, "-", 0, 0};
+    auto inner_unary = std::make_unique<UnaryExpr>(neg_token1, std::move(inner_operand));
+    
+    Token neg_token2{TokenType::TOKEN_MINUS, "-", 0, 0};
+    UnaryExpr outer_unary(neg_token2, std::move(inner_unary));
+    
+    llvm::Value* result = codegen.codegenUnary(&outer_unary);
+    
+    ASSERT(result != nullptr, "Nested unary operations should produce a value");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+// ============================================================================
+// PHASE 4.2.5: FUNCTION CALL CODE GENERATION TESTS
+// ============================================================================
+
+TEST_CASE(codegen_expr_call_no_args) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a helper function to call: get_value() -> i32
+    llvm::FunctionType* helper_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* helper_func = llvm::Function::Create(helper_type, llvm::Function::ExternalLinkage, "get_value", &module);
+    llvm::BasicBlock* helper_entry = llvm::BasicBlock::Create(context, "entry", helper_func);
+    llvm::IRBuilder<> helper_builder(context);
+    helper_builder.SetInsertPoint(helper_entry);
+    helper_builder.CreateRet(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 42));
+    
+    // Create main function that calls get_value()
+    llvm::FunctionType* main_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* main_func = llvm::Function::Create(main_type, llvm::Function::ExternalLinkage, "main", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", main_func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: get_value()
+    auto callee = std::make_unique<IdentifierExpr>("get_value");
+    std::vector<ASTNodePtr> args;
+    CallExpr call_expr(std::move(callee), args);
+    
+    llvm::Value* result = codegen.codegenCall(&call_expr);
+    
+    ASSERT(result != nullptr, "Function call should produce a value");
+    ASSERT(result->getType()->isIntegerTy(32), "Result should be i32 type");
+    ASSERT(llvm::isa<llvm::CallInst>(result), "Result should be a call instruction");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*main_func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_call_one_arg) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a helper function: double_it(i32) -> i32
+    std::vector<llvm::Type*> param_types = {llvm::Type::getInt32Ty(context)};
+    llvm::FunctionType* helper_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), param_types, false);
+    llvm::Function* helper_func = llvm::Function::Create(helper_type, llvm::Function::ExternalLinkage, "double_it", &module);
+    llvm::BasicBlock* helper_entry = llvm::BasicBlock::Create(context, "entry", helper_func);
+    llvm::IRBuilder<> helper_builder(context);
+    helper_builder.SetInsertPoint(helper_entry);
+    llvm::Argument* arg = helper_func->arg_begin();
+    llvm::Value* doubled = helper_builder.CreateMul(arg, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 2));
+    helper_builder.CreateRet(doubled);
+    
+    // Create main function that calls double_it(21)
+    llvm::FunctionType* main_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* main_func = llvm::Function::Create(main_type, llvm::Function::ExternalLinkage, "main", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", main_func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: double_it(21)
+    auto callee = std::make_unique<IdentifierExpr>("double_it");
+    std::vector<ASTNodePtr> args;
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(21)));
+    CallExpr call_expr(std::move(callee), args);
+    
+    llvm::Value* result = codegen.codegenCall(&call_expr);
+    
+    ASSERT(result != nullptr, "Function call should produce a value");
+    ASSERT(result->getType()->isIntegerTy(32), "Result should be i32 type");
+    ASSERT(llvm::isa<llvm::CallInst>(result), "Result should be a call instruction");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*main_func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_call_multiple_args) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a helper function: add_three(i32, i32, i32) -> i32
+    std::vector<llvm::Type*> param_types = {
+        llvm::Type::getInt32Ty(context),
+        llvm::Type::getInt32Ty(context),
+        llvm::Type::getInt32Ty(context)
+    };
+    llvm::FunctionType* helper_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), param_types, false);
+    llvm::Function* helper_func = llvm::Function::Create(helper_type, llvm::Function::ExternalLinkage, "add_three", &module);
+    llvm::BasicBlock* helper_entry = llvm::BasicBlock::Create(context, "entry", helper_func);
+    llvm::IRBuilder<> helper_builder(context);
+    helper_builder.SetInsertPoint(helper_entry);
+    auto args_iter = helper_func->arg_begin();
+    llvm::Value* a = args_iter++;
+    llvm::Value* b = args_iter++;
+    llvm::Value* c = args_iter++;
+    llvm::Value* sum1 = helper_builder.CreateAdd(a, b);
+    llvm::Value* sum2 = helper_builder.CreateAdd(sum1, c);
+    helper_builder.CreateRet(sum2);
+    
+    // Create main function that calls add_three(10, 20, 30)
+    llvm::FunctionType* main_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* main_func = llvm::Function::Create(main_type, llvm::Function::ExternalLinkage, "main", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", main_func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: add_three(10, 20, 30)
+    auto callee = std::make_unique<IdentifierExpr>("add_three");
+    std::vector<ASTNodePtr> args;
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(10)));
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(20)));
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(30)));
+    CallExpr call_expr(std::move(callee), args);
+    
+    llvm::Value* result = codegen.codegenCall(&call_expr);
+    
+    ASSERT(result != nullptr, "Function call should produce a value");
+    ASSERT(result->getType()->isIntegerTy(32), "Result should be i32 type");
+    ASSERT(llvm::isa<llvm::CallInst>(result), "Result should be a call instruction");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*main_func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_call_with_expression_args) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a helper function: multiply(i32, i32) -> i32
+    std::vector<llvm::Type*> param_types = {
+        llvm::Type::getInt32Ty(context),
+        llvm::Type::getInt32Ty(context)
+    };
+    llvm::FunctionType* helper_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), param_types, false);
+    llvm::Function* helper_func = llvm::Function::Create(helper_type, llvm::Function::ExternalLinkage, "multiply", &module);
+    llvm::BasicBlock* helper_entry = llvm::BasicBlock::Create(context, "entry", helper_func);
+    llvm::IRBuilder<> helper_builder(context);
+    helper_builder.SetInsertPoint(helper_entry);
+    auto args_iter = helper_func->arg_begin();
+    llvm::Value* a = args_iter++;
+    llvm::Value* b = args_iter++;
+    llvm::Value* product = helper_builder.CreateMul(a, b);
+    helper_builder.CreateRet(product);
+    
+    // Create main function that calls multiply(5 + 3, 10 - 2)
+    llvm::FunctionType* main_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* main_func = llvm::Function::Create(main_type, llvm::Function::ExternalLinkage, "main", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", main_func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: multiply(5 + 3, 10 - 2)
+    auto callee = std::make_unique<IdentifierExpr>("multiply");
+    std::vector<ASTNodePtr> args;
+    
+    // First arg: 5 + 3
+    auto arg1_left = std::make_unique<LiteralExpr>(static_cast<int64_t>(5));
+    auto arg1_right = std::make_unique<LiteralExpr>(static_cast<int64_t>(3));
+    Token add_token{TokenType::TOKEN_PLUS, "+", 0, 0};
+    args.push_back(std::make_unique<BinaryExpr>(std::move(arg1_left), add_token, std::move(arg1_right)));
+    
+    // Second arg: 10 - 2
+    auto arg2_left = std::make_unique<LiteralExpr>(static_cast<int64_t>(10));
+    auto arg2_right = std::make_unique<LiteralExpr>(static_cast<int64_t>(2));
+    Token sub_token{TokenType::TOKEN_MINUS, "-", 0, 0};
+    args.push_back(std::make_unique<BinaryExpr>(std::move(arg2_left), sub_token, std::move(arg2_right)));
+    
+    CallExpr call_expr(std::move(callee), args);
+    
+    llvm::Value* result = codegen.codegenCall(&call_expr);
+    
+    ASSERT(result != nullptr, "Function call should produce a value");
+    ASSERT(result->getType()->isIntegerTy(32), "Result should be i32 type");
+    ASSERT(llvm::isa<llvm::CallInst>(result), "Result should be a call instruction");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*main_func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_call_float_args) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create a helper function: add_floats(f64, f64) -> f64
+    std::vector<llvm::Type*> param_types = {
+        llvm::Type::getDoubleTy(context),
+        llvm::Type::getDoubleTy(context)
+    };
+    llvm::FunctionType* helper_type = llvm::FunctionType::get(llvm::Type::getDoubleTy(context), param_types, false);
+    llvm::Function* helper_func = llvm::Function::Create(helper_type, llvm::Function::ExternalLinkage, "add_floats", &module);
+    llvm::BasicBlock* helper_entry = llvm::BasicBlock::Create(context, "entry", helper_func);
+    llvm::IRBuilder<> helper_builder(context);
+    helper_builder.SetInsertPoint(helper_entry);
+    auto args_iter = helper_func->arg_begin();
+    llvm::Value* a = args_iter++;
+    llvm::Value* b = args_iter++;
+    llvm::Value* sum = helper_builder.CreateFAdd(a, b);
+    helper_builder.CreateRet(sum);
+    
+    // Create main function that calls add_floats(3.14, 2.86)
+    llvm::FunctionType* main_type = llvm::FunctionType::get(llvm::Type::getDoubleTy(context), false);
+    llvm::Function* main_func = llvm::Function::Create(main_type, llvm::Function::ExternalLinkage, "main", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", main_func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: add_floats(3.14, 2.86)
+    auto callee = std::make_unique<IdentifierExpr>("add_floats");
+    std::vector<ASTNodePtr> args;
+    args.push_back(std::make_unique<LiteralExpr>(3.14));
+    args.push_back(std::make_unique<LiteralExpr>(2.86));
+    CallExpr call_expr(std::move(callee), args);
+    
+    llvm::Value* result = codegen.codegenCall(&call_expr);
+    
+    ASSERT(result != nullptr, "Function call should produce a value");
+    ASSERT(result->getType()->isFloatingPointTy(), "Result should be float type");
+    ASSERT(llvm::isa<llvm::CallInst>(result), "Result should be a call instruction");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*main_func, &llvm::errs()), "Generated function should be valid");
+}
+
+// ============================================================================
+// PHASE 4.2.6: SPECIAL OPERATOR CODE GENERATION TESTS (Ternary)
+// ============================================================================
+
+TEST_CASE(codegen_expr_ternary_basic_int) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create function and entry block
+    llvm::FunctionType* func_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: is true : 42 : 0 (should return 42)
+    auto condition = std::make_unique<LiteralExpr>(true);
+    auto true_val = std::make_unique<LiteralExpr>(static_cast<int64_t>(42));
+    auto false_val = std::make_unique<LiteralExpr>(static_cast<int64_t>(0));
+    TernaryExpr ternary_expr(std::move(condition), std::move(true_val), std::move(false_val));
+    
+    llvm::Value* result = codegen.codegenTernary(&ternary_expr);
+    
+    ASSERT(result != nullptr, "Ternary should produce a value");
+    ASSERT(llvm::isa<llvm::PHINode>(result), "Result should be a PHI node");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_ternary_false_branch) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create function and entry block
+    llvm::FunctionType* func_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: is false : 42 : 99 (should return 99)
+    auto condition = std::make_unique<LiteralExpr>(false);
+    auto true_val = std::make_unique<LiteralExpr>(static_cast<int64_t>(42));
+    auto false_val = std::make_unique<LiteralExpr>(static_cast<int64_t>(99));
+    TernaryExpr ternary_expr(std::move(condition), std::move(true_val), std::move(false_val));
+    
+    llvm::Value* result = codegen.codegenTernary(&ternary_expr);
+    
+    ASSERT(result != nullptr, "Ternary should produce a value");
+    ASSERT(llvm::isa<llvm::PHINode>(result), "Result should be a PHI node");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_ternary_with_comparison) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create function and entry block
+    llvm::FunctionType* func_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: is (10 < 20) : 100 : 200 (should return 100)
+    auto cond_left = std::make_unique<LiteralExpr>(static_cast<int64_t>(10));
+    auto cond_right = std::make_unique<LiteralExpr>(static_cast<int64_t>(20));
+    Token lt_token{TokenType::TOKEN_LESS, "<", 0, 0};
+    auto condition = std::make_unique<BinaryExpr>(std::move(cond_left), lt_token, std::move(cond_right));
+    
+    auto true_val = std::make_unique<LiteralExpr>(static_cast<int64_t>(100));
+    auto false_val = std::make_unique<LiteralExpr>(static_cast<int64_t>(200));
+    TernaryExpr ternary_expr(std::move(condition), std::move(true_val), std::move(false_val));
+    
+    llvm::Value* result = codegen.codegenTernary(&ternary_expr);
+    
+    ASSERT(result != nullptr, "Ternary with comparison should produce a value");
+    ASSERT(llvm::isa<llvm::PHINode>(result), "Result should be a PHI node");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_ternary_with_expressions) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create function and entry block
+    llvm::FunctionType* func_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: is true : (10 + 5) : (20 - 3)
+    auto condition = std::make_unique<LiteralExpr>(true);
+    
+    // True branch: 10 + 5
+    auto true_left = std::make_unique<LiteralExpr>(static_cast<int64_t>(10));
+    auto true_right = std::make_unique<LiteralExpr>(static_cast<int64_t>(5));
+    Token add_token{TokenType::TOKEN_PLUS, "+", 0, 0};
+    auto true_val = std::make_unique<BinaryExpr>(std::move(true_left), add_token, std::move(true_right));
+    
+    // False branch: 20 - 3
+    auto false_left = std::make_unique<LiteralExpr>(static_cast<int64_t>(20));
+    auto false_right = std::make_unique<LiteralExpr>(static_cast<int64_t>(3));
+    Token sub_token{TokenType::TOKEN_MINUS, "-", 0, 0};
+    auto false_val = std::make_unique<BinaryExpr>(std::move(false_left), sub_token, std::move(false_right));
+    
+    TernaryExpr ternary_expr(std::move(condition), std::move(true_val), std::move(false_val));
+    
+    llvm::Value* result = codegen.codegenTernary(&ternary_expr);
+    
+    ASSERT(result != nullptr, "Ternary with expressions should produce a value");
+    ASSERT(llvm::isa<llvm::PHINode>(result), "Result should be a PHI node");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_ternary_float) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create function and entry block
+    llvm::FunctionType* func_type = llvm::FunctionType::get(llvm::Type::getDoubleTy(context), false);
+    llvm::Function* func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: is true : 3.14 : 2.86
+    auto condition = std::make_unique<LiteralExpr>(true);
+    auto true_val = std::make_unique<LiteralExpr>(3.14);
+    auto false_val = std::make_unique<LiteralExpr>(2.86);
+    TernaryExpr ternary_expr(std::move(condition), std::move(true_val), std::move(false_val));
+    
+    llvm::Value* result = codegen.codegenTernary(&ternary_expr);
+    
+    ASSERT(result != nullptr, "Ternary with floats should produce a value");
+    ASSERT(llvm::isa<llvm::PHINode>(result), "Result should be a PHI node");
+    ASSERT(result->getType()->isFloatingPointTy(), "Result should be float type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}
+
+TEST_CASE(codegen_expr_ternary_nested) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_module", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen codegen(context, builder, &module, named_values);
+    
+    // Create function and entry block
+    llvm::FunctionType* func_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
+    llvm::Function* func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create: is true : (is false : 10 : 20) : 30
+    // Should evaluate to 20
+    auto outer_condition = std::make_unique<LiteralExpr>(true);
+    
+    // Inner ternary: is false : 10 : 20
+    auto inner_condition = std::make_unique<LiteralExpr>(false);
+    auto inner_true = std::make_unique<LiteralExpr>(static_cast<int64_t>(10));
+    auto inner_false = std::make_unique<LiteralExpr>(static_cast<int64_t>(20));
+    auto inner_ternary = std::make_unique<TernaryExpr>(std::move(inner_condition), std::move(inner_true), std::move(inner_false));
+    
+    auto outer_false = std::make_unique<LiteralExpr>(static_cast<int64_t>(30));
+    TernaryExpr outer_ternary(std::move(outer_condition), std::move(inner_ternary), std::move(outer_false));
+    
+    llvm::Value* result = codegen.codegenTernary(&outer_ternary);
+    
+    ASSERT(result != nullptr, "Nested ternary should produce a value");
+    ASSERT(llvm::isa<llvm::PHINode>(result), "Result should be a PHI node");
+    ASSERT(result->getType()->isIntegerTy(), "Result should be integer type");
+    
+    builder.CreateRet(result);
+    ASSERT(!llvm::verifyFunction(*func, &llvm::errs()), "Generated function should be valid");
+}

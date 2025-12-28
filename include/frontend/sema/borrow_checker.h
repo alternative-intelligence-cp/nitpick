@@ -53,12 +53,28 @@ struct Loan {
 
 /**
  * Tracks the state of a wild pointer for use-after-free detection
+ *
+ * State Machine (ARIA-014):
+ * UNINITIALIZED -> ALLOCATED (via alloc)
+ * ALLOCATED -> FREED (via free)
+ * ALLOCATED -> MOVED (via move/assign)
+ * FREED -> [error on access or double-free]
+ * MOVED -> [error on access]
  */
 enum class WildState {
-    ALLOCATED,   // Memory allocated, can be used
-    FREED,       // Memory freed, cannot be used
-    MOVED        // Ownership transferred, cannot be used
+    UNINITIALIZED,  // Declared but no value assigned
+    ALLOCATED,      // Memory allocated, can be used
+    FREED,          // Memory freed, cannot be used
+    MOVED,          // Ownership transferred, cannot be used
+    UNKNOWN,        // Indeterminate state (after complex branching)
+    MAY_FREED       // May have been freed (loop-carried uncertainty)
 };
+
+/**
+ * Constants for fixpoint iteration algorithm
+ */
+constexpr int WIDENING_THRESHOLD = 3;  // Max iterations before widening
+constexpr int MAX_FIXPOINT_ITERATIONS = 10;  // Absolute maximum iterations
 
 /**
  * Lifetime tracking context - core data structure for borrow checking
@@ -87,6 +103,11 @@ struct LifetimeContext {
     // Tracks wild allocations requiring cleanup (for leak detection)
     // Variables in this set must be freed before going out of scope
     std::unordered_set<std::string> pending_wild_frees;
+
+    // Tracks defer obligations - wild vars that have a matching defer statement
+    // Key: wild variable name, Value: line of defer statement
+    // ARIA-014: Every wild allocation must be paired with a defer free
+    std::unordered_map<std::string, int> defer_obligations;
     
     // Tracks the state of wild pointers (allocated, freed, moved)
     std::unordered_map<std::string, WildState> wild_states;
@@ -138,6 +159,25 @@ struct LifetimeContext {
      * Conservative merging: variable is valid only if valid in ALL branches
      */
     void merge(const LifetimeContext& then_state, const LifetimeContext& else_state);
+
+    /**
+     * Merge for loop back-edge analysis (fixpoint iteration)
+     * Returns true if the state changed (need another iteration)
+     * Uses set union for active_loans (May-Analysis)
+     */
+    bool mergeLoopBackEdge(const LifetimeContext& back_edge_state);
+
+    /**
+     * Apply widening operator to force convergence
+     * Called after WIDENING_THRESHOLD iterations
+     * Promotes uncertain states to conservative top values
+     */
+    void widen();
+
+    /**
+     * Check if two states are equivalent (for fixpoint detection)
+     */
+    bool equivalent(const LifetimeContext& other) const;
 };
 
 /**
@@ -271,7 +311,27 @@ private:
      * Detect memory leaks (wild memory not freed before scope exit)
      */
     void checkForLeaks();
-    
+
+    // ========================================================================
+    // Defer Enforcement (ARIA-014)
+    // ========================================================================
+
+    /**
+     * Record a defer statement that frees a wild variable
+     * ARIA-014: Every wild allocation must be paired with defer free
+     */
+    void recordDeferFree(const std::string& var, int line);
+
+    /**
+     * Check if a wild variable has a matching defer statement
+     */
+    bool hasDeferObligation(const std::string& var) const;
+
+    /**
+     * Verify defer obligations are satisfied at scope exit
+     */
+    void verifyDeferObligations();
+
     // ========================================================================
     // AST Traversal
     // ========================================================================
@@ -287,6 +347,34 @@ private:
     void checkForStmt(ForStmt* stmt);
     void checkBlockStmt(BlockStmt* stmt);
     void checkReturnStmt(ReturnStmt* stmt);
+    void checkDeferStmt(DeferStmt* stmt);
+
+    // ========================================================================
+    // Deep AST Scanning for Defer Blocks
+    // ========================================================================
+
+    /**
+     * Deep scan a defer block for free() calls
+     * Handles nested structures: blocks, conditionals, loops, wrappers
+     *
+     * @param node The AST node to scan
+     * @param deferLine Line of the defer statement (for error reporting)
+     * @param must_free If true, requires free on ALL paths (default: false = ANY path)
+     * @return Set of variable names that are freed in this subtree
+     */
+    std::unordered_set<std::string> scanDeferBlockForFree(ASTNode* node, int deferLine, bool must_free = false);
+
+    /**
+     * Check if a function name is a known deallocator
+     * Includes built-ins and user-annotated functions
+     */
+    bool isDeallocator(const std::string& funcName) const;
+
+    /**
+     * Check if this is a method-style cleanup call (e.g., x.dispose())
+     * Returns the object being disposed, or empty string if not a cleanup call
+     */
+    std::string checkMethodCleanup(CallExpr* call) const;
     
     // Expression visitors
     void checkBinaryExpr(BinaryExpr* expr);

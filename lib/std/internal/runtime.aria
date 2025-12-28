@@ -1,0 +1,202 @@
+/**
+ * Aria Standard Library - Internal Runtime FFI Definitions
+ *
+ * This module defines the low-level FFI interface to the Aria C++ runtime.
+ * It provides type-safe wrappers around the AriaResult pattern for I/O operations.
+ *
+ * ARIA-018: Standard Library Wrapper Pattern Design
+ *
+ * WARNING: This module is for internal use only. Application code should use
+ * the high-level APIs in std.fs, std.io, etc.
+ *
+ * The Acquire-Convert-Release (ACR) Protocol:
+ * 1. Acquire: Call extern runtime function, get wild AriaResult*
+ * 2. Convert: Inspect result, copy data to GC heap or extract wild buffer
+ * 3. Release: Free the AriaResult (and payload if not transferred)
+ */
+
+module std.internal.runtime;
+
+// =============================================================================
+// AriaResult - The Core FFI Result Type
+// =============================================================================
+
+/**
+ * AriaResult - Type-Erased Result Monad for FFI
+ *
+ * This struct matches the C++ AriaResult layout exactly.
+ * All fields are wild pointers (C heap allocated).
+ *
+ * Memory layout (24 bytes on 64-bit):
+ * - err:      char* - NULL on success, error message on failure
+ * - val:      void* - payload pointer on success, NULL on failure
+ * - val_size: size_t - size of payload (for memcpy or sized-free)
+ *
+ * Lifecycle:
+ * - err string owned by result, freed by aria_result_free()
+ * - val payload ownership transfers to caller on success
+ * - Caller MUST call aria_result_free() to prevent leaks
+ */
+pub extern struct AriaResult {
+    err: wild int8*,      // Null-terminated error message (NULL on success)
+    val: wild byte*,      // Void* payload (NULL on error)
+    val_size: uint64      // Size of payload in bytes
+}
+
+// =============================================================================
+// Core Runtime Functions
+// =============================================================================
+
+extern "aria_runtime" {
+    /**
+     * Read entire file into buffer
+     *
+     * @param path File path (null-terminated C string)
+     * @return Pointer to AriaResult with:
+     *   - On success: val = file contents, val_size = length, err = NULL
+     *   - On failure: val = NULL, val_size = 0, err = error message
+     */
+    pub func:aria_read_file = wild AriaResult*(wild int8*:path);
+
+    /**
+     * Write buffer to file
+     *
+     * @param path File path (null-terminated C string)
+     * @param content Content to write (null-terminated C string)
+     * @return Pointer to AriaResult with success/error status
+     */
+    pub func:aria_write_file = wild AriaResult*(wild int8*:path, wild int8*:content);
+
+    /**
+     * Free AriaResult and its associated memory
+     *
+     * Frees:
+     * - The AriaResult struct itself
+     * - The error message (if any)
+     * - The value payload (if val is non-NULL)
+     *
+     * IMPORTANT: If you want to keep the payload (zero-copy pattern),
+     * set res.val = NULL before calling this function.
+     */
+    pub func:aria_result_free = void(wild AriaResult*:res);
+
+    /**
+     * Create successful result (for wrapper functions)
+     *
+     * @param value Pointer to value (ownership transferred)
+     * @param size Size of value
+     * @return New AriaResult with err=NULL
+     */
+    pub func:aria_result_ok = wild AriaResult*(wild byte*:value, uint64:size);
+
+    /**
+     * Create error result (for wrapper functions)
+     *
+     * @param error Error message (copied internally)
+     * @return New AriaResult with val=NULL
+     */
+    pub func:aria_result_err = wild AriaResult*(wild int8*:error);
+}
+
+// =============================================================================
+// Memory Operations
+// =============================================================================
+
+extern "aria_runtime" {
+    /**
+     * Allocate memory from the wild heap
+     *
+     * @param size Number of bytes to allocate
+     * @return Pointer to allocated memory, or NULL on failure
+     */
+    pub func:aria_alloc = wild byte*(uint64:size);
+
+    /**
+     * Free memory allocated by aria_alloc
+     *
+     * @param ptr Pointer to memory (NULL is safe)
+     */
+    pub func:aria_free = void(wild byte*:ptr);
+
+    /**
+     * Copy memory between wild buffers
+     *
+     * @param dest Destination buffer
+     * @param src Source buffer
+     * @param size Number of bytes to copy
+     * @return dest pointer
+     */
+    pub func:memcpy = wild byte*(wild byte*:dest, wild byte*:src, uint64:size);
+
+    /**
+     * Set memory to a value
+     *
+     * @param dest Destination buffer
+     * @param value Byte value to set
+     * @param size Number of bytes
+     * @return dest pointer
+     */
+    pub func:memset = wild byte*(wild byte*:dest, int32:value, uint64:size);
+}
+
+// =============================================================================
+// String Conversion Helpers
+// =============================================================================
+
+/**
+ * Convert wild C string to managed Aria string
+ *
+ * This performs a COPY from wild memory to GC heap.
+ * The source C string is not freed.
+ *
+ * @param cstr Null-terminated C string (wild pointer)
+ * @return GC-managed Aria string
+ */
+pub func:string_from_cstr = string(wild int8*:cstr) {
+    // Get string length
+    uint64:len = 0;
+    wild int8*:p = cstr;
+    while (p[len] != 0) {
+        len = len + 1;
+    }
+
+    // Allocate GC string and copy
+    // Note: This uses the built-in string allocation mechanism
+    string:result = string.allocate(len);
+
+    // Copy bytes using memcpy (requires pin for GC object)
+    unsafe {
+        memcpy(#result.data, cstr, len);
+    }
+
+    return result;
+};
+
+/**
+ * Convert managed Aria string to wild C string
+ *
+ * This performs a COPY from GC heap to wild memory.
+ * CALLER MUST FREE the returned pointer using aria_free().
+ *
+ * @param s Aria string (GC-managed)
+ * @return Null-terminated C string (wild pointer, caller must free)
+ */
+pub func:string_to_cstr = wild int8*(string:s) {
+    uint64:len = s.length;
+
+    // Allocate wild buffer (+1 for null terminator)
+    wild int8*:cstr = aria_alloc(len + 1);
+    if (cstr == null) {
+        return null;
+    }
+
+    // Copy string data
+    unsafe {
+        memcpy(cstr, #s.data, len);
+    }
+
+    // Null terminate
+    cstr[len] = 0;
+
+    return cstr;
+};

@@ -1,0 +1,420 @@
+﻿Aria Method Call System - Complete Implementation Guide
+Executive Summary
+The Aria programming language project, currently at version 0.0.7-dev, has established a formidable technological foundation characterized by a high-performance LLVM backend, a sophisticated hybrid memory model comprising garbage collection and manual "wild" pointers, and a unique Twisted Balanced Binary (TBB) arithmetic system.1 Furthermore, the integration of a NASM-style preprocessor offers powerful metaprogramming capabilities that theoretically allow for extensive syntactic extension.1 However, a significant dissonance currently exists between the language's syntactic aspirations—as evidenced by the standard library's design—and its compiler's current reality. Specifically, the system utilities, which are essential for the ecosystem's viability, have been architected using an Object-Oriented Programming (OOP) style syntax (e.g., string.from_char(), array.push()) that the current parser expressly rejects. This syntactic gap has created a critical blockage, preventing the compilation of all nine core system utilities and stalling the ecosystem's development.1
+This report presents a comprehensive, production-ready implementation strategy to bridge this gap through the introduction of the "Aria Hybrid Object Model." This design eschews the runtime heaviness of traditional OOP—such as hidden virtual tables (vtables), dynamic dispatch overhead, and complex runtime type information—in favor of a compile-time synthesis of Uniform Function Call Syntax (UFCS) and macro-based code generation. By leveraging the existing, underutilized power of the preprocessor for structural definitions and augmenting the parser to handle type-based resolution, Aria can achieve the ergonomic benefits of OOP—method chaining, encapsulation, and namespace organization—with absolutely zero runtime cost. This approach strictly adheres to the language's core tenets: composition over inheritance, explicit memory management, and performance parity with C.
+The implementation plan is stratified into four distinct phases, prioritizing the immediate remediation of the utility compilation blockage. Phase 1 focuses on enabling namespace-qualified static calls, allowing constructs like string.from_char() to resolve to global functions. Phase 2 introduces instance method syntax via UFCS, enabling the obj.method() pattern by syntactically transforming it into method(obj). Phase 3 leverages the preprocessor to create a declarative class system, automating the boilerplate of struct and function generation using context stacks and hygiene mechanisms.1 Finally, Phase 4 outlines a Trait system for structural polymorphism that relies on compile-time constraint checking rather than runtime dispatch. This document provides the exhaustive technical specifications, C++ compiler modifications, and macro definitions required to realize this vision, ensuring that Aria evolves into a language that effectively balances high-level usability with low-level control.
+________________
+Part 1: Namespace-Qualified Static Calls
+Architecture
+The immediate impediment to the compilation of the system utilities is the parser's current inability to reconcile type keywords (e.g., string, array, map) with the dot operator (.). In the current grammar, string is treated as a reserved keyword representing a primitive type, not an expression that can yield a member.1 Consequently, the construct string.from_char(65) precipitates a parser error because the grammar anticipates an identifier or literal, not a type keyword, as the initiation of a primary expression.
+To resolve this, the architecture introduces the concept of Type-Namespace Resolution. In this model, both primitive types and user-defined structs are elevated to act as namespaces for static functions. When the parser encounters a type keyword followed by a dot, it must not treat the keyword as a value to be evaluated but as a symbol anchor for namespace resolution. The compiler will then resolve the subsequent identifier as a function name within that type's namespace context.
+This architecture requires no changes to the runtime memory model or the LLVM IR generator's core logic, preserving the stability of the backend. It is a purely frontend transformation. The expression Type.method(args) is lowered directly to a global function call Type_method(args) (or a specific builtin name in the case of primitives). This ensures zero runtime overhead; the "method call" is compiled exactly as a standard C-style function call.2 This design aligns with the "zero-cost abstraction" philosophy, as the abstraction of the method call exists solely in the developer's view and the compiler's semantic analysis phase, evaporating completely before code generation.
+Parser Changes
+The modifications required are localized to src/frontend/parser/parser.cpp, specifically within the expression parsing logic. The parser uses a Pratt parsing (Top-Down Operator Precedence) approach, where parsePrimary handles the beginning of expressions (atoms) and parsePrecedence handles operators based on their binding power.3 We must augment parsePrimary to accept type keywords as valid start tokens if and only if they are followed by a dot token.
+Required Modifications
+1. Augment parsePrimary:
+Currently, parsePrimary switches on the current token type, handling cases like TOKEN_IDENTIFIER for variables and TOKEN_NUMBER for literals. It implicitly rejects tokens like TOKEN_TYPE_STRING or TOKEN_TYPE_INT because they are reserved for type declarations. We must add cases for these keywords. However, simply allowing them would introduce ambiguity with variable declarations (e.g., string: s). Therefore, the lookahead mechanism must be employed. The parser will check if the next token is TOKEN_DOT. If it is, the type keyword is consumed and wrapped in a TypeReferenceExpr; if not, the parser falls back to existing error handling or declaration parsing logic.
+C++
+// src/frontend/parser/parser.cpp
+
+ASTNodePtr Parser::parsePrimary() {
+   //... existing cases for Identifiers, Literals, Parentheses...
+
+   // NEW: Handle Type Keywords acting as Namespaces
+   // We check if the current token is a primitive type keyword (int, string, etc.)
+   if (isTypeKeyword(current.type)) {
+       // CRITICAL: We only allow this if it's followed by a DOT (static method call)
+       // This disambiguates 'string.from_char' (expression) from 'string:s' (declaration)
+       if (peekNext().type == TOKEN_DOT) {
+           Token typeToken = advance(); // Consume type keyword
+           std::string typeName = typeToken.value; // e.g., "string"
+
+           // Return a special AST node or a temporary Identifier node
+           // encapsulating the type name. This node represents the 'Type' part of Type.Method.
+           return std::make_shared<TypeReferenceExpr>(typeName, typeToken.line, typeToken.column);
+       }
+       // If not followed by DOT, it might be a cast or declaration start.
+       // In expression context, this is usually an error, handled by default case.
+   }
+
+   //... existing error handling...
+}
+
+2. Update parseDot (Postfix Handling):
+The Pratt parser handles the . operator in a method typically named parseInfix or parsePostfix (or specifically parseDot if the tokenizer distinguishes it). This method receives the Left-Hand Side (LHS) of the expression that has already been parsed. With the modification to parsePrimary, the LHS can now be a TypeReferenceExpr. The parseDot method must be updated to inspect the dynamic type of the LHS node.
+C++
+ASTNodePtr Parser::parseDot(ASTNodePtr lhs) {
+   consume(TOKEN_DOT, "Expected '.' after expression");
+   Token methodToken = consume(TOKEN_IDENTIFIER, "Expected method name");
+
+   // Check if LHS is a TypeReference (Static Call) or a standard Value (Instance Call)
+   if (auto typeRef = std::dynamic_pointer_cast<TypeReferenceExpr>(lhs)) {
+       // This corresponds to syntax like: string.from_char
+       // We create a StaticMethodCallExpr node.
+       // Note: The arguments are not parsed here; the '(' is handled by the Call parsing logic
+       // which usually has higher precedence or follows immediately.
+       return std::make_shared<StaticMethodCallExpr>(
+           typeRef->typeName, 
+           methodToken.value, 
+           typeRef->line,
+           typeRef->column
+       );
+   } else {
+       // Standard Instance Member Access: obj.field or obj.method
+       return std::make_shared<MemberAccessExpr>(lhs, methodToken.value);
+   }
+}
+
+3. Refine CallExpr Parsing:
+The StaticMethodCallExpr created above serves as the callee of a function call. The actual function call syntax involves the parentheses (). The parser's parseCall method (or the infix handler for TOKEN_LPAREN) must be robust enough to accept StaticMethodCallExpr as a valid callee. When parseCall encounters StaticMethodCallExpr, it should bundle the method name and the type name together, effectively preparing them for the semantic analyzer to resolve as a single global symbol.
+It is crucial that CallExpr does not try to compile StaticMethodCallExpr as a closure or function pointer access, but recognizes it as a symbolic reference to a function.5
+Semantic Analysis
+The Semantic Analysis phase (src/frontend/sema/type_checker.cpp) is responsible for resolving these syntactic constructs into concrete semantic entities. It bridges the gap between the programmer's intent ("call the method on this type") and the backend's reality ("call this specific global function").
+Type Resolution Algorithm:
+   1. Input: The analyzer receives a CallExpr where the callee is a StaticMethodCallExpr.
+   * typeName: "string"
+   * methodName: "from_char"
+   * arguments: [Literal(65)]
+   2. Mangling Lookup: The analyzer must construct the canonical, internal function name that corresponds to this static method. The Aria standard library uses a consistent snake_case mapping for primitives.
+   * Construction Scheme: {typeName}_{methodName}
+   * Result: string_from_char
+   3. Symbol Table Check:
+   * The analyzer queries the global symbol table (including symbols imported from modules) for string_from_char.
+   * Success Path: If the symbol is found, the analyzer transforms the AST. It replaces the complex CallExpr(StaticMethodCallExpr) structure with a direct FuncCallExpr pointing to the string_from_char symbol. This normalizes the AST, so the backend sees a simple function call.
+   * Failure Path: If the symbol is not found, the analyzer emits a specific, helpful error message: Error: Type 'string' has no static method 'from_char'. This is significantly better than a generic "symbol not found" error.
+Generic Handling (array<T>.new()):
+Generics introduce an additional layer of complexity. If the TypeReferenceExpr refers to a generic type instantiation (e.g., array<string>), the resolution process must trigger the compiler's monomorphization logic.1
+   1. Input: array<string>.new()
+   2. Resolution Strategy:
+   * Identify the base generic template: array (from array<string>).
+   * Identify the method: new.
+   * Construct the generic function name: array_new.
+   * Trigger Monomorphization: The compiler must request a specialization of array_new with the type parameter T = string. This relies on the Monomorphizer subsystem.
+   * Mangled Name Generation: The monomorphizer returns the specialized name, likely following a scheme like array_string_new or _Aria_M_array_new_string.
+   * The AST is rewritten to call this specialized function.
+IR Generation
+The modifications to src/backend/ir/ir_generator.cpp should be minimal if the Semantic Analysis phase correctly rewrites the AST. The goal is for the backend to be agnostic regarding whether the call originated as a static method syntax or a direct function call.
+   * Logic:
+C++
+Value* IRGenerator::visit(FuncCallExpr* node) {
+   // The node->mangledName has been populated by the Type Checker.
+   // For 'string.from_char', this is 'string_from_char'.
+   Function* callee = module->getFunction(node->mangledName);
+
+   if (!callee) {
+       // This should have been caught by Type Checker, but as a safety:
+       return error("Internal Compiler Error: Function '" + node->mangledName + "' not found in module.");
+   }
+
+   // Code generation for arguments proceeds as standard for C-ABI calls.
+   std::vector<Value*> args;
+   for (auto& arg : node->arguments) {
+       args.push_back(arg->accept(*this));
+   }
+
+   return builder.CreateCall(callee, args);
+}
+
+   * Builtin Mapping: For primitives like string, the standard library runtime (src/runtime/string.c) must export symbols that match this mangling scheme exactly.
+      * extern "C" AriaString* string_from_char(char c) {... }
+      * This confirms that string.from_char in Aria maps 1:1 to string_from_char in the C runtime.1
+Testing Plan
+To ensure the robustness of this implementation, a tiered testing strategy is required:
+Unit Tests:
+      1. static_prim.aria: Validate basic primitive static calls.
+      * Code: string:s = string.from_char(65);
+      * Expectation: Compilation succeeds; output is "A".
+      2. static_struct.aria: Validate user-defined struct static methods.
+      * Code: struct User {}; func User_new()...; User:u = User.new();
+      * Expectation: Resolves to User_new.
+      3. static_fail.aria: Validate error reporting.
+      * Code: int.invalid_method();
+      * Expectation: Compiler error "Type 'int' has no static method 'invalid_method'".
+Integration Tests:
+      * System Utilities: The primary acceptance test is compiling sysUtils_19_aeon_CORRECTED.aria. This utility relies heavily on string.from_char and similar patterns.1 Success is defined by the generation of a valid object file without parser errors.
+________________
+Part 2: Instance Method Calls
+Architecture
+Instance method calls (obj.method()) represent a significant step up in complexity compared to static calls. They imply a specific context—the instance obj—that must be passed to the implementation as the self parameter. To maintain the zero-cost abstraction requirement and avoid the overhead of vtables, we leverage Uniform Function Call Syntax (UFCS) logic at compile time.2
+Key Architectural Decision: The implementation will treat x.f(y) as pure syntactic sugar for f(x, y). The resolution of f is determined solely by the static type of x. If x is of type MyStruct, the expression x.method() triggers a lookup for MyStruct_method. There is no dynamic dispatch; the function to be called is determined entirely at compile time based on the type known to the compiler.
+Parser Changes
+The parser infrastructure established in Part 1 for parseDot largely suffices for instance methods, but a critical ambiguity between field access (obj.x) and method call (obj.x()) must be resolved. The parser cannot know purely from obj.x whether x is a data field or a function.
+Ambiguity Resolution:
+The parser differentiates based on the token immediately following the identifier.
+      * If the next token is ( (TOKEN_LPAREN), the construct is parsed as a Method Call.
+      * If the next token is anything else, it is parsed as a Member Access (field retrieval).
+AST Representation:
+We reuse the existing MemberAccessExpr node but wrap it within a CallExpr.
+      * Parsing obj.push(x) results in:
+      * CallExpr
+      * Callee: MemberAccessExpr(base=obj, member="push")
+      * Arguments: [x]
+This structure preserves the syntactic form in the AST, allowing the Semantic Analysis phase to inspect the types and perform the UFCS transformation.
+Semantic Analysis (The Heavy Lifting)
+The TypeChecker (src/frontend/sema/type_checker.cpp) bears the responsibility for the UFCS transformation. It must convert the CallExpr(MemberAccessExpr) structure into a FuncCallExpr with injected arguments.
+Resolution Algorithm:
+      1. Resolve LHS Type: The analyzer evaluates the type of the base expression (obj). Let's assume obj is of type array<int>.
+      2. Name Construction:
+      * The analyzer constructs a candidate function name by combining the type name and the method name.
+      * For array<T>, the type lowers to the generic template array.
+      * Candidate Name: array_push.
+      3. Signature Matching & Symbol Lookup:
+      * The analyzer looks up array_push in the symbol table.
+      * It retrieves the function signature to verify compatibility with the self argument (obj).
+      * Self Handling Scenarios:
+      * Scenario A (Exact Match): The function func array_push(arr: array<T>,...) expects the value type. obj is passed as-is.
+      * Scenario B (Auto-Reference): The function func array_push(arr: array<T>@,...) expects a pointer (denoted by @ in Aria 1). If obj is a value, the compiler implicitly injects an "Address-Of" node: &obj. This automatic referencing is critical for usability, allowing users to call mutating methods on values without explicit pointer syntax.
+      * Scenario C (Auto-Dereference): If obj is a wild T* (pointer) but the method expects T (value), the compiler implicitly injects a "Dereference" node: *obj.
+      4. AST Rewriting:
+      * The analyzer transforms the AST into a FuncCallExpr.
+      * Injection: The obj expression (possibly wrapped in Reference/Dereference nodes) is injected as the first argument of the function call.
+      * The original arguments (x) are appended subsequent to self.
+      * The result is semantically equivalent to calling array_push(obj, x).
+IR Generation
+Handling self:
+Because the Semantic Analysis phase essentially "desugars" the method call into a standard function call, the backend requires no special logic for self or this pointers. It simply sees a function call where the first argument happens to be the struct.
+      * Source: arr.push(x)
+      * Desugared: array_push(arr, x)
+      * LLVM IR: call void @array_push(%struct.Array* %arr, i64 %x)
+Method Chaining (str.trim().to_upper()):
+The architecture naturally supports method chaining through recursive AST resolution.
+      1. The inner expression str.trim() is resolved first via UFCS to string_trim(str). The return type of this call is determined (e.g., string).
+      2. The .to_upper() operator is then applied to this result.
+      3. The type of the result ( string) is used to resolve the second method: string_to_upper.
+      4. The final transformations results in string_to_upper(string_trim(str)).
+      5. Data flows through the return values as defined in the function signatures.
+Wild Pointers (ptr->method() vs ptr.method()):
+Aria, sharing DNA with C++, distinguishes between dot (.) and arrow (->) operators. However, to align with modern ergonomic standards (like Go and Rust), we unify these under the dot operator for method calls.
+      * Unified Access: If the LHS is a pointer (wild T*), the dot operator automatically handles the dereference logic required to access fields or methods.
+      * Resolution Logic:
+      1. The compiler first attempts to match the method on the pointer type itself (e.g., func MyStruct_free(s: wild MyStruct*)).
+      2. If that fails, it attempts to match on the value type (e.g., func MyStruct_val(s: MyStruct)).
+      3. If a match is found on the value type, an implicit dereference is generated.
+Testing Plan
+Unit Tests:
+      1. instance_ufcs.aria: Test basic UFCS. Define func Int_add(self: int, other: int). Call x.add(5) and verify it compiles to Int_add(x, 5).
+      2. instance_chain.aria: Test chaining logic. x.add(1).sub(2). Verify the nested call structure in the IR.
+      3. instance_ptr.aria: Test method calls on wild T* pointers. Verify that pointer-receiver methods are called correctly without extra dereferencing, and value-receiver methods trigger implicit dereferencing.
+________________
+Part 3: Macro-Based Class System
+Implementation Strategy
+While static and instance calls provide the mechanics of OOP, they require developers to manually adhere to naming conventions (e.g., writing func Point_add). To provide a true high-level OOP experience, we need a declarative syntax. We can achieve this without changing the compiler core by leveraging the NASM-style preprocessor's %macro, %push (context stacks), and hygiene features.1
+Macro Directives
+We define a standard library file std/class.aria containing a DSL for class definitions.
+1. The %CLASS Macro:
+This macro initiates a class definition. Crucially, it pushes a new context onto the preprocessor stack to track the class name and scope.
+
+
+Code snippet
+
+
+
+
+%macro %CLASS 1
+   %push class_context
+   %define %$CURRENT_CLASS %1
+   
+   // Generate the underlying struct definition
+   struct %1 {
+%endmacro
+
+2. The %END_CLASS Macro:
+This macro closes the struct definition and pops the class context, returning the preprocessor to the global scope.
+
+
+Code snippet
+
+
+
+
+%macro %END_CLASS 0
+   }; // Close struct block
+   %pop // Pop class_context
+%endmacro
+
+3. Method Definitions (IMPL Blocks):
+Defining methods inside the struct block (C++ style) is difficult because the struct layout must be contiguous data. A better approach, aligned with Rust or Go, is to define methods in a separate implementation block. This fits the compiler's physical reality (structs are data, functions are code) and is easier to implement with macros.
+
+
+Code snippet
+
+
+
+
+// Implementation Block Macro
+%macro IMPL 1
+   %push impl_context
+   %define %$IMPL_TYPE %1
+%endmacro
+
+%macro END_IMPL 0
+   %pop
+%endmacro
+
+// Method Definition Macro
+// Usage: def name = return_type(args...)
+%macro def 1-*
+   // %1 is the method name
+   // We construct the mangled name using the current IMPL_TYPE context
+   
+   func %$IMPL_TYPE_%1
+%endmacro
+
+User Code Example (Macro-Expanded)
+This system allows users to write clean, organized code:
+
+
+Code snippet
+
+
+
+
+// User Code
+%CLASS Point
+   x: int64,
+   y: int64
+%END_CLASS
+
+IMPL Point
+   def magnitude = int64(Point:self) { 
+       return self.x * self.x + self.y * self.y; 
+   }
+END_IMPL
+
+Expansion: The preprocessor transforms this into:
+
+
+Code snippet
+
+
+
+
+struct Point {
+   x: int64,
+   y: int64
+};
+
+func Point_magnitude = int64(Point:self) {
+   return self.x * self.x + self.y * self.y;
+}
+
+This IMPL block strategy cleanly separates data layout from behavior while automating the tedious name mangling, providing a first-class OOP feel.
+Constructor/Destructor Patterns
+      * Constructors: By convention, a static method named new serves as the constructor. Point.new() resolves to func Point_new().
+      * Destructors: A standard method named free or drop handles resource cleanup.
+      * For wild memory, the user is responsible for manually calling obj.free().
+      * Future enhancements could use a defer macro to automate defer obj.free() insertion at scope exit.
+________________
+Part 4: Type System Integration
+TBB Types
+The Twisted Balanced Binary (TBB) types (tbb8, tbb64) introduce ERR sentinels (-128) which propagate through arithmetic operations "stickily".1 Method calls on TBB types must respect this semantic.
+      * Rule: If the self instance passed to a method is an ERR value, the method logic effectively operates on an error state.
+      * Implementation: This is handled naturally inside the method body. The method receives self. If the method performs TBB arithmetic on self (e.g., self + 1), the underlying TBB arithmetic intrinsics automatically detect the ERR value and propagate it to the result. No special dispatch logic is needed; the TBB type system handles the safety internally.
+Generics (array<T>)
+Method resolution for generics relies on the compiler's Monomorphizer.1
+      * Definition: The standard library defines func array_push<T>(arr: array<T>, val: T).
+      * Call: The user calls arr.push(x) where arr is array<int>.
+      * Resolution: The Semantic Analysis phase identifies arr as array<int>. It constructs the lookup key array_push. It finds the generic template. It then triggers the instantiation of array_push<int>, generating a specialized function implementation optimized for int.
+Wild vs GC Memory
+Methods must be designed to be agnostic where possible, or explicit where necessary, regarding memory models.
+      * Agnostic Methods: A method like func get_x(p: Point@) takes a reference. The UFCS logic can auto-reference both wild Point* and gc Point (stack/heap) to pass a valid address to this method, allowing it to work across memory models.
+      * Specific Methods: A method like func free(p: wild Point*) is explicitly typed for wild pointers. The type checker will reject attempts to call .free() on a garbage-collected object, providing compile-time safety against invalid memory operations.1
+________________
+Part 5: Interface/Trait System (Optional)
+While scheduled for Phase 4, the design for an Interface/Trait system allows for polymorphism via structural typing (Duck Typing) at compile time.1
+Design:
+
+
+Code snippet
+
+
+
+
+interface Stringable {
+   func to_string(self) -> string;
+}
+
+Implementation Strategy:
+      1. Constraint Definition: An interface is defined as a collection of method signatures.
+      2. Constraint Checking: When a generic function declares a constraint, e.g., func print<T: Stringable>(x: T), the compiler enforces compliance.
+      3. Verification: During the instantiation of print<Point>, the compiler verifies that the type Point has a matching method Point_to_string.
+      4. Zero-Cost: If the method exists, the compilation proceeds. If not, a compile-time error is issued: "Type Point does not satisfy Stringable: missing method to_string". This requires no runtime vtables; it is purely a semantic check that ensures the specialized function call will be valid.7
+________________
+Part 6: Integration Timeline
+Phase 1: Namespace-Qualified Static Calls (Immediate)
+      * Objective: Unblock system utilities compilation.
+      * Tasks:
+      * Modify src/frontend/parser/parser.cpp: Update parsePrimary to accept type keywords if followed by DOT.
+      * Modify src/frontend/sema/type_checker.cpp: Implement StaticMethodCallExpr resolution to global symbols (e.g., string_from_char).
+      * Target: Successfully compile sysUtils_19_aeon_CORRECTED.aria.1
+      * Estimate: 3 Days.
+Phase 2: Instance Method Desugaring (Medium-term)
+      * Objective: Enable ergonomic obj.method() syntax.
+      * Tasks:
+      * Implement UFCS transformation logic in Semantic Analysis (obj.method -> method(obj)).
+      * Implement "Self" type inference (handling auto-ref & and auto-deref *).
+      * Target: Refactor all 9 system utilities to use list.push() syntax instead of functional calls.
+      * Estimate: 5 Days.
+Phase 3: Macro-Based Class System (Long-term)
+      * Objective: Provide high-level declarative syntax.
+      * Tasks:
+      * Develop std/class.aria standard library file containing %CLASS, %END_CLASS, and IMPL macros.
+      * Refactor standard library structures to use these macros for cleaner definition.
+      * Target: A robust, documented, and tested macro library.
+      * Estimate: 2 Weeks.
+Phase 4: Interface/Trait System (Future)
+      * Objective: Enable structural polymorphism.
+      * Tasks:
+      * Add interface keyword to parser.
+      * Implement constraint checking logic in the Monomorphizer to validate trait compliance.
+      * Estimate: 3 Weeks.
+________________
+Appendix A: Name Mangling Scheme
+To ensure interoperability, predictability, and link safety, we define a strict name mangling scheme for method lowering.9
+      1. Format: _Aria_{ModuleName}_{TypeName}_{MethodName}_{OverloadSuffix}
+      * This ensures globally unique symbols even if different modules define structs with the same name.
+      2. Static Methods: Follow the same scheme as instance methods.
+      3. Generics: _Aria_{ModuleName}_{TypeName}_{T}_{MethodName}.
+      * Example: array<int>.push lowers to _Aria_Std_Array_Int_Push.
+C Compatibility:
+To export methods to C (for FFI), developers should utilize extern "C" blocks. Functions defined inside these blocks are not mangled, preserving their declared names for external linking.
+
+
+Code snippet
+
+
+
+
+extern "C" {
+   func Point_new()... // Symbol remains "Point_new"
+}
+
+Appendix B: Standard Library Refactoring Checklist
+The following refactoring actions are required in the standard library once Phase 1 & 2 are complete to align with the new method call system:
+      * [ ] String: Ensure string_from_char exists and matches the mangling scheme. Consider aliasing string_len to string_length if string.length() is the desired API.
+      * [ ] Array: Ensure core methods like array_push, array_pop, and array_get are implemented and accept the array instance as the first argument.1
+      * [ ] Map: Update map_insert, map_get, and map_remove to follow the UFCS pattern (Map instance as first argument).
+      * [ ] File: Rename or alias fs_open to File_open (static) and file_read to File_read (instance) to support File.open("...").read().
+Appendix C: Error Message Examples
+The compiler should produce clear, actionable error messages for method call failures:
+      1. Static method not found:
+Error: Type 'string' has no static method 'unknown'.
+Did you mean 'from_char'?
+
+      2. Instance method not found:
+Error: Type 'array<int>' has no method 'swizzle'.
+
+      3. UFCS Mismatch:
+Error: Method 'push' expects 'array<T>@' (pointer) as first argument, but 'arr' is passed by value and cannot be implicitly referenced in this context (it may be a temporary).
+
+Works cited
+         1. aria_research_full.txt
+         2. Uniform Function Call Syntax (UFCS) - Dlang Tour, accessed December 25, 2025, https://tour.dlang.org/tour/en/gems/uniform-function-call-syntax-ufcs
+         3. Pratt Parsers: Expression Parsing Made Easy – journal.stuffwithstuff.com, accessed December 25, 2025, https://journal.stuffwithstuff.com/2011/03/19/pratt-parsers-expression-parsing-made-easy/
+         4. From Precedence Climbing to Pratt Parsing - Faculty of Engineering and Applied Science, accessed December 25, 2025, https://www.engr.mun.ca/~theo/Misc/pratt_parsing.htm
+         5. How should a Pratt Parser handle these two expressions which seem to have contradictory binding powers? - Stack Overflow, accessed December 25, 2025, https://stackoverflow.com/questions/79371580/how-should-a-pratt-parser-handle-these-two-expressions-which-seem-to-have-contra
+         6. Uniform function call syntax - Wikipedia, accessed December 25, 2025, https://en.wikipedia.org/wiki/Uniform_function_call_syntax
+         7. It isn't though. C++ templates are duck-typed. Structural typing is two structs ... - Hacker News, accessed December 25, 2025, https://news.ycombinator.com/item?id=41735494
+         8. How to do compile-time interfaces in a procedural programming language - Reddit, accessed December 25, 2025, https://www.reddit.com/r/ProgrammingLanguages/comments/1mroj2c/how_to_do_compiletime_interfaces_in_a_procedural/
+         9. Name mangling confusion in LLVM - c++ - Stack Overflow, accessed December 25, 2025, https://stackoverflow.com/questions/42029763/name-mangling-confusion-in-llvm
+         10. Anyone use "pretty" name mangling in their language implementation? - Reddit, accessed December 25, 2025, https://www.reddit.com/r/ProgrammingLanguages/comments/12m738n/anyone_use_pretty_name_mangling_in_their_language/

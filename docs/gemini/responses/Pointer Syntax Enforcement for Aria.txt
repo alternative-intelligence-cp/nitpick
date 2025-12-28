@@ -1,0 +1,382 @@
+﻿Architectural Specification: Strict Segregation of Native and Foreign Function Interface (FFI) Pointers in the Aria Compiler
+1. Introduction: The Imperative for Strict Pointer Segregation
+The design philosophy of the Aria programming language rests on a delicate equilibrium between high-level safety and low-level control. This "Hybrid Memory Model," which seamlessly integrates automatic garbage collection (GC) with manual "wild" memory management, is the language's defining characteristic. However, as the compiler infrastructure matures from prototype (v0.0.6) to production candidate (v0.0.7), a critical architectural vulnerability has emerged within the type system's syntactic interface. The overloading of the asterisk (*) symbol to denote both native pointer types and Foreign Function Interface (FFI) pointers has created a semantic ambiguity that undermines the compiler's ability to enforce memory safety invariants.
+In the current architectural iteration, the compiler's frontend lacks a rigorous mechanism to distinguish between a "managed" pointer—one subject to Aria's unique Appendage Theory, lifetime tracking, and potentially "fat" metadata—and an "unmanaged" pointer intended solely for binary compatibility with external C libraries. This conflation presents a severe risk: the accidental leakage of Aria's internal memory representations (such as 32-byte fat pointers) into C functions expecting 8-bit raw addresses, or conversely, the unchecked propagation of raw, unsafe C pointers into Aria's managed contexts without appropriate safety encapsulations. Furthermore, this ambiguity complicates the enforcement of Twisted Balanced Binary (TBB) arithmetic semantics, where native pointers must respect error sentinels that external C code effectively ignores.
+This report establishes a definitive architectural mandate to refactor the Aria compiler's frontend and backend subsystems. The primary objective is to enforce a strict syntactic and semantic dichotomy: the At-Sign (@) shall be exclusively reserved for Native Aria Pointers, while the Asterisk (*) shall be strictly confined to extern blocks for describing C-compatible FFI pointers. This specification audits the existing Lexer and Parser implementations, defines the necessary state machines for contextual enforcement, and prescribes detailed modifications to the backend CodeGenContext to ensure that this type-level separation translates into correct, ABI-compliant LLVM Intermediate Representation (IR).
+2. Architectural Audit of the Current Compiler Infrastructure
+To prescribe a robust remediation strategy, we must first deconstruct the existing compiler architecture, identifying the specific mechanisms that handle pointer resolution, type mapping, and memory safety. The Aria compiler employs a multi-pass design, leveraging a custom recursive-descent parser frontend and an LLVM 18 backend.
+2.1 The CodeGenContext and Type Resolution
+The CodeGenContext class, located in src/backend/codegen_context.h, serves as the central repository for the compiler's state during the IR generation phase.1 It manages the symbol table, scope stacks, and, crucially, the translation logic that maps Aria's high-level types to LLVM's low-level types.
+The core of this translation is the getLLVMType(const std::string& ariaType) method. An analysis of the current implementation reveals that pointer handling is implicitly tied to array syntax and generic substitution rather than explicit pointer typing. The method currently identifies dynamic arrays (types ending in ``) and maps them to PointerType::getUnqual(llvmContext).1 This confirms that, at the backend level, "raw" pointers are represented as standard LLVM opaque pointers. However, the logic lacks a dedicated execution path for distinguishing between a pointer that is native to Aria (and thus potentially "fat" in debug modes) and a pointer that is strictly for FFI.
+The CodeGenContext maintains several critical maps that rely on precise type identification:
+* exprTypeMap: This structure maps LLVM Value* pointers back to their original Aria type strings. This is explicitly documented as being "critical for TBB safety," as it allows the compiler to identify if a value is a Twisted Balanced Binary type and applies "sticky error propagation" logic.1 If the type system conflates native and FFI pointers, the compiler cannot definitively know whether to apply TBB semantics to a loaded value.
+* typeSubstitution: This map handles generic monomorphization, replacing parameters like T with concrete types like int8.1 The interaction between generics and pointer types is a common source of bugs; strict separation ensures that T cannot accidentally resolve to an FFI pointer type in a context that requires managed safety.
+2.2 The Safety Gap: Fat Pointers vs. Thin Pointers
+Aria's safety model relies heavily on the concept of "Fat Pointers" in debug and safety-critical builds. The backend defines a specific LLVM struct, struct.aria_fat_pointer, which is 32 bytes in size.1 Its layout is rigorously defined:
+1. i8* ptr: The actual data pointer.
+2. i8* base: The base address of the allocation (for bounds checking).
+3. i64 size: The size of the allocation.
+4. i64 alloc_id: A unique identifier for temporal safety (detecting use-after-free).
+The existence of this structure highlights the danger of the current syntactic ambiguity. If a developer declares a pointer using * in native code, and the compiler interprets it as a native pointer, it might lower it to this 32-byte struct. If that same pointer is then passed to a C function (which expects a standard 8-byte pointer on 64-bit systems), the Application Binary Interface (ABI) contract is violated. The C function will interpret the first 8 bytes of the struct (the ptr) as the argument, which might be correct, but if the calling convention involves registers, the fat pointer might be split across multiple registers or spilled to the stack in a way that the C code does not anticipate, leading to memory corruption or segmentation faults.
+Conversely, enforcing @ for native pointers allows the compiler to deterministic apply "fat" semantics only where appropriate. The * operator, reserved for extern blocks, serves as a semantic marker to the compiler: "This is a thin pointer. Do not fatten it. Do not track its lifetime. Just pass the raw address."
+2.3 Twisted Balanced Binary (TBB) Semantics
+A unique feature of Aria is its support for Twisted Balanced Binary integers (tbb8, tbb16, etc.). These types use standard two's complement storage but enforce symmetric ranges and use the minimum representable value (e.g., -128 for tbb8) as an error sentinel (ERR).1
+The interaction between pointers and TBB types is subtle but critical.
+* Native Pointer (tbb8@): When dereferencing a native pointer to a TBB value, the compiler is responsible for checking the loaded value against the ERR sentinel. If the value is ERR, the operation must propagate that error state (sticky error).
+* FFI Pointer (tbb8*): When interacting with C code, a tbb8 is just an int8_t. C code knows nothing of sentinels. It is valid for C code to write -128 into a buffer. If Aria reads this back via a native pointer, it sees an error. If it reads it via an FFI pointer, it sees raw data.
+The strict separation of syntax clarifies the developer's intent. Using @ implies participation in the Aria safety and semantic model. Using * implies raw memory access where Aria's invariants (like TBB sentinels) are suspended or manually managed.
+3. Theoretical Foundations of Pointer Segregation
+To understand why this specific syntactic change is necessary, we must explore the theoretical underpinnings of Aria's memory model. The distinction between @ and * is not arbitrary; it maps to the fundamental difference between "References" and "Addresses" in type theory.
+3.1 Appendage Theory and Lifetime Tracking
+Aria employs a safety system known as "Appendage Theory," which is a simplified form of lifetime analysis. In this model, a "Host" (the owner of memory) must strictly outlive its "Appendage" (the reference to that memory).1 The compiler tracks scope_depth for every variable to enforce this rule.
+Native pointers (@) are subject to Appendage Theory. When a user writes int64@ ptr = &var;, the compiler records that ptr is an appendage of var. It then verifies that ptr does not escape the scope of var. This analysis relies on the compiler's ability to introspect the pointer type and associate it with a specific scope depth.
+FFI pointers (*), by definition, escape the compiler's analysis. They are passed into the opaque void of external functions. The compiler cannot track what a C library does with a pointer—whether it stores it in a global variable, frees it, or ignores it. Therefore, FFI pointers cannot participate in Appendage Theory. They are inherently "unsafe" and must be treated as such. By segregating the syntax, we create a "Safety Firewall." The @ symbol guarantees checked lifetimes (or at least compiler-tracked lifetimes), while the * symbol explicitly disavows these guarantees.
+3.2 The ABI Boundary Problem
+The Application Binary Interface (ABI) defines how data is exchanged between disparate program modules at the machine code level. Aria's native ABI is designed for safety and expressiveness, supporting features like multiple return values, error propagation (Result types), and fat pointers. The C ABI, which dominates systems programming, is designed for simplicity and universality.
+The conflict arises when these two ABIs intersect.
+* Native ABI: Supports struct.aria_fat_pointer (32 bytes).
+* C ABI: Supports void* (8 bytes).
+If the language allows * to define a native pointer, the compiler faces a decision problem every time it sees int64*. Is this a fat pointer? Is it a thin pointer? It would have to infer the intent based on usage, which is fragile and error-prone. By mandating @ for native pointers, the decision is made at the parsing stage. @ lowers to the native representation (fat in debug, potentially optimized in release). * lowers to the C representation (always thin). This eliminates the need for complex inference heuristics and ensures deterministic compilation.
+4. Lexical Analysis Strategy: The Tokenization Layer
+The strict enforcement of pointer segregation begins at the very first stage of compilation: the Lexer. The Lexer's responsibility is to convert the raw character stream into a structured stream of tokens. It must identify the @ and * characters as distinct entities without attempting to assign them grammatical meaning.
+4.1 Redefining the Token Enum
+We must audit src/frontend/tokens.h to ensure that the token enumeration supports the required distinction. The backend code references TOKEN_STAR in the context of "auto-wrap" functions, confirming that the token exists.1 However, explicit references to TOKEN_AT are absent in the backend context snippets, though implied by the pointer AST nodes.
+To support the new architecture, we define specific tokens for these operators. Note that we must avoid conflating the contextual keywords (like wild or extern) with these operator tokens.
+
+
+C++
+
+
+
+
+// src/frontend/tokens.h
+
+namespace aria::frontend {
+   enum TokenType {
+       //... existing tokens...
+       
+       // Operator Tokens
+       TOKEN_STAR,       // '*' - Used for multiplication and FFI pointers
+       TOKEN_AT,         // '@' - Used for Native pointers and Address-of
+       
+       // Contextual Keywords
+       TOKEN_KW_WILD,    // 'wild' - Memory allocation strategy
+       TOKEN_KW_EXTERN,  // 'extern' - FFI context marker
+       TOKEN_KW_FUNC,    // 'func' - Function declaration
+       
+       //...
+   };
+}
+
+4.2 The Lexer State Machine
+In src/frontend/lexer.cpp, the scanToken method implements the state machine that categorizes characters. The implementation for * and @ must be straightforward. The Lexer should not attempt to distinguish between "multiplication" and "pointer" usage; that is a syntactic decision for the Parser.
+Crucially, the Lexer must handle the @ symbol carefully. In some languages, @ is used for compiler directives (annotations). If Aria uses @ for both directives (e.g., @inline) and pointers (e.g., int64@), the Lexer might need to peek ahead to disambiguate, or issue a generic TOKEN_AT and let the Parser decide. Given the requirement for strict pointer enforcement, we will treat @ as a primary operator token.
+Lexer Implementation Logic:
+
+
+C++
+
+
+
+
+// src/frontend/lexer.cpp
+
+Token Lexer::scanToken() {
+   skipWhitespace();
+   
+   if (isAtEnd()) return makeToken(TOKEN_EOF);
+   
+   char c = advance();
+   
+   switch (c) {
+       //... other cases...
+       
+       case '*': 
+           // Potential ambiguity: '*=' (Multiply Assign) vs '*' (Star)
+           return match('=')? makeToken(TOKEN_STAR_ASSIGN) : makeToken(TOKEN_STAR);
+           
+       case '@':
+           // The '@' symbol is now strictly the Native Pointer / Address-Of token.
+           // Directives might handle this differently, but for pointers, it's TOKEN_AT.
+           return makeToken(TOKEN_AT);
+           
+       //... other cases...
+   }
+   
+   //... identifier/number logic...
+}
+
+This strict tokenization provides the foundation. The stream of tokens passed to the Parser will clearly distinguish between * and @, allowing the Parser to apply contextual rules.
+5. Grammatical Enforcement: The Parser's Role
+The Parser acts as the gatekeeper of the language's syntax. It is here that we implement the core logic of the request: enforcing that * is valid only within extern blocks and @ is valid only outside them. To achieve this, the Parser requires a context-aware state machine.
+5.1 Context Tracking: ParserContext
+We introduce a state variable within the Parser class to track the current compilation context. This boolean flag, isInsideExternBlock, defaults to false.
+
+
+C++
+
+
+
+
+// src/frontend/parser.h
+
+class Parser {
+private:
+   //... existing members...
+   
+   // State flag to track FFI context
+   bool isInsideExternBlock = false;
+   
+   //...
+};
+
+5.2 Parsing extern Blocks
+The grammar for extern blocks typically follows the pattern: extern "ABI" { declarations... }. The Parser must intercept this construct, toggle the context flag, parse the internal declarations, and then restore the flag. This ensures that the context is correctly propagated to all types parsed within the block.
+Implementation Specification for parseExternBlock:
+
+
+C++
+
+
+
+
+// src/frontend/parser.cpp
+
+std::unique_ptr<Statement> Parser::parseExternBlock() {
+   // 1. Consume 'extern' keyword
+   consume(TOKEN_KW_EXTERN, "Expected 'extern' keyword.");
+   
+   // 2. Parse ABI string (optional, defaults to "C")
+   std::string abi = "C";
+   if (check(TOKEN_STRING)) {
+       abi = advance().getString();
+   }
+   
+   // 3. Enter Block
+   consume(TOKEN_LBRACE, "Expected '{' to begin extern block.");
+   
+   // 4. SET CONTEXT: We are now inside an FFI boundary
+   bool previousContext = isInsideExternBlock;
+   isInsideExternBlock = true;
+   
+   auto externBlock = std::make_unique<ExternBlock>(abi);
+   
+   // 5. Parse Declarations
+   // We loop until we hit the closing brace.
+   // Inside this loop, any call to parseType() will see isInsideExternBlock == true.
+   while (!check(TOKEN_RBRACE) &&!isAtEnd()) {
+       // parseFuncDecl ultimately calls parseType
+       externBlock->addDeclaration(parseFuncDecl());
+   }
+   
+   // 6. Restore Context
+   consume(TOKEN_RBRACE, "Expected '}' to close extern block.");
+   isInsideExternBlock = previousContext;
+   
+   return externBlock;
+}
+
+5.3 The Enforcement Logic: parseType
+The parseType method is the enforcement checkpoint. Whenever the parser expects a type (e.g., in a variable declaration, function parameter, or return type), it calls this method. We must inject logic here to validate the pointer suffix against the current context.
+Validation Algorithm:
+1. Parse the base type (e.g., int64, MyStruct).
+2. Enter a loop to handle type suffixes (arrays, pointers).
+3. If the suffix is @ (Native Pointer):
+   * Check: Is isInsideExternBlock true?
+   * Action: If yes, raise a ParserError. Native pointers cannot cross the FFI boundary directly (semantics must be marshaled).
+   * Else: Create a PointerType node with PointerKind::NATIVE.
+4. If the suffix is * (Extern Pointer):
+   * Check: Is isInsideExternBlock false?
+   * Action: If yes, raise a ParserError. C-style pointers are forbidden in native Aria code to ensure safety.
+   * Else: Create a PointerType node with PointerKind::EXTERN.
+Implementation Specification:
+
+
+C++
+
+
+
+
+// src/frontend/parser_type.cpp
+
+std::unique_ptr<TypeNode> Parser::parseType() {
+   // 1. Parse Base Type
+   auto type = parseBaseType();
+   
+   // 2. Handle Suffixes
+   while (true) {
+       if (match(TOKEN_AT)) {
+           // Found '@' - Native Pointer
+           if (isInsideExternBlock) {
+               // VIOLATION: Native pointer in FFI context
+               error("Native pointers ('@') are strictly forbidden in extern blocks. "
+                     "Use '*' for C-compatible pointers.");
+           }
+           // Valid Native Pointer
+           type = std::make_unique<PointerType>(std::move(type), PointerKind::NATIVE);
+       }
+       else if (match(TOKEN_STAR)) {
+           // Found '*' - Extern Pointer
+           if (!isInsideExternBlock) {
+               // VIOLATION: Extern pointer in Native context
+               error("C-style pointers ('*') are forbidden in native code. "
+                     "Use '@' for managed pointers or wrap in 'extern' block.");
+           }
+           // Valid Extern Pointer
+           type = std::make_unique<PointerType>(std::move(type), PointerKind::EXTERN);
+       }
+       else if (match(TOKEN_LBRACKET)) {
+           // Array handling (unchanged)
+           //... parse array size...
+       }
+       else {
+           break; // No more suffixes
+       }
+   }
+   
+   return type;
+}
+
+This implementation strictly segregates the usage. A developer attempting to write wild int64* p in a standard function will be blocked by the compiler with a clear, actionable error message.
+6. Semantic Analysis: The Safety Firewall
+Once the AST is constructed with the correct PointerKind annotations, the Semantic Analysis phase (TypeChecker and BorrowChecker) must enforce the rules governing how these pointers interact. This "Semantic Firewall" prevents unsafe data flow between the managed and unmanaged worlds.
+6.1 Type Compatibility and Casting
+The TypeChecker must treat T@ and T* as distinct, incompatible types. Implicit casting between them is a safety violation.
+Rules for Type Checking:
+* Assignment: var a: int64@ = b: int64*; is invalid. The types mismatch.
+* Explicit Casting: The user must explicitly cast to bridge the gap.
+   * T@ -> T*: Requires an unsafe cast or a specific intrinsic like .to_raw_address().
+   * T* -> T@: Requires an unsafe cast and an assumption of validity. The compiler cannot verify the safety of this operation.
+6.2 The Role of wild Memory
+The wild keyword in Aria denotes manual memory management. It is often confused with "unsafe" pointers, but in Aria, wild refers to the allocation strategy, not necessarily the pointer representation.
+* wild int64@: This is a native pointer to manually managed memory. It supports fat pointer metadata (tracking the size of the allocation) and is subject to Appendage Theory (the pointer cannot outlive the scope if tied to a specific allocator).
+* wild int64*: This syntax is now invalid in native code due to our Parser changes.
+* void* (in extern): This is a raw address returned by a C function (like malloc).
+The Semantic Analyzer must ensure that when aria.alloc(size) is called, it returns a wild void@ (Native Pointer). If the user wants to pass this to free(void*) in C, they must cast it or use the Aria wrapper aria.free(wild void@).
+6.3 Pinning Semantics (#) and FFI
+When passing a pointer to a Garbage Collected (GC) object to C, strict safety rules apply. The GC moves objects to defragment memory. If C holds a pointer to a GC object (int64*), and the GC moves the object, the C pointer becomes a dangling reference.
+The Pinning Rule: Converting a GC T@ (Native Managed Pointer) to a T* (Extern Pointer) is only valid if the object is Pinned.
+The # operator pins an object.
+* obj: MyStruct; (GC managed)
+* ptr: MyStruct@ = @obj; (Native pointer, tracks object movement)
+* c_ptr: MyStruct* = ptr as MyStruct*; ERROR: Cannot cast managed pointer to raw pointer without pinning.
+* pinned_ptr: wild MyStruct@ = #obj; (Pin object, return stable native pointer)
+* c_ptr: MyStruct* = pinned_ptr as MyStruct*; VALID: The object is pinned, so the address is stable.
+7. Backend Implementation: CodeGenContext Updates
+The final stage of enforcement lies in the backend. The CodeGenContext must translate the PointerType nodes into LLVM IR that respects the distinction between fat (native) and thin (extern) pointers.
+7.1 Updating getLLVMType
+We must update src/backend/codegen_context.h to explicitly handle the PointerKind. The current implementation maps dynamic arrays to pointers.1 We need to expand this to handle the new PointerType AST node.
+Code Generation Logic:
+1. Retrieve AST Node: Access the PointerType node from the AST.
+2. Check Kind: Determine if it is NATIVE or EXTERN.
+3. Branch Logic:
+   * Case EXTERN (*): Always return llvm::PointerType::getUnqual(llvmContext). This is a raw, opaque pointer (64-bit address). It matches the C ABI void*.
+   * Case NATIVE (@): Check the safety flags.
+      * If ARIA_ENABLE_SAFETY is true (Debug Mode): Return getFatPointerType(). This returns the 32-byte struct.aria_fat_pointer containing {ptr, base, size, id}.
+      * If ARIA_ENABLE_SAFETY is false (Release Mode): Return llvm::PointerType::getUnqual(llvmContext). In release mode, we optimize native pointers to raw pointers for performance, but the frontend semantic checks still apply.
+Implementation Snippet:
+
+
+C++
+
+
+
+
+// src/backend/codegen_context.h
+
+llvm::Type* CodeGenContext::getLLVMType(const TypeNode* typeNode) {
+   //... (Generic substitution logic)...
+
+   if (auto* ptrNode = dynamic_cast<const PointerType*>(typeNode)) {
+       if (ptrNode->kind == PointerKind::EXTERN) {
+           // FFI Pointer: Always Thin
+           return llvm::PointerType::getUnqual(llvmContext);
+       } else {
+           // Native Pointer: Conditioned on Safety Mode
+           if (this->enableSafety) {
+               return getFatPointerType(); // Returns 32-byte struct
+           } else {
+               // Optimization: Thin pointer in release, relying on 
+               // frontend checks for safety.
+               return llvm::PointerType::getUnqual(llvmContext);
+           }
+       }
+   }
+   
+   //... (Existing array/integer mapping)...
+}
+
+7.2 Handling ABI Mismatches (Marshaling)
+The CodeGenVisitor—the component that walks the AST and calls getLLVMType—must handle the impedance mismatch when calling functions.
+Scenario: Calling an extern function with a Native Fat Pointer.
+* Problem: The function expects i8*. We have {i8*, i8*, i64, i64}.
+* Resolution: The backend must implicitly "slice" the fat pointer. It generates a extractvalue instruction to pull the first element (ptr) from the struct and passes that to the C function.
+* Warning: This implicit slicing discards safety metadata. The compiler should issue a warning if this happens implicitly, or require an explicit cast. Given the strict segregation, the Parser prevents this at the syntactic level (types won't match), forcing the user to cast, which makes the loss of metadata explicit.
+8. Ecosystem Implications and Migration
+Implementing this strict segregation has broad implications for the Aria ecosystem.
+8.1 Standard Library Updates
+The standard library (std.mem, std.io) likely contains existing code using *. This must be audited. Functions like aria.alloc must be updated to return wild void@ instead of void*, ensuring they integrate with the native pointer system.
+8.2 Tooling Integration (aria-fmt)
+The aria-fmt tool 1 should be updated to automatically migrate code.
+* Rule: If a variable declaration uses * and is not in an extern block, rewrite it to @.
+* Example: wild int64* p -> wild int64@ p.
+This automated migration significantly reduces the friction of adopting the strict safety rules.
+9. Verification and Testing Strategy
+To validate this architectural change, a comprehensive test suite is required.
+9.1 Unit Testing the Parser
+We define a set of test cases for src/frontend/parser_test.cpp:
+* Test 1 (Native Violation): Input var p: int* =...;. Expect ParserError: forbidden in native code.
+* Test 2 (Extern Violation): Input extern { func f(p: int@); }. Expect ParserError: forbidden in extern block.
+* Test 3 (Valid Native): Input var p: int@ =...;. Expect Success.
+* Test 4 (Valid Extern): Input extern { func f(p: int*); }. Expect Success.
+9.2 Integration Testing with C
+We create an integration test that links against a C library.
+* C Code: void c_func(int* p) { *p = 10; }
+* Aria Code:
+Code snippet
+extern "C" { func c_func(p: int32*); }
+func main() {
+   var x: int32 = 0;
+   c_func(&x); // Error: Cannot pass native ref to extern ptr directly?
+               // Correction: &x creates int32@. Must verify casting rules.
+}
+
+This highlights the need to verify the address-of operator's interaction. &x produces a native reference (int32@). To pass to c_func, the user must explicitly cast or pin: c_func(@x as int32*).
+10. Conclusion
+The strict segregation of native pointers (@) and FFI pointers (*) is a necessary evolution for the Aria compiler. It resolves the ambiguity inherent in the current syntax, enforcing a clear boundary between the managed, safe world of Aria and the unmanaged, raw world of external C libraries.
+By implementing the changes detailed in this report—updating the Lexer to tokenize distinctly, the Parser to enforce context, and the Backend to generate ABI-compliant IR—we provide a robust foundation for Aria's hybrid memory model. This architecture empowers the compiler to provide advanced features like Fat Pointers and TBB safety in native code without compromising the ability to interoperate seamlessly with the systems programming ecosystem. The resulting system is safer, more predictable, and ready for production deployment.
+Summary of Required Changes Table
+Component
+	File
+	Action
+	Rationale
+	Lexer
+	src/frontend/lexer.cpp
+	Separate * and @ tokenization.
+	Remove ambiguity at the source level.
+	Tokens
+	src/frontend/tokens.h
+	Add TOKEN_STAR and TOKEN_AT.
+	Enable distinct parsing paths.
+	Parser
+	src/frontend/parser.cpp
+	Add isInsideExternBlock state.
+	Context-aware parsing.
+	Parser
+	src/frontend/parser_type.cpp
+	Enforce @ (Native) vs * (FFI).
+	Prevent syntax mixing.
+	AST
+	src/frontend/ast_node.h
+	Add PointerKind::NATIVE/EXTERN.
+	Preserve intent for backend.
+	Backend
+	src/backend/codegen_context.h
+	Update getLLVMType logic.
+	Lower to Fat vs Thin pointers.
+	Semantics
+	src/frontend/type_checker.cpp
+	Ban implicit casts between types.
+	Enforce the safety firewall.
+	Works cited
+   1. aria_source_full.txt

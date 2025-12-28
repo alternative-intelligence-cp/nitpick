@@ -49,6 +49,10 @@ private:
     
     // Track Aria types for LLVM values (needed for member access with opaque pointers)
     std::map<llvm::Value*, Type*> value_types;
+
+    // Track Aria type names by variable name (for UFCS method resolution)
+    // Maps variable names to their Aria type name (e.g., "array", "string", "MyStruct")
+    std::map<std::string, std::string> var_aria_types;
     
     // Type mapping cache (Aria types -> LLVM types)
     std::map<std::string, llvm::Type*> type_map;

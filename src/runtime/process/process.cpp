@@ -20,7 +20,28 @@
     #include <sys/wait.h>
     #include <signal.h>
     #include <fcntl.h>
+    #include <sys/syscall.h>  // For close_range syscall
+
+    // close_range syscall wrapper (Linux 5.9+)
+    #ifdef __linux__
+        #ifndef SYS_close_range
+            #define SYS_close_range 436  // x86_64
+        #endif
+
+        static int close_range_wrapper(unsigned int first, unsigned int last, unsigned int flags) {
+            return syscall(SYS_close_range, first, last, flags);
+        }
+    #endif
 #endif
+
+// Aria six-stream FD constants
+#define ARIA_FD_STDIN   0
+#define ARIA_FD_STDOUT  1
+#define ARIA_FD_STDERR  2
+#define ARIA_FD_STDDBG  3
+#define ARIA_FD_STDDATI 4
+#define ARIA_FD_STDDATO 5
+#define ARIA_FD_FIRST_FREE 6
 
 // ============================================================================
 // Internal Structures
@@ -74,8 +95,12 @@ static char* get_error_message(const char* prefix) {
 AriaSpawnOptions* aria_spawn_options_create(void) {
     AriaSpawnOptions* options = (AriaSpawnOptions*)calloc(1, sizeof(AriaSpawnOptions));
     if (!options) return NULL;
-    
-    // All fields default to NULL/false (calloc)
+
+    // Default: close extra FDs for security (FDs >= 6)
+    // This prevents leaking parent's file descriptors to child
+    options->close_extra_fds = true;
+
+    // All other fields default to NULL/false (calloc)
     return options;
 }
 
@@ -112,30 +137,89 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
     
     if (pid == 0) {
         // Child process
-        
-        // Handle pipe redirections
+        //
+        // Aria Six-Stream I/O Topology (ARIA-020):
+        //   FD 0: stdin   - Standard input
+        //   FD 1: stdout  - Standard output
+        //   FD 2: stderr  - Standard error
+        //   FD 3: stddbg  - Debug output (structured diagnostics)
+        //   FD 4: stddati - Data input (binary/structured data)
+        //   FD 5: stddato - Data output (binary/structured data)
+        //
+        // The FD dance uses dup2() to move pipe ends to their canonical positions.
+        // We use a temp FD (>= 100) to avoid clobbering during the dance.
+
+        // Handle pipe redirections - all six streams
         if (options) {
+            // FD 0: stdin (read from pipe)
             if (options->redirect_stdin && options->stdin_pipe) {
                 int fd = aria_pipe_get_read_fd(options->stdin_pipe);
-                if (fd >= 0) {
-                    dup2(fd, STDIN_FILENO);
+                if (fd >= 0 && fd != ARIA_FD_STDIN) {
+                    dup2(fd, ARIA_FD_STDIN);
+                    // Don't close fd here - O_CLOEXEC will handle it on exec
                 }
             }
-            
+
+            // FD 1: stdout (write to pipe)
             if (options->redirect_stdout && options->stdout_pipe) {
                 int fd = aria_pipe_get_write_fd(options->stdout_pipe);
-                if (fd >= 0) {
-                    dup2(fd, STDOUT_FILENO);
+                if (fd >= 0 && fd != ARIA_FD_STDOUT) {
+                    dup2(fd, ARIA_FD_STDOUT);
                 }
             }
-            
+
+            // FD 2: stderr (write to pipe)
             if (options->redirect_stderr && options->stderr_pipe) {
                 int fd = aria_pipe_get_write_fd(options->stderr_pipe);
-                if (fd >= 0) {
-                    dup2(fd, STDERR_FILENO);
+                if (fd >= 0 && fd != ARIA_FD_STDERR) {
+                    dup2(fd, ARIA_FD_STDERR);
                 }
             }
-            
+
+            // FD 3: stddbg - debug output (write to pipe)
+            if (options->redirect_stddbg && options->stddbg_pipe) {
+                int fd = aria_pipe_get_write_fd(options->stddbg_pipe);
+                if (fd >= 0 && fd != ARIA_FD_STDDBG) {
+                    dup2(fd, ARIA_FD_STDDBG);
+                }
+            }
+
+            // FD 4: stddati - data input (read from pipe)
+            if (options->redirect_stddati && options->stddati_pipe) {
+                int fd = aria_pipe_get_read_fd(options->stddati_pipe);
+                if (fd >= 0 && fd != ARIA_FD_STDDATI) {
+                    dup2(fd, ARIA_FD_STDDATI);
+                }
+            }
+
+            // FD 5: stddato - data output (write to pipe)
+            if (options->redirect_stddato && options->stddato_pipe) {
+                int fd = aria_pipe_get_write_fd(options->stddato_pipe);
+                if (fd >= 0 && fd != ARIA_FD_STDDATO) {
+                    dup2(fd, ARIA_FD_STDDATO);
+                }
+            }
+
+            // Security: Close all FDs >= 6 to prevent leaking parent's FDs
+            // This is critical for security isolation
+            if (options->close_extra_fds) {
+                #ifdef __linux__
+                    // Use close_range syscall for efficiency (Linux 5.9+)
+                    // Falls back gracefully if syscall not available
+                    if (close_range_wrapper(ARIA_FD_FIRST_FREE, ~0U, 0) < 0) {
+                        // Fallback: close FDs individually (slower but portable)
+                        for (int fd = ARIA_FD_FIRST_FREE; fd < 1024; fd++) {
+                            close(fd);
+                        }
+                    }
+                #else
+                    // Non-Linux: close FDs individually
+                    for (int fd = ARIA_FD_FIRST_FREE; fd < 1024; fd++) {
+                        close(fd);
+                    }
+                #endif
+            }
+
             // Change working directory if specified
             if (options->cwd) {
                 if (chdir(options->cwd) < 0) {
@@ -441,18 +525,33 @@ AriaResult* aria_pipe_create(void) {
     if (!aria_pipe) {
         return aria_result_err("Out of memory");
     }
-    
+
     int fds[2];
-    if (::pipe(fds) < 0) {  // Use :: to call global pipe() function
-        free(aria_pipe);
-        return aria_result_err(get_error_message("pipe creation failed"));
-    }
-    
+
+    // Use pipe2() with O_CLOEXEC for thread-safe pipe creation
+    // This ensures pipes are atomically created with close-on-exec flag,
+    // preventing FD leaks to forked children in multithreaded programs
+    #ifdef __linux__
+        if (pipe2(fds, O_CLOEXEC) < 0) {
+            free(aria_pipe);
+            return aria_result_err(get_error_message("pipe2 creation failed"));
+        }
+    #else
+        // Fallback for non-Linux: create pipe then set close-on-exec
+        if (::pipe(fds) < 0) {
+            free(aria_pipe);
+            return aria_result_err(get_error_message("pipe creation failed"));
+        }
+        // Set close-on-exec flags (not atomic, but best we can do)
+        fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+        fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+    #endif
+
     aria_pipe->read_fd = fds[0];
     aria_pipe->write_fd = fds[1];
     aria_pipe->read_closed = false;
     aria_pipe->write_closed = false;
-    
+
     return aria_result_ok(aria_pipe, sizeof(AriaPipe));
 }
 

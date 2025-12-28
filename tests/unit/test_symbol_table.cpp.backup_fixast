@@ -1,0 +1,285 @@
+#include "test_helpers.h"
+#include "frontend/sema/symbol_table.h"
+#include "frontend/sema/type.h"
+
+using namespace aria;
+using namespace aria::sema;
+
+// ============================================================================
+// Symbol Table Tests
+// ============================================================================
+
+TEST_CASE(symbol_table_create) {
+    SymbolTable table;
+    ASSERT(table.getRootScope() != nullptr, "Root scope should exist");
+    ASSERT(table.getCurrentScope() != nullptr, "Current scope should exist");
+    ASSERT_EQ(table.getCurrentScope(), table.getRootScope(), "Current should be root initially");
+}
+
+TEST_CASE(symbol_table_define_variable) {
+    TypeSystem types;
+    SymbolTable table;
+    
+    auto intType = types.getPrimitiveType("int32");
+    auto symbol = table.defineSymbol("x", SymbolKind::VARIABLE, intType, 1, 1);
+    
+    ASSERT(symbol != nullptr, "Symbol should be created");
+    ASSERT_EQ(symbol->name, "x", "Symbol name should match");
+    ASSERT(symbol->kind == SymbolKind::VARIABLE, "Symbol should be variable");
+    ASSERT(symbol->type == intType, "Symbol type should match");
+}
+
+TEST_CASE(symbol_table_lookup) {
+    TypeSystem types;
+    SymbolTable table;
+    
+    auto intType = types.getPrimitiveType("int32");
+    table.defineSymbol("x", SymbolKind::VARIABLE, intType);
+    
+    auto found = table.lookupSymbol("x");
+    ASSERT(found != nullptr, "Symbol should be found");
+    ASSERT_EQ(found->name, "x", "Found symbol name should match");
+}
+
+TEST_CASE(symbol_table_lookup_missing) {
+    SymbolTable table;
+    
+    auto found = table.lookupSymbol("nonexistent");
+    ASSERT(found == nullptr, "Missing symbol should return null");
+}
+
+TEST_CASE(symbol_table_duplicate_error) {
+    TypeSystem types;
+    SymbolTable table;
+    
+    auto intType = types.getPrimitiveType("int32");
+    table.defineSymbol("x", SymbolKind::VARIABLE, intType);
+    auto duplicate = table.defineSymbol("x", SymbolKind::VARIABLE, intType);
+    
+    ASSERT(duplicate == nullptr, "Duplicate should fail");
+    ASSERT(table.hasErrors(), "Should have error");
+}
+
+TEST_CASE(symbol_table_enter_scope) {
+    SymbolTable table;
+    
+    auto rootScope = table.getCurrentScope();
+    table.enterScope(ScopeKind::FUNCTION, "testFunc");
+    
+    ASSERT(table.getCurrentScope() != rootScope, "Should be in new scope");
+    ASSERT(table.getCurrentScope()->getParent() == rootScope, "Parent should be root");
+    ASSERT(table.getCurrentScope()->getKind() == ScopeKind::FUNCTION, "Should be function scope");
+}
+
+TEST_CASE(symbol_table_exit_scope) {
+    SymbolTable table;
+    
+    auto rootScope = table.getCurrentScope();
+    table.enterScope(ScopeKind::FUNCTION, "testFunc");
+    table.exitScope();
+    
+    ASSERT_EQ(table.getCurrentScope(), rootScope, "Should be back in root scope");
+}
+
+TEST_CASE(symbol_table_nested_scopes) {
+    TypeSystem types;
+    SymbolTable table;
+    
+    auto intType = types.getPrimitiveType("int32");
+    
+    // Global scope: x = 10
+    table.defineSymbol("x", SymbolKind::VARIABLE, intType);
+    
+    // Enter function scope
+    table.enterScope(ScopeKind::FUNCTION, "func");
+    table.defineSymbol("y", SymbolKind::VARIABLE, intType);
+    
+    // Should find both x and y
+    ASSERT(table.resolveSymbol("x") != nullptr, "Should find x from parent");
+    ASSERT(table.resolveSymbol("y") != nullptr, "Should find y in current");
+    
+    // Exit function scope
+    table.exitScope();
+    
+    // Should only find x now
+    ASSERT(table.resolveSymbol("x") != nullptr, "Should find x");
+    ASSERT(table.resolveSymbol("y") == nullptr, "Should not find y");
+}
+
+TEST_CASE(symbol_table_shadowing) {
+    TypeSystem types;
+    SymbolTable table;
+    
+    auto intType = types.getPrimitiveType("int32");
+    
+    // Global scope: x = 10
+    auto globalX = table.defineSymbol("x", SymbolKind::VARIABLE, intType);
+    
+    // Enter function scope and shadow x
+    table.enterScope(ScopeKind::FUNCTION, "func");
+    auto localX = table.defineSymbol("x", SymbolKind::VARIABLE, intType);
+    
+    // Resolve should find local x
+    auto found = table.resolveSymbol("x");
+    ASSERT(found == localX, "Should find local x (shadowing)");
+    ASSERT(found != globalX, "Should not find global x");
+    
+    // Exit and check again
+    table.exitScope();
+    found = table.resolveSymbol("x");
+    ASSERT(found == globalX, "Should find global x again");
+}
+
+TEST_CASE(symbol_table_multiple_symbols) {
+    TypeSystem types;
+    SymbolTable table;
+    
+    auto intType = types.getPrimitiveType("int32");
+    auto stringType = types.getPrimitiveType("string");
+    
+    table.defineSymbol("x", SymbolKind::VARIABLE, intType);
+    table.defineSymbol("y", SymbolKind::VARIABLE, intType);
+    table.defineSymbol("name", SymbolKind::VARIABLE, stringType);
+    
+    ASSERT(table.resolveSymbol("x") != nullptr, "Should find x");
+    ASSERT(table.resolveSymbol("y") != nullptr, "Should find y");
+    ASSERT(table.resolveSymbol("name") != nullptr, "Should find name");
+}
+
+TEST_CASE(symbol_table_function_parameters) {
+    TypeSystem types;
+    SymbolTable table;
+    
+    auto intType = types.getPrimitiveType("int32");
+    
+    // Global function
+    table.defineSymbol("add", SymbolKind::FUNCTION, nullptr);
+    
+    // Enter function scope for parameters
+    table.enterScope(ScopeKind::FUNCTION, "add");
+    table.defineSymbol("a", SymbolKind::PARAMETER, intType);
+    table.defineSymbol("b", SymbolKind::PARAMETER, intType);
+    
+    ASSERT(table.resolveSymbol("a") != nullptr, "Should find parameter a");
+    ASSERT(table.resolveSymbol("b") != nullptr, "Should find parameter b");
+    
+    table.exitScope();
+    
+    // Parameters should not be accessible outside function
+    ASSERT(table.resolveSymbol("a") == nullptr, "Should not find a outside function");
+    ASSERT(table.resolveSymbol("b") == nullptr, "Should not find b outside function");
+}
+
+TEST_CASE(symbol_table_block_scope) {
+    TypeSystem types;
+    SymbolTable table;
+    
+    auto intType = types.getPrimitiveType("int32");
+    
+    table.enterScope(ScopeKind::FUNCTION, "test");
+    table.defineSymbol("x", SymbolKind::VARIABLE, intType);
+    
+    // Enter block (like if statement body)
+    table.enterScope(ScopeKind::BLOCK);
+    table.defineSymbol("y", SymbolKind::VARIABLE, intType);
+    
+    ASSERT(table.resolveSymbol("x") != nullptr, "Should find x from function");
+    ASSERT(table.resolveSymbol("y") != nullptr, "Should find y in block");
+    
+    // Exit block
+    table.exitScope();
+    
+    ASSERT(table.resolveSymbol("x") != nullptr, "Should still find x");
+    ASSERT(table.resolveSymbol("y") == nullptr, "Should not find y outside block");
+    
+    table.exitScope();
+}
+
+// ============================================================================
+// Type System Tests
+// ============================================================================
+
+TEST_CASE(type_system_create) {
+    TypeSystem types;
+    
+    ASSERT(types.getUnknownType() != nullptr, "Unknown type should exist");
+    ASSERT(types.getErrorType() != nullptr, "Error type should exist");
+}
+
+TEST_CASE(type_system_primitive) {
+    TypeSystem types;
+    
+    auto int32 = types.getPrimitiveType("int32");
+    ASSERT(int32 != nullptr, "Should create int32 type");
+    ASSERT_EQ(int32->getName(), "int32", "Type name should match");
+    ASSERT_EQ(int32->toString(), "int32", "toString should match");
+}
+
+TEST_CASE(type_system_primitive_cache) {
+    TypeSystem types;
+    
+    auto int32_1 = types.getPrimitiveType("int32");
+    auto int32_2 = types.getPrimitiveType("int32");
+    
+    ASSERT(int32_1 == int32_2, "Should return same instance (cached)");
+}
+
+TEST_CASE(type_equals) {
+    TypeSystem types;
+    
+    auto int32_1 = types.getPrimitiveType("int32");
+    auto int32_2 = types.getPrimitiveType("int32");
+    auto int64 = types.getPrimitiveType("int64");
+    
+    ASSERT(int32_1->equals(int32_2), "Same type should be equal");
+    ASSERT(!int32_1->equals(int64), "Different types should not be equal");
+}
+
+TEST_CASE(type_assignable) {
+    TypeSystem types;
+    
+    auto int32 = types.getPrimitiveType("int32");
+    auto int64 = types.getPrimitiveType("int64");
+    
+    ASSERT(int32->isAssignableTo(int32), "Type should be assignable to itself");
+    ASSERT(!int32->isAssignableTo(int64), "Different types not assignable");
+}
+
+TEST_CASE(type_unknown) {
+    TypeSystem types;
+    
+    auto unknown = types.getUnknownType();
+    auto int32 = types.getPrimitiveType("int32");
+    
+    ASSERT(unknown->isAssignableTo(int32), "Unknown assignable to anything");
+    ASSERT_EQ(unknown->toString(), "<unknown>", "Unknown toString correct");
+}
+
+TEST_CASE(type_error) {
+    TypeSystem types;
+    
+    auto error = types.getErrorType();
+    auto int32 = types.getPrimitiveType("int32");
+    
+    ASSERT(error->isAssignableTo(int32), "Error assignable to anything");
+    ASSERT_EQ(error->toString(), "<error>", "Error toString correct");
+}
+
+TEST_CASE(type_all_primitives) {
+    TypeSystem types;
+    
+    // Test that all primitive types can be created
+    auto int8 = types.getPrimitiveType("int8");
+    auto uint32 = types.getPrimitiveType("uint32");
+    auto flt64 = types.getPrimitiveType("flt64");
+    auto tbb8 = types.getPrimitiveType("tbb8");
+    auto boolType = types.getPrimitiveType("bool");
+    auto stringType = types.getPrimitiveType("string");
+    
+    ASSERT(int8 != nullptr, "int8 should exist");
+    ASSERT(uint32 != nullptr, "uint32 should exist");
+    ASSERT(flt64 != nullptr, "flt64 should exist");
+    ASSERT(tbb8 != nullptr, "tbb8 should exist");
+    ASSERT(boolType != nullptr, "bool should exist");
+    ASSERT(stringType != nullptr, "string should exist");
+}

@@ -571,7 +571,28 @@ public:
      * - Register enum variants in symbol table
      */
     void checkEnumDecl(EnumDeclStmt* stmt);
-    
+
+    /**
+     * Check trait declaration (WP 005)
+     *
+     * Rules:
+     * - Trait name must not already be defined
+     * - Register trait in symbol table
+     * - Validate method signatures
+     */
+    void checkTraitDecl(TraitDeclStmt* stmt);
+
+    /**
+     * Check trait implementation (WP 005)
+     *
+     * Rules:
+     * - Trait must exist
+     * - Type must exist
+     * - All trait methods must be implemented
+     * - Method signatures must match trait
+     */
+    void checkImplDecl(ImplDeclStmt* stmt);
+
     /**
      * Check assignment expression
      * 

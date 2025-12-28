@@ -1,0 +1,251 @@
+/**
+ * test_tbb_codegen.cpp
+ * 
+ * Unit tests for TBB (Ternary Balanced Binary) arithmetic code generation (Phase 4.1.3)
+ * Tests safe arithmetic with ERR sentinels and overflow detection.
+ */
+
+#include "../test_helpers.h"
+#include "backend/ir/tbb_codegen.h"
+#include "frontend/sema/type.h"
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/Support/raw_ostream.h>
+
+using namespace aria;
+using namespace aria::sema;
+
+// ============================================================================
+// TBB Codegen Tests
+// ============================================================================
+
+TEST_CASE(tbb_codegen_err_sentinel_values) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_tbb", context);
+    llvm::IRBuilder<> builder(context);
+    
+    llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getVoidTy(), false);
+    llvm::Function* func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    TBBCodegen tbbGen(context, builder);
+    TypeSystem types;
+    
+    // Test ERR sentinel values
+    Type* tbb8Type = types.getPrimitiveType("tbb8");
+    llvm::Value* err8 = tbbGen.getErrSentinel(tbb8Type);
+    ASSERT(err8 != nullptr, "tbb8 ERR sentinel should not be null");
+    
+    auto* c8 = llvm::cast<llvm::ConstantInt>(err8);
+    ASSERT_EQ(c8->getSExtValue(), -128, "tbb8 ERR sentinel should be -128");
+}
+
+TEST_CASE(tbb_codegen_max_min_values) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_tbb", context);
+    llvm::IRBuilder<> builder(context);
+    
+    llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getVoidTy(), false);
+    llvm::Function* func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "test_func", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    TBBCodegen tbbGen(context, builder);
+    TypeSystem types;
+    Type* tbb8Type = types.getPrimitiveType("tbb8");
+    
+    llvm::Value* max8 = tbbGen.getMaxValue(tbb8Type);
+    llvm::Value* min8 = tbbGen.getMinValue(tbb8Type);
+    
+    auto* cMax = llvm::cast<llvm::ConstantInt>(max8);
+    auto* cMin = llvm::cast<llvm::ConstantInt>(min8);
+    
+    ASSERT_EQ(cMax->getSExtValue(), 127, "tbb8 max should be 127");
+    ASSERT_EQ(cMin->getSExtValue(), -127, "tbb8 min should be -127");
+}
+
+TEST_CASE(tbb_codegen_add_basic) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_tbb", context);
+    llvm::IRBuilder<> builder(context);
+    
+    llvm::Type* tbb8LLVMType = builder.getInt8Ty();
+    llvm::FunctionType* funcType = llvm::FunctionType::get(tbb8LLVMType, {tbb8LLVMType, tbb8LLVMType}, false);
+    llvm::Function* func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "add_test", &module);
+    
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    TBBCodegen tbbGen(context, builder);
+    TypeSystem types;
+    Type* tbb8Type = types.getPrimitiveType("tbb8");
+    
+    auto args = func->arg_begin();
+    llvm::Value* lhs = &(*args++);
+    llvm::Value* rhs = &(*args);
+    
+    llvm::Value* result = tbbGen.generateAdd(lhs, rhs, tbb8Type);
+    ASSERT(result != nullptr, "TBB addition should generate valid LLVM value");
+    
+    builder.CreateRet(result);
+    
+    std::string errorStr;
+    llvm::raw_string_ostream errorStream(errorStr);
+    bool hasErrors = llvm::verifyFunction(*func, &errorStream);
+    ASSERT(!hasErrors, "Generated TBB add function should be valid LLVM IR");
+}
+
+TEST_CASE(tbb_codegen_sub_basic) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_tbb", context);
+    llvm::IRBuilder<> builder(context);
+    
+    llvm::Type* tbb16LLVMType = builder.getInt16Ty();
+    llvm::FunctionType* funcType = llvm::FunctionType::get(tbb16LLVMType, {tbb16LLVMType, tbb16LLVMType}, false);
+    llvm::Function* func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "sub_test", &module);
+    
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    TBBCodegen tbbGen(context, builder);
+    TypeSystem types;
+    Type* tbb16Type = types.getPrimitiveType("tbb16");
+    
+    auto args = func->arg_begin();
+    llvm::Value* lhs = &(*args++);
+    llvm::Value* rhs = &(*args);
+    
+    llvm::Value* result = tbbGen.generateSub(lhs, rhs, tbb16Type);
+    ASSERT(result != nullptr, "TBB subtraction should generate valid LLVM value");
+    
+    builder.CreateRet(result);
+    
+    std::string errorStr;
+    llvm::raw_string_ostream errorStream(errorStr);
+    bool hasErrors = llvm::verifyFunction(*func, &errorStream);
+    ASSERT(!hasErrors, "Generated TBB sub function should be valid LLVM IR");
+}
+
+TEST_CASE(tbb_codegen_mul_basic) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_tbb", context);
+    llvm::IRBuilder<> builder(context);
+    
+    llvm::Type* tbb32LLVMType = builder.getInt32Ty();
+    llvm::FunctionType* funcType = llvm::FunctionType::get(tbb32LLVMType, {tbb32LLVMType, tbb32LLVMType}, false);
+    llvm::Function* func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "mul_test", &module);
+    
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    TBBCodegen tbbGen(context, builder);
+    TypeSystem types;
+    Type* tbb32Type = types.getPrimitiveType("tbb32");
+    
+    auto args = func->arg_begin();
+    llvm::Value* lhs = &(*args++);
+    llvm::Value* rhs = &(*args);
+    
+    llvm::Value* result = tbbGen.generateMul(lhs, rhs, tbb32Type);
+    ASSERT(result != nullptr, "TBB multiplication should generate valid LLVM value");
+    
+    builder.CreateRet(result);
+    
+    std::string errorStr;
+    llvm::raw_string_ostream errorStream(errorStr);
+    bool hasErrors = llvm::verifyFunction(*func, &errorStream);
+    ASSERT(!hasErrors, "Generated TBB mul function should be valid LLVM IR");
+}
+
+TEST_CASE(tbb_codegen_div_basic) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_tbb", context);
+    llvm::IRBuilder<> builder(context);
+    
+    llvm::Type* tbb64LLVMType = builder.getInt64Ty();
+    llvm::FunctionType* funcType = llvm::FunctionType::get(tbb64LLVMType, {tbb64LLVMType, tbb64LLVMType}, false);
+    llvm::Function* func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "div_test", &module);
+    
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    TBBCodegen tbbGen(context, builder);
+    TypeSystem types;
+    Type* tbb64Type = types.getPrimitiveType("tbb64");
+    
+    auto args = func->arg_begin();
+    llvm::Value* lhs = &(*args++);
+    llvm::Value* rhs = &(*args);
+    
+    llvm::Value* result = tbbGen.generateDiv(lhs, rhs, tbb64Type);
+    ASSERT(result != nullptr, "TBB division should generate valid LLVM value");
+    
+    builder.CreateRet(result);
+    
+    std::string errorStr;
+    llvm::raw_string_ostream errorStream(errorStr);
+    bool hasErrors = llvm::verifyFunction(*func, &errorStream);
+    ASSERT(!hasErrors, "Generated TBB div function should be valid LLVM IR");
+}
+
+TEST_CASE(tbb_codegen_neg_basic) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_tbb", context);
+    llvm::IRBuilder<> builder(context);
+    
+    llvm::Type* tbb8LLVMType = builder.getInt8Ty();
+    llvm::FunctionType* funcType = llvm::FunctionType::get(tbb8LLVMType, {tbb8LLVMType}, false);
+    llvm::Function* func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "neg_test", &module);
+    
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    TBBCodegen tbbGen(context, builder);
+    TypeSystem types;
+    Type* tbb8Type = types.getPrimitiveType("tbb8");
+    
+    llvm::Value* operand = &(*func->arg_begin());
+    llvm::Value* result = tbbGen.generateNeg(operand, tbb8Type);
+    ASSERT(result != nullptr, "TBB negation should generate valid LLVM value");
+    
+    builder.CreateRet(result);
+    
+    std::string errorStr;
+    llvm::raw_string_ostream errorStream(errorStr);
+    bool hasErrors = llvm::verifyFunction(*func, &errorStream);
+    ASSERT(!hasErrors, "Generated TBB neg function should be valid LLVM IR");
+}
+
+TEST_CASE(tbb_codegen_all_types_supported) {
+    llvm::LLVMContext context;
+    llvm::Module module("test_tbb", context);
+    llvm::IRBuilder<> builder(context);
+    
+    llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getVoidTy(), false);
+    llvm::Function* func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "all_types_test", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    TBBCodegen tbbGen(context, builder);
+    TypeSystem types;
+    
+    // Test that all TBB types can generate ERR sentinels
+    Type* tbb8Type = types.getPrimitiveType("tbb8");
+    Type* tbb16Type = types.getPrimitiveType("tbb16");
+    Type* tbb32Type = types.getPrimitiveType("tbb32");
+    Type* tbb64Type = types.getPrimitiveType("tbb64");
+    
+    llvm::Value* err8 = tbbGen.getErrSentinel(tbb8Type);
+    llvm::Value* err16 = tbbGen.getErrSentinel(tbb16Type);
+    llvm::Value* err32 = tbbGen.getErrSentinel(tbb32Type);
+    llvm::Value* err64 = tbbGen.getErrSentinel(tbb64Type);
+    
+    ASSERT(err8 != nullptr, "tbb8 ERR sentinel generated");
+    ASSERT(err16 != nullptr, "tbb16 ERR sentinel generated");
+    ASSERT(err32 != nullptr, "tbb32 ERR sentinel generated");
+    ASSERT(err64 != nullptr, "tbb64 ERR sentinel generated");
+}

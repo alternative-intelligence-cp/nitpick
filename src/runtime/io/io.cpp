@@ -1139,7 +1139,86 @@ AriaResultBool aria_path_is_absolute_result(const char* path) {
     if (!path) {
         return aria_result_err_bool(aria_error_msg("Path is NULL"));
     }
-    
+
     bool is_abs = aria_path_is_absolute(path);
     return aria_result_ok_bool(is_abs);
+}
+
+// ============================================================================
+// UFCS-Compatible File Aliases (for File.open(), stream.read(), etc.)
+// ============================================================================
+
+// Static method: File.open(path, mode) -> AriaStream*
+AriaStream* File_open(const char* path, const char* mode) {
+    return aria_open_file(path, mode);
+}
+
+// Instance method: stream.read_line() -> char*
+char* File_read_line(AriaStream* stream) {
+    return aria_stream_read_line(stream);
+}
+
+// Instance method: stream.read_bytes(buffer, size) -> int64
+int64_t File_read_bytes(AriaStream* stream, void* buffer, size_t size) {
+    return aria_stream_read_bytes(stream, buffer, size);
+}
+
+// Instance method: stream.write(str) -> int64
+int64_t File_write(AriaStream* stream, const char* str) {
+    return aria_stream_write(stream, str);
+}
+
+// Instance method: stream.write_bytes(data, size) -> int64
+int64_t File_write_bytes(AriaStream* stream, const void* data, size_t size) {
+    return aria_stream_write_bytes(stream, data, size);
+}
+
+// Instance method: stream.close() -> void
+void File_close(AriaStream* stream) {
+    aria_stream_close(stream);
+}
+
+// Instance method: stream.eof() -> bool
+bool File_eof(AriaStream* stream) {
+    return aria_stream_eof(stream);
+}
+
+// Instance method: stream.flush() -> int
+int File_flush(AriaStream* stream) {
+    return aria_stream_flush(stream);
+}
+
+// Instance method: stream.seek(offset, whence) -> int
+int File_seek(AriaStream* stream, int64_t offset, int whence) {
+    return aria_stream_seek(stream, offset, whence);
+}
+
+// Instance method: stream.tell() -> int64
+int64_t File_tell(AriaStream* stream) {
+    return aria_stream_tell(stream);
+}
+
+// Static method: File.read(path) -> AriaString*
+AriaString* File_read(const char* path) {
+    return aria_read_file_simple(path);
+}
+
+// Static method: File.write(path, content) -> int64
+int64_t File_write_all(const char* path, const char* content) {
+    return aria_write_file_simple(path, content);
+}
+
+// Static method: File.delete(path) -> int64
+int64_t File_delete(const char* path) {
+    return aria_delete_file_simple(path);
+}
+
+// Static method: File.exists(path) -> bool
+bool File_exists(const char* path) {
+    return aria_file_exists(path);
+}
+
+// Static method: File.size(path) -> int64
+int64_t File_size(const char* path) {
+    return aria_file_size(path);
 }

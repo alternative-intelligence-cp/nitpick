@@ -624,6 +624,100 @@ AriaString* aria_path_dirname_string(const char* path);
 AriaString* aria_path_basename_string(const char* path);
 AriaString* aria_path_join_string(const char* dir, const char* name);
 
+// ============================================================================
+// UFCS-Compatible File Aliases (for File.open(), stream.read(), etc.)
+// ============================================================================
+
+/**
+ * Static method: File.open(path, mode) -> AriaStream*
+ * Opens a file stream for reading or writing.
+ */
+AriaStream* File_open(const char* path, const char* mode);
+
+/**
+ * Instance method: stream.read_line() -> char*
+ * Reads a line from the stream (caller must free).
+ */
+char* File_read_line(AriaStream* stream);
+
+/**
+ * Instance method: stream.read_bytes(buffer, size) -> int64
+ * Reads bytes from the stream into a buffer.
+ */
+int64_t File_read_bytes(AriaStream* stream, void* buffer, size_t size);
+
+/**
+ * Instance method: stream.write(str) -> int64
+ * Writes a string to the stream.
+ */
+int64_t File_write(AriaStream* stream, const char* str);
+
+/**
+ * Instance method: stream.write_bytes(data, size) -> int64
+ * Writes bytes to the stream.
+ */
+int64_t File_write_bytes(AriaStream* stream, const void* data, size_t size);
+
+/**
+ * Instance method: stream.close() -> void
+ * Closes the file stream.
+ */
+void File_close(AriaStream* stream);
+
+/**
+ * Instance method: stream.eof() -> bool
+ * Returns true if at end of file.
+ */
+bool File_eof(AriaStream* stream);
+
+/**
+ * Instance method: stream.flush() -> int
+ * Flushes the stream buffer.
+ */
+int File_flush(AriaStream* stream);
+
+/**
+ * Instance method: stream.seek(offset, whence) -> int
+ * Seeks to a position in the stream.
+ */
+int File_seek(AriaStream* stream, int64_t offset, int whence);
+
+/**
+ * Instance method: stream.tell() -> int64
+ * Returns the current position in the stream.
+ */
+int64_t File_tell(AriaStream* stream);
+
+/**
+ * Static method: File.read(path) -> AriaString*
+ * Reads entire file contents into a string.
+ */
+AriaString* File_read(const char* path);
+
+/**
+ * Static method: File.write_all(path, content) -> int64
+ * Writes a string to a file (creates/overwrites).
+ */
+int64_t File_write_all(const char* path, const char* content);
+
+/**
+ * Static method: File.delete(path) -> int64
+ * Deletes a file.
+ */
+int64_t File_delete(const char* path);
+
+/**
+ * Static method: File.exists(path) -> bool
+ * Returns true if file exists.
+ */
+bool File_exists(const char* path);
+
+/**
+ * Static method: File.size(path) -> int64
+ * Returns file size in bytes.
+ */
+int64_t File_size(const char* path);
+
 #ifdef __cplusplus
 }
 #endif

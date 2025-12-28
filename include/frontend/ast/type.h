@@ -34,16 +34,23 @@ public:
 
 /**
  * Pointer type annotation
- * Represents: int8@, string@, obj@ (Aria native pointer syntax)
- * Note: extern blocks use C-style * for FFI compatibility
+ * ARIA-015: Pointer Syntax Enforcement
+ *
+ * - isNative=true (@):  Fat pointer (32 bytes) - native Aria code
+ *   Struct: {i8* ptr, i8* base, i64 size, i64 alloc_id}
+ *   Used for: Borrow checking, bounds checking, Appendage Theory
+ *
+ * - isNative=false (*): Thin pointer (8 bytes) - extern blocks only
+ *   Standard C-compatible pointer for FFI
  */
 class PointerType : public TypeNode {
 public:
     ASTNodePtr baseType;  // The type being pointed to
-    
+    bool isNative = true; // true=fat pointer (@), false=thin pointer (*)
+
     PointerType(ASTNodePtr base, int line = 0, int column = 0)
-        : TypeNode(NodeType::POINTER_TYPE, line, column), baseType(base) {}
-    
+        : TypeNode(NodeType::POINTER_TYPE, line, column), baseType(base), isNative(true) {}
+
     std::string toString() const override;
 };
 

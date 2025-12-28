@@ -1,0 +1,463 @@
+/**
+ * Arena Allocator Tests - Phase 4.2 Stage 3
+ * 
+ * Tests for Aria's arena allocator including:
+ * - Creation and destruction
+ * - Pointer bump allocation
+ * - Block chaining
+ * - Reset with retain capacity
+ * - Large allocation optimization
+ * - Error handling
+ */
+
+#include "test_helpers.h"
+#include "runtime/arena.h"
+#include <cstring>
+
+// ============================================================================
+// Arena Creation Tests
+// ============================================================================
+
+TEST_CASE(arena_new_success) {
+    AriaArenaResult result = aria_arena_new(4096);
+    
+    ASSERT_MSG(aria_arena_result_is_ok(result), "Arena creation should succeed");
+    ASSERT_MSG(result.arena != NULL, "Arena pointer should not be NULL");
+    ASSERT_EQ_MSG(result.error_code, ARIA_ARENA_OK, "Error code should be ARIA_ARENA_OK");
+    
+    aria_arena_destroy(result.arena);
+}
+
+TEST_CASE(arena_new_with_block_size) {
+    AriaArenaResult result = aria_arena_new_with_block_size(8192, 8192);
+    
+    ASSERT_MSG(aria_arena_result_is_ok(result), "Arena creation should succeed");
+    ASSERT_MSG(result.arena != NULL, "Arena pointer should not be NULL");
+    
+    aria_arena_destroy(result.arena);
+}
+
+TEST_CASE(arena_new_invalid_block_size) {
+    // Block size too small (< 256)
+    AriaArenaResult result = aria_arena_new_with_block_size(1024, 128);
+    
+    ASSERT_MSG(aria_arena_result_is_err(result), "Should fail with small block size");
+    ASSERT_EQ_MSG(result.error_code, ARIA_ARENA_ERR_INVALID_CAPACITY, "Error should be INVALID_CAPACITY");
+    ASSERT_MSG(result.arena == NULL, "Arena pointer should be NULL on error");
+}
+
+TEST_CASE(arena_destroy_null_safe) {
+    // Should not crash with NULL
+    aria_arena_destroy(NULL);
+}
+
+// ============================================================================
+// Basic Allocation Tests
+// ============================================================================
+
+TEST_CASE(arena_alloc_single) {
+    AriaArenaResult arena_res = aria_arena_new(4096);
+    ASSERT_MSG(aria_arena_result_is_ok(arena_res), "Arena creation should succeed");
+    aria_arena* arena = arena_res.arena;
+    
+    // Allocate 64 bytes
+    AriaAllocResult alloc_res = aria_arena_alloc(arena, 64, 8);
+    
+    ASSERT_MSG(aria_alloc_result_is_ok(alloc_res), "Allocation should succeed");
+    ASSERT_MSG(alloc_res.value != NULL, "Pointer should not be NULL");
+    ASSERT_EQ_MSG(alloc_res.requested_size, 64, "Size should be 64");
+    
+    // Use the memory
+    memset(alloc_res.value, 42, 64);
+    uint8_t* bytes = (uint8_t*)alloc_res.value;
+    ASSERT_EQ_MSG(bytes[0], 42, "Memory should be writable");
+    ASSERT_EQ_MSG(bytes[63], 42, "Memory should be writable");
+    
+    aria_arena_destroy(arena);
+}
+
+TEST_CASE(arena_alloc_multiple) {
+    AriaArenaResult arena_res = aria_arena_new(4096);
+    aria_arena* arena = arena_res.arena;
+    
+    // Allocate multiple objects
+    AriaAllocResult res1 = aria_arena_alloc(arena, 32, 8);
+    AriaAllocResult res2 = aria_arena_alloc(arena, 64, 8);
+    AriaAllocResult res3 = aria_arena_alloc(arena, 128, 8);
+    
+    ASSERT_MSG(aria_alloc_result_is_ok(res1), "First allocation should succeed");
+    ASSERT_MSG(aria_alloc_result_is_ok(res2), "Second allocation should succeed");
+    ASSERT_MSG(aria_alloc_result_is_ok(res3), "Third allocation should succeed");
+    
+    // Pointers should be distinct
+    ASSERT_MSG(res1.value != res2.value, "Pointers should be different");
+    ASSERT_MSG(res2.value != res3.value, "Pointers should be different");
+    
+    aria_arena_destroy(arena);
+}
+
+TEST_CASE(arena_alloc_alignment) {
+    AriaArenaResult arena_res = aria_arena_new(4096);
+    aria_arena* arena = arena_res.arena;
+    
+    // Allocate with 16-byte alignment
+    AriaAllocResult res = aria_arena_alloc(arena, 64, 16);
+    
+    ASSERT_MSG(aria_alloc_result_is_ok(res), "Allocation should succeed");
+    ASSERT_MSG(((uintptr_t)res.value % 16) == 0, "Pointer should be 16-byte aligned");
+    
+    // Allocate with 32-byte alignment
+    AriaAllocResult res2 = aria_arena_alloc(arena, 64, 32);
+    ASSERT_MSG(((uintptr_t)res2.value % 32) == 0, "Pointer should be 32-byte aligned");
+    
+    aria_arena_destroy(arena);
+}
+
+TEST_CASE(arena_alloc_invalid_alignment) {
+    AriaArenaResult arena_res = aria_arena_new(4096);
+    aria_arena* arena = arena_res.arena;
+    
+    // Non-power-of-2 alignment
+    AriaAllocResult res = aria_arena_alloc(arena, 64, 15);
+    
+    ASSERT_MSG(aria_alloc_result_is_err(res), "Should fail with invalid alignment");
+    ASSERT_EQ_MSG(res.error_code, ARIA_ALLOC_ERR_INVALID_ALIGNMENT, "Error should be INVALID_ALIGNMENT");
+    
+    aria_arena_destroy(arena);
+}
+
+TEST_CASE(arena_alloc_invalid_size) {
+    AriaArenaResult arena_res = aria_arena_new(4096);
+    aria_arena* arena = arena_res.arena;
+    
+    // Zero size
+    AriaAllocResult res = aria_arena_alloc(arena, 0, 8);
+    
+    ASSERT_MSG(aria_alloc_result_is_err(res), "Should fail with zero size");
+    ASSERT_EQ_MSG(res.error_code, ARIA_ALLOC_ERR_INVALID_SIZE, "Error should be INVALID_SIZE");
+    
+    aria_arena_destroy(arena);
+}
+
+// ============================================================================
+// Array Allocation Tests
+// ============================================================================
+
+TEST_CASE(arena_alloc_array_success) {
+    AriaArenaResult arena_res = aria_arena_new(8192);
+    aria_arena* arena = arena_res.arena;
+    
+    // Allocate array of 100 int64_t
+    AriaAllocResult res = aria_arena_alloc_array(arena, sizeof(int64_t), 100, 8);
+    
+    ASSERT_MSG(aria_alloc_result_is_ok(res), "Array allocation should succeed");
+    ASSERT_MSG(res.value != NULL, "Pointer should not be NULL");
+    ASSERT_EQ_MSG(res.requested_size, sizeof(int64_t) * 100, "Size should be elem_size * count");
+    
+    // Initialize and verify
+    int64_t* arr = (int64_t*)res.value;
+    for (int i = 0; i < 100; i++) {
+        arr[i] = i * 2;
+    }
+    
+    ASSERT_EQ_MSG(arr[0], 0, "First element");
+    ASSERT_EQ_MSG(arr[50], 100, "Middle element");
+    ASSERT_EQ_MSG(arr[99], 198, "Last element");
+    
+    aria_arena_destroy(arena);
+}
+
+TEST_CASE(arena_alloc_array_overflow) {
+    AriaArenaResult arena_res = aria_arena_new(4096);
+    aria_arena* arena = arena_res.arena;
+    
+    // Try to overflow: SIZE_MAX elements of 2 bytes each
+    AriaAllocResult res = aria_arena_alloc_array(arena, 2, SIZE_MAX, 8);
+    
+    ASSERT_MSG(aria_alloc_result_is_err(res), "Should fail with overflow");
+    ASSERT_EQ_MSG(res.error_code, ARIA_ALLOC_ERR_SIZE_OVERFLOW, "Error should be SIZE_OVERFLOW");
+    
+    aria_arena_destroy(arena);
+}
+
+// ============================================================================
+// Zeroed Allocation Tests
+// ============================================================================
+
+TEST_CASE(arena_alloc_zeroed) {
+    AriaArenaResult arena_res = aria_arena_new(4096);
+    aria_arena* arena = arena_res.arena;
+    
+    // Allocate zeroed memory
+    AriaAllocResult res = aria_arena_alloc_zeroed(arena, 256, 8);
+    
+    ASSERT_MSG(aria_alloc_result_is_ok(res), "Zeroed allocation should succeed");
+    
+    // Verify all bytes are zero
+    uint8_t* bytes = (uint8_t*)res.value;
+    bool all_zero = true;
+    for (size_t i = 0; i < 256; i++) {
+        if (bytes[i] != 0) {
+            all_zero = false;
+            break;
+        }
+    }
+    
+    ASSERT_MSG(all_zero, "Memory should be zero-initialized");
+    
+    aria_arena_destroy(arena);
+}
+
+// ============================================================================
+// Block Chaining Tests
+// ============================================================================
+
+TEST_CASE(arena_block_chaining) {
+    // Create arena with small 512-byte blocks
+    AriaArenaResult arena_res = aria_arena_new_with_block_size(512, 512);
+    aria_arena* arena = arena_res.arena;
+    
+    // Allocate multiple 200-byte chunks (should trigger chaining)
+    AriaAllocResult res1 = aria_arena_alloc(arena, 200, 8);
+    AriaAllocResult res2 = aria_arena_alloc(arena, 200, 8);
+    AriaAllocResult res3 = aria_arena_alloc(arena, 200, 8);  // Should trigger new block
+    
+    ASSERT_MSG(aria_alloc_result_is_ok(res1), "First allocation should succeed");
+    ASSERT_MSG(aria_alloc_result_is_ok(res2), "Second allocation should succeed");
+    ASSERT_MSG(aria_alloc_result_is_ok(res3), "Third allocation should succeed (new block)");
+    
+    // Check statistics
+    size_t user_bytes, sys_bytes, num_blocks;
+    aria_arena_get_stats(arena, &user_bytes, &sys_bytes, &num_blocks);
+    
+    ASSERT_EQ_MSG(user_bytes, 600, "User allocated 600 bytes");
+    ASSERT_MSG(num_blocks >= 2, "Should have at least 2 blocks");
+    
+    aria_arena_destroy(arena);
+}
+
+TEST_CASE(arena_large_allocation_optimization) {
+    // Create arena with 1KB blocks
+    AriaArenaResult arena_res = aria_arena_new_with_block_size(1024, 1024);
+    aria_arena* arena = arena_res.arena;
+    
+    // Allocate large object (> block_size / 2 = 512 bytes)
+    AriaAllocResult res_large = aria_arena_alloc(arena, 800, 8);
+    
+    ASSERT_MSG(aria_alloc_result_is_ok(res_large), "Large allocation should succeed");
+    
+    // Small allocation after large should still use standard block
+    AriaAllocResult res_small = aria_arena_alloc(arena, 64, 8);
+    ASSERT_MSG(aria_alloc_result_is_ok(res_small), "Small allocation should succeed");
+    
+    // Check statistics
+    size_t user_bytes, sys_bytes, num_blocks;
+    aria_arena_get_stats(arena, &user_bytes, &sys_bytes, &num_blocks);
+    
+    ASSERT_MSG(num_blocks >= 2, "Should have multiple blocks (dedicated + standard)");
+    
+    aria_arena_destroy(arena);
+}
+
+// ============================================================================
+// Reset Tests
+// ============================================================================
+
+TEST_CASE(arena_reset_basic) {
+    AriaArenaResult arena_res = aria_arena_new(4096);
+    aria_arena* arena = arena_res.arena;
+    
+    // Allocate some memory
+    AriaAllocResult res1 = aria_arena_alloc(arena, 256, 8);
+    ASSERT_MSG(aria_alloc_result_is_ok(res1), "First allocation should succeed");
+    
+    // Write to it
+    memset(res1.value, 42, 256);
+    
+    // Reset arena
+    aria_arena_reset(arena);
+    
+    // Allocate again - should reuse block
+    AriaAllocResult res2 = aria_arena_alloc(arena, 128, 8);
+    ASSERT_MSG(aria_alloc_result_is_ok(res2), "Second allocation should succeed");
+    
+    // Check statistics (user bytes should be reset)
+    size_t user_bytes, sys_bytes, num_blocks;
+    aria_arena_get_stats(arena, &user_bytes, &sys_bytes, &num_blocks);
+    
+    ASSERT_EQ_MSG(user_bytes, 128, "User bytes should only count second allocation");
+    ASSERT_EQ_MSG(num_blocks, 1, "Should still have 1 block (retained)");
+    
+    aria_arena_destroy(arena);
+}
+
+TEST_CASE(arena_reset_retain_capacity) {
+    // Create arena with small blocks to force chaining
+    AriaArenaResult arena_res = aria_arena_new_with_block_size(512, 512);
+    aria_arena* arena = arena_res.arena;
+    
+    // Allocate enough to trigger multiple blocks
+    for (int i = 0; i < 5; i++) {
+        AriaAllocResult res = aria_arena_alloc(arena, 256, 8);
+        ASSERT_MSG(aria_alloc_result_is_ok(res), "Allocation should succeed");
+    }
+    
+    // Check we have multiple blocks
+    size_t user_bytes_before, sys_bytes_before, num_blocks_before;
+    aria_arena_get_stats(arena, &user_bytes_before, &sys_bytes_before, &num_blocks_before);
+    ASSERT_MSG(num_blocks_before >= 3, "Should have multiple blocks");
+    
+    // Reset (retain capacity)
+    aria_arena_reset(arena);
+    
+    // Check blocks are retained
+    size_t user_bytes_after, sys_bytes_after, num_blocks_after;
+    aria_arena_get_stats(arena, &user_bytes_after, &sys_bytes_after, &num_blocks_after);
+    
+    ASSERT_EQ_MSG(user_bytes_after, 0, "User bytes should be reset");
+    ASSERT_EQ_MSG(sys_bytes_after, sys_bytes_before, "System bytes should be retained");
+    ASSERT_EQ_MSG(num_blocks_after, num_blocks_before, "Blocks should be retained");
+    
+    // Allocate again - should reuse existing blocks (zero malloc)
+    for (int i = 0; i < 3; i++) {
+        AriaAllocResult res = aria_arena_alloc(arena, 256, 8);
+        ASSERT_MSG(aria_alloc_result_is_ok(res), "Reallocation should succeed");
+    }
+    
+    // Block count should not increase
+    size_t num_blocks_reuse;
+    aria_arena_get_stats(arena, NULL, NULL, &num_blocks_reuse);
+    ASSERT_EQ_MSG(num_blocks_reuse, num_blocks_before, "Should reuse existing blocks");
+    
+    aria_arena_destroy(arena);
+}
+
+TEST_CASE(arena_reset_limit) {
+    // Create arena and allocate multiple blocks
+    AriaArenaResult arena_res = aria_arena_new_with_block_size(1024, 1024);
+    aria_arena* arena = arena_res.arena;
+    
+    // Allocate to create 4 blocks (4KB total)
+    for (int i = 0; i < 4; i++) {
+        AriaAllocResult res = aria_arena_alloc(arena, 800, 8);
+        ASSERT_MSG(aria_alloc_result_is_ok(res), "Allocation should succeed");
+    }
+    
+    size_t num_blocks_before;
+    aria_arena_get_stats(arena, NULL, NULL, &num_blocks_before);
+    ASSERT_MSG(num_blocks_before >= 4, "Should have 4+ blocks");
+    
+    // Reset with 2KB limit (keep first 2 blocks)
+    aria_arena_reset_limit(arena, 2048);
+    
+    size_t sys_bytes_after, num_blocks_after;
+    aria_arena_get_stats(arena, NULL, &sys_bytes_after, &num_blocks_after);
+    
+    ASSERT_MSG(num_blocks_after < num_blocks_before, "Should have freed some blocks");
+    ASSERT_MSG(sys_bytes_after <= 2048 + 1024, "Should have freed excess (within 1 block tolerance)");
+    
+    aria_arena_destroy(arena);
+}
+
+// ============================================================================
+// Statistics Tests
+// ============================================================================
+
+TEST_CASE(arena_get_stats) {
+    AriaArenaResult arena_res = aria_arena_new(4096);
+    aria_arena* arena = arena_res.arena;
+    
+    // Initial stats
+    size_t user_bytes, sys_bytes, num_blocks;
+    aria_arena_get_stats(arena, &user_bytes, &sys_bytes, &num_blocks);
+    
+    ASSERT_EQ_MSG(user_bytes, 0, "Initially no user bytes");
+    ASSERT_MSG(sys_bytes >= 4096, "System should have reserved >= 4KB");
+    ASSERT_EQ_MSG(num_blocks, 1, "Initially 1 block");
+    
+    // Allocate
+    aria_arena_alloc(arena, 256, 8);
+    aria_arena_get_stats(arena, &user_bytes, NULL, NULL);
+    ASSERT_EQ_MSG(user_bytes, 256, "User bytes should update");
+    
+    aria_arena_destroy(arena);
+}
+
+TEST_CASE(arena_remaining_capacity) {
+    AriaArenaResult arena_res = aria_arena_new(1024);
+    aria_arena* arena = arena_res.arena;
+    
+    size_t remaining_before = aria_arena_remaining_capacity(arena);
+    ASSERT_MSG(remaining_before >= 1024, "Should have >= 1KB remaining");
+    
+    // Allocate 512 bytes
+    aria_arena_alloc(arena, 512, 8);
+    
+    size_t remaining_after = aria_arena_remaining_capacity(arena);
+    ASSERT_MSG(remaining_after < remaining_before, "Remaining should decrease");
+    ASSERT_MSG(remaining_after >= 512 - 8, "Should have ~512 bytes remaining (minus alignment)");
+    
+    aria_arena_destroy(arena);
+}
+
+// ============================================================================
+// Error Message Tests
+// ============================================================================
+
+TEST_CASE(arena_error_messages) {
+    const char* msg;
+    
+    msg = aria_arena_error_message(ARIA_ARENA_OK);
+    ASSERT_MSG(strcmp(msg, "Success") == 0, "ARIA_ARENA_OK message");
+    
+    msg = aria_arena_error_message(ARIA_ARENA_ERR_INVALID_CAPACITY);
+    ASSERT_MSG(strcmp(msg, "Invalid capacity (must be >= 256 bytes)") == 0, "INVALID_CAPACITY message");
+    
+    msg = aria_arena_error_message(ARIA_ARENA_ERR_OUT_OF_MEMORY);
+    ASSERT_MSG(strcmp(msg, "Out of memory") == 0, "OUT_OF_MEMORY message");
+}
+
+// ============================================================================
+// Stress Tests
+// ============================================================================
+
+TEST_CASE(arena_stress_many_allocations) {
+    AriaArenaResult arena_res = aria_arena_new(65536);
+    aria_arena* arena = arena_res.arena;
+    
+    // Allocate 1000 small objects
+    for (int i = 0; i < 1000; i++) {
+        AriaAllocResult res = aria_arena_alloc(arena, 32, 8);
+        ASSERT_MSG(aria_alloc_result_is_ok(res), "All allocations should succeed");
+        
+        // Write pattern to verify no corruption
+        uint32_t* ptr = (uint32_t*)res.value;
+        for (int j = 0; j < 8; j++) {
+            ptr[j] = i + j;
+        }
+    }
+    
+    aria_arena_destroy(arena);
+}
+
+TEST_CASE(arena_stress_reset_loop) {
+    AriaArenaResult arena_res = aria_arena_new(4096);
+    aria_arena* arena = arena_res.arena;
+    
+    // Simulate server loop with 100 iterations
+    for (int iter = 0; iter < 100; iter++) {
+        aria_arena_reset(arena);
+        
+        // Allocate various sizes
+        aria_arena_alloc(arena, 64, 8);
+        aria_arena_alloc(arena, 128, 8);
+        aria_arena_alloc(arena, 256, 8);
+    }
+    
+    // Check blocks are retained (no growth after stabilization)
+    size_t num_blocks;
+    aria_arena_get_stats(arena, NULL, NULL, &num_blocks);
+    ASSERT_MSG(num_blocks <= 3, "Blocks should stabilize (retain capacity working)");
+    
+    aria_arena_destroy(arena);
+}
