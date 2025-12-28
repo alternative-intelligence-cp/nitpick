@@ -1,0 +1,769 @@
+/// Asynchronous Runtime Module
+//!
+//! This module provides Aria's async/await system including:
+//! - Future<T> trait for asynchronous computation
+//! - Task/Coroutine frame management
+//! - Work-stealing scheduler with M:N threading
+//! - RAMP optimization (sync fast-path, async slow-path)
+//! - Wild Affinity for safe unmanaged memory handling
+//! - TBB sticky error propagation across await points
+//!
+//! Reference: research_029_async_await_system.txt
+
+use std.sys;
+use std.math;
+
+// =============================================================================
+// Poll Result (research_029 Section 4.1)
+// =============================================================================
+// Futures return Poll<T> from their poll() method
+
+/// Poll state - result of polling a Future
+pub enum PollState {
+    READY = 0,      // Computation complete, value available
+    PENDING = 1,    // Computation not ready, will be woken
+    ERROR = 2       // Fatal error occurred (e.g., TBB sentinel)
+}
+
+/// Poll result with optional value
+pub struct Poll<T> {
+    PollState:state;
+    T:value;           // Valid if state == READY
+    int32:error_code;  // Valid if state == ERROR
+}
+
+/// Create a Ready poll result
+pub func:poll_ready<T> = Poll<T>(T:value) {
+    Poll<T>:p = {
+        state: PollState.READY,
+        value: value,
+        error_code: 0
+    };
+    pass(p);
+};
+
+/// Create a Pending poll result
+pub func:poll_pending<T> = Poll<T>() {
+    Poll<T>:p = {
+        state: PollState.PENDING,
+        value: @default<T>(),
+        error_code: 0
+    };
+    pass(p);
+};
+
+/// Create an Error poll result
+pub func:poll_error<T> = Poll<T>(int32:code) {
+    Poll<T>:p = {
+        state: PollState.ERROR,
+        value: @default<T>(),
+        error_code: code
+    };
+    pass(p);
+};
+
+// =============================================================================
+// Waker and Context (research_029 Section 4.1)
+// =============================================================================
+// Wakers notify the executor when a Future is ready to be polled again
+
+/// Waker - handle to notify executor that task is ready
+pub struct Waker {
+    wild void@:data;           // Opaque pointer to executor data
+    wild void@:wake_fn;        // Function pointer: wake(data)
+    wild void@:wake_by_ref_fn; // Function pointer: wake_by_ref(data)
+    wild void@:clone_fn;       // Function pointer: clone(data)
+    wild void@:drop_fn;        // Function pointer: drop(data)
+}
+
+/// Wake the task (consumes the waker)
+pub func:wake = void(Waker:w) {
+    // Call the wake function pointer
+    // This notifies the scheduler to re-poll the associated task
+    wild void@:fn = w.wake_fn;
+    if (fn != NULL) {
+        @call_ptr(fn, w.data);
+    }
+};
+
+/// Wake the task by reference (does not consume)
+pub func:wake_by_ref = void(Waker@:w) {
+    wild void@:fn = w->wake_by_ref_fn;
+    if (fn != NULL) {
+        @call_ptr(fn, w->data);
+    }
+};
+
+/// Clone a waker
+pub func:clone_waker = Waker(Waker@:w) {
+    wild void@:fn = w->clone_fn;
+    if (fn != NULL) {
+        pass(@call_ptr_ret<Waker>(fn, w->data));
+    }
+    // Fallback: copy struct
+    Waker:copy = *w;
+    pass(copy);
+};
+
+/// Context passed to Future::poll
+/// Contains the Waker and allocator context
+pub struct Context {
+    Waker:waker;
+    wild void@:allocator;  // Optional custom allocator
+}
+
+// =============================================================================
+// Future Trait (research_029 Section 4.1)
+// =============================================================================
+// The core abstraction for asynchronous computation
+
+/// Future trait - represents an asynchronous computation
+/// Implementations provide poll() which drives the state machine
+trait Future<Output> {
+    /// Poll the future for completion
+    /// @param ctx Context containing Waker for notification
+    /// @return Poll result (Ready, Pending, or Error)
+    func:poll = Poll<Output>(Context@:ctx);
+}
+
+// =============================================================================
+// Coroutine Frame (research_029 Section 5.1)
+// =============================================================================
+// The stack frame for suspended async functions
+
+/// Coroutine state
+pub enum CoroState {
+    SUSPENDED = 0,   // Waiting to be resumed
+    RUNNING = 1,     // Currently executing
+    COMPLETE = 2,    // Finished execution
+    CANCELLED = 3    // Dropped before completion
+}
+
+/// Coroutine frame - the "stack" for async functions
+/// This struct is heap-allocated when a coroutine suspends
+pub struct CoroutineFrame {
+    wild void@:coro_handle;       // LLVM coroutine handle (resume IP)
+    CoroState:state;              // Current state
+    wild CoroutineFrame@:waiting_on;  // Dependency (who is waiting for me?)
+    int32:affinity_thread_id;     // Wild Affinity: pinned thread ID
+    bool:has_wild_affinity;       // Does this capture wild pointers?
+    int64:data_size;              // Size of spilled data
+    // Data follows inline (alignas(64) for AVX-512 support)
+}
+
+/// Resume a suspended coroutine
+pub func:coro_resume = void(wild CoroutineFrame@:frame) {
+    if (frame->state != CoroState.SUSPENDED) {
+        pass(NIL);  // Cannot resume non-suspended coroutine
+    }
+
+    frame->state = CoroState.RUNNING;
+
+    // Call LLVM coroutine resume intrinsic
+    @llvm_coro_resume(frame->coro_handle);
+};
+
+/// Destroy a coroutine frame (runs destructors)
+pub func:coro_destroy = void(wild CoroutineFrame@:frame) {
+    if (frame->state == CoroState.RUNNING) {
+        // Cannot destroy while running
+        pass(NIL);
+    }
+
+    frame->state = CoroState.CANCELLED;
+
+    // Call LLVM coroutine destroy intrinsic
+    @llvm_coro_destroy(frame->coro_handle);
+
+    // Free the frame memory
+    free<CoroutineFrame>(frame);
+};
+
+// =============================================================================
+// RAMP Optimization (research_029 Section 5.3)
+// =============================================================================
+// Resource Allocation for Minimal Pause - sync fast path
+
+/// RAMP result state
+pub enum RampState {
+    RAMP_COMPLETE = 0,  // Completed synchronously (no heap allocation)
+    RAMP_PENDING = 1    // Suspended, coroutine frame allocated
+}
+
+/// RAMP result - union of immediate value or coroutine pointer
+pub struct RampResult<T> {
+    RampState:state;
+    union Payload {
+        T:value;                      // Direct result (fast path)
+        wild CoroutineFrame@:coro;    // Heap pointer (slow path)
+    }:payload;
+}
+
+/// Create a complete RAMP result (synchronous completion)
+pub func:ramp_complete<T> = RampResult<T>(T:value) {
+    RampResult<T>:r = {
+        state: RampState.RAMP_COMPLETE,
+        payload: { value: value }
+    };
+    pass(r);
+};
+
+/// Create a pending RAMP result (async suspension)
+pub func:ramp_pending<T> = RampResult<T>(wild CoroutineFrame@:coro) {
+    RampResult<T>:r = {
+        state: RampState.RAMP_PENDING,
+        payload: { coro: coro }
+    };
+    pass(r);
+};
+
+// =============================================================================
+// Task (research_029 Section 6.3)
+// =============================================================================
+// A Task wraps a Future for execution by the scheduler
+
+/// Task - schedulable unit of work
+pub struct Task {
+    wild CoroutineFrame@:frame;   // The coroutine frame
+    int32:task_id;                // Unique task ID
+    int32:priority;               // Scheduling priority
+    bool:has_wild_affinity;       // Inherits from frame
+    int32:affinity_thread_id;     // Pinned thread (if wild)
+}
+
+/// Task priority levels
+pub const PRIORITY_HIGH: int32 = 0;
+pub const PRIORITY_NORMAL: int32 = 1;
+pub const PRIORITY_LOW: int32 = 2;
+pub const PRIORITY_IDLE: int32 = 3;
+
+// =============================================================================
+// Chase-Lev Work-Stealing Deque (research_029 Section 6.1)
+// =============================================================================
+// Lock-free deque for task scheduling
+
+/// Work-stealing deque for per-worker task queue
+pub struct WorkDeque {
+    wild Task@@:buffer;      // Circular buffer of task pointers
+    int64:capacity;          // Buffer capacity (power of 2)
+    atomic<int64>:top;       // Top index (thieves steal from here)
+    atomic<int64>:bottom;    // Bottom index (owner pushes/pops here)
+}
+
+/// Create a new work-stealing deque
+pub func:deque_new = WorkDeque(int64:initial_capacity) {
+    // Capacity must be power of 2
+    int64:cap = 64;  // Minimum capacity
+    while (cap < initial_capacity) {
+        cap = cap * 2;
+    }
+
+    WorkDeque:d = {
+        buffer: alloc<Task@>(cap),
+        capacity: cap,
+        top: 0,
+        bottom: 0
+    };
+    pass(d);
+};
+
+/// Push a task to the bottom (owner only)
+pub func:deque_push = void(WorkDeque@:d, Task@:task) {
+    int64:b = atomic_load(@d->bottom);
+    int64:t = atomic_load(@d->top);
+
+    // Check if full (need to grow)
+    if (b - t >= d->capacity) {
+        // Double the capacity
+        int64:new_cap = d->capacity * 2;
+        wild Task@@:new_buf = alloc<Task@>(new_cap);
+
+        // Copy existing tasks
+        int64:i = t;
+        while (i < b) {
+            new_buf[i & (new_cap - 1)] = d->buffer[i & (d->capacity - 1)];
+            i = i + 1;
+        }
+
+        free<Task@>(d->buffer);
+        d->buffer = new_buf;
+        d->capacity = new_cap;
+    }
+
+    // Store task at bottom
+    d->buffer[b & (d->capacity - 1)] = task;
+
+    // Memory fence + increment bottom
+    atomic_store(@d->bottom, b + 1);
+};
+
+/// Pop a task from the bottom (owner only, LIFO)
+pub func:deque_pop = result<Task@>(WorkDeque@:d) {
+    int64:b = atomic_load(@d->bottom) - 1;
+    atomic_store(@d->bottom, b);
+
+    // Memory fence
+    @memory_fence();
+
+    int64:t = atomic_load(@d->top);
+
+    if (t <= b) {
+        // Non-empty
+        Task@:task = d->buffer[b & (d->capacity - 1)];
+
+        if (t == b) {
+            // Last element - race with thieves
+            if (!atomic_cas(@d->top, t, t + 1)) {
+                // Lost the race
+                atomic_store(@d->bottom, b + 1);
+                fail(ERR);
+            }
+            atomic_store(@d->bottom, b + 1);
+        }
+
+        pass(task);
+    } else {
+        // Empty
+        atomic_store(@d->bottom, b + 1);
+        fail(ERR);
+    }
+};
+
+/// Steal a task from the top (thieves, FIFO)
+pub func:deque_steal = result<Task@>(WorkDeque@:d) {
+    int64:t = atomic_load(@d->top);
+
+    // Memory fence
+    @memory_fence();
+
+    int64:b = atomic_load(@d->bottom);
+
+    if (t < b) {
+        // Non-empty
+        Task@:task = d->buffer[t & (d->capacity - 1)];
+
+        // Try to claim the task
+        if (!atomic_cas(@d->top, t, t + 1)) {
+            // Lost the race
+            fail(ERR);
+        }
+
+        pass(task);
+    } else {
+        // Empty
+        fail(ERR);
+    }
+};
+
+// =============================================================================
+// Scheduler (research_029 Section 6)
+// =============================================================================
+// M:N work-stealing scheduler
+
+/// Worker thread state
+pub struct Worker {
+    int32:id;                    // Worker thread ID
+    WorkDeque:local_queue;       // Local task deque
+    wild void@:thread_handle;    // OS thread handle
+    bool:running;                // Is the worker running?
+    int64:tick_count;            // Ticks for global queue check
+}
+
+/// Global scheduler state
+pub struct Scheduler {
+    wild Worker@:workers;        // Array of workers
+    int32:num_workers;           // Number of worker threads
+    WorkDeque:global_queue;      // Global queue for external spawns
+    atomic<bool>:shutdown;       // Shutdown flag
+    atomic<int32>:next_task_id;  // Task ID generator
+}
+
+/// Global scheduler instance (singleton)
+wild Scheduler@:SCHEDULER = NULL;
+
+/// Initialize the global scheduler
+/// @param num_threads Number of worker threads (0 = auto-detect)
+pub func:scheduler_init = result<void>(int32:num_threads) {
+    if (SCHEDULER != NULL) {
+        fail(ERR);  // Already initialized
+    }
+
+    int32:n = num_threads;
+    if (n <= 0) {
+        n = sys.getCPUCount();
+        // Leave 2 cores for OS and other apps
+        if (n > 4) {
+            n = n - 2;
+        }
+    }
+
+    // Allocate scheduler
+    SCHEDULER = alloc<Scheduler>(1);
+
+    SCHEDULER->num_workers = n;
+    SCHEDULER->workers = alloc<Worker>(n);
+    SCHEDULER->global_queue = deque_new(1024);
+    atomic_store(@SCHEDULER->shutdown, false);
+    atomic_store(@SCHEDULER->next_task_id, 1);
+
+    // Initialize workers
+    int32:i = 0;
+    while (i < n) {
+        SCHEDULER->workers[i].id = i;
+        SCHEDULER->workers[i].local_queue = deque_new(256);
+        SCHEDULER->workers[i].running = false;
+        SCHEDULER->workers[i].tick_count = 0;
+        i = i + 1;
+    }
+
+    // Start worker threads
+    i = 0;
+    while (i < n) {
+        SCHEDULER->workers[i].running = true;
+        SCHEDULER->workers[i].thread_handle = @spawn_thread(worker_loop, @SCHEDULER->workers[i]);
+        i = i + 1;
+    }
+
+    pass(NIL);
+};
+
+/// Shutdown the scheduler
+pub func:scheduler_shutdown = void() {
+    if (SCHEDULER == NULL) {
+        pass(NIL);
+    }
+
+    // Signal shutdown
+    atomic_store(@SCHEDULER->shutdown, true);
+
+    // Wait for all workers to finish
+    int32:i = 0;
+    while (i < SCHEDULER->num_workers) {
+        @join_thread(SCHEDULER->workers[i].thread_handle);
+        i = i + 1;
+    }
+
+    // Free resources
+    free<Worker>(SCHEDULER->workers);
+    free<Task@>(SCHEDULER->global_queue.buffer);
+    free<Scheduler>(SCHEDULER);
+    SCHEDULER = NULL;
+};
+
+/// Worker thread main loop
+func:worker_loop = void(Worker@:worker) {
+    while (!atomic_load(@SCHEDULER->shutdown)) {
+        // Try local queue first (LIFO - cache locality)
+        result<Task@>:task = deque_pop(@worker->local_queue);
+
+        if (task.is_err()) {
+            // Local queue empty - check global queue every 61 ticks
+            worker->tick_count = worker->tick_count + 1;
+            if (worker->tick_count >= 61) {
+                worker->tick_count = 0;
+                task = deque_steal(@SCHEDULER->global_queue);
+            }
+        }
+
+        if (task.is_err()) {
+            // Try stealing from a random victim
+            int32:victim = @random_int() % SCHEDULER->num_workers;
+            if (victim != worker->id) {
+                task = deque_steal(@SCHEDULER->workers[victim].local_queue);
+
+                // Wild Affinity check: skip tasks pinned to other threads
+                if (task.is_ok()) {
+                    Task@:t = task.unwrap();
+                    if (t->has_wild_affinity && t->affinity_thread_id != worker->id) {
+                        // Put it back - this task is pinned elsewhere
+                        deque_push(@SCHEDULER->workers[victim].local_queue, t);
+                        task = fail(ERR);
+                    }
+                }
+            }
+        }
+
+        if (task.is_ok()) {
+            // Execute the task
+            Task@:t = task.unwrap();
+            coro_resume(t->frame);
+
+            // Check if task completed
+            if (t->frame->state == CoroState.COMPLETE) {
+                // Cleanup
+                coro_destroy(t->frame);
+                free<Task>(t);
+            } else if (t->frame->state == CoroState.SUSPENDED) {
+                // Re-schedule (will be woken by Waker)
+                // Task stays out of queue until wake() is called
+            }
+        } else {
+            // No work available - yield CPU
+            @thread_yield();
+        }
+    }
+
+    worker->running = false;
+};
+
+// =============================================================================
+// Spawn Functions (research_029 Section 6.3)
+// =============================================================================
+
+/// Spawn an async task
+/// @param future The future to execute
+/// @return Handle to the spawned task
+pub func:spawn<T> = TaskHandle<T>(Future<T>:future) {
+    if (SCHEDULER == NULL) {
+        // Auto-initialize scheduler
+        scheduler_init(0);
+    }
+
+    // Allocate coroutine frame
+    wild CoroutineFrame@:frame = alloc<CoroutineFrame>(1);
+    frame->state = CoroState.SUSPENDED;
+    frame->waiting_on = NULL;
+    frame->has_wild_affinity = false;
+    frame->affinity_thread_id = -1;
+
+    // Create task
+    Task@:task = alloc<Task>(1);
+    task->frame = frame;
+    task->task_id = atomic_fetch_add(@SCHEDULER->next_task_id, 1);
+    task->priority = PRIORITY_NORMAL;
+    task->has_wild_affinity = false;
+    task->affinity_thread_id = -1;
+
+    // Push to global queue
+    deque_push(@SCHEDULER->global_queue, task);
+
+    // Return handle for await
+    TaskHandle<T>:handle = {
+        task_id: task->task_id,
+        task: task
+    };
+    pass(handle);
+};
+
+/// Spawn a blocking task on a dedicated thread pool
+/// Use this for CPU-bound work or legacy synchronous code
+pub func:spawn_blocking<T> = TaskHandle<T>(func:action = T()) {
+    // spawn_blocking uses a separate thread pool that doesn't block
+    // the async executor
+
+    // For now, just execute synchronously (placeholder)
+    // Full implementation would use a dedicated blocking thread pool
+    T:result = action();
+
+    TaskHandle<T>:handle = {
+        task_id: -1,
+        task: NULL,
+        result: result,
+        completed: true
+    };
+    pass(handle);
+};
+
+/// Spawn a task with Wild Affinity (captures wild pointers)
+/// This task will be pinned to the current worker thread
+pub func:spawn_local<T> = TaskHandle<T>(Future<T>:future) {
+    TaskHandle<T>:handle = spawn(future);
+
+    // Mark as wild affinity
+    if (handle.task != NULL) {
+        handle.task->has_wild_affinity = true;
+        // Will be set when first polled on a worker
+    }
+
+    pass(handle);
+};
+
+// =============================================================================
+// Task Handle (for await)
+// =============================================================================
+
+/// Handle to a spawned task
+pub struct TaskHandle<T> {
+    int32:task_id;
+    wild Task@:task;
+    T:result;
+    bool:completed;
+}
+
+/// Await a task handle (get the result when ready)
+pub func:await_task<T> = T(TaskHandle<T>:handle) {
+    if (handle.completed) {
+        pass(handle.result);
+    }
+
+    // Poll until complete
+    // This is called from within an async context
+    while (handle.task != NULL && handle.task->frame->state != CoroState.COMPLETE) {
+        @yield_current();  // Suspend current coroutine
+    }
+
+    pass(handle.result);
+};
+
+// =============================================================================
+// Combinators (research_029 Section 4.3)
+// =============================================================================
+
+/// Join two futures - wait for both to complete
+pub func:join<A, B> = result<(A, B)>(Future<A>:f1, Future<B>:f2) {
+    // Poll both futures until both are ready
+    bool:f1_done = false;
+    bool:f2_done = false;
+    A:result1;
+    B:result2;
+
+    while (!f1_done || !f2_done) {
+        if (!f1_done) {
+            Context:ctx1 = @current_context();
+            Poll<A>:p1 = f1.poll(@ctx1);
+            if (p1.state == PollState.READY) {
+                f1_done = true;
+                result1 = p1.value;
+            } else if (p1.state == PollState.ERROR) {
+                fail(ERR);
+            }
+        }
+
+        if (!f2_done) {
+            Context:ctx2 = @current_context();
+            Poll<B>:p2 = f2.poll(@ctx2);
+            if (p2.state == PollState.READY) {
+                f2_done = true;
+                result2 = p2.value;
+            } else if (p2.state == PollState.ERROR) {
+                fail(ERR);
+            }
+        }
+
+        if (!f1_done || !f2_done) {
+            @yield_current();
+        }
+    }
+
+    (A, B):tuple = (result1, result2);
+    pass(tuple);
+};
+
+/// Select - race two futures, return the first to complete
+/// The losing future is cancelled (dropped)
+pub func:select<T> = result<T>(Future<T>:f1, Future<T>:f2) {
+    while (true) {
+        Context:ctx1 = @current_context();
+        Poll<T>:p1 = f1.poll(@ctx1);
+        if (p1.state == PollState.READY) {
+            // f1 won - cancel f2 by dropping
+            @drop(f2);
+            pass(p1.value);
+        } else if (p1.state == PollState.ERROR) {
+            @drop(f2);
+            fail(ERR);
+        }
+
+        Context:ctx2 = @current_context();
+        Poll<T>:p2 = f2.poll(@ctx2);
+        if (p2.state == PollState.READY) {
+            // f2 won - cancel f1 by dropping
+            @drop(f1);
+            pass(p2.value);
+        } else if (p2.state == PollState.ERROR) {
+            @drop(f1);
+            fail(ERR);
+        }
+
+        // Both pending - yield
+        @yield_current();
+    }
+};
+
+// =============================================================================
+// Timer Future (research_029 Section 10.3)
+// =============================================================================
+
+/// Timer future - completes after specified milliseconds
+pub struct Timer {
+    int64:deadline_ms;   // Absolute deadline (monotonic time)
+    bool:expired;
+}
+
+/// Create a timer that fires after the specified duration
+pub func:timeout = Timer(int64:duration_ms) {
+    int64:now = @monotonic_time_ms();
+    Timer:t = {
+        deadline_ms: now + duration_ms,
+        expired: false
+    };
+    pass(t);
+};
+
+/// Create a timer that fires at a specific instant
+pub func:deadline = Timer(int64:deadline_ms) {
+    Timer:t = {
+        deadline_ms: deadline_ms,
+        expired: false
+    };
+    pass(t);
+};
+
+/// Timer implements Future<void>
+impl Future<void> for Timer {
+    func:poll = Poll<void>(Context@:ctx) {
+        int64:now = @monotonic_time_ms();
+        if (now >= self.deadline_ms) {
+            self.expired = true;
+            pass(poll_ready<void>(NIL));
+        }
+
+        // Register waker with timer wheel (reactor)
+        // For now, just return pending
+        pass(poll_pending<void>());
+    };
+}
+
+// =============================================================================
+// Sleep Function
+// =============================================================================
+
+/// Sleep for the specified number of milliseconds
+/// Must be called from async context
+pub async func:sleep = void(int64:duration_ms) {
+    Timer:t = timeout(duration_ms);
+    await t;
+};
+
+// =============================================================================
+// TBB Error Propagation (research_029 Section 4.2, 9.3)
+// =============================================================================
+// TBB sticky errors propagate across await points without exceptions
+
+/// Check if a TBB result is an error and convert to Poll error
+pub func:check_tbb<T> = Poll<T>(tbb64:value, T:result) {
+    if (value == math.TBB64_ERR) {
+        pass(poll_error<T>(-128));  // TBB error code
+    }
+    pass(poll_ready<T>(result));
+};
+
+/// TBB-aware future that propagates sticky errors
+pub struct TbbFuture<T> {
+    Future<tbb64>:inner;
+}
+
+impl Future<tbb64> for TbbFuture<tbb64> {
+    func:poll = Poll<tbb64>(Context@:ctx) {
+        Poll<tbb64>:p = self.inner.poll(ctx);
+
+        if (p.state == PollState.READY) {
+            // Check for TBB error sentinel
+            if (p.value == math.TBB64_ERR) {
+                pass(poll_error<tbb64>(-128));
+            }
+        }
+
+        pass(p);
+    };
+}

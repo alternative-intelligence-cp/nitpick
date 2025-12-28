@@ -354,6 +354,47 @@ llvm::Value* TBBCodegen::generateDiv(llvm::Value* lhs, llvm::Value* rhs, Type* t
     return phi;
 }
 
+llvm::Value* TBBCodegen::generateMod(llvm::Value* lhs, llvm::Value* rhs, Type* type) {
+    llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+
+    llvm::BasicBlock* checkLhsErrBB = llvm::BasicBlock::Create(context, "check_lhs_err", currentFunc);
+    llvm::BasicBlock* checkRhsErrBB = llvm::BasicBlock::Create(context, "check_rhs_err", currentFunc);
+    llvm::BasicBlock* checkModZeroBB = llvm::BasicBlock::Create(context, "check_mod_zero", currentFunc);
+    llvm::BasicBlock* doModBB = llvm::BasicBlock::Create(context, "do_mod", currentFunc);
+    llvm::BasicBlock* returnErrBB = llvm::BasicBlock::Create(context, "return_err", currentFunc);
+    llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "merge", currentFunc);
+
+    builder.CreateBr(checkLhsErrBB);
+
+    builder.SetInsertPoint(checkLhsErrBB);
+    llvm::Value* lhsIsErr = isErr(lhs, type);
+    builder.CreateCondBr(lhsIsErr, returnErrBB, checkRhsErrBB);
+
+    builder.SetInsertPoint(checkRhsErrBB);
+    llvm::Value* rhsIsErr = isErr(rhs, type);
+    builder.CreateCondBr(rhsIsErr, returnErrBB, checkModZeroBB);
+
+    builder.SetInsertPoint(checkModZeroBB);
+    llvm::Value* zero = llvm::ConstantInt::get(getTBBLLVMType(type), 0, true);
+    llvm::Value* isZero = builder.CreateICmpEQ(rhs, zero, "is_zero");
+    builder.CreateCondBr(isZero, returnErrBB, doModBB);
+
+    builder.SetInsertPoint(doModBB);
+    llvm::Value* result = builder.CreateSRem(lhs, rhs, "mod_result");
+    builder.CreateBr(mergeBB);
+
+    builder.SetInsertPoint(returnErrBB);
+    llvm::Value* errSentinel = getErrSentinel(type);
+    builder.CreateBr(mergeBB);
+
+    builder.SetInsertPoint(mergeBB);
+    llvm::PHINode* phi = builder.CreatePHI(getTBBLLVMType(type), 2, "mod_phi");
+    phi->addIncoming(result, doModBB);
+    phi->addIncoming(errSentinel, returnErrBB);
+
+    return phi;
+}
+
 llvm::Value* TBBCodegen::generateNeg(llvm::Value* operand, Type* type) {
     llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
 

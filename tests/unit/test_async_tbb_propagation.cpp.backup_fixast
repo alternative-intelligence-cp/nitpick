@@ -1,0 +1,248 @@
+// Test file for TBB error propagation through async/await
+// TBB (Twisted Balanced Binary) types use min value as ERR sentinel
+// ERR should propagate through Future<tbb*> and await chains
+#include "../test_helpers.h"
+#include "frontend/sema/type.h"
+
+using namespace aria::sema;
+
+TEST_CASE(future_tbb8_type) {
+    TypeSystem typeSystem;
+    
+    Type* tbb8Type = typeSystem.getPrimitiveType("tbb8");
+    FutureType* futureTbb8 = typeSystem.getFutureType(tbb8Type);
+    
+    ASSERT(futureTbb8 != nullptr, "Future<tbb8> should be created");
+    ASSERT(futureTbb8->getKind() == TypeKind::FUTURE, "Should be Future type");
+    ASSERT(futureTbb8->getOutputType() == tbb8Type, "Output type should be tbb8");
+    ASSERT(futureTbb8->toString() == "future<tbb8>", "Should be future<tbb8>");
+}
+
+TEST_CASE(future_tbb16_type) {
+    TypeSystem typeSystem;
+    
+    Type* tbb16Type = typeSystem.getPrimitiveType("tbb16");
+    FutureType* futureTbb16 = typeSystem.getFutureType(tbb16Type);
+    
+    ASSERT(futureTbb16->getOutputType() == tbb16Type, "Output type should be tbb16");
+    ASSERT(futureTbb16->toString() == "future<tbb16>", "Should be future<tbb16>");
+}
+
+TEST_CASE(future_tbb32_type) {
+    TypeSystem typeSystem;
+    
+    Type* tbb32Type = typeSystem.getPrimitiveType("tbb32");
+    FutureType* futureTbb32 = typeSystem.getFutureType(tbb32Type);
+    
+    ASSERT(futureTbb32->getOutputType() == tbb32Type, "Output type should be tbb32");
+    ASSERT(futureTbb32->toString() == "future<tbb32>", "Should be future<tbb32>");
+}
+
+TEST_CASE(future_tbb64_type) {
+    TypeSystem typeSystem;
+    
+    Type* tbb64Type = typeSystem.getPrimitiveType("tbb64");
+    FutureType* futureTbb64 = typeSystem.getFutureType(tbb64Type);
+    
+    ASSERT(futureTbb64->getOutputType() == tbb64Type, "Output type should be tbb64");
+    ASSERT(futureTbb64->toString() == "future<tbb64>", "Should be future<tbb64>");
+}
+
+TEST_CASE(async_function_returns_future_tbb8) {
+    TypeSystem typeSystem;
+    
+    Type* tbb8Type = typeSystem.getPrimitiveType("tbb8");
+    std::vector<Type*> paramTypes;
+    
+    // async func:compute = tbb8() { ... }
+    // Actual type: func() -> future<tbb8>
+    FunctionType* asyncFunc = typeSystem.getFunctionType(paramTypes, tbb8Type, true, false);
+    
+    Type* returnType = asyncFunc->getReturnType();
+    ASSERT(returnType->getKind() == TypeKind::FUTURE, "Should return future");
+    
+    FutureType* futureType = static_cast<FutureType*>(returnType);
+    ASSERT(futureType->getOutputType() == tbb8Type, "Future should contain tbb8");
+}
+
+TEST_CASE(async_function_returns_future_tbb32) {
+    TypeSystem typeSystem;
+    
+    Type* tbb32Type = typeSystem.getPrimitiveType("tbb32");
+    std::vector<Type*> paramTypes;
+    
+    // async func:calculate = tbb32() { ... }
+    FunctionType* asyncFunc = typeSystem.getFunctionType(paramTypes, tbb32Type, true, false);
+    
+    Type* returnType = asyncFunc->getReturnType();
+    FutureType* futureType = static_cast<FutureType*>(returnType);
+    ASSERT(futureType->getOutputType() == tbb32Type, "Future should contain tbb32");
+}
+
+TEST_CASE(await_future_tbb8_extracts_tbb8) {
+    TypeSystem typeSystem;
+    
+    Type* tbb8Type = typeSystem.getPrimitiveType("tbb8");
+    FutureType* futureTbb8 = typeSystem.getFutureType(tbb8Type);
+    
+    // await future<tbb8> → tbb8
+    Type* awaitType = typeSystem.unwrapFutureType(futureTbb8);
+    
+    ASSERT(awaitType == tbb8Type, "Await should extract tbb8");
+    ASSERT(awaitType->toString() == "tbb8", "Should be tbb8 type");
+}
+
+TEST_CASE(await_future_tbb32_extracts_tbb32) {
+    TypeSystem typeSystem;
+    
+    Type* tbb32Type = typeSystem.getPrimitiveType("tbb32");
+    FutureType* futureTbb32 = typeSystem.getFutureType(tbb32Type);
+    
+    // await future<tbb32> → tbb32
+    Type* awaitType = typeSystem.unwrapFutureType(futureTbb32);
+    
+    ASSERT(awaitType == tbb32Type, "Await should extract tbb32");
+    ASSERT(awaitType->toString() == "tbb32", "Should be tbb32 type");
+}
+
+TEST_CASE(chained_async_tbb_operations) {
+    TypeSystem typeSystem;
+    
+    Type* tbb32Type = typeSystem.getPrimitiveType("tbb32");
+    std::vector<Type*> paramTypes;
+    
+    // async func:step1 = tbb32() { ... }
+    FunctionType* step1Func = typeSystem.getFunctionType(paramTypes, tbb32Type, true, false);
+    Type* step1Return = step1Func->getReturnType();  // future<tbb32>
+    
+    // result1 = await step1()  → tbb32
+    Type* result1 = typeSystem.unwrapFutureType(step1Return);
+    ASSERT(result1 == tbb32Type, "First await extracts tbb32");
+    
+    // async func:step2 = tbb32(tbb32) { ... }
+    std::vector<Type*> step2Params = {tbb32Type};
+    FunctionType* step2Func = typeSystem.getFunctionType(step2Params, tbb32Type, true, false);
+    Type* step2Return = step2Func->getReturnType();  // future<tbb32>
+    
+    // result2 = await step2(result1)  → tbb32
+    Type* result2 = typeSystem.unwrapFutureType(step2Return);
+    ASSERT(result2 == tbb32Type, "Second await extracts tbb32");
+}
+
+TEST_CASE(async_tbb_with_result_type) {
+    TypeSystem typeSystem;
+    
+    Type* tbb32Type = typeSystem.getPrimitiveType("tbb32");
+    ResultType* resultTbb32 = typeSystem.getResultType(tbb32Type);
+    std::vector<Type*> paramTypes;
+    
+    // async func:compute = result<tbb32>() { ... }
+    // Returns: future<result<tbb32>>
+    FunctionType* asyncFunc = typeSystem.getFunctionType(paramTypes, resultTbb32, true, false);
+    
+    Type* returnType = asyncFunc->getReturnType();
+    ASSERT(returnType->getKind() == TypeKind::FUTURE, "Should return future");
+    
+    FutureType* futureType = static_cast<FutureType*>(returnType);
+    ASSERT(futureType->getOutputType() == resultTbb32, "Should contain result<tbb32>");
+    
+    // await future<result<tbb32>> → result<tbb32>
+    Type* awaitType = typeSystem.unwrapFutureType(futureType);
+    ASSERT(awaitType == resultTbb32, "Await extracts result<tbb32>");
+    ASSERT(awaitType->toString() == "result<tbb32>", "Should be result<tbb32>");
+}
+
+TEST_CASE(async_tbb_array_operations) {
+    TypeSystem typeSystem;
+    
+    Type* tbb8Type = typeSystem.getPrimitiveType("tbb8");
+    ArrayType* arrayTbb8 = typeSystem.getArrayType(tbb8Type, 256);
+    std::vector<Type*> paramTypes;
+    
+    // async func:process = tbb8[256]() { ... }
+    FunctionType* asyncFunc = typeSystem.getFunctionType(paramTypes, arrayTbb8, true, false);
+    
+    Type* returnType = asyncFunc->getReturnType();
+    FutureType* futureType = static_cast<FutureType*>(returnType);
+    ASSERT(futureType->getOutputType() == arrayTbb8, "Should contain tbb8[256]");
+    
+    // await future<tbb8[256]> → tbb8[256]
+    Type* awaitType = typeSystem.unwrapFutureType(futureType);
+    ASSERT(awaitType == arrayTbb8, "Await extracts tbb8[256]");
+}
+
+TEST_CASE(async_tbb_pointer_operations) {
+    TypeSystem typeSystem;
+    
+    Type* tbb32Type = typeSystem.getPrimitiveType("tbb32");
+    PointerType* ptrTbb32 = typeSystem.getPointerType(tbb32Type);
+    std::vector<Type*> paramTypes;
+    
+    // async func:allocate = tbb32@() { ... }
+    FunctionType* asyncFunc = typeSystem.getFunctionType(paramTypes, ptrTbb32, true, false);
+    
+    Type* returnType = asyncFunc->getReturnType();
+    FutureType* futureType = static_cast<FutureType*>(returnType);
+    ASSERT(futureType->getOutputType() == ptrTbb32, "Should contain tbb32@");
+    
+    // await future<tbb32@> → tbb32@
+    Type* awaitType = typeSystem.unwrapFutureType(futureType);
+    ASSERT(awaitType == ptrTbb32, "Await extracts tbb32@");
+}
+
+TEST_CASE(multiple_tbb_types_in_async) {
+    TypeSystem typeSystem;
+    
+    Type* tbb8Type = typeSystem.getPrimitiveType("tbb8");
+    Type* tbb16Type = typeSystem.getPrimitiveType("tbb16");
+    Type* tbb32Type = typeSystem.getPrimitiveType("tbb32");
+    Type* tbb64Type = typeSystem.getPrimitiveType("tbb64");
+    
+    // async func:mix = tbb32(tbb8, tbb16, tbb64) { ... }
+    std::vector<Type*> paramTypes = {tbb8Type, tbb16Type, tbb64Type};
+    FunctionType* asyncFunc = typeSystem.getFunctionType(paramTypes, tbb32Type, true, false);
+    
+    ASSERT(asyncFunc->getParamCount() == 3, "Should have 3 parameters");
+    ASSERT(asyncFunc->getParamTypes()[0] == tbb8Type, "First param is tbb8");
+    ASSERT(asyncFunc->getParamTypes()[1] == tbb16Type, "Second param is tbb16");
+    ASSERT(asyncFunc->getParamTypes()[2] == tbb64Type, "Third param is tbb64");
+    
+    Type* returnType = asyncFunc->getReturnType();
+    FutureType* futureType = static_cast<FutureType*>(returnType);
+    ASSERT(futureType->getOutputType() == tbb32Type, "Returns future<tbb32>");
+}
+
+TEST_CASE(async_tbb_nested_structures) {
+    TypeSystem typeSystem;
+    
+    Type* tbb32Type = typeSystem.getPrimitiveType("tbb32");
+    ArrayType* arrayTbb = typeSystem.getArrayType(tbb32Type, 10);
+    PointerType* ptrArray = typeSystem.getPointerType(arrayTbb);
+    ResultType* resultPtr = typeSystem.getResultType(ptrArray);
+    FutureType* futureComplex = typeSystem.getFutureType(resultPtr);
+    
+    // Type: future<result<tbb32[10]@>>
+    ASSERT(futureComplex->toString() == "future<result<tbb32[10]@>>", 
+           "Should be future<result<tbb32[10]@>>");
+    
+    // Unwrap: future<result<tbb32[10]@>> → result<tbb32[10]@>
+    Type* unwrapped = typeSystem.unwrapFutureType(futureComplex);
+    ASSERT(unwrapped == resultPtr, "Should unwrap to result<tbb32[10]@>");
+}
+
+TEST_CASE(tbb_function_equality_async_vs_sync) {
+    TypeSystem typeSystem;
+    
+    Type* tbb32Type = typeSystem.getPrimitiveType("tbb32");
+    std::vector<Type*> paramTypes = {tbb32Type};
+    
+    // sync func(tbb32) -> tbb32
+    FunctionType* syncFunc = typeSystem.getFunctionType(paramTypes, tbb32Type, false, false);
+    
+    // async func(tbb32) -> tbb32  (becomes func(tbb32) -> future<tbb32>)
+    FunctionType* asyncFunc = typeSystem.getFunctionType(paramTypes, tbb32Type, true, false);
+    
+    ASSERT(!syncFunc->equals(asyncFunc), "Sync and async should not be equal");
+    ASSERT(syncFunc->getReturnType() == tbb32Type, "Sync returns tbb32");
+    ASSERT(asyncFunc->getReturnType()->getKind() == TypeKind::FUTURE, "Async returns future");
+}

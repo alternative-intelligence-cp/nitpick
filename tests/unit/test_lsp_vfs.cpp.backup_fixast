@@ -1,0 +1,126 @@
+#include "tools/lsp/vfs.h"
+#include "test_helpers.h"
+#include <thread>
+#include <atomic>
+
+using namespace aria::lsp;
+
+TEST_CASE(vfs_set_and_get_content) {
+    VirtualFileSystem vfs;
+    
+    std::string uri = "file:///test.aria";
+    std::string content = "func:main = void() { print(\"hello\"); };";
+    
+    vfs.set_content(uri, content);
+    
+    auto retrieved = vfs.get_content(uri);
+    ASSERT(retrieved.has_value(), "Content should exist");
+    ASSERT_EQ(retrieved.value(), content, "Content should match");
+}
+
+TEST_CASE(vfs_get_nonexistent) {
+    VirtualFileSystem vfs;
+    
+    auto result = vfs.get_content("file:///nonexistent.aria");
+    ASSERT(!result.has_value(), "Should return nullopt for nonexistent file");
+}
+
+TEST_CASE(vfs_update_content) {
+    VirtualFileSystem vfs;
+    
+    std::string uri = "file:///test.aria";
+    vfs.set_content(uri, "original content");
+    vfs.set_content(uri, "updated content");
+    
+    auto retrieved = vfs.get_content(uri);
+    ASSERT(retrieved.has_value(), "Content should exist");
+    ASSERT_EQ(retrieved.value(), "updated content", "Should have updated content");
+}
+
+TEST_CASE(vfs_remove) {
+    VirtualFileSystem vfs;
+    
+    std::string uri = "file:///test.aria";
+    vfs.set_content(uri, "content");
+    
+    ASSERT(vfs.contains(uri), "Should contain file");
+    ASSERT_EQ(vfs.size(), 1, "Should have 1 file");
+    
+    vfs.remove(uri);
+    
+    ASSERT(!vfs.contains(uri), "Should not contain file after removal");
+    ASSERT_EQ(vfs.size(), 0, "Should have 0 files");
+}
+
+TEST_CASE(vfs_multiple_files) {
+    VirtualFileSystem vfs;
+    
+    vfs.set_content("file:///a.aria", "content a");
+    vfs.set_content("file:///b.aria", "content b");
+    vfs.set_content("file:///c.aria", "content c");
+    
+    ASSERT_EQ(vfs.size(), 3, "Should have 3 files");
+    
+    auto docs = vfs.get_open_documents();
+    ASSERT_EQ(docs.size(), 3, "Should return 3 URIs");
+}
+
+TEST_CASE(vfs_thread_safety_concurrent_reads) {
+    VirtualFileSystem vfs;
+    
+    std::string uri = "file:///test.aria";
+    std::string content = "shared content";
+    vfs.set_content(uri, content);
+    
+    // Multiple threads reading simultaneously
+    std::vector<std::thread> threads;
+    std::atomic<int> success_count{0};
+    
+    for (int i = 0; i < 10; i++) {
+        threads.emplace_back([&vfs, &uri, &content, &success_count]() {
+            auto result = vfs.get_content(uri);
+            if (result.has_value() && result.value() == content) {
+                success_count++;
+            }
+        });
+    }
+    
+    for (auto& t : threads) {
+        t.join();
+    }
+    
+    ASSERT_EQ(success_count.load(), 10, "All threads should successfully read");
+}
+
+TEST_CASE(vfs_thread_safety_write_then_read) {
+    VirtualFileSystem vfs;
+    
+    std::string uri = "file:///test.aria";
+    
+    // Writer thread
+    std::thread writer([&vfs, &uri]() {
+        for (int i = 0; i < 100; i++) {
+            vfs.set_content(uri, "version " + std::to_string(i));
+        }
+    });
+    
+    // Reader threads
+    std::vector<std::thread> readers;
+    for (int i = 0; i < 5; i++) {
+        readers.emplace_back([&vfs, &uri]() {
+            for (int j = 0; j < 20; j++) {
+                auto result = vfs.get_content(uri);
+                // Just verify we can read without crashing
+                // Content may vary due to concurrent writes
+            }
+        });
+    }
+    
+    writer.join();
+    for (auto& r : readers) {
+        r.join();
+    }
+    
+    // If we get here without crashing, thread safety works
+    ASSERT(true, "Thread safety test passed");
+}

@@ -1,0 +1,411 @@
+/**
+ * Aria Runtime - File I/O Tests
+ * 
+ * Test suite for file operations, streams, and structured parsing.
+ */
+
+#include "runtime/io.h"
+#include "test_helpers.h"
+#include <cstring>
+#include <cstdio>
+
+// Test file paths
+static const char* TEST_FILE = "/tmp/aria_test_file.txt";
+static const char* TEST_BINARY = "/tmp/aria_test_binary.dat";
+static const char* TEST_CSV = "/tmp/aria_test.csv";
+
+// ============================================================================
+// Result Type Tests
+// ============================================================================
+
+TEST_CASE(result_ok) {
+    char* data = strdup("test data");
+    AriaResult* r = aria_result_ok(data, 10);
+    
+    ASSERT(r != nullptr, "Result should not be NULL");
+    ASSERT(r->err == nullptr, "Error should be NULL on success");
+    ASSERT(r->val != nullptr, "Value should not be NULL");
+    ASSERT(strcmp((char*)r->val, "test data") == 0, "Value should match");
+    
+    aria_result_free(r);
+}
+
+TEST_CASE(result_err) {
+    AriaResult* r = aria_result_err("Test error message");
+    
+    ASSERT(r != nullptr, "Result should not be NULL");
+    ASSERT(r->err != nullptr, "Error should not be NULL");
+    ASSERT(strcmp(r->err, "Test error message") == 0, "Error message should match");
+    ASSERT(r->val == nullptr, "Value should be NULL on error");
+    
+    aria_result_free(r);
+}
+
+// ============================================================================
+// Simple File Operations Tests
+// ============================================================================
+
+TEST_CASE(file_write_read) {
+    // Write file
+    const char* content = "Hello, Aria!";
+    AriaResult* write_result = aria_write_file(TEST_FILE, content);
+    
+    ASSERT(write_result != nullptr, "Write result should not be NULL");
+    ASSERT(write_result->err == nullptr, "Write should succeed");
+    aria_result_free(write_result);
+    
+    // Read file
+    AriaResult* read_result = aria_read_file(TEST_FILE);
+    
+    ASSERT(read_result != nullptr, "Read result should not be NULL");
+    ASSERT(read_result->err == nullptr, "Read should succeed");
+    ASSERT(read_result->val != nullptr, "Read value should not be NULL");
+    ASSERT(strcmp((char*)read_result->val, content) == 0, "Content should match");
+    
+    aria_result_free(read_result);
+    
+    // Cleanup
+    remove(TEST_FILE);
+}
+
+TEST_CASE(file_read_nonexistent) {
+    AriaResult* r = aria_read_file("/tmp/nonexistent_file_12345.txt");
+    
+    ASSERT(r != nullptr, "Result should not be NULL");
+    ASSERT(r->err != nullptr, "Error should be set for nonexistent file");
+    ASSERT(r->val == nullptr, "Value should be NULL on error");
+    
+    aria_result_free(r);
+}
+
+TEST_CASE(file_binary_write_read) {
+    // Create binary data
+    uint8_t data[256];
+    for (int i = 0; i < 256; i++) {
+        data[i] = (uint8_t)i;
+    }
+    
+    // Write binary
+    AriaResult* write_result = aria_write_binary(TEST_BINARY, data, 256);
+    ASSERT(write_result->err == nullptr, "Binary write should succeed");
+    aria_result_free(write_result);
+    
+    // Read binary
+    size_t size = 0;
+    AriaResult* read_result = aria_read_binary(TEST_BINARY, &size);
+    
+    ASSERT(read_result->err == nullptr, "Binary read should succeed");
+    ASSERT(size == 256, "Size should be 256");
+    ASSERT(read_result->val != nullptr, "Data should not be NULL");
+    
+    uint8_t* read_data = (uint8_t*)read_result->val;
+    bool match = true;
+    for (int i = 0; i < 256; i++) {
+        if (read_data[i] != (uint8_t)i) {
+            match = false;
+            break;
+        }
+    }
+    ASSERT(match, "Binary data should match");
+    
+    aria_result_free(read_result);
+    
+    // Cleanup
+    remove(TEST_BINARY);
+}
+
+TEST_CASE(file_exists) {
+    // Create file
+    aria_write_file(TEST_FILE, "test");
+    
+    ASSERT(aria_file_exists(TEST_FILE), "File should exist");
+    ASSERT(!aria_file_exists("/tmp/nonexistent_12345.txt"), "Nonexistent file should not exist");
+    
+    // Cleanup
+    remove(TEST_FILE);
+}
+
+TEST_CASE(file_size) {
+    // Create file with known content
+    const char* content = "1234567890";
+    aria_write_file(TEST_FILE, content);
+    
+    int64_t size = aria_file_size(TEST_FILE);
+    ASSERT(size == 10, "File size should be 10");
+    
+    int64_t nonexistent = aria_file_size("/tmp/nonexistent_12345.txt");
+    ASSERT(nonexistent == -1, "Nonexistent file size should be -1");
+    
+    // Cleanup
+    remove(TEST_FILE);
+}
+
+TEST_CASE(file_delete) {
+    // Create file
+    aria_write_file(TEST_FILE, "test");
+    ASSERT(aria_file_exists(TEST_FILE), "File should exist before delete");
+    
+    // Delete
+    AriaResult* r = aria_delete_file(TEST_FILE);
+    ASSERT(r->err == nullptr, "Delete should succeed");
+    aria_result_free(r);
+    
+    ASSERT(!aria_file_exists(TEST_FILE), "File should not exist after delete");
+}
+
+// ============================================================================
+// Stream Operations Tests
+// ============================================================================
+
+TEST_CASE(stream_open_close) {
+    // Write test file
+    aria_write_file(TEST_FILE, "test content");
+    
+    // Open stream
+    AriaStream* stream = aria_open_file(TEST_FILE, "r");
+    ASSERT(stream != nullptr, "Stream open should succeed");
+    
+    // Close stream
+    aria_stream_close(stream);
+    
+    // Cleanup
+    remove(TEST_FILE);
+}
+
+TEST_CASE(stream_read_line) {
+    // Create multiline file
+    const char* content = "Line 1\nLine 2\nLine 3";
+    aria_write_file(TEST_FILE, content);
+    
+    // Open and read lines
+    AriaStream* stream = aria_open_file(TEST_FILE, "r");
+    ASSERT(stream != nullptr, "Stream open should succeed");
+    
+    char* line1 = aria_stream_read_line(stream);
+    ASSERT(line1 != nullptr, "First line should not be NULL");
+    ASSERT(strcmp(line1, "Line 1\n") == 0, "First line should match");
+    free(line1);
+    
+    char* line2 = aria_stream_read_line(stream);
+    ASSERT(line2 != nullptr, "Second line should not be NULL");
+    ASSERT(strcmp(line2, "Line 2\n") == 0, "Second line should match");
+    free(line2);
+    
+    char* line3 = aria_stream_read_line(stream);
+    ASSERT(line3 != nullptr, "Third line should not be NULL");
+    ASSERT(strcmp(line3, "Line 3") == 0, "Third line should match");
+    free(line3);
+    
+    char* line4 = aria_stream_read_line(stream);
+    ASSERT(line4 == nullptr, "EOF should return NULL");
+    
+    aria_stream_close(stream);
+    
+    // Cleanup
+    remove(TEST_FILE);
+}
+
+TEST_CASE(stream_write) {
+    // Open for writing
+    AriaStream* stream = aria_open_file(TEST_FILE, "w");
+    ASSERT(stream != nullptr, "Stream open should succeed");
+    
+    // Write data
+    int64_t written = aria_stream_write(stream, "Hello, ");
+    ASSERT(written == 7, "Should write 7 bytes");
+    
+    written = aria_stream_write(stream, "World!");
+    ASSERT(written == 6, "Should write 6 bytes");
+    
+    aria_stream_close(stream);
+    
+    // Read back
+    AriaResult* r = aria_read_file(TEST_FILE);
+    ASSERT(r->err == nullptr, "Read should succeed");
+    ASSERT(strcmp((char*)r->val, "Hello, World!") == 0, "Content should match");
+    aria_result_free(r);
+    
+    // Cleanup
+    remove(TEST_FILE);
+}
+
+TEST_CASE(stream_read_write_bytes) {
+    // Write binary data
+    uint8_t write_data[] = {0x01, 0x02, 0x03, 0x04, 0x05};
+    
+    AriaStream* write_stream = aria_open_file(TEST_BINARY, "wb");
+    ASSERT(write_stream != nullptr, "Write stream should open");
+    
+    int64_t written = aria_stream_write_bytes(write_stream, write_data, 5);
+    ASSERT(written == 5, "Should write 5 bytes");
+    
+    aria_stream_close(write_stream);
+    
+    // Read binary data
+    AriaStream* read_stream = aria_open_file(TEST_BINARY, "rb");
+    ASSERT(read_stream != nullptr, "Read stream should open");
+    
+    uint8_t read_data[5];
+    int64_t bytes_read = aria_stream_read_bytes(read_stream, read_data, 5);
+    ASSERT(bytes_read == 5, "Should read 5 bytes");
+    
+    bool match = true;
+    for (int i = 0; i < 5; i++) {
+        if (read_data[i] != write_data[i]) {
+            match = false;
+            break;
+        }
+    }
+    ASSERT(match, "Binary data should match");
+    
+    aria_stream_close(read_stream);
+    
+    // Cleanup
+    remove(TEST_BINARY);
+}
+
+TEST_CASE(stream_eof) {
+    // Create small file
+    aria_write_file(TEST_FILE, "AB");
+    
+    AriaStream* stream = aria_open_file(TEST_FILE, "r");
+    ASSERT(stream != nullptr, "Stream should open");
+    
+    ASSERT(!aria_stream_eof(stream), "Should not be at EOF initially");
+    
+    uint8_t buffer[3];
+    aria_stream_read_bytes(stream, buffer, 2);
+    
+    aria_stream_read_bytes(stream, buffer, 1); // Read past EOF
+    ASSERT(aria_stream_eof(stream), "Should be at EOF after reading all data");
+    
+    aria_stream_close(stream);
+    
+    // Cleanup
+    remove(TEST_FILE);
+}
+
+TEST_CASE(stream_seek_tell) {
+    // Create file with known content
+    aria_write_file(TEST_FILE, "0123456789");
+    
+    AriaStream* stream = aria_open_file(TEST_FILE, "r");
+    ASSERT(stream != nullptr, "Stream should open");
+    
+    // Initial position
+    int64_t pos = aria_stream_tell(stream);
+    ASSERT(pos == 0, "Initial position should be 0");
+    
+    // Seek to position 5
+    int result = aria_stream_seek(stream, 5, SEEK_SET);
+    ASSERT(result == 0, "Seek should succeed");
+    
+    pos = aria_stream_tell(stream);
+    ASSERT(pos == 5, "Position should be 5");
+    
+    // Read byte at position 5
+    uint8_t byte;
+    aria_stream_read_bytes(stream, &byte, 1);
+    ASSERT(byte == '5', "Byte should be '5'");
+    
+    aria_stream_close(stream);
+    
+    // Cleanup
+    remove(TEST_FILE);
+}
+
+// ============================================================================
+// CSV Parsing Tests
+// ============================================================================
+
+TEST_CASE(csv_parse_simple) {
+    const char* csv_content = "Name,Age,City\nAlice,30,NYC\nBob,25,LA";
+    AriaResult* r = aria_parse_csv(csv_content);
+    
+    ASSERT(r->err == nullptr, "CSV parse should succeed");
+    ASSERT(r->val != nullptr, "CSV data should not be NULL");
+    
+    AriaCsvData* csv = (AriaCsvData*)r->val;
+    ASSERT(csv->row_count == 3, "Should have 3 rows");
+    ASSERT(csv->rows[0].field_count == 3, "First row should have 3 fields");
+    ASSERT(strcmp(csv->rows[0].fields[0], "Name") == 0, "First field should be 'Name'");
+    ASSERT(strcmp(csv->rows[1].fields[0], "Alice") == 0, "Second row first field should be 'Alice'");
+    
+    aria_csv_free(csv);
+    // Set val to NULL before freeing result to avoid double-free
+    r->val = NULL;
+    aria_result_free(r);
+}
+
+TEST_CASE(csv_read_file) {
+    // Create CSV file
+    const char* csv_content = "A,B,C\n1,2,3\n4,5,6";
+    aria_write_file(TEST_CSV, csv_content);
+    
+    // Read CSV
+    AriaResult* r = aria_read_csv(TEST_CSV);
+    
+    ASSERT(r->err == nullptr, "CSV read should succeed");
+    AriaCsvData* csv = (AriaCsvData*)r->val;
+    ASSERT(csv->row_count == 3, "Should have 3 rows");
+    
+    aria_csv_free(csv);
+    // Set val to NULL before freeing result to avoid double-free
+    r->val = NULL;
+    aria_result_free(r);
+    
+    // Cleanup
+    remove(TEST_CSV);
+}
+
+// ============================================================================
+// Path Operations Tests
+// ============================================================================
+
+TEST_CASE(path_dirname) {
+    char* dir1 = aria_path_dirname("/home/user/file.txt");
+    ASSERT(dir1 != nullptr, "dirname should not be NULL");
+    ASSERT(strcmp(dir1, "/home/user") == 0, "dirname should be '/home/user'");
+    free(dir1);
+    
+    char* dir2 = aria_path_dirname("file.txt");
+    ASSERT(dir2 != nullptr, "dirname of bare filename should not be NULL");
+    free(dir2);
+}
+
+TEST_CASE(path_basename) {
+    char* base1 = aria_path_basename("/home/user/file.txt");
+    ASSERT(base1 != nullptr, "basename should not be NULL");
+    ASSERT(strcmp(base1, "file.txt") == 0, "basename should be 'file.txt'");
+    free(base1);
+    
+    char* base2 = aria_path_basename("file.txt");
+    ASSERT(base2 != nullptr, "basename of bare filename should not be NULL");
+    ASSERT(strcmp(base2, "file.txt") == 0, "basename should be 'file.txt'");
+    free(base2);
+}
+
+TEST_CASE(path_join) {
+    char* joined = aria_path_join("/home/user", "file.txt");
+    ASSERT(joined != nullptr, "joined path should not be NULL");
+    
+    // Check that path contains both parts (separator may vary by platform)
+    bool has_home = strstr(joined, "/home/user") != nullptr || strstr(joined, "\\home\\user") != nullptr;
+    bool has_file = strstr(joined, "file.txt") != nullptr;
+    ASSERT(has_home, "joined path should contain directory");
+    ASSERT(has_file, "joined path should contain filename");
+    
+    free(joined);
+}
+
+TEST_CASE(path_is_absolute) {
+#ifdef _WIN32
+    ASSERT(aria_path_is_absolute("C:\\Windows\\System32"), "Windows absolute path should be recognized");
+    ASSERT(!aria_path_is_absolute("relative\\path"), "Windows relative path should not be absolute");
+#else
+    ASSERT(aria_path_is_absolute("/usr/bin"), "Unix absolute path should be recognized");
+    ASSERT(!aria_path_is_absolute("relative/path"), "Unix relative path should not be absolute");
+#endif
+    
+    ASSERT(!aria_path_is_absolute(""), "Empty path should not be absolute");
+}

@@ -1,0 +1,390 @@
+/**
+ * Tests for Aria GC Runtime
+ * 
+ * Tests the garbage collector implementation including:
+ * - Basic allocation
+ * - Object pinning
+ * - Minor GC (nursery evacuation)
+ * - Major GC (mark-sweep)
+ * - Shadow stack management
+ * - Write barriers
+ */
+
+#include "../test_helpers.h"
+#include "runtime/gc.h"
+#include <cstring>
+#include <vector>
+
+// =============================================================================
+// Basic Allocation Tests
+// =============================================================================
+
+TEST_CASE(gc_init_and_shutdown) {
+    // Initialize GC with small nursery for testing
+    aria_gc_init(1024 * 1024, 4 * 1024 * 1024);  // 1MB nursery, 4MB old gen
+    
+    GCStats stats;
+    aria_gc_get_stats(&stats);
+    
+    ASSERT(stats.nursery_size == 1024 * 1024, "stats.nursery_size == 1024 * 1024");
+    ASSERT(stats.nursery_used == 0, "stats.nursery_used == 0");
+    ASSERT(stats.num_minor_collections == 0, "stats.num_minor_collections == 0");
+    ASSERT(stats.num_major_collections == 0, "stats.num_major_collections == 0");
+    
+    aria_gc_shutdown();
+}
+
+TEST_CASE(gc_basic_allocation) {
+    aria_gc_init(1024 * 1024, 4 * 1024 * 1024);
+    
+    // Allocate a simple object
+    void* obj1 = aria_gc_alloc(128, 1);  // 128 bytes, type_id=1
+    
+    ASSERT(obj1 != nullptr, "obj1 != nullptr");
+    ASSERT(aria_gc_is_heap_pointer(obj1), "Object should be in GC heap");
+    
+    // Verify memory is zero-initialized
+    uint8_t* bytes = (uint8_t*)obj1;
+    bool is_zeroed = true;
+    for (int i = 0; i < 128; ++i) {
+        if (bytes[i] != 0) {
+            is_zeroed = false;
+            break;
+        }
+    }
+    ASSERT(is_zeroed, "is_zeroed");
+    
+    aria_gc_shutdown();
+}
+
+TEST_CASE(gc_multiple_allocations) {
+    aria_gc_init(1024 * 1024, 4 * 1024 * 1024);
+    
+    const int NUM_OBJECTS = 100;
+    std::vector<void*> objects;
+    
+    // Allocate multiple objects
+    for (int i = 0; i < NUM_OBJECTS; ++i) {
+        void* obj = aria_gc_alloc(64, 1);
+        ASSERT(obj != nullptr, "obj != nullptr");
+        objects.push_back(obj);
+        
+        // Write unique pattern
+        uint32_t* data = (uint32_t*)obj;
+        data[0] = i;
+    }
+    
+    // Verify all objects are valid
+    for (int i = 0; i < NUM_OBJECTS; ++i) {
+        uint32_t* data = (uint32_t*)objects[i];
+        ASSERT(data[0] == (uint32_t)i, "Object data should match");
+    }
+    
+    GCStats stats;
+    aria_gc_get_stats(&stats);
+    ASSERT(stats.nursery_used > 0, "stats.nursery_used > 0");
+    
+    aria_gc_shutdown();
+}
+
+// =============================================================================
+// Object Pinning Tests
+// =============================================================================
+
+TEST_CASE(gc_object_pinning) {
+    aria_gc_init(1024 * 1024, 4 * 1024 * 1024);
+    
+    // Allocate and pin an object
+    void* obj = aria_gc_alloc(256, 1);
+    ASSERT(obj != nullptr, "obj != nullptr");
+    
+    // Write pattern to object
+    uint64_t* data = (uint64_t*)obj;
+    data[0] = 0xDEADBEEFCAFEBABE;
+    
+    // Pin the object
+    aria_gc_pin(obj);
+    
+    // Get header and verify pinned bit
+    ObjHeader* header = aria_gc_get_header(obj);
+    ASSERT(header != nullptr, "header != nullptr");
+    ASSERT(header->pinned_bit == 1, "header->pinned_bit == 1");
+    
+    GCStats stats;
+    aria_gc_get_stats(&stats);
+    ASSERT(stats.num_pinned_objects == 1, "stats.num_pinned_objects == 1");
+    
+    // Unpin
+    aria_gc_unpin(obj);
+    ASSERT(header->pinned_bit == 0, "header->pinned_bit == 0");
+    
+    aria_gc_shutdown();
+}
+
+TEST_CASE(gc_pinned_object_survives_collection) {
+    aria_gc_init(64 * 1024, 1024 * 1024);  // Small nursery for quick collection
+    
+    // Allocate and pin an object
+    void* pinned_obj = aria_gc_alloc(256, 1);
+    ASSERT(pinned_obj != nullptr, "pinned_obj != nullptr");
+    
+    uint64_t* data = (uint64_t*)pinned_obj;
+    data[0] = 0x123456789ABCDEF0;
+    
+    aria_gc_pin(pinned_obj);
+    
+    // Save address
+    void* original_addr = pinned_obj;
+    
+    // Fill nursery with garbage
+    for (int i = 0; i < 100; ++i) {
+        aria_gc_alloc(512, 1);
+    }
+    
+    // Trigger minor GC
+    aria_gc_collect(false);
+    
+    // Pinned object should still be at original address
+    ASSERT(pinned_obj == original_addr, "pinned_obj == original_addr");
+    ASSERT(data[0] == 0x123456789ABCDEF0, "data[0] == 0x123456789ABCDEF0");
+    
+    aria_gc_shutdown();
+}
+
+// =============================================================================
+// Shadow Stack Tests
+// =============================================================================
+
+TEST_CASE(gc_shadow_stack_basic) {
+    aria_gc_init(1024 * 1024, 4 * 1024 * 1024);
+    
+    // Push a frame
+    aria_shadow_stack_push_frame();
+    
+    // Register a root
+    void* obj = aria_gc_alloc(128, 1);
+    aria_shadow_stack_add_root(&obj);
+    
+    ASSERT(obj != nullptr, "obj != nullptr");
+    
+    // Pop frame
+    aria_shadow_stack_pop_frame();
+    
+    aria_gc_shutdown();
+}
+
+TEST_CASE(gc_shadow_stack_nested_frames) {
+    aria_gc_init(1024 * 1024, 4 * 1024 * 1024);
+    
+    // Outer frame
+    aria_shadow_stack_push_frame();
+    void* outer_obj = aria_gc_alloc(64, 1);
+    aria_shadow_stack_add_root(&outer_obj);
+    
+    // Inner frame
+    aria_shadow_stack_push_frame();
+    void* inner_obj = aria_gc_alloc(64, 1);
+    aria_shadow_stack_add_root(&inner_obj);
+    
+    ASSERT(outer_obj != nullptr, "outer_obj != nullptr");
+    ASSERT(inner_obj != nullptr, "inner_obj != nullptr");
+    
+    // Pop inner frame
+    aria_shadow_stack_pop_frame();
+    
+    // Pop outer frame
+    aria_shadow_stack_pop_frame();
+    
+    aria_gc_shutdown();
+}
+
+// =============================================================================
+// Minor GC Tests (Nursery Evacuation)
+// =============================================================================
+
+TEST_CASE(gc_minor_collection_evacuates_live_objects) {
+    aria_gc_init(64 * 1024, 1024 * 1024);
+    
+    // Create a root frame
+    aria_shadow_stack_push_frame();
+    
+    // Allocate live object
+    void* live_obj = aria_gc_alloc(128, 1);
+    uint32_t* live_data = (uint32_t*)live_obj;
+    live_data[0] = 0xCAFEBABE;
+    
+    // Register as root
+    aria_shadow_stack_add_root(&live_obj);
+    
+    // Fill nursery with garbage
+    for (int i = 0; i < 200; ++i) {
+        aria_gc_alloc(256, 1);
+    }
+    
+    // Trigger minor GC
+    aria_gc_collect(false);
+    
+    // Live object should have been evacuated (address changed)
+    // but data should be intact
+    ASSERT(live_obj != nullptr, "live_obj != nullptr");
+    ASSERT(((uint32_t*)live_obj)[0] == 0xCAFEBABE, "Object data should survive GC");
+    
+    // Verify it's in old generation now
+    ObjHeader* header = aria_gc_get_header(live_obj);
+    ASSERT(header != nullptr, "header != nullptr");
+    ASSERT(header->is_nursery == 0, "header->is_nursery == 0");  // Moved to old gen
+    
+    aria_shadow_stack_pop_frame();
+    aria_gc_shutdown();
+}
+
+TEST_CASE(gc_minor_collection_reclaims_dead_objects) {
+    aria_gc_init(64 * 1024, 1024 * 1024);
+    
+    // Allocate objects without registering as roots (dead)
+    for (int i = 0; i < 100; ++i) {
+        void* dead_obj = aria_gc_alloc(256, 1);
+        (void)dead_obj;  // Unused
+    }
+    
+    GCStats stats_before;
+    aria_gc_get_stats(&stats_before);
+    size_t used_before = stats_before.nursery_used;
+    
+    // Trigger minor GC
+    aria_gc_collect(false);
+    
+    GCStats stats_after;
+    aria_gc_get_stats(&stats_after);
+    size_t used_after = stats_after.nursery_used;
+    
+    // Nursery should be mostly reclaimed
+    ASSERT(used_after < used_before, "used_after < used_before");
+    ASSERT(stats_after.num_minor_collections == 1, "stats_after.num_minor_collections == 1");
+    
+    aria_gc_shutdown();
+}
+
+// =============================================================================
+// Major GC Tests (Mark-Sweep)
+// =============================================================================
+
+TEST_CASE(gc_major_collection_basic) {
+    aria_gc_init(64 * 1024, 256 * 1024);  // Small old gen threshold
+    
+    aria_shadow_stack_push_frame();
+    
+    // Allocate object in old generation (by surviving minor GC)
+    void* obj = aria_gc_alloc(128, 1);
+    aria_shadow_stack_add_root(&obj);
+    
+    uint32_t* data = (uint32_t*)obj;
+    data[0] = 0x12345678;
+    
+    // Fill nursery to trigger minor GC (evacuate to old gen)
+    for (int i = 0; i < 200; ++i) {
+        aria_gc_alloc(256, 1);
+    }
+    
+    // Minor GC happens automatically
+    
+    // Now trigger major GC
+    aria_gc_collect(true);
+    
+    // Object should survive (it's a root)
+    ASSERT(obj != nullptr, "obj != nullptr");
+    ASSERT(((uint32_t*)obj)[0] == 0x12345678, "Object data should survive major GC");
+    
+    GCStats stats;
+    aria_gc_get_stats(&stats);
+    ASSERT(stats.num_major_collections >= 1, "stats.num_major_collections >= 1");
+    
+    aria_shadow_stack_pop_frame();
+    aria_gc_shutdown();
+}
+
+// =============================================================================
+// Write Barrier Tests
+// =============================================================================
+
+TEST_CASE(gc_write_barrier_marks_cards) {
+    aria_gc_init(1024 * 1024, 4 * 1024 * 1024);
+    
+    // Allocate objects
+    void* old_obj = aria_gc_alloc(128, 1);
+    void* young_obj = aria_gc_alloc(128, 1);
+    
+    // Simulate old_obj.field = young_obj
+    aria_gc_write_barrier(old_obj, young_obj);
+    
+    // This should mark a card in the card table
+    // (Internal state, hard to verify without exposing internals)
+    // Just verify no crash
+    
+    aria_gc_shutdown();
+}
+
+// =============================================================================
+// Stress Tests
+// =============================================================================
+
+TEST_CASE(gc_stress_test_allocations) {
+    aria_gc_init(256 * 1024, 2 * 1024 * 1024);
+    
+    aria_shadow_stack_push_frame();
+    
+    // Allocate many objects, keep some as roots
+    std::vector<void*> roots;
+    
+    for (int round = 0; round < 10; ++round) {
+        for (int i = 0; i < 100; ++i) {
+            void* obj = aria_gc_alloc(128 + (i % 256), 1);
+            
+            // Keep every 10th object as root
+            if (i % 10 == 0) {
+                roots.push_back(obj);
+                aria_shadow_stack_add_root(&roots.back());
+                
+                // Write pattern
+                uint32_t* data = (uint32_t*)obj;
+                data[0] = round * 100 + i;
+            }
+        }
+        
+        // Trigger collection occasionally
+        if (round % 3 == 0) {
+            aria_gc_collect(false);
+        }
+    }
+    
+    // Verify roots survived
+    for (size_t i = 0; i < roots.size(); ++i) {
+        ASSERT(roots[i] != nullptr, "roots[i] != nullptr");
+        // Data integrity check would require tracking expected values
+    }
+    
+    GCStats stats;
+    aria_gc_get_stats(&stats);
+    ASSERT(stats.num_minor_collections > 0, "stats.num_minor_collections > 0");
+    
+    aria_shadow_stack_pop_frame();
+    aria_gc_shutdown();
+}
+
+TEST_CASE(gc_header_integrity) {
+    aria_gc_init(1024 * 1024, 4 * 1024 * 1024);
+    
+    void* obj = aria_gc_alloc(256, 42);  // type_id = 42
+    
+    ObjHeader* header = aria_gc_get_header(obj);
+    ASSERT(header != nullptr, "header != nullptr");
+    ASSERT(header->type_id == 42, "header->type_id == 42");
+    ASSERT(header->is_nursery == 1, "header->is_nursery == 1");
+    ASSERT(header->mark_bit == 0, "header->mark_bit == 0");
+    ASSERT(header->pinned_bit == 0, "header->pinned_bit == 0");
+    ASSERT(header->forwarded_bit == 0, "header->forwarded_bit == 0");
+    
+    aria_gc_shutdown();
+}
+
+// Tests are auto-registered via TEST_CASE macro

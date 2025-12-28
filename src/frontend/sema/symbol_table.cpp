@@ -15,7 +15,8 @@ Symbol::Symbol(const std::string& name, SymbolKind kind, Type* type,
     : name(name), kind(kind), type(type), scope(scope),
       line(line), column(column), isPublic(false),
       isMutable(true), isInitialized(false),
-      comptimeValue(nullptr), funcDecl(nullptr), moduleRef(nullptr) {}
+      comptimeValue(nullptr), funcDecl(nullptr), moduleRef(nullptr),
+      traitDecl(nullptr) {}
 
 void Symbol::setComptimeValue(ComptimeValue* value) {
     comptimeValue = value;
@@ -39,6 +40,7 @@ std::string Symbol::toString() const {
         case SymbolKind::FUNCTION: ss << "function"; break;
         case SymbolKind::PARAMETER: ss << "parameter"; break;
         case SymbolKind::TYPE: ss << "type"; break;
+        case SymbolKind::TRAIT: ss << "trait"; break;
         case SymbolKind::MODULE: ss << "module"; break;
         case SymbolKind::CONSTANT: ss << "constant"; break;
     }

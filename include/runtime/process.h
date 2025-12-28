@@ -55,16 +55,37 @@ typedef struct {
 
 /**
  * Spawn options for controlling child process behavior
+ *
+ * Supports the Aria six-stream I/O topology:
+ *   FD 0: stdin   - Standard input
+ *   FD 1: stdout  - Standard output
+ *   FD 2: stderr  - Standard error
+ *   FD 3: stddbg  - Debug output (structured diagnostics)
+ *   FD 4: stddati - Data input (binary/structured data)
+ *   FD 5: stddato - Data output (binary/structured data)
  */
 typedef struct {
     const char** env;      // Environment variables (NULL-terminated array, NULL for inherit)
     const char* cwd;       // Working directory (NULL for inherit)
+
+    // Standard streams (FD 0-2)
     bool redirect_stdin;   // Redirect stdin from pipe
     bool redirect_stdout;  // Redirect stdout to pipe
     bool redirect_stderr;  // Redirect stderr to pipe
     AriaPipe* stdin_pipe;  // Pipe to use for stdin (if redirect_stdin)
     AriaPipe* stdout_pipe; // Pipe to use for stdout (if redirect_stdout)
     AriaPipe* stderr_pipe; // Pipe to use for stderr (if redirect_stderr)
+
+    // Extended streams (FD 3-5) - Aria six-stream topology
+    bool redirect_stddbg;  // Redirect debug output to pipe
+    bool redirect_stddati; // Redirect data input from pipe
+    bool redirect_stddato; // Redirect data output to pipe
+    AriaPipe* stddbg_pipe; // Pipe for debug output (FD 3)
+    AriaPipe* stddati_pipe;// Pipe for data input (FD 4)
+    AriaPipe* stddato_pipe;// Pipe for data output (FD 5)
+
+    // Security options
+    bool close_extra_fds;  // Close FDs >= 6 in child (recommended: true)
 } AriaSpawnOptions;
 
 // ============================================================================

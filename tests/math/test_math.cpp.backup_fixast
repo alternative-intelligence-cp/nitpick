@@ -1,0 +1,235 @@
+/**
+ * Phase 6.4 Standard Library Tests - Math Operations
+ * 
+ * Tests for mathematical functions and constants.
+ */
+
+#include "test_helpers.h"
+#include "runtime/math.h"
+#include <cmath>
+
+// ═══════════════════════════════════════════════════════════════════════
+// Constants Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(math_constants_pi) {
+    ASSERT_NEAR(ARIA_MATH_PI, 3.14159265358979323846, 1e-15, "PI should be accurate");
+}
+
+TEST_CASE(math_constants_e) {
+    ASSERT_NEAR(ARIA_MATH_E, 2.71828182845904523536, 1e-15, "E should be accurate");
+}
+
+TEST_CASE(math_constants_infinity) {
+    ASSERT_MSG(aria_math_is_inf(ARIA_MATH_INFINITY), "INFINITY should be infinite");
+    ASSERT_MSG(ARIA_MATH_INFINITY > 0, "INFINITY should be positive");
+}
+
+TEST_CASE(math_constants_nan) {
+    ASSERT_MSG(aria_math_is_nan(ARIA_MATH_NAN), "NAN should be NaN");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Basic Math Functions Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(math_abs_positive) {
+    ASSERT_NEAR(aria_math_abs(5.5), 5.5, 1e-10, "abs(5.5) should be 5.5");
+}
+
+TEST_CASE(math_abs_negative) {
+    ASSERT_NEAR(aria_math_abs(-5.5), 5.5, 1e-10, "abs(-5.5) should be 5.5");
+}
+
+TEST_CASE(math_abs_zero) {
+    ASSERT_NEAR(aria_math_abs(0.0), 0.0, 1e-10, "abs(0) should be 0");
+}
+
+TEST_CASE(math_abs_i64) {
+    ASSERT_EQ_MSG(aria_math_abs_i64(-42), 42, "abs(-42) should be 42");
+    ASSERT_EQ_MSG(aria_math_abs_i64(42), 42, "abs(42) should be 42");
+    ASSERT_EQ_MSG(aria_math_abs_i64(0), 0, "abs(0) should be 0");
+}
+
+TEST_CASE(math_min) {
+    ASSERT_NEAR(aria_math_min(3.5, 7.2), 3.5, 1e-10, "min(3.5, 7.2) should be 3.5");
+    ASSERT_NEAR(aria_math_min(7.2, 3.5), 3.5, 1e-10, "min(7.2, 3.5) should be 3.5");
+    ASSERT_NEAR(aria_math_min(5.0, 5.0), 5.0, 1e-10, "min(5.0, 5.0) should be 5.0");
+}
+
+TEST_CASE(math_max) {
+    ASSERT_NEAR(aria_math_max(3.5, 7.2), 7.2, 1e-10, "max(3.5, 7.2) should be 7.2");
+    ASSERT_NEAR(aria_math_max(7.2, 3.5), 7.2, 1e-10, "max(7.2, 3.5) should be 7.2");
+    ASSERT_NEAR(aria_math_max(5.0, 5.0), 5.0, 1e-10, "max(5.0, 5.0) should be 5.0");
+}
+
+TEST_CASE(math_min_max_i64) {
+    ASSERT_EQ_MSG(aria_math_min_i64(10, 20), 10, "min(10, 20) should be 10");
+    ASSERT_EQ_MSG(aria_math_max_i64(10, 20), 20, "max(10, 20) should be 20");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Power and Root Functions Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(math_sqrt_positive) {
+    ASSERT_NEAR(aria_math_sqrt(4.0), 2.0, 1e-10, "sqrt(4) should be 2");
+    ASSERT_NEAR(aria_math_sqrt(9.0), 3.0, 1e-10, "sqrt(9) should be 3");
+    ASSERT_NEAR(aria_math_sqrt(2.0), 1.41421356237, 1e-10, "sqrt(2) should be ~1.414");
+}
+
+TEST_CASE(math_sqrt_zero) {
+    ASSERT_NEAR(aria_math_sqrt(0.0), 0.0, 1e-10, "sqrt(0) should be 0");
+}
+
+TEST_CASE(math_sqrt_negative) {
+    double result = aria_math_sqrt(-1.0);
+    ASSERT_MSG(aria_math_is_nan(result), "sqrt(-1) should be NaN");
+}
+
+TEST_CASE(math_pow_basic) {
+    ASSERT_NEAR(aria_math_pow(2.0, 3.0), 8.0, 1e-10, "2^3 should be 8");
+    ASSERT_NEAR(aria_math_pow(5.0, 2.0), 25.0, 1e-10, "5^2 should be 25");
+    ASSERT_NEAR(aria_math_pow(2.0, -1.0), 0.5, 1e-10, "2^-1 should be 0.5");
+}
+
+TEST_CASE(math_pow_special) {
+    ASSERT_NEAR(aria_math_pow(10.0, 0.0), 1.0, 1e-10, "x^0 should be 1");
+    ASSERT_NEAR(aria_math_pow(5.0, 1.0), 5.0, 1e-10, "x^1 should be x");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Exponential and Logarithmic Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(math_exp) {
+    ASSERT_NEAR(aria_math_exp(0.0), 1.0, 1e-10, "e^0 should be 1");
+    ASSERT_NEAR(aria_math_exp(1.0), ARIA_MATH_E, 1e-10, "e^1 should be E");
+    ASSERT_NEAR(aria_math_exp(2.0), ARIA_MATH_E * ARIA_MATH_E, 1e-10, "e^2 should be E^2");
+}
+
+TEST_CASE(math_log_positive) {
+    ASSERT_NEAR(aria_math_log(1.0), 0.0, 1e-10, "ln(1) should be 0");
+    ASSERT_NEAR(aria_math_log(ARIA_MATH_E), 1.0, 1e-10, "ln(e) should be 1");
+    ASSERT_NEAR(aria_math_log(10.0), 2.302585093, 1e-9, "ln(10) should be ~2.303");
+}
+
+TEST_CASE(math_log_negative) {
+    double result = aria_math_log(-1.0);
+    ASSERT_MSG(aria_math_is_nan(result), "ln(-1) should be NaN");
+}
+
+TEST_CASE(math_log10) {
+    ASSERT_NEAR(aria_math_log10(1.0), 0.0, 1e-10, "log10(1) should be 0");
+    ASSERT_NEAR(aria_math_log10(10.0), 1.0, 1e-10, "log10(10) should be 1");
+    ASSERT_NEAR(aria_math_log10(100.0), 2.0, 1e-10, "log10(100) should be 2");
+}
+
+TEST_CASE(math_log2) {
+    ASSERT_NEAR(aria_math_log2(1.0), 0.0, 1e-10, "log2(1) should be 0");
+    ASSERT_NEAR(aria_math_log2(2.0), 1.0, 1e-10, "log2(2) should be 1");
+    ASSERT_NEAR(aria_math_log2(8.0), 3.0, 1e-10, "log2(8) should be 3");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Trigonometric Functions Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(math_sin) {
+    ASSERT_NEAR(aria_math_sin(0.0), 0.0, 1e-10, "sin(0) should be 0");
+    ASSERT_NEAR(aria_math_sin(ARIA_MATH_PI / 2), 1.0, 1e-10, "sin(π/2) should be 1");
+    ASSERT_NEAR(aria_math_sin(ARIA_MATH_PI), 0.0, 1e-10, "sin(π) should be 0");
+    ASSERT_NEAR(aria_math_sin(ARIA_MATH_PI / 6), 0.5, 1e-10, "sin(π/6) should be 0.5");
+}
+
+TEST_CASE(math_cos) {
+    ASSERT_NEAR(aria_math_cos(0.0), 1.0, 1e-10, "cos(0) should be 1");
+    ASSERT_NEAR(aria_math_cos(ARIA_MATH_PI / 2), 0.0, 1e-10, "cos(π/2) should be 0");
+    ASSERT_NEAR(aria_math_cos(ARIA_MATH_PI), -1.0, 1e-10, "cos(π) should be -1");
+}
+
+TEST_CASE(math_tan) {
+    ASSERT_NEAR(aria_math_tan(0.0), 0.0, 1e-10, "tan(0) should be 0");
+    ASSERT_NEAR(aria_math_tan(ARIA_MATH_PI / 4), 1.0, 1e-10, "tan(π/4) should be 1");
+}
+
+TEST_CASE(math_asin) {
+    ASSERT_NEAR(aria_math_asin(0.0), 0.0, 1e-10, "asin(0) should be 0");
+    ASSERT_NEAR(aria_math_asin(1.0), ARIA_MATH_PI / 2, 1e-10, "asin(1) should be π/2");
+    ASSERT_NEAR(aria_math_asin(0.5), ARIA_MATH_PI / 6, 1e-10, "asin(0.5) should be π/6");
+}
+
+TEST_CASE(math_asin_domain_error) {
+    double result = aria_math_asin(2.0);
+    ASSERT_MSG(aria_math_is_nan(result), "asin(2) should be NaN");
+}
+
+TEST_CASE(math_acos) {
+    ASSERT_NEAR(aria_math_acos(1.0), 0.0, 1e-10, "acos(1) should be 0");
+    ASSERT_NEAR(aria_math_acos(0.0), ARIA_MATH_PI / 2, 1e-10, "acos(0) should be π/2");
+}
+
+TEST_CASE(math_atan) {
+    ASSERT_NEAR(aria_math_atan(0.0), 0.0, 1e-10, "atan(0) should be 0");
+    ASSERT_NEAR(aria_math_atan(1.0), ARIA_MATH_PI / 4, 1e-10, "atan(1) should be π/4");
+}
+
+TEST_CASE(math_atan2) {
+    ASSERT_NEAR(aria_math_atan2(0.0, 1.0), 0.0, 1e-10, "atan2(0,1) should be 0");
+    ASSERT_NEAR(aria_math_atan2(1.0, 0.0), ARIA_MATH_PI / 2, 1e-10, "atan2(1,0) should be π/2");
+    ASSERT_NEAR(aria_math_atan2(1.0, 1.0), ARIA_MATH_PI / 4, 1e-10, "atan2(1,1) should be π/4");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Rounding and Truncation Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(math_floor) {
+    ASSERT_NEAR(aria_math_floor(3.7), 3.0, 1e-10, "floor(3.7) should be 3");
+    ASSERT_NEAR(aria_math_floor(-3.7), -4.0, 1e-10, "floor(-3.7) should be -4");
+    ASSERT_NEAR(aria_math_floor(5.0), 5.0, 1e-10, "floor(5.0) should be 5");
+}
+
+TEST_CASE(math_ceil) {
+    ASSERT_NEAR(aria_math_ceil(3.2), 4.0, 1e-10, "ceil(3.2) should be 4");
+    ASSERT_NEAR(aria_math_ceil(-3.2), -3.0, 1e-10, "ceil(-3.2) should be -3");
+    ASSERT_NEAR(aria_math_ceil(5.0), 5.0, 1e-10, "ceil(5.0) should be 5");
+}
+
+TEST_CASE(math_round) {
+    ASSERT_NEAR(aria_math_round(3.4), 3.0, 1e-10, "round(3.4) should be 3");
+    ASSERT_NEAR(aria_math_round(3.5), 4.0, 1e-10, "round(3.5) should be 4");
+    ASSERT_NEAR(aria_math_round(3.6), 4.0, 1e-10, "round(3.6) should be 4");
+    ASSERT_NEAR(aria_math_round(-3.5), -4.0, 1e-10, "round(-3.5) should be -4");
+}
+
+TEST_CASE(math_trunc) {
+    ASSERT_NEAR(aria_math_trunc(3.7), 3.0, 1e-10, "trunc(3.7) should be 3");
+    ASSERT_NEAR(aria_math_trunc(-3.7), -3.0, 1e-10, "trunc(-3.7) should be -3");
+    ASSERT_NEAR(aria_math_trunc(5.0), 5.0, 1e-10, "trunc(5.0) should be 5");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Utility Functions Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(math_is_nan) {
+    ASSERT_MSG(aria_math_is_nan(ARIA_MATH_NAN), "NAN should be detected");
+    ASSERT_MSG(aria_math_is_nan(aria_math_sqrt(-1.0)), "sqrt(-1) should be NaN");
+    ASSERT_MSG(!aria_math_is_nan(5.0), "5.0 should not be NaN");
+    ASSERT_MSG(!aria_math_is_nan(ARIA_MATH_INFINITY), "Infinity should not be NaN");
+}
+
+TEST_CASE(math_is_inf) {
+    ASSERT_MSG(aria_math_is_inf(ARIA_MATH_INFINITY), "+Infinity should be detected");
+    ASSERT_MSG(aria_math_is_inf(-ARIA_MATH_INFINITY), "-Infinity should be detected");
+    ASSERT_MSG(!aria_math_is_inf(5.0), "5.0 should not be infinite");
+    ASSERT_MSG(!aria_math_is_inf(ARIA_MATH_NAN), "NaN should not be infinite");
+}
+
+TEST_CASE(math_is_finite) {
+    ASSERT_MSG(aria_math_is_finite(5.0), "5.0 should be finite");
+    ASSERT_MSG(aria_math_is_finite(0.0), "0.0 should be finite");
+    ASSERT_MSG(!aria_math_is_finite(ARIA_MATH_INFINITY), "Infinity should not be finite");
+    ASSERT_MSG(!aria_math_is_finite(ARIA_MATH_NAN), "NaN should not be finite");
+}

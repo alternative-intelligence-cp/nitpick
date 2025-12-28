@@ -10,6 +10,7 @@
 #include "backend/ir/codegen_stmt.h"
 #include "backend/ir/codegen_expr.h"
 #include "frontend/ast/stmt.h"
+#include "frontend/ast/type.h"
 #include "frontend/ast/expr.h"
 #include <llvm/IR/Module.h>
 #include <llvm/IR/LLVMContext.h>

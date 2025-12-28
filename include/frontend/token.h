@@ -60,6 +60,8 @@ enum class TokenType {
     TOKEN_KW_STRUCT,    // struct - structure declaration
     TOKEN_KW_ENUM,      // enum - enumeration declaration
     TOKEN_KW_OPAQUE,    // opaque - opaque type declaration (FFI)
+    TOKEN_KW_TRAIT,     // trait - trait declaration
+    TOKEN_KW_IMPL,      // impl - trait implementation
     TOKEN_KW_USE,       // use - import module
     TOKEN_KW_MOD,       // mod - define module
     TOKEN_KW_PUB,       // pub - public visibility

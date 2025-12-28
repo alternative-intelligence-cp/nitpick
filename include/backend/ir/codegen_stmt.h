@@ -29,8 +29,10 @@ namespace aria {
     class ContinueStmt;
     class DeferStmt;
     class ExpressionStmt;
+    class TraitDeclStmt;    // WP 005: Trait declaration
+    class ImplDeclStmt;     // WP 005: Trait implementation
     class ASTNode;
-    
+
     namespace sema {
         class Type;
         class Monomorphizer;  // For generic instantiation (Phase 4.5.1)
@@ -72,7 +74,10 @@ private:
     
     // Symbol table (maps variable names to their LLVM values - allocas or params)
     std::map<std::string, llvm::Value*>& named_values;
-    
+
+    // Track Aria type names by variable name (for UFCS method resolution)
+    std::map<std::string, std::string>& var_aria_types;
+
     // Expression codegen helper
     ExprCodegen* expr_codegen;
     
@@ -143,9 +148,11 @@ public:
      * @param bldr IR builder
      * @param mod LLVM module
      * @param values Symbol table for named values
+     * @param types Aria type names by variable name (for UFCS resolution)
      */
     StmtCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr,
-                llvm::Module* mod, std::map<std::string, llvm::Value*>& values);
+                llvm::Module* mod, std::map<std::string, llvm::Value*>& values,
+                std::map<std::string, std::string>& types);
     
     /**
      * Set expression codegen helper
@@ -181,7 +188,21 @@ public:
      * @return LLVM Function pointer
      */
     llvm::Function* codegenFuncDecl(FuncDeclStmt* stmt);
-    
+
+    /**
+     * Generate code for a trait declaration (WP 005)
+     * Trait declarations are compile-time only - no IR generated
+     * @param stmt Trait declaration statement
+     */
+    void codegenTraitDecl(TraitDeclStmt* stmt);
+
+    /**
+     * Generate code for a trait implementation (WP 005)
+     * Generates mangled functions: TypeName_methodName for each method
+     * @param stmt Implementation declaration statement
+     */
+    void codegenImplDecl(ImplDeclStmt* stmt);
+
     /**
      * Generate code for an if statement
      * Creates conditional branches with basic blocks

@@ -92,6 +92,8 @@ public:
     static ComptimeValue makeString(const std::string& val);
     static ComptimeValue makePointer(uint32_t allocId, uint32_t offset, const std::string& type);
     static ComptimeValue makeERR(const std::string& type, int bits);
+    static ComptimeValue makeStruct(const std::map<std::string, ComptimeValue>& fields, const std::string& typeName);
+    static ComptimeValue makeArray(const std::vector<ComptimeValue>& elements, const std::string& elementType);
     
     // Type queries
     Kind getKind() const { return kind; }
@@ -105,6 +107,8 @@ public:
     bool isString() const { return kind == Kind::STRING; }
     bool isPointer() const { return kind == Kind::POINTER; }
     bool isERR() const { return kind == Kind::ERR_SENTINEL; }
+    bool isStruct() const { return kind == Kind::STRUCT; }
+    bool isArray() const { return kind == Kind::ARRAY; }
     
     // Comparison operator for memoization cache keys (research_030 Section 5.2)
     bool operator<(const ComptimeValue& other) const;
@@ -117,6 +121,8 @@ public:
     bool getBool() const;
     const std::string& getString() const;
     const PointerHandle& getPointer() const;
+    const std::map<std::string, ComptimeValue>& getStruct() const;
+    const std::vector<ComptimeValue>& getArray() const;
     
     // TBB-specific queries
     bool isTBBInRange() const;  // Check if TBB value is not ERR
@@ -205,6 +211,11 @@ public:
     ComptimeValue evalUnaryOp(UnaryExpr* unOp);
     ComptimeValue evalTernary(TernaryExpr* ternary);
     ComptimeValue evalFunctionCall(CallExpr* call);
+    ComptimeValue evalWhileLoop(ASTNode* whileStmt);
+
+    // === Builtin Intrinsics (research_010-011) ===
+    // @typeInfo(T) - Returns compile-time type information
+    ComptimeValue getTypeInfo(const std::string& typeName);
     
     // === TBB Arithmetic (research_030 Section 4.2) ===
     ComptimeValue tbbAdd(const ComptimeValue& a, const ComptimeValue& b);

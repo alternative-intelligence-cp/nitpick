@@ -1,0 +1,320 @@
+/**
+ * Phase 4.1 Tests - Core Memory Functions
+ * 
+ * Tests for aria_alloc, aria_alloc_aligned, aria_alloc_array, aria_free
+ */
+
+#include "../test_helpers.h"
+#include "runtime/allocators.h"
+#include <cstring>
+#include <cstdint>
+
+// =============================================================================
+// Basic Allocation Tests
+// =============================================================================
+
+TEST_CASE(memory_alloc_basic) {
+    void* ptr = aria_alloc(64);
+    ASSERT(ptr != nullptr, "Basic allocation should succeed");
+    
+    // Write pattern
+    char* data = static_cast<char*>(ptr);
+    for (int i = 0; i < 64; ++i) {
+        data[i] = static_cast<char>(i);
+    }
+    
+    // Verify pattern
+    for (int i = 0; i < 64; ++i) {
+        ASSERT_EQ(data[i], static_cast<char>(i), "Data should match pattern");
+    }
+    
+    aria_free(ptr);
+}
+
+TEST_CASE(memory_alloc_zero) {
+    void* ptr = aria_alloc(0);
+    ASSERT(ptr == nullptr, "Zero-size allocation should return NULL");
+}
+
+TEST_CASE(memory_alloc_negative) {
+    // Negative size should return NULL (treated as invalid)
+    void* ptr = aria_alloc(-100);
+    ASSERT(ptr == nullptr, "Negative size should return NULL");
+}
+
+TEST_CASE(memory_free_null) {
+    // Freeing NULL should be safe (no crash)
+    aria_free(nullptr);
+    // If we get here, test passed
+    ASSERT_TRUE(true, "Free NULL should not crash");
+}
+
+// =============================================================================
+// Array Allocation Tests
+// =============================================================================
+
+TEST_CASE(memory_alloc_array_basic) {
+    // Allocate array of 100 int64_t values
+    void* ptr = aria_alloc_array(sizeof(int64_t), 100);
+    ASSERT(ptr != nullptr, "Array allocation should succeed");
+    
+    // Write and verify
+    int64_t* arr = static_cast<int64_t*>(ptr);
+    for (int i = 0; i < 100; ++i) {
+        arr[i] = i * 2;
+    }
+    
+    for (int i = 0; i < 100; ++i) {
+        ASSERT_EQ(arr[i], i * 2, "Array element should match");
+    }
+    
+    aria_free(ptr);
+}
+
+TEST_CASE(memory_alloc_array_zero_count) {
+    void* ptr = aria_alloc_array(8, 0);
+    ASSERT(ptr == nullptr, "Zero count should return NULL");
+}
+
+TEST_CASE(memory_alloc_array_zero_size) {
+    void* ptr = aria_alloc_array(0, 100);
+    ASSERT(ptr == nullptr, "Zero element size should return NULL");
+}
+
+TEST_CASE(memory_alloc_array_overflow) {
+    // Try to allocate array that would overflow
+    // INT64_MAX / 8 + 1 should cause overflow
+    int64_t huge_count = (9223372036854775807LL / 8) + 1;
+    void* ptr = aria_alloc_array(8, huge_count);
+    ASSERT(ptr == nullptr, "Overflow should be detected and return NULL");
+}
+
+TEST_CASE(memory_alloc_array_overflow_2) {
+    // Another overflow case: large elem_size * large count
+    void* ptr = aria_alloc_array(1000000000, 10000000);
+    ASSERT(ptr == nullptr, "Large multiplication should overflow and return NULL");
+}
+
+// =============================================================================
+// Aligned Allocation Tests
+// =============================================================================
+
+TEST_CASE(memory_alloc_aligned_basic) {
+    // Allocate 64-byte aligned memory
+    void* ptr = aria_alloc_buffer(256, 64, false);
+    ASSERT(ptr != nullptr, "Aligned allocation should succeed");
+    
+    // Verify alignment
+    uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+    ASSERT_EQ(addr % 64, 0u, "Pointer should be 64-byte aligned");
+    
+    aria_free(ptr);
+}
+
+TEST_CASE(memory_alloc_aligned_various) {
+    // Test various alignment values (all powers of 2)
+    int alignments[] = {8, 16, 32, 64, 128, 256};
+    
+    for (int align : alignments) {
+        void* ptr = aria_alloc_buffer(1024, align, false);
+        ASSERT(ptr != nullptr, "Aligned allocation should succeed");
+        
+        uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+        ASSERT_EQ(addr % align, 0u, "Pointer should be properly aligned");
+        
+        aria_free(ptr);
+    }
+}
+
+TEST_CASE(memory_alloc_aligned_zero_init) {
+    // Test zero-initialization
+    void* ptr = aria_alloc_buffer(128, 16, true);
+    ASSERT(ptr != nullptr, "Zero-init allocation should succeed");
+    
+    // Verify all bytes are zero
+    char* data = static_cast<char*>(ptr);
+    for (int i = 0; i < 128; ++i) {
+        ASSERT_EQ(data[i], 0, "Byte should be zero");
+    }
+    
+    aria_free(ptr);
+}
+
+TEST_CASE(memory_alloc_aligned_invalid) {
+    // Non-power-of-2 alignment should return NULL
+    void* ptr = aria_alloc_buffer(100, 17, false);  // 17 is not power of 2
+    ASSERT(ptr == nullptr, "Invalid alignment should return NULL");
+}
+
+TEST_CASE(memory_alloc_aligned_zero_alignment) {
+    // Zero alignment should use default allocation
+    void* ptr = aria_alloc_buffer(100, 0, false);
+    ASSERT(ptr != nullptr, "Zero alignment should use default");
+    
+    aria_free(ptr);
+}
+
+// =============================================================================
+// String Allocation Tests
+// =============================================================================
+
+TEST_CASE(memory_alloc_string_basic) {
+    char* str = aria_alloc_string(10);
+    ASSERT(str != nullptr, "String allocation should succeed");
+    
+    // Copy string
+    std::strcpy(str, "Hello");
+    ASSERT_EQ(std::strcmp(str, "Hello"), 0, "String should match");
+    
+    // Verify null terminator exists
+    ASSERT_EQ(str[10], '\0', "Null terminator should be present");
+    
+    aria_free(str);
+}
+
+TEST_CASE(memory_alloc_string_zero) {
+    char* str = aria_alloc_string(0);
+    ASSERT(str != nullptr, "Zero-length string should allocate 1 byte for null");
+    ASSERT_EQ(str[0], '\0', "Should have null terminator");
+    
+    aria_free(str);
+}
+
+// =============================================================================
+// Memory Leak Tests (Manual Verification)
+// =============================================================================
+
+TEST_CASE(memory_no_leaks_simple) {
+    // Allocate and free 1000 times
+    for (int i = 0; i < 1000; ++i) {
+        void* ptr = aria_alloc(100);
+        ASSERT(ptr != nullptr, "Allocation should succeed");
+        aria_free(ptr);
+    }
+    
+    // No assertions here - leak detection done with Valgrind
+    ASSERT_TRUE(true, "Simple alloc/free loop completed");
+}
+
+TEST_CASE(memory_no_leaks_array) {
+    // Allocate and free arrays
+    for (int i = 0; i < 100; ++i) {
+        void* ptr = aria_alloc_array(sizeof(int64_t), 50);
+        ASSERT(ptr != nullptr, "Array allocation should succeed");
+        aria_free(ptr);
+    }
+    
+    ASSERT_TRUE(true, "Array alloc/free loop completed");
+}
+
+// =============================================================================
+// Statistics Tests (if enabled)
+// =============================================================================
+
+TEST_CASE(memory_stats_tracking) {
+    // Get initial stats
+    AllocatorStats stats_before;
+    aria_allocator_get_stats(&stats_before);
+    
+    size_t initial_allocs = stats_before.num_wild_allocations;
+    
+    // Make some allocations
+    void* p1 = aria_alloc(100);
+    void* p2 = aria_alloc(200);
+    void* p3 = aria_alloc(300);
+    
+    // Check stats increased
+    AllocatorStats stats_during;
+    aria_allocator_get_stats(&stats_during);
+    
+    ASSERT(stats_during.num_wild_allocations >= initial_allocs + 3,
+           "Allocation count should increase");
+    
+    // Free
+    aria_free(p1);
+    aria_free(p2);
+    aria_free(p3);
+    
+    // Note: Stats tracking may be imprecise, this is OK
+    ASSERT_TRUE(true, "Stats tracking completed");
+}
+
+// =============================================================================
+// Edge Cases
+// =============================================================================
+
+TEST_CASE(memory_large_allocation) {
+    // Try to allocate 100MB
+    void* ptr = aria_alloc(100 * 1024 * 1024);
+    
+    if (ptr != nullptr) {
+        // Large allocation succeeded
+        ASSERT_TRUE(true, "Large allocation succeeded");
+        aria_free(ptr);
+    } else {
+        // Out of memory - acceptable on constrained systems
+        ASSERT_TRUE(true, "Large allocation failed (OOM acceptable)");
+    }
+}
+
+TEST_CASE(memory_many_small_allocs) {
+    // Stress test: many small allocations
+    const int count = 10000;
+    void** ptrs = new void*[count];
+    
+    int successful = 0;
+    for (int i = 0; i < count; ++i) {
+        ptrs[i] = aria_alloc(16);
+        if (ptrs[i] != nullptr) {
+            successful++;
+        }
+    }
+    
+    ASSERT(successful > 0, "At least some allocations should succeed");
+    
+    // Free all
+    for (int i = 0; i < count; ++i) {
+        if (ptrs[i] != nullptr) {
+            aria_free(ptrs[i]);
+        }
+    }
+    
+    delete[] ptrs;
+}
+
+// =============================================================================
+// Correctness Tests
+// =============================================================================
+
+TEST_CASE(memory_no_corruption) {
+    // Allocate multiple blocks and verify no corruption
+    const int count = 10;
+    void* ptrs[count];
+    
+    // Allocate
+    for (int i = 0; i < count; ++i) {
+        ptrs[i] = aria_alloc(100);
+        ASSERT(ptrs[i] != nullptr, "Allocation should succeed");
+        
+        // Fill with pattern
+        char* data = static_cast<char*>(ptrs[i]);
+        for (int j = 0; j < 100; ++j) {
+            data[j] = static_cast<char>(i + j);
+        }
+    }
+    
+    // Verify patterns (no corruption from other allocations)
+    for (int i = 0; i < count; ++i) {
+        char* data = static_cast<char*>(ptrs[i]);
+        for (int j = 0; j < 100; ++j) {
+            ASSERT_EQ(data[j], static_cast<char>(i + j), 
+                     "Data should not be corrupted");
+        }
+    }
+    
+    // Free
+    for (int i = 0; i < count; ++i) {
+        aria_free(ptrs[i]);
+    }
+}
+

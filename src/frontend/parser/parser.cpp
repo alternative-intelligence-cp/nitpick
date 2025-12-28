@@ -391,19 +391,16 @@ ASTNodePtr Parser::parsePrimary() {
     
     // Float literal
     if (token.type == TokenType::TOKEN_FLOAT) {
-        std::string lexeme = token.lexeme;  // Save before advance()
         std::string raw_text = token.raw_literal_text;  // High-precision literal
+        double value = token.value.float_value;  // Use actual parsed value
         int line = token.line;
         int col = token.column;
         advance();
-        
-        // All float literals now preserve raw text for precision
-        // The placeholder value (0.0) will be replaced by type checker
+
+        // Store both the parsed value and raw text for high-precision scenarios
         if (!raw_text.empty()) {
-            return std::make_shared<LiteralExpr>(0.0, raw_text, line, col);
+            return std::make_shared<LiteralExpr>(value, raw_text, line, col);
         } else {
-            // Legacy path (shouldn't happen with new lexer)
-            double value = std::stod(lexeme);
             return std::make_shared<LiteralExpr>(value, line, col);
         }
     }
@@ -566,7 +563,16 @@ ASTNodePtr Parser::parsePrimary() {
         advance();
         return std::make_shared<IdentifierExpr>(lexeme, line, col);
     }
-    
+
+    // Allow 'process' keyword to be used as identifier (common function name)
+    if (token.type == TokenType::TOKEN_KW_PROCESS) {
+        std::string lexeme = token.lexeme;  // Save before advance()
+        int line = token.line;
+        int col = token.column;
+        advance();
+        return std::make_shared<IdentifierExpr>(lexeme, line, col);
+    }
+
     // Parenthesized expression
     if (token.type == TokenType::TOKEN_LEFT_PAREN) {
         advance();
@@ -1246,7 +1252,17 @@ ASTNodePtr Parser::parseStatement() {
     if (match(TokenType::TOKEN_KW_ENUM)) {
         return parseEnumDecl();
     }
-    
+
+    // Check for trait declarations
+    if (match(TokenType::TOKEN_KW_TRAIT)) {
+        return parseTraitDecl();
+    }
+
+    // Check for impl declarations
+    if (match(TokenType::TOKEN_KW_IMPL)) {
+        return parseImplDecl();
+    }
+
     // Check for qualifiers (wild, const, stack, gc) followed by type
     if (peek().type == TokenType::TOKEN_KW_WILD ||
         peek().type == TokenType::TOKEN_KW_CONST ||
@@ -1646,8 +1662,13 @@ ASTNodePtr Parser::parseFuncDecl() {
     // Consume colon
     consume(TokenType::TOKEN_COLON, "Expected ':' after 'func'");
     
-    // Get function name
-    Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected function name");
+    // Get function name (allow 'process' keyword as function name too)
+    Token nameToken;
+    if (peek().type == TokenType::TOKEN_KW_PROCESS) {
+        nameToken = advance();
+    } else {
+        nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected function name");
+    }
     
     // Consume equal sign
     consume(TokenType::TOKEN_EQUAL, "Expected '=' after function name");
@@ -1843,6 +1864,191 @@ ASTNodePtr Parser::parseEnumDecl() {
     return enumDecl;
 }
 
+// Parse trait declaration: trait:Name = { method_sig1, method_sig2, ... };
+// Or with super traits: trait:Name:SuperTrait1:SuperTrait2 = { ... };
+ASTNodePtr Parser::parseTraitDecl() {
+    using namespace frontend;
+
+    Token traitToken = previous(); // We already consumed 'trait'
+
+    // Expect colon
+    consume(TokenType::TOKEN_COLON, "Expected ':' after 'trait'");
+
+    // Parse trait name
+    Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected trait name after 'trait:'");
+
+    // Parse optional super traits: :SuperTrait1:SuperTrait2
+    std::vector<std::string> superTraits;
+    while (check(TokenType::TOKEN_COLON) && peekNext().type != TokenType::TOKEN_EQUAL) {
+        advance(); // consume ':'
+        Token superTrait = consume(TokenType::TOKEN_IDENTIFIER, "Expected super trait name after ':'");
+        superTraits.push_back(superTrait.lexeme);
+    }
+
+    // Expect assignment
+    consume(TokenType::TOKEN_EQUAL, "Expected '=' after trait name");
+
+    // Expect opening brace
+    consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' to begin trait body");
+
+    // Parse trait methods (method signatures only, no bodies)
+    std::vector<TraitMethod> methods;
+    while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        // Skip commas between method signatures
+        if (match(TokenType::TOKEN_COMMA)) {
+            continue;
+        }
+
+        // Skip semicolons
+        if (match(TokenType::TOKEN_SEMICOLON)) {
+            continue;
+        }
+
+        // Parse method name (can be identifier or 'func:name')
+        std::string methodName;
+        if (match(TokenType::TOKEN_KW_FUNC)) {
+            consume(TokenType::TOKEN_COLON, "Expected ':' after 'func'");
+            Token methodToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected method name");
+            methodName = methodToken.lexeme;
+        } else {
+            Token methodToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected method name in trait");
+            methodName = methodToken.lexeme;
+        }
+
+        // Expect colon before signature
+        consume(TokenType::TOKEN_COLON, "Expected ':' after method name");
+
+        // Parse return type first (before parameters)
+        std::string returnType = "void";
+
+        // Check if we have a return type before '('
+        if (!check(TokenType::TOKEN_LEFT_PAREN)) {
+            ASTNodePtr returnTypeNode = parseType();
+            if (returnTypeNode) {
+                returnType = returnTypeNode->toString();
+            }
+        }
+
+        // Parse parameters
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' to begin method parameters");
+
+        std::vector<ParameterNode> params;
+        while (!check(TokenType::TOKEN_RIGHT_PAREN) && !isAtEnd()) {
+            // Skip commas
+            if (match(TokenType::TOKEN_COMMA)) {
+                continue;
+            }
+
+            // Parse parameter type
+            ASTNodePtr paramTypeNode = parseType();
+
+            // Expect colon
+            consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
+
+            // Parse parameter name
+            Token paramName = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
+
+            params.emplace_back(paramTypeNode, paramName.lexeme, nullptr, paramName.line, paramName.column);
+        }
+
+        // Expect closing paren
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' to end method parameters");
+
+        // Create TraitMethod
+        methods.emplace_back(methodName, std::move(params), returnType);
+    }
+
+    // Expect closing brace
+    consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' to end trait body");
+
+    // Consume optional semicolon
+    match(TokenType::TOKEN_SEMICOLON);
+
+    auto traitDecl = std::make_shared<TraitDeclStmt>(
+        nameToken.lexeme,
+        std::move(methods),
+        traitToken.line,
+        traitToken.column
+    );
+    traitDecl->superTraits = std::move(superTraits);
+
+    return traitDecl;
+}
+
+// Parse trait implementation: impl:Trait:for:Type = { method implementations };
+ASTNodePtr Parser::parseImplDecl() {
+    using namespace frontend;
+
+    Token implToken = previous(); // We already consumed 'impl'
+
+    // Expect colon
+    consume(TokenType::TOKEN_COLON, "Expected ':' after 'impl'");
+
+    // Parse trait name
+    Token traitNameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected trait name after 'impl:'");
+
+    // Expect :for:
+    consume(TokenType::TOKEN_COLON, "Expected ':for:' in impl declaration");
+    consume(TokenType::TOKEN_KW_FOR, "Expected 'for' keyword in impl declaration");
+    consume(TokenType::TOKEN_COLON, "Expected ':' after 'for'");
+
+    // Parse type name (can be identifier OR primitive type keyword like int64, string, etc.)
+    Token typeNameToken = peek();
+    if (check(TokenType::TOKEN_IDENTIFIER)) {
+        advance();
+    } else if (isTypeKeyword(peek().type)) {
+        advance();
+    } else {
+        error("Expected type name after 'for:'");
+        return nullptr;
+    }
+
+    // Expect assignment
+    consume(TokenType::TOKEN_EQUAL, "Expected '=' after impl declaration");
+
+    // Expect opening brace
+    consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' to begin impl body");
+
+    // Parse method implementations (full function declarations)
+    std::vector<ASTNodePtr> methods;
+    while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        // Skip commas
+        if (match(TokenType::TOKEN_COMMA)) {
+            continue;
+        }
+
+        // Skip semicolons
+        if (match(TokenType::TOKEN_SEMICOLON)) {
+            continue;
+        }
+
+        // Parse function declaration (method implementation)
+        if (match(TokenType::TOKEN_KW_FUNC)) {
+            auto method = parseFuncDecl();
+            if (method) {
+                methods.push_back(std::move(method));
+            }
+        } else {
+            throw std::runtime_error("Expected method implementation in impl block at line " +
+                                    std::to_string(peek().line));
+        }
+    }
+
+    // Expect closing brace
+    consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' to end impl body");
+
+    // Consume optional semicolon
+    match(TokenType::TOKEN_SEMICOLON);
+
+    return std::make_shared<ImplDeclStmt>(
+        traitNameToken.lexeme,
+        typeNameToken.lexeme,
+        std::move(methods),
+        implToken.line,
+        implToken.column
+    );
+}
+
 // Parse block: { stmt1; stmt2; ... }
 ASTNodePtr Parser::parseBlock() {
     using namespace frontend;
@@ -1910,10 +2116,26 @@ ASTNodePtr Parser::parseType() {
         return nullptr;
     }
     
-    // Check for pointer suffix: type@ (Aria native pointer syntax)
-    // Note: extern blocks use * for C FFI, but that's handled separately
+    // ARIA-015: Context-aware pointer syntax enforcement
+    // - @ creates fat pointers (native Aria) - only outside extern blocks
+    // - * creates thin pointers (FFI) - only inside extern blocks
     if (match(TokenType::TOKEN_AT)) {
-        baseType = std::make_shared<PointerType>(baseType, typeToken.line, typeToken.column);
+        if (isInsideExternBlock) {
+            error("Use '*' for pointers inside extern blocks, not '@'. "
+                  "The '@' syntax creates fat pointers incompatible with C ABI.");
+        }
+        auto ptrType = std::make_shared<PointerType>(baseType, typeToken.line, typeToken.column);
+        ptrType->isNative = true;  // Fat pointer (32 bytes)
+        baseType = ptrType;
+    }
+    else if (match(TokenType::TOKEN_STAR)) {
+        if (!isInsideExternBlock) {
+            error("Use '@' for pointers in Aria code, not '*'. "
+                  "The '*' syntax is only valid in extern blocks for FFI compatibility.");
+        }
+        auto ptrType = std::make_shared<PointerType>(baseType, typeToken.line, typeToken.column);
+        ptrType->isNative = false;  // Thin pointer (8 bytes)
+        baseType = ptrType;
     }
     
     // Check for safe reference suffix: type$ (safe reference for borrow checker)
@@ -2084,7 +2306,10 @@ ASTNodePtr Parser::parseExternStatement() {
     
     // Expect opening brace
     consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after extern library name");
-    
+
+    // ARIA-015: Set FFI context - * pointer syntax is now allowed
+    isInsideExternBlock = true;
+
     // Parse declarations inside the extern block
     // Note: extern blocks contain signatures (declarations without bodies), not statements
     while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
@@ -2338,7 +2563,10 @@ ASTNodePtr Parser::parseExternStatement() {
     }
     
     consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after extern block");
-    
+
+    // ARIA-015: Exit FFI context - restore @ pointer syntax enforcement
+    isInsideExternBlock = false;
+
     return externStmt;
 }
 
@@ -2383,42 +2611,44 @@ ASTNodePtr Parser::parseReturn() {
 
 ASTNodePtr Parser::parsePassStatement() {
     using namespace frontend;
-    
+
     Token passToken = previous(); // We already consumed 'pass'
-    
+
     // Parse: pass(expr);
     consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'pass'");
-    
+
     ASTNodePtr value = parseExpression();
     if (!value) {
         error("Expected expression in pass statement");
         return nullptr;
     }
-    
+
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after pass value");
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after pass statement");
-    
-    return std::make_shared<PassStmt>(value, passToken.line, passToken.column);
+
+    // Desugar pass(expr) to return(expr) - semantic analysis will handle Result wrapping
+    return std::make_shared<ReturnStmt>(value, passToken.line, passToken.column);
 }
 
 ASTNodePtr Parser::parseFailStatement() {
     using namespace frontend;
-    
+
     Token failToken = previous(); // We already consumed 'fail'
-    
+
     // Parse: fail(error_code);
     consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'fail'");
-    
+
     ASTNodePtr errorCode = parseExpression();
     if (!errorCode) {
         error("Expected error code expression in fail statement");
         return nullptr;
     }
-    
+
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after fail error code");
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after fail statement");
-    
-    return std::make_shared<FailStmt>(errorCode, failToken.line, failToken.column);
+
+    // Desugar fail(code) to return(code) - semantic analysis will handle Result wrapping
+    return std::make_shared<ReturnStmt>(errorCode, failToken.line, failToken.column);
 }
 
 // Parse if statement: if (condition) thenBranch [else elseBranch]

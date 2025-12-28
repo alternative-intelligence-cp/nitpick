@@ -1,7 +1,70 @@
 /// Core mathematical functions and constants
 //!
-//! This module provides essential mathematical operations including
-//! trigonometric functions, power/exponential operations, and mathematical constants.
+//! This module provides essential mathematical operations including:
+//! - Trigonometric functions (sin, cos, tan, etc.)
+//! - Power/exponential operations (pow, exp, ln, log)
+//! - TBB (Twisted Balanced Binary) arithmetic with sticky error semantics
+//! - Vector and matrix math (vec2, vec3, vec4, mat3, mat4)
+//!
+//! All basic math functions are implemented as compiler builtins for
+//! optimal performance using LLVM intrinsics and libm.
+//!
+//! BUILTIN FUNCTIONS AVAILABLE:
+//!   abs(x)          - Absolute value
+//!   sqrt(x)         - Square root
+//!   cbrt(x)         - Cube root
+//!   pow(base, exp)  - Power/exponentiation
+//!   exp(x)          - e^x (natural exponential)
+//!   ln(x)           - Natural logarithm (base e)
+//!   log10(x)        - Base-10 logarithm
+//!   log2(x)         - Base-2 logarithm
+//!   sin(x)          - Sine (radians)
+//!   cos(x)          - Cosine (radians)
+//!   tan(x)          - Tangent (radians)
+//!   asin(x)         - Arc sine
+//!   acos(x)         - Arc cosine
+//!   atan(x)         - Arc tangent
+//!   atan2(y, x)     - Two-argument arc tangent
+//!   floor(x)        - Round down
+//!   ceil(x)         - Round up
+//!   round(x)        - Round to nearest
+//!   trunc(x)        - Truncate toward zero
+//!   min(a, b)       - Minimum of two values
+//!   max(a, b)       - Maximum of two values
+//!
+//! BUILTIN CONSTANTS:
+//!   PI  - 3.14159... (π)
+//!   E   - 2.71828... (Euler's number)
+//!   TAU - 6.28318... (2π)
+//!
+//! Reference: research_031_essential_stdlib.txt Section 6
+
+// =============================================================================
+// TBB Type Specifications (research_031 Section 6.1)
+// =============================================================================
+// TBB types use symmetric ranges with a dedicated ERR sentinel value.
+// This enables "sticky" error propagation - if any operand is ERR,
+// the result is always ERR.
+
+/// tbb8 range: -127 to +127, ERR = -128
+pub const TBB8_MIN: tbb8 = -127;
+pub const TBB8_MAX: tbb8 = 127;
+pub const TBB8_ERR: tbb8 = -128;
+
+/// tbb16 range: -32,767 to +32,767, ERR = -32,768
+pub const TBB16_MIN: tbb16 = -32767;
+pub const TBB16_MAX: tbb16 = 32767;
+pub const TBB16_ERR: tbb16 = -32768;
+
+/// tbb32 range: -2,147,483,647 to +2,147,483,647, ERR = -2,147,483,648
+pub const TBB32_MIN: tbb32 = -2147483647;
+pub const TBB32_MAX: tbb32 = 2147483647;
+pub const TBB32_ERR: tbb32 = -2147483648;
+
+/// tbb64 range: -(2^63-1) to +(2^63-1), ERR = -2^63
+pub const TBB64_MIN: tbb64 = -9223372036854775807;
+pub const TBB64_MAX: tbb64 = 9223372036854775807;
+pub const TBB64_ERR: tbb64 = -9223372036854775808;
 
 /// The mathematical constant π (pi)
 /// Ratio of a circle's circumference to its diameter
@@ -263,3 +326,567 @@ pub fn min(a: flt64, b: flt64) -> flt64 {
 pub fn max(a: flt64, b: flt64) -> flt64 {
     // Native implementation
 }
+
+// =============================================================================
+// TBB Error Checking Functions (research_031 Section 6.1)
+// =============================================================================
+
+/// Check if a tbb8 value is the ERR sentinel
+/// @param v The value to check
+/// @return true if v is ERR (-128)
+pub func:is_tbb8_err = bool(tbb8:v) {
+    pass(v == TBB8_ERR);
+};
+
+/// Check if a tbb16 value is the ERR sentinel
+pub func:is_tbb16_err = bool(tbb16:v) {
+    pass(v == TBB16_ERR);
+};
+
+/// Check if a tbb32 value is the ERR sentinel
+pub func:is_tbb32_err = bool(tbb32:v) {
+    pass(v == TBB32_ERR);
+};
+
+/// Check if a tbb64 value is the ERR sentinel
+pub func:is_tbb64_err = bool(tbb64:v) {
+    pass(v == TBB64_ERR);
+};
+
+/// Check if a tbb8 value is within valid range (not ERR)
+/// @param v The value to check
+/// @return true if v is a valid value (not ERR)
+pub func:is_tbb8_valid = bool(tbb8:v) {
+    pass(v != TBB8_ERR);
+};
+
+/// Check if a tbb16 value is within valid range (not ERR)
+pub func:is_tbb16_valid = bool(tbb16:v) {
+    pass(v != TBB16_ERR);
+};
+
+/// Check if a tbb32 value is within valid range (not ERR)
+pub func:is_tbb32_valid = bool(tbb32:v) {
+    pass(v != TBB32_ERR);
+};
+
+/// Check if a tbb64 value is within valid range (not ERR)
+pub func:is_tbb64_valid = bool(tbb64:v) {
+    pass(v != TBB64_ERR);
+};
+
+// =============================================================================
+// TBB Safe Division (research_031 Section 6.2)
+// =============================================================================
+// Division by zero returns ERR instead of crashing.
+// Also handles INT_MIN % -1 edge case that causes CPU trap.
+
+/// Safe division for tbb8 - returns ERR on division by zero
+pub func:tbb8_div = tbb8(tbb8:a, tbb8:b) {
+    // Sticky error: if either operand is ERR, result is ERR
+    if (a == TBB8_ERR) { pass(TBB8_ERR); }
+    if (b == TBB8_ERR) { pass(TBB8_ERR); }
+    // Division by zero returns ERR
+    if (b == 0) { pass(TBB8_ERR); }
+    pass(a / b);
+};
+
+/// Safe division for tbb16
+pub func:tbb16_div = tbb16(tbb16:a, tbb16:b) {
+    if (a == TBB16_ERR) { pass(TBB16_ERR); }
+    if (b == TBB16_ERR) { pass(TBB16_ERR); }
+    if (b == 0) { pass(TBB16_ERR); }
+    pass(a / b);
+};
+
+/// Safe division for tbb32
+pub func:tbb32_div = tbb32(tbb32:a, tbb32:b) {
+    if (a == TBB32_ERR) { pass(TBB32_ERR); }
+    if (b == TBB32_ERR) { pass(TBB32_ERR); }
+    if (b == 0) { pass(TBB32_ERR); }
+    pass(a / b);
+};
+
+/// Safe division for tbb64
+pub func:tbb64_div = tbb64(tbb64:a, tbb64:b) {
+    if (a == TBB64_ERR) { pass(TBB64_ERR); }
+    if (b == TBB64_ERR) { pass(TBB64_ERR); }
+    if (b == 0) { pass(TBB64_ERR); }
+    pass(a / b);
+};
+
+/// Safe modulo for tbb8 - handles division by zero and MIN % -1
+pub func:tbb8_mod = tbb8(tbb8:a, tbb8:b) {
+    if (a == TBB8_ERR) { pass(TBB8_ERR); }
+    if (b == TBB8_ERR) { pass(TBB8_ERR); }
+    if (b == 0) { pass(TBB8_ERR); }
+    // MIN % -1 would trap on x86, return ERR instead
+    if (a == TBB8_MIN && b == -1) { pass(TBB8_ERR); }
+    pass(a % b);
+};
+
+/// Safe modulo for tbb16
+pub func:tbb16_mod = tbb16(tbb16:a, tbb16:b) {
+    if (a == TBB16_ERR) { pass(TBB16_ERR); }
+    if (b == TBB16_ERR) { pass(TBB16_ERR); }
+    if (b == 0) { pass(TBB16_ERR); }
+    if (a == TBB16_MIN && b == -1) { pass(TBB16_ERR); }
+    pass(a % b);
+};
+
+/// Safe modulo for tbb32
+pub func:tbb32_mod = tbb32(tbb32:a, tbb32:b) {
+    if (a == TBB32_ERR) { pass(TBB32_ERR); }
+    if (b == TBB32_ERR) { pass(TBB32_ERR); }
+    if (b == 0) { pass(TBB32_ERR); }
+    if (a == TBB32_MIN && b == -1) { pass(TBB32_ERR); }
+    pass(a % b);
+};
+
+/// Safe modulo for tbb64
+pub func:tbb64_mod = tbb64(tbb64:a, tbb64:b) {
+    if (a == TBB64_ERR) { pass(TBB64_ERR); }
+    if (b == TBB64_ERR) { pass(TBB64_ERR); }
+    if (b == 0) { pass(TBB64_ERR); }
+    if (a == TBB64_MIN && b == -1) { pass(TBB64_ERR); }
+    pass(a % b);
+};
+
+// =============================================================================
+// TBB Conversion Functions
+// =============================================================================
+
+/// Convert int64 to tbb64, returning ERR if out of range
+pub func:int64_to_tbb64 = tbb64(int64:v) {
+    // int64 range is identical to tbb64 valid range + ERR
+    // Since TBB64_MIN is the ERR sentinel, we need to reject it
+    if (v == -9223372036854775808) {
+        pass(TBB64_ERR);  // This value is reserved for ERR
+    }
+    pass(v);
+};
+
+/// Convert tbb64 to result, converting ERR to error
+pub func:tbb64_to_result = result(tbb64:v) {
+    if (v == TBB64_ERR) {
+        fail(ERR);  // Propagate as error result
+    }
+    pass(v);
+};
+
+// =============================================================================
+// Vector Types (research_031 Section 6.3)
+// =============================================================================
+// SIMD-aligned vector types for graphics and linear algebra
+
+/// 2D vector with flt32 components
+pub struct Vec2 {
+    flt32:x;
+    flt32:y;
+}
+
+/// 3D vector with flt32 components
+pub struct Vec3 {
+    flt32:x;
+    flt32:y;
+    flt32:z;
+}
+
+/// 4D vector with flt32 components (SIMD-aligned)
+pub struct Vec4 {
+    flt32:x;
+    flt32:y;
+    flt32:z;
+    flt32:w;
+}
+
+// =============================================================================
+// Vec2 Operations
+// =============================================================================
+
+/// Create a new Vec2
+pub func:vec2 = Vec2(flt32:x, flt32:y) {
+    Vec2:v = { x: x, y: y };
+    pass(v);
+};
+
+/// Add two Vec2
+pub func:vec2_add = Vec2(Vec2@:a, Vec2@:b) {
+    Vec2:v = {
+        x: a->x + b->x,
+        y: a->y + b->y
+    };
+    pass(v);
+};
+
+/// Subtract two Vec2
+pub func:vec2_sub = Vec2(Vec2@:a, Vec2@:b) {
+    Vec2:v = {
+        x: a->x - b->x,
+        y: a->y - b->y
+    };
+    pass(v);
+};
+
+/// Multiply Vec2 by scalar
+pub func:vec2_scale = Vec2(Vec2@:v, flt32:s) {
+    Vec2:result = {
+        x: v->x * s,
+        y: v->y * s
+    };
+    pass(result);
+};
+
+/// Dot product of two Vec2
+pub func:vec2_dot = flt32(Vec2@:a, Vec2@:b) {
+    flt32:result = a->x * b->x + a->y * b->y;
+    pass(result);
+};
+
+/// Length (magnitude) of Vec2
+pub func:vec2_length = flt32(Vec2@:v) {
+    flt32:len_sq = v->x * v->x + v->y * v->y;
+    pass(sqrt(len_sq));
+};
+
+/// Normalize Vec2 to unit length
+pub func:vec2_normalize = Vec2(Vec2@:v) {
+    flt32:len = vec2_length(v);
+    if (len == 0.0) {
+        Vec2:zero = { x: 0.0, y: 0.0 };
+        pass(zero);
+    }
+    flt32:inv_len = 1.0 / len;
+    Vec2:result = {
+        x: v->x * inv_len,
+        y: v->y * inv_len
+    };
+    pass(result);
+};
+
+// =============================================================================
+// Vec3 Operations
+// =============================================================================
+
+/// Create a new Vec3
+pub func:vec3 = Vec3(flt32:x, flt32:y, flt32:z) {
+    Vec3:v = { x: x, y: y, z: z };
+    pass(v);
+};
+
+/// Add two Vec3
+pub func:vec3_add = Vec3(Vec3@:a, Vec3@:b) {
+    Vec3:v = {
+        x: a->x + b->x,
+        y: a->y + b->y,
+        z: a->z + b->z
+    };
+    pass(v);
+};
+
+/// Subtract two Vec3
+pub func:vec3_sub = Vec3(Vec3@:a, Vec3@:b) {
+    Vec3:v = {
+        x: a->x - b->x,
+        y: a->y - b->y,
+        z: a->z - b->z
+    };
+    pass(v);
+};
+
+/// Multiply Vec3 by scalar
+pub func:vec3_scale = Vec3(Vec3@:v, flt32:s) {
+    Vec3:result = {
+        x: v->x * s,
+        y: v->y * s,
+        z: v->z * s
+    };
+    pass(result);
+};
+
+/// Dot product of two Vec3
+pub func:vec3_dot = flt32(Vec3@:a, Vec3@:b) {
+    flt32:result = a->x * b->x + a->y * b->y + a->z * b->z;
+    pass(result);
+};
+
+/// Cross product of two Vec3
+pub func:vec3_cross = Vec3(Vec3@:a, Vec3@:b) {
+    Vec3:result = {
+        x: a->y * b->z - a->z * b->y,
+        y: a->z * b->x - a->x * b->z,
+        z: a->x * b->y - a->y * b->x
+    };
+    pass(result);
+};
+
+/// Length (magnitude) of Vec3
+pub func:vec3_length = flt32(Vec3@:v) {
+    flt32:len_sq = v->x * v->x + v->y * v->y + v->z * v->z;
+    pass(sqrt(len_sq));
+};
+
+/// Normalize Vec3 to unit length
+pub func:vec3_normalize = Vec3(Vec3@:v) {
+    flt32:len = vec3_length(v);
+    if (len == 0.0) {
+        Vec3:zero = { x: 0.0, y: 0.0, z: 0.0 };
+        pass(zero);
+    }
+    flt32:inv_len = 1.0 / len;
+    Vec3:result = {
+        x: v->x * inv_len,
+        y: v->y * inv_len,
+        z: v->z * inv_len
+    };
+    pass(result);
+};
+
+// =============================================================================
+// Vec4 Operations
+// =============================================================================
+
+/// Create a new Vec4
+pub func:vec4 = Vec4(flt32:x, flt32:y, flt32:z, flt32:w) {
+    Vec4:v = { x: x, y: y, z: z, w: w };
+    pass(v);
+};
+
+/// Add two Vec4
+pub func:vec4_add = Vec4(Vec4@:a, Vec4@:b) {
+    Vec4:v = {
+        x: a->x + b->x,
+        y: a->y + b->y,
+        z: a->z + b->z,
+        w: a->w + b->w
+    };
+    pass(v);
+};
+
+/// Subtract two Vec4
+pub func:vec4_sub = Vec4(Vec4@:a, Vec4@:b) {
+    Vec4:v = {
+        x: a->x - b->x,
+        y: a->y - b->y,
+        z: a->z - b->z,
+        w: a->w - b->w
+    };
+    pass(v);
+};
+
+/// Multiply Vec4 by scalar
+pub func:vec4_scale = Vec4(Vec4@:v, flt32:s) {
+    Vec4:result = {
+        x: v->x * s,
+        y: v->y * s,
+        z: v->z * s,
+        w: v->w * s
+    };
+    pass(result);
+};
+
+/// Dot product of two Vec4
+pub func:vec4_dot = flt32(Vec4@:a, Vec4@:b) {
+    flt32:result = a->x * b->x + a->y * b->y + a->z * b->z + a->w * b->w;
+    pass(result);
+};
+
+// =============================================================================
+// Matrix Types (research_031 Section 6.3)
+// =============================================================================
+
+/// 3x3 matrix (column-major order)
+pub struct Mat3 {
+    flt32[9]:m;  // Column-major: m[col*3 + row]
+}
+
+/// 4x4 matrix (column-major order, SIMD-aligned)
+pub struct Mat4 {
+    flt32[16]:m;  // Column-major: m[col*4 + row]
+}
+
+// =============================================================================
+// Mat4 Operations
+// =============================================================================
+
+/// Create identity Mat4
+pub func:mat4_identity = Mat4() {
+    Mat4:m = {
+        m: [
+            1.0, 0.0, 0.0, 0.0,  // Column 0
+            0.0, 1.0, 0.0, 0.0,  // Column 1
+            0.0, 0.0, 1.0, 0.0,  // Column 2
+            0.0, 0.0, 0.0, 1.0   // Column 3
+        ]
+    };
+    pass(m);
+};
+
+/// Create translation Mat4
+pub func:mat4_translate = Mat4(flt32:x, flt32:y, flt32:z) {
+    Mat4:m = {
+        m: [
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            x,   y,   z,   1.0
+        ]
+    };
+    pass(m);
+};
+
+/// Create scale Mat4
+pub func:mat4_scale = Mat4(flt32:sx, flt32:sy, flt32:sz) {
+    Mat4:m = {
+        m: [
+            sx,  0.0, 0.0, 0.0,
+            0.0, sy,  0.0, 0.0,
+            0.0, 0.0, sz,  0.0,
+            0.0, 0.0, 0.0, 1.0
+        ]
+    };
+    pass(m);
+};
+
+/// Create rotation Mat4 around X axis (angle in radians)
+pub func:mat4_rotate_x = Mat4(flt32:angle) {
+    flt32:c = cos(angle);
+    flt32:s = sin(angle);
+    Mat4:m = {
+        m: [
+            1.0, 0.0, 0.0, 0.0,
+            0.0, c,   s,   0.0,
+            0.0, -s,  c,   0.0,
+            0.0, 0.0, 0.0, 1.0
+        ]
+    };
+    pass(m);
+};
+
+/// Create rotation Mat4 around Y axis (angle in radians)
+pub func:mat4_rotate_y = Mat4(flt32:angle) {
+    flt32:c = cos(angle);
+    flt32:s = sin(angle);
+    Mat4:m = {
+        m: [
+            c,   0.0, -s,  0.0,
+            0.0, 1.0, 0.0, 0.0,
+            s,   0.0, c,   0.0,
+            0.0, 0.0, 0.0, 1.0
+        ]
+    };
+    pass(m);
+};
+
+/// Create rotation Mat4 around Z axis (angle in radians)
+pub func:mat4_rotate_z = Mat4(flt32:angle) {
+    flt32:c = cos(angle);
+    flt32:s = sin(angle);
+    Mat4:m = {
+        m: [
+            c,   s,   0.0, 0.0,
+            -s,  c,   0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        ]
+    };
+    pass(m);
+};
+
+/// Multiply two Mat4 matrices
+pub func:mat4_mul = Mat4(Mat4@:a, Mat4@:b) {
+    Mat4:result = { m: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                       0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] };
+
+    // Column-major matrix multiplication
+    int32:col = 0;
+    while (col < 4) {
+        int32:row = 0;
+        while (row < 4) {
+            flt32:sum = 0.0;
+            int32:k = 0;
+            while (k < 4) {
+                sum = sum + a->m[k * 4 + row] * b->m[col * 4 + k];
+                k = k + 1;
+            }
+            result.m[col * 4 + row] = sum;
+            row = row + 1;
+        }
+        col = col + 1;
+    }
+
+    pass(result);
+};
+
+/// Transform Vec4 by Mat4
+pub func:mat4_transform = Vec4(Mat4@:m, Vec4@:v) {
+    Vec4:result = {
+        x: m->m[0] * v->x + m->m[4] * v->y + m->m[8]  * v->z + m->m[12] * v->w,
+        y: m->m[1] * v->x + m->m[5] * v->y + m->m[9]  * v->z + m->m[13] * v->w,
+        z: m->m[2] * v->x + m->m[6] * v->y + m->m[10] * v->z + m->m[14] * v->w,
+        w: m->m[3] * v->x + m->m[7] * v->y + m->m[11] * v->z + m->m[15] * v->w
+    };
+    pass(result);
+};
+
+/// Create perspective projection Mat4
+/// @param fov_y Field of view in Y direction (radians)
+/// @param aspect Aspect ratio (width/height)
+/// @param near Near clipping plane
+/// @param far Far clipping plane
+pub func:mat4_perspective = Mat4(flt32:fov_y, flt32:aspect, flt32:near, flt32:far) {
+    flt32:tan_half_fov = tan(fov_y / 2.0);
+    flt32:f = 1.0 / tan_half_fov;
+    flt32:nf = 1.0 / (near - far);
+
+    Mat4:m = {
+        m: [
+            f / aspect, 0.0, 0.0,                  0.0,
+            0.0,        f,   0.0,                  0.0,
+            0.0,        0.0, (far + near) * nf,   -1.0,
+            0.0,        0.0, 2.0 * far * near * nf, 0.0
+        ]
+    };
+    pass(m);
+};
+
+/// Create orthographic projection Mat4
+pub func:mat4_ortho = Mat4(flt32:left, flt32:right, flt32:bottom, flt32:top, flt32:near, flt32:far) {
+    flt32:rl = 1.0 / (right - left);
+    flt32:tb = 1.0 / (top - bottom);
+    flt32:fn = 1.0 / (far - near);
+
+    Mat4:m = {
+        m: [
+            2.0 * rl,                0.0,                    0.0,                0.0,
+            0.0,                     2.0 * tb,               0.0,                0.0,
+            0.0,                     0.0,                   -2.0 * fn,           0.0,
+            -(right + left) * rl,   -(top + bottom) * tb,  -(far + near) * fn,  1.0
+        ]
+    };
+    pass(m);
+};
+
+/// Create look-at view Mat4
+pub func:mat4_look_at = Mat4(Vec3@:eye, Vec3@:center, Vec3@:up) {
+    // Calculate forward direction
+    Vec3:f = vec3_sub(center, eye);
+    f = vec3_normalize(@f);
+
+    // Calculate right direction
+    Vec3:r = vec3_cross(@f, up);
+    r = vec3_normalize(@r);
+
+    // Calculate up direction
+    Vec3:u = vec3_cross(@r, @f);
+
+    Mat4:m = {
+        m: [
+            r.x,                  u.x,                 -f.x,                 0.0,
+            r.y,                  u.y,                 -f.y,                 0.0,
+            r.z,                  u.z,                 -f.z,                 0.0,
+            -vec3_dot(@r, eye),  -vec3_dot(@u, eye),   vec3_dot(@f, eye),   1.0
+        ]
+    };
+    pass(m);
+};

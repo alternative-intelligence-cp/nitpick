@@ -1,0 +1,140 @@
+// Test the C API for async runtime
+// Validates FFI layer between LLVM-generated code and C++ runtime
+
+#include "../test_helpers.h"
+#include "runtime/async/runtime_api.h"
+#include "runtime/async/executor.h"
+#include "runtime/async/future.h"
+
+using namespace aria::runtime;
+
+// Mock coroutine state for testing
+struct MockCoroutineState {
+    int suspendPoint;
+    int64_t value;
+    bool done;
+};
+
+// Mock LLVM intrinsics for testing
+extern "C" {
+    void __aria_coro_resume(void* handle) {
+        if (!handle) return;
+        MockCoroutineState* state = static_cast<MockCoroutineState*>(handle);
+        if (state->suspendPoint == 0) {
+            state->value = 42;
+            state->suspendPoint = 1;
+        } else {
+            state->done = true;
+        }
+    }
+    
+    bool __aria_coro_done(void* handle) {
+        if (!handle) return true;
+        return static_cast<MockCoroutineState*>(handle)->done;
+    }
+    
+    void __aria_coro_destroy(void* handle) {
+        if (handle) delete static_cast<MockCoroutineState*>(handle);
+    }
+}
+
+TEST_CASE(c_api_executor_create) {
+    AriaExecutorHandle exec = aria_executor_create();
+    ASSERT(exec != nullptr, "Should create executor");
+    aria_executor_destroy(exec);
+}
+
+TEST_CASE(c_api_global_executor) {
+    AriaExecutorHandle exec1 = aria_get_global_executor();
+    AriaExecutorHandle exec2 = aria_get_global_executor();
+    
+    ASSERT(exec1 != nullptr, "Global executor should exist");
+    ASSERT(exec1 == exec2, "Global executor should be singleton");
+}
+
+TEST_CASE(c_api_future_create) {
+    AriaFutureHandle fut = aria_future_create(sizeof(int64_t));
+    ASSERT(fut != nullptr, "Should create future");
+    
+    ASSERT(!aria_future_is_ready(fut), "New future should not be ready");
+    
+    aria_future_destroy(fut);
+}
+
+TEST_CASE(c_api_future_set_get) {
+    AriaFutureHandle fut = aria_future_create(sizeof(int64_t));
+    
+    int64_t value = 42;
+    aria_future_set_value(fut, &value, sizeof(value));
+    
+    ASSERT(aria_future_is_ready(fut), "Future should be ready after set");
+    
+    void* result = aria_future_get_value(fut);
+    ASSERT(result != nullptr, "Should get value");
+    ASSERT(*static_cast<int64_t*>(result) == 42, "Value should be 42");
+    
+    aria_future_destroy(fut);
+}
+
+TEST_CASE(c_api_spawn_task) {
+    AriaExecutorHandle exec = aria_executor_create();
+    
+    MockCoroutineState* coro = new MockCoroutineState{0, 0, false};
+    
+    AriaTaskId taskId = aria_executor_spawn(exec, coro);
+    ASSERT(taskId > 0, "Should return valid task ID");
+    
+    aria_executor_destroy(exec);
+}
+
+TEST_CASE(c_api_run_executor) {
+    AriaExecutorHandle exec = aria_executor_create();
+    
+    MockCoroutineState* coro = new MockCoroutineState{0, 0, false};
+    aria_executor_spawn(exec, coro);
+    
+    aria_executor_run(exec);
+    
+    // Executor should complete
+    Executor* execPtr = static_cast<Executor*>(exec);
+    ASSERT(execPtr->getTasksCompleted() > 0, "Should complete tasks");
+    
+    aria_executor_destroy(exec);
+}
+
+TEST_CASE(c_api_await_sync) {
+    MockCoroutineState* coro = new MockCoroutineState{0, 0, false};
+    
+    void* result = aria_await_sync(coro);
+    
+    // Should run coroutine synchronously
+    // For mock, result handling is simplified
+    (void)result;  // Avoid unused warning
+}
+
+TEST_CASE(c_api_coro_intrinsics) {
+    MockCoroutineState* coro = new MockCoroutineState{0, 0, false};
+    
+    ASSERT(!aria_coro_done(coro), "Should not be done initially");
+    
+    aria_coro_resume(coro);
+    ASSERT(!aria_coro_done(coro), "Should not be done after first resume");
+    
+    aria_coro_resume(coro);
+    ASSERT(aria_coro_done(coro), "Should be done after second resume");
+    
+    aria_coro_destroy(coro);
+}
+
+TEST_CASE(c_api_memory_management) {
+    void* mem = aria_coro_alloc(1024);
+    ASSERT(mem != nullptr, "Should allocate memory");
+    
+    aria_coro_free(mem);
+}
+
+int main() {
+    run_all_tests();
+    print_test_summary();
+    return g_test_stats.failed > 0 ? 1 : 0;
+}

@@ -1,0 +1,821 @@
+#include "test_helpers.h"
+#include "frontend/sema/generic_resolver.h"
+#include "frontend/sema/symbol_table.h"
+#include "frontend/ast/stmt.h"
+#include "frontend/ast/type.h"
+#include "frontend/ast/type.h"
+#include "frontend/ast/expr.h"
+
+using namespace aria;
+using namespace aria::sema;
+
+// ============================================================================
+// Generic Type System Tests - Phase 3.4
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// GenericParam Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(generic_param_creation) {
+    GenericParam param("T", 1, 10);
+    
+    ASSERT_EQ(param.name, "T", "Param name should be T");
+    ASSERT(!param.hasConstraints(), "Should have no constraints initially");
+}
+
+TEST_CASE(generic_param_with_constraints) {
+    GenericParam param("T", 1, 10);
+    param.constraints.push_back("Addable");
+    param.constraints.push_back("Display");
+    
+    ASSERT(param.hasConstraints(), "Should have constraints");
+    ASSERT_EQ(param.constraints.size(), 2, "Should have 2 constraints");
+}
+
+// ----------------------------------------------------------------------------
+// TypeArg Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(type_arg_creation) {
+    TypeSystem typeSystem;
+    Type* intType = typeSystem.getPrimitiveType("int32");
+    
+    TypeArg arg(intType, "inferred", 1, 5);
+    
+    ASSERT(arg.type != nullptr, "Type should not be null");
+    ASSERT_EQ(arg.source, "inferred", "Source should be inferred");
+}
+
+// ----------------------------------------------------------------------------
+// SpecializationKey Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(specialization_key_equality) {
+    SpecializationKey key1{"identity", {"int32"}};
+    SpecializationKey key2{"identity", {"int32"}};
+    SpecializationKey key3{"identity", {"int64"}};
+    
+    ASSERT(key1 == key2, "Same keys should be equal");
+    ASSERT(!(key1 == key3), "Different type args should not be equal");
+}
+
+TEST_CASE(specialization_key_hash) {
+    SpecializationKeyHash hasher;
+    
+    SpecializationKey key1{"identity", {"int32"}};
+    SpecializationKey key2{"identity", {"int32"}};
+    
+    size_t hash1 = hasher(key1);
+    size_t hash2 = hasher(key2);
+    
+    ASSERT_EQ(hash1, hash2, "Same keys should have same hash");
+}
+
+// ----------------------------------------------------------------------------
+// GenericResolver Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(generic_resolver_creation) {
+    GenericResolver resolver;
+    
+    ASSERT(!resolver.hasErrors(), "New resolver should have no errors");
+}
+
+TEST_CASE(generic_resolver_canonicalize_type) {
+    GenericResolver resolver;
+    TypeSystem registry;
+    
+    Type* intType = registry.getPrimitiveType("int32");
+    std::string canonical = resolver.canonicalizeTypeName(intType);
+    
+    ASSERT_EQ(canonical, "int32", "Should canonicalize to int32");
+}
+
+TEST_CASE(generic_resolver_make_specialization_key) {
+    GenericResolver resolver;
+    TypeSystem registry;
+    
+    Type* intType = registry.getPrimitiveType("int32");
+    TypeSubstitution sub;
+    sub["T"] = intType;
+    
+    SpecializationKey key = resolver.makeSpecializationKey("identity", sub);
+    
+    ASSERT_EQ(key.funcName, "identity", "Function name should match");
+    ASSERT_EQ(key.typeNames.size(), 1, "Should have one type name");
+    ASSERT_EQ(key.typeNames[0], "int32", "Type name should be int32");
+}
+
+TEST_CASE(generic_resolver_validate_substitution_complete) {
+    GenericResolver resolver;
+    TypeSystem registry;
+    
+    // Create a generic function: func<T>:identity
+    std::vector<ASTNodePtr> params;
+    auto funcDecl = std::make_unique<FuncDeclStmt>("identity", std::make_shared<SimpleType>("*T"), params, nullptr);
+    funcDecl->genericParams.emplace_back("T");
+    
+    // Create complete substitution
+    TypeSubstitution sub;
+    sub["T"] = registry.getPrimitiveType("int32");
+    
+    bool valid = resolver.validateSubstitution(funcDecl.get(), sub);
+    
+    ASSERT(valid, "Complete substitution should be valid");
+    ASSERT(!resolver.hasErrors(), "Should have no errors");
+}
+
+TEST_CASE(generic_resolver_validate_substitution_incomplete) {
+    GenericResolver resolver;
+    
+    // Create a generic function: func<T>:identity
+    std::vector<ASTNodePtr> params;
+    auto funcDecl = std::make_unique<FuncDeclStmt>("identity", std::make_shared<SimpleType>("*T"), params, nullptr);
+    funcDecl->genericParams.emplace_back("T");
+    
+    // Create empty substitution (missing T)
+    TypeSubstitution sub;
+    
+    bool valid = resolver.validateSubstitution(funcDecl.get(), sub);
+    
+    ASSERT(!valid, "Incomplete substitution should be invalid");
+    ASSERT(resolver.hasErrors(), "Should have errors");
+}
+
+// ----------------------------------------------------------------------------
+// Monomorphizer Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(monomorphizer_creation) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    
+    ASSERT(!mono.hasErrors(), "New monomorphizer should have no errors");
+}
+
+TEST_CASE(monomorphizer_mangle_name) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    TypeSystem registry;
+    
+    Type* intType = registry.getPrimitiveType("int32");
+    TypeSubstitution sub;
+    sub["T"] = intType;
+    
+    std::string mangled = mono.mangleName("identity", sub);
+    
+    // Should start with _Aria_M_
+    ASSERT(mangled.find("_Aria_M_identity") == 0,
+           "Mangled name should start with _Aria_M_identity");
+    
+    // Should contain int32
+    ASSERT(mangled.find("int32") != std::string::npos,
+           "Mangled name should contain int32");
+}
+
+TEST_CASE(monomorphizer_check_depth_limit_ok) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    
+    ASSERT(mono.checkDepthLimit(), "Depth limit should be OK initially");
+}
+
+TEST_CASE(monomorphizer_cache_hit) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    TypeSystem registry;
+    
+    // Create a simple generic function
+    std::vector<ASTNodePtr> params;
+    auto param = std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "value");
+    params.push_back(std::move(param));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "identity", std::make_shared<SimpleType>("*T"), params, nullptr);
+    funcDecl->genericParams.emplace_back("T");
+    
+    // Create substitution
+    TypeSubstitution sub;
+    sub["T"] = registry.getPrimitiveType("int32");
+    
+    // First request should create specialization
+    Specialization* spec1 = mono.requestSpecialization(funcDecl.get(), sub);
+    
+    // Second request should hit cache
+    Specialization* spec2 = mono.requestSpecialization(funcDecl.get(), sub);
+    
+    ASSERT(spec1 == spec2, "Should return same specialization from cache");
+}
+
+TEST_CASE(monomorphizer_different_types_different_specializations) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    TypeSystem registry;
+    
+    // Create a simple generic function
+    std::vector<ASTNodePtr> params;
+    auto param = std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "value");
+    params.push_back(std::move(param));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "identity", std::make_shared<SimpleType>("*T"), params, nullptr);
+    funcDecl->genericParams.emplace_back("T");
+    
+    // Create substitution for int32
+    TypeSubstitution sub1;
+    sub1["T"] = registry.getPrimitiveType("int32");
+    
+    // Create substitution for int64
+    TypeSubstitution sub2;
+    sub2["T"] = registry.getPrimitiveType("int64");
+    
+    // Request specializations
+    Specialization* spec1 = mono.requestSpecialization(funcDecl.get(), sub1);
+    Specialization* spec2 = mono.requestSpecialization(funcDecl.get(), sub2);
+    
+    ASSERT(spec1 != spec2, "Different types should create different specializations");
+    
+    // Check mangled names are different
+    ASSERT(spec1->mangledName != spec2->mangledName,
+           "Different types should have different mangled names");
+}
+
+// ----------------------------------------------------------------------------
+// AST Cloning Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(monomorphizer_clone_simple_expression) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    
+    // Create a simple literal expression: 42
+    auto lit = std::make_unique<LiteralExpr>(static_cast<int64_t>(42));
+    
+    // Clone it
+    auto cloned = mono.cloneAST(lit.get());
+    
+    ASSERT(cloned != nullptr, "Cloned node should not be null");
+    ASSERT_EQ(cloned->type, ASTNode::NodeType::LITERAL, "Cloned node should be LITERAL");
+    
+    // Verify independence (different memory addresses)
+    ASSERT(static_cast<void*>(cloned.get()) != static_cast<void*>(lit.get()),
+           "Cloned node should be independent");
+}
+
+TEST_CASE(monomorphizer_clone_identifier) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    
+    // Create identifier: x
+    auto id = std::make_unique<IdentifierExpr>("x", 1, 1);
+    
+    // Clone it
+    auto cloned = mono.cloneAST(id.get());
+    
+    ASSERT(cloned != nullptr, "Cloned identifier should not be null");
+    ASSERT_EQ(cloned->type, ASTNode::NodeType::IDENTIFIER, "Cloned node should be IDENTIFIER");
+    
+    IdentifierExpr* clonedId = static_cast<IdentifierExpr*>(cloned.get());
+    ASSERT_EQ(clonedId->name, "x", "Name should be preserved");
+}
+
+TEST_CASE(monomorphizer_clone_block_statement) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    
+    // Create block: { return 42; }
+    auto retVal = std::make_unique<LiteralExpr>(static_cast<int64_t>(42), 1, 10);
+    auto retStmt = std::make_unique<ReturnStmt>(std::move(retVal), 1, 3);
+    std::vector<ASTNodePtr> stmts;
+    stmts.push_back(std::move(retStmt));
+    auto block = std::make_unique<BlockStmt>(std::move(stmts), 1, 1);
+    
+    // Clone it
+    auto cloned = mono.cloneAST(block.get());
+    
+    ASSERT(cloned != nullptr, "Cloned block should not be null");
+    ASSERT_EQ(cloned->type, ASTNode::NodeType::BLOCK, "Cloned node should be BLOCK");
+    
+    BlockStmt* clonedBlock = static_cast<BlockStmt*>(cloned.get());
+    ASSERT_EQ(clonedBlock->statements.size(), 1, "Block should have 1 statement");
+    ASSERT_EQ(clonedBlock->statements[0]->type, ASTNode::NodeType::RETURN,
+              "Statement should be RETURN");
+}
+
+// ----------------------------------------------------------------------------
+// Type Substitution Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(monomorphizer_substitute_var_decl) {
+    TypeSystem typeSystem;
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    
+    // Create var decl: *T:x = 42
+    auto init = std::make_unique<LiteralExpr>(static_cast<int64_t>(42), 1, 10);
+    auto varDecl = std::make_unique<VarDeclStmt>(
+        "*T", "x", std::move(init), 1, 1);
+    
+    // Clone and substitute with int32
+    auto cloned = mono.cloneAST(varDecl.get());
+    ASSERT(cloned != nullptr, "Cloned var decl should not be null");
+    
+    TypeSubstitution substitution;
+    auto int32Type = typeSystem.getPrimitiveType("int32");
+    substitution["T"] = int32Type;
+    
+    mono.substituteTypes(cloned.get(), substitution);
+    
+    VarDeclStmt* clonedVar = static_cast<VarDeclStmt*>(cloned.get());
+    ASSERT_EQ(clonedVar->typeNode->toString(), "int32", 
+              "Type should be substituted from *T to int32");
+    ASSERT_EQ(clonedVar->varName, "x", "Variable name should be preserved");
+}
+
+TEST_CASE(monomorphizer_substitute_parameter) {
+    TypeSystem typeSystem;
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    
+    // Create parameter: *T:value
+    auto param = std::make_unique<ParameterNode>(
+        std::make_shared<SimpleType>("*T"), "value", nullptr, 1, 1);
+    
+    // Clone and substitute with float32
+    auto cloned = mono.cloneAST(param.get());
+    ASSERT(cloned != nullptr, "Cloned parameter should not be null");
+    
+    TypeSubstitution substitution;
+    auto float32Type = typeSystem.getPrimitiveType("float32");
+    substitution["T"] = float32Type;
+    
+    mono.substituteTypes(cloned.get(), substitution);
+    
+    ParameterNode* clonedParam = static_cast<ParameterNode*>(cloned.get());
+    ASSERT_EQ(clonedParam->typeNode->toString(), "float32",
+              "Parameter type should be substituted from *T to float32");
+    ASSERT_EQ(clonedParam->paramName, "value", "Parameter name should be preserved");
+}
+
+TEST_CASE(monomorphizer_substitute_nested) {
+    TypeSystem typeSystem;
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    
+    // Create: { *T:x = 42; return x; }
+    auto init = std::make_unique<LiteralExpr>(static_cast<int64_t>(42), 1, 17);
+    auto varDecl = std::make_unique<VarDeclStmt>(
+        "*T", "x", std::move(init), 1, 10);
+    auto id = std::make_unique<IdentifierExpr>("x", 2, 14);
+    auto retStmt = std::make_unique<ReturnStmt>(std::move(id), 2, 7);
+    std::vector<ASTNodePtr> stmts;
+    stmts.push_back(std::move(varDecl));
+    stmts.push_back(std::move(retStmt));
+    auto block = std::make_unique<BlockStmt>(std::move(stmts), 1, 1);
+    
+    // Clone and substitute
+    auto cloned = mono.cloneAST(block.get());
+    ASSERT(cloned != nullptr, "Cloned block should not be null");
+    
+    TypeSubstitution substitution;
+    auto int32Type = typeSystem.getPrimitiveType("int32");
+    substitution["T"] = int32Type;
+    
+    mono.substituteTypes(cloned.get(), substitution);
+    
+    BlockStmt* clonedBlock = static_cast<BlockStmt*>(cloned.get());
+    ASSERT_EQ(clonedBlock->statements.size(), 2, "Block should have 2 statements");
+    
+    VarDeclStmt* clonedVar = static_cast<VarDeclStmt*>(clonedBlock->statements[0].get());
+    ASSERT_EQ(clonedVar->typeNode->toString(), "int32",
+              "Nested var decl type should be substituted");
+}
+// ----------------------------------------------------------------------------
+// Type Inference Tests (Phase 3.4 Part 6)
+// ----------------------------------------------------------------------------
+
+TEST_CASE(type_inference_simple_single_param) {
+    TypeSystem typeSystem;
+    GenericResolver resolver;
+    
+    // Create generic function: func<T>:identity = *T(*T:value) { ... }
+    std::vector<ASTNodePtr> params;
+    auto param = std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "value", nullptr, 1, 20);
+    params.push_back(std::move(param));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "identity", std::make_shared<SimpleType>("*T"), params, nullptr, 1, 1);
+    funcDecl->genericParams.emplace_back("T");
+    
+    // Create call with int32 argument: identity(42)
+    auto callee = std::make_unique<IdentifierExpr>("identity", 5, 1);
+    std::vector<ASTNodePtr> args;
+    auto argLit = std::make_unique<LiteralExpr>(static_cast<int64_t>(42), 5, 10);
+    args.push_back(std::move(argLit));
+    auto callExpr = std::make_unique<CallExpr>(
+        std::move(callee), std::move(args), 5, 1);
+    
+    // Prepare argument types
+    std::vector<Type*> argTypes;
+    argTypes.push_back(typeSystem.getPrimitiveType("int32"));
+    
+    // Perform type inference
+    TypeSubstitution substitution = resolver.inferTypeArgs(
+        funcDecl.get(), callExpr.get(), argTypes);
+    
+    ASSERT(!resolver.hasErrors(), "Type inference should not have errors");
+    ASSERT_EQ(substitution.size(), 1, "Should infer one type parameter");
+    ASSERT(substitution.find("T") != substitution.end(), "Should infer T");
+    ASSERT_EQ(substitution["T"]->toString(), "int32", "T should be inferred as int32");
+}
+
+TEST_CASE(type_inference_multiple_params_same_type) {
+    TypeSystem typeSystem;
+    GenericResolver resolver;
+    
+    // Create generic function: func<T>:max = *T(*T:a, *T:b) { ... }
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "a", nullptr, 1, 20));
+    params.push_back(std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "b", nullptr, 1, 28));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "max", std::make_shared<SimpleType>("*T"), params, nullptr, 1, 1);
+    funcDecl->genericParams.emplace_back("T");
+    
+    // Create call: max(10, 20)
+    auto callee = std::make_unique<IdentifierExpr>("max", 5, 1);
+    std::vector<ASTNodePtr> args;
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(10), 5, 5));
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(20), 5, 9));
+    auto callExpr = std::make_unique<CallExpr>(
+        std::move(callee), std::move(args), 5, 1);
+    
+    // Both arguments are int32
+    std::vector<Type*> argTypes;
+    argTypes.push_back(typeSystem.getPrimitiveType("int32"));
+    argTypes.push_back(typeSystem.getPrimitiveType("int32"));
+    
+    // Perform type inference
+    TypeSubstitution substitution = resolver.inferTypeArgs(
+        funcDecl.get(), callExpr.get(), argTypes);
+    
+    ASSERT(!resolver.hasErrors(), "Type inference should not have errors");
+    ASSERT_EQ(substitution.size(), 1, "Should infer one type parameter");
+    ASSERT_EQ(substitution["T"]->toString(), "int32", "T should be inferred as int32");
+}
+
+TEST_CASE(type_inference_conflicting_types_error) {
+    TypeSystem typeSystem;
+    GenericResolver resolver;
+    
+    // Create generic function: func<T>:max = *T(*T:a, *T:b) { ... }
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "a", nullptr, 1, 20));
+    params.push_back(std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "b", nullptr, 1, 28));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "max", std::make_shared<SimpleType>("*T"), params, nullptr, 1, 1);
+    funcDecl->genericParams.emplace_back("T");
+    
+    // Create call: max(10, 20.5)  // int32 and float32 - conflict!
+    auto callee = std::make_unique<IdentifierExpr>("max", 5, 1);
+    std::vector<ASTNodePtr> args;
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(10), 5, 5));
+    args.push_back(std::make_unique<LiteralExpr>(3.14, 5, 9));
+    auto callExpr = std::make_unique<CallExpr>(
+        std::move(callee), std::move(args), 5, 1);
+    
+    // Conflicting types: int32 and float32
+    std::vector<Type*> argTypes;
+    argTypes.push_back(typeSystem.getPrimitiveType("int32"));
+    argTypes.push_back(typeSystem.getPrimitiveType("float32"));
+    
+    // Perform type inference - should fail
+    TypeSubstitution substitution = resolver.inferTypeArgs(
+        funcDecl.get(), callExpr.get(), argTypes);
+    
+    ASSERT(resolver.hasErrors(), "Should have errors for conflicting types");
+    ASSERT_EQ(substitution.size(), 0, "Should return empty substitution on error");
+}
+
+TEST_CASE(type_inference_multiple_type_params) {
+    TypeSystem typeSystem;
+    GenericResolver resolver;
+    
+    // Create generic function: func<T,U>:convert = *T(*U:value) { ... }
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*U"), "value", nullptr, 1, 30));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "convert", std::make_shared<SimpleType>("*T"), params, nullptr, 1, 1);
+    funcDecl->genericParams.emplace_back("T");
+    funcDecl->genericParams.emplace_back("U");
+    
+    // Create call: convert(42)
+    auto callee = std::make_unique<IdentifierExpr>("convert", 5, 1);
+    std::vector<ASTNodePtr> args;
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(42), 5, 9));
+    auto callExpr = std::make_unique<CallExpr>(
+        std::move(callee), std::move(args), 5, 1);
+    
+    // Argument type is int32
+    std::vector<Type*> argTypes;
+    argTypes.push_back(typeSystem.getPrimitiveType("int32"));
+    
+    // Perform type inference
+    TypeSubstitution substitution = resolver.inferTypeArgs(
+        funcDecl.get(), callExpr.get(), argTypes);
+    
+    // Should infer U = int32, but T cannot be inferred (appears only in return type)
+    ASSERT(resolver.hasErrors(), "Should have error - T cannot be inferred");
+}
+
+TEST_CASE(type_inference_no_generic_params) {
+    TypeSystem typeSystem;
+    GenericResolver resolver;
+    
+    // Create non-generic function: func:add = int32(int32:a, int32:b) { ... }
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>(std::make_shared<SimpleType>("int32"), "a", nullptr, 1, 15));
+    params.push_back(std::make_unique<ParameterNode>(std::make_shared<SimpleType>("int32"), "b", nullptr, 1, 27));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "add", std::make_shared<SimpleType>("int32"), params, nullptr, 1, 1);
+    // No generic params
+    
+    // Create call: add(10, 20)
+    auto callee = std::make_unique<IdentifierExpr>("add", 5, 1);
+    std::vector<ASTNodePtr> args;
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(10), 5, 5));
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(20), 5, 9));
+    auto callExpr = std::make_unique<CallExpr>(
+        std::move(callee), std::move(args), 5, 1);
+    
+    // Argument types
+    std::vector<Type*> argTypes;
+    argTypes.push_back(typeSystem.getPrimitiveType("int32"));
+    argTypes.push_back(typeSystem.getPrimitiveType("int32"));
+    
+    // Attempt type inference on non-generic function
+    TypeSubstitution substitution = resolver.inferTypeArgs(
+        funcDecl.get(), callExpr.get(), argTypes);
+    
+    ASSERT(resolver.hasErrors(), "Should have error - function is not generic");
+}
+
+TEST_CASE(type_inference_wrong_arg_count) {
+    TypeSystem typeSystem;
+    GenericResolver resolver;
+    
+    // Create generic function: func<T>:identity = *T(*T:value) { ... }
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "value", nullptr, 1, 20));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "identity", std::make_shared<SimpleType>("*T"), params, nullptr, 1, 1);
+    funcDecl->genericParams.emplace_back("T");
+    
+    // Create call with wrong number of arguments: identity(42, 100)
+    auto callee = std::make_unique<IdentifierExpr>("identity", 5, 1);
+    std::vector<ASTNodePtr> args;
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(42), 5, 10));
+    args.push_back(std::make_unique<LiteralExpr>(static_cast<int64_t>(100), 5, 14));
+    auto callExpr = std::make_unique<CallExpr>(
+        std::move(callee), std::move(args), 5, 1);
+    
+    // Wrong number of argument types
+    std::vector<Type*> argTypes;
+    argTypes.push_back(typeSystem.getPrimitiveType("int32"));
+    argTypes.push_back(typeSystem.getPrimitiveType("int32"));
+    
+    // Attempt type inference with wrong arg count
+    TypeSubstitution substitution = resolver.inferTypeArgs(
+        funcDecl.get(), callExpr.get(), argTypes);
+    
+    ASSERT(resolver.hasErrors(), "Should have error - argument count mismatch");
+}
+
+// ----------------------------------------------------------------------------
+// Monomorphization Engine Tests (Phase 3.4 Part 7)
+// ----------------------------------------------------------------------------
+
+TEST_CASE(monomorphization_name_mangling_format) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    TypeSystem registry;
+    
+    TypeSubstitution sub;
+    sub["T"] = registry.getPrimitiveType("int32");
+    
+    std::string mangled = mono.mangleName("identity", sub);
+    
+    // Check format: _Aria_M_<FuncName>_<Hash>_<TypeDesc>
+    ASSERT(mangled.find("_Aria_M_") == 0, "Should start with _Aria_M_ prefix");
+    ASSERT(mangled.find("identity") != std::string::npos, "Should contain function name");
+    ASSERT(mangled.find("int32") != std::string::npos, "Should contain readable type");
+}
+
+TEST_CASE(monomorphization_name_mangling_uniqueness) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    TypeSystem registry;
+    
+    // Two different type substitutions
+    TypeSubstitution sub1;
+    sub1["T"] = registry.getPrimitiveType("int32");
+    
+    TypeSubstitution sub2;
+    sub2["T"] = registry.getPrimitiveType("int64");
+    
+    std::string mangled1 = mono.mangleName("identity", sub1);
+    std::string mangled2 = mono.mangleName("identity", sub2);
+    
+    ASSERT(mangled1 != mangled2, "Different types should produce different mangled names");
+}
+
+TEST_CASE(monomorphization_name_mangling_deterministic) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    TypeSystem registry;
+    
+    TypeSubstitution sub;
+    sub["T"] = registry.getPrimitiveType("int32");
+    
+    std::string mangled1 = mono.mangleName("identity", sub);
+    std::string mangled2 = mono.mangleName("identity", sub);
+    
+    ASSERT_EQ(mangled1, mangled2, "Same input should produce same mangled name");
+}
+
+TEST_CASE(monomorphization_depth_limit_check) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    TypeSystem registry;
+    
+    // Create a generic function
+    std::vector<ASTNodePtr> params;
+    auto param = std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "value");
+    params.push_back(std::move(param));
+    
+    auto body = std::make_unique<ReturnStmt>(
+        std::make_unique<IdentifierExpr>("value", 2, 5), 2, 1);
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "test_depth", std::make_shared<SimpleType>("*T"), params, std::move(body));
+    funcDecl->genericParams.emplace_back("T");
+    
+    // Initially should be at depth 0
+    ASSERT_EQ(mono.getInstantiationDepth(), 0, "Initial depth should be 0");
+    
+    // Check depth limit returns true when under limit
+    ASSERT(mono.checkDepthLimit(), "Should be under depth limit initially");
+    
+    // Note: Full depth limit test would require 64 nested instantiations,
+    // which is difficult to set up in unit tests. The implementation
+    // is verified to check instantiationStack.size() >= MAX_INSTANTIATION_DEPTH
+}
+
+TEST_CASE(monomorphization_cycle_detection_via_cache) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    TypeSystem registry;
+    
+    // Create a generic function
+    std::vector<ASTNodePtr> params;
+    auto param = std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "value");
+    params.push_back(std::move(param));
+    
+    auto body = std::make_unique<ReturnStmt>(
+        std::make_unique<IdentifierExpr>("value", 2, 5), 2, 1);
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "cycle_test", std::make_shared<SimpleType>("*T"), params, std::move(body));
+    funcDecl->genericParams.emplace_back("T");
+    
+    TypeSubstitution sub;
+    sub["T"] = registry.getPrimitiveType("int32");
+    
+    // First instantiation should succeed
+    Specialization* spec1 = mono.requestSpecialization(funcDecl.get(), sub);
+    ASSERT(spec1 != nullptr, "First instantiation should succeed");
+    ASSERT(!mono.hasErrors(), "Should not have errors after first instantiation");
+    
+    // Second instantiation with same type should hit cache (not cycle)
+    Specialization* spec2 = mono.requestSpecialization(funcDecl.get(), sub);
+    ASSERT(spec1 == spec2, "Should return cached specialization");
+    
+    // Note: True cycle detection happens during recursive instantiation
+    // (e.g., when instantiating foo<T> calls foo<Vector<T>> calls foo<T>).
+    // The cycle detection logic in requestSpecialization() checks the
+    // instantiationStack before pushing a new key, preventing infinite loops.
+}
+
+TEST_CASE(monomorphization_specialized_function_has_no_generic_params) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    TypeSystem registry;
+    
+    // Create generic function with generic param
+    std::vector<ASTNodePtr> params;
+    auto param = std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "value");
+    params.push_back(std::move(param));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "identity", std::make_shared<SimpleType>("*T"), params, nullptr);
+    funcDecl->genericParams.emplace_back("T");
+    
+    ASSERT_EQ(funcDecl->genericParams.size(), 1, "Original should have 1 generic param");
+    
+    // Create specialization
+    TypeSubstitution sub;
+    sub["T"] = registry.getPrimitiveType("int32");
+    
+    Specialization* spec = mono.requestSpecialization(funcDecl.get(), sub);
+    
+    ASSERT(spec != nullptr, "Specialization should succeed");
+    ASSERT_EQ(spec->funcDecl->genericParams.size(), 0,
+              "Specialized function should have no generic params");
+}
+
+TEST_CASE(monomorphization_cache_efficiency) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    TypeSystem registry;
+    
+    // Create generic function
+    std::vector<ASTNodePtr> params;
+    auto param = std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "value");
+    params.push_back(std::move(param));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "test", std::make_shared<SimpleType>("*T"), params, nullptr);
+    funcDecl->genericParams.emplace_back("T");
+    
+    TypeSubstitution sub;
+    sub["T"] = registry.getPrimitiveType("int32");
+    
+    // First request
+    Specialization* spec1 = mono.requestSpecialization(funcDecl.get(), sub);
+    size_t initial_count = mono.getSpecializations().size();
+    
+    // Second request (should hit cache)
+    Specialization* spec2 = mono.requestSpecialization(funcDecl.get(), sub);
+    size_t after_count = mono.getSpecializations().size();
+    
+    ASSERT(spec1 == spec2, "Should return cached specialization");
+    ASSERT_EQ(initial_count, after_count, "Cache hit should not create new specialization");
+}
+
+TEST_CASE(monomorphization_multiple_type_params) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    TypeSystem registry;
+    
+    // Create generic function with two type params: func<T,U>
+    std::vector<ASTNodePtr> params;
+    auto param1 = std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "first");
+    auto param2 = std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*U"), "second");
+    params.push_back(std::move(param1));
+    params.push_back(std::move(param2));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "pair", std::make_shared<SimpleType>("*T"), params, nullptr);
+    funcDecl->genericParams.emplace_back("T");
+    funcDecl->genericParams.emplace_back("U");
+    
+    TypeSubstitution sub;
+    sub["T"] = registry.getPrimitiveType("int32");
+    sub["U"] = registry.getPrimitiveType("flt64");
+    
+    Specialization* spec = mono.requestSpecialization(funcDecl.get(), sub);
+    
+    ASSERT(spec != nullptr, "Multi-param specialization should succeed");
+    ASSERT(spec->mangledName.find("int32") != std::string::npos,
+           "Mangled name should contain first type");
+    ASSERT(spec->mangledName.find("flt64") != std::string::npos,
+           "Mangled name should contain second type");
+}
+
+TEST_CASE(monomorphization_analyzed_flag_initially_false) {
+    GenericResolver resolver;
+    Monomorphizer mono(&resolver);
+    TypeSystem registry;
+    
+    std::vector<ASTNodePtr> params;
+    auto param = std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "value");
+    params.push_back(std::move(param));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "test", std::make_shared<SimpleType>("*T"), params, nullptr);
+    funcDecl->genericParams.emplace_back("T");
+    
+    TypeSubstitution sub;
+    sub["T"] = registry.getPrimitiveType("int32");
+    
+    Specialization* spec = mono.requestSpecialization(funcDecl.get(), sub);
+    
+    ASSERT(spec != nullptr, "Specialization should succeed");
+    ASSERT(!spec->analyzed, "analyzed flag should be false initially");
+    // Note: Future TypeChecker will set analyzed = true after validation
+}

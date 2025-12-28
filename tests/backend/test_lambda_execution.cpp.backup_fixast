@@ -1,0 +1,448 @@
+/**
+ * @file test_lambda_execution.cpp
+ * @brief Lambda/closure execution tests - verify runtime behavior
+ * 
+ * Phase 4.5.2: Closures/Lambdas - Execution Tests
+ * Tests lambda code generation and execution with various types,
+ * parameters, captures, and call patterns.
+ */
+
+#include "../test_helpers.h"
+#include "backend/ir/codegen_expr.h"
+#include "backend/ir/codegen_stmt.h"
+#include "frontend/parser/parser.h"
+#include "frontend/lexer/lexer.h"
+#include "frontend/sema/closure_analyzer.h"
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/GenericValue.h>
+#include <llvm/Support/TargetSelect.h>
+
+using namespace aria;
+using namespace aria::frontend;
+using namespace aria::backend;
+using namespace aria::sema;
+
+/**
+ * Test: Simple lambda returns constant
+ * Lambda: int64() { pass(42); }
+ * Expected: Returns 42
+ */
+TEST_CASE(lambda_return_constant) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("test", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    // Create test wrapper function
+    llvm::FunctionType* wrapper_type = llvm::FunctionType::get(
+        llvm::Type::getInt64Ty(context), {}, false
+    );
+    llvm::Function* wrapper = llvm::Function::Create(
+        wrapper_type, llvm::Function::ExternalLinkage, "test_wrapper", module.get()
+    );
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", wrapper);
+    builder.SetInsertPoint(entry);
+    
+    // Manually create lambda AST: int64() { pass(42); }
+    auto return_stmt = std::make_shared<ReturnStmt>(
+        std::make_shared<LiteralExpr>(int64_t(42), 1, 1),
+        1, 1
+    );
+    auto body = std::make_shared<BlockStmt>(
+        std::vector<std::shared_ptr<ASTNode>>{return_stmt},
+        1, 1
+    );
+    auto lambda = std::make_unique<LambdaExpr>(
+        std::vector<std::shared_ptr<ASTNode>>{},  // no parameters
+        "int64",
+        body,
+        1, 1
+    );
+    
+    // Generate lambda (creates fat pointer and lambda function)
+    llvm::Value* fat_ptr = expr_codegen.codegenLambda(lambda.get());
+    ASSERT(fat_ptr != nullptr, "Lambda codegen should succeed");
+    
+    // Extract method_ptr from fat pointer
+    llvm::Value* method_ptr_field = builder.CreateExtractValue(fat_ptr, 0, "method_ptr");
+    llvm::Value* env_ptr_field = builder.CreateExtractValue(fat_ptr, 1, "env_ptr");
+    
+    // Cast method_ptr to correct function type: i64(i8*)
+    llvm::FunctionType* lambda_type = llvm::FunctionType::get(
+        llvm::Type::getInt64Ty(context),
+        {llvm::PointerType::get(context, 0)},  // env_ptr parameter
+        false
+    );
+    llvm::Value* method_ptr_typed = builder.CreateBitCast(
+        method_ptr_field,
+        llvm::PointerType::get(lambda_type, 0),
+        "method_func"
+    );
+    
+    // Call lambda: result = lambda(env_ptr)
+    llvm::Value* result = builder.CreateCall(lambda_type, method_ptr_typed, {env_ptr_field}, "result");
+    builder.CreateRet(result);
+    
+    // Verify module
+    std::string error_str;
+    llvm::raw_string_ostream error_stream(error_str);
+    ASSERT(!llvm::verifyModule(*module, &error_stream), "Module valid: " + error_str);
+    
+    // TODO: Execute and verify result == 42 when JIT integration ready
+    // For now, successful codegen and module verification is enough
+}
+
+/**
+ * Test: Lambda with parameters
+ * Lambda: int64(int64:a, int64:b) { pass(a + b); }
+ * Call: lambda(10, 32)
+ * Expected: Returns 42
+ */
+TEST_CASE(lambda_with_parameters) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("test", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    // Create test wrapper
+    llvm::FunctionType* wrapper_type = llvm::FunctionType::get(
+        llvm::Type::getInt64Ty(context), {}, false
+    );
+    llvm::Function* wrapper = llvm::Function::Create(
+        wrapper_type, llvm::Function::ExternalLinkage, "test_wrapper", module.get()
+    );
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", wrapper);
+    builder.SetInsertPoint(entry);
+    
+    // Lambda AST: int64(int64:a, int64:b) { return a + b; }
+    auto param_a = std::make_shared<ParameterNode>("int64", "a", nullptr, 1, 1);
+    auto param_b = std::make_shared<ParameterNode>("int64", "b", nullptr, 1, 1);
+    
+    auto binary_add = std::make_shared<BinaryExpr>(
+        std::make_shared<IdentifierExpr>("a", 1, 1),
+        Token{TokenType::TOKEN_PLUS, "+", 1, 1},
+        std::make_shared<IdentifierExpr>("b", 1, 1),
+        1, 1
+    );
+    auto return_stmt = std::make_shared<ReturnStmt>(binary_add, 1, 1);
+    auto body = std::make_shared<BlockStmt>(
+        std::vector<std::shared_ptr<ASTNode>>{return_stmt},
+        1, 1
+    );
+    
+    auto lambda = std::make_unique<LambdaExpr>(
+        std::vector<std::shared_ptr<ASTNode>>{param_a, param_b},
+        "int64",
+        body,
+        1, 1
+    );
+    
+    // Generate lambda
+    llvm::Value* fat_ptr = expr_codegen.codegenLambda(lambda.get());
+    ASSERT(fat_ptr != nullptr, "Lambda codegen should succeed");
+    
+    // Extract and call lambda with arguments (10, 32)
+    llvm::Value* method_ptr = builder.CreateExtractValue(fat_ptr, 0, "method_ptr");
+    llvm::Value* env_ptr = builder.CreateExtractValue(fat_ptr, 1, "env_ptr");
+    
+    llvm::FunctionType* lambda_type = llvm::FunctionType::get(
+        llvm::Type::getInt64Ty(context),
+        {llvm::PointerType::get(context, 0), llvm::Type::getInt64Ty(context), llvm::Type::getInt64Ty(context)},
+        false
+    );
+    llvm::Value* method_typed = builder.CreateBitCast(
+        method_ptr,
+        llvm::PointerType::get(lambda_type, 0)
+    );
+    
+    llvm::Value* arg1 = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 10);
+    llvm::Value* arg2 = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 32);
+    llvm::Value* result = builder.CreateCall(lambda_type, method_typed, {env_ptr, arg1, arg2});
+    builder.CreateRet(result);
+    
+    // Verify module
+    std::string error_str;
+    llvm::raw_string_ostream error_stream(error_str);
+    ASSERT(!llvm::verifyModule(*module, &error_stream), "Module valid: " + error_str);
+}
+
+/**
+ * Test: Lambda with different return types
+ * Tests type mapping for int8, int32, int64, flt32, bool
+ */
+TEST_CASE(lambda_various_types) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("test", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    // Create dummy wrapper for builder context
+    llvm::FunctionType* wrapper_type = llvm::FunctionType::get(
+        llvm::Type::getInt32Ty(context), {}, false
+    );
+    llvm::Function* wrapper = llvm::Function::Create(
+        wrapper_type, llvm::Function::ExternalLinkage, "test_wrapper", module.get()
+    );
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", wrapper);
+    builder.SetInsertPoint(entry);
+    
+    // Test int8 lambda
+    {
+        auto return_stmt = std::make_shared<ReturnStmt>(
+            std::make_shared<LiteralExpr>(int64_t(127), 1, 1),
+            1, 1
+        );
+        auto body = std::make_shared<BlockStmt>(
+            std::vector<std::shared_ptr<ASTNode>>{return_stmt}, 1, 1
+        );
+        auto lambda_int8 = std::make_unique<LambdaExpr>(
+            std::vector<std::shared_ptr<ASTNode>>{}, "int8", body, 1, 1
+        );
+        
+        llvm::Value* result = expr_codegen.codegenLambda(lambda_int8.get());
+        ASSERT(result != nullptr, "int8 lambda should codegen");
+    }
+    
+    // Test bool lambda
+    {
+        auto return_stmt = std::make_shared<ReturnStmt>(
+            std::make_shared<LiteralExpr>(true, 1, 1),
+            1, 1
+        );
+        auto body = std::make_shared<BlockStmt>(
+            std::vector<std::shared_ptr<ASTNode>>{return_stmt}, 1, 1
+        );
+        auto lambda_bool = std::make_unique<LambdaExpr>(
+            std::vector<std::shared_ptr<ASTNode>>{}, "bool", body, 1, 1
+        );
+        
+        llvm::Value* result = expr_codegen.codegenLambda(lambda_bool.get());
+        ASSERT(result != nullptr, "bool lambda should codegen");
+    }
+    
+    // Test TBB types
+    {
+        auto return_stmt = std::make_shared<ReturnStmt>(
+            std::make_shared<LiteralExpr>(int64_t(100), 1, 1),
+            1, 1
+        );
+        auto body = std::make_shared<BlockStmt>(
+            std::vector<std::shared_ptr<ASTNode>>{return_stmt}, 1, 1
+        );
+        auto lambda_tbb8 = std::make_unique<LambdaExpr>(
+            std::vector<std::shared_ptr<ASTNode>>{}, "tbb8", body, 1, 1
+        );
+        
+        llvm::Value* result = expr_codegen.codegenLambda(lambda_tbb8.get());
+        ASSERT(result != nullptr, "tbb8 lambda should codegen");
+    }
+    
+    // Add terminator for wrapper
+    builder.CreateRet(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0));
+    
+    // Module should be valid
+    std::string error_str;
+    llvm::raw_string_ostream error_stream(error_str);
+    ASSERT(!llvm::verifyModule(*module, &error_stream), "Module valid: " + error_str);
+}
+
+/**
+ * Test: Lambda with BY_VALUE capture
+ * Outer: int64:x = 5;
+ * Lambda: int64(int64:y) { pass(x + y); }  // x captured by value
+ * Call: lambda(10)
+ * Expected: Returns 15
+ */
+TEST_CASE(lambda_capture_by_value) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("test", context);
+    std::map<std::string, llvm::Value*> named_values;
+    SymbolTable symTable;
+    
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    // Create test wrapper
+    llvm::FunctionType* wrapper_type = llvm::FunctionType::get(
+        llvm::Type::getInt64Ty(context), {}, false
+    );
+    llvm::Function* wrapper = llvm::Function::Create(
+        wrapper_type, llvm::Function::ExternalLinkage, "test_wrapper", module.get()
+    );
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", wrapper);
+    builder.SetInsertPoint(entry);
+    
+    // Create outer variable: x = 5
+    llvm::AllocaInst* x_alloca = builder.CreateAlloca(llvm::Type::getInt64Ty(context), nullptr, "x");
+    builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 5), x_alloca);
+    named_values["x"] = x_alloca;
+    
+    // Lambda: int64(int64:y) { return x + y; }
+    auto param_y = std::make_shared<ParameterNode>("int64", "y", nullptr, 1, 1);
+    auto binary_add = std::make_shared<BinaryExpr>(
+        std::make_shared<IdentifierExpr>("x", 1, 1),
+        Token{TokenType::TOKEN_PLUS, "+", 1, 1},
+        std::make_shared<IdentifierExpr>("y", 1, 1),
+        1, 1
+    );
+    auto return_stmt = std::make_shared<ReturnStmt>(binary_add, 1, 1);
+    auto body = std::make_shared<BlockStmt>(
+        std::vector<std::shared_ptr<ASTNode>>{return_stmt}, 1, 1
+    );
+    
+    auto lambda = std::make_unique<LambdaExpr>(
+        std::vector<std::shared_ptr<ASTNode>>{param_y},
+        "int64",
+        body,
+        1, 1
+    );
+    
+    // Analyze captures
+    ClosureAnalyzer analyzer(&symTable);
+    // Manually set captured variable (since we don't have full symbol table integration)
+    lambda->capturedVars.emplace_back("x", LambdaExpr::CaptureMode::BY_VALUE, nullptr);
+    
+    // Generate lambda
+    llvm::Value* fat_ptr = expr_codegen.codegenLambda(lambda.get());
+    ASSERT(fat_ptr != nullptr, "Lambda with capture should codegen");
+    
+    // Add terminator for wrapper function
+    builder.CreateRet(llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 0));
+    
+    // Verify module
+    std::string error_str;
+    llvm::raw_string_ostream error_stream(error_str);
+    ASSERT(!llvm::verifyModule(*module, &error_stream), "Module valid: " + error_str);
+}
+
+/**
+ * Test: Empty lambda (void return)
+ * Lambda: void() { }
+ */
+TEST_CASE(lambda_void_return) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("test", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    // Create dummy wrapper for builder context
+    llvm::FunctionType* wrapper_type = llvm::FunctionType::get(
+        llvm::Type::getInt32Ty(context), {}, false
+    );
+    llvm::Function* wrapper = llvm::Function::Create(
+        wrapper_type, llvm::Function::ExternalLinkage, "test_wrapper", module.get()
+    );
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", wrapper);
+    builder.SetInsertPoint(entry);
+    
+    // Lambda: void() { }
+    auto body = std::make_shared<BlockStmt>(
+        std::vector<std::shared_ptr<ASTNode>>{}, 1, 1
+    );
+    auto lambda = std::make_unique<LambdaExpr>(
+        std::vector<std::shared_ptr<ASTNode>>{},
+        "void",
+        body,
+        1, 1
+    );
+    
+    llvm::Value* fat_ptr = expr_codegen.codegenLambda(lambda.get());
+    ASSERT(fat_ptr != nullptr, "Void lambda should codegen");
+    ASSERT(fat_ptr->getType()->isStructTy(), "Should be fat pointer struct");
+    
+    // Add terminator for wrapper
+    builder.CreateRet(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0));
+    
+    // Verify module
+    std::string error_str;
+    llvm::raw_string_ostream error_stream(error_str);
+    ASSERT(!llvm::verifyModule(*module, &error_stream), "Module valid: " + error_str);
+}
+
+/**
+ * Test: Multiple lambdas in same module
+ * Verifies unique naming and no conflicts
+ */
+TEST_CASE(lambda_multiple_in_module) {
+    llvm::LLVMContext context;
+    llvm::IRBuilder<> builder(context);
+    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("test", context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    ExprCodegen expr_codegen(context, builder, module.get(), named_values);
+    StmtCodegen stmt_codegen(context, builder, module.get(), named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    expr_codegen.setStmtCodegen(&stmt_codegen);
+    
+    // Create dummy wrapper for builder context
+    llvm::FunctionType* wrapper_type = llvm::FunctionType::get(
+        llvm::Type::getInt32Ty(context), {}, false
+    );
+    llvm::Function* wrapper = llvm::Function::Create(
+        wrapper_type, llvm::Function::ExternalLinkage, "test_wrapper", module.get()
+    );
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", wrapper);
+    builder.SetInsertPoint(entry);
+    
+    // Create 3 different lambdas
+    for (int i = 0; i < 3; i++) {
+        auto return_stmt = std::make_shared<ReturnStmt>(
+            std::make_shared<LiteralExpr>(int64_t(i * 10), 1, 1),
+            1, 1
+        );
+        auto body = std::make_shared<BlockStmt>(
+            std::vector<std::shared_ptr<ASTNode>>{return_stmt}, 1, 1
+        );
+        auto lambda = std::make_unique<LambdaExpr>(
+            std::vector<std::shared_ptr<ASTNode>>{}, "int64", body, 1, 1
+        );
+        
+        llvm::Value* fat_ptr = expr_codegen.codegenLambda(lambda.get());
+        ASSERT(fat_ptr != nullptr, "Lambda " + std::to_string(i) + " should codegen");
+    }
+    
+    // Verify all lambda functions have unique names
+    int lambda_count = 0;
+    for (auto& func : module->functions()) {
+        std::string name = func.getName().str();
+        if (name.find("lambda_") == 0) {
+            lambda_count++;
+        }
+    }
+    ASSERT(lambda_count == 3, "Should have 3 lambda functions");
+    
+    // Add terminator for wrapper
+    builder.CreateRet(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0));
+    
+    // Verify module
+    std::string error_str;
+    llvm::raw_string_ostream error_stream(error_str);
+    ASSERT(!llvm::verifyModule(*module, &error_stream), "Module valid: " + error_str);
+}

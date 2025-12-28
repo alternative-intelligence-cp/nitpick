@@ -8,6 +8,7 @@
 #include "frontend/sema/generic_resolver.h"
 #include "frontend/sema/borrow_checker.h"
 #include "frontend/ast/stmt.h"
+#include "frontend/ast/type.h"
 #include "frontend/ast/expr.h"
 #include "frontend/parser/parser.h"
 #include "frontend/lexer/lexer.h"
@@ -39,8 +40,8 @@ TEST_CASE(sema_integration_simple_function) {
     
     // Build AST for function
     std::vector<ASTNodePtr> params;
-    auto param1 = std::make_unique<ParameterNode>("int32", "a");
-    auto param2 = std::make_unique<ParameterNode>("int32", "b");
+    auto param1 = std::make_unique<ParameterNode>(std::make_shared<SimpleType>("int32"), "a");
+    auto param2 = std::make_unique<ParameterNode>(std::make_shared<SimpleType>("int32"), "b");
     params.push_back(std::move(param1));
     params.push_back(std::move(param2));
     
@@ -53,7 +54,7 @@ TEST_CASE(sema_integration_simple_function) {
     auto returnStmt = std::make_unique<ReturnStmt>(std::move(addition), 1, 1);
     
     auto funcDecl = std::make_unique<FuncDeclStmt>(
-        "add", "int32", params, std::move(returnStmt));
+        "add", std::make_shared<SimpleType>("int32"), params, std::move(returnStmt));
     
     // Enter function scope and add parameters to symbol table
     symbols.enterScope(ScopeKind::FUNCTION, "add");
@@ -312,14 +313,14 @@ TEST_CASE(sema_integration_generic_with_type_checking) {
     
     // Create generic identity function
     std::vector<ASTNodePtr> params;
-    auto param = std::make_unique<ParameterNode>("*T", "value");
+    auto param = std::make_unique<ParameterNode>(std::make_shared<SimpleType>("*T"), "value");
     params.push_back(std::move(param));
     
     auto returnExpr = std::make_unique<IdentifierExpr>("value", 1, 50);
     auto returnStmt = std::make_unique<ReturnStmt>(std::move(returnExpr), 1, 45);
     
     auto funcDecl = std::make_unique<FuncDeclStmt>(
-        "identity", "*T", params, std::move(returnStmt));
+        "identity", std::make_shared<SimpleType>("*T"), params, std::move(returnStmt));
     funcDecl->genericParams.emplace_back("T");
     
     // Infer type arguments from call with int32

@@ -1,0 +1,396 @@
+#include "test_helpers.h"
+#include "frontend/sema/const_evaluator.h"
+#include "frontend/sema/symbol_table.h"
+#include "frontend/sema/type.h"
+#include "frontend/sema/type_checker.h"
+#include "frontend/ast/expr.h"
+#include "frontend/ast/stmt.h"
+#include <memory>
+
+using namespace aria;
+using namespace aria::sema;
+
+// ============================================================================
+// Task 10: Integration with Generics and Array Sizes (Phase 4.5.4)
+// ============================================================================
+// These tests validate that const values can be used as:
+// 1. Array sizes (both literal and computed)
+// 2. Generic const parameters for monomorphization
+// 3. Compile-time bounds for optimizations
+
+// ----------------------------------------------------------------------------
+// Array Size Tests - Const Values as Array Bounds
+// ----------------------------------------------------------------------------
+
+TEST_CASE(task10_array_size_from_const_literal) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    TypeSystem typeSystem;
+    
+    // Define const size
+    evaluator.defineConstant("BUFFER_SIZE", ComptimeValue::makeInteger(1024, "int64", 64));
+    
+    // Lookup for array declaration
+    ComptimeValue size = evaluator.lookupConstant("BUFFER_SIZE");
+    
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+    ASSERT(size.isInteger(), "Size should be integer");
+    ASSERT_EQ(size.getInt(), 1024, "Size should be 1024");
+    
+    // Create array type with const size
+    auto elementType = typeSystem.getPrimitiveType("int32");
+    auto arrayType = new ArrayType(elementType, static_cast<int>(size.getInt()));
+    
+    ASSERT(arrayType->isFixedSize(), "Array should be fixed size");
+    ASSERT_EQ(arrayType->getSize(), 1024, "Array size should be 1024");
+}
+
+TEST_CASE(task10_array_size_from_const_expression) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    TypeSystem typeSystem;
+    
+    // Define base sizes
+    evaluator.defineConstant("ROWS", ComptimeValue::makeInteger(32, "int64", 64));
+    evaluator.defineConstant("COLS", ComptimeValue::makeInteger(32, "int64", 64));
+    
+    // Create expression: ROWS * COLS
+    auto rowsRef = std::make_unique<IdentifierExpr>("ROWS");
+    auto colsRef = std::make_unique<IdentifierExpr>("COLS");
+    auto mulExpr = std::make_unique<BinaryExpr>(
+        std::move(rowsRef), Token(TokenType::TOKEN_STAR, "*", 0, 0), std::move(colsRef)
+    );
+    
+    // Evaluate expression at compile time
+    ComptimeValue totalSize = evaluator.evaluateExpr(mulExpr.get());
+    
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+    ASSERT_EQ(totalSize.getInt(), 1024, "Total size should be 32 * 32 = 1024");
+    
+    // Use as array size
+    auto elementType = typeSystem.getPrimitiveType("flt32");
+    auto arrayType = new ArrayType(elementType, static_cast<int>(totalSize.getInt()));
+    
+    ASSERT_EQ(arrayType->getSize(), 1024, "Array size should be 1024");
+}
+
+TEST_CASE(task10_array_size_from_const_function) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    TypeSystem typeSystem;
+    
+    // Create function: func:computeBufferSize = int64() { return 512; }
+    std::vector<ASTNodePtr> params;
+    auto retValue = std::make_unique<LiteralExpr>(static_cast<int64_t>(512));
+    auto retStmt = std::make_unique<ReturnStmt>(std::move(retValue));
+    
+    std::vector<ASTNodePtr> stmts;
+    stmts.push_back(std::move(retStmt));
+    auto body = std::make_unique<BlockStmt>(std::move(stmts));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "computeBufferSize", "int64", params, std::move(body)
+    );
+    
+    evaluator.registerFunction("computeBufferSize", funcDecl.get());
+    
+    // Call function for array size
+    auto callee = std::make_unique<IdentifierExpr>("computeBufferSize");
+    std::vector<ASTNodePtr> args;
+    auto callExpr = std::make_unique<CallExpr>(std::move(callee), std::move(args));
+    
+    ComptimeValue size = evaluator.evaluateExpr(callExpr.get());
+    
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+    ASSERT_EQ(size.getInt(), 512, "Computed size should be 512");
+    
+    // Use as array size
+    auto elementType = typeSystem.getPrimitiveType("uint8");
+    auto arrayType = new ArrayType(elementType, static_cast<int>(size.getInt()));
+    
+    ASSERT_EQ(arrayType->getSize(), 512, "Array size should be 512");
+}
+
+TEST_CASE(task10_array_multidimensional_const_sizes) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    TypeSystem typeSystem;
+    
+    // Define matrix dimensions
+    evaluator.defineConstant("MATRIX_ROWS", ComptimeValue::makeInteger(4, "int64", 64));
+    evaluator.defineConstant("MATRIX_COLS", ComptimeValue::makeInteger(8, "int64", 64));
+    
+    ComptimeValue rows = evaluator.lookupConstant("MATRIX_ROWS");
+    ComptimeValue cols = evaluator.lookupConstant("MATRIX_COLS");
+    
+    // Create 2D array type: flt32[ROWS][COLS]
+    auto elementType = typeSystem.getPrimitiveType("flt32");
+    auto innerArray = new ArrayType(elementType, static_cast<int>(cols.getInt()));
+    auto outerArray = new ArrayType(innerArray, static_cast<int>(rows.getInt()));
+    
+    ASSERT(outerArray->isFixedSize(), "Outer array should be fixed size");
+    ASSERT_EQ(outerArray->getSize(), 4, "Outer size should be 4 rows");
+    ASSERT(innerArray->isFixedSize(), "Inner array should be fixed size");
+    ASSERT_EQ(innerArray->getSize(), 8, "Inner size should be 8 cols");
+}
+
+// ----------------------------------------------------------------------------
+// Generic Const Parameter Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(task10_generic_const_param_storage) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    
+    // Simulate generic function: func<const N: int64>:fixed_buffer
+    // Store N as const in generic instantiation context
+    evaluator.defineConstant("N", ComptimeValue::makeInteger(256, "int64", 64));
+    
+    // Retrieve N for monomorphization
+    ComptimeValue n = evaluator.lookupConstant("N");
+    
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+    ASSERT_EQ(n.getInt(), 256, "N should be 256");
+    
+    // In real implementation, this would generate a specialized function name
+    // like "fixed_buffer_256" for monomorphization
+}
+
+TEST_CASE(task10_generic_const_different_instantiations) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    TypeSystem typeSystem;
+    
+    // Simulate two instantiations of func<const SIZE: int64>:buffer
+    
+    // Instance 1: SIZE = 128
+    evaluator.pushLocalScope();
+    evaluator.defineLocalConstant("SIZE", ComptimeValue::makeInteger(128, "int64", 64));
+    ComptimeValue size1 = evaluator.lookupConstant("SIZE");
+    auto array1Type = new ArrayType(typeSystem.getPrimitiveType("uint8"), 
+                                     static_cast<int>(size1.getInt()));
+    evaluator.popLocalScope();
+    
+    // Instance 2: SIZE = 512
+    evaluator.pushLocalScope();
+    evaluator.defineLocalConstant("SIZE", ComptimeValue::makeInteger(512, "int64", 64));
+    ComptimeValue size2 = evaluator.lookupConstant("SIZE");
+    auto array2Type = new ArrayType(typeSystem.getPrimitiveType("uint8"),
+                                     static_cast<int>(size2.getInt()));
+    evaluator.popLocalScope();
+    
+    // Verify distinct instantiations
+    ASSERT_EQ(array1Type->getSize(), 128, "First instance should be 128");
+    ASSERT_EQ(array2Type->getSize(), 512, "Second instance should be 512");
+    ASSERT(!array1Type->equals(array2Type), "Should be different types");
+}
+
+TEST_CASE(task10_const_generic_with_expression) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    TypeSystem typeSystem;
+    
+    // Simulate: func<const BASE: int64>:allocate_buffer(int64:multiplier)
+    // Array size = BASE * multiplier (compile-time * runtime)
+    
+    // BASE is const (compile-time known)
+    evaluator.defineConstant("BASE", ComptimeValue::makeInteger(64, "int64", 64));
+    
+    // multiplier is a parameter (runtime value)
+    // But in const context, we can compute derived values
+    auto baseRef = std::make_unique<IdentifierExpr>("BASE");
+    auto multiplier = std::make_unique<LiteralExpr>(static_cast<int64_t>(4));
+    auto mulExpr = std::make_unique<BinaryExpr>(
+        std::move(baseRef), Token(TokenType::TOKEN_STAR, "*", 0, 0), std::move(multiplier)
+    );
+    
+    ComptimeValue size = evaluator.evaluateExpr(mulExpr.get());
+    
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+    ASSERT_EQ(size.getInt(), 256, "BASE * 4 should be 256");
+}
+
+// ----------------------------------------------------------------------------
+// Optimization Hints from Const Values
+// ----------------------------------------------------------------------------
+
+TEST_CASE(task10_const_loop_unrolling_hint) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    
+    // Define const iteration count
+    evaluator.defineConstant("UNROLL_COUNT", ComptimeValue::makeInteger(4, "int64", 64));
+    
+    ComptimeValue count = evaluator.lookupConstant("UNROLL_COUNT");
+    
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+    ASSERT_EQ(count.getInt(), 4, "Unroll count should be 4");
+    
+    // In codegen, this could trigger loop unrolling optimization
+    // when UNROLL_COUNT is small (<= 8)
+    bool shouldUnroll = (count.getInt() > 0 && count.getInt() <= 8);
+    ASSERT(shouldUnroll, "Should enable loop unrolling for count = 4");
+}
+
+TEST_CASE(task10_const_inline_threshold) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    
+    // Define const complexity threshold for inlining
+    evaluator.defineConstant("MAX_INLINE_SIZE", ComptimeValue::makeInteger(50, "int64", 64));
+    evaluator.defineConstant("FUNCTION_SIZE", ComptimeValue::makeInteger(32, "int64", 64));
+    
+    ComptimeValue maxSize = evaluator.lookupConstant("MAX_INLINE_SIZE");
+    ComptimeValue funcSize = evaluator.lookupConstant("FUNCTION_SIZE");
+    
+    // Decision: should this function be inlined?
+    bool shouldInline = (funcSize.getInt() < maxSize.getInt());
+    
+    ASSERT(shouldInline, "32-instruction function should be inlined (< 50 threshold)");
+}
+
+// ----------------------------------------------------------------------------
+// TBB Array Size Tests (Safe Bounds Checking)
+// ----------------------------------------------------------------------------
+
+TEST_CASE(task10_tbb_array_size_within_range) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    TypeSystem typeSystem;
+    
+    // Use TBB for array size (safe range checking)
+    auto size = ComptimeValue::makeTBB(100, "tbb8", 8);
+    
+    ASSERT(!size.isERR(), "100 is within tbb8 range");
+    ASSERT(size.isTBB(), "Should be TBB type");
+    
+    // Use as array size
+    auto elementType = typeSystem.getPrimitiveType("int8");
+    auto arrayType = new ArrayType(elementType, static_cast<int>(size.getInt()));
+    
+    ASSERT_EQ(arrayType->getSize(), 100, "Array size should be 100");
+}
+
+TEST_CASE(task10_tbb_array_size_overflow_detection) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    
+    // Try to create array with size > tbb8 max (127)
+    auto base = ComptimeValue::makeTBB(100, "tbb8", 8);
+    auto increment = ComptimeValue::makeTBB(50, "tbb8", 8);
+    ComptimeValue size = evaluator.tbbAdd(base, increment);
+    
+    ASSERT(size.isERR(), "100 + 50 = 150 exceeds tbb8 max (127) → ERR");
+    
+    // In real implementation, this would be a compile-time error
+    // "Array size computation overflowed: cannot create array of size ERR"
+}
+
+// ----------------------------------------------------------------------------
+// Const Propagation Tests
+// ----------------------------------------------------------------------------
+
+TEST_CASE(task10_const_propagation_through_function) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    
+    // Define const values
+    evaluator.defineConstant("PAGE_SIZE", ComptimeValue::makeInteger(4096, "int64", 64));
+    evaluator.defineConstant("NUM_PAGES", ComptimeValue::makeInteger(16, "int64", 64));
+    
+    // Create function that computes total allocation
+    std::vector<ASTNodePtr> params;
+    auto pageSizeRef = std::make_unique<IdentifierExpr>("PAGE_SIZE");
+    auto numPagesRef = std::make_unique<IdentifierExpr>("NUM_PAGES");
+    auto mulExpr = std::make_unique<BinaryExpr>(
+        std::move(pageSizeRef), Token(TokenType::TOKEN_STAR, "*", 0, 0), std::move(numPagesRef)
+    );
+    auto retStmt = std::make_unique<ReturnStmt>(std::move(mulExpr));
+    
+    std::vector<ASTNodePtr> stmts;
+    stmts.push_back(std::move(retStmt));
+    auto body = std::make_unique<BlockStmt>(std::move(stmts));
+    
+    auto funcDecl = std::make_unique<FuncDeclStmt>(
+        "computeTotalSize", "int64", params, std::move(body)
+    );
+    
+    evaluator.registerFunction("computeTotalSize", funcDecl.get());
+    
+    // Call function - result should be const-folded
+    auto callee = std::make_unique<IdentifierExpr>("computeTotalSize");
+    std::vector<ASTNodePtr> args;
+    auto callExpr = std::make_unique<CallExpr>(std::move(callee), std::move(args));
+    
+    ComptimeValue totalSize = evaluator.evaluateExpr(callExpr.get());
+    
+    ASSERT(!evaluator.hasErrors(), "Should have no errors");
+    ASSERT_EQ(totalSize.getInt(), 65536, "4096 * 16 should be 65536");
+    
+    // This value can now be used as an array size or allocation hint
+}
+
+TEST_CASE(task10_const_default_generic_parameter) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    TypeSystem typeSystem;
+    
+    // Simulate: func<const SIZE: int64 = 1024>:buffer
+    // If SIZE not provided, use default value of 1024
+    
+    // Check if SIZE is defined
+    ComptimeValue size = evaluator.lookupConstant("SIZE");
+    
+    // If undefined, use default
+    if (evaluator.hasErrors()) {
+        evaluator.clearErrors();
+        evaluator.defineConstant("SIZE", ComptimeValue::makeInteger(1024, "int64", 64));
+        size = evaluator.lookupConstant("SIZE");
+    }
+    
+    ASSERT(!evaluator.hasErrors(), "Should have no errors after default");
+    ASSERT_EQ(size.getInt(), 1024, "Should use default SIZE = 1024");
+}
+
+// ----------------------------------------------------------------------------
+// Integration with Type Checker
+// ----------------------------------------------------------------------------
+
+TEST_CASE(task10_type_checker_const_array_bounds) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    TypeSystem typeSystem;
+    
+    // Define const bounds
+    evaluator.defineConstant("MIN_SIZE", ComptimeValue::makeInteger(8, "int64", 64));
+    evaluator.defineConstant("MAX_SIZE", ComptimeValue::makeInteger(4096, "int64", 64));
+    evaluator.defineConstant("REQUEST_SIZE", ComptimeValue::makeInteger(256, "int64", 64));
+    
+    ComptimeValue minVal = evaluator.lookupConstant("MIN_SIZE");
+    ComptimeValue maxVal = evaluator.lookupConstant("MAX_SIZE");
+    ComptimeValue requestVal = evaluator.lookupConstant("REQUEST_SIZE");
+    
+    // Type checker can validate bounds at compile time
+    bool withinBounds = (requestVal.getInt() >= minVal.getInt() && 
+                        requestVal.getInt() <= maxVal.getInt());
+    
+    ASSERT(withinBounds, "REQUEST_SIZE (256) should be within [8, 4096]");
+}
+
+TEST_CASE(task10_power_of_two_const_validation) {
+    SymbolTable symTable;
+    ConstEvaluator evaluator(&symTable);
+    
+    // Some data structures require power-of-2 sizes
+    evaluator.defineConstant("CACHE_SIZE", ComptimeValue::makeInteger(256, "int64", 64));
+    
+    ComptimeValue size = evaluator.lookupConstant("CACHE_SIZE");
+    
+    // Check if power of 2: (n & (n-1)) == 0 and n != 0
+    int64_t n = size.getInt();
+    bool isPowerOfTwo = (n > 0) && ((n & (n - 1)) == 0);
+    
+    ASSERT(isPowerOfTwo, "256 is a power of 2");
+    
+    // In real implementation, this could be a static_assert in const context
+}

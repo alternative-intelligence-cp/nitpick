@@ -1,0 +1,60 @@
+#include "frontend/parser/parser.h"
+#include "frontend/lexer/lexer.h"
+#include "frontend/ast/stmt.h"
+#include "frontend/ast/type.h"
+#include "frontend/ast/expr.h"
+#include <iostream>
+
+using namespace aria;
+using namespace aria::frontend;
+
+int main() {
+    std::string source = "int32:x = identity::<int32>(42);";
+    
+    Lexer lexer(source);
+    auto tokens = lexer.tokenize();
+    
+    std::cout << "=== TOKENS ===" << std::endl;
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        std::cout << i << ": " << tokenTypeToString(tokens[i].type) 
+                  << " [" << tokens[i].lexeme << "]" << std::endl;
+    }
+    std::cout << std::endl;
+    
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    
+    if (parser.hasErrors()) {
+        std::cout << "=== PARSER ERRORS ===" << std::endl;
+        for (const auto& err : parser.getErrors()) {
+            std::cout << err << std::endl;
+        }
+        return 1;
+    }
+    
+    std::cout << "=== AST ===" << std::endl;
+    if (ast) {
+        std::cout << ast->toString() << std::endl;
+        
+        ProgramNode* program = static_cast<ProgramNode*>(ast.get());
+        if (program->declarations.size() > 0) {
+            VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(program->declarations[0].get());
+            std::cout << "\nVariable: " << varDecl->varName << std::endl;
+            std::cout << "Type: " << varDecl->typeNode->toString() << std::endl;
+            if (varDecl->initializer) {
+                std::cout << "Initializer type: " << static_cast<int>(varDecl->initializer->type) << std::endl;
+                std::cout << "Initializer: " << varDecl->initializer->toString() << std::endl;
+                
+                if (varDecl->initializer->type == ASTNode::NodeType::CALL) {
+                    CallExpr* call = static_cast<CallExpr*>(varDecl->initializer.get());
+                    std::cout << "Explicit type args: " << call->explicitTypeArgs.size() << std::endl;
+                    for (const auto& t : call->explicitTypeArgs) {
+                        std::cout << "  - " << t << std::endl;
+                    }
+                }
+            }
+        }
+    }
+    
+    return 0;
+}

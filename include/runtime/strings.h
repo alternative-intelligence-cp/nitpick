@@ -210,12 +210,24 @@ AriaResultPtr aria_string_to_lower(AriaString str);
 
 /**
  * Concatenate two strings.
- * 
+ *
  * @param a First string
  * @param b Second string
  * @return Result containing new AriaString (a + b)
  */
 AriaResultPtr aria_string_concat(AriaString a, AriaString b);
+
+/**
+ * Concatenate multiple strings in a single allocation pass.
+ *
+ * This is an O(n) optimization over repeated pairwise concat (O(n²)).
+ * Used internally by template literals for efficient string building.
+ *
+ * @param strings Array of AriaString structs to concatenate
+ * @param count Number of strings in the array
+ * @return Result containing new AriaString (all strings joined)
+ */
+AriaResultPtr aria_string_concat_n(AriaString* strings, int64_t count);
 
 /**
  * Repeat a string n times.
@@ -327,6 +339,7 @@ AriaString* aria_string_format_float_simple(double value, int32_t precision);
 AriaString* aria_string_from_char_simple(uint8_t ch);
 AriaString* aria_string_from_cstr_simple(const char* cstr);
 AriaString* aria_string_concat_simple(AriaString* a, AriaString* b);
+AriaString* aria_string_concat_n_simple(AriaString* strings, int64_t count);
 
 #ifdef __cplusplus
 }

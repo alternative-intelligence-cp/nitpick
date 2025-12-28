@@ -155,6 +155,8 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_STRUCT: return "STRUCT";
         case TokenType::TOKEN_KW_ENUM: return "ENUM";
         case TokenType::TOKEN_KW_OPAQUE: return "OPAQUE";
+        case TokenType::TOKEN_KW_TRAIT: return "TRAIT";
+        case TokenType::TOKEN_KW_IMPL: return "IMPL";
         case TokenType::TOKEN_KW_USE: return "USE";
         case TokenType::TOKEN_KW_MOD: return "MOD";
         case TokenType::TOKEN_KW_PUB: return "PUB";

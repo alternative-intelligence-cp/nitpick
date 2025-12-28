@@ -3,7 +3,9 @@
 
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
 #include <llvm/IR/Value.h>
+#include <llvm/IR/Function.h>
 #include "frontend/sema/type.h"
 
 namespace aria {
@@ -12,25 +14,36 @@ using Type = aria::sema::Type;
 
 /**
  * @brief TernaryCodegen - Balanced ternary and nonary arithmetic code generation
- * 
+ *
  * Generates LLVM IR for balanced ternary/nonary types:
- * - trit:  Single balanced ternary digit (-1, 0, 1) in 2 bits
- * - tryte: 10 trits packed in 16 bits
- * - nit:   Single nonary digit (-4 to 4) in 4 bits  
- * - nyte:  5 nits packed in 16 bits
- * 
- * Balanced ternary uses symmetric ranges around zero, unlike standard binary.
- * Operations that exceed the valid range return the max/min boundary value.
- * 
+ * - trit:  Single balanced ternary digit (-1, 0, 1) in 3 bits
+ * - tryte: 10 trits packed in 16 bits (Split-Byte format)
+ * - nit:   Single nonary digit (-4 to 4) in 4 bits
+ * - nyte:  5 nits packed in 16 bits (Biased-Radix format)
+ *
+ * For atomic types (trit/nit): Uses inline LLVM arithmetic with clamping.
+ * For composite types (tryte/nyte): Emits calls to runtime intrinsics from
+ * ternary_ops.cpp for proper Split-Byte packing and LUT-based arithmetic.
+ *
+ * Runtime Intrinsics (ARIA-013):
+ * - aria_tryte_add, aria_tryte_sub, aria_tryte_mul, aria_tryte_div, aria_tryte_neg
+ * - aria_nyte_add, aria_nyte_sub, aria_nyte_mul, aria_nyte_div, aria_nyte_neg
+ *
  * Valid Ranges:
  * - trit:  [-1, +1]
- * - tryte: Implementation-defined (10 trits)
+ * - tryte: [-29524, +29524] (3^10 - 1) / 2
  * - nit:   [-4, +4]
- * - nyte:  Implementation-defined (5 nits)
+ * - nyte:  [-29524, +29524] (9^5 - 1) / 2
  */
 class TernaryCodegen {
 public:
     TernaryCodegen(llvm::LLVMContext& context, llvm::IRBuilder<>& builder);
+
+    /**
+     * @brief Set the module for declaring runtime intrinsics
+     * Must be called before using generateXxx methods for tryte/nyte types.
+     */
+    void setModule(llvm::Module* mod) { module = mod; }
 
     /**
      * @brief Generate balanced ternary/nonary addition with range checking
@@ -87,9 +100,35 @@ public:
 private:
     llvm::LLVMContext& context;
     llvm::IRBuilder<>& builder;
+    llvm::Module* module = nullptr;
+
+    // Cached runtime function pointers
+    llvm::Function* fn_tryte_add = nullptr;
+    llvm::Function* fn_tryte_sub = nullptr;
+    llvm::Function* fn_tryte_mul = nullptr;
+    llvm::Function* fn_tryte_div = nullptr;
+    llvm::Function* fn_tryte_neg = nullptr;
+    llvm::Function* fn_nyte_add = nullptr;
+    llvm::Function* fn_nyte_sub = nullptr;
+    llvm::Function* fn_nyte_mul = nullptr;
+    llvm::Function* fn_nyte_div = nullptr;
+    llvm::Function* fn_nyte_neg = nullptr;
 
     /**
-     * @brief Clamp value to valid range for the type
+     * @brief Check if type is a composite ternary type (tryte/nyte)
+     * Composite types require runtime intrinsic calls.
+     */
+    bool isCompositeType(Type* type) const;
+
+    /**
+     * @brief Get or declare a runtime intrinsic function
+     * @param name Function name (e.g., "aria_tryte_add")
+     * @param isBinaryOp True for binary ops (i16, i16) -> i16, false for unary (i16) -> i16
+     */
+    llvm::Function* getOrDeclareIntrinsic(const std::string& name, bool isBinaryOp);
+
+    /**
+     * @brief Clamp value to valid range for the type (for trit/nit inline ops)
      * @param value Value to clamp
      * @param type Ternary type
      * @return Clamped value (min if too low, max if too high)

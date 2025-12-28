@@ -10,9 +10,10 @@ std::string SimpleType::toString() const {
 std::string PointerType::toString() const {
     std::ostringstream oss;
     if (baseType) {
-        oss << baseType->toString() << "@";  // Aria uses @ for pointers
+        // ARIA-015: @ for native fat pointers, * for FFI thin pointers
+        oss << baseType->toString() << (isNative ? "@" : "*");
     } else {
-        oss << "unknown@";
+        oss << "unknown" << (isNative ? "@" : "*");
     }
     return oss.str();
 }

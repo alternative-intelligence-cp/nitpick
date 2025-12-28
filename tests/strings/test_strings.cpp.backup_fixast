@@ -1,0 +1,525 @@
+/**
+ * Phase 6.3 Standard Library Tests - Strings
+ * 
+ * Tests for string operations.
+ */
+
+#include "test_helpers.h"
+#include "runtime/strings.h"
+#include "runtime/collections.h"
+#include "runtime/gc.h"
+#include <cstring>
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test Helpers
+// ═══════════════════════════════════════════════════════════════════════
+
+static void init_gc() {
+    aria_gc_init(1024 * 1024, 512 * 1024);
+}
+
+static void shutdown_gc() {
+    aria_gc_shutdown();
+}
+
+// Helper to extract AriaString* from result
+static AriaString* get_string(AriaResultPtr result) {
+    if (result.error) {
+        return aria_string_empty();
+    }
+    return (AriaString*)result.value;
+}
+
+// Helper to compare strings
+static bool strings_equal(AriaString* a, const char* b) {
+    if (!a) return !b || strlen(b) == 0;
+    if (!b) return a->length == 0;
+    return a->length == (int64_t)strlen(b) && 
+           memcmp(a->data, b, a->length) == 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Creation Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(string_from_cstr) {
+    init_gc();
+    
+    AriaResultPtr result = aria_string_from_cstr("hello");
+    ASSERT_MSG(result.error == NULL, "String creation should succeed");
+    
+    AriaString* str = get_string(result);
+    ASSERT_EQ_MSG(str->length, 5, "Length should be 5");
+    ASSERT_MSG(strings_equal(str, "hello"), "String should be 'hello'");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_from_bytes) {
+    init_gc();
+    
+    const char* data = "world";
+    AriaResultPtr result = aria_string_from_bytes(data, 5);
+    ASSERT_MSG(result.error == NULL, "String creation should succeed");
+    
+    AriaString* str = get_string(result);
+    ASSERT_EQ_MSG(str->length, 5, "Length should be 5");
+    ASSERT_MSG(strings_equal(str, "world"), "String should be 'world'");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_empty) {
+    init_gc();
+    
+    AriaString* str = aria_string_empty();
+    ASSERT_EQ_MSG(str->length, 0, "Empty string should have length 0");
+    ASSERT_MSG(aria_string_is_empty(*str), "Should be empty");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_from_cstr_null) {
+    init_gc();
+    
+    AriaResultPtr result = aria_string_from_cstr(NULL);
+    ASSERT_MSG(result.is_error, "Should fail with NULL pointer");
+    ASSERT_EQ_MSG(((AriaError*)result.error)->code, ARIA_ERR_NULL_PTR, 
+                  "Should return NULL_PTR error");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_from_bytes_invalid) {
+    init_gc();
+    
+    // NULL data with non-zero length
+    AriaResultPtr result = aria_string_from_bytes(NULL, 5);
+    ASSERT_MSG(result.is_error, "Should fail with NULL data");
+    
+    // Negative length
+    result = aria_string_from_bytes("test", -1);
+    ASSERT_MSG(result.is_error, "Should fail with negative length");
+    
+    shutdown_gc();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Basic Operations Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(string_length) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("hello"));
+    ASSERT_EQ_MSG(aria_string_length(*str), 5, "Length should be 5");
+    
+    AriaString* empty = aria_string_empty();
+    ASSERT_EQ_MSG(aria_string_length(*empty), 0, "Empty length should be 0");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_equals) {
+    init_gc();
+    
+    AriaString* a = get_string(aria_string_from_cstr("hello"));
+    AriaString* b = get_string(aria_string_from_cstr("hello"));
+    AriaString* c = get_string(aria_string_from_cstr("world"));
+    AriaString* d = get_string(aria_string_from_cstr("hi"));
+    
+    ASSERT_MSG(aria_string_equals(*a, *b), "Same strings should be equal");
+    ASSERT_MSG(!aria_string_equals(*a, *c), "Different strings should not be equal");
+    ASSERT_MSG(!aria_string_equals(*a, *d), "Different length strings should not be equal");
+    
+    // Empty strings
+    AriaString* e1 = aria_string_empty();
+    AriaString* e2 = aria_string_empty();
+    ASSERT_MSG(aria_string_equals(*e1, *e2), "Empty strings should be equal");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_substring) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("hello world"));
+    
+    // Normal substring
+    AriaString* sub1 = get_string(aria_string_substring(*str, 0, 5));
+    ASSERT_MSG(strings_equal(sub1, "hello"), "Substring [0,5) should be 'hello'");
+    
+    AriaString* sub2 = get_string(aria_string_substring(*str, 6, 11));
+    ASSERT_MSG(strings_equal(sub2, "world"), "Substring [6,11) should be 'world'");
+    
+    // Empty substring
+    AriaString* sub3 = get_string(aria_string_substring(*str, 5, 5));
+    ASSERT_MSG(aria_string_is_empty(*sub3), "Empty substring should be empty");
+    
+    // Out of bounds
+    AriaResultPtr result = aria_string_substring(*str, -1, 5);
+    ASSERT_MSG(result.is_error, "Negative start should fail");
+    
+    result = aria_string_substring(*str, 0, 100);
+    ASSERT_MSG(result.is_error, "End beyond length should fail");
+    
+    result = aria_string_substring(*str, 5, 3);
+    ASSERT_MSG(result.is_error, "End before start should fail");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_index_of) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("hello world"));
+    AriaString* needle1 = get_string(aria_string_from_cstr("world"));
+    AriaString* needle2 = get_string(aria_string_from_cstr("xyz"));
+    AriaString* needle3 = get_string(aria_string_from_cstr("o"));
+    
+    // Found
+    AriaResultI64 result = aria_string_index_of(*str, *needle1);
+    ASSERT_MSG(result.error == NULL, "Should find 'world'");
+    ASSERT_EQ_MSG(result.value, 6, "Index should be 6");
+    
+    // Not found
+    result = aria_string_index_of(*str, *needle2);
+    ASSERT_MSG(result.is_error, "Should not find 'xyz'");
+    
+    // Find first occurrence
+    result = aria_string_index_of(*str, *needle3);
+    ASSERT_MSG(result.error == NULL, "Should find 'o'");
+    ASSERT_EQ_MSG(result.value, 4, "First 'o' at index 4");
+    
+    // Empty needle
+    AriaString* empty = aria_string_empty();
+    result = aria_string_index_of(*str, *empty);
+    ASSERT_MSG(result.error == NULL, "Empty needle should match at 0");
+    ASSERT_EQ_MSG(result.value, 0, "Empty needle index should be 0");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_contains) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("hello world"));
+    AriaString* needle1 = get_string(aria_string_from_cstr("world"));
+    AriaString* needle2 = get_string(aria_string_from_cstr("xyz"));
+    
+    ASSERT_MSG(aria_string_contains(*str, *needle1), "Should contain 'world'");
+    ASSERT_MSG(!aria_string_contains(*str, *needle2), "Should not contain 'xyz'");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_starts_with) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("hello world"));
+    AriaString* prefix1 = get_string(aria_string_from_cstr("hello"));
+    AriaString* prefix2 = get_string(aria_string_from_cstr("world"));
+    AriaString* empty = aria_string_empty();
+    
+    ASSERT_MSG(aria_string_starts_with(*str, *prefix1), "Should start with 'hello'");
+    ASSERT_MSG(!aria_string_starts_with(*str, *prefix2), "Should not start with 'world'");
+    ASSERT_MSG(aria_string_starts_with(*str, *empty), "Should start with empty string");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_ends_with) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("hello world"));
+    AriaString* suffix1 = get_string(aria_string_from_cstr("world"));
+    AriaString* suffix2 = get_string(aria_string_from_cstr("hello"));
+    AriaString* empty = aria_string_empty();
+    
+    ASSERT_MSG(aria_string_ends_with(*str, *suffix1), "Should end with 'world'");
+    ASSERT_MSG(!aria_string_ends_with(*str, *suffix2), "Should not end with 'hello'");
+    ASSERT_MSG(aria_string_ends_with(*str, *empty), "Should end with empty string");
+    
+    shutdown_gc();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Manipulation Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(string_trim) {
+    init_gc();
+    
+    AriaString* str1 = get_string(aria_string_from_cstr("  hello  "));
+    AriaString* trimmed1 = get_string(aria_string_trim(*str1));
+    ASSERT_MSG(strings_equal(trimmed1, "hello"), "Should trim spaces");
+    
+    AriaString* str2 = get_string(aria_string_from_cstr("\t\nhello\r\n"));
+    AriaString* trimmed2 = get_string(aria_string_trim(*str2));
+    ASSERT_MSG(strings_equal(trimmed2, "hello"), "Should trim all whitespace types");
+    
+    AriaString* str3 = get_string(aria_string_from_cstr("   \t\n   "));
+    AriaString* trimmed3 = get_string(aria_string_trim(*str3));
+    ASSERT_MSG(aria_string_is_empty(*trimmed3), "All whitespace should become empty");
+    
+    AriaString* str4 = get_string(aria_string_from_cstr("hello"));
+    AriaString* trimmed4 = get_string(aria_string_trim(*str4));
+    ASSERT_MSG(strings_equal(trimmed4, "hello"), "No whitespace should stay same");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_trim_start) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("  hello  "));
+    AriaString* trimmed = get_string(aria_string_trim_start(*str));
+    ASSERT_MSG(strings_equal(trimmed, "hello  "), "Should trim only start");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_trim_end) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("  hello  "));
+    AriaString* trimmed = get_string(aria_string_trim_end(*str));
+    ASSERT_MSG(strings_equal(trimmed, "  hello"), "Should trim only end");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_to_upper) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("Hello World!"));
+    AriaString* upper = get_string(aria_string_to_upper(*str));
+    ASSERT_MSG(strings_equal(upper, "HELLO WORLD!"), "Should convert to uppercase");
+    
+    AriaString* already_upper = get_string(aria_string_from_cstr("HELLO"));
+    AriaString* still_upper = get_string(aria_string_to_upper(*already_upper));
+    ASSERT_MSG(strings_equal(still_upper, "HELLO"), "Already uppercase should stay same");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_to_lower) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("Hello World!"));
+    AriaString* lower = get_string(aria_string_to_lower(*str));
+    ASSERT_MSG(strings_equal(lower, "hello world!"), "Should convert to lowercase");
+    
+    AriaString* already_lower = get_string(aria_string_from_cstr("hello"));
+    AriaString* still_lower = get_string(aria_string_to_lower(*already_lower));
+    ASSERT_MSG(strings_equal(still_lower, "hello"), "Already lowercase should stay same");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_concat) {
+    init_gc();
+    
+    AriaString* a = get_string(aria_string_from_cstr("hello"));
+    AriaString* b = get_string(aria_string_from_cstr(" world"));
+    AriaString* result = get_string(aria_string_concat(*a, *b));
+    
+    ASSERT_MSG(strings_equal(result, "hello world"), "Should concatenate strings");
+    ASSERT_EQ_MSG(result->length, 11, "Length should be sum of parts");
+    
+    // Concat with empty
+    AriaString* empty = aria_string_empty();
+    AriaString* result2 = get_string(aria_string_concat(*a, *empty));
+    ASSERT_MSG(aria_string_equals(*result2, *a), "Concat with empty should equal original");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_repeat) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("ha"));
+    
+    AriaString* repeat3 = get_string(aria_string_repeat(*str, 3));
+    ASSERT_MSG(strings_equal(repeat3, "hahaha"), "Should repeat 3 times");
+    
+    AriaString* repeat0 = get_string(aria_string_repeat(*str, 0));
+    ASSERT_MSG(aria_string_is_empty(*repeat0), "Repeat 0 times should be empty");
+    
+    AriaString* repeat1 = get_string(aria_string_repeat(*str, 1));
+    ASSERT_MSG(strings_equal(repeat1, "ha"), "Repeat 1 time should equal original");
+    
+    // Negative count
+    AriaResultPtr result = aria_string_repeat(*str, -1);
+    ASSERT_MSG(result.is_error, "Negative count should fail");
+    
+    shutdown_gc();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Splitting and Joining Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(string_split) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("hello,world,test"));
+    AriaString* delimiter = get_string(aria_string_from_cstr(","));
+    
+    AriaResultPtr result = aria_string_split(*str, *delimiter);
+    ASSERT_MSG(result.error == NULL, "Split should succeed");
+    
+    AriaArray* parts = (AriaArray*)result.value;
+    ASSERT_EQ_MSG(parts->length, 3, "Should have 3 parts");
+    
+    AriaString** strings = (AriaString**)parts->data;
+    ASSERT_MSG(strings_equal(strings[0], "hello"), "Part 0 should be 'hello'");
+    ASSERT_MSG(strings_equal(strings[1], "world"), "Part 1 should be 'world'");
+    ASSERT_MSG(strings_equal(strings[2], "test"), "Part 2 should be 'test'");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_split_empty_delimiter) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("abc"));
+    AriaString* empty_delim = aria_string_empty();
+    
+    AriaResultPtr result = aria_string_split(*str, *empty_delim);
+    ASSERT_MSG(result.error == NULL, "Split with empty delimiter should succeed");
+    
+    AriaArray* parts = (AriaArray*)result.value;
+    ASSERT_EQ_MSG(parts->length, 3, "Should split into 3 characters");
+    
+    AriaString** strings = (AriaString**)parts->data;
+    ASSERT_MSG(strings_equal(strings[0], "a"), "Part 0 should be 'a'");
+    ASSERT_MSG(strings_equal(strings[1], "b"), "Part 1 should be 'b'");
+    ASSERT_MSG(strings_equal(strings[2], "c"), "Part 2 should be 'c'");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_split_no_delimiter) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("hello"));
+    AriaString* delimiter = get_string(aria_string_from_cstr(","));
+    
+    AriaResultPtr result = aria_string_split(*str, *delimiter);
+    ASSERT_MSG(result.error == NULL, "Split should succeed");
+    
+    AriaArray* parts = (AriaArray*)result.value;
+    ASSERT_EQ_MSG(parts->length, 1, "Should have 1 part when delimiter not found");
+    
+    AriaString** strings = (AriaString**)parts->data;
+    ASSERT_MSG(strings_equal(strings[0], "hello"), "Part should be original string");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_join) {
+    init_gc();
+    
+    // Create array of strings
+    AriaResultPtr array_result = aria_array_new(sizeof(AriaString*), 3, 0);
+    ASSERT_MSG(array_result.error == NULL, "Array creation should succeed");
+    AriaArray* array = (AriaArray*)array_result.value;
+    
+    AriaString* str1 = get_string(aria_string_from_cstr("hello"));
+    AriaString* str2 = get_string(aria_string_from_cstr("world"));
+    AriaString* str3 = get_string(aria_string_from_cstr("test"));
+    
+    aria_array_push(array, &str1);
+    aria_array_push(array, &str2);
+    aria_array_push(array, &str3);
+    
+    AriaString* delimiter = get_string(aria_string_from_cstr(","));
+    AriaString* joined = get_string(aria_string_join(array, *delimiter));
+    
+    ASSERT_MSG(strings_equal(joined, "hello,world,test"), "Should join with commas");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_join_empty_array) {
+    init_gc();
+    
+    AriaResultPtr array_result = aria_array_new(sizeof(AriaString*), 0, 0);
+    AriaArray* array = (AriaArray*)array_result.value;
+    
+    AriaString* delimiter = get_string(aria_string_from_cstr(","));
+    AriaString* joined = get_string(aria_string_join(array, *delimiter));
+    
+    ASSERT_MSG(aria_string_is_empty(*joined), "Empty array join should be empty string");
+    
+    shutdown_gc();
+}
+
+TEST_CASE(string_join_empty_delimiter) {
+    init_gc();
+    
+    AriaResultPtr array_result = aria_array_new(sizeof(AriaString*), 3, 0);
+    AriaArray* array = (AriaArray*)array_result.value;
+    
+    AriaString* str1 = get_string(aria_string_from_cstr("a"));
+    AriaString* str2 = get_string(aria_string_from_cstr("b"));
+    AriaString* str3 = get_string(aria_string_from_cstr("c"));
+    
+    aria_array_push(array, &str1);
+    aria_array_push(array, &str2);
+    aria_array_push(array, &str3);
+    
+    AriaString* empty_delim = aria_string_empty();
+    AriaString* joined = get_string(aria_string_join(array, *empty_delim));
+    
+    ASSERT_MSG(strings_equal(joined, "abc"), "Should concatenate without delimiter");
+    
+    shutdown_gc();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Conversion Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(string_to_cstr) {
+    init_gc();
+    
+    AriaString* str = get_string(aria_string_from_cstr("hello"));
+    AriaResultPtr result = aria_string_to_cstr(*str);
+    
+    ASSERT_MSG(result.error == NULL, "Conversion should succeed");
+    const char* cstr = (const char*)result.value;
+    ASSERT_MSG(strcmp(cstr, "hello") == 0, "C string should equal 'hello'");
+    ASSERT_MSG(cstr[5] == '\0', "Should be null-terminated");
+    
+    shutdown_gc();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Integration Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE(string_integration) {
+    init_gc();
+    
+    // Complex string operations
+    AriaString* str = get_string(aria_string_from_cstr("  Hello, World!  "));
+    
+    // Trim and lowercase
+    AriaString* trimmed = get_string(aria_string_trim(*str));
+    AriaString* lower = get_string(aria_string_to_lower(*trimmed));
+    ASSERT_MSG(strings_equal(lower, "hello, world!"), "Trim + lower should work");
+    
+    // Split, modify, join
+    AriaString* csv = get_string(aria_string_from_cstr("apple,banana,cherry"));
+    AriaString* comma = get_string(aria_string_from_cstr(","));
+    AriaResultPtr split_result = aria_string_split(*csv, *comma);
+    AriaArray* fruits = (AriaArray*)split_result.value;
+    
+    AriaString* pipe = get_string(aria_string_from_cstr("|"));
+    AriaString* joined = get_string(aria_string_join(fruits, *pipe));
+    ASSERT_MSG(strings_equal(joined, "apple|banana|cherry"), "Split + join should work");
+    
+    shutdown_gc();
+}

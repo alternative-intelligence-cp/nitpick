@@ -1,0 +1,219 @@
+// Test file for await expression type extraction (Future<T> → T)
+#include "../test_helpers.h"
+#include "frontend/sema/type.h"
+
+using namespace aria::sema;
+
+TEST_CASE(unwrap_future_int32) {
+    TypeSystem typeSystem;
+    
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    FutureType* futureInt = typeSystem.getFutureType(int32Type);
+    
+    // Unwrap future<int32> → int32
+    Type* unwrapped = typeSystem.unwrapFutureType(futureInt);
+    
+    ASSERT(unwrapped != nullptr, "Unwrapped type should not be null");
+    ASSERT(unwrapped == int32Type, "Should unwrap to int32");
+    ASSERT(unwrapped->getKind() == TypeKind::PRIMITIVE, "Should be primitive type");
+}
+
+TEST_CASE(unwrap_future_string) {
+    TypeSystem typeSystem;
+    
+    Type* stringType = typeSystem.getPrimitiveType("string");
+    FutureType* futureString = typeSystem.getFutureType(stringType);
+    
+    Type* unwrapped = typeSystem.unwrapFutureType(futureString);
+    
+    ASSERT(unwrapped == stringType, "Should unwrap to string");
+    ASSERT(unwrapped->toString() == "string", "Should be string type");
+}
+
+TEST_CASE(unwrap_future_void) {
+    TypeSystem typeSystem;
+    
+    Type* voidType = typeSystem.getPrimitiveType("void");
+    FutureType* futureVoid = typeSystem.getFutureType(voidType);
+    
+    Type* unwrapped = typeSystem.unwrapFutureType(futureVoid);
+    
+    ASSERT(unwrapped == voidType, "Should unwrap to void");
+    ASSERT(unwrapped->toString() == "void", "Should be void type");
+}
+
+TEST_CASE(unwrap_future_pointer) {
+    TypeSystem typeSystem;
+    
+    Type* stringType = typeSystem.getPrimitiveType("string");
+    PointerType* ptrString = typeSystem.getPointerType(stringType);
+    FutureType* futurePtrString = typeSystem.getFutureType(ptrString);
+    
+    // Unwrap future<string@> → string@
+    Type* unwrapped = typeSystem.unwrapFutureType(futurePtrString);
+    
+    ASSERT(unwrapped == ptrString, "Should unwrap to string@");
+    ASSERT(unwrapped->getKind() == TypeKind::POINTER, "Should be pointer type");
+    ASSERT(unwrapped->toString() == "string@", "Should be string@ type");
+}
+
+TEST_CASE(unwrap_future_array) {
+    TypeSystem typeSystem;
+    
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    ArrayType* arrayInt = typeSystem.getArrayType(int32Type, 10);
+    FutureType* futureArray = typeSystem.getFutureType(arrayInt);
+    
+    // Unwrap future<int32[10]> → int32[10]
+    Type* unwrapped = typeSystem.unwrapFutureType(futureArray);
+    
+    ASSERT(unwrapped == arrayInt, "Should unwrap to int32[10]");
+    ASSERT(unwrapped->getKind() == TypeKind::ARRAY, "Should be array type");
+}
+
+TEST_CASE(unwrap_future_result) {
+    TypeSystem typeSystem;
+    
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    ResultType* resultInt = typeSystem.getResultType(int32Type);
+    FutureType* futureResult = typeSystem.getFutureType(resultInt);
+    
+    // Unwrap future<result<int32>> → result<int32>
+    Type* unwrapped = typeSystem.unwrapFutureType(futureResult);
+    
+    ASSERT(unwrapped == resultInt, "Should unwrap to result<int32>");
+    ASSERT(unwrapped->getKind() == TypeKind::RESULT, "Should be result type");
+    ASSERT(unwrapped->toString() == "result<int32>", "Should be result<int32>");
+}
+
+TEST_CASE(unwrap_nested_future) {
+    TypeSystem typeSystem;
+    
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    FutureType* innerFuture = typeSystem.getFutureType(int32Type);
+    FutureType* outerFuture = typeSystem.getFutureType(innerFuture);
+    
+    // Unwrap future<future<int32>> → future<int32>
+    Type* unwrapped = typeSystem.unwrapFutureType(outerFuture);
+    
+    ASSERT(unwrapped == innerFuture, "Should unwrap one level");
+    ASSERT(unwrapped->getKind() == TypeKind::FUTURE, "Should still be future");
+    ASSERT(unwrapped->toString() == "future<int32>", "Should be future<int32>");
+    
+    // Unwrap again: future<int32> → int32
+    Type* fullyUnwrapped = typeSystem.unwrapFutureType(unwrapped);
+    ASSERT(fullyUnwrapped == int32Type, "Should unwrap to int32");
+}
+
+TEST_CASE(unwrap_non_future_is_error) {
+    TypeSystem typeSystem;
+    
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    
+    // Try to unwrap a non-Future type
+    Type* unwrapped = typeSystem.unwrapFutureType(int32Type);
+    
+    ASSERT(unwrapped->getKind() == TypeKind::ERROR, "Should return error type");
+    ASSERT(unwrapped->toString() == "<error>", "Should be error type");
+}
+
+TEST_CASE(unwrap_null_future) {
+    TypeSystem typeSystem;
+    
+    // Try to unwrap null
+    Type* unwrapped = typeSystem.unwrapFutureType(nullptr);
+    
+    ASSERT(unwrapped->getKind() == TypeKind::ERROR, "Should return error type");
+    ASSERT(unwrapped->toString() == "<error>", "Should be error type");
+}
+
+TEST_CASE(await_async_function_call) {
+    TypeSystem typeSystem;
+    
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    std::vector<Type*> paramTypes;
+    
+    // Create async function: async func() -> int32
+    // This becomes: func() -> future<int32> (from Task #3)
+    FunctionType* asyncFunc = typeSystem.getFunctionType(paramTypes, int32Type, true, false);
+    
+    // The function return type is future<int32>
+    Type* returnType = asyncFunc->getReturnType();
+    ASSERT(returnType->getKind() == TypeKind::FUTURE, "Async function returns future");
+    
+    // Simulate: result = await asyncFunc()
+    // The await expression type is the unwrapped future type
+    Type* awaitResultType = typeSystem.unwrapFutureType(returnType);
+    
+    ASSERT(awaitResultType == int32Type, "Await should extract int32 from future<int32>");
+    ASSERT(awaitResultType->toString() == "int32", "Result type should be int32");
+}
+
+TEST_CASE(await_chained_async_calls) {
+    TypeSystem typeSystem;
+    
+    Type* stringType = typeSystem.getPrimitiveType("string");
+    std::vector<Type*> paramTypes;
+    
+    // async func fetchData() -> string
+    // Returns: future<string>
+    FunctionType* fetchFunc = typeSystem.getFunctionType(paramTypes, stringType, true, false);
+    Type* fetchReturn = fetchFunc->getReturnType();
+    
+    // result = await fetchData()
+    Type* fetchAwait = typeSystem.unwrapFutureType(fetchReturn);
+    ASSERT(fetchAwait == stringType, "First await extracts string");
+    
+    // async func processData(string) -> string
+    std::vector<Type*> processParams = {stringType};
+    FunctionType* processFunc = typeSystem.getFunctionType(processParams, stringType, true, false);
+    Type* processReturn = processFunc->getReturnType();
+    
+    // result = await processData(await fetchData())
+    Type* processAwait = typeSystem.unwrapFutureType(processReturn);
+    ASSERT(processAwait == stringType, "Second await extracts string");
+}
+
+TEST_CASE(await_with_tbb_types) {
+    TypeSystem typeSystem;
+    
+    Type* tbb32Type = typeSystem.getPrimitiveType("tbb32");
+    FutureType* futureTbb = typeSystem.getFutureType(tbb32Type);
+    
+    // await future<tbb32> → tbb32
+    Type* unwrapped = typeSystem.unwrapFutureType(futureTbb);
+    
+    ASSERT(unwrapped == tbb32Type, "Should unwrap to tbb32");
+    ASSERT(unwrapped->toString() == "tbb32", "Should be tbb32 type");
+}
+
+TEST_CASE(await_complex_return_types) {
+    TypeSystem typeSystem;
+    
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    ArrayType* arrayInt = typeSystem.getArrayType(int32Type, 100);
+    PointerType* ptrArray = typeSystem.getPointerType(arrayInt);
+    ResultType* resultPtr = typeSystem.getResultType(ptrArray);
+    FutureType* futureComplex = typeSystem.getFutureType(resultPtr);
+    
+    // await future<result<int32[100]@>> → result<int32[100]@>
+    Type* unwrapped = typeSystem.unwrapFutureType(futureComplex);
+    
+    ASSERT(unwrapped == resultPtr, "Should unwrap to result<int32[100]@>");
+    ASSERT(unwrapped->getKind() == TypeKind::RESULT, "Should be result type");
+}
+
+TEST_CASE(multiple_await_in_expression) {
+    TypeSystem typeSystem;
+    
+    Type* int32Type = typeSystem.getPrimitiveType("int32");
+    FutureType* futureInt = typeSystem.getFutureType(int32Type);
+    
+    // Simulate: (await future1) + (await future2)
+    Type* await1 = typeSystem.unwrapFutureType(futureInt);
+    Type* await2 = typeSystem.unwrapFutureType(futureInt);
+    
+    ASSERT(await1 == int32Type, "First await extracts int32");
+    ASSERT(await2 == int32Type, "Second await extracts int32");
+    ASSERT(await1 == await2, "Both awaits extract same type");
+}

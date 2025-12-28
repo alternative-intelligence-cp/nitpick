@@ -65,7 +65,8 @@ add_executable(test_runner
     runtime/test_timer.cpp
     runtime/test_async_executor.cpp
     runtime/test_async_future.cpp
-    runtime/test_async_runtime_api.cpp
+    runtime/test_ternary_ops.cpp
+    # runtime/test_async_runtime_api.cpp  # Excluded: has own main() and mock coroutine funcs
     integration/test_runtime_stress.cpp
     stdlib/test_stdlib.cpp
     stdlib/test_result.cpp
@@ -98,11 +99,16 @@ target_sources(test_runner PRIVATE
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/async_analyzer.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/closure_analyzer.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/sema/const_evaluator.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/sema/definite_assignment.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/sema/module_loader.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/sema/exhaustiveness.cpp
+    ${CMAKE_SOURCE_DIR}/src/semantic/literal_converter.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/ir_generator.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/tbb_codegen.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/ternary_codegen.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/codegen_expr.cpp
     ${CMAKE_SOURCE_DIR}/src/backend/ir/codegen_stmt.cpp
+    ${CMAKE_SOURCE_DIR}/src/backend/runtime/ternary_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/gc/allocator.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/gc/gc.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/allocators/wild_alloc.cpp

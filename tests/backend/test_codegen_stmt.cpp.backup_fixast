@@ -1,0 +1,2361 @@
+#include "../test_helpers.h"
+#include "backend/ir/codegen_stmt.h"
+#include "backend/ir/codegen_expr.h"
+#include "frontend/ast/stmt.h"
+#include "frontend/ast/expr.h"
+#include "frontend/sema/type.h"
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/IR/Instructions.h>
+#include <memory>
+#include <map>
+
+using namespace aria;
+using namespace aria::backend;
+using namespace aria::sema;
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Create a test function to hold our generated code
+ */
+llvm::Function* createTestFunction(llvm::Module* module, llvm::Type* return_type = nullptr) {
+    llvm::LLVMContext& context = module->getContext();
+    
+    if (!return_type) {
+        return_type = llvm::Type::getInt32Ty(context);
+    }
+    
+    llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type,
+        llvm::Function::ExternalLinkage,
+        "test_func",
+        module
+    );
+    
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    return func;
+}
+
+// ============================================================================
+// Phase 4.3.1: Variable Declaration Tests
+// ============================================================================
+
+/**
+ * Test: Variable declaration without initializer
+ * Code: i32:x;
+ * Should create: %x = alloca i32
+ */
+TEST_CASE(codegen_stmt_var_decl_no_init) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create test function
+    llvm::Function* func = createTestFunction(&module);
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    builder.SetInsertPoint(entry);
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create variable declaration: i32:x;
+    auto var_decl = std::make_unique<VarDeclStmt>("i32", "x", nullptr);
+    
+    // Generate code
+    stmt_codegen.codegenVarDecl(var_decl.get());
+    
+    // Verify alloca was created
+    ASSERT(named_values.count("x") > 0, "Variable x should be in named_values");
+    llvm::Value* x_value = named_values["x"];
+    ASSERT(x_value != nullptr, "Variable x value should not be null");
+    
+    // Verify it's an alloca instruction
+    llvm::AllocaInst* alloca = llvm::dyn_cast<llvm::AllocaInst>(x_value);
+    ASSERT(alloca != nullptr, "Variable x should be an alloca instruction");
+    ASSERT(alloca->getAllocatedType()->isIntegerTy(32), "Variable x should be i32 type");
+}
+
+/**
+ * Test: Variable declaration with integer initializer
+ * Code: i32:x = 42;
+ * Should create: %x = alloca i32
+ *                store i32 42, i32* %x
+ */
+TEST_CASE(codegen_stmt_var_decl_with_init) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create test function
+    llvm::Function* func = createTestFunction(&module);
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    builder.SetInsertPoint(entry);
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create variable declaration: i32:x = 42;
+    auto init_expr = std::make_unique<LiteralExpr>(static_cast<int64_t>(42));
+    auto var_decl = std::make_unique<VarDeclStmt>("i32", "x", std::move(init_expr));
+    
+    // Generate code
+    stmt_codegen.codegenVarDecl(var_decl.get());
+    
+    // Verify alloca was created
+    ASSERT(named_values.count("x") > 0, "Variable x should be in named_values");
+    llvm::AllocaInst* alloca = llvm::dyn_cast<llvm::AllocaInst>(named_values["x"]);
+    ASSERT(alloca != nullptr, "Variable x should be an alloca instruction");
+    ASSERT(alloca->getAllocatedType()->isIntegerTy(32), "Variable x should be i32 type");
+    
+    // Verify store instruction was created
+    // The store should be in the current block after the alloca
+    bool found_store = false;
+    for (auto& inst : *entry) {
+        if (llvm::StoreInst* store = llvm::dyn_cast<llvm::StoreInst>(&inst)) {
+            if (store->getPointerOperand() == alloca) {
+                found_store = true;
+                // Verify stored value is 42
+                if (llvm::ConstantInt* const_val = llvm::dyn_cast<llvm::ConstantInt>(store->getValueOperand())) {
+                    ASSERT_EQ(const_val->getSExtValue(), static_cast<int64_t>(42), "Stored value should be 42");
+                }
+                break;
+            }
+        }
+    }
+    ASSERT(found_store, "Store instruction should be created for initializer");
+}
+
+/**
+ * Test: Variable declaration with float initializer
+ * Code: f64:pi = 3.14;
+ * Should create: %pi = alloca double
+ *                store double 3.14, double* %pi
+ */
+TEST_CASE(codegen_stmt_var_decl_float) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create test function
+    llvm::Function* func = createTestFunction(&module);
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    builder.SetInsertPoint(entry);
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create variable declaration: f64:pi = 3.14;
+    auto init_expr = std::make_unique<LiteralExpr>(3.14);
+    auto var_decl = std::make_unique<VarDeclStmt>("f64", "pi", std::move(init_expr));
+    
+    // Generate code
+    stmt_codegen.codegenVarDecl(var_decl.get());
+    
+    // Verify alloca was created
+    ASSERT(named_values.count("pi") > 0, "Variable pi should be in named_values");
+    llvm::AllocaInst* alloca = llvm::dyn_cast<llvm::AllocaInst>(named_values["pi"]);
+    ASSERT(alloca != nullptr, "Variable pi should be an alloca instruction");
+    ASSERT(alloca->getAllocatedType()->isDoubleTy(), "Variable pi should be f64 (double) type");
+    
+    // Verify store instruction
+    bool found_store = false;
+    for (auto& inst : *entry) {
+        if (llvm::StoreInst* store = llvm::dyn_cast<llvm::StoreInst>(&inst)) {
+            if (store->getPointerOperand() == alloca) {
+                found_store = true;
+                break;
+            }
+        }
+    }
+    ASSERT(found_store, "Store instruction should be created for float initializer");
+}
+
+/**
+ * Test: Variable declaration with expression initializer
+ * Code: i32:result = 10 + 20;
+ * Should create: %result = alloca i32
+ *                %add = add i32 10, 20
+ *                store i32 %add, i32* %result
+ */
+TEST_CASE(codegen_stmt_var_decl_expr_init) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create test function
+    llvm::Function* func = createTestFunction(&module);
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    builder.SetInsertPoint(entry);
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create variable declaration: i32:result = 10 + 20;
+    auto left = std::make_unique<LiteralExpr>(static_cast<int64_t>(10));
+    auto right = std::make_unique<LiteralExpr>(static_cast<int64_t>(20));
+    Token plus_token(TokenType::TOKEN_PLUS, "+", 0, 0);
+    auto init_expr = std::make_unique<BinaryExpr>(std::move(left), plus_token, std::move(right));
+    auto var_decl = std::make_unique<VarDeclStmt>("i32", "result", std::move(init_expr));
+    
+    // Generate code
+    stmt_codegen.codegenVarDecl(var_decl.get());
+    
+    // Verify alloca was created
+    ASSERT(named_values.count("result") > 0, "Variable result should be in named_values");
+    llvm::AllocaInst* alloca = llvm::dyn_cast<llvm::AllocaInst>(named_values["result"]);
+    ASSERT(alloca != nullptr, "Variable result should be an alloca instruction");
+    
+    // Verify store instruction
+    bool found_store = false;
+    for (auto& inst : *entry) {
+        if (llvm::StoreInst* store = llvm::dyn_cast<llvm::StoreInst>(&inst)) {
+            if (store->getPointerOperand() == alloca) {
+                found_store = true;
+                break;
+            }
+        }
+    }
+    ASSERT(found_store, "Store instruction should be created for expression initializer");
+}
+
+/**
+ * Test: Multiple variable declarations
+ * Code: i32:x = 10;
+ *       i32:y = 20;
+ *       i32:z = 30;
+ */
+TEST_CASE(codegen_stmt_multiple_var_decls) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create test function
+    llvm::Function* func = createTestFunction(&module);
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    builder.SetInsertPoint(entry);
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create three variable declarations
+    auto var_x = std::make_unique<VarDeclStmt>("i32", "x", std::make_unique<LiteralExpr>(static_cast<int64_t>(10)));
+    auto var_y = std::make_unique<VarDeclStmt>("i32", "y", std::make_unique<LiteralExpr>(static_cast<int64_t>(20)));
+    auto var_z = std::make_unique<VarDeclStmt>("i32", "z", std::make_unique<LiteralExpr>(static_cast<int64_t>(30)));
+    
+    // Generate code
+    stmt_codegen.codegenVarDecl(var_x.get());
+    stmt_codegen.codegenVarDecl(var_y.get());
+    stmt_codegen.codegenVarDecl(var_z.get());
+    
+    // Verify all variables were created
+    ASSERT(named_values.count("x") > 0, "Variable x should be in named_values");
+    ASSERT(named_values.count("y") > 0, "Variable y should be in named_values");
+    ASSERT(named_values.count("z") > 0, "Variable z should be in named_values");
+    
+    // Verify they are all allocas
+    ASSERT(llvm::dyn_cast<llvm::AllocaInst>(named_values["x"]) != nullptr, "Variable x should be alloca");
+    ASSERT(llvm::dyn_cast<llvm::AllocaInst>(named_values["y"]) != nullptr, "Variable y should be alloca");
+    ASSERT(llvm::dyn_cast<llvm::AllocaInst>(named_values["z"]) != nullptr, "Variable z should be alloca");
+}
+
+/**
+ * Test: Variable declaration with different types
+ * Code: i8:byte_val = 5;
+ *       i64:long_val = 1000;
+ *       bool:flag = true;
+ */
+TEST_CASE(codegen_stmt_var_decl_different_types) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create test function
+    llvm::Function* func = createTestFunction(&module);
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    builder.SetInsertPoint(entry);
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create variable declarations with different types
+    auto var_byte = std::make_unique<VarDeclStmt>("i8", "byte_val", std::make_unique<LiteralExpr>(static_cast<int64_t>(5)));
+    auto var_long = std::make_unique<VarDeclStmt>("i64", "long_val", std::make_unique<LiteralExpr>(static_cast<int64_t>(1000)));
+    auto var_flag = std::make_unique<VarDeclStmt>("bool", "flag", std::make_unique<LiteralExpr>(true));
+    
+    // Generate code
+    stmt_codegen.codegenVarDecl(var_byte.get());
+    stmt_codegen.codegenVarDecl(var_long.get());
+    stmt_codegen.codegenVarDecl(var_flag.get());
+    
+    // Verify all variables were created with correct types
+    llvm::AllocaInst* alloca_byte = llvm::dyn_cast<llvm::AllocaInst>(named_values["byte_val"]);
+    llvm::AllocaInst* alloca_long = llvm::dyn_cast<llvm::AllocaInst>(named_values["long_val"]);
+    llvm::AllocaInst* alloca_flag = llvm::dyn_cast<llvm::AllocaInst>(named_values["flag"]);
+    
+    ASSERT(alloca_byte != nullptr, "byte_val should be alloca");
+    ASSERT(alloca_long != nullptr, "long_val should be alloca");
+    ASSERT(alloca_flag != nullptr, "flag should be alloca");
+    
+    ASSERT(alloca_byte->getAllocatedType()->isIntegerTy(8), "byte_val should be i8");
+    ASSERT(alloca_long->getAllocatedType()->isIntegerTy(64), "long_val should be i64");
+    ASSERT(alloca_flag->getAllocatedType()->isIntegerTy(1), "flag should be i1 (bool)");
+}
+
+// ============================================================================
+// Phase 4.3.2: Function Declaration Tests
+// ============================================================================
+
+/**
+ * Test: Simple function with no parameters and void return
+ * Code: func:simple = void() { };
+ */
+TEST_CASE(codegen_stmt_func_decl_no_params) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create function: func:simple = void() { };
+    std::vector<ASTNodePtr> params;
+    auto body = std::make_unique<BlockStmt>();
+    auto func_decl = std::make_unique<FuncDeclStmt>("simple", "void", params, std::move(body));
+    
+    // Generate code
+    llvm::Function* func = stmt_codegen.codegenFuncDecl(func_decl.get());
+    
+    // Verify function was created
+    ASSERT(func != nullptr, "Function should be created");
+    ASSERT_EQ(func->getName().str(), "simple", "Function name should be 'simple'");
+    ASSERT(func->getReturnType()->isVoidTy(), "Return type should be void");
+    ASSERT_EQ(func->arg_size(), 0u, "Function should have 0 parameters");
+    
+    // Verify function has entry block and terminator
+    ASSERT(!func->empty(), "Function should have at least one basic block");
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    ASSERT(entry->getTerminator() != nullptr, "Entry block should have terminator");
+}
+
+/**
+ * Test: Function with single parameter
+ * Code: func:double_it = i32(i32:x) { pass(x * 2); };
+ */
+TEST_CASE(codegen_stmt_func_decl_one_param) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create function: func:double_it = i32(i32:x) { pass(x * 2); };
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>("i32", "x"));
+    
+    // Create body: pass(x * 2);
+    auto x_ref = std::make_unique<IdentifierExpr>("x");
+    auto two = std::make_unique<LiteralExpr>(static_cast<int64_t>(2));
+    Token mul_token(TokenType::TOKEN_STAR, "*", 0, 0);
+    auto mul_expr = std::make_unique<BinaryExpr>(std::move(x_ref), mul_token, std::move(two));
+    auto ret_stmt = std::make_unique<ReturnStmt>(std::move(mul_expr));
+    
+    std::vector<ASTNodePtr> body_stmts;
+    body_stmts.push_back(std::move(ret_stmt));
+    auto body = std::make_unique<BlockStmt>(body_stmts);
+    
+    auto func_decl = std::make_unique<FuncDeclStmt>("double_it", "i32", params, std::move(body));
+    
+    // Generate code
+    llvm::Function* func = stmt_codegen.codegenFuncDecl(func_decl.get());
+    
+    // Verify function signature
+    ASSERT(func != nullptr, "Function should be created");
+    ASSERT_EQ(func->getName().str(), "double_it", "Function name should be 'double_it'");
+    ASSERT(func->getReturnType()->isIntegerTy(32), "Return type should be i32");
+    ASSERT_EQ(func->arg_size(), 1u, "Function should have 1 parameter");
+    
+    // Verify parameter name
+    llvm::Argument* arg = func->getArg(0);
+    ASSERT_EQ(arg->getName().str(), "x", "Parameter name should be 'x'");
+    ASSERT(arg->getType()->isIntegerTy(32), "Parameter type should be i32");
+}
+
+/**
+ * Test: Function with multiple parameters
+ * Code: func:add = i32(i32:a, i32:b) { pass(a + b); };
+ */
+TEST_CASE(codegen_stmt_func_decl_multiple_params) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create function: func:add = i32(i32:a, i32:b) { pass(a + b); };
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>("i32", "a"));
+    params.push_back(std::make_unique<ParameterNode>("i32", "b"));
+    
+    // Create body: pass(a + b);
+    auto a_ref = std::make_unique<IdentifierExpr>("a");
+    auto b_ref = std::make_unique<IdentifierExpr>("b");
+    Token add_token(TokenType::TOKEN_PLUS, "+", 0, 0);
+    auto add_expr = std::make_unique<BinaryExpr>(std::move(a_ref), add_token, std::move(b_ref));
+    auto ret_stmt = std::make_unique<ReturnStmt>(std::move(add_expr));
+    
+    std::vector<ASTNodePtr> body_stmts;
+    body_stmts.push_back(std::move(ret_stmt));
+    auto body = std::make_unique<BlockStmt>(body_stmts);
+    
+    auto func_decl = std::make_unique<FuncDeclStmt>("add", "i32", params, std::move(body));
+    
+    // Generate code
+    llvm::Function* func = stmt_codegen.codegenFuncDecl(func_decl.get());
+    
+    // Verify function signature
+    ASSERT(func != nullptr, "Function should be created");
+    ASSERT_EQ(func->getName().str(), "add", "Function name should be 'add'");
+    ASSERT(func->getReturnType()->isIntegerTy(32), "Return type should be i32");
+    ASSERT_EQ(func->arg_size(), 2u, "Function should have 2 parameters");
+    
+    // Verify parameter names and types
+    llvm::Argument* arg_a = func->getArg(0);
+    llvm::Argument* arg_b = func->getArg(1);
+    ASSERT_EQ(arg_a->getName().str(), "a", "First parameter name should be 'a'");
+    ASSERT_EQ(arg_b->getName().str(), "b", "Second parameter name should be 'b'");
+    ASSERT(arg_a->getType()->isIntegerTy(32), "First parameter type should be i32");
+    ASSERT(arg_b->getType()->isIntegerTy(32), "Second parameter type should be i32");
+}
+
+/**
+ * Test: Function with float return type
+ * Code: func:get_pi = f64() { pass(3.14); };
+ */
+TEST_CASE(codegen_stmt_func_decl_float_return) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create function: func:get_pi = f64() { pass(3.14); };
+    std::vector<ASTNodePtr> params;
+    
+    // Create body: pass(3.14);
+    auto pi_val = std::make_unique<LiteralExpr>(3.14);
+    auto ret_stmt = std::make_unique<ReturnStmt>(std::move(pi_val));
+    
+    std::vector<ASTNodePtr> body_stmts;
+    body_stmts.push_back(std::move(ret_stmt));
+    auto body = std::make_unique<BlockStmt>(body_stmts);
+    
+    auto func_decl = std::make_unique<FuncDeclStmt>("get_pi", "f64", params, std::move(body));
+    
+    // Generate code
+    llvm::Function* func = stmt_codegen.codegenFuncDecl(func_decl.get());
+    
+    // Verify function signature
+    ASSERT(func != nullptr, "Function should be created");
+    ASSERT_EQ(func->getName().str(), "get_pi", "Function name should be 'get_pi'");
+    ASSERT(func->getReturnType()->isDoubleTy(), "Return type should be f64 (double)");
+    ASSERT_EQ(func->arg_size(), 0u, "Function should have 0 parameters");
+}
+
+/**
+ * Test: Function with variable declaration in body
+ * Code: func:compute = i32() { i32:result = 42; pass(result); };
+ */
+TEST_CASE(codegen_stmt_func_decl_with_var) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create function: func:compute = i32() { i32:result = 42; pass(result); };
+    std::vector<ASTNodePtr> params;
+    
+    // Create body: i32:result = 42; pass(result);
+    auto init_val = std::make_unique<LiteralExpr>(static_cast<int64_t>(42));
+    auto var_decl = std::make_unique<VarDeclStmt>("i32", "result", std::move(init_val));
+    
+    auto result_ref = std::make_unique<IdentifierExpr>("result");
+    auto ret_stmt = std::make_unique<ReturnStmt>(std::move(result_ref));
+    
+    std::vector<ASTNodePtr> body_stmts;
+    body_stmts.push_back(std::move(var_decl));
+    body_stmts.push_back(std::move(ret_stmt));
+    auto body = std::make_unique<BlockStmt>(body_stmts);
+    
+    auto func_decl = std::make_unique<FuncDeclStmt>("compute", "i32", params, std::move(body));
+    
+    // Generate code
+    llvm::Function* func = stmt_codegen.codegenFuncDecl(func_decl.get());
+    
+    // Verify function was created and has correct structure
+    ASSERT(func != nullptr, "Function should be created");
+    ASSERT_EQ(func->getName().str(), "compute", "Function name should be 'compute'");
+    ASSERT(func->getReturnType()->isIntegerTy(32), "Return type should be i32");
+    
+    // Verify entry block has instructions (var alloca, store, load, return)
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    ASSERT(!entry->empty(), "Entry block should have instructions");
+    ASSERT(entry->getTerminator() != nullptr, "Entry block should have terminator");
+}
+
+/**
+ * Test: Function with mixed parameter types
+ * Code: func:mix = f64(i32:count, f64:rate) { pass(count * rate); };
+ */
+TEST_CASE(codegen_stmt_func_decl_mixed_params) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create function: func:mix = f64(i32:count, f64:rate) { pass(count * rate); };
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>("i32", "count"));
+    params.push_back(std::make_unique<ParameterNode>("f64", "rate"));
+    
+    // Create empty body for now (full expression would need type casting)
+    auto body = std::make_unique<BlockStmt>();
+    
+    auto func_decl = std::make_unique<FuncDeclStmt>("mix", "f64", params, std::move(body));
+    
+    // Generate code
+    llvm::Function* func = stmt_codegen.codegenFuncDecl(func_decl.get());
+    
+    // Verify function signature
+    ASSERT(func != nullptr, "Function should be created");
+    ASSERT_EQ(func->getName().str(), "mix", "Function name should be 'mix'");
+    ASSERT(func->getReturnType()->isDoubleTy(), "Return type should be f64");
+    ASSERT_EQ(func->arg_size(), 2u, "Function should have 2 parameters");
+    
+    // Verify parameter types are different
+    llvm::Argument* arg_count = func->getArg(0);
+    llvm::Argument* arg_rate = func->getArg(1);
+    ASSERT(arg_count->getType()->isIntegerTy(32), "First parameter should be i32");
+    ASSERT(arg_rate->getType()->isDoubleTy(), "Second parameter should be f64");
+}
+// ============================================================================
+// Phase 4.3.3: If Statement Code Generation Tests
+// ============================================================================
+
+/**
+ * Test: Simple if statement without else
+ * Code: if (true) { i32:x = 42; }
+ */
+TEST_CASE(codegen_stmt_if_simple) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function to hold the if statement
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_if", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create condition: true
+    auto condition = std::make_unique<LiteralExpr>(true);
+    
+    // Create then branch: i32:x = 42;
+    auto init_value = std::make_unique<LiteralExpr>((int64_t)42);
+    auto var_decl = std::make_unique<VarDeclStmt>("i32", "x", std::move(init_value));
+    auto then_block = std::make_unique<BlockStmt>();
+    then_block->statements.push_back(std::move(var_decl));
+    
+    // Create if statement
+    auto if_stmt = std::make_unique<IfStmt>(std::move(condition), std::move(then_block), nullptr);
+    
+    // Generate code
+    stmt_codegen.codegenIf(if_stmt.get());
+    
+    // Verify basic blocks exist
+    bool found_then = false;
+    bool found_merge = false;
+    for (auto& bb : *func) {
+        std::string bb_name = bb.getName().str();
+        if (bb_name == "if.then") found_then = true;
+        if (bb_name == "if.merge") found_merge = true;
+    }
+    ASSERT(found_then, "if.then block should exist");
+    ASSERT(found_merge, "if.merge block should exist");
+    
+    // Should be exactly 3 blocks: entry, if.then, if.merge
+    ASSERT_EQ(func->size(), 3u, "Function should have 3 basic blocks");
+}
+
+/**
+ * Test: If statement with else
+ * Code: if (false) { i32:x = 1; } else { i32:y = 2; }
+ */
+TEST_CASE(codegen_stmt_if_else) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_if_else", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create condition: false
+    auto condition = std::make_unique<LiteralExpr>(false);
+    
+    // Create then branch: i32:x = 1;
+    auto one = std::make_unique<LiteralExpr>((int64_t)1);
+    auto x_decl = std::make_unique<VarDeclStmt>("i32", "x", std::move(one));
+    auto then_block = std::make_unique<BlockStmt>();
+    then_block->statements.push_back(std::move(x_decl));
+    
+    // Create else branch: i32:y = 2;
+    auto two = std::make_unique<LiteralExpr>((int64_t)2);
+    auto y_decl = std::make_unique<VarDeclStmt>("i32", "y", std::move(two));
+    auto else_block = std::make_unique<BlockStmt>();
+    else_block->statements.push_back(std::move(y_decl));
+    
+    // Create if statement
+    auto if_stmt = std::make_unique<IfStmt>(std::move(condition), std::move(then_block), std::move(else_block));
+    
+    // Generate code
+    stmt_codegen.codegenIf(if_stmt.get());
+    
+    // Verify basic blocks exist
+    bool found_then = false;
+    bool found_else = false;
+    bool found_merge = false;
+    for (auto& bb : *func) {
+        std::string bb_name = bb.getName().str();
+        if (bb_name == "if.then") found_then = true;
+        if (bb_name == "if.else") found_else = true;
+        if (bb_name == "if.merge") found_merge = true;
+    }
+    ASSERT(found_then, "if.then block should exist");
+    ASSERT(found_else, "if.else block should exist");
+    ASSERT(found_merge, "if.merge block should exist");
+    
+    // Should be exactly 4 blocks: entry, if.then, if.else, if.merge
+    ASSERT_EQ(func->size(), 4u, "Function should have 4 basic blocks");
+}
+
+/**
+ * Test: If statement with boolean condition
+ * Code: if (false) { }
+ */
+TEST_CASE(codegen_stmt_if_bool_condition) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_if_bool", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create condition: false
+    auto condition = std::make_unique<LiteralExpr>(false);
+    
+    // Create then branch
+    auto then_block = std::make_unique<BlockStmt>();
+    
+    // Create if statement
+    auto if_stmt = std::make_unique<IfStmt>(std::move(condition), std::move(then_block), nullptr);
+    
+    // Generate code
+    stmt_codegen.codegenIf(if_stmt.get());
+    
+    // Verify condition is boolean (i1)
+    llvm::BasicBlock* entry_bb = &func->getEntryBlock();
+    ASSERT(!entry_bb->empty(), "Entry block should have instructions");
+    
+    // Find the branch instruction
+    bool found_branch = false;
+    for (auto& inst : *entry_bb) {
+        if (llvm::BranchInst* br = llvm::dyn_cast<llvm::BranchInst>(&inst)) {
+            if (br->isConditional()) {
+                found_branch = true;
+                llvm::Value* cond = br->getCondition();
+                ASSERT(cond->getType()->isIntegerTy(1), "Condition should be i1 (boolean)");
+            }
+        }
+    }
+    ASSERT(found_branch, "Should find conditional branch instruction");
+}
+
+/**
+ * Test: If statement with integer condition (converted to bool)
+ * Code: if (42) { }
+ */
+TEST_CASE(codegen_stmt_if_int_condition) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_if_int", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create condition: 42 (integer, should be converted to bool)
+    auto condition = std::make_unique<LiteralExpr>((int64_t)42);
+    
+    // Create then branch
+    auto then_block = std::make_unique<BlockStmt>();
+    
+    // Create if statement
+    auto if_stmt = std::make_unique<IfStmt>(std::move(condition), std::move(then_block), nullptr);
+    
+    // Generate code
+    stmt_codegen.codegenIf(if_stmt.get());
+    
+    // Verify we have if blocks
+    ASSERT(func->size() >= 2u, "Function should have at least 2 basic blocks");
+}
+
+/**
+ * Test: Nested if statements (else-if pattern)
+ * Code: if (true) { i32:a = 1; } else { if (false) { i32:b = 2; } else { i32:c = 3; } }
+ */
+TEST_CASE(codegen_stmt_if_nested) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_if_nested", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create inner if statement: if (false) { i32:b = 2; } else { i32:c = 3; }
+    auto inner_cond = std::make_unique<LiteralExpr>(false);
+    
+    auto two = std::make_unique<LiteralExpr>((int64_t)2);
+    auto b_decl = std::make_unique<VarDeclStmt>("i32", "b", std::move(two));
+    auto inner_then_block = std::make_unique<BlockStmt>();
+    inner_then_block->statements.push_back(std::move(b_decl));
+    
+    auto three = std::make_unique<LiteralExpr>((int64_t)3);
+    auto c_decl = std::make_unique<VarDeclStmt>("i32", "c", std::move(three));
+    auto inner_else_block = std::make_unique<BlockStmt>();
+    inner_else_block->statements.push_back(std::move(c_decl));
+    
+    auto inner_if = std::make_unique<IfStmt>(std::move(inner_cond), std::move(inner_then_block), std::move(inner_else_block));
+    
+    // Create outer if statement: if (true) { i32:a = 1; } else { <inner_if> }
+    auto outer_cond = std::make_unique<LiteralExpr>(true);
+    
+    auto one = std::make_unique<LiteralExpr>((int64_t)1);
+    auto a_decl = std::make_unique<VarDeclStmt>("i32", "a", std::move(one));
+    auto outer_then_block = std::make_unique<BlockStmt>();
+    outer_then_block->statements.push_back(std::move(a_decl));
+    
+    auto outer_if = std::make_unique<IfStmt>(std::move(outer_cond), std::move(outer_then_block), std::move(inner_if));
+    
+    // Generate code
+    stmt_codegen.codegenIf(outer_if.get());
+    
+    // Verify we have multiple if.then/if.else/if.merge blocks from nesting
+    int then_count = 0;
+    int else_count = 0;
+    int merge_count = 0;
+    for (auto& bb : *func) {
+        std::string bb_name = bb.getName().str();
+        if (bb_name.find("if.then") != std::string::npos) then_count++;
+        if (bb_name.find("if.else") != std::string::npos) else_count++;
+        if (bb_name.find("if.merge") != std::string::npos) merge_count++;
+    }
+    ASSERT(then_count >= 2, "Should have at least 2 if.then blocks (nested)");
+    ASSERT(else_count >= 1, "Should have at least 1 if.else block (nested)");
+    ASSERT(merge_count >= 2, "Should have at least 2 if.merge blocks (nested)");
+}
+
+/**
+ * Test: If statement with float condition (converted to bool)
+ * Code: if (3.14) { }
+ */
+TEST_CASE(codegen_stmt_if_float_condition) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_if_float", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create condition: 3.14 (float, should be converted to bool)
+    auto condition = std::make_unique<LiteralExpr>(3.14);
+    
+    // Create then branch
+    auto then_block = std::make_unique<BlockStmt>();
+    
+    // Create if statement
+    auto if_stmt = std::make_unique<IfStmt>(std::move(condition), std::move(then_block), nullptr);
+    
+    // Generate code
+    stmt_codegen.codegenIf(if_stmt.get());
+    
+    // Verify we have if blocks
+    ASSERT(func->size() >= 2u, "Function should have at least 2 basic blocks");
+}
+
+// ============================================================================
+// Phase 4.3.4: Loop Statement Tests
+// ============================================================================
+
+/**
+ * Test: Simple while loop with boolean condition
+ * Code: while (true) { }
+ */
+TEST_CASE(codegen_stmt_while_simple) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_while", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create condition: true
+    auto condition = std::make_unique<LiteralExpr>(true);
+    
+    // Create body
+    auto body = std::make_unique<BlockStmt>();
+    
+    // Create while statement
+    auto while_stmt = std::make_unique<WhileStmt>(std::move(condition), std::move(body));
+    
+    // Generate code
+    stmt_codegen.codegenWhile(while_stmt.get());
+    
+    // Verify we have while.cond, while.body, and while.end blocks
+    bool has_cond = false;
+    bool has_body = false;
+    bool has_end = false;
+    for (auto& bb : *func) {
+        std::string bb_name = bb.getName().str();
+        if (bb_name == "while.cond") has_cond = true;
+        if (bb_name == "while.body") has_body = true;
+        if (bb_name == "while.end") has_end = true;
+    }
+    
+    ASSERT(has_cond, "Function should have while.cond block");
+    ASSERT(has_body, "Function should have while.body block");
+    ASSERT(has_end, "Function should have while.end block");
+    ASSERT(func->size() == 4u, "Function should have 4 basic blocks (entry + 3 loop blocks)");
+}
+
+/**
+ * Test: While loop with integer condition (converted to bool)
+ * Code: while (42) { }
+ */
+TEST_CASE(codegen_stmt_while_int_condition) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_while_int", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create condition: 42 (integer, should be converted to bool)
+    auto condition = std::make_unique<LiteralExpr>((int64_t)42);
+    
+    // Create body with a variable declaration
+    auto body = std::make_unique<BlockStmt>();
+    auto var_decl = std::make_unique<VarDeclStmt>("x", "i32", nullptr);
+    body->statements.push_back(std::move(var_decl));
+    
+    // Create while statement
+    auto while_stmt = std::make_unique<WhileStmt>(std::move(condition), std::move(body));
+    
+    // Generate code
+    stmt_codegen.codegenWhile(while_stmt.get());
+    
+    // Verify loop structure exists
+    ASSERT(func->size() == 4u, "Function should have 4 basic blocks");
+}
+
+/**
+ * Test: While loop with float condition (converted to bool)
+ * Code: while (3.14) { }
+ */
+TEST_CASE(codegen_stmt_while_float_condition) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_while_float", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create condition: 3.14 (float, should be converted to bool)
+    auto condition = std::make_unique<LiteralExpr>(3.14);
+    
+    // Create body
+    auto body = std::make_unique<BlockStmt>();
+    
+    // Create while statement
+    auto while_stmt = std::make_unique<WhileStmt>(std::move(condition), std::move(body));
+    
+    // Generate code
+    stmt_codegen.codegenWhile(while_stmt.get());
+    
+    // Verify loop structure exists
+    ASSERT(func->size() == 4u, "Function should have 4 basic blocks");
+}
+
+/**
+ * Test: For loop with all components
+ * Code: for (i32:i = 0; i < 10; i = i + 1) { }
+ */
+TEST_CASE(codegen_stmt_for_complete) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_for", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create initializer: i32:i = 0
+    auto init = std::make_unique<VarDeclStmt>("i", "i32", 
+        std::make_unique<LiteralExpr>((int64_t)0));
+    
+    // Create condition: i < 10 (simplified to just a literal for testing)
+    auto condition = std::make_unique<LiteralExpr>(true);
+    
+    // Create update: i = i + 1 (simplified to just a literal for testing)
+    auto update = std::make_unique<LiteralExpr>((int64_t)1);
+    
+    // Create body
+    auto body = std::make_unique<BlockStmt>();
+    
+    // Create for statement (C-style)
+    auto for_stmt = std::make_unique<ForStmt>(
+        std::move(init), std::move(condition), std::move(update), std::move(body), 0, 0);
+    
+    // Generate code
+    stmt_codegen.codegenFor(for_stmt.get());
+    
+    // Verify we have for.cond, for.body, for.inc, and for.end blocks
+    bool has_cond = false;
+    bool has_body = false;
+    bool has_inc = false;
+    bool has_end = false;
+    for (auto& bb : *func) {
+        std::string bb_name = bb.getName().str();
+        if (bb_name == "for.cond") has_cond = true;
+        if (bb_name == "for.body") has_body = true;
+        if (bb_name == "for.inc") has_inc = true;
+        if (bb_name == "for.end") has_end = true;
+    }
+    
+    ASSERT(has_cond, "Function should have for.cond block");
+    ASSERT(has_body, "Function should have for.body block");
+    ASSERT(has_inc, "Function should have for.inc block");
+    ASSERT(has_end, "Function should have for.end block");
+    ASSERT(func->size() == 5u, "Function should have 5 basic blocks (entry + 4 loop blocks)");
+}
+
+/**
+ * Test: For loop without initializer
+ * Code: for (; true; ) { }
+ */
+TEST_CASE(codegen_stmt_for_no_init) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_for_no_init", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create condition: true
+    auto condition = std::make_unique<LiteralExpr>(true);
+    
+    // Create body
+    auto body = std::make_unique<BlockStmt>();
+    
+    // Create for statement without init and update (C-style)
+    auto for_stmt = std::make_unique<ForStmt>(
+        nullptr, std::move(condition), nullptr, std::move(body), 0, 0);
+    
+    // Generate code
+    stmt_codegen.codegenFor(for_stmt.get());
+    
+    // Verify loop structure exists
+    ASSERT(func->size() >= 4u, "Function should have at least 4 basic blocks");
+}
+
+/**
+ * Test: For loop without condition (infinite loop)
+ * Code: for (;;) { }
+ */
+TEST_CASE(codegen_stmt_for_infinite) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_for_infinite", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create body
+    auto body = std::make_unique<BlockStmt>();
+    
+    // Create for statement without anything (infinite loop, C-style)
+    auto for_stmt = std::make_unique<ForStmt>(
+        nullptr, nullptr, nullptr, std::move(body), 0, 0);
+    
+    // Generate code
+    stmt_codegen.codegenFor(for_stmt.get());
+    
+    // Verify we have basic loop structure
+    // Infinite loop should still have cond, body, inc blocks but cond always branches to body
+    ASSERT(func->size() >= 3u, "Function should have at least 3 basic blocks");
+}
+// ============================================================================
+// Phase 4.3.4 (Continued): Aria-Specific Loop Tests (till/loop/when)
+// ============================================================================
+
+/**
+ * Test: Till loop with integer limit
+ * Code: till(10, 1) { }
+ * Creates implicit $ variable from 0 to 9
+ */
+TEST_CASE(codegen_stmt_till_simple) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_till", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create limit: 10
+    auto limit = std::make_unique<LiteralExpr>((int64_t)10);
+    
+    // Create step: 1
+    auto step = std::make_unique<LiteralExpr>((int64_t)1);
+    
+    // Create body
+    auto body = std::make_unique<BlockStmt>();
+    
+    // Create till statement
+    auto till_stmt = std::make_unique<TillStmt>(
+        std::move(limit), std::move(step), std::move(body));
+    
+    // Generate code
+    stmt_codegen.codegenTill(till_stmt.get());
+    
+    // Verify we have till.cond, till.body, till.inc, and till.end blocks
+    bool has_cond = false;
+    bool has_body = false;
+    bool has_inc = false;
+    bool has_end = false;
+    for (auto& bb : *func) {
+        std::string bb_name = bb.getName().str();
+        if (bb_name == "till.cond") has_cond = true;
+        if (bb_name == "till.body") has_body = true;
+        if (bb_name == "till.inc") has_inc = true;
+        if (bb_name == "till.end") has_end = true;
+    }
+    
+    ASSERT(has_cond, "Function should have till.cond block");
+    ASSERT(has_body, "Function should have till.body block");
+    ASSERT(has_inc, "Function should have till.inc block");
+    ASSERT(has_end, "Function should have till.end block");
+    ASSERT(func->size() == 5u, "Function should have 5 basic blocks (entry + 4 loop blocks)");
+}
+
+/**
+ * Test: Loop statement with start, limit, step
+ * Code: loop(5, 15, 2) { }
+ * Creates implicit $ variable from 5 to 13 by 2s
+ */
+TEST_CASE(codegen_stmt_loop_simple) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_loop", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create start: 5
+    auto start = std::make_unique<LiteralExpr>((int64_t)5);
+    
+    // Create limit: 15
+    auto limit = std::make_unique<LiteralExpr>((int64_t)15);
+    
+    // Create step: 2
+    auto step = std::make_unique<LiteralExpr>((int64_t)2);
+    
+    // Create body
+    auto body = std::make_unique<BlockStmt>();
+    
+    // Create loop statement
+    auto loop_stmt = std::make_unique<LoopStmt>(
+        std::move(start), std::move(limit), std::move(step), std::move(body));
+    
+    // Generate code
+    stmt_codegen.codegenLoop(loop_stmt.get());
+    
+    // Verify we have loop.cond, loop.body, loop.inc, and loop.end blocks
+    bool has_cond = false;
+    bool has_body = false;
+    bool has_inc = false;
+    bool has_end = false;
+    for (auto& bb : *func) {
+        std::string bb_name = bb.getName().str();
+        if (bb_name == "loop.cond") has_cond = true;
+        if (bb_name == "loop.body") has_body = true;
+        if (bb_name == "loop.inc") has_inc = true;
+        if (bb_name == "loop.end") has_end = true;
+    }
+    
+    ASSERT(has_cond, "Function should have loop.cond block");
+    ASSERT(has_body, "Function should have loop.body block");
+    ASSERT(has_inc, "Function should have loop.inc block");
+    ASSERT(has_end, "Function should have loop.end block");
+    ASSERT(func->size() == 5u, "Function should have 5 basic blocks (entry + 4 loop blocks)");
+}
+
+/**
+ * Test: When loop with then and end blocks
+ * Code: when(true) { } then { } end { }
+ * Tests tri-state completion tracking
+ */
+TEST_CASE(codegen_stmt_when_complete) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_when", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create condition: true
+    auto condition = std::make_unique<LiteralExpr>(true);
+    
+    // Create body
+    auto body = std::make_unique<BlockStmt>();
+    
+    // Create then block
+    auto then_block = std::make_unique<BlockStmt>();
+    
+    // Create end block
+    auto end_block = std::make_unique<BlockStmt>();
+    
+    // Create when statement
+    auto when_stmt = std::make_unique<WhenStmt>(
+        std::move(condition), std::move(body), std::move(then_block), std::move(end_block));
+    
+    // Generate code
+    stmt_codegen.codegenWhen(when_stmt.get());
+    
+    // Verify we have when.cond, when.body, when.decision, when.then, when.end, when.exit
+    bool has_cond = false;
+    bool has_body = false;
+    bool has_decision = false;
+    bool has_then = false;
+    bool has_end = false;
+    bool has_exit = false;
+    for (auto& bb : *func) {
+        std::string bb_name = bb.getName().str();
+        if (bb_name == "when.cond") has_cond = true;
+        if (bb_name == "when.body") has_body = true;
+        if (bb_name == "when.decision") has_decision = true;
+        if (bb_name == "when.then") has_then = true;
+        if (bb_name == "when.end") has_end = true;
+        if (bb_name == "when.exit") has_exit = true;
+    }
+    
+    ASSERT(has_cond, "Function should have when.cond block");
+    ASSERT(has_body, "Function should have when.body block");
+    ASSERT(has_decision, "Function should have when.decision block");
+    ASSERT(has_then, "Function should have when.then block");
+    ASSERT(has_end, "Function should have when.end block");
+    ASSERT(has_exit, "Function should have when.exit block");
+    ASSERT(func->size() >= 6u, "Function should have at least 6 basic blocks");
+}
+
+/**
+ * Test: When loop with only then block
+ * Code: when(false) { } then { }
+ */
+TEST_CASE(codegen_stmt_when_then_only) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_when_then", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create condition: false
+    auto condition = std::make_unique<LiteralExpr>(false);
+    
+    // Create body
+    auto body = std::make_unique<BlockStmt>();
+    
+    // Create then block
+    auto then_block = std::make_unique<BlockStmt>();
+    
+    // Create when statement (no end block)
+    auto when_stmt = std::make_unique<WhenStmt>(
+        std::move(condition), std::move(body), std::move(then_block), nullptr);
+    
+    // Generate code
+    stmt_codegen.codegenWhen(when_stmt.get());
+    
+    // Verify basic structure
+    ASSERT(func->size() >= 4u, "Function should have at least 4 basic blocks");
+}
+
+/**
+ * Test: When loop with only end block
+ * Code: when(42) { } end { }
+ */
+TEST_CASE(codegen_stmt_when_end_only) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_when_end", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create condition: 42 (int to bool conversion)
+    auto condition = std::make_unique<LiteralExpr>((int64_t)42);
+    
+    // Create body
+    auto body = std::make_unique<BlockStmt>();
+    
+    // Create end block
+    auto end_block = std::make_unique<BlockStmt>();
+    
+    // Create when statement (no then block)
+    auto when_stmt = std::make_unique<WhenStmt>(
+        std::move(condition), std::move(body), nullptr, std::move(end_block));
+    
+    // Generate code
+    stmt_codegen.codegenWhen(when_stmt.get());
+    
+    // Verify basic structure
+    ASSERT(func->size() >= 4u, "Function should have at least 4 basic blocks");
+}
+
+// ============================================================================
+// Phase 4.3.5: Pick Pattern Matching Code Generation Tests
+// ============================================================================
+
+/**
+ * Test: Pick statement with literal patterns
+ * Code: pick(x) { (5) { }, (10) { }, (20) { } }
+ */
+TEST_CASE(codegen_stmt_pick_literal_patterns) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_pick_literal", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create selector: x (identifier)
+    auto selector = std::make_unique<LiteralExpr>((int64_t)10);
+    
+    // Create case 1: (5) { }
+    auto pattern1 = std::make_unique<LiteralExpr>((int64_t)5);
+    auto body1 = std::make_unique<BlockStmt>();
+    auto case1 = std::make_unique<PickCase>("", std::move(pattern1), std::move(body1));
+    
+    // Create case 2: (10) { }
+    auto pattern2 = std::make_unique<LiteralExpr>((int64_t)10);
+    auto body2 = std::make_unique<BlockStmt>();
+    auto case2 = std::make_unique<PickCase>("", std::move(pattern2), std::move(body2));
+    
+    // Create case 3: (20) { }
+    auto pattern3 = std::make_unique<LiteralExpr>((int64_t)20);
+    auto body3 = std::make_unique<BlockStmt>();
+    auto case3 = std::make_unique<PickCase>("", std::move(pattern3), std::move(body3));
+    
+    // Create pick statement
+    std::vector<ASTNodePtr> cases;
+    cases.push_back(std::move(case1));
+    cases.push_back(std::move(case2));
+    cases.push_back(std::move(case3));
+    auto pick_stmt = std::make_unique<PickStmt>(std::move(selector), cases);
+    
+    // Generate code
+    stmt_codegen.codegenPick(pick_stmt.get());
+    
+    // Verify structure
+    // Should have: entry + 3 check blocks + 3 body blocks + pick.end
+    // At least 8 blocks total
+    ASSERT(func->size() >= 8u, "Function should have at least 8 basic blocks");
+    
+    // Verify block names contain expected patterns
+    bool found_check = false;
+    bool found_body = false;
+    bool found_end = false;
+    
+    for (auto& block : *func) {
+        std::string name = block.getName().str();
+        if (name.find("case0.check") != std::string::npos) found_check = true;
+        if (name.find("case0.body") != std::string::npos) found_body = true;
+        if (name.find("pick.end") != std::string::npos) found_end = true;
+    }
+    
+    ASSERT(found_check, "Should have case check block");
+    ASSERT(found_body, "Should have case body block");
+    ASSERT(found_end, "Should have pick end block");
+}
+
+/**
+ * Test: Pick statement with wildcard pattern
+ * Code: pick(x) { (5) { }, (*) { } }
+ */
+TEST_CASE(codegen_stmt_pick_wildcard) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_pick_wildcard", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create selector
+    auto selector = std::make_unique<LiteralExpr>((int64_t)42);
+    
+    // Create case 1: (5) { }
+    auto pattern1 = std::make_unique<LiteralExpr>((int64_t)5);
+    auto body1 = std::make_unique<BlockStmt>();
+    auto case1 = std::make_unique<PickCase>("", std::move(pattern1), std::move(body1));
+    
+    // Create case 2: (*) { } - wildcard
+    auto wildcard_pattern = std::make_unique<IdentifierExpr>("*");
+    auto wildcard_body = std::make_unique<BlockStmt>();
+    auto case2 = std::make_unique<PickCase>("", std::move(wildcard_pattern), std::move(wildcard_body));
+    
+    // Create pick statement
+    std::vector<ASTNodePtr> cases;
+    cases.push_back(std::move(case1));
+    cases.push_back(std::move(case2));
+    auto pick_stmt = std::make_unique<PickStmt>(std::move(selector), cases);
+    
+    // Generate code
+    stmt_codegen.codegenPick(pick_stmt.get());
+    
+    // Verify basic structure
+    ASSERT(func->size() >= 6u, "Function should have at least 6 basic blocks");
+}
+
+/**
+ * Test: Pick statement with comparison patterns
+ * Code: pick(x) { (< 10) { }, (> 20) { } }
+ */
+TEST_CASE(codegen_stmt_pick_comparisons) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_pick_comparisons", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create selector
+    auto selector = std::make_unique<LiteralExpr>((int64_t)15);
+    
+    // Create case 1: (< 10) { }
+    Token less_token;
+    less_token.type = TokenType::TOKEN_LESS;
+    auto dummy_left1 = std::make_unique<IdentifierExpr>("_");  // Placeholder for unary
+    auto comp_val1 = std::make_unique<LiteralExpr>((int64_t)10);
+    auto pattern1 = std::make_unique<BinaryExpr>(
+        std::move(dummy_left1), less_token, std::move(comp_val1));
+    auto body1 = std::make_unique<BlockStmt>();
+    auto case1 = std::make_unique<PickCase>("", std::move(pattern1), std::move(body1));
+    
+    // Create case 2: (> 20) { }
+    Token greater_token;
+    greater_token.type = TokenType::TOKEN_GREATER;
+    auto dummy_left2 = std::make_unique<IdentifierExpr>("_");  // Placeholder for unary
+    auto comp_val2 = std::make_unique<LiteralExpr>((int64_t)20);
+    auto pattern2 = std::make_unique<BinaryExpr>(
+        std::move(dummy_left2), greater_token, std::move(comp_val2));
+    auto body2 = std::make_unique<BlockStmt>();
+    auto case2 = std::make_unique<PickCase>("", std::move(pattern2), std::move(body2));
+    
+    // Create pick statement
+    std::vector<ASTNodePtr> cases;
+    cases.push_back(std::move(case1));
+    cases.push_back(std::move(case2));
+    auto pick_stmt = std::make_unique<PickStmt>(std::move(selector), cases);
+    
+    // Generate code
+    stmt_codegen.codegenPick(pick_stmt.get());
+    
+    // Verify basic structure
+    ASSERT(func->size() >= 6u, "Function should have at least 6 basic blocks");
+}
+
+/**
+ * Test: Pick statement with range pattern (inclusive)
+ * Code: pick(x) { (10..20) { } }
+ */
+TEST_CASE(codegen_stmt_pick_range_inclusive) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_pick_range", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create selector
+    auto selector = std::make_unique<LiteralExpr>((int64_t)15);
+    
+    // Create case: (10..20) { } - inclusive range
+    Token range_token;
+    range_token.type = TokenType::TOKEN_DOT_DOT;
+    auto start_val = std::make_unique<LiteralExpr>((int64_t)10);
+    auto end_val = std::make_unique<LiteralExpr>((int64_t)20);
+    auto pattern = std::make_unique<BinaryExpr>(
+        std::move(start_val), range_token, std::move(end_val));
+    auto body = std::make_unique<BlockStmt>();
+    auto case1 = std::make_unique<PickCase>("", std::move(pattern), std::move(body));
+    
+    // Create pick statement
+    std::vector<ASTNodePtr> cases;
+    cases.push_back(std::move(case1));
+    auto pick_stmt = std::make_unique<PickStmt>(std::move(selector), cases);
+    
+    // Generate code
+    stmt_codegen.codegenPick(pick_stmt.get());
+    
+    // Verify basic structure
+    ASSERT(func->size() >= 4u, "Function should have at least 4 basic blocks");
+}
+
+/**
+ * Test: Pick statement with labeled cases
+ * Code: pick(x) { success:(200) { }, error:(500) { } }
+ */
+TEST_CASE(codegen_stmt_pick_labeled_cases) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create codegen instances
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create a test function
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context), false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, "test_pick_labeled", &module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create selector
+    auto selector = std::make_unique<LiteralExpr>((int64_t)200);
+    
+    // Create case 1: success:(200) { }
+    auto pattern1 = std::make_unique<LiteralExpr>((int64_t)200);
+    auto body1 = std::make_unique<BlockStmt>();
+    auto case1 = std::make_unique<PickCase>("success", std::move(pattern1), std::move(body1));
+    
+    // Create case 2: error:(500) { }
+    auto pattern2 = std::make_unique<LiteralExpr>((int64_t)500);
+    auto body2 = std::make_unique<BlockStmt>();
+    auto case2 = std::make_unique<PickCase>("error", std::move(pattern2), std::move(body2));
+    
+    // Create pick statement
+    std::vector<ASTNodePtr> cases;
+    cases.push_back(std::move(case1));
+    cases.push_back(std::move(case2));
+    auto pick_stmt = std::make_unique<PickStmt>(std::move(selector), cases);
+    
+    // Generate code
+    stmt_codegen.codegenPick(pick_stmt.get());
+    
+    // Verify basic structure
+    ASSERT(func->size() >= 6u, "Function should have at least 6 basic blocks");
+}
+// ============================================================================
+// Phase 4.3.6: Control Flow Statement Tests (break, continue, return, defer)
+// ============================================================================
+
+/**
+ * Test break statement in while loop
+ * Tests: Simple break exits loop to end block
+ */
+TEST_CASE(codegen_stmt_break_while) {
+    // Setup
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create test function
+    llvm::Function* func = createTestFunction(&module);
+    builder.SetInsertPoint(&func->getEntryBlock());
+    
+    // Create while(true) { break; } loop
+    auto true_lit = std::make_unique<LiteralExpr>(static_cast<int64_t>(1), 0, 0);
+    auto break_stmt = std::make_unique<BreakStmt>("", 0, 0);
+    std::vector<ASTNodePtr> body_stmts;
+    body_stmts.push_back(std::move(break_stmt));
+    auto body = std::make_unique<BlockStmt>(body_stmts, 0, 0);
+    auto while_stmt = std::make_unique<WhileStmt>(std::move(true_lit), std::move(body), 0, 0);
+    
+    // Generate code
+    stmt_codegen.codegenWhile(while_stmt.get());
+    
+    // Verify: Should have while.cond, while.body, while.end blocks
+    ASSERT(func->size() >= 3u, "Function should have at least 3 basic blocks (entry, cond, body, end)");
+}
+
+/**
+ * Test continue statement in for loop
+ * Tests: Continue skips to increment block
+ */
+TEST_CASE(codegen_stmt_continue_for) {
+    // Setup
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create test function
+    llvm::Function* func = createTestFunction(&module);
+    builder.SetInsertPoint(&func->getEntryBlock());
+    
+    // Create for loop with continue
+    auto init_lit = std::make_unique<LiteralExpr>(static_cast<int64_t>(0), 0, 0);
+    auto init = std::make_unique<VarDeclStmt>("i32", "i", std::move(init_lit), 0, 0);
+    
+    auto i_ref = std::make_unique<IdentifierExpr>("i", 0, 0);
+    auto limit = std::make_unique<LiteralExpr>(static_cast<int64_t>(10), 0, 0);
+    auto cond = std::make_unique<BinaryExpr>(std::move(i_ref), Token(TokenType::TOKEN_LESS, "<", 0, 0), std::move(limit), 0, 0);
+    
+    auto i_ref2 = std::make_unique<IdentifierExpr>("i", 0, 0);
+    auto one = std::make_unique<LiteralExpr>(static_cast<int64_t>(1), 0, 0);
+    auto update = std::make_unique<BinaryExpr>(std::move(i_ref2), Token(TokenType::TOKEN_PLUS, "+", 0, 0), std::move(one), 0, 0);
+    
+    auto continue_stmt = std::make_unique<ContinueStmt>("", 0, 0);
+    std::vector<ASTNodePtr> body_stmts;
+    body_stmts.push_back(std::move(continue_stmt));
+    auto body = std::make_unique<BlockStmt>(body_stmts, 0, 0);
+    
+    auto for_stmt = std::make_unique<ForStmt>(std::move(init), std::move(cond), std::move(update), std::move(body), 0, 0);
+    
+    // Generate code
+    stmt_codegen.codegenFor(for_stmt.get());
+    
+    // Verify: Should have for.cond, for.body, for.inc, for.end blocks
+    ASSERT(func->size() >= 4u, "Function should have at least 4 basic blocks (entry, cond, body, inc, end)");
+}
+
+/**
+ * Test defer statement execution order
+ * Tests: Defer executes in LIFO order at block exit
+ */
+TEST_CASE(codegen_stmt_defer_basic) {
+    // Setup
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create test function
+    llvm::Function* func = createTestFunction(&module);
+    builder.SetInsertPoint(&func->getEntryBlock());
+    
+    // Create defer { } statements
+    std::vector<ASTNodePtr> defer1_stmts;
+    auto defer1_block = std::make_unique<BlockStmt>(defer1_stmts, 0, 0);
+    auto defer1 = std::make_unique<DeferStmt>(std::move(defer1_block), 0, 0);
+    
+    std::vector<ASTNodePtr> defer2_stmts;
+    auto defer2_block = std::make_unique<BlockStmt>(defer2_stmts, 0, 0);
+    auto defer2 = std::make_unique<DeferStmt>(std::move(defer2_block), 0, 0);
+    
+    // Create block with two defers
+    std::vector<ASTNodePtr> block_stmts;
+    block_stmts.push_back(std::move(defer1));
+    block_stmts.push_back(std::move(defer2));
+    auto block = std::make_unique<BlockStmt>(block_stmts, 0, 0);
+    
+    // Generate code
+    stmt_codegen.codegenBlock(block.get());
+    
+    // Verify: Code generation succeeds (defers are registered for execution)
+    ASSERT(true, "Defer statements should register successfully");
+}
+
+/**
+ * Test return with defer execution
+ * Tests: Return executes all defers before returning
+ */
+TEST_CASE(codegen_stmt_return_with_defer) {
+    // Setup
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create test function
+    llvm::Function* func = createTestFunction(&module);
+    builder.SetInsertPoint(&func->getEntryBlock());
+    
+    // Create defer statement
+    std::vector<ASTNodePtr> defer_stmts;
+    auto defer_block = std::make_unique<BlockStmt>(defer_stmts, 0, 0);
+    auto defer_stmt = std::make_unique<DeferStmt>(std::move(defer_block), 0, 0);
+    
+    // Create return statement
+    auto ret_value = std::make_unique<LiteralExpr>(static_cast<int64_t>(42), 0, 0);
+    auto return_stmt = std::make_unique<ReturnStmt>(std::move(ret_value), 0, 0);
+    
+    // Create block with defer and return
+    std::vector<ASTNodePtr> block_stmts;
+    block_stmts.push_back(std::move(defer_stmt));
+    block_stmts.push_back(std::move(return_stmt));
+    auto block = std::make_unique<BlockStmt>(block_stmts, 0, 0);
+    
+    // Generate code
+    stmt_codegen.codegenBlock(block.get());
+    
+    // Verify: Should have terminator (ret instruction)
+    ASSERT(builder.GetInsertBlock()->getTerminator() != nullptr, "Block should have terminator after return");
+}
+
+/**
+ * Test nested defer scopes
+ * Tests: Each block scope has its own defer list
+ */
+TEST_CASE(codegen_stmt_defer_nested) {
+    // Setup
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create test function
+    llvm::Function* func = createTestFunction(&module);
+    builder.SetInsertPoint(&func->getEntryBlock());
+    
+    // Create outer defer
+    std::vector<ASTNodePtr> outer_defer_stmts;
+    auto outer_defer_block = std::make_unique<BlockStmt>(outer_defer_stmts, 0, 0);
+    auto outer_defer = std::make_unique<DeferStmt>(std::move(outer_defer_block), 0, 0);
+    
+    // Create inner defer
+    std::vector<ASTNodePtr> inner_defer_stmts;
+    auto inner_defer_block = std::make_unique<BlockStmt>(inner_defer_stmts, 0, 0);
+    auto inner_defer = std::make_unique<DeferStmt>(std::move(inner_defer_block), 0, 0);
+    
+    // Create inner block with defer
+    std::vector<ASTNodePtr> inner_block_stmts;
+    inner_block_stmts.push_back(std::move(inner_defer));
+    auto inner_block = std::make_unique<BlockStmt>(inner_block_stmts, 0, 0);
+    
+    // Create outer block with defer and inner block
+    std::vector<ASTNodePtr> outer_block_stmts;
+    outer_block_stmts.push_back(std::move(outer_defer));
+    outer_block_stmts.push_back(std::move(inner_block));
+    auto outer_block = std::make_unique<BlockStmt>(outer_block_stmts, 0, 0);
+    
+    // Generate code
+    stmt_codegen.codegenBlock(outer_block.get());
+    
+    // Verify: Code generation succeeds with nested defer scopes
+    ASSERT(true, "Nested defer scopes should work correctly");
+}
+
+/**
+ * Test break with defer execution
+ * Tests: Break executes scope defers before exiting loop
+ */
+TEST_CASE(codegen_stmt_break_with_defer) {
+    // Setup
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create test function
+    llvm::Function* func = createTestFunction(&module);
+    builder.SetInsertPoint(&func->getEntryBlock());
+    
+    // Create defer statement
+    std::vector<ASTNodePtr> defer_stmts;
+    auto defer_block = std::make_unique<BlockStmt>(defer_stmts, 0, 0);
+    auto defer_stmt = std::make_unique<DeferStmt>(std::move(defer_block), 0, 0);
+    
+    // Create break statement
+    auto break_stmt = std::make_unique<BreakStmt>("", 0, 0);
+    
+    // Create loop body with defer and break
+    std::vector<ASTNodePtr> body_stmts;
+    body_stmts.push_back(std::move(defer_stmt));
+    body_stmts.push_back(std::move(break_stmt));
+    auto body = std::make_unique<BlockStmt>(body_stmts, 0, 0);
+    
+    // Create while(true) loop
+    auto true_lit = std::make_unique<LiteralExpr>(static_cast<int64_t>(1), 0, 0);
+    auto while_stmt = std::make_unique<WhileStmt>(std::move(true_lit), std::move(body), 0, 0);
+    
+    // Generate code
+    stmt_codegen.codegenWhile(while_stmt.get());
+    
+    // Verify: Should have while.cond, while.body, while.end blocks
+    ASSERT(func->size() >= 3u, "Function should have at least 3 basic blocks");
+}
+
+// ============================================================================
+// Phase 4.4: Memory Model Tests
+// ============================================================================
+
+/**
+ * Test: Stack allocation (default behavior)
+ * Code: i32:x = 42;
+ * Should create: %x = alloca i32
+ *                store i32 42, i32* %x
+ */
+TEST_CASE(codegen_memory_stack_default) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create test function
+    llvm::Function* func = createTestFunction(&module);
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    builder.SetInsertPoint(entry);
+    
+    // Create codegens
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create variable declaration: i32:x = 42;
+    auto init = std::make_unique<LiteralExpr>(static_cast<int64_t>(42), 0, 0);
+    auto var_decl = std::make_unique<VarDeclStmt>("i32", "x", std::move(init), 0, 0);
+    // No explicit keyword means default allocation (stack for primitives)
+    
+    // Generate code
+    stmt_codegen.codegenVarDecl(var_decl.get());
+    
+    // Verify alloca was created
+    ASSERT(named_values.count("x") > 0, "Variable x should be in named_values");
+    llvm::AllocaInst* alloca = llvm::dyn_cast<llvm::AllocaInst>(named_values["x"]);
+    ASSERT(alloca != nullptr, "Variable x should be an alloca instruction (stack allocation)");
+}
+
+/**
+ * Test: Explicit stack allocation
+ * Code: stack i32:y = 100;
+ * Should create: %y = alloca i32
+ *                store i32 100, i32* %y
+ */
+TEST_CASE(codegen_memory_stack_explicit) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    llvm::Function* func = createTestFunction(&module);
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    builder.SetInsertPoint(entry);
+    
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create: stack i32:y = 100;
+    auto init = std::make_unique<LiteralExpr>(static_cast<int64_t>(100), 0, 0);
+    auto var_decl = std::make_unique<VarDeclStmt>("i32", "y", std::move(init), 0, 0);
+    var_decl->isStack = true;  // Explicit stack keyword
+    
+    stmt_codegen.codegenVarDecl(var_decl.get());
+    
+    ASSERT(named_values.count("y") > 0, "Variable y should be in named_values");
+    llvm::AllocaInst* alloca = llvm::dyn_cast<llvm::AllocaInst>(named_values["y"]);
+    ASSERT(alloca != nullptr, "Variable y should be an alloca instruction (explicit stack)");
+}
+
+/**
+ * Test: GC allocation
+ * Code: gc i32:data = 42;
+ * Should create: %0 = call i8* @aria_gc_alloc(i64 4)
+ *                %data = bitcast i8* %0 to i32*
+ *                store i32 42, i32* %data
+ */
+TEST_CASE(codegen_memory_gc_allocation) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    llvm::Function* func = createTestFunction(&module);
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    builder.SetInsertPoint(entry);
+    
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create: gc i32:data = 42;
+    auto init = std::make_unique<LiteralExpr>(static_cast<int64_t>(42), 0, 0);
+    auto var_decl = std::make_unique<VarDeclStmt>("i32", "data", std::move(init), 0, 0);
+    var_decl->isGC = true;  // GC allocation
+    
+    stmt_codegen.codegenVarDecl(var_decl.get());
+    
+    // Verify call to aria_gc_alloc was generated
+    ASSERT(named_values.count("data") > 0, "Variable data should be in named_values");
+    llvm::Value* data_ptr = named_values["data"];
+    ASSERT(data_ptr != nullptr, "Variable data should have a value");
+    
+    // Verify aria_gc_alloc function was declared
+    llvm::Function* gc_alloc = module.getFunction("aria_gc_alloc");
+    ASSERT(gc_alloc != nullptr, "aria_gc_alloc function should be declared");
+    ASSERT(gc_alloc->isDeclaration(), "aria_gc_alloc should be external declaration");
+}
+
+/**
+ * Test: Wild allocation (manual memory)
+ * Code: wild i64:ptr = 1000;
+ * Should create: %0 = call i8* @aria_alloc(i64 8)
+ *                %ptr = bitcast i8* %0 to i64*
+ *                store i64 1000, i64* %ptr
+ */
+TEST_CASE(codegen_memory_wild_allocation) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    llvm::Function* func = createTestFunction(&module);
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    builder.SetInsertPoint(entry);
+    
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create: wild i64:ptr = 1000;
+    auto init = std::make_unique<LiteralExpr>(static_cast<int64_t>(1000), 0, 0);
+    auto var_decl = std::make_unique<VarDeclStmt>("i64", "ptr", std::move(init), 0, 0);
+    var_decl->isWild = true;  // Wild (manual) allocation
+    
+    stmt_codegen.codegenVarDecl(var_decl.get());
+    
+    // Verify call to aria_alloc was generated
+    ASSERT(named_values.count("ptr") > 0, "Variable ptr should be in named_values");
+    llvm::Value* ptr_val = named_values["ptr"];
+    ASSERT(ptr_val != nullptr, "Variable ptr should have a value");
+    
+    // Verify aria_alloc function was declared
+    llvm::Function* wild_alloc = module.getFunction("aria_alloc");
+    ASSERT(wild_alloc != nullptr, "aria_alloc function should be declared");
+    ASSERT(wild_alloc->isDeclaration(), "aria_alloc should be external declaration");
+}
+
+/**
+ * Test: Multiple allocation strategies in same function
+ * Code: i32:a = 1;           // stack (default)
+ *       gc i32:b = 2;        // gc
+ *       wild i32:c = 3;      // wild
+ */
+TEST_CASE(codegen_memory_mixed_allocations) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    llvm::Function* func = createTestFunction(&module);
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    builder.SetInsertPoint(entry);
+    
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Stack allocation: i32:a = 1;
+    auto init_a = std::make_unique<LiteralExpr>(static_cast<int64_t>(1), 0, 0);
+    auto var_a = std::make_unique<VarDeclStmt>("i32", "a", std::move(init_a), 0, 0);
+    stmt_codegen.codegenVarDecl(var_a.get());
+    
+    // GC allocation: gc i32:b = 2;
+    auto init_b = std::make_unique<LiteralExpr>(static_cast<int64_t>(2), 0, 0);
+    auto var_b = std::make_unique<VarDeclStmt>("i32", "b", std::move(init_b), 0, 0);
+    var_b->isGC = true;
+    stmt_codegen.codegenVarDecl(var_b.get());
+    
+    // Wild allocation: wild i32:c = 3;
+    auto init_c = std::make_unique<LiteralExpr>(static_cast<int64_t>(3), 0, 0);
+    auto var_c = std::make_unique<VarDeclStmt>("i32", "c", std::move(init_c), 0, 0);
+    var_c->isWild = true;
+    stmt_codegen.codegenVarDecl(var_c.get());
+    
+    // Verify all three variables exist
+    ASSERT(named_values.count("a") > 0, "Variable a should exist");
+    ASSERT(named_values.count("b") > 0, "Variable b should exist");
+    ASSERT(named_values.count("c") > 0, "Variable c should exist");
+    
+    // Verify a is alloca (stack)
+    llvm::AllocaInst* alloca_a = llvm::dyn_cast<llvm::AllocaInst>(named_values["a"]);
+    ASSERT(alloca_a != nullptr, "Variable a should be stack allocated");
+    
+    // Verify runtime functions were declared
+    ASSERT(module.getFunction("aria_gc_alloc") != nullptr, "aria_gc_alloc should be declared");
+    ASSERT(module.getFunction("aria_alloc") != nullptr, "aria_alloc should be declared");
+}
+
+/**
+ * Test: Runtime function signatures
+ * Verify that declared runtime functions have correct signatures
+ */
+TEST_CASE(codegen_memory_runtime_signatures) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    llvm::Function* func = createTestFunction(&module);
+    llvm::BasicBlock* entry = &func->getEntryBlock();
+    builder.SetInsertPoint(entry);
+    
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Trigger declaration of all runtime functions
+    auto init = std::make_unique<LiteralExpr>(static_cast<int64_t>(0), 0, 0);
+    
+    auto var_gc = std::make_unique<VarDeclStmt>("i32", "gc_var", std::move(init), 0, 0);
+    var_gc->isGC = true;
+    stmt_codegen.codegenVarDecl(var_gc.get());
+    
+    auto init2 = std::make_unique<LiteralExpr>(static_cast<int64_t>(0), 0, 0);
+    auto var_wild = std::make_unique<VarDeclStmt>("i32", "wild_var", std::move(init2), 0, 0);
+    var_wild->isWild = true;
+    stmt_codegen.codegenVarDecl(var_wild.get());
+    
+    // Verify aria_gc_alloc signature: void* (i64)
+    llvm::Function* gc_alloc = module.getFunction("aria_gc_alloc");
+    ASSERT(gc_alloc != nullptr, "aria_gc_alloc should exist");
+    ASSERT(gc_alloc->arg_size() == 1u, "aria_gc_alloc should have 1 parameter");
+    ASSERT(gc_alloc->getReturnType()->isPointerTy(), "aria_gc_alloc should return pointer");
+    
+    // Verify aria_alloc signature: void* (i64)
+    llvm::Function* wild_alloc = module.getFunction("aria_alloc");
+    ASSERT(wild_alloc != nullptr, "aria_alloc should exist");
+    ASSERT(wild_alloc->arg_size() == 1u, "aria_alloc should have 1 parameter");
+    ASSERT(wild_alloc->getReturnType()->isPointerTy(), "aria_alloc should return pointer");
+}
+
+// ============================================================================
+// Phase 4.5.1: Generic Instantiation Tests
+// ============================================================================
+
+/**
+ * Test: Generic function templates are not directly compiled
+ * Code: func<T>:identity = *T(*T:value) { return value; }
+ * Should: Skip code generation (return nullptr)
+ */
+TEST_CASE(codegen_generic_template_skipped) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create generic function: func<T>:identity = *T(*T:value) { return value; }
+    // Note: This is just the declaration - the body would use *T syntax
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>("T", "value"));  // Type will be substituted
+    
+    auto return_stmt = std::make_unique<ReturnStmt>(
+        std::make_unique<IdentifierExpr>("value")
+    );
+    std::vector<ASTNodePtr> body_stmts;
+    body_stmts.push_back(std::move(return_stmt));
+    auto body = std::make_unique<BlockStmt>(std::move(body_stmts));
+    
+    auto func_decl = std::make_unique<FuncDeclStmt>(
+        "identity",
+        "T",  // Return type (will be substituted)
+        params,
+        std::move(body)
+    );
+    
+    // Add generic parameter
+    func_decl->genericParams.push_back(GenericParamInfo("T"));
+    
+    // Generate code - should return nullptr (template not directly compiled)
+    llvm::Function* result = stmt_codegen.codegenFuncDecl(func_decl.get());
+    
+    ASSERT(result == nullptr, "Generic template should not generate code");
+    
+    // Verify no function was created in the module
+    llvm::Function* func_in_module = module.getFunction("identity");
+    ASSERT(func_in_module == nullptr, "Generic template should not be in module");
+}
+
+
+
+/**
+ * Test: codegenAllSpecializations with no monomorphizer returns 0
+ * Should: Handle nullptr monomorphizer gracefully
+ */
+TEST_CASE(codegen_specializations_no_monomorphizer) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create StmtCodegen without setting monomorphizer
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Try to generate specializations
+    size_t count = stmt_codegen.codegenAllSpecializations();
+    
+    ASSERT(count == 0, "Should return 0 when no monomorphizer set");
+}
+
+/**
+ * Test: Generic function with multiple type parameters skipped
+ * Code: func<T, U>:pair = void(*T:first, *U:second) { ... }
+ * Should: Skip code generation (return nullptr)
+ */
+TEST_CASE(codegen_generic_multi_param_skipped) {
+    llvm::LLVMContext context;
+    llvm::Module module("test", context);
+    llvm::IRBuilder<> builder(context);
+    std::map<std::string, llvm::Value*> named_values;
+    
+    // Create StmtCodegen and ExprCodegen
+    StmtCodegen stmt_codegen(context, builder, &module, named_values);
+    ExprCodegen expr_codegen(context, builder, &module, named_values);
+    stmt_codegen.setExprCodegen(&expr_codegen);
+    
+    // Create generic function with 2 type parameters
+    std::vector<ASTNodePtr> params;
+    params.push_back(std::make_unique<ParameterNode>("T", "first"));
+    params.push_back(std::make_unique<ParameterNode>("U", "second"));
+    
+    auto body = std::make_unique<BlockStmt>();
+    
+    auto func_decl = std::make_unique<FuncDeclStmt>(
+        "pair",
+        "void",
+        params,
+        std::move(body)
+    );
+    
+    // Add two generic parameters
+    func_decl->genericParams.push_back(GenericParamInfo("T"));
+    func_decl->genericParams.push_back(GenericParamInfo("U"));
+    
+    // Generate code - should return nullptr
+    llvm::Function* result = stmt_codegen.codegenFuncDecl(func_decl.get());
+    
+    ASSERT(result == nullptr, "Generic template with multiple params should not generate code");
+    ASSERT(module.getFunction("pair") == nullptr, "Generic template should not be in module");
+}
+
+

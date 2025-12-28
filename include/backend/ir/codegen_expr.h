@@ -28,6 +28,10 @@ namespace aria {
     namespace sema {
         class Type;
     }
+    
+    namespace frontend {
+        enum class TokenType;  // Forward declaration for frontend::TokenType
+    }
 }
 
 namespace aria {
@@ -52,7 +56,10 @@ private:
     
     // Symbol table (maps variable names to their LLVM values)
     std::map<std::string, llvm::Value*>& named_values;
-    
+
+    // Track Aria type names by variable name (for UFCS method resolution)
+    std::map<std::string, std::string>& var_aria_types;
+
     // Statement codegen (for lambda body generation)
     StmtCodegen* stmt_codegen;
     
@@ -70,7 +77,19 @@ private:
     
     // Helper: Check if type is TBB type
     bool isTBBType(sema::Type* type);
-    
+
+    // Helper: Get TBB type name from an expression (returns empty string if not TBB)
+    std::string getExprTBBTypeName(ASTNode* expr);
+
+    // Helper: Get ERR sentinel constant for TBB type
+    llvm::Value* getTBBSentinel(llvm::Type* type);
+
+    // Helper: Generate intrinsic-based TBB binary operation (optimized)
+    llvm::Value* generateTBBBinaryOp(const std::string& tbbType,
+                                      frontend::TokenType op,
+                                      llvm::Value* left,
+                                      llvm::Value* right);
+
 public:
     /**
      * Constructor
@@ -78,9 +97,11 @@ public:
      * @param bldr IR builder
      * @param mod LLVM module
      * @param values Symbol table for named values
+     * @param types Aria type names by variable name (for UFCS resolution)
      */
-    ExprCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr, 
-                llvm::Module* mod, std::map<std::string, llvm::Value*>& values);
+    ExprCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr,
+                llvm::Module* mod, std::map<std::string, llvm::Value*>& values,
+                std::map<std::string, std::string>& types);
     
     /**
      * Set statement codegen helper (for lambda body generation)

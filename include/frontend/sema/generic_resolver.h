@@ -132,6 +132,9 @@ class GenericResolver {
 public:
     GenericResolver();
     ~GenericResolver() = default;
+
+    // Set symbol table for trait resolution (Task 4 completion)
+    void setSymbolTable(SymbolTable* st) { symbolTable = st; }
     
     // ========================================================================
     // Type Inference (Phase 3.4.1)
@@ -223,16 +226,17 @@ public:
     
 private:
     std::vector<GenericError> errors;
-    
+    SymbolTable* symbolTable = nullptr;  // For trait resolution (Task 4)
+
     // Helper: Add an error
     void addError(const std::string& message, int line = 0, int column = 0,
                   const std::string& context = "");
-    
+
     // Helper: Unify two types during inference
     bool unifyTypes(Type* expected, Type* actual,
                    TypeSubstitution& substitution,
                    const std::string& paramName);
-    
+
     // Helper: Check if a type implements a trait
     bool implementsTrait(Type* type, const std::string& traitName);
 };
