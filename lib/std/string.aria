@@ -15,9 +15,9 @@ pub func:parse_int = int32(int8->:str) {
         return 0;
     }
     
-    int32:result = 0;
-    int32:sign = 1;
-    int32:i = 0;
+    int32:result = 0i32;
+    int32:sign = 1i32;
+    int32:i = 0i32;
     
     // Skip leading whitespace
     while (str[i] == 32 || str[i] == 9 || str[i] == 10 || str[i] == 13) {
@@ -52,8 +52,8 @@ pub func:parse_int_range = int32(int8->:str, int32:start, int32:length) {
         return 0;
     }
     
-    int32:result = 0;
-    int32:sign = 1;
+    int32:result = 0i32;
+    int32:sign = 1i32;
     int32:i = start;
     int32:end_pos = start + length;
     
@@ -90,9 +90,9 @@ pub func:parse_float = flt64(int8->:str) {
         return 0.0;
     }
     
-    flt64:result = 0.0;
-    flt64:sign = 1.0;
-    int32:i = 0;
+    flt64:result = 0.0f64;
+    flt64:sign = 1.0f64;
+    int32:i = 0i32;
     
     // Skip whitespace
     while (str[i] == 32 || str[i] == 9) {
@@ -146,7 +146,7 @@ pub func:find_char = int32(int8->:str, int8:ch) {
         return (0 - 1);
     }
     
-    int32:i = 0;
+    int32:i = 0i32;
     while (str[i] != 0) {
         if (str[i] == ch) {
             return i;
@@ -184,8 +184,8 @@ pub func:count_char = int32(int8->:str, int8:ch) {
         return 0;
     }
     
-    int32:count = 0;
-    int32:i = 0;
+    int32:count = 0i32;
+    int32:i = 0i32;
     
     while (str[i] != 0) {
         if (str[i] == ch) {
@@ -210,7 +210,7 @@ pub func:trim_start_offset = int32(int8->:str) {
         return 0;
     }
     
-    int32:i = 0;
+    int32:i = 0i32;
     while (str[i] == 32 || str[i] == 9 || str[i] == 10 || str[i] == 13) {
         i = i + 1;
     }
@@ -243,8 +243,8 @@ pub func:replace_char = int32(int8->:str, int8:old_ch, int8:new_ch) {
         return 0;
     }
     
-    int32:count = 0;
-    int32:i = 0;
+    int32:count = 0i32;
+    int32:i = 0i32;
     
     while (str[i] != 0) {
         if (str[i] == old_ch) {
@@ -271,14 +271,14 @@ pub func:pad_left_spaces = void(int8->:dest, int8->:src, int32:target_len) {
     }
     
     // Get source length
-    int32:src_len = 0;
+    int32:src_len = 0i32;
     while (src[src_len] != 0) {
         src_len = src_len + 1;
     }
     
     if (src_len >= target_len) {
         // Copy as-is if already long enough
-        int32:i = 0;
+        int32:i = 0i32;
         while (src[i] != 0) {
             dest[i] = src[i];
             i = i + 1;
@@ -290,7 +290,7 @@ pub func:pad_left_spaces = void(int8->:dest, int8->:src, int32:target_len) {
     }
     
     int32:padding = target_len - src_len;
-    int32:i = 0;
+    int32:i = 0i32;
     
     // Write padding
     while (i < padding) {
@@ -299,7 +299,7 @@ pub func:pad_left_spaces = void(int8->:dest, int8->:src, int32:target_len) {
     }
     
     // Copy source
-    int32:j = 0;
+    int32:j = 0i32;
     while (src[j] != 0) {
         dest[i] = src[j];
         i = i + 1;
@@ -316,7 +316,7 @@ pub func:pad_right_spaces = void(int8->:dest, int8->:src, int32:target_len) {
     }
     
     // Copy source
-    int32:i = 0;
+    int32:i = 0i32;
     while (src[i] != 0 && i < target_len) {
         dest[i] = src[i];
         i = i + 1;
@@ -341,7 +341,7 @@ pub func:starts_with = int8(int8->:str, int8->:prefix) {
         return 0;
     }
     
-    int32:i = 0;
+    int32:i = 0i32;
     while (prefix[i] != 0) {
         if (str[i] != prefix[i]) {
             return 0;
@@ -361,12 +361,12 @@ pub func:ends_with = int8(int8->:str, int8->:suffix) {
     }
     
     // Get lengths
-    int32:str_len = 0;
+    int32:str_len = 0i32;
     while (str[str_len] != 0) {
         str_len = str_len + 1;
     }
     
-    int32:suffix_len = 0;
+    int32:suffix_len = 0i32;
     while (suffix[suffix_len] != 0) {
         suffix_len = suffix_len + 1;
     }
@@ -379,7 +379,7 @@ pub func:ends_with = int8(int8->:str, int8->:suffix) {
     
     // Compare from end
     int32:str_i = str_len - suffix_len;
-    int32:suf_i = 0;
+    int32:suf_i = 0i32;
     
     while (suf_i < suffix_len) {
         if (str[str_i] != suffix[suf_i]) {
@@ -425,7 +425,7 @@ pub func:equals_ignore_case = int8(int8->:s1, int8->:s2) {
         return 0;
     }
     
-    int32:i = 0;
+    int32:i = 0i32;
     while (s1[i] != 0 && s2[i] != 0) {
         if (char_equals_ignore_case(s1[i], s2[i]) == 0) {
             return 0;
@@ -452,14 +452,14 @@ pub func:equals_ignore_case = int8(int8->:s1, int8->:s2) {
 pub func:copy_substring = void(int8->:dest, int8->:src, int32:start, int32:length) {
     if (dest == NULL || src == NULL || start < 0 || length <= 0) {
         if (dest != NULL) {
-            dest[0] = 0;
+            dest[0i64] = 0;
         } else {
             // null dest
         }
         return;
     }
     
-    int32:i = 0;
+    int32:i = 0i32;
     while (i < length && src[start + i] != 0) {
         dest[i] = src[start + i];
         i = i + 1;

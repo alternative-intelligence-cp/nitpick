@@ -1,0 +1,80 @@
+/// Random Number Generation
+
+extern "libc" {
+    func:rand = int32();
+    func:srand = void(int32:seed);
+}
+
+use std.time.*;
+
+/// Initialize random seed with current time
+func:seed_random = void() {
+    int64:t = get_time();
+    int32:seed = t;  // Truncate to int32
+    srand(seed);
+};
+
+/// Initialize random seed with specific value
+func:seed_random_value = void(int32:seed) {
+    srand(seed);
+};
+
+/// Get random int32 (0 to RAND_MAX)
+func:random_int = int32() {
+    int32:val = rand();
+    pass(val);
+};
+
+/// Get random number in range [min, max] inclusive
+func:random_range = int32(int32:min_val, int32:max_val) {
+    int32:r = rand();
+    int32:range = ((max_val - min_val) + 1);
+    int32:mod = (r - ((r / range) * range));  // Manual modulo
+    int32:result = (min_val + mod);
+    pass(result);
+};
+
+/// Get random float between 0.0 and 1.0
+func:random_float = flt64() {
+    int32:r = rand();
+    flt64:rf = r;
+    flt64:max = 2147483647.0;  // RAND_MAX approximation
+    flt64:result = (rf / max);
+    pass(result);
+};
+
+/// Get random float in range [min, max]
+func:random_float_range = flt64(flt64:min_val, flt64:max_val) {
+    flt64:r = random_float();
+    flt64:range = (max_val - min_val);
+    flt64:scaled = (r * range);
+    flt64:result = (min_val + scaled);
+    pass(result);
+};
+
+/// Coin flip - returns true or false randomly
+func:coin_flip = bool() {
+    int32:r = rand();
+    int32:bit = (r - ((r / 2) * 2));  // Check if odd/even
+    bool:result = false;
+    bool:is_odd = (bit == 1);
+    if (is_odd) {
+        result = true;
+    } else {
+        result = false;
+    }
+    pass(result);
+};
+
+/// Roll dice - returns 1 to sides
+func:dice_roll = int32(int32:sides) {
+    int32:result = random_range(1, sides);
+    pass(result);
+};
+
+/// Shuffle index - Fisher-Yates helper
+/// Returns random index from 0 to n-1
+func:random_index = int32(int32:n) {
+    int32:result = random_range(0, (n - 1));
+    pass(result);
+};

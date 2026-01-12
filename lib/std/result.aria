@@ -1,0 +1,134 @@
+/// Error Codes and Result Handling
+
+/// Standard error codes
+const int32:ERR_NONE = 0i32;
+const int32:ERR_INVALID_ARG = 1i32;
+const int32:ERR_NULL_PTR = 2i32;
+const int32:ERR_OUT_OF_BOUNDS = 3i32;
+const int32:ERR_OUT_OF_MEMORY = 4i32;
+const int32:ERR_NOT_FOUND = 5i32;
+const int32:ERR_ALREADY_EXISTS = 6i32;
+const int32:ERR_IO_ERROR = 7i32;
+const int32:ERR_PARSE_ERROR = 8i32;
+const int32:ERR_OVERFLOW = 9i32;
+const int32:ERR_UNDERFLOW = 10i32;
+const int32:ERR_DIV_BY_ZERO = 11i32;
+const int32:ERR_TIMEOUT = 12i32;
+const int32:ERR_UNKNOWN = 99;
+
+/// Check if error code indicates success
+func:is_success = bool(int32:err_code) {
+    bool:result = false;
+    bool:is_zero = (err_code == 0);
+    
+    if (is_zero) {
+        result = true;
+    } else {
+        result = false;
+    }
+    
+    pass(result);
+};
+
+/// Check if error code indicates failure
+func:is_error = bool(int32:err_code) {
+    bool:result = false;
+    bool:not_zero = (err_code != 0);
+    
+    if (not_zero) {
+        result = true;
+    } else {
+        result = false;
+    }
+    
+    pass(result);
+};
+
+/// Check if pointer is null
+func:is_null_ptr = bool(void*:ptr) {
+    int64:addr = ptr;
+    bool:result = false;
+    bool:is_zero = (addr == 0);
+    
+    if (is_zero) {
+        result = true;
+    } else {
+        result = false;
+    }
+    
+    pass(result);
+};
+
+/// Check if pointer is valid (not null)
+func:is_valid_ptr = bool(void*:ptr) {
+    int64:addr = ptr;
+    bool:result = false;
+    bool:not_zero = (addr != 0);
+    
+    if (not_zero) {
+        result = true;
+    } else {
+        result = false;
+    }
+    
+    pass(result);
+};
+
+/// Check if index is within bounds
+func:is_in_bounds = bool(int32:index, int32:length) {
+    bool:result = false;
+    bool:gte_zero = (index >= 0);
+    
+    if (gte_zero) {
+        bool:lt_len = (index < length);
+        if (lt_len) {
+            result = true;
+        } else {
+            result = false;
+        }
+    } else {
+        result = false;
+    }
+    
+    pass(result);
+};
+
+/// Clamp index to valid range
+func:clamp_index = int32(int32:index, int32:length) {
+    int32:result = index;
+    bool:negative = (index < 0);
+    
+    if (negative) {
+        result = 0;
+    } else {
+        bool:too_big = (index >= length);
+        if (too_big) {
+            result = (length - 1);
+        } else {
+            result = index;
+        }
+    }
+    
+    pass(result);
+};
+
+/// Wrap index to valid range (circular)
+func:wrap_index = int32(int32:index, int32:length) {
+    int32:result = index;
+    bool:negative = (index < 0);
+    
+    if (negative) {
+        // For negative, would need modulo support
+        result = 0;
+    } else {
+        bool:too_big = (index >= length);
+        if (too_big) {
+            int32:wrapped = (index - ((index / length) * length));
+            result = wrapped;
+        } else {
+            result = index;
+        }
+    }
+    
+    pass(result);
+};

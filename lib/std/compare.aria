@@ -1,0 +1,151 @@
+/// Comparison and Ordering Utilities
+
+/// Compare two int32 values (-1 if a < b, 0 if equal, 1 if a > b)
+pub func:compare_i32 = int32(int32:a, int32:b) {
+    int32:result = 0i32;
+    bool:less = (a < b);
+    bool:greater = (a > b);
+    
+    if (less) {
+        int32:zero = 0i32;
+        int32:one = 1i32;
+        result = zero - one;
+    } else {
+        if (greater) {
+            int32:one_val = 1i32;
+            result = one_val;
+        } else {
+            int32:zero_val = 0i32;
+            result = zero_val;
+        }
+    }
+    pass(result);
+};
+
+/// Compare two flt64 values
+pub func:compare_f64 = int32(flt64:a, flt64:b) {
+    int32:result = 0i32;
+    bool:less = (a < b);
+    bool:greater = (a > b);
+    
+    if (less) {
+        int32:zero = 0i32;
+        int32:one = 1i32;
+        result = zero - one;
+    } else {
+        if (greater) {
+            int32:one_val = 1i32;
+            result = one_val;
+        } else {
+            int32:zero_val = 0i32;
+            result = zero_val;
+        }
+    }
+    pass(result);
+};
+
+/// Check if value is in range [min, max] inclusive
+pub func:in_range_i32 = bool(int32:val, int32:min_val, int32:max_val) {
+    bool:gte_min = (val >= min_val);
+    bool:lte_max = (val <= max_val);
+    bool:result = false;
+    
+    if (gte_min) {
+        if (lte_max) {
+            result = true;
+        } else {
+            result = false;
+        }
+    } else {
+        result = false;
+    }
+    pass(result);
+};
+
+/// Check if value is in range [min, max] inclusive (float)
+pub func:in_range_f64 = bool(flt64:val, flt64:min_val, flt64:max_val) {
+    bool:gte_min = (val >= min_val);
+    bool:lte_max = (val <= max_val);
+    bool:result = false;
+    
+    if (gte_min) {
+        if (lte_max) {
+            result = true;
+        } else {
+            result = false;
+        }
+    } else {
+        result = false;
+    }
+    pass(result);
+};
+
+/// Three-way max (returns largest of three values)
+pub func:max3_i32 = int32(int32:a, int32:b, int32:c) {
+    int32:result = a;
+    bool:b_larger = (b > result);
+    bool:c_larger = (c > result);
+    
+    if (b_larger) {
+        result = b;
+    } else {}
+    
+    if (c_larger) {
+        result = c;
+    } else {}
+    
+    pass(result);
+};
+
+/// Three-way min (returns smallest of three values)
+pub func:min3_i32 = int32(int32:a, int32:b, int32:c) {
+    int32:result = a;
+    bool:b_smaller = (b < result);
+    bool:c_smaller = (c < result);
+    
+    if (b_smaller) {
+        result = b;
+    } else {}
+    
+    if (c_smaller) {
+        result = c;
+    } else {}
+    
+    pass(result);
+};
+
+/// Check if three values are in ascending order
+pub func:is_ascending_i32 = bool(int32:a, int32:b, int32:c) {
+    bool:ab_ordered = (a <= b);
+    bool:bc_ordered = (b <= c);
+    bool:result = false;
+    
+    if (ab_ordered) {
+        if (bc_ordered) {
+            result = true;
+        } else {
+            result = false;
+        }
+    } else {
+        result = false;
+    }
+    pass(result);
+};
+
+/// Check if three values are in descending order
+pub func:is_descending_i32 = bool(int32:a, int32:b, int32:c) {
+    bool:ab_ordered = (a >= b);
+    bool:bc_ordered = (b >= c);
+    bool:result = false;
+    
+    if (ab_ordered) {
+        if (bc_ordered) {
+            result = true;
+        } else {
+            result = false;
+        }
+    } else {
+        result = false;
+    }
+    pass(result);
+};
