@@ -1,0 +1,89 @@
+func:bit_set = uint32(uint32:n, uint32:pos) {
+    uint32:mask = 1i32;
+    uint32:i = 0i32;
+    uint32:two = 2i32;
+    uint32:one = 1i32;
+    
+    // Calculate 2^pos
+    while (i < pos) {
+        mask = (mask * two);
+        i = (i + one);
+    }
+    
+    uint32:result = (n | mask);  // Bitwise OR
+    pass(result);
+};
+func:bit_clear = uint32(uint32:n, uint32:pos) {
+    uint32:mask = 1i32;
+    uint32:i = 0i32;
+    uint32:two = 2i32;
+    uint32:one = 1i32;
+    
+    // Calculate 2^pos
+    while (i < pos) {
+        mask = (mask * two);
+        i = (i + one);
+    }
+    
+    uint32:inv_mask = (~mask);  // Bitwise NOT
+    uint32:result = (n & inv_mask);  // Bitwise AND
+    pass(result);
+};
+func:bit_flip = uint32(uint32:n, uint32:pos) {
+    uint32:mask = 1i32;
+    uint32:i = 0i32;
+    uint32:two = 2i32;
+    uint32:one = 1i32;
+    
+    // Calculate 2^pos
+    while (i < pos) {
+        mask = (mask * two);
+        i = (i + one);
+    }
+    
+    uint32:result = (n ^ mask);  // Bitwise XOR
+    pass(result);
+};
+func:rotate_left_u32 = uint32(uint32:n, uint32:shift) {
+    uint32:bits = 32;
+    uint32:normalized = (shift - ((shift / bits) * bits));  // shift % 32
+    
+    uint32:left_part = (n << normalized);
+    uint32:right_shift_amt = (bits - normalized);
+    uint32:right_part = (n >> right_shift_amt);
+    
+    uint32:result = (left_part | right_part);
+    pass(result);
+};
+func:rotate_right_u32 = uint32(uint32:n, uint32:shift) {
+    uint32:bits = 32;
+    uint32:normalized = (shift - ((shift / bits) * bits));  // shift % 32
+    
+    uint32:right_part = (n >> normalized);
+    uint32:left_shift_amt = (bits - normalized);
+    uint32:left_part = (n << left_shift_amt);
+    
+    uint32:result = (left_part | right_part);
+    pass(result);
+};
+func:is_power_of_two = bool(uint32:n) {
+    bool:result = false;
+    uint32:zero = 0i32;
+    bool:positive = (n > zero);
+    
+    if (positive) {
+        uint32:one = 1i32;
+        uint32:n_minus_1 = (n - one);
+        uint32:test = (n & n_minus_1);
+        bool:is_zero = (test == zero);
+        if (is_zero) {
+            result = true;
+        } else {
+            result = false;
+        }
+    } else {
+        result = false;
+    }
+    
+    pass(result);
+};

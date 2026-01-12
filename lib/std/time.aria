@@ -15,7 +15,7 @@ extern "C" {
 
 /// Get current Unix timestamp (seconds since epoch)
 pub func:get_time = int64() {
-    int64:null_ptr = 0;
+    int64:null_ptr = 0i64;
     int64->:null_cast = null_ptr;
     int64:t = time(null_cast);
     pass(t);
@@ -208,7 +208,7 @@ pub func:days_in_month = int32(int32:year, int32:month) {
 // Hour: 0-23, Minute: 0-59, Second: 0-59
 pub func:make_timestamp = int64(int32:year, int32:month, int32:day, int32:hour, int32:minute, int32:second) {
     // Count days from epoch (1970-01-01)
-    int64:total_days = 0;
+    int64:total_days = 0i64;
     
     // Add days for complete years
     int32:y = 1970;
@@ -218,7 +218,7 @@ pub func:make_timestamp = int64(int32:year, int32:month, int32:day, int32:hour, 
     }
     
     // Add days for complete months in current year
-    int32:m = 1;
+    int32:m = 1i32;
     while (m < month) {
         total_days = total_days + days_in_month(year, m);
         m = m + 1;
@@ -277,9 +277,9 @@ pub func:format_iso8601 = void(int8->:buf, int64:timestamp) {
     
     // Write YYYY-MM-DD HH:MM:SS
     write_4digit(buf, 0, year);
-    buf[4] = 45;
+    buf[4i64] = 45;
     write_2digit(buf, 5, 1);
-    buf[7] = 45;
+    buf[7i64] = 45;
     write_2digit(buf, 8, 1);
     buf[10] = 32;
     write_2digit(buf, 11, hour);
@@ -302,11 +302,11 @@ pub func:format_time = void(int8->:buf, int64:timestamp) {
     int32:second = get_second(timestamp);
     
     write_2digit(buf, 0, hour);
-    buf[2] = 58;
+    buf[2i64] = 58;
     write_2digit(buf, 3, minute);
-    buf[5] = 58;
+    buf[5i64] = 58;
     write_2digit(buf, 6, second);
-    buf[8] = 0;
+    buf[8i64] = 0;
 };
 
 // Format duration as HH:MM:SS
@@ -321,11 +321,11 @@ pub func:format_duration = void(int8->:buf, int64:seconds) {
     int32:secs = remainder - (minutes * 60);
     
     write_2digit(buf, 0, hours);
-    buf[2] = 58;
+    buf[2i64] = 58;
     write_2digit(buf, 3, minutes);
-    buf[5] = 58;
+    buf[5i64] = 58;
     write_2digit(buf, 6, secs);
-    buf[8] = 0;
+    buf[8i64] = 0;
 };
 
 // ============================================================================

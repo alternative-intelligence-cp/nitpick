@@ -557,7 +557,7 @@ pub func:glob = result<array<string>>(string:pattern, string:base_dir) {
     array<string>:matches = array_new<string>(res.count);
 
     // Copy each path from wild memory to managed memory
-    int64:i = 0;
+    int64:i = 0i64;
     while (i < res.count) {
         wild int8*:path_cstr = res.paths[i];
         string:path = string_from_cstr(path_cstr);
@@ -599,7 +599,7 @@ pub func:glob_all = result<array<string>>(array<string>:patterns, string:base_di
     defer free<int8*>(c_patterns);
 
     // Copy pattern pointers
-    int64:i = 0;
+    int64:i = 0i64;
     while (i < count) {
         c_patterns[i] = patterns[i].data;
         i = i + 1;

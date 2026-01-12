@@ -1,0 +1,122 @@
+/// File I/O Operations
+
+extern "libc" {
+    func:fopen = void*(int8*:filename, int8*:mode);
+    func:fclose = int32(void*:stream);
+    func:fread = int64(void*:ptr, int64:size, int64:count, void*:stream);
+    func:fwrite = int64(void*:ptr, int64:size, int64:count, void*:stream);
+    func:fseek = int32(void*:stream, int64:offset, int32:whence);
+    func:ftell = int64(void*:stream);
+    func:feof = int32(void*:stream);
+    func:ferror = int32(void*:stream);
+    func:fflush = int32(void*:stream);
+    func:fgetc = int32(void*:stream);
+    func:fputc = int32(int32:c, void*:stream);
+}
+
+/// Open file for reading
+func:file_open_read = void*(int8*:filename) {
+    int64:mode_r = 0i64;
+    int8*:mode = mode_r;
+    void*:fp = fopen(filename, mode);
+    pass(fp);
+};
+
+/// Open file for writing (creates or truncates)
+func:file_open_write = void*(int8*:filename) {
+    int64:mode_w = 0i64;
+    int8*:mode = mode_w;
+    void*:fp = fopen(filename, mode);
+    pass(fp);
+};
+
+/// Open file for appending
+func:file_open_append = void*(int8*:filename) {
+    int64:mode_a = 0i64;
+    int8*:mode = mode_a;
+    void*:fp = fopen(filename, mode);
+    pass(fp);
+};
+
+/// Close file
+func:file_close = int32(void*:fp) {
+    int32:result = fclose(fp);
+    pass(result);
+};
+
+/// Read bytes from file
+func:file_read = int64(void*:fp, void*:buffer, int64:size) {
+    int64:bytes_read = fread(buffer, 1, size, fp);
+    pass(bytes_read);
+};
+
+/// Write bytes to file
+func:file_write = int64(void*:fp, void*:buffer, int64:size) {
+    int64:bytes_written = fwrite(buffer, 1, size, fp);
+    pass(bytes_written);
+};
+
+/// Seek to position in file (whence: 0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END)
+func:file_seek = int32(void*:fp, int64:offset, int32:whence) {
+    int32:result = fseek(fp, offset, whence);
+    pass(result);
+};
+
+/// Get current position in file
+func:file_tell = int64(void*:fp) {
+    int64:pos = ftell(fp);
+    pass(pos);
+};
+
+/// Check if at end of file
+func:file_is_eof = bool(void*:fp) {
+    int32:eof = feof(fp);
+    bool:result = false;
+    bool:is_eof = (eof != 0);
+    if (is_eof) {
+        result = true;
+    } else {
+        result = false;
+    }
+    pass(result);
+};
+
+/// Check for file error
+func:file_has_error = bool(void*:fp) {
+    int32:err = ferror(fp);
+    bool:result = false;
+    bool:has_err = (err != 0);
+    if (has_err) {
+        result = true;
+    } else {
+        result = false;
+    }
+    pass(result);
+};
+
+/// Flush file buffer
+func:file_flush = int32(void*:fp) {
+    int32:result = fflush(fp);
+    pass(result);
+};
+
+/// Read single character
+func:file_read_char = int32(void*:fp) {
+    int32:c = fgetc(fp);
+    pass(c);
+};
+
+/// Write single character
+func:file_write_char = int32(void*:fp, int32:c) {
+    int32:result = fputc(c, fp);
+    pass(result);
+};
+
+/// Get file size
+func:file_size = int64(void*:fp) {
+    int64:current = ftell(fp);
+    int32:seek_end = fseek(fp, 0, 2);  // SEEK_END = 2
+    int64:size = ftell(fp);
+    int32:seek_back = fseek(fp, current, 0);  // SEEK_SET = 0
+    pass(size);
+};

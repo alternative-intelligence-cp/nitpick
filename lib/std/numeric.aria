@@ -1,0 +1,135 @@
+/// Extended Numeric Utilities
+
+/// Greatest common divisor (Euclidean algorithm)
+pub func:gcd_i32 = int32(int32:a, int32:b) {
+    int32:x = a;
+    int32:y = b;
+    bool:done = false;
+    
+    // Handle negatives
+    bool:x_neg = (x < 0);
+    if (x_neg) {
+        x = (0 - x);
+    } else {}
+    
+    bool:y_neg = (y < 0);
+    if (y_neg) {
+        y = (0 - y);
+    } else {}
+    
+    // Euclidean algorithm using while loop
+    while (y != 0) {
+        int32:temp = y;
+        int32:remainder = (x - ((x / y) * y));  // Manual modulo
+        y = remainder;
+        x = temp;
+    }
+    
+    pass(x);
+};
+
+/// Least common multiple
+pub func:lcm_i32 = int32(int32:a, int32:b) {
+    int32:gcd_val = gcd_i32(a, b);
+    int32:product = (a * b);
+    
+    bool:negative = (product < 0);
+    if (negative) {
+        product = (0 - product);
+    } else {}
+    
+    int32:result = (product / gcd_val);
+    pass(result);
+};
+
+/// Factorial (iterative)
+pub func:factorial_i32 = int32(int32:n) {
+    int32:result = 1i32;
+    int32:i = 2i32;
+    
+    while (i <= n) {
+        result = (result * i);
+        i = (i + 1);
+    }
+    
+    pass(result);
+};
+
+/// Power (integer exponent, iterative)
+pub func:pow_i32 = int32(int32:base, int32:exp) {
+    int32:result = 1i32;  // Start with 1 (for exp=0 case)
+    int32:i = 0i32;
+    int32:one = 1i32;
+    
+    while (i < exp) {
+        result = (result * base);
+        i = (i + one);
+    }
+    
+    pass(result);
+};
+
+/// Check if number is even
+pub func:is_even = bool(int32:n) {
+    int32:remainder = (n - ((n / 2) * 2));  // Manual modulo 2
+    bool:result = false;
+    bool:is_zero = (remainder == 0);
+    if (is_zero) {
+        result = true;
+    } else {
+        result = false;
+    }
+    pass(result);
+};
+
+/// Check if number is odd
+pub func:is_odd = bool(int32:n) {
+    bool:even = is_even(n);
+    bool:result = false;
+    if (even) {
+        result = false;
+    } else {
+        result = true;
+    }
+    pass(result);
+};
+
+/// Sign function (-1, 0, or 1)
+pub func:sign_i32 = int32(int32:n) {
+    int32:result = 0i32;
+    bool:positive = (n > 0);
+    bool:negative = (n < 0);
+    
+    if (positive) {
+        int32:one_val = 1i32;
+        result = one_val;
+    } else {
+        if (negative) {
+            int32:zero = 0i32;
+            int32:one = 1i32;
+            result = zero - one;
+        } else {
+            int32:zero_val = 0i32;
+            result = zero_val;
+        }
+    }
+    pass(result);
+};
+
+/// Clamp integer value to range
+pub func:clamp_i32 = int32(int32:val, int32:min_val, int32:max_val) {
+    int32:result = val;
+    bool:too_small = (val < min_val);
+    bool:too_large = (val > max_val);
+    
+    if (too_small) {
+        result = min_val;
+    } else {
+        if (too_large) {
+            result = max_val;
+        } else {
+            result = val;
+        }
+    }
+    pass(result);
+};

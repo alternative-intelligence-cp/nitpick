@@ -407,7 +407,7 @@ pub func:scheduler_init = result<void>(int32:num_threads) {
     atomic_store(@SCHEDULER->next_task_id, 1);
 
     // Initialize workers
-    int32:i = 0;
+    int32:i = 0i32;
     while (i < n) {
         SCHEDULER->workers[i].id = i;
         SCHEDULER->workers[i].local_queue = deque_new(256);
@@ -437,7 +437,7 @@ pub func:scheduler_shutdown = void() {
     atomic_store(@SCHEDULER->shutdown, true);
 
     // Wait for all workers to finish
-    int32:i = 0;
+    int32:i = 0i32;
     while (i < SCHEDULER->num_workers) {
         @join_thread(SCHEDULER->workers[i].thread_handle);
         i = i + 1;

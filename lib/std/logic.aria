@@ -1,0 +1,105 @@
+/// Boolean Utility Functions
+
+/// Logical AND - both must be true
+func:and = bool(bool:a, bool:b) {
+    bool:result = false;
+    if (a) {
+        if (b) {
+            result = true;
+        } else {
+            result = false;
+        }
+    } else {
+        result = false;
+    }
+    pass(result);
+};
+
+/// Logical OR - at least one must be true
+func:or = bool(bool:a, bool:b) {
+    bool:result = false;
+    if (a) {
+        result = true;
+    } else {
+        if (b) {
+            result = true;
+        } else {
+            result = false;
+        }
+    }
+    pass(result);
+};
+
+/// Logical XOR - exactly one must be true
+func:xor = bool(bool:a, bool:b) {
+    bool:result = false;
+    bool:same = (a == b);
+    if (same) {
+        result = false;
+    } else {
+        result = true;
+    }
+    pass(result);
+};
+
+/// Logical NOT - inverts the value
+func:not = bool(bool:a) {
+    bool:result = false;
+    if (a) {
+        result = false;
+    } else {
+        result = true;
+    }
+    pass(result);
+};
+
+/// Logical NAND - NOT(a AND b)
+func:nand = bool(bool:a, bool:b) {
+    bool:result = false;
+    bool:both = and(a, b);
+    if (both) {
+        result = false;
+    } else {
+        result = true;
+    }
+    pass(result);
+};
+
+/// Logical NOR - NOT(a OR b)
+func:nor = bool(bool:a, bool:b) {
+    bool:result = false;
+    bool:either = or(a, b);
+    if (either) {
+        result = false;
+    } else {
+        result = true;
+    }
+    pass(result);
+};
+
+/// Logical IMPLIES - if a then b
+func:implies = bool(bool:a, bool:b) {
+    bool:result = false;
+    if (a) {
+        if (b) {
+            result = true;
+        } else {
+            result = false;
+        }
+    } else {
+        result = true;
+    }
+    pass(result);
+};
+
+/// Logical EQUIVALENCE - a if and only if b
+func:equiv = bool(bool:a, bool:b) {
+    bool:result = false;
+    bool:same = (a == b);
+    if (same) {
+        result = true;
+    } else {
+        result = false;
+    }
+    pass(result);
+};

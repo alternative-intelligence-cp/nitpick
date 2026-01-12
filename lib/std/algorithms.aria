@@ -1,0 +1,469 @@
+// ============================================================================
+// Aria Standard Library - Algorithms Module
+// ============================================================================
+// Sorting, searching, and algorithm utilities
+// Part of stdlib expansion phase (150+ functions across 20+ modules)
+
+use "arrays.aria";
+
+// ============================================================================
+// QUICKSORT (unstable, in-place, O(n log n) average)
+// ============================================================================
+
+// Partition helper for quicksort
+pub func:partition_i32 = int32(int32->:arr, int32:low, int32:high) {
+    int32:pivot = arr[high];
+    int32:i = low - 1;
+    
+    int32:j = low;
+    till(high, 1i64) {
+        if (arr[j] < pivot) {
+            i = i + 1;
+            // Swap arr[i] and arr[j]
+            int32:temp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = temp;
+        }
+        j = j + 1;
+    }
+    
+    // Swap arr[i+1] and arr[high] (pivot)
+    int32:temp = arr[i + 1];
+    arr[i + 1] = arr[high];
+    arr[high] = temp;
+    
+    return i + 1;
+};
+
+// Quicksort implementation for int32 arrays
+pub func:quicksort_i32_range = void(int32->:arr, int32:low, int32:high) {
+    if (low < high) {
+        int32:pi = partition_i32(arr, low, high);
+        quicksort_i32_range(arr, low, pi - 1);
+        quicksort_i32_range(arr, pi + 1, high);
+    }
+};
+
+// Public quicksort interface
+pub func:sort_i32 = void(int32->:arr, int32:len) {
+    if (len <= 1) {
+        return;
+    }
+    quicksort_i32_range(arr, 0, len - 1);
+};
+
+// Quicksort for int64
+pub func:partition_i64 = int32(int64->:arr, int32:low, int32:high) {
+    int64:pivot = arr[high];
+    int32:i = low - 1;
+    
+    int32:j = low;
+    till(high, 1i64) {
+        if (arr[j] < pivot) {
+            i = i + 1;
+            int64:temp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = temp;
+        }
+        j = j + 1;
+    }
+    
+    int64:temp = arr[i + 1];
+    arr[i + 1] = arr[high];
+    arr[high] = temp;
+    
+    return i + 1;
+};
+
+pub func:quicksort_i64_range = void(int64->:arr, int32:low, int32:high) {
+    if (low < high) {
+        int32:pi = partition_i64(arr, low, high);
+        quicksort_i64_range(arr, low, pi - 1);
+        quicksort_i64_range(arr, pi + 1, high);
+    }
+};
+
+pub func:sort_i64 = void(int64->:arr, int32:len) {
+    if (len <= 1) {
+        return;
+    }
+    quicksort_i64_range(arr, 0, len - 1);
+};
+
+// Quicksort for flt64
+pub func:partition_f64 = int32(*flt64:arr, int32:low, int32:high) {
+    flt64:pivot = arr[high];
+    int32:i = low - 1;
+    
+    int32:j = low;
+    till(high, 1i64) {
+        if (arr[j] < pivot) {
+            i = i + 1;
+            flt64:temp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = temp;
+        }
+        j = j + 1;
+    }
+    
+    flt64:temp = arr[i + 1];
+    arr[i + 1] = arr[high];
+    arr[high] = temp;
+    
+    return i + 1;
+};
+
+pub func:quicksort_f64_range = void(*flt64:arr, int32:low, int32:high) {
+    if (low < high) {
+        int32:pi = partition_f64(arr, low, high);
+        quicksort_f64_range(arr, low, pi - 1);
+        quicksort_f64_range(arr, pi + 1, high);
+    }
+};
+
+pub func:sort_f64 = void(*flt64:arr, int32:len) {
+    if (len <= 1) {
+        return;
+    }
+    quicksort_f64_range(arr, 0, len - 1);
+};
+
+// ============================================================================
+// BUBBLE SORT (stable, O(n²), good for small/nearly sorted arrays)
+// ============================================================================
+
+pub func:bubble_sort_i32 = void(int32->:arr, int32:len) {
+    if (len <= 1) {
+        return;
+    }
+    
+    int32:i = 0i32;
+    till(len, 1i64) {
+        int32:j = 0i32;
+        int32:limit = len - i - 1;
+        till(limit, 1i64) {
+            if (arr[j] > arr[j + 1]) {
+                int32:temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+};
+
+pub func:bubble_sort_i64 = void(int64->:arr, int32:len) {
+    if (len <= 1) {
+        return;
+    }
+    
+    int32:i = 0i32;
+    till(len, 1i64) {
+        int32:j = 0i32;
+        int32:limit = len - i - 1;
+        till(limit, 1i64) {
+            if (arr[j] > arr[j + 1]) {
+                int64:temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+};
+
+// ============================================================================
+// INSERTION SORT (stable, O(n²), efficient for small arrays)
+// ============================================================================
+
+pub func:insertion_sort_i32 = void(int32->:arr, int32:len) {
+    if (len <= 1) {
+        return;
+    }
+    
+    int32:i = 1i32;
+    till(len, 1i64) {
+        int32:key = arr[i];
+        int32:j = i - 1;
+        
+        // Shift elements greater than key to the right
+        while (j >= 0 && arr[j] > key) {
+            arr[j + 1] = arr[j];
+            j = j - 1;
+        }
+        
+        arr[j + 1] = key;
+        i = i + 1;
+    }
+};
+
+pub func:insertion_sort_i64 = void(int64->:arr, int32:len) {
+    if (len <= 1) {
+        return;
+    }
+    
+    int32:i = 1i32;
+    till(len, 1i64) {
+        int64:key = arr[i];
+        int32:j = i - 1;
+        
+        while (j >= 0 && arr[j] > key) {
+            arr[j + 1] = arr[j];
+            j = j - 1;
+        }
+        
+        arr[j + 1] = key;
+        i = i + 1;
+    }
+};
+
+// ============================================================================
+// MERGE SORT (stable, O(n log n), guaranteed performance)
+// ============================================================================
+
+// Merge helper for merge sort
+pub func:merge_i32 = void(int32->:arr, int32:left, int32:mid, int32:right, int32->:temp) {
+    int32:i = left;
+    int32:j = mid + 1;
+    int32:k = left;
+    
+    // Merge the two halves into temp array
+    while (i <= mid && j <= right) {
+        if (arr[i] <= arr[j]) {
+            temp[k] = arr[i];
+            i = i + 1;
+        } else {
+            temp[k] = arr[j];
+            j = j + 1;
+        }
+        k = k + 1;
+    }
+    
+    // Copy remaining elements from left half
+    while (i <= mid) {
+        temp[k] = arr[i];
+        i = i + 1;
+        k = k + 1;
+    }
+    
+    // Copy remaining elements from right half
+    while (j <= right) {
+        temp[k] = arr[j];
+        j = j + 1;
+        k = k + 1;
+    }
+    
+    // Copy back to original array
+    i = left;
+    till(right + 1, 1i64) {
+        arr[i] = temp[i];
+        i = i + 1;
+    }
+};
+
+pub func:merge_sort_i32_range = void(int32->:arr, int32:left, int32:right, int32->:temp) {
+    if (left < right) {
+        int32:mid = left + (right - left) / 2;
+        
+        merge_sort_i32_range(arr, left, mid, temp);
+        merge_sort_i32_range(arr, mid + 1, right, temp);
+        merge_i32(arr, left, mid, right, temp);
+    }
+};
+
+pub func:merge_sort_i32 = void(int32->:arr, int32:len) {
+    if (len <= 1) {
+        return;
+    }
+    
+    // Allocate temporary array for merging
+    wild int32->:temp = aria_alloc(len * 4);
+    merge_sort_i32_range(arr, 0, len - 1, temp);
+    aria_free(temp);
+};
+
+// ============================================================================
+// BINARY SEARCH (requires sorted array, O(log n))
+// ============================================================================
+
+pub func:binary_search_sorted_i32 = int32(int32->:arr, int32:len, int32:target) {
+    int32:left = 0i32;
+    int32:right = len - 1;
+    
+    while (left <= right) {
+        int32:mid = left + (right - left) / 2;
+        
+        if (arr[mid] == target) {
+            return mid;
+        }
+        
+        if (arr[mid] < target) {
+            left = mid + 1;
+        } else {
+            right = mid - 1;
+        }
+    }
+    
+    return -1; // Not found
+};
+
+pub func:binary_search_sorted_i64 = int32(int64->:arr, int32:len, int64:target) {
+    int32:left = 0i32;
+    int32:right = len - 1;
+    
+    while (left <= right) {
+        int32:mid = left + (right - left) / 2;
+        
+        if (arr[mid] == target) {
+            return mid;
+        }
+        
+        if (arr[mid] < target) {
+            left = mid + 1;
+        } else {
+            right = mid - 1;
+        }
+    }
+    
+    return -1;
+};
+
+// ============================================================================
+// PARTITION (for quickselect/median finding)
+// ============================================================================
+
+pub func:quickselect_partition_i32 = int32(int32->:arr, int32:low, int32:high) {
+    int32:pivot = arr[high];
+    int32:i = low;
+    
+    int32:j = low;
+    till(high, 1i64) {
+        if (arr[j] < pivot) {
+            int32:temp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = temp;
+            i = i + 1;
+        }
+        j = j + 1;
+    }
+    
+    int32:temp = arr[i];
+    arr[i] = arr[high];
+    arr[high] = temp;
+    
+    return i;
+};
+
+// ============================================================================
+// QUICKSELECT (find kth smallest element, O(n) average)
+// ============================================================================
+
+pub func:quickselect_i32 = int32(int32->:arr, int32:low, int32:high, int32:k) {
+    if (low == high) {
+        return arr[low];
+    }
+    
+    int32:pivot_index = quickselect_partition_i32(arr, low, high);
+    
+    if (k == pivot_index) {
+        return arr[k];
+    }
+    
+    if (k < pivot_index) {
+        return quickselect_i32(arr, low, pivot_index - 1, k);
+    }
+    
+    return quickselect_i32(arr, pivot_index + 1, high, k);
+};
+
+// Find median using quickselect
+pub func:median_i32 = int32(int32->:arr, int32:len) {
+    if (len == 0) {
+        return 0;
+    }
+    
+    int32:mid = len / 2;
+    return quickselect_i32(arr, 0, len - 1, mid);
+};
+
+// ============================================================================
+// ARRAY UTILITIES
+// ============================================================================
+
+// Reverse array in-place
+pub func:reverse_i32 = void(int32->:arr, int32:len) {
+    int32:left = 0i32;
+    int32:right = len - 1;
+    
+    while (left < right) {
+        int32:temp = arr[left];
+        arr[left] = arr[right];
+        arr[right] = temp;
+        left = left + 1;
+        right = right - 1;
+    }
+};
+
+pub func:reverse_i64 = void(int64->:arr, int32:len) {
+    int32:left = 0i32;
+    int32:right = len - 1;
+    
+    while (left < right) {
+        int64:temp = arr[left];
+        arr[left] = arr[right];
+        arr[right] = temp;
+        left = left + 1;
+        right = right - 1;
+    }
+};
+
+// Check if array is sorted
+pub func:is_sorted_i32 = int8(int32->:arr, int32:len) {
+    if (len <= 1) {
+        return 1;
+    }
+    
+    int32:i = 0i32;
+    int32:limit = len - 1;
+    till(limit, 1i64) {
+        if (arr[i] > arr[i + 1]) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    
+    return 1;
+};
+
+pub func:is_sorted_i64 = int8(int64->:arr, int32:len) {
+    if (len <= 1) {
+        return 1;
+    }
+    
+    int32:i = 0i32;
+    int32:limit = len - 1;
+    till(limit, 1i64) {
+        if (arr[i] > arr[i + 1]) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    
+    return 1;
+};
+
+// ============================================================================
+// MODULE SUMMARY
+// ============================================================================
+// Functions: 24
+// - Sorting: sort_i32, sort_i64, sort_f64 (quicksort)
+//           bubble_sort_i32, bubble_sort_i64
+//           insertion_sort_i32, insertion_sort_i64
+//           merge_sort_i32
+// - Searching: binary_search_sorted_i32, binary_search_sorted_i64
+// - Selection: quickselect_i32, median_i32
+// - Utilities: reverse_i32, reverse_i64, is_sorted_i32, is_sorted_i64
+// - Helpers: partition_i32/i64/f64, merge_i32, quickselect_partition_i32
+//           quicksort_*_range, merge_sort_i32_range

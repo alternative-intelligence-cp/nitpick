@@ -1,0 +1,65 @@
+/// Bit Manipulation Utilities - Integer (non-bitwise) Functions
+/// Safe to use int32 - no bitwise operators required
+
+/// Count number of set bits (population count)
+func:popcount_i32 = int32(int32:n) {
+    int32:count = 0i32;
+    int32:val = n;
+    
+    // Handle negative numbers
+    bool:negative = (val < 0);
+    if (negative) {
+        val = (0 - val);
+    } else {}
+    
+    while (val != 0) {
+        int32:bit = (val - ((val / 2) * 2));  // Manual modulo 2
+        bool:is_one = (bit == 1);
+        if (is_one) {
+            count = (count + 1);
+        } else {}
+        val = (val / 2);
+    }
+    
+    pass(count);
+};
+
+/// Check if specific bit is set
+func:bit_test = bool(int32:n, int32:pos) {
+    int32:val = n;
+    int32:i = 0i32;
+    
+    // Shift right by pos positions
+    while (i < pos) {
+        val = (val / 2);
+        i = (i + 1);
+    }
+    
+    int32:bit = (val - ((val / 2) * 2));  // Check lowest bit
+    bool:result = false;
+    bool:is_set = (bit == 1);
+    if (is_set) {
+        result = true;
+    } else {
+        result = false;
+    }
+    pass(result);
+};
+
+/// Find position of highest set bit (log2 floor)
+func:bit_length = int32(int32:n) {
+    int32:len = 0i32;
+    int32:val = n;
+    
+    bool:negative = (val < 0);
+    if (negative) {
+        val = (0 - val);
+    } else {}
+    
+    while (val > 0) {
+        val = (val / 2);
+        len = (len + 1);
+    }
+    
+    pass(len);
+};
