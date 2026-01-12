@@ -1,0 +1,18 @@
+/**
+ * Test: Function Parameter Aliasing - Same Variable
+ * Expected: COMPILER ERROR - same variable borrowed mutably twice
+ * Why Critical: Two mutable references to same memory = data race
+ */
+
+func:modify_both = void(int32$:a, int32$:b) {
+    // Uses the references (just read them to keep it simple)
+    print("a and b received\n");
+};
+
+func:main = int32() {
+    int32:x = 5;
+    modify_both($x, $x);  // ERROR: Same variable borrowed mutably twice
+
+    print("Should not compile!\n");
+    return 0;
+};

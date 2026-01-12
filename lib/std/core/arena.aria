@@ -22,7 +22,7 @@
  *       // Allocate objects
  *       alloc_result<int64>:int_res = arena_alloc<int64>(my_arena);
  *       if (int_res.is_ok()) {
- *           wild int64@:num = int_res.unwrap();
+ *           wild int64->:num = int_res.unwrap();
  *           num@ = 42;
  *       }
  *       
@@ -255,7 +255,7 @@ func:destroy = void(arena: arena@) {
  *   
  *   alloc_result<int64>:res = arena_alloc<int64>(my_arena);
  *   if (res.is_ok()) {
- *       wild int64@:num = res.unwrap();
+ *       wild int64->:num = res.unwrap();
  *       num@ = 42;
  *       // No need to free - arena owns memory
  *   }
@@ -286,7 +286,7 @@ func:arena_alloc<T> = alloc_result<T>(arena: arena@) {
  *   
  *   alloc_result<int32>:res = arena_alloc_array<int32>(my_arena, 100);
  *   if (res.is_ok()) {
- *       wild int32@:arr = res.unwrap();
+ *       wild int32->:arr = res.unwrap();
  *       
  *       // Initialize array
  *       int64:i = 0;
@@ -473,7 +473,7 @@ func:remaining_capacity = int64(arena: arena@) {
  * 
  * 1. Use-After-Reset:
  *    alloc_result<int64>:res = arena_alloc<int64>(arena);
- *    wild int64@:ptr = res.unwrap();
+ *    wild int64->:ptr = res.unwrap();
  *    ptr@ = 42;
  *    
  *    reset(arena);  // ptr is now INVALID!

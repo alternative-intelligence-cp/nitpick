@@ -8,7 +8,7 @@
  * Usage:
  *   use std.core.memory;
  * 
- *   wild int64@:ptr = alloc<int64>();
+ *   wild int64->:ptr = alloc<int64>();
  *   if (ptr == null) { error("Out of memory"); }
  *   defer free<int64>(ptr);
  *   
@@ -51,7 +51,7 @@ func:alloc<T> = wild T@() {
  * Includes overflow protection - will return null if count * sizeof(T) overflows.
  * 
  * Example:
- *   wild int32@:numbers = alloc_array<int32>(100);
+ *   wild int32->:numbers = alloc_array<int32>(100);
  *   if (numbers == null) { error("Allocation failed"); }
  *   defer free<int32>(numbers);
  *   
@@ -83,7 +83,7 @@ func:alloc_array<T> = wild T@(count: int64) {
  * 
  * Example:
  *   // Allocate 32-byte aligned memory for SIMD vector
- *   wild flt32@:vector = alloc_aligned<flt32>(32);
+ *   wild flt32->:vector = alloc_aligned<flt32>(32);
  *   defer free<flt32>(vector);
  */
 func:alloc_aligned<T> = wild T@(alignment: int64) {
@@ -106,7 +106,7 @@ func:alloc_aligned<T> = wild T@(alignment: int64) {
  * Safe to call with null pointer (no-op). Use defer for automatic cleanup.
  * 
  * Example:
- *   wild int64@:data = alloc<int64>();
+ *   wild int64->:data = alloc<int64>();
  *   defer free<int64>(data);  // Automatic cleanup at scope exit
  */
 func:free<T> = void(ptr: wild T@) {
@@ -125,7 +125,7 @@ func:free<T> = void(ptr: wild T@) {
  * Allocate and zero-initialize
  * 
  * Example:
- *   wild int64@:counter = alloc_zeroed<int64>();
+ *   wild int64->:counter = alloc_zeroed<int64>();
  *   // counter@ == 0
  */
 func:alloc_zeroed<T> = wild T@() {
@@ -142,7 +142,7 @@ func:alloc_zeroed<T> = wild T@() {
  * Allocate array and zero-initialize
  * 
  * Example:
- *   wild int32@:flags = alloc_array_zeroed<int32>(1000);
+ *   wild int32->:flags = alloc_array_zeroed<int32>(1000);
  *   // All elements are 0
  */
 func:alloc_array_zeroed<T> = wild T@(count: int64) {
@@ -171,7 +171,7 @@ func:alloc_array_zeroed<T> = wild T@(count: int64) {
  * Check if pointer is null (allocation failed)
  * 
  * Example:
- *   wild int64@:ptr = alloc<int64>();
+ *   wild int64->:ptr = alloc<int64>();
  *   if (is_null(ptr)) {
  *       error("Out of memory");
  *   }
@@ -184,7 +184,7 @@ func:is_null<T> = bool(ptr: wild T@) {
  * Require successful allocation (panic on null)
  * 
  * Example:
- *   wild int64@:ptr = require_alloc<int64>();
+ *   wild int64->:ptr = require_alloc<int64>();
  *   // Guaranteed non-null or program aborted
  */
 func:require_alloc<T> = wild T@() {
@@ -207,17 +207,17 @@ func:require_alloc<T> = wild T@() {
  *    defer free<T>(ptr);
  * 
  * 2. Never access after free:
- *    wild int64@:x = alloc<int64>();
+ *    wild int64->:x = alloc<int64>();
  *    free<int64>(x);
  *    x@ = 42;  // ERROR: use-after-free (borrow checker detects)
  * 
  * 3. Never double-free:
- *    wild int64@:x = alloc<int64>();
+ *    wild int64->:x = alloc<int64>();
  *    free<int64>(x);
  *    free<int64>(x);  // ERROR: double-free (borrow checker detects)
  * 
  * 4. Null checks before dereferencing:
- *    wild int64@:x = alloc<int64>();
+ *    wild int64->:x = alloc<int64>();
  *    if (x == null) { return; }
  *    x@ = 42;  // Safe
  * 

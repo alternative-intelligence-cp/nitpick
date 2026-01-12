@@ -62,10 +62,26 @@ bool Token::isOperator() const {
 }
 
 bool Token::isLiteral() const {
-    return type == TokenType::TOKEN_INTEGER ||
-           type == TokenType::TOKEN_FLOAT ||
-           type == TokenType::TOKEN_STRING ||
+    // Legacy untyped literals (deprecated)
+    if (type == TokenType::TOKEN_INTEGER || type == TokenType::TOKEN_FLOAT) {
+        return true;
+    }
+    
+    // Typed integer literals
+    if (type >= TokenType::TOKEN_INTEGER_U8 && type <= TokenType::TOKEN_INTEGER_TBB64) {
+        return true;
+    }
+    
+    // Typed float literals
+    if (type >= TokenType::TOKEN_FLOAT_F32 && type <= TokenType::TOKEN_FLOAT_FIX256) {
+        return true;
+    }
+    
+    // Other literals
+    return type == TokenType::TOKEN_STRING ||
            type == TokenType::TOKEN_CHAR ||
+           type == TokenType::TOKEN_TERNARY ||
+           type == TokenType::TOKEN_NONARY ||
            type == TokenType::TOKEN_KW_TRUE ||
            type == TokenType::TOKEN_KW_FALSE ||
            type == TokenType::TOKEN_KW_NULL ||
@@ -76,10 +92,12 @@ bool Token::isType() const {
     return (type >= TokenType::TOKEN_KW_INT1 && type <= TokenType::TOKEN_KW_INT512) ||
            (type >= TokenType::TOKEN_KW_UINT8 && type <= TokenType::TOKEN_KW_UINT512) ||
            (type >= TokenType::TOKEN_KW_TBB8 && type <= TokenType::TOKEN_KW_TBB64) ||
+           (type >= TokenType::TOKEN_KW_FRAC8 && type <= TokenType::TOKEN_KW_FRAC64) ||
+           (type >= TokenType::TOKEN_KW_TFP32 && type <= TokenType::TOKEN_KW_TFP64) ||
            (type >= TokenType::TOKEN_KW_FLT32 && type <= TokenType::TOKEN_KW_FLT512) ||
            (type >= TokenType::TOKEN_KW_BOOL && type <= TokenType::TOKEN_KW_ARRAY) ||
            (type >= TokenType::TOKEN_KW_TRIT && type <= TokenType::TOKEN_KW_NYTE) ||
-           (type >= TokenType::TOKEN_KW_VEC2 && type <= TokenType::TOKEN_KW_TENSOR) ||
+           (type >= TokenType::TOKEN_KW_VEC2 && type <= TokenType::TOKEN_KW_TTENSOR) ||
            (type >= TokenType::TOKEN_KW_BINARY && type <= TokenType::TOKEN_KW_LOG);
 }
 
@@ -194,6 +212,16 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_TBB32: return "TBB32";
         case TokenType::TOKEN_KW_TBB64: return "TBB64";
         
+        // Fraction types
+        case TokenType::TOKEN_KW_FRAC8: return "FRAC8";
+        case TokenType::TOKEN_KW_FRAC16: return "FRAC16";
+        case TokenType::TOKEN_KW_FRAC32: return "FRAC32";
+        case TokenType::TOKEN_KW_FRAC64: return "FRAC64";
+        
+        // TFP types
+        case TokenType::TOKEN_KW_TFP32: return "TFP32";
+        case TokenType::TOKEN_KW_TFP64: return "TFP64";
+        
         // Float types
         case TokenType::TOKEN_KW_FLT32: return "FLT32";
         case TokenType::TOKEN_KW_FLT64: return "FLT64";
@@ -220,7 +248,9 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_VEC3: return "VEC3";
         case TokenType::TOKEN_KW_VEC9: return "VEC9";
         case TokenType::TOKEN_KW_MATRIX: return "MATRIX";
+        case TokenType::TOKEN_KW_TMATRIX: return "TMATRIX";
         case TokenType::TOKEN_KW_TENSOR: return "TENSOR";
+        case TokenType::TOKEN_KW_TTENSOR: return "TTENSOR";
         
         // I/O and system types
         case TokenType::TOKEN_KW_BINARY: return "BINARY";
@@ -283,6 +313,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_DOLLAR: return "DOLLAR";
         case TokenType::TOKEN_HASH: return "HASH";
         case TokenType::TOKEN_ARROW: return "ARROW";
+        case TokenType::TOKEN_LEFT_ARROW: return "LEFT_ARROW";
         case TokenType::TOKEN_SAFE_NAV: return "SAFE_NAV";
         case TokenType::TOKEN_NULL_COALESCE: return "NULL_COALESCE";
         case TokenType::TOKEN_QUESTION: return "QUESTION";
@@ -311,12 +342,49 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_LEFT_BRACKET: return "LEFT_BRACKET";
         case TokenType::TOKEN_RIGHT_BRACKET: return "RIGHT_BRACKET";
         
-        // Literals
+        // Literals (deprecated - use typed variants below)
         case TokenType::TOKEN_INTEGER: return "INTEGER";
         case TokenType::TOKEN_FLOAT: return "FLOAT";
+        
+        // Typed integer literals (unsigned)
+        case TokenType::TOKEN_INTEGER_U8: return "INTEGER_U8";
+        case TokenType::TOKEN_INTEGER_U16: return "INTEGER_U16";
+        case TokenType::TOKEN_INTEGER_U32: return "INTEGER_U32";
+        case TokenType::TOKEN_INTEGER_U64: return "INTEGER_U64";
+        case TokenType::TOKEN_INTEGER_U128: return "INTEGER_U128";
+        case TokenType::TOKEN_INTEGER_U256: return "INTEGER_U256";
+        case TokenType::TOKEN_INTEGER_U512: return "INTEGER_U512";
+        case TokenType::TOKEN_INTEGER_U1024: return "INTEGER_U1024";
+        
+        // Typed integer literals (signed)
+        case TokenType::TOKEN_INTEGER_I8: return "INTEGER_I8";
+        case TokenType::TOKEN_INTEGER_I16: return "INTEGER_I16";
+        case TokenType::TOKEN_INTEGER_I32: return "INTEGER_I32";
+        case TokenType::TOKEN_INTEGER_I64: return "INTEGER_I64";
+        case TokenType::TOKEN_INTEGER_I128: return "INTEGER_I128";
+        case TokenType::TOKEN_INTEGER_I256: return "INTEGER_I256";
+        case TokenType::TOKEN_INTEGER_I512: return "INTEGER_I512";
+        case TokenType::TOKEN_INTEGER_I1024: return "INTEGER_I1024";
+        
+        // Typed integer literals (TBB)
+        case TokenType::TOKEN_INTEGER_TBB8: return "INTEGER_TBB8";
+        case TokenType::TOKEN_INTEGER_TBB16: return "INTEGER_TBB16";
+        case TokenType::TOKEN_INTEGER_TBB32: return "INTEGER_TBB32";
+        case TokenType::TOKEN_INTEGER_TBB64: return "INTEGER_TBB64";
+        
+        // Typed float literals
+        case TokenType::TOKEN_FLOAT_F32: return "FLOAT_F32";
+        case TokenType::TOKEN_FLOAT_F64: return "FLOAT_F64";
+        case TokenType::TOKEN_FLOAT_F128: return "FLOAT_F128";
+        case TokenType::TOKEN_FLOAT_F256: return "FLOAT_F256";
+        case TokenType::TOKEN_FLOAT_F512: return "FLOAT_F512";
+        case TokenType::TOKEN_FLOAT_FIX256: return "FLOAT_FIX256";
+        
+        // Other literals
         case TokenType::TOKEN_STRING: return "STRING";
         case TokenType::TOKEN_CHAR: return "CHAR";
         case TokenType::TOKEN_TERNARY: return "TERNARY";
+        case TokenType::TOKEN_NONARY: return "NONARY";
         
         // Special tokens
         case TokenType::TOKEN_IDENTIFIER: return "IDENTIFIER";

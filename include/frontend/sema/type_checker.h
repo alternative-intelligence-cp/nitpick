@@ -720,6 +720,12 @@ public:
      */
     void checkModStmt(ModStmt* stmt);
     
+    /**
+     * Check extern statement (FFI declarations)
+     * Registers external function and variable symbols in current scope
+     */
+    void checkExternStmt(ExternStmt* stmt);
+    
     // ========================================================================
     // Module Symbol Importing (Phase 3 from research_module_loading_system)
     // ========================================================================

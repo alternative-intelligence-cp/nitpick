@@ -1,0 +1,18 @@
+/**
+ * Test: Nested Borrow Conflict
+ * Expected: COMPILER ERROR - nested scope creates conflicting borrow
+ * Why Critical: Inner scope borrow conflicts with outer
+ */
+
+func:main = int32() {
+    int32:x = 10;
+    int32$:outer = $x;  // Mutable borrow in outer scope
+
+    {
+        int32$:inner = $x;  // ERROR: Cannot borrow again while outer exists
+        print("inner borrowed\n");
+    }
+
+    print("outer still active\n");
+    return 0;
+};

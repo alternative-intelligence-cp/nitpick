@@ -1,0 +1,15 @@
+/**
+ * Test: Use After Free
+ * Expected: COMPILER ERROR (use of freed wild memory)
+ * Why: Using wild memory after free() is undefined behavior
+ */
+
+func:main = int32() {
+    wild int8@:ptr = alloc(1024);
+    free(ptr);
+
+    // BUG: Freeing the same pointer a second time uses the freed pointer
+    free(ptr);  // ERROR: Use after free (ptr already freed)
+
+    return 0;
+};

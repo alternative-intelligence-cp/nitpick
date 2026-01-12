@@ -41,6 +41,24 @@
 
 Aria is a modern systems programming language that reimagines how we think about I/O and type systems. Inspired by Nikola Tesla's vision of interconnected systems, Aria introduces **six-stream I/O** - a revolutionary approach where programs communicate through stdin, stdout, stderr, stddbg, stddati, and stddato streams instead of just the traditional three.
 
+### Theoretical Foundation
+
+Aria's design philosophy draws from published research in consciousness modeling and cognitive architecture:
+
+- **ATPM (Autonomic Temporal Pattern Model)**: The theoretical framework underlying Nikola's consciousness architecture  
+  DOI: [10.5281/zenodo.18158226](https://doi.org/10.5281/zenodo.18158226)
+
+- **ATPM Extended - Big Bang, Bruising, and Asymmetry**: Addresses topological genesis, CMB anomalies, and cosmic dipole predictions  
+  DOI: [10.5281/zenodo.18168992](https://doi.org/10.5281/zenodo.18168992)
+
+- **Ego-Mediated Behavior Study**: Published research on behavioral modeling  
+  DOI: [10.5281/zenodo.18159274](https://doi.org/10.5281/zenodo.18159274)
+
+- **Nikola Model Academic Paper**: Comprehensive consciousness model architecture *(peer review in progress)*  
+  DOI: [10.5281/zenodo.18159162](https://doi.org/10.5281/zenodo.18159162)
+
+These foundations inform Aria's approach to neurodivergent-friendly syntax design and pattern-based cognition optimization.
+
 ### Key Innovations
 
 **� TBB Types - Symmetric Signed Integers with Error Sentinels**

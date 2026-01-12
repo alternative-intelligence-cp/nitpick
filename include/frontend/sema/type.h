@@ -80,18 +80,20 @@ private:
     bool isSigned;     // True for signed integers, false for unsigned
     bool isFloating;   // True for floating-point types
     bool isTBB;        // True for Twisted Balanced Binary types (tbb8, tbb16, etc.)
+    bool isExotic;     // True for Exotic Balanced types (trit, tryte, nit, nyte)
     
 public:
     explicit PrimitiveType(const std::string& name, int bitWidth = 0,
-                          bool isSigned = false, bool isFloating = false, bool isTBB = false)
+                          bool isSigned = false, bool isFloating = false, bool isTBB = false, bool isExotic = false)
         : Type(TypeKind::PRIMITIVE), name(name), bitWidth(bitWidth),
-          isSigned(isSigned), isFloating(isFloating), isTBB(isTBB) {}
+          isSigned(isSigned), isFloating(isFloating), isTBB(isTBB), isExotic(isExotic) {}
     
     const std::string& getName() const { return name; }
     int getBitWidth() const { return bitWidth; }
     bool isSignedType() const { return isSigned; }
     bool isFloatingType() const { return isFloating; }
     bool isTBBType() const { return isTBB; }
+    bool isExoticType() const { return isExotic; }
     
     bool equals(const Type* other) const override;
     bool isAssignableTo(const Type* target) const override;

@@ -153,6 +153,13 @@ extern "aria_runtime" {
  * @return GC-managed Aria string
  */
 pub func:string_from_cstr = string(wild int8*:cstr) {
+    // ARIA-026 FIX: Null check before dereferencing C string pointer
+    // C functions can return NULL on error. Dereferencing NULL causes segfault
+    // which lobotomizes robot (actuators go limp, potentially dropping patient).
+    if (cstr == null) {
+        return string.empty();  // Graceful degradation
+    }
+
     // Get string length
     uint64:len = 0;
     wild int8*:p = cstr;

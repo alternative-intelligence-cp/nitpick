@@ -15,6 +15,9 @@ namespace async_io {
 
 /**
  * Async file operations
+ * 
+ * TODO BUG-08: Convert to std::shared_ptr<Future> for safer ownership
+ * (Requires updating all implementation files first)
  */
 
 // Read entire file asynchronously

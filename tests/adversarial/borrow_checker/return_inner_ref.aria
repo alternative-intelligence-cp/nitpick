@@ -1,0 +1,17 @@
+/**
+ * Test: Return Reference to Inner Scope Variable
+ * Expected: COMPILER ERROR - reference escapes inner scope
+ * Why Critical: Inner scope variable destroyed before reference used
+ */
+
+func:get_inner_ref = int32$() {
+    {
+        int32:inner = 42;
+        pass($inner);  // ERROR: Reference to inner scope variable escapes
+    }
+};
+
+func:main = int32() {
+    int32$:r = get_inner_ref();
+    return 0;
+};

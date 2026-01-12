@@ -1,0 +1,26 @@
+/**
+ * Test: TBB Overflow Results in ERR (Saturating Arithmetic)
+ * Expected: COMPILES SUCCESSFULLY (runtime test)
+ * Why: Overflow in TBB arithmetic should become ERR, not wrap
+ *
+ * From TODO: TBB arithmetic saturates or returns ERR sentinel
+ */
+
+func:main = int32() {
+    // tbb8 max is 127, adding more should ERR or saturate
+    tbb8:max8 = tbb8_from_int(127);
+    tbb8:overflow8 = tbb8_add(max8, tbb8_from_int(1));
+    bool:overflow8_is_err = tbb8_is_err(overflow8);
+
+    // tbb8 min is -127, subtracting more should ERR or saturate
+    tbb8:min8 = tbb8_from_int(-127);
+    tbb8:underflow8 = tbb8_sub(min8, tbb8_from_int(1));
+    bool:underflow8_is_err = tbb8_is_err(underflow8);
+
+    // tbb32 overflow test
+    tbb32:max32 = tbb32_from_int(2147483647);
+    tbb32:overflow32 = tbb32_add(max32, tbb32_from_int(1));
+    bool:overflow32_is_err = tbb32_is_err(overflow32);
+
+    return 0;
+};

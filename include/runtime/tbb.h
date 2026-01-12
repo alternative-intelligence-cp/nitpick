@@ -162,6 +162,52 @@ int64_t tbb64_div(int64_t a, int64_t b);
 int64_t tbb64_neg(int64_t a);
 int64_t tbb64_abs(int64_t a);
 
+// ============================================================================
+// TBB Widening Operations (ARIA-018: Sentinel-Preserving Conversion)
+// ============================================================================
+// These functions safely widen TBB types while preserving error semantics.
+// Standard sign extension would convert source ERR to a valid value in the
+// destination type (e.g., tbb8 ERR (-128) → -128 in tbb16, not tbb16 ERR).
+// These intrinsics map source sentinel → destination sentinel.
+//
+// Usage: tbb16:wide = tbb_widen<tbb16>(tbb8:narrow);
+
+/**
+ * Widen tbb8 to tbb16 with sentinel preservation
+ * ERR (-128) → ERR (-32768)
+ */
+int16_t aria_tbb_widen_8_16(int8_t val);
+
+/**
+ * Widen tbb8 to tbb32 with sentinel preservation
+ * ERR (-128) → ERR (-2147483648)
+ */
+int32_t aria_tbb_widen_8_32(int8_t val);
+
+/**
+ * Widen tbb8 to tbb64 with sentinel preservation
+ * ERR (-128) → ERR (INT64_MIN)
+ */
+int64_t aria_tbb_widen_8_64(int8_t val);
+
+/**
+ * Widen tbb16 to tbb32 with sentinel preservation
+ * ERR (-32768) → ERR (-2147483648)
+ */
+int32_t aria_tbb_widen_16_32(int16_t val);
+
+/**
+ * Widen tbb16 to tbb64 with sentinel preservation
+ * ERR (-32768) → ERR (INT64_MIN)
+ */
+int64_t aria_tbb_widen_16_64(int16_t val);
+
+/**
+ * Widen tbb32 to tbb64 with sentinel preservation
+ * ERR (-2147483648) → ERR (INT64_MIN)
+ */
+int64_t aria_tbb_widen_32_64(int32_t val);
+
 #ifdef __cplusplus
 }
 #endif

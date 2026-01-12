@@ -1,8 +1,10 @@
 # Aria Compiler - Project Status
 
-**Last Updated**: December 24, 2024  
+**Last Updated**: January 7, 2026  
 **Version**: v0.0.7-dev  
 **Build Status**: ✅ Clean
+**Module System**: ✅ WORKING (imports, exports, symbol resolution)
+**Stdlib Status**: ✅ 284+ functions across 22 modules
 
 ---
 
@@ -46,6 +48,16 @@
   - Code generation for core features
   - Optimization passes
   - Platform-specific code emission
+
+- **Module System** ✅ WORKING
+  - `use` statements (file paths, logical paths, wildcards, selective imports)
+  - Module loading and symbol resolution via ModuleLoader
+  - Import modes: namespace, wildcard (`use std.io.*;`), selective (`use std.{a,b};`)
+  - Stdlib integration (`use std.io.*;` compiles and runs)
+  - `mod` declarations (inline and external)
+  - `pub` modifier (parsed, not yet enforced for visibility)
+  - `extern` blocks for FFI
+  - **Tests**: test_import_simple.aria, test_import_just_io.aria ✅
 
 ### Build System
 - CMake-based build

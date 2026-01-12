@@ -335,18 +335,123 @@ tbb16::MIN  // -32,767
 tbb8::MIN   // -127
 ```
 
-### 6.5 Type Coercion
+### 6.5 Type Conversion and ARIA-018: Sentinel Discontinuity Constraint
+
+**CRITICAL SAFETY REQUIREMENT**: Implicit widening between TBB types is **FORBIDDEN** due to sentinel discontinuity.
+
+#### 6.5.1 The Sentinel Healing Problem
+
+Standard sign-extension breaks TBB's error semantics:
 
 ```aria
-// Widening (always safe)
-tbb8 -> tbb16 -> tbb32 -> tbb64
-
-// Narrowing (may produce ERR)
-tbb64 -> tbb32 -> tbb16 -> tbb8
-
-tbb64:wide = 200;
-tbb8:narrow = tbb8.from_tbb64(wide);  // ERR (200 > 127)
+tbb8:err = ERR;              // 0x80 = -128 (ERR in tbb8)
+// FORBIDDEN: Implicit widening
+// tbb16:wide = err;         // Would become 0xFF80 = -128 (VALID in tbb16, not ERR!)
+                              // ERR "healed" into valid number!
 ```
+
+**Binary Analysis of the Bug**:
+```
+tbb8  ERR:  0x80       = -128 (sentinel)
+            ↓ sext
+tbb16:      0xFF80     = -128 (VALID number, NOT sentinel)
+tbb16 ERR:  0x8000     = -32768 (actual sentinel)
+```
+
+The error state is **lost** during widening because each TBB width has a different sentinel value.
+
+#### 6.5.2 ARIA-018: Formal Safety Constraint
+
+**Standard**: ARIA-018 (Sentinel Discontinuity Constraint)
+
+**Requirement**: Implicit type coercion between TBB types of differing widths is forbidden because the error sentinel value is width-dependent. A direct mapping of bit patterns via standard Two's Complement sign-extension fails to preserve the error state, violating the Sticky Error invariant.
+
+**Rationale**: All widening operations must explicitly check for the source sentinel and map it to the destination sentinel.
+
+**Enforcement**: Compiler rejects implicit widening at type-checking phase.
+
+#### 6.5.3 Safe Explicit Widening: `tbb_widen<T>()`
+
+**Correct Usage - Explicit Widening**:
+```aria
+tbb8:narrow = get_sensor();
+tbb16:wide = tbb_widen<tbb16>(narrow);  // ✓ Safe! ERR preserved
+```
+
+**Semantics**:
+```
+tbb_widen<T>(value):
+  if value == ERR_source:
+    return ERR_destination
+  else:
+    return sign_extend(value)
+```
+
+**Implementation**: Branchless `cmov`/`csel` instruction on modern CPUs:
+```llvm
+%is_err = icmp eq %val, %src_sentinel
+%extended = sext %val to %dst_type
+%result = select %is_err, %dst_sentinel, %extended
+```
+
+**Runtime Performance**: Zero overhead (single conditional move).
+
+#### 6.5.4 Available Widening Functions
+
+```aria
+// Explicit widening intrinsics
+tbb_widen<tbb16>(tbb8)   -> tbb16
+tbb_widen<tbb32>(tbb8)   -> tbb32
+tbb_widen<tbb64>(tbb8)   -> tbb64
+tbb_widen<tbb32>(tbb16)  -> tbb32
+tbb_widen<tbb64>(tbb16)  -> tbb64
+tbb_widen<tbb64>(tbb32)  -> tbb64
+```
+
+**C Runtime Functions**:
+```c
+extern "C" int16_t aria_tbb_widen_8_16(int8_t val);
+extern "C" int32_t aria_tbb_widen_8_32(int8_t val);
+extern "C" int64_t aria_tbb_widen_8_64(int8_t val);
+extern "C" int32_t aria_tbb_widen_16_32(int16_t val);
+extern "C" int64_t aria_tbb_widen_16_64(int16_t val);
+extern "C" int64_t aria_tbb_widen_32_64(int32_t val);
+```
+
+#### 6.5.5 Narrowing (Explicit Only)
+
+Narrowing requires explicit checking and may produce ERR:
+
+```aria
+tbb64:wide = 200;
+tbb8:narrow = tbb_narrow<tbb8>(wide);  // ERR (200 > 127)
+```
+
+**Semantics**:
+```
+tbb_narrow<T>(value):
+  if value == ERR_source:
+    return ERR_destination
+  if value > MAX_destination:
+    return ERR_destination
+  if value < MIN_destination:
+    return ERR_destination
+  return truncate(value)
+```
+
+#### 6.5.6 Safety Impact
+
+**Without ARIA-018 enforcement**:
+- Sensor failure (ERR) converts to valid -128°C reading
+- Thermal algorithm activates heaters
+- Physical hardware damage
+
+**With ARIA-018 enforcement**:
+- ERR propagates correctly through widening
+- System detects failure and halts safely
+- No silent corruption
+
+**AGI Context**: In the 9D torus physics engine, a single healed ERR can corrupt millions of neural weights during training, causing catastrophic model divergence ("Infected Hypercube" failure mode).
 
 ---
 

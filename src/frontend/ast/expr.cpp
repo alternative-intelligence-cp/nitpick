@@ -27,6 +27,11 @@ std::string LiteralExpr::toString() const {
         }, value);
     }
     
+    // Show explicit type if present (Zero Implicit Conversion Policy)
+    if (!explicit_type.empty()) {
+        oss << ":" << explicit_type;
+    }
+    
     oss << ")";
     return oss.str();
 }

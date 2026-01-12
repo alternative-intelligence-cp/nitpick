@@ -143,7 +143,7 @@ static bool isTypeKeyword(const std::string& name) {
         // Other primitives
         "bool", "string", "void", "NIL", "obj", "dyn",
         // Collections
-        "array", "map", "result", "option"
+        "array", "map", "Result", "option"
     };
     return typeKeywords.count(name) > 0;
 }
@@ -268,29 +268,122 @@ Type* TypeChecker::inferType(ASTNode* expr) {
 }
 
 // ============================================================================
+// Type Suffix to Type System Name Mapping
+// ============================================================================
+
+// Convert type suffix (u32, i64, f32, etc.) to type system name (uint32, int64, flt32, etc.)
+static std::string typeSuffixToSystemName(const std::string& suffix) {
+    // unsigned integers: u8 -> uint8, u16 -> uint16, etc.
+    if (suffix[0] == 'u' && suffix.length() >= 2) {
+        return "uint" + suffix.substr(1);
+    }
+    // signed integers: i8 -> int8, i16 -> int16, etc.
+    if (suffix[0] == 'i' && suffix.length() >= 2) {
+        return "int" + suffix.substr(1);
+    }
+    // floats: f32 -> flt32, f64 -> flt64, etc.
+    if (suffix[0] == 'f' && suffix.length() >= 2) {
+        return "flt" + suffix.substr(1);
+    }
+    // TBB types: tbb8, tbb16, tbb32, tbb64 (already correct)
+    if (suffix.substr(0, 3) == "tbb") {
+        return suffix;
+    }
+    // fixed-point: fix32, fix64, fix128, fix256 (already correct)
+    if (suffix.substr(0, 3) == "fix") {
+        return suffix;
+    }
+    // exotic balanced types: trit, tryte, nit, nyte (already correct)
+    if (suffix == "trit" || suffix == "tryte" || suffix == "nit" || suffix == "nyte") {
+        return suffix;
+    }
+    
+    // Unknown suffix - return as-is and let type system handle error
+    return suffix;
+}
+
+// ============================================================================
+// Range Validation for Untyped Literals (Fits-or-Fails)
+// ============================================================================
+
+// Check if integer value fits in target type without loss
+// Returns true if value fits, false otherwise
+static bool integerFitsInType(int64_t value, const std::string& type_name) {
+    // Signed integer types
+    if (type_name == "int8")    return value >= -128 && value <= 127;
+    if (type_name == "int16")   return value >= -32768 && value <= 32767;
+    if (type_name == "int32")   return value >= -2147483648LL && value <= 2147483647LL;
+    if (type_name == "int64")   return true;  // Always fits
+    // For int128+, we can't represent in int64, so we allow it (validation happens at compile-time)
+    if (type_name == "int128" || type_name == "int256" || 
+        type_name == "int512" || type_name == "int1024" ||
+        type_name == "int2048" || type_name == "int4096") {
+        return true;  // If it fits in int64, it fits in larger types
+    }
+    
+    // Unsigned integer types  
+    if (type_name == "uint8")   return value >= 0 && value <= 255;
+    if (type_name == "uint16")  return value >= 0 && value <= 65535;
+    if (type_name == "uint32")  return value >= 0 && value <= 4294967295LL;
+    if (type_name == "uint64")  return value >= 0;  // Always fits if non-negative
+    // For uint128+, same logic as signed
+    if (type_name == "uint128" || type_name == "uint256" || 
+        type_name == "uint512" || type_name == "uint1024" ||
+        type_name == "uint2048" || type_name == "uint4096") {
+        return value >= 0;  // Must be non-negative
+    }
+    
+    // TBB types (similar to signed)
+    if (type_name == "tbb8")    return value >= -128 && value <= 127;
+    if (type_name == "tbb16")   return value >= -32768 && value <= 32767;
+    if (type_name == "tbb32")   return value >= -2147483648LL && value <= 2147483647LL;
+    if (type_name == "tbb64")   return true;  // Always fits
+    
+    // Unknown type - be conservative and reject
+    return false;
+}
+
+// ============================================================================
 // Literal Type Inference
 // ============================================================================
 
 Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
+    // ========================================================================
+    // PHASE 3: ZERO IMPLICIT CONVERSION - Use Explicit Type
+    // ========================================================================
+    // If literal has explicit type suffix (u32, i64, f32, etc.), use it DIRECTLY
+    // NO inference, NO guessing - type is EXPLICIT from source code
+    
+    if (!expr->explicit_type.empty()) {
+        // Convert type suffix to type system name
+        std::string type_name = typeSuffixToSystemName(expr->explicit_type);
+        
+        // Get type from type system
+        Type* explicit_type = typeSystem->getPrimitiveType(type_name);
+        
+        // Validate type exists
+        if (!explicit_type || explicit_type == typeSystem->getErrorType()) {
+            addError("Unknown type '" + expr->explicit_type + "' in literal", expr);
+            return typeSystem->getErrorType();
+        }
+        
+        return explicit_type;
+    }
+    
+    // ========================================================================
+    // UNTYPED LITERALS: Return "unknown" type for context resolution
+    // ========================================================================
+    // NOTE: Type checker will validate range when target type is known
+    // This enables "fits-or-fails" behavior:
+    //   int8:a = 42;     ✅ OK: 42 fits in int8
+    //   int8:b = 200;    ❌ ERROR: doesn't fit
+    //   print(42);       ❌ ERROR: ambiguous context
+    
     // Check if this is a high-precision literal (has raw string)
     if (expr->hasRawValue()) {
         // High-precision literal - type will be determined by context
-        // For now, return the default types (flt64/int64)
-        // The actual conversion will happen in VAR_DECL when we know the target type
-        
-        // Determine if it's a float or integer based on the raw string
-        const std::string& raw = expr->getRawValue();
-        bool is_float = (raw.find('.') != std::string::npos || 
-                        raw.find('e') != std::string::npos ||
-                        raw.find('E') != std::string::npos);
-        
-        if (is_float) {
-            // Default to flt64, but can be coerced to flt32/flt128 in context
-            return typeSystem->getPrimitiveType("flt64");
-        } else {
-            // Default to int64, but can be coerced to int128/256/512 in context
-            return typeSystem->getPrimitiveType("int64");
-        }
+        // Return unknown type so type checker validates range when assigned
+        return typeSystem->getUnknownType();
     }
     
     // Use std::visit to handle variant (standard literals without raw strings)
@@ -298,22 +391,21 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
         using T = std::decay_t<decltype(arg)>;
         
         if constexpr (std::is_same_v<T, int64_t>) {
-            // Integer literal: default to int64
-            return typeSystem->getPrimitiveType("int64");
+            // Untyped integer literal: return unknown for context inference
+            return typeSystem->getUnknownType();
         }
         else if constexpr (std::is_same_v<T, double>) {
-            // Float literal: default to flt64 (double precision)
-            return typeSystem->getPrimitiveType("flt64");
+            // Untyped float literal: return unknown for context inference
+            return typeSystem->getUnknownType();
         }
         else if constexpr (std::is_same_v<T, std::string>) {
             // Check if this is the special ERR literal
             if (arg == "ERR") {
                 // ERR literal: represents TBB error sentinel
                 // Type will be resolved from context (tbb8/tbb16/tbb32/tbb64)
-                // For now, return unknown type to be resolved contextually
                 return typeSystem->getUnknownType();
             }
-            // Regular string literal
+            // Regular string literal - type is always "string"
             return typeSystem->getPrimitiveType("string");
         }
         else if constexpr (std::is_same_v<T, bool>) {
@@ -529,10 +621,14 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         
         bool leftIsNumeric = (leftName.find("int") == 0 || leftName.find("uint") == 0 ||
                              leftName.find("flt") == 0 || leftName.find("tbb") == 0 ||
+                             leftName.find("frac") == 0 || leftName.find("tfp") == 0 ||
+                             leftName == "vec9" || leftName == "dvec9" ||
                              leftName == "trit" || leftName == "tryte" ||
                              leftName == "nit" || leftName == "nyte");
         bool rightIsNumeric = (rightName.find("int") == 0 || rightName.find("uint") == 0 ||
                               rightName.find("flt") == 0 || rightName.find("tbb") == 0 ||
+                              rightName.find("frac") == 0 || rightName.find("tfp") == 0 ||
+                              rightName == "vec9" || rightName == "dvec9" ||
                               rightName == "trit" || rightName == "tryte" ||
                               rightName == "nit" || rightName == "nyte");
         
@@ -749,7 +845,9 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
         
         const std::string& name = primType->getName();
         bool isNumeric = (name.find("int") == 0 || name.find("flt") == 0 || name.find("tbb") == 0 ||
-                         name == "trit" || name == "tryte" || name == "nit" || name == "nyte");
+                         name == "trit" || name == "tryte" || name == "nit" || name == "nyte" ||
+                         name.find("frac") == 0 || name.find("tfp") == 0 ||
+                         name == "vec9" || name == "dvec9");
         
         if (!isNumeric) {
             addError("Unary minus requires numeric type, got '" + name + "'", 0, 0);
@@ -820,6 +918,21 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
     }
     
     // ========================================================================
+    // Dereference (blueprint style): value <- ptr
+    // ========================================================================
+    if (op == TokenType::TOKEN_LEFT_ARROW) {
+        // Dereference a pointer to get the value
+        // <-ptr where ptr: int32-> → result type: int32
+        // The arrow shows data flow: value FROM pointer
+        if (!operandType->isPointer()) {
+            addError("Dereference operator (<-) requires pointer type", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        // Return the pointed-to type
+        return static_cast<PointerType*>(operandType)->getPointeeType();
+    }
+    
+    // ========================================================================
     // Unwrap: ?
     // ========================================================================
     if (op == TokenType::TOKEN_QUESTION) {
@@ -872,21 +985,78 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
     // Check for namespace-qualified static method calls: Type.method()
     // Example: string.from_char(65) -> resolves to builtin string_from_char
     // Also handles UFCS instance method calls: obj.method() -> Type_method(obj)
+    // AND module function calls: module.function()
     if (expr->callee->type == ASTNode::NodeType::MEMBER_ACCESS) {
         MemberAccessExpr* memberExpr = static_cast<MemberAccessExpr*>(expr->callee.get());
 
-        // Check if the object is an identifier (type name or variable)
+        // Check if the object is an identifier (type name, module, or variable)
         if (memberExpr->object->type == ASTNode::NodeType::IDENTIFIER) {
             IdentifierExpr* identExpr = static_cast<IdentifierExpr*>(memberExpr->object.get());
             std::string name = identExpr->name;
             std::string methodName = memberExpr->member;
 
+            // First check if this is a MODULE symbol
+            Symbol* baseSymbol = symbolTable->resolveSymbol(name);
+            if (baseSymbol && baseSymbol->isModule()) {
+                Module* module = baseSymbol->getModuleRef();
+                if (!module) {
+                    addError("Module '" + name + "' has invalid module reference", expr);
+                    return typeSystem->getErrorType();
+                }
+
+                // Look up function in module exports
+                const auto& exports = module->getExports();
+                auto it = exports.find(methodName);
+                if (it == exports.end()) {
+                    addError("Module '" + name + "' has no exported function '" + methodName + "'", expr);
+                    return typeSystem->getErrorType();
+                }
+
+                Symbol* funcSymbol = it->second.symbol;
+                if (!funcSymbol || !funcSymbol->type) {
+                    addError("Invalid function symbol in module exports", expr);
+                    return typeSystem->getErrorType();
+                }
+
+                // Verify it's actually a function
+                if (funcSymbol->type->getKind() != TypeKind::FUNCTION) {
+                    addError("'" + methodName + "' in module '" + name + "' is not a function", expr);
+                    return typeSystem->getErrorType();
+                }
+
+                FunctionType* funcType = static_cast<FunctionType*>(funcSymbol->type);
+
+                // Check argument count
+                if (expr->arguments.size() != funcType->getParamTypes().size()) {
+                    std::ostringstream oss;
+                    oss << "Function '" + methodName + "' expects " 
+                        << funcType->getParamTypes().size() << " arguments, got " 
+                        << expr->arguments.size();
+                    addError(oss.str(), expr);
+                    return typeSystem->getErrorType();
+                }
+
+                // Type check arguments (basic type checking)
+                const auto& paramTypes = funcType->getParamTypes();
+                for (size_t i = 0; i < expr->arguments.size(); ++i) {
+                    Type* argType = inferType(expr->arguments[i].get());
+                    // Check for error type
+                    if (argType->getKind() == TypeKind::ERROR) {
+                        return typeSystem->getErrorType();
+                    }
+                    // TODO: Add proper type compatibility checking
+                    // For now, just ensure no error types pass through
+                }
+
+                // Return the function's return type
+                return funcType->getReturnType();
+            }
+
             // Check if this is a type name (static method call) or a variable (UFCS)
             // Type keywords: string, int64, array, etc.
             // Also check if it's a user-defined type (struct name)
-            Symbol* typeSymbol = symbolTable->resolveSymbol(name);
             bool isTypeName = isTypeKeyword(name) ||
-                              (typeSymbol && typeSymbol->kind == SymbolKind::TYPE);
+                              (baseSymbol && baseSymbol->kind == SymbolKind::TYPE);
 
             if (isTypeName) {
                 // Static method call: Type.method() -> Type_method()
@@ -940,6 +1110,216 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
     // Check for builtin functions first
     if (expr->callee->type == ASTNode::NodeType::IDENTIFIER) {
         IdentifierExpr* idExpr = static_cast<IdentifierExpr*>(expr->callee.get());
+        
+        // ====================================================================
+        // COMPILER INTRINSICS - Compile-Time Reflection
+        // ====================================================================
+        
+        // @sizeof(type) -> int64 - Returns size of type in bytes
+        if (idExpr->name == "@sizeof" || idExpr->name == "sizeof") {
+            if (expr->arguments.size() != 1) {
+                addError("@sizeof() requires exactly one argument (type or expression)", expr);
+                return typeSystem->getErrorType();
+            }
+            // For now, just return int64 - actual value computed at compile time
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // @alignof(type) -> int64 - Returns alignment requirement in bytes
+        if (idExpr->name == "@alignof" || idExpr->name == "alignof") {
+            if (expr->arguments.size() != 1) {
+                addError("@alignof() requires exactly one argument (type)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // @typeof(expr) -> type - Returns type of expression
+        if (idExpr->name == "@typeof" || idExpr->name == "typeof") {
+            if (expr->arguments.size() != 1) {
+                addError("@typeof() requires exactly one argument (expression)", expr);
+                return typeSystem->getErrorType();
+            }
+            // Returns the type itself (for metaprogramming)
+            Type* argType = inferType(expr->arguments[0].get());
+            return argType;
+        }
+        
+        // @offsetof(type, field) -> int64 - Returns byte offset of field in struct
+        if (idExpr->name == "@offsetof" || idExpr->name == "offsetof") {
+            if (expr->arguments.size() != 2) {
+                addError("@offsetof() requires exactly two arguments (type, field_name)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // ====================================================================
+        // COMPILER HINTS - Branch Prediction & Performance
+        // ====================================================================
+        
+        // @likely(bool) -> bool - Hints that condition is usually true
+        if (idExpr->name == "@likely" || idExpr->name == "likely") {
+            if (expr->arguments.size() != 1) {
+                addError("@likely() requires exactly one argument (bool condition)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // @unlikely(bool) -> bool - Hints that condition is usually false
+        if (idExpr->name == "@unlikely" || idExpr->name == "unlikely") {
+            if (expr->arguments.size() != 1) {
+                addError("@unlikely() requires exactly one argument (bool condition)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // @prefetch(ptr) -> void - Prefetch data into cache
+        if (idExpr->name == "@prefetch" || idExpr->name == "prefetch") {
+            if (expr->arguments.size() != 1) {
+                addError("@prefetch() requires exactly one argument (pointer)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("void");
+        }
+        
+        // ====================================================================
+        // DEBUG & ASSERTIONS
+        // ====================================================================
+        
+        // @assert(condition) -> void - Runtime assertion
+        if (idExpr->name == "@assert" || idExpr->name == "assert") {
+            if (expr->arguments.size() < 1 || expr->arguments.size() > 2) {
+                addError("@assert() requires 1-2 arguments (condition, optional message)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* condType = inferType(expr->arguments[0].get());
+            if (condType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("void");
+        }
+        
+        // @unreachable() -> never - Marks code path as impossible
+        if (idExpr->name == "@unreachable" || idExpr->name == "unreachable") {
+            if (expr->arguments.size() != 0) {
+                addError("@unreachable() takes no arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            // Returns void for now (in full impl would be 'never' type)
+            return typeSystem->getPrimitiveType("void");
+        }
+        
+        // @breakpoint() -> void - Insert debugger breakpoint
+        if (idExpr->name == "@breakpoint" || idExpr->name == "breakpoint") {
+            if (expr->arguments.size() != 0) {
+                addError("@breakpoint() takes no arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("void");
+        }
+        
+        // @trap() -> never - Trigger intentional trap/abort
+        if (idExpr->name == "@trap" || idExpr->name == "trap") {
+            if (expr->arguments.size() != 0) {
+                addError("@trap() takes no arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("void");
+        }
+        
+        // ====================================================================
+        // BIT MANIPULATION INTRINSICS
+        // ====================================================================
+        
+        // @bswap16/32/64(value) -> same - Byte swap
+        if (idExpr->name == "@bswap16" || idExpr->name == "bswap16") {
+            if (expr->arguments.size() != 1) {
+                addError("@bswap16() requires exactly one argument (int16)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int16");
+        }
+        if (idExpr->name == "@bswap32" || idExpr->name == "bswap32") {
+            if (expr->arguments.size() != 1) {
+                addError("@bswap32() requires exactly one argument (int32)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        if (idExpr->name == "@bswap64" || idExpr->name == "bswap64") {
+            if (expr->arguments.size() != 1) {
+                addError("@bswap64() requires exactly one argument (int64)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // @clz32/64(value) -> int32 - Count leading zeros
+        if (idExpr->name == "@clz32" || idExpr->name == "clz32") {
+            if (expr->arguments.size() != 1) {
+                addError("@clz32() requires exactly one argument (int32)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        if (idExpr->name == "@clz64" || idExpr->name == "clz64") {
+            if (expr->arguments.size() != 1) {
+                addError("@clz64() requires exactly one argument (int64)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        // @ctz32/64(value) -> int32 - Count trailing zeros
+        if (idExpr->name == "@ctz32" || idExpr->name == "ctz32") {
+            if (expr->arguments.size() != 1) {
+                addError("@ctz32() requires exactly one argument (int32)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        if (idExpr->name == "@ctz64" || idExpr->name == "ctz64") {
+            if (expr->arguments.size() != 1) {
+                addError("@ctz64() requires exactly one argument (int64)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        // @popcount32/64(value) -> int32 - Count set bits
+        if (idExpr->name == "@popcount32" || idExpr->name == "popcount32") {
+            if (expr->arguments.size() != 1) {
+                addError("@popcount32() requires exactly one argument (int32)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        if (idExpr->name == "@popcount64" || idExpr->name == "popcount64") {
+            if (expr->arguments.size() != 1) {
+                addError("@popcount64() requires exactly one argument (int64)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        // ====================================================================
+        // STANDARD I/O BUILTINS
+        // ====================================================================
         
         // Builtin: print() - accepts any single argument, returns void
         if (idExpr->name == "print") {
@@ -1254,7 +1634,75 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             }
             return typeSystem->getPrimitiveType("int64");
         }
-        
+
+        // ====================================================================
+        // WILD MEMORY BUILTINS (Phase 2.2 - Manual Memory Management)
+        // ====================================================================
+        // These are the primitive wild memory operations that the borrow checker
+        // tracks via the ALLOCATED/FREED/MAY_FREED state machine.
+        //
+        // Usage:
+        //   wild int8@:ptr = alloc(1024);  // Allocate 1024 bytes
+        //   defer free(ptr);                // Must be freed before scope exit
+        //
+        // For typed allocation, use sizeof:
+        //   wild int64@:array = alloc(sizeof<int64>() * count);
+
+        // Builtin: alloc(size: int64) -> wild int8@
+        // Allocates 'size' bytes of wild (manual) memory
+        if (idExpr->name == "alloc") {
+            if (expr->arguments.size() != 1) {
+                addError("alloc() requires exactly one argument (size in bytes)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Return wild int8@ (generic byte pointer)
+            // The borrow checker will track this as ALLOCATED state
+            return typeSystem->getPointerType(typeSystem->getPrimitiveType("int8"));
+        }
+
+        // Builtin: free(ptr: wild any@) -> void
+        // Frees a wild pointer allocated by alloc()
+        if (idExpr->name == "free") {
+            if (expr->arguments.size() != 1) {
+                addError("free() requires exactly one argument (pointer to free)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Check that argument is a pointer type
+            if (argType->getKind() != TypeKind::POINTER) {
+                addError("free() requires a pointer argument, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            // The borrow checker will transition this to FREED state
+            return typeSystem->getPrimitiveType("void");
+        }
+
+        // Builtin: realloc(ptr: wild any@, new_size: int64) -> wild int8@
+        // Reallocates a wild pointer to a new size
+        if (idExpr->name == "realloc") {
+            if (expr->arguments.size() != 2) {
+                addError("realloc() requires exactly two arguments (ptr, new_size)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* ptrType = inferType(expr->arguments[0].get());
+            Type* sizeType = inferType(expr->arguments[1].get());
+            if (ptrType->getKind() == TypeKind::ERROR || sizeType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (ptrType->getKind() != TypeKind::POINTER) {
+                addError("realloc() first argument must be a pointer, got '" + ptrType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPointerType(typeSystem->getPrimitiveType("int8"));
+        }
+
         // ====================================================================
         // STRING LIBRARY BUILTINS (Phase 4.3)
         // ====================================================================
@@ -1578,6 +2026,20 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             if (argType->getKind() == TypeKind::ERROR) {
                 return typeSystem->getErrorType();
             }
+            // ARIA-023: Compile-time validation of TBB sentinel values
+            // tbb64 valid range: [INT64_MIN+1, INT64_MAX], sentinel: INT64_MIN
+            ASTNode* arg = expr->arguments[0].get();
+            if (arg->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* lit = static_cast<LiteralExpr*>(arg);
+                if (std::holds_alternative<int64_t>(lit->value)) {
+                    int64_t val = std::get<int64_t>(lit->value);
+                    constexpr int64_t TBB64_SENTINEL = INT64_MIN;
+                    if (val == TBB64_SENTINEL) {
+                        addError("tbb64_from_int() cannot construct sentinel value (TBB64_ERR). Use tbb64_div(x, 0) to generate error state.", expr);
+                        return typeSystem->getErrorType();
+                    }
+                }
+            }
             return typeSystem->getPrimitiveType("tbb64");
         }
 
@@ -1616,6 +2078,25 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             Type* argType = inferType(expr->arguments[0].get());
             if (argType->getKind() == TypeKind::ERROR) {
                 return typeSystem->getErrorType();
+            }
+            // ARIA-023: Compile-time validation of TBB sentinel values
+            // tbb32 valid range: [-2147483647, 2147483647], sentinel: -2147483648
+            ASTNode* arg = expr->arguments[0].get();
+            if (arg->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* lit = static_cast<LiteralExpr*>(arg);
+                if (std::holds_alternative<int64_t>(lit->value)) {
+                    int64_t val = std::get<int64_t>(lit->value);
+                    constexpr int64_t TBB32_SENTINEL = -2147483648LL;
+                    constexpr int64_t TBB32_MAX = 2147483647LL;
+                    if (val == TBB32_SENTINEL) {
+                        addError("tbb32_from_int() cannot construct sentinel value -2147483648 (TBB32_ERR). Use tbb32_div(x, 0) to generate error state.", expr);
+                        return typeSystem->getErrorType();
+                    }
+                    if (val < TBB32_SENTINEL || val > TBB32_MAX) {
+                        addError("tbb32_from_int() value " + std::to_string(val) + " out of valid range [-2147483647, 2147483647]", expr);
+                        return typeSystem->getErrorType();
+                    }
+                }
             }
             return typeSystem->getPrimitiveType("tbb32");
         }
@@ -1656,6 +2137,25 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             if (argType->getKind() == TypeKind::ERROR) {
                 return typeSystem->getErrorType();
             }
+            // ARIA-023: Compile-time validation of TBB sentinel values
+            // tbb16 valid range: [-32767, 32767], sentinel: -32768
+            ASTNode* arg = expr->arguments[0].get();
+            if (arg->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* lit = static_cast<LiteralExpr*>(arg);
+                if (std::holds_alternative<int64_t>(lit->value)) {
+                    int64_t val = std::get<int64_t>(lit->value);
+                    constexpr int64_t TBB16_SENTINEL = -32768;
+                    constexpr int64_t TBB16_MAX = 32767;
+                    if (val == TBB16_SENTINEL) {
+                        addError("tbb16_from_int() cannot construct sentinel value -32768 (TBB16_ERR). Use tbb16_div(x, 0) to generate error state.", expr);
+                        return typeSystem->getErrorType();
+                    }
+                    if (val < TBB16_SENTINEL || val > TBB16_MAX) {
+                        addError("tbb16_from_int() value " + std::to_string(val) + " out of valid range [-32767, 32767]", expr);
+                        return typeSystem->getErrorType();
+                    }
+                }
+            }
             return typeSystem->getPrimitiveType("tbb16");
         }
 
@@ -1695,6 +2195,40 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             if (argType->getKind() == TypeKind::ERROR) {
                 return typeSystem->getErrorType();
             }
+            // ARIA-023: Compile-time validation of TBB sentinel values
+            // tbb8 valid range: [-127, 127], sentinel: -128
+            ASTNode* arg = expr->arguments[0].get();
+            std::optional<int64_t> constVal;
+            // Check for direct literal
+            if (arg->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* lit = static_cast<LiteralExpr*>(arg);
+                if (std::holds_alternative<int64_t>(lit->value)) {
+                    constVal = std::get<int64_t>(lit->value);
+                }
+            }
+            // Check for unary minus with literal (e.g., -128)
+            else if (arg->type == ASTNode::NodeType::UNARY_OP) {
+                UnaryExpr* unary = static_cast<UnaryExpr*>(arg);
+                if (unary->op.type == frontend::TokenType::TOKEN_MINUS && unary->operand) {
+                    if (unary->operand->type == ASTNode::NodeType::LITERAL) {
+                        LiteralExpr* lit = static_cast<LiteralExpr*>(unary->operand.get());
+                        if (std::holds_alternative<int64_t>(lit->value)) {
+                            constVal = -std::get<int64_t>(lit->value);
+                        }
+                    }
+                }
+            }
+            if (constVal.has_value()) {
+                int64_t val = constVal.value();
+                if (val == -128) {
+                    addError("tbb8_from_int() cannot construct sentinel value -128 (TBB8_ERR). Use tbb8_div(x, 0) to generate error state.", expr);
+                    return typeSystem->getErrorType();
+                }
+                if (val < -127 || val > 127) {
+                    addError("tbb8_from_int() value " + std::to_string(val) + " out of valid range [-127, 127]", expr);
+                    return typeSystem->getErrorType();
+                }
+            }
             return typeSystem->getPrimitiveType("tbb8");
         }
 
@@ -1722,6 +2256,361 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 return typeSystem->getErrorType();
             }
             return typeSystem->getPrimitiveType("int8");
+        }
+
+        // ====================================================================
+        // TBB WIDENING INTRINSICS (ARIA-018: Sentinel-Preserving Widening)
+        // ====================================================================
+        // Standard sign extension would heal ERR sentinel:
+        //   tbb8(-128) → sext → tbb16(-128) [VALID in tbb16, not ERR!]
+        // These intrinsics preserve the ERR state across widening operations
+        
+        // tbb16_from_tbb8(tbb8) -> tbb16
+        if (idExpr->name == "tbb16_from_tbb8") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb16_from_tbb8() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->toString() != "tbb8") {
+                addError("tbb16_from_tbb8() requires tbb8 argument, got " + argType->toString(), expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb16");
+        }
+        
+        // tbb32_from_tbb8(tbb8) -> tbb32
+        if (idExpr->name == "tbb32_from_tbb8") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb32_from_tbb8() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->toString() != "tbb8") {
+                addError("tbb32_from_tbb8() requires tbb8 argument, got " + argType->toString(), expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+        
+        // tbb32_from_tbb16(tbb16) -> tbb32
+        if (idExpr->name == "tbb32_from_tbb16") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb32_from_tbb16() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->toString() != "tbb16") {
+                addError("tbb32_from_tbb16() requires tbb16 argument, got " + argType->toString(), expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+        
+        // tbb64_from_tbb8(tbb8) -> tbb64
+        if (idExpr->name == "tbb64_from_tbb8") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb64_from_tbb8() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->toString() != "tbb8") {
+                addError("tbb64_from_tbb8() requires tbb8 argument, got " + argType->toString(), expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb64");
+        }
+        
+        // tbb64_from_tbb16(tbb16) -> tbb64
+        if (idExpr->name == "tbb64_from_tbb16") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb64_from_tbb16() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->toString() != "tbb16") {
+                addError("tbb64_from_tbb16() requires tbb16 argument, got " + argType->toString(), expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb64");
+        }
+        
+        // tbb64_from_tbb32(tbb32) -> tbb64
+        if (idExpr->name == "tbb64_from_tbb32") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb64_from_tbb32() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->toString() != "tbb32") {
+                addError("tbb64_from_tbb32() requires tbb32 argument, got " + argType->toString(), expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb64");
+        }
+
+        // ====================================================================
+        // NUMERIC TYPE CONSTRUCTORS (Session 2: frac, tfp, vec9, tmatrix, ttensor)
+        // ====================================================================
+        
+        // Fraction constructors: make_frac8, make_frac16, make_frac32, make_frac64
+        if (idExpr->name == "make_frac8" || idExpr->name == "make_frac16" ||
+            idExpr->name == "make_frac32" || idExpr->name == "make_frac64") {
+            if (expr->arguments.size() != 3) {
+                addError(idExpr->name + "() requires exactly 3 arguments (whole, numerator, denominator)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Type check arguments
+            for (const auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+            }
+            
+            // Return the appropriate frac type
+            std::string typeName = idExpr->name.substr(5);  // Remove "make_" prefix
+            return typeSystem->getPrimitiveType(typeName);
+        }
+        
+        // Tri-state floating point constructors: make_tfp32, make_tfp64
+        if (idExpr->name == "make_tfp32" || idExpr->name == "make_tfp64") {
+            if (expr->arguments.size() != 2) {
+                addError(idExpr->name + "() requires exactly 2 arguments (exponent, mantissa)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Type check arguments
+            for (const auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+            }
+            
+            // Return the appropriate tfp type
+            std::string typeName = idExpr->name.substr(5);  // Remove "make_" prefix
+            return typeSystem->getPrimitiveType(typeName);
+        }
+        
+        // Vector constructor: make_vec9
+        if (idExpr->name == "make_vec9") {
+            if (expr->arguments.size() != 9) {
+                addError("make_vec9() requires exactly 9 arguments (9 int32 elements)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Type check arguments
+            for (const auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+            }
+            
+            // Return vec9 (TBB-inspired vector struct, not dvec9 float vector)
+            return typeSystem->getPrimitiveType("vec9");
+        }
+        
+        // vec9 operations
+        if (idExpr->name == "vec9_add" || idExpr->name == "vec9_sub") {
+            if (expr->arguments.size() != 2) {
+                addError(idExpr->name + "() requires exactly 2 vec9 arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Type check arguments - both must be vec9
+            for (const auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+                // Check if argument is vec9
+                if (PrimitiveType* primType = dynamic_cast<PrimitiveType*>(argType)) {
+                    if (primType->getName() != "vec9") {
+                        addError(idExpr->name + "() requires vec9 arguments", expr);
+                        return typeSystem->getErrorType();
+                    }
+                } else {
+                    addError(idExpr->name + "() requires vec9 arguments", expr);
+                    return typeSystem->getErrorType();
+                }
+            }
+            
+            // Return vec9
+            return typeSystem->getPrimitiveType("vec9");
+        }
+        
+        if (idExpr->name == "vec9_scale") {
+            if (expr->arguments.size() != 2) {
+                addError("vec9_scale() requires exactly 2 arguments (vec9, int32)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Check first argument is vec9
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            if (arg1Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (PrimitiveType* primType = dynamic_cast<PrimitiveType*>(arg1Type)) {
+                if (primType->getName() != "vec9") {
+                    addError("vec9_scale() first argument must be vec9", expr);
+                    return typeSystem->getErrorType();
+                }
+            } else {
+                addError("vec9_scale() first argument must be vec9", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Check second argument is int32
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            if (arg2Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            // Return vec9
+            return typeSystem->getPrimitiveType("vec9");
+        }
+        
+        if (idExpr->name == "vec9_dot") {
+            if (expr->arguments.size() != 2) {
+                addError("vec9_dot() requires exactly 2 vec9 arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Type check arguments - both must be vec9
+            for (const auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+                // Check if argument is vec9
+                if (PrimitiveType* primType = dynamic_cast<PrimitiveType*>(argType)) {
+                    if (primType->getName() != "vec9") {
+                        addError("vec9_dot() requires vec9 arguments", expr);
+                        return typeSystem->getErrorType();
+                    }
+                } else {
+                    addError("vec9_dot() requires vec9 arguments", expr);
+                    return typeSystem->getErrorType();
+                }
+            }
+            
+            // Return int32 (dot product is scalar)
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        // Tensor matrix constructor: make_tmatrix
+        if (idExpr->name == "make_tmatrix") {
+            if (expr->arguments.size() != 4) {
+                addError("make_tmatrix() requires exactly 4 arguments (rows, cols, rank, data)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Type check arguments
+            for (const auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+            }
+            
+            return typeSystem->getPrimitiveType("tmatrix");
+        }
+        
+        // Tensor constructor: make_ttensor
+        if (idExpr->name == "make_ttensor") {
+            if (expr->arguments.size() != 11) {
+                addError("make_ttensor() requires exactly 11 arguments (9 shape dims + rank + data)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Type check arguments
+            for (const auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+            }
+            
+            return typeSystem->getPrimitiveType("ttensor");
+        }
+
+        // ====================================================================
+        // ARIA-018: TBB SENTINEL-PRESERVING WIDENING
+        // ====================================================================
+
+        // tbb_widen_8_to_16(tbb8) -> tbb16
+        if (idExpr->name == "tbb_widen_8_to_16") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb_widen_8_to_16() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb16");
+        }
+
+        // tbb_widen_8_to_32(tbb8) -> tbb32
+        if (idExpr->name == "tbb_widen_8_to_32") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb_widen_8_to_32() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+
+        // tbb_widen_8_to_64(tbb8) -> tbb64
+        if (idExpr->name == "tbb_widen_8_to_64") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb_widen_8_to_64() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb64");
+        }
+
+        // tbb_widen_16_to_32(tbb16) -> tbb32
+        if (idExpr->name == "tbb_widen_16_to_32") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb_widen_16_to_32() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+
+        // tbb_widen_16_to_64(tbb16) -> tbb64
+        if (idExpr->name == "tbb_widen_16_to_64") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb_widen_16_to_64() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb64");
+        }
+
+        // tbb_widen_32_to_64(tbb32) -> tbb64
+        if (idExpr->name == "tbb_widen_32_to_64") {
+            if (expr->arguments.size() != 1) {
+                addError("tbb_widen_32_to_64() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tbb64");
         }
 
         // ====================================================================
@@ -1942,6 +2831,249 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 return typeSystem->getErrorType();
             }
             return typeSystem->getPrimitiveType("tbb8");
+        }
+
+        // ====================================================================
+        // EXOTIC TYPE CONSTRUCTORS (LBIM, Fixed Point, Fractional)
+        // ====================================================================
+        
+        // uint1024_from_int(int64) -> uint1024
+        if (idExpr->name == "uint1024_from_int") {
+            if (expr->arguments.size() != 1) {
+                addError("uint1024_from_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("uint1024");
+        }
+        
+        // int1024_from_int(int64) -> int1024
+        if (idExpr->name == "int1024_from_int") {
+            if (expr->arguments.size() != 1) {
+                addError("int1024_from_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int1024");
+        }
+        
+        // fix256_from_int(int64) -> fix256
+        if (idExpr->name == "fix256_from_int") {
+            if (expr->arguments.size() != 1) {
+                addError("fix256_from_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("fix256");
+        }
+        
+        // fix256_from_float(flt64) -> fix256
+        if (idExpr->name == "fix256_from_float") {
+            if (expr->arguments.size() != 1) {
+                addError("fix256_from_float() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("fix256");
+        }
+        
+        // trit_from_int(int64) -> trit (balanced ternary: -1, 0, 1)
+        if (idExpr->name == "trit_from_int") {
+            if (expr->arguments.size() != 1) {
+                addError("trit_from_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Validate range at compile time if possible
+            ASTNode* arg = expr->arguments[0].get();
+            if (arg->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* lit = static_cast<LiteralExpr*>(arg);
+                if (std::holds_alternative<int64_t>(lit->value)) {
+                    int64_t val = std::get<int64_t>(lit->value);
+                    if (val < -1 || val > 1) {
+                        addError("trit_from_int() value " + std::to_string(val) + " out of range [-1, 1]", expr);
+                        return typeSystem->getErrorType();
+                    }
+                }
+            }
+            return typeSystem->getPrimitiveType("trit");
+        }
+        
+        // nit_from_int(int64) -> nit (balanced nonary: -4 to +4)
+        if (idExpr->name == "nit_from_int") {
+            if (expr->arguments.size() != 1) {
+                addError("nit_from_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Validate range at compile time if possible
+            ASTNode* arg = expr->arguments[0].get();
+            if (arg->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* lit = static_cast<LiteralExpr*>(arg);
+                if (std::holds_alternative<int64_t>(lit->value)) {
+                    int64_t val = std::get<int64_t>(lit->value);
+                    if (val < -4 || val > 4) {
+                        addError("nit_from_int() value " + std::to_string(val) + " out of range [-4, 4]", expr);
+                        return typeSystem->getErrorType();
+                    }
+                }
+            }
+            return typeSystem->getPrimitiveType("nit");
+        }
+        
+        // tryte_from_int(int64) -> tryte (10 balanced ternary digits packed in uint16)
+        if (idExpr->name == "tryte_from_int") {
+            if (expr->arguments.size() != 1) {
+                addError("tryte_from_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Validate range: 3^10 = 59049, balanced: -29524 to +29524
+            ASTNode* arg = expr->arguments[0].get();
+            if (arg->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* lit = static_cast<LiteralExpr*>(arg);
+                if (std::holds_alternative<int64_t>(lit->value)) {
+                    int64_t val = std::get<int64_t>(lit->value);
+                    if (val < -29524 || val > 29524) {
+                        addError("tryte_from_int() value " + std::to_string(val) + " out of range [-29524, 29524]", expr);
+                        return typeSystem->getErrorType();
+                    }
+                }
+            }
+            return typeSystem->getPrimitiveType("tryte");
+        }
+        
+        // nyte_from_int(int64) -> nyte (5 balanced nonary digits packed in uint16)
+        if (idExpr->name == "nyte_from_int") {
+            if (expr->arguments.size() != 1) {
+                addError("nyte_from_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Validate range: 9^5 = 59049, balanced: -29524 to +29524
+            ASTNode* arg = expr->arguments[0].get();
+            if (arg->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* lit = static_cast<LiteralExpr*>(arg);
+                if (std::holds_alternative<int64_t>(lit->value)) {
+                    int64_t val = std::get<int64_t>(lit->value);
+                    if (val < -29524 || val > 29524) {
+                        addError("nyte_from_int() value " + std::to_string(val) + " out of range [-29524, 29524]", expr);
+                        return typeSystem->getErrorType();
+                    }
+                }
+            }
+            return typeSystem->getPrimitiveType("nyte");
+        }
+        
+        // ====================================================================
+        // INTEGER CONVERSION BUILTINS
+        // ====================================================================
+        
+        // int8_from_int64(int64) -> int8
+        if (idExpr->name == "int8_from_int64") {
+            if (expr->arguments.size() != 1) {
+                addError("int8_from_int64() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int8");
+        }
+        
+        // int16_from_int64(int64) -> int16
+        if (idExpr->name == "int16_from_int64") {
+            if (expr->arguments.size() != 1) {
+                addError("int16_from_int64() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int16");
+        }
+        
+        // int32_from_int64(int64) -> int32
+        if (idExpr->name == "int32_from_int64") {
+            if (expr->arguments.size() != 1) {
+                addError("int32_from_int64() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        // int64_from_int32(int32) -> int64
+        if (idExpr->name == "int64_from_int32") {
+            if (expr->arguments.size() != 1) {
+                addError("int64_from_int32() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // int64_from_int8(int8) -> int64
+        if (idExpr->name == "int64_from_int8") {
+            if (expr->arguments.size() != 1) {
+                addError("int64_from_int8() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // ====================================================================
+        // MEMORY MANAGEMENT BUILTINS
+        // ====================================================================
+        
+        // drop(wild T@) -> void - Free wild pointer
+        if (idExpr->name == "drop") {
+            if (expr->arguments.size() != 1) {
+                addError("drop() requires exactly one argument (wild pointer)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // TODO: Verify argument is a wild pointer
+            return typeSystem->getPrimitiveType("void");
         }
 
         // ====================================================================
@@ -3187,119 +4319,150 @@ bool TypeChecker::canCoerce(Type* from, Type* to) {
     const std::string& toName = toPrim->getName();
     
     // ========================================================================
-    // Numeric Widening: int8 → int16 → int32 → int64 → int128 → int256 → int512
+    // Aria STRICT Type Coercion Rules
     // ========================================================================
-    
+    // - NO implicit integer widening (int32 → int64 requires explicit cast)
+    // - NO cross-family coercion (int ↔ tbb ↔ balanced FORBIDDEN)
+    // - NO implicit TBB widening (ARIA-018: Sentinel Discontinuity Constraint)
+    //   tbb8 ERR (-128) → tbb16 becomes valid -128, not ERR (-32768)
+    //   Use explicit tbb_widen<T>() for safe sentinel-preserving conversion
+    // - Only float → float widening allowed
+    // - Only balanced → same-subfamily balanced widening allowed
+    // ========================================================================
+
     // Extract bit width from type name (e.g., "int32" → 32)
+    // Returns 0 for invalid or malformed type names (overflow, non-numeric, etc.)
     auto extractBitWidth = [](const std::string& name) -> int {
-        if (name.find("int") == 0) {
-            size_t pos = (name[0] == 'u') ? 4 : 3;  // "uint" or "int"
-            return std::stoi(name.substr(pos));
+        try {
+            std::string suffix;
+            if (name.find("int") == 0 || name.find("uint") == 0) {
+                size_t pos = (name[0] == 'u') ? 4 : 3;  // "uint" or "int"
+                suffix = name.substr(pos);
+            } else if (name.find("flt") == 0) {
+                suffix = name.substr(3);
+            } else if (name.find("tbb") == 0) {
+                suffix = name.substr(3);
+            } else {
+                return 0;
+            }
+
+            // Use stoll to handle larger values, then validate range
+            long long width = std::stoll(suffix);
+
+            // Valid bit widths for Aria types
+            if (width == 8 || width == 16 || width == 32 || width == 64 ||
+                width == 128 || width == 256 || width == 512 || width == 1024 || width == 2048 || width == 4096) {
+                return static_cast<int>(width);
+            }
+            return 0;  // Invalid bit width
+        } catch (const std::out_of_range&) {
+            return 0;  // Overflow - not a valid bit width
+        } catch (const std::invalid_argument&) {
+            return 0;  // Not a valid number
         }
-        if (name.find("flt") == 0) {
-            return std::stoi(name.substr(3));
-        }
-        if (name.find("tbb") == 0) {
-            return std::stoi(name.substr(3));
-        }
-        return 0;
     };
-    
-    // Signed integer widening
-    if (fromName.find("int") == 0 && toName.find("int") == 0) {
-        int fromWidth = extractBitWidth(fromName);
-        int toWidth = extractBitWidth(toName);
-        return fromWidth < toWidth;  // Allow widening only
-    }
-    
-    // Unsigned integer widening
-    if (fromName.find("uint") == 0 && toName.find("uint") == 0) {
-        int fromWidth = extractBitWidth(fromName);
-        int toWidth = extractBitWidth(toName);
-        return fromWidth < toWidth;  // Allow widening only
-    }
-    
-    // TBB widening (preserves error semantics)
-    if (fromName.find("tbb") == 0 && toName.find("tbb") == 0) {
-        int fromWidth = extractBitWidth(fromName);
-        int toWidth = extractBitWidth(toName);
-        return fromWidth < toWidth;  // Allow widening only
-    }
-    
-    // Float widening: flt32 → flt64
-    if (fromName.find("flt") == 0 && toName.find("flt") == 0) {
-        int fromWidth = extractBitWidth(fromName);
-        int toWidth = extractBitWidth(toName);
-        return fromWidth < toWidth;  // Allow widening only
-    }
-    
-    // ========================================================================
-    // Integer to Float Promotion
-    // ========================================================================
-    if (fromName.find("int") == 0 && toName.find("flt") == 0) {
-        // Allow int → float promotion (e.g., int32 → flt32, int64 → flt64)
-        // Note: This can lose precision for large integers
-        return true;
-    }
-    
-    // ========================================================================
-    // Integer to TBB Coercion (Session 14)
-    // ========================================================================
-    // Allow signed integers to coerce to TBB types (int64 → tbb8, tbb16, tbb32, tbb64)
-    // This is safe because runtime will validate range and convert to ERR on overflow
-    // TBB → integer is FORBIDDEN (would lose error sentinel)
+
+    // Check type families
     bool fromIsTBB = (fromName.find("tbb") == 0);
     bool toIsTBB = (toName.find("tbb") == 0);
-    bool fromIsSignedInt = (fromName.find("int") == 0 && fromName.find("uint") != 0);
-    bool toIsStdInt = (toName.find("int") == 0 || toName.find("uint") == 0);
-    
-    // Allow signed int → TBB (e.g., int64 → tbb8)
-    if (fromIsSignedInt && toIsTBB) {
-        // Runtime will check range and set ERR on overflow
-        return true;
-    }
-    
-    // Forbid TBB → standard integer (would lose ERR sentinel)
-    if (fromIsTBB && toIsStdInt) {
-        return false;  // Explicit cast required
-    }
-    
-    // Forbid unsigned → TBB (unsigned can't represent negative values)
-    if (fromName.find("uint") == 0 && toIsTBB) {
-        return false;  // Explicit cast required
-    }
-    
-    // Balanced ↔ Standard Integer: Partially allowed (Session 15)
-    // Balanced types (trit, tryte, nit, nyte) use symmetric digit sets
-    // Allow int → balanced for literals (comparison, assignment)
-    // Forbid balanced → int (would lose semantic meaning)
-    bool fromIsBalanced = (fromName == "trit" || fromName == "tryte" || 
+    bool fromIsBalanced = (fromName == "trit" || fromName == "tryte" ||
                           fromName == "nit" || fromName == "nyte");
-    bool toIsBalanced = (toName == "trit" || toName == "tryte" || 
+    bool toIsBalanced = (toName == "trit" || toName == "tryte" ||
                         toName == "nit" || toName == "nyte");
-    bool fromIsStdInt = (fromName.find("int") == 0 && fromName.find("uint") != 0);
-    bool fromIsStdIntOrUint = (fromName.find("int") == 0 || fromName.find("uint") == 0);
-    
-    // Allow signed int → balanced (for literals and comparisons)
-    if (fromIsStdInt && toIsBalanced) {
-        return true;  // Runtime will check range
+    bool fromIsFloat = (fromName.find("flt") == 0);
+    bool toIsFloat = (toName.find("flt") == 0);
+    bool fromIsInt = ((fromName.find("int") == 0 || fromName.find("uint") == 0) && !fromIsTBB);
+    bool toIsInt = ((toName.find("int") == 0 || toName.find("uint") == 0) && !toIsTBB);
+
+    // ========================================================================
+    // TBB Type Family - NO implicit coercion (even between TBB sizes)
+    // ========================================================================
+    // ARIA-018: TBB sizes have different sentinel values:
+    //   tbb8 sentinel = -128, tbb16 sentinel = -32768, etc.
+    // Widening -128 from tbb8 to tbb16 would create a valid value,
+    // not a sentinel, breaking sticky error semantics.
+    // Use explicit tbb_widen<T>() functions for size conversion.
+    if (toIsTBB) {
+        if (!fromIsTBB) {
+            return false;  // REJECT: int → tbb, balanced → tbb, float → tbb
+        }
+        // REJECT: tbb8 → tbb16, etc. (different sentinel values)
+        // Only allow exact same type
+        return fromName == toName;
     }
-    
-    // Forbid balanced → standard int (explicit cast required)
-    if (fromIsBalanced && fromIsStdIntOrUint) {
-        return false;  // Explicit cast required
+    if (fromIsTBB) {
+        return false;  // REJECT: tbb → anything else
     }
-    
-    // Balanced ↔ TBB: FORBIDDEN (Phase 3.2.5)
-    // Different semantic models
-    if ((fromIsBalanced && toIsTBB) || (fromIsTBB && toIsBalanced)) {
-        return false;  // Explicit cast required
+
+    // ========================================================================
+    // Balanced Type Family - ONLY same-subfamily widening
+    // ========================================================================
+    if (toIsBalanced) {
+        if (!fromIsBalanced) {
+            return false;  // REJECT: int → balanced, float → balanced
+        }
+        // Only same sub-family widening: trit → tryte, nit → nyte
+        bool fromIsTernary = (fromName == "trit" || fromName == "tryte");
+        bool toIsTernary = (toName == "trit" || toName == "tryte");
+        if (fromIsTernary != toIsTernary) {
+            return false;  // REJECT: ternary ↔ nonary
+        }
+        // Allow widening within same sub-family
+        // trit (2 bits) → tryte (16 bits), nit (4 bits) → nyte (16 bits)
+        if (fromName == "trit" && toName == "tryte") return true;
+        if (fromName == "nit" && toName == "nyte") return true;
+        return false;  // No other balanced widening
     }
-    
-    // No narrowing (int32 → int8)
-    // No float to int (flt32 → int32)
-    // No signed ↔ unsigned (int32 ↔ uint32)
-    
+    if (fromIsBalanced) {
+        return false;  // REJECT: balanced → int, balanced → float
+    }
+
+    // ========================================================================
+    // Float Widening - ONLY float → float widening allowed
+    // ========================================================================
+    if (fromIsFloat && toIsFloat) {
+        int fromWidth = extractBitWidth(fromName);
+        int toWidth = extractBitWidth(toName);
+        return fromWidth < toWidth;  // Allow widening only
+    }
+
+    // REJECT: int → float (requires explicit cast)
+    if (fromIsInt && toIsFloat) {
+        return false;
+    }
+
+    // REJECT: float → int
+    if (fromIsFloat && toIsInt) {
+        return false;
+    }
+
+    // ========================================================================
+    // Integer Widening - ALLOWED within same family
+    // ========================================================================
+    // int8 → int16 → int32 → int64 OK (signed family)
+    // uint8 → uint16 → uint32 → uint64 OK (unsigned family)
+    // int ↔ uint REJECTED (sign change)
+
+    bool fromIsSigned = (fromName.find("int") == 0 && fromName.find("uint") == std::string::npos);
+    bool toIsSigned = (toName.find("int") == 0 && toName.find("uint") == std::string::npos);
+    bool fromIsUnsigned = (fromName.find("uint") == 0);
+    bool toIsUnsigned = (toName.find("uint") == 0);
+
+    // Signed integer widening
+    if (fromIsSigned && toIsSigned) {
+        int fromWidth = extractBitWidth(fromName);
+        int toWidth = extractBitWidth(toName);
+        return fromWidth < toWidth;  // Allow widening only
+    }
+
+    // Unsigned integer widening
+    if (fromIsUnsigned && toIsUnsigned) {
+        int fromWidth = extractBitWidth(fromName);
+        int toWidth = extractBitWidth(toName);
+        return fromWidth < toWidth;  // Allow widening only
+    }
+
+    // REJECT: signed ↔ unsigned (int32 ↔ uint32)
     return false;
 }
 
@@ -3419,6 +4582,10 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             checkPickStmt(static_cast<PickStmt*>(stmt));
             break;
         
+        case ASTNode::NodeType::EXTERN:
+            checkExternStmt(static_cast<ExternStmt*>(stmt));
+            break;
+        
         default:
             // Other statement types not yet implemented
             break;
@@ -3439,7 +4606,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             // Simple type: int32, string, etc.
             aria::SimpleType* simpleType = static_cast<aria::SimpleType*>(typeNode);
             
-            // Handle vector types specially (vec2, vec3, vec9)
+            // Handle vector types specially (vec2, vec3)
             // Default to flt64 components to match float literal inference
             if (simpleType->typeName == "vec2" || simpleType->typeName == "dvec2") {
                 Type* componentType = typeSystem->getPrimitiveType("flt64");
@@ -3449,10 +4616,13 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 Type* componentType = typeSystem->getPrimitiveType("flt64");
                 return typeSystem->getVectorType(componentType, 3);
             }
-            if (simpleType->typeName == "vec9" || simpleType->typeName == "dvec9") {
+            // dvec9: Double-precision floating-point vector (9 flt64 components)
+            if (simpleType->typeName == "dvec9") {
                 Type* componentType = typeSystem->getPrimitiveType("flt64");
                 return typeSystem->getVectorType(componentType, 9);
             }
+            // vec9: TBB-inspired vector (vec9_tbb32 struct - NOT a VectorType)
+            // Handled below via struct/primitive lookup
             
             // Float vector types (fvec2, fvec3, fvec9)
             if (simpleType->typeName == "fvec2") {
@@ -3574,7 +4744,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             }
             
             // Check for built-in generic types first
-            if (genericType->baseName == "result" || genericType->baseName == "array") {
+            if (genericType->baseName == "Result" || genericType->baseName == "array") {
                 // Built-in generic types - handle specially
                 // For now, just return a placeholder struct type
                 // The actual implementation will be in stdlib once fully integrated
@@ -3594,7 +4764,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 // Create a new struct type for this specialization
                 // This is a placeholder - actual fields will be defined in stdlib
                 std::vector<StructType::Field> fields;
-                if (genericType->baseName == "result") {
+                if (genericType->baseName == "Result") {
                     // result<T> has: bool is_error, T val, string err
                     fields.push_back({"is_error", typeSystem->getPrimitiveType("bool"), 0});
                     fields.push_back({"val", resolvedTypeArgs[0], 8});
@@ -3718,6 +4888,10 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         }
     }
     
+    // ARIA-024: int128/int256/int512 now use Limb-Based Integral Model (LBIM)
+    // The semantic block for these types has been removed as they are now
+    // represented as structs of i64 limbs, bypassing LLVM IPSCCP bugs.
+
     // Check const variables have initializers
     if (stmt->isConst && !stmt->initializer) {
         addError("const variable '" + stmt->varName + "' must have initializer", stmt);
@@ -3898,7 +5072,31 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
         }
         return;
     }
-    
+
+    // Validate main function signature
+    // main must return int32 to be compatible with C runtime expectations
+    if (stmt->funcName == "main") {
+        std::string returnTypeName = returnType->toString();
+        if (returnTypeName != "int32") {
+            addError("Function 'main' must return 'int32', but returns '" +
+                     returnTypeName + "'", stmt);
+            // Continue checking to report other errors, but main is invalid
+        }
+
+        // main should take no parameters (for now - could support int argc, char** argv later)
+        if (!stmt->parameters.empty()) {
+            addError("Function 'main' should take no parameters", stmt);
+        }
+    }
+
+    // ARIA-026 FIX: FFI Safety - Ban string return types from extern functions
+    if (!stmt->body && returnType->toString() == "str") {  // No body = extern function
+        addError("FFI Safety Violation: Cannot return 'str' from extern function '" + 
+                 stmt->funcName + "'. Aria strings are fat pointers {data, len} incompatible " +
+                 "with C char*. Use 'wild int8*' for C strings and convert with string_from_cstr().", 
+                 stmt);
+    }
+
     // Set current function return type for return statement checking
     Type* previousReturnType = currentFunctionReturnType;
     currentFunctionReturnType = returnType;
@@ -3918,6 +5116,17 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
                     addError("Missing parameter type", param.get());
                 }
                 continue;
+            }
+            
+            // ARIA-026 FIX: FFI Safety - Ban strings in extern functions
+            // String type is a fat pointer {data, len} struct which is incompatible with C ABI char*.
+            // Passing string to extern causes parameter shift: C sees 'data' as arg1, 'len' as arg2.
+            // This corrupts actuator force limits and sensor readings in robotic control.
+            if (!stmt->body && paramType->toString() == "str") {  // No body = extern function
+                addError("FFI Safety Violation: Cannot pass 'str' type to extern function '" + 
+                         stmt->funcName + "'. Aria strings are fat pointers {data, len} incompatible " +
+                         "with C char*. Use 'wild int8*' for C strings and convert with string_to_cstr().", 
+                         param.get());
             }
             
             // Define parameter in symbol table (will be visible in function body)
@@ -4847,6 +6056,11 @@ bool TypeChecker::canLiteralFitInIntType(int64_t value, Type* type, ASTNode* nod
     } else if (typeName == "int64") {
         // int64 can hold any int64_t value
         return true;
+    } else if (typeName == "int128" || typeName == "int256" || 
+               typeName == "int512" || typeName == "int1024" ||
+               typeName == "int2048" || typeName == "int4096") {
+        // Big integer types: if it fits in int64, it fits in these
+        return true;
     } else if (typeName == "uint8") {
         if (value < 0) {
             addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
@@ -4874,6 +6088,15 @@ bool TypeChecker::canLiteralFitInIntType(int64_t value, Type* type, ASTNode* nod
             return false;
         }
         // uint64 can hold any non-negative int64_t value
+        return true;
+    } else if (typeName == "uint128" || typeName == "uint256" || 
+               typeName == "uint512" || typeName == "uint1024" ||
+               typeName == "uint2048" || typeName == "uint4096") {
+        if (value < 0) {
+            addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
+            return false;
+        }
+        // Big unsigned types: if it's non-negative and fits in int64, it fits
         return true;
     } else {
         return false;  // Unknown type
@@ -4933,6 +6156,10 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
     LoadedModule* module = moduleLoader->loadModule(logicalPath, currentModulePath);
     if (!module) {
         addError("Failed to load module '" + logicalPath + "'", stmt);
+        // Add detailed errors from module loader
+        for (const auto& err : moduleLoader->getErrors()) {
+            addError("  " + err, stmt);
+        }
         return;
     }
     
@@ -5033,6 +6260,71 @@ void TypeChecker::checkModStmt(ModStmt* stmt) {
     // The module resolver will validate they exist
 }
 
+void TypeChecker::checkExternStmt(ExternStmt* stmt) {
+    if (!stmt) {
+        return;
+    }
+    
+    // Register all extern function and variable declarations in symbol table
+    // This allows them to be referenced by other code in the same scope
+    
+    for (const auto& decl : stmt->declarations) {
+        if (decl->type == ASTNode::NodeType::FUNC_DECL) {
+            // Register extern function
+            FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(decl.get());
+            
+            // Resolve return type
+            Type* returnType = resolveTypeNode(funcDecl->returnType.get());
+            
+            // Resolve parameter types
+            std::vector<Type*> paramTypes;
+            for (const auto& param : funcDecl->parameters) {
+                if (param->type == ASTNode::NodeType::PARAMETER) {
+                    ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
+                    Type* paramType = resolveTypeNode(paramNode->typeNode.get());
+                    paramTypes.push_back(paramType);
+                }
+            }
+            
+            // Create function type (extern functions are never async or generic)
+            Type* funcType = new FunctionType(paramTypes, returnType, false, false);
+            
+            // Register in symbol table
+            symbolTable->defineSymbol(funcDecl->funcName, SymbolKind::FUNCTION, funcType);
+        }
+        else if (decl->type == ASTNode::NodeType::VAR_DECL) {
+            // Register extern variable
+            VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(decl.get());
+            
+            // Resolve variable type
+            Type* varType = nullptr;
+            if (varDecl->typeNode) {
+                varType = resolveTypeNode(varDecl->typeNode.get());
+            } else if (!varDecl->typeName.empty()) {
+                // Legacy simple type name
+                varType = typeSystem->getPrimitiveType(varDecl->typeName);
+                if (!varType || varType->getKind() == TypeKind::ERROR) {
+                    varType = typeSystem->getStructType(varDecl->typeName);
+                }
+            }
+            
+            if (varType && varType->getKind() != TypeKind::ERROR) {
+                symbolTable->defineSymbol(varDecl->varName, SymbolKind::VARIABLE, varType);
+            }
+        }
+        else if (decl->type == ASTNode::NodeType::OPAQUE_STRUCT) {
+            // Register opaque struct type
+            OpaqueStructDecl* opaqueDecl = static_cast<OpaqueStructDecl*>(decl.get());
+            
+            // Create opaque struct type (empty struct as placeholder)
+            Type* opaqueType = typeSystem->createStructType(opaqueDecl->structName, {});
+            
+            // Mark as opaque in symbol table (type is already registered in typeSystem)
+            // The type will be treated as a pointer type in IR generation
+        }
+    }
+}
+
 // ============================================================================
 // Module Symbol Importing (Phase 3 from research_module_loading_system)
 // ============================================================================
@@ -5108,8 +6400,20 @@ void TypeChecker::importModuleNamespace(LoadedModule* module, UseStmt* stmt, con
     std::string namespaceName;
     if (!stmt->alias.empty()) {
         namespaceName = stmt->alias;
+    } else if (stmt->isFilePath) {
+        // For file paths, extract filename without extension
+        // e.g., "./helper.aria" -> "helper", "../utils/math.aria" -> "math"
+        std::string filePath = module->moduleInfo->getPath();
+        size_t lastSlash = filePath.find_last_of("/\\");
+        std::string filename = (lastSlash != std::string::npos) ? 
+                               filePath.substr(lastSlash + 1) : filePath;
+        
+        // Remove .aria extension
+        size_t lastDot = filename.find_last_of('.');
+        namespaceName = (lastDot != std::string::npos) ? 
+                        filename.substr(0, lastDot) : filename;
     } else {
-        // Extract last component from module path (e.g., "std.io" -> "io")
+        // For logical paths, extract last component (e.g., "std.io" -> "io")
         size_t lastDot = modulePath.find_last_of('.');
         if (lastDot != std::string::npos) {
             namespaceName = modulePath.substr(lastDot + 1);

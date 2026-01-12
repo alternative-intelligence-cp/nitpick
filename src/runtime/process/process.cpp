@@ -418,31 +418,39 @@ void aria_process_free(AriaProcess* process) {
 
 #ifndef _WIN32
 
+// Static storage for fork result to avoid malloc() after fork()
+// This prevents deadlock in multi-threaded programs where another
+// thread might hold malloc's lock when we fork
+static __thread AriaForkInfo fork_result_buffer;
+
 AriaResult* aria_fork(void) {
+    // Pre-allocate result structure BEFORE fork to avoid malloc deadlock
+    // Use thread-local storage to avoid race conditions
+    fork_result_buffer.is_child = false;
+    fork_result_buffer.pid = 0;
+    fork_result_buffer.parent_pid = 0;
+    
     pid_t pid = fork();
     
     if (pid < 0) {
         return aria_result_err(get_error_message("fork failed"));
     }
     
-    AriaForkInfo* info = (AriaForkInfo*)malloc(sizeof(AriaForkInfo));
-    if (!info) {
-        return aria_result_err("Out of memory");
-    }
-    
     if (pid == 0) {
-        // Child process
-        info->is_child = true;
-        info->pid = 0;
-        info->parent_pid = (int64_t)getppid();
+        // Child process - populate result
+        fork_result_buffer.is_child = true;
+        fork_result_buffer.pid = 0;
+        fork_result_buffer.parent_pid = (int64_t)getppid();
     } else {
-        // Parent process
-        info->is_child = false;
-        info->pid = (int64_t)pid;
-        info->parent_pid = (int64_t)getpid();
+        // Parent process - populate result
+        fork_result_buffer.is_child = false;
+        fork_result_buffer.pid = (int64_t)pid;
+        fork_result_buffer.parent_pid = (int64_t)getpid();
     }
     
-    return aria_result_ok(info, sizeof(AriaForkInfo));
+    // Return pointer to thread-local buffer
+    // Caller must copy this before next fork() call
+    return aria_result_ok(&fork_result_buffer, sizeof(AriaForkInfo));
 }
 
 int aria_exec(const char* command, const char** args) {

@@ -1,0 +1,22 @@
+/**
+ * Determinism Test: Loop Allocations (simple)
+ * Tests allocation determinism in a loop without dereferencing
+ */
+
+func:main = int32() {
+    int64:i = 0;
+    int64:count = 5;
+    int64:size = 256;
+
+    while (i < count) {
+        wild int8@:ptr = alloc(size);
+        print(i);
+        free(ptr);
+        i = (i + 1);
+    }
+
+    int64:complete = 100;
+    print(complete);
+
+    return 0;
+};

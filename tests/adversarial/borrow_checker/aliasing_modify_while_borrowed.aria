@@ -1,0 +1,14 @@
+/**
+ * Test: Modify Host While Borrowed
+ * Expected: COMPILER ERROR - cannot modify borrowed variable
+ */
+
+func:main = int32() {
+    int32:x = 10;
+    int32$:r = !$x;  // Borrow x
+
+    x = 20;  // ERROR: Cannot modify x while borrowed
+
+    print("Should not compile!\n");
+    return 0;
+};

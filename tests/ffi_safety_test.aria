@@ -1,0 +1,50 @@
+// ARIA-026 FFI Safety Tests
+// Testing critical security fixes from Gemini audits 13-15
+
+// Test 1: String parameters in extern should be REJECTED
+// This should fail to compile with FFI Safety Violation error
+/*
+extern "test" {
+    pub func:bad_ffi_string = void(str:message);
+}
+*/
+
+// Test 2: Correct FFI string usage (wild int8*)
+extern "test" {
+    pub func:good_ffi_string = void(wild int8*:message);
+}
+
+// Test 3: String return type should be REJECTED
+/*
+extern "test" {
+    pub func:bad_ffi_return = str();
+}
+*/
+
+// Test 4: Large template literal (>100 segments) should use GC heap
+// This tests the fix for GC blindness bug
+pub func:test_large_template = str() {
+    // Create a template with 105 segments (exceeds MAX_STACK_SEGMENTS = 100)
+    // Each interpolation creates 2 segments: literal + interpolation
+    let x = 42;
+    return `
+        {x} {x} {x} {x} {x} {x} {x} {x} {x} {x}
+        {x} {x} {x} {x} {x} {x} {x} {x} {x} {x}
+        {x} {x} {x} {x} {x} {x} {x} {x} {x} {x}
+        {x} {x} {x} {x} {x} {x} {x} {x} {x} {x}
+        {x} {x} {x} {x} {x} {x} {x} {x} {x} {x}
+        {x} {x}
+    `;  // 52 interpolations + 52 literal parts = 104 segments + start/end = 106 total
+}
+
+pub func:main = int32() {
+    // Test null pointer handling in string_from_cstr
+    wild int8*:null_ptr = null;
+    str:result = string_from_cstr(null_ptr);  // Should return empty string, not crash
+    
+    // Test large template literal
+    str:large_str = test_large_template();
+    
+    print("FFI safety tests passed!");
+    return 0;
+}

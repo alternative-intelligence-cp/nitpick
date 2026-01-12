@@ -222,6 +222,7 @@ set(RUNTIME_SOURCES
     src/runtime/allocators/arena_builtins.cpp
     src/runtime/allocators/pool_builtins.cpp
     src/runtime/allocators/slab_builtins.cpp
+    src/runtime/format/locale_safe_format.cpp
     src/runtime/assembler/assembler.cpp
     src/runtime/assembler/llvm_jit.cpp
     src/runtime/assembler/code_cache.cpp
@@ -231,6 +232,11 @@ set(RUNTIME_SOURCES
     src/runtime/process/process.cpp
     src/runtime/thread/thread.cpp
     src/backend/runtime/ternary_ops.cpp
+    src/backend/runtime/frac_ops.cpp
+    src/backend/runtime/tfp_ops.cpp
+    src/backend/runtime/vec9_ops.cpp
+    src/backend/runtime/tmatrix_ops.cpp
+    src/backend/runtime/ttensor_ops.cpp
     src/runtime/atomic/atomic.cpp
     src/runtime/timer/timer.cpp
     src/runtime/async/executor.cpp
@@ -245,6 +251,7 @@ set(RUNTIME_SOURCES
     src/runtime/async/work_stealing.cpp
     src/runtime/async/gc_integration.cpp
     src/runtime/telemetry/telemetry.cpp
+    src/runtime/exotic_types.c
 )
 
 # Phase 6: Standard Library Runtime Support
@@ -255,7 +262,11 @@ set(STDLIB_SOURCES
     src/runtime/collections/map.cpp
     src/runtime/strings/strings.cpp
     src/runtime/math/math.cpp
+    src/runtime/math/lbim.cpp
+    src/runtime/math/lbim_extended.cpp
+    src/runtime/math/fix256.cpp
     src/runtime/tbb/tbb.cpp
+    src/runtime/fmt/formatters.cpp
 )
 
 # ARIA-017: High-Precision Floating-Point (flt256, flt512)

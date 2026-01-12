@@ -18,6 +18,24 @@ Aria is built on these **non-negotiable** principles:
 
 **If you disagree with these principles, Aria is not the right project for you.** Fork it and build your vision.
 
+### Development Methodology: AIAAT
+
+Aria's development process incorporates **AI Assisted Academic Trolling (AIAAT)** - a formally documented methodology for transforming adversarial discourse into rigorous academic research:
+
+1. Make provocative technical claim in public forum
+2. Face challenges and counterarguments
+3. Collaborate with AI to formalize intuitions into testable hypotheses
+4. Conduct rigorous research and documentation
+5. Submit to peer review
+6. Publish with DOI
+7. Integrate validated concepts into production systems
+
+**Proven Results**: This methodology has produced peer-reviewed publications backing Aria's theoretical foundations (see README.md for DOI citations).
+
+**Why This Works**: Adversarial conditions force clarity. If an idea can survive both internet trolls AND academic peer review, it's probably solid. The AI amplifies human intuition into formal rigor without replacing human creativity.
+
+**Reference**: For formal treatment of AIAAT methodology, see the Ego-Mediated Behavior Study (DOI: [10.5281/zenodo.18159274](https://doi.org/10.5281/zenodo.18159274)).
+
 ### Non-Negotiables
 
 These are **rules**, not suggestions:

@@ -500,6 +500,13 @@ ASTNodePtr Monomorphizer::cloneAST(ASTNode* node) {
             cloned->isConst = var->isConst;
             cloned->isStack = var->isStack;
             cloned->isGC = var->isGC;
+            // Clone typeNode if it exists, otherwise create from typeName for consistency
+            if (var->typeNode) {
+                cloned->typeNode = cloneAST(var->typeNode.get());
+            } else if (!var->typeName.empty()) {
+                // Create SimpleType node from typeName to ensure typeNode is always available
+                cloned->typeNode = std::make_shared<SimpleType>(var->typeName, var->line, var->column);
+            }
             return cloned;
         }
         
@@ -715,11 +722,28 @@ void Monomorphizer::substituteTypes(ASTNode* node,
     switch (node->type) {
         case ASTNode::NodeType::VAR_DECL: {
             VarDeclStmt* var = static_cast<VarDeclStmt*>(node);
+            // Check typeName for generic type parameter (*T)
             if (!var->typeName.empty() && var->typeName[0] == '*') {
                 std::string paramName = var->typeName.substr(1);
                 auto it = substitution.find(paramName);
                 if (it != substitution.end() && it->second) {
-                    var->typeName = it->second->toString();
+                    std::string newTypeName = it->second->toString();
+                    var->typeName = newTypeName;
+                    // Also update typeNode to keep representations in sync
+                    var->typeNode = std::make_shared<SimpleType>(newTypeName, var->line, var->column);
+                }
+            }
+            // Also check typeNode directly (may have been set by cloneAST)
+            else if (var->typeNode) {
+                std::string typeStr = var->typeNode->toString();
+                if (!typeStr.empty() && typeStr[0] == '*') {
+                    std::string paramName = typeStr.substr(1);
+                    auto it = substitution.find(paramName);
+                    if (it != substitution.end() && it->second) {
+                        std::string newTypeName = it->second->toString();
+                        var->typeName = newTypeName;
+                        var->typeNode = std::make_shared<SimpleType>(newTypeName, var->line, var->column);
+                    }
                 }
             }
             if (var->initializer) {

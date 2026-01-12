@@ -1,0 +1,17 @@
+/**
+ * Test: Overlapping Borrow Lifetimes in Loop
+ * Expected: COMPILER ERROR - modify while borrowed
+ */
+
+func:main = int32() {
+    int32:x = 10;
+    int32:i = 0;
+
+    while (i < 2) {
+        int32$:r = !$x;  // Borrow in each iteration
+        x = x + 1;       // ERROR: Modify while borrowed
+        i = i + 1;
+    }
+
+    return 0;
+};

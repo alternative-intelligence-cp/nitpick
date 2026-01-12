@@ -11,7 +11,7 @@
  *   // Result-based allocation
  *   result<wild int64@, alloc_error>:res = alloc_result<int64>();
  *   if (res.is_ok()) {
- *       wild int64@:ptr = res.unwrap();
+ *       wild int64->:ptr = res.unwrap();
  *       defer free<int64>(ptr);
  *       ptr@ = 42;
  *   } else {
@@ -114,14 +114,33 @@ func:is_err<T> = bool(result: alloc_result<T>) {
  * Example:
  *   alloc_result<int64>:res = alloc_result<int64>();
  *   if (res.is_ok()) {
- *       wild int64@:ptr = res.unwrap();
+ *       wild int64->:ptr = res.unwrap();
  *       // Use ptr...
  *   }
  */
+// CRITICAL FIX 4: Replace abort() with panic handler that executes defer blocks
+// The abort() was "extreme severity" - robot holding object, unwrap fails,
+// instant death without defer unlock_actuators() → crushing force
+//
+// New behavior: Call runtime panic handler that:
+// 1. Executes all defer blocks in current thread
+// 2. Calls hardware safety callback (engage brakes)
+// 3. For async: kills only faulting task, not entire process
+// 4. Logs full context before controlled shutdown
+//
+// NOTE: For production deployment, consider banning unwrap() entirely via linter
+// and forcing explicit error handling with is_ok()/is_err() checks
 func:unwrap<T> = wild T@(result: alloc_result<T>) {
     if (result.error_code != 0) {
-        // Panic - attempted to unwrap error result
-        @extern("abort");
+        // Record panic event for debugging statistics
+        @extern("aria_telemetry_record_panic");
+        aria_telemetry_record_panic("unwrap_error");
+        
+        // Call panic handler instead of abort()
+        // This allows defer execution and safe shutdown
+        @extern("aria_runtime_panic_unwrap");
+        aria_runtime_panic_unwrap("Attempted to unwrap error result");
+        // Never returns - but unlike abort(), executes cleanup
     }
     return result.value;
 }
@@ -139,7 +158,8 @@ func:unwrap<T> = wild T@(result: alloc_result<T>) {
 func:unwrap_err<T> = alloc_error(result: alloc_result<T>) {
     if (result.error_code == 0) {
         // Panic - attempted to unwrap_err on Ok result
-        @extern("abort");
+        @extern("aria_runtime_panic_unwrap");
+        aria_runtime_panic_unwrap("Attempted to unwrap_err on Ok result");
     }
     return @cast<alloc_error>(result.error_code);
 }
@@ -149,7 +169,7 @@ func:unwrap_err<T> = alloc_error(result: alloc_result<T>) {
  * 
  * Example:
  *   alloc_result<int64>:res = alloc_result<int64>();
- *   wild int64@:ptr = res.unwrap_or(null);
+ *   wild int64->:ptr = res.unwrap_or(null);
  *   if (ptr != null) {
  *       // Use ptr...
  *   }
@@ -175,7 +195,7 @@ func:unwrap_or<T> = wild T@(result: alloc_result<T>, default: wild T@) {
  * Example:
  *   alloc_result<int64>:res = alloc_result<int64>();
  *   if (res.is_ok()) {
- *       wild int64@:ptr = res.unwrap();
+ *       wild int64->:ptr = res.unwrap();
  *       defer free<int64>(ptr);
  *       ptr@ = 42;
  *   } else {
@@ -276,7 +296,7 @@ func:alloc_buffer_result<T> = alloc_result<T>(size: int64, alignment: int64, zer
  * Example of manual error propagation pattern
  * 
  * Once the ? operator is implemented, this can be simplified to:
- *   wild int64@:ptr = alloc_result<int64>()?;
+ *   wild int64->:ptr = alloc_result<int64>()?;
  *   defer free<int64>(ptr);
  * 
  * For now, manual checking is required:
@@ -315,7 +335,7 @@ func:create_buffer_example = alloc_result<byte>(size: int64) {
  * COMPARISON: NULL vs Result
  * 
  * NULL-based (Phase 4.1):
- *   wild int64@:ptr = alloc<int64>();
+ *   wild int64->:ptr = alloc<int64>();
  *   if (ptr == null) {
  *       // Don't know WHY it failed (OOM? Invalid size? Overflow?)
  *       return;

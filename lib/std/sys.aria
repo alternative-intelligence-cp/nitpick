@@ -1,444 +1,61 @@
-/// Platform Abstraction Layer (PAL)
-//!
-//! This module provides platform-independent access to system functionality:
-//! - Six-channel I/O (stdin, stdout, stderr, stddbg, stddati, stddato)
-//! - Process spawning and management
-//! - System information and diagnostics
-//! - Platform detection and conditional compilation support
-//!
-//! Reference: research_031_essential_stdlib.txt Section 2
+/// Minimal System Module - Working Foundation
 
 // =============================================================================
-// Platform Detection Constants (research_031 Section 2.1)
+// External C Library Functions
 // =============================================================================
-// These constants are set at compile time based on the target platform
 
-/// Architecture detection
-#if defined(ARIA_ARCH_X86_64)
-pub const ARCH_X86_64: bool = true;
-pub const ARCH_ARM64: bool = false;
-pub const ARCH_NAME: string = "x86_64";
-#elif defined(ARIA_ARCH_ARM64)
-pub const ARCH_X86_64: bool = false;
-pub const ARCH_ARM64: bool = true;
-pub const ARCH_NAME: string = "arm64";
-#else
-pub const ARCH_X86_64: bool = false;
-pub const ARCH_ARM64: bool = false;
-pub const ARCH_NAME: string = "unknown";
-#endif
-
-/// Platform detection
-#if defined(ARIA_PLATFORM_LINUX)
-pub const PLATFORM_LINUX: bool = true;
-pub const PLATFORM_WINDOWS: bool = false;
-pub const PLATFORM_MACOS: bool = false;
-pub const PLATFORM_NAME: string = "linux";
-#elif defined(ARIA_PLATFORM_WINDOWS)
-pub const PLATFORM_LINUX: bool = false;
-pub const PLATFORM_WINDOWS: bool = true;
-pub const PLATFORM_MACOS: bool = false;
-pub const PLATFORM_NAME: string = "windows";
-#elif defined(ARIA_PLATFORM_MACOS)
-pub const PLATFORM_LINUX: bool = false;
-pub const PLATFORM_WINDOWS: bool = false;
-pub const PLATFORM_MACOS: bool = true;
-pub const PLATFORM_NAME: string = "macos";
-#else
-pub const PLATFORM_LINUX: bool = false;
-pub const PLATFORM_WINDOWS: bool = false;
-pub const PLATFORM_MACOS: bool = false;
-pub const PLATFORM_NAME: string = "unknown";
-#endif
-
-// =============================================================================
-// Six-Channel I/O Model (research_031 Section 2.2)
-// =============================================================================
-// Aria extends the traditional three-stream model to six channels:
-//   stdin  (0) - Text input
-//   stdout (1) - Text output
-//   stderr (2) - Error output
-//   stddbg (3) - Debug output (compiler diagnostics)
-//   stddati(4) - Data input (binary modules, symbol tables)
-//   stddato(5) - Data output (object files, bitcode)
-
-/// File descriptor constants for the six channels
-pub const STDIN_FD: int32 = 0;
-pub const STDOUT_FD: int32 = 1;
-pub const STDERR_FD: int32 = 2;
-pub const STDDBG_FD: int32 = 3;
-pub const STDDATI_FD: int32 = 4;
-pub const STDDATO_FD: int32 = 5;
-
-/// Channel type enumeration
-pub enum Channel {
-    STDIN = 0,
-    STDOUT = 1,
-    STDERR = 2,
-    STDDBG = 3,
-    STDDATI = 4,
-    STDDATO = 5
-}
-
-// External C library functions
 extern "libc" {
-    func read(fd: int32, buf: wild void*, count: int64) -> int64;
-    func write(fd: int32, buf: wild void*, count: int64) -> int64;
-    func close(fd: int32) -> int32;
-    func dup(oldfd: int32) -> int32;
-    func dup2(oldfd: int32, newfd: int32) -> int32;
-    func pipe(pipefd: wild int32[2]@) -> int32;
-    func fork() -> int32;
-    func waitpid(pid: int32, status: wild int32@, options: int32) -> int32;
-    func execvp(file: wild byte@, argv: wild wild byte@@) -> int32;
-    func _exit(status: int32) -> void;
-    func getpid() -> int32;
-    func getppid() -> int32;
-    func kill(pid: int32, sig: int32) -> int32;
+    func:exit = void(int32:status);
+    func:getpid = int32();
+    func:getppid = int32();
+    func:getuid = int32();
+    func:getgid = int32();
+    func:sleep = int32(int32:seconds);
 }
 
 // =============================================================================
-// Basic Channel Operations
+// Constants
 // =============================================================================
 
-/// Write data to a channel
-/// @param channel The channel to write to
-/// @param data The data to write
-/// @return Number of bytes written, or error
-pub func:channel_write = result<int64>(Channel:channel, string:data) {
-    int32:fd = channel;
-    wild string@:pinned = #data;
-    int64:len = data.length();
-
-    int64:written = write(fd, pinned, len);
-
-    if (written < 0) {
-        fail(ERR);
-    }
-
-    pass(written);
-};
-
-/// Read data from a channel
-/// @param channel The channel to read from
-/// @param buffer The buffer to read into
-/// @param count Maximum bytes to read
-/// @return Number of bytes read, or error
-pub func:channel_read = result<int64>(Channel:channel, wild byte@:buffer, int64:count) {
-    int32:fd = channel;
-
-    int64:bytes_read = read(fd, buffer, count);
-
-    if (bytes_read < 0) {
-        fail(ERR);
-    }
-
-    pass(bytes_read);
-};
-
-/// Write to debug channel (stddbg - fd 3)
-/// Useful for compiler developer diagnostics
-pub func:debug_write = result<int64>(string:msg) {
-    pass(channel_write(Channel.STDDBG, msg));
-};
-
-/// Write binary data to data output channel (stddato - fd 5)
-/// Used for emitting object files or bitcode
-pub func:data_write = result<int64>(wild byte@:data, int64:len) {
-    int64:written = write(STDDATO_FD, data, len);
-
-    if (written < 0) {
-        fail(ERR);
-    }
-
-    pass(written);
-};
-
-/// Read binary data from data input channel (stddati - fd 4)
-/// Used for reading pre-compiled modules or symbol tables
-pub func:data_read = result<int64>(wild byte@:buffer, int64:count) {
-    int64:bytes_read = read(STDDATI_FD, buffer, count);
-
-    if (bytes_read < 0) {
-        fail(ERR);
-    }
-
-    pass(bytes_read);
-};
+const int32:EXIT_SUCCESS = 0;
+const int32:EXIT_FAILURE = 1;
 
 // =============================================================================
-// Process Management (research_031 Section 2.3)
+// Basic System Functions
 // =============================================================================
 
-/// Process ID type
-pub type pid_t = int32;
-
-/// Process exit status
-pub struct ExitStatus {
-    int32:code;        // Exit code (0-255)
-    bool:signaled;     // Was terminated by signal
-    int32:signal;      // Signal number if signaled
-}
-
-/// Spawn a child process and wait for completion
-/// @param program The program to execute
-/// @param args Command line arguments
-/// @return Exit status of the child process
-pub func:spawn_wait = result<ExitStatus>(string:program, string[]:args) {
-    // Create pipes for the six channels
-    wild int32[2]:stdin_pipe;
-    wild int32[2]:stdout_pipe;
-    wild int32[2]:stderr_pipe;
-    wild int32[2]:stddbg_pipe;
-    wild int32[2]:stddati_pipe;
-    wild int32[2]:stddato_pipe;
-
-    // Create all pipes
-    if (pipe(@stdin_pipe) < 0) { fail(ERR); }
-    if (pipe(@stdout_pipe) < 0) { fail(ERR); }
-    if (pipe(@stderr_pipe) < 0) { fail(ERR); }
-    if (pipe(@stddbg_pipe) < 0) { fail(ERR); }
-    if (pipe(@stddati_pipe) < 0) { fail(ERR); }
-    if (pipe(@stddato_pipe) < 0) { fail(ERR); }
-
-    // Fork the process
-    pid_t:pid = fork();
-
-    if (pid < 0) {
-        // Fork failed
-        fail(ERR);
-    } else if (pid == 0) {
-        // Child process
-
-        // Set up file descriptors for six-channel I/O
-        dup2(stdin_pipe[0], STDIN_FD);
-        dup2(stdout_pipe[1], STDOUT_FD);
-        dup2(stderr_pipe[1], STDERR_FD);
-        dup2(stddbg_pipe[1], STDDBG_FD);
-        dup2(stddati_pipe[0], STDDATI_FD);
-        dup2(stddato_pipe[1], STDDATO_FD);
-
-        // Close unused pipe ends
-        close(stdin_pipe[1]);
-        close(stdout_pipe[0]);
-        close(stderr_pipe[0]);
-        close(stddbg_pipe[0]);
-        close(stddati_pipe[1]);
-        close(stddato_pipe[0]);
-
-        // Execute the program
-        wild byte@:prog_cstr = #program;
-
-        // Build argv array (program name + args + NULL terminator)
-        int64:argc = args.length() + 2;
-        wild wild byte@@:argv = alloc<wild byte@>(argc);
-
-        argv[0] = prog_cstr;
-        int64:i = 0;
-        while (i < args.length()) {
-            argv[i + 1] = #args[i];
-            i = i + 1;
-        }
-        argv[argc - 1] = NULL;
-
-        execvp(prog_cstr, argv);
-
-        // If execvp returns, it failed
-        _exit(127);
-    }
-
-    // Parent process - close unused pipe ends
-    close(stdin_pipe[0]);
-    close(stdout_pipe[1]);
-    close(stderr_pipe[1]);
-    close(stddbg_pipe[1]);
-    close(stddati_pipe[0]);
-    close(stddato_pipe[1]);
-
-    // Wait for child to complete
-    wild int32:status;
-    pid_t:result_pid = waitpid(pid, @status, 0);
-
-    if (result_pid < 0) {
-        fail(ERR);
-    }
-
-    // Parse exit status
-    ExitStatus:exit_status = {
-        code: (status >> 8) & 0xFF,
-        signaled: (status & 0x7F) != 0,
-        signal: status & 0x7F
-    };
-
-    // Close remaining pipe ends
-    close(stdin_pipe[1]);
-    close(stdout_pipe[0]);
-    close(stderr_pipe[0]);
-    close(stddbg_pipe[0]);
-    close(stddati_pipe[1]);
-    close(stddato_pipe[0]);
-
-    pass(exit_status);
+/// Exit the program with status code
+func:exit_program = void(int32:code) {
+    exit(code);
 };
 
 /// Get current process ID
-pub func:getpid = pid_t() {
+func:get_process_id = int32() {
     pass(getpid());
 };
 
 /// Get parent process ID
-pub func:getppid = pid_t() {
+func:get_parent_process_id = int32() {
     pass(getppid());
 };
 
-/// Send signal to a process
-/// @param pid Process ID
-/// @param sig Signal number
-/// @return 0 on success, error otherwise
-pub func:signal_send = result<int32>(pid_t:pid, int32:sig) {
-    int32:ret = kill(pid, sig);
-    if (ret < 0) {
-        fail(ERR);
-    }
-    pass(0);
+/// Get user ID
+func:get_user_id = int32() {
+    pass(getuid());
 };
 
-// Signal constants
-pub const SIGTERM: int32 = 15;
-pub const SIGKILL: int32 = 9;
-pub const SIGINT: int32 = 2;
-pub const SIGSTOP: int32 = 19;
-pub const SIGCONT: int32 = 18;
-
-// =============================================================================
-// System Diagnostics (research_031 Section 2.4)
-// =============================================================================
-
-extern "libc" {
-    func sysconf(name: int32) -> int64;
-    func getpagesize() -> int32;
-}
-
-// sysconf constants (Linux)
-const _SC_NPROCESSORS_ONLN: int32 = 84;
-const _SC_PHYS_PAGES: int32 = 85;
-
-/// Get the number of available CPU cores
-/// Used by the scheduler to size thread pools
-pub func:getCPUCount = int64() {
-    int64:count = sysconf(_SC_NPROCESSORS_ONLN);
-    if (count < 1) {
-        pass(1);  // Fallback to 1 CPU
-    }
-    pass(count);
+/// Get group ID
+func:get_group_id = int32() {
+    pass(getgid());
 };
 
-/// Get system page size in bytes
-/// Used for page-aligned allocations
-pub func:getPageSize = int64() {
-    int32:size = getpagesize();
-    pass(size);
+/// Sleep for specified seconds (returns 0 on success)
+func:sleep_seconds = int32(int32:seconds) {
+    pass(sleep(seconds));
 };
 
-/// Get total physical memory in bytes
-pub func:getTotalMemory = int64() {
-    int64:pages = sysconf(_SC_PHYS_PAGES);
-    int64:page_size = getPageSize();
-    pass(pages * page_size);
-};
-
-/// Memory usage information
-pub struct MemoryInfo {
-    int64:virtual_size;   // Virtual memory size
-    int64:resident_size;  // Resident Set Size (RSS)
-    int64:shared_size;    // Shared memory
-}
-
-/// Get current process memory usage
-/// Critical for self-throttling during compilation
-pub func:getMemoryUsage = result<MemoryInfo>() {
-    // Read from /proc/self/statm on Linux
-    // Format: size resident shared text lib data dt
-
-    // For now, return a stub - full implementation requires file I/O
-    MemoryInfo:info = {
-        virtual_size: 0,
-        resident_size: 0,
-        shared_size: 0
-    };
-
-    pass(info);
-};
-
-// =============================================================================
-// Environment Variables
-// =============================================================================
-
-extern "libc" {
-    func getenv(name: wild byte@) -> wild byte@;
-    func setenv(name: wild byte@, value: wild byte@, overwrite: int32) -> int32;
-    func unsetenv(name: wild byte@) -> int32;
-}
-
-/// Get environment variable value
-/// @param name Environment variable name
-/// @return Value or empty string if not set
-pub func:env_get = string(string:name) {
-    wild byte@:name_cstr = #name;
-    wild byte@:value = getenv(name_cstr);
-
-    if (value == NULL) {
-        pass("");
-    }
-
-    // Convert C string to Aria string
-    string:result = @from_cstr(value);
-    pass(result);
-};
-
-/// Set environment variable
-/// @param name Environment variable name
-/// @param value Value to set
-/// @param overwrite If true, overwrite existing value
-pub func:env_set = result<void>(string:name, string:value, bool:overwrite) {
-    wild byte@:name_cstr = #name;
-    wild byte@:value_cstr = #value;
-    int32:ow = 0;
-    if (overwrite) { ow = 1; }
-
-    int32:ret = setenv(name_cstr, value_cstr, ow);
-    if (ret < 0) {
-        fail(ERR);
-    }
-    pass(NIL);
-};
-
-/// Remove environment variable
-pub func:env_unset = result<void>(string:name) {
-    wild byte@:name_cstr = #name;
-
-    int32:ret = unsetenv(name_cstr);
-    if (ret < 0) {
-        fail(ERR);
-    }
-    pass(NIL);
-};
-
-// =============================================================================
-// Program Termination
-// =============================================================================
-
-extern "libc" {
-    func exit(status: int32) -> void;
-    func abort() -> void;
-}
-
-/// Exit the program with given status code
-pub func:exit = void(int32:code) {
-    exit(code);
-};
-
-/// Abort the program immediately (generates SIGABRT)
-pub func:abort = void() {
-    abort();
-};
+// TODO: Add when implemented:
+// - Platform detection
+// - Environment variables
+// - Process spawning
+// - Signal handling

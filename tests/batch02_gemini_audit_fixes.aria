@@ -1,0 +1,461 @@
+// ARIA Batch 02 Gemini Audit - Safety Critical Bug Fix Verification
+// Tests all 4 bugs identified by Gemini SIL-4 audit:
+//   BUG-004: TBB narrowing wraparound (CRITICAL)
+//   BUG-005: Trit/nit logic inversion (CRITICAL)
+//   BUG-006: Trit/nit sentinel healing (CRITICAL)
+//   BUG-007: Nit error swallowing (MEDIUM)
+
+// ==============================================================================
+// BUG-004: TBB Narrowing Wraparound (Force Limit Bypass)
+// ==============================================================================
+// Physical Consequence Prevented: Robot grip force 300 Nm appears as 44 Nm
+
+fn test_bug004_tbb8_wraparound() {
+    // Before fix: 300 would wrap to 44 (0x012C → 0x2C)
+    // After fix: 300 should return ERR sentinel (-128)
+    
+    let val_tbb8: tbb8 = tbb8_from_int(300);
+    
+    // Should be ERR, not 44
+    if (val_tbb8 == -128) {
+        print("✓ BUG-004: TBB8 overflow returns ERR (not 44)");
+    } else {
+        print("✗ FAIL: TBB8 overflow wrapped to: ");
+        print(val_tbb8);
+    }
+}
+
+fn test_bug004_tbb8_underflow() {
+    // Test negative overflow
+    let val_tbb8: tbb8 = tbb8_from_int(-300);
+    
+    if (val_tbb8 == -128) {
+        print("✓ BUG-004: TBB8 underflow returns ERR");
+    } else {
+        print("✗ FAIL: TBB8 underflow value: ");
+        print(val_tbb8);
+    }
+}
+
+fn test_bug004_tbb8_valid_positive() {
+    // Test edge of valid range (should work)
+    let val_tbb8: tbb8 = tbb8_from_int(127);
+    
+    if (val_tbb8 == 127) {
+        print("✓ BUG-004: TBB8 max valid value passes");
+    } else {
+        print("✗ FAIL: TBB8 max valid corrupted: ");
+        print(val_tbb8);
+    }
+}
+
+fn test_bug004_tbb8_valid_negative() {
+    // Test negative edge of valid range
+    let val_tbb8: tbb8 = tbb8_from_int(-127);
+    
+    if (val_tbb8 == -127) {
+        print("✓ BUG-004: TBB8 min valid value passes");
+    } else {
+        print("✗ FAIL: TBB8 min valid corrupted: ");
+        print(val_tbb8);
+    }
+}
+
+fn test_bug004_tbb16_wraparound() {
+    // Test tbb16 overflow (35000 > 32767)
+    let val_tbb16: tbb16 = tbb16_from_int(35000);
+    
+    if (val_tbb16 == -32768) {  // TBB16_ERR
+        print("✓ BUG-004: TBB16 overflow returns ERR");
+    } else {
+        print("✗ FAIL: TBB16 overflow value: ");
+        print(val_tbb16);
+    }
+}
+
+fn test_bug004_tbb32_wraparound() {
+    // Test tbb32 overflow (would require int64 input in real code)
+    // This tests that the mechanism exists
+    let val_tbb32: tbb32 = tbb32_from_int(2147483647);  // Max valid
+    
+    if (val_tbb32 == 2147483647) {
+        print("✓ BUG-004: TBB32 max valid passes");
+    } else {
+        print("✗ FAIL: TBB32 max valid corrupted: ");
+        print(val_tbb32);
+    }
+}
+
+// ==============================================================================
+// BUG-005: Trit/Nit Logic Inversion (Security Bypass)
+// ==============================================================================
+// Physical Consequence Prevented: permission && validated = true when should be false
+
+fn test_bug005_trit_and_logic() {
+    // Before fix: True (1) AND False (-1) = 1 (bitwise 0x01 & 0xFF = 0x01)
+    // After fix: Should be -1 (min(1, -1) = -1)
+    
+    let true_val: trit = 1;
+    let false_val: trit = -1;
+    let result: trit = true_val && false_val;
+    
+    if (result == -1) {
+        print("✓ BUG-005: Trit AND(true, false) = false");
+    } else {
+        print("✗ FAIL: Trit AND logic inverted, got: ");
+        print(result);
+    }
+}
+
+fn test_bug005_trit_or_logic() {
+    // Test OR logic: OR(false, true) = true
+    let false_val: trit = -1;
+    let true_val: trit = 1;
+    let result: trit = false_val || true_val;
+    
+    if (result == 1) {
+        print("✓ BUG-005: Trit OR(false, true) = true");
+    } else {
+        print("✗ FAIL: Trit OR logic broken, got: ");
+        print(result);
+    }
+}
+
+fn test_bug005_trit_and_both_false() {
+    // AND(false, false) = false
+    let false1: trit = -1;
+    let false2: trit = -1;
+    let result: trit = false1 && false2;
+    
+    if (result == -1) {
+        print("✓ BUG-005: Trit AND(false, false) = false");
+    } else {
+        print("✗ FAIL: Trit AND both false, got: ");
+        print(result);
+    }
+}
+
+fn test_bug005_trit_and_both_true() {
+    // AND(true, true) = true
+    let true1: trit = 1;
+    let true2: trit = 1;
+    let result: trit = true1 && true2;
+    
+    if (result == 1) {
+        print("✓ BUG-005: Trit AND(true, true) = true");
+    } else {
+        print("✗ FAIL: Trit AND both true, got: ");
+        print(result);
+    }
+}
+
+fn test_bug005_trit_unknown_and_true() {
+    // AND(unknown, true) = unknown (Kleene logic)
+    let unknown: trit = 0;
+    let true_val: trit = 1;
+    let result: trit = unknown && true_val;
+    
+    if (result == 0) {
+        print("✓ BUG-005: Trit AND(unknown, true) = unknown");
+    } else {
+        print("✗ FAIL: Trit three-valued logic broken, got: ");
+        print(result);
+    }
+}
+
+fn test_bug005_nit_and_logic() {
+    // Test nonary AND logic (uses same Kleene semantics)
+    let val1: nit = 3;   // "more true"
+    let val2: nit = -2;  // "more false"
+    let result: nit = val1 && val2;
+    
+    // min(3, -2) = -2
+    if (result == -2) {
+        print("✓ BUG-005: Nit AND uses min (Kleene logic)");
+    } else {
+        print("✗ FAIL: Nit AND logic broken, got: ");
+        print(result);
+    }
+}
+
+fn test_bug005_nit_or_logic() {
+    // Test nonary OR logic
+    let val1: nit = 2;
+    let val2: nit = -3;
+    let result: nit = val1 || val2;
+    
+    // max(2, -3) = 2
+    if (result == 2) {
+        print("✓ BUG-005: Nit OR uses max (Kleene logic)");
+    } else {
+        print("✗ FAIL: Nit OR logic broken, got: ");
+        print(result);
+    }
+}
+
+// ==============================================================================
+// BUG-006: Trit/Nit Sentinel Healing (Error Laundering)
+// ==============================================================================
+// Physical Consequence Prevented: Corrupted sensor reading appears valid
+
+fn test_bug006_trit_err_propagation_add() {
+    // Before fix: ERR (-128) + 1 = -127 (becomes "valid")
+    // After fix: ERR + 1 = ERR (sticky error)
+    
+    let err_trit: trit = -128;  // TRIT_ERR sentinel
+    let one: trit = 1;
+    let result: trit = err_trit + one;
+    
+    if (result == -128) {
+        print("✓ BUG-006: Trit ERR + 1 = ERR (sticky)");
+    } else {
+        print("✗ FAIL: Trit error healed to: ");
+        print(result);
+    }
+}
+
+fn test_bug006_trit_err_propagation_mul() {
+    // ERR * valid = ERR
+    let err_trit: trit = -128;
+    let val: trit = 1;
+    let result: trit = err_trit * val;
+    
+    if (result == -128) {
+        print("✓ BUG-006: Trit ERR * val = ERR");
+    } else {
+        print("✗ FAIL: Trit ERR multiplication healed to: ");
+        print(result);
+    }
+}
+
+fn test_bug006_trit_err_propagation_and() {
+    // ERR && true = ERR
+    let err_trit: trit = -128;
+    let true_val: trit = 1;
+    let result: trit = err_trit && true_val;
+    
+    if (result == -128) {
+        print("✓ BUG-006: Trit ERR && true = ERR");
+    } else {
+        print("✗ FAIL: Trit ERR logic healed to: ");
+        print(result);
+    }
+}
+
+fn test_bug006_nit_err_propagation() {
+    // NIT_ERR + valid = NIT_ERR
+    let err_nit: nit = -128;
+    let val: nit = 2;
+    let result: nit = err_nit + val;
+    
+    if (result == -128) {
+        print("✓ BUG-006: Nit ERR + val = ERR (sticky)");
+    } else {
+        print("✗ FAIL: Nit error healed to: ");
+        print(result);
+    }
+}
+
+// ==============================================================================
+// BUG-007: Nit Error Swallowing (Silent Saturation)
+// ==============================================================================
+// Physical Consequence Prevented: Accumulated sensor values hit ceiling, appear valid
+
+fn test_bug007_nit_add_overflow() {
+    // Before fix: 3 + 2 = 4 (saturated)
+    // After fix: 3 + 2 = ERR (overflow for nit range [-4, 4])
+    
+    let val1: nit = 3;
+    let val2: nit = 2;
+    let result: nit = val1 + val2;
+    
+    if (result == -128) {  // NIT_ERR
+        print("✓ BUG-007: Nit overflow returns ERR (not saturated)");
+    } else {
+        print("✗ FAIL: Nit overflow saturated to: ");
+        print(result);
+    }
+}
+
+fn test_bug007_nit_add_underflow() {
+    // -3 + (-2) = -5, out of range [-4, 4]
+    let val1: nit = -3;
+    let val2: nit = -2;
+    let result: nit = val1 + val2;
+    
+    if (result == -128) {
+        print("✓ BUG-007: Nit underflow returns ERR");
+    } else {
+        print("✗ FAIL: Nit underflow saturated to: ");
+        print(result);
+    }
+}
+
+fn test_bug007_nit_mul_overflow() {
+    // 3 * 2 = 6, out of range
+    let val1: nit = 3;
+    let val2: nit = 2;
+    let result: nit = val1 * val2;
+    
+    if (result == -128) {
+        print("✓ BUG-007: Nit mul overflow returns ERR");
+    } else {
+        print("✗ FAIL: Nit mul overflow saturated to: ");
+        print(result);
+    }
+}
+
+fn test_bug007_nit_valid_addition() {
+    // Test edge case: 4 + 0 = 4 (should work)
+    let max_nit: nit = 4;
+    let zero: nit = 0;
+    let result: nit = max_nit + zero;
+    
+    if (result == 4) {
+        print("✓ BUG-007: Nit max + 0 = max (valid)");
+    } else {
+        print("✗ FAIL: Nit valid add corrupted to: ");
+        print(result);
+    }
+}
+
+fn test_bug007_nit_edge_valid() {
+    // 2 + 2 = 4 (exactly at edge, valid)
+    let val1: nit = 2;
+    let val2: nit = 2;
+    let result: nit = val1 + val2;
+    
+    if (result == 4) {
+        print("✓ BUG-007: Nit 2+2 = 4 (edge valid)");
+    } else {
+        print("✗ FAIL: Nit edge case value: ");
+        print(result);
+    }
+}
+
+fn test_bug007_nit_just_over_edge() {
+    // 2 + 3 = 5 (one past edge, overflow)
+    let val1: nit = 2;
+    let val2: nit = 3;
+    let result: nit = val1 + val2;
+    
+    if (result == -128) {
+        print("✓ BUG-007: Nit 2+3 = ERR (overflow)");
+    } else {
+        print("✗ FAIL: Nit just-over-edge value: ");
+        print(result);
+    }
+}
+
+// ==============================================================================
+// Integration Test: All Bugs Combined
+// ==============================================================================
+
+fn test_integration_safety_chain() {
+    print("=== Integration Test: Safety Barrier Chain ===");
+    
+    // Scenario: Robot control with multiple safety checks
+    
+    // 1. Force limit check (BUG-004)
+    let measured_force: int32 = 300;  // Exceeds tbb8 range
+    let force_tbb8: tbb8 = tbb8_from_int(measured_force);
+    
+    if (force_tbb8 != -128) {
+        print("✗ INTEGRATION FAIL: Force wraparound not prevented");
+        return;
+    }
+    
+    // 2. Permission logic (BUG-005)
+    let has_permission: trit = 1;  // true
+    let security_check: trit = -1;  // false
+    let access_granted: trit = has_permission && security_check;
+    
+    if (access_granted != -1) {
+        print("✗ INTEGRATION FAIL: Security bypass possible");
+        return;
+    }
+    
+    // 3. Sensor error propagation (BUG-006)
+    let sensor_reading: trit = -128;  // ERR from failed sensor
+    let processed: trit = sensor_reading + 1;  // Attempted error recovery
+    
+    if (processed != -128) {
+        print("✗ INTEGRATION FAIL: Sensor error laundered");
+        return;
+    }
+    
+    // 4. Accumulator overflow (BUG-007)
+    let accumulator: nit = 3;
+    let increment: nit = 2;
+    let new_value: nit = accumulator + increment;
+    
+    if (new_value != -128) {
+        print("✗ INTEGRATION FAIL: Overflow saturation hiding error");
+        return;
+    }
+    
+    print("✓ INTEGRATION: All 4 safety barriers functioning");
+    print("   - Force limits enforced (BUG-004)");
+    print("   - Logic inversion prevented (BUG-005)");
+    print("   - Error propagation maintained (BUG-006)");
+    print("   - Overflow detection working (BUG-007)");
+}
+
+// ==============================================================================
+// Main Test Runner
+// ==============================================================================
+
+fn main() {
+    print("╔════════════════════════════════════════════════════════════════╗");
+    print("║  ARIA Batch 02 Gemini Audit - Critical Bug Fix Verification   ║");
+    print("║  SIL-4 Safety Standard - Zero Tolerance for Silent Corruption ║");
+    print("╚════════════════════════════════════════════════════════════════╝");
+    print("");
+    
+    print("=== BUG-004: TBB Narrowing Wraparound Tests ===");
+    test_bug004_tbb8_wraparound();
+    test_bug004_tbb8_underflow();
+    test_bug004_tbb8_valid_positive();
+    test_bug004_tbb8_valid_negative();
+    test_bug004_tbb16_wraparound();
+    test_bug004_tbb32_wraparound();
+    print("");
+    
+    print("=== BUG-005: Trit/Nit Logic Inversion Tests ===");
+    test_bug005_trit_and_logic();
+    test_bug005_trit_or_logic();
+    test_bug005_trit_and_both_false();
+    test_bug005_trit_and_both_true();
+    test_bug005_trit_unknown_and_true();
+    test_bug005_nit_and_logic();
+    test_bug005_nit_or_logic();
+    print("");
+    
+    print("=== BUG-006: Trit/Nit Sentinel Healing Tests ===");
+    test_bug006_trit_err_propagation_add();
+    test_bug006_trit_err_propagation_mul();
+    test_bug006_trit_err_propagation_and();
+    test_bug006_nit_err_propagation();
+    print("");
+    
+    print("=== BUG-007: Nit Error Swallowing Tests ===");
+    test_bug007_nit_add_overflow();
+    test_bug007_nit_add_underflow();
+    test_bug007_nit_mul_overflow();
+    test_bug007_nit_valid_addition();
+    test_bug007_nit_edge_valid();
+    test_bug007_nit_just_over_edge();
+    print("");
+    
+    test_integration_safety_chain();
+    
+    print("");
+    print("╔════════════════════════════════════════════════════════════════╗");
+    print("║                    Test Suite Complete                         ║");
+    print("║  Physical Consequences Prevented:                              ║");
+    print("║   - Robot crushing injuries (force wraparound)                 ║");
+    print("║   - Security bypass (logic inversion)                          ║");
+    print("║   - Corrupted sensor data propagation                          ║");
+    print("║   - Silent accumulator overflow                                ║");
+    print("╚════════════════════════════════════════════════════════════════╝");
+}

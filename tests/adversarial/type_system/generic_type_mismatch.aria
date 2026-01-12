@@ -1,0 +1,17 @@
+/**
+ * Test: Generic Function Type Mismatch
+ * Expected: COMPILER ERROR - TBB passed where int expected
+ * Why Critical: No implicit TBB→int through generics
+ */
+
+func:identity<T> = T(T:x) {
+    pass(x);
+};
+
+func:main = int32() {
+    tbb8:x = 50;
+    int8:y = identity<int8>(x);  // ERROR: Cannot pass tbb8 where int8 expected
+
+    print("Should not compile!\n");
+    return 0;
+};

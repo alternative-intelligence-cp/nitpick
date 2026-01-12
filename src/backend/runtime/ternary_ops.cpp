@@ -32,8 +32,9 @@ struct Trybble {
 /// Maps packed trybble (bias 121) to 5 trits
 static Trybble LUT_UNPACK[256];
 
-/// Powers of 3 for packing: {1, 3, 9, 27, 81}
-static const int POW3[5] = {1, 3, 9, 27, 81};
+/// Powers of 3 for packing: {1, 3, 9, 27, 81, 243, 729, 2187, 6561, 19683}
+/// 10 elements needed: indices 0-4 for low trybble, 5-9 for high trybble
+static const int POW3[10] = {1, 3, 9, 27, 81, 243, 729, 2187, 6561, 19683};
 
 /// Powers of 9 for nyte operations: {1, 9, 81, 729, 6561}
 static const int POW9[5] = {1, 9, 81, 729, 6561};
@@ -162,6 +163,32 @@ int8_t aria_trit_mul(int8_t a, int8_t b) {
 }
 
 int8_t aria_trit_neg(int8_t a) {
+    return static_cast<int8_t>(-a);
+}
+
+// ARIA SAFETY FIX (Gemini Batch 02, BUG-005): Kleene Logic for Balanced Ternary
+// Balanced ternary logic uses Kleene logic (min/max), NOT bitwise operations
+// Values: True=1, False=-1, Unknown=0, ERR=-128
+
+int8_t aria_trit_and(int8_t a, int8_t b) {
+    // Kleene AND: min(a, b) - takes most "false" value
+    // ERR propagates (sticky error)
+    if (a == -128 || b == -128) return -128;  // TRIT_ERR
+    return (a < b) ? a : b;  // min(a, b)
+}
+
+int8_t aria_trit_or(int8_t a, int8_t b) {
+    // Kleene OR: max(a, b) - takes most "true" value
+    // ERR propagates (sticky error)
+    if (a == -128 || b == -128) return -128;  // TRIT_ERR
+    return (a > b) ? a : b;  // max(a, b)
+}
+
+int8_t aria_trit_not(int8_t a) {
+    // NOT: logical negation
+    // True (1) -> False (-1), False (-1) -> True (1), Unknown (0) -> Unknown (0)
+    // ERR propagates
+    if (a == -128) return -128;  // TRIT_ERR
     return static_cast<int8_t>(-a);
 }
 
@@ -296,17 +323,37 @@ uint16_t aria_tryte_div(uint16_t a, uint16_t b) {
 }
 
 uint16_t aria_tryte_mod(uint16_t a, uint16_t b) {
+    // Sticky Error Propagation
     if (a == TRYTE_ERR || b == TRYTE_ERR) return TRYTE_ERR;
     
-    int32_t a_bin = aria_tryte_to_bin(a);
-    int32_t b_bin = aria_tryte_to_bin(b);
+    // Unbias (convert to semantic values)
+    int32_t val_a = aria_tryte_to_bin(a);
+    int32_t val_b = aria_tryte_to_bin(b);
     
-    if (a_bin == INT32_MIN || b_bin == INT32_MIN || b_bin == 0) {
+    // Division by Zero Check
+    if (val_a == INT32_MIN || val_b == INT32_MIN || val_b == 0) {
         return TRYTE_ERR;
     }
     
-    int32_t remainder = a_bin % b_bin;
-    return aria_bin_to_tryte(remainder);
+    // Calculate Balanced Remainder: r = a - (b * round(a/b))
+    // Use round-to-nearest (symmetric rounding for balanced arithmetic)
+    double quot_d = static_cast<double>(val_a) / static_cast<double>(val_b);
+    int32_t q;
+    if (quot_d >= 0) {
+        q = static_cast<int32_t>(quot_d + 0.5);
+    } else {
+        q = static_cast<int32_t>(quot_d - 0.5);
+    }
+    
+    int32_t result_balanced = val_a - (val_b * q);
+    
+    // Bounds check (defensive coding)
+    if (result_balanced < TERNARY_MIN || result_balanced > TERNARY_MAX) {
+        return TRYTE_ERR;
+    }
+    
+    // Re-bias and return
+    return aria_bin_to_tryte(result_balanced);
 }
 
 int32_t aria_tryte_cmp(uint16_t a, uint16_t b) {
@@ -403,26 +450,69 @@ int8_t aria_tryte_get_trit(uint16_t tryte, uint8_t index) {
 // Atomic Nit Operations
 // ==============================================================================
 
+// ARIA SAFETY FIX (Gemini Batch 02, BUG-007): Error sentinels instead of saturation
+// Nit valid range: [-4, +4] (5 nonary digits: -4, -3, -2, -1, 0, 1, 2, 3, 4)
+// NIT_ERR: -128 (same as TRIT_ERR for consistency)
+
+#define NIT_ERR -128
+
 int8_t aria_nit_add(int8_t a, int8_t b) {
+    // Sticky error propagation
+    if (a == NIT_ERR || b == NIT_ERR) return NIT_ERR;
+    
     int sum = static_cast<int>(a) + static_cast<int>(b);
-    // Saturate to [-4, 4]
-    if (sum > 4) return 4;
-    if (sum < -4) return -4;
+    
+    // FIXED: Return ERR on overflow instead of saturating
+    if (sum > 4 || sum < -4) return NIT_ERR;
+    
     return static_cast<int8_t>(sum);
 }
 
 int8_t aria_nit_sub(int8_t a, int8_t b) {
+    // Sticky error propagation
+    if (a == NIT_ERR || b == NIT_ERR) return NIT_ERR;
+    
     return aria_nit_add(a, static_cast<int8_t>(-b));
 }
 
 int8_t aria_nit_mul(int8_t a, int8_t b) {
+    // Sticky error propagation
+    if (a == NIT_ERR || b == NIT_ERR) return NIT_ERR;
+    
     int product = static_cast<int>(a) * static_cast<int>(b);
-    if (product > 4) return 4;
-    if (product < -4) return -4;
+    
+    // FIXED: Return ERR on overflow instead of saturating
+    if (product > 4 || product < -4) return NIT_ERR;
+    
     return static_cast<int8_t>(product);
 }
 
 int8_t aria_nit_neg(int8_t a) {
+    // Sticky error propagation
+    if (a == NIT_ERR) return NIT_ERR;
+    
+    return static_cast<int8_t>(-a);
+}
+
+// ARIA SAFETY FIX (Gemini Batch 02, BUG-005): Kleene Logic for Nonary
+// Nonary logic uses same Kleene semantics as balanced ternary
+// Values: [-4, -3, -2, -1, 0, 1, 2, 3, 4], ERR=-128
+
+int8_t aria_nit_and(int8_t a, int8_t b) {
+    // Kleene AND: min(a, b)
+    if (a == NIT_ERR || b == NIT_ERR) return NIT_ERR;
+    return (a < b) ? a : b;
+}
+
+int8_t aria_nit_or(int8_t a, int8_t b) {
+    // Kleene OR: max(a, b)
+    if (a == NIT_ERR || b == NIT_ERR) return NIT_ERR;
+    return (a > b) ? a : b;
+}
+
+int8_t aria_nit_not(int8_t a) {
+    // NOT: logical negation
+    if (a == NIT_ERR) return NIT_ERR;
     return static_cast<int8_t>(-a);
 }
 
@@ -493,15 +583,35 @@ uint16_t aria_nyte_div(uint16_t a, uint16_t b) {
 }
 
 uint16_t aria_nyte_mod(uint16_t a, uint16_t b) {
+    // Sticky Error Propagation
     if (a == NYTE_ERR || b == NYTE_ERR) return NYTE_ERR;
     
-    int32_t a_val = static_cast<int32_t>(a) - NYTE_BIAS;
-    int32_t b_val = static_cast<int32_t>(b) - NYTE_BIAS;
+    // Unbias (convert to semantic values)
+    int32_t val_a = static_cast<int32_t>(a) - NYTE_BIAS;
+    int32_t val_b = static_cast<int32_t>(b) - NYTE_BIAS;
     
-    if (b_val == 0) return NYTE_ERR;
+    // Division by Zero Check
+    if (val_b == 0) return NYTE_ERR;
     
-    int32_t remainder = a_val % b_val;
-    return static_cast<uint16_t>(remainder + NYTE_BIAS);
+    // Calculate Balanced Remainder: r = a - (b * round(a/b))
+    // Same round-to-nearest logic for base-9 balanced system
+    double quot_d = static_cast<double>(val_a) / static_cast<double>(val_b);
+    int32_t q;
+    if (quot_d >= 0) {
+        q = static_cast<int32_t>(quot_d + 0.5);
+    } else {
+        q = static_cast<int32_t>(quot_d - 0.5);
+    }
+    
+    int32_t result_balanced = val_a - (val_b * q);
+    
+    // Bounds check (defensive coding)
+    if (result_balanced < TERNARY_MIN || result_balanced > TERNARY_MAX) {
+        return NYTE_ERR;
+    }
+    
+    // Re-bias and return
+    return static_cast<uint16_t>(result_balanced + NYTE_BIAS);
 }
 
 uint16_t aria_nyte_neg(uint16_t a) {

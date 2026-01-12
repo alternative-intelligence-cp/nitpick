@@ -1,0 +1,23 @@
+/**
+ * Test: Conditional Borrow Merge
+ * Expected: COMPILER ERROR - borrow may exist on some paths
+ * Why Critical: Conservative analysis must catch potential conflicts
+ */
+
+func:main = int32() {
+    int32:x = 10;
+    int32:y = 20;
+    bool:cond = true;
+
+    int32$:r;
+    if (cond) {
+        r = $x;  // Borrow x in true branch
+    } else {
+        r = $y;  // Borrow y in false branch
+    }
+
+    // After merge: r might borrow x
+    x = 30;  // ERROR: x might be borrowed by r
+
+    return 0;
+};

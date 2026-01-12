@@ -1,0 +1,15 @@
+/**
+ * Test: TBB Cannot Implicitly Convert to Standard Int
+ * Expected: COMPILER ERROR (type mismatch)
+ * Why: Cross-family conversion defeats error propagation
+ *
+ * From TODO: "TBB types must NEVER implicitly coerce to standard integers"
+ * If tbb8 → int8 is allowed, sentinel value could leak
+ */
+
+func:main = int32() {
+    tbb8:x = tbb8_from_int(100);
+    int8:y = x;  // ERROR: Cannot implicitly convert tbb8 → int8
+
+    return 0;
+};

@@ -432,4 +432,36 @@ llvm::Value* TBBCodegen::generateNeg(llvm::Value* operand, Type* type) {
     return phi;
 }
 
+llvm::Value* TBBCodegen::generateWiden(llvm::Value* srcVal, Type* srcType, Type* dstType) {
+    // ARIA-018: Sentinel-Preserving TBB Widening
+    //
+    // Standard sign extension would convert source ERR to a valid value:
+    //   tbb8 ERR (-128) → sext → 0xFFFFFFFFFFFFFF80 = -128 in tbb16 (valid!)
+    //   tbb16 ERR (-32768) → sext → 0xFFFF8000 in tbb32 (valid!)
+    //
+    // We must map: source sentinel → destination sentinel
+    //
+    // Generated IR (branchless using select):
+    //   isErr = icmp eq srcVal, srcSentinel
+    //   widened = sext srcVal to dstType
+    //   result = select isErr, dstSentinel, widened
+
+    // Get destination LLVM type for sign extension
+    llvm::IntegerType* dstLLVMType = getTBBLLVMType(dstType);
+
+    // Get sentinel values
+    llvm::Value* srcSentinel = getErrSentinel(srcType);
+    llvm::Value* dstSentinel = getErrSentinel(dstType);
+
+    // Check if source is ERR
+    llvm::Value* isErr = builder.CreateICmpEQ(srcVal, srcSentinel, "is_tbb_err");
+
+    // Perform standard sign extension
+    llvm::Value* widened = builder.CreateSExt(srcVal, dstLLVMType, "tbb_sext");
+
+    // Select: if ERR, return dstSentinel; otherwise return widened value
+    // This compiles to cmov on x86 or csel on ARM - branchless and fast
+    return builder.CreateSelect(isErr, dstSentinel, widened, "tbb_widen");
+}
+
 } // namespace aria

@@ -29,6 +29,8 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
       di_file(nullptr),
       debug_enabled(enable_debug),
       current_module_name(""),
+      current_func_is_async(false),
+      current_coro_suspend_block(nullptr),
       tbb_codegen(context, builder),
       ternary_codegen(context, builder) {
     // Set source filename for better debug info
@@ -46,6 +48,127 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
 
 void IRGenerator::setTypeSystem(TypeSystem* ts) {
     type_system = ts;
+}
+
+// Helper: Promote int64 literal to LBIM struct (int128/256/512/1024/2048/4096)
+llvm::Value* IRGenerator::promoteToLBIMStruct(llvm::Value* literal, llvm::Type* targetType) {
+    // Verify target is a struct type
+    if (!targetType->isStructTy()) {
+        return literal;  // Not an LBIM type, no promotion needed
+    }
+    
+    llvm::StructType* structType = llvm::cast<llvm::StructType>(targetType);
+    std::string structName = structType->getName().str();
+    
+    // Check if this is an LBIM struct (int128, int256, etc.)
+    if (structName.find("struct.int") != 0 && structName.find("struct.uint") != 0) {
+        return literal;  // Not an LBIM type
+    }
+    
+    // Extract the literal value as int64
+    if (!literal->getType()->isIntegerTy()) {
+        std::cerr << "[ERROR] promoteToLBIMStruct: literal is not an integer type" << std::endl;
+        return literal;
+    }
+    
+    // Determine the number of limbs based on struct name
+    int numLimbs = 0;
+    if (structName.find("128") != std::string::npos) numLimbs = 2;
+    else if (structName.find("256") != std::string::npos) numLimbs = 4;
+    else if (structName.find("512") != std::string::npos) numLimbs = 8;
+    else if (structName.find("1024") != std::string::npos) numLimbs = 16;
+    else if (structName.find("2048") != std::string::npos) numLimbs = 32;
+    else if (structName.find("4096") != std::string::npos) numLimbs = 64;
+    else {
+        std::cerr << "[ERROR] promoteToLBIMStruct: unknown LBIM type " << structName << std::endl;
+        return literal;
+    }
+    
+    std::cerr << "[LBIM_PROMOTE] Promoting literal to " << structName << " (" << numLimbs << " limbs)" << std::endl;
+    
+    // Create a zero-initialized struct on the stack
+    llvm::Value* structAlloca = builder.CreateAlloca(targetType, nullptr, "lbim_promoted");
+    
+    // Initialize all limbs to 0
+    llvm::Type* i64Type = llvm::Type::getInt64Ty(context);
+    llvm::Value* zero = llvm::ConstantInt::get(i64Type, 0);
+    
+    for (int i = 0; i < numLimbs; i++) {
+        // Get pointer to limbs[i]: GEP into struct, then into array, then index i
+        std::vector<llvm::Value*> indices = {
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),  // struct index
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),  // array field index
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), i)   // limb index
+        };
+        llvm::Value* limbPtr = builder.CreateGEP(targetType, structAlloca, indices, "limb_ptr");
+        builder.CreateStore(zero, limbPtr);
+    }
+    
+    // Convert literal to i64 (sign-extend if necessary)
+    llvm::Value* literalI64 = literal;
+    if (literal->getType() != i64Type) {
+        if (literal->getType()->getIntegerBitWidth() < 64) {
+            // Sign-extend for signed types
+            literalI64 = builder.CreateSExt(literal, i64Type, "literal_i64");
+        } else {
+            // Truncate if somehow larger
+            literalI64 = builder.CreateTrunc(literal, i64Type, "literal_i64");
+        }
+    }
+    
+    // Store the literal value in limbs[0] (LSB)
+    std::vector<llvm::Value*> indices0 = {
+        llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),  // struct index
+        llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),  // array field index  
+        llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0)   // limb 0
+    };
+    llvm::Value* limb0Ptr = builder.CreateGEP(targetType, structAlloca, indices0, "limb0_ptr");
+    builder.CreateStore(literalI64, limb0Ptr);
+    
+    // If the literal is negative (signed), sign-extend by filling high limbs with all 1s
+    if (structName.find("uint") == 0) {
+        // Unsigned type - already zero-extended, done
+        llvm::Value* result = builder.CreateLoad(targetType, structAlloca, "lbim_promoted_val");
+        return result;
+    }
+    
+    // Signed type - check if negative and sign-extend
+    llvm::Value* isNegative = builder.CreateICmpSLT(
+        literalI64,
+        llvm::ConstantInt::get(i64Type, 0),
+        "is_negative"
+    );
+    
+    std::cerr << "[LBIM_PROMOTE] Literal is signed type, checking if negative..." << std::endl;
+    if (llvm::ConstantInt* CI = llvm::dyn_cast<llvm::ConstantInt>(literalI64)) {
+        std::cerr << "[LBIM_PROMOTE] Literal constant value: " << CI->getSExtValue() << std::endl;
+    }
+    
+    // Create blocks for sign extension
+    llvm::Function* func = builder.GetInsertBlock()->getParent();
+    llvm::BasicBlock* signExtendBB = llvm::BasicBlock::Create(context, "sign_extend", func);
+    llvm::BasicBlock* continueBB = llvm::BasicBlock::Create(context, "continue", func);
+    
+    builder.CreateCondBr(isNegative, signExtendBB, continueBB);
+    
+    // Sign extend block: fill high limbs with 0xFFFFFFFFFFFFFFFF
+    builder.SetInsertPoint(signExtendBB);
+    llvm::Value* allOnes = llvm::ConstantInt::get(i64Type, 0xFFFFFFFFFFFFFFFFULL);
+    for (int i = 1; i < numLimbs; i++) {
+        std::vector<llvm::Value*> indices = {
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), i)
+        };
+        llvm::Value* limbPtr = builder.CreateGEP(targetType, structAlloca, indices, "limb_ptr");
+        builder.CreateStore(allOnes, limbPtr);
+    }
+    builder.CreateBr(continueBB);
+    
+    // Continue block: load and return the struct
+    builder.SetInsertPoint(continueBB);
+    llvm::Value* result = builder.CreateLoad(targetType, structAlloca, "lbim_promoted_val");
+    return result;
 }
 
 void IRGenerator::setCurrentModuleName(const std::string& module_name) {
@@ -70,10 +193,84 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
     switch (aria_type->getKind()) {
         case TypeKind::PRIMITIVE: {
             auto* prim = static_cast<PrimitiveType*>(aria_type);
+            std::string prim_name = prim->getName();
             
             // Boolean type
-            if (prim->getName() == "bool") {
+            if (prim_name == "bool") {
                 llvm_type = builder.getInt1Ty();
+            }
+            // Fraction types: {whole, numerator, denominator} (all same TBB width)
+            else if (prim_name == "frac8") {
+                std::vector<llvm::Type*> fields = {
+                    builder.getInt8Ty(),  // whole (tbb8)
+                    builder.getInt8Ty(),  // numerator (tbb8)
+                    builder.getInt8Ty()   // denominator (tbb8)
+                };
+                llvm_type = llvm::StructType::get(context, fields);
+            }
+            else if (prim_name == "frac16") {
+                std::vector<llvm::Type*> fields = {
+                    builder.getInt16Ty(),  // whole (tbb16)
+                    builder.getInt16Ty(),  // numerator (tbb16)
+                    builder.getInt16Ty()   // denominator (tbb16)
+                };
+                llvm_type = llvm::StructType::get(context, fields);
+            }
+            else if (prim_name == "frac32") {
+                std::vector<llvm::Type*> fields = {
+                    builder.getInt32Ty(),  // whole (tbb32)
+                    builder.getInt32Ty(),  // numerator (tbb32)
+                    builder.getInt32Ty()   // denominator (tbb32)
+                };
+                llvm_type = llvm::StructType::get(context, fields);
+            }
+            else if (prim_name == "frac64") {
+                std::vector<llvm::Type*> fields = {
+                    builder.getInt64Ty(),  // whole (tbb64)
+                    builder.getInt64Ty(),  // numerator (tbb64)
+                    builder.getInt64Ty()   // denominator (tbb64)
+                };
+                llvm_type = llvm::StructType::get(context, fields);
+            }
+            // Twisted Floating Point types: {tbb16 exp, tbbN mant}
+            else if (prim_name == "tfp32") {
+                std::vector<llvm::Type*> fields = {
+                    builder.getInt16Ty(),  // exponent (tbb16)
+                    builder.getInt16Ty()   // mantissa (tbb16)
+                };
+                llvm_type = llvm::StructType::get(context, fields);
+            }
+            else if (prim_name == "tfp64") {
+                std::vector<llvm::Type*> fields = {
+                    builder.getInt16Ty(),  // exponent (tbb16)
+                    builder.getInt64Ty()   // mantissa (tbb48 in i64, upper 16 bits unused)
+                };
+                llvm_type = llvm::StructType::get(context, fields);
+            }
+            // Vec9: 16-element toroidal vector (16 x tbb32 = 512 bits)
+            else if (prim_name == "vec9") {
+                llvm_type = llvm::ArrayType::get(builder.getInt32Ty(), 16);
+            }
+            // TMatrix: Composite structure with metadata + wild pointer
+            else if (prim_name == "tmatrix") {
+                std::vector<llvm::Type*> fields = {
+                    builder.getInt64Ty(),                // width
+                    builder.getInt64Ty(),                // height
+                    builder.getInt32Ty(),                // element_size
+                    builder.getInt32Ty(),                // padding/alignment
+                    llvm::PointerType::get(context, 0)   // wild data pointer
+                };
+                llvm_type = llvm::StructType::get(context, fields);
+            }
+            // TTensor: 9D toroidal tensor with metadata + wild pointer
+            else if (prim_name == "ttensor") {
+                std::vector<llvm::Type*> fields = {
+                    llvm::ArrayType::get(builder.getInt64Ty(), 9),  // dimensions[9]
+                    builder.getInt32Ty(),                // element_size
+                    builder.getInt32Ty(),                // padding/alignment
+                    llvm::PointerType::get(context, 0)   // wild data pointer
+                };
+                llvm_type = llvm::StructType::get(context, fields);
             }
             // Floating point types
             else if (prim->isFloatingType()) {
@@ -278,8 +475,664 @@ llvm::Value* IRGenerator::createOptionalNone(llvm::Type* optionalType) {
     llvm::Value* hasValue = builder.getInt1(false);
     llvm::Value* optStruct = llvm::UndefValue::get(optionalType);
     optStruct = builder.CreateInsertValue(optStruct, hasValue, {0}, "opt.none");
-    
+
     return optStruct;
+}
+
+// ============================================================================
+// ARIA-024: Limb-Based Integral Model (LBIM) Helper Methods
+// Implements arithmetic on struct-wrapped limb arrays to bypass LLVM bugs
+// See: github.com/llvm/llvm-project/issues/68751, #56351
+// ============================================================================
+
+unsigned IRGenerator::isLBIMType(llvm::Type* type) {
+    // Check if type is a struct type
+    if (!type->isStructTy()) {
+        std::cerr << "[DEBUG] isLBIMType: type is NOT a struct" << std::endl;
+        return 0;
+    }
+
+    llvm::StructType* structType = llvm::cast<llvm::StructType>(type);
+
+    // Check the struct name
+    if (!structType->hasName()) {
+        std::cerr << "[DEBUG] isLBIMType: struct has NO name" << std::endl;
+        return 0;
+    }
+
+    llvm::StringRef name = structType->getName();
+    std::cerr << "[DEBUG] isLBIMType: checking struct name='" << name.str() << "'" << std::endl;
+
+    if (name == "struct.int128" || name == "struct.uint128") {
+        return 2;  // 2 x i64 limbs
+    }
+    if (name == "struct.int256" || name == "struct.uint256") {
+        return 4;  // 4 x i64 limbs
+    }
+    if (name == "struct.int512" || name == "struct.uint512") {
+        return 8;  // 8 x i64 limbs
+    }
+    if (name == "struct.int1024" || name == "struct.uint1024") {
+        return 16;  // 16 x i64 limbs (ARIA-025: post-quantum crypto)
+    }
+    if (name == "struct.int2048" || name == "struct.uint2048") {
+        return 32;  // 32 x i64 limbs
+    }
+    if (name == "struct.int4096" || name == "struct.uint4096") {
+        std::cerr << "[DEBUG] isLBIMType: MATCHED int4096/uint4096, returning 64" << std::endl;
+        return 64;  // 64 x i64 limbs
+    }
+
+    std::cerr << "[DEBUG] isLBIMType: no match, returning 0" << std::endl;
+    return 0;
+}
+
+bool IRGenerator::isFix256Type(llvm::Type* type) {
+    // Check if type is fix256 (Q128.128 deterministic fixed-point)
+    if (!type->isStructTy()) {
+        return false;
+    }
+
+    llvm::StructType* structType = llvm::cast<llvm::StructType>(type);
+
+    if (!structType->hasName()) {
+        return false;
+    }
+
+    llvm::StringRef name = structType->getName();
+    return name == "struct.fix256";
+}
+
+llvm::Value* IRGenerator::generateLBIMAdd(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
+    // Ripple-carry addition for LBIM types
+    // Algorithm:
+    //   carry = 0
+    //   for i in 0..numLimbs:
+    //     (sum, overflow1) = limb_L[i] + limb_R[i]
+    //     (result, overflow2) = sum + carry
+    //     carry = overflow1 | overflow2
+    //     result_limbs[i] = result
+
+    llvm::Type* i64Ty = builder.getInt64Ty();
+    llvm::Type* i1Ty = builder.getInt1Ty();
+    llvm::Type* structType = L->getType();
+
+    // If R is not the same LBIM struct type, convert it
+    if (R->getType() != structType) {
+        // R is a scalar (likely int64), zero-extend to LBIM struct
+        llvm::Value* rConverted = llvm::UndefValue::get(structType);
+        // Put R value in limb[0], rest are zeros
+        if (R->getType()->isIntegerTy()) {
+            // Ensure it's i64
+            if (R->getType() != i64Ty) {
+                R = builder.CreateZExtOrTrunc(R, i64Ty, "r.to_i64");
+            }
+            rConverted = builder.CreateInsertValue(rConverted, R, {0, 0}, "r.limb0");
+            // Fill remaining limbs with zeros
+            for (unsigned i = 1; i < numLimbs; ++i) {
+                rConverted = builder.CreateInsertValue(rConverted, builder.getInt64(0), {0, i});
+            }
+            R = rConverted;
+        } else {
+            // Type mismatch - should not happen if type checker is correct
+            // Fall back to error
+            return nullptr;
+        }
+    }
+
+    // Get the overflow intrinsic
+    llvm::Function* uaddOverflow = llvm::Intrinsic::getDeclaration(
+        module.get(), llvm::Intrinsic::uadd_with_overflow, {i64Ty});
+
+    // Start with zero carry
+    llvm::Value* carry = builder.getInt64(0);
+
+    // Build result struct
+    llvm::Value* result = llvm::UndefValue::get(structType);
+
+    for (unsigned i = 0; i < numLimbs; ++i) {
+        // Extract limbs: L->limbs[i], R->limbs[i]
+        // The struct is { [N x i64] }, so we use indices {0, i}
+        llvm::Value* limbL = builder.CreateExtractValue(L, {0, i}, "limbL");
+        llvm::Value* limbR = builder.CreateExtractValue(R, {0, i}, "limbR");
+
+        // Step 1: Add the two limbs
+        llvm::Value* addResult1 = builder.CreateCall(uaddOverflow, {limbL, limbR}, "add1");
+        llvm::Value* sum1 = builder.CreateExtractValue(addResult1, {0}, "sum1");
+        llvm::Value* overflow1 = builder.CreateExtractValue(addResult1, {1}, "ovf1");
+
+        // Step 2: Add the carry
+        llvm::Value* addResult2 = builder.CreateCall(uaddOverflow, {sum1, carry}, "add2");
+        llvm::Value* finalSum = builder.CreateExtractValue(addResult2, {0}, "sum2");
+        llvm::Value* overflow2 = builder.CreateExtractValue(addResult2, {1}, "ovf2");
+
+        // Combine overflows for new carry (either overflow sets carry)
+        llvm::Value* anyOverflow = builder.CreateOr(overflow1, overflow2, "anyovf");
+        carry = builder.CreateZExt(anyOverflow, i64Ty, "carry");
+
+        // Store result limb
+        result = builder.CreateInsertValue(result, finalSum, {0, i}, "res.limb");
+    }
+
+    return result;
+}
+
+llvm::Value* IRGenerator::generateLBIMSub(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
+    // Borrow-chain subtraction for LBIM types
+    // Algorithm:
+    //   borrow = 0
+    //   for i in 0..numLimbs:
+    //     (diff, underflow1) = limb_L[i] - limb_R[i]
+    //     (result, underflow2) = diff - borrow
+    //     borrow = underflow1 | underflow2
+    //     result_limbs[i] = result
+
+    llvm::Type* i64Ty = builder.getInt64Ty();
+    llvm::Type* structType = L->getType();
+
+    // If R is not the same LBIM struct type, convert it
+    if (R->getType() != structType) {
+        // R is a scalar (likely int64), zero-extend to LBIM struct
+        llvm::Value* rConverted = llvm::UndefValue::get(structType);
+        if (R->getType()->isIntegerTy()) {
+            // Ensure it's i64
+            if (R->getType() != i64Ty) {
+                R = builder.CreateZExtOrTrunc(R, i64Ty, "r.to_i64");
+            }
+            rConverted = builder.CreateInsertValue(rConverted, R, {0, 0}, "r.limb0");
+            // Fill remaining limbs with zeros
+            for (unsigned i = 1; i < numLimbs; ++i) {
+                rConverted = builder.CreateInsertValue(rConverted, builder.getInt64(0), {0, i});
+            }
+            R = rConverted;
+        } else {
+            return nullptr;
+        }
+    }
+
+    // Get the overflow intrinsic for subtraction
+    llvm::Function* usubOverflow = llvm::Intrinsic::getDeclaration(
+        module.get(), llvm::Intrinsic::usub_with_overflow, {i64Ty});
+
+    // Start with zero borrow
+    llvm::Value* borrow = builder.getInt64(0);
+
+    // Build result struct
+    llvm::Value* result = llvm::UndefValue::get(structType);
+
+    for (unsigned i = 0; i < numLimbs; ++i) {
+        // Extract limbs
+        llvm::Value* limbL = builder.CreateExtractValue(L, {0, i}, "limbL");
+        llvm::Value* limbR = builder.CreateExtractValue(R, {0, i}, "limbR");
+
+        // Step 1: Subtract the two limbs
+        llvm::Value* subResult1 = builder.CreateCall(usubOverflow, {limbL, limbR}, "sub1");
+        llvm::Value* diff1 = builder.CreateExtractValue(subResult1, {0}, "diff1");
+        llvm::Value* underflow1 = builder.CreateExtractValue(subResult1, {1}, "udf1");
+
+        // Step 2: Subtract the borrow
+        llvm::Value* subResult2 = builder.CreateCall(usubOverflow, {diff1, borrow}, "sub2");
+        llvm::Value* finalDiff = builder.CreateExtractValue(subResult2, {0}, "diff2");
+        llvm::Value* underflow2 = builder.CreateExtractValue(subResult2, {1}, "udf2");
+
+        // Combine underflows for new borrow
+        llvm::Value* anyUnderflow = builder.CreateOr(underflow1, underflow2, "anyudf");
+        borrow = builder.CreateZExt(anyUnderflow, i64Ty, "borrow");
+
+        // Store result limb
+        result = builder.CreateInsertValue(result, finalDiff, {0, i}, "res.limb");
+    }
+
+    return result;
+}
+
+llvm::Value* IRGenerator::generateLBIMEQ(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
+    // Equality: call runtime function for reliability
+    // Runtime functions: aria_lbim_eq128, aria_lbim_eq256, etc.
+    // For large structs (>16 limbs), pass by pointer for ABI compatibility
+    
+    llvm::Type* structType = L->getType();
+    bool usePointers = (numLimbs > 16);  // int2048, int4096 use pointers
+    
+    // Determine the runtime function name based on number of limbs
+    std::string funcName;
+    switch (numLimbs) {
+        case 2: funcName = "aria_lbim_eq128"; break;
+        case 4: funcName = "aria_lbim_eq256"; break;
+        case 8: funcName = "aria_lbim_eq512"; break;
+        case 16: funcName = "aria_lbim_eq1024"; break;
+        case 32: funcName = "aria_lbim_eq2048"; break;
+        case 64: funcName = "aria_lbim_eq4096"; break;
+        default:
+            llvm::errs() << "LBIM eq: unsupported limb count " << numLimbs << "\n";
+            return builder.getInt1(false);
+    }
+    
+    llvm::FunctionType* funcType;
+    llvm::Value* arg1, *arg2;
+    
+    if (usePointers) {
+        // For large structs, pass by pointer
+        // Signature: bool aria_lbim_eqN(const structType* a, const structType* b)
+        llvm::Type* ptrType = llvm::PointerType::get(structType, 0);
+        funcType = llvm::FunctionType::get(
+            builder.getInt1Ty(), {ptrType, ptrType}, false);
+        
+        // Create allocas and store the struct values
+        llvm::Value* allocaL = builder.CreateAlloca(structType, nullptr, "eq_arg_l");
+        llvm::Value* allocaR = builder.CreateAlloca(structType, nullptr, "eq_arg_r");
+        builder.CreateStore(L, allocaL);
+        builder.CreateStore(R, allocaR);
+        
+        arg1 = allocaL;
+        arg2 = allocaR;
+    } else {
+        // For small structs, pass by value
+        // Signature: bool aria_lbim_eqN(structType a, structType b)
+        funcType = llvm::FunctionType::get(
+            builder.getInt1Ty(), {structType, structType}, false);
+        
+        arg1 = L;
+        arg2 = R;
+    }
+    
+    // Get or declare the runtime function
+    llvm::Function* eqFunc = module->getFunction(funcName);
+    if (!eqFunc) {
+        eqFunc = llvm::Function::Create(
+            funcType, llvm::Function::ExternalLinkage, funcName, module.get());
+    }
+    
+    // Call the runtime function
+    return builder.CreateCall(eqFunc, {arg1, arg2}, "lbim.eq");
+}
+
+llvm::Value* IRGenerator::generateLBIMULT(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
+    // Unsigned less than: compare from most significant limb to least
+    // If L[i] < R[i], return true
+    // If L[i] > R[i], return false
+    // If L[i] == R[i], continue to next limb
+    // If all equal, return false
+
+    llvm::Function* func = builder.GetInsertBlock()->getParent();
+    llvm::BasicBlock* resultBlock = llvm::BasicBlock::Create(context, "cmp.result", func);
+
+    // Allocate result variable
+    llvm::Value* resultVar = builder.CreateAlloca(builder.getInt1Ty(), nullptr, "cmp.res");
+    builder.CreateStore(builder.getInt1(false), resultVar);  // Default: not less than
+
+    // Compare from most significant to least significant
+    for (int i = numLimbs - 1; i >= 0; --i) {
+        llvm::Value* limbL = builder.CreateExtractValue(L, {0, (unsigned)i}, "limbL");
+        llvm::Value* limbR = builder.CreateExtractValue(R, {0, (unsigned)i}, "limbR");
+
+        llvm::Value* isLt = builder.CreateICmpULT(limbL, limbR, "limb.ult");
+        llvm::Value* isGt = builder.CreateICmpUGT(limbL, limbR, "limb.ugt");
+
+        // If L[i] < R[i], result is true, jump to result
+        llvm::BasicBlock* ltBlock = llvm::BasicBlock::Create(context, "cmp.lt", func);
+        llvm::BasicBlock* notLtBlock = llvm::BasicBlock::Create(context, "cmp.notlt", func);
+
+        builder.CreateCondBr(isLt, ltBlock, notLtBlock);
+
+        builder.SetInsertPoint(ltBlock);
+        builder.CreateStore(builder.getInt1(true), resultVar);
+        builder.CreateBr(resultBlock);
+
+        builder.SetInsertPoint(notLtBlock);
+
+        // If L[i] > R[i], result is false (default), jump to result
+        llvm::BasicBlock* continueBlock = llvm::BasicBlock::Create(context, "cmp.continue", func);
+        builder.CreateCondBr(isGt, resultBlock, continueBlock);
+
+        builder.SetInsertPoint(continueBlock);
+    }
+
+    // All limbs were equal, result remains false
+    builder.CreateBr(resultBlock);
+
+    builder.SetInsertPoint(resultBlock);
+    return builder.CreateLoad(builder.getInt1Ty(), resultVar, "cmp.final");
+}
+
+llvm::Value* IRGenerator::generateLBIMSLT(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
+    // Signed less than
+    // For large structs (>16 limbs), use runtime scmp function for ABI compatibility
+    
+    if (numLimbs > 16) {
+        // Use runtime function: int32_t aria_lbim_scmpN(const aria_intN_t* a, const aria_intN_t* b)
+        llvm::Type* structType = L->getType();
+        llvm::Type* ptrType = llvm::PointerType::get(structType, 0);
+        
+        std::string funcName;
+        switch (numLimbs) {
+            case 32: funcName = "aria_lbim_scmp2048"; break;
+            case 64: funcName = "aria_lbim_scmp4096"; break;
+            default:
+                llvm::errs() << "LBIM slt: unsupported limb count " << numLimbs << "\n";
+                return builder.getInt1(false);
+        }
+        
+        llvm::FunctionType* funcType = llvm::FunctionType::get(
+            builder.getInt32Ty(), {ptrType, ptrType}, false);
+        
+        llvm::Function* cmpFunc = module->getFunction(funcName);
+        if (!cmpFunc) {
+            cmpFunc = llvm::Function::Create(
+                funcType, llvm::Function::ExternalLinkage, funcName, module.get());
+        }
+        
+        // Create allocas and store the struct values
+        llvm::Value* allocaL = builder.CreateAlloca(structType, nullptr, "slt_arg_l");
+        llvm::Value* allocaR = builder.CreateAlloca(structType, nullptr, "slt_arg_r");
+        builder.CreateStore(L, allocaL);
+        builder.CreateStore(R, allocaR);
+        
+        // Call scmp and check if result < 0
+        llvm::Value* cmpResult = builder.CreateCall(cmpFunc, {allocaL, allocaR}, "scmp");
+        llvm::Value* zero = llvm::ConstantInt::get(builder.getInt32Ty(), 0);
+        return builder.CreateICmpSLT(cmpResult, zero, "slt_result");
+    }
+    
+    // For small structs, use inline comparison
+    // Signed less than: compare high limb as signed, rest as unsigned
+    // For signed comparison, the high limb determines sign
+    // Algorithm:
+    //   1. Compare high limbs as signed
+    //   2. If high limbs differ, that determines the result
+    //   3. If high limbs equal, compare remaining limbs as unsigned
+
+    llvm::Function* func = builder.GetInsertBlock()->getParent();
+    llvm::BasicBlock* resultBlock = llvm::BasicBlock::Create(context, "cmp.result", func);
+
+    llvm::Value* resultVar = builder.CreateAlloca(builder.getInt1Ty(), nullptr, "cmp.res");
+    builder.CreateStore(builder.getInt1(false), resultVar);
+
+    // Extract high limbs for signed comparison
+    unsigned highIdx = numLimbs - 1;
+    llvm::Value* highL = builder.CreateExtractValue(L, {0, highIdx}, "highL");
+    llvm::Value* highR = builder.CreateExtractValue(R, {0, highIdx}, "highR");
+
+    // Signed comparison of high limbs
+    llvm::Value* highLt = builder.CreateICmpSLT(highL, highR, "high.slt");
+    llvm::Value* highGt = builder.CreateICmpSGT(highL, highR, "high.sgt");
+    llvm::Value* highEq = builder.CreateICmpEQ(highL, highR, "high.eq");
+
+    llvm::BasicBlock* highLtBlock = llvm::BasicBlock::Create(context, "high.lt", func);
+    llvm::BasicBlock* highNotLtBlock = llvm::BasicBlock::Create(context, "high.notlt", func);
+
+    builder.CreateCondBr(highLt, highLtBlock, highNotLtBlock);
+
+    builder.SetInsertPoint(highLtBlock);
+    builder.CreateStore(builder.getInt1(true), resultVar);
+    builder.CreateBr(resultBlock);
+
+    builder.SetInsertPoint(highNotLtBlock);
+
+    llvm::BasicBlock* highEqBlock = llvm::BasicBlock::Create(context, "high.eq", func);
+    builder.CreateCondBr(highGt, resultBlock, highEqBlock);
+
+    builder.SetInsertPoint(highEqBlock);
+
+    // High limbs are equal, compare remaining limbs as unsigned
+    for (int i = numLimbs - 2; i >= 0; --i) {
+        llvm::Value* limbL = builder.CreateExtractValue(L, {0, (unsigned)i}, "limbL");
+        llvm::Value* limbR = builder.CreateExtractValue(R, {0, (unsigned)i}, "limbR");
+
+        llvm::Value* isLt = builder.CreateICmpULT(limbL, limbR, "limb.ult");
+        llvm::Value* isGt = builder.CreateICmpUGT(limbL, limbR, "limb.ugt");
+
+        llvm::BasicBlock* ltBlock = llvm::BasicBlock::Create(context, "cmp.lt", func);
+        llvm::BasicBlock* notLtBlock = llvm::BasicBlock::Create(context, "cmp.notlt", func);
+
+        builder.CreateCondBr(isLt, ltBlock, notLtBlock);
+
+        builder.SetInsertPoint(ltBlock);
+        builder.CreateStore(builder.getInt1(true), resultVar);
+        builder.CreateBr(resultBlock);
+
+        builder.SetInsertPoint(notLtBlock);
+
+        llvm::BasicBlock* continueBlock = llvm::BasicBlock::Create(context, "cmp.continue", func);
+        builder.CreateCondBr(isGt, resultBlock, continueBlock);
+
+        builder.SetInsertPoint(continueBlock);
+    }
+
+    // All limbs were equal
+    builder.CreateBr(resultBlock);
+
+    builder.SetInsertPoint(resultBlock);
+    return builder.CreateLoad(builder.getInt1Ty(), resultVar, "cmp.final");
+}
+
+llvm::Value* IRGenerator::generateLBIMMul(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
+    // Schoolbook multiplication for LBIM types
+    // Uses safe i128 intermediate operations to avoid IPSCCP crashes
+    //
+    // Algorithm: For N limbs, compute lower N limbs of product
+    //   For i in 0..N-1:
+    //     For j in 0..N-1:
+    //       If i+j < N:
+    //         (lo, hi) = L[i] * R[j]  (64x64 -> 128 bit)
+    //         Result[i+j] += lo (with carry)
+    //         Result[i+j+1] += hi (with carry, if i+j+1 < N)
+
+    llvm::Type* i64Ty = builder.getInt64Ty();
+    llvm::Type* i128Ty = builder.getInt128Ty();
+    llvm::Type* structType = L->getType();
+
+    // If R is not the same LBIM struct type, convert it
+    if (R->getType() != structType) {
+        llvm::Value* rConverted = llvm::UndefValue::get(structType);
+        if (R->getType()->isIntegerTy()) {
+            if (R->getType() != i64Ty) {
+                R = builder.CreateZExtOrTrunc(R, i64Ty, "r.to_i64");
+            }
+            rConverted = builder.CreateInsertValue(rConverted, R, {0, 0}, "r.limb0");
+            for (unsigned i = 1; i < numLimbs; ++i) {
+                rConverted = builder.CreateInsertValue(rConverted, builder.getInt64(0), {0, i});
+            }
+            R = rConverted;
+        } else {
+            return nullptr;
+        }
+    }
+
+    // Get the overflow intrinsic for accumulation
+    llvm::Function* uaddOverflow = llvm::Intrinsic::getDeclaration(
+        module.get(), llvm::Intrinsic::uadd_with_overflow, {i64Ty});
+
+    // Allocate result limbs initialized to zero
+    std::vector<llvm::Value*> resultLimbs(numLimbs);
+    for (unsigned k = 0; k < numLimbs; ++k) {
+        resultLimbs[k] = builder.getInt64(0);
+    }
+
+    // Schoolbook multiplication: O(N^2) limb multiplications
+    for (unsigned i = 0; i < numLimbs; ++i) {
+        llvm::Value* limbL = builder.CreateExtractValue(L, {0, i}, "mulL");
+
+        for (unsigned j = 0; j < numLimbs; ++j) {
+            unsigned k = i + j;  // Target limb index
+
+            // Skip if result limb would be beyond our fixed width
+            if (k >= numLimbs) {
+                continue;
+            }
+
+            llvm::Value* limbR = builder.CreateExtractValue(R, {0, j}, "mulR");
+
+            // Perform 64x64 -> 128 bit multiplication using safe i128
+            // This avoids exposing i256 to the optimizer (IPSCCP workaround)
+            llvm::Value* aExt = builder.CreateZExt(limbL, i128Ty, "a.ext");
+            llvm::Value* bExt = builder.CreateZExt(limbR, i128Ty, "b.ext");
+            llvm::Value* prod128 = builder.CreateMul(aExt, bExt, "prod128");
+
+            // Extract low and high 64-bit halves
+            llvm::Value* prodLo = builder.CreateTrunc(prod128, i64Ty, "prod.lo");
+            llvm::Value* prodHiShift = builder.CreateLShr(prod128, 64, "prod.hi.shift");
+            llvm::Value* prodHi = builder.CreateTrunc(prodHiShift, i64Ty, "prod.hi");
+
+            // Accumulate low part to Result[k] with carry propagation
+            llvm::Value* carry = builder.getInt64(0);
+
+            // Add prodLo to resultLimbs[k]
+            llvm::Value* addRes1 = builder.CreateCall(uaddOverflow, {resultLimbs[k], prodLo}, "acc1");
+            resultLimbs[k] = builder.CreateExtractValue(addRes1, {0}, "acc1.sum");
+            llvm::Value* ovf1 = builder.CreateExtractValue(addRes1, {1}, "acc1.ovf");
+            carry = builder.CreateZExt(ovf1, i64Ty, "carry1");
+
+            // Propagate carry through higher limbs
+            for (unsigned c = k + 1; c < numLimbs; ++c) {
+                llvm::Value* addCarry = builder.CreateCall(uaddOverflow, {resultLimbs[c], carry}, "carry.add");
+                resultLimbs[c] = builder.CreateExtractValue(addCarry, {0}, "carry.sum");
+                llvm::Value* carryOvf = builder.CreateExtractValue(addCarry, {1}, "carry.ovf");
+                carry = builder.CreateZExt(carryOvf, i64Ty, "carry.next");
+            }
+
+            // Accumulate high part to Result[k+1] if within bounds
+            if (k + 1 < numLimbs) {
+                carry = builder.getInt64(0);
+
+                // Add prodHi to resultLimbs[k+1]
+                llvm::Value* addRes2 = builder.CreateCall(uaddOverflow, {resultLimbs[k + 1], prodHi}, "acc2");
+                resultLimbs[k + 1] = builder.CreateExtractValue(addRes2, {0}, "acc2.sum");
+                llvm::Value* ovf2 = builder.CreateExtractValue(addRes2, {1}, "acc2.ovf");
+                carry = builder.CreateZExt(ovf2, i64Ty, "carry2");
+
+                // Propagate carry through higher limbs
+                for (unsigned c = k + 2; c < numLimbs; ++c) {
+                    llvm::Value* addCarry = builder.CreateCall(uaddOverflow, {resultLimbs[c], carry}, "carry.add");
+                    resultLimbs[c] = builder.CreateExtractValue(addCarry, {0}, "carry.sum");
+                    llvm::Value* carryOvf = builder.CreateExtractValue(addCarry, {1}, "carry.ovf");
+                    carry = builder.CreateZExt(carryOvf, i64Ty, "carry.next");
+                }
+            }
+        }
+    }
+
+    // Build result struct from limbs
+    llvm::Value* result = llvm::UndefValue::get(structType);
+    for (unsigned k = 0; k < numLimbs; ++k) {
+        result = builder.CreateInsertValue(result, resultLimbs[k], {0, k}, "mul.limb");
+    }
+
+    return result;
+}
+
+llvm::Value* IRGenerator::generateLBIMDiv(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
+    // LBIM signed division by calling runtime intrinsic
+    // Uses aria_lbim_sdivN where N is the bit width (128/256/512/1024/2048/4096)
+    // For large structs (>16 limbs), pass by pointer for ABI compatibility
+
+    llvm::Type* structType = L->getType();
+    bool usePointers = (numLimbs > 16);  // int2048, int4096 use pointers
+
+    // Determine the runtime function name based on number of limbs
+    std::string funcName;
+    switch (numLimbs) {
+        case 2: funcName = "aria_lbim_sdiv128"; break;
+        case 4: funcName = "aria_lbim_sdiv256"; break;
+        case 8: funcName = "aria_lbim_sdiv512"; break;
+        case 16: funcName = "aria_lbim_sdiv1024"; break;  // ARIA-025: Post-quantum
+        case 32: funcName = "aria_lbim_sdiv2048"; break;
+        case 64: funcName = "aria_lbim_sdiv4096"; break;
+        default:
+            llvm::errs() << "LBIM div: unsupported limb count " << numLimbs << "\n";
+            return llvm::UndefValue::get(structType);
+    }
+
+    if (usePointers) {
+        // For large structs, pass by pointer and return by pointer
+        // Signature: aria_intN_t aria_lbim_sdivN(const aria_intN_t* a, const aria_intN_t* b)
+        // But we still return the struct by value in LLVM (runtime handles conversion)
+        llvm::Type* ptrType = llvm::PointerType::get(structType, 0);
+        llvm::FunctionType* funcType = llvm::FunctionType::get(
+            structType, {ptrType, ptrType}, false);
+        
+        llvm::Function* divFunc = module->getFunction(funcName);
+        if (!divFunc) {
+            divFunc = llvm::Function::Create(
+                funcType, llvm::Function::ExternalLinkage, funcName, module.get());
+        }
+        
+        // Create allocas and store the struct values
+        llvm::Value* allocaL = builder.CreateAlloca(structType, nullptr, "div_arg_l");
+        llvm::Value* allocaR = builder.CreateAlloca(structType, nullptr, "div_arg_r");
+        builder.CreateStore(L, allocaL);
+        builder.CreateStore(R, allocaR);
+        
+        return builder.CreateCall(divFunc, {allocaL, allocaR}, "lbim.div");
+    } else {
+        // For small structs, pass by value
+        llvm::FunctionType* funcType = llvm::FunctionType::get(
+            structType, {structType, structType}, false);
+        
+        llvm::Function* divFunc = module->getFunction(funcName);
+        if (!divFunc) {
+            divFunc = llvm::Function::Create(
+                funcType, llvm::Function::ExternalLinkage, funcName, module.get());
+        }
+        
+        return builder.CreateCall(divFunc, {L, R}, "lbim.div");
+    }
+}
+
+llvm::Value* IRGenerator::generateLBIMMod(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
+    // LBIM signed modulo by calling runtime intrinsic
+    // Uses aria_lbim_smodN where N is the bit width (128/256/512/1024/2048/4096)
+    // For large structs (>16 limbs), pass by pointer for ABI compatibility
+
+    llvm::Type* structType = L->getType();
+    bool usePointers = (numLimbs > 16);  // int2048, int4096 use pointers
+
+    // Determine the runtime function name based on number of limbs
+    std::string funcName;
+    switch (numLimbs) {
+        case 2: funcName = "aria_lbim_smod128"; break;
+        case 4: funcName = "aria_lbim_smod256"; break;
+        case 8: funcName = "aria_lbim_smod512"; break;
+        case 16: funcName = "aria_lbim_smod1024"; break;  // ARIA-025: Post-quantum
+        case 32: funcName = "aria_lbim_smod2048"; break;
+        case 64: funcName = "aria_lbim_smod4096"; break;
+        default:
+            llvm::errs() << "LBIM mod: unsupported limb count " << numLimbs << "\n";
+            return llvm::UndefValue::get(structType);
+    }
+
+    if (usePointers) {
+        // For large structs, pass by pointer
+        llvm::Type* ptrType = llvm::PointerType::get(structType, 0);
+        llvm::FunctionType* funcType = llvm::FunctionType::get(
+            structType, {ptrType, ptrType}, false);
+        
+        llvm::Function* modFunc = module->getFunction(funcName);
+        if (!modFunc) {
+            modFunc = llvm::Function::Create(
+                funcType, llvm::Function::ExternalLinkage, funcName, module.get());
+        }
+        
+        // Create allocas and store the struct values
+        llvm::Value* allocaL = builder.CreateAlloca(structType, nullptr, "mod_arg_l");
+        llvm::Value* allocaR = builder.CreateAlloca(structType, nullptr, "mod_arg_r");
+        builder.CreateStore(L, allocaL);
+        builder.CreateStore(R, allocaR);
+        
+        return builder.CreateCall(modFunc, {allocaL, allocaR}, "lbim.mod");
+    } else {
+        // For small structs, pass by value
+        llvm::FunctionType* funcType = llvm::FunctionType::get(
+            structType, {structType, structType}, false);
+        
+        llvm::Function* modFunc = module->getFunction(funcName);
+        if (!modFunc) {
+            modFunc = llvm::Function::Create(
+                funcType, llvm::Function::ExternalLinkage, funcName, module.get());
+        }
+        
+        return builder.CreateCall(modFunc, {L, R}, "lbim.mod");
+    }
 }
 
 // Helper function to map type name strings to LLVM types
@@ -334,11 +1187,60 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     if (type_name == "int16") return builder.getInt16Ty();
     if (type_name == "int32") return builder.getInt32Ty();
     if (type_name == "int64") return builder.getInt64Ty();
-    if (type_name == "int128") return builder.getInt128Ty();
-    if (type_name == "int256") return builder.getIntNTy(256);
-    if (type_name == "int512") return builder.getIntNTy(512);
-    
-    // Integer types - unsigned (same representation in LLVM)
+
+    // ARIA-024: Large integers use Limb-Based Integral Model (LBIM)
+    // Stored as structs of i64 limbs to bypass LLVM IPSCCP/ConstraintElimination bugs
+    // See: github.com/llvm/llvm-project/issues/68751, #56351
+    if (type_name == "int128" || type_name == "uint128") {
+        llvm::StructType* int128Struct = llvm::StructType::getTypeByName(context, "struct.int128");
+        if (!int128Struct) {
+            llvm::Type* limbArray = llvm::ArrayType::get(builder.getInt64Ty(), 2);
+            int128Struct = llvm::StructType::create(context, {limbArray}, "struct.int128");
+        }
+        return int128Struct;
+    }
+    if (type_name == "int256" || type_name == "uint256") {
+        llvm::StructType* int256Struct = llvm::StructType::getTypeByName(context, "struct.int256");
+        if (!int256Struct) {
+            llvm::Type* limbArray = llvm::ArrayType::get(builder.getInt64Ty(), 4);
+            int256Struct = llvm::StructType::create(context, {limbArray}, "struct.int256");
+        }
+        return int256Struct;
+    }
+    if (type_name == "int512" || type_name == "uint512") {
+        llvm::StructType* int512Struct = llvm::StructType::getTypeByName(context, "struct.int512");
+        if (!int512Struct) {
+            llvm::Type* limbArray = llvm::ArrayType::get(builder.getInt64Ty(), 8);
+            int512Struct = llvm::StructType::create(context, {limbArray}, "struct.int512");
+        }
+        return int512Struct;
+    }
+    if (type_name == "int1024" || type_name == "uint1024") {
+        llvm::StructType* int1024Struct = llvm::StructType::getTypeByName(context, "struct.int1024");
+        if (!int1024Struct) {
+            llvm::Type* limbArray = llvm::ArrayType::get(builder.getInt64Ty(), 16);
+            int1024Struct = llvm::StructType::create(context, {limbArray}, "struct.int1024");
+        }
+        return int1024Struct;
+    }
+    if (type_name == "int2048" || type_name == "uint2048") {
+        llvm::StructType* int2048Struct = llvm::StructType::getTypeByName(context, "struct.int2048");
+        if (!int2048Struct) {
+            llvm::Type* limbArray = llvm::ArrayType::get(builder.getInt64Ty(), 32);
+            int2048Struct = llvm::StructType::create(context, {limbArray}, "struct.int2048");
+        }
+        return int2048Struct;
+    }
+    if (type_name == "int4096" || type_name == "uint4096") {
+        llvm::StructType* int4096Struct = llvm::StructType::getTypeByName(context, "struct.int4096");
+        if (!int4096Struct) {
+            llvm::Type* limbArray = llvm::ArrayType::get(builder.getInt64Ty(), 64);
+            int4096Struct = llvm::StructType::create(context, {limbArray}, "struct.int4096");
+        }
+        return int4096Struct;
+    }
+
+    // Integer types - unsigned (standard sizes)
     if (type_name == "uint1") return builder.getInt1Ty();
     if (type_name == "uint2") return builder.getIntNTy(2);
     if (type_name == "uint4") return builder.getIntNTy(4);
@@ -346,15 +1248,89 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     if (type_name == "uint16") return builder.getInt16Ty();
     if (type_name == "uint32") return builder.getInt32Ty();
     if (type_name == "uint64") return builder.getInt64Ty();
-    if (type_name == "uint128") return builder.getInt128Ty();
-    if (type_name == "uint256") return builder.getIntNTy(256);
-    if (type_name == "uint512") return builder.getIntNTy(512);
-    
+
     // TBB types - Ternary Balanced Binary (symmetric signed integers with ERR sentinel)
     if (type_name == "tbb8") return builder.getInt8Ty();
     if (type_name == "tbb16") return builder.getInt16Ty();
     if (type_name == "tbb32") return builder.getInt32Ty();
     if (type_name == "tbb64") return builder.getInt64Ty();
+    
+    // Fraction types: {whole, numerator, denominator} (all same TBB width)
+    // Exact rational arithmetic - mathematically precise (no floating-point drift)
+    if (type_name == "frac8") {
+        std::vector<llvm::Type*> fields = {
+            builder.getInt8Ty(),   // whole (tbb8)
+            builder.getInt8Ty(),   // numerator (tbb8)
+            builder.getInt8Ty()    // denominator (tbb8)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    if (type_name == "frac16") {
+        std::vector<llvm::Type*> fields = {
+            builder.getInt16Ty(),  // whole (tbb16)
+            builder.getInt16Ty(),  // numerator (tbb16)
+            builder.getInt16Ty()   // denominator (tbb16)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    if (type_name == "frac32") {
+        std::vector<llvm::Type*> fields = {
+            builder.getInt32Ty(),  // whole (tbb32)
+            builder.getInt32Ty(),  // numerator (tbb32)
+            builder.getInt32Ty()   // denominator (tbb32)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    if (type_name == "frac64") {
+        std::vector<llvm::Type*> fields = {
+            builder.getInt64Ty(),  // whole (tbb64)
+            builder.getInt64Ty(),  // numerator (tbb64)
+            builder.getInt64Ty()   // denominator (tbb64)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    
+    // Twisted Floating Point types: {tbb16 exp, tbbN mant}
+    // Deterministic IEEE-free floating point with cross-platform bit-exact reproducibility
+    if (type_name == "tfp32") {
+        std::vector<llvm::Type*> fields = {
+            builder.getInt16Ty(),  // exponent (tbb16)
+            builder.getInt16Ty()   // mantissa (tbb16)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    if (type_name == "tfp64") {
+        std::vector<llvm::Type*> fields = {
+            builder.getInt16Ty(),  // exponent (tbb16)
+            builder.getInt64Ty()   // mantissa (tbb48 stored in i64, upper 16 bits unused)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    
+    // TMatrix: Sentinel-aware matrix (for 9D toroidal memory system)
+    // Wild pointer + metadata for safe matrix operations
+    if (type_name == "tmatrix") {
+        std::vector<llvm::Type*> fields = {
+            builder.getInt64Ty(),                // width
+            builder.getInt64Ty(),                // height
+            builder.getInt32Ty(),                // element_size
+            builder.getInt32Ty(),                // padding/alignment
+            llvm::PointerType::get(context, 0)   // wild data pointer
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    
+    // TTensor: 9D toroidal tensor (for 9D toroidal memory system)
+    // Wild pointer + 9D dimensional metadata
+    if (type_name == "ttensor") {
+        std::vector<llvm::Type*> fields = {
+            llvm::ArrayType::get(builder.getInt64Ty(), 9),  // dimensions[9]
+            builder.getInt32Ty(),                // element_size
+            builder.getInt32Ty(),                // padding/alignment
+            llvm::PointerType::get(context, 0)   // wild data pointer
+        };
+        return llvm::StructType::get(context, fields);
+    }
     
     // Balanced Ternary types
     if (type_name == "trit") return builder.getIntNTy(3);   // Single trit (-1, 0, 1) in 3 bits for overflow
@@ -396,9 +1372,9 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
         return llvm::FixedVectorType::get(builder.getInt32Ty(), 3);
     }
     if (type_name == "vec9" || type_name == "dvec9") {
-        // vec9 / dvec9 with flt64 components (struct of 9 doubles)
-        std::vector<llvm::Type*> components(9, builder.getDoubleTy());
-        return llvm::StructType::get(context, components);
+        // vec9: 16-element toroidal vector (16 x tbb32 = 512 bits, 64-byte aligned)
+        // Used for 9D toroidal memory addressing
+        return llvm::ArrayType::get(builder.getInt32Ty(), 16);
     }
     if (type_name == "fvec9") {
         // fvec9 with flt32 components (struct of 9 floats)
@@ -787,7 +1763,13 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 func_name,
                 module.get()
             );
-            
+
+            // Phase 4.6: Mark async functions with presplitcoroutine attribute
+            // This tells CoroSplit that this function contains coroutine intrinsics
+            if (funcDecl->isAsync) {
+                func->addFnAttr(llvm::Attribute::PresplitCoroutine);
+            }
+
             // Skip body generation if no body (extern declaration)
             if (!funcDecl->body) {
                 continue;
@@ -845,22 +1827,22 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 );
                 llvm::Value* coro_size = builder.CreateCall(coroSizeFunc, {}, "coro.size");
                 
-                // 3. Allocate coroutine frame
-                llvm::Function* malloc_func = module->getFunction("malloc");
-                if (!malloc_func) {
-                    llvm::FunctionType* malloc_type = llvm::FunctionType::get(
+                // 3. Allocate coroutine frame (BUG-01 FIX: GC-tracked allocation)
+                llvm::Function* gc_alloc_func = module->getFunction("aria_gc_alloc");
+                if (!gc_alloc_func) {
+                    llvm::FunctionType* gc_alloc_type = llvm::FunctionType::get(
                         llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                         {llvm::Type::getInt64Ty(context)},
                         false
                     );
-                    malloc_func = llvm::Function::Create(
-                        malloc_type,
+                    gc_alloc_func = llvm::Function::Create(
+                        gc_alloc_type,
                         llvm::Function::ExternalLinkage,
-                        "malloc",
+                        "aria_gc_alloc",
                         module.get()
                     );
                 }
-                llvm::Value* coro_mem = builder.CreateCall(malloc_func, {coro_size}, "coro.alloc");
+                llvm::Value* coro_mem = builder.CreateCall(gc_alloc_func, {coro_size}, "coro.alloc");
                 
                 // 4. Begin coroutine
                 llvm::Function* coroBeginFunc = llvm::Intrinsic::getDeclaration(
@@ -868,10 +1850,49 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     llvm::Intrinsic::coro_begin
                 );
                 coro_handle = builder.CreateCall(coroBeginFunc, {coro_id, coro_mem}, "coro.handle");
-                
-                // Create suspend and cleanup blocks for later use
-                coro_suspend_block = llvm::BasicBlock::Create(context, "coro.suspend", func);
+
+                // Create blocks for coroutine structure
+                llvm::BasicBlock* init_suspend_block = llvm::BasicBlock::Create(context, "coro.init.suspend", func);
+                llvm::BasicBlock* coro_body_block = llvm::BasicBlock::Create(context, "coro.body", func);
+                coro_suspend_block = llvm::BasicBlock::Create(context, "coro.final.suspend", func);
                 coro_cleanup_block = llvm::BasicBlock::Create(context, "coro.cleanup", func);
+
+                // 5. Initial suspend (required by LLVM coroutine lowering)
+                llvm::Function* coroSaveFunc = llvm::Intrinsic::getDeclaration(
+                    module.get(),
+                    llvm::Intrinsic::coro_save
+                );
+                llvm::Value* init_save_token = builder.CreateCall(coroSaveFunc, {coro_handle}, "coro.init.save");
+
+                llvm::Function* coroSuspendFunc = llvm::Intrinsic::getDeclaration(
+                    module.get(),
+                    llvm::Intrinsic::coro_suspend
+                );
+                llvm::Value* init_is_final = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);  // false = not final
+                llvm::Value* init_suspend_result = builder.CreateCall(
+                    coroSuspendFunc,
+                    {init_save_token, init_is_final},
+                    "coro.init.suspend.result"
+                );
+
+                // Switch on initial suspend result:
+                //   -1 (255 unsigned) -> suspend (return handle)
+                //    0 -> resume (continue to body)
+                //    1 -> cleanup (destroy immediately)
+                llvm::SwitchInst* init_switch = builder.CreateSwitch(init_suspend_result, init_suspend_block, 2);
+                init_switch->addCase(llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 0), coro_body_block);
+                init_switch->addCase(llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 1), coro_cleanup_block);
+
+                // Initial suspend block: return handle (coroutine is lazy - suspended until resumed)
+                builder.SetInsertPoint(init_suspend_block);
+                builder.CreateRet(coro_handle);
+
+                // Continue building in body block
+                builder.SetInsertPoint(coro_body_block);
+
+                // Set async context for return statement handling
+                current_func_is_async = true;
+                current_coro_suspend_block = coro_suspend_block;
             }
             
             // Map parameters to symbol table
@@ -932,9 +1953,17 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     "coro.suspend.result"
                 );
                 
-                // Switch on suspend result
-                llvm::SwitchInst* suspend_switch = builder.CreateSwitch(suspend_result, coro_cleanup_block, 1);
-                
+                // Switch on final suspend result:
+                //   -1 (255 unsigned) -> cleanup (suspended at final, done)
+                //    0 -> unreachable (shouldn't resume after final suspend)
+                //    1 -> cleanup (destroy called)
+                // Default goes to cleanup since final suspend means we're done
+                llvm::SwitchInst* suspend_switch = builder.CreateSwitch(suspend_result, coro_cleanup_block, 2);
+                // -1 (signed) = 255 (unsigned i8) -> cleanup
+                suspend_switch->addCase(llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 255, false), coro_cleanup_block);
+                // 1 -> cleanup
+                suspend_switch->addCase(llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 1), coro_cleanup_block);
+
                 // Cleanup block: free coroutine frame
                 builder.SetInsertPoint(coro_cleanup_block);
                 
@@ -945,35 +1974,40 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 );
                 llvm::Value* free_mem = builder.CreateCall(coroFreeFunc, {coro_id, coro_handle}, "coro.free.mem");
                 
-                // Free the memory
-                llvm::Function* free_func = module->getFunction("free");
-                if (!free_func) {
-                    llvm::FunctionType* free_type = llvm::FunctionType::get(
+                // Free the memory (BUG-10 FIX: GC-aware deallocation)
+                llvm::Function* gc_free_func = module->getFunction("aria_gc_free");
+                if (!gc_free_func) {
+                    llvm::FunctionType* gc_free_type = llvm::FunctionType::get(
                         llvm::Type::getVoidTy(context),
                         {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)},
                         false
                     );
-                    free_func = llvm::Function::Create(
-                        free_type,
+                    gc_free_func = llvm::Function::Create(
+                        gc_free_type,
                         llvm::Function::ExternalLinkage,
-                        "free",
+                        "aria_gc_free",
                         module.get()
                     );
                 }
-                builder.CreateCall(free_func, {free_mem});
+                builder.CreateCall(gc_free_func, {free_mem});
                 
-                // End coroutine
+                // End coroutine (LLVM 17+: takes ptr, i1, token)
                 llvm::Function* coroEndFunc = llvm::Intrinsic::getDeclaration(
                     module.get(),
                     llvm::Intrinsic::coro_end
                 );
                 llvm::Value* unwind = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
-                builder.CreateCall(coroEndFunc, {coro_handle, unwind});
+                llvm::Value* token_none = llvm::ConstantTokenNone::get(context);
+                builder.CreateCall(coroEndFunc, {coro_handle, unwind, token_none});
                 
                 // Return coroutine handle
                 builder.CreateRet(coro_handle);
             }
-            
+
+            // Reset async context after function generation
+            current_func_is_async = false;
+            current_coro_suspend_block = nullptr;
+
             // Clean up symbol table
             for (const auto& param : funcDecl->parameters) {
                 ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
@@ -1081,43 +2115,97 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
     if (!stmt) {
         return nullptr;
     }
-    
+
+    // ARIA-022: Prevent stack overflow from deeply nested statements
+    if (++codegen_depth_ > MAX_CODEGEN_DEPTH) {
+        --codegen_depth_;
+        throw std::runtime_error("Codegen depth limit exceeded (256 levels). "
+                                "Reduce nesting depth in your code.");
+    }
+
+    // RAII-style depth decrement on scope exit
+    struct DepthGuard {
+        size_t& depth;
+        DepthGuard(size_t& d) : depth(d) {}
+        ~DepthGuard() { --depth; }
+    } guard(codegen_depth_);
+
     switch (stmt->type) {
         case ASTNode::NodeType::BLOCK: {
             // Block statement - generate code for each statement
             BlockStmt* block = static_cast<BlockStmt*>(stmt);
-            
-            // Push new defer scope for this block
-            defer_stack.push_back(std::vector<BlockStmt*>());
-            
+
+            // ARIA-023: Skip defer scope management when executing defers
+            // to prevent iterator invalidation from vector reallocation
+            bool manage_defer_scope = !executing_defers;
+
+            if (manage_defer_scope) {
+                // Push new defer scope for this block
+                defer_stack.push_back(std::vector<BlockStmt*>());
+            }
+
             llvm::Value* lastVal = nullptr;
             for (const auto& s : block->statements) {
                 lastVal = codegenStatement(s.get());
             }
-            
-            // Execute defers at block exit (LIFO order)
-            executeScopeDefers();
-            
-            // Pop defer scope
-            defer_stack.pop_back();
-            
+
+            if (manage_defer_scope) {
+                // Execute defers at block exit (LIFO order)
+                executeScopeDefers();
+
+                // Pop defer scope
+                defer_stack.pop_back();
+            }
+
             return lastVal;
         }
         
         case ASTNode::NodeType::RETURN: {
             // Return statement - execute all defers before returning
             ReturnStmt* ret = static_cast<ReturnStmt*>(stmt);
-            
+
             // Execute all defer blocks (LIFO order)
             executeFunctionDefers();
-            
-            if (ret->value) {
-                llvm::Value* retVal = codegenExpression(ret->value.get());
-                if (retVal) {
-                    builder.CreateRet(retVal);
+
+            // Phase 4.6: Async functions branch to suspend block instead of direct return
+            if (current_func_is_async && current_coro_suspend_block) {
+                // For async functions, the return value is ignored for now
+                // (coroutine result storage can be added later)
+                if (ret->value) {
+                    // Evaluate the return expression for side effects (if any)
+                    codegenExpression(ret->value.get());
                 }
+                // Branch to the coroutine suspend block
+                builder.CreateBr(current_coro_suspend_block);
             } else {
-                builder.CreateRetVoid();
+                // Normal synchronous return
+                if (ret->value) {
+                    llvm::Value* retVal = codegenExpression(ret->value.get());
+                    if (retVal) {
+                        // Convert return value to match function return type if necessary
+                        llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                        llvm::Type* returnType = currentFunc->getReturnType();
+
+                        if (retVal->getType() != returnType) {
+                            // Handle integer conversions
+                            if (retVal->getType()->isIntegerTy() && returnType->isIntegerTy()) {
+                                llvm::IntegerType* valIntTy = llvm::cast<llvm::IntegerType>(retVal->getType());
+                                llvm::IntegerType* retIntTy = llvm::cast<llvm::IntegerType>(returnType);
+
+                                if (valIntTy->getBitWidth() < retIntTy->getBitWidth()) {
+                                    // Sign extend for widening
+                                    retVal = builder.CreateSExt(retVal, returnType, "ret_sext");
+                                } else if (valIntTy->getBitWidth() > retIntTy->getBitWidth()) {
+                                    // Truncate for narrowing
+                                    retVal = builder.CreateTrunc(retVal, returnType, "ret_trunc");
+                                }
+                            }
+                        }
+                        builder.CreateRet(retVal);
+                    }
+                } else {
+                    builder.CreateRetVoid();
+                }
             }
             return nullptr;
         }
@@ -1190,6 +2278,12 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 }
             }
             
+            // CRITICAL FIX: Also track type name for exotic type routing
+            // ExprCodegen::getExprExoticTypeName() checks var_aria_types to route
+            // modulo operations to runtime functions (aria_tryte_mod, aria_nyte_mod)
+            var_aria_types[varDecl->varName] = actualTypeName;
+            std::cerr << "[DEBUG] Registered var_aria_types[" << varDecl->varName << "] = " << actualTypeName << std::endl;
+            
             // Generate initializer if present
             if (varDecl->initializer) {
                 std::cerr << "[DEBUG IR_GEN] Variable '" << varDecl->varName << "' HAS initializer, generating..." << std::endl;
@@ -1236,8 +2330,19 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     } else {
                         // Non-optional type - cast initializer to match variable type if necessary
                         if (initVal->getType() != varType) {
+                            // Check if we're promoting a literal to an LBIM struct type
+                            if (varType->isStructTy() && initVal->getType()->isIntegerTy()) {
+                                llvm::StructType* struct_type = llvm::cast<llvm::StructType>(varType);
+                                std::string struct_name = struct_type->getName().str();
+                                
+                                // If target is LBIM type, promote the literal
+                                if (struct_name.find("struct.int") == 0 || struct_name.find("struct.uint") == 0) {
+                                    std::cerr << "[DEBUG IR_GEN] Promoting literal to LBIM type " << struct_name << std::endl;
+                                    initVal = promoteToLBIMStruct(initVal, varType);
+                                }
+                            }
                             // For integer types, use trunc or sext/zext
-                            if (initVal->getType()->isIntegerTy() && varType->isIntegerTy()) {
+                            else if (initVal->getType()->isIntegerTy() && varType->isIntegerTy()) {
                                 llvm::IntegerType* initIntTy = llvm::cast<llvm::IntegerType>(initVal->getType());
                                 llvm::IntegerType* varIntTy = llvm::cast<llvm::IntegerType>(varType);
                                 
@@ -1466,6 +2571,28 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             }
             
             // C-style for loop: for (init; cond; update) { body }
+            
+            // TBB LOOP SAFETY (GAP_2 Fix): Extract counter variable info for sentinel checking
+            std::string counter_var_name;
+            std::string counter_type_name;
+            bool has_tbb_counter = false;
+            
+            std::cout << "[TBB GUARD DEBUG] Checking for TBB counter in for loop...\n" << std::flush;
+            
+            if (forStmt->initializer && forStmt->initializer->type == ASTNode::NodeType::VAR_DECL) {
+                VarDeclStmt* init_decl = static_cast<VarDeclStmt*>(forStmt->initializer.get());
+                counter_var_name = init_decl->varName;
+                counter_type_name = init_decl->typeName;
+                
+                std::cout << "[TBB GUARD DEBUG] Counter: " << counter_var_name << ", Type: " << counter_type_name << "\n" << std::flush;
+                
+                // Check if counter is TBB type
+                has_tbb_counter = (counter_type_name == "tbb8" || counter_type_name == "tbb16" ||
+                                  counter_type_name == "tbb32" || counter_type_name == "tbb64");
+                
+                std::cout << "[TBB GUARD DEBUG] Is TBB counter: " << has_tbb_counter << "\n" << std::flush;
+            }
+            
             // Generate initializer
             if (forStmt->initializer) {
                 codegenStatement(forStmt->initializer.get());
@@ -1487,6 +2614,56 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             
             // Generate condition
             builder.SetInsertPoint(condBB);
+            
+            // TBB LOOP SAFETY (GAP_2 Fix): Check for ERR sentinel BEFORE user condition
+            // This prevents infinite loops when counter overflows to ERR value
+            std::cout << "[TBB GUARD DEBUG] In condition block, has_tbb_counter=" << has_tbb_counter << ", has condition=" << (forStmt->condition != nullptr) << "\n" << std::flush;
+            
+            if (has_tbb_counter && forStmt->condition) {
+                std::cout << "[TBB GUARD DEBUG] Entering sentinel guard injection...\n" << std::flush;
+                
+                // Get counter variable alloca
+                auto counter_it = named_values.find(counter_var_name);
+                std::cout << "[TBB GUARD DEBUG] Looking for '" << counter_var_name << "' in named_values...\n" << std::flush;
+                std::cout << "[TBB GUARD DEBUG] Found: " << (counter_it != named_values.end()) << "\n" << std::flush;
+                
+                if (counter_it != named_values.end()) {
+                    std::cout << "[TBB GUARD DEBUG] INJECTING SENTINEL GUARD!\n" << std::flush;
+                    
+                    llvm::Value* counter_alloca = counter_it->second;
+                    
+                    // Load current counter value
+                    llvm::Type* counter_type = mapTypeFromName(counter_type_name);
+                    llvm::Value* counter_val = builder.CreateLoad(counter_type, counter_alloca, "counter_val");
+                    
+                    // Get ERR sentinel for this TBB type
+                    llvm::Value* err_sentinel = nullptr;
+                    if (counter_type_name == "tbb8") {
+                        err_sentinel = llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), -128, true);
+                    } else if (counter_type_name == "tbb16") {
+                        err_sentinel = llvm::ConstantInt::get(llvm::Type::getInt16Ty(context), -32768, true);
+                    } else if (counter_type_name == "tbb32") {
+                        err_sentinel = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), -2147483648LL, true);
+                    } else if (counter_type_name == "tbb64") {
+                        err_sentinel = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), INT64_MIN, true);
+                    }
+                    
+                    // Check if counter == ERR
+                    llvm::Value* is_err = builder.CreateICmpEQ(counter_val, err_sentinel, "is_err_sentinel");
+                    
+                    // Create user condition block
+                    llvm::BasicBlock* userCondBB = llvm::BasicBlock::Create(context, "forcond.user", function);
+                    
+                    // If ERR, exit loop immediately; otherwise check user condition
+                    builder.CreateCondBr(is_err, afterBB, userCondBB);
+                    
+                    std::cout << "[TBB GUARD DEBUG] Sentinel guard complete. Created conditional branch.\n" << std::flush;
+                    
+                    // Continue in user condition block
+                    builder.SetInsertPoint(userCondBB);
+                }
+            }
+            
             if (forStmt->condition) {
                 llvm::Value* condVal = codegenExpression(forStmt->condition.get());
                 if (!condVal) return nullptr;
@@ -1508,8 +2685,16 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // Generate update
             function->insert(function->end(), updateBB);
             builder.SetInsertPoint(updateBB);
+            
+            std::cout << "[FOR DEBUG] Update block - has update: " << (forStmt->update != nullptr) << "\n" << std::flush;
+            
             if (forStmt->update) {
-                codegenStatement(forStmt->update.get());
+                std::cout << "[FOR DEBUG] Generating update expression...\n" << std::flush;
+                std::cout << "[FOR DEBUG] Update node type: " << static_cast<int>(forStmt->update->type) << "\n" << std::flush;
+                codegenExpression(forStmt->update.get());  // FIXED: Use codegenExpression not codegenStatement
+                std::cout << "[FOR DEBUG] Update expression complete\n" << std::flush;
+            } else {
+                std::cout << "[FOR DEBUG] NO UPDATE EXPRESSION!\n" << std::flush;
             }
             builder.CreateBr(condBB);  // Loop back
             
@@ -2249,10 +3434,27 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     llvm::Type* loadType = builder.getInt32Ty();  // Default
                     if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(val)) {
                         loadType = allocaInst->getAllocatedType();
+                        std::cerr << "[DEBUG] Alloca '" << ident->name << "' getAllocatedType()=" 
+                                  << (loadType->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
+                        if (loadType->isStructTy()) {
+                            llvm::StructType* st = llvm::cast<llvm::StructType>(loadType);
+                            if (st->hasName()) {
+                                std::cerr << "[DEBUG]   Allocated type name: " << st->getName().str() << std::endl;
+                            }
+                        }
                     }
                     
                     // Create the load instruction
                     llvm::Value* loaded = builder.CreateLoad(loadType, val, ident->name);
+                    
+                    std::cerr << "[DEBUG] Loaded variable '" << ident->name << "' type=" 
+                              << (loaded->getType()->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
+                    if (loaded->getType()->isStructTy()) {
+                        llvm::StructType* st = llvm::cast<llvm::StructType>(loaded->getType());
+                        if (st->hasName()) {
+                            std::cerr << "[DEBUG]   Struct name: " << st->getName().str() << std::endl;
+                        }
+                    }
                     
                     // Track the Aria type for the loaded value (same as alloca)
                     auto typeIt = value_types.find(val);
@@ -2274,1604 +3476,15 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Function call
             CallExpr* call = static_cast<CallExpr*>(expr);
             
-            // Check if this is a member access call (e.g., math_utils.add(...))
-            if (call->callee->type == ASTNode::NodeType::MEMBER_ACCESS) {
-                // Delegate to ExprCodegen for member access calls
-                backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values, var_aria_types);
-                return expr_codegen.codegenCall(call);
-            }
             
-            // Get callee name for identifier calls
-            if (call->callee->type != ASTNode::NodeType::IDENTIFIER) {
-                return nullptr;  // Other complex callees not yet supported
-            }
-            
-            IdentifierExpr* callee = static_cast<IdentifierExpr*>(call->callee.get());
-            
-            // Builtin: print() - outputs a single value to stdout
-            if (callee->name == "print") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;  // print() requires exactly one argument
-                }
-                
-                // Declare printf if not already present
-                llvm::Function* printf_func = module->getFunction("printf");
-                if (!printf_func) {
-                    llvm::FunctionType* printf_type = llvm::FunctionType::get(
-                        builder.getInt32Ty(),
-                        llvm::PointerType::get(context, 0),
-                        true  // vararg
-                    );
-                    printf_func = llvm::Function::Create(
-                        printf_type,
-                        llvm::Function::ExternalLinkage,
-                        "printf",
-                        module.get()
-                    );
-                }
-                
-                // Generate argument
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg) {
-                    return nullptr;
-                }
-                
-                // Determine format string based on argument type
-                llvm::Value* format_str = nullptr;
-                std::vector<llvm::Value*> printf_args;
-                printf_args.push_back(nullptr);  // Placeholder for format string
-                
-                llvm::Type* arg_type = arg->getType();
-                
-                if (arg_type->isPointerTy()) {
-                    // String - check if it's AriaString pointer
-                    // Get or create AriaString type (needed for string functions without literals)
-                    llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
-                    if (!aria_string_type) {
-                        // Create AriaString type: { ptr data, i64 length }
-                        std::vector<llvm::Type*> fields = {builder.getPtrTy(), builder.getInt64Ty()};
-                        aria_string_type = llvm::StructType::create(context, fields, "struct.AriaString");
-                    }
-                    // Load AriaString struct and extract data field
-                    llvm::Value* aria_str = builder.CreateLoad(aria_string_type, arg, "aria_str");
-                    llvm::Value* str_data = builder.CreateExtractValue(aria_str, 0, "str_data");
-                    format_str = builder.CreateGlobalStringPtr("%s\n", "str_fmt");
-                    printf_args.push_back(str_data);
-                } else if (arg_type->isIntegerTy()) {
-                    // Integer type - determine format based on bit width
-                    unsigned bit_width = arg_type->getIntegerBitWidth();
-                    
-                    if (bit_width < 32) {
-                        // Sign-extend to int32 for printf
-                        arg = builder.CreateSExt(arg, builder.getInt32Ty());
-                        format_str = builder.CreateGlobalStringPtr("%d\n", "int_fmt");
-                    } else if (bit_width == 32) {
-                        format_str = builder.CreateGlobalStringPtr("%d\n", "int_fmt");
-                    } else if (bit_width == 64) {
-                        format_str = builder.CreateGlobalStringPtr("%lld\n", "int64_fmt");
-                    } else {
-                        // For larger integers (128+), print as unsigned 64-bit
-                        arg = builder.CreateTrunc(arg, builder.getInt64Ty());
-                        format_str = builder.CreateGlobalStringPtr("%llu\n", "int64_fmt");
-                    }
-                    
-                    printf_args.push_back(arg);
-                } else if (arg_type->isFloatingPointTy()) {
-                    // Float or double
-                    if (arg_type->isFloatTy()) {
-                        // Promote float to double for printf
-                        arg = builder.CreateFPExt(arg, builder.getDoubleTy());
-                    }
-                    format_str = builder.CreateGlobalStringPtr("%g\n", "float_fmt");
-                    printf_args.push_back(arg);
-                } else {
-                    // Unsupported type
-                    return nullptr;
-                }
-                
-                // Set the format string as first argument
-                printf_args[0] = format_str;
-                
-                // Create printf call
-                return builder.CreateCall(printf_func, printf_args, "print_call");
-            }
-            
-            // Builtin: stdout_write(string) -> int64
-            if (callee->name == "stdout_write") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg || !arg->getType()->isPointerTy()) {
-                    return nullptr;
-                }
-                
-                // Declare aria_stdout_write if not already present
-                llvm::Function* func = module->getFunction("aria_stdout_write");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(),
-                        {llvm::PointerType::get(context, 0)},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_stdout_write",
-                        module.get()
-                    );
-                }
-                
-                return builder.CreateCall(func, {arg}, "stdout_write_call");
-            }
-            
-            // Builtin: stderr_write(string) -> int64
-            if (callee->name == "stderr_write") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg || !arg->getType()->isPointerTy()) {
-                    return nullptr;
-                }
-                
-                // Declare aria_stderr_write if not already present
-                llvm::Function* func = module->getFunction("aria_stderr_write");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(),
-                        {llvm::PointerType::get(context, 0)},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_stderr_write",
-                        module.get()
-                    );
-                }
-                
-                return builder.CreateCall(func, {arg}, "stderr_write_call");
-            }
-            
-            // Builtin: stddbg_write(string) -> int64
-            if (callee->name == "stddbg_write") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg || !arg->getType()->isPointerTy()) {
-                    return nullptr;
-                }
-                
-                // Declare aria_stddbg_write if not already present
-                llvm::Function* func = module->getFunction("aria_stddbg_write");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(),
-                        {llvm::PointerType::get(context, 0)},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_stddbg_write",
-                        module.get()
-                    );
-                }
-                
-                return builder.CreateCall(func, {arg}, "stddbg_write_call");
-            }
-            
-            // Builtin: stdin_read_line() -> string
-            if (callee->name == "stdin_read_line") {
-                if (call->arguments.size() != 0) {
-                    return nullptr;
-                }
-                
-                // Declare aria_stdin_read_line if not already present
-                llvm::Function* func = module->getFunction("aria_stdin_read_line");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        llvm::PointerType::get(context, 0),
-                        {},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_stdin_read_line",
-                        module.get()
-                    );
-                }
-                
-                return builder.CreateCall(func, {}, "stdin_read_line_call");
-            }
-            
-            // ====================================================================
-            // FILE I/O BUILTINS (Phase 4.2)
-            // ====================================================================
-            
-            // Helper lambda to extract char* from AriaString pointer
-            auto extractStringData = [&](llvm::Value* aria_str_ptr) -> llvm::Value* {
-                // Get AriaString struct type
-                llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
-                if (!aria_string_type) {
-                    std::vector<llvm::Type*> fields = {
-                        llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
-                        llvm::Type::getInt64Ty(context)
-                    };
-                    aria_string_type = llvm::StructType::create(context, fields, "struct.AriaString");
-                }
-                
-                // Load the AriaString struct from the pointer
-                llvm::Value* aria_str = builder.CreateLoad(aria_string_type, aria_str_ptr, "aria_str");
-                
-                // Extract field 0 (data: char*)
-                llvm::Value* data_ptr = builder.CreateExtractValue(aria_str, 0, "str_data");
-                
-                return data_ptr;
-            };
-            
-            // Builtin: writeFile(path: string, content: string) -> result<int64>
-            if (callee->name == "writeFile") {
-                if (call->arguments.size() != 2) {
-                    return nullptr;
-                }
-                
-                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
-                llvm::Value* content_arg = codegenExpression(call->arguments[1].get());
-                if (!path_arg || !content_arg) {
-                    return nullptr;
-                }
-                
-                // Extract char* from AriaString struct (path)
-                llvm::Value* path_cstr = extractStringData(path_arg);
-                
-                // Declare aria_write_file_result if not already present
-                // Returns AriaResultVoid struct: { void* error, bool is_error }
-                llvm::Function* func = module->getFunction("aria_write_file_result");
-                if (!func) {
-                    llvm::StructType* result_void_type = llvm::StructType::get(
-                        llvm::PointerType::get(context, 0),  // error
-                        builder.getInt1Ty()                   // is_error
-                    );
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        result_void_type,
-                        {llvm::PointerType::get(context, 0), llvm::PointerType::get(context, 0)},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_write_file_result",
-                        module.get()
-                    );
-                }
-                
-                // content_arg is AriaString*, pass directly
-                return builder.CreateCall(func, {path_cstr, content_arg}, "write_file_result");
-            }
-            
-            // Builtin: readFile(path: string) -> result<string>
-            if (callee->name == "readFile") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
-                if (!path_arg) {
-                    return nullptr;
-                }
-                
-                // Extract char* from AriaString
-                llvm::Value* path_cstr = extractStringData(path_arg);
-                
-                // Declare aria_read_file_result if not already present
-                // Returns AriaResultPtr struct: { void* value, void* error, bool is_error }
-                llvm::Function* func = module->getFunction("aria_read_file_result");
-                if (!func) {
-                    llvm::StructType* result_ptr_type = llvm::StructType::get(
-                        llvm::PointerType::get(context, 0),  // value
-                        llvm::PointerType::get(context, 0),  // error
-                        builder.getInt1Ty()                   // is_error
-                    );
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        result_ptr_type,
-                        {llvm::PointerType::get(context, 0)},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_read_file_result",
-                        module.get()
-                    );
-                }
-                
-                return builder.CreateCall(func, {path_cstr}, "read_file_result");
-            }
-            
-            // Builtin: fileExists(path: string) -> result<bool>
-            if (callee->name == "fileExists") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
-                if (!path_arg) {
-                    return nullptr;
-                }
-                
-                // Extract char* from AriaString
-                llvm::Value* path_cstr = extractStringData(path_arg);
-                
-                // Declare aria_file_exists_result if not already present
-                // Returns AriaResultBool struct: { bool value, void* error, bool is_error }
-                llvm::Function* func = module->getFunction("aria_file_exists_result");
-                if (!func) {
-                    llvm::StructType* result_bool_type = llvm::StructType::get(
-                        builder.getInt1Ty(),                  // value
-                        llvm::PointerType::get(context, 0),  // error
-                        builder.getInt1Ty()                   // is_error
-                    );
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        result_bool_type,
-                        {llvm::PointerType::get(context, 0)},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_file_exists_result",
-                        module.get()
-                    );
-                }
-                
-                return builder.CreateCall(func, {path_cstr}, "file_exists_result");
-            }
-            
-            // Builtin: fileSize(path: string) -> result<int64>
-            if (callee->name == "fileSize") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
-                if (!path_arg) {
-                    return nullptr;
-                }
-                
-                // Extract char* from AriaString
-                llvm::Value* path_cstr = extractStringData(path_arg);
-                
-                // Declare aria_file_size_result if not already present
-                // Returns AriaResultI64 struct: { int64 value, void* error, bool is_error }
-                llvm::Function* func = module->getFunction("aria_file_size_result");
-                if (!func) {
-                    llvm::StructType* result_i64_type = llvm::StructType::get(
-                        builder.getInt64Ty(),                 // value
-                        llvm::PointerType::get(context, 0),  // error
-                        builder.getInt1Ty()                   // is_error
-                    );
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        result_i64_type,
-                        {llvm::PointerType::get(context, 0)},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_file_size_result",
-                        module.get()
-                    );
-                }
-                
-                return builder.CreateCall(func, {path_cstr}, "file_size_result");
-            }
-            
-            // Builtin: deleteFile(path: string) -> result<int64>
-            if (callee->name == "deleteFile") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
-                if (!path_arg) {
-                    return nullptr;
-                }
-                
-                // Extract char* from AriaString
-                llvm::Value* path_cstr = extractStringData(path_arg);
-                
-                // Declare aria_delete_file_result if not already present
-                // Returns AriaResultVoid struct: { void* error, bool is_error }
-                llvm::Function* func = module->getFunction("aria_delete_file_result");
-                if (!func) {
-                    llvm::StructType* result_void_type = llvm::StructType::get(
-                        llvm::PointerType::get(context, 0),  // error
-                        builder.getInt1Ty()                   // is_error
-                    );
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        result_void_type,
-                        {llvm::PointerType::get(context, 0)},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_delete_file_result",
-                        module.get()
-                    );
-                }
-                
-                return builder.CreateCall(func, {path_cstr}, "delete_file_result");
-            }
-            
-            // Builtin: pathAbsolute(path: string) -> string
-            if (callee->name == "pathAbsolute") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
-                if (!path_arg) {
-                    return nullptr;
-                }
-                
-                // Extract char* from AriaString
-                llvm::Value* path_cstr = extractStringData(path_arg);
-                
-                // Declare aria_path_absolute_string if not already present
-                llvm::Function* func = module->getFunction("aria_path_absolute_string");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        llvm::PointerType::get(context, 0),
-                        {llvm::PointerType::get(context, 0)},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_path_absolute_string",
-                        module.get()
-                    );
-                }
-                
-                return builder.CreateCall(func, {path_cstr}, "path_absolute_call");
-            }
-            
-            // Builtin: pathDirname(path: string) -> string
-            if (callee->name == "pathDirname") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
-                if (!path_arg) {
-                    return nullptr;
-                }
-                
-                // Extract char* from AriaString
-                llvm::Value* path_cstr = extractStringData(path_arg);
-                
-                // Declare aria_path_dirname_string if not already present
-                llvm::Function* func = module->getFunction("aria_path_dirname_string");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        llvm::PointerType::get(context, 0),
-                        {llvm::PointerType::get(context, 0)},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_path_dirname_string",
-                        module.get()
-                    );
-                }
-                
-                return builder.CreateCall(func, {path_cstr}, "path_dirname_call");
-            }
-            
-            // Builtin: pathBasename(path: string) -> string
-            if (callee->name == "pathBasename") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
-                if (!path_arg) {
-                    return nullptr;
-                }
-                
-                // Extract char* from AriaString
-                llvm::Value* path_cstr = extractStringData(path_arg);
-                
-                // Declare aria_path_basename_string if not already present
-                llvm::Function* func = module->getFunction("aria_path_basename_string");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        llvm::PointerType::get(context, 0),
-                        {llvm::PointerType::get(context, 0)},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_path_basename_string",
-                        module.get()
-                    );
-                }
-                
-                return builder.CreateCall(func, {path_cstr}, "path_basename_call");
-            }
-            
-            // Builtin: pathJoin(dir: string, name: string) -> string
-            if (callee->name == "pathJoin") {
-                if (call->arguments.size() != 2) {
-                    return nullptr;
-                }
-                
-                llvm::Value* dir_arg = codegenExpression(call->arguments[0].get());
-                llvm::Value* name_arg = codegenExpression(call->arguments[1].get());
-                if (!dir_arg || !name_arg) {
-                    return nullptr;
-                }
-                
-                // Extract char* from AriaStrings
-                llvm::Value* dir_cstr = extractStringData(dir_arg);
-                llvm::Value* name_cstr = extractStringData(name_arg);
-                
-                // Declare aria_path_join_string if not already present
-                llvm::Function* func = module->getFunction("aria_path_join_string");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        llvm::PointerType::get(context, 0),
-                        {llvm::PointerType::get(context, 0), llvm::PointerType::get(context, 0)},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_path_join_string",
-                        module.get()
-                    );
-                }
-                
-                return builder.CreateCall(func, {dir_cstr, name_cstr}, "path_join_call");
-            }
-            
-            // Builtin: pathIsAbsolute(path: string) -> bool
-            if (callee->name == "pathIsAbsolute") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* path_arg = codegenExpression(call->arguments[0].get());
-                if (!path_arg) {
-                    return nullptr;
-                }
-                
-                // Extract char* from AriaString
-                llvm::Value* path_cstr = extractStringData(path_arg);
-                
-                // Declare aria_path_is_absolute if not already present
-                llvm::Function* func = module->getFunction("aria_path_is_absolute");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        builder.getInt1Ty(),
-                        {llvm::PointerType::get(context, 0)},
-                        false
-                    );
-                    func = llvm::Function::Create(
-                        func_type,
-                        llvm::Function::ExternalLinkage,
-                        "aria_path_is_absolute",
-                        module.get()
-                    );
-                }
-                
-                return builder.CreateCall(func, {path_cstr}, "path_is_absolute_call");
-            }
-            
-            // ====================================================================
-            // ARENA ALLOCATOR BUILTINS (Phase 4.2.5.2)
-            // ====================================================================
-            
-            if (callee->name == "arena_new") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* arena_new_func = module->getFunction("aria_arena_new_handle");
-                if (!arena_new_func) {
-                    llvm::FunctionType* arena_new_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
-                    arena_new_func = llvm::Function::Create(arena_new_type,
-                        llvm::Function::ExternalLinkage, "aria_arena_new_handle", module.get());
-                }
-                
-                llvm::Value* capacity = codegenExpression(call->arguments[0].get());
-                if (!capacity->getType()->isIntegerTy(64)) {
-                    capacity = builder.CreateSExtOrTrunc(capacity, builder.getInt64Ty());
-                }
-                return builder.CreateCall(arena_new_func, {capacity}, "arena_handle");
-            }
-            
-            if (callee->name == "arena_alloc") {
-                if (call->arguments.size() != 2) {
-                    return nullptr;
-                }
-                
-                llvm::Function* arena_alloc_func = module->getFunction("aria_arena_alloc_handle");
-                if (!arena_alloc_func) {
-                    llvm::FunctionType* arena_alloc_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
-                    arena_alloc_func = llvm::Function::Create(arena_alloc_type,
-                        llvm::Function::ExternalLinkage, "aria_arena_alloc_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                llvm::Value* size = codegenExpression(call->arguments[1].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                if (!size->getType()->isIntegerTy(64)) {
-                    size = builder.CreateSExtOrTrunc(size, builder.getInt64Ty());
-                }
-                return builder.CreateCall(arena_alloc_func, {handle, size}, "alloc_ptr");
-            }
-            
-            if (callee->name == "arena_reset") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* arena_reset_func = module->getFunction("aria_arena_reset_handle");
-                if (!arena_reset_func) {
-                    llvm::FunctionType* arena_reset_type = llvm::FunctionType::get(
-                        builder.getVoidTy(), {builder.getInt64Ty()}, false);
-                    arena_reset_func = llvm::Function::Create(arena_reset_type,
-                        llvm::Function::ExternalLinkage, "aria_arena_reset_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                builder.CreateCall(arena_reset_func, {handle});
-                return builder.getInt32(0);
-            }
-            
-            if (callee->name == "arena_destroy") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* arena_destroy_func = module->getFunction("aria_arena_destroy_handle");
-                if (!arena_destroy_func) {
-                    llvm::FunctionType* arena_destroy_type = llvm::FunctionType::get(
-                        builder.getVoidTy(), {builder.getInt64Ty()}, false);
-                    arena_destroy_func = llvm::Function::Create(arena_destroy_type,
-                        llvm::Function::ExternalLinkage, "aria_arena_destroy_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                builder.CreateCall(arena_destroy_func, {handle});
-                return builder.getInt32(0);
-            }
-            
-            if (callee->name == "arena_get_allocated") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* func = module->getFunction("aria_arena_get_allocated_handle");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
-                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
-                        "aria_arena_get_allocated_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                return builder.CreateCall(func, {handle}, "allocated_bytes");
-            }
-            
-            if (callee->name == "arena_get_reserved") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* func = module->getFunction("aria_arena_get_reserved_handle");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
-                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
-                        "aria_arena_get_reserved_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                return builder.CreateCall(func, {handle}, "reserved_bytes");
-            }
-            
-            // ====================================================================
-            // POOL ALLOCATOR BUILTINS (Phase 4.2.5.3)
-            // ====================================================================
-            
-            if (callee->name == "pool_new") {
-                if (call->arguments.size() != 2) {
-                    return nullptr;
-                }
-                
-                llvm::Function* pool_new_func = module->getFunction("aria_pool_new_handle");
-                if (!pool_new_func) {
-                    llvm::FunctionType* pool_new_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
-                    pool_new_func = llvm::Function::Create(pool_new_type,
-                        llvm::Function::ExternalLinkage, "aria_pool_new_handle", module.get());
-                }
-                
-                llvm::Value* block_size = codegenExpression(call->arguments[0].get());
-                llvm::Value* capacity = codegenExpression(call->arguments[1].get());
-                if (!block_size->getType()->isIntegerTy(64)) {
-                    block_size = builder.CreateSExtOrTrunc(block_size, builder.getInt64Ty());
-                }
-                if (!capacity->getType()->isIntegerTy(64)) {
-                    capacity = builder.CreateSExtOrTrunc(capacity, builder.getInt64Ty());
-                }
-                return builder.CreateCall(pool_new_func, {block_size, capacity}, "pool_handle");
-            }
-            
-            if (callee->name == "pool_alloc") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* pool_alloc_func = module->getFunction("aria_pool_alloc_handle");
-                if (!pool_alloc_func) {
-                    llvm::FunctionType* pool_alloc_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
-                    pool_alloc_func = llvm::Function::Create(pool_alloc_type,
-                        llvm::Function::ExternalLinkage, "aria_pool_alloc_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                return builder.CreateCall(pool_alloc_func, {handle}, "alloc_ptr");
-            }
-            
-            if (callee->name == "pool_free") {
-                if (call->arguments.size() != 2) {
-                    return nullptr;
-                }
-                
-                llvm::Function* pool_free_func = module->getFunction("aria_pool_free_handle");
-                if (!pool_free_func) {
-                    llvm::FunctionType* pool_free_type = llvm::FunctionType::get(
-                        builder.getVoidTy(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
-                    pool_free_func = llvm::Function::Create(pool_free_type,
-                        llvm::Function::ExternalLinkage, "aria_pool_free_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                llvm::Value* ptr = codegenExpression(call->arguments[1].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                if (!ptr->getType()->isIntegerTy(64)) {
-                    ptr = builder.CreateSExtOrTrunc(ptr, builder.getInt64Ty());
-                }
-                builder.CreateCall(pool_free_func, {handle, ptr});
-                return builder.getInt32(0);
-            }
-            
-            if (callee->name == "pool_reset") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* pool_reset_func = module->getFunction("aria_pool_reset_handle");
-                if (!pool_reset_func) {
-                    llvm::FunctionType* pool_reset_type = llvm::FunctionType::get(
-                        builder.getVoidTy(), {builder.getInt64Ty()}, false);
-                    pool_reset_func = llvm::Function::Create(pool_reset_type,
-                        llvm::Function::ExternalLinkage, "aria_pool_reset_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                builder.CreateCall(pool_reset_func, {handle});
-                return builder.getInt32(0);
-            }
-            
-            if (callee->name == "pool_destroy") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* pool_destroy_func = module->getFunction("aria_pool_destroy_handle");
-                if (!pool_destroy_func) {
-                    llvm::FunctionType* pool_destroy_type = llvm::FunctionType::get(
-                        builder.getVoidTy(), {builder.getInt64Ty()}, false);
-                    pool_destroy_func = llvm::Function::Create(pool_destroy_type,
-                        llvm::Function::ExternalLinkage, "aria_pool_destroy_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                builder.CreateCall(pool_destroy_func, {handle});
-                return builder.getInt32(0);
-            }
-            
-            if (callee->name == "pool_get_total_blocks") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* func = module->getFunction("aria_pool_get_total_blocks_handle");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
-                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
-                        "aria_pool_get_total_blocks_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                return builder.CreateCall(func, {handle}, "total_blocks");
-            }
-            
-            if (callee->name == "pool_get_used_blocks") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* func = module->getFunction("aria_pool_get_used_blocks_handle");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
-                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
-                        "aria_pool_get_used_blocks_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                return builder.CreateCall(func, {handle}, "used_blocks");
-            }
-            
-            // ====================================================================
-            // SLAB ALLOCATOR BUILTINS (Phase 4.2.5.4)
-            // ====================================================================
-            
-            if (callee->name == "slab_new") {
-                if (call->arguments.size() != 2) {
-                    return nullptr;
-                }
-                
-                llvm::Function* slab_new_func = module->getFunction("aria_slab_cache_new_handle");
-                if (!slab_new_func) {
-                    llvm::FunctionType* slab_new_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
-                    slab_new_func = llvm::Function::Create(slab_new_type,
-                        llvm::Function::ExternalLinkage, "aria_slab_cache_new_handle", module.get());
-                }
-                
-                llvm::Value* object_size = codegenExpression(call->arguments[0].get());
-                llvm::Value* slab_size = codegenExpression(call->arguments[1].get());
-                if (!object_size->getType()->isIntegerTy(64)) {
-                    object_size = builder.CreateSExtOrTrunc(object_size, builder.getInt64Ty());
-                }
-                if (!slab_size->getType()->isIntegerTy(64)) {
-                    slab_size = builder.CreateSExtOrTrunc(slab_size, builder.getInt64Ty());
-                }
-                return builder.CreateCall(slab_new_func, {object_size, slab_size}, "slab_handle");
-            }
-            
-            if (callee->name == "slab_alloc") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* slab_alloc_func = module->getFunction("aria_slab_cache_alloc_handle");
-                if (!slab_alloc_func) {
-                    llvm::FunctionType* slab_alloc_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
-                    slab_alloc_func = llvm::Function::Create(slab_alloc_type,
-                        llvm::Function::ExternalLinkage, "aria_slab_cache_alloc_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                return builder.CreateCall(slab_alloc_func, {handle}, "alloc_ptr");
-            }
-            
-            if (callee->name == "slab_free") {
-                if (call->arguments.size() != 2) {
-                    return nullptr;
-                }
-                
-                llvm::Function* slab_free_func = module->getFunction("aria_slab_cache_free_handle");
-                if (!slab_free_func) {
-                    llvm::FunctionType* slab_free_type = llvm::FunctionType::get(
-                        builder.getVoidTy(), {builder.getInt64Ty(), builder.getInt64Ty()}, false);
-                    slab_free_func = llvm::Function::Create(slab_free_type,
-                        llvm::Function::ExternalLinkage, "aria_slab_cache_free_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                llvm::Value* ptr = codegenExpression(call->arguments[1].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                if (!ptr->getType()->isIntegerTy(64)) {
-                    ptr = builder.CreateSExtOrTrunc(ptr, builder.getInt64Ty());
-                }
-                builder.CreateCall(slab_free_func, {handle, ptr});
-                return builder.getInt32(0);
-            }
-            
-            if (callee->name == "slab_destroy") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* slab_destroy_func = module->getFunction("aria_slab_cache_destroy_handle");
-                if (!slab_destroy_func) {
-                    llvm::FunctionType* slab_destroy_type = llvm::FunctionType::get(
-                        builder.getVoidTy(), {builder.getInt64Ty()}, false);
-                    slab_destroy_func = llvm::Function::Create(slab_destroy_type,
-                        llvm::Function::ExternalLinkage, "aria_slab_cache_destroy_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                builder.CreateCall(slab_destroy_func, {handle});
-                return builder.getInt32(0);
-            }
-            
-            if (callee->name == "slab_get_total_objects") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* func = module->getFunction("aria_slab_cache_get_total_objects_handle");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
-                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
-                        "aria_slab_cache_get_total_objects_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                return builder.CreateCall(func, {handle}, "total_objects");
-            }
-            
-            if (callee->name == "slab_get_allocated_objects") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Function* func = module->getFunction("aria_slab_cache_get_allocated_objects_handle");
-                if (!func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        builder.getInt64Ty(), {builder.getInt64Ty()}, false);
-                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
-                        "aria_slab_cache_get_allocated_objects_handle", module.get());
-                }
-                
-                llvm::Value* handle = codegenExpression(call->arguments[0].get());
-                if (!handle->getType()->isIntegerTy(64)) {
-                    handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-                }
-                return builder.CreateCall(func, {handle}, "allocated_objects");
-            }
-            
-            // ====================================================================
-            // END ALLOCATOR BUILTINS
-            // ====================================================================
-            
-            // ====================================================================
-            // STRING LIBRARY BUILTINS (Phase 4.3) - Delegate to ExprCodegen
-            // ====================================================================
-            
-            // Check if this is a string builtin - delegate to ExprCodegen which has full implementation
-            if (callee->name == "string_length" || callee->name == "string_is_empty" ||
-                callee->name == "string_equals" || callee->name == "string_concat" ||
-                callee->name == "string_substring" || callee->name == "string_contains" ||
-                callee->name == "string_starts_with" || callee->name == "string_ends_with" ||
-                callee->name == "string_trim" || callee->name == "string_to_upper" ||
-                callee->name == "string_to_lower" || callee->name == "string_from_cstr" ||
-                callee->name == "string_from_char" || callee->name == "string_from_int" ||
-                callee->name == "string_to_int" || callee->name == "string_to_hex" ||
-                callee->name == "string_pad_right" || callee->name == "string_format_float") {
-
-                // Create ExprCodegen instance (same pattern as TEMPLATE_LITERAL case)
-                backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values, var_aria_types);
-                return expr_codegen_inst.codegenCall(call);
-            }
-
-            // ====================================================================
-            // TBB TYPE BUILTINS - Delegate to ExprCodegen
-            // ====================================================================
-
-            // Check if this is a TBB builtin - delegate to ExprCodegen
-            if (callee->name == "tbb64_from_int" || callee->name == "tbb64_is_err" || callee->name == "tbb64_to_int" ||
-                callee->name == "tbb32_from_int" || callee->name == "tbb32_is_err" || callee->name == "tbb32_to_int" ||
-                callee->name == "tbb16_from_int" || callee->name == "tbb16_is_err" || callee->name == "tbb16_to_int" ||
-                callee->name == "tbb8_from_int" || callee->name == "tbb8_is_err" || callee->name == "tbb8_to_int") {
-
-                backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values, var_aria_types);
-                return expr_codegen_inst.codegenCall(call);
-            }
-
-            // ====================================================================
-            // COLLECTION BUILTINS (Phase 6.2) - Delegate to ExprCodegen
-            // ====================================================================
-
-            // Check if this is a collection builtin - delegate to ExprCodegen
-            if (callee->name == "array_new" || callee->name == "array_length" ||
-                callee->name == "array_push" || callee->name == "array_get" ||
-                callee->name == "array_set" || callee->name == "array_pop") {
-
-                backend::ExprCodegen expr_codegen_inst(context, builder, module.get(), named_values, var_aria_types);
-                return expr_codegen_inst.codegenCall(call);
-            }
-
-            // ====================================================================
-            // FILE UFCS BUILTINS (for File.open(), stream.read(), etc.)
-            // ====================================================================
-
-            // Check if this is a File builtin - call external runtime function
-            if (callee->name == "File_open" || callee->name == "File_read_line" ||
-                callee->name == "File_read_bytes" || callee->name == "File_write" ||
-                callee->name == "File_write_bytes" || callee->name == "File_close" ||
-                callee->name == "File_eof" || callee->name == "File_flush" ||
-                callee->name == "File_seek" || callee->name == "File_tell" ||
-                callee->name == "File_read" || callee->name == "File_write_all" ||
-                callee->name == "File_delete" || callee->name == "File_exists" ||
-                callee->name == "File_size") {
-
-                // Get or declare the external function
-                llvm::Function* func = module->getFunction(callee->name);
-                if (!func) {
-                    // Build the function type based on the builtin
-                    std::vector<llvm::Type*> param_types;
-                    llvm::Type* return_type;
-
-                    if (callee->name == "File_open") {
-                        // File_open(path: i8*, mode: i8*) -> ptr
-                        param_types = {builder.getPtrTy(), builder.getPtrTy()};
-                        return_type = builder.getPtrTy();
-                    } else if (callee->name == "File_read_line") {
-                        // File_read_line(stream: ptr) -> ptr (char*)
-                        param_types = {builder.getPtrTy()};
-                        return_type = builder.getPtrTy();
-                    } else if (callee->name == "File_read_bytes") {
-                        // File_read_bytes(stream: ptr, buffer: ptr, size: i64) -> i64
-                        param_types = {builder.getPtrTy(), builder.getPtrTy(), builder.getInt64Ty()};
-                        return_type = builder.getInt64Ty();
-                    } else if (callee->name == "File_write") {
-                        // File_write(stream: ptr, str: ptr) -> i64
-                        param_types = {builder.getPtrTy(), builder.getPtrTy()};
-                        return_type = builder.getInt64Ty();
-                    } else if (callee->name == "File_write_bytes") {
-                        // File_write_bytes(stream: ptr, data: ptr, size: i64) -> i64
-                        param_types = {builder.getPtrTy(), builder.getPtrTy(), builder.getInt64Ty()};
-                        return_type = builder.getInt64Ty();
-                    } else if (callee->name == "File_close") {
-                        // File_close(stream: ptr) -> void
-                        param_types = {builder.getPtrTy()};
-                        return_type = builder.getVoidTy();
-                    } else if (callee->name == "File_eof") {
-                        // File_eof(stream: ptr) -> bool
-                        param_types = {builder.getPtrTy()};
-                        return_type = builder.getInt1Ty();
-                    } else if (callee->name == "File_flush") {
-                        // File_flush(stream: ptr) -> i32
-                        param_types = {builder.getPtrTy()};
-                        return_type = builder.getInt32Ty();
-                    } else if (callee->name == "File_seek") {
-                        // File_seek(stream: ptr, offset: i64, whence: i32) -> i32
-                        param_types = {builder.getPtrTy(), builder.getInt64Ty(), builder.getInt32Ty()};
-                        return_type = builder.getInt32Ty();
-                    } else if (callee->name == "File_tell") {
-                        // File_tell(stream: ptr) -> i64
-                        param_types = {builder.getPtrTy()};
-                        return_type = builder.getInt64Ty();
-                    } else if (callee->name == "File_read") {
-                        // File_read(path: ptr) -> ptr (AriaString*)
-                        param_types = {builder.getPtrTy()};
-                        return_type = builder.getPtrTy();
-                    } else if (callee->name == "File_write_all") {
-                        // File_write_all(path: ptr, content: ptr) -> i64
-                        param_types = {builder.getPtrTy(), builder.getPtrTy()};
-                        return_type = builder.getInt64Ty();
-                    } else if (callee->name == "File_delete") {
-                        // File_delete(path: ptr) -> i64
-                        param_types = {builder.getPtrTy()};
-                        return_type = builder.getInt64Ty();
-                    } else if (callee->name == "File_exists") {
-                        // File_exists(path: ptr) -> bool
-                        param_types = {builder.getPtrTy()};
-                        return_type = builder.getInt1Ty();
-                    } else if (callee->name == "File_size") {
-                        // File_size(path: ptr) -> i64
-                        param_types = {builder.getPtrTy()};
-                        return_type = builder.getInt64Ty();
-                    } else {
-                        return nullptr;
-                    }
-
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
-                    func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, callee->name, module.get());
-                }
-
-                // Generate arguments
-                std::vector<llvm::Value*> args;
-                for (auto& arg : call->arguments) {
-                    llvm::Value* val = codegenExpression(arg.get());
-                    if (!val) return nullptr;
-                    args.push_back(val);
-                }
-
-                // Call the function
-                if (func->getReturnType()->isVoidTy()) {
-                    builder.CreateCall(func, args);
-                    return llvm::Constant::getNullValue(builder.getPtrTy());
-                }
-                return builder.CreateCall(func, args, callee->name + "_result");
-            }
-
-            // ====================================================================
-            // MATH LIBRARY BUILTINS (Phase 4.4)
-            // ====================================================================
-            
-            // abs() - Absolute value
-            if (callee->name == "abs") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg) {
-                    return nullptr;
-                }
-                
-                // For integers, use select with negation
-                if (arg->getType()->isIntegerTy()) {
-                    llvm::Value* zero = llvm::ConstantInt::get(arg->getType(), 0);
-                    llvm::Value* neg = builder.CreateNeg(arg);
-                    llvm::Value* cmp = builder.CreateICmpSLT(arg, zero);
-                    return builder.CreateSelect(cmp, neg, arg, "abs");
-                }
-                // For floats, use llvm.fabs intrinsic
-                else if (arg->getType()->isFloatingPointTy()) {
-                    llvm::Function* fabs_intrinsic = llvm::Intrinsic::getDeclaration(
-                        module.get(), llvm::Intrinsic::fabs, {arg->getType()});
-                    return builder.CreateCall(fabs_intrinsic, {arg}, "abs");
-                }
-                
-                return nullptr;
-            }
-            
-            // min() - Minimum of two values
-            if (callee->name == "min") {
-                if (call->arguments.size() != 2) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg1 = codegenExpression(call->arguments[0].get());
-                llvm::Value* arg2 = codegenExpression(call->arguments[1].get());
-                if (!arg1 || !arg2) {
-                    return nullptr;
-                }
-                
-                // For integers, use ICmp + Select
-                if (arg1->getType()->isIntegerTy() && arg2->getType()->isIntegerTy()) {
-                    llvm::Value* cmp = builder.CreateICmpSLT(arg1, arg2);
-                    return builder.CreateSelect(cmp, arg1, arg2, "min");
-                }
-                // For floats, use llvm.minnum intrinsic
-                else if (arg1->getType()->isFloatingPointTy() && arg2->getType()->isFloatingPointTy()) {
-                    llvm::Function* minnum_intrinsic = llvm::Intrinsic::getDeclaration(
-                        module.get(), llvm::Intrinsic::minnum, {arg1->getType()});
-                    return builder.CreateCall(minnum_intrinsic, {arg1, arg2}, "min");
-                }
-                
-                return nullptr;
-            }
-            
-            // max() - Maximum of two values
-            if (callee->name == "max") {
-                if (call->arguments.size() != 2) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg1 = codegenExpression(call->arguments[0].get());
-                llvm::Value* arg2 = codegenExpression(call->arguments[1].get());
-                if (!arg1 || !arg2) {
-                    return nullptr;
-                }
-                
-                // For integers, use ICmp + Select
-                if (arg1->getType()->isIntegerTy() && arg2->getType()->isIntegerTy()) {
-                    llvm::Value* cmp = builder.CreateICmpSGT(arg1, arg2);
-                    return builder.CreateSelect(cmp, arg1, arg2, "max");
-                }
-                // For floats, use llvm.maxnum intrinsic
-                else if (arg1->getType()->isFloatingPointTy() && arg2->getType()->isFloatingPointTy()) {
-                    llvm::Function* maxnum_intrinsic = llvm::Intrinsic::getDeclaration(
-                        module.get(), llvm::Intrinsic::maxnum, {arg1->getType()});
-                    return builder.CreateCall(maxnum_intrinsic, {arg1, arg2}, "max");
-                }
-                
-                return nullptr;
-            }
-            
-            // Rounding functions: floor, ceil, round, trunc
-            if (callee->name == "floor" || callee->name == "ceil" || 
-                callee->name == "round" || callee->name == "trunc") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg) {
-                    return nullptr;
-                }
-                
-                // Convert int to double if needed
-                if (arg->getType()->isIntegerTy()) {
-                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
-                }
-                
-                if (!arg->getType()->isFloatingPointTy()) {
-                    return nullptr;
-                }
-                
-                llvm::Intrinsic::ID intrinsic_id;
-                if (callee->name == "floor") intrinsic_id = llvm::Intrinsic::floor;
-                else if (callee->name == "ceil") intrinsic_id = llvm::Intrinsic::ceil;
-                else if (callee->name == "round") intrinsic_id = llvm::Intrinsic::round;
-                else intrinsic_id = llvm::Intrinsic::trunc;
-                
-                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
-                    module.get(), intrinsic_id, {arg->getType()});
-                return builder.CreateCall(intrinsic, {arg}, callee->name);
-            }
-            
-            // Exponential and logarithmic functions
-            if (callee->name == "sqrt") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg) {
-                    return nullptr;
-                }
-                
-                if (arg->getType()->isIntegerTy()) {
-                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
-                }
-                
-                if (!arg->getType()->isFloatingPointTy()) {
-                    return nullptr;
-                }
-                
-                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
-                    module.get(), llvm::Intrinsic::sqrt, {arg->getType()});
-                return builder.CreateCall(intrinsic, {arg}, "sqrt");
-            }
-            
-            if (callee->name == "pow") {
-                if (call->arguments.size() != 2) {
-                    return nullptr;
-                }
-                
-                llvm::Value* base = codegenExpression(call->arguments[0].get());
-                llvm::Value* exp = codegenExpression(call->arguments[1].get());
-                if (!base || !exp) {
-                    return nullptr;
-                }
-                
-                if (base->getType()->isIntegerTy()) {
-                    base = builder.CreateSIToFP(base, builder.getDoubleTy());
-                }
-                if (exp->getType()->isIntegerTy()) {
-                    exp = builder.CreateSIToFP(exp, builder.getDoubleTy());
-                }
-                
-                if (!base->getType()->isFloatingPointTy() || !exp->getType()->isFloatingPointTy()) {
-                    return nullptr;
-                }
-                
-                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
-                    module.get(), llvm::Intrinsic::pow, {base->getType()});
-                return builder.CreateCall(intrinsic, {base, exp}, "pow");
-            }
-            
-            if (callee->name == "exp") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg) {
-                    return nullptr;
-                }
-                
-                if (arg->getType()->isIntegerTy()) {
-                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
-                }
-                
-                if (!arg->getType()->isFloatingPointTy()) {
-                    return nullptr;
-                }
-                
-                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
-                    module.get(), llvm::Intrinsic::exp, {arg->getType()});
-                return builder.CreateCall(intrinsic, {arg}, "exp");
-            }
-            
-            if (callee->name == "log") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg) {
-                    return nullptr;
-                }
-                
-                if (arg->getType()->isIntegerTy()) {
-                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
-                }
-                
-                if (!arg->getType()->isFloatingPointTy()) {
-                    return nullptr;
-                }
-                
-                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
-                    module.get(), llvm::Intrinsic::log, {arg->getType()});
-                return builder.CreateCall(intrinsic, {arg}, "log");
-            }
-            
-            if (callee->name == "log10") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg) {
-                    return nullptr;
-                }
-                
-                if (arg->getType()->isIntegerTy()) {
-                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
-                }
-                
-                if (!arg->getType()->isFloatingPointTy()) {
-                    return nullptr;
-                }
-                
-                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
-                    module.get(), llvm::Intrinsic::log10, {arg->getType()});
-                return builder.CreateCall(intrinsic, {arg}, "log10");
-            }
-            
-            if (callee->name == "log2") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg) {
-                    return nullptr;
-                }
-                
-                if (arg->getType()->isIntegerTy()) {
-                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
-                }
-                
-                if (!arg->getType()->isFloatingPointTy()) {
-                    return nullptr;
-                }
-                
-                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
-                    module.get(), llvm::Intrinsic::log2, {arg->getType()});
-                return builder.CreateCall(intrinsic, {arg}, "log2");
-            }
-            
-            // Trigonometric functions
-            if (callee->name == "sin") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg) {
-                    return nullptr;
-                }
-                
-                if (arg->getType()->isIntegerTy()) {
-                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
-                }
-                
-                if (!arg->getType()->isFloatingPointTy()) {
-                    return nullptr;
-                }
-                
-                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
-                    module.get(), llvm::Intrinsic::sin, {arg->getType()});
-                return builder.CreateCall(intrinsic, {arg}, "sin");
-            }
-            
-            if (callee->name == "cos") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg) {
-                    return nullptr;
-                }
-                
-                if (arg->getType()->isIntegerTy()) {
-                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
-                }
-                
-                if (!arg->getType()->isFloatingPointTy()) {
-                    return nullptr;
-                }
-                
-                llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
-                    module.get(), llvm::Intrinsic::cos, {arg->getType()});
-                return builder.CreateCall(intrinsic, {arg}, "cos");
-            }
-            
-            // Trig functions that need libm (no LLVM intrinsics)
-            if (callee->name == "tan" || callee->name == "asin" || callee->name == "acos" || 
-                callee->name == "atan") {
-                if (call->arguments.size() != 1) {
-                    return nullptr;
-                }
-                
-                llvm::Value* arg = codegenExpression(call->arguments[0].get());
-                if (!arg) {
-                    return nullptr;
-                }
-                
-                if (arg->getType()->isIntegerTy()) {
-                    arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
-                }
-                
-                if (!arg->getType()->isFloatingPointTy()) {
-                    return nullptr;
-                }
-                
-                // Declare external libm function
-                llvm::Function* libm_func = module->getFunction(callee->name);
-                if (!libm_func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        builder.getDoubleTy(), {builder.getDoubleTy()}, false);
-                    libm_func = llvm::Function::Create(func_type,
-                        llvm::Function::ExternalLinkage, callee->name, module.get());
-                }
-                
-                return builder.CreateCall(libm_func, {arg}, callee->name + "_result");
-            }
-            
-            if (callee->name == "atan2") {
-                if (call->arguments.size() != 2) {
-                    return nullptr;
-                }
-                
-                llvm::Value* y = codegenExpression(call->arguments[0].get());
-                llvm::Value* x = codegenExpression(call->arguments[1].get());
-                if (!y || !x) {
-                    return nullptr;
-                }
-                
-                if (y->getType()->isIntegerTy()) {
-                    y = builder.CreateSIToFP(y, builder.getDoubleTy());
-                }
-                if (x->getType()->isIntegerTy()) {
-                    x = builder.CreateSIToFP(x, builder.getDoubleTy());
-                }
-                
-                if (!y->getType()->isFloatingPointTy() || !x->getType()->isFloatingPointTy()) {
-                    return nullptr;
-                }
-                
-                // Declare external atan2 from libm
-                llvm::Function* atan2_func = module->getFunction("atan2");
-                if (!atan2_func) {
-                    llvm::FunctionType* func_type = llvm::FunctionType::get(
-                        builder.getDoubleTy(), {builder.getDoubleTy(), builder.getDoubleTy()}, false);
-                    atan2_func = llvm::Function::Create(func_type,
-                        llvm::Function::ExternalLinkage, "atan2", module.get());
-                }
-                
-                return builder.CreateCall(atan2_func, {y, x}, "atan2_result");
-            }
-            
-            // Math constants
-            if (callee->name == "PI") {
-                if (call->arguments.size() != 0) {
-                    return nullptr;
-                }
-                return llvm::ConstantFP::get(builder.getDoubleTy(), 3.14159265358979323846);
-            }
-            
-            if (callee->name == "E") {
-                if (call->arguments.size() != 0) {
-                    return nullptr;
-                }
-                return llvm::ConstantFP::get(builder.getDoubleTy(), 2.71828182845904523536);
-            }
-            
-            if (callee->name == "TAU") {
-                if (call->arguments.size() != 0) {
-                    return nullptr;
-                }
-                return llvm::ConstantFP::get(builder.getDoubleTy(), 6.28318530717958647692);
-            }
-            
-            // Check if this is a specialized generic call
-            std::string functionName = callee->name;
-            if (!call->specializedMangledName.empty()) {
-                // Use the specialized mangled name from type checking
-                functionName = call->specializedMangledName;
-            }
-            
-            llvm::Function* calleeFunc = module->getFunction(functionName);
-            
-            if (!calleeFunc) {
-                return nullptr;  // Function not found
-            }
-            
-            // Generate code for arguments
-            std::vector<llvm::Value*> args;
-            for (const auto& arg : call->arguments) {
-                llvm::Value* argVal = codegenExpression(arg.get());
-                if (argVal) {
-                    args.push_back(argVal);
-                }
-            }
-            
-            return builder.CreateCall(calleeFunc, args);
+            // CRITICAL FIX (Dec 31, 2024): Unconditionally delegate ALL calls to ExprCodegen
+            // The legacy IRGenerator print() implementation doesn't understand modern types:
+            // - LBIM (int256 as struct { [4 x i64] })
+            // - AriaString (struct { i8*, i64 })
+            // - TBB types with ERR sentinels
+            // ExprCodegen has the correct, specification-compliant implementations.
+            backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values, var_aria_types);
+            return expr_codegen.codegenCall(call);
         }
         
         case ASTNode::NodeType::UNARY_OP: {
@@ -3926,9 +3539,67 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             if (!operand) return nullptr;
             
             switch (unary->op.type) {
-                case frontend::TokenType::TOKEN_MINUS:
-                    // Negate
+                case frontend::TokenType::TOKEN_MINUS: {
+                    // Check if operand is a numeric type (frac*, tfp*, vec9)
+                    Type* operandType = nullptr;
+                    auto typeIt = value_types.find(operand);
+                    if (typeIt != value_types.end()) {
+                        operandType = typeIt->second;
+                    }
+                    
+                    bool isNumericType = false;
+                    PrimitiveType* primType = nullptr;
+                    if (operandType && operandType->isPrimitive()) {
+                        primType = static_cast<PrimitiveType*>(operandType);
+                        const std::string& name = primType->getName();
+                        if (name.find("frac") == 0 || name.find("tfp") == 0 ||
+                            name == "vec9" || name == "dvec9") {
+                            isNumericType = true;
+                        }
+                    }
+                    
+                    if (isNumericType && primType) {
+                        // Numeric type negation - call aria_*_neg runtime function
+                        std::string typeName = primType->getName();
+                        std::string funcName = "aria_" + typeName + "_neg";
+                        
+                        std::cerr << "[DEBUG] Generated numeric negation call: " << funcName << std::endl;
+                        
+                        // Get LLVM types
+                        llvm::Type* numericLLVMType = operand->getType();
+                        llvm::Type* ptrType = llvm::PointerType::get(numericLLVMType, 0);
+                        
+                        // Build function type: void neg(result*, a*)
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            builder.getVoidTy(),
+                            {ptrType, ptrType},
+                            false
+                        );
+                        
+                        llvm::FunctionCallee negFunc = module->getOrInsertFunction(funcName, funcType);
+                        
+                        // Allocate space for operand and result
+                        llvm::Value* operandAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "neg_operand");
+                        llvm::Value* resultAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "neg_result");
+                        
+                        // Store operand
+                        builder.CreateStore(operand, operandAlloca);
+                        
+                        // Call negation function
+                        builder.CreateCall(negFunc, {resultAlloca, operandAlloca});
+                        
+                        // Load and return result
+                        llvm::Value* result = builder.CreateLoad(numericLLVMType, resultAlloca, "neg_value");
+                        
+                        // Store result type in value_types map
+                        value_types[result] = operandType;
+                        
+                        return result;
+                    }
+                    
+                    // Standard negation for non-numeric types
                     return builder.CreateNeg(operand, "negtmp");
+                }
                 
                 case frontend::TokenType::TOKEN_BANG:
                     // Logical NOT
@@ -4069,21 +3740,43 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (!rhs) return nullptr;
                     
                     // Perform operation
+                    // ARIA-024: Check for LBIM types for compound assignment
+                    unsigned numLimbs = isLBIMType(currentVal->getType());
                     switch (binop->op.type) {
                         case frontend::TokenType::TOKEN_PLUS_EQUAL:
-                            result = builder.CreateAdd(currentVal, rhs, "addtmp");
+                            if (numLimbs) {
+                                result = generateLBIMAdd(currentVal, rhs, numLimbs);
+                            } else {
+                                result = builder.CreateAdd(currentVal, rhs, "addtmp");
+                            }
                             break;
                         case frontend::TokenType::TOKEN_MINUS_EQUAL:
-                            result = builder.CreateSub(currentVal, rhs, "subtmp");
+                            if (numLimbs) {
+                                result = generateLBIMSub(currentVal, rhs, numLimbs);
+                            } else {
+                                result = builder.CreateSub(currentVal, rhs, "subtmp");
+                            }
                             break;
                         case frontend::TokenType::TOKEN_STAR_EQUAL:
-                            result = builder.CreateMul(currentVal, rhs, "multmp");
+                            if (numLimbs) {
+                                result = generateLBIMMul(currentVal, rhs, numLimbs);
+                            } else {
+                                result = builder.CreateMul(currentVal, rhs, "multmp");
+                            }
                             break;
                         case frontend::TokenType::TOKEN_SLASH_EQUAL:
-                            result = builder.CreateSDiv(currentVal, rhs, "divtmp");
+                            if (numLimbs) {
+                                result = generateLBIMDiv(currentVal, rhs, numLimbs);
+                            } else {
+                                result = builder.CreateSDiv(currentVal, rhs, "divtmp");
+                            }
                             break;
                         case frontend::TokenType::TOKEN_PERCENT_EQUAL:
-                            result = builder.CreateSRem(currentVal, rhs, "modtmp");
+                            if (numLimbs) {
+                                result = generateLBIMMod(currentVal, rhs, numLimbs);
+                            } else {
+                                result = builder.CreateSRem(currentVal, rhs, "modtmp");
+                            }
                             break;
                         default:
                             return nullptr;
@@ -4324,17 +4017,45 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             if (leftType && leftType->isPrimitive()) {
                 PrimitiveType* prim = static_cast<PrimitiveType*>(leftType);
                 const std::string& name = prim->getName();
+                std::cerr << "[DEBUG] Left operand type: " << name << std::endl;
                 if (name == "trit" || name == "tryte" || name == "nit" || name == "nyte") {
                     isTernary = true;
                     ternaryType = leftType;
+                    std::cerr << "[DEBUG] Detected ternary type on LEFT: " << name << std::endl;
                 }
             }
             if (!isTernary && rightType && rightType->isPrimitive()) {
                 PrimitiveType* prim = static_cast<PrimitiveType*>(rightType);
                 const std::string& name = prim->getName();
+                std::cerr << "[DEBUG] Right operand type: " << name << std::endl;
                 if (name == "trit" || name == "tryte" || name == "nit" || name == "nyte") {
                     isTernary = true;
                     ternaryType = rightType;
+                    std::cerr << "[DEBUG] Detected ternary type on RIGHT: " << name << std::endl;
+                }
+            }
+            
+            // Check if either operand is a numeric type (frac*, tfp*, vec9)
+            bool isNumericType = false;
+            Type* numericType = nullptr;
+            if (leftType && leftType->isPrimitive()) {
+                PrimitiveType* prim = static_cast<PrimitiveType*>(leftType);
+                const std::string& name = prim->getName();
+                if (name.find("frac") == 0 || name.find("tfp") == 0 ||
+                    name == "vec9" || name == "dvec9") {
+                    isNumericType = true;
+                    numericType = leftType;
+                    std::cerr << "[DEBUG] Detected numeric type on LEFT: " << name << std::endl;
+                }
+            }
+            if (!isNumericType && rightType && rightType->isPrimitive()) {
+                PrimitiveType* prim = static_cast<PrimitiveType*>(rightType);
+                const std::string& name = prim->getName();
+                if (name.find("frac") == 0 || name.find("tfp") == 0 ||
+                    name == "vec9" || name == "dvec9") {
+                    isNumericType = true;
+                    numericType = rightType;
+                    std::cerr << "[DEBUG] Detected numeric type on RIGHT: " << name << std::endl;
                 }
             }
             
@@ -4388,6 +4109,35 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         value_types[result] = ternaryType;  // Track type for result
                         return result;
                     }
+                    if (isNumericType && numericType) {
+                        // Generate runtime function call for numeric type addition
+                        PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
+                        std::string typeName = prim->getName();
+                        std::string funcName = "aria_" + typeName + "_add";
+                        
+                        llvm::Type* numericLLVMType = L->getType();
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            numericLLVMType, {numericLLVMType, numericLLVMType}, false);
+                        llvm::FunctionCallee runtimeFunc = module->getOrInsertFunction(funcName, funcType);
+                        
+                        llvm::Value* result = builder.CreateCall(runtimeFunc, {L, R}, typeName + "_result");
+                        value_types[result] = numericType;
+                        std::cerr << "[DEBUG] Generated numeric addition call: " << funcName << std::endl;
+                        return result;
+                    }
+                    // ARIA-024: LBIM addition for large integers (int128/256/512/1024)
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        return generateLBIMAdd(L, R, numLimbs);
+                    }
+                    // ARIA-025: fix256 deterministic fixed-point addition
+                    if (isFix256Type(L->getType())) {
+                        llvm::Type* fix256Type = L->getType();
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            fix256Type, {fix256Type, fix256Type}, false);
+                        llvm::FunctionCallee addFunc = module->getOrInsertFunction(
+                            "aria_fix256_add", funcType);
+                        return builder.CreateCall(addFunc, {L, R}, "fix256.add");
+                    }
                     return builder.CreateAdd(L, R, "addtmp");
                 case frontend::TokenType::TOKEN_MINUS:
                     // Check if either operand is a vector
@@ -4432,6 +4182,35 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::Value* result = ternary_codegen.generateSub(L, R, ternaryType);
                         value_types[result] = ternaryType;  // Track type for result
                         return result;
+                    }
+                    if (isNumericType && numericType) {
+                        // Generate runtime function call for numeric type subtraction
+                        PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
+                        std::string typeName = prim->getName();
+                        std::string funcName = "aria_" + typeName + "_sub";
+                        
+                        llvm::Type* numericLLVMType = L->getType();
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            numericLLVMType, {numericLLVMType, numericLLVMType}, false);
+                        llvm::FunctionCallee runtimeFunc = module->getOrInsertFunction(funcName, funcType);
+                        
+                        llvm::Value* result = builder.CreateCall(runtimeFunc, {L, R}, typeName + "_result");
+                        value_types[result] = numericType;
+                        std::cerr << "[DEBUG] Generated numeric subtraction call: " << funcName << std::endl;
+                        return result;
+                    }
+                    // ARIA-024: LBIM subtraction for large integers (int128/256/512/1024)
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        return generateLBIMSub(L, R, numLimbs);
+                    }
+                    // ARIA-025: fix256 deterministic fixed-point subtraction
+                    if (isFix256Type(L->getType())) {
+                        llvm::Type* fix256Type = L->getType();
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            fix256Type, {fix256Type, fix256Type}, false);
+                        llvm::FunctionCallee subFunc = module->getOrInsertFunction(
+                            "aria_fix256_sub", funcType);
+                        return builder.CreateCall(subFunc, {L, R}, "fix256.sub");
                     }
                     return builder.CreateSub(L, R, "subtmp");
                 case frontend::TokenType::TOKEN_STAR:
@@ -4478,6 +4257,35 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         value_types[result] = ternaryType;  // Track type for result
                         return result;
                     }
+                    if (isNumericType && numericType) {
+                        // Generate runtime function call for numeric type multiplication
+                        PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
+                        std::string typeName = prim->getName();
+                        std::string funcName = "aria_" + typeName + "_mul";
+                        
+                        llvm::Type* numericLLVMType = L->getType();
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            numericLLVMType, {numericLLVMType, numericLLVMType}, false);
+                        llvm::FunctionCallee runtimeFunc = module->getOrInsertFunction(funcName, funcType);
+                        
+                        llvm::Value* result = builder.CreateCall(runtimeFunc, {L, R}, typeName + "_result");
+                        value_types[result] = numericType;
+                        std::cerr << "[DEBUG] Generated numeric multiplication call: " << funcName << std::endl;
+                        return result;
+                    }
+                    // ARIA-024: LBIM multiplication for large integers (int128/256/512/1024)
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        return generateLBIMMul(L, R, numLimbs);
+                    }
+                    // ARIA-025: fix256 deterministic fixed-point multiplication
+                    if (isFix256Type(L->getType())) {
+                        llvm::Type* fix256Type = L->getType();
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            fix256Type, {fix256Type, fix256Type}, false);
+                        llvm::FunctionCallee mulFunc = module->getOrInsertFunction(
+                            "aria_fix256_mul", funcType);
+                        return builder.CreateCall(mulFunc, {L, R}, "fix256.mul");
+                    }
                     return builder.CreateMul(L, R, "multmp");
                 case frontend::TokenType::TOKEN_SLASH:
                     // Check if either operand is a vector
@@ -4523,10 +4331,41 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         value_types[result] = ternaryType;  // Track type for result
                         return result;
                     }
+                    if (isNumericType && numericType) {
+                        // Generate runtime function call for numeric type division
+                        PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
+                        std::string typeName = prim->getName();
+                        std::string funcName = "aria_" + typeName + "_div";
+                        
+                        llvm::Type* numericLLVMType = L->getType();
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            numericLLVMType, {numericLLVMType, numericLLVMType}, false);
+                        llvm::FunctionCallee runtimeFunc = module->getOrInsertFunction(funcName, funcType);
+                        
+                        llvm::Value* result = builder.CreateCall(runtimeFunc, {L, R}, typeName + "_result");
+                        value_types[result] = numericType;
+                        std::cerr << "[DEBUG] Generated numeric division call: " << funcName << std::endl;
+                        return result;
+                    }
+                    // ARIA-024: LBIM division for large integers (int128/256/512/1024)
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        return generateLBIMDiv(L, R, numLimbs);
+                    }
+                    // ARIA-025: fix256 deterministic fixed-point division
+                    if (isFix256Type(L->getType())) {
+                        llvm::Type* fix256Type = L->getType();
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            fix256Type, {fix256Type, fix256Type}, false);
+                        llvm::FunctionCallee divFunc = module->getOrInsertFunction(
+                            "aria_fix256_div", funcType);
+                        return builder.CreateCall(divFunc, {L, R}, "fix256.div");
+                    }
                     return builder.CreateSDiv(L, R, "divtmp");
                 case frontend::TokenType::TOKEN_PERCENT:
+                    std::cerr << "[DEBUG MODULO] isTBB=" << isTBB << ", isTernary=" << isTernary << std::endl;
                     // TBB modulo operator lowering
                     if (isTBB && tbbType) {
+                        std::cerr << "[DEBUG MODULO] Using TBB codegen" << std::endl;
                         // Ensure both operands are the same type as the TBB type
                         llvm::Type* tbbLLVMType = tbb_codegen.getTBBLLVMType(tbbType);
                         if (L->getType() != tbbLLVMType) {
@@ -4540,10 +4379,62 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         value_types[result] = tbbType;  // Track type for result
                         return result;
                     }
+                    // CRITICAL FIX: Balanced ternary/nonary modulo (tryte/nyte)
+                    // Must use ternary_codegen which calls aria_tryte_mod/aria_nyte_mod
+                    // instead of native srem (which breaks homomorphism on biased values)
+                    if (isTernary && ternaryType) {
+                        std::cerr << "[DEBUG MODULO] Using TERNARY codegen for type: " << ternaryType->toString() << std::endl;
+                        // Ensure both operands are the same type as the ternary type
+                        llvm::Type* ternaryLLVMType = ternary_codegen.getTernaryLLVMType(ternaryType);
+                        if (L->getType() != ternaryLLVMType) {
+                            L = builder.CreateIntCast(L, ternaryLLVMType, true, "cast_lhs");
+                        }
+                        if (R->getType() != ternaryLLVMType) {
+                            R = builder.CreateIntCast(R, ternaryLLVMType, true, "cast_rhs");
+                        }
+                        
+                        llvm::Value* result = ternary_codegen.generateMod(L, R, ternaryType);
+                        value_types[result] = ternaryType;  // Track type for result
+                        return result;
+                    }
+                    std::cerr << "[DEBUG MODULO] Falling through to native srem" << std::endl;
+                    // ARIA-024: LBIM modulo for large integers (int128/256/512)
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        return generateLBIMMod(L, R, numLimbs);
+                    }
                     return builder.CreateSRem(L, R, "modtmp");
-                
+
                 // Comparison operators (return i1)
                 case frontend::TokenType::TOKEN_EQUAL_EQUAL:
+                    std::cerr << "[DEBUG] TOKEN_EQUAL_EQUAL: L type=" << (L->getType()->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
+                    std::cerr << "[DEBUG] TOKEN_EQUAL_EQUAL: R type=" << (R->getType()->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
+                    // ARIA-024: LBIM equality comparison for large integers
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        std::cerr << "[DEBUG] LBIM equality comparison detected, numLimbs=" << numLimbs << std::endl;
+                        return generateLBIMEQ(L, R, numLimbs);
+                    }
+                    if (isNumericType && numericType) {
+                        PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
+                        std::string typeName = prim->getName();
+                        std::string funcName = "aria_" + typeName + "_cmp";
+                        
+                        llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+                        llvm::Type* numericLLVMType = L->getType();
+                        llvm::Type* ptrType = llvm::PointerType::get(numericLLVMType, 0);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            i32Type, {ptrType, ptrType}, false);
+                        llvm::FunctionCallee cmpFunc = module->getOrInsertFunction(funcName, funcType);
+                        
+                        // Allocate space for operands and pass as pointers
+                        llvm::Value* leftAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "cmp_left");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "cmp_right");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        
+                        llvm::Value* cmpResult = builder.CreateCall(cmpFunc, {leftAlloca, rightAlloca}, "cmp");
+                        llvm::Value* zero = llvm::ConstantInt::get(i32Type, 0);
+                        return builder.CreateICmpEQ(cmpResult, zero, "eq_result");
+                    }
                     // Ensure operands have same type for comparison
                     if (L->getType() != R->getType()) {
                         // Promote to larger type (only for integer types)
@@ -4562,6 +4453,32 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return builder.CreateICmpEQ(L, R, "eqtmp");
                     }
                 case frontend::TokenType::TOKEN_BANG_EQUAL:
+                    // ARIA-024: LBIM inequality comparison for large integers
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        llvm::Value* eq = generateLBIMEQ(L, R, numLimbs);
+                        return builder.CreateNot(eq, "netmp");
+                    }
+                    if (isNumericType && numericType) {
+                        PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
+                        std::string typeName = prim->getName();
+                        std::string funcName = "aria_" + typeName + "_cmp";
+                        
+                        llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+                        llvm::Type* numericLLVMType = L->getType();
+                        llvm::Type* ptrType = llvm::PointerType::get(numericLLVMType, 0);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            i32Type, {ptrType, ptrType}, false);
+                        llvm::FunctionCallee cmpFunc = module->getOrInsertFunction(funcName, funcType);
+                        
+                        llvm::Value* leftAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "cmp_left");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "cmp_right");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        
+                        llvm::Value* cmpResult = builder.CreateCall(cmpFunc, {leftAlloca, rightAlloca}, "cmp");
+                        llvm::Value* zero = llvm::ConstantInt::get(i32Type, 0);
+                        return builder.CreateICmpNE(cmpResult, zero, "ne_result");
+                    }
                     if (L->getType() != R->getType()) {
                         if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
                             if (L->getType()->getIntegerBitWidth() > R->getType()->getIntegerBitWidth()) {
@@ -4578,6 +4495,31 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return builder.CreateICmpNE(L, R, "netmp");
                     }
                 case frontend::TokenType::TOKEN_LESS:
+                    // ARIA-024: LBIM comparison for large integers
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        return generateLBIMSLT(L, R, numLimbs);
+                    }
+                    if (isNumericType && numericType) {
+                        PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
+                        std::string typeName = prim->getName();
+                        std::string funcName = "aria_" + typeName + "_cmp";
+                        
+                        llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+                        llvm::Type* numericLLVMType = L->getType();
+                        llvm::Type* ptrType = llvm::PointerType::get(numericLLVMType, 0);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            i32Type, {ptrType, ptrType}, false);
+                        llvm::FunctionCallee cmpFunc = module->getOrInsertFunction(funcName, funcType);
+                        
+                        llvm::Value* leftAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "cmp_left");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "cmp_right");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        
+                        llvm::Value* cmpResult = builder.CreateCall(cmpFunc, {leftAlloca, rightAlloca}, "cmp");
+                        llvm::Value* zero = llvm::ConstantInt::get(i32Type, 0);
+                        return builder.CreateICmpSLT(cmpResult, zero, "lt_result");
+                    }
                     if (L->getType() != R->getType()) {
                         if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
                             if (L->getType()->getIntegerBitWidth() > R->getType()->getIntegerBitWidth()) {
@@ -4594,6 +4536,33 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return builder.CreateICmpSLT(L, R, "lttmp");
                     }
                 case frontend::TokenType::TOKEN_LESS_EQUAL:
+                    // ARIA-024: LBIM comparison for large integers
+                    // L <= R is equivalent to !(R < L)
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        llvm::Value* gt = generateLBIMSLT(R, L, numLimbs);
+                        return builder.CreateNot(gt, "letmp");
+                    }
+                    if (isNumericType && numericType) {
+                        PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
+                        std::string typeName = prim->getName();
+                        std::string funcName = "aria_" + typeName + "_cmp";
+                        
+                        llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+                        llvm::Type* numericLLVMType = L->getType();
+                        llvm::Type* ptrType = llvm::PointerType::get(numericLLVMType, 0);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            i32Type, {ptrType, ptrType}, false);
+                        llvm::FunctionCallee cmpFunc = module->getOrInsertFunction(funcName, funcType);
+                        
+                        llvm::Value* leftAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "cmp_left");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "cmp_right");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        
+                        llvm::Value* cmpResult = builder.CreateCall(cmpFunc, {leftAlloca, rightAlloca}, "cmp");
+                        llvm::Value* zero = llvm::ConstantInt::get(i32Type, 0);
+                        return builder.CreateICmpSLE(cmpResult, zero, "le_result");
+                    }
                     if (L->getType() != R->getType()) {
                         if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
                             if (L->getType()->getIntegerBitWidth() > R->getType()->getIntegerBitWidth()) {
@@ -4610,6 +4579,32 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return builder.CreateICmpSLE(L, R, "letmp");
                     }
                 case frontend::TokenType::TOKEN_GREATER:
+                    // ARIA-024: LBIM comparison for large integers
+                    // L > R is equivalent to R < L
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        return generateLBIMSLT(R, L, numLimbs);
+                    }
+                    if (isNumericType && numericType) {
+                        PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
+                        std::string typeName = prim->getName();
+                        std::string funcName = "aria_" + typeName + "_cmp";
+                        
+                        llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+                        llvm::Type* numericLLVMType = L->getType();
+                        llvm::Type* ptrType = llvm::PointerType::get(numericLLVMType, 0);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            i32Type, {ptrType, ptrType}, false);
+                        llvm::FunctionCallee cmpFunc = module->getOrInsertFunction(funcName, funcType);
+                        
+                        llvm::Value* leftAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "cmp_left");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "cmp_right");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        
+                        llvm::Value* cmpResult = builder.CreateCall(cmpFunc, {leftAlloca, rightAlloca}, "cmp");
+                        llvm::Value* zero = llvm::ConstantInt::get(i32Type, 0);
+                        return builder.CreateICmpSGT(cmpResult, zero, "gt_result");
+                    }
                     if (L->getType() != R->getType()) {
                         if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
                             if (L->getType()->getIntegerBitWidth() > R->getType()->getIntegerBitWidth()) {
@@ -4626,6 +4621,33 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return builder.CreateICmpSGT(L, R, "gttmp");
                     }
                 case frontend::TokenType::TOKEN_GREATER_EQUAL:
+                    // ARIA-024: LBIM comparison for large integers
+                    // L >= R is equivalent to !(L < R)
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        llvm::Value* lt = generateLBIMSLT(L, R, numLimbs);
+                        return builder.CreateNot(lt, "getmp");
+                    }
+                    if (isNumericType && numericType) {
+                        PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
+                        std::string typeName = prim->getName();
+                        std::string funcName = "aria_" + typeName + "_cmp";
+                        
+                        llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+                        llvm::Type* numericLLVMType = L->getType();
+                        llvm::Type* ptrType = llvm::PointerType::get(numericLLVMType, 0);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            i32Type, {ptrType, ptrType}, false);
+                        llvm::FunctionCallee cmpFunc = module->getOrInsertFunction(funcName, funcType);
+                        
+                        llvm::Value* leftAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "cmp_left");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(numericLLVMType, nullptr, "cmp_right");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        
+                        llvm::Value* cmpResult = builder.CreateCall(cmpFunc, {leftAlloca, rightAlloca}, "cmp");
+                        llvm::Value* zero = llvm::ConstantInt::get(i32Type, 0);
+                        return builder.CreateICmpSGE(cmpResult, zero, "ge_result");
+                    }
                     if (L->getType() != R->getType()) {
                         if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
                             if (L->getType()->getIntegerBitWidth() > R->getType()->getIntegerBitWidth()) {
@@ -4762,9 +4784,57 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
         
         case ASTNode::NodeType::OBJECT_LITERAL: {
             // Object literal - struct instantiation: Point{ x: 10, y: 20 }
+            // Special handling for numeric types that need runtime constructor calls
             ObjectLiteralExpr* objLit = static_cast<ObjectLiteralExpr*>(expr);
             
-            // Get the struct type from the type name
+            // Check if this is one of our special numeric types that needs runtime constructor
+            bool isFrac = objLit->type_name.find("frac") == 0;
+            bool isTFP = objLit->type_name.find("tfp") == 0;
+            bool isVec9 = objLit->type_name == "vec9";
+            bool isTMatrix = objLit->type_name == "tmatrix";
+            bool isTTensor = objLit->type_name == "ttensor";
+            
+            if (isFrac || isTFP || isVec9 || isTMatrix || isTTensor) {
+                // These types use runtime constructor functions
+                // Syntax: frac32{1, 1, 2} → frac32_from_parts(1, 1, 2)
+                
+                // Generate arguments (field values in order)
+                std::vector<llvm::Value*> args;
+                for (const auto& field : objLit->fields) {
+                    llvm::Value* arg = codegenExpression(field.value.get());
+                    if (!arg) {
+                        return nullptr;  // Error in argument generation
+                    }
+                    args.push_back(arg);
+                }
+                
+                // Get or declare the runtime constructor function
+                std::string func_name = objLit->type_name + "_from_parts";
+                llvm::Type* return_type = mapTypeFromName(objLit->type_name);
+                
+                // Build function type
+                std::vector<llvm::Type*> param_types;
+                for (llvm::Value* arg : args) {
+                    param_types.push_back(arg->getType());
+                }
+                llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
+                
+                // Get or create function declaration
+                llvm::Function* constructor_func = module->getFunction(func_name);
+                if (!constructor_func) {
+                    constructor_func = llvm::Function::Create(
+                        func_type,
+                        llvm::Function::ExternalLinkage,
+                        func_name,
+                        module.get()
+                    );
+                }
+                
+                // Call the constructor
+                return builder.CreateCall(constructor_func, args, objLit->type_name + ".val");
+            }
+            
+            // Regular struct initialization (non-numeric types)
             llvm::Type* struct_type = mapTypeFromName(objLit->type_name);
             if (!struct_type || !struct_type->isStructTy()) {
                 // Error: not a struct type
@@ -5267,16 +5337,55 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Phase 4.6: Await expression - suspend coroutine until operand completes
             AwaitExpr* awaitExpr = static_cast<AwaitExpr*>(expr);
             
-            // Step 1: Evaluate the operand (should be an async function call returning coroutine handle)
-            llvm::Value* future_value = codegenExpression(awaitExpr->operand.get());
-            if (!future_value) return nullptr;
+            // Step 1: Evaluate the operand (should return a Future* pointer)
+            llvm::Value* future_ptr = codegenExpression(awaitExpr->operand.get());
+            if (!future_ptr) return nullptr;
             
-            // Get coroutine intrinsics
-            llvm::Function* coroResumeFunc = llvm::Intrinsic::getDeclaration(
-                module.get(),
-                llvm::Intrinsic::coro_resume
+            // Get current function (we're inside an async function)
+            llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+            
+            // BUG-02 FIX: Install continuation mechanism - poll Future and conditionally suspend
+            
+            // Call Future::poll() to check if ready
+            llvm::Function* poll_func = module->getFunction("_ZN4aria7runtime6Future4pollEv");
+            if (!poll_func) {
+                // Declare: PollResult Future::poll()
+                llvm::Type* poll_result_type = llvm::Type::getInt32Ty(context); // enum PollResult
+                llvm::FunctionType* poll_type = llvm::FunctionType::get(
+                    poll_result_type,
+                    {future_ptr->getType()}, // this pointer
+                    false
+                );
+                poll_func = llvm::Function::Create(
+                    poll_type,
+                    llvm::Function::ExternalLinkage,
+                    "_ZN4aria7runtime6Future4pollEv",
+                    module.get()
+                );
+            }
+            
+            llvm::Value* poll_result = builder.CreateCall(poll_func, {future_ptr}, "poll.result");
+            
+            // Check if READY (1) or PENDING (0)
+            llvm::Value* is_ready = builder.CreateICmpEQ(
+                poll_result,
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 1), // PollResult::READY = 1
+                "is.ready"
             );
             
+            // Create blocks: ready (extract value), suspend (wait), resume (after suspension)
+            llvm::BasicBlock* ready_block = llvm::BasicBlock::Create(context, "await.ready", currentFunc);
+            llvm::BasicBlock* suspend_block = llvm::BasicBlock::Create(context, "await.suspend", currentFunc);
+            llvm::BasicBlock* resume_block = llvm::BasicBlock::Create(context, "await.resume", currentFunc);
+            llvm::BasicBlock* cleanup_block = llvm::BasicBlock::Create(context, "await.cleanup", currentFunc);
+            
+            // Branch: if ready, extract value; else suspend
+            builder.CreateCondBr(is_ready, ready_block, suspend_block);
+            
+            // SUSPEND BLOCK: Future not ready - install continuation and suspend
+            builder.SetInsertPoint(suspend_block);
+            
+            // Get coroutine intrinsics
             llvm::Function* coroSaveFunc = llvm::Intrinsic::getDeclaration(
                 module.get(),
                 llvm::Intrinsic::coro_save
@@ -5287,59 +5396,89 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 llvm::Intrinsic::coro_suspend
             );
             
-            // Step 2: If the operand is a coroutine handle (ptr), resume it
-            if (future_value->getType()->isPointerTy()) {
-                builder.CreateCall(coroResumeFunc, {future_value});
+            // Save coroutine state
+            // Get current coroutine handle (stored in function prologue)
+            llvm::Value* coro_handle = nullptr;
+            if (auto* alloca_inst = currentFunc->getEntryBlock().getFirstNonPHI()) {
+                // Look for the coro.handle alloca in entry block
+                for (auto& inst : currentFunc->getEntryBlock()) {
+                    if (auto* alloca = llvm::dyn_cast<llvm::AllocaInst>(&inst)) {
+                        if (alloca->getName().starts_with("coro.handle")) {
+                            coro_handle = builder.CreateLoad(alloca->getAllocatedType(), alloca, "coro.hdl");
+                            break;
+                        }
+                    }
+                }
             }
             
-            // Get current function (we're inside an async function)
-            llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+            if (!coro_handle) {
+                // Fallback: use null handle (should not happen in well-formed async functions)
+                coro_handle = llvm::ConstantPointerNull::get(
+                    llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)
+                );
+            }
             
-            // Use the awaited coroutine handle as the current handle for now
-            // TODO: Proper handle management when we have full Future<T> system
-            llvm::Value* current_handle = future_value;
+            llvm::Value* save_token = builder.CreateCall(coroSaveFunc, {coro_handle}, "await.save");
             
-            // Step 3: Save state and suspend
-            llvm::Value* save_token = builder.CreateCall(coroSaveFunc, {current_handle}, "await.save");
-            
-            // Suspend (not final - this is an intermediate suspension point)
+            // Suspend (not final - intermediate suspension point)
             llvm::Value* is_final = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
             llvm::Value* suspend_result = builder.CreateCall(
                 coroSuspendFunc,
                 {save_token, is_final},
-                "await.suspend"
+                "await.suspend.result"
             );
             
-            // Step 4: Create resume and cleanup blocks
-            llvm::BasicBlock* resume_block = llvm::BasicBlock::Create(
-                context,
-                "await.resume",
-                currentFunc
-            );
-            
-            llvm::BasicBlock* cleanup_block = llvm::BasicBlock::Create(
-                context,
-                "await.cleanup",
-                currentFunc
-            );
-            
-            // Step 5: Switch on suspend result
+            // Switch on suspend result: 0 = resume, 1 = cleanup
             llvm::SwitchInst* suspend_switch = builder.CreateSwitch(suspend_result, resume_block, 1);
             suspend_switch->addCase(
                 llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 1),
                 cleanup_block
             );
             
-            // Step 6: Generate cleanup block
+            // CLEANUP BLOCK
             builder.SetInsertPoint(cleanup_block);
-            builder.CreateUnreachable();  // LLVM's coroutine pass will handle this
+            builder.CreateUnreachable();
             
-            // Step 7: Generate resume block - continue execution here
+            // READY BLOCK: Future is ready - extract value (BUG-03 FIX)
+            builder.SetInsertPoint(ready_block);
+            
+            // Call Future::getValue() to extract the result
+            llvm::Function* getValue_func = module->getFunction("_ZN4aria7runtime6Future8getValueEv");
+            if (!getValue_func) {
+                // Declare: void* Future::getValue() const
+                llvm::FunctionType* getValue_type = llvm::FunctionType::get(
+                    llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0), // void*
+                    {future_ptr->getType()},
+                    false
+                );
+                getValue_func = llvm::Function::Create(
+                    getValue_type,
+                    llvm::Function::ExternalLinkage,
+                    "_ZN4aria7runtime6Future8getValueEv",
+                    module.get()
+                );
+            }
+            
+            llvm::Value* value_ptr_ready = builder.CreateCall(getValue_func, {future_ptr}, "value.ready");
+            builder.CreateBr(resume_block);
+            
+            // RESUME BLOCK: Merge point - value available from either ready or resumed path
             builder.SetInsertPoint(resume_block);
             
-            // For now, return the future value itself
-            // TODO: Extract actual result from Future<T> when trait system is ready
-            return future_value;
+            // Poll again after resume to get value
+            llvm::Value* value_ptr_resumed = builder.CreateCall(getValue_func, {future_ptr}, "value.resumed");
+            
+            // PHI node to merge values from ready and resumed paths
+            llvm::PHINode* result_value = builder.CreatePHI(
+                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                2,
+                "await.result"
+            );
+            result_value->addIncoming(value_ptr_ready, ready_block);
+            result_value->addIncoming(value_ptr_resumed, suspend_block);
+            
+            // BUG-03 FIX: Return the extracted value pointer, not the Future pointer
+            return result_value;
         }
         
         default:
@@ -5564,10 +5703,14 @@ void aria::IRGenerator::executeScopeDefers() {
     if (defer_stack.empty()) {
         return;
     }
-    
+
+    // ARIA-023: Set flag to prevent defer_stack modification during iteration
+    bool was_executing = executing_defers;
+    executing_defers = true;
+
     // Get the current scope's defer blocks
     std::vector<BlockStmt*>& current_scope_defers = defer_stack.back();
-    
+
     // Execute in LIFO order (reverse)
     for (auto it = current_scope_defers.rbegin(); it != current_scope_defers.rend(); ++it) {
         BlockStmt* defer_block = *it;
@@ -5575,9 +5718,15 @@ void aria::IRGenerator::executeScopeDefers() {
             codegenStatement(statement.get());
         }
     }
+
+    executing_defers = was_executing;
 }
 
 void aria::IRGenerator::executeFunctionDefers() {
+    // ARIA-023: Set flag to prevent defer_stack modification during iteration
+    bool was_executing = executing_defers;
+    executing_defers = true;
+
     // Execute all scopes' defers in reverse order (inside-out)
     for (auto scope_it = defer_stack.rbegin(); scope_it != defer_stack.rend(); ++scope_it) {
         // Within each scope, execute defers in LIFO order
@@ -5588,4 +5737,6 @@ void aria::IRGenerator::executeFunctionDefers() {
             }
         }
     }
+
+    executing_defers = was_executing;
 }

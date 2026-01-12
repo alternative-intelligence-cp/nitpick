@@ -135,6 +135,24 @@ private:
     
     // Check if character is octal digit (0-7)
     static bool isOctalDigit(char c);
+    
+    // ========================================================================
+    // Type Suffix Scanning (Zero Implicit Conversion Policy)
+    // ========================================================================
+    // Reference: docs/programming_guide/types/zero_implicit_conversion.md
+    
+    // Scan type suffix after numeric literal (e.g., "u32", "i64", "f32")
+    // Returns empty string if no suffix found
+    std::string scanTypeSuffix();
+    
+    // Convert type suffix string to appropriate TokenType
+    // Parameters:
+    //   suffix - the type suffix string (e.g., "u32", "i64", "f32")
+    //   isFloat - true if scanning a float literal, false for integer
+    // Returns:
+    //   Appropriate TOKEN_INTEGER_* or TOKEN_FLOAT_* type
+    //   Returns TOKEN_ERROR if suffix is invalid for the literal type
+    TokenType suffixToTokenType(const std::string& suffix, bool isFloat);
 };
 
 } // namespace frontend

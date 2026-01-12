@@ -1,0 +1,14 @@
+/**
+ * Test: Immutable Borrow After Mutable
+ * Expected: COMPILER ERROR - cannot create immutable borrow while mutable exists
+ */
+
+func:main = int32() {
+    int32:x = 10;
+
+    int32$:m = $x;       // Mutable borrow
+    int32$:r = !$x;      // ERROR: Immutable borrow while mutable exists
+
+    print("Should not compile!\n");
+    return 0;
+};

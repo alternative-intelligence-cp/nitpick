@@ -38,17 +38,169 @@ namespace sema {
 // Data Structures for Lifetime Analysis
 // ============================================================================
 
+// ============================================================================
+// Access Path Tracking (Gemini Report: Split Borrows)
+// ============================================================================
+
 /**
- * Represents a single borrow/loan of a variable
+ * AccessPath - Tracks the exact path being borrowed for split borrow analysis
+ *
+ * Enables disjoint field borrowing:
+ *   - torus.sector[0] and torus.sector[1] are disjoint
+ *   - torus.emitters and torus.grid are disjoint
+ *   - torus.sector and torus.sector[0] overlap (parent/child)
+ *
+ * Format: base_var.field1.field2[index]...
+ */
+struct AccessPath {
+    std::string base_var;              // Root variable name
+    std::vector<std::string> fields;   // Field/index access chain
+
+    AccessPath() = default;
+    explicit AccessPath(const std::string& base) : base_var(base) {}
+    AccessPath(const std::string& base, std::vector<std::string> f)
+        : base_var(base), fields(std::move(f)) {}
+
+    /**
+     * Returns true if this path is a prefix of or equal to 'other'
+     * Example: a.x is prefix of a.x.y
+     */
+    bool isPrefixOf(const AccessPath& other) const {
+        if (base_var != other.base_var) return false;
+        if (fields.size() > other.fields.size()) return false;
+        for (size_t i = 0; i < fields.size(); ++i) {
+            if (fields[i] != other.fields[i]) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Returns true if paths are disjoint (e.g. x.a vs x.b)
+     * Two paths are disjoint if they share a common prefix but diverge
+     */
+    bool isDisjointFrom(const AccessPath& other) const {
+        if (base_var != other.base_var) return true;  // Different roots
+
+        // Find where paths diverge
+        size_t min_len = std::min(fields.size(), other.fields.size());
+        for (size_t i = 0; i < min_len; ++i) {
+            if (fields[i] != other.fields[i]) {
+                // They diverge here - check if both have more fields
+                // a.x vs a.y -> disjoint (diverge at same level)
+                return true;
+            }
+        }
+
+        // One is a prefix of the other - they overlap
+        return false;
+    }
+
+    /**
+     * Check if this path conflicts with another for borrowing purposes
+     * Conflict if: same path, one is prefix of other, or overlapping indices
+     */
+    bool conflictsWith(const AccessPath& other) const {
+        return !isDisjointFrom(other);
+    }
+
+    std::string toString() const {
+        std::string result = base_var;
+        for (const auto& field : fields) {
+            if (!field.empty() && field[0] == '[') {
+                result += field;  // Array index
+            } else {
+                result += "." + field;  // Field access
+            }
+        }
+        return result;
+    }
+
+    bool operator==(const AccessPath& other) const {
+        return base_var == other.base_var && fields == other.fields;
+    }
+
+    bool operator<(const AccessPath& other) const {
+        if (base_var != other.base_var) return base_var < other.base_var;
+        return fields < other.fields;
+    }
+};
+
+// Hash function for AccessPath (for use in unordered containers)
+struct AccessPathHash {
+    size_t operator()(const AccessPath& path) const {
+        size_t h = std::hash<std::string>{}(path.base_var);
+        for (const auto& f : path.fields) {
+            h ^= std::hash<std::string>{}(f) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        }
+        return h;
+    }
+};
+
+// ============================================================================
+// Two-Phase Borrowing (Gemini Report: Method Call Patterns)
+// ============================================================================
+
+/**
+ * LoanPhase - Tracks the phase of a two-phase borrow
+ *
+ * Two-phase borrowing enables patterns like vec.push(vec.len()):
+ *   1. RESERVED: Mutable borrow is "reserved" but acts as shared
+ *   2. ACTIVE: Borrow is activated to full mutable after args evaluated
+ *
+ * This allows reading the receiver while evaluating arguments.
+ */
+enum class LoanPhase {
+    RESERVED,   // Reserved mutable borrow (acts as shared)
+    ACTIVE      // Fully active borrow (exclusive for mutable)
+};
+
+/**
+ * Represents a single borrow/loan of a variable or access path
  */
 struct Loan {
     std::string borrower;    // Name of the reference variable
     bool is_mutable;         // true for $mut, false for $
     int creation_line;       // Line where borrow was created
     int creation_column;     // Column where borrow was created
-    
+    AccessPath path;         // The exact path being borrowed (for split borrows)
+    LoanPhase phase;         // Two-phase borrowing state (RESERVED or ACTIVE)
+
     Loan(const std::string& b, bool mut, int line, int col)
-        : borrower(b), is_mutable(mut), creation_line(line), creation_column(col) {}
+        : borrower(b), is_mutable(mut), creation_line(line), creation_column(col),
+          path(b), phase(LoanPhase::ACTIVE) {}
+
+    Loan(const std::string& b, bool mut, int line, int col, const AccessPath& p)
+        : borrower(b), is_mutable(mut), creation_line(line), creation_column(col),
+          path(p), phase(LoanPhase::ACTIVE) {}
+
+    Loan(const std::string& b, bool mut, int line, int col, const AccessPath& p, LoanPhase ph)
+        : borrower(b), is_mutable(mut), creation_line(line), creation_column(col),
+          path(p), phase(ph) {}
+
+    /**
+     * Check if this loan is currently active (not just reserved)
+     */
+    bool isActive() const { return phase == LoanPhase::ACTIVE; }
+
+    /**
+     * Check if this loan blocks mutable access
+     * Reserved loans allow shared reads, active mutable loans block all
+     */
+    bool blocksMutableAccess() const {
+        return phase == LoanPhase::ACTIVE && is_mutable;
+    }
+
+    /**
+     * Check if this loan blocks any access to the path
+     */
+    bool blocksAccess(bool requesting_mutable) const {
+        if (phase == LoanPhase::RESERVED) {
+            // Reserved loans only block other mutable borrows
+            return requesting_mutable;
+        }
+        // Active loans: mutable blocks all, immutable blocks mutable
+        return is_mutable || requesting_mutable;
+    }
 };
 
 /**
@@ -68,6 +220,72 @@ enum class WildState {
     MOVED,          // Ownership transferred, cannot be used
     UNKNOWN,        // Indeterminate state (after complex branching)
     MAY_FREED       // May have been freed (loop-carried uncertainty)
+};
+
+// ============================================================================
+// TBB Value State Tracking (Gemini Report: TBB ERR → Release Borrows)
+// ============================================================================
+
+/**
+ * TBBValueState - Tracks whether a TBB variable is in Valid or Error state
+ *
+ * When a TBB variable enters ERR state (via check like `if val == ERR`),
+ * it semantically holds no useful data. Borrows from that variable can
+ * be considered released on the error path, enabling error recovery patterns:
+ *
+ *   let result = torus.compute_wave();
+ *   if result == ERR {
+ *       torus.reset();  // Allowed: ERR releases borrow
+ *   }
+ */
+enum class TBBValueState {
+    VALID,    // Normal value, may hold data
+    ERROR,    // Known to be ERR sentinel
+    UNKNOWN   // Could be either (merge of valid/error paths)
+};
+
+// ============================================================================
+// Liveness Analysis (Gemini Report: Loop-Carried Dependencies)
+// ============================================================================
+
+/**
+ * LivenessAnalysis - Tracks which variables are "live" at program points
+ *
+ * A variable is live at point P if:
+ *   1. It may be used after P (before being reassigned)
+ *   2. It holds a value that could affect program behavior
+ *
+ * Used by mergeLoopBackEdge to filter out dead variables,
+ * preventing false conflicts from zombie loans.
+ */
+struct LivenessAnalysis {
+    // Variables that are live at the loop header
+    std::unordered_set<std::string> live_at_header;
+
+    // Variables that are used after the loop (for escape analysis)
+    std::unordered_set<std::string> live_after_loop;
+
+    /**
+     * Check if a variable is live at the loop header
+     */
+    bool isLiveAtHeader(const std::string& var) const {
+        return live_at_header.count(var) > 0;
+    }
+
+    /**
+     * Mark a variable as live at header
+     */
+    void markLiveAtHeader(const std::string& var) {
+        live_at_header.insert(var);
+    }
+
+    /**
+     * Clear all liveness info
+     */
+    void clear() {
+        live_at_header.clear();
+        live_after_loop.clear();
+    }
 };
 
 /**
@@ -111,11 +329,26 @@ struct LifetimeContext {
     
     // Tracks the state of wild pointers (allocated, freed, moved)
     std::unordered_map<std::string, WildState> wild_states;
-    
+
     // Tracks all variables that have been moved (not just wild)
     // Used to detect use-after-move for all types
     std::unordered_set<std::string> moved_variables;
-    
+
+    // ========================================================================
+    // TBB Value State Tracking (Gemini Report)
+    // ========================================================================
+    // Tracks whether TBB variables are in Valid or Error state
+    // When a variable is known to be ERR, borrows from it can be released
+    std::unordered_map<std::string, TBBValueState> tbb_value_states;
+
+    // ========================================================================
+    // Access Path Based Loans (Gemini Report: Split Borrows)
+    // ========================================================================
+    // Maps AccessPath -> List of Active Loans
+    // Enables split borrowing: torus.sector[0] and torus.sector[1] can be
+    // borrowed simultaneously because their paths are disjoint
+    std::unordered_map<AccessPath, std::vector<Loan>, AccessPathHash> path_loans;
+
     // Current traversal depth (0 = global, 1 = function body, etc.)
     int current_depth;
     
@@ -164,8 +397,24 @@ struct LifetimeContext {
      * Merge for loop back-edge analysis (fixpoint iteration)
      * Returns true if the state changed (need another iteration)
      * Uses set union for active_loans (May-Analysis)
+     *
+     * Original version (for backwards compatibility)
      */
     bool mergeLoopBackEdge(const LifetimeContext& back_edge_state);
+
+    /**
+     * Liveness-aware merge for loop back-edge (Gemini Report improvement)
+     *
+     * Only propagates loans for variables that are LIVE at the loop header.
+     * This prevents false conflicts from "zombie" loans that would be dead
+     * by the start of the next iteration.
+     *
+     * @param back_edge_state State at end of loop body
+     * @param liveness Liveness analysis results
+     * @return true if state changed (need another iteration)
+     */
+    bool mergeLoopBackEdgeLivenessAware(const LifetimeContext& back_edge_state,
+                                         const LivenessAnalysis& liveness);
 
     /**
      * Apply widening operator to force convergence
@@ -178,6 +427,56 @@ struct LifetimeContext {
      * Check if two states are equivalent (for fixpoint detection)
      */
     bool equivalent(const LifetimeContext& other) const;
+
+    // ========================================================================
+    // TBB Value State Methods (Gemini Report)
+    // ========================================================================
+
+    /**
+     * Mark a TBB variable as being in ERR state
+     * Releases any borrows that originated from this variable
+     */
+    void markTBBError(const std::string& var);
+
+    /**
+     * Mark a TBB variable as having a valid (non-ERR) value
+     */
+    void markTBBValid(const std::string& var);
+
+    /**
+     * Check if a TBB variable is known to be in ERR state
+     */
+    bool isTBBError(const std::string& var) const;
+
+    /**
+     * Release all loans that originated from a variable in ERR state
+     * Called when we detect a TBB variable is ERR
+     */
+    void releaseLoansForTBBError(const std::string& var);
+
+    // ========================================================================
+    // Split Borrow Methods (Gemini Report)
+    // ========================================================================
+
+    /**
+     * Check if a borrow of the given path would conflict with existing loans
+     * Uses access path analysis to allow disjoint borrows
+     *
+     * @param path The access path being borrowed
+     * @param is_mutable Whether this is a mutable borrow
+     * @return nullptr if no conflict, or pointer to conflicting loan
+     */
+    const Loan* checkPathConflict(const AccessPath& path, bool is_mutable) const;
+
+    /**
+     * Record a loan with access path tracking
+     */
+    void recordPathLoan(const AccessPath& path, const Loan& loan);
+
+    /**
+     * Release loans for a specific access path
+     */
+    void releasePathLoans(const AccessPath& path);
 };
 
 /**
@@ -347,6 +646,7 @@ private:
     void checkForStmt(ForStmt* stmt);
     void checkBlockStmt(BlockStmt* stmt);
     void checkReturnStmt(ReturnStmt* stmt);
+    void checkPassStmt(PassStmt* stmt);
     void checkDeferStmt(DeferStmt* stmt);
 
     // ========================================================================
@@ -382,7 +682,101 @@ private:
     void checkIdentifier(IdentifierExpr* expr);
     void checkCallExpr(CallExpr* expr);
     void checkMoveExpr(MoveExpr* expr);
-    
+
+    /**
+     * ARIA-017: Check if a reference would escape its scope
+     * Detects returning or passing references to local variables
+     */
+    void checkReferenceEscape(ASTNode* value, ASTNode* context);
+
+    // ========================================================================
+    // Liveness Analysis (Gemini Report)
+    // ========================================================================
+
+    /**
+     * Compute liveness information for a loop
+     * Determines which variables are live at the loop header
+     *
+     * @param loopBody The loop body AST node
+     * @param loopCondition The loop condition (may use variables)
+     * @return LivenessAnalysis with live variable sets
+     */
+    LivenessAnalysis computeLoopLiveness(ASTNode* loopBody, ASTNode* loopCondition);
+
+    /**
+     * Collect variables used in an expression (for liveness)
+     */
+    void collectUsedVariables(ASTNode* expr, std::unordered_set<std::string>& used);
+
+    // ========================================================================
+    // Two-Phase Borrowing (Gemini Report)
+    // ========================================================================
+
+    /**
+     * Create a reserved (not yet active) mutable borrow
+     * Used for method call receivers during argument evaluation
+     *
+     * @param host Variable being borrowed
+     * @param reference Reference variable
+     * @param node AST node for error reporting
+     * @return The created Loan (in RESERVED phase)
+     */
+    Loan createReservedLoan(const std::string& host, const std::string& reference, ASTNode* node);
+
+    /**
+     * Activate a reserved loan to full mutable
+     * Called after method arguments are evaluated
+     *
+     * @param loan The loan to activate
+     * @param node AST node for error reporting
+     * @return true if activation succeeded
+     */
+    bool activateLoan(Loan& loan, ASTNode* node);
+
+    // ========================================================================
+    // TBB Error Detection (Gemini Report)
+    // ========================================================================
+
+    /**
+     * Check if a condition is testing for TBB ERR state
+     * Patterns: x == ERR, x == TBB8_ERR, x.is_err(), etc.
+     *
+     * @param condition The condition expression
+     * @return Variable name if this is an ERR check, empty string otherwise
+     */
+    std::string detectTBBErrorCheck(ASTNode* condition);
+
+    /**
+     * Check if a type name is a TBB type
+     */
+    bool isTBBType(const std::string& typeName) const;
+
+    // ========================================================================
+    // Access Path Extraction (Gemini Report: Split Borrows)
+    // ========================================================================
+
+    /**
+     * Extract the access path from an expression
+     * Handles: identifier, member access, array subscript
+     *
+     * @param expr The expression to analyze
+     * @return AccessPath representing the full path
+     */
+    AccessPath extractAccessPath(ASTNode* expr);
+
+    /**
+     * Record a borrow with access path tracking
+     * Enables split borrowing of disjoint fields
+     */
+    void recordBorrowWithPath(const AccessPath& path, const std::string& reference,
+                              bool is_mutable, ASTNode* node);
+
+    /**
+     * Check borrow rules with access path awareness
+     * Allows disjoint paths to be borrowed simultaneously
+     */
+    bool checkBorrowRulesWithPath(const AccessPath& path, bool is_mutable, ASTNode* node);
+
     // ========================================================================
     // Error Reporting
     // ========================================================================

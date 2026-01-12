@@ -78,7 +78,12 @@ private:
     
     // Defer statement support (RAII cleanup)
     std::vector<std::vector<BlockStmt*>> defer_stack;
-    
+    bool executing_defers = false;  // ARIA-023: Prevents defer_stack modification during iteration
+
+    // ARIA-022: Recursion depth limit to prevent stack overflow
+    static constexpr size_t MAX_CODEGEN_DEPTH = 256;
+    size_t codegen_depth_ = 0;
+
     // Debug info generation (Phase 7.4.1)
     std::unique_ptr<llvm::DIBuilder> di_builder;
     llvm::DICompileUnit* di_compile_unit;
@@ -89,7 +94,11 @@ private:
     
     // Current module name (for distinguishing module functions from main functions)
     std::string current_module_name;
-    
+
+    // Async function context tracking (Phase 4.6: Coroutines)
+    bool current_func_is_async;                    // Is current function async?
+    llvm::BasicBlock* current_coro_suspend_block;  // Where return statements branch to in async functions
+
     /**
      * Map Aria type to LLVM type
      * Reference: research_012-017 for type specifications
@@ -162,7 +171,110 @@ private:
      * @return LLVM struct { i1 false, T undef }
      */
     llvm::Value* createOptionalNone(llvm::Type* optionalType);
-    
+
+    // ========================================================================
+    // ARIA-024: Limb-Based Integral Model (LBIM) for Large Integers
+    // Implements arithmetic on struct-wrapped limb arrays to bypass LLVM bugs
+    // See: github.com/llvm/llvm-project/issues/68751, #56351
+    // ========================================================================
+
+    /**
+     * Check if an LLVM type is a LBIM large integer struct (int128/256/512/1024)
+     * @param type LLVM type to check
+     * @return Number of limbs (2, 4, 8, or 16) if LBIM type, 0 otherwise
+     */
+    unsigned isLBIMType(llvm::Type* type);
+
+    /**
+     * Check if an LLVM type is fix256 (Q128.128 deterministic fixed-point)
+     * @param type LLVM type to check
+     * @return true if fix256, false otherwise
+     */
+    bool isFix256Type(llvm::Type* type);
+
+    /**
+     * Generate LBIM addition using ripple-carry algorithm
+     * @param L Left operand (LBIM struct)
+     * @param R Right operand (LBIM struct)
+     * @param numLimbs Number of i64 limbs (2, 4, 8, or 16)
+     * @return Result LBIM struct
+     */
+    llvm::Value* generateLBIMAdd(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
+
+    /**
+     * Generate LBIM subtraction using borrow-chain algorithm
+     * @param L Left operand (LBIM struct)
+     * @param R Right operand (LBIM struct)
+     * @param numLimbs Number of i64 limbs (2, 4, 8, or 16)
+     * @return Result LBIM struct
+     */
+    llvm::Value* generateLBIMSub(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
+
+    /**
+     * Generate LBIM comparison (signed less than)
+     * Compares limbs from most significant to least significant
+     * @param L Left operand (LBIM struct)
+     * @param R Right operand (LBIM struct)
+     * @param numLimbs Number of i64 limbs (2, 4, or 8)
+     * @return i1 result (true if L < R)
+     */
+    llvm::Value* generateLBIMSLT(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
+
+    /**
+     * Generate LBIM comparison (unsigned less than)
+     * @param L Left operand (LBIM struct)
+     * @param R Right operand (LBIM struct)
+     * @param numLimbs Number of i64 limbs (2, 4, or 8)
+     * @return i1 result (true if L < R unsigned)
+     */
+    llvm::Value* generateLBIMULT(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
+
+    /**
+     * Generate LBIM equality comparison
+     * @param L Left operand (LBIM struct)
+     * @param R Right operand (LBIM struct)
+     * @param numLimbs Number of i64 limbs (2, 4, or 8)
+     * @return i1 result (true if L == R)
+     */
+    llvm::Value* generateLBIMEQ(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
+
+    /**
+     * Generate LBIM multiplication using Schoolbook algorithm
+     * Uses safe i128 intermediate operations to avoid IPSCCP crashes
+     * @param L Left operand (LBIM struct)
+     * @param R Right operand (LBIM struct)
+     * @param numLimbs Number of i64 limbs (2, 4, or 8)
+     * @return Result LBIM struct (lower N limbs of product)
+     */
+    llvm::Value* generateLBIMMul(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
+
+    /**
+     * Promote int64 literal to LBIM struct (int128/256/512/1024/2048/4096)
+     * Used when assigning literals to large integer variables
+     * @param literal LLVM integer value to promote  
+     * @param targetType Target LBIM struct type
+     * @return Promoted LBIM struct value
+     */
+    llvm::Value* promoteToLBIMStruct(llvm::Value* literal, llvm::Type* targetType);
+
+    /**
+     * Generate LBIM signed division by calling runtime intrinsic
+     * @param L Left operand (LBIM struct dividend)
+     * @param R Right operand (LBIM struct divisor)
+     * @param numLimbs Number of i64 limbs (2, 4, or 8)
+     * @return Result LBIM struct (quotient)
+     */
+    llvm::Value* generateLBIMDiv(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
+
+    /**
+     * Generate LBIM signed modulo by calling runtime intrinsic
+     * @param L Left operand (LBIM struct dividend)
+     * @param R Right operand (LBIM struct divisor)
+     * @param numLimbs Number of i64 limbs (2, 4, or 8)
+     * @return Result LBIM struct (remainder)
+     */
+    llvm::Value* generateLBIMMod(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
+
 public:
     /**
      * Constructor

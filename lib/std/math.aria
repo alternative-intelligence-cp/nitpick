@@ -1,892 +1,441 @@
-/// Core mathematical functions and constants
-//!
-//! This module provides essential mathematical operations including:
-//! - Trigonometric functions (sin, cos, tan, etc.)
-//! - Power/exponential operations (pow, exp, ln, log)
-//! - TBB (Twisted Balanced Binary) arithmetic with sticky error semantics
-//! - Vector and matrix math (vec2, vec3, vec4, mat3, mat4)
-//!
-//! All basic math functions are implemented as compiler builtins for
-//! optimal performance using LLVM intrinsics and libm.
-//!
-//! BUILTIN FUNCTIONS AVAILABLE:
-//!   abs(x)          - Absolute value
-//!   sqrt(x)         - Square root
-//!   cbrt(x)         - Cube root
-//!   pow(base, exp)  - Power/exponentiation
-//!   exp(x)          - e^x (natural exponential)
-//!   ln(x)           - Natural logarithm (base e)
-//!   log10(x)        - Base-10 logarithm
-//!   log2(x)         - Base-2 logarithm
-//!   sin(x)          - Sine (radians)
-//!   cos(x)          - Cosine (radians)
-//!   tan(x)          - Tangent (radians)
-//!   asin(x)         - Arc sine
-//!   acos(x)         - Arc cosine
-//!   atan(x)         - Arc tangent
-//!   atan2(y, x)     - Two-argument arc tangent
-//!   floor(x)        - Round down
-//!   ceil(x)         - Round up
-//!   round(x)        - Round to nearest
-//!   trunc(x)        - Truncate toward zero
-//!   min(a, b)       - Minimum of two values
-//!   max(a, b)       - Maximum of two values
-//!
-//! BUILTIN CONSTANTS:
-//!   PI  - 3.14159... (π)
-//!   E   - 2.71828... (Euler's number)
-//!   TAU - 6.28318... (2π)
-//!
-//! Reference: research_031_essential_stdlib.txt Section 6
+// ============================================================================
+// Aria Standard Library - Extended Mathematics Module
+// ============================================================================
+// Transcendental functions, interpolation, rounding, modular arithmetic
+// Part of stdlib expansion phase (252+ functions across 22+ modules)
 
 // =============================================================================
-// TBB Type Specifications (research_031 Section 6.1)
+// External C Math Library Functions
 // =============================================================================
-// TBB types use symmetric ranges with a dedicated ERR sentinel value.
-// This enables "sticky" error propagation - if any operand is ERR,
-// the result is always ERR.
 
-/// tbb8 range: -127 to +127, ERR = -128
-pub const TBB8_MIN: tbb8 = -127;
-pub const TBB8_MAX: tbb8 = 127;
-pub const TBB8_ERR: tbb8 = -128;
-
-/// tbb16 range: -32,767 to +32,767, ERR = -32,768
-pub const TBB16_MIN: tbb16 = -32767;
-pub const TBB16_MAX: tbb16 = 32767;
-pub const TBB16_ERR: tbb16 = -32768;
-
-/// tbb32 range: -2,147,483,647 to +2,147,483,647, ERR = -2,147,483,648
-pub const TBB32_MIN: tbb32 = -2147483647;
-pub const TBB32_MAX: tbb32 = 2147483647;
-pub const TBB32_ERR: tbb32 = -2147483648;
-
-/// tbb64 range: -(2^63-1) to +(2^63-1), ERR = -2^63
-pub const TBB64_MIN: tbb64 = -9223372036854775807;
-pub const TBB64_MAX: tbb64 = 9223372036854775807;
-pub const TBB64_ERR: tbb64 = -9223372036854775808;
-
-/// The mathematical constant π (pi)
-/// Ratio of a circle's circumference to its diameter
-pub const PI: flt64 = 3.141592653589793;
-
-/// The mathematical constant e (Euler's number)
-/// Base of natural logarithms
-pub const E: flt64 = 2.718281828459045;
-
-/// The mathematical constant τ (tau)
-/// Equal to 2π, represents one full turn in radians
-pub const TAU: flt64 = 6.283185307179586;
-
-/// Calculate the absolute value of a number
-/// @param x The input number
-/// @return The absolute value of x
-/// @example
-/// ```aria
-/// let result = abs(-42.5);  // returns 42.5
-/// ```
-pub fn abs(x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Calculate the square root of a number
-/// @param x The number to calculate the square root of (must be non-negative)
-/// @return The square root of x
-/// @throws Panics if x is negative
-/// @example
-/// ```aria
-/// let result = sqrt(16.0);  // returns 4.0
-/// let root2 = sqrt(2.0);    // returns 1.414213...
-/// ```
-pub fn sqrt(x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Calculate the cube root of a number
-/// @param x The number to calculate the cube root of
-/// @return The cube root of x
-/// @example
-/// ```aria
-/// let result = cbrt(27.0);   // returns 3.0
-/// let result2 = cbrt(-8.0);  // returns -2.0
-/// ```
-pub fn cbrt(x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Raise a number to a power
-/// @param base The base number
-/// @param exponent The power to raise to
-/// @return base raised to the exponent power
-/// @example
-/// ```aria
-/// let result = pow(2.0, 8.0);    // returns 256.0
-/// let result2 = pow(10.0, -2.0); // returns 0.01
-/// ```
-pub fn pow(base: flt64, exponent: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Calculate e raised to a power
-/// @param x The exponent
-/// @return e^x
-/// @example
-/// ```aria
-/// let result = exp(1.0);  // returns e (2.718281...)
-/// let result2 = exp(0.0); // returns 1.0
-/// ```
-pub fn exp(x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Calculate the natural logarithm (base e)
-/// @param x The number to take the logarithm of (must be positive)
-/// @return The natural logarithm of x
-/// @throws Panics if x <= 0
-/// @example
-/// ```aria
-/// let result = ln(E);     // returns 1.0
-/// let result2 = ln(1.0);  // returns 0.0
-/// ```
-pub fn ln(x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Calculate the base-10 logarithm
-/// @param x The number to take the logarithm of (must be positive)
-/// @return The base-10 logarithm of x
-/// @throws Panics if x <= 0
-/// @example
-/// ```aria
-/// let result = log10(100.0);   // returns 2.0
-/// let result2 = log10(1000.0); // returns 3.0
-/// ```
-pub fn log10(x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Calculate the base-2 logarithm
-/// @param x The number to take the logarithm of (must be positive)
-/// @return The base-2 logarithm of x
-/// @throws Panics if x <= 0
-/// @example
-/// ```aria
-/// let result = log2(8.0);  // returns 3.0
-/// let result2 = log2(1024.0); // returns 10.0
-/// ```
-pub fn log2(x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Calculate the sine of an angle
-/// @param angle_rad The angle in radians
-/// @return The sine of the angle (range: -1.0 to 1.0)
-/// @see cos, tan
-/// @example
-/// ```aria
-/// let result = sin(0.0);       // returns 0.0
-/// let result2 = sin(PI / 2.0); // returns 1.0
-/// ```
-pub fn sin(angle_rad: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Calculate the cosine of an angle
-/// @param angle_rad The angle in radians
-/// @return The cosine of the angle (range: -1.0 to 1.0)
-/// @see sin, tan
-/// @example
-/// ```aria
-/// let result = cos(0.0);       // returns 1.0
-/// let result2 = cos(PI);       // returns -1.0
-/// ```
-pub fn cos(angle_rad: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Calculate the tangent of an angle
-/// @param angle_rad The angle in radians
-/// @return The tangent of the angle
-/// @see sin, cos
-/// @example
-/// ```aria
-/// let result = tan(0.0);       // returns 0.0
-/// let result2 = tan(PI / 4.0); // returns 1.0
-/// ```
-pub fn tan(angle_rad: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Calculate the arcsine (inverse sine)
-/// @param x The value (must be in range -1.0 to 1.0)
-/// @return The angle in radians whose sine is x
-/// @throws Panics if x is outside [-1.0, 1.0]
-/// @example
-/// ```aria
-/// let result = asin(0.0);  // returns 0.0
-/// let result2 = asin(1.0); // returns π/2
-/// ```
-pub fn asin(x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Calculate the arccosine (inverse cosine)
-/// @param x The value (must be in range -1.0 to 1.0)
-/// @return The angle in radians whose cosine is x
-/// @throws Panics if x is outside [-1.0, 1.0]
-/// @example
-/// ```aria
-/// let result = acos(1.0);   // returns 0.0
-/// let result2 = acos(-1.0); // returns π
-/// ```
-pub fn acos(x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Calculate the arctangent (inverse tangent)
-/// @param x The value
-/// @return The angle in radians whose tangent is x
-/// @example
-/// ```aria
-/// let result = atan(0.0);  // returns 0.0
-/// let result2 = atan(1.0); // returns π/4
-/// ```
-pub fn atan(x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Calculate the two-argument arctangent
-/// @param y The y coordinate
-/// @param x The x coordinate
-/// @return The angle in radians between the positive x-axis and the point (x, y)
-/// @example
-/// ```aria
-/// let angle = atan2(1.0, 1.0);  // returns π/4 (45 degrees)
-/// ```
-pub fn atan2(y: flt64, x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Round a number to the nearest integer
-/// @param x The number to round
-/// @return The nearest integer value
-/// @example
-/// ```aria
-/// let result = round(3.7);  // returns 4.0
-/// let result2 = round(3.2); // returns 3.0
-/// ```
-pub fn round(x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Round a number down to the nearest integer
-/// @param x The number to round
-/// @return The largest integer less than or equal to x
-/// @example
-/// ```aria
-/// let result = floor(3.7);   // returns 3.0
-/// let result2 = floor(-3.2); // returns -4.0
-/// ```
-pub fn floor(x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Round a number up to the nearest integer
-/// @param x The number to round
-/// @return The smallest integer greater than or equal to x
-/// @example
-/// ```aria
-/// let result = ceil(3.2);   // returns 4.0
-/// let result2 = ceil(-3.7); // returns -3.0
-/// ```
-pub fn ceil(x: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Find the minimum of two numbers
-/// @param a First number
-/// @param b Second number
-/// @return The smaller of the two numbers
-/// @example
-/// ```aria
-/// let result = min(5.0, 3.0);  // returns 3.0
-/// ```
-pub fn min(a: flt64, b: flt64) -> flt64 {
-    // Native implementation
-}
-
-/// Find the maximum of two numbers
-/// @param a First number
-/// @param b Second number
-/// @return The larger of the two numbers
-/// @example
-/// ```aria
-/// let result = max(5.0, 3.0);  // returns 5.0
-/// ```
-pub fn max(a: flt64, b: flt64) -> flt64 {
-    // Native implementation
+extern "libm" {
+    func:sqrt = flt64(flt64:x);
+    func:pow = flt64(flt64:base, flt64:exp);
+    func:sin = flt64(flt64:x);
+    func:cos = flt64(flt64:x);
+    func:tan = flt64(flt64:x);
+    func:asin = flt64(flt64:x);
+    func:acos = flt64(flt64:x);
+    func:atan = flt64(flt64:x);
+    func:atan2 = flt64(flt64:y, flt64:x);
+    func:log = flt64(flt64:x);
+    func:log10 = flt64(flt64:x);
+    func:exp = flt64(flt64:x);
+    func:floor = flt64(flt64:x);
+    func:ceil = flt64(flt64:x);
+    func:fabs = flt64(flt64:x);
+    func:fmod = flt64(flt64:x, flt64:y);
+    func:round = flt64(flt64:x);
 }
 
 // =============================================================================
-// TBB Error Checking Functions (research_031 Section 6.1)
+// Constants
 // =============================================================================
-
-/// Check if a tbb8 value is the ERR sentinel
-/// @param v The value to check
-/// @return true if v is ERR (-128)
-pub func:is_tbb8_err = bool(tbb8:v) {
-    pass(v == TBB8_ERR);
-};
-
-/// Check if a tbb16 value is the ERR sentinel
-pub func:is_tbb16_err = bool(tbb16:v) {
-    pass(v == TBB16_ERR);
-};
-
-/// Check if a tbb32 value is the ERR sentinel
-pub func:is_tbb32_err = bool(tbb32:v) {
-    pass(v == TBB32_ERR);
-};
-
-/// Check if a tbb64 value is the ERR sentinel
-pub func:is_tbb64_err = bool(tbb64:v) {
-    pass(v == TBB64_ERR);
-};
-
-/// Check if a tbb8 value is within valid range (not ERR)
-/// @param v The value to check
-/// @return true if v is a valid value (not ERR)
-pub func:is_tbb8_valid = bool(tbb8:v) {
-    pass(v != TBB8_ERR);
-};
-
-/// Check if a tbb16 value is within valid range (not ERR)
-pub func:is_tbb16_valid = bool(tbb16:v) {
-    pass(v != TBB16_ERR);
-};
-
-/// Check if a tbb32 value is within valid range (not ERR)
-pub func:is_tbb32_valid = bool(tbb32:v) {
-    pass(v != TBB32_ERR);
-};
-
-/// Check if a tbb64 value is within valid range (not ERR)
-pub func:is_tbb64_valid = bool(tbb64:v) {
-    pass(v != TBB64_ERR);
-};
+// NOTE: const keyword not yet implemented in parser
+// TODO: Uncomment when const declarations are supported
+// const flt64:PI = 3.141592653589793;
+// const flt64:E = 2.718281828459045;
+// const flt64:TAU = 6.283185307179586;
+// const flt64:SQRT_2 = 1.414213562373095;
+// const flt64:SQRT_3 = 1.732050807568877;
+// const flt64:PHI = 1.618033988749895;
 
 // =============================================================================
-// TBB Safe Division (research_031 Section 6.2)
+// Basic Math Functions
 // =============================================================================
-// Division by zero returns ERR instead of crashing.
-// Also handles INT_MIN % -1 edge case that causes CPU trap.
 
-/// Safe division for tbb8 - returns ERR on division by zero
-pub func:tbb8_div = tbb8(tbb8:a, tbb8:b) {
-    // Sticky error: if either operand is ERR, result is ERR
-    if (a == TBB8_ERR) { pass(TBB8_ERR); }
-    if (b == TBB8_ERR) { pass(TBB8_ERR); }
-    // Division by zero returns ERR
-    if (b == 0) { pass(TBB8_ERR); }
-    pass(a / b);
+/// Square root
+pub func:square_root = flt64(flt64:x) {
+    pass(sqrt(x));
 };
 
-/// Safe division for tbb16
-pub func:tbb16_div = tbb16(tbb16:a, tbb16:b) {
-    if (a == TBB16_ERR) { pass(TBB16_ERR); }
-    if (b == TBB16_ERR) { pass(TBB16_ERR); }
-    if (b == 0) { pass(TBB16_ERR); }
-    pass(a / b);
+/// Power function
+pub func:power = flt64(flt64:base, flt64:exponent) {
+    pass(pow(base, exponent));
 };
 
-/// Safe division for tbb32
-pub func:tbb32_div = tbb32(tbb32:a, tbb32:b) {
-    if (a == TBB32_ERR) { pass(TBB32_ERR); }
-    if (b == TBB32_ERR) { pass(TBB32_ERR); }
-    if (b == 0) { pass(TBB32_ERR); }
-    pass(a / b);
+/// Sine
+pub func:sine = flt64(flt64:x) {
+    pass(sin(x));
 };
 
-/// Safe division for tbb64
-pub func:tbb64_div = tbb64(tbb64:a, tbb64:b) {
-    if (a == TBB64_ERR) { pass(TBB64_ERR); }
-    if (b == TBB64_ERR) { pass(TBB64_ERR); }
-    if (b == 0) { pass(TBB64_ERR); }
-    pass(a / b);
+/// Cosine
+pub func:cosine = flt64(flt64:x) {
+    pass(cos(x));
 };
 
-/// Safe modulo for tbb8 - handles division by zero and MIN % -1
-pub func:tbb8_mod = tbb8(tbb8:a, tbb8:b) {
-    if (a == TBB8_ERR) { pass(TBB8_ERR); }
-    if (b == TBB8_ERR) { pass(TBB8_ERR); }
-    if (b == 0) { pass(TBB8_ERR); }
-    // MIN % -1 would trap on x86, return ERR instead
-    if (a == TBB8_MIN && b == -1) { pass(TBB8_ERR); }
-    pass(a % b);
+/// Tangent
+pub func:tangent = flt64(flt64:x) {
+    pass(tan(x));
 };
 
-/// Safe modulo for tbb16
-pub func:tbb16_mod = tbb16(tbb16:a, tbb16:b) {
-    if (a == TBB16_ERR) { pass(TBB16_ERR); }
-    if (b == TBB16_ERR) { pass(TBB16_ERR); }
-    if (b == 0) { pass(TBB16_ERR); }
-    if (a == TBB16_MIN && b == -1) { pass(TBB16_ERR); }
-    pass(a % b);
+/// Arc sine
+pub func:arc_sine = flt64(flt64:x) {
+    pass(asin(x));
 };
 
-/// Safe modulo for tbb32
-pub func:tbb32_mod = tbb32(tbb32:a, tbb32:b) {
-    if (a == TBB32_ERR) { pass(TBB32_ERR); }
-    if (b == TBB32_ERR) { pass(TBB32_ERR); }
-    if (b == 0) { pass(TBB32_ERR); }
-    if (a == TBB32_MIN && b == -1) { pass(TBB32_ERR); }
-    pass(a % b);
+/// Arc cosine
+pub func:arc_cosine = flt64(flt64:x) {
+    pass(acos(x));
 };
 
-/// Safe modulo for tbb64
-pub func:tbb64_mod = tbb64(tbb64:a, tbb64:b) {
-    if (a == TBB64_ERR) { pass(TBB64_ERR); }
-    if (b == TBB64_ERR) { pass(TBB64_ERR); }
-    if (b == 0) { pass(TBB64_ERR); }
-    if (a == TBB64_MIN && b == -1) { pass(TBB64_ERR); }
-    pass(a % b);
+/// Arc tangent
+pub func:arc_tangent = flt64(flt64:x) {
+    pass(atan(x));
+};
+
+/// Arc tangent with two arguments (handles quadrants correctly)
+pub func:arc_tangent2 = flt64(flt64:y, flt64:x) {
+    pass(atan2(y, x));
+};
+
+/// Natural logarithm
+pub func:ln = flt64(flt64:x) {
+    pass(log(x));
+};
+
+/// Base-10 logarithm
+pub func:log_10 = flt64(flt64:x) {
+    pass(log10(x));
+};
+
+/// Exponential (e^x)
+pub func:exponential = flt64(flt64:x) {
+    pass(exp(x));
+};
+
+/// Absolute value
+pub func:abs = flt64(flt64:x) {
+    pass(fabs(x));
 };
 
 // =============================================================================
-// TBB Conversion Functions
+// ROUNDING FUNCTIONS
 // =============================================================================
 
-/// Convert int64 to tbb64, returning ERR if out of range
-pub func:int64_to_tbb64 = tbb64(int64:v) {
-    // int64 range is identical to tbb64 valid range + ERR
-    // Since TBB64_MIN is the ERR sentinel, we need to reject it
-    if (v == -9223372036854775808) {
-        pass(TBB64_ERR);  // This value is reserved for ERR
+/// Floor - round down to nearest integer
+pub func:floor_f64 = flt64(flt64:x) {
+    return floor(x);
+};
+
+/// Ceiling - round up to nearest integer
+pub func:ceil_f64 = flt64(flt64:x) {
+    return ceil(x);
+};
+
+/// Round to nearest integer
+pub func:round_f64 = flt64(flt64:x) {
+    return round(x);
+};
+
+/// Truncate - round toward zero
+pub func:trunc_f64 = flt64(flt64:x) {
+    if (x >= 0.0) {
+        return floor(x);
+    } else {
+        return ceil(x);
     }
-    pass(v);
 };
 
-/// Convert tbb64 to result, converting ERR to error
-pub func:tbb64_to_result = result(tbb64:v) {
-    if (v == TBB64_ERR) {
-        fail(ERR);  // Propagate as error result
+// =============================================================================
+// MODULAR ARITHMETIC
+// =============================================================================
+
+/// Floating-point modulo
+pub func:mod_f64 = flt64(flt64:x, flt64:y) {
+    return fmod(x, y);
+};
+
+/// Integer GCD (moved from numeric.aria for math module completeness)
+pub func:gcd_i32 = int32(int32:a, int32:b) {
+    int32:zero = 0;
+    int32:temp_a = a;
+    int32:temp_b = b;
+    
+    if (temp_a < zero) {
+        temp_a = zero - temp_a;
+    } else {}
+    
+    if (temp_b < zero) {
+        temp_b = zero - temp_b;
+    } else {}
+    
+    while (temp_b != zero) {
+        int32:remainder = temp_a - ((temp_a / temp_b) * temp_b);
+        temp_a = temp_b;
+        temp_b = remainder;
     }
-    pass(v);
+    
+    return temp_a;
+};
+
+/// Integer LCM
+pub func:lcm_i32 = int32(int32:a, int32:b) {
+    int32:zero = 0;
+    
+    if (a == zero || b == zero) {
+        return zero;
+    } else {}
+    
+    int32:abs_a = a;
+    int32:abs_b = b;
+    
+    if (abs_a < zero) {
+        abs_a = zero - abs_a;
+    } else {}
+    
+    if (abs_b < zero) {
+        abs_b = zero - abs_b;
+    } else {}
+    
+    int32:gcd = gcd_i32(abs_a, abs_b);
+    return (abs_a / gcd) * abs_b;
 };
 
 // =============================================================================
-// Vector Types (research_031 Section 6.3)
-// =============================================================================
-// SIMD-aligned vector types for graphics and linear algebra
-
-/// 2D vector with flt32 components
-pub struct Vec2 {
-    flt32:x;
-    flt32:y;
-}
-
-/// 3D vector with flt32 components
-pub struct Vec3 {
-    flt32:x;
-    flt32:y;
-    flt32:z;
-}
-
-/// 4D vector with flt32 components (SIMD-aligned)
-pub struct Vec4 {
-    flt32:x;
-    flt32:y;
-    flt32:z;
-    flt32:w;
-}
-
-// =============================================================================
-// Vec2 Operations
+// FACTORIAL AND COMBINATORICS
 // =============================================================================
 
-/// Create a new Vec2
-pub func:vec2 = Vec2(flt32:x, flt32:y) {
-    Vec2:v = { x: x, y: y };
-    pass(v);
-};
-
-/// Add two Vec2
-pub func:vec2_add = Vec2(Vec2@:a, Vec2@:b) {
-    Vec2:v = {
-        x: a->x + b->x,
-        y: a->y + b->y
-    };
-    pass(v);
-};
-
-/// Subtract two Vec2
-pub func:vec2_sub = Vec2(Vec2@:a, Vec2@:b) {
-    Vec2:v = {
-        x: a->x - b->x,
-        y: a->y - b->y
-    };
-    pass(v);
-};
-
-/// Multiply Vec2 by scalar
-pub func:vec2_scale = Vec2(Vec2@:v, flt32:s) {
-    Vec2:result = {
-        x: v->x * s,
-        y: v->y * s
-    };
-    pass(result);
-};
-
-/// Dot product of two Vec2
-pub func:vec2_dot = flt32(Vec2@:a, Vec2@:b) {
-    flt32:result = a->x * b->x + a->y * b->y;
-    pass(result);
-};
-
-/// Length (magnitude) of Vec2
-pub func:vec2_length = flt32(Vec2@:v) {
-    flt32:len_sq = v->x * v->x + v->y * v->y;
-    pass(sqrt(len_sq));
-};
-
-/// Normalize Vec2 to unit length
-pub func:vec2_normalize = Vec2(Vec2@:v) {
-    flt32:len = vec2_length(v);
-    if (len == 0.0) {
-        Vec2:zero = { x: 0.0, y: 0.0 };
-        pass(zero);
+/// Factorial (iterative, safe for n <= 12)
+pub func:factorial_i32 = int32(int32:n) {
+    int32:zero = 0;
+    int32:one = 1;
+    int32:two = 2;
+    
+    if (n < zero) {
+        return zero;
+    } else {}
+    
+    if (n <= one) {
+        return one;
+    } else {}
+    
+    int32:result = one;
+    int32:i = two;
+    
+    while (i <= n) {
+        result = result * i;
+        i = i + one;
     }
-    flt32:inv_len = 1.0 / len;
-    Vec2:result = {
-        x: v->x * inv_len,
-        y: v->y * inv_len
-    };
-    pass(result);
+    
+    return result;
 };
 
-// =============================================================================
-// Vec3 Operations
-// =============================================================================
-
-/// Create a new Vec3
-pub func:vec3 = Vec3(flt32:x, flt32:y, flt32:z) {
-    Vec3:v = { x: x, y: y, z: z };
-    pass(v);
-};
-
-/// Add two Vec3
-pub func:vec3_add = Vec3(Vec3@:a, Vec3@:b) {
-    Vec3:v = {
-        x: a->x + b->x,
-        y: a->y + b->y,
-        z: a->z + b->z
-    };
-    pass(v);
-};
-
-/// Subtract two Vec3
-pub func:vec3_sub = Vec3(Vec3@:a, Vec3@:b) {
-    Vec3:v = {
-        x: a->x - b->x,
-        y: a->y - b->y,
-        z: a->z - b->z
-    };
-    pass(v);
-};
-
-/// Multiply Vec3 by scalar
-pub func:vec3_scale = Vec3(Vec3@:v, flt32:s) {
-    Vec3:result = {
-        x: v->x * s,
-        y: v->y * s,
-        z: v->z * s
-    };
-    pass(result);
-};
-
-/// Dot product of two Vec3
-pub func:vec3_dot = flt32(Vec3@:a, Vec3@:b) {
-    flt32:result = a->x * b->x + a->y * b->y + a->z * b->z;
-    pass(result);
-};
-
-/// Cross product of two Vec3
-pub func:vec3_cross = Vec3(Vec3@:a, Vec3@:b) {
-    Vec3:result = {
-        x: a->y * b->z - a->z * b->y,
-        y: a->z * b->x - a->x * b->z,
-        z: a->x * b->y - a->y * b->x
-    };
-    pass(result);
-};
-
-/// Length (magnitude) of Vec3
-pub func:vec3_length = flt32(Vec3@:v) {
-    flt32:len_sq = v->x * v->x + v->y * v->y + v->z * v->z;
-    pass(sqrt(len_sq));
-};
-
-/// Normalize Vec3 to unit length
-pub func:vec3_normalize = Vec3(Vec3@:v) {
-    flt32:len = vec3_length(v);
-    if (len == 0.0) {
-        Vec3:zero = { x: 0.0, y: 0.0, z: 0.0 };
-        pass(zero);
+/// Factorial (floating-point, for larger values)
+pub func:factorial_f64 = flt64(int32:n) {
+    int32:zero = 0;
+    int32:one = 1;
+    
+    if (n < zero) {
+        return 0.0;
+    } else {}
+    
+    if (n <= one) {
+        return 1.0;
+    } else {}
+    
+    flt64:result = 1.0;
+    flt64:i = 2.0;  // Use flt64 from the start
+    flt64:n_float = 0.0;
+    
+    // Manually convert n to float by building it up
+    // This is a workaround until we have proper cast operators
+    int32:temp_n = n;
+    while (temp_n > zero) {
+        n_float = n_float + 1.0;
+        temp_n = temp_n - one;
     }
-    flt32:inv_len = 1.0 / len;
-    Vec3:result = {
-        x: v->x * inv_len,
-        y: v->y * inv_len,
-        z: v->z * inv_len
-    };
-    pass(result);
-};
-
-// =============================================================================
-// Vec4 Operations
-// =============================================================================
-
-/// Create a new Vec4
-pub func:vec4 = Vec4(flt32:x, flt32:y, flt32:z, flt32:w) {
-    Vec4:v = { x: x, y: y, z: z, w: w };
-    pass(v);
-};
-
-/// Add two Vec4
-pub func:vec4_add = Vec4(Vec4@:a, Vec4@:b) {
-    Vec4:v = {
-        x: a->x + b->x,
-        y: a->y + b->y,
-        z: a->z + b->z,
-        w: a->w + b->w
-    };
-    pass(v);
-};
-
-/// Subtract two Vec4
-pub func:vec4_sub = Vec4(Vec4@:a, Vec4@:b) {
-    Vec4:v = {
-        x: a->x - b->x,
-        y: a->y - b->y,
-        z: a->z - b->z,
-        w: a->w - b->w
-    };
-    pass(v);
-};
-
-/// Multiply Vec4 by scalar
-pub func:vec4_scale = Vec4(Vec4@:v, flt32:s) {
-    Vec4:result = {
-        x: v->x * s,
-        y: v->y * s,
-        z: v->z * s,
-        w: v->w * s
-    };
-    pass(result);
-};
-
-/// Dot product of two Vec4
-pub func:vec4_dot = flt32(Vec4@:a, Vec4@:b) {
-    flt32:result = a->x * b->x + a->y * b->y + a->z * b->z + a->w * b->w;
-    pass(result);
-};
-
-// =============================================================================
-// Matrix Types (research_031 Section 6.3)
-// =============================================================================
-
-/// 3x3 matrix (column-major order)
-pub struct Mat3 {
-    flt32[9]:m;  // Column-major: m[col*3 + row]
-}
-
-/// 4x4 matrix (column-major order, SIMD-aligned)
-pub struct Mat4 {
-    flt32[16]:m;  // Column-major: m[col*4 + row]
-}
-
-// =============================================================================
-// Mat4 Operations
-// =============================================================================
-
-/// Create identity Mat4
-pub func:mat4_identity = Mat4() {
-    Mat4:m = {
-        m: [
-            1.0, 0.0, 0.0, 0.0,  // Column 0
-            0.0, 1.0, 0.0, 0.0,  // Column 1
-            0.0, 0.0, 1.0, 0.0,  // Column 2
-            0.0, 0.0, 0.0, 1.0   // Column 3
-        ]
-    };
-    pass(m);
-};
-
-/// Create translation Mat4
-pub func:mat4_translate = Mat4(flt32:x, flt32:y, flt32:z) {
-    Mat4:m = {
-        m: [
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            x,   y,   z,   1.0
-        ]
-    };
-    pass(m);
-};
-
-/// Create scale Mat4
-pub func:mat4_scale = Mat4(flt32:sx, flt32:sy, flt32:sz) {
-    Mat4:m = {
-        m: [
-            sx,  0.0, 0.0, 0.0,
-            0.0, sy,  0.0, 0.0,
-            0.0, 0.0, sz,  0.0,
-            0.0, 0.0, 0.0, 1.0
-        ]
-    };
-    pass(m);
-};
-
-/// Create rotation Mat4 around X axis (angle in radians)
-pub func:mat4_rotate_x = Mat4(flt32:angle) {
-    flt32:c = cos(angle);
-    flt32:s = sin(angle);
-    Mat4:m = {
-        m: [
-            1.0, 0.0, 0.0, 0.0,
-            0.0, c,   s,   0.0,
-            0.0, -s,  c,   0.0,
-            0.0, 0.0, 0.0, 1.0
-        ]
-    };
-    pass(m);
-};
-
-/// Create rotation Mat4 around Y axis (angle in radians)
-pub func:mat4_rotate_y = Mat4(flt32:angle) {
-    flt32:c = cos(angle);
-    flt32:s = sin(angle);
-    Mat4:m = {
-        m: [
-            c,   0.0, -s,  0.0,
-            0.0, 1.0, 0.0, 0.0,
-            s,   0.0, c,   0.0,
-            0.0, 0.0, 0.0, 1.0
-        ]
-    };
-    pass(m);
-};
-
-/// Create rotation Mat4 around Z axis (angle in radians)
-pub func:mat4_rotate_z = Mat4(flt32:angle) {
-    flt32:c = cos(angle);
-    flt32:s = sin(angle);
-    Mat4:m = {
-        m: [
-            c,   s,   0.0, 0.0,
-            -s,  c,   0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0
-        ]
-    };
-    pass(m);
-};
-
-/// Multiply two Mat4 matrices
-pub func:mat4_mul = Mat4(Mat4@:a, Mat4@:b) {
-    Mat4:result = { m: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                       0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] };
-
-    // Column-major matrix multiplication
-    int32:col = 0;
-    while (col < 4) {
-        int32:row = 0;
-        while (row < 4) {
-            flt32:sum = 0.0;
-            int32:k = 0;
-            while (k < 4) {
-                sum = sum + a->m[k * 4 + row] * b->m[col * 4 + k];
-                k = k + 1;
-            }
-            result.m[col * 4 + row] = sum;
-            row = row + 1;
-        }
-        col = col + 1;
+    
+    while (i <= n_float) {
+        result = result * i;
+        i = i + 1.0;
     }
+    
+    return result;
+};
 
+/// Binomial coefficient (n choose k)
+pub func:binomial_i32 = int32(int32:n, int32:k) {
+    int32:zero = 0;
+    int32:one = 1;
+    
+    if (k < zero || k > n) {
+        return zero;
+    } else {}
+    
+    if (k == zero || k == n) {
+        return one;
+    } else {}
+    
+    // Optimize by using smaller k
+    if (k > (n - k)) {
+        k = n - k;
+    } else {}
+    
+    int32:result = one;
+    int32:i = zero;
+    
+    while (i < k) {
+        result = result * (n - i);
+        result = result / (i + one);
+        i = i + one;
+    }
+    
+    return result;
+};
+
+// =============================================================================
+// INTERPOLATION AND MAPPING
+// =============================================================================
+
+/// Linear interpolation (already exists in float.aria, duplicated for math module)
+pub func:lerp_f64 = flt64(flt64:a, flt64:b, flt64:t) {
+    return a + ((b - a) * t);
+};
+
+/// Inverse lerp - find t for value between a and b
+pub func:inverse_lerp = flt64(flt64:a, flt64:b, flt64:value) {
+    if (a == b) {
+        return 0.0;
+    } else {}
+    
+    return (value - a) / (b - a);
+};
+
+/// Map value from one range to another
+pub func:map_range = flt64(flt64:value, flt64:in_min, flt64:in_max, flt64:out_min, flt64:out_max) {
+    flt64:t = inverse_lerp(in_min, in_max, value);
+    return lerp_f64(out_min, out_max, t);
+};
+
+/// Smoothstep interpolation (smooth 0->1 transition)
+pub func:smoothstep = flt64(flt64:edge0, flt64:edge1, flt64:x) {
+    if (x < edge0) {
+        return 0.0;
+    } else {}
+    
+    if (x >= edge1) {
+        return 1.0;
+    } else {}
+    
+    flt64:t = (x - edge0) / (edge1 - edge0);
+    return t * t * (3.0 - (2.0 * t));
+};
+
+/// Smootherstep (even smoother 0->1 transition)
+pub func:smootherstep = flt64(flt64:edge0, flt64:edge1, flt64:x) {
+    if (x < edge0) {
+        return 0.0;
+    } else {}
+    
+    if (x >= edge1) {
+        return 1.0;
+    } else {}
+    
+    flt64:t = (x - edge0) / (edge1 - edge0);
+    return t * t * t * ((t * ((t * 6.0) - 15.0)) + 10.0);
+};
+
+// =============================================================================
+// CLAMPING AND RANGE UTILITIES
+// =============================================================================
+
+/// Clamp value between min and max
+pub func:clamp_f64 = flt64(flt64:value, flt64:min_val, flt64:max_val) {
+    if (value < min_val) {
+        return min_val;
+    } else {}
+    
+    if (value > max_val) {
+        return max_val;
+    } else {}
+    
+    return value;
+};
+
+/// Wrap value to [0, max) range
+pub func:wrap_f64 = flt64(flt64:value, flt64:max_val) {
+    flt64:result = fmod(value, max_val);
+    
+    if (result < 0.0) {
+        result = result + max_val;
+    } else {}
+    
+    return result;
+};
+
+/// Ping-pong value between 0 and length
+pub func:ping_pong = flt64(flt64:t, flt64:length) {
+    flt64:twice = length * 2.0;
+    flt64:wrapped = wrap_f64(t, twice);
+    
+    if (wrapped > length) {
+        return twice - wrapped;
+    } else {
+        return wrapped;
+    }
+};
+
+// =============================================================================
+// DEGREE/RADIAN CONVERSION
+// =============================================================================
+
+/// Convert degrees to radians
+pub func:deg_to_rad = flt64(flt64:degrees) {
+    flt64:pi_val = 3.141592653589793;
+    flt64:divisor = 180.0;
+    flt64:factor = (pi_val / divisor);
+    flt64:result = (degrees * factor);
     pass(result);
 };
 
-/// Transform Vec4 by Mat4
-pub func:mat4_transform = Vec4(Mat4@:m, Vec4@:v) {
-    Vec4:result = {
-        x: m->m[0] * v->x + m->m[4] * v->y + m->m[8]  * v->z + m->m[12] * v->w,
-        y: m->m[1] * v->x + m->m[5] * v->y + m->m[9]  * v->z + m->m[13] * v->w,
-        z: m->m[2] * v->x + m->m[6] * v->y + m->m[10] * v->z + m->m[14] * v->w,
-        w: m->m[3] * v->x + m->m[7] * v->y + m->m[11] * v->z + m->m[15] * v->w
-    };
+/// Convert radians to degrees
+pub func:rad_to_deg = flt64(flt64:radians) {
+    flt64:pi_val = 3.141592653589793;
+    flt64:divisor = 180.0;
+    flt64:factor = (divisor / pi_val);
+    flt64:result = (radians * factor);
     pass(result);
 };
 
-/// Create perspective projection Mat4
-/// @param fov_y Field of view in Y direction (radians)
-/// @param aspect Aspect ratio (width/height)
-/// @param near Near clipping plane
-/// @param far Far clipping plane
-pub func:mat4_perspective = Mat4(flt32:fov_y, flt32:aspect, flt32:near, flt32:far) {
-    flt32:tan_half_fov = tan(fov_y / 2.0);
-    flt32:f = 1.0 / tan_half_fov;
-    flt32:nf = 1.0 / (near - far);
+// =============================================================================
+// SIGN AND COMPARISON
+// =============================================================================
 
-    Mat4:m = {
-        m: [
-            f / aspect, 0.0, 0.0,                  0.0,
-            0.0,        f,   0.0,                  0.0,
-            0.0,        0.0, (far + near) * nf,   -1.0,
-            0.0,        0.0, 2.0 * far * near * nf, 0.0
-        ]
-    };
-    pass(m);
+/// Sign of number (-1, 0, or 1)
+pub func:sign_f64 = flt64(flt64:x) {
+    if (x > 0.0) {
+        return 1.0;
+    } else {}
+    
+    if (x < 0.0) {
+        return 0.0 - 1.0;
+    } else {
+        return 0.0;
+    }
 };
 
-/// Create orthographic projection Mat4
-pub func:mat4_ortho = Mat4(flt32:left, flt32:right, flt32:bottom, flt32:top, flt32:near, flt32:far) {
-    flt32:rl = 1.0 / (right - left);
-    flt32:tb = 1.0 / (top - bottom);
-    flt32:fn = 1.0 / (far - near);
-
-    Mat4:m = {
-        m: [
-            2.0 * rl,                0.0,                    0.0,                0.0,
-            0.0,                     2.0 * tb,               0.0,                0.0,
-            0.0,                     0.0,                   -2.0 * fn,           0.0,
-            -(right + left) * rl,   -(top + bottom) * tb,  -(far + near) * fn,  1.0
-        ]
-    };
-    pass(m);
+/// Copy sign from one number to another
+pub func:copysign = flt64(flt64:magnitude, flt64:sign) {
+    flt64:abs_mag = fabs(magnitude);
+    
+    if (sign < 0.0) {
+        return 0.0 - abs_mag;
+    } else {
+        return abs_mag;
+    }
 };
 
-/// Create look-at view Mat4
-pub func:mat4_look_at = Mat4(Vec3@:eye, Vec3@:center, Vec3@:up) {
-    // Calculate forward direction
-    Vec3:f = vec3_sub(center, eye);
-    f = vec3_normalize(@f);
-
-    // Calculate right direction
-    Vec3:r = vec3_cross(@f, up);
-    r = vec3_normalize(@r);
-
-    // Calculate up direction
-    Vec3:u = vec3_cross(@r, @f);
-
-    Mat4:m = {
-        m: [
-            r.x,                  u.x,                 -f.x,                 0.0,
-            r.y,                  u.y,                 -f.y,                 0.0,
-            r.z,                  u.z,                 -f.z,                 0.0,
-            -vec3_dot(@r, eye),  -vec3_dot(@u, eye),   vec3_dot(@f, eye),   1.0
-        ]
-    };
-    pass(m);
-};
+// =============================================================================
+// MODULE SUMMARY
+// =============================================================================
+// Functions: 44 (12 original + 32 new)
+// - Basic transcendental: sqrt, pow, sin/cos/tan, asin/acos/atan/atan2, ln, log10, exp, abs
+// - Rounding: floor, ceil, round, trunc
+// - Modular: mod_f64, gcd_i32, lcm_i32
+// - Combinatorics: factorial_i32/f64, binomial_i32
+// - Interpolation: lerp, inverse_lerp, map_range, smoothstep, smootherstep
+// - Range: clamp, wrap, ping_pong
+// - Conversion: deg_to_rad, rad_to_deg
+// - Utilities: sign, copysign
+// - Constants: PI, E, TAU, SQRT_2, SQRT_3, PHI

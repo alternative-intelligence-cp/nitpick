@@ -1,0 +1,22 @@
+/**
+ * Test: Multiple Defers for Multiple Resources
+ * Expected: COMPILES SUCCESSFULLY
+ * Why: Each resource should have its own defer for cleanup
+ *
+ * Pattern: RAII-style multiple resource management
+ */
+
+func:main = int32() {
+    wild int8@:p1 = alloc(100);
+    defer { free(p1); }
+
+    wild int8@:p2 = alloc(200);
+    defer { free(p2); }
+
+    wild int8@:p3 = alloc(300);
+    defer { free(p3); }
+
+    // Use all resources
+    // All defers execute in LIFO order on return
+    return 0;
+};

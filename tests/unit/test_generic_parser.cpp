@@ -44,11 +44,11 @@ TEST_CASE(parse_generic_function_simple) {
     ASSERT_EQ(funcDecl->funcName, "identity", "Function name should be 'identity'");
     ASSERT_EQ(funcDecl->genericParams.size(), 1, "Should have 1 generic parameter");
     ASSERT_EQ(funcDecl->genericParams[0].name, "T", "Generic param should be 'T'");
-    ASSERT_EQ(funcDecl->returnType->toString(), "*T", "Return type should be '*T'");
+    ASSERT_EQ(funcDecl->returnType->toString(), "T*", "Return type should be 'T*' (pointer to generic T)");
     ASSERT_EQ(funcDecl->parameters.size(), 1, "Should have 1 parameter");
-    
+
     ParameterNode* param = static_cast<ParameterNode*>(funcDecl->parameters[0].get());
-    ASSERT_EQ(param->typeNode->toString(), "*T", "Parameter type should be '*T'");
+    ASSERT_EQ(param->typeNode->toString(), "T*", "Parameter type should be 'T*' (pointer to generic T)");
     ASSERT_EQ(param->paramName, "value", "Parameter name should be 'value'");
 }
 
@@ -69,15 +69,15 @@ TEST_CASE(parse_generic_function_multiple_params) {
     ASSERT_EQ(funcDecl->genericParams.size(), 2, "Should have 2 generic parameters");
     ASSERT_EQ(funcDecl->genericParams[0].name, "T", "First param should be 'T'");
     ASSERT_EQ(funcDecl->genericParams[1].name, "U", "Second param should be 'U'");
-    ASSERT_EQ(funcDecl->returnType->toString(), "*T", "Return type should be '*T'");
+    ASSERT_EQ(funcDecl->returnType->toString(), "T*", "Return type should be 'T*'");
     ASSERT_EQ(funcDecl->parameters.size(), 2, "Should have 2 parameters");
-    
+
     ParameterNode* param1 = static_cast<ParameterNode*>(funcDecl->parameters[0].get());
-    ASSERT_EQ(param1->typeNode->toString(), "*T", "First parameter type should be '*T'");
+    ASSERT_EQ(param1->typeNode->toString(), "T*", "First parameter type should be 'T*'");
     ASSERT_EQ(param1->paramName, "first", "First parameter name should be 'first'");
-    
+
     ParameterNode* param2 = static_cast<ParameterNode*>(funcDecl->parameters[1].get());
-    ASSERT_EQ(param2->typeNode->toString(), "*U", "Second parameter type should be '*U'");
+    ASSERT_EQ(param2->typeNode->toString(), "U*", "Second parameter type should be 'U*'");
     ASSERT_EQ(param2->paramName, "second", "Second parameter name should be 'second'");
 }
 
@@ -105,8 +105,8 @@ TEST_CASE(parse_generic_function_mixed_types) {
     ASSERT_EQ(funcDecl->parameters.size(), 2, "Should have 2 parameters");
     
     ParameterNode* param1 = static_cast<ParameterNode*>(funcDecl->parameters[0].get());
-    ASSERT_EQ(param1->typeNode->toString(), "*T", "First parameter type should be '*T'");
-    
+    ASSERT_EQ(param1->typeNode->toString(), "T*", "First parameter type should be 'T*'");
+
     ParameterNode* param2 = static_cast<ParameterNode*>(funcDecl->parameters[1].get());
     ASSERT_EQ(param2->typeNode->toString(), "int32", "Second parameter type should be 'int32'");
 }
@@ -161,7 +161,7 @@ TEST_CASE(parse_generic_var_decl) {
     ASSERT_EQ(block->statements.size(), 1, "Block should have 1 statement");
     
     VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(block->statements[0].get());
-    ASSERT_EQ(varDecl->typeNode->toString(), "*T", "Variable type should be '*T'");
+    ASSERT_EQ(varDecl->typeNode->toString(), "T*", "Variable type should be 'T*'");
     ASSERT_EQ(varDecl->varName, "local", "Variable name should be 'local'");
 }
 // ----------------------------------------------------------------------------

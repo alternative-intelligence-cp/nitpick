@@ -62,6 +62,24 @@ public:
      */
     llvm::Value* generateNeg(llvm::Value* operand, Type* type);
 
+    /**
+     * @brief Generate sentinel-preserving TBB widening (ARIA-018)
+     *
+     * Standard sign extension would convert source ERR to a valid value:
+     *   tbb8 ERR (-128) → sext → -128 in tbb16 (valid, not ERR!)
+     *
+     * This generates:
+     *   isErr = (src == srcSentinel)
+     *   widened = sext(src)
+     *   result = select(isErr, dstSentinel, widened)
+     *
+     * @param srcVal Source TBB value to widen
+     * @param srcType Source TBB type (tbb8/16/32)
+     * @param dstType Destination TBB type (tbb16/32/64)
+     * @return Widened value with sentinel preservation
+     */
+    llvm::Value* generateWiden(llvm::Value* srcVal, Type* srcType, Type* dstType);
+
     // ========================================================================
     // Public helpers for testing
     // ========================================================================

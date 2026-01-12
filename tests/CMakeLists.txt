@@ -2,6 +2,63 @@
 # Aria Compiler - Test Suite
 # ============================================================================
 
+# ============================================================================
+# ARIA-025: Safety-Critical Type Tests (int1024, fix256)
+# ============================================================================
+
+# int1024 safety test suite
+add_executable(test_int1024_safety
+    runtime/test_int1024_safety.cpp
+)
+target_link_libraries(test_int1024_safety aria_runtime pthread)
+add_test(NAME int1024_safety COMMAND test_int1024_safety)
+
+# fix256 safety test suite
+add_executable(test_fix256_safety
+    runtime/test_fix256_safety.cpp
+)
+target_link_libraries(test_fix256_safety aria_runtime pthread)
+add_test(NAME fix256_safety COMMAND test_fix256_safety)
+
+# fix256 edge case tests
+add_executable(test_fix256_edge_cases
+    runtime/test_fix256_edge_cases.cpp
+)
+target_link_libraries(test_fix256_edge_cases aria_runtime pthread)
+add_test(NAME fix256_edge_cases COMMAND test_fix256_edge_cases)
+
+# fix256 determinism verification
+add_executable(test_fix256_determinism
+    runtime/test_fix256_determinism.cpp
+)
+target_link_libraries(test_fix256_determinism aria_runtime pthread)
+add_test(NAME fix256_determinism COMMAND test_fix256_determinism)
+
+# fix256 fuzzing test suite (515,000 random operations)
+add_executable(test_fix256_fuzz
+    runtime/test_fix256_fuzz.cpp
+)
+target_link_libraries(test_fix256_fuzz aria_runtime pthread)
+add_test(NAME fix256_fuzz COMMAND test_fix256_fuzz)
+
+# fix256 property-based testing (60,000+ mathematical invariants)
+add_executable(test_fix256_properties
+    runtime/test_fix256_properties.cpp
+)
+target_link_libraries(test_fix256_properties aria_runtime pthread)
+add_test(NAME fix256_properties COMMAND test_fix256_properties)
+
+# fix256 exhaustive boundary testing
+add_executable(test_fix256_exhaustive
+    runtime/test_fix256_exhaustive.cpp
+)
+target_link_libraries(test_fix256_exhaustive aria_runtime pthread)
+add_test(NAME fix256_exhaustive COMMAND test_fix256_exhaustive)
+
+# ============================================================================
+# Main Test Runner
+# ============================================================================
+
 # Test runner executable
 add_executable(test_runner
     test_runner.cpp
@@ -9,6 +66,8 @@ add_executable(test_runner
     unit/test_sample.cpp
     unit/test_token.cpp
     unit/test_lexer.cpp
+    unit/test_type_suffixes.cpp
+    unit/test_typed_literals_parser.cpp
     unit/test_ast.cpp
     unit/test_parser.cpp
     unit/test_diagnostics.cpp
@@ -23,6 +82,7 @@ add_executable(test_runner
     unit/test_symbol_table.cpp
     unit/test_module_table.cpp
     unit/test_type_checker.cpp
+    unit/test_type_soundness.cpp
     unit/test_borrow_checker.cpp
     unit/test_generic_resolver.cpp
     unit/test_generic_parser.cpp

@@ -25,6 +25,7 @@
 #include "frontend/sema/type.h"
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
+#include <iostream>  // For std::cerr debug output
 
 namespace aria {
 
@@ -242,6 +243,66 @@ llvm::Value* TernaryCodegen::generateDiv(llvm::Value* lhs, llvm::Value* rhs, Typ
 
     // If divisor is zero, return 0 (balanced ternary convention)
     llvm::Value* result = builder.CreateSDiv(lhs, rhs);
+    result = builder.CreateSelect(isZero, zero, result);
+
+    return clampToRange(result, type);
+}
+
+llvm::Value* TernaryCodegen::generateMod(llvm::Value* lhs, llvm::Value* rhs, Type* type) {
+    std::string typeName = type->toString();
+    std::cerr << "[TERNARY MOD] Called for type: " << typeName << ", isComposite=" << isCompositeType(type) << std::endl;
+
+    if (isCompositeType(type)) {
+        // Composite type (tryte/nyte): call runtime intrinsic
+        // CRITICAL: Runtime functions implement balanced remainder, not truncating modulo
+        llvm::Function* modFn = nullptr;
+        if (typeName == "tryte") {
+            std::cerr << "[TERNARY MOD] Getting aria_tryte_mod" << std::endl;
+            if (!fn_tryte_mod) {
+                fn_tryte_mod = getOrDeclareIntrinsic("aria_tryte_mod", true);
+                std::cerr << "[TERNARY MOD] Declared fn_tryte_mod=" << (void*)fn_tryte_mod << std::endl;
+            }
+            modFn = fn_tryte_mod;
+        } else {  // nyte
+            std::cerr << "[TERNARY MOD] Getting aria_nyte_mod" << std::endl;
+            if (!fn_nyte_mod) {
+                fn_nyte_mod = getOrDeclareIntrinsic("aria_nyte_mod", true);
+                std::cerr << "[TERNARY MOD] Declared fn_nyte_mod=" << (void*)fn_nyte_mod << std::endl;
+            }
+            modFn = fn_nyte_mod;
+        }
+
+        std::cerr << "[TERNARY MOD] modFn=" << (void*)modFn << std::endl;
+        if (modFn) {
+            std::cerr << "[TERNARY MOD] Creating call to " << typeName << "_mod" << std::endl;
+            llvm::Type* i16 = builder.getInt16Ty();
+            if (lhs->getType() != i16) {
+                lhs = builder.CreateIntCast(lhs, i16, true, "tryte_cast_lhs");
+            }
+            if (rhs->getType() != i16) {
+                rhs = builder.CreateIntCast(rhs, i16, true, "tryte_cast_rhs");
+            }
+            llvm::Value* result = builder.CreateCall(modFn, {lhs, rhs}, typeName + "_mod");
+            std::cerr << "[TERNARY MOD] Created call, result=" << (void*)result << std::endl;
+            // DEBUG: Print the instruction immediately
+            result->print(llvm::errs());
+            llvm::errs() << "\n";
+            return result;
+        }
+        std::cerr << "[TERNARY MOD] ERROR: modFn is nullptr!" << std::endl;
+    }
+
+    // Atomic type (trit/nit): inline LLVM operation with clamping
+    // For atomic types, native modulo is acceptable since they're not biased
+    std::cerr << "[TERNARY MOD] Using inline srem (atomic type)" << std::endl;
+    llvm::IntegerType* llvmType = getTernaryLLVMType(type);
+
+    // Check for division by zero
+    llvm::Value* zero = llvm::ConstantInt::get(llvmType, 0);
+    llvm::Value* isZero = builder.CreateICmpEQ(rhs, zero);
+
+    // If divisor is zero, return 0 (balanced ternary convention)
+    llvm::Value* result = builder.CreateSRem(lhs, rhs);
     result = builder.CreateSelect(isZero, zero, result);
 
     return clampToRange(result, type);

@@ -76,7 +76,22 @@ An AI consciousness model designed to:
 
 Nikola isn't about replacing humans. It's about giving every human access to the kind of patient, knowledgeable guidance that privileged kids get from expensive tutors.
 
-**Current status**: 900+ pages of research, no code yet. This is intentional. We're getting it right.
+**Current status**: 900+ pages of research, academic papers published and in review. Theoretical framework established.
+
+**Published Research**:
+- **ATPM (Autonomic Temporal Pattern Model)** - The consciousness architecture framework  
+  DOI: [10.5281/zenodo.18158226](https://doi.org/10.5281/zenodo.18158226) ✅ **Published**
+
+- **ATPM Extended - Big Bang, Bruising, and Asymmetry** - Topological genesis, CMB anomalies, cosmic dipole predictions  
+  DOI: [10.5281/zenodo.18168992](https://doi.org/10.5281/zenodo.18168992) ✅ **Published**
+
+- **Ego-Mediated Behavior Study** - Behavioral modeling research  
+  DOI: [10.5281/zenodo.18159274](https://doi.org/10.5281/zenodo.18159274) ✅ **Published**
+
+- **Nikola Model Academic Paper** - Comprehensive AGI consciousness architecture  
+  DOI: [10.5281/zenodo.18159162](https://doi.org/10.5281/zenodo.18159162) 🔄 **In Peer Review**
+
+This is intentional. We're getting it right.
 
 ### Phase 3: Educational Systems (The Purpose)
 
