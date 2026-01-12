@@ -1,5 +1,76 @@
 # BLOCKED ISSUES - Aria Compiler
 
+## ✅ PHASE 4 COMPLETE: IR Generation with Explicit Types (2026-01-12)
+
+**STATUS: IR CORRECTLY GENERATES TYPED LLVM VALUES**
+
+Successfully implemented IR generation that uses explicit type suffixes to produce precise LLVM types instead of defaulting to i64/double.
+
+### Implementation
+Added two helper functions to ir_generator.cpp:
+
+1. **getLLVMTypeFromSuffix()**: Maps type suffix strings to LLVM types
+   - Unsigned: u8→i8, u16→i16, u32→i32, u64→i64, u128→i128
+   - Signed: i8→i8, i16→i16, i32→i32, i64→i64, i128→i128
+   - Floats: f32→float, f64→double, f128→FP128
+   - TBB: tbb8/16/32/64→i8/16/32/64
+   - LBIM: u256/i256→{i64×4}, u512/i512→{i64×8}, etc.
+   - Fixed: fix256→{i64×4} Q128.128
+
+2. **isSuffixSigned()**: Returns true for signed types (i*, tbb*, fix*)
+
+3. **Modified literal codegen** (lines 3313-3330):
+   ```cpp
+   // PHASE 4: Use Explicit Type
+   if (!lit->explicit_type.empty()) {
+       llvm::Type* llvm_type = getLLVMTypeFromSuffix(lit->explicit_type);
+       if (llvm_type->isIntegerTy()) {
+           bool is_signed = isSuffixSigned(lit->explicit_type);
+           return llvm::ConstantInt::get(llvm_type, val, is_signed);
+       }
+       else if (llvm_type->isFloatingPointTy()) {
+           return llvm::ConstantFP::get(llvm_type, val);
+       }
+   }
+   ```
+
+### Test Results
+Input: `tests/phase4_typed_literals.aria`
+```aria
+uint8:a = 255u8;    // i8 in IR
+uint16:b = 65535u16;  // i16 in IR
+uint32:c = 42u32;   // i32 in IR
+uint64:d = 1000u64; // i64 in IR
+int8:e = 127i8;     // i8 in IR
+int32:g = 42i32;    // i32 in IR
+flt32:x = 3.14f32;  // float in IR
+flt64:y = 2.71828f64; // double in IR
+```
+
+Output LLVM IR:
+```llvm
+store i8 -1, ptr %a, align 1      // 255u8 → i8
+store i16 -1, ptr %b, align 2     // 65535u16 → i16
+store i32 42, ptr %c, align 4     // 42u32 → i32
+store i64 1000, ptr %d, align 4   // 1000u64 → i64
+store i8 127, ptr %e, align 1     // 127i8 → i8
+store i32 42, ptr %g, align 4     // 42i32 → i32
+store float 0x40091EB860000000, ptr %x  // 3.14f32 → float
+store double 2.718280e+00, ptr %y       // 2.71828f64 → double
+```
+
+### Verification
+✅ **i8, i16, i32, i64** types generated correctly for integers
+✅ **float, double** types generated correctly for floats
+✅ No more default i64 for all integers
+✅ No more default double for all floats
+✅ Build succeeds with no errors
+
+### Next Steps
+Phase 5: Update stdlib with typed literals (largest effort - 284+ functions, 27 modules)
+
+---
+
 ## ✅ PHASE 3 COMPLETE: Overflow Detection (Fits-or-Fails) (2026-01-12)
 
 **STATUS: BUG FIXED - OVERFLOW DETECTION WORKING**
