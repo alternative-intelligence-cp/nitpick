@@ -1,0 +1,355 @@
+﻿Architectural Specification for Advanced Numerical Primitives in Safety-Critical AGI Systems
+1. Executive Summary: The Imperative of Algorithmic Determinism
+The development of the Aria programming language, specifically architected for a physics-based Artificial General Intelligence (AGI) designed to serve vulnerable populations, necessitates a rigorous re-evaluation of standard numerical primitives. The stated operational constraints—specifically the "ironclad" correctness required to prevent physical drift in robotic actuators and the absolute necessity of preventing "game over" scenarios—demand a departure from traditional systems programming paradigms. Standard IEEE 754 floating-point arithmetic, while ubiquitous, suffers from non-determinism across hardware architectures and cumulative precision loss (drift), which renders it unsuitable for long-running, safety-critical physical simulations.1 Furthermore, the cryptographic landscape of 2025 and beyond imposes stringent requirements for key sizes and arithmetic hardness that exceed the capabilities of standard 64-bit or even 512-bit integers.
+This report presents a comprehensive architectural strategy to extend the Aria type system beyond its current 512-bit capability. It analyzes the mathematical and implementation requirements for three critical categories of types: Ultra-Wide Integers (int1024/int2048) for post-quantum cryptography, Arbitrary Precision Integers (BigInt) for failsafe bounds checking, and Deterministic Fixed-Point Types for physical stability. Furthermore, it integrates these new primitives with Aria’s existing Twisted Balanced Binary (TBB) system, ensuring that the "Sticky Error" propagation mechanism—a unique safety feature of Aria—is preserved across all bit widths.
+The analysis leverages the existing Limb-Based Integral Model (LBIM) foundation present in the Aria compiler backend and proposes extensions to the wild memory model 4 to support these structures efficiently. This document serves as the foundational blueprint for the next phase of the Aria compiler's evolution, prioritizing algorithmic correctness, side-channel resistance, and absolute numerical stability.
+________________
+2. The Limb-Based Integral Model (LBIM) Expansion: int1024 and Beyond
+2.1 Architectural Necessity in AGI Contexts
+The current Aria implementation utilizes the Limb-Based Integral Model (LBIM) for integers up to int512. This design choice was originally driven by the need to bypass optimization bugs in the LLVM backend (specifically IPSCCP and ConstraintElimination). However, for a safety-critical AGI operating in 2025 and beyond, the extension of this model to int1024 and int2048 is not merely a workaround but a fundamental requirement for cryptographic identity and integrity.
+In the context of a "companion for vulnerable populations," the AGI must maintain a secure root of trust. Post-Quantum Cryptography (PQC) standards, such as those derived from Module-Lattice-Based Key-Encapsulation Mechanisms (ML-KEM), often require arithmetic on vectors of large coefficients or operations over large finite fields.5 Furthermore, to verify the integrity of the AGI's decision-making model against adversarial inputs (e.g., preventing a prompt injection that could harm a child), the system may need to employ Zero-Knowledge Proofs (ZKPs), which heavily utilize large integer arithmetic (256-bit to 1024-bit fields).7
+The defining characteristic of these ultra-wide integers in Aria must be their integration with the Twisted Balanced Binary (TBB) semantics. Unlike standard libraries (like GMP or OpenSSL) which treat integers as pure mathematical objects, Aria's integers are signals that carry validity metadata. The "error sentinel" mechanism—where a specific bit pattern represents an invalid state—must propagate through even the most complex cryptographic transformations.
+2.2 Mathematical Implementation of Ultra-Wide Arithmetic
+Extending the LBIM to 1024 bits involves managing an array of 16 int64 limbs. While addition and subtraction are linear $O(N)$ operations, multiplication presents a significant computational bottleneck. The efficiency of the multiplication algorithm directly impacts the latency of the AGI's cognitive loop.
+2.2.1 Multiplication Algorithms and Thresholds
+For int1024 (16 limbs of 64 bits), the naive "schoolbook" multiplication algorithm, which operates in $O(N^2)$, requires $16^2 = 256$ limb multiplications. While simple to implement, this latency is acceptable only if the constant factors are minimized. However, advanced recursive algorithms offer better asymptotic complexity.
+The Karatsuba algorithm offers a divide-and-conquer approach with complexity $O(N^{\log_2 3}) \approx O(N^{1.585})$.8 It splits the inputs $X$ and $Y$ into high and low halves:
+
+
+
+
+$$X = X_1 B + X_0$$
+
+
+$$Y = Y_1 B + Y_0$$
+where $B$ is the radix ($2^{512}$ in this case). The product is computed as:
+
+
+$$XY = z_2 B^2 + z_1 B + z_0 \\ z_2 = X_1 Y_1 \\ z_0 = X_0 Y_0$$
+
+
+$$z_1 = (X_1 + X_0)(Y_1 + Y_0) - z_2 - z_0$$
+Empirical data suggests that the crossover point where Karatsuba becomes more efficient than schoolbook multiplication on modern x86_64 architectures typically lies between 8 and 24 machine words.10 Since int1024 comprises exactly 16 words (limbs), it sits squarely in the transition zone where Karatsuba may offer performance gains, particularly if the implementation can minimize memory allocation overhead.
+For types larger than int1024, such as int2048 or int4096, Toom-Cook 3-way multiplication (complexity $O(N^{1.46})$) becomes viable.8 However, given the Aria "ironclad" correctness constraint, the implementation complexity of Toom-Cook introduces a higher risk of verification bugs. Toom-Cook requires dividing the input into three parts and evaluating polynomials at five points ($0, 1, -1, -2, \infty$). The interpolation step involves division by constants (like 2, 3, 6), which is computationally expensive in integer arithmetic unless specific optimizations are used.
+Recommendation: For int1024, Aria should utilize a Hybrid Approach. The compiler should emit code that uses Comba Multiplication (a column-oriented variant of schoolbook multiplication) for the base case operations, as it minimizes carry propagation overhead and is easier to make constant-time. Karatsuba should be reserved for the BigInt type where the size is not known at compile time, or for int2048 and above.
+2.2.2 Constant-Time Execution for Cryptography
+For the specific use case of the AGI's identity protection, arithmetic operations on int1024 must be constant-time to prevent timing side-channel attacks.12 Standard Karatsuba implementations usually depend on the data (e.g., branching based on the size of the numbers or recursively calling until a base case is reached).
+Requirement: The Aria implementation of int1024 multiplication must utilize a branchless variant. Comba multiplication is ideal here. It computes the product column by column, accumulating partial products into a 3-word accumulator ($r_2, r_1, r_0$). This avoids the long carry propagation chains of row-wise schoolbook multiplication and allows the compiler to unroll the loops entirely for a fixed size like 1024 bits.
+The algorithm proceeds as follows for inputs $A$ and $B$ of size $n$ limbs:
+For $i$ from $0$ to $2n-2$:
+1. Initialize accumulator $(r_2, r_1, r_0) = 0$.
+2. For each $j, k$ such that $j+k = i$:
+   * Compute $(hi, lo) = A[j] \times B[k]$.
+   * Add $(hi, lo)$ to the accumulator.
+3. Store $r_0$ as the $i$-th limb of the result.
+4. Shift accumulator: $r_0 = r_1$, $r_1 = r_2$, $r_2 = 0$.
+This structure executes the exact same number of instructions regardless of the input values (assuming the underlying mul instruction is constant time, which is true on modern x86/ARM), satisfying the side-channel resistance requirement.
+2.3 Low-Level Implementation Strategy (Codegen)
+The src/backend/ir/codegen_expr.cpp file currently lowers int512 to a struct of 8 i64s. The expansion to int1024 requires:
+1. Type Definition:
+C++
+// In src/backend/ir/codegen_expr.cpp
+if (typeName == "int1024" |
+
+
+| typeName == "uint1024") {
+llvm::StructType* int1024Struct = llvm::StructType::getTypeByName(context, "struct.int1024");
+if (!int1024Struct) {
+// 16 limbs of 64-bit integers
+llvm::Type* limbArray = llvm::ArrayType::get(llvm::Type::getInt64Ty(context), 16);
+int1024Struct = llvm::StructType::create(context, {limbArray}, "struct.int1024");
+}
+return int1024Struct;
+}
+```
+   2. Arithmetic Intrinsics: Unlike int64, which maps to LLVM instructions (add, sub), int1024 operations must be lowered to runtime library calls (aria_lbim_add1024, aria_lbim_mul1024) to ensure the logic is strictly controlled and TBB-compliant.
+   3. TBB Integration: The "sticky error" logic must be manually injected. If any limb in the input is part of an ERR state (which for int1024 would likely be a specific reserved bit pattern in the highest limb, e.g., 0x8000...0000), the result must immediately collapse to ERR.
+2.4 Implementation Prompt: int1024 and LBIM Expansion
+System Prompt:
+You are an expert compiler engineer specializing in LLVM IR generation and high-precision arithmetic. Your task is to extend the Aria language's Limb-Based Integral Model (LBIM) to support int1024 and uint1024 types.
+Context:
+Aria currently supports int512 using a struct of 8 i64 limbs to bypass LLVM bugs. We need to double this width for cryptographic compliance. The implementation must adhere to the "Twisted Balanced Binary" (TBB) philosophy where applicable, specifically preserving "Sticky Error" states.
+Task Requirements:
+   1. Type Definition: Modify src/backend/ir/codegen_expr.cpp to register int1024 and uint1024 as structs with 16 i64 elements.
+   2. Runtime Library (C++): Create the source for src/runtime/math/lbim_1024.cpp. Implement the following functions:
+   * aria_int1024_add: Implementation using a ripple-carry adder across 16 limbs.
+   * aria_int1024_mul: Implementation using Comba Multiplication (column-wise) to ensure constant-time execution for cryptography. Unroll the loops for 16 limbs.
+   * aria_int1024_div: Implementation using Knuth's Algorithm D (long division).
+   3. Safety Constraints:
+   * Implement a check_sticky_error macro. If the most significant limb corresponds to the TBB error sentinel (defined as 0x8000000000000000 in the highest limb for signed types), the function must immediately return ERR.
+   * Ensure all memory allocations for intermediate buffers use the wild allocator (stack-based if possible, or explicit heap) to prevent GC pauses.
+Output:
+Provide the C++ code for the runtime implementation and the LLVM IR generation logic.
+________________
+3. Cryptographic Modular Arithmetic: The Mathematical Core
+3.1 The Necessity of Modular Primitives
+While int1024 provides the storage container, cryptographic operations rarely perform raw arithmetic. They operate within a finite field, defined by a modulus $N$. For the AGI's "ironclad" security, specifically for key exchange (Diffie-Hellman) and digital signatures (RSA/DSA), the language must natively support Modular Exponentiation ($g^a \pmod N$) and Modular Inversion ($a^{-1} \pmod N$).
+Standard implementations often use division (div instruction) to compute remainders. However, division is notoriously slow and variable-latency on modern CPUs, making it a primary vector for timing attacks.13 Aria must implement these operations using algorithms that avoid naive division.
+3.2 Montgomery Reduction for Modular Multiplication
+To perform efficient modular exponentiation without repeated expensive division, Aria must implement Montgomery Multiplication. This algorithm transforms numbers into the "Montgomery Domain" where modular reduction becomes a series of shifts and multiplications, which are much faster and constant-time.15
+Given a modulus $N$ (odd) and a radix $R$ (typically $2^{1024}$), we map an integer $A$ to $\bar{A} = A \cdot R \pmod N$.
+The Montgomery reduction algorithm REDC(T) computes $T \cdot R^{-1} \pmod N$.
+The product of two numbers in the Montgomery domain is:
+
+
+
+
+$$\bar{C} = \text{REDC}(\bar{A} \cdot \bar{B}) = (A \cdot R) \cdot (B \cdot R) \cdot R^{-1} \pmod N = (A \cdot B) \cdot R \pmod N$$
+
+
+This result $\bar{C}$ remains in the Montgomery domain, allowing chain multiplications (like in exponentiation) to occur without converting back until the very end.
+Implementation Detail:
+The reduction step involves:
+
+
+
+
+$$m = ((T \pmod R) \cdot N') \pmod R$$
+
+
+$$t = (T + m \cdot N) / R$$
+
+
+if $t \ge N$, return $t - N$, else return $t$.
+This relies on precomputing $N' = -N^{-1} \pmod R$. Since $R$ is a power of 2 ($2^{64}$ for the limb base), modulo $R$ and division by $R$ are bitwise operations (& and >>), which are perfectly deterministic and constant-time.
+3.3 Constant-Time Modular Inverse: Binary Extended Euclidean Algorithm
+For generating keys or handling RSA, the AGI needs to compute modular inverses. The classic Extended Euclidean Algorithm uses division. The Binary Extended Euclidean Algorithm (Stein's Algorithm) replaces division with shifts and subtractions, making it suitable for constant-time implementation.16
+The algorithm tracks four variables ($u, v, r, s$) and maintains the invariants:
+$u = A \cdot r \pmod M$
+$v = A \cdot s \pmod M$
+It repeatedly halves even numbers (right shift) or subtracts the smaller from the larger until the GCD is found. To make this constant-time ("Bernstein-Yang" variant), the branches must be replaced with bitwise select operations (constant_time_select(condition, true_val, false_val)), preventing the CPU's branch predictor from leaking information about the key.17
+3.4 Implementation Prompt: Crypto Primitives
+System Prompt:
+You are a cryptography engineer implementing the secure math core for Aria.
+Context:
+We have int1024 and int2048 types (LBIM). We need secure modular arithmetic functions that are resistant to timing attacks.
+Task Requirements:
+   1. Montgomery Arithmetic:
+   * Implement aria_mont_mul(A, B, N, N_prime) using the CIOS (Coarsely Integrated Operand Scanning) method for efficient cache usage.
+   * Implement aria_mod_exp(base, exp, mod) using the "Montgomery Ladder" approach. This ensures that both the square and multiply steps are executed in every iteration regardless of the exponent bit, preventing simple power analysis (SPA).
+   2. Modular Inverse:
+   * Implement aria_mod_inv(a, m) using the Constant-Time Binary Extended Euclidean algorithm (Bernstein-Yang variant).
+   * Avoid hardware division instructions entirely. Use only shifts, adds, subs, and bitwise logic.
+   3. TBB Integration:
+   * Define the interaction between TBB sentinels and modular arithmetic. If the modulus $N$ is the TBB ERR sentinel, the result must be ERR. If the base is ERR, result is ERR.
+Output:
+C++ runtime code for these cryptographic primitives using the LBIM struct format.
+________________
+4. Arbitrary Precision Integers (BigInt) in a Hybrid Memory Model
+4.1 The Safety Paradox of BigInts
+While int1024 covers standard crypto, "Game Over" scenarios in physics simulations (e.g., identifying a resonance cascade in the AGI's actuators) may produce values that momentarily exceed fixed bounds. In these cases, wrapping around is dangerous, and saturating to ERR might kill the process too aggressively. An Arbitrary Precision (BigInt) type acts as a safety net, allowing calculations to grow dynamically during debug or audit phases.19
+However, BigInts typically require dynamic memory allocation. In Aria's safety model, "wild" memory (manual allocation) is considered unsafe without the Borrow Checker 4, while Garbage Collected (GC) memory introduces non-deterministic pauses unacceptable for real-time control.4
+4.2 Architectural Solution: The "Wild Buffer" BigInt
+To satisfy the "ironclad" requirement, Aria's BigInt must be implemented as a hybrid structure: a small optimization (SSO) fixed buffer for values up to 256 bits, and a "wild" pointer to a dynamically allocated limb array for larger values.
+Structure Definition:
+
+
+C++
+
+
+
+
+struct BigInt {
+   uint32_t capacity; // Number of limbs allocated
+   uint32_t length;   // Number of limbs used
+   union {
+       uint64_t inline_limbs; // 256 bits inline
+       uint64_t* wild_limbs;     // Pointer to wild heap
+   } storage;
+   uint8_t is_inline; // Flag: 1 = inline, 0 = heap
+};
+
+Crucially, because Aria allows manual memory management (wild keyword), the BigInt implementation must leverage Linear Types (or strict ownership semantics) to ensure that the backing memory is freed exactly once, preventing memory leaks which could crash the AGI over months of operation.20 The Aria compiler's "Appendage Theory" 4 must verify that no references to wild_limbs outlive the BigInt container.
+4.3 Mathematical Operations: FFT Multiplication for Massive Integers
+When dealing with arbitrary precision numbers that might grow to thousands of bits (e.g., calculating precise orbital mechanics or verifying a ZKP with thousands of constraints), $O(N^2)$ and even Karatsuba $O(N^{1.58})$ become too slow.
+The Schönhage-Strassen algorithm (using Fast Fourier Transforms over finite rings) allows for multiplication in $O(N \log N \log \log N)$ time.8 For the Aria AGI, implementing an FFT-based multiply for BigInts ensures that if the system needs to verify a massive safety proof, it can do so without stalling the main control loop.
+
+
+$$\text{Convolution Theorem:} \quad A \times B = \text{IFFT}(\text{FFT}(A) \cdot \text{FFT}(B))$$
+This requires the implementation of a Number Theoretic Transform (NTT) to perform the convolution over integer fields without floating-point rounding errors, maintaining the "exactness" required by the spec.
+Thresholds:
+   * $N < 32$ limbs (2048 bits): Use Schoolbook/Comba.
+   * $32 \le N < 256$ limbs: Use Karatsuba.
+   * $N \ge 256$ limbs: Use NTT/Schönhage-Strassen.
+4.4 Implementation Prompt: Safe BigInt
+System Prompt:
+You are a systems programming expert focusing on memory safety and algorithmic efficiency. You need to implement an Arbitrary Precision Integer (BigInt) for the Aria language that interfaces with its "wild" memory model.
+Context:
+Aria distinguishes between gc (garbage collected) and wild (manual) memory. The BigInt must be usable in real-time contexts, meaning it should avoid malloc/free for small values and strictly manage ownership for large values to prevent leaks.
+Task Requirements:
+   1. Data Structure: Define a struct BigInt in C++ (runtime) that uses Small Buffer Optimization (SBO).
+   * If limbs <= 4 (256 bits), store inline.
+   * If limbs > 4, allocate using aria_alloc_wild.
+   2. Arithmetic Logic:
+   * Implement bigint_add and bigint_sub with automatic resizing.
+   * Implement bigint_mul using a threshold strategy: Schoolbook for $N < 32$, Karatsuba for $32 \le N < 256$, and a simplified NTT (Number Theoretic Transform) for $N \ge 256$ limbs.
+   3. Safety & Ownership:
+   * Implement a destructor bigint_free that checks the storage tag.
+   * Ensure that operations on BigInt result in a new wild allocation or reuse of existing capacity (move semantics).
+   4. TBB Compatibility:
+   * Define a conversion function tbb_to_bigint(tbb64) that handles the sentinel. If the input is TBB_ERR, the BigInt should enter a specific "Invalid" state (internally represented as a zero-size, null-pointer struct, distinct from valid zero).
+Output:
+C++ implementation of the struct and the multiplication logic, specifically focusing on the safe memory transition between SSO and heap allocation.
+________________
+5. Deterministic High-Precision Fixed-Point Arithmetic
+5.1 The Problem with Floating Point Drift
+In "physics-based AGI," the simulation of physical bodies involves integrating acceleration over time to update position: $x_{t+1} = x_t + v_t \Delta t + \frac{1}{2} a_t \Delta t^2$. When using IEEE 754 floating-point numbers (flt64), the associativity of addition does not hold ($ (A+B)+C \neq A+(B+C) $). Over billions of simulation steps, these rounding errors accumulate (drift), causing the AGI's internal model of its limbs to diverge from physical reality.1
+For a companion robot, this drift is unacceptable. It could lead to the AGI applying too much force or miscalculating the position of a child. Deterministic Fixed-Point arithmetic solves this by fixing the precision and ensuring that every operation is bit-exact across all platforms.
+5.2 Proposed Type: fix256_128
+To meet the "extreme tolerance" requirements, we propose a 256-bit fixed-point type, fix256, with 128 bits of integer and 128 bits of fraction ($Q128.128$). This provides a dynamic range significantly exceeding the observable universe (in Planck lengths) while maintaining absolute precision for sub-atomic interactions.
+5.2.1 Mathematical Operations
+Multiplication:
+Multiplying two $Q128.128$ numbers results in a 512-bit intermediate with 256 fractional bits. To return to $Q128.128$, we must shift right by 128 bits.
+
+
+
+
+$$\text{Result} = (A \times B) \gg 128$$
+
+
+This requires a temporary int512 container (which Aria already supports via LBIM ). Specifically, the multiplication algorithm must compute the full 512-bit product and then perform the shift and round. Deterministic rounding (e.g., Round Half Up or Convergent Rounding) must be implemented manually in software, as hardware rounding modes vary.23
+Division:
+Division requires shifting the numerator before the operation to preserve precision.
+
+
+
+
+$$\text{Result} = (A \ll 128) / B$$
+
+
+This requires a 512-bit shift capability. The division itself must be performed using integer division on the 512-bit extended numerator.
+Square Root:
+For physics engines, sqrt is ubiquitous (e.g., vector normalization). Deterministic sqrt for fixed-point is challenging. The Goldschmidt algorithm or Integer Newton-Raphson are candidates.24
+For safety, we will use Integer Newton-Raphson:
+
+
+
+
+$$x_{k+1} = \frac{1}{2} \left( x_k + \frac{S}{x_k} \right)$$
+
+
+This converges quadratically and can be implemented entirely using integer primitives (add, div, shift), ensuring determinism. The initial guess $x_0$ can be efficiently estimated using the "Count Leading Zeros" (CLZ) hardware instruction, which is deterministic on all major architectures.
+Trigonometry (CORDIC):
+Standard sin/cos use lookup tables (LUTs) or Taylor series which vary by standard library implementation. For Aria, we must use the CORDIC (Coordinate Rotation Digital Computer) algorithm.26 CORDIC computes trig functions using only shifts, additions, and a small lookup table of atan(2^-i) constants. By implementing CORDIC in software using fix256 arithmetic, we ensure that sin(x) returns the exact same bit pattern on an x86 server and an ARM-based robot controller.
+5.3 Implementation Strategy
+The src/backend/ir/codegen_expr.cpp does not currently have fixed-point types. We must introduce fix256 as a distinct primitive.
+   1. Storage: Lower fix256 to the existing struct.int256 (LBIM).
+   2. Frontend: Treat literals like 1.5fx as fixed-point.
+   3. Backend: Generate calls to aria_fix256_mul, aria_fix256_sqrt.
+5.4 Implementation Prompt: Deterministic Fixed Point
+System Prompt:
+You are a specialist in deterministic physics engines and numerical methods. You need to implement a high-precision fixed-point type fix256 ($Q128.128$) for the Aria runtime.
+Context:
+Aria requires "ironclad" physical stability. Floating point drift is unacceptable. We have an existing int256 type (LBIM) that can be used for storage.
+Task Requirements:
+   1. Core Arithmetic: Implement aria_fix256_mul and aria_fix256_div.
+   * Use int512 (LBIM) as the intermediate accumulator to prevent overflow before shifting.
+   * Implement Convergent Rounding (Round to Nearest Even) manually using bitwise logic to ensure determinism.
+   2. Deterministic Math Functions:
+   * Implement aria_fix256_sqrt using the Integer Newton-Raphson method with a CLZ-based initial guess.
+   * Implement aria_fix256_sin and aria_fix256_cos using the CORDIC algorithm. Do NOT use standard math.h functions.
+   3. Safety Integration:
+   * Integrate TBB Error Sentinels. If the result of an operation overflows the 256-bit range, return the TBB256_ERR sentinel (most negative value).
+   * Ensure division by zero returns TBB256_ERR.
+Output:
+C++ runtime code for the multiplication, division, square root, and CORDIC sine functions.
+________________
+6. The Twisted Balanced Binary (TBB) Integration
+6.1 The "Sticky Error" Imperative
+Aria's defining feature for safety is the Twisted Balanced Binary system. Unlike standard two's complement where overflow wraps around (causing logic bugs), or checked arithmetic which throws exceptions (crashing the AGI), TBB types saturate to a specific ERR sentinel (e.g., -128 for tbb8). This error state is "sticky"—any operation involving ERR results in ERR.
+For the AGI to be safe, the new int1024, BigInt, and fix256 types must adopt this protocol. This prevents a corrupted sensor reading from being "healed" by a mathematical operation into a valid (but wrong) actuator command.
+6.2 Sentinel Definitions for New Types
+   * int1024 (TBB Mode): The sentinel is 0x8000...0000 (1024 bits).
+   * Constraint: Standard sext (sign extension) from int512 to int1024 is forbidden because it would turn the 512-bit error (0x80...00) into a valid negative 1024-bit number (0xFF...80...00). Explicit widening intrinsics (tbb_widen) must be used.4
+   * BigInt: A specific internal state (e.g., length = 0 but storage!= nullptr or a specific tag in the structure) must represent ERR.
+   * fix256: Uses the same sentinel as int256 (Minimum integer).
+6.3 Propagation Logic in LBIM
+The current ExprCodegen uses a tbb_codegen helper. This must be updated to handle multi-limb checks.
+Algorithm for TBB Add (1024-bit):
+   1. Check if Operand A is ERR (efficient check: is MSB 1 and all other limbs 0?).
+   2. Check if Operand B is ERR.
+   3. Perform Res = A + B using standard multi-limb addition.
+   4. Check Overflow flag of the 1024-bit addition (carry out of the last limb or signed overflow logic).
+   5. If (1) OR (2) OR (4), Res = ERR.
+This logic must be branchless to maintain cryptographic constant-time properties where possible, utilizing bitwise OR masks for the error flags.
+6.4 Implementation Prompt: TBB Logic Extension
+System Prompt:
+You are a compiler backend engineer. You need to extend the Twisted Balanced Binary (TBB) error propagation logic to the new int1024 and fix256 types in the Aria compiler.
+Context:
+Aria uses "Sticky Errors". If an input is ERR, or if an operation overflows, the result is ERR. int1024 is stored as an array of 16 uint64s. The ERR sentinel is the minimum signed value (most significant bit 1, all others 0).
+Task Requirements:
+   1. Sentinel Detection: Write a C++ helper function is_err_1024(uint64_t* limbs) that efficiently checks for the sentinel pattern.
+   2. Propagation Logic: Implement the logic for aria_tbb1024_add.
+   * Perform the addition.
+   * Detect signed overflow for 1024-bit integers.
+   * Use bitwise logic to select between the valid result and the ERR sentinel based on input validity and overflow status. Avoid branching if possible.
+   3. Widening Safety: Implement the logic for tbb_widen_512_to_1024.
+   * Input: int512.
+   * Logic: If input is TBB512_ERR, return TBB1024_ERR. Else, return standard sign-extended value.
+Output:
+C++ implementation code for the runtime library.
+________________
+7. Exotic Types Future-Proofing: Ternary and Nonary
+7.1 Beyond Binary Logic
+The research notes highlight "Balanced Ternary" (trit, tryte) and "Balanced Nonary" (nit, nyte) as "NON-NEGOTIABLE" core requirements.4 These types are essential for "exotic architectures" and potentially for neuromorphic computing layers in the AGI.
+   * Ternary (trit): Values $\{-1, 0, 1\}$. Stored as int8.
+   * Nonary (nit): Values $\{-4, \dots, 4\}$. Stored as int8.
+7.2 Math Implementation
+Standard ALUs are binary. Implementing ternary math efficiently requires emulation.
+Balanced Ternary Adder:
+To add two trits $A$ and $B$:
+
+
+
+
+$$Sum = A + B$$
+
+
+If $Sum > 1$, $Sum -= 3$, Carry = +1.
+If $Sum < -1$, $Sum += 3$, Carry = -1.
+For int1024-width ternary vectors (vectors of trits), this carry propagation is complex. However, for the scope of "future proofing," implementing the base primitives allows the AGI to interface with experimental hardware.
+7.3 Implementation Prompt: Exotic Math
+System Prompt:
+You are implementing the "Exotic" arithmetic core for the Aria language.
+Context:
+Aria supports balanced ternary (trit: -1, 0, 1) and balanced nonary (nit: -4..4). These are stored in int8 containers.
+Task Requirements:
+   1. Ternary Arithmetic: Implement trit_add(int8 a, int8 b, int8* carry) and trit_mul(int8 a, int8 b, int8* carry).
+   * Handle the balanced carry logic (-1, 0, 1).
+   2. Tryte Packing: A tryte consists of 5 trits. Implement efficient packing/unpacking of 5 trits into a standard int16.
+   * $Value = \sum_{i=0}^4 t_i \cdot 3^i$.
+   3. Optimization: Provide a lookup-table (LUT) based approach for tryte addition to avoid expensive division/modulus operations during emulation.
+Output:
+C++ runtime code for the arithmetic operations and LUT generation.
+________________
+8. Conclusion
+To strictly meet the "ironclad" safety and "game over" prevention requirements of the Nikola AGI project, the Aria language must expand its type system significantly. The LBIM must be scaled to 1024 bits to support modern cryptography, utilizing constant-time algorithms like Comba multiplication and Montgomery reduction. Arbitrary Precision Integers must be introduced with a hybrid memory model to prevent bounds-check failures from terminating the AGI during complex validation steps. Most critically, Deterministic Fixed-Point (fix256) types utilizing CORDIC and Integer Newton-Raphson algorithms are required to ensure the physical stability of the robot's actuators. By wrapping all these new types in the Twisted Balanced Binary (TBB) error propagation protocol, Aria will provide a unique, safety-first foundation for the next generation of AGI development.
+The prompts provided in this report serve as actionable specifications for the immediate implementation of these features in the next phase of the Aria compiler development.
+Works cited
+   1. 256 bit fixed point arithmetic, the future? - Stack Overflow, accessed December 31, 2025, https://stackoverflow.com/questions/37119616/256-bit-fixed-point-arithmetic-the-future
+   2. Why the CORDIC algorithm lives rent-free in my head | Hacker News, accessed December 31, 2025, https://news.ycombinator.com/item?id=40326563
+   3. Fixed-point arithmetic - Wikipedia, accessed December 31, 2025, https://en.wikipedia.org/wiki/Fixed-point_arithmetic
+   4. aria_source_full.txt
+   5. Modular Inverse for Integers using Fast Constant Time GCD Algorithm and its Applications, accessed December 31, 2025, https://caslab.io/publications/deshpande2021modular.pdf
+   6. The implementation of Montgomery modular reduction to speed up of modular exponentiation⋆ - CEUR-WS.org, accessed December 31, 2025, https://ceur-ws.org/Vol-3702/paper23.pdf
+   7. Exploring Large Integer Multiplication for Cryptography Targeting In-Memory Computing - Graz University of Technology, accessed December 31, 2025, https://tugraz.elsevierpure.com/files/87467016/CameraReady.pdf
+   8. Toom–Cook multiplication - Wikipedia, accessed December 31, 2025, https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication
+   9. Karatsuba algorithm - Wikipedia, accessed December 31, 2025, https://en.wikipedia.org/wiki/Karatsuba_algorithm
+   10. Is it really efficient to use Karatsuba algorithm in 64-bit x 64-bit multiplication?, accessed December 31, 2025, https://stackoverflow.com/questions/31069291/is-it-really-efficient-to-use-karatsuba-algorithm-in-64-bit-x-64-bit-multiplicat
+   11. FPGA implementation of the multiplication operation in multiple-precision arithmetic - MOST Wiedzy, accessed December 31, 2025, https://mostwiedzy.pl/pl/publication/download/1/fpga-implementation-of-the-multiplication-operation-in-multiple-precision-arithmetic_17198.pdf
+   12. Constant Time Modular Inversion - Joppe W. Bos, accessed December 31, 2025, https://www.joppebos.com/files/CTInversion.pdf
+   13. Side-channel attacks on RSA - People, accessed December 31, 2025, https://people.csail.mit.edu/alinush/6.858-fall-2014/l16-timing-attacks.html
+   14. What is a "constant time" work around when dealing with the point at infinity for prime curves? - Cryptography Stack Exchange, accessed December 31, 2025, https://crypto.stackexchange.com/questions/86692/what-is-a-constant-time-work-around-when-dealing-with-the-point-at-infinity-fo
+   15. An Efficient Montgomery Multiplication Algorithm and RSA Cryptographic Processor, accessed December 31, 2025, https://ieeexplore.ieee.org/document/4426692/
+   16. Extended Euclidean algorithm - Wikipedia, accessed December 31, 2025, https://en.wikipedia.org/wiki/Extended_Euclidean_algorithm
+   17. Fast constant-time gcd computation and modular inversion, accessed December 31, 2025, https://d-nb.info/1205834052/34
+   18. Help me understand this modular inverse implementation : r/cryptography - Reddit, accessed December 31, 2025, https://www.reddit.com/r/cryptography/comments/1d83tfx/help_me_understand_this_modular_inverse/
+   19. Arbitrary-precision arithmetic - Wikipedia, accessed December 31, 2025, https://en.wikipedia.org/wiki/Arbitrary-precision_arithmetic
+   20. Safe Manual Memory Management : r/programming - Reddit, accessed December 31, 2025, https://www.reddit.com/r/programming/comments/1eqvce/safe_manual_memory_management/
+   21. Simple, Fast and Safe Manual Memory Management - Microsoft, accessed December 31, 2025, https://www.microsoft.com/en-us/research/wp-content/uploads/2017/03/kedia2017mem.pdf
+   22. Did the 2019 discovery of O(N log(N)) multiplication have a practical outcome?, accessed December 31, 2025, https://mattermodeling.stackexchange.com/questions/1355/did-the-2019-discovery-of-on-logn-multiplication-have-a-practical-outcome
+   23. How can I descale x by n/d, when x*n overflows?, accessed December 31, 2025, https://stackoverflow.com/questions/63091924/how-can-i-descale-x-by-n-d-when-xn-overflows
+   24. Square root in fixed point VHDL - Jari Honkanen - EmbeddedRelated.com, accessed December 31, 2025, https://www.embeddedrelated.com/showarticle/1558.php
+   25. Divisions and Square Roots with Tight Error Analysis from Newton–Raphson Iteration in Secure Fixed-Point Arithmetic - MDPI, accessed December 31, 2025, https://www.mdpi.com/2410-387X/7/3/43
+   26. How to Set CORDIC Input Word Length and Maximum Shift Value to Achieve Desired Precision - MATLAB & Simulink - MathWorks, accessed December 31, 2025, https://www.mathworks.com/help/fixedpoint/ug/how-to-set-cordic-input-word-length-and-maximum-shift-value-to-achieve-desired-precision.html
+   27. FPGA implementation of the trigonometric function using the CORDIC Algorithm, accessed December 31, 2025, https://www.researchgate.net/publication/343362330_FPGA_implementation_of_the_trigonometric_function_using_the_CORDIC_Algorithm

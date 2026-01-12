@@ -90,28 +90,109 @@ void LifetimeContext::merge(const LifetimeContext& then_state, const LifetimeCon
         }
     }
 
-    // Merge loan origins: union of origins from both branches (phi node logic)
-    for (auto& [ref, origins] : then_state.loan_origins) {
-        auto else_it = else_state.loan_origins.find(ref);
-        if (else_it != else_state.loan_origins.end()) {
-            // Merge origins from both branches
-            loan_origins[ref] = origins;
-            loan_origins[ref].insert(else_it->second.begin(), else_it->second.end());
+    // ARIA-021: Merge loan origins using UNION from EITHER branch (phi node logic)
+    // If a reference might borrow from different sources on different paths,
+    // we must track all possible origins conservatively
+    for (const auto& [ref, origins] : then_state.loan_origins) {
+        loan_origins[ref].insert(origins.begin(), origins.end());
+    }
+    for (const auto& [ref, origins] : else_state.loan_origins) {
+        loan_origins[ref].insert(origins.begin(), origins.end());
+    }
+
+    // ARIA-021: Merge active_loans using UNION (if loan may exist, assume it exists)
+    // This is critical for Bug #5: conditional borrow merge
+    // After: if (cond) { r = $x; } else { r = $y; }
+    // Both x and y should be considered potentially borrowed
+    for (const auto& [host, loans] : then_state.active_loans) {
+        auto& our_loans = active_loans[host];
+        for (const auto& loan : loans) {
+            // Only add if not already present
+            bool found = false;
+            for (const auto& existing : our_loans) {
+                if (existing.borrower == loan.borrower) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                our_loans.push_back(loan);
+            }
+        }
+    }
+    for (const auto& [host, loans] : else_state.active_loans) {
+        auto& our_loans = active_loans[host];
+        for (const auto& loan : loans) {
+            bool found = false;
+            for (const auto& existing : our_loans) {
+                if (existing.borrower == loan.borrower) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                our_loans.push_back(loan);
+            }
+        }
+    }
+
+    // ARIA-021: Merge active_pins using UNION
+    for (const auto& [host, pinner] : then_state.active_pins) {
+        if (active_pins.find(host) == active_pins.end()) {
+            active_pins[host] = pinner;
+        }
+    }
+    for (const auto& [host, pinner] : else_state.active_pins) {
+        if (active_pins.find(host) == active_pins.end()) {
+            active_pins[host] = pinner;
         }
     }
 }
 
 bool LifetimeContext::mergeLoopBackEdge(const LifetimeContext& back_edge_state) {
-    // Fixpoint iteration: merge back-edge state into loop header
-    // Returns true if state changed (need another iteration)
-    // Uses set UNION for May-Analysis (loan may be active)
+    // Original implementation - delegates to liveness-aware version with empty liveness
+    // This maintains backwards compatibility while enabling the new feature
+    LivenessAnalysis empty_liveness;
+
+    // For backwards compatibility, consider all variables as live
+    // This preserves the original conservative behavior
+    for (const auto& [var, _] : back_edge_state.var_depths) {
+        empty_liveness.markLiveAtHeader(var);
+    }
+
+    return mergeLoopBackEdgeLivenessAware(back_edge_state, empty_liveness);
+}
+
+bool LifetimeContext::mergeLoopBackEdgeLivenessAware(const LifetimeContext& back_edge_state,
+                                                      const LivenessAnalysis& liveness) {
+    // Liveness-aware fixpoint iteration (Gemini Report improvement)
+    // Only propagate loans for LIVE variables at loop header
+    // This prevents false conflicts from zombie loans
 
     bool changed = false;
 
-    // Merge active loans: union (if loan exists on any path, it may be active)
+    // ========================================================================
+    // Liveness-Aware Loan Merging (Gemini Report: Loop-Carried Dependencies)
+    // ========================================================================
+    // Only propagate loans if BOTH the host AND the borrower are live at the
+    // loop header. Dead variables' loans are "zombie" loans that would cause
+    // false conflicts in the next iteration.
+
     for (const auto& [host, loans] : back_edge_state.active_loans) {
+        // Skip if the host variable is not live at the loop header
+        // Dead hosts mean the loan is a zombie that won't affect next iteration
+        if (!liveness.isLiveAtHeader(host)) {
+            continue;
+        }
+
         auto& our_loans = active_loans[host];
         for (const auto& loan : loans) {
+            // Also check if the borrower is live - if the reference dies,
+            // the loan it holds should not propagate
+            if (!liveness.isLiveAtHeader(loan.borrower)) {
+                continue;
+            }
+
             // Check if this exact loan already exists
             bool found = false;
             for (const auto& existing : our_loans) {
@@ -129,36 +210,73 @@ bool LifetimeContext::mergeLoopBackEdge(const LifetimeContext& back_edge_state) 
         }
     }
 
-    // Merge loan origins: union
+    // Merge loan origins: union (also liveness-filtered)
     for (const auto& [ref, origins] : back_edge_state.loan_origins) {
+        // Only propagate if the reference is live
+        if (!liveness.isLiveAtHeader(ref)) {
+            continue;
+        }
+
         auto& our_origins = loan_origins[ref];
         size_t old_size = our_origins.size();
-        our_origins.insert(origins.begin(), origins.end());
+        for (const auto& origin : origins) {
+            // Only add origins that are live
+            if (liveness.isLiveAtHeader(origin)) {
+                our_origins.insert(origin);
+            }
+        }
         if (our_origins.size() > old_size) {
             changed = true;
         }
     }
 
-    // Merge wild states: conservative lattice join
+    // Merge wild states: conservative lattice join for loop analysis
+    // Implements explicit MAY_FREED handling as per Appendage Theory
     for (const auto& [var, state] : back_edge_state.wild_states) {
         auto it = wild_states.find(var);
         if (it == wild_states.end()) {
             wild_states[var] = state;
             changed = true;
         } else if (it->second != state) {
-            // States differ - apply conservative merge
+            // States differ - apply conservative lattice merge
+            WildState current = it->second;
+            WildState back = state;
             WildState merged;
-            if (it->second == WildState::ALLOCATED && state == WildState::FREED) {
-                // ALLOC + FREED = MAY_FREED (loop may have freed it)
+
+            // Case 1: ALLOCATED ⊔ FREED = MAY_FREED (The critical MAY_FREED scenario)
+            // If variable was freed/moved in the loop (back_edge) and ALLOCATED at start,
+            // it is now MAY_FREED. This forces the analyzer to reject uses unless re-init.
+            if ((current == WildState::ALLOCATED && back == WildState::FREED) ||
+                (current == WildState::FREED && back == WildState::ALLOCATED)) {
                 merged = WildState::MAY_FREED;
-            } else if (it->second == WildState::FREED && state == WildState::ALLOCATED) {
+            }
+            // Case 2: ALLOCATED ⊔ MOVED = MAY_FREED (ownership transferred in loop)
+            else if ((current == WildState::ALLOCATED && back == WildState::MOVED) ||
+                     (current == WildState::MOVED && back == WildState::ALLOCATED)) {
                 merged = WildState::MAY_FREED;
-            } else if (it->second == WildState::ALLOCATED && state == WildState::ALLOCATED) {
-                merged = WildState::ALLOCATED;
-            } else {
-                // Any other combination goes to UNKNOWN
+            }
+            // Case 3: UNINITIALIZED ⊔ (anything != UNINITIALIZED) = UNKNOWN
+            // Variable may not be initialized on first iteration entry path
+            else if (current == WildState::UNINITIALIZED && back != WildState::UNINITIALIZED) {
                 merged = WildState::UNKNOWN;
             }
+            else if (back == WildState::UNINITIALIZED && current != WildState::UNINITIALIZED) {
+                merged = WildState::UNKNOWN;
+            }
+            // Case 4: UNKNOWN or MAY_FREED is the sink (Top) - stays at top
+            else if (current == WildState::UNKNOWN || back == WildState::UNKNOWN ||
+                     current == WildState::MAY_FREED || back == WildState::MAY_FREED) {
+                merged = WildState::UNKNOWN;
+            }
+            // Case 5: Identical terminal states stay the same
+            else if (current == back) {
+                merged = current;
+            }
+            // Case 6: Any other combination -> UNKNOWN (conservative)
+            else {
+                merged = WildState::UNKNOWN;
+            }
+
             if (it->second != merged) {
                 it->second = merged;
                 changed = true;
@@ -183,19 +301,65 @@ bool LifetimeContext::mergeLoopBackEdge(const LifetimeContext& back_edge_state) 
     return changed;
 }
 
+// Constant for widening: max loans before collapsing to unknown sentinel
+static constexpr size_t MAX_LOANS_PER_HOST = 100;
+static const std::string UNKNOWN_LOAN_MARKER = "*UNKNOWN_WIDENED*";
+
 void LifetimeContext::widen() {
     // Widening operator: promote uncertain states to conservative top
     // Called after WIDENING_THRESHOLD iterations to force convergence
+    // This guarantees termination of the fixpoint algorithm
 
-    // For wild states, promote any non-terminal state to UNKNOWN
+    // ========================================================================
+    // Part 1: Wild State Widening
+    // ========================================================================
+    // Promote any non-terminal state to UNKNOWN
     for (auto& [var, state] : wild_states) {
         if (state == WildState::MAY_FREED) {
             state = WildState::UNKNOWN;  // Conservative: might be freed
         }
+        // Also widen ALLOCATED in loops - it may not remain allocated
+        // after arbitrary iterations
+        if (state == WildState::ALLOCATED) {
+            state = WildState::UNKNOWN;
+        }
     }
 
-    // For loans, we keep what we have - the set is already conservative
-    // (union over-approximates the actual loans)
+    // ========================================================================
+    // Part 2: Active Loan Widening (Fixes unbounded loan growth)
+    // ========================================================================
+    // If a host has > MAX_LOANS_PER_HOST active loans, the code is too complex
+    // to analyze precisely. We force convergence by replacing the set with a
+    // single "Universal Unknown Loan" sentinel.
+    for (auto& [host, loans] : active_loans) {
+        if (loans.size() > MAX_LOANS_PER_HOST) {
+            // Unbounded growth detected. This happens in pathological loops
+            // (e.g., while(true) { let r = $h }) where a new borrow is created
+            // in every iteration.
+
+            // Clear and replace with conservative sentinel
+            loans.clear();
+
+            // Create "Top" element: unknown mutable borrow
+            // Mutable because it's exclusive - blocks all other access
+            Loan unknown_loan(UNKNOWN_LOAN_MARKER, true, 0, 0);
+            loans.push_back(unknown_loan);
+
+            // Note: This forces the analysis to assume the variable is
+            // permanently borrowed for the remainder of the scope
+        }
+
+        // Also check for widened sentinel stickiness:
+        // If we already have the unknown sentinel, keep only it
+        if (!loans.empty() && loans[0].borrower == UNKNOWN_LOAN_MARKER) {
+            if (loans.size() > 1) {
+                // Other loans accumulated - collapse back to just sentinel
+                Loan sentinel = loans[0];
+                loans.clear();
+                loans.push_back(sentinel);
+            }
+        }
+    }
 }
 
 /**
@@ -658,6 +822,10 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
             checkReturnStmt(static_cast<ReturnStmt*>(stmt));
             break;
 
+        case ASTNode::NodeType::PASS:
+            checkPassStmt(static_cast<PassStmt*>(stmt));
+            break;
+
         case ASTNode::NodeType::DEFER:
             checkDeferStmt(static_cast<DeferStmt*>(stmt));
             break;
@@ -803,8 +971,10 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
 
     // Check if this is a wild allocation (only if NOT a pin operation)
     // A pin creates a wild pointer to GC memory, not a wild allocation
-    if (stmt->typeName.find("wild") == 0 && stmt->initializer && !stmt->is_pinned_shadow) {
-        // This is an actual wild allocation (e.g., wild int8@:ptr = malloc(...))
+    // Use isWild flag set by parser when 'wild' keyword is present
+    bool is_wild_type = stmt->isWild || stmt->typeName.find("wild") == 0;
+    if (is_wild_type && stmt->initializer && !stmt->is_pinned_shadow) {
+        // This is an actual wild allocation (e.g., wild int8@:ptr = alloc(...))
         stmt->requires_drop = true;
         recordWildAlloc(stmt->varName, stmt);
     }
@@ -812,17 +982,20 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
 
 void BorrowChecker::checkAssignment(BinaryExpr* expr) {
     if (!expr) return;
-    
+
+    std::string target_name;
+
     // Check left side (ensure it's not pinned or borrowed mutably)
     if (expr->left->type == ASTNode::NodeType::IDENTIFIER) {
         IdentifierExpr* target = static_cast<IdentifierExpr*>(expr->left.get());
-        
+        target_name = target->name;
+
         // Check if target is pinned
         if (isPinned(target->name)) {
             addError("Cannot assign to pinned variable '" + target->name + "'", expr);
             return;
         }
-        
+
         // Check if target is borrowed
         auto it = ctx.active_loans.find(target->name);
         if (it != ctx.active_loans.end() && !it->second.empty()) {
@@ -833,13 +1006,52 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
                     loan.creation_line, loan.creation_column);
             return;
         }
-        
+
         // Check for use-after-free
         checkWildUse(target->name, expr);
     }
-    
+
     // Check right side
     checkExpression(expr->right.get());
+
+    // ARIA-021: Handle borrow assignment (r = $x)
+    // When assigning a borrow expression to a reference variable,
+    // we need to create a loan and track the origin
+    if (!target_name.empty() && expr->right->type == ASTNode::NodeType::UNARY_OP) {
+        auto* unary = static_cast<UnaryExpr*>(expr->right.get());
+        if (unary->creates_loan && !unary->loan_target.empty()) {
+            const std::string& host = unary->loan_target;
+            bool is_mutable = (unary->op.type != frontend::TokenType::TOKEN_BANG);  // !$ is immutable
+
+            // Check XOR rule: 1 mutable OR N immutable (not both)
+            auto loans_it = ctx.active_loans.find(host);
+            if (loans_it != ctx.active_loans.end() && !loans_it->second.empty()) {
+                bool has_mutable = std::any_of(loans_it->second.begin(), loans_it->second.end(),
+                    [](const Loan& l) { return l.is_mutable; });
+
+                if (has_mutable) {
+                    const Loan& existing = loans_it->second.front();
+                    addError("Cannot borrow '" + host + "' because it is already mutably borrowed by '" +
+                             existing.borrower + "'",
+                             expr->right.get(),
+                             "Mutable borrow was created here", existing.creation_line, existing.creation_column);
+                    return;
+                } else if (is_mutable) {
+                    const Loan& existing = loans_it->second.front();
+                    addError("Cannot borrow '" + host + "' as mutable because it is already borrowed",
+                             expr->right.get(),
+                             "Existing borrow by '" + existing.borrower + "' created here",
+                             existing.creation_line, existing.creation_column);
+                    return;
+                }
+            }
+
+            // Create the loan
+            Loan loan(target_name, is_mutable, expr->line, expr->column);
+            ctx.active_loans[host].push_back(loan);
+            ctx.loan_origins[target_name].insert(host);
+        }
+    }
 }
 
 void BorrowChecker::checkIfStmt(IfStmt* stmt) {
@@ -1100,9 +1312,135 @@ void BorrowChecker::checkReturnStmt(ReturnStmt* stmt) {
     if (stmt->value) {
         checkExpression(stmt->value.get());
 
-        // TODO: Check that returned references don't point to local variables
-        // This requires analyzing the return value to see if it's a reference
-        // and validating that it doesn't borrow from local scope
+        // ARIA-017: Check that returned references don't point to local variables
+        // This prevents dangling references from escaping function scope
+        checkReferenceEscape(stmt->value.get(), stmt);
+    }
+}
+
+void BorrowChecker::checkPassStmt(PassStmt* stmt) {
+    if (!stmt) return;
+
+    // Check passed value
+    if (stmt->value) {
+        checkExpression(stmt->value.get());
+
+        // ARIA-017: Check that passed references don't point to local variables
+        // This prevents dangling references from escaping function scope
+        checkReferenceEscape(stmt->value.get(), stmt);
+    }
+}
+
+/**
+ * ARIA-017: Check if a reference/borrow expression would escape its scope.
+ * Called when returning or passing values that might be references to locals.
+ *
+ * Detects patterns like:
+ *   func:get_ref = int32$() {
+ *       int32:x = 10;
+ *       pass($x);  // ERROR: Reference to local would escape
+ *   }
+ */
+void BorrowChecker::checkReferenceEscape(ASTNode* value, ASTNode* context) {
+    if (!value) return;
+
+    // Check if this is a borrow expression ($x or !$x)
+    if (value->type == ASTNode::NodeType::UNARY_OP) {
+        UnaryExpr* unary = static_cast<UnaryExpr*>(value);
+
+        // Detect borrow by token type or AST flag
+        bool is_borrow = unary->creates_loan ||
+                         unary->op.type == frontend::TokenType::TOKEN_DOLLAR;
+
+        // Also check for negated borrow (!$x)
+        if (!is_borrow && unary->op.type == frontend::TokenType::TOKEN_BANG &&
+            unary->operand && unary->operand->type == ASTNode::NodeType::UNARY_OP) {
+            UnaryExpr* inner = static_cast<UnaryExpr*>(unary->operand.get());
+            is_borrow = inner->creates_loan ||
+                        inner->op.type == frontend::TokenType::TOKEN_DOLLAR;
+            if (is_borrow) {
+                unary = inner;  // Use inner expression for target extraction
+            }
+        }
+
+        if (is_borrow) {
+            // Extract the borrowed variable name
+            std::string target;
+            if (!unary->loan_target.empty()) {
+                target = unary->loan_target;
+            } else if (unary->operand &&
+                       unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                target = static_cast<IdentifierExpr*>(unary->operand.get())->name;
+            }
+
+            if (!target.empty()) {
+                // Check if target is a local variable (exists in any scope)
+                bool is_local = false;
+                for (const auto& scope_vars : ctx.scope_stack) {
+                    for (const auto& var : scope_vars) {
+                        if (var == target) {
+                            is_local = true;
+                            break;
+                        }
+                    }
+                    if (is_local) break;
+                }
+
+                if (is_local) {
+                    addError("Cannot return reference to local variable '" + target +
+                             "'. The reference would become invalid when the function returns.",
+                             context);
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Helper: Check if a code block contains control flow structures that could
+ * make execution paths ambiguous (e.g., if, while, for, pick).
+ *
+ * Used to detect when defer blocks have complex control flow that might
+ * cause free() calls to not execute on all paths.
+ */
+static bool hasComplexControlFlow(ASTNode* node) {
+    if (!node) return false;
+
+    switch (node->type) {
+        // Direct Control Flow Nodes - these create branching
+        case ASTNode::NodeType::IF:
+        case ASTNode::NodeType::WHILE:
+        case ASTNode::NodeType::FOR:
+        case ASTNode::NodeType::LOOP:
+        case ASTNode::NodeType::TILL:
+        case ASTNode::NodeType::WHEN:
+        case ASTNode::NodeType::PICK:
+        case ASTNode::NodeType::BREAK:
+        case ASTNode::NodeType::CONTINUE:
+        case ASTNode::NodeType::RETURN:  // Early return changes flow
+            return true;
+
+        // Container Nodes - Recurse deeply
+        case ASTNode::NodeType::BLOCK: {
+            BlockStmt* block = static_cast<BlockStmt*>(node);
+            for (const auto& s : block->statements) {
+                if (hasComplexControlFlow(s.get())) return true;
+            }
+            return false;
+        }
+
+        case ASTNode::NodeType::EXPRESSION_STMT: {
+            // Check for ternary expressions which also branch
+            ExpressionStmt* exprStmt = static_cast<ExpressionStmt*>(node);
+            if (exprStmt->expression &&
+                exprStmt->expression->type == ASTNode::NodeType::TERNARY) {
+                return true;
+            }
+            return false;
+        }
+
+        default:
+            return false;
     }
 }
 
@@ -1112,12 +1450,43 @@ void BorrowChecker::checkDeferStmt(DeferStmt* stmt) {
     // ARIA-014: Deep scan the defer block for free() calls
     // Handles: direct free(), wrapper functions, conditionals, method cleanup
     if (stmt->block) {
-        // Perform deep AST scan - this will call recordDeferFree for each found free
-        std::unordered_set<std::string> freed = scanDeferBlockForFree(stmt->block.get(), stmt->line, false);
+        // Step 1: Identify ALL variables that MIGHT be freed (May-Analysis)
+        std::unordered_set<std::string> freed_vars =
+            scanDeferBlockForFree(stmt->block.get(), stmt->line, false);
 
-        // Debug: track what was found (can be removed later)
-        // For now, the recordDeferFree calls inside scanDeferBlockForFree handle the tracking
-        (void)freed;  // Suppress unused warning
+        // Step 2: Safety Analysis for Complex Control Flow
+        // If there are freed variables and the block has complex control flow,
+        // check if the frees are GUARANTEED on all paths
+        if (!freed_vars.empty()) {
+            if (hasComplexControlFlow(stmt->block.get())) {
+                // We have complexity. Verify if frees are guaranteed (Must-Analysis)
+                std::unordered_set<std::string> definitely_freed =
+                    scanDeferBlockForFree(stmt->block.get(), stmt->line, true);
+
+                // Check for discrepancies between May-Set and Must-Set
+                // If a variable is in freed_vars but NOT in definitely_freed,
+                // it means the free is conditional
+                for (const auto& var : freed_vars) {
+                    if (definitely_freed.find(var) == definitely_freed.end()) {
+                        // Found a conditionally freed variable in a complex block
+                        std::string warningMsg =
+                            "Defer block contains conditional/loop - free of '" +
+                            var + "' may not execute on all paths";
+
+                        // Emit warning (using addError with warning prefix)
+                        addError("[Warning] " + warningMsg, stmt);
+
+                        // One warning per defer block is sufficient
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Record the defer obligations (for leak detection at scope exit)
+        for (const auto& var : freed_vars) {
+            recordDeferFree(var, stmt->line);
+        }
     }
 }
 
@@ -1372,12 +1741,87 @@ void BorrowChecker::checkIdentifier(IdentifierExpr* expr) {
 
 void BorrowChecker::checkCallExpr(CallExpr* expr) {
     if (!expr) return;
-    
+
+    // ARIA-020: Track borrow targets in this call to detect aliasing
+    // Maps variable name -> first argument index where it was borrowed
+    std::unordered_map<std::string, size_t> borrow_targets;
+
     // Check all arguments
-    for (const auto& arg : expr->arguments) {
+    for (size_t i = 0; i < expr->arguments.size(); ++i) {
+        const auto& arg = expr->arguments[i];
         checkExpression(arg.get());
+
+        // ARIA-016: Check if argument is a pinned variable being passed by value
+        // Pinned variables cannot be moved (passed by value to functions)
+        // Passing by value would potentially relocate or copy the pinned memory,
+        // violating the address stability guarantee that pins provide
+        if (arg && arg->type == ASTNode::NodeType::IDENTIFIER) {
+            auto* ident = static_cast<IdentifierExpr*>(arg.get());
+            if (isPinned(ident->name)) {
+                addError("Cannot pass pinned variable '" + ident->name +
+                         "' by value. Pinned objects must remain at a stable address. "
+                         "Use a reference ($" + ident->name + ") instead.",
+                         arg.get());
+            }
+
+            // ARIA-019: Check if argument is a borrowed variable being passed by value
+            // Cannot move a variable while it has active borrows
+            auto loans_it = ctx.active_loans.find(ident->name);
+            if (loans_it != ctx.active_loans.end() && !loans_it->second.empty()) {
+                const Loan& loan = loans_it->second.front();
+                addError("Cannot move variable '" + ident->name +
+                         "' because it is currently borrowed by '" + loan.borrower + "'",
+                         arg.get(),
+                         "Variable was borrowed here", loan.creation_line, loan.creation_column);
+            }
+        }
+
+        // ARIA-020: Check for borrow expressions in arguments
+        // Detects aliasing (same variable borrowed multiple times) and
+        // reborrowing (borrowing while existing borrow exists)
+        if (arg && arg->type == ASTNode::NodeType::UNARY_OP) {
+            auto* unary = static_cast<UnaryExpr*>(arg.get());
+            if (unary->creates_loan && !unary->loan_target.empty()) {
+                const std::string& target = unary->loan_target;
+
+                // ARIA-020a: Check for argument aliasing (Bug #6)
+                // Same variable borrowed multiple times in same call
+                auto existing = borrow_targets.find(target);
+                if (existing != borrow_targets.end()) {
+                    addError("Cannot borrow '" + target + "' multiple times in the same function call. "
+                             "This would create aliasing references to the same variable.",
+                             arg.get());
+                } else {
+                    borrow_targets[target] = i;
+                }
+
+                // ARIA-020b: Check for reborrow while existing borrow (Bug #7)
+                // Cannot create new borrow if variable already has active loans
+                auto loans_it = ctx.active_loans.find(target);
+                if (loans_it != ctx.active_loans.end() && !loans_it->second.empty()) {
+                    const Loan& loan = loans_it->second.front();
+                    addError("Cannot borrow '" + target + "' because it is already borrowed by '" +
+                             loan.borrower + "'",
+                             arg.get(),
+                             "Previous borrow was created here", loan.creation_line, loan.creation_column);
+                }
+            }
+        }
     }
-    
+
+    // ARIA-022: Check for wild memory deallocation calls
+    // If this is a free() call, record it for double-free and use-after-free detection
+    if (expr->callee && expr->callee->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* callee = static_cast<IdentifierExpr*>(expr->callee.get());
+        if (isDeallocator(callee->name) && !expr->arguments.empty()) {
+            ASTNode* arg = expr->arguments[0].get();
+            if (arg && arg->type == ASTNode::NodeType::IDENTIFIER) {
+                auto* argIdent = static_cast<IdentifierExpr*>(arg);
+                recordWildFree(argIdent->name, expr);
+            }
+        }
+    }
+
     // TODO: Check function signature for ownership transfer
     // Some functions may take ownership (move) of arguments
     // This requires function signature analysis
@@ -1446,11 +1890,527 @@ void BorrowChecker::addError(const std::string& message, int line, int column) {
 void BorrowChecker::addError(const std::string& message, ASTNode* node,
                             const std::string& related_msg, int related_line, int related_col) {
     if (node) {
-        errors.emplace_back(node->line, node->column, message, 
+        errors.emplace_back(node->line, node->column, message,
                            related_line, related_col, related_msg);
     } else {
         errors.emplace_back(0, 0, message, related_line, related_col, related_msg);
     }
+}
+
+// ============================================================================
+// TBB Value State Methods (Gemini Report: TBB ERR → Release Borrows)
+// ============================================================================
+
+void LifetimeContext::markTBBError(const std::string& var) {
+    tbb_value_states[var] = TBBValueState::ERROR;
+    // When a TBB variable enters ERR state, release loans that originated from it
+    releaseLoansForTBBError(var);
+}
+
+void LifetimeContext::markTBBValid(const std::string& var) {
+    tbb_value_states[var] = TBBValueState::VALID;
+}
+
+bool LifetimeContext::isTBBError(const std::string& var) const {
+    auto it = tbb_value_states.find(var);
+    return it != tbb_value_states.end() && it->second == TBBValueState::ERROR;
+}
+
+void LifetimeContext::releaseLoansForTBBError(const std::string& var) {
+    // Release all loans where the host is the ERR variable
+    // This enables error recovery patterns like:
+    //   let result = torus.compute();
+    //   if result == ERR { torus.reset(); }  // Allowed: ERR releases borrow
+
+    // Remove from active_loans where this var is the host
+    active_loans.erase(var);
+
+    // Also remove from path_loans if paths start with this variable
+    std::vector<AccessPath> paths_to_remove;
+    for (const auto& [path, loans] : path_loans) {
+        if (path.base_var == var) {
+            paths_to_remove.push_back(path);
+        }
+    }
+    for (const auto& path : paths_to_remove) {
+        path_loans.erase(path);
+    }
+
+    // Remove from loan_origins where this var is an origin
+    for (auto& [ref, origins] : loan_origins) {
+        origins.erase(var);
+    }
+}
+
+// ============================================================================
+// Split Borrow Methods (Gemini Report: Access Path Tracking)
+// ============================================================================
+
+const Loan* LifetimeContext::checkPathConflict(const AccessPath& path, bool is_mutable) const {
+    // Check if borrowing 'path' would conflict with existing loans
+    // Uses disjointness analysis to allow split borrows
+
+    // First check path_loans for precise path-based analysis
+    for (const auto& [existing_path, loans] : path_loans) {
+        // Skip if paths are disjoint (e.g., x.a vs x.b)
+        if (path.isDisjointFrom(existing_path)) {
+            continue;
+        }
+
+        // Paths overlap - check for borrow conflicts
+        for (const auto& loan : loans) {
+            // Reserved loans only block mutable borrows
+            if (loan.phase == LoanPhase::RESERVED) {
+                if (is_mutable) {
+                    return &loan;
+                }
+                continue;
+            }
+
+            // Active loans: mutable blocks all, immutable blocks mutable
+            if (loan.is_mutable || is_mutable) {
+                return &loan;
+            }
+        }
+    }
+
+    // Also check legacy active_loans for base variable conflicts
+    auto it = active_loans.find(path.base_var);
+    if (it != active_loans.end()) {
+        for (const auto& loan : it->second) {
+            // If existing loan has no path info, assume it conflicts
+            if (loan.path.fields.empty() && loan.path.base_var == path.base_var) {
+                if (loan.phase == LoanPhase::RESERVED && !is_mutable) {
+                    continue;  // Reserved allows shared reads
+                }
+                if (loan.is_mutable || is_mutable) {
+                    return &loan;
+                }
+            }
+        }
+    }
+
+    return nullptr;  // No conflict
+}
+
+void LifetimeContext::recordPathLoan(const AccessPath& path, const Loan& loan) {
+    path_loans[path].push_back(loan);
+
+    // Also record in legacy active_loans for backwards compatibility
+    active_loans[path.base_var].push_back(loan);
+}
+
+void LifetimeContext::releasePathLoans(const AccessPath& path) {
+    // Remove exact path matches
+    path_loans.erase(path);
+
+    // Also remove from active_loans where borrower matches
+    auto it = active_loans.find(path.base_var);
+    if (it != active_loans.end()) {
+        it->second.erase(
+            std::remove_if(it->second.begin(), it->second.end(),
+                [&path](const Loan& loan) { return loan.path == path; }),
+            it->second.end()
+        );
+    }
+}
+
+// ============================================================================
+// Liveness Analysis (Gemini Report: Loop-Carried Dependencies)
+// ============================================================================
+
+LivenessAnalysis BorrowChecker::computeLoopLiveness(ASTNode* loopBody, ASTNode* loopCondition) {
+    LivenessAnalysis liveness;
+
+    // Collect variables used in the loop condition
+    // These are definitely live at the loop header
+    if (loopCondition) {
+        collectUsedVariables(loopCondition, liveness.live_at_header);
+    }
+
+    // Collect variables used in the loop body
+    // A variable is live at the header if it's used before being redefined
+    if (loopBody) {
+        collectUsedVariables(loopBody, liveness.live_at_header);
+    }
+
+    return liveness;
+}
+
+void BorrowChecker::collectUsedVariables(ASTNode* expr, std::unordered_set<std::string>& used) {
+    if (!expr) return;
+
+    switch (expr->type) {
+        case ASTNode::NodeType::IDENTIFIER: {
+            auto* ident = static_cast<IdentifierExpr*>(expr);
+            used.insert(ident->name);
+            break;
+        }
+
+        case ASTNode::NodeType::BINARY_OP: {
+            auto* binary = static_cast<BinaryExpr*>(expr);
+            collectUsedVariables(binary->left.get(), used);
+            collectUsedVariables(binary->right.get(), used);
+            break;
+        }
+
+        case ASTNode::NodeType::UNARY_OP: {
+            auto* unary = static_cast<UnaryExpr*>(expr);
+            collectUsedVariables(unary->operand.get(), used);
+            break;
+        }
+
+        case ASTNode::NodeType::CALL: {
+            auto* call = static_cast<CallExpr*>(expr);
+            collectUsedVariables(call->callee.get(), used);
+            for (const auto& arg : call->arguments) {
+                collectUsedVariables(arg.get(), used);
+            }
+            break;
+        }
+
+        case ASTNode::NodeType::MEMBER_ACCESS: {
+            auto* member = static_cast<MemberAccessExpr*>(expr);
+            collectUsedVariables(member->object.get(), used);
+            break;
+        }
+
+        case ASTNode::NodeType::INDEX: {
+            auto* index = static_cast<IndexExpr*>(expr);
+            collectUsedVariables(index->array.get(), used);
+            collectUsedVariables(index->index.get(), used);
+            break;
+        }
+
+        case ASTNode::NodeType::BLOCK: {
+            auto* block = static_cast<BlockStmt*>(expr);
+            for (const auto& s : block->statements) {
+                collectUsedVariables(s.get(), used);
+            }
+            break;
+        }
+
+        case ASTNode::NodeType::VAR_DECL: {
+            auto* varDecl = static_cast<VarDeclStmt*>(expr);
+            if (varDecl->initializer) {
+                collectUsedVariables(varDecl->initializer.get(), used);
+            }
+            break;
+        }
+
+        case ASTNode::NodeType::EXPRESSION_STMT: {
+            auto* exprStmt = static_cast<ExpressionStmt*>(expr);
+            collectUsedVariables(exprStmt->expression.get(), used);
+            break;
+        }
+
+        case ASTNode::NodeType::IF: {
+            auto* ifStmt = static_cast<IfStmt*>(expr);
+            collectUsedVariables(ifStmt->condition.get(), used);
+            collectUsedVariables(ifStmt->thenBranch.get(), used);
+            if (ifStmt->elseBranch) {
+                collectUsedVariables(ifStmt->elseBranch.get(), used);
+            }
+            break;
+        }
+
+        case ASTNode::NodeType::WHILE: {
+            auto* whileStmt = static_cast<WhileStmt*>(expr);
+            collectUsedVariables(whileStmt->condition.get(), used);
+            collectUsedVariables(whileStmt->body.get(), used);
+            break;
+        }
+
+        case ASTNode::NodeType::FOR: {
+            auto* forStmt = static_cast<ForStmt*>(expr);
+            collectUsedVariables(forStmt->initializer.get(), used);
+            collectUsedVariables(forStmt->condition.get(), used);
+            collectUsedVariables(forStmt->update.get(), used);
+            collectUsedVariables(forStmt->body.get(), used);
+            break;
+        }
+
+        case ASTNode::NodeType::RETURN: {
+            auto* ret = static_cast<ReturnStmt*>(expr);
+            collectUsedVariables(ret->value.get(), used);
+            break;
+        }
+
+        default:
+            // Other node types don't use variables directly
+            break;
+    }
+}
+
+// ============================================================================
+// Two-Phase Borrowing (Gemini Report: Method Call Patterns)
+// ============================================================================
+
+Loan BorrowChecker::createReservedLoan(const std::string& host, const std::string& reference, ASTNode* node) {
+    // Create a loan in RESERVED phase - acts as shared borrow during argument evaluation
+    // This enables patterns like vec.push(vec.len())
+
+    AccessPath path(host);
+    Loan loan(reference, true /* is_mutable */, node->line, node->column, path, LoanPhase::RESERVED);
+
+    // Check for conflicts with existing loans
+    // Reserved loans only conflict with active mutable borrows
+    const Loan* conflict = ctx.checkPathConflict(path, false);  // Check as shared
+    if (conflict && conflict->blocksMutableAccess()) {
+        addError("Cannot create reserved borrow of '" + host +
+                 "' - already mutably borrowed by '" + conflict->borrower + "'",
+                 node, "Previous mutable borrow here",
+                 conflict->creation_line, conflict->creation_column);
+    }
+
+    // Record the reserved loan
+    ctx.recordPathLoan(path, loan);
+    ctx.loan_origins[reference].insert(host);
+
+    return loan;
+}
+
+bool BorrowChecker::activateLoan(Loan& loan, ASTNode* node) {
+    // Activate a reserved loan to full mutable
+    // Called after method arguments are evaluated
+
+    if (loan.phase == LoanPhase::ACTIVE) {
+        return true;  // Already active
+    }
+
+    // Check for conflicts - now we need exclusive access
+    const Loan* conflict = ctx.checkPathConflict(loan.path, true);  // Check as mutable
+    if (conflict && conflict != &loan) {
+        addError("Cannot activate mutable borrow of '" + loan.path.toString() +
+                 "' - conflicts with borrow by '" + conflict->borrower + "'",
+                 node, "Conflicting borrow here",
+                 conflict->creation_line, conflict->creation_column);
+        return false;
+    }
+
+    // Update phase in path_loans
+    auto it = ctx.path_loans.find(loan.path);
+    if (it != ctx.path_loans.end()) {
+        for (auto& existing : it->second) {
+            if (existing.borrower == loan.borrower &&
+                existing.creation_line == loan.creation_line) {
+                existing.phase = LoanPhase::ACTIVE;
+                break;
+            }
+        }
+    }
+
+    // Update the loan parameter
+    loan.phase = LoanPhase::ACTIVE;
+    return true;
+}
+
+// ============================================================================
+// TBB Error Detection (Gemini Report)
+// ============================================================================
+
+std::string BorrowChecker::detectTBBErrorCheck(ASTNode* condition) {
+    // Detect patterns that check for TBB ERR state:
+    //   x == ERR
+    //   x == TBB8_ERR
+    //   x.is_err()
+    //   !x.is_valid()
+
+    if (!condition) return "";
+
+    if (condition->type == ASTNode::NodeType::BINARY_OP) {
+        auto* binary = static_cast<BinaryExpr*>(condition);
+
+        // Check for x == ERR or x == TBB*_ERR patterns
+        if (binary->op.type == frontend::TokenType::TOKEN_EQUAL_EQUAL) {
+            // Check left == ERR
+            if (binary->left->type == ASTNode::NodeType::IDENTIFIER &&
+                binary->right->type == ASTNode::NodeType::IDENTIFIER) {
+                auto* left = static_cast<IdentifierExpr*>(binary->left.get());
+                auto* right = static_cast<IdentifierExpr*>(binary->right.get());
+
+                // Check if right side is an ERR constant
+                if (right->name == "ERR" ||
+                    right->name.find("_ERR") != std::string::npos ||
+                    (right->name.find("TBB") != std::string::npos &&
+                     right->name.find("ERR") != std::string::npos)) {
+                    return left->name;
+                }
+
+                // Also check left side for ERR
+                if (left->name == "ERR" ||
+                    left->name.find("_ERR") != std::string::npos) {
+                    return right->name;
+                }
+            }
+        }
+    }
+    else if (condition->type == ASTNode::NodeType::CALL) {
+        auto* call = static_cast<CallExpr*>(condition);
+
+        // Check for x.is_err() pattern
+        if (call->callee && call->callee->type == ASTNode::NodeType::MEMBER_ACCESS) {
+            auto* member = static_cast<MemberAccessExpr*>(call->callee.get());
+            if (member->member == "is_err" || member->member == "is_error") {
+                if (member->object && member->object->type == ASTNode::NodeType::IDENTIFIER) {
+                    return static_cast<IdentifierExpr*>(member->object.get())->name;
+                }
+            }
+        }
+    }
+    else if (condition->type == ASTNode::NodeType::UNARY_OP) {
+        auto* unary = static_cast<UnaryExpr*>(condition);
+
+        // Check for !x.is_valid() pattern
+        if (unary->op.type == frontend::TokenType::TOKEN_BANG) {
+            if (unary->operand && unary->operand->type == ASTNode::NodeType::CALL) {
+                auto* call = static_cast<CallExpr*>(unary->operand.get());
+                if (call->callee && call->callee->type == ASTNode::NodeType::MEMBER_ACCESS) {
+                    auto* member = static_cast<MemberAccessExpr*>(call->callee.get());
+                    if (member->member == "is_valid" || member->member == "is_ok") {
+                        if (member->object && member->object->type == ASTNode::NodeType::IDENTIFIER) {
+                            return static_cast<IdentifierExpr*>(member->object.get())->name;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return "";
+}
+
+bool BorrowChecker::isTBBType(const std::string& typeName) const {
+    // Check if the type name indicates a TBB (Ternary Balanced Binary) type
+    // TBB types: tbb8, tbb16, tbb32, tbb64, TBB8, TBB16, etc.
+
+    std::string lower = typeName;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+
+    return lower.find("tbb") != std::string::npos ||
+           lower.find("ternary") != std::string::npos ||
+           lower.find("balanced") != std::string::npos;
+}
+
+// ============================================================================
+// Access Path Extraction (Gemini Report: Split Borrows)
+// ============================================================================
+
+AccessPath BorrowChecker::extractAccessPath(ASTNode* expr) {
+    // Extract the full access path from an expression
+    // Handles: identifier, member access, array subscript
+
+    if (!expr) return AccessPath();
+
+    switch (expr->type) {
+        case ASTNode::NodeType::IDENTIFIER: {
+            auto* ident = static_cast<IdentifierExpr*>(expr);
+            return AccessPath(ident->name);
+        }
+
+        case ASTNode::NodeType::MEMBER_ACCESS: {
+            auto* member = static_cast<MemberAccessExpr*>(expr);
+            AccessPath base = extractAccessPath(member->object.get());
+            base.fields.push_back(member->member);
+            return base;
+        }
+
+        case ASTNode::NodeType::INDEX: {
+            auto* index = static_cast<IndexExpr*>(expr);
+            AccessPath base = extractAccessPath(index->array.get());
+
+            // Try to extract constant index
+            if (index->index && index->index->type == ASTNode::NodeType::LITERAL) {
+                auto* lit = static_cast<LiteralExpr*>(index->index.get());
+                // Try to extract integer value from the variant
+                if (std::holds_alternative<int64_t>(lit->value)) {
+                    base.fields.push_back("[" + std::to_string(std::get<int64_t>(lit->value)) + "]");
+                } else {
+                    // Non-integer literal - use placeholder
+                    base.fields.push_back("[*]");
+                }
+            } else {
+                // Non-constant index - use placeholder
+                base.fields.push_back("[*]");
+            }
+            return base;
+        }
+
+        case ASTNode::NodeType::UNARY_OP: {
+            // Handle dereference and borrow operators
+            auto* unary = static_cast<UnaryExpr*>(expr);
+            if (unary->op.type == frontend::TokenType::TOKEN_DOLLAR ||
+                unary->op.type == frontend::TokenType::TOKEN_STAR ||
+                unary->op.type == frontend::TokenType::TOKEN_AT) {
+                return extractAccessPath(unary->operand.get());
+            }
+            break;
+        }
+
+        default:
+            break;
+    }
+
+    return AccessPath();  // Empty path for unrecognized expressions
+}
+
+void BorrowChecker::recordBorrowWithPath(const AccessPath& path, const std::string& reference,
+                                          bool is_mutable, ASTNode* node) {
+    // Record a borrow with full access path tracking
+    // This enables split borrowing of disjoint fields
+
+    if (path.base_var.empty()) {
+        addError("Cannot borrow from invalid access path", node);
+        return;
+    }
+
+    // Validate lifetime
+    if (!validateLifetime(path.base_var, reference, node)) {
+        return;
+    }
+
+    // Check borrow rules with path awareness
+    if (!checkBorrowRulesWithPath(path, is_mutable, node)) {
+        return;
+    }
+
+    // Create and record the loan
+    Loan loan(reference, is_mutable, node->line, node->column, path);
+    ctx.recordPathLoan(path, loan);
+    ctx.loan_origins[reference].insert(path.base_var);
+}
+
+bool BorrowChecker::checkBorrowRulesWithPath(const AccessPath& path, bool is_mutable, ASTNode* node) {
+    // Check borrow rules with access path awareness
+    // Allows disjoint paths to be borrowed simultaneously
+
+    // Check for pinning on the base variable
+    if (isPinned(path.base_var)) {
+        if (is_mutable) {
+            addError("Cannot borrow pinned variable '" + path.base_var + "' as mutable", node);
+            return false;
+        }
+    }
+
+    // Check for conflicts using path-based analysis
+    const Loan* conflict = ctx.checkPathConflict(path, is_mutable);
+    if (conflict) {
+        if (is_mutable) {
+            addError("Cannot borrow '" + path.toString() + "' as mutable because it conflicts with existing borrow",
+                    node,
+                    "Existing " + std::string(conflict->is_mutable ? "mutable" : "immutable") +
+                    " borrow by '" + conflict->borrower + "' of '" + conflict->path.toString() + "'",
+                    conflict->creation_line, conflict->creation_column);
+        } else {
+            addError("Cannot borrow '" + path.toString() + "' as immutable because it is already borrowed as mutable",
+                    node,
+                    "Mutable borrow by '" + conflict->borrower + "' of '" + conflict->path.toString() + "'",
+                    conflict->creation_line, conflict->creation_column);
+        }
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace sema

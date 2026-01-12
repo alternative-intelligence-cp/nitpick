@@ -678,7 +678,21 @@ AriaResult* aria_rwlock_create(void) {
 #ifdef _WIN32
     InitializeSRWLock(&rwlock->lock);
 #else
-    int result = pthread_rwlock_init(&rwlock->lock, NULL);
+    // ARIA-AUDIT-2026: Prefer writers to prevent safety-critical starvation
+    // Safety monitor updates (force limits, emergency stop) must not be blocked
+    // indefinitely by continuous reader threads (monitoring loops)
+    #ifdef __linux__
+        pthread_rwlockattr_t attr;
+        pthread_rwlockattr_init(&attr);
+        // Explicitly prefer writers to prevent safety-critical starvation
+        pthread_rwlockattr_setkind_np(&attr, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
+        int result = pthread_rwlock_init(&rwlock->lock, &attr);
+        pthread_rwlockattr_destroy(&attr);
+    #else
+        // Non-Linux POSIX: use default (may need platform-specific tuning)
+        int result = pthread_rwlock_init(&rwlock->lock, NULL);
+    #endif
+    
     if (result != 0) {
         free(rwlock);
         return aria_result_err(get_error_message("pthread_rwlock_init"));

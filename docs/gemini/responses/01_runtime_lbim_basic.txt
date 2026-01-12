@@ -1,0 +1,350 @@
+﻿Audit Report: Runtime Safety Analysis of Limb-Based Integral Model (LBIM) Arithmetic in Aria
+Date: January 1, 2026
+Auditor: Senior Safety-Critical Systems Analyst
+Subject: Runtime Safety Audit of LBIM Basic Operations (int128/int256/int512) for Robotic Actuator Control
+Target: src/runtime/math/lbim.cpp (Implementation - Missing), src/backend/ir/codegen_expr.cpp (Code Generation - Analyzed)
+Compliance Standard: SIL-4 (Safety Integrity Level 4) - IEC 61508 / ISO 26262 (ASIL D adaptation)
+________________
+1. Executive Summary
+This document constitutes a comprehensive safety audit of the Limb-Based Integral Model (LBIM) arithmetic operations within the Aria programming language environment. The audit was commissioned under strict directives to evaluate the language's suitability for high-stakes robotic applications, specifically identifying risks related to physical actuator control in proximity to vulnerable human populations. The guiding philosophy for this analysis is "Fail Hard," prioritizing the immediate detection and cessation of operations upon error over execution continuity or developer convenience.
+The scope of this audit focuses on the multi-precision integer arithmetic used in physics simulations, specifically int128, int256, and int512. These types are critical for calculating torque, force vectors, and inverse kinematics in high-frequency control loops. A failure in these operations—such as a silent overflow wrapping a positive force vector to a negative one—presents a catastrophic hazard profile, potentially resulting in unchecked motor actuation.
+1.1 Critical Findings Overview
+The audit process involved a static analysis of the compiler's Intermediate Representation (IR) generation logic found in src/backend/ir/codegen_expr.cpp 1 and a comparative analysis against the verified safe Twisted Balanced Binary (TBB) implementation found in src/runtime/atomic/atomic.c.1
+The investigation uncovered a Critical Architectural Vulnerability in the handling of LBIM types. Unlike the TBB types, which benefit from rigorous, compiler-enforced inline sentinel checks and overflow intrinsics generated directly into the LLVM IR, the LBIM types rely entirely on opaque runtime function calls (aria_lbim_*) without visible safety wrappers at the call site.
+Furthermore, the specific source implementation for the LBIM runtime library (src/runtime/math/lbim.cpp) was not present in the provided compilation artifacts. While the compiler correctly enforces type safety and memory layout to prevent stack corruption (addressing a prior "Type System Breach" finding), the arithmetic logic itself remains a "black box." In a SIL-4 context, an unverified component is functionally equivalent to an unsafe component. The reliance on an external function call without pre-flight validation of inputs (checking for error sentinels) or post-flight validation of outputs (checking for overflow flags) violates the core requirement for "explicitness" and "predictability."
+1.2 Verdict Summary
+The following verdicts are rendered based on the available evidence and the strict threat model:
+* Type System Integrity: ✅ Compliant. The compiler enforces strict type mappings for LBIM structures, preventing memory corruption from size mismatches.1
+* Arithmetic Safety Enforcement: ❌ Critical Failure. The code generation layer fails to emit inline safety checks for LBIM operations, delegating total responsibility to an opaque runtime.
+* Sentinel Propagation: ⚠️ Unclear/High Risk. Without the runtime source, there is no evidence that the "sticky error" sentinel (defined as -1 in the high limb) is respected. The compiler does not enforce it.
+* Determinism: ⚠️ Unverified. Absence of source code prevents verification of deterministic behavior in edge cases (e.g., division by zero).
+1.3 Recommendations
+Immediate remediation is required before deployment in any physical control system. The primary recommendation is to refactor ExprCodegen::generateLBIMBinaryOp to emit inline sentinel checks before the runtime call, ensuring that the safety contract is enforced by the language topology rather than the library implementation. Additionally, the runtime source lbim.cpp must be retrieved and audited to confirm the internal implementation of carry-chain logic and overflow detection.
+________________
+2. System Architecture and Threat Landscape
+To understand the severity of the findings, one must first analyze the unique architectural constraints of the Aria language and the specific physical threats posed by the target application.
+2.1 The Aria Safety Philosophy
+Aria distinguishes itself from general-purpose languages by prioritizing explicitness and stability over developer ergonomics. In the context of the Limb-Based Integral Model (LBIM), this philosophy dictates that every arithmetic operation must have a defined, deterministic outcome. Undefined behavior, such as signed integer overflow in C++, is unacceptable.
+For a robotic assistant designed to interact with neurodivergent children or patients in critical care, the software control loop is part of the physical safety chain. The language runtime effectively acts as a "digital fuse." If a calculation exceeds the physical or logical limits of the system (overflow), the system must "blow the fuse" (return an error sentinel or halt) rather than allowing the "current" (actuator torque) to spike unpredictably.
+2.2 The Threat Model: Integer Overflow in Actuation
+The specific threat scenario driving this audit is the miscalculation of torque in a robotic joint. Consider a feedback loop calculating the force required to gently hold an object:
+
+
+$$F_{command} = K_p \times (P_{target} - P_{current})$$
+In a high-precision physics simulation, $P_{target}$ and $P_{current}$ might be represented as int256 values to maintain sub-micron precision over a large working volume without floating-point drift.
+The Failure Chain:
+1. Event: A sensor glitch or unexpected external force causes a temporary spike in the input values.
+2. Calculation: The subtraction P_target - P_current results in a value that slightly exceeds the maximum capacity of the 256-bit integer (overflow).
+3. Silent Failure: In a standard arithmetic model, this overflows and wraps around. A large positive number becomes a large negative number (or vice versa).
+4. Actuation: The F_command value flips sign and maximizes magnitude. Instead of applying $5N$ of force to hold the hand, the robot applies $-1000N$.
+5. Consequence: The actuator reverses direction at maximum power, potentially crushing the subject's hand.
+Aria's Moral Obligation:
+The prompt explicitly states a moral obligation to eliminate bugs that could cause physical harm. Therefore, reliance on standard wrapping arithmetic is insufficient. The system must detect this overflow and either clamp the value or propagate an error sentinel (ERR) that shuts down the actuator driver safely.
+2.3 The Limb-Based Integral Model (LBIM)
+Aria implements large integers using the Limb-Based Integral Model. This is not merely a library feature but a core compiler construct verified in src/backend/ir/codegen_expr.cpp.1
+Why LBIM?
+Standard LLVM backends often struggle with integers larger than 128 bits. The source code explicitly notes:
+"Large integers use Limb-Based Integral Model (LBIM). Stored as structs of i64 limbs to bypass LLVM IPSCCP/ConstraintElimination bugs (See: github.com/llvm/llvm-project/issues/68751, #56351)".1
+Structure:
+LBIM breaks large integers into arrays of 64-bit "limbs" (machine words).
+* int128: 2 limbs ($2 \times 64$).
+* int256: 4 limbs ($4 \times 64$).
+* int512: 8 limbs ($8 \times 64$).
+This structural decision has profound implications for safety. Arithmetic operations cannot use simple CPU instructions (like add). They must use software algorithms that manually propagate carry and borrow bits across limbs. This complexity increases the surface area for bugs, making the verification of the add, sub, and mul algorithms critical.
+________________
+3. Structural Analysis of Code Generation
+The primary evidence available for this audit is the code generation logic in src/backend/ir/codegen_expr.cpp. This file determines how high-level Aria source code is translated into low-level LLVM instructions. It is the enforcement point for the language's safety guarantees.
+3.1 Verification of Type Mappings
+The first step in safety is ensuring that data types are represented correctly in memory. A mismatch here could lead to buffer overflows or stack corruption.
+Audit of ExprCodegen::getLLVMTypeFromString 1:
+The compiler explicitly maps Aria type names to LLVM structure definitions.
+Aria Type
+	Mapped LLVM Structure
+	Limb Count
+	Verification
+	int128
+	struct.int128
+	2 x i64
+	✅ Matches 128 bits
+	int256
+	struct.int256
+	4 x i64
+	✅ Matches 256 bits
+	int512
+	struct.int512
+	8 x i64
+	✅ Matches 512 bits
+	int1024
+	struct.int1024
+	16 x i64
+	✅ Matches 1024 bits
+	int2048
+	struct.int2048
+	32 x i64
+	✅ Matches 2048 bits
+	int4096
+	struct.int4096
+	64 x i64
+	✅ Matches 4096 bits
+	fix256
+	struct.fix256
+	4 x i64
+	✅ Matches Q128.128 layout
+	Insight:
+The code includes a specific safety fix labeled ARIA-026: "Fail hard on non-primitive types instead of defaulting to i32".1 This is a critical safety feature. Previous iterations likely defaulted unknown types to i32, which would cause a memory corruption if a 16-byte int128 were treated as a 4-byte i32. The current implementation throws a std::runtime_error, effectively preventing compilation of mismatched types. This satisfies the requirement: "Verify EVERY type mapping. Fail hard on unknowns. No silent defaults."
+Verdict on Type Mapping: ✅ Compliant. The structural foundation is sound.
+3.2 The Code Generation Strategy: TBB vs. LBIM
+A crucial finding of this audit is the divergence in how Twisted Balanced Binary (TBB) types are handled compared to LBIM types. This contrast highlights the deficiency in the LBIM implementation.
+3.2.1 The TBB Safety Standard (The Baseline)
+The TBB types (tbb8, tbb16, tbb32, tbb64) are described as "symmetric signed with error sentinel".1 The compiler generates extensive inline safety checks for these types.
+Evidence from generateTBBBinaryOp 1:
+1. Sentinel Retrieval: llvm::Value* sentinel = getTBBSentinel(type);
+2. Input Validation:
+C++
+llvm::Value* lhsIsErr = builder.CreateICmpEQ(left, sentinel, "lhs_is_err");
+llvm::Value* rhsIsErr = builder.CreateICmpEQ(right, sentinel, "rhs_is_err");
+
+3. Arithmetic with Overflow:
+C++
+llvm::Function* saddFunc = llvm::Intrinsic::getDeclaration(..., llvm::Intrinsic::sadd_with_overflow,...);
+llvm::Value* resStruct = builder.CreateCall(saddFunc, {left, right}, "sadd_ovf");
+
+4. Sentinel Collision Check: The code explicitly checks if a valid result coincidentally equals the sentinel value.
+5. Branchless Selection:
+C++
+llvm::Value* failFinal = builder.CreateOr(failTemp, resIsSentinel, "fail_final");
+return builder.CreateSelect(failFinal, sentinel, mathResult, "tbb_result");
+
+Implication: For TBB types, safety is guaranteed by the compiler. Even if the standard library were missing or corrupt, the binary operation would still perform these checks because they are emitted as raw LLVM instructions.
+3.2.2 The LBIM Safety Gap (The Vulnerability)
+In stark contrast, the LBIM types utilize ExprCodegen::generateLBIMBinaryOp.1 This function performs none of the inline checks seen in the TBB logic.
+Evidence from generateLBIMBinaryOp 1:
+
+
+C++
+
+
+
+
+// Build function name based on type
+if (op == frontend::TokenType::TOKEN_PLUS) {
+   opSuffix = "_add";
+}
+//... (omitted operator mapping)
+
+std::string funcName = "aria_lbim_" + opSuffix + bitWidth; // e.g., aria_lbim_add128
+
+// Generate the call
+llvm::Value* result = builder.CreateCall(runtimeFunc, {left, right}, lbimType + "_result");
+return result;
+
+Critical Analysis:
+The compiler blindly delegates the operation to an external runtime function (e.g., aria_lbim_add128).
+   1. No Input Validation: There is no check to see if left or right contains the sentinel value (-1 in the high limb) before the call.
+   2. No Overflow Handling: The compiler assumes the runtime function returns a correct result. It does not check for an error flag or compare the result against the inputs to detect wrapping.
+   3. Black Box Trust: The safety of the robotic system now depends entirely on the internal implementation of aria_lbim_add128. If that C++ function is implemented as a standard return a + b; (which is common for performance optimization), the system is unsafe.
+This architecture violates the "Fail Hard" requirement at the compiler level. While the runtime might be safe, the compiler does not ensure it is safe. In SIL-4 systems, safety features should ideally be redundant or enforced at the highest possible level (the language semantics).
+________________
+4. Detailed Audit of Specific Functions
+Given the absence of the runtime source file src/runtime/math/lbim.cpp, we must audit the contract defined by the compiler and infer the risks based on the missing verification.
+4.1 Audit Item 1: int128_add() function
+Context: 128-bit addition is the fundamental building block for physics integration steps (e.g., updating position $P_{new} = P_{old} + V \times \Delta t$).
+Compliance Matrix:
+
+
+Requirement
+	Implementation Status
+	Analysis & Risk
+	Verify limb-wise addition carries
+	⚠️ Unverified
+	The implementation logic is hidden in the missing lbim.cpp. A correct implementation requires adding the lower 64-bit limbs, capturing the carry bit (0 or 1), and adding it to the sum of the upper limbs. Without source, we cannot verify if the carry is dropped.
+	Check overflow detection
+	❌ Bug Found
+	The compiler 1 emits a direct call to aria_lbim_add128. It does not wrap this call in checked_add logic. If aria_lbim_add128 simply performs native addition, overflow will wrap silently.
+	Confirm sentinel propagation
+	❌ Bug Found
+	The prompt specifies the sentinel is -1 in the high limb. The generateLBIMBinaryOp function 1 contains zero logic to check for this sentinel. It passes the operands directly to the runtime. If the runtime function assumes valid inputs for speed, ERR + 5 could result in a non-error value (e.g., (-1, -1) + (0, 5) wrapping to (0, 4)), breaking the sticky error chain.
+	Deep Insight:
+The use of int128 suggests the developers are using the __int128 type support available in GCC/Clang C++ runtimes. If aria_lbim_add128 is implemented as:
+
+
+C++
+
+
+
+
+aria_int128_t aria_lbim_add128(aria_int128_t a, aria_int128_t b) {
+   unsigned __int128 res = (unsigned __int128)a.limbs... +...;
+   // return struct cast
+}
+
+This implementation would be unsafe because standard C++ __int128 wraps on overflow. The absence of explicit checks in the compiler makes this a high-probability risk vector.
+Verdict: ❌ Bug Found.
+Location: src/backend/ir/codegen_expr.cpp, ExprCodegen::generateLBIMBinaryOp.
+Root Cause: Failure to emit inline sentinel checks and overflow validation for LBIM types, breaking the pattern established by TBB types.
+4.2 Audit Item 2: int128_sub() function
+Context: Subtraction is critical for calculating error terms in PID controllers ($Error = Setpoint - ProcessVariable$).
+Compliance Matrix:
+Requirement
+	Implementation Status
+	Analysis & Risk
+	Verify borrow propagation
+	⚠️ Unverified
+	Requires sbb (subtract with borrow) logic. Missing source prevents verification.
+	Check underflow detection
+	❌ Bug Found
+	Similar to addition, the compiler provides no guardrails. Underflow in a PID controller is catastrophic; a large negative error term wrapping to a large positive one causes the controller to accelerate into the error rather than correcting it.
+	Confirm sentinel propagation
+	❌ Bug Found
+	No pre-call validation in codegen_expr.cpp.
+	Scenario Analysis:
+Consider a robot arm holding a position at x = 100. The target moves to x = 50. The error is 50 - 100 = -50. If int128 underflows (e.g., calculating 0 - 1 resulting in MAX_INT), the controller perceives an immense positive error. It commands maximum reverse torque. The compiler's failure to enforce checks means we are relying solely on the opaque aria_lbim_sub128 to handle this correctly.
+Verdict: ❌ Bug Found.
+Location: src/backend/ir/codegen_expr.cpp.
+Proposed Fix: Modify generateLBIMBinaryOp to check operands against the sentinel mask before emitting the CallInst.
+4.3 Audit Item 3: int128_mul() function
+Context: Multiplication scales forces and is used in unit conversions.
+Compliance Matrix:
+Requirement
+	Implementation Status
+	Analysis & Risk
+	Verify limb cross-products
+	⚠️ Unverified
+	128-bit multiplication requires four 64-bit multiplications and careful summation of partial products. The complexity makes implementation errors likely (e.g., forgetting to add the carry from the lower partial products to the upper ones).
+	Check silent overflow
+	⚠️ High Risk
+	Multiplication overflows much faster than addition. The risk of result truncation is severe. Without the runtime source, we cannot know if the implementation checks if (a!= 0 && result / a!= b).
+	Confirm result fits
+	❌ Bug Found
+	The return type of aria_lbim_mul128 is struct.int128. In reality, multiplying two 128-bit numbers produces a 256-bit result. To be safe, the operation must fail if the upper 128 bits of the true result are non-zero. The compiler blindly accepts the truncated 128-bit return value.
+	Verdict: ❌ Bug Found / High Risk.
+Location: src/backend/ir/codegen_expr.cpp.
+Root Cause: The function signature implies a truncated return (int128 * int128 -> int128). Safe multiplication usually requires returning a result-with-status or a larger type. The current definition invites silent overflow.
+4.4 Audit Item 4: int256_add() and int256_sub()
+Context: int256 is likely used for the global coordinate system or accumulated energy totals over long durations.
+Compliance Matrix:
+
+
+Requirement
+	Implementation Status
+	Analysis & Risk
+	Verify 256-bit patterns
+	✅ Compliant
+	The IR generator correctly uses aria_lbim_add256 and aria_lbim_sub256, matching the int128 pattern. The type mapping creates a 4-limb struct correctly.
+	Limb count consistency
+	✅ Compliant
+	ExprCodegen::getLLVMTypeFromString correctly allocates 4 limbs for int256.1
+	Copy-paste errors
+	⚠️ Unverified
+	Without lbim.cpp, we cannot check if the developer copy-pasted int128 logic and failed to update loop bounds (e.g., looping to 2 instead of 4).
+	Insight:
+The risk here is scalability of complexity. Implementing add128 requires handling one internal carry. Implementing add256 (4 limbs) requires a loop or unrolled chain of 3 internal carries. If the runtime implementation was manually unrolled (common for performance), the probability of a "copy-paste error" where index 2 is used instead of 3 is non-trivial. The compiler's opaque call hides this risk.
+Verdict: ⚠️ Unclear (Source Missing).
+Constraint: Cannot verify arithmetic correctness without runtime source.
+4.5 Audit Item 5: int512_mul()
+Context: Extremely high precision arithmetic, possibly for cryptographic signing of motor commands or secure logging.
+Compliance Matrix:
+Requirement
+	Implementation Status
+	Analysis & Risk
+	Verify intermediate overflow
+	⚠️ Unverified
+	int512 multiplication involves 8 limbs. A naive $O(N^2)$ implementation involves 64 partial products. Managing the intermediate sums without overflowing the accumulator variables is difficult in C++.
+	Final assembly of limbs
+	⚠️ Unverified
+	Assembling 64 partial products into 8 result limbs is highly error-prone.
+	Zero/One/-1 behavior
+	⚠️ Unverified
+	Standard edge cases. Mul by 0 must clear all 8 limbs. Mul by -1 must perform a perfect 2's complement negation across 8 limbs.
+	Verdict: ⚠️ Unclear / High Risk.
+Implication: If int512 is used for security (cryptography), a bug here implies a security vulnerability. If used for physics, it implies a stability hazard.
+________________
+5. The Comparative Safety Gap: TBB vs. LBIM
+The most damning evidence found in the audit is the inconsistency within codegen_expr.cpp itself. By comparing the handling of TBB types and LBIM types, we can clearly see the missing safety features.
+Feature
+	TBB Implementation (Verified Safe)
+	LBIM Implementation (Current)
+	Overflow Detection
+	Uses llvm.sadd.with.overflow intrinsic.
+	Relies on external C++ function logic (unknown).
+	Sentinel Check
+	Inline icmp eq %val, %sentinel generated by compiler.
+	None. Passed directly to C++.
+	Branching
+	Branchless select instruction used for safety.
+	Standard function call overhead.
+	Trust Model
+	"Trust but Verify" (Compiler enforces rules).
+	"Blind Trust" (Runtime must be perfect).
+	Determinism
+	Hardcoded in IR.
+	Dependent on linked library version.
+	Analysis:
+The TBB implementation proves that the Aria compiler developers know how to implement "Fail Hard" safety. The fact that this logic was not applied to LBIM suggests either:
+   1. Premature Optimization: Runtime calls were preferred to keep the IR size small.
+   2. Incomplete Feature: LBIM support was added later (indicated by comment ARIA-024) and has not yet been brought up to the TBB safety standard.
+This discrepancy confirms that LBIM is currently a "second-class citizen" regarding safety, which is unacceptable for code controlling physical actuators.
+________________
+6. Recommendations and Remediation
+To achieve SIL-4 compliance and safeguard the vulnerable populations intended to interact with these robots, the following actions are mandatory.
+6.1 Priority 1: Architectural Refactoring (Compiler Level)
+The safety logic must be hoisted from the runtime library into the compiler IR generation. ExprCodegen::generateLBIMBinaryOp must be rewritten.
+Current Logic:
+
+
+C++
+
+
+
+
+return builder.CreateCall(func, {left, right});
+
+Required Logic (Pseudocode for Fix):
+
+
+C++
+
+
+
+
+// 1. Generate Sentinel Constants
+llvm::Value* sent = getLBIMSentinel(bitWidth); 
+
+// 2. Inline Input Checks
+llvm::Value* l_bad = builder.CreateCall(isErrFunc, {left});
+llvm::Value* r_bad = builder.CreateCall(isErrFunc, {right});
+llvm::Value* inputs_bad = builder.CreateOr(l_bad, r_bad);
+
+// 3. Generate Operation Call
+llvm::Value* raw_res = builder.CreateCall(mathFunc, {left, right});
+
+// 4. Inline Result Validation (e.g., check overflow flag from struct)
+llvm::Value* res_bad = builder.CreateExtractValue(raw_res, 1); // Assuming {res, err} return
+
+// 5. Select Final Result
+llvm::Value* failure = builder.CreateOr(inputs_bad, res_bad);
+return builder.CreateSelect(failure, sent, raw_res);
+
+This change ensures that even if the runtime library is buggy or swapped out, the sentinel propagation ("Sticky Error") remains enforced by the compiled binary.
+6.2 Priority 2: Runtime Implementation Audit
+The missing file src/runtime/math/lbim.cpp must be located and audited. The audit must confirm:
+   1. Carry Propagation: Use of compiler intrinsics (e.g., __builtin_add_overflow or _addcarry_u64) rather than manual if (sum < a) checks, which can be optimized away by aggressive C++ compilers.
+   2. Sentinel Definition: Verification that the specific bit pattern for the sentinel (e.g., High Limb = 0xFF...FF) is consistently defined across both the compiler and the runtime.
+6.3 Priority 3: Fuzz Testing for Large Integers
+Given the complexity of int512_mul, static analysis is insufficient. A property-based fuzzing harness must be integrated into the CI/CD pipeline.
+   * Property: mul(a, b) == mul(b, a) (Commutativity).
+   * Property: mul(a, 1) == a (Identity).
+   * Property: mul(ERR, a) == ERR (Sentinel Propagation).
+   * Property: mul(MAX, 2) == ERR (Overflow Detection).
+6.4 Safety Policy Update
+The comment // ARIA-026: SAFETY FIX - Fail hard on non-primitive types suggests a reactive approach to safety. A proactive policy should be instituted where all numerical types, regardless of size, must utilize the generateTBBBinaryOp pattern (inline safety) rather than function calls, or the function calls must return a {value, error} tuple that the compiler is forced to check.
+________________
+7. Conclusion
+The audit of the Aria LBIM basic operations reveals a sound type system but a deficient execution model. While the compiler successfully prevents memory corruption via strict type mapping, it fails to enforce arithmetic safety for large integers.
+By relying on opaque runtime calls without inline validation, the int128, int256, and int512 types currently lack the "explicitness" and "predictability" required for SIL-4 robotic control. A robotic arm controlled by this code runs a significant risk of silent integer overflow leading to uncontrolled actuation.
+Final Verdict: The LBIM subsystem is currently NON-COMPLIANT with the stated safety requirements. Use of int128/int256/int512 in the robotic control loop is unsafe until the compiler is updated to enforce sentinel checks and overflow detection at the IR level.
+Signed,
+Senior Safety-Critical Systems Analyst
+January 1, 2026
+Works cited
+   1. aria_source_full.txt

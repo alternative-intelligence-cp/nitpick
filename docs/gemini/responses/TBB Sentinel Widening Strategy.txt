@@ -1,0 +1,473 @@
+﻿ARIA-018: Architectural Specification and Implementation Strategy for Sentinel-Preserving TBB Widening
+1. Executive Summary
+The integrity of numerical computation in systems programming has long been compromised by the inherent asymmetry of standard integer representations. The Aria programming language, in its pursuit of rigorous safety and deterministic behavior, introduces Twisted Balanced Binary (TBB) arithmetic—a paradigm shift that redefines the mathematical foundations of machine integers. By enforcing symmetric valid ranges and reserving the minimum representable value of the underlying two's complement storage as an explicit, sticky error sentinel (ERR), Aria eliminates a vast class of integer overflow vulnerabilities that plague legacy languages like C and C++.
+However, the transition from theoretical specification to compiler implementation has revealed a critical discontinuity: the process of type widening (casting a narrower type to a wider type). Current investigations into the Aria compiler backend (src/backend/ir/codegen_expr.cpp) indicate a reliance on standard LLVM sign-extension instructions (sext) for these operations. While efficient, standard sign-extension is semantically oblivious to the TBB sentinel constraint. An 8-bit sentinel value (-128), when sign-extended to 16 bits (-128), becomes a valid numerical value within the wider domain, effectively "healing" the error state. This phenomenon, termed "Sentinel Healing," undermines the "Sticky Error" guarantee that is central to Aria's safety promises.1
+This report establishes the definitive architectural specification for ARIA-018, a mandated compiler enhancement designed to enforce sentinel preservation during TBB widening operations. We propose the implementation of a branchless, sentinel-aware intrinsic, tbb_widen<T>, which leverages LLVM's conditional selection logic (select) to maintain error continuity without introducing control flow pipeline hazards.
+The following analysis is exhaustive. It deconstructs the mathematical theory of TBB types, maps the precise integration points within the Aria compiler's frontend and backend, provides cycle-accurate LLVM IR generation patterns, and outlines a rigorous verification strategy. By adopting this specification, the Aria project will close a critical safety gap, ensuring that the axiom "Once ERR, Always ERR" holds true across all type domains and bit widths.
+2. Theoretical Framework: The Arithmetic of Asymmetry
+To appreciate the necessity of ARIA-018, one must first examine the historical and mathematical context of machine arithmetic. The vulnerabilities inherent in modern systems are often artifacts of decisions made in the hardware designs of the mid-20th century.
+2.1 The Two's Complement Singularity
+Standard signed integer arithmetic, as implemented in virtually all modern Arithmetic Logic Units (ALUs), utilizes two's complement representation. This system is favored for its simplicity: addition and subtraction logic remains identical for signed and unsigned numbers. However, it introduces a fundamental domain asymmetry.
+An $N$-bit two's complement integer can represent $2^N$ distinct values. Because one value is reserved for zero, the remaining $2^N - 1$ values cannot be evenly divided between positive and negative numbers. The range is defined as $[-2^{N-1}, 2^{N-1}-1]$.
+For an 8-bit integer (int8), the range is $[-128, +127]$.
+* There are 128 negative numbers ($-1$ to $-128$).
+* There are 127 positive numbers ($+1$ to $+127$).
+* There is one zero.
+This results in a "singular" value: $-128$ (0x80). This number has no positive additive inverse within the bit width. Computing abs(-128) or -(-128) is mathematically impossible in 8 bits, leading to the infamous INT_MIN overflow bugs in C and C++. In legacy systems, these operations typically wrap around to the negative value itself or trigger undefined behavior.1
+2.2 The Twisted Balanced Binary Solution
+Aria addresses this asymmetry not by changing the hardware, but by "twisting" the interpretation of the bit patterns via the compiler's type system. The TBB specification defines the valid domain of an $N$-bit integer as strictly symmetric:
+
+
+$$\text{Domain}(TBB_N) = \{ z \in \mathbb{Z} \mid -(2^{N-1}-1) \le z \le (2^{N-1}-1) \}$$
+For tbb8, this restricts the valid range to $[-127, +127]$. This leaves one bit pattern unused: the minimum representable value (e.g., -128 or 0x80). Aria repurposes this "singularity" as the Error Sentinel (ERR).
+This architectural decision has profound implications:
+1. Symmetry: Every valid TBB number $x$ has a valid negation $-x$.
+2. Error Representation: Failed operations (overflow, division by zero) do not wrap; they collapse the result to ERR.
+3. Sticky Propagation: The ALU logic is augmented (via compiler intrinsics) such that for any operator $\odot$, $x \odot \text{ERR} = \text{ERR}$.1
+2.3 The Widening Vulnerability: A Mathematical Analysis
+The flaw addressed by ARIA-018 arises when mapping between TBB domains of different cardinalities. Let $S_8$ be the set of bit patterns in tbb8 and $S_{16}$ be the set of bit patterns in tbb16.
+The standard conversion function, sign-extension ($E$), is defined as preserving the numerical value:
+
+
+
+
+$$E(v) = v$$
+When applied to the tbb8 sentinel $s_8 = -128$:
+
+
+
+
+$$E(-128) = -128$$
+In the destination domain tbb16:
+* Valid Range: $[-32,767, +32,767]$
+* Sentinel $s_{16}$: $-32,768$ (0x8000)
+The result of the extension, $-128$ (0xFF80), falls squarely within the valid range of tbb16. The semantic metadata—that this value represents an error state—is stripped during the translation. This is "Sentinel Healing."
+Impact Scenario:
+Consider a shell script utilizing tbb8 for a retry counter.1 If the counter overflows to ERR, and is then cast to tbb16 to interface with a system timer, the timer receives a valid value of -128 ms (likely treated as 0 or ignored), rather than the ERR signal which should halt the script. The system continues execution in an undefined state.
+2.4 The ARIA-018 Correction Function
+To fix this, we must define a new mapping function $W(v)$ that introduces a discontinuity at the sentinel value.
+
+
+$$W(v) = \begin{cases} s_{dst} & \text{if } v = s_{src} \\ E(v) & \text{otherwise} \end{cases}$$
+This function cannot be implemented by a simple CPU instruction. It requires logic to detect the source sentinel and injection of the destination sentinel.
+3. Detailed Sentinel Mapping and Widening Matrix
+Precise definition of sentinel values is a prerequisite for code generation. Based on the ecosystem research 1, the following constants are authoritative for the Aria compiler (LLVM backend).
+3.1 Sentinel Value Definitions
+Type
+	Bit Width
+	Valid Symmetric Range
+	ERR Sentinel (Decimal)
+	ERR Sentinel (Hex)
+	ERR Sentinel (Binary)
+	tbb8
+	8
+	$\pm 127$
+	-128
+	0x80
+	1000 0000
+	tbb16
+	16
+	$\pm 32,767$
+	-32,768
+	0x8000
+	10...00
+	tbb32
+	32
+	$\pm 2,147,483,647$
+	-2,147,483,648
+	0x80000000
+	10...00
+	tbb64
+	64
+	$\pm 9.22 \times 10^{18}$
+	INT64_MIN
+	0x80...00
+	10...00
+	Note on tbb64: The sentinel is INT64_MIN (-9,223,372,036,854,775,808). As confirmed in the Aria Utilities research (atar), this is used for file sizes and offsets.1
+3.2 The Widening Matrix
+The following matrix defines the transformational logic for all permutations of TBB casting. "Direct" implies the standard sext is sufficient (or no-op). "Sentinel Check" implies the ARIA-018 logic is required.
+Source \ Dest
+	tbb8
+	tbb16
+	tbb32
+	tbb64
+	tbb8
+	Identity (No-op)
+	WIDEN (Check -128)
+	WIDEN (Check -128)
+	WIDEN (Check -128)
+	tbb16
+	Narrowing (Sat)
+	Identity (No-op)
+	WIDEN (Check -32k)
+	WIDEN (Check -32k)
+	tbb32
+	Narrowing (Sat)
+	Narrowing (Sat)
+	Identity (No-op)
+	WIDEN (Check INT_MIN)
+	tbb64
+	Narrowing (Sat)
+	Narrowing (Sat)
+	Narrowing (Sat)
+	Identity (No-op)
+	Key Insight: While narrowing casts are inherently lossy and require saturation logic (discussed in Section 7), the widening casts are strictly information-preserving only if the sentinel discontinuity is enforced.
+4. Compiler Frontend: Integration Strategy
+The implementation begins in the compiler frontend, where the Abstract Syntax Tree (AST) is analyzed. The TypeChecker is responsible for semantic validity and injecting the necessary metadata for the backend.
+4.1 Integration Point: TypeChecker::visit(CastExpr)
+In the Aria compiler architecture 1, the TypeChecker visitor traverses the AST. When it encounters a CastExpr, it must distinguish between standard integer casts (which use sext) and TBB casts.
+Current Logic (Hypothetical):
+
+
+C++
+
+
+
+
+void TypeChecker::visit(CastExpr* expr) {
+   Type* src = expr->getExpr()->getType();
+   Type* dst = expr->getTargetType();
+   if (src->isNumeric() && dst->isNumeric()) {
+       expr->setKind(CastKind::IntegralCast); // Default LLVM sext
+   }
+}
+
+Proposed ARIA-018 Logic:
+The TypeChecker must explicitly tag TBB widening operations. We propose introducing a new CastKind: CastKind::TBB_Widen.
+
+
+C++
+
+
+
+
+void TypeChecker::visit(CastExpr* expr) {
+   Type* src = expr->getExpr()->getType();
+   Type* dst = expr->getTargetType();
+
+   if (src->isTBB() && dst->isTBB()) {
+       if (src->width() < dst->width()) {
+           // ARIA-018: Enforce sentinel preservation
+           expr->setKind(CastKind::TBB_Widen);
+           return;
+       } else if (src->width() > dst->width()) {
+           // Narrowing: Warn on potential saturation/loss
+           diagnostics.report(Warning, expr->loc, 
+               "Narrowing TBB cast may saturate or destroy sentinel");
+           expr->setKind(CastKind::TBB_Narrow); // See Section 7
+           return;
+       }
+   }
+   
+   // Fallback for standard ints or same-width casts
+   if (src->isNumeric() && dst->isNumeric()) {
+       expr->setKind(CastKind::IntegralCast);
+   }
+}
+
+4.2 Implicit Cast Injection
+Implicit casts occur during binary operations (e.g., tbb8 + tbb16). The Aria specification mandates promotion to the wider type.1 The TypeChecker::checkBinaryOp method is responsible for inserting implicit casts.
+Requirement: When injecting an implicit cast for TBB types, the TypeChecker must construct a CastExpr with CastKind::TBB_Widen, not a generic integral cast. If this is missed, mixed-type arithmetic will suffer from sentinel healing.
+Example Scenario:
+
+
+Code snippet
+
+
+
+
+tbb8:a = ERR;
+tbb16:b = 100;
+tbb16:c = a + b;
+
+1. Parser creates BinaryOp(Add, Var(a), Var(b)).
+2. TypeChecker sees mismatched widths (8 vs 16).
+3. Promotes a to tbb16.
+4. Critical Step: Inserts ImplicitCast(a, tbb16, TBB_Widen).
+5. Resulting AST: BinaryOp(Add, ImplicitCast(a, tbb16, TBB_Widen), Var(b)).
+5. Backend Implementation: LLVM IR Code Generation
+The backend ExprCodegen transforms the AST into LLVM IR. This is where the branchless logic is synthesized.
+5.1 The Branchless Imperative
+Aria aims for high-performance systems programming. Introducing conditional jumps (br) for simple type conversions is unacceptable due to:
+1. Pipeline Stalls: Branch mispredictions flush the CPU pipeline, costing 10-20 cycles.
+2. Basic Block Explosion: Jumps create new basic blocks, complicating control flow graphs and hindering downstream optimizations like vectorization.
+Therefore, we utilize the LLVM select instruction. On modern architectures, this lowers to conditional move instructions:
+* x86-64: cmov (Conditional Move).
+* AArch64: csel (Conditional Select).
+These instructions execute in constant time (typically 1-2 cycles) and do not disrupt the fetch-decode-execute pipeline.1
+5.2 LLVM IR Pattern Specification
+We define the transformation logic $W(v)$ in LLVM IR. The process involves three steps:
+   1. Sentinel Check (icmp): Compare input to source sentinel.
+   2. Speculative Extension (sext): Extend the input using standard logic. This calculates the "healed" value.
+   3. Selection (select): If the check passed, choose the destination sentinel. Otherwise, choose the extended value.
+Pattern A: tbb8 to tbb16
+
+
+Code snippet
+
+
+
+
+; Function: tbb_widen_8_16
+; Input: %val (i8)
+; Output: %result (i16)
+
+; 1. Check for source sentinel (-128 / 0x80)
+;    The compiler backend knows the width is 8, so -128 is the constant.
+%is_err = icmp eq i8 %val, -128
+
+; 2. Speculative Extension
+;    This is safe because sext has no side effects.
+%val_ext = sext i8 %val to i16
+
+; 3. Conditional Selection
+;    If is_err is true (1), return -32768 (Target Sentinel)
+;    Else, return %val_ext
+%result = select i1 %is_err, i16 -32768, i16 %val_ext
+
+Pattern B: tbb32 to tbb64
+
+
+Code snippet
+
+
+
+
+; Function: tbb_widen_32_64
+; Input: %val (i32)
+; Output: %result (i64)
+
+; 1. Check for source sentinel (INT32_MIN)
+%is_err = icmp eq i32 %val, -2147483648
+
+; 2. Speculative Extension
+%val_ext = sext i32 %val to i64
+
+; 3. Conditional Selection
+;    Target Sentinel is INT64_MIN (-9223372036854775808)
+%result = select i1 %is_err, i64 -9223372036854775808, i64 %val_ext
+
+5.3 Implementation in ExprCodegen
+The implementation requires modifying src/backend/ir/codegen_expr.cpp. We introduce a helper method generateTBBWiden.
+
+
+C++
+
+
+
+
+// src/backend/ir/codegen_expr.cpp
+
+llvm::Value* ExprCodegen::generateTBBWiden(llvm::Value* srcVal, llvm::Type* dstType) {
+   llvm::Type* srcType = srcVal->getType();
+   unsigned srcWidth = srcType->getIntegerBitWidth();
+   unsigned dstWidth = dstType->getIntegerBitWidth();
+
+   // 1. Define Sentinels using APInt to handle arbitrary widths
+   //    getSignedMinValue creates a value with only the sign bit set (100...0)
+   llvm::APInt srcSentinelInt = llvm::APInt::getSignedMinValue(srcWidth);
+   llvm::APInt dstSentinelInt = llvm::APInt::getSignedMinValue(dstWidth);
+
+   llvm::Value* srcSentinel = llvm::ConstantInt::get(ctx, srcSentinelInt);
+   llvm::Value* dstSentinel = llvm::ConstantInt::get(ctx, dstSentinelInt);
+
+   // 2. Emit Branchless Logic
+   //    icmp eq src, sentinel
+   llvm::Value* isErr = builder.CreateICmpEQ(srcVal, srcSentinel, "tbb.is_err");
+   
+   //    sext src to dst
+   llvm::Value* extended = builder.CreateSExt(srcVal, dstType, "tbb.sext");
+   
+   //    select is_err, dst_sentinel, extended
+   return builder.CreateSelect(isErr, dstSentinel, extended, "tbb.widen");
+}
+
+llvm::Value* ExprCodegen::codegenCastExpr(const CastExpr* expr) {
+   //... existing logic...
+   
+   if (expr->getKind() == CastKind::TBB_Widen) {
+       llvm::Value* srcVal = codegen(expr->getExpr());
+       llvm::Type* dstType = mapType(expr->getTargetType());
+       return generateTBBWiden(srcVal, dstType);
+   }
+
+   //... existing integral cast logic...
+}
+
+This implementation is robust because it uses APInt. This ensures that even if Aria introduces exotic types (like tbb24 or tbb48), the sentinel logic (sign bit only) remains correct without hardcoding constants.
+6. Microarchitectural Impact Analysis
+To validate the "zero overhead" claim, we analyze the assembly output for x86-64 and ARM64.
+6.1 x86-64 Assembly Generation
+Compiling the IR pattern with -O3 -march=haswell:
+
+
+Code snippet
+
+
+
+
+; Input in dil (8-bit register)
+cmp     dil, -128       ; Check sentinel
+movsx   ax, dil         ; Sign-extend (speculative)
+mov     cx, -32768      ; Load target sentinel
+cmove   ax, cx          ; Conditional move if Equal
+; Result in ax
+
+   * Latency: The movsx, mov, and cmp can execute in parallel ports. cmove has a latency of ~1 cycle on Skylake+.
+   * Throughput: High. No branch prediction slots consumed.
+6.2 AArch64 Assembly Generation
+Compiling for Apple Silicon (M1/M2) or Cortex-A72:
+
+
+Code snippet
+
+
+
+
+; Input in w0
+cmp     w0, #-128       ; Check sentinel
+sxth    w1, w0          ; Sign-extend to 16-bit (in 32-bit reg)
+mov     w2, #-32768     ; Load target sentinel
+csel    w0, w2, w1, eq  ; Select w2 if EQ, else w1
+
+   * Latency: csel is a fundamental single-cycle instruction on ARM64.
+   * Efficiency: Extremely high. This is the canonical pattern for "branchless if" on ARM.
+7. The Inverse Problem: Narrowing Casts
+While the primary directive is widening, the robustness of the system demands a policy for narrowing (e.g., tbb64 -> tbb8). Standard truncation is dangerous: 0x8000 (16-bit sentinel) truncates to 0x00 (valid zero), converting an error into success. This is catastrophic.
+7.1 Policy: Saturating Casts
+Aria's safety philosophy 1 implies that narrowing should be saturating, not wrapping.
+Algorithm for tbb_narrow:
+   1. Sentinel Check: If source is Sentinel, return Destination Sentinel.
+   2. Max Check: If source > Max(Dst), return Max(Dst).
+   3. Min Check: If source < Min(Dst) [and not sentinel], return Min(Dst).
+   * Note: Min(Dst) is -127, not -128. We must never saturate to -128 because that would signal an error where there was none (just a very small number).
+This logic is expensive (3 comparisons).
+7.2 Implementation
+
+
+C++
+
+
+
+
+llvm::Value* ExprCodegen::generateTBBNarrow(llvm::Value* srcVal, llvm::Type* dstType) {
+   // 1. Check for Source Sentinel (Return Dest Sentinel)
+   // 2. Check > MaxDest (Return MaxDest)
+   // 3. Check < MinDest (Return MinDest)
+   // 4. Else trunc
+   //... Implementation involves multiple select instructions...
+   // This forms a decision tree encoded in selects.
+}
+
+While heavier, this ensures tbb16 error states don't magically become 0 in tbb8.
+8. Integration with Ecosystem Components
+The compiler change propagates to the broader Aria ecosystem.
+
+
+8.1 AriaBuild and GlobEngine
+1
+
+
+These tools interact with the filesystem. Filesystem APIs often return -1 for error.
+   * Impact: If GlobEngine passes a file count of -1 (error) to an Aria tbb64 variable, it is interpreted as a valid number (0xFFFF...).
+   * Mitigation: The FFI layer defined in 1 must include a "Sanitization Shim". When passing integers from C++ to Aria, specific C++ error codes must be mapped to the Aria ERR sentinel.
+
+
+8.2 Aria Shell (AriaSH)
+1
+
+
+AriaSH uses tbb8 for status codes.
+   * Scenario: A script captures an exit code. tbb8:status = run().
+   * Impact: If the user casts this status to tbb16 for logging, ARIA-018 ensures that a status of -128 (if used as error) propagates correctly.
+   * Sticky Error: The shell's "Sticky Error" violation mechanism relies on the sentinel being present. ARIA-018 guarantees that implicit widening in shell scripts (e.g., adding a small counter to a large accumulator) doesn't "unstick" the error.
+
+
+8.3 Debugger (Ariadbg)
+1
+
+
+The debugger visualizer must be updated.
+   * Current: Displays 0x80 as -128.
+   * Required: When inspecting a tbb type, check against the type's sentinel. If match, display <ERR> or SENTINEL instead of the raw number.
+   * Validation: Developers can use the debugger to verify ARIA-018. If they widen ERR and see -32768 (0x8000) in a tbb16 view, the fix works. If they see -128 (0xFF80), it failed.
+9. Verification Strategy and Test Suite
+A rigorous test suite is required to validate ARIA-018. This suite must be added to the Aria language repository (tests/core/).
+9.1 Functional Tests (Aria Source)
+
+
+Code snippet
+
+
+
+
+// File: tests/core/tbb_widening.aria
+use std.test;
+
+// Test 1: Basic Sentinel Preservation
+func:test_err_preservation = bool() {
+   tbb8:src = ERR;
+   tbb16:dst = src; // ARIA-018 should make this -32768
+   
+   if (dst == ERR) return true;
+   
+   // Diagnostic failure output
+   print("FAIL: tbb8 ERR healed to " + dst);
+   return false;
+}
+
+// Test 2: Valid Negative Preservation
+func:test_valid_neg = bool() {
+   tbb8:src = -127; // Min valid value
+   tbb16:dst = src;
+   
+   // Must be -127, NOT -32768 or anything else
+   if (dst == -127) return true;
+   return false;
+}
+
+// Test 3: Arithmetic Interaction (Implicit Cast)
+func:test_arithmetic_implicit = bool() {
+   tbb8:a = ERR;
+   tbb16:b = 100;
+   
+   // 'a' is implicitly widened to tbb16. 
+   // If widened correctly -> -32768. 
+   // -32768 + 100 -> -32668 (which is inside valid range? NO)
+   // TBB Arithmetic Rule: ERR + N = ERR.
+   // The addition logic checks for sentinel.
+   // If 'a' heals to -128, result is -28 (VALID).
+   // If 'a' stays ERR, result is ERR.
+   
+   tbb16:res = a + b;
+   
+   if (res == ERR) return true;
+   return false;
+}
+
+// Test 4: Chained Widening
+func:test_chain = bool() {
+   tbb8:a = ERR;
+   tbb64:d = a; // 8 -> 64
+   
+   if (d == ERR) return true;
+   return false;
+}
+
+9.2 Assembly Verification
+Compile the tests with --emit-llvm and grep for the branchless pattern:
+grep "select i1 %.*, i16 -32768" output.ll
+This ensures the compiler isn't optimizing the check away incorrectly.
+10. Conclusion
+The implementation of ARIA-018 is a foundational correction to the Aria type system. By replacing standard sign-extension with sentinel-preserving widening, we ensure that the "Sticky Error" semantics defined in the TBB specification are mathematically robust across all type domains.
+The proposed architecture utilizes a low-overhead, branchless instruction sequence (icmp / sext / select) that guarantees safety without compromising the performance required by systems applications. This change harmonizes the compiler backend with the expectations of the Aria Shell, Build System, and Debugger, solidifying the language's position as a safe, modern alternative to C/C++.
+11. Implementation Checklist
+   1. Frontend: Update TypeChecker to define CastKind::TBB_Widen and CastKind::TBB_Narrow.
+   2. Frontend: Update binary operator resolution to inject TBB_Widen implicit casts.
+   3. Backend: Implement generateTBBWiden in ExprCodegen using APInt for width-agnostic sentinel generation.
+   4. Backend: Wire codegenCastExpr to use the new generator for TBB_Widen kinds.
+   5. Testing: Commit tests/core/tbb_widening.aria and verify pass.
+   6. Docs: Update TBB_TYPE_SYSTEM_SPEC.md to explicitly document the discontinuity behavior during casting.
+Status: Specification complete. Ready for engineering.
+Works cited
+   1. aria_shell_research_full.txt

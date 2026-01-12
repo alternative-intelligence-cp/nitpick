@@ -1,0 +1,525 @@
+# BLOCKED ISSUES - Aria Compiler
+
+## ✅ PHASE 2 COMPLETE: Zero Implicit Conversion - Parser (2026-01-09)
+
+**STATUS: ALL 14 NEW TESTS PASSING**
+
+Successfully implemented parser support for typed literal tokens with explicit type storage in AST.
+
+### Implementation Summary
+1. **LiteralExpr Enhancement**: Added `explicit_type` field to store type suffix ("u32", "i64", "f32", etc.)
+2. **Factory Methods**: Created `makeTypedInt()`, `makeTypedIntWithRaw()`, `makeTypedFloat()` for clean construction
+3. **Parser Updates**: Updated `parsePrimary()` to handle all 30+ typed token variants
+4. **Helper Function**: Added `tokenTypeToTypeString()` to convert TokenType → type string
+5. **Debug Support**: Enhanced `toString()` to display explicit types: `Literal(42:u32)`
+
+### Test Results
+```
+✅ parser_typed_u32_literal     (5 assertions)
+✅ parser_typed_i64_literal     (3 assertions)
+✅ parser_typed_u8_literal      (4 assertions)
+✅ parser_typed_i32_literal     (3 assertions)
+✅ parser_typed_tbb8_literal    (3 assertions)
+✅ parser_typed_f32_literal     (5 assertions)
+✅ parser_typed_f64_literal     (3 assertions)
+✅ parser_typed_fix256_literal  (3 assertions)
+✅ parser_typed_hex_u16_literal (4 assertions)  // 0xFFu16
+✅ parser_typed_binary_u32_literal (4 assertions)  // 0b1010u32
+✅ parser_typed_octal_u64_literal (4 assertions)  // 0o777u64
+✅ parser_typed_scientific_f64_literal (3 assertions)  // 1.23e10f64
+✅ parser_typed_high_precision_u128_literal (4 assertions)
+✅ parser_typed_high_precision_f128_literal (3 assertions)
+```
+
+### Breaking Changes Confirmed
+Old `test_parser.cpp` tests correctly failing because they use untyped literals (`42`, `3.14`) which lexer now rejects. **This is expected behavior** demonstrating the zero-conversion policy is working end-to-end.
+
+### AST Structure Example
+```cpp
+// Input: 42u32
+// AST: Literal(42:u32)
+LiteralExpr {
+    value: 42 (int64_t)
+    explicit_type: "u32"
+    raw_value_string: ""  // Empty unless high-precision
+}
+
+// Input: 340282366920938463463374607431768211455u128
+// AST: Literal(raw="...":u128)
+LiteralExpr {
+    value: 0 (placeholder)
+    explicit_type: "u128"
+    raw_value_string: "340282366920938463463374607431768211455"
+}
+```
+
+### Next Phase: Type Checker & IR
+Update type checker to:
+1. Read explicit_type from AST nodes
+2. Enforce type suffix matches expected type
+3. Update IR generation to use explicit types
+4. Update stdlib to use typed literals
+
+---
+
+## ✅ PHASE 1 COMPLETE: Zero Implicit Conversion - Lexer (2026-01-09)
+
+**STATUS: ALL 20 TESTS PASSING**
+
+Successfully implemented type suffix requirement for ALL numeric literals.
+
+### Test Results
+```
+✅ type_suffix_integer_u32     (4 assertions)
+✅ type_suffix_integer_i64     (3 assertions)
+✅ type_suffix_integer_u8      (4 assertions)
+✅ type_suffix_integer_i32     (4 assertions)
+✅ type_suffix_integer_tbb8    (4 assertions)
+✅ type_suffix_integer_tbb16   (4 assertions)
+✅ type_suffix_float_f32       (4 assertions)
+✅ type_suffix_float_f64       (4 assertions)
+✅ type_suffix_float_fix256    (4 assertions)
+✅ type_suffix_hex_with_suffix (4 assertions)  // 0xFFu32
+✅ type_suffix_binary_with_suffix (4 assertions)  // 0b1010u8
+✅ type_suffix_scientific_with_suffix (4 assertions)  // 1.23e10f64
+✅ type_suffix_missing_on_integer (2 assertions)  // Error test
+✅ type_suffix_missing_on_float (2 assertions)  // Error test
+✅ type_suffix_missing_on_hex (2 assertions)  // Error test
+✅ type_suffix_float_on_integer (2 assertions)  // Error test
+✅ type_suffix_integer_on_float (2 assertions)  // Error test
+✅ type_suffix_unknown (2 assertions)  // Error test
+✅ type_suffix_zero (4 assertions)  // Edge case
+✅ type_suffix_with_underscores (4 assertions)  // Edge case
+```
+
+### Breaking Changes Confirmed
+- Old tests without suffixes: **CORRECTLY FAILING**
+- Error messages: **CLEAR AND HELPFUL**
+- Documentation references: **INCLUDED IN ERRORS**
+
+Example error:
+```
+Numeric literal missing required type suffix.
+All numeric literals in Aria must have explicit types.
+  Examples: 1u32, 0i64, -42i32, 3.14f32, 2.5f64
+  Available suffixes:
+    Unsigned: u8, u16, u32, u64, u128, u256, u512, u1024
+    Signed:   i8, i16, i32, i64, i128, i256, i512, i1024
+    Float:    f32, f64, f128, f256, f512, fix256
+    TBB:      tbb8, tbb16, tbb32, tbb64
+  See: docs/programming_guide/types/zero_implicit_conversion.md
+```
+
+### Next Phase: Parser
+Update parser to:
+1. Handle all typed literal tokens
+2. Create AST nodes with explicit type information
+3. Pass type info to type checker
+
+---
+
+## CRITICAL: Type System State Pollution - Mixed int32/uint32 in Same Module (2026-01-09)
+
+**File**: `src/frontend/sema/type_checker.cpp` (likely)
+**Status**: **BLOCKED - Compiler type checker bug**
+
+### Root Cause Found
+The Aria compiler's type checker **pollutes type state** when int32 and uint32 functions exist in the same module file. Earlier int32 functions contaminate type inference for later uint32 functions, causing false "int32 and uint32" type mismatch errors.
+
+### Reproduction
+Minimal test case in `lib/std/mixed_bitwise_test.aria`:
+```aria
+// This int32 function compiles fine alone
+func:test_int_arith = int32(int32:n) {
+    int32:result = (n + 1);
+    pass(result);
+};
+
+// But its presence causes THIS uint32 function to fail
+func:test_uint_bitwise = uint32(uint32:n, uint32:pos) {
+    uint32:mask = 1;
+    uint32:result = (n | mask);  // ERROR: "Got 'int32' and 'uint32'"
+    pass(result);                // Both are uint32!
+};
+```
+
+Error: `Bitwise operators require unsigned types. Got 'int32' and 'uint32'.`
+
+### Verification
+- int32 functions alone: ✅ Compile successfully
+- uint32 functions alone: ✅ Compile successfully  
+- Mixed in same file: ❌ Compiler falsely claims uint32 variables are int32
+
+### Technical Analysis
+Type checker maintains state across function definitions within a module. When processing int32 functions, it sets type context that isn't properly cleared before processing subsequent uint32 functions. This causes uint32 variables to be mistyped as int32 in error messages and type checking.
+
+### Workaround
+Split mixed-type modules into separate files:
+- `bits_int32.aria` - popcount, bit_test, bit_length (no bitwise ops)
+- `bits_uint32.aria` - bit_set, bit_clear, bit_flip, rotate, is_power_of_two
+
+**WARNING**: Even split modules trigger LLVM IR generation bugs (see below).
+
+### Additional Bug: LLVM IR Generation Type Mismatch
+
+Split modules still fail with LLVM backend assertion:
+```
+llvm::ICmpInst::AssertOK(): Assertion `getOperand(0)->getType() == getOperand(1)->getType()`
+ICmpInst::AssertOK(): Both operands to ICmp instruction are not of the same type!
+```
+
+**Analysis**:
+- Type checker correctly identifies uint32 types (debug logs confirm)
+- IR generation phase creates mismatched types for comparison instructions
+- Bug exists in both type checking AND IR generation layers
+- Suggests fundamental issue with implicit type handling
+
+### Impact & Risk
+**CRITICAL PRIORITY**: This bug has multiple failure points:
+- Type checker state pollution (surface symptom)
+- IR generation creates incorrect LLVM types (deep symptom)
+- May affect ANY module using uint32 or mixing types
+- Could cause mysterious crashes, segfaults, or undefined behavior
+- **Fundamentally incompatible with Nikola's child-safety requirements**
+
+### Root Cause: Implicit Type Inference
+The underlying problem is **implicit literal type inference**:
+```aria
+uint32:mask = 1;  // Compiler guesses: Is 1 int32? int64? uint32?
+```
+
+Compiler maintains coercion state and implicit conversion rules, creating opportunities for state pollution across compilation phases.
+
+### DESIGN DECISION: Zero Implicit Conversion
+
+**APPROVED**: Eliminate ALL implicit type conversions and literal inference.
+
+**Rationale**:
+- Solves type pollution at source (no state to pollute)
+- Simplifies compiler (no inference, no coercion tables)
+- Explicit code intent (safety requirement for Nikola)
+- "No affordances for cutting corners" - explicit types prevent hidden assumptions
+
+**Syntax** (following Rust/C++ model):
+```aria
+// Current (broken):
+uint32:mask = 1;           // Ambiguous
+int64:count = 0;           // Compiler guesses
+
+// New (explicit):
+uint32:mask = 1u32;        // Unambiguous type suffix
+int64:count = 0i64;        // Explicit
+flt32:pi = 3.14f32;        // Explicit
+uint8:byte = 255u8;        // Explicit
+```
+
+**Benefits**:
+- Type pollution impossible (no implicit inference)
+- Compiler simpler (remove all coercion logic)
+- Code self-documenting (types visible at declaration)
+- Debugging easier (no hidden conversions)
+- Safety-critical: No hidden assumptions or behavior
+
+**Required Changes**:
+1. Lexer: Add type suffix tokens (u8, u16, u32, i32, i64, f32, etc.)
+2. Parser: Require type suffixes on all numeric literals
+3. Type Checker: Remove ALL implicit conversion rules
+4. IR Gen: Remove type coercion, enforce exact matching
+5. Error Messages: Guide users to add type suffixes
+6. Documentation: Update all examples with explicit types
+
+### Affected Files
+- `lib/std/bits.aria` - Split into two modules (still broken)
+- All stdlib modules using literals - **REQUIRES MASS UPDATE**
+- All test files - **REQUIRES MASS UPDATE**
+- Documentation and examples - **REQUIRES MASS UPDATE**
+
+**Date Discovered**: January 9, 2026  
+**IR Bug Found**: January 9, 2026  
+**Design Decision**: Zero implicit conversion approved
+**Diagnosis Method**: Incremental isolation + LLVM debug analysis
+**Blocker**: Requires fundamental compiler redesign
+
+---
+
+## CRITICAL: convert.aria Module - Segfaults on Import (2026-01-09)
+
+**File**: `lib/std/convert.aria`  
+**Status**: **BLOCKED - Runtime segfault in core functions**
+
+### Problem
+Functions in convert.aria cause segmentation faults when called, even in minimal test cases. The module compiles successfully but crashes at runtime.
+
+### Affected Functions
+- `count_digits()` - Segfaults immediately
+- `print_int()` - Segfaults (depends on count_digits and digit_at)
+- `print_signed_int()` - Segfaults (depends on print_int)
+- `digit_at()` - Untested but likely broken
+
+### Test Results
+```aria
+// Minimal test that crashes:
+int32:val = 42;
+int32:count = count_digits(val);  // Segfault
+```
+
+### Suspected Cause
+Possible issues in while loop codegen or variable scoping in count_digits/digit_at functions. Similar pattern to pow_i32 bug but manifests as segfault instead of hang.
+
+### Blocking Investigation Needed
+1. Debug count_digits with GDB to find crash location
+2. Check if while loop in count_digits triggers codegen bug
+3. Verify digit_at while loop behavior
+4. Test if simpler implementations avoid crash
+
+### Workaround
+None - core conversion functions are essential for stdlib testing.
+
+### Impact
+- ❌ Cannot test integer printing functions
+- ❌ Import testing blocked for convert module
+- ❌ Many stdlib functions depend on print_int
+
+**Date Discovered**: January 9, 2026  
+**Discovered During**: Stdlib import testing initiative
+
+---
+
+## CRITICAL: pow_i32 Codegen Bug (2026-01-08)
+
+**File**: `lib/std/numeric.aria`  
+**Function**: `pub func:pow_i32 = int32(int32:base, int32:exp)`  
+**Status**: **UNFIXABLE AT SOURCE LEVEL** - Compiler codegen bug
+
+### Problem
+Calling `pow_i32()` causes runtime hang or LLVM error. No source-level workaround found.
+
+### Symptoms
+- `i=0; while(i < exp)` → Infinite loop / timeout
+- `i=1; while(i <= exp)` → "LLVM ERROR: Cannot emit physreg copy instruction"
+- `count=exp; while(count > 0)` → LLVM physreg error
+- `count=exp; while(count != 0)` → LLVM physreg error
+
+### Attempted Fixes (All Failed - 25+ Variations Tested)
+1. ❌ Different loop init values (0, 1, 2)
+2. ❌ Different comparison operators (<, <=, >, !=)
+3. ❌ Copying parameters to locals before loop
+4. ❌ Using countdown instead of count-up
+5. ❌ Renaming all variables  
+6. ❌ Different result initialization
+7. ❌ Copying BOTH base and exp to locals, using only locals in loop
+8. ❌ Starting at i=2 like factorial_i32 (which works!)
+9. ❌ Multiplying by local copy of base instead of parameter
+10. ❌ Exact replication of factorial pattern → Still fails!
+
+### Key Evidence
+- ✅ Inline version works: `test_pow_debug.aria` prints "S\nLLLE\n8"
+- ❌ Function call hangs: `test_pow_call.aria` prints "S" then timeout
+- ✅ Unrolled version works: `test_pow_manual.aria` prints "3\nABC\n8"
+- ✅ factorial_i32 works with similar while loop pattern!
+- ✅ gcd_i32 works with while loops!
+
+### Comparison with Working Functions
+
+**factorial_i32 (WORKS):**
+```aria
+pub func:factorial_i32 = int32(int32:n) {
+    int32:result = 1;
+    int32:i = 2;  
+    while (i <= n) {  // Compares i to param n directly
+        result = (result * i);  // Multiplies by loop counter
+        i = (i + 1);
+    }
+    pass(result);
+};
+```
+
+**gcd_i32 (WORKS):**
+```aria
+pub func:gcd_i32 = int32(int32:a, int32:b) {
+    int32:x = a;  // Copies params first
+    int32:y = b;
+    while (y != 0) {  // Compares local to literal
+        // ... loop body ...
+    }
+    pass(x);
+};
+```
+
+**pow_i32 (BROKEN - Every Variation):**
+```aria
+// Attempted copying params like gcd - STILL HANGS
+pub func:pow_i32 = int32(int32:base, int32:exp) {
+    int32:b = base;
+    int32:result = b;
+    int32:i = 2;  // Even starting at 2 like factorial!
+    while (i <= exp) {  // Using <= like factorial
+        result = (result * b);  // Using local b not param
+        i = (i + 1);
+    }
+    pass(result);
+};
+```
+
+### Root Cause Hypothesis
+Not a specific loop pattern issue. Might be related to:
+- How pow_i32 is compiled as a whole
+- Some interaction between parameter types and loop codegen
+- Possibly an optimizer bug triggered by specific combination of operations
+- The function name or declaration order?
+
+### What We Know Works
+- Inline loops in main()
+- factorial_i32 with while loop
+- gcd_i32 with while loop  
+- Manually unrolled pow computation
+
+### What Doesn't Work  
+- pow_i32 in any configuration we've tried
+
+### Workaround
+**NONE**. Function is unusable. Document as broken and skip in stdlib testing.
+
+### Next Steps (Requires Compiler Work)
+1. Compare LLVM IR: `ariac --emit-llvm factorial.aria` vs `ariac --emit-llvm pow.aria`
+2. Check assembly output differences
+3. Investigate src/backend/ir/codegen_stmt.cpp line 1054+ (while loop codegen)
+4. Add compiler test case to regression suite
+5. Consider if this affects other untested stdlib functions
+
+### Test Files
+- `tests/stdlib/test_pow_debug.aria` - Inline works ✅
+- `tests/stdlib/test_pow_call.aria` - Function call hangs ❌
+- `tests/stdlib/test_pow_manual.aria` - Unrolled works ✅
+- `tests/stdlib/test_pow_minimal.aria` - Minimal test case ❌
+- `tests/stdlib/test_factorial_minimal.aria` - Comparison (works) ✅
+
+## CRITICAL: Integer Literal Type Inference Bug (2026-01-08)
+
+**Status**: **STDLIB BREAKING** - Affects multiple modules
+
+### Problem
+Integer literals (0, 1, 2, etc.) default to `int64` instead of inferring from context. This causes type errors when used with `int32` variables in comparisons, arithmetic, and returns.
+
+### Symptoms
+```aria
+pub func:example = int32(int32:n) {
+    if (n < 0) {        // ERROR: comparing int32 with int64 literal
+        return 0;        // ERROR: returning int64 literal from int32 function
+    }
+    int32:i = 1;        // ERROR: initializing int32 with int64 literal
+}
+```
+
+Error message: `No common type between 'int32' and 'int64'`
+
+### Affected Modules
+- ✅ `lib/std/numeric.aria` - Fixed by using int32 variables for all literals
+- ✅ `lib/std/math.aria` - Fixed gcd_i32, lcm_i32, factorial_i32, factorial_f64, binomial_i32
+- ❌ `lib/std/int.aria` - Has literal comparisons (not yet fixed)
+- ❌ Other modules not yet audited
+
+### Required Fix Pattern
+**BEFORE (broken):**
+```aria
+pub func:abs_i32 = int32(int32:x) {
+    if (x < 0) {              // Type error!
+        return 0 - x;         // Type error!
+    }
+}
+```
+
+**AFTER (working):**
+```aria
+pub func:abs_i32 = int32(int32:x) {
+    int32:zero = 0;           // Explicit int32
+    if (x < zero) {           // Now both int32
+        return zero - x;      // Now both int32
+    }
+}
+```
+
+### Root Cause
+Compiler's type inference defaults all integer literals to `int64`. No automatic type coercion or context-sensitive inference.
+
+### Workaround
+Declare explicit variables for all numeric literals used in int32 contexts:
+```aria
+int32:zero = 0;
+int32:one = 1;
+int32:two = 2;
+```
+
+### Long-term Fix Needed
+1. Implement context-sensitive type inference for literals
+2. OR add implicit safe conversions (int64 → int32 when in range)
+3. OR add literal suffixes (0i32, 1i32, etc.)
+4. OR default to smallest type that fits the literal
+
+### Impact
+- **HIGH**: Breaks most stdlib integer functions
+- **HIGH**: Makes Aria extremely verbose (every literal needs a variable)
+- **MEDIUM**: Confusing for users (why can't I write `if (x < 0)`?)
+
+---
+
+## CRITICAL: Compiler Not Producing Executables (2026-01-08)
+
+**Status**: **REGRESSION** - Compilation succeeds but no binary created
+
+### Problem
+The Aria compiler (`ariac`) reports successful compilation but does not create the output executable file.
+
+### Symptoms
+```bash
+$ ariac test_io.aria
+[DEBUG] Body generation complete for: main
+$ ls test_io
+ls: cannot access 'test_io': No such file or directory
+```
+
+Compilation appears successful (exit code 0), debug output shows complete code generation, but no executable is created.
+
+### Evidence
+- Old executables from earlier today (Jan 8 01:09-02:44) still exist and work
+- Recompiling those same source files now produces NO executable
+- Debug output looks identical to successful compilations
+- No error messages displayed
+- Compiler exits with code 0 (success)
+
+### Affected Files
+- `test_io.aria` - previously compiled successfully, now produces no output
+- `test_int_basic.aria` - compilation succeeds, no executable
+- All new test files
+
+### Working Files (compiled before regression)
+- `test_io` (from 01:09) - 485K executable
+- `test_numeric` (from 01:46) - 489K executable
+- `test_factorial` (from 02:44) - 485K executable
+
+### Timeline
+- **01:09-02:44**: Compiler working correctly
+- **03:50+**: Compiler stopped producing executables
+- **What changed**: Unknown - no source code changes to compiler
+
+### Hypotheses
+1. LLVM backend silently failing after code generation
+2. Linker not being invoked
+3. Output file being created then immediately deleted
+4. Compiler updated between sessions?
+
+### Debug Steps Needed
+1. Check if object files (.o) are being created
+2. Add verbose output to see linker invocation
+3. Check compiler binary modification time
+4. Compare strace of working vs broken compilation
+
+### Workaround
+**NONE**. Cannot test any new code until this is fixed.
+
+### Impact
+- **CRITICAL**: Completely blocks all development and testing
+- **CRITICAL**: Cannot validate any stdlib fixes
+- **CRITICAL**: Cannot write new tests
+
+---

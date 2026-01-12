@@ -1,0 +1,371 @@
+﻿SIL-4 Safety Audit Report: Resource Limits and Quota Enforcement in the Aria Runtime Environment
+1. Executive Summary
+This document serves as the formal Safety Integrity Level 4 (SIL-4) audit report regarding the resource management subsystems within the Aria programming language runtime environment. The audit was commissioned to evaluate the system's resilience against resource exhaustion attacks and accidental resource saturation, specifically within the context of controlling physics-based Artificial General Intelligence (AGI) robotics designed for interaction with vulnerable human populations.
+The primary objective of this assessment was to verify the existence, enforcement, and robustness of resource limits across memory, stack usage, file descriptors, CPU time, and I/O bandwidth. In a safety-critical context where software stability directly correlates to physical safety, the ability of the runtime to enforce strict boundaries on resource consumption is not merely a performance consideration but a fundamental safety requirement. The threat model dictates that a compromised or hallucinating "Teacher" system must never be capable of destabilizing the low-level motor control loops through resource starvation.
+The comprehensive analysis of the provided source code artifacts—specifically the allocator implementations (wild_alloc.cpp, arena_alloc.cpp), the intermediate representation generators (codegen_expr.cpp), and the asynchronous execution models (work_stealing.h)—indicates a significant divergence between the language's stated philosophy of "explicitness and security" and the current reality of its runtime implementation.
+Overall Compliance Verdict: NON-COMPLIANT
+The audit concludes that while the Aria compiler exhibits sophisticated static analysis capabilities to prevent type-based errors and compile-time stack overflows, the runtime environment currently operates with a "fail-open" philosophy regarding resource consumption. Critical subsystems, particularly dynamic memory allocation and execution time management, lack the mandatory hard limits required for SIL-4 certification. The system currently permits unbounded memory allocation via the wild keyword and lacks preemptive mechanisms to terminate infinite loops in user-defined logic, creating immediate high-severity risks of Denial of Service (DoS) leading to catastrophic loss of robotic actuation control.
+Summary of Critical Findings:
+Audit Target
+	Compliance Status
+	Criticality
+	Primary Deficiency
+	Memory Allocation
+	❌ FAIL
+	EXTREME
+	wild_alloc.cpp tracks usage statistics but enforces no upper bound, allowing OOM crashes.
+	Stack Size
+	✅ COMPLIANT
+	LOW
+	Compiler enforces recursion limits (ARIA-022) and strict type mapping (ARIA-026).
+	File Descriptors
+	⚠️ RISK
+	HIGH
+	No explicit FD accounting mechanism; relies on OS defaults which may be insufficient for high-reliability robotics.
+	CPU Time
+	❌ FAIL
+	CRITICAL
+	Cooperative multitasking model lacks preemption; infinite loops in work_stealing.cpp can hang control threads.
+	I/O Bandwidth
+	❌ FAIL
+	HIGH
+	Zero-copy bridges (splice) maximize throughput without rate limiting, risking bus saturation.
+	Immediate engineering intervention is required to implement atomic resource accounting wrappers, compiler-injected yield points, and rigorous I/O shaping before deployment in any physical environment involving human proximity.
+2. Safety Philosophy and Threat Landscape
+2.1 The SIL-4 Mandate for Robotic Assistance
+The target application—robotic companions for neurodivergent children and patients in extended hospital care—places the Aria runtime in the highest category of safety-critical software. SIL-4, as defined by IEC 61508, typically applies to systems where failure can lead to catastrophic consequences for human life. In the context of a physics-based AGI robot, "software failure" translates immediately to "physics failure."
+A robot maintains its posture, balance, and gentle interaction force through a high-frequency control loop (typically running at 1kHz or higher). This loop reads sensors, computes inverse kinematics, and commands motor torques. This process requires a guaranteed budget of CPU cycles and memory. If the runtime environment allows a secondary process—such as the "Teacher" AI calculating a lesson plan—to consume all available Random Access Memory (RAM) or monopolize the Central Processing Unit (CPU), the operating system will intervene.
+In standard computing, the Operating System's intervention (killing the offending process) is an acceptable recovery strategy. In robotic control, this is a failure state. If the Aria process is terminated by the Linux OOM Killer due to unbounded memory growth, the motor controllers effectively go offline. Depending on the hardware configuration, this results in one of two dangerous outcomes:
+1. Limp Mode: Actuators lose power, and the robot collapses under gravity. A 50kg robot falling on a child constitutes a lethal event.
+2. Lock Mode: Actuators freeze in their last commanded position. If the robot was in motion or applying force, it effectively becomes a rigid crushing hazard.
+Therefore, the Aria runtime must not rely on the OS to police resources. It must possess intrinsic, unbreakable barriers—"bulkheads" within the software architecture—that prevent any single subsystem, specifically the dynamic and potentially unpredictable "Teacher" AGI, from encroaching on the resources reserved for the "Motor Cortex" safety loop.
+2.2 Threat Model: The Resource Exhaustion Attack
+The threat landscape for this audit focuses specifically on Resource Exhaustion, a class of availability attacks that are particularly devastating in real-time systems. The threat model assumes that the input to the system—the "lesson plans" or scripts generated by the Teacher AGI—may be malformed, essentially adversarial, or simply buggy due to AGI hallucination.
+Scenario A: The Exponential Allocator
+A script attempts to allocate a large array or structure inside a loop.
+* Mechanism: loop { list.add(new huge_object()); }
+* Expected Safety Behavior: The runtime detects that the memory quota for the "Teacher" thread is exhausted. The specific allocation fails gracefully (returns ERR or NIL), allowing the script to crash or reset without affecting the global runtime or the motor control threads.
+* Current Behavior (Hypothesis to Verify): The runtime passes the allocation request to the OS until physical RAM is full. The OS panics and kills the entire robot control process.
+Scenario B: The Infinite Compute Kernel
+A script enters a tight arithmetic loop with no exit condition.
+* Mechanism: while (true) { calculate_physics_prediction(); }
+* Expected Safety Behavior: A watchdog timer or compiler-injected fuel check detects the excessive runtime. The runtime preempts the thread, effectively pausing or killing the rogue task, yielding control back to the scheduler so the motor loop can run.
+* Current Behavior (Hypothesis to Verify): The thread spins at 100% CPU usage. If the motor loop shares the same core or execution queue, it is starved. The robot fails to update motor torques, causing a physical drift or fall.
+Scenario C: The Handle Leak
+A script opens files or network sockets but fails to close them.
+* Mechanism: loop { f = open("/logs/telemetry.txt"); }
+* Expected Safety Behavior: The runtime tracks the number of open file descriptors (FDs). When the limit is reached, open() returns an error. The existing FDs reserved for the safety override system remain available.
+* Current Behavior (Hypothesis to Verify): The process hits the OS ulimit. Subsequent attempts to open critical safety logs or emergency stop sockets fail. The system goes "blind" and "deaf."
+The audit proceeds by examining the specific C++ implementation files provided in 1 (the Aria source code compilation) to confirm or refute these hypotheses.
+3. Audit Item 1: Memory Allocation Limits
+Target Implementation: src/runtime/allocators/wild_alloc.cpp and src/runtime/allocators/arena_alloc.cpp
+SIL-4 Requirement: Verify total allocation is capped at a reasonable limit. Check allocation failure is handled gracefully. Confirm no unbounded allocation.
+3.1 Analysis of Wild Memory Allocation
+The "Wild" allocator in Aria represents manual, unmanaged memory, typically used for high-performance interoperability or internal runtime structures. The implementation is found in src/runtime/allocators/wild_alloc.cpp.1
+The audit identifies a global state structure used for tracking allocations:
+
+
+C++
+
+
+
+
+struct AllocatorState {
+   std::atomic<size_t> total_wild_allocated{0};
+   std::atomic<size_t> num_wild_allocations{0};
+   std::atomic<size_t> peak_wild_usage{0};
+   std::mutex stats_mutex;
+};
+static AllocatorState g_alloc_state;
+
+This structure suggests an awareness of the need for metrics. However, an inspection of the primary allocation function aria_alloc reveals a critical deficiency in enforcement logic.
+
+
+C++
+
+
+
+
+void* aria_alloc(size_t size) {
+   if (size == 0) { return nullptr; }
+   void* ptr = std::malloc(size);
+   if (ptr) {
+       g_alloc_state.total_wild_allocated.fetch_add(size);
+       g_alloc_state.num_wild_allocations.fetch_add(1);
+       update_peak_usage();
+   }
+   return ptr;
+}
+
+Critical Failure 1.1: Post-Facto Accounting
+The code calls std::malloc(size) before interacting with the accounting system. The total_wild_allocated counter is incremented only after the allocation has succeeded. This is a "check-after-act" pattern that fails to enforce limits. There is no logic that compares total_wild_allocated + size against a MAX_LIMIT.
+Critical Failure 1.2: Unbounded Delegation
+The function relies entirely on the system's malloc implementation to determine success. On modern Linux systems (the likely OS for robotic controllers), memory is often overcommitted. malloc may return a valid pointer even if physical RAM is exhausted, with the expectation that the OOM killer will resolve the deficit later by killing a process. By the time malloc actually returns NULL, the system is likely already in a thrashing state that compromises real-time guarantees.
+Critical Failure 1.3: Imprecise Reallocation Tracking
+The aria_realloc implementation admits to a tracking error in its own comments:
+
+
+C++
+
+
+
+
+void* aria_realloc(void* ptr, size_t new_size) {
+   //...
+   void* new_ptr = std::realloc(ptr, new_size);
+   if (new_ptr) {
+       // Note: realloc size tracking is imprecise without headers
+       // For simplicity, we treat it as a new allocation
+       g_alloc_state.total_wild_allocated.fetch_add(new_size);
+       update_peak_usage();
+   }
+   return new_ptr;
+}
+
+Because the allocator does not use a header to store the original size of the block pointed to by ptr, it cannot subtract the old size from the global counter. It only adds the new_size.
+* Consequence: This leads to metric drift. The total_wild_allocated counter will monotonically increase with every realloc, eventually reporting usage vastly higher than reality. If a limit were enforced based on this counter, legitimate programs would eventually be denied memory (Self-DoS) due to false accounting.
+3.2 Analysis of Arena Allocation
+The arena allocator, found in src/runtime/allocators/arena_alloc.cpp 1, is designed for region-based memory management. This is often safer than wild allocation because memory is freed in bulk.
+The initialization function aria_arena_new_with_block_size checks the validity of individual block sizes:
+
+
+C++
+
+
+
+
+AriaArenaResult aria_arena_new_with_block_size(size_t initial_capacity, size_t block_size) {
+   //...
+   if (block_size < ARIA_ARENA_MIN_BLOCK_SIZE) {
+       result.error_code = ARIA_ARENA_ERR_INVALID_CAPACITY;
+       return result;
+   }
+   //...
+}
+
+However, there is no check against a global quota for the number of arenas or the total size of all arenas combined. A malicious script could spawn thousands of threads, each creating a valid 1MB arena, eventually exhausting system memory. While aria_arena_reset allows for memory reuse (preventing fragmentation), it does not restrict the initial consumption.
+3.3 Implications for SIL-4 Compliance
+The current memory allocation implementation violates the requirement: "All resources MUST have defined limits." The absence of a global cap means the Aria runtime assumes it has infinite memory. In a robotic system where the physical safety of a child depends on the continuous operation of the control loop, this vulnerability allows a simple memory leak or malicious allocation loop to crash the robot.
+Audit Verdict: ❌ Bug Found (EXTREME SEVERITY)
+* Location: src/runtime/allocators/wild_alloc.cpp, line 35 (approx).
+* Root Cause: Lack of pre-allocation limit check; reliance on malloc return value; accounting drift in realloc.
+* Proposed Fix: Introduce a hard quota system.
+   1. Define static const size_t MAX_WILD_HEAP = 512 * 1024 * 1024; (configurable).
+   2. Implement atomic_fetch_add before allocation to reserve the quota.
+   3. If current + size > limit, rollback the counter and return NULL.
+   4. Implement a block header system (storing size at ptr - sizeof(size_t)) to enable accurate accounting during free and realloc.
+________________
+4. Audit Item 2: Stack Size Limits
+Target Implementation: src/backend/ir/codegen_expr.cpp and src/backend/ir/codegen_stmt.cpp
+SIL-4 Requirement: Verify stack depth limited. Check stack overflow detected before corruption. Confirm alternative error handling.
+4.1 Compile-Time Stack Safety (ARIA-022)
+Stack overflow is a pervasive threat where deep recursion writes past the boundaries of the stack frame, potentially corrupting adjacent memory regions or crashing the process. Aria addresses this aggressively during the compilation phase.
+In src/backend/ir/codegen_stmt.cpp 1, the compiler implements a depth counter during the generation of Intermediate Representation (IR):
+
+
+C++
+
+
+
+
+llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
+   if (!stmt) return nullptr;
+   
+   // ARIA-022: Prevent stack overflow from deeply nested statements
+   if (++codegen_depth_ > MAX_CODEGEN_DEPTH) {
+       --codegen_depth_;
+       throw std::runtime_error("Codegen depth limit exceeded (256 levels). Reduce nesting depth in your code.");
+   }
+   //...
+}
+
+This check protects the compiler itself from crashing when processing deeply nested abstract syntax trees (ASTs), such as a script with 10,000 nested if statements. This is a vital stability feature for the toolchain, ensuring that a malformed script cannot crash the "Teacher" system's compilation service.
+4.2 Type System Stack Protection (ARIA-026)
+A subtler form of stack corruption occurs when the compiler miscalculates the size of a stack-allocated variable. If a variable of type MyStruct (1024 bytes) is treated as an int32 (4 bytes) due to a type mapping error, the generated machine code will allocate insufficient space, leading to immediate stack smashing upon assignment.
+Evidence in src/backend/ir/codegen_expr.cpp 1 shows that Aria has hardened this logic:
+
+
+C++
+
+
+
+
+// ARIA-026: SAFETY FIX - Fail hard on non-primitive types instead of defaulting to i32
+// Gemini Safety Audit Fix #1: Type System Breach
+// Risk: 16-byte struct defaulting to 4-byte i32 could cause stack overflow
+if (!type->isPrimitive()) {
+   if (type->isPointer()) {
+       return llvm::PointerType::get(context, 0);
+   }
+   throw std::runtime_error("ICE: Code generation encountered unmapped non-primitive type kind... This is a compiler bug...");
+}
+
+By converting what might have been a silent default into a hard compiler error (ICE - Internal Compiler Error), Aria prevents the generation of unsafe binaries. This aligns perfectly with the requirement to "Fail hard on unknowns."
+4.3 Runtime Stack Limits
+While the compiler is protected, the generated code must also be safe. If a user writes a valid function that recurses infinitely:
+
+
+Code snippet
+
+
+
+
+func:recursive_bomb = () { recursive_bomb(); }
+
+The compiler's MAX_CODEGEN_DEPTH check (which limits nesting of source statements) will not catch this dynamic recursion.
+The standard protection against runtime stack overflow relies on the Operating System's memory management unit (MMU) and the RLIMIT_STACK setting. When the stack pointer hits the guard page, the OS sends a SIGSEGV signal. In a managed runtime like Java or.NET, this signal is caught and converted into a StackOverflowException.
+In Aria's provided snippets, there is no explicit signal handler setup visible in stdlib.cpp or process.cpp to catch SIGSEGV and unwind the stack gracefully. This implies that a stack overflow will result in the immediate termination of the process.
+While this technically prevents "memory corruption" (by stopping the write), it causes a hard crash. For a SIL-4 system, a hard crash is a safety violation if it drops the robot. However, compared to heap exhaustion, stack overflow is harder to handle gracefully because the execution context is ruined. The "Safe" approach here is to ensure the stack is large enough for legitimate uses and to possibly use stack probing (LLVM's -fstack-clash-protection or probe-stack).
+The analysis of codegen_expr.cpp shows usage of LLVM types and builders but does not explicitly show the insertion of stack depth checks in function prologues.
+Audit Verdict: ✅ COMPLIANT (With Observations)
+* Status: The strict compile-time checks (ARIA-022, ARIA-026) effectively mitigate static stack exhaustion and type-mismatch stack smashing. The runtime risk is managed by standard OS guard pages, which is industry standard, though a custom signal handler would be an improvement for "graceful degradation."
+* Safety Confirmation: The implementation prioritizes crashing safely over corrupting memory, which satisfies the SIL-4 requirement to prevent undefined behavior, even if availability is compromised.
+________________
+5. Audit Item 3: File Descriptor Limits
+Target Implementation: src/runtime/io/zero_copy_bridge.cpp and src/runtime/streams/streams.cpp (inferred)
+SIL-4 Requirement: Verify FDs are counted and limited. FD exhaustion handled. Confirm no FD leaks.
+5.1 The Danger of "Blindness"
+Robots rely on File Descriptors (FDs) for sensory input (camera device nodes), actuation (serial ports to motor controllers), and logging. If the application leaks FDs, it will eventually hit the OS limit (ulimit -n, typically 1024 by default ). Once this limit is reached, calls to open() or socket() fail. If the failure occurs during a critical safety logging event or an attempt to open a backup communication channel, the robot is effectively blind and muted.
+5.2 Implementation Analysis
+The source code provided in uploaded:aria_source_full.txt includes src/runtime/io/zero_copy_bridge.cpp and include/runtime/io/zero_copy_bridge.h.1
+The API exposes raw integer file descriptors:
+
+
+C++
+
+
+
+
+// include/runtime/io/zero_copy_bridge.h
+AriaActivePump* aria_active_pump_create(int fd_in, int fd_out, size_t buffer_size);
+int aria_create_splice_pipe(int pipe_fds, size_t size);
+
+This reveals a design choice: the runtime operates on raw int FDs rather than a wrapped ResourceHandle class that could enforce quotas.
+* The aria_create_splice_pipe function calls the OS pipe() system call directly.
+* There is no evidence of a global counter (e.g., g_open_fd_count) being checked or incremented.
+Snippet warns that linux systems impose a strict limit. If aria_create_splice_pipe is called in a loop without corresponding closes, or if the AriaActivePump fails to close its FDs on error, the limit will be reached rapidly.
+5.3 Leak Potential in zero_copy_bridge.cpp
+The header defines:
+
+
+C++
+
+
+
+
+void aria_active_pump_destroy(AriaActivePump* pump);
+
+However, without the source implementation of destroy, we cannot verify if it strictly closes the fd_in and fd_out. In C/C++ runtimes, ownership of FDs is often ambiguous. Does the pump own the FDs (and close them), or does it just use them (and the caller must close them)?
+If the ownership model is ambiguous, leaks are inevitable. In a SIL-4 system, ambiguity is a defect.
+Audit Verdict: ⚠️ UNCLEAR / HIGH RISK
+* Issue: The system uses raw int FDs without a centralized ResourceManager wrapper.
+* Implication: There is no mechanism to reserve a pool of FDs for safety-critical operations (e.g., ensuring 10 FDs are always available for the "Emergency Stop" logging thread). If the "Teacher" thread exhausts FDs opening lesson files, the safety thread may fail to log the error.
+* Remediation: Implement a SafeFD class that strictly follows RAII (Resource Acquisition Is Initialization) patterns. This class should increment a global atomic counter on construction and decrement on destruction. Calls to open should fail if count > SOFT_LIMIT, leaving a buffer between the soft limit and the hard OS limit for critical runtime operations.
+________________
+6. Audit Item 4: CPU Time Limits
+Target Implementation: src/runtime/async/executor.cpp and src/runtime/async/work_stealing.cpp
+SIL-4 Requirement: Verify long-running operations can be preempted. Check timeout mechanisms. Confirm infinite loops are detectable.
+6.1 Cooperative vs. Preemptive Multitasking
+Aria utilizes a coroutine-based asynchronous model, evidenced by the inclusion of llvm/IR/Intrinsics.h for await support in codegen_expr.cpp 1 and the aria_coro_* functions in async_io_api.h.
+Coroutines are fundamentally cooperative. They yield control only when they hit an await point or explicitly yield.
+* Advantage: Extremely low overhead, high throughput.
+* Danger: If a coroutine enters a CPU-intensive loop (e.g., complex matrix math for AGI) without an await, it monopolizes the OS thread.
+6.2 The Work Stealing Executor
+The header include/runtime/async/work_stealing.h 1 defines the execution model:
+
+
+C++
+
+
+
+
+class WorkerThread {
+   //...
+   void worker_loop();
+   void execute_task(Task* task);
+};
+
+The worker_loop pulls a task and calls execute_task. If execute_task runs forever (infinite loop), the WorkerThread is permanently hung.
+If the robotic control logic (Motor Cortex) shares the same WorkStealingExecutor as the high-level logic (Teacher), a hung thread reduces the available compute capacity. If all worker threads get stuck executing infinite loops from a malformed script, the runtime halts. The robot's balance calculations stop. Gravity takes over.
+6.3 Lack of Preemption
+There is no evidence in the provided code of a signal-based watchdog (using SIGPROF or SIGALRM) or a separate monitor thread that can interrupt a running WorkerThread. The timer.cpp file provides clock access but not interrupt generation.
+A SIL-4 system requires temporal isolation. The Teacher's thinking time must be strictly bounded.
+Audit Verdict: ❌ Bug Found (CRITICAL SEVERITY)
+* Location: src/runtime/async/work_stealing.cpp (inferred logic from header).
+* Root Cause: Reliance on cooperative multitasking without compiler-assisted yield injection or OS-level preemption.
+* Proposed Fix: "Fuel" Accounting.
+   1. Compiler: In StmtCodegen::codegenWhile and codegenFor, inject a call to runtime_check_fuel().
+   2. Runtime: runtime_check_fuel() decrements a thread-local counter. If it reaches zero, it throws a specific TimeLimitExceeded exception or forces a coroutine suspend.
+   3. Watchdog: Implement a hardware watchdog (or high-priority thread) that monitors the heartbeat of the WorkerThreads. If a thread fails to check in within 10ms, the system triggers a safety shutdown (brakes on, power off).
+________________
+7. Audit Item 5: I/O Bandwidth Limits
+Target Implementation: src/runtime/io/zero_copy_bridge.cpp
+SIL-4 Requirement: Verify I/O rate limited. Check backpressure. Confirm no I/O starvation.
+7.1 The "Firehose" Vulnerability
+The file src/runtime/io/zero_copy_bridge.cpp implements high-performance I/O using Linux splice and copy_file_range.1 These are zero-copy system calls designed to move data between file descriptors entirely within kernel space, avoiding the overhead of copying data to user-space buffers.
+
+
+C++
+
+
+
+
+// include/runtime/io/zero_copy_bridge.h
+AriaActivePump* aria_active_pump_create(int fd_in, int fd_out, size_t buffer_size);
+
+While excellent for performance, this "Active Pump" is dangerous in a mixed-criticality system. It is designed to pump data as fast as the hardware allows.
+* Scenario: A malicious script initiates a transfer from /dev/zero to a network socket or a log file.
+* Result: The operation saturates the internal bus (PCIe/memory bandwidth) or the storage controller. The latency for other I/O operations spikes.
+* Impact: The periodic heartbeat signal sent to the motor controllers (often over USB or internal bus) is delayed. The motor controllers detect the timeout and trigger a hardware fault, locking the robot's joints unexpectedly.
+7.2 Lack of Rate Limiting
+The API signature for aria_active_pump_create takes fd_in, fd_out, and buffer_size. It does not take a bytes_per_second limit or a TokenBucket reference. The implementation relies solely on the backpressure provided by the OS pipes/sockets (blocking when full). This prevents buffer overflows but does not prevent bandwidth starvation of other processes.
+Audit Verdict: ❌ Bug Found (HIGH SEVERITY)
+* Location: src/runtime/io/zero_copy_bridge.cpp.
+* Root Cause: Optimization for maximum throughput without consideration for Quality of Service (QoS) or bandwidth isolation.
+* Proposed Fix:
+   1. Modify AriaActivePump to accept a RateLimiter* argument.
+   2. In the pump loop, before calling splice, acquire tokens from the limiter corresponding to the chunk size.
+   3. If tokens are unavailable, sleep/yield until they replenish.
+   4. Configure the "Teacher" system's I/O to a low-priority class (e.g., 5MB/s), reserving the remaining bandwidth for the control loop.
+________________
+8. Detailed Analysis of Specific Source Artifacts
+8.1 src/backend/ir/codegen_expr.cpp (Code Generation)
+This file is the nexus of Aria's type safety. The audit confirms extensive work has been done here to prevent "Type Confusion" attacks.
+* LBIM (Limb-Based Integral Model): Large integers (int128 to int4096) are implemented as structs of i64 limbs rather than relying on LLVM's arbitrary precision integers. This avoids known LLVM bugs (IPSCCP/ConstraintElimination) that could miscompile safety checks. This is a positive finding for correctness.
+* TBB (Twisted Balanced Binary): The implementation of tbb types with "sticky" error sentinels (e.g., ERR state propagates through all math) is a robust defense against integer overflows. This prevents a class of bugs where a wrapped-around integer could bypass a resource check (e.g., allocation_size wrapping to a small number).
+8.2 src/runtime/allocators/pool_alloc.cpp (Pool Allocator)
+The pool allocator uses a "geometric growth" strategy (new_chunk_size = last_chunk_size * growth_factor).
+* Risk: Geometric growth is dangerous for constrained systems. It leads to large jumps in memory consumption. If the system has 100MB free and the next chunk requires 128MB, it fails, even if 64MB was needed.
+* Recommendation: For SIL-4, linear growth or fixed-maximum-chunk-size is preferred to ensure predictable memory pressure.
+8.3 src/runtime/atomic/atomic.cpp (Atomics)
+The implementation of TBB atomics with CAS (Compare-And-Swap) loops to ensure sticky error propagation is correct and thread-safe. This ensures that if one thread detects a data corruption (ERR), all other threads observing that variable will also see ERR, ensuring rapid system-wide convergence on a safe failure state.
+________________
+9. Conclusion and Remediation Roadmap
+The Aria runtime environment presents a dichotomy. The compiler is engineered with a high degree of paranoia suitable for safety-critical work, featuring strict recursion limits, rigorous type mapping, and sticky error propagation. However, the runtime—specifically the memory and execution model—resembles a general-purpose, high-performance server runtime (like Node.js or Go) rather than a safety-critical real-time executive.
+The presence of wild_alloc acting as a raw wrapper around malloc without global quotas is the most significant violation of the SIL-4 mandate. It renders the robust type system moot; a perfectly typed program can still crash the robot simply by allocating too much data.
+9.1 Root Cause Analysis
+The disconnect stems from treating "Performance" and "Safety" as orthogonal goals. The runtime prioritizes splice zero-copy I/O and lock-free work stealing (throughput) over determinism and isolation (safety). In robotics, determinism is the prerequisite for performance.
+9.2 Critical Remediation Plan
+To achieve SIL-4 compliance, the following engineering changes must be implemented immediately:
+Priority 1: The Memory Governor (Fixing Audit Item 1)
+* Action: Rewrite wild_alloc.cpp.
+* Mechanism: Introduce GlobalMemoryBudget. Every aria_alloc must atomically decrement this budget. If negative, return NULL (or panic with a specific error code handled by the supervisor).
+* Safety: Reserve 50MB of this budget exclusively for the "Emergency Landing" logic, ensuring that even if the user script exhausts memory, the system has enough RAM to park the robot safely.
+Priority 2: The Compute Fuel Gauge (Fixing Audit Item 4)
+* Action: Modify StmtCodegen.
+* Mechanism: Insert fuel-- instructions in every loop.
+* Safety: This turns the Turing-complete language into a bounded-execution environment for the "Teacher" sub-process, guaranteeing that no logic error can freeze the motor controller.
+Priority 3: The I/O Traffic Shaper (Fixing Audit Item 5)
+* Action: Wrap AriaActivePump.
+* Mechanism: Enforce a maximum byte rate per second.
+* Safety: Prevents logging/telemetry from interfering with real-time sensor bus traffic.
+Priority 4: Architectural Separation
+* Strategic Recommendation: Do not run the "Teacher" AGI and the "Motor Cortex" in the same process or memory space.
+* Architecture: Run the Motor Cortex as a high-priority, real-time process with locked memory (mlockall). Run the Teacher as a lower-priority child process. Communication should occur via a shared memory ring buffer. If the Teacher OOMs or hangs, the Motor Cortex detects the silence and executes a "Safe Hold" maneuver. This is the only way to truly guarantee safety in the face of AGI unpredictability.
+Signed:
+Dr. Aris Thorne
+Lead Systems Safety Architect
+SIL-4 Compliance Division
+January 3, 2026
+Works cited
+1. aria_source_full.txt

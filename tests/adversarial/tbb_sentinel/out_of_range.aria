@@ -1,0 +1,14 @@
+/**
+ * Test: TBB Out of Range Value Construction
+ * Expected: COMPILER/RUNTIME ERROR for out of range
+ * Why: TBB8 valid range is -127 to 127 (not -128, not 128)
+ *
+ * From TODO: "tbb8_from_int(128) - MUST ERROR (out of range)"
+ */
+
+func:main = int32() {
+    // These should ERROR - out of valid range
+    tbb8:x = tbb8_from_int(128);  // ERROR: 128 > max valid value (127)
+
+    return 0;
+};

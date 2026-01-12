@@ -14,38 +14,73 @@ using aria::frontend::TokenType;
 /**
  * Literal expression node
  * Represents: integer, float, string, boolean, null literals
+ * 
+ * ZERO IMPLICIT CONVERSION POLICY:
+ * All numeric literals MUST have explicit type suffixes (u32, i64, f32, etc.)
+ * The explicit_type field stores the type suffix to prevent any implicit conversions
  */
 class LiteralExpr : public ASTNode {
 public:
     std::variant<int64_t, double, std::string, bool, std::monostate> value;
     std::string raw_value_string;  // For high-precision literals (flt128, int128, etc.)
+    std::string explicit_type;     // Type suffix: "u32", "i64", "f32", "tbb8", etc.
     
+    // DEPRECATED constructors (for backward compatibility during migration)
     explicit LiteralExpr(int64_t val, int line = 0, int column = 0)
-        : ASTNode(NodeType::LITERAL, line, column), value(val) {}
+        : ASTNode(NodeType::LITERAL, line, column), value(val), explicit_type("") {}
     
     explicit LiteralExpr(double val, int line = 0, int column = 0)
-        : ASTNode(NodeType::LITERAL, line, column), value(val) {}
+        : ASTNode(NodeType::LITERAL, line, column), value(val), explicit_type("") {}
     
     explicit LiteralExpr(const std::string& val, int line = 0, int column = 0)
-        : ASTNode(NodeType::LITERAL, line, column), value(val) {}
+        : ASTNode(NodeType::LITERAL, line, column), value(val), explicit_type("") {}
     
     explicit LiteralExpr(bool val, int line = 0, int column = 0)
-        : ASTNode(NodeType::LITERAL, line, column), value(val) {}
+        : ASTNode(NodeType::LITERAL, line, column), value(val), explicit_type("") {}
     
     // Null literal
     explicit LiteralExpr(std::monostate, int line = 0, int column = 0)
-        : ASTNode(NodeType::LITERAL, line, column), value(std::monostate{}) {}
+        : ASTNode(NodeType::LITERAL, line, column), value(std::monostate{}), explicit_type("") {}
     
-    // High-precision constructors (for flt128, int128, etc.)
-    explicit LiteralExpr(int64_t val, const std::string& raw_text, int line = 0, int column = 0)
-        : ASTNode(NodeType::LITERAL, line, column), value(val), raw_value_string(raw_text) {}
+    // DEPRECATED: High-precision constructors (for compatibility - prefer typed versions)
+    // Disambiguation: 5th parameter tells whether 2nd parameter is raw_text (true) or type (false)
+    explicit LiteralExpr(int64_t val, const std::string& raw_or_type, int line, int column, bool is_raw_text = true)
+        : ASTNode(NodeType::LITERAL, line, column), value(val), 
+          raw_value_string(is_raw_text ? raw_or_type : ""), 
+          explicit_type(is_raw_text ? "" : raw_or_type) {}
     
-    explicit LiteralExpr(double val, const std::string& raw_text, int line = 0, int column = 0)
-        : ASTNode(NodeType::LITERAL, line, column), value(val), raw_value_string(raw_text) {}
+    explicit LiteralExpr(double val, const std::string& raw_text, int line, int column)
+        : ASTNode(NodeType::LITERAL, line, column), value(val), raw_value_string(raw_text), explicit_type("") {}
+    
+    // NEW: Typed literal constructors (Zero Implicit Conversion Policy)
+    // Integer literals with explicit type (small values that fit in int64_t)
+    static std::shared_ptr<LiteralExpr> makeTypedInt(int64_t val, const std::string& type, int line, int column) {
+        auto lit = std::make_shared<LiteralExpr>(val, line, column);
+        lit->explicit_type = type;
+        return lit;
+    }
+    
+    // Integer literals with explicit type AND high-precision raw text
+    static std::shared_ptr<LiteralExpr> makeTypedIntWithRaw(int64_t val, const std::string& raw_text, 
+                                                             const std::string& type, int line, int column) {
+        auto lit = std::make_shared<LiteralExpr>(val, raw_text, line, column);
+        lit->explicit_type = type;
+        return lit;
+    }
+    
+    // Float literals with explicit type
+    static std::shared_ptr<LiteralExpr> makeTypedFloat(double val, const std::string& raw_text, 
+                                                        const std::string& type, int line, int column) {
+        auto lit = std::make_shared<LiteralExpr>(val, raw_text, line, column);
+        lit->explicit_type = type;
+        return lit;
+    }
     
     // Helper methods
     bool hasRawValue() const { return !raw_value_string.empty(); }
     const std::string& getRawValue() const { return raw_value_string; }
+    bool hasExplicitType() const { return !explicit_type.empty(); }
+    const std::string& getExplicitType() const { return explicit_type; }
     
     std::string toString() const override;
 };

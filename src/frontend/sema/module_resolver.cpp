@@ -14,6 +14,12 @@ ModuleResolver::ModuleResolver(const std::string& rootPath)
     // Add root path as first search location
     searchPaths.push_back(this->rootPath);
     
+    // Add stdlib path relative to root (lib/std/)
+    fs::path stdlibPath = fs::path(this->rootPath) / "lib" / "std";
+    if (fs::exists(stdlibPath) && fs::is_directory(stdlibPath)) {
+        searchPaths.push_back(stdlibPath.string());
+    }
+    
     // Add standard library paths
     // /usr/lib/aria is the default system-wide installation
     #ifdef __linux__

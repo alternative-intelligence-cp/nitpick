@@ -81,6 +81,36 @@ int8_t aria_trit_mul(int8_t a, int8_t b);
  */
 int8_t aria_trit_neg(int8_t a);
 
+/**
+ * @brief Kleene logic AND for balanced ternary
+ * @param a First trit (-1, 0, or 1)
+ * @param b Second trit (-1, 0, or 1)
+ * @return min(a, b) - takes most "false" value
+ * 
+ * Truth table: AND(-1,-1)=-1, AND(-1,0)=-1, AND(-1,1)=-1,
+ *              AND(0,0)=0,   AND(0,1)=0,   AND(1,1)=1
+ * ARIA Safety Fix (Gemini Batch 02, BUG-005): Uses min, not bitwise &
+ */
+int8_t aria_trit_and(int8_t a, int8_t b);
+
+/**
+ * @brief Kleene logic OR for balanced ternary
+ * @param a First trit (-1, 0, or 1)
+ * @param b Second trit (-1, 0, or 1)
+ * @return max(a, b) - takes most "true" value
+ * 
+ * Truth table: OR(-1,-1)=-1, OR(-1,0)=0, OR(-1,1)=1,
+ *              OR(0,0)=0,    OR(0,1)=1,  OR(1,1)=1
+ * ARIA Safety Fix (Gemini Batch 02, BUG-005): Uses max, not bitwise |
+ */
+int8_t aria_trit_or(int8_t a, int8_t b);
+
+/**
+ * @brief Logical NOT for balanced ternary
+ * @return Negated value: NOT(-1)=1, NOT(0)=0, NOT(1)=-1
+ */
+int8_t aria_trit_not(int8_t a);
+
 // ==============================================================================
 // Composite Tryte Operations (10 Trits, Split-Byte Packing)
 // ==============================================================================
@@ -180,6 +210,32 @@ int8_t aria_nit_mul(int8_t a, int8_t b);
  * @brief Negate a nit
  */
 int8_t aria_nit_neg(int8_t a);
+
+/**
+ * @brief Kleene logic AND for balanced nonary
+ * @param a First nit [-4, 4]
+ * @param b Second nit [-4, 4]
+ * @return min(a, b)
+ * 
+ * ARIA Safety Fix (Gemini Batch 02, BUG-005): Uses min, not bitwise &
+ */
+int8_t aria_nit_and(int8_t a, int8_t b);
+
+/**
+ * @brief Kleene logic OR for balanced nonary
+ * @param a First nit [-4, 4]
+ * @param b Second nit [-4, 4]
+ * @return max(a, b)
+ * 
+ * ARIA Safety Fix (Gemini Batch 02, BUG-005): Uses max, not bitwise |
+ */
+int8_t aria_nit_or(int8_t a, int8_t b);
+
+/**
+ * @brief Logical NOT for balanced nonary
+ * @return Negated value
+ */
+int8_t aria_nit_not(int8_t a);
 
 // ==============================================================================
 // Composite Nyte Operations (5 Nits, Biased Radix Packing)

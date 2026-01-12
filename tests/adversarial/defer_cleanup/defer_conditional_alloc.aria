@@ -1,0 +1,21 @@
+/**
+ * Test: Defer with Conditional Allocation
+ * Expected: COMPILES SUCCESSFULLY (defer only runs if alloc happened)
+ * Why: Complex control flow with defers must be handled correctly
+ *
+ * Pattern: Conditional resource acquisition with cleanup
+ */
+
+func:main = int32() {
+    bool:should_alloc = true;
+
+    if (should_alloc) {
+        wild int8@:p = alloc(1024);
+        defer { free(p); }
+        // Use p within this scope
+        // defer executes when scope exits
+    }
+    // p is out of scope here - defer already ran
+
+    return 0;
+};

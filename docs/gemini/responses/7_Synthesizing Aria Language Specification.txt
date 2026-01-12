@@ -1,0 +1,263 @@
+﻿Architectural Specification for the Aria Programming Language Core: Safety-Critical Primitives for Physics-Based AGI
+1. Executive Summary: The Imperative of Algorithmic Determinism
+The architectural conception of the Aria programming language is driven by a singular, non-negotiable operational context: the deployment of physics-based Artificial General Intelligence (AGI) designed to serve as companions for vulnerable populations. In this domain, the standard tolerance for software failure—acceptable in consumer electronics or web services—is inverted. A segmentation fault, a numerical overflow, or a non-deterministic floating-point error is not merely a disruption of service; it is a potential vector for physical harm. If an AGI model actuating a robotic limb makes a calculation error due to a compiler bug or numerical drift and injures a child, the project is considered a total, catastrophic failure. Consequently, the design philosophy of Aria prioritizes "ironclad" correctness, absolute numerical stability, and verifiable safety over the raw throughput optimization that characterizes traditional systems languages like C++ or Rust.
+1.1 The Rejection of Standard Paradigms
+The core philosophy of Aria is rooted in Algorithmic Determinism. Standard systems programming paradigms are rejected, particularly those relying on IEEE 754 floating-point arithmetic. IEEE 754 allows for non-determinism across different hardware architectures (e.g., x86 vs. ARM fused multiply-add differences) and suffers from cumulative precision loss, known as "drift," over long-running simulations. In a robotic control loop operating at kilohertz frequencies, such drift translates to physical deviation—a robotic actuator moving millimeters off-target. Aria enforces determinism at the primitive level, ensuring that a calculation performed on a server yields the exact bitwise result as the same calculation on an embedded controller, eliminating the "butterfly effect" in physical simulations.1
+1.2 Cryptographic Hardness as Identity
+The architecture anticipates the hostile cryptographic landscape of 2025 and beyond. It assumes an environment where AGI identity and decision-making processes must be protected by Post-Quantum Cryptography (PQC) and Zero-Knowledge Proofs (ZKPs) to verify integrity against adversarial inputs like prompt injections. This necessitates native support for Ultra-Wide Integers (int1024, int2048) and constant-time arithmetic to prevent side-channel attacks. Integers in Aria are not treated as pure mathematical objects but as "signals" that carry validity metadata, enforced through the Twisted Balanced Binary (TBB) system.1
+This specification synthesizes the Limb-Based Integral Model (LBIM) for high-precision arithmetic, the "Wild" memory model for real-time determinism, the TBB safety protocols for error propagation, and the 6-stream I/O topology, forming the blueprint for a language where safety is structural, not optional.
+________________
+2. The Limb-Based Integral Model (LBIM): Architectural Defense
+The handling of integers exceeding the native word size of the target architecture (typically 64-bit) is a defining characteristic of Aria. While standard compiler infrastructures like LLVM provide support for arbitrary-width integers (e.g., i1024), extensive analysis has revealed that this approach is pragmatically flawed for high-integrity systems.1
+2.1 The Optimization Barrier Rationale
+Standard LLVM optimization pipelines exhibit persistent instability when processing scalars significantly wider than the native register size. Specific optimization passes, notably Interprocedural Sparse Conditional Constant Propagation (IPSCCP) and Constraint Elimination, have been documented to miscalculate value ranges or erroneously eliminate "dead" code paths when processing ultra-wide scalars (referenced as LLVM bugs #68751 and #56351).1 In a safety-critical AGI, a compiler optimizing away a bounds check or miscalculating a cryptographic modulus constitutes a "game over" scenario.
+To mitigate this, Aria implements the Limb-Based Integral Model (LBIM). This architecture treats ultra-wide integers (int128, int256, int1024) as aggregate structures (arrays of limbs) rather than primitive scalars.1 This design creates an Optimization Barrier. The LLVM backend perceives a struct containing an array of i64s, preventing it from applying scalar optimizations designed for integers. Instead, operations on these types are lowered to explicit function calls to the runtime library, where the arithmetic is implemented in strictly verified, constant-time C++.1
+2.2 Structural Specification and Memory Layout
+The LBIM represents an integer $V$ as a polynomial summation of 64-bit limbs:
+
+
+
+
+$$V = \sum_{i=0}^{N-1} L_i \cdot 2^{64i}$$
+
+
+where $L_i$ is the $i$-th limb in a Little-Endian array.
+The compiler backend (src/backend/ir/codegen_expr.cpp) explicitly maps these types to LLVM aggregate structures.1 This mapping ensures that the memory layout is predictable and aligned, critical for the "Wild" memory allocator which forbids garbage collection on these types.
+Table 1: LBIM Type Definitions and Memory Layout
+Aria Type
+	LLVM IR Representation
+	Limbs (N)
+	Bit Width
+	Memory Size (Bytes)
+	Alignment
+	int128 / uint128
+	struct.int128 { [2 x i64] }
+	2
+	128
+	16
+	16 bytes
+	int256 / uint256
+	struct.int256 { [4 x i64] }
+	4
+	256
+	32
+	32 bytes
+	int512 / uint512
+	struct.int512 { [8 x i64] }
+	8
+	512
+	64
+	64 bytes
+	int1024 / uint1024
+	struct.int1024 { [16 x i64] }
+	16
+	1024
+	128
+	128 bytes
+	This structural definition allows the compiler to enforce strict type checking. For instance, an int1024 is distinct from an array of integers; it is a singular arithmetic entity with specific semantic rules regarding error propagation.1
+2.3 Runtime Arithmetic Core Implementation
+Since the LLVM backend sees these types as structs, it cannot generate native arithmetic instructions (e.g., add i1024). The compiler must generate calls to the Aria Runtime Environment. This runtime library (src/runtime/math/lbim_1024.cpp) implements the arithmetic logic, prioritizing side-channel resistance over average-case speed.1
+2.3.1 Constant-Time Comba Multiplication
+For int1024 multiplication, the runtime avoids the Karatsuba algorithm. While Karatsuba is asymptotically faster ($O(N^{1.58})$), its recursive nature and conditional logic introduce variable latency, which leaks information about the operands via timing side-channels. Instead, Aria mandates Comba Multiplication (column-oriented).
+The Comba method calculates the product limb-by-limb, accumulating columns into a 3-word (192-bit) accumulator to prevent overflow before reduction. Crucially, the loops are fully unrolled in the runtime implementation. This unrolling ensures that the instruction trace is identical regardless of the input values (e.g., multiplying by zero takes the exact same number of cycles as multiplying by a large prime), securing the AGI's private keys against timing analysis.1
+2.3.2 Ripple-Carry Addition via Intrinsics
+Addition is implemented using Ripple-Carry logic. The implementation leverages the unsigned __int128 type (available via compiler extensions in GCC/Clang) to perform $64+64 \to 128$-bit addition. This allows the runtime to extract the carry bit ($\text{sum} \gg 64$) without using conditional branching, maintaining the constant-time invariant required for the TBB error propagation checks.1
+2.3.3 Algorithmic Division (Knuth's D)
+Division relies on Knuth's Algorithm D. This algorithm is chosen for its rigor and correctness. It involves normalization of the divisor and dividend, estimation of the quotient digit ($\hat{q}$), and correction steps. While significantly slower than hardware division, it allows for verified correctness on multi-limb integers where native hardware instructions are unavailable, and ensures that division by zero or overflow conditions are caught and converted to TBB error sentinels before any undefined behavior can occur.1
+________________
+3. Twisted Balanced Binary (TBB): The Safety Protocol
+The Twisted Balanced Binary (TBB) system is the primary mechanism for semantic resilience in Aria. It addresses the inherent asymmetry of standard two's complement arithmetic, which creates "arithmetic traps" that can crash safety-critical systems.
+3.1 Theoretical Foundation: Symmetry via Sentinel Reservation
+Standard two's complement arithmetic is asymmetric. For an $N$-bit signed integer, the representable range is $[-2^{N-1}, 2^{N-1}-1]$. This asymmetry means the absolute value of the minimum representable integer (INT_MIN) cannot be represented, as it exceeds INT_MAX by one. Operations like abs(INT_MIN) or INT_MIN / -1 result in hardware traps or undefined behavior.
+Aria resolves this via TBB by "twisting" the representation. The system explicitly reserves the most negative value in the two's complement space (the bit pattern 100...0) as an Error Sentinel (ERR). By removing this single value from the valid number line, the valid range becomes perfectly symmetric: $[-(2^{N-1}-1), 2^{N-1}-1]$. This ensures that for every valid number $x$, $-x$ is also a valid number, eliminating a specific class of arithmetic overflow bugs.
+3.2 Sentinel Bit Patterns
+The sentinel value is strictly defined as the minimum representable value in the standard two's complement space. This allows for efficient hardware detection (checking the sign bit and zeroes) while maintaining compatibility with standard ALUs for non-sentinel values.
+Table 2: TBB Sentinel Specifications
+Type
+	Bit Width
+	Sentinel Value (ERR)
+	Hex Pattern (Little Endian)
+	LBIM Representation
+	tbb8
+	8
+	-128
+	0x80
+	N/A
+	tbb16
+	16
+	-32,768
+	0x8000
+	N/A
+	tbb32
+	32
+	$-2^{31}$
+	0x80000000
+	N/A
+	int128
+	128
+	$-2^{127}$
+	{0x0, 0x80...00}
+	limbs == 0x8000000000000000
+	fix256
+	256
+	$-2^{255}$
+	{0x0, 0x0, 0x0, 0x80...00}
+	limbs == 0x8000000000000000
+	int1024
+	1024
+	$-2^{1023}$
+	{0x0... (x15), 0x80...00}
+	limbs == 0x8000000000000000
+	In the LBIM struct, the sentinel is identified by a specific state: the most significant bit of the most significant limb is set (1), while all other bits in that limb and all other limbs are zero.1
+3.3 The Sticky Error Propagation Logic
+The "Sticky Error" logic is the operational enforcement of TBB safety. It ensures that validity metadata is never lost. This protocol is governed by three invariant rules :
+1. Input Propagation Rule: If any operand in an operation is the ERR sentinel, the result must be the ERR sentinel.
+
+$$\text{IF } (A == \text{ERR} \lor B == \text{ERR}) \implies Result = \text{ERR}$$
+
+This prevents "phantom values" from propagating through a control loop. A corrupted sensor reading (ERR) feeding into a PID controller will instantly turn the controller's output to ERR, triggering a failsafe.
+2. Range Collapse Rule: If a calculation involving strictly valid numbers produces a result outside the valid symmetric range, it collapses to ERR.
+
+$$\text{IF } (Result > \text{MAX}_{TBB} \lor Result < \text{MIN}_{TBB}) \implies Result = \text{ERR}$$
+
+Critically, this applies even if the result would be representable in standard two's complement (e.g., tbb8 resulting in -128 must become ERR).
+3. Sentinel Collision Rule: If the mathematically correct result of an operation bitwise matches the reserved sentinel pattern, it is treated as a collision and collapsed to ERR.
+3.4 Compiler Backend Implementation: Branchless Logic
+The Aria compiler backend (src/backend/ir/codegen_expr.cpp) generates LLVM IR that enforces TBB logic without conditional branches, which is vital for side-channel resistance. The generateTBBBinaryOp function 1 implements the following sequence:
+   1. Validation: Emit icmp eq instructions to check if either operand is the sentinel.
+   2. Arithmetic: Use LLVM intrinsics like @llvm.sadd.with.overflow to perform the math and capture the overflow bit.
+   3. Collision Check: Emit icmp eq to check if the valid result matches the sentinel pattern.
+   4. Branchless Selection: Combine all error conditions using or instructions. Use a select instruction (compiling to cmov on x86) to return either the result or the sentinel.
+
+
+Code snippet
+
+
+
+
+; Conceptual IR for TBB Addition (tbb8)
+%is_err_a = icmp eq i8 %a, -128
+%is_err_b = icmp eq i8 %b, -128
+%res_struct = call {i8, i1} @llvm.sadd.with.overflow.i8(i8 %a, i8 %b)
+%math_res = extractvalue {i8, i1} %res_struct, 0
+%overflow = extractvalue {i8, i1} %res_struct, 1
+%is_sentinel = icmp eq i8 %math_res, -128
+%any_fail = or i1 %is_err_a, %is_err_b
+%any_fail_2 = or i1 %any_fail, %overflow
+%any_fail_3 = or i1 %any_fail_2, %is_sentinel
+%final_res = select i1 %any_fail_3, i8 -128, i8 %math_res
+
+3.5 The Sentinel Discontinuity Constraint
+A major challenge is Type Widening (e.g., tbb8 to tbb16). Standard sign extension (sext) destroys TBB semantics. If tbb8 ERR (0x80 / -128) is sign-extended, it becomes 0xFF80 (-128 in 16-bit). In tbb16, -128 is a valid number; the error state has been "healed" into a valid value.
+The compiler implements "Sentinel-Preserving Widening".1 It avoids raw sext. Instead, it generates: check if input is input-width sentinel $\to$ if true, return output-width sentinel (0x8000) $\to$ else, perform sext. This ensures error states are sticky across type domains.
+________________
+4. Deterministic Fixed-Point Arithmetic (fix256)
+For the physics engine driving the AGI, floating-point arithmetic is unacceptable due to non-associativity and hardware variance. Aria mandates fix256, a Q128.128 fixed-point type.
+4.1 Specifications and Precision
+   * Format: Q128.128 (128 integer bits, 128 fractional bits), stored in a 4-limb LBIM structure.
+   * Resolution: The fractional component ($2^{-128}$) provides a precision of approximately $2.93 \times 10^{-39}$, which is four orders of magnitude finer than the Planck length ($1.6 \times 10^{-35}$ meters).1 This ensures the simulation granularity exceeds the fundamental granularity of the physical universe.
+   * Range: The integer component allows values up to $\approx 1.7 \times 10^{38}$, sufficient to index the observable universe at Planck resolution within a single coordinate system.1
+4.2 TBB Integration and Overflow Handling
+The fix256 type integrates with TBB by reusing the int256 container logic but applying fixed-point semantics.
+   * Sentinel: {0x0, 0x0, 0x0, 0x8000000000000000} (Limb 3 has MSB set).
+   * Multiplication Logic: Multiplication requires a $256 \times 256 \to 512$-bit intermediate calculation. The result is then scaled by shifting right by 128 bits.
+   * Overflow vs. Precision Loss: In fixed-point math, dropping lower bits (precision loss) is acceptable. However, if the high-order integer bits of the 512-bit intermediate product contain data that is lost during the shift, this constitutes a Range Violation. The TBB logic detects this and collapses the result to the fix256 ERR sentinel.1 This distinguishes between "acceptable loss of precision" and "catastrophic loss of magnitude."
+________________
+5. Cryptographic Core: Secure Montgomery Arithmetic
+The security of the AGI depends on the "Secure Math Core," which implements Montgomery arithmetic for modular operations required by RSA and ECC.
+5.1 CIOS Algorithm and Cache Locality
+The core uses the Coarsely Integrated Operand Scanning (CIOS) method for Montgomery multiplication ($P = A \times B \times R^{-1} \pmod N$). CIOS is selected over Separated Operand Scanning (SOS) because it interleaves multiplication and reduction steps. This keeps the modulus $N$ and the operand $B$ in the L1 cache, significantly improving locality and performance for large moduli (2048+ bits).1 It also fits the constraints of the "Wild Allocator" by requiring fewer stack-allocated temporaries (essentially $N+2$ words).
+5.2 Side-Channel Resistance Implementation
+To prevent timing attacks, the core implements "ironclad" side-channel defenses 1:
+   * Branchless Carry Propagation: As with LBIM addition, carry extraction uses bitwise shifts on 128-bit accumulators rather than conditional jumps.
+   * Masked Subtraction: The final reduction step ($T - N$ if $T \ge N$) is a common source of leaks. Aria uses a constant-time masked subtraction. It computes both $T$ and $T-N$, then selects the correct result using a bitmask derived from the borrow flag, avoiding branch prediction traces.
+   * Secret Erasure: Intermediate buffers (partial products) are allocated on the "Wild" stack and explicitly zeroed (memset) immediately after use to prevent cold-boot attacks or memory dump forensics. Garbage collection is strictly prohibited in this core.
+________________
+6. Exotic Arithmetic: Ternary and Nonary Cores
+Aria includes support for Balanced Ternary (base-3) and Nonary (base-9) arithmetic, targeting efficient neural network weights and reversible computing.
+6.1 Trit and Tryte Encoding
+   * Trit: The fundamental unit, representing $\{-1, 0, 1\}$. It is stored in an int8. The value -128 is the TRIT_ERR sentinel.1
+   * Tryte: A composite type consisting of 5 trits packed into a uint16. This provides a range of $[-121, 121]$ ($3^5 = 243$ states). The packing formula is $V = \sum_{i=0}^{4} t_i \cdot 3^i$.
+   * Nonary Isomorphism: A base-9 nit ($\{-4,..., 4\}$) is mathematically isomorphic to two trits ($d_9 = 3t_1 + t_0$). This allows the runtime to use shared storage logic for both systems.1
+6.2 Lookup Table (LUT) Arithmetic
+Standard binary ALUs are inefficient at ternary math. To avoid branching overhead, Aria uses statically computed Lookup Tables (LUTs). For operations on trytes (5-trit sequences), the runtime maps the inputs to a packed result via a LUT sized $3 \times 243 \times 243$ (approx. 177KB), which fits in the L2 cache. This allows ternary addition and multiplication to be performed via direct memory indexing, maintaining deterministic execution time.1
+________________
+7. Memory Architecture: The Wild vs. Managed Model
+Aria utilizes a bifurcated memory architecture to reconcile ease of development with the strict determinism required for AGI control loops.
+7.1 The Wild Memory Model
+The "Wild" memory model is the domain of manual resource management. It is designed to decouple arithmetic and control loops from the non-deterministic pauses of the Garbage Collector (GC).1
+   * Determinism: Allocations in the wild heap are strictly deterministic. The cost is limited to the allocator's search algorithm ($O(1)$ or $O(\log N)$).
+   * Lifecycle: Objects in wild memory have lifetimes defined by scope or explicit deallocation (aria_free). This imposes a strict ownership burden on implementation types like BigInt to prevent leaks.
+7.2 Allocator Specification and API
+The runtime exposes a specific API for the wild allocator 1:
+   * void* aria_alloc(size_t size): Allocates a block. Returns NULL on failure (resource exhaustion).
+   * void aria_free(void* ptr): Frees a block.
+   * No Realloc: The wild allocator does not assume a safe realloc intrinsic. Expanding a buffer (e.g., growing a BigInt) requires: (1) aria_alloc new block, (2) memcpy data, (3) aria_free old block.
+   * Lazy Contraction: To prevent "allocation thrashing" (hysteresis), the allocator does not automatically shrink heap buffers when values decrease in size. Contraction is only performed on explicit request (shrink_to_fit), ensuring stability in high-frequency loops.1
+7.3 Memory Qualifiers
+The type system enforces memory model separation via qualifiers 1:
+   * wild: Pointer to manually managed wild memory.
+   * wildx: Pointer to executable wild memory (used for JIT compilation).
+   * stack: Explicit stack allocation (compiler managed via alloca).
+   * gc: (Implicit default) Managed heap pointer.
+________________
+8. Compiler Backend Architecture (codegen_expr.cpp)
+The Aria compiler backend is responsible for translating these high-level constraints into LLVM IR that preserves the safety guarantees.
+8.1 Type Lowering and Mapping
+The ExprCodegen class in src/backend/ir/codegen_expr.cpp implements the mapping of Aria types to LLVM types 1:
+   * Primitives: tbb8 $\to$ i8, tbb64 $\to$ i64.
+   * LBIM: int128 $\to$ struct.int128, int1024 $\to$ struct.int1024.
+   * Exotic: trit $\to$ i8 (primitive), tryte $\to$ i16 (exotic balanced type).
+   * References: string, array, struct, vec9 $\to$ Opaque Pointers (ptr in LLVM 20+).
+8.2 String-as-Truth Literal Handling
+For high-precision literals (e.g., a 100-digit integer in source code), the compiler uses a "String-as-Truth" architecture. The codegenLiteral function detects if a numeric literal exceeds native precision. If so, it does not convert it to a standard C++ double or long long. Instead, it invokes LiteralConverter to parse the raw string into the appropriate APFloat or APInt representation, preserving exact precision from source to IR.1
+For template literals (interpolated strings), the compiler generates code to create an array of AriaString structs on the stack and calls aria_string_concat_n_simple. This $O(N)$ approach avoids the $O(N^2)$ overhead of repeated concatenation.1
+8.3 Intrinsics for TBB Arithmetic
+The compiler does not simply emit add instructions for TBB types. It generates intrinsic calls or inline logic to enforce sticky errors. For tbb8 addition, the IR generation logic is:
+   1. Check operands for sentinel -128.
+   2. Call @llvm.sadd.with.overflow.i8.
+   3. Check result for sentinel -128 (collision).
+   4. Use select to return sentinel if any check fails.
+This ensures the safety logic is baked into the binary and cannot be optimized away by the LLVM middle-end.1
+________________
+9. The 6-Stream I/O Topology
+Aria redefines system interaction with a 6-Stream Topology, separating concerns to ensure pipeline safety and observability.1
+9.1 Stream Definitions and FD Mappings
+Unlike the Unix 3-stream model (stdin, stdout, stderr), Aria utilizes six streams to separate UI, Data, and Telemetry:
+Stream
+	FD (POSIX)
+	Purpose
+	Content Type
+	stdin
+	0
+	Control Input
+	User commands / Text
+	stdout
+	1
+	User Interface
+	Human-readable (colors, progress bars)
+	stderr
+	2
+	Critical Errors
+	Fatal error messages
+	stddbg
+	3
+	Telemetry
+	Structured logs (JSON), Debug info
+	stddati
+	4
+	Data Input
+	Binary structured data (Structs)
+	stddato
+	5
+	Data Output
+	Binary structured data (Structs)
+	9.2 Operational Philosophy
+This topology solves "pipeline fragility." A tool like aps (Aria Process Status) uses stdout (FD 1) to display a pretty-printed, colored table for the human user. Simultaneously, it streams binary Process structs to stddato (FD 5). A downstream tool like filter consumes FD 5, ignoring the UI on FD 1. This eliminates the need for fragile text parsing (e.g., awk, grep) and ensures type safety across shell pipes.1
+9.3 Runtime Integration
+The runtime initializes these streams before main. When the Aria Shell spawns a process, it must create 6 pipes and use dup2 to map them to FDs 0-5 in the child process, ensuring the topology propagates through the process tree.1
+________________
+10. Conclusion
+The Aria programming language represents a fortress of algorithmic determinism. It assumes that in the context of AGI for vulnerable populations, the cost of correctness is infinite, and thus any trade-off sacrificing correctness for speed is invalid. By treating integers as validity-carrying signals (TBB), protecting them with structural optimization barriers (LBIM), and managing them via deterministic memory models (Wild), Aria eliminates entire classes of bugs—from compiler mis-optimizations to non-deterministic physical drift. It creates a secure, verified root of trust essential for the safe deployment of AGI in the physical world. This specification serves as the immutable reference for its implementation.
+Works cited
+      1. 0_Aria Language_ Advanced Types & Math.txt

@@ -70,6 +70,13 @@ public:
     llvm::Value* generateDiv(llvm::Value* lhs, llvm::Value* rhs, Type* type);
 
     /**
+     * @brief Generate balanced ternary/nonary modulo with balanced remainder
+     * Uses round-to-nearest division: r = a - (b * round(a/b))
+     * This is different from truncating modulo used in standard arithmetic.
+     */
+    llvm::Value* generateMod(llvm::Value* lhs, llvm::Value* rhs, Type* type);
+
+    /**
      * @brief Generate balanced ternary/nonary negation
      */
     llvm::Value* generateNeg(llvm::Value* operand, Type* type);
@@ -107,11 +114,13 @@ private:
     llvm::Function* fn_tryte_sub = nullptr;
     llvm::Function* fn_tryte_mul = nullptr;
     llvm::Function* fn_tryte_div = nullptr;
+    llvm::Function* fn_tryte_mod = nullptr;  // CRITICAL: Balanced modulo
     llvm::Function* fn_tryte_neg = nullptr;
     llvm::Function* fn_nyte_add = nullptr;
     llvm::Function* fn_nyte_sub = nullptr;
     llvm::Function* fn_nyte_mul = nullptr;
     llvm::Function* fn_nyte_div = nullptr;
+    llvm::Function* fn_nyte_mod = nullptr;  // CRITICAL: Balanced modulo
     llvm::Function* fn_nyte_neg = nullptr;
 
     /**

@@ -1,0 +1,15 @@
+/**
+ * Test: Reassign Pinned Variable
+ * Expected: COMPILER ERROR - cannot reassign pinned variable
+ * Why Critical: Pin promises address stability
+ */
+
+func:main = int32() {
+    int32:x = 10;
+    wild int32@:pin_x = #x;  // Pin x
+
+    x = 20;  // ERROR: Cannot reassign pinned variable
+
+    print("Should not compile!\n");
+    return 0;
+};

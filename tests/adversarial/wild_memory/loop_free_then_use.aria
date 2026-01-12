@@ -1,0 +1,25 @@
+/**
+ * Test: Loop Free Then Use
+ * Expected: COMPILER ERROR
+ * Why: After freeing in loop iteration, next use is use-after-free
+ *
+ * The borrow checker must detect that on iteration 2+,
+ * p is already in FREED state when the loop body starts.
+ */
+
+func:use_ptr = void(int8@:ptr) {
+    // Just use the pointer
+};
+
+func:main = int32() {
+    wild int8@:p = alloc(10);
+    int32:i = 0;
+
+    while (i < 3) {
+        use_ptr(p);  // Iteration 1: OK, Iteration 2+: ERROR (p was freed)
+        free(p);     // Frees p
+        i = i + 1;
+    }
+
+    return 0;
+};

@@ -136,12 +136,18 @@ void aria_arena_reset(aria_arena* arena) {
         return;
     }
     
-    // Reset to first block
-    arena->current = arena->head;
-    arena->current_offset = 0;
-    arena->total_allocated_user = 0;
+    // ARIA-BUGFIX: CRIT-4 - Don't retain all memory forever
+    // Use automatic shrink policy with reasonable default (16 MB)
+    // This prevents long-running AGI from accumulating memory after spikes
+    // 
+    // Default retention: 16 MB (enough for most workloads, not excessive)
+    // - Small embedded systems: Won't OOM from spikes
+    // - Desktop/server: Trivial amount of RAM
+    // - Can override with aria_arena_reset_limit() for custom policy
+    const size_t DEFAULT_RETENTION_BYTES = 16 * 1024 * 1024;  // 16 MB
     
-    // Blocks remain allocated (retain capacity optimization)
+    // Delegate to limit-based reset
+    aria_arena_reset_limit(arena, DEFAULT_RETENTION_BYTES);
 }
 
 void aria_arena_reset_limit(aria_arena* arena, size_t max_retain) {

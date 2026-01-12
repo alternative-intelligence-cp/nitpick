@@ -1,0 +1,24 @@
+/**
+ * Test: Defer Executes on Early Return
+ * Expected: COMPILES SUCCESSFULLY
+ * Why: defer block must execute even when function returns early
+ *
+ * From TODO: "Test defer executes on early return"
+ */
+
+func:test = int32(bool:cond) {
+    wild int8@:p = alloc(1024);
+    defer { free(p); }
+
+    if (cond) {
+        return 1;  // Early return - defer must still run
+    }
+
+    return 0;  // Normal return - defer runs here too
+};
+
+func:main = int32() {
+    int32:r1 = test(true);
+    int32:r2 = test(false);
+    return 0;
+};

@@ -1,0 +1,368 @@
+﻿INDEPENDENT SAFETY AUDIT REPORT: ARIA COMPILER & RUNTIME ARCHITECTURE
+SUBJECT: CONCURRENCY, TASK CANCELLATION, AND TYPE SAFETY (SIL-4 COMPLIANCE)
+TARGET: ROBOTIC ACTUATOR CONTROL SYSTEMS (PHYSICS-BASED AGI)
+DATE: January 3, 2026
+SECURITY LEVEL: RED / CRITICAL
+AUDIT ID: ARIA-2026-01-02-AUDIT-001
+1. Executive Summary
+1.1 Audit Context and Mandate
+This report constitutes a comprehensive, independent safety audit of the Aria programming language core, specifically targeting its suitability for high-stakes, safety-critical applications involving robotic actuation and interaction with vulnerable human populations. The audit was commissioned under a strict mandate to treat the deployment scenario—physics-based Artificial General Intelligence (AGI) serving neurodivergent children and hospital patients—as a life-or-death context. Consequently, the review standard applied herein corresponds to Safety Integrity Level 4 (SIL-4) under IEC 61508 standards, where failure is not an option and formal verification of safety properties is required.
+The specific focus of this audit is Concurrency and Task Cancellation Safety. In robotic control systems, the ability to reliably cancel a task (e.g., "Stop Arm Movement") without leaving the system in an unstable, partial, or energized state is paramount. A failure in cancellation logic—specifically the "Zombie Task" scenario where a task appears stopped but continues to send signals to actuators—represents a catastrophic hazard. The "Teacher" system described in the mandate introduces further complexity, requiring distributed state consistency between a human teacher's inputs and the robotic student's execution, necessitating absolute determinism and drift-free operation.
+1.2 Critical Findings Overview
+The audit identified significant architectural strengths in the compiler’s type generation logic but uncovered critical unverifiable gaps in the runtime execution model due to missing source artifacts. While the compiler backend (codegen_expr.cpp) demonstrates a rigorous, almost paranoid approach to type safety and error propagation (compliant with SIL-4 principles), the runtime mechanisms for task scheduling, work-stealing, and involuntary cancellation (task.cpp, executor.cpp) were not present in the provided source artifacts.
+Summary of Compliance Status:
+Audit Item
+	Status
+	Risk Level
+	Primary Hazard
+	1. Cancellation Point Identification
+	⚠️ PARTIAL / UNVERIFIABLE
+	HIGH
+	Runaway Loop / Unresponsive Actuator
+	2. Cleanup on Cancellation
+	❌ CRITICAL FAILURE
+	SEVERE
+	Locked Brakes / Resource Leak / Physical Drop
+	3. Cancellation Propagation
+	✅ COMPLIANT (Data Plane)
+	LOW
+	Corrupted Sensor Data (Mitigated by TBB)
+	4. Partial Operation Handling
+	✅ COMPLIANT
+	LOW
+	Tearing of Large Integers (Mitigated by LBIM)
+	5. Race Conditions
+	⚠️ UNVERIFIABLE
+	HIGH
+	Double-Free / Use-After-Free
+	1.3 Risk Assessment: The "Actuator Drift" Threat
+The primary threat identified is Actuator Drift via Unchecked Partial State. While the TBB (Twisted Balanced Binary) type system prevents mathematical corruption through a sophisticated "sticky error" propagation mechanism 1, the absence of verified defer logic means that a task cancelled while holding a "Motor Lock" might fail to release it. If the AGI logic assumes the motor is free and attempts a new movement, the conflicting commands could cause physical spasms in the robotic unit.
+Furthermore, the audit confirms that semantic search tools failed to locate the runtime files not because of indexing errors, but because the files src/runtime/async/task.cpp and src/runtime/async/executor.cpp were physically absent from the compilation upload, despite the directory structure suggesting their existence.1
+Recommendation: The project must immediately undergo a secondary audit focused exclusively on src/runtime/async/task.cpp and src/backend/ir/codegen_stmt.cpp once those artifacts are made available. The current state is NOT CERTIFIED for physical deployment until the defer mechanism is formally verified.
+________________
+2. Audit Scope and Artifact Verification
+2.1 Methodology
+The audit followed a rigorous static analysis methodology consistent with high-assurance software validation.
+1. Artifact Inventory: Verified presence of all required source files against the repository manifest.
+2. Semantic Analysis: Deep reading of C++ source code to understand the mapping between Aria language constructs (source) and LLVM Intermediate Representation (target).
+3. Traceability: Mapping safety requirements (e.g., "guaranteed cleanup") to specific lines of code or compiler logic.
+4. Negative Testing: Actively searching for "silent defaults" or implicit behaviors that could lead to undefined states.
+2.2 Artifact Availability Report
+A critical impediment to this audit was the absence of the runtime source files referenced in the audit mandate. The user mandate explicitly stated that semantic searches might fail and urged manual verification. This manual verification was performed by exhaustively scanning the file headers in the provided "aria_source_full.txt" document.
+
+
+Required Artifact
+	Path
+	Status
+	Impact on Audit
+	Task Implementation
+	src/runtime/async/task.cpp
+	MISSING
+	Cannot verify Task destructor logic or state transitions. 1
+	Executor Implementation
+	src/runtime/async/executor.cpp
+	MISSING
+	Cannot verify scheduling, preemption, or work-stealing safety. 1
+	Statement Codegen
+	src/backend/ir/codegen_stmt.cpp
+	MISSING
+	Cannot verify defer generation, loop interrupts, or control flow. 1
+	Expression Codegen
+	src/backend/ir/codegen_expr.cpp
+	PRESENT
+	Full analysis of type safety, LBIM, TBB, and async intrinsics performed. 1
+	Async Standard Lib
+	lib/std/async.aria
+	MISSING
+	Cannot verify high-level primitives like select or join. 1
+	Auditor Note: Per the user's explicit instruction to "Fail hard on unknowns," this report treats missing files not as "assumed standard implementation" but as non-existent safety features. A SIL-4 system cannot rely on unverified components. The analysis primarily leverages src/backend/ir/codegen_expr.cpp 1, which contains deep insights into the language's safety philosophy, type system, and asynchronous lowering strategy.
+________________
+3. Detailed Audit: Concurrency and Task Cancellation Safety
+3.1 Cancellation Point Identification
+Requirement: Cancellation must be checked at safe points only, ensuring no cancellation occurs mid-critical-section. The threat model specifies that a task cancelled mid-operation must not leave motors enabled or variables in torn states.
+Analysis of Asynchronous Lowering:
+The provided backend code (src/backend/ir/codegen_expr.cpp) reveals that Aria utilizes LLVM's coroutine infrastructure to implement asynchronous behavior. Specifically, the inclusion of <llvm/IR/Intrinsics.h> and the commentary "Phase 4.5.3: Coroutine intrinsics for await" 1 indicates that the language lowers await expressions to llvm.coro.suspend points.
+In a coroutine model, "cancellation" typically occurs when a coroutine handle is destroyed (llvm.coro.destroy) rather than resumed (llvm.coro.resume). This distinction is critical for robotic safety.
+Compliance Findings:
+* Explicit Suspension: The code generator creates suspension points via intrinsics. This suggests that cancellation is cooperative. The task must actively await something (a timer, a sensor reading, a sub-task) to be cancellable. This is generally safer for robotic control than preemptive cancellation (killing a thread), as it ensures the code is paused at a known state (the await point) where invariants should be stable.
+* Absence of Implicit Poll Points: There is no evidence in codegen_expr.cpp of "implicit" poll points being inserted into long-running synchronous code. If a user writes while(true) { calculate_physics(); } without an await, the task may become a "Zombie"—uncancellable and consuming CPU resources. In a robotics context, this could prevent the emergency stop logic from preempting a lower-priority calculation, leading to a physical collision.
+* Critical Section Integrity: Because the suspension points are explicit (await), users have control over where cancellation happens. However, without the executor.cpp source, we cannot verify if the runtime enforces "No Cancellation" zones (Critical Sections). If an await is placed inside a critical section (e.g., while holding a lock on the I2C bus), cancellation at that point could leave the bus hung.
+Risk: High. Without evidence of loop-interrupt logic in codegen_stmt.cpp (which handles WhileStmt), we must assume that compute-bound tasks are uncancellable. This violates the requirement for "predictability" and "stability."
+Recommendation: The compiler must insert implicit cancellation checks (yield points) at the back-edge of every loop in codegen_stmt.cpp to ensure bounded latency for cancellation requests. These checks must be low-overhead (e.g., checking a thread-local atomic flag) to maintain the "performance" requirement.
+3.2 Cleanup on Cancellation (The defer Mechanism)
+Requirement: Cancellation allows stopping async tasks. defer blocks must run when a task is cancelled to free resources (e.g., unlocking motors). Cancellation must guarantee cleanup similar to a panic.
+Analysis:
+The concept of defer is central to Aria's safety model, intended to act as a RAII (Resource Acquisition Is Initialization) equivalent for procedural blocks. However, defer is a statement-level construct. The logic for generating defer code resides in src/backend/ir/codegen_stmt.cpp, which is missing from the artifact bundle.1
+Despite the missing file, we can infer critical constraints from codegen_expr.cpp. The expression generator deals with complex types like LBIM (large integers) and structs. These types often require cleanup. For example, int1024 is implemented as a struct of i64 limbs. If these are stack-allocated (via alloca), they are cleaned up automatically when the stack frame is destroyed (llvm.coro.destroy).
+The "Pinning" Problem:
+In the snippet src/backend/ir/codegen_expr.cpp, we see extensive handling of String literals and global variables.1
+* Strings are pool-allocated or global (string_pool_).
+* The query mentions wild int64@, suggesting manual memory management ("Wild" pointers).
+* If a task allocates a "Wild" pointer or interacts with a physical memory mapped I/O (MMIO) region, that resource must be explicitly released.
+Critical Gap: In C++ based coroutine runtimes (which Aria appears to be, utilizing LLVM), destroying a suspended coroutine handle causes the local variables in the coroutine frame to be destructed. This works for C++ objects with destructors. However, Aria likely implements defer blocks as explicit code paths that execute at scope exit.
+Crucial Failure Mode: Unless the compiler generates a custom destroy ramp function for the coroutine that jumps to the relevant defer blocks based on the suspension index, cancellation will skip defer blocks. When llvm.coro.destroy is called, it deallocates the frame. It does not automatically jump to the end of the user's function to run cleanup code unless specifically wired to do so.
+Verdict: NON-COMPLIANT / HIGH RISK. Without seeing the implementation of the coroutine destroy ramp in codegen_stmt.cpp, we must assume that cancelling a task effectively longjmps out of the function, bypassing cleanup code. For a robotic arm holding a heavy payload, this could mean the "Release Brake" command in a defer block is never called, causing the motors to overheat (if holding position) or the payload to drop unexpectedly (if active control ceases) when the system eventually resets. This directly violates the "One child harmed would be game over" constraint.
+3.3 Cancellation Propagation in Nested Tasks
+Requirement: Parent cancellation must cancel children. Child cancellation must not cancel parent. Confirm cancellation scope is clearly defined.
+Analysis:
+The user query mentions a Teacher system and nested tasks, implying a hierarchy of execution. Ideally, a "Lesson Plan" task should be able to cancel a "Demonstrate Gesture" sub-task without crashing the whole system.
+In codegen_expr.cpp, we see the implementation of CallExpr logic (implied via function generation). The interaction with Future objects (likely defined in src/runtime/async/future.h, also missing 1) defines propagation.
+However, the file codegen_expr.cpp does show how OptionalType (T?) is handled:
+
+
+C++
+
+
+
+
+// Handle optional types: T? -> { i1, T }
+if (type->getKind() == TypeKind::OPTIONAL) {
+   OptionalType* optType = static_cast<OptionalType*>(type);
+   Type* wrappedType = optType->getWrappedType();
+   llvm::Type* wrappedLLVMType = getLLVMType(wrappedType);
+   return getOptionalType(wrappedLLVMType);
+}
+
+1
+This structure { i1, T } is crucial. It suggests that functions return a "Success/Failure" flag alongside the data. This supports a propagation-by-return-value model. If a child task is cancelled, it likely returns NIL (or an Error result). The parent must check this.
+The TBB Propagation Safety Net:
+A unique and highly robust feature found in codegen_expr.cpp is the Twisted Balanced Binary (TBB) error propagation logic.
+
+
+C++
+
+
+
+
+// ARIA-018: Sentinel-Preserving TBB Widening
+// Implements branchless widening that preserves error sentinels...
+// Pattern: icmp (check source sentinel) -> sext -> select
+
+1
+The compiler enforces "Sticky Errors". If a variable x is ERR (the sentinel value), then x + 1 is also ERR.
+
+
+C++
+
+
+
+
+// Step 1: Input validation - check if either operand is ERR
+llvm::Value* lhsIsErr = builder.CreateICmpEQ(left, sentinel, "lhs_is_err");
+//...
+// Step 5: Branchless select - return sentinel if any failure
+return builder.CreateSelect(failFinal, sentinel, mathResult, "tbb_result");
+
+1
+Insight: This TBB mechanism acts as an implicit cancellation propagation system for the Data Plane. If a sensor reading fails (returns ERR), any calculation derived from that reading (e.g., TargetForce = SensorInput * Gain) immediately and atomically becomes ERR.
+This is SIL-4 Compliant behavior. It prevents a robotic actuator from acting on invalid data derived from a failed sub-task. Even if the Control Task isn't formally "cancelled" by the scheduler, the data stream effectively "cancels itself" by turning into error sentinels that propagate to the motor output. The motor controller can then check if (force == ERR) emergency_stop();.
+Verdict: COMPLIANT (Data Plane). The TBB sticky error mechanism provides a robust fallback for cancellation propagation. Even if the task scheduler fails to kill a task, the data integrity is maintained via the sentinel system.
+3.4 Partial Operation Handling
+Requirement: Verify partial writes rolled back on cancellation. Check invariants maintained even if cancelled. Confirm no observable partial state.
+Analysis of LBIM (Limb-Based Integral Model):
+Robotic physics often requires high-precision math. Aria implements int128 through int4096 using LBIM to avoid LLVM bugs.1
+
+
+C++
+
+
+
+
+// ARIA-024: Large integers use Limb-Based Integral Model (LBIM)
+// Stored as structs of i64 limbs...
+if (typeName == "int128" |
+
+| typeName == "uint128") {
+   //...
+   int128Struct = llvm::StructType::create(context, {limbArray}, "struct.int128");
+}
+
+1
+And crucially, the operations are runtime calls:
+
+
+C++
+
+
+
+
+// ARIA-024: Large integers use runtime library (limb-based arithmetic)
+//...
+funcName = "aria_lbim" + opSuffix + bitWidth; // e.g., aria_lbim_add1024
+
+1
+Safety Implication:
+Because large integer arithmetic is performed via function calls (aria_lbim_add1024), it is atomic with respect to the Aria scheduler (assuming the scheduler is cooperative and doesn't interrupt C++ runtime calls). A task cannot be suspended in the middle of adding two 1024-bit numbers. It suspends before the call or after the call returns.
+This prevents "Tearing" where the lower 64 bits of a coordinate are updated but the upper bits are not, which could cause a robot arm to teleport to a random location in the coordinate space—a classic source of drift and violent motion in robotics.
+Partial State in Structs:
+The compiler creates structs with isPacked=false for ABI alignment.1
+
+
+C++
+
+
+
+
+// Set struct body with natural ABI padding (isPacked=false)
+// This ensures platform-consistent alignment...
+
+This ensures that writes to fields are naturally aligned, reducing the risk of memory corruption during partial writes if the underlying hardware supports atomic pointer writes.
+Verification of Invariants:
+The fix256 type (deterministic fixed point) uses a 4-limb structure.
+
+
+C++
+
+
+
+
+// fix256 uses 4-limb structure: [2 x i64] integer part + [2 x i64] fractional part
+
+1
+
+
+Since this is also handled via runtime calls (aria_fix256_*), the integrity of physics calculations is maintained. A cancelled physics step will result in either the old state or the new state, but not a hybrid state where the integer part is updated but the fractional part is not.
+Verdict: COMPLIANT. The use of atomic runtime calls for complex math (LBIM, Fix256) effectively prevents partial value tearing during task suspension.
+3.5 Race Between Completion and Cancellation
+Requirement: Verify task completion prevents cancellation. Check cancellation doesn't affect completed task result. Confirm no double-cleanup.
+Analysis:
+This logic resides in Executor::run or Task::transition, which are in the missing files executor.cpp/task.cpp.
+However, we can look for "Double Free" risks in the generated code.
+The TBB logic uses branchless selects (CreateSelect). It does not use control flow branching for error handling in arithmetic. This eliminates a class of race conditions where a branch predictor might speculatively execute a cleanup path.
+The "String Interning" Hazard:
+Code codegen_expr.cpp mentions a fix for string literal deduplication:
+
+
+C++
+
+
+
+
+// ARIA-026: String interning - check pool before creating new global
+// Gemini Safety Audit Fix #5: Prevents OOM from duplicate literals
+auto pool_it = string_pool_.find(str);
+
+1
+
+
+While this fixes OOM (Out Of Memory), it introduces a shared global state.
+* Scenario: Task A is cancelled while referencing a string literal. Task B finishes and references the same string.
+* Risk: If the string pool management (which relies on llvm::GlobalVariable) is not thread-safe or if the cancellation logic attempts to "free" string literals (which it shouldn't, as they are globals), a race condition could corrupt the global string table.
+* Mitigation: llvm::GlobalVariable implies static lifetime. As long as aria_free is never called on these pointers, it is safe. The compiler uses llvm::GlobalValue::PrivateLinkage 1, which restricts visibility but maintains static lifetime.
+Verdict: UNVERIFIABLE. Without the Executor source, we cannot guarantee that a task finishing on Thread A while being cancelled on Thread B won't trigger a double-free of resources or a race condition on shared task state flags.
+________________
+4. Deep Analysis of Compiler Safety Constructs (Aria Specifics)
+The Aria compiler backend exhibits several "Paranoid Safety" features that significantly mitigate the risks of the missing runtime verification. These features are critical for the robotics use case and demonstrate strict adherence to the "Safety > Convenience" philosophy.
+4.1 ARIA-026: The "Fail Hard" Type System
+In src/backend/ir/codegen_expr.cpp, the compiler implements a rigid type mapping strategy.
+
+
+C++
+
+
+
+
+// ARIA-026: SAFETY FIX - Fail hard on non-primitive types instead of defaulting to i32
+// Gemini Safety Audit Fix #1: Type System Breach
+// Risk: 16-byte struct defaulting to 4-byte i32 could cause stack overflow
+if (!type->isPrimitive()) {
+   //...
+   throw std::runtime_error("ICE: Code generation encountered unmapped non-primitive type kind... This is a compiler bug - all types must be explicitly mapped.");
+}
+
+1
+Insight: Many compilers default to int (i32) when encountering an unknown type during prototyping or error recovery. In a robotic system, treating a struct (e.g., MotorConfig) as an int could lead to interpreting pointer data as force limits (e.g., interpreting 0x7FFF... address as 32767 Newtons). Aria's refusal to compile ("ICE" - Internal Compiler Error) is a massive safety asset. It prevents "Silent Defaults" explicitly requested by the user to be avoided.
+4.2 ARIA-025: Deterministic Physics (Fix256)
+The language implements fix256 (Q128.128 fixed-point) specifically for AGI physics.
+
+
+C++
+
+
+
+
+// ARIA-025: fix256 deterministic fixed-point (Q128.128 for physics simulations)
+if (typeName == "fix256") {
+   // fix256 uses 4-limb structure: [2 x i64] integer part + [2 x i64] fractional part
+   //...
+}
+
+1
+Safety Implication: Floating point math (f64) is non-deterministic across different CPU architectures (x86 vs ARM) due to subtle differences in rounding and FMA (Fused Multiply-Add) instructions. In a distributed robotic learning system ("Teacher" system), if the teacher (Cloud/x86) calculates a trajectory and the student (Robot/ARM) calculates a slightly different one due to float drift, the robot could collide with an object.
+Aria's use of fix256 guarantees bit-exact determinism. This eliminates "Mathematical Drift" as a source of physical harm, satisfying the "drift" concern in the mandate.
+4.3 ARIA-018: Sentinel-Preserving Widening
+The compiler implements a sophisticated widening cast for TBB types that preserves error states.
+
+
+C++
+
+
+
+
+// ARIA-018: Sentinel-Preserving TBB Widening
+// Prevents "sentinel healing" where tbb8 ERR (-128) becomes valid in tbb16
+// Logic: icmp (src == sentinel)? dest_sentinel : sext(src)
+
+1
+Insight: Standard integer promotion (int8 -> int16) sign-extends the value.
+If tbb8 uses -128 as ERR, extending it to tbb16 results in -128 (which is a valid value in 16-bit). The error "heals" and becomes a valid, but incorrect, number.
+Aria's compiler explicitly detects the sentinel and promotes it to the destination's sentinel (e.g., -32768).
+Ripple Effect: This prevents a sensor error (ERR) from being interpreted as a valid negative force command when the variable type is widened for calculation. This is a critical safety feature for actuator control.
+4.4 ARIA-024: LBIM Integrity
+The compiler explicitly works around LLVM optimization bugs that threaten large integer correctness.
+
+
+C++
+
+
+
+
+// ARIA-024: Large integers use Limb-Based Integral Model (LBIM)
+// Stored as structs of i64 limbs to bypass LLVM IPSCCP/ConstraintElimination bugs
+// See: github.com/llvm/llvm-project/issues/68751, #56351
+
+1
+Insight: By treating large integers as aggregate structs rather than scalar integers, the compiler prevents LLVM from applying aggressive optimizations (like Constant Propagation) that are known to be buggy for bit-widths > 128. This prioritizes Correctness over Performance, adhering to the user's primary requirement. It ensures that cryptographic or high-precision control identifiers remain uncorrupted during optimization passes.
+________________
+5. Threat Models and Failure Scenarios
+5.1 Scenario A: The "Zombie Arm" (Cancellation Failure)
+Setup: A robotic arm is executing a MoveTo(Point B) task.
+Event: A safety sensor detects a child entering the workspace. The System Monitor issues a Cancel(TaskID) command.
+Failure Mode:
+1. The runtime sets the task state to CANCELLED.
+2. The task is currently inside a tight loop while(dist > 0.1) { calculate_inverse_kinematics(); }.
+3. Because codegen_stmt.cpp is missing, we cannot verify if the while loop checks the cancellation token.
+4. Result: The task ignores the cancellation flag and continues driving the motor until it hits the target (or the child).
+Mitigation: The TBB Error propagation acts as a secondary kill switch. If the sensor injects an ERR value into the distance calculation, the MoveTo calculation will mathematically collapse to ERR, potentially causing the motor driver (if properly written) to disengage.
+5.2 Scenario B: The "Locked Brake" (Cleanup Failure)
+Setup: A task acquires a Mutex to release the joint brakes for gravity compensation.
+Event: The task is cancelled due to a high-priority interrupt.
+Failure Mode:
+   1. The task is suspended at an await point.
+   2. The executor destroys the task object.
+   3. The logic for defer { brake.engage(); } is skipped because the coroutine destruction path was not generated correctly in codegen_stmt.cpp (or was never implemented).
+   4. Result: The task dies, but the brakes remain released (disengaged). The robotic arm collapses under gravity, potentially injuring a patient.
+Mitigation: NONE VISIBLE. This is the single highest risk identified. RAII (Resource Acquisition Is Initialization) via C++ class destructors works, but Aria's defer statement requires explicit compiler support to hook into the coroutine destruction path. Without verification of codegen_stmt.cpp, this scenario is a "Game Over" risk.
+________________
+6. Conclusions and Recommendations
+6.1 Conclusion
+The Aria language compiler backend (codegen_expr.cpp) demonstrates an exceptional level of rigor regarding type safety, numeric integrity, and deterministic behavior. The implementations of fix256, LBIM, and TBB error propagation are world-class examples of safety-critical compiler design. These features provide a strong "Data Plane" safety net that mitigates many common robotic control hazards (drift, tearing, integer overflow).
+However, the absence of the Runtime Execution Model (executor.cpp) and Statement Logic (codegen_stmt.cpp) makes it impossible to certify the system for SIL-4 deployment regarding Task Cancellation. We cannot verify that defer blocks run on cancellation, nor can we verify that loops are interruptible. The "Fail Hard on Unknowns" mandate requires us to fail the audit on these grounds.
+Final Audit Status: CONDITIONAL FAIL.
+      * Data Safety: PASS (High Confidence) - TBB, LBIM, and Fix256 provide excellent protection against data corruption.
+      * Control Flow Safety: FAIL (Unverifiable) - Missing artifacts prevent verification of cleanup and cancellation.
+6.2 Recommendations for the Development Team
+      1. Immediate Remediation of Missing Artifacts:
+      * Provide src/runtime/async/task.cpp and src/backend/ir/codegen_stmt.cpp for immediate review.
+      * Specifically demonstrate the "Destroy Ramp" logic in coroutine generation: ensuring that when a coroutine handle is destroyed, the instruction pointer jumps to a cleanup block that executes active defers.
+      2. Implement "Safe Points" in Loops:
+      * Modify codegen_stmt.cpp (While/For loops) to insert an intrinsic call llvm.coro.suspend(token.none, true) or a runtime check aria_check_cancellation() at the start of every loop iteration. This guarantees bounded latency for emergency stops.
+      3. Formalize the TBB-Cancellation Bridge:
+      * Explicitly link Task Cancellation to TBB Errors. When a task is cancelled, inject a TBB_ERR sentinel into its await result. This forces the task to wake up, see the error, and unwind naturally via the verified generateTBBBinaryOp propagation logic, triggering defer blocks along the way. This converts "Async Cancellation" (hard) into "Error Handling" (verified).
+      4. Mandatory Hardware Interlocks:
+      * Given the "Locked Brake" risk (Scenario 5.2), the robotic hardware must not rely solely on software task cancellation. Implement a hardware Watchdog Timer that automatically engages brakes if the main control loop fails to "pet" it every 10ms. This is standard SIL-4 practice but is doubly important given the unverified software cleanup.
+Signed:
+Lead Safety Auditor
+Aria Language Certification Authority
+Works cited
+      1. aria_source_full.txt

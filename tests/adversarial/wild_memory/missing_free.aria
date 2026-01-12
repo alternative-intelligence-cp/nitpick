@@ -1,0 +1,12 @@
+/**
+ * Test: Missing Free (Memory Leak)
+ * Expected: COMPILER ERROR (wild memory not freed before scope exit)
+ * Why: Wild memory must be explicitly freed to prevent leaks
+ */
+
+func:main = int32() {
+    wild int8@:ptr = alloc(1024);
+
+    // BUG: ptr is never freed before function returns
+    return 0;  // ERROR: Wild memory leak
+};

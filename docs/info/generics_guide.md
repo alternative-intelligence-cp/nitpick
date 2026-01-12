@@ -187,6 +187,82 @@ int32:y = 20;
 swap(x, y);  // T inferred as int32, calls _Aria_M_swap_<hash>_int32
 ```
 
+## TBB Type Widening (ARIA-018 Safety Constraint)
+
+**CRITICAL:** Implicit TBB widening is **forbidden** due to sentinel discontinuity. Each TBB width has a different ERR sentinel value, and standard sign-extension does not preserve error state.
+
+### Problem Example (FORBIDDEN)
+
+```aria
+tbb8:temp = getSensorReading();  // Returns ERR on failure
+// tbb16:wide = temp;  // ❌ COMPILE ERROR! ERR would "heal" to valid -128
+```
+
+**Why this fails:**
+- `tbb8` ERR = -128 (0x80)
+- Sign-extension → `tbb16` = -128 (0xFF80) - **valid number, NOT ERR!**
+- `tbb16` ERR = -32768 (0x8000) - **different value**
+
+### Correct Usage: `tbb_widen<T>()`
+
+Use the explicit widening intrinsic:
+
+```aria
+tbb8:temp = getSensorReading();
+tbb16:wide = tbb_widen<tbb16>(temp);  // ✓ Preserves ERR correctly
+```
+
+**How it works:**
+```aria
+// Internal implementation (simplified)
+func<T>:tbb_widen = *T(tbb8:val) {
+    if (val == TBB8_ERR) {
+        pass ERR;  // Maps to appropriate ERR for destination type
+    }
+    pass sext(val);  // Standard sign-extension for valid values
+}
+```
+
+### Available Widening Functions
+
+```aria
+tbb_widen<tbb16>(tbb8)   // 8-bit → 16-bit
+tbb_widen<tbb32>(tbb8)   // 8-bit → 32-bit
+tbb_widen<tbb64>(tbb8)   // 8-bit → 64-bit
+tbb_widen<tbb32>(tbb16)  // 16-bit → 32-bit
+tbb_widen<tbb64>(tbb16)  // 16-bit → 64-bit
+tbb_widen<tbb64>(tbb32)  // 32-bit → 64-bit
+```
+
+### Performance Note
+
+`tbb_widen<T>()` compiles to a **single branchless instruction** (cmov/csel) with zero runtime overhead. The safety constraint has no performance cost.
+
+### Real-World Safety Impact
+
+```aria
+// Temperature control system
+tbb8:sensor = readTemperature();  // Returns ERR on sensor failure
+
+// WRONG: Implicit widening (FORBIDDEN)
+// tbb16:temp = sensor;  // Would convert ERR to -128°C (valid!)
+// if (temp < -100) { activateHeaters(); }  // Heaters activate on error! 🔥
+
+// CORRECT: Explicit widening preserves ERR
+tbb16:temp = tbb_widen<tbb16>(sensor);
+if (temp == ERR) {
+    failSafe();  // System halts safely
+} else if (temp < -100) {
+    activateHeaters();  // Only activates on valid readings
+}
+```
+
+**See Also:**
+- [TBB Type System Spec](../specs/TBB_TYPE_SYSTEM_SPEC.md) - Complete ARIA-018 documentation
+- [aria_specs.txt](aria_specs.txt) - Formal safety constraints
+
+---
+
 ## See Also
 
 - [Type System Reference](type_system.md)

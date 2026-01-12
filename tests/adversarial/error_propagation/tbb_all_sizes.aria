@@ -1,0 +1,31 @@
+/**
+ * Test: TBB Error Propagation for All Sizes (8, 16, 32, 64)
+ * Expected: COMPILES SUCCESSFULLY (runtime test)
+ * Why: All TBB sizes must have consistent sticky error behavior
+ *
+ * Each size has its own sentinel value that must propagate correctly
+ */
+
+func:main = int32() {
+    // tbb8: sentinel is -128
+    tbb8:err8 = tbb8_div(tbb8_from_int(10), tbb8_from_int(0));
+    tbb8:result8 = tbb8_add(err8, tbb8_from_int(5));
+    bool:err8_propagates = tbb8_is_err(result8);
+
+    // tbb16: sentinel is -32768
+    tbb16:err16 = tbb16_div(tbb16_from_int(10), tbb16_from_int(0));
+    tbb16:result16 = tbb16_add(err16, tbb16_from_int(5));
+    bool:err16_propagates = tbb16_is_err(result16);
+
+    // tbb32: sentinel is -2147483648
+    tbb32:err32 = tbb32_div(tbb32_from_int(10), tbb32_from_int(0));
+    tbb32:result32 = tbb32_add(err32, tbb32_from_int(5));
+    bool:err32_propagates = tbb32_is_err(result32);
+
+    // tbb64: sentinel is INT64_MIN
+    tbb64:err64 = tbb64_div(tbb64_from_int(10), tbb64_from_int(0));
+    tbb64:result64 = tbb64_add(err64, tbb64_from_int(5));
+    bool:err64_propagates = tbb64_is_err(result64);
+
+    return 0;
+};

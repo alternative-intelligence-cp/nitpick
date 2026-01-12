@@ -1,0 +1,23 @@
+/**
+ * Test: TBB Error Propagation (Sticky Errors)
+ * Expected: COMPILES SUCCESSFULLY (runtime behavior test)
+ * Why: ERR must propagate through ALL operations
+ *
+ * From TODO: "ERR propagates through ALL operations"
+ * tbb8_div(10, 0) → ERR
+ * ERR + 5 → ERR
+ * ERR * 2 → ERR
+ * ERR - 100 → ERR
+ */
+
+func:main = int32() {
+    tbb8:a = tbb8_div(tbb8_from_int(10), tbb8_from_int(0));  // ERR (div by zero)
+    tbb8:b = tbb8_add(a, tbb8_from_int(5));    // ERR + 5 → ERR
+    tbb8:c = tbb8_mul(b, tbb8_from_int(2));    // ERR * 2 → ERR
+    tbb8:d = tbb8_sub(c, tbb8_from_int(100));  // ERR - 100 → ERR
+
+    // Final value must still be ERR
+    bool:still_err = tbb8_is_err(d);
+
+    return 0;
+};

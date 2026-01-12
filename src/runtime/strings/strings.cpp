@@ -6,6 +6,7 @@
 
 #include "runtime/strings.h"
 #include "runtime/gc.h"
+#include <cerrno>
 #include <cstring>
 #include <cctype>
 #include <cstdlib>
@@ -385,6 +386,19 @@ AriaResultPtr aria_string_to_lower(AriaString str) {
 }
 
 AriaResultPtr aria_string_concat(AriaString a, AriaString b) {
+    // BUG-CONCAT-001 FIX: Check for integer overflow before addition
+    // GEMINI BATCH 04 SAFETY FIX: Prevent heap corruption from overflow wraparound
+    // Risk: Large strings summing to > INT64_MAX would wrap to negative/small value,
+    //       causing small allocation followed by large memcpy → heap corruption
+    if (INT64_MAX - a.length < b.length) {
+        AriaError* error = aria_error_new(
+            ARIA_ERR_OVERFLOW,
+            "String concatenation would overflow (combined length exceeds INT64_MAX)",
+            __FILE__, __LINE__
+        );
+        return aria_result_err_ptr(error);
+    }
+    
     int64_t total_length = a.length + b.length;
     
     // Allocate new string data
@@ -712,8 +726,24 @@ AriaResultI64 aria_string_to_int(AriaString str) {
     memcpy(temp, str.data, str.length);
     temp[str.length] = '\0';
 
+    // BUG-STRTOLL-001 FIX: Reset errno before strtoll and check for overflow
+    // GEMINI BATCH 04 SAFETY FIX: Prevent silent clamping to INT64_MAX
+    // Risk: Parsing "99999999999999999999" would silently return INT64_MAX,
+    //       disabling safety limits (e.g., MAX_FORCE becomes effectively infinite)
+    errno = 0;
     char* endptr;
     int64_t result = strtoll(temp, &endptr, 10);
+
+    // Check for numeric overflow
+    if (errno == ERANGE) {
+        free(temp);
+        AriaError* error = aria_error_new(
+            ARIA_ERR_OVERFLOW,
+            "Integer overflow in string conversion (value exceeds INT64 range)",
+            __FILE__, __LINE__
+        );
+        return aria_result_err_i64(error);
+    }
 
     // Check if entire string was consumed
     bool valid = (endptr == temp + str.length);

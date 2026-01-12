@@ -1,0 +1,60 @@
+/// Comprehensive pointer syntax test for Aria
+/// Testing @, ->, and . operators
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+/// Test 1: Address-of operator (@variable)
+func:test_address_of = int32() {
+    int64:myInt = 345;
+    int64@:myPtr = @myInt;  // Get address of myInt
+    
+    pass(0);
+};
+
+/// Test 2: Pointer member access (->)
+func:test_arrow_operator = int32() {
+    Point:p = { x: 10, y: 20 };
+    
+    wild Point@:ptr = @p;
+    int32:x_val = ptr->x;  // Member access through pointer with ->
+    int32:y_val = ptr->y;
+    
+    pass(0);
+};
+
+/// Test 3: Standalone pointer dereference
+func:test_pointer_deref = int32() {
+    int64:value = 42;
+    int64@:ptr = @value;
+    
+    // Try to dereference - which syntax works?
+    // int64:retrieved = ptr@;    // Option 1: ptr@
+    // int64:retrieved = @ptr;    // Option 2: @ptr  
+    // int64:retrieved = ptr->;   // Option 3: ptr->
+    
+    // For now, use array indexing workaround
+    int64:retrieved = ptr[0];
+    
+    pass(0);
+};
+
+/// Test 4: Array indexing (known to work)
+func:test_array_indexing = int32() {
+    int8@:str = "Hello";
+    int8:first = str[0];   // 'H'
+    int8:second = str[1];  // 'e'
+    
+    pass(0);
+};
+
+func:main = int32() {
+    test_address_of();
+    test_arrow_operator();
+    test_pointer_deref();
+    test_array_indexing();
+    
+    pass(0);
+};

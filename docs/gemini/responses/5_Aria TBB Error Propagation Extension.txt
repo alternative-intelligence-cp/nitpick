@@ -1,0 +1,400 @@
+﻿Architectural Specification and Implementation Strategy for High-Precision TBB Primitives: int1024 and fix256
+1. Executive Summary and Theoretical Foundation
+The evolution of the Aria programming language into the domain of safety-critical Artificial General Intelligence (AGI) necessitates a rigorous expansion of its numerical capabilities. The core philosophy of Aria—serving as a "companion for vulnerable populations" and ensuring ironclad operational safety—dictates that numerical primitives cannot simply be efficient; they must be semantically resilient against corruption, overflow, and undefined behavior. This report details the comprehensive backend engineering strategy required to extend the Twisted Balanced Binary (TBB) error propagation logic to two new high-precision primitive types: int1024 (a 1024-bit signed integer) and fix256 (a 256-bit fixed-point number).
+The implementation of these types is not merely an exercise in widening bit-widths. It involves a fundamental re-engineering of the compiler's backend to accommodate the "Sticky Error" propagation mechanism, a safety feature designed to prevent physical drift in robotic actuators and decision-making failures in cognitive loops. Furthermore, the implementation must navigate specific limitations and bugs within the Low Level Virtual Machine (LLVM) optimization passes, specifically issues related to Inter-procedural Sparse Conditional Constant Propagation (IPSCCP) and Constraint Elimination, which have historically plagued large integer arithmetic.
+To achieve this, the Aria compiler employs a Limb-Based Integral Model (LBIM) for storage and a rigorous runtime intrinsic layer for arithmetic operations. This report provides an exhaustive technical roadmap, from the theoretical underpinnings of TBB semantics to the precise C++ implementation details required in the compiler's Intermediate Representation (IR) generator and the supporting runtime library.
+1.1 The Twisted Balanced Binary (TBB) Safety Protocol
+Standard binary integer arithmetic, utilizing two's complement representation, suffers from an inherent asymmetry. For a signed $N$-bit integer, the range is typically $[-2^{N-1}, 2^{N-1}-1]$. This asymmetry means that the absolute value of the minimum integer cannot be represented, leading to arithmetic traps on operations as simple as abs(INT_MIN) or INT_MIN / -1.
+Aria's TBB system resolves this by "twisting" the representation to enforce perfect symmetry. The most negative value in the two's complement space (the bit pattern 100...0) is explicitly reserved as an error sentinel, denoted as ERR.
+Table 1.1: TBB Semantic Ranges
+Type
+	Bit Width
+	Standard Min (Two's Comp)
+	TBB Sentinel (ERR)
+	TBB Valid Min
+	TBB Valid Max
+	tbb8
+	8
+	-128
+	-128 (0x80)
+	-127
+	+127
+	tbb16
+	16
+	-32,768
+	-32,768 (0x8000)
+	-32,767
+	+32,767
+	tbb64
+	64
+	$-2^{63}$
+	$-2^{63}$ (0x80...00)
+	$-2^{63} + 1$
+	$2^{63} - 1$
+	int1024
+	1024
+	$-2^{1023}$
+	$-2^{1023}$
+	$-2^{1023} + 1$
+	$2^{1023} - 1$
+	This configuration ensures that for every valid number $x$, $-x$ is also a valid number. However, it imposes a strict constraint on all arithmetic operations: the "Sticky Error." If any operand in a calculation is ERR, the result must be ERR. Furthermore, if a calculation involving valid numbers exceeds the valid symmetric range (even if it stays within the standard binary range), it must collapse to ERR.
+1.2 The Necessity of int1024 and fix256
+The introduction of int1024 and fix256 addresses specific requirements in the high-fidelity simulation domain.
+The int1024 type is essential for cryptographic operations, specifically in generating RSA keys and handling homomorphic encryption schemes where intermediate values frequently exceed 512 bits. Standard libraries often use heap-allocated BigInts for this, but Aria's design constraints for safety-critical real-time systems discourage hidden memory allocations. The int1024 type is stack-allocated, ensuring deterministic memory usage.
+The fix256 type addresses the need for high-precision decimal modeling without the non-determinism of floating-point arithmetic. In financial modeling or physical simulations involving chaotic systems, the rounding errors inherent in IEEE 754 floating-point math can accumulate, leading to divergent results across different hardware architectures. fix256 provides a fixed resolution, ensuring bit-exact results on all platforms, which is crucial for the "String-as-Truth" architecture Aria employs.
+2. The Limb-Based Integral Model (LBIM): Overcoming LLVM Constraints
+A critical insight derived from the Aria compiler source code is the specific handling of large integers. While LLVM supports arbitrary precision integers (e.g., i1024), the Aria compiler backend explicitly avoids mapping large Aria integers directly to these LLVM types for arithmetic operations. This is due to identified bugs in LLVM's optimization passes, specifically IPSCCP (Inter-procedural Sparse Conditional Constant Propagation) and ConstraintElimination.
+These bugs can cause the optimizer to make incorrect assumptions about value ranges or overflow behavior when dealing with non-standard integer bit-widths, potentially optimizing away the crucial TBB safety checks. To circumvent this, Aria employs the Limb-Based Integral Model (LBIM).
+2.1 LBIM Architectural Definition
+In the LBIM architecture, a large integer is not a primitive scalar but an aggregate structure of 64-bit "limbs." This forces the compiler to treat the integer as a composite data type, preventing it from applying aggressive scalar optimizations that might compromise safety.
+For the existing int512 type, the structure is defined as:
+
+
+Code snippet
+
+
+
+
+%struct.int512 = type { [8 x i64] }
+
+To implement int1024, the backend must extend this model to 16 limbs. The backend engineer must explicitly define this structure within the LLVM context.
+Table 2.1: LBIM Structural Mapping
+Aria Type
+	LLVM IR Structure
+	Limb Count
+	Total Bits
+	int128
+	struct.int128
+	2
+	128
+	int256
+	struct.int256
+	4
+	256
+	int512
+	struct.int512
+	8
+	512
+	int1024
+	struct.int1024
+	16
+	1024
+	fix256
+	struct.int256
+	4
+	256
+	It is crucial to note that fix256 does not require a unique LLVM structural definition; it reuses the 256-bit container (struct.int256). The distinction lies entirely in the semantic interpretation of the data during arithmetic operations and type checking.
+2.2 LBIM Memory Layout and Endianness
+The limbs are stored in Little Endian order. limbs contains the least significant 64 bits, while limbs[N-1] contains the most significant bits, including the sign bit.
+For int1024, the array index mapping is:
+* limbs: Bits 0-63
+* limbs: Bits 64-127
+* ...
+* limbs: Bits 960-1023 (Sign bit is bit 63 of this limb)
+This layout is critical for the implementation of the TBB sentinel check. The TBB error sentinel for int1024 is defined as the minimum representable value ($-2^{1023}$). In the LBIM layout, this corresponds to a specific bit pattern where only the most significant bit of the most significant limb is set.
+Sentinel Pattern for int1024:
+* limbs... limbs = 0x0000000000000000
+* limbs = 0x8000000000000000 (which is INT64_MIN)
+The compiler backend must be able to synthesize this constant efficiently during Intermediate Representation (IR) generation.
+3. Frontend Integration and Type Semantics
+Before code generation can occur, the Aria frontend must be updated to recognize and validate these new types. This involves the Lexer, Parser, and Semantic Analysis (Sema) phases.
+3.1 Lexical Analysis of High-Precision Literals
+Aria supports high-precision literals, which pose a challenge for standard parsing routines that typically convert strings to int64_t or double. For int1024, literals can exceed 300 decimal digits.
+The ExprCodegen::codegenLiteral function in src/backend/ir/codegen_expr.cpp reveals that Aria employs a "String-as-Truth" architecture. When a literal exceeds the capacity of standard types, it is stored as a raw string within the AST.
+To support int1024, the LiteralConverter class must be updated. The current heuristic switches to int128 if the digit count exceeds 19. This logic must be refined to create a tiered classification:
+1. < 19 digits: int64
+2. 20 - 39 digits: int128
+3. 40 - 78 digits: int256
+4. 79 - 156 digits: int512
+5. > 156 digits: int1024
+This ensures that literals like 1000... (300 zeros) are correctly typed as int1024 rather than overflowing a smaller type or triggering a compilation error.
+3.2 Semantic Analysis: Type Coercion and Safety
+Aria's type system enforces strict safety regarding type coercion, particularly regarding TBB types. The "Sentinel Discontinuity Constraint" mentioned in the research materials highlights a critical risk during type widening.
+Consider a widening cast from tbb8 to tbb16.
+* tbb8 ERR: -128 (0x80)
+* Standard Sign Extension: -128 becomes -128 (0xFF80 in 16-bit).
+* tbb16 ERR: -32768 (0x8000).
+If a standard sign extension is used, the error state is lost; the result is a valid tbb16 value of -128. This violates the sticky error principle.
+For int1024, implicit coercion from smaller TBB types (int512, int256) must be forbidden or strictly managed via explicit casting intrinsics that check for the sentinel before extending. The frontend's TypeChecker must ensure that no implicit sext instructions are generated for TBB types. Instead, calls to runtime widening functions (e.g., aria_tbb_widen_512_1024) must be injected.
+3.3 Fixed-Point Type Semantics
+The fix256 type requires defined semantics for its fractional component. Unlike floating-point numbers where the decimal point floats, fix256 locks it in place.
+Proposed Specification for fix256:
+* Format: Q128.128. This provides a symmetric split, offering 128 bits for the integer part and 128 bits for the fractional part.
+* Integer Range: $\pm 2^{127}$ (approx $\pm 1.7 \times 10^{38}$).
+* Resolution: $2^{-128}$ (approx $2.9 \times 10^{-39}$).
+This specification aligns with the storage of int256 (4 limbs). The semantic analysis phase must distinguish fix256 from int256 to ensure that multiplication and division operators invoke the correct fixed-point scaling logic rather than integer arithmetic.
+4. Backend IR Generation: Implementation Details
+The core implementation work lies in extending src/backend/ir/codegen_expr.cpp. This file is responsible for translating Aria AST nodes into LLVM IR.
+4.1 Type Registration
+The ExprCodegen::getLLVMTypeFromString method must be updated to recognize the new types and construct the appropriate LBIM structs. The code pattern established for int512 must be replicated and expanded.
+
+
+C++
+
+
+
+
+// Extension to src/backend/ir/codegen_expr.cpp
+
+llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
+   //... existing integer types...
+   
+   // ARIA-024 Extension: int1024
+   if (typeName == "int1024" |
+
+| typeName == "uint1024") {
+       llvm::StructType* int1024Struct = llvm::StructType::getTypeByName(context, "struct.int1024");
+       if (!int1024Struct) {
+           // Create 16-limb array for 1024 bits
+           // 16 x 64-bit = 1024 bits
+           llvm::Type* limbArray = llvm::ArrayType::get(llvm::Type::getInt64Ty(context), 16);
+           int1024Struct = llvm::StructType::create(context, {limbArray}, "struct.int1024");
+       }
+       return int1024Struct;
+   }
+
+   // Fixed Point Extension: fix256
+   // Uses underlying int256 struct storage but implies different semantics
+   if (typeName == "fix256") {
+       // Reuse existing struct.int256 definition logic
+       return getLLVMTypeFromString("int256"); 
+   }
+
+   //... existing code...
+}
+
+4.2 Sentinel Constant Generation
+To perform error checking, the backend frequently needs to generate the ERR sentinel constant. The existing getTBBSentinel function likely returns a scalar ConstantInt, which is incompatible with LBIM structs. A specialized getLBIMSentinel function is required.
+This function must construct a constant struct where the highest limb is set to INT64_MIN and all others are zero.
+
+
+C++
+
+
+
+
+llvm::Value* ExprCodegen::getLBIMSentinel(unsigned numLimbs) {
+   std::vector<llvm::Constant*> limbs;
+   
+   // Lower limbs are all zero
+   for (unsigned i = 0; i < numLimbs - 1; ++i) {
+       limbs.push_back(llvm::ConstantInt::get(context, llvm::APInt(64, 0)));
+   }
+   
+   // Highest limb is INT64_MIN (0x8000000000000000)
+   // defined as signed min value of 64-bit integer
+   limbs.push_back(llvm::ConstantInt::get(context, llvm::APInt::getSignedMinValue(64)));
+   
+   llvm::Type* limbType = llvm::Type::getInt64Ty(context);
+   llvm::ArrayType* arrayType = llvm::ArrayType::get(limbType, numLimbs);
+   
+   // Create the struct { [N x i64] }
+   llvm::Constant* limbArray = llvm::ConstantArray::get(arrayType, limbs);
+   
+   // Identify the correct struct name based on limb count
+   std::string structName = "struct.int" + std::to_string(numLimbs * 64);
+   llvm::StructType* structTy = llvm::StructType::getTypeByName(context, structName);
+   
+   if (!structTy) {
+       throw std::runtime_error("LBIM struct type not initialized before sentinel request: " + structName);
+   }
+   
+   return llvm::ConstantStruct::get(structTy, {limbArray});
+}
+
+4.3 Intrinsic Dispatch Logic
+The codegenBinary function must be intercepted. Currently, it likely generates native LLVM instructions (add, sub, mul) for primitive types. For LBIM types, this is impossible because LLVM arithmetic instructions do not operate on structs.
+We must inject a dispatch mechanism that identifies if an operand is an LBIM structure and routes the operation to a runtime library call.
+
+
+C++
+
+
+
+
+// In codegenBinary...
+std::string ariaTypeName = getExprAriaTypeName(expr, var_aria_types);
+
+// Check if type requires special handling (LBIM or Fixed Point)
+if (leftType->isStructTy() && needsSpecialFormatter(ariaTypeName)) {
+   // It is an LBIM type (int128, int1024, fix256, etc.)
+   return generateLBIMBinaryOp(ariaTypeName, op, L, R);
+}
+
+The generateLBIMBinaryOp function is responsible for:
+1. Allocating stack space for the result (since the return type is a struct).
+2. Ensuring operands are passed by pointer (conforming to the ABI for large structures).
+3. Calling the specific C-runtime function (e.g., aria_int1024_add).
+4. Returning the result (or the pointer to it, depending on value category).
+5. Runtime Library Implementation: The Core Math
+The "safety" of the TBB system is realized not in the compiler, but in the runtime library where the arithmetic actually occurs. The compiler merely emits calls to these functions. This section details the implementation of the math engines for int1024 and fix256.
+5.1 The int1024 Arithmetic Engine
+Implementing 1024-bit arithmetic is computationally expensive. To maintain performance, the runtime must be optimized, but never at the cost of safety.
+Safety Macro: CHECK_STICKY_ERROR
+As per the "Manual Injection" requirement , every arithmetic function must begin with a check for sentinels.
+
+
+C++
+
+
+
+
+static inline bool is_err_1024(const uint64_t* limbs) {
+   // Check highest limb for 0x8000...0000
+   if (limbs!= 0x8000000000000000ULL) return false;
+   
+   // Check lower limbs for 0
+   // Optimization: OR them all together to check for non-zero in one go
+   uint64_t lower = 0;
+   for(int i=0; i<15; ++i) lower |= limbs[i];
+   return lower == 0;
+}
+
+#define CHECK_STICKY_ERROR(a, b, result) \
+   if (is_err_1024(a->limbs) |
+
+| is_err_1024(b->limbs)) { \
+       *result = ERR_SENTINEL_1024; \
+       return; \
+   }
+
+Addition Logic (aria_int1024_add)
+Addition follows the classic ripple-carry algorithm. However, TBB semantics require a post-computation check for overflow and sentinel collision.
+1. Perform Addition: Add limbs from 0 to 15, propagating the carry.
+2. Overflow Check: TBB overflow detection logic for signed addition:
+   * If a > 0 and b > 0 and result < 0, Overflow.
+   * If a < 0 and b < 0 and result > 0, Underflow.
+   * Note: "Positive" and "Negative" here refer to the MSB of the highest limb.
+3. Collision Check: If the mathematically correct result happens to have the exact bit pattern of the Sentinel ($-2^{1023}$), it must be treated as an error because that bit pattern is reserved.
+5.2 The fix256 Arithmetic Engine
+Arithmetic on fix256 (Q128.128) presents unique challenges, particularly multiplication.
+Fixed-Point Multiplication (aria_fix256_mul)
+When multiplying two Q128.128 numbers, the raw result is a 512-bit integer with 256 fractional bits (Q256.256). To fit this back into a fix256, we must:
+1. Compute the full 512-bit product.
+2. Shift right by 128 bits.
+3. Check if the resulting value fits within the 256-bit container.
+The Implementation Protocol:
+
+
+C++
+
+
+
+
+extern "C" void aria_fix256_mul(fix256_t* res, const fix256_t* a, const fix256_t* b) {
+   // 1. Sticky Error Check
+   if (is_err_256(a) |
+
+| is_err_256(b)) {
+       *res = FIX256_ERR;
+       return;
+   }
+
+   // 2. Full 256x256 -> 512 bit multiplication
+   // Utilizing the existing int512 infrastructure or a specialized mul routine
+   int512_t full_product;
+   aria_lbim_mul_256_full(&full_product, (int256_t*)a, (int256_t*)b);
+
+   // 3. Scaling (Right Shift by 128)
+   // The result we want is in the middle of the 512-bit product.
+   // full_product has 8 limbs.
+   // Q256.256 format implies the binary point is between limb 3 and 4.
+   // We need to extract 128 bits of integer (limbs 4,5) and 128 bits of fraction (limbs 2,3).
+   
+   // 4. Overflow Check
+   // We check if the high-order integer bits (limbs 6, 7) contain any data.
+   // If they do, the result is too large for fix256.
+   
+   bool overflow = false;
+   uint64_t sign_mask = (full_product.limbs >> 63)? 0xFFFFFFFFFFFFFFFF : 0;
+   
+   if (full_product.limbs!= sign_mask |
+
+| full_product.limbs!= sign_mask) {
+       overflow = true;
+   }
+   
+   // Also check if the extracted result (limbs 2,3,4,5) creates a sign inversion relative to the 512-bit result
+   bool result_sign = full_product.limbs >> 63;
+   bool true_sign = full_product.limbs >> 63;
+   if (result_sign!= true_sign) overflow = true;
+
+   if (overflow) {
+       *res = FIX256_ERR;
+       return;
+   }
+
+   // 5. Pack result
+   res->limbs = full_product.limbs;
+   res->limbs = full_product.limbs;
+   res->limbs = full_product.limbs;
+   res->limbs = full_product.limbs;
+   
+   // 6. Sentinel Collision Check
+   if (is_err_256(res)) {
+       *res = FIX256_ERR;
+   }
+}
+
+This logic ensures that precision loss (dropping lower bits) is acceptable, but range violation (dropping upper bits) triggers the TBB safety net.
+6. Integration with Ecosystem Interfaces
+Aria operates within a broader ecosystem involving build systems, debuggers, and FFI.1 The new types must be fully supported across these boundaries.
+6.1 Foreign Function Interface (FFI)
+When passing int1024 to C functions (via extern), the wild keyword is used. Since C has no native int1024, these must be passed as pointers to opaque structs.
+Aria Declaration:
+
+
+Code snippet
+
+
+
+
+extern func:process_big_data = void(val: wild int1024*);
+
+C-Side Consumption:
+The C developer must treat this as a byte array or use a compatible library (like GMP), but must be aware of the internal limb ordering (Little Endian). The compiler documentation must explicitly state the ABI: struct { uint64_t limbs; }.
+6.2 Debugger Support (LLDB)
+To make int1024 usable for developers, the LLDB formatters in src/tools/debugger/aria_formatters.cpp must be updated. A raw dump of 16 integers is unintelligible.
+We must implement a LBIMTypeSummaryProvider.
+* Logic:
+   1. Read the memory of the struct.
+   2. Check for the Sentinel Pattern. If found, display <ERR>.
+   3. If not ERR, implement a simple BigInt-to-String conversion (converting base-2^64 to base-10) to display the decimal value.
+   4. For fix256, display the value as a decimal float (e.g., "123.456") by dividing the 256-bit integer value by $2^{128}$.
+6.3 Telemetry (stddbg)
+The Aria utils (aria_utils) rely on stddbg (FD 3) for structured logging. When logging an int1024, the telemetry writer cannot simply dump bytes. It should serialize the value to a hex string (e.g., "0x...") or a decimal string in the JSON output to ensure the log is machine-parseable by tools like ascope.
+7. Verification and Future Outlook
+7.1 Property-Based Verification Strategy
+Verification of these types requires more than unit tests; it requires property-based testing. We propose a fuzzing strategy:
+1. Oracle: Use Python's native arbitrary-precision integers as the "source of truth."
+2. Generator: Generate random 1024-bit integers, including edge cases (0, -1, 1, MAX, MIN, Sentinel).
+3. Operation: Perform add, sub, mul in both Python and Aria (via FFI harness).
+4. Assertion:
+   * If Python result is within Aria's valid TBB range, Aria result must match bit-for-bit.
+   * If Python result is outside Aria's valid TBB range, Aria result must be ERR.
+   * If any input is ERR, Aria result must be ERR.
+7.2 Performance Considerations
+Using struct arrays for arithmetic is slower than native register operations. For 1024-bit arithmetic, this involves significant memory traffic.
+* Mitigation: The C++ runtime implementation should be compiled with aggressive vectorization enabled (-mavx512f on supported hardware). The independent limb operations in addition/subtraction are prime candidates for SIMD optimization.
+* Future Work: Implementing assembly-optimized trampolines for specific architectures (x86_64, ARM64) to replace the generic C++ LBIM implementation.
+8. Conclusion
+The implementation of int1024 and fix256 represents a maturing of the Aria language's capabilities. By adhering to the Limb-Based Integral Model, we successfully navigate the treacherous waters of compiler optimization bugs. By rigorously enforcing Twisted Balanced Binary semantics in the runtime, we provide the safety guarantees necessary for AGI development. This report provides the blueprint for these modifications, ensuring that Aria remains a robust, deterministic, and safe platform for the next generation of computing.
+9. Detailed Appendices
+9.1 Table of Sentinel Constants
+Type
+	Hexadecimal Pattern (Little Endian Limbs)
+	int128
+	{0x0, 0x8000000000000000}
+	fix256
+	{0x0, 0x0, 0x0, 0x8000000000000000}
+	int1024
+	{0x0,..., 0x0 (x14), 0x8000000000000000}
+	9.2 Required Compiler File Changes
+* Modified: src/backend/ir/codegen_expr.cpp (Type mapping, Dispatch)
+* New: src/runtime/math/lbim_1024.cpp (Arithmetic implementation)
+* New: src/runtime/math/fix256.cpp (Fixed-point logic)
+* Modified: include/runtime/lbim.h (Struct definitions)
+* Modified: src/frontend/sema/literal_converter.cpp (Parsing logic)
+This concludes the architectural specification. Proceeding with these implementations will ensure full compliance with Aria's safety standards while delivering the required high-precision capabilities.
+Works cited
+1. aria_shell_source_full.txt

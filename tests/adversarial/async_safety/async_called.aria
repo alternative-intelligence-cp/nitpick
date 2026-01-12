@@ -1,0 +1,16 @@
+/**
+ * Test: Async Function Called from Main
+ * Expected: COMPILES SUCCESSFULLY
+ * Why: Verify async function coroutine lowering works when function is used
+ */
+
+async func:get_value = int32() {
+    return 42;
+};
+
+func:main = int32() {
+    // Call the async function to prevent DCE
+    // Note: Discarding result for now until async type system is complete
+    get_value();
+    return 0;
+};

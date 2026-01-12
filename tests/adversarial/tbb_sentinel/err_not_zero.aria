@@ -1,0 +1,20 @@
+/**
+ * Test: ERR - ERR Must Not Become Zero
+ * Expected: COMPILES SUCCESSFULLY (runtime behavior test)
+ * Why: ERR sentinel must never become valid value through arithmetic
+ *
+ * From TODO: "ERR - ERR → ERR (not 0!)"
+ * This is critical - if ERR-ERR=0, error state could be lost
+ */
+
+func:main = int32() {
+    tbb8:err1 = tbb8_div(tbb8_from_int(10), tbb8_from_int(0));  // ERR
+    tbb8:err2 = tbb8_div(tbb8_from_int(5), tbb8_from_int(0));   // ERR
+
+    // ERR - ERR must still be ERR, not 0
+    tbb8:result = tbb8_sub(err1, err2);
+
+    bool:still_err = tbb8_is_err(result);  // Must be true
+
+    return 0;
+};

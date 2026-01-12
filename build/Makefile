@@ -705,6 +705,97 @@ ContinuousSubmit/fast:
 .PHONY : ContinuousSubmit/fast
 
 #=============================================================================
+# Target rules for targets named test_int1024_safety
+
+# Build rule for target.
+test_int1024_safety: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_int1024_safety
+.PHONY : test_int1024_safety
+
+# fast build rule for target.
+test_int1024_safety/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_int1024_safety.dir/build.make tests/CMakeFiles/test_int1024_safety.dir/build
+.PHONY : test_int1024_safety/fast
+
+#=============================================================================
+# Target rules for targets named test_fix256_safety
+
+# Build rule for target.
+test_fix256_safety: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_fix256_safety
+.PHONY : test_fix256_safety
+
+# fast build rule for target.
+test_fix256_safety/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_fix256_safety.dir/build.make tests/CMakeFiles/test_fix256_safety.dir/build
+.PHONY : test_fix256_safety/fast
+
+#=============================================================================
+# Target rules for targets named test_fix256_edge_cases
+
+# Build rule for target.
+test_fix256_edge_cases: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_fix256_edge_cases
+.PHONY : test_fix256_edge_cases
+
+# fast build rule for target.
+test_fix256_edge_cases/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_fix256_edge_cases.dir/build.make tests/CMakeFiles/test_fix256_edge_cases.dir/build
+.PHONY : test_fix256_edge_cases/fast
+
+#=============================================================================
+# Target rules for targets named test_fix256_determinism
+
+# Build rule for target.
+test_fix256_determinism: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_fix256_determinism
+.PHONY : test_fix256_determinism
+
+# fast build rule for target.
+test_fix256_determinism/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_fix256_determinism.dir/build.make tests/CMakeFiles/test_fix256_determinism.dir/build
+.PHONY : test_fix256_determinism/fast
+
+#=============================================================================
+# Target rules for targets named test_fix256_fuzz
+
+# Build rule for target.
+test_fix256_fuzz: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_fix256_fuzz
+.PHONY : test_fix256_fuzz
+
+# fast build rule for target.
+test_fix256_fuzz/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_fix256_fuzz.dir/build.make tests/CMakeFiles/test_fix256_fuzz.dir/build
+.PHONY : test_fix256_fuzz/fast
+
+#=============================================================================
+# Target rules for targets named test_fix256_properties
+
+# Build rule for target.
+test_fix256_properties: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_fix256_properties
+.PHONY : test_fix256_properties
+
+# fast build rule for target.
+test_fix256_properties/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_fix256_properties.dir/build.make tests/CMakeFiles/test_fix256_properties.dir/build
+.PHONY : test_fix256_properties/fast
+
+#=============================================================================
+# Target rules for targets named test_fix256_exhaustive
+
+# Build rule for target.
+test_fix256_exhaustive: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_fix256_exhaustive
+.PHONY : test_fix256_exhaustive
+
+# fast build rule for target.
+test_fix256_exhaustive/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_fix256_exhaustive.dir/build.make tests/CMakeFiles/test_fix256_exhaustive.dir/build
+.PHONY : test_fix256_exhaustive/fast
+
+#=============================================================================
 # Target rules for targets named test_runner
 
 # Build rule for target.
@@ -837,6 +928,33 @@ src/backend/ir/ternary_codegen.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/ir/ternary_codegen.cpp.s
 .PHONY : src/backend/ir/ternary_codegen.cpp.s
 
+src/backend/runtime/frac_ops.o: src/backend/runtime/frac_ops.cpp.o
+.PHONY : src/backend/runtime/frac_ops.o
+
+# target to build an object file
+src/backend/runtime/frac_ops.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/frac_ops.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/frac_ops.cpp.o
+.PHONY : src/backend/runtime/frac_ops.cpp.o
+
+src/backend/runtime/frac_ops.i: src/backend/runtime/frac_ops.cpp.i
+.PHONY : src/backend/runtime/frac_ops.i
+
+# target to preprocess a source file
+src/backend/runtime/frac_ops.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/frac_ops.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/frac_ops.cpp.i
+.PHONY : src/backend/runtime/frac_ops.cpp.i
+
+src/backend/runtime/frac_ops.s: src/backend/runtime/frac_ops.cpp.s
+.PHONY : src/backend/runtime/frac_ops.s
+
+# target to generate assembly for a file
+src/backend/runtime/frac_ops.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/frac_ops.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/frac_ops.cpp.s
+.PHONY : src/backend/runtime/frac_ops.cpp.s
+
 src/backend/runtime/ternary_ops.o: src/backend/runtime/ternary_ops.cpp.o
 .PHONY : src/backend/runtime/ternary_ops.o
 
@@ -863,6 +981,114 @@ src/backend/runtime/ternary_ops.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/ternary_ops.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/ternary_ops.cpp.s
 .PHONY : src/backend/runtime/ternary_ops.cpp.s
+
+src/backend/runtime/tfp_ops.o: src/backend/runtime/tfp_ops.cpp.o
+.PHONY : src/backend/runtime/tfp_ops.o
+
+# target to build an object file
+src/backend/runtime/tfp_ops.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/tfp_ops.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/tfp_ops.cpp.o
+.PHONY : src/backend/runtime/tfp_ops.cpp.o
+
+src/backend/runtime/tfp_ops.i: src/backend/runtime/tfp_ops.cpp.i
+.PHONY : src/backend/runtime/tfp_ops.i
+
+# target to preprocess a source file
+src/backend/runtime/tfp_ops.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/tfp_ops.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/tfp_ops.cpp.i
+.PHONY : src/backend/runtime/tfp_ops.cpp.i
+
+src/backend/runtime/tfp_ops.s: src/backend/runtime/tfp_ops.cpp.s
+.PHONY : src/backend/runtime/tfp_ops.s
+
+# target to generate assembly for a file
+src/backend/runtime/tfp_ops.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/tfp_ops.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/tfp_ops.cpp.s
+.PHONY : src/backend/runtime/tfp_ops.cpp.s
+
+src/backend/runtime/tmatrix_ops.o: src/backend/runtime/tmatrix_ops.cpp.o
+.PHONY : src/backend/runtime/tmatrix_ops.o
+
+# target to build an object file
+src/backend/runtime/tmatrix_ops.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/tmatrix_ops.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/tmatrix_ops.cpp.o
+.PHONY : src/backend/runtime/tmatrix_ops.cpp.o
+
+src/backend/runtime/tmatrix_ops.i: src/backend/runtime/tmatrix_ops.cpp.i
+.PHONY : src/backend/runtime/tmatrix_ops.i
+
+# target to preprocess a source file
+src/backend/runtime/tmatrix_ops.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/tmatrix_ops.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/tmatrix_ops.cpp.i
+.PHONY : src/backend/runtime/tmatrix_ops.cpp.i
+
+src/backend/runtime/tmatrix_ops.s: src/backend/runtime/tmatrix_ops.cpp.s
+.PHONY : src/backend/runtime/tmatrix_ops.s
+
+# target to generate assembly for a file
+src/backend/runtime/tmatrix_ops.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/tmatrix_ops.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/tmatrix_ops.cpp.s
+.PHONY : src/backend/runtime/tmatrix_ops.cpp.s
+
+src/backend/runtime/ttensor_ops.o: src/backend/runtime/ttensor_ops.cpp.o
+.PHONY : src/backend/runtime/ttensor_ops.o
+
+# target to build an object file
+src/backend/runtime/ttensor_ops.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/ttensor_ops.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/ttensor_ops.cpp.o
+.PHONY : src/backend/runtime/ttensor_ops.cpp.o
+
+src/backend/runtime/ttensor_ops.i: src/backend/runtime/ttensor_ops.cpp.i
+.PHONY : src/backend/runtime/ttensor_ops.i
+
+# target to preprocess a source file
+src/backend/runtime/ttensor_ops.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/ttensor_ops.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/ttensor_ops.cpp.i
+.PHONY : src/backend/runtime/ttensor_ops.cpp.i
+
+src/backend/runtime/ttensor_ops.s: src/backend/runtime/ttensor_ops.cpp.s
+.PHONY : src/backend/runtime/ttensor_ops.s
+
+# target to generate assembly for a file
+src/backend/runtime/ttensor_ops.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/ttensor_ops.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/ttensor_ops.cpp.s
+.PHONY : src/backend/runtime/ttensor_ops.cpp.s
+
+src/backend/runtime/vec9_ops.o: src/backend/runtime/vec9_ops.cpp.o
+.PHONY : src/backend/runtime/vec9_ops.o
+
+# target to build an object file
+src/backend/runtime/vec9_ops.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/vec9_ops.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/vec9_ops.cpp.o
+.PHONY : src/backend/runtime/vec9_ops.cpp.o
+
+src/backend/runtime/vec9_ops.i: src/backend/runtime/vec9_ops.cpp.i
+.PHONY : src/backend/runtime/vec9_ops.i
+
+# target to preprocess a source file
+src/backend/runtime/vec9_ops.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/vec9_ops.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/vec9_ops.cpp.i
+.PHONY : src/backend/runtime/vec9_ops.cpp.i
+
+src/backend/runtime/vec9_ops.s: src/backend/runtime/vec9_ops.cpp.s
+.PHONY : src/backend/runtime/vec9_ops.s
+
+# target to generate assembly for a file
+src/backend/runtime/vec9_ops.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/backend/runtime/vec9_ops.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/backend/runtime/vec9_ops.cpp.s
+.PHONY : src/backend/runtime/vec9_ops.cpp.s
 
 src/frontend/ast/ast_node.o: src/frontend/ast/ast_node.cpp.o
 .PHONY : src/frontend/ast/ast_node.o
@@ -2190,6 +2416,60 @@ src/runtime/collections/map.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/map.cpp.s
 .PHONY : src/runtime/collections/map.cpp.s
 
+src/runtime/fmt/formatters.o: src/runtime/fmt/formatters.cpp.o
+.PHONY : src/runtime/fmt/formatters.o
+
+# target to build an object file
+src/runtime/fmt/formatters.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/fmt/formatters.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/fmt/formatters.cpp.o
+.PHONY : src/runtime/fmt/formatters.cpp.o
+
+src/runtime/fmt/formatters.i: src/runtime/fmt/formatters.cpp.i
+.PHONY : src/runtime/fmt/formatters.i
+
+# target to preprocess a source file
+src/runtime/fmt/formatters.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/fmt/formatters.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/fmt/formatters.cpp.i
+.PHONY : src/runtime/fmt/formatters.cpp.i
+
+src/runtime/fmt/formatters.s: src/runtime/fmt/formatters.cpp.s
+.PHONY : src/runtime/fmt/formatters.s
+
+# target to generate assembly for a file
+src/runtime/fmt/formatters.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/fmt/formatters.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/fmt/formatters.cpp.s
+.PHONY : src/runtime/fmt/formatters.cpp.s
+
+src/runtime/format/locale_safe_format.o: src/runtime/format/locale_safe_format.cpp.o
+.PHONY : src/runtime/format/locale_safe_format.o
+
+# target to build an object file
+src/runtime/format/locale_safe_format.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/format/locale_safe_format.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/format/locale_safe_format.cpp.o
+.PHONY : src/runtime/format/locale_safe_format.cpp.o
+
+src/runtime/format/locale_safe_format.i: src/runtime/format/locale_safe_format.cpp.i
+.PHONY : src/runtime/format/locale_safe_format.i
+
+# target to preprocess a source file
+src/runtime/format/locale_safe_format.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/format/locale_safe_format.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/format/locale_safe_format.cpp.i
+.PHONY : src/runtime/format/locale_safe_format.cpp.i
+
+src/runtime/format/locale_safe_format.s: src/runtime/format/locale_safe_format.cpp.s
+.PHONY : src/runtime/format/locale_safe_format.s
+
+# target to generate assembly for a file
+src/runtime/format/locale_safe_format.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/format/locale_safe_format.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/format/locale_safe_format.cpp.s
+.PHONY : src/runtime/format/locale_safe_format.cpp.s
+
 src/runtime/gc/allocator.o: src/runtime/gc/allocator.cpp.o
 .PHONY : src/runtime/gc/allocator.o
 
@@ -2345,6 +2625,87 @@ src/runtime/io/zero_copy_bridge.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/io/zero_copy_bridge.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/io/zero_copy_bridge.cpp.s
 .PHONY : src/runtime/io/zero_copy_bridge.cpp.s
+
+src/runtime/math/fix256.o: src/runtime/math/fix256.cpp.o
+.PHONY : src/runtime/math/fix256.o
+
+# target to build an object file
+src/runtime/math/fix256.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/math/fix256.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/fix256.cpp.o
+.PHONY : src/runtime/math/fix256.cpp.o
+
+src/runtime/math/fix256.i: src/runtime/math/fix256.cpp.i
+.PHONY : src/runtime/math/fix256.i
+
+# target to preprocess a source file
+src/runtime/math/fix256.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/math/fix256.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/fix256.cpp.i
+.PHONY : src/runtime/math/fix256.cpp.i
+
+src/runtime/math/fix256.s: src/runtime/math/fix256.cpp.s
+.PHONY : src/runtime/math/fix256.s
+
+# target to generate assembly for a file
+src/runtime/math/fix256.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/math/fix256.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/fix256.cpp.s
+.PHONY : src/runtime/math/fix256.cpp.s
+
+src/runtime/math/lbim.o: src/runtime/math/lbim.cpp.o
+.PHONY : src/runtime/math/lbim.o
+
+# target to build an object file
+src/runtime/math/lbim.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/math/lbim.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/lbim.cpp.o
+.PHONY : src/runtime/math/lbim.cpp.o
+
+src/runtime/math/lbim.i: src/runtime/math/lbim.cpp.i
+.PHONY : src/runtime/math/lbim.i
+
+# target to preprocess a source file
+src/runtime/math/lbim.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/math/lbim.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/lbim.cpp.i
+.PHONY : src/runtime/math/lbim.cpp.i
+
+src/runtime/math/lbim.s: src/runtime/math/lbim.cpp.s
+.PHONY : src/runtime/math/lbim.s
+
+# target to generate assembly for a file
+src/runtime/math/lbim.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/math/lbim.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/lbim.cpp.s
+.PHONY : src/runtime/math/lbim.cpp.s
+
+src/runtime/math/lbim_extended.o: src/runtime/math/lbim_extended.cpp.o
+.PHONY : src/runtime/math/lbim_extended.o
+
+# target to build an object file
+src/runtime/math/lbim_extended.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/math/lbim_extended.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/lbim_extended.cpp.o
+.PHONY : src/runtime/math/lbim_extended.cpp.o
+
+src/runtime/math/lbim_extended.i: src/runtime/math/lbim_extended.cpp.i
+.PHONY : src/runtime/math/lbim_extended.i
+
+# target to preprocess a source file
+src/runtime/math/lbim_extended.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/math/lbim_extended.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/lbim_extended.cpp.i
+.PHONY : src/runtime/math/lbim_extended.cpp.i
+
+src/runtime/math/lbim_extended.s: src/runtime/math/lbim_extended.cpp.s
+.PHONY : src/runtime/math/lbim_extended.s
+
+# target to generate assembly for a file
+src/runtime/math/lbim_extended.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/math/lbim_extended.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/lbim_extended.cpp.s
+.PHONY : src/runtime/math/lbim_extended.cpp.s
 
 src/runtime/math/math.o: src/runtime/math/math.cpp.o
 .PHONY : src/runtime/math/math.o
@@ -3147,6 +3508,13 @@ help:
 	@echo "... aria-pkg"
 	@echo "... aria_runtime"
 	@echo "... ariac"
+	@echo "... test_fix256_determinism"
+	@echo "... test_fix256_edge_cases"
+	@echo "... test_fix256_exhaustive"
+	@echo "... test_fix256_fuzz"
+	@echo "... test_fix256_properties"
+	@echo "... test_fix256_safety"
+	@echo "... test_int1024_safety"
 	@echo "... test_runner"
 	@echo "... src/backend/ir/codegen_expr.o"
 	@echo "... src/backend/ir/codegen_expr.i"
@@ -3163,9 +3531,24 @@ help:
 	@echo "... src/backend/ir/ternary_codegen.o"
 	@echo "... src/backend/ir/ternary_codegen.i"
 	@echo "... src/backend/ir/ternary_codegen.s"
+	@echo "... src/backend/runtime/frac_ops.o"
+	@echo "... src/backend/runtime/frac_ops.i"
+	@echo "... src/backend/runtime/frac_ops.s"
 	@echo "... src/backend/runtime/ternary_ops.o"
 	@echo "... src/backend/runtime/ternary_ops.i"
 	@echo "... src/backend/runtime/ternary_ops.s"
+	@echo "... src/backend/runtime/tfp_ops.o"
+	@echo "... src/backend/runtime/tfp_ops.i"
+	@echo "... src/backend/runtime/tfp_ops.s"
+	@echo "... src/backend/runtime/tmatrix_ops.o"
+	@echo "... src/backend/runtime/tmatrix_ops.i"
+	@echo "... src/backend/runtime/tmatrix_ops.s"
+	@echo "... src/backend/runtime/ttensor_ops.o"
+	@echo "... src/backend/runtime/ttensor_ops.i"
+	@echo "... src/backend/runtime/ttensor_ops.s"
+	@echo "... src/backend/runtime/vec9_ops.o"
+	@echo "... src/backend/runtime/vec9_ops.i"
+	@echo "... src/backend/runtime/vec9_ops.s"
 	@echo "... src/frontend/ast/ast_node.o"
 	@echo "... src/frontend/ast/ast_node.i"
 	@echo "... src/frontend/ast/ast_node.s"
@@ -3319,6 +3702,12 @@ help:
 	@echo "... src/runtime/collections/map.o"
 	@echo "... src/runtime/collections/map.i"
 	@echo "... src/runtime/collections/map.s"
+	@echo "... src/runtime/fmt/formatters.o"
+	@echo "... src/runtime/fmt/formatters.i"
+	@echo "... src/runtime/fmt/formatters.s"
+	@echo "... src/runtime/format/locale_safe_format.o"
+	@echo "... src/runtime/format/locale_safe_format.i"
+	@echo "... src/runtime/format/locale_safe_format.s"
 	@echo "... src/runtime/gc/allocator.o"
 	@echo "... src/runtime/gc/allocator.i"
 	@echo "... src/runtime/gc/allocator.s"
@@ -3337,6 +3726,15 @@ help:
 	@echo "... src/runtime/io/zero_copy_bridge.o"
 	@echo "... src/runtime/io/zero_copy_bridge.i"
 	@echo "... src/runtime/io/zero_copy_bridge.s"
+	@echo "... src/runtime/math/fix256.o"
+	@echo "... src/runtime/math/fix256.i"
+	@echo "... src/runtime/math/fix256.s"
+	@echo "... src/runtime/math/lbim.o"
+	@echo "... src/runtime/math/lbim.i"
+	@echo "... src/runtime/math/lbim.s"
+	@echo "... src/runtime/math/lbim_extended.o"
+	@echo "... src/runtime/math/lbim_extended.i"
+	@echo "... src/runtime/math/lbim_extended.s"
 	@echo "... src/runtime/math/math.o"
 	@echo "... src/runtime/math/math.i"
 	@echo "... src/runtime/math/math.s"

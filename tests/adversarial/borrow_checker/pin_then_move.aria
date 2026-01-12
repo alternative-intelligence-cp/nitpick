@@ -1,0 +1,17 @@
+/**
+ * Test: Cannot Move Pinned Variable
+ * Expected: COMPILER ERROR - cannot move pinned variable
+ */
+
+func:take_ownership = void(int32:val) {
+    print("Got value\n");
+};
+
+func:main = int32() {
+    int32:x = 10;
+    wild int32@:pin_x = #x;  // Pin x
+
+    take_ownership(x);  // ERROR: Cannot move pinned variable
+
+    return 0;
+};

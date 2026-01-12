@@ -1,0 +1,14 @@
+/**
+ * Test: Borrow Cannot Escape Scope
+ * Expected: COMPILER ERROR - reference escapes scope
+ */
+
+func:get_ref = int32$() {
+    int32:x = 10;
+    pass($x);  // ERROR: Returning reference to local variable
+};
+
+func:main = int32() {
+    int32$:r = get_ref();  // Would create dangling reference
+    return 0;
+};

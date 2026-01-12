@@ -23,6 +23,11 @@ private:
     // - When true: * is allowed (FFI thin pointers)
     // - When false: only @ is allowed (Aria fat pointers)
     bool isInsideExternBlock = false;
+
+    // ARIA-020: Nesting depth limit to prevent stack overflow
+    // Deeply nested code (90+ levels) can exhaust the call stack
+    static constexpr int MAX_NESTING_DEPTH = 256;
+    int currentNestingDepth = 0;
     
     // Operator precedence map (higher number = higher precedence)
     static const std::unordered_map<frontend::TokenType, int> precedence;
@@ -100,6 +105,9 @@ private:
     
     // Generic type arguments parsing (Phase 3.4 Part 5)
     std::vector<std::string> parseExplicitTypeArgs();  // Parse turbofish ::<T, U>
+    
+    // Zero Implicit Conversion Policy: Extract type suffix from token
+    std::string tokenTypeToTypeString(frontend::TokenType type) const;
     
 public:
     Parser(const std::vector<frontend::Token>& tokens);

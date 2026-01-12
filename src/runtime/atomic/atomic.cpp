@@ -46,6 +46,25 @@ static inline std::memory_order aria_to_cpp_order(AriaMemoryOrder order) {
 }
 
 /* ============================================================================
+ * Helper: Derive safe failure memory order for CAS operations
+ * C++ standard: failure order cannot be release or acq_rel
+ * ============================================================================ */
+
+static inline std::memory_order derive_cas_failure_order(std::memory_order success_order) {
+    switch (success_order) {
+        case std::memory_order_release:
+            // Release cannot be used for failure (load operation)
+            return std::memory_order_relaxed;
+        case std::memory_order_acq_rel:
+            // Acq_rel for failure stripped to acquire
+            return std::memory_order_acquire;
+        default:
+            // Relaxed, consume, acquire, seq_cst are valid for failure
+            return success_order;
+    }
+}
+
+/* ============================================================================
  * TBB Arithmetic Helpers (Sticky Error Propagation)
  * ============================================================================ */
 
@@ -425,27 +444,29 @@ bool aria_atomic_tbb8_compare_exchange_strong(AriaAtomicTBB8* atomic, int8_t* ex
 }
 
 int8_t aria_atomic_tbb8_fetch_add(AriaAtomicTBB8* atomic, int8_t value, AriaMemoryOrder order) {
-    std::memory_order mo = aria_to_cpp_order(order);
-    int8_t old_val = atomic->value.load(mo);
+    std::memory_order success_mo = aria_to_cpp_order(order);
+    std::memory_order failure_mo = derive_cas_failure_order(success_mo);
+    int8_t old_val = atomic->value.load(failure_mo);
     int8_t new_val;
     
-    // CAS loop for sticky error propagation
+    // CAS loop for sticky error propagation (ARIA-AUDIT-2026: Fixed memory ordering UB)
     do {
         new_val = tbb8_add(old_val, value);
-    } while (!atomic->value.compare_exchange_weak(old_val, new_val, mo));
+    } while (!atomic->value.compare_exchange_weak(old_val, new_val, success_mo, failure_mo));
     
     return old_val;
 }
 
 int8_t aria_atomic_tbb8_fetch_sub(AriaAtomicTBB8* atomic, int8_t value, AriaMemoryOrder order) {
-    std::memory_order mo = aria_to_cpp_order(order);
-    int8_t old_val = atomic->value.load(mo);
+    std::memory_order success_mo = aria_to_cpp_order(order);
+    std::memory_order failure_mo = derive_cas_failure_order(success_mo);
+    int8_t old_val = atomic->value.load(failure_mo);
     int8_t new_val;
     
-    // CAS loop for sticky error propagation
+    // CAS loop for sticky error propagation (ARIA-AUDIT-2026: Fixed memory ordering UB)
     do {
         new_val = tbb8_sub(old_val, value);
-    } while (!atomic->value.compare_exchange_weak(old_val, new_val, mo));
+    } while (!atomic->value.compare_exchange_weak(old_val, new_val, success_mo, failure_mo));
     
     return old_val;
 }
@@ -484,27 +505,29 @@ bool aria_atomic_tbb32_compare_exchange_strong(AriaAtomicTBB32* atomic, int32_t*
 }
 
 int32_t aria_atomic_tbb32_fetch_add(AriaAtomicTBB32* atomic, int32_t value, AriaMemoryOrder order) {
-    std::memory_order mo = aria_to_cpp_order(order);
-    int32_t old_val = atomic->value.load(mo);
+    std::memory_order success_mo = aria_to_cpp_order(order);
+    std::memory_order failure_mo = derive_cas_failure_order(success_mo);
+    int32_t old_val = atomic->value.load(failure_mo);
     int32_t new_val;
     
-    // CAS loop for sticky error propagation
+    // CAS loop for sticky error propagation (ARIA-AUDIT-2026: Fixed memory ordering UB)
     do {
         new_val = tbb32_add(old_val, value);
-    } while (!atomic->value.compare_exchange_weak(old_val, new_val, mo));
+    } while (!atomic->value.compare_exchange_weak(old_val, new_val, success_mo, failure_mo));
     
     return old_val;
 }
 
 int32_t aria_atomic_tbb32_fetch_sub(AriaAtomicTBB32* atomic, int32_t value, AriaMemoryOrder order) {
-    std::memory_order mo = aria_to_cpp_order(order);
-    int32_t old_val = atomic->value.load(mo);
+    std::memory_order success_mo = aria_to_cpp_order(order);
+    std::memory_order failure_mo = derive_cas_failure_order(success_mo);
+    int32_t old_val = atomic->value.load(failure_mo);
     int32_t new_val;
     
-    // CAS loop for sticky error propagation
+    // CAS loop for sticky error propagation (ARIA-AUDIT-2026: Fixed memory ordering UB)
     do {
         new_val = tbb32_sub(old_val, value);
-    } while (!atomic->value.compare_exchange_weak(old_val, new_val, mo));
+    } while (!atomic->value.compare_exchange_weak(old_val, new_val, success_mo, failure_mo));
     
     return old_val;
 }
@@ -543,27 +566,29 @@ bool aria_atomic_tbb64_compare_exchange_strong(AriaAtomicTBB64* atomic, int64_t*
 }
 
 int64_t aria_atomic_tbb64_fetch_add(AriaAtomicTBB64* atomic, int64_t value, AriaMemoryOrder order) {
-    std::memory_order mo = aria_to_cpp_order(order);
-    int64_t old_val = atomic->value.load(mo);
+    std::memory_order success_mo = aria_to_cpp_order(order);
+    std::memory_order failure_mo = derive_cas_failure_order(success_mo);
+    int64_t old_val = atomic->value.load(failure_mo);
     int64_t new_val;
     
-    // CAS loop for sticky error propagation
+    // CAS loop for sticky error propagation (ARIA-AUDIT-2026: Fixed memory ordering UB)
     do {
         new_val = tbb64_add(old_val, value);
-    } while (!atomic->value.compare_exchange_weak(old_val, new_val, mo));
+    } while (!atomic->value.compare_exchange_weak(old_val, new_val, success_mo, failure_mo));
     
     return old_val;
 }
 
 int64_t aria_atomic_tbb64_fetch_sub(AriaAtomicTBB64* atomic, int64_t value, AriaMemoryOrder order) {
-    std::memory_order mo = aria_to_cpp_order(order);
-    int64_t old_val = atomic->value.load(mo);
+    std::memory_order success_mo = aria_to_cpp_order(order);
+    std::memory_order failure_mo = derive_cas_failure_order(success_mo);
+    int64_t old_val = atomic->value.load(failure_mo);
     int64_t new_val;
     
-    // CAS loop for sticky error propagation
+    // CAS loop for sticky error propagation (ARIA-AUDIT-2026: Fixed memory ordering UB)
     do {
         new_val = tbb64_sub(old_val, value);
-    } while (!atomic->value.compare_exchange_weak(old_val, new_val, mo));
+    } while (!atomic->value.compare_exchange_weak(old_val, new_val, success_mo, failure_mo));
     
     return old_val;
 }

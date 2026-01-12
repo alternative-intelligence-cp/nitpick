@@ -1,0 +1,293 @@
+﻿Architectural Implementation Roadmap for Feature Freeze: The Aria Safety-Critical Core
+1. Executive Summary: The Imperative of Determinism in Safety-Critical AGI
+The Aria programming language project has arrived at its most pivotal developmental gateway: the pre-deployment feature freeze. Unlike general-purpose languages designed for web servers or consumer applications, Aria bears a burden of responsibility that approaches the absolute. It is the foundational substrate for a physics-based Artificial General Intelligence (AGI) intended to serve as a companion for neurodivergent children and vulnerable patients in extended hospital care. In this domain, the distinction between a "software bug" and a "clinical adverse event" vanishes. A numerical drift in a robotic actuator’s control loop, born from a floating-point rounding error, is not a glitch—it is a potential bone fracture. A failure in decision-making logic due to an unhandled arithmetic overflow is not an exception to be caught; it is a breach of trust that could result in psychological trauma.
+Consequently, the definition of "correctness" for Aria is not governed by market readiness or feature parity, but by mathematical and semantic ironclad stability. The synthesis of the architectural research reports 1 and the forensic analysis of the current source code compilation 1 reveals a distinct, quantifiable gap between the high-level safety mandates and the current implementation status. While the compiler backend, specifically within src/backend/ir/codegen_expr.cpp, establishes the groundwork for the Limb-Based Integral Model (LBIM) up to 512 bits, it lacks the critical 1024-bit extension required for post-quantum cryptographic parity and the fix256 deterministic physics primitives necessary for safe physical interaction.1
+This report serves as the definitive engineering directive to bridge these gaps. It translates the theoretical requirements of the Twisted Balanced Binary (TBB) safety protocols, the LBIM Optimization Barrier, and the Wild Memory Model into a granular, file-level action plan. The strict adherence to these steps is required to certify the runtime environment as safe for deployment. The architecture rejects the convenience of standard IEEE 754 floating-point arithmetic in favor of absolute determinism, and it rejects the opacity of standard compiler optimizations in favor of verified structural barriers. This is a roadmap for building a digital nervous system capable of holding a human hand without trembling.
+________________
+2. Architectural Invariants and the Safety-Critical Gap
+To understand the necessity of the proposed changes, one must first analyze the architectural invariants that define Aria's safety model and how the current codebase diverges from these critical paths. The analysis identifies three primary pillars where the current implementation exposes the system to unacceptable risk.
+2.1 The Limb-Based Integral Model (LBIM) as an Optimization Barrier
+The most sophisticated threat to the integrity of the Aria runtime comes not from runtime errors, but from the compiler itself. Research into the behavior of the LLVM infrastructure—upon which Aria is built—indicates persistent instability when optimizing native integers significantly wider than the target architecture's registers. Specifically, the Interprocedural Sparse Conditional Constant Propagation (IPSCCP) and Constraint Elimination passes have been documented to miscalculate value ranges or erroneously eliminate valid code paths when handling scalars of 128 bits or larger.1
+In a standard application, a miscompiled integer check might lead to a crash. In the Aria context, if the compiler incorrectly eliminates a bounds check on a force-feedback loop because it "proved" a 1024-bit value could never be negative (due to an overflow bug in the optimization pass), the physical safety limits of the AGI could be bypassed silently.
+The Architectural Mandate:
+To neutralize this threat, Aria employs the Limb-Based Integral Model (LBIM). This strategy dictates that ultra-wide integers must never be presented to the LLVM backend as native scalar types (e.g., i1024). Instead, they must be implemented as aggregate structures—structs containing arrays of native 64-bit "limbs." This structure acts as an Optimization Barrier.1 By treating the integer as a complex memory object rather than a scalar number, the compiler is forced to treat arithmetic operations as opaque sequences of function calls or explicit native instructions, preventing it from applying the faulty scalar optimization logic.1
+Current Implementation Status:
+The forensic analysis of src/backend/ir/codegen_expr.cpp confirms that this pattern is correctly implemented for int128, int256, and int512.1 The code explicitly constructs these types as structs of i64 arrays to "bypass LLVM IPSCCP/ConstraintElimination bugs".1 However, the implementation halts at 512 bits. There is currently zero support for int1024 or uint1024. This omission leaves the system vulnerable if higher-precision cryptography or state tracking is attempted, as the compiler would currently throw an "Unknown Aria type" error, halting development.1
+2.2 Deterministic Physics: The fix256 Imperative
+The second pillar of safety is Algorithmic Determinism. The AGI model relies on physics simulations to predict the consequences of its physical actions. Standard IEEE 754 floating-point arithmetic is notoriously non-deterministic across different hardware architectures; a simulation run on an x86 processor may yield slightly different results than one run on an ARM processor due to differences in fused multiply-add (FMA) instructions or rounding modes.1 Over time, these microscopic discrepancies accumulate—a phenomenon known as "drift." In a chaotic system like a multi-jointed robotic arm, drift leads to the "butterfly effect," where the model's internal prediction of its limb position diverges from reality, potentially causing collisions.
+The Architectural Mandate:
+Aria rejects float and double for control logic. Instead, it mandates a Q128.128 fixed-point primitive (fix256). This type provides 128 bits of integer range (indexing the observable universe) and 128 bits of fractional precision ($2^{-128} \approx 2.93 \times 10^{-39}$), which is four orders of magnitude finer than the Planck length.1 This ensures that the simulation granularity exceeds the fundamental granularity of the physical universe, rendering quantization errors physically irrelevant.
+Current Implementation Status:
+The current compiler backend supports standard floats (flt32, flt64, flt128) and has a structural placeholder for library-based extended floats (flt256, flt512) using limb arrays.1 However, the fix256 type—which requires distinct arithmetic semantics from floating-point types (e.g., no exponent handling, different overflow rules)—is entirely absent from src/backend/ir/codegen_expr.cpp.1 This is a critical deficiency for the physics engine.
+2.3 The Twisted Balanced Binary (TBB) Safety Protocol
+The third pillar addresses the semantic correctness of arithmetic itself. Standard two's complement arithmetic is asymmetric; in an 8-bit signed integer, the range is $[-128, +127]$. The value $-128$ has no positive counterpart. This asymmetry is a fertile breeding ground for "arithmetic traps," where negating the minimum value causes an overflow or undefined behavior.
+The Architectural Mandate:
+Aria enforces the Twisted Balanced Binary (TBB) system. TBB creates a perfectly symmetric valid range ($[-127, +127]$ for 8-bit) by reserving the most negative bit pattern (100...0) as a dedicated Error Sentinel (ERR).1 This enforces a "Sticky Error" protocol:
+1. Input Propagation: If any operand is ERR, the result is ERR.
+2. Range Collapse: Any result falling outside the symmetric range collapses to ERR.
+3. Sentinel Collision: Any mathematically valid result that accidentally matches the sentinel bit pattern must be treated as an error.1
+Current Implementation Status:
+The backend recognizes tbb8 through tbb64 and maps them to standard LLVM integers.1 While basic support exists, the rigorous "Sticky Error" checking logic required for the proposed 1024-bit and fixed-point types is missing. The implementation of branchless error propagation—using bitwise operations to avoid timing side-channels—must be explicitly engineered for these new complex types.
+________________
+3. Detailed Implementation Roadmap: The 1024-bit LBIM Extension
+The immediate priority for Feature Freeze is the implementation of the 1024-bit integer primitives (int1024, uint1024). This is not merely a capacity upgrade; it is a structural requirement to enable the "Secure Math Core" necessary for AGI identity protection via RSA-4096 and Zero-Knowledge Proofs.
+3.1 Compiler Backend Modifications (src/backend/ir/codegen_expr.cpp)
+The compiler must be taught to recognize these new types and allocate the appropriate storage structures within the LLVM Intermediate Representation (IR).
+3.1.1 Structural Definition and Type Interception
+The ExprCodegen::getLLVMTypeFromString method acts as the gatekeeper for type definitions. Currently, it supports up to int512 by creating a struct of 8 limbs. We must extend this to support 16 limbs ($16 \times 64 \text{ bits} = 1024 \text{ bits}$).
+Implementation Directive:
+The following logic must be injected into src/backend/ir/codegen_expr.cpp. The selection of a 16-limb array is non-negotiable; it aligns the memory layout with the 128-byte boundary required by the runtime allocators and ensures the "Optimization Barrier" remains effective against IPSCCP bugs.
+
+
+C++
+
+
+
+
+// Extension for 1024-bit LBIM (ARIA-024)
+if (typeName == "int1024" |
+
+| typeName == "uint1024") {
+   // Check for existing struct definition to avoid redefinition errors
+   llvm::StructType* int1024Struct = llvm::StructType::getTypeByName(context, "struct.int1024");
+   if (!int1024Struct) {
+       // Create an array of 16 i64 limbs. 
+       // 16 * 64 = 1024 bits.
+       // This structural wrapping is the primary defense against LLVM bug #68751.
+       llvm::Type* limbArray = llvm::ArrayType::get(llvm::Type::getInt64Ty(context), 16);
+       int1024Struct = llvm::StructType::create(context, {limbArray}, "struct.int1024");
+   }
+   return int1024Struct;
+}
+
+3.1.2 Memory Sizing and Alignment
+The ExprCodegen::getTypeSize function determines the memory allocation size for stack slots and heap requests. It is imperative that this function returns the exact byte width of the struct to prevent buffer overflows during runtime memcpy operations.
+Implementation Directive:
+Update the switch/conditional logic in getTypeSize to handle the new types.
+* Input: int1024, uint1024
+* Return: 128 (bytes).
+* Context: This value flows into the aria_alloc calls in the runtime. An incorrect value here would cause heap corruption, potentially destabilizing the AGI's memory space.
+3.1.3 TBB Logic Propagation
+The ExprCodegen::isTBBType and needsSpecialFormatter helper functions determine which types require "Sticky Error" checking and custom string formatting. The 1024-bit types must be flagged here.
+Implementation Directive:
+* Add int1024 and uint1024 to isTBBType. This signals the semantic analyzer to enforce "Range Collapse" logic during AST verification.
+* Add int1024 and uint1024 to needsSpecialFormatter. Standard printf cannot handle these structures; they require the runtime's aria_format_int1024 function, which converts the 16-limb binary representation into a decimal string.1
+3.2 Runtime Library Engineering (src/runtime/math/lbim_1024.cpp)
+Because LLVM cannot natively perform arithmetic on a struct { [16 x i64] }, the compiler lowers operations (like +, *, /) into calls to the runtime library. This library must be implemented in C++ with strict adherence to Constant-Time Execution to prevent side-channel attacks. If the time it takes to verify a cryptographic signature depends on the data, an attacker can extract the private key. For an AGI, this means an attacker could hijack the "identity" of the model.
+3.2.1 The Addition Kernel: Branchless Ripple-Carry
+Addition must propagate carries across 16 limbs. Standard implementations often use if (sum < a) carry = 1, but this introduces branch prediction artifacts.
+Implementation Directive:
+Utilize the __int128 compiler extension available in Clang/GCC to perform the addition in a wider domain, extracting the carry via bit-shifting. This avoids branching entirely.
+Logic Flow:
+1. Initialize carry (unsigned 128-bit) to 0.
+2. Iterate i from 0 to 15 (unrolled).
+3. Load a[i] and b[i].
+4. Compute sum = (u128)a[i] + b[i] + carry.
+5. Store (u64)sum to result[i].
+6. Update carry = sum >> 64.
+7. Safety Check: After the loop, check for Signed Overflow. In TBB, overflow occurs if a and b have the same sign (MSB of limb 15) but the result has a different sign. If true, overwrite result with TBB_ERR_SENTINEL (0x8000...0000).1
+3.2.2 The Multiplication Kernel: The Comba Method
+Multiplication is the most computationally expensive operation and the most vulnerable to timing attacks. The Comba Method (column-wise multiplication) is required because it allows for a fully unrolled, memory-access-independent execution trace.
+Implementation Directive:
+Implement aria_lbim_mul_1024 using a 192-bit accumulator approach to handle column sums without overflow.
+Logic Flow:
+1. Initialize a 3-word accumulator: r0, r1, r2.
+2. Iterate through columns k from 0 to 30 (for a $16 \times 16$ limb product, the result has 32 limbs; we compute the lower 16 or full 32 depending on the function variant).
+3. Inner Loop (Unrolled): For each column k, sum all partial products $A[i] \times B[j]$ where $i+j=k$.
+4. Add partial products to the accumulator (r2, r1, r0).
+5. Store r0 as the result limb k.
+6. Right shift the accumulator: r0 = r1, r1 = r2, r2 = 0.
+7. Sticky Error: Before starting, check `IS_ERR(a) |
+| IS_ERR(b). If true, return ERR`.
+3.2.3 The Division Kernel: Knuth’s Algorithm D
+Division is critical for modular arithmetic in cryptography. Simple repeated subtraction is too slow; standard long division is vulnerable to timing attacks. Knuth’s Algorithm D is the mandated standard for correctness.
+Implementation Directive:
+1. Normalization: Shift the divisor v left so its most significant bit is 1. Shift the dividend u by the same amount. This ensures the quotient estimate is accurate.
+2. Estimation: Calculate a candidate quotient digit $\hat{q}$ using the top two limbs of u and the top limb of v.
+3. Correction: The estimate $\hat{q}$ may be off by 1 or 2. Refine it using the second limb of v.
+4. Multiply and Subtract: Compute $u \leftarrow u - \hat{q}v$.
+5. Add Back: If the subtraction result is negative (borrow occurred), add v back to u and decrement $\hat{q}$.
+6. Denormalization: Shift the remainder right to restore the original scale.
+________________
+4. Detailed Implementation Roadmap: Deterministic Physics (fix256)
+The fix256 type is the dedicated physics primitive. It is distinct from int256 because it possesses an implicit radix point (dividing integer and fractional parts) and enforces different overflow rules tailored for physical simulation constraints.
+4.1 Backend Type Integration (src/backend/ir/codegen_expr.cpp)
+The compiler must distinguish fix256 from int256 to ensure that the correct arithmetic intrinsics are called. While they share the same memory layout, their behavior is semantically distinct.
+Implementation Directive:
+* Action: Augment getLLVMTypeFromString to recognize "fix256".
+* Structure: Reuse the 4-limb structure of int256 to maintain binary compatibility with the LBIM infrastructure.
+C++
+if (typeName == "fix256") {
+   // Reuse int256 layout: 4 x i64
+   llvm::Type* limbArray = llvm::ArrayType::get(llvm::Type::getInt64Ty(context), 4);
+   // Create distinct name for type safety in IR
+   return llvm::StructType::create(context, {limbArray}, "struct.fix256");
+}
+
+* Sizing: Ensure getTypeSize returns 32 bytes.
+4.2 Intrinsic Lowering Strategy
+The ExprCodegen must verify that binary operators acting on fix256 types are not lowered to standard integer instructions.
+Implementation Directive:
+In ExprCodegen::visitBinaryOp, detect if the operand type is struct.fix256. If so, emit calls to the runtime instead of LLVM instructions:
+   * + $\rightarrow$ call @aria_fix256_add
+   * - $\rightarrow$ call @aria_fix256_sub
+   * * $\rightarrow$ call @aria_fix256_mul (This is critical: integer multiplication would produce a result scaled by $2^{256}$, whereas fixed-point multiplication must be scaled by $2^{128}$).1
+   * / $\rightarrow$ call @aria_fix256_div
+4.3 Runtime Logic and The "Chaos Trap" (src/runtime/math/fix256.cpp)
+The aria_fix256_mul function is the heart of the physics engine. It must perform a multiplication that preserves the Planck-scale precision while checking for "Cosmological Range" violations.
+Implementation Directive:
+   1. Full Width Product: Compute the full $256 \times 256 \to 512$-bit product using the LBIM multiplication kernel.
+   2. Scaling: The radix point in Q128.128 is at bit 128. The useful result resides in bits [128 to 383] of the 512-bit product. Shift the 512-bit result right by 128 bits.
+   3. Overflow Check (Range Collapse): Check the upper 128 bits (bits 384-511) of the product. If any bit is set (excluding sign extension), the result exceeds the maximum representable value ($2^{127}$). In this case, strictly return TBB_ERR_SENTINEL. Do not wrap. A robot arm calculating a target position outside the observable universe is a critical error.1
+   4. Deterministic Rounding: Implement "Round to Nearest, Ties to Even" based on the most significant bit of the discarded lower 128 bits. This ensures that a simulation run on Monday yields the exact same bit pattern as a run on Tuesday, regardless of the machine state.
+Validation Task:
+Once implemented, the team must execute the Chaos Trap test: simulate a double pendulum for 10,000 steps. Hash the state of the system at every step using SHA-256. This hash must be identical across x86-64 (Intel), x86-64 (AMD), and ARM64 (Apple Silicon). Any deviation indicates a failure in determinism.1
+________________
+5. Implementation Roadmap: Safety Protocols (TBB & Sticky Errors)
+The TBB system is the fail-safe. It ensures that if a calculation goes wrong, it fails safe (becoming ERR) rather than failing dangerous (becoming a valid but wrong number).
+5.1 The Sentinel Patterns (src/runtime/common/tbb_safety.h)
+We must define the bit patterns for the sentinels across all types.
+Implementation Directive:
+Create/Update tbb_safety.h with macros that identify sentinels efficiently.
+   * tbb8: -128 (0x80)
+   * tbb16: -32768 (0x8000)
+   * fix256: 0x8000...0000 (MSB of limb 3 is 1, all others 0).
+   * int1024: 0x8000...0000 (MSB of limb 15 is 1, all others 0).
+
+
+C++
+
+
+
+
+#define IS_ERR_1024(limbs) \
+   ((limbs == 0x8000000000000000ULL) && \
+    (limbs | limbs |... | limbs) == 0)
+
+5.2 Sticky Error Injection
+Implementation Directive:
+Every single runtime math function (lbim_1024.cpp, fix256.cpp) must begin with the CHECK_STICKY_ERROR macro.
+
+
+C++
+
+
+
+
+#define CHECK_STICKY_ERROR(a, b) \
+   if (IS_ERR_1024(a) |
+
+| IS_ERR_1024(b)) return TBB_ERR_1024;
+
+This enforces the Input Propagation rule. If an input is corrupted, the output is corrupted. This "infectious" behavior allows the system to trace the error back to its source and prevents the AGI from acting on "phantom values".1
+5.3 Sentinel-Preserving Widening
+A subtle but critical requirement is safe type casting. If a tbb8 value of -128 (ERR) is cast to tbb16, standard sign extension makes it -128, which is a valid 16-bit number. This "heals" the error, effectively hiding the failure.
+Implementation Directive:
+In src/backend/ir/codegen_expr.cpp, the generateTBBWiden function must use branchless logic to detect this:
+   1. icmp: Compare source value to source sentinel.
+   2. select: If equal, return destination sentinel. If not, return sext (sign extended) value.
+This ensures that ERR in 8-bit becomes ERR in 16-bit, preserving the safety state.1
+________________
+6. Implementation Roadmap: The Wild Memory Model
+For the AGI to operate in real-time control loops (e.g., stabilizing a drone or a prosthetic limb), it cannot suffer from non-deterministic Garbage Collection (GC) pauses. The "Wild" memory model provides a manual, deterministic alternative.
+6.1 The Wild Allocator API (src/runtime/memory/wild_alloc.cpp)
+Implementation Directive:
+Implement aria_alloc and aria_free as wrappers around the system allocator (or a custom slab allocator), but crucially, do not register these pointers with the GC.
+      * Performance: The allocation must have a complexity of $O(1)$ (using free lists) or $O(\log N)$ to guarantee latency bounds.1
+      * Security: For cryptographic buffers, aria_free must essentially perform a memset to zero out the memory before releasing it, protecting against cold-boot attacks and memory scraping forensics.
+6.2 Small Buffer Optimization (SBO) for BigInt
+To balance performance with capacity, the BigInt type must use SBO.
+Implementation Directive:
+In src/runtime/types/bigint.h, define the BigInt structure to fit exactly within a 64-byte CPU cache line. This minimizes memory bandwidth usage.
+Memory Layout 1:
+      * Bytes 0-31: union { uint64_t inline_limbs; struct { uint64_t* ptr; size_t cap; } heap; }
+      * Bytes 32-35: uint32_t size (Magnitude).
+      * Byte 36: uint8_t mode (0=Inline, 1=Heap, 2=Invalid).
+      * Byte 37: bool sign.
+      * Bytes 38-39: Padding (Alignment).
+Lazy Contraction Rule:
+In the normalization logic, if a Heap-mode BigInt shrinks (e.g., value reduces from 500 bits to 10 bits), do not immediately free the heap memory and switch to Inline mode. This prevents "allocation thrashing" if the value oscillates around the threshold. Only shrink on an explicit shrink_to_fit call.1
+________________
+7. Implementation Roadmap: Exotic Arithmetic Core
+To support efficient neural network inference, Aria requires native support for Balanced Ternary (base-3) and Nonary (base-9) arithmetic.
+7.1 Lookup Table (LUT) Generation
+Binary processors are inefficient at ternary math. To achieve acceptable performance, we must use pre-computed Lookup Tables.
+Implementation Directive:
+      1. Tooling: Create a build-time tool tools/generate_ternary_luts.cpp.
+      2. Logic: Calculate the result of adding two "Trybbles" (5-trit sequences) for all possible input combinations.
+      * Input Space: $243 \times 243$ states $\times 3$ carry states = $177,147$ entries.
+      * Output: src/runtime/math/ternary_luts.h containing static const uint16_t TERNARY_ADD_LUT.
+      3. Runtime: In src/backend/ir/ternary_codegen.cpp, lower ternary additions to array lookups:
+result = TERNARY_ADD_LUT;
+This guarantees that ternary addition takes deterministic time (one memory access), regardless of the values, which is essential for consistent neural network latency.1
+________________
+8. Requirements Traceability Matrix
+The following table maps the high-level requirements derived from the research synthesis to the specific engineering action items detailed above.
+
+
+Requirement ID
+	Description
+	Criticality
+	Source
+	Action Item
+	Target File
+	REQ-LBIM-1024
+	1024-bit integers for RSA-4096
+	Critical
+	
+
+	3.1.1, 3.1.2
+	codegen_expr.cpp
+	REQ-OPT-BARR
+	Optimization Barrier for LLVM bugs
+	Critical
+	
+
+	3.1.1
+	codegen_expr.cpp
+	REQ-FIX-256
+	Deterministic Physics (Q128.128)
+	Critical
+	1
+	4.1, 4.3
+	codegen_expr.cpp, fix256.cpp
+	REQ-TBB-SENT
+	100...0 Sentinel Reservation
+	Critical
+	1
+	5.1
+	tbb_safety.h
+	REQ-TBB-STICKY
+	Error Propagation on Input/Overflow
+	Critical
+	1
+	5.2
+	lbim_1024.cpp
+	REQ-WILD-MEM
+	Deterministic, Manual Allocation
+	High
+	1
+	6.1
+	wild_alloc.cpp
+	REQ-SEC-CONST
+	Constant-Time Execution (Side-Channel)
+	High
+	1
+	3.2.2
+	lbim_1024.cpp
+	REQ-EXOTIC-LUT
+	Deterministic Ternary Arithmetic
+	High
+	1
+	7.1
+	ternary_codegen.cpp
+	________________
+9. Conclusion
+The path to Feature Freeze for the Aria programming language is clear but demanding. The current codebase serves as a solid proof of concept but lacks the "industrial-grade" safety mechanisms required for its stated mission. The implementation of int1024 and fix256 using the LBIM strategy is not optional; it is the structural guarantee that the compiler will not corrupt the mathematics defining the AGI's reality.
+The distinction between success and failure in this project is measured in bit patterns. A single bit flipped by an over-aggressive compiler optimization in a 1024-bit control loop could result in physical harm to a vulnerable user. By rigorously implementing the "Optimization Barriers," forcing "Sticky Error" propagation, and mandating "Wild" memory determinism, the engineering team creates a runtime environment where safety is not a policy, but a property of the physics of the language itself.
+This roadmap provides the step-by-step instructions to achieve that state. The immediate next step is the modification of src/backend/ir/codegen_expr.cpp to register the missing types, effectively sealing the compiler against the instability of the underlying LLVM infrastructure. Proceed with extreme caution and rigor.
+Works cited
+         1. aria_source_full.txt
+         2. Why does LLVM not perform range analysis on integer values? - Stack Overflow, accessed December 31, 2025, https://stackoverflow.com/questions/77342259/why-does-llvm-not-perform-range-analysis-on-integer-values
+         3. Behavior of overflowing floating-point to integer conversions · Issue #66603 - GitHub, accessed December 31, 2025, https://github.com/llvm/llvm-project/issues/66603
+         4. Using LLVM to optimize programs that use large structs - Stack Overflow, accessed December 31, 2025, https://stackoverflow.com/questions/29684775/using-llvm-to-optimize-programs-that-use-large-structs

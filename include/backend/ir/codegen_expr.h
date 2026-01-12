@@ -8,6 +8,7 @@
 #include "backend/ir/tbb_codegen.h"
 #include <map>
 #include <string>
+#include <unordered_map>
 
 // Forward declarations
 namespace aria {
@@ -66,6 +67,14 @@ private:
     // TBB codegen for safe arithmetic with overflow detection
     TBBCodegen tbb_codegen;
     
+    // ARIA-026: Expression recursion depth guard (Gemini Safety Audit Fix #4)
+    size_t expr_depth_ = 0;
+    static constexpr size_t MAX_EXPR_DEPTH = 500;
+    
+    // ARIA-026: String interning pool (Gemini Safety Audit Fix #5)
+    // Prevents OOM crashes from duplicate string literals in Teacher system
+    std::map<std::string, llvm::GlobalVariable*> string_pool_;
+    
     // Helper: Get LLVM type from Aria type
     llvm::Type* getLLVMType(sema::Type* type);
     
@@ -84,11 +93,42 @@ private:
     // Helper: Get ERR sentinel constant for TBB type
     llvm::Value* getTBBSentinel(llvm::Type* type);
 
+    // ARIA-018: Sentinel-Preserving TBB Widening
+    // Generates branchless widening that preserves error sentinels across bit widths
+    llvm::Value* generateTBBWiden(llvm::Value* srcVal, llvm::Type* dstType);
+
     // Helper: Generate intrinsic-based TBB binary operation (optimized)
     llvm::Value* generateTBBBinaryOp(const std::string& tbbType,
                                       frontend::TokenType op,
                                       llvm::Value* left,
                                       llvm::Value* right);
+
+    // Helper: Get exotic type name from an expression (returns empty string if not exotic)
+    std::string getExprExoticTypeName(ASTNode* expr);
+
+    // Helper: Get numeric type name from an expression (frac*, tfp*, vec9)
+    std::string getExprNumericTypeName(ASTNode* expr);
+
+    // Helper: Get LBIM type name from an expression (int128/256/512/1024, uint*, fix256)
+    std::string getExprLBIMTypeName(ASTNode* expr);
+
+    // Helper: Generate exotic type binary operation (tryte/nyte runtime calls)
+    llvm::Value* generateExoticBinaryOp(const std::string& exoticType,
+                                         frontend::TokenType op,
+                                         llvm::Value* left,
+                                         llvm::Value* right);
+
+    // Helper: Generate numeric type binary operation (frac*, tfp* runtime calls)
+    llvm::Value* generateNumericBinaryOp(const std::string& numericType,
+                                          frontend::TokenType op,
+                                          llvm::Value* left,
+                                          llvm::Value* right);
+
+    // Helper: Generate LBIM type binary operation (int128/256/512/1024 runtime calls)
+    llvm::Value* generateLBIMBinaryOp(const std::string& lbimType,
+                                       frontend::TokenType op,
+                                       llvm::Value* left,
+                                       llvm::Value* right);
 
 public:
     /**
@@ -108,6 +148,15 @@ public:
      * @param stmt_gen Statement codegen instance
      */
     void setStmtCodegen(StmtCodegen* stmt_gen);
+
+    /**
+     * Promote int64 literal to LBIM struct type (int128/256/512/1024/2048/4096)
+     * Used when assigning literals to large integer variables
+     * @param literal LLVM integer value to promote
+     * @param targetType Target LBIM struct type
+     * @return Promoted LBIM struct value
+     */
+    llvm::Value* promoteLiteralToLBIM(llvm::Value* literal, llvm::Type* targetType);
     
     /**
      * Generate code for a literal expression

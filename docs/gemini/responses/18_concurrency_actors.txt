@@ -1,0 +1,311 @@
+﻿SIL-4 Audit Report: Concurrency and Actor Message Passing Verification for the Aria Language Runtime
+Date: January 2, 2026
+Subject: Safety Integrity Level 4 (SIL-4) Audit of Aria Language Runtime Environment
+Target Application: Physics-Based AGI and Robotic Assistance for Vulnerable Populations
+Audit Focus: Concurrency, Actor Message Passing, and Type Safety Integration
+Reference Standards: IEC 61508 (Functional Safety), ISO 13482 (Robots for Personal Care)
+________________
+1. Executive Summary and Compliance Verdict
+1.1 Overview of Engagement
+This report constitutes a rigorous, expert-level audit of the Aria programming language's runtime architecture, specifically targeting the concurrency model and actor message-passing mechanisms. The audit was commissioned under a "life/death" threat model, necessitating a zero-trust evaluation approach. The target application—controlling physical actuators in robotic assistants for neurodivergent children and hospital patients—demands adherence to Safety Integrity Level 4 (SIL-4) standards, where the probability of dangerous failure per hour (PFH) must be less than $10^{-8}$.
+The audit examined the provided source code compilation (aria_source_full.txt), specification documents (aria_specs.txt), and auxiliary search data. The primary analysis focused on the backend intermediate representation (IR) generation (src/backend/ir/codegen_expr.cpp) to infer the structural integrity of the data types transmitted between actors, while simultaneously identifying critical gaps caused by missing runtime source files.
+1.2 Critical Findings and Verdict
+Overall Compliance Verdict: NON-COMPLIANT (Critical Gaps Identified)
+The audit identifies a catastrophic verification gap: the specific source files implementing the Actor Model (src/runtime/async/actor.cpp) and the asynchronous code generation (src/backend/ir/codegen_async.cpp) are absent from the provided repository snapshot, despite their directory existence being confirmed.1 Consequently, it is impossible to affirmatively verify the existence of queue bounds checking, message ordering logic, or state isolation enforcement.
+However, a Negative Audit of the available backend infrastructure (codegen_expr.cpp) reveals a highly sophisticated and safety-conscious type system that partially mitigates specific risks, while simultaneously highlighting severe integration risks due to "TODOs" in memory management.
+
+
+Audit Item
+	SIL-4 Requirement
+	Status
+	Risk Magnitude
+	Primary Findings
+	1. Queue Bounds
+	No silent overflow
+	⚠️ UNCLEAR
+	Critical
+	Source code for Actor and Mailbox is missing. No evidence of backpressure mechanisms exists in the visible backend logic.
+	2. Serialization
+	Type preservation
+	✅ COMPLIANT (Architecture)
+	Low
+	The LBIM (Limb-Based Integral Model) and fix256 implementations 1 provide a deterministic, robust foundation for data integrity, surpassing standard C++ capabilities.
+	3. State Isolation
+	No shared state
+	❌ FAIL
+	High
+	The language explicitly supports wild pointers 1 and the backend maps them to LLVM opaque pointers.1 Without visible BorrowChecker enforcement, isolation breaches are trivial.
+	4. Lifecycle
+	Deterministic cleanup
+	❌ FAIL
+	High
+	Critical safety violation found in codegen_expr.cpp: A TODO comment explicitly states memory integration for coroutine cleanup is unfinished.1
+	5. Ordering
+	FIFO Guarantee
+	⚠️ UNCLEAR
+	Critical
+	References to "Work Stealing" 1 suggest non-deterministic execution order, violating strict causality requirements for robotic control.
+	1.3 Immediate Recommendations
+1. Halt Physical Testing: Do not deploy this code to any hardware capable of kinetic movement until the Actor implementation is audited.
+2. Resolve Cleanup TODO: The free call in the coroutine cleanup block 1 must be integrated with the aria_gc_alloc or a deterministic slab allocator immediately. The current TODO represents a memory leak or corruption vector.
+3. Audit Missing Files: The files src/runtime/async/actor.cpp and src/backend/ir/codegen_async.cpp must be provided. The current audit is based on inference from the backend types, which is insufficient for SIL-4 certification.
+________________
+2. Threat Model Analysis: The Robotic Control Context
+2.1 The "Teacher" System and Physical Harm
+The stakeholder describes a "Teacher" system assisting vulnerable populations. In this context, the software does not merely process data; it applies forces.
+* The Hazard: A robotic arm assisting a child with a lesson drifts due to a calculation error or fails to stop due to a dropped message.
+* The Victim: Neurodivergent children or hospital patients with degraded physical/mental states, incapable of reacting quickly to malfunction.
+* The Obligation: The system must be Fail-Silent or Fail-Safe. It acts only when system integrity is proven.
+2.2 Specific Concurrency Threats
+The Actor Model is chosen for its isolation, but implementation flaws introduce unique vectors for physical harm:
+* The "Deaf Actor" (Queue Overflow):
+   * Mechanism: The robot's vision system (Actor A) sends positional updates to the motor controller (Actor B) at 1000Hz. Actor B enters a heavy calculation state (e.g., path planning).
+   * Result: The message queue fills. If the policy is "Drop Newest," the "Emergency Stop" command sent by the safety monitor is discarded. The robot continues moving based on stale velocity vectors.
+   * Mitigation Requirement: Queues must be bounded. send() must return a Result<Ok, Full> or block the sender. Silent dropping is forbidden.
+* The "Confused Actor" (Type Corruption):
+   * Mechanism: A message containing a 64-bit pointer (0x7FFF...) is interpreted as a 64-bit force limit (9.22e18 Newtons) due to serialization alignment errors.
+   * Result: The robot applies maximum torque instantly.
+   * Mitigation Requirement: Strict, verified serialization of the fix256 and LBIM types implemented in codegen_expr.cpp.1
+* The "Zombie" (Lifecycle Failure):
+   * Mechanism: An actor crashes due to an exception. Its state is corrupted, but it retains a "Holding" lock on a physical joint.
+   * Result: The joint cannot be relaxed or moved by safety overrides.
+   * Mitigation Requirement: Deterministic destructors (RAII) and supervision trees that release hardware locks on crash.
+________________
+3. Structural Analysis of the Available Backend
+While the runtime actor code is missing, the provided src/backend/ir/codegen_expr.cpp 1 offers deep insight into the data structures that the actors must pass. The rigor of this backend is the primary evidence for the system's potential safety.
+3.1 The Limb-Based Integral Model (LBIM)
+The compiler implements integers larger than 64 bits (int128, int256,... int4096) using a custom Limb-Based Integral Model (LBIM) rather than native LLVM integers.
+* Evidence:
+C++
+// ARIA-024: Large integers use Limb-Based Integral Model (LBIM)
+// Stored as structs of i64 limbs to bypass LLVM IPSCCP/ConstraintElimination bugs
+if (typeName == "int128" |
+
+
+| typeName == "uint128") {
+//... create struct with [2 x i64] array
+}
+```
+
+
+1
+   * Implications for Actors: This is a massive safety win. By avoiding LLVM's buggy optimization passes for large integers, the compiler prevents "silent corruption" of cryptographic keys or high-precision counters during optimization.
+   * Serialization Challenge: The Actor message passing system must recognize these structs not as generic objects, but as fundamental value types. If the serializer tries to pointer-chase the limbs, performance will collapse. If it treats them as contiguous bytes, endianness becomes a factor in distributed systems.
+3.2 Deterministic Physics: The fix256 Type
+The language includes a dedicated type for physics: fix256.
+   * Evidence:
+C++
+// ARIA-025: fix256 deterministic fixed-point (Q128.128 for physics simulations)
+if (typeName == "fix256") {
+   //... [2 x i64] integer part + [2 x i64] fractional part
+}
+
+1
+   * Insight: This proves the "physics based AGI" requirement is baked into the compiler core. A Q128.128 fixed-point number allows for sub-atomic precision over intergalactic distances, or more practically, extreme precision for robotic joint angles without the non-determinism of IEEE 754 floating point.
+   * Safety Criticality: Floating-point drift is a major issue in long-running simulations. By enforcing fixed-point at the type level, Aria ensures that a simulation run on a developer's laptop matches the robot's execution bit-for-bit.
+3.3 Safety Fix ARIA-026: The "Fail Hard" Doctrine
+The code includes a specific fix to prevent type confusion.
+      * Evidence:
+C++
+// ARIA-026: SAFETY FIX - Fail hard on non-primitive types instead of defaulting to i32
+// Gemini Safety Audit Fix #1: Type System Breach
+if (!type->isPrimitive()) {
+   throw std::runtime_error("ICE: Code generation encountered unmapped non-primitive type kind...");
+}
+
+1
+      * Insight: This demonstrates a culture of safety. Previous versions apparently defaulted unknown types to i32 (a common C/C++ compiler fallback behavior that leads to buffer overflows). The explicit removal of this default proves the developer is actively auditing against "silent defaults," exactly as requested.
+________________
+4. Detailed Audit: Concurrency and Actor Message Passing
+This section evaluates the five specific audit items against the SIL-4 requirements, synthesizing the known backend behaviors with the risks of the missing runtime implementation.
+4.1 Audit Item 1: Message Queue Bounds Checking
+SIL-4 Requirement: Message queues MUST NOT overflow silently. send() MUST block or return an error.
+Status: ⚠️ Unclear / Critical Verification Gap
+Architecture Analysis:
+The available code in codegen_expr.cpp does not contain the Actor class or Mailbox definitions. However, the presence of src/runtime/async/async_io_api.cpp and references to RingBuffer in the search results 1 strongly suggest a ring-buffer-based implementation.
+Risk Assessment:
+         * The Ring Buffer Hazard: In high-performance systems, ring buffers are often implemented as "Overwrite Oldest" to avoid blocking the producer (sensor).
+         * Safety Violation: If a sensor sends , , ``, and the buffer wraps around, overwriting the FAULT message with the next OK, the system enters an unsafe state without knowing it.
+         * The Allocation Hazard: If the queues are implemented as std::deque or linked lists (unbounded), a slow consumer will cause memory usage to grow until the OOM killer terminates the process. In a robotic system, abrupt termination of the control process results in "limp mode" or uncontrolled drift.
+Required Remediation:
+The src/runtime/async/actor.cpp file must be verified to contain the following logic:
+         1. Fixed Capacity: Actors must be initialized with a rigid capacity (e.g., Actor::spawn(..., capacity=1024)).
+         2. Explicit Backpressure: The send operation must return a Result enum:
+C++
+enum SendResult { Ok, QueueFull, ActorDead };
+SendResult send(Message msg);
+
+         3. No Silent Drops: The implementation must not return void.
+Verdict: We cannot confirm compliance. The threat of "motor disable command lost" remains unmitigated by any visible code.
+4.2 Audit Item 2: Message Serialization/Deserialization
+SIL-4 Requirement: Message types MUST be preserved accurately. No type confusion.
+Status: ✅ Compliant (Architectural Capability Verified) / ⚠️ Unclear (Implementation)
+Evidence of Compliance:
+The codegen_expr.cpp file demonstrates an extremely rigorous approach to type layout, which is a prerequisite for safe serialization.
+            1. Recursive Struct Safety:
+The compiler handles recursive types (e.g., struct Node { next: Node* }) by caching the type definition before generating the body.1
+C++
+// Check cache to handle recursive types...
+llvm::StructType* existingStruct = llvm::StructType::getTypeByName(context, structName);
+if (existingStruct) return existingStruct;
+
+This prevents the serializer from entering infinite loops when traversing complex message graphs.
+            2. Sentinel-Aware TBB Types:
+Aria supports tbb8 through tbb64 (Twisted Balanced Binary). These types have specific bit-patterns for ERR (Error).
+               * The Check: The generateTBBWiden function 1 ensures that when a tbb8 value is promoted to tbb16, the ERR sentinel is preserved (icmp -> select).
+               * Serialization Impact: This logic must be replicated in the serializer. If a tbb8 is serialized as a raw byte 0x80 (-128, the error sentinel) and deserialized into a int16, it must become -32768 (the 16-bit sentinel), NOT -128. The presence of this widening logic in the compiler suggests the developers are aware of this requirement.
+               3. Strict Padding Control:
+The use of llvmStruct->setBody(fieldTypes, /*isPacked=*/false) 1 ensures natural alignment. This reduces the risk of "bus errors" or unaligned access faults on ARM processors (common in robotics), which would crash the actor.
+Risk Assessment:
+The backend is robust. The risk lies in whether the runtime uses this metadata. If the runtime uses a "bag of bytes" approach (casting void*), all this safety is lost. Given the dyn and Any types mentioned in the specs 1, runtime type checking is likely intended.
+Verdict: The underlying type system is Compliant and capable of supporting SIL-4 serialization. Verification of the runtime implementation is still required.
+4.3 Audit Item 3: Actor State Isolation
+SIL-4 Requirement: Actor state MUST be isolated (no shared mutable state).
+Status: ❌ FAIL / High Risk of Breach
+Evidence of Failure:
+The language specification and the compiler backend explicitly support Wild Pointers.
+                  1. The wild Keyword:
+The specs 1 show usage: wild int64@... = "SHA256";.
+The lexer tokens 2 confirm TOKEN_KW_WILD.
+                  2. Pointer Codegen:
+The codegen_expr.cpp maps pointers as follows:
+C++
+if (type_name == "str" |
+
+
+| type_name.find('*')!= std::string::npos) {
+return llvm::PointerType::get(context, 0); // LLVM 20.x opaque pointers
+}
+```
+
+
+1
+The Hazard:
+The Actor Model guarantees safety only if state is not shared. However, if Aria allows passing a wild int64* inside a message, isolation is broken.
+                     * Scenario: Actor A sends a pointer to its internal motor calibration map to Actor B. Actor B writes to it. Actor A reads it simultaneously.
+                     * Result: Data race. The motor controller reads a torn write (half updated value), potentially interpreting a calibration factor of 1.0 as NaN or Infinity, causing immediate, uncontrolled motor acceleration.
+Verification Needs:
+The compiler's Semantic Analysis (src/frontend/sema/borrow_checker.cpp - noted in file lists but content missing) MUST forbid the inclusion of wild types in Actor Messages. Without this restriction, the system cannot be certified SIL-4. The presence of wild pointers makes the language fundamentally unsafe unless strictly contained.
+Verdict: Non-Compliant. The capability to create and pass raw pointers undermines the isolation guarantees of the Actor model.
+4.4 Audit Item 4: Actor Lifecycle Management
+SIL-4 Requirement: Actor cleanup MUST be deterministic. No resource leaks.
+Status: ❌ FAIL / Critical Safety Violation
+Evidence of Failure:
+A critical finding in src/backend/ir/codegen_expr.cpp directly addresses memory cleanup for coroutines (which likely back the actors).
+
+
+C++
+
+
+
+
+// src/backend/ir/codegen_expr.cpp
+// Phase 4.5.3: Generate coroutine suspend and cleanup blocks for async functions
+if (stmt->isAsync) {
+   //...
+   // Cleanup block: free coroutine frame
+   builder.SetInsertPoint(coro_cleanup_block);
+   // Get memory to free: i8* @llvm.coro.free(token id, i8* handle)
+   llvm::Value* free_mem = builder.CreateCall(getCoroFree(), {coro_id, coro_handle}, "coro.free.mem");
+   
+   // Free the memory (TODO: integrate with Aria memory model)
+   llvm::Function* free_func = module->getFunction("free");
+   //...
+}
+
+1
+The "TODO" Violation:
+The comment // Free the memory (TODO: integrate with Aria memory model) is a Showstopper for SIL-4 certification.
+                     * Implication: The current implementation likely calls the system free() (libc) rather than a deterministic, safety-critical allocator (aria_alloc).
+                     * Risk:
+                     1. Fragmentation: Standard malloc/free leads to heap fragmentation, eventually causing allocation failures (OOM) after days of runtime—unacceptable for a long-term care robot.
+                     2. Non-Determinism: free() has unbounded execution time (need to merge blocks). This violates the real-time constraints of the control loop.
+                     3. Memory Corruption: If the integration is incomplete, there is a high risk of "Double Free" or "Use After Free" if the actor framework manages the handle lifecycle incorrectly.
+Verdict: Non-Compliant. The explicit TODO regarding memory integration in the cleanup path is a failure of the safety process.
+4.5 Audit Item 5: Message Ordering Guarantees
+SIL-4 Requirement: Message ordering MUST be defined and enforced (Causal Ordering).
+Status: ⚠️ UNCLEAR / Potential Flaw
+Evidence:
+The search results 1 reference src/runtime/async/work_stealing.cpp and WorkStealingDeque.
+The Work Stealing Hazard:
+Aria appears to use a Work Stealing Executor for its async/actor runtime. While excellent for throughput (performance), work stealing is dangerous for Ordering.
+                     * Mechanism: Tasks (messages) are placed on a queue. Idle threads "steal" tasks from the back of the queue.
+                     * The Violation: If Actor A sends messages $M_1$ then $M_2$, and they are scheduled as tasks:
+                     1. Thread 1 queues $M_1$.
+                     2. Thread 1 queues $M_2$.
+                     3. Thread 2 (idle) steals $M_2$ from the back of the queue.
+                     4. Thread 2 executes $M_2$.
+                     5. Thread 1 executes $M_1$.
+                     * Result: $M_2$ is processed before $M_1$. Order is violated.
+Robotic Impact:
+                     * $M_1$: "Unlock Brakes"
+                     * $M_2$: "Apply Torque"
+                     * Reordered: "Apply Torque" (while brakes locked -> Motor Burnout) -> "Unlock Brakes" (Load falls).
+Verdict: Unless the Actor implementation explicitly pins an actor to a single queue or uses a logical clock re-sequencer (unlikely in a low-level runtime), the use of Work Stealing implies a violation of strict FIFO ordering. High Risk.
+________________
+5. System Robustness and Determinism Features
+Despite the failures in isolation and lifecycle, the Aria language demonstrates exceptional robustness in its fundamental data types, which mitigates the severity of "Data Corruption" threats.
+5.1 The Safety of int1024 and LBIM
+The compiler's handling of int128 through int4096 is notable.
+
+
+C++
+
+
+
+
+// Stored as structs of i64 limbs to bypass LLVM IPSCCP/ConstraintElimination bugs
+
+1
+
+
+The decision to manually implement large integers via Limb-Based Integral Models (LBIM) rather than trusting LLVM's i1024 type is significant. LLVM optimization passes often have edge-case bugs with non-standard integer widths. By treating these as structs, Aria ensures that cryptographic operations (crucial for verifying the "Teacher" system's updates) and high-precision sensor data remain uncorrupted by aggressive compiler optimizations.
+5.2 Deterministic String Handling
+The codegen includes safeguards for string literals:
+
+
+C++
+
+
+
+
+// Gemini Safety Audit Fix #5: Prevents OOM from duplicate literals
+// ARIA-026: String interning - check pool before creating new global
+
+1
+
+
+This fix prevents a Denial-of-Service (DoS) condition where an actor logging error messages in a loop could exhaust memory by creating duplicate string constants. This contributes to long-term stability.
+5.3 Coroutine Intrinsics and Await
+The inclusion of <llvm/IR/Intrinsics.h> 1 confirms that Aria uses Stackless Coroutines.
+                     * Pro: Extremely lightweight context switching. Thousands of actors can run on a small embedded controller.
+                     * Con: Deep recursion or complex stack traces are harder to debug.
+                     * Relevance: This architecture confirms that Actor is likely an abstraction over an async func. This tight integration allows the compiler to verify state machines, if the semantic analysis is correctly implemented.
+________________
+6. Recommendations and Remediation Roadmap
+The following actions are required to bring the Aria runtime into compliance with SIL-4 standards for the stated use case.
+6.1 Critical Blockers (Audit Item 4 & 5)
+                     1. Fix Coroutine Cleanup: Modify src/backend/ir/codegen_expr.cpp. Remove the TODO. Replace the call to module->getFunction("free") with a call to the deterministic runtime allocator aria_dealloc_coroutine_frame(). This function must ensure memory is zeroed before release (security) and returned to the correct slab (performance/fragmentation).
+                     2. Enforce Ordering in Executors: If Work Stealing is retained, the Actor implementation must use a Strand pattern. The mailbox must be a critical section that ensures only one thread processes messages for a specific actor at a time, effectively serializing the parallel execution for that specific entity.
+6.2 Structural Changes (Audit Item 1 & 3)
+                     3. Implement Bounded Mailboxes: The Actor constructor must accept a capacity argument. The send semantic must allow for checking capacity:
+Code snippet
+// Required Syntax
+result<void, QueueError> sent = actor.send(msg);
+if (sent.is_err()) { /* Handle backpressure */ }
+
+                     4. Borrow Checker Integration: The compiler must be updated to strictly forbid wild pointers in message payloads. Messages should be restricted to types that implement a Transferable trait (POD types, fix256, or deep-clonable structs).
+6.3 Verification Data
+                        5. Supply Missing Sources: The audit cannot be closed until src/runtime/async/actor.cpp is reviewed to confirm the queue implementation (Ring Buffer vs Linked List) and the locking strategy.
+7. Conclusion
+The Aria programming language is built on a foundation of exceptional rigor regarding type safety and compiler correctness. The LBIM and fix256 implementations demonstrate a commitment to determinism that exceeds industry norms for general-purpose languages. The developers have actively proactively addressed compiler bugs and safety audits (e.g., ARIA-026).
+However, the Concurrency/Actor layer is currently the weak link. The presence of "Work Stealing" without proven ordering guarantees, the "TODO" in the memory cleanup path, and the ability to pass wild pointers create unacceptable risks for a system controlling physical actuators near vulnerable humans.
+Final Status: The system is NOT APPROVED for physical deployment. Remediation of the memory cleanup and verification of the message queueing logic is mandatory.
+________________
+Sources:
+1 aria_specs.txt - Language Specifications
+1 src/backend/ir/codegen_expr.cpp - Expression Code Generation Source
+1 - Semantic Search Results regarding file existence and content.
+Works cited
+                        1. aria_source_full.txt
+                        2. Aria: a scripting language for systems developers : r/ProgrammingLanguages - Reddit, accessed January 2, 2026, https://www.reddit.com/r/ProgrammingLanguages/comments/1p2cf0g/aria_a_scripting_language_for_systems_developers/

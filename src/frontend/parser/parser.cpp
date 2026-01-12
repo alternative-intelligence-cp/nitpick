@@ -207,6 +207,7 @@ void Parser::synchronize() {
             case TokenType::TOKEN_KW_EXTERN:
             case TokenType::TOKEN_KW_STRUCT:
             case TokenType::TOKEN_KW_ENUM:
+            case TokenType::TOKEN_KW_TRAIT:
                 return;
             default:
                 advance();
@@ -231,6 +232,7 @@ bool Parser::isUnaryOperator(TokenType type) const {
            type == TokenType::TOKEN_BANG ||
            type == TokenType::TOKEN_TILDE ||
            type == TokenType::TOKEN_AT ||
+           type == TokenType::TOKEN_LEFT_ARROW ||  // <- for pointer dereference
            type == TokenType::TOKEN_HASH ||
            type == TokenType::TOKEN_DOLLAR;  // $ for safe borrow/reference
            // Note: TOKEN_DOLLAR is BOTH a unary operator ($x for borrow) AND used as iteration variable in till loops
@@ -360,23 +362,115 @@ ASTNodePtr Parser::parseExpression(int minPrecedence) {
 ASTNodePtr Parser::parsePrimary() {
     Token token = peek();
     
-    // Integer literal
-    if (token.type == TokenType::TOKEN_INTEGER) {
-        std::string lexeme = token.lexeme;  // Save before advance()
-        std::string raw_text = token.raw_literal_text;  // High-precision literal
+    // ========================================================================
+    // TYPED INTEGER LITERALS (Zero Implicit Conversion Policy)
+    // ========================================================================
+    // All integer literals MUST have type suffixes: 42u32, -128i8, 0xFFu16, etc.
+    // This prevents accidental type mismatches and implicit conversions
+    
+    // Unsigned integers
+    if (token.type == TokenType::TOKEN_INTEGER_U8 || 
+        token.type == TokenType::TOKEN_INTEGER_U16 ||
+        token.type == TokenType::TOKEN_INTEGER_U32 ||
+        token.type == TokenType::TOKEN_INTEGER_U64 ||
+        token.type == TokenType::TOKEN_INTEGER_U128 ||
+        token.type == TokenType::TOKEN_INTEGER_U256 ||
+        token.type == TokenType::TOKEN_INTEGER_U512 ||
+        token.type == TokenType::TOKEN_INTEGER_U1024 ||
+        // Signed integers
+        token.type == TokenType::TOKEN_INTEGER_I8 ||
+        token.type == TokenType::TOKEN_INTEGER_I16 ||
+        token.type == TokenType::TOKEN_INTEGER_I32 ||
+        token.type == TokenType::TOKEN_INTEGER_I64 ||
+        token.type == TokenType::TOKEN_INTEGER_I128 ||
+        token.type == TokenType::TOKEN_INTEGER_I256 ||
+        token.type == TokenType::TOKEN_INTEGER_I512 ||
+        token.type == TokenType::TOKEN_INTEGER_I1024 ||
+        // TBB integers
+        token.type == TokenType::TOKEN_INTEGER_TBB8 ||
+        token.type == TokenType::TOKEN_INTEGER_TBB16 ||
+        token.type == TokenType::TOKEN_INTEGER_TBB32 ||
+        token.type == TokenType::TOKEN_INTEGER_TBB64) {
+        
+        std::string type_str = tokenTypeToTypeString(token.type);
+        std::string raw_text = token.raw_literal_text;
+        int64_t value = token.value.int_value;
         int line = token.line;
         int col = token.column;
         advance();
         
-        // If we have a raw literal text (overflow detected or high-precision),
-        // store it; otherwise use the converted value
+        // If we have high-precision raw text, use factory with raw_text
         if (!raw_text.empty()) {
-            return std::make_shared<LiteralExpr>((int64_t)0, raw_text, line, col);
+            return LiteralExpr::makeTypedIntWithRaw(value, raw_text, type_str, line, col);
         } else {
-            int64_t value = std::stoll(lexeme);
+            return LiteralExpr::makeTypedInt(value, type_str, line, col);
+        }
+    }
+    
+    // ========================================================================
+    // TYPED FLOAT LITERALS (Zero Implicit Conversion Policy)
+    // ========================================================================
+    // All float literals MUST have type suffixes: 3.14f32, 2.718f64, etc.
+    
+    if (token.type == TokenType::TOKEN_FLOAT_F32 ||
+        token.type == TokenType::TOKEN_FLOAT_F64 ||
+        token.type == TokenType::TOKEN_FLOAT_F128 ||
+        token.type == TokenType::TOKEN_FLOAT_F256 ||
+        token.type == TokenType::TOKEN_FLOAT_F512 ||
+        token.type == TokenType::TOKEN_FLOAT_FIX256) {
+        
+        std::string type_str = tokenTypeToTypeString(token.type);
+        std::string raw_text = token.raw_literal_text;
+        double value = token.value.float_value;
+        int line = token.line;
+        int col = token.column;
+        advance();
+        
+        // Use factory method for typed floats
+        return LiteralExpr::makeTypedFloat(value, raw_text, type_str, line, col);
+    }
+    
+    // ========================================================================
+    // DEPRECATED UNTYPED LITERALS (backward compatibility only)
+    // ========================================================================
+    // These should trigger errors in lexer now, but keep for migration
+    
+    // Integer literal (DEPRECATED - lexer should require type suffix)
+    if (token.type == TokenType::TOKEN_INTEGER) {
+        int64_t value = token.value.int_value;  // Use lexer's parsed value
+        std::string raw_text = token.raw_literal_text;
+        int line = token.line;
+        int col = token.column;
+        advance();
+        
+        // Only use raw_text path if value couldn't fit in int64 (lexer sets value to 0 in that case)
+        if (!raw_text.empty() && value == 0 && raw_text != "0") {
+            // High-precision literal that exceeded int64 range
+            return std::make_shared<LiteralExpr>((int64_t)0, raw_text, line, col, true);
+        } else {
+            // Normal literal, use parsed value
             return std::make_shared<LiteralExpr>(value, line, col);
         }
     }
+    
+    // Float literal (DEPRECATED - lexer should require type suffix)
+    if (token.type == TokenType::TOKEN_FLOAT) {
+        std::string raw_text = token.raw_literal_text;
+        double value = token.value.float_value;
+        int line = token.line;
+        int col = token.column;
+        advance();
+
+        if (!raw_text.empty()) {
+            return std::make_shared<LiteralExpr>(value, raw_text, line, col);
+        } else {
+            return std::make_shared<LiteralExpr>(value, line, col);
+        }
+    }
+    
+    // ========================================================================
+    // SPECIAL NUMERIC LITERALS (ternary/nonary - not subject to suffix policy)
+    // ========================================================================
     
     // Ternary literal (balanced ternary)
     if (token.type == TokenType::TOKEN_TERNARY) {
@@ -389,21 +483,20 @@ ASTNodePtr Parser::parsePrimary() {
         return std::make_shared<LiteralExpr>(value, line, col);
     }
     
-    // Float literal
-    if (token.type == TokenType::TOKEN_FLOAT) {
-        std::string raw_text = token.raw_literal_text;  // High-precision literal
-        double value = token.value.float_value;  // Use actual parsed value
+    // Nonary literal (balanced nonary)
+    if (token.type == TokenType::TOKEN_NONARY) {
         int line = token.line;
         int col = token.column;
         advance();
-
-        // Store both the parsed value and raw text for high-precision scenarios
-        if (!raw_text.empty()) {
-            return std::make_shared<LiteralExpr>(value, raw_text, line, col);
-        } else {
-            return std::make_shared<LiteralExpr>(value, line, col);
-        }
+        // The lexer has already converted the nonary string to int64_t
+        // and stored it in the token's value.int_value
+        int64_t value = token.value.int_value;
+        return std::make_shared<LiteralExpr>(value, line, col);
     }
+    
+    // ========================================================================
+    // OTHER LITERALS (strings, chars, booleans, null, etc.)
+    // ========================================================================
     
     // String literal
     if (token.type == TokenType::TOKEN_STRING) {
@@ -1159,19 +1252,28 @@ bool Parser::isTypeKeyword(frontend::TokenType type) const {
         type == TokenType::TOKEN_KW_INT16 || type == TokenType::TOKEN_KW_INT32 ||
         type == TokenType::TOKEN_KW_INT64 || type == TokenType::TOKEN_KW_INT128 ||
         type == TokenType::TOKEN_KW_INT256 || type == TokenType::TOKEN_KW_INT512 ||
+        type == TokenType::TOKEN_KW_INT1024 ||
         // Unsigned integers
         type == TokenType::TOKEN_KW_UINT1 || type == TokenType::TOKEN_KW_UINT2 ||
         type == TokenType::TOKEN_KW_UINT4 || type == TokenType::TOKEN_KW_UINT8 ||
         type == TokenType::TOKEN_KW_UINT16 || type == TokenType::TOKEN_KW_UINT32 ||
         type == TokenType::TOKEN_KW_UINT64 || type == TokenType::TOKEN_KW_UINT128 ||
         type == TokenType::TOKEN_KW_UINT256 || type == TokenType::TOKEN_KW_UINT512 ||
+        type == TokenType::TOKEN_KW_UINT1024 ||
         // TBB types
         type == TokenType::TOKEN_KW_TBB8 || type == TokenType::TOKEN_KW_TBB16 ||
         type == TokenType::TOKEN_KW_TBB32 || type == TokenType::TOKEN_KW_TBB64 ||
+        // Frac types (exact rational arithmetic)
+        type == TokenType::TOKEN_KW_FRAC8 || type == TokenType::TOKEN_KW_FRAC16 ||
+        type == TokenType::TOKEN_KW_FRAC32 || type == TokenType::TOKEN_KW_FRAC64 ||
+        // TFP types (twisted floating point)
+        type == TokenType::TOKEN_KW_TFP32 || type == TokenType::TOKEN_KW_TFP64 ||
         // Floating point
         type == TokenType::TOKEN_KW_FLT32 || type == TokenType::TOKEN_KW_FLT64 ||
         type == TokenType::TOKEN_KW_FLT128 || type == TokenType::TOKEN_KW_FLT256 ||
         type == TokenType::TOKEN_KW_FLT512 ||
+        // Fixed point (deterministic physics)
+        type == TokenType::TOKEN_KW_FIX256 ||
         // Other types
         type == TokenType::TOKEN_KW_BOOL || type == TokenType::TOKEN_KW_STRING ||
         type == TokenType::TOKEN_KW_DYN || type == TokenType::TOKEN_KW_OBJ ||
@@ -1183,7 +1285,8 @@ bool Parser::isTypeKeyword(frontend::TokenType type) const {
         type == TokenType::TOKEN_KW_NIT || type == TokenType::TOKEN_KW_NYTE ||
         // Math types
         type == TokenType::TOKEN_KW_VEC2 || type == TokenType::TOKEN_KW_VEC3 ||
-        type == TokenType::TOKEN_KW_VEC9 || type == TokenType::TOKEN_KW_MATRIX ||
+        type == TokenType::TOKEN_KW_VEC9 || type == TokenType::TOKEN_KW_TMATRIX ||
+        type == TokenType::TOKEN_KW_TTENSOR || type == TokenType::TOKEN_KW_MATRIX ||
         type == TokenType::TOKEN_KW_TENSOR ||
         // I/O types
         type == TokenType::TOKEN_KW_BINARY || type == TokenType::TOKEN_KW_BUFFER ||
@@ -1191,6 +1294,49 @@ bool Parser::isTypeKeyword(frontend::TokenType type) const {
         type == TokenType::TOKEN_KW_PIPE || type == TokenType::TOKEN_KW_DEBUG ||
         type == TokenType::TOKEN_KW_LOG
     );
+}
+
+// Convert typed literal TokenType to type string for AST nodes
+// TOKEN_INTEGER_U32 -> "u32", TOKEN_FLOAT_F64 -> "f64", etc.
+std::string Parser::tokenTypeToTypeString(frontend::TokenType type) const {
+    using namespace frontend;
+    
+    // Unsigned integers
+    if (type == TokenType::TOKEN_INTEGER_U8) return "u8";
+    if (type == TokenType::TOKEN_INTEGER_U16) return "u16";
+    if (type == TokenType::TOKEN_INTEGER_U32) return "u32";
+    if (type == TokenType::TOKEN_INTEGER_U64) return "u64";
+    if (type == TokenType::TOKEN_INTEGER_U128) return "u128";
+    if (type == TokenType::TOKEN_INTEGER_U256) return "u256";
+    if (type == TokenType::TOKEN_INTEGER_U512) return "u512";
+    if (type == TokenType::TOKEN_INTEGER_U1024) return "u1024";
+    
+    // Signed integers
+    if (type == TokenType::TOKEN_INTEGER_I8) return "i8";
+    if (type == TokenType::TOKEN_INTEGER_I16) return "i16";
+    if (type == TokenType::TOKEN_INTEGER_I32) return "i32";
+    if (type == TokenType::TOKEN_INTEGER_I64) return "i64";
+    if (type == TokenType::TOKEN_INTEGER_I128) return "i128";
+    if (type == TokenType::TOKEN_INTEGER_I256) return "i256";
+    if (type == TokenType::TOKEN_INTEGER_I512) return "i512";
+    if (type == TokenType::TOKEN_INTEGER_I1024) return "i1024";
+    
+    // TBB (Twisted Balanced Binary) integers
+    if (type == TokenType::TOKEN_INTEGER_TBB8) return "tbb8";
+    if (type == TokenType::TOKEN_INTEGER_TBB16) return "tbb16";
+    if (type == TokenType::TOKEN_INTEGER_TBB32) return "tbb32";
+    if (type == TokenType::TOKEN_INTEGER_TBB64) return "tbb64";
+    
+    // Float types
+    if (type == TokenType::TOKEN_FLOAT_F32) return "f32";
+    if (type == TokenType::TOKEN_FLOAT_F64) return "f64";
+    if (type == TokenType::TOKEN_FLOAT_F128) return "f128";
+    if (type == TokenType::TOKEN_FLOAT_F256) return "f256";
+    if (type == TokenType::TOKEN_FLOAT_F512) return "f512";
+    if (type == TokenType::TOKEN_FLOAT_FIX256) return "fix256";
+    
+    // Should not reach here if called with proper typed literal token
+    return "";
 }
 
 // Main statement dispatcher
@@ -1338,13 +1484,13 @@ ASTNodePtr Parser::parseStatement() {
             current = saved;
             // Fall through to expression statement
         }
-        // Check for pointer type suffix: type@
-        if (check(TokenType::TOKEN_AT)) {
-            advance(); // consume '@'
+        // Check for pointer type suffix: type->
+        if (check(TokenType::TOKEN_ARROW)) {
+            advance(); // consume '->'
             
             // Now check for colon after pointer type
             if (check(TokenType::TOKEN_COLON)) {
-                // It's a pointer type annotation: type@:name
+                // It's a pointer type annotation: type->:name
                 current = saved; // reset position
                 return parseVarDecl();
             }
@@ -1429,13 +1575,33 @@ ASTNodePtr Parser::parseStatement() {
         if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_KW_FUNC) {
             current++; // skip 'func'
             
-            // Check for generic parameters: func<T, U>
+            // Check for generic parameters: func<T, U> or func<T: Trait, U>
             if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_LESS) {
                 current++; // skip '<'
-                // Skip generic parameter names
+                // Skip generic parameter list including trait constraints
+                // Format: <T: Trait1 & Trait2, U: Trait3, V>
                 while (current < tokens.size() && tokens[current].type != TokenType::TOKEN_GREATER) {
                     if (tokens[current].type == TokenType::TOKEN_IDENTIFIER) {
-                        current++; // skip identifier
+                        current++; // skip type parameter name (T, U, etc.)
+
+                        // Check for trait constraints: T: Trait1 & Trait2
+                        if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_COLON) {
+                            current++; // skip ':'
+                            // Parse trait bounds
+                            while (current < tokens.size()) {
+                                if (tokens[current].type == TokenType::TOKEN_IDENTIFIER) {
+                                    current++; // skip trait name
+                                    // Check for additional trait bounds with '&'
+                                    if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_AMPERSAND) {
+                                        current++; // skip '&'
+                                        continue; // expect another trait name
+                                    }
+                                }
+                                break; // done with this parameter's constraints
+                            }
+                        }
+
+                        // Check for comma (more parameters follow)
                         if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_COMMA) {
                             current++; // skip comma
                         }
@@ -1447,7 +1613,7 @@ ASTNodePtr Parser::parseStatement() {
                     current++; // skip '>'
                 }
             }
-            
+
             // Check for colon
             if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_COLON) {
                 // It's an async function declaration
@@ -1478,13 +1644,33 @@ ASTNodePtr Parser::parseStatement() {
         size_t saved = current;
         current++; // skip 'func'
         
-        // Check for generic parameters: func<T, U>
+        // Check for generic parameters: func<T, U> or func<T: Trait, U>
         if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_LESS) {
             current++; // skip '<'
-            // Skip generic parameter names  
+            // Skip generic parameter list including trait constraints
+            // Format: <T: Trait1 & Trait2, U: Trait3, V>
             while (current < tokens.size() && tokens[current].type != TokenType::TOKEN_GREATER) {
                 if (tokens[current].type == TokenType::TOKEN_IDENTIFIER) {
-                    current++; // skip identifier
+                    current++; // skip type parameter name (T, U, etc.)
+
+                    // Check for trait constraints: T: Trait1 & Trait2
+                    if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_COLON) {
+                        current++; // skip ':'
+                        // Parse trait bounds
+                        while (current < tokens.size()) {
+                            if (tokens[current].type == TokenType::TOKEN_IDENTIFIER) {
+                                current++; // skip trait name
+                                // Check for additional trait bounds with '&'
+                                if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_AMPERSAND) {
+                                    current++; // skip '&'
+                                    continue; // expect another trait name
+                                }
+                            }
+                            break; // done with this parameter's constraints
+                        }
+                    }
+
+                    // Check for comma (more parameters follow)
                     if (current < tokens.size() && tokens[current].type == TokenType::TOKEN_COMMA) {
                         current++; // skip comma
                     }
@@ -1653,15 +1839,15 @@ ASTNodePtr Parser::parseVarDecl() {
 // Parse function declaration: func:name = returnType(params) { body };
 ASTNodePtr Parser::parseFuncDecl() {
     using namespace frontend;
-    
+
     Token funcToken = previous(); // 'func' keyword
-    
+
     // Phase 3.4: Parse generic parameters if present: func<T: Trait, U>
     std::vector<GenericParamInfo> genericParams = parseGenericParams();
-    
+
     // Consume colon
     consume(TokenType::TOKEN_COLON, "Expected ':' after 'func'");
-    
+
     // Get function name (allow 'process' keyword as function name too)
     Token nameToken;
     if (peek().type == TokenType::TOKEN_KW_PROCESS) {
@@ -1669,10 +1855,10 @@ ASTNodePtr Parser::parseFuncDecl() {
     } else {
         nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected function name");
     }
-    
+
     // Consume equal sign
     consume(TokenType::TOKEN_EQUAL, "Expected '=' after function name");
-    
+
     // Parse return type (supports generics, pointers, etc.)
     ASTNodePtr returnTypeNode = parseType();
     if (!returnTypeNode) {
@@ -1838,7 +2024,16 @@ ASTNodePtr Parser::parseEnumDecl() {
         
         // Get variant value (must be an integer literal)
         Token valueToken = consume(TokenType::TOKEN_INTEGER, "Expected integer value for enum variant");
-        int64_t value = std::stoll(valueToken.lexeme);
+        int64_t value = 0;
+        try {
+            value = std::stoll(valueToken.lexeme);
+        } catch (const std::invalid_argument& e) {
+            error("Invalid integer value for enum variant: '" + valueToken.lexeme + "'");
+            return nullptr;
+        } catch (const std::out_of_range& e) {
+            error("Enum variant value out of range: '" + valueToken.lexeme + "'");
+            return nullptr;
+        }
         
         // Store the variant
         variants[variantName] = value;
@@ -1872,10 +2067,20 @@ ASTNodePtr Parser::parseTraitDecl() {
     Token traitToken = previous(); // We already consumed 'trait'
 
     // Expect colon
-    consume(TokenType::TOKEN_COLON, "Expected ':' after 'trait'");
+    if (!check(TokenType::TOKEN_COLON)) {
+        error("Expected ':' after 'trait'");
+        synchronize(); // Move past the error
+        return nullptr;
+    }
+    advance(); // consume ':'
 
     // Parse trait name
-    Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected trait name after 'trait:'");
+    if (!check(TokenType::TOKEN_IDENTIFIER)) {
+        error("Expected trait name after 'trait:'");
+        synchronize();
+        return nullptr;
+    }
+    Token nameToken = advance();
 
     // Parse optional super traits: :SuperTrait1:SuperTrait2
     std::vector<std::string> superTraits;
@@ -1893,7 +2098,14 @@ ASTNodePtr Parser::parseTraitDecl() {
 
     // Parse trait methods (method signatures only, no bodies)
     std::vector<TraitMethod> methods;
+    int loopCount = 0;
     while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        // DEBUG: Detect infinite loop
+        if (++loopCount > 1000) {
+            error("Internal error: Infinite loop detected in trait method parsing");
+            break;
+        }
+
         // Skip commas between method signatures
         if (match(TokenType::TOKEN_COMMA)) {
             continue;
@@ -1903,6 +2115,9 @@ ASTNodePtr Parser::parseTraitDecl() {
         if (match(TokenType::TOKEN_SEMICOLON)) {
             continue;
         }
+
+        // Save current position to detect if we're making progress
+        size_t positionBefore = current;
 
         // Parse method name (can be identifier or 'func:name')
         std::string methodName;
@@ -1956,6 +2171,12 @@ ASTNodePtr Parser::parseTraitDecl() {
 
         // Create TraitMethod
         methods.emplace_back(methodName, std::move(params), returnType);
+
+        // If we didn't advance at all, skip the current token to avoid infinite loop
+        if (current == positionBefore && !isAtEnd()) {
+            error("Unexpected token in trait method declaration");
+            advance(); // Force progress
+        }
     }
 
     // Expect closing brace
@@ -2052,10 +2273,18 @@ ASTNodePtr Parser::parseImplDecl() {
 // Parse block: { stmt1; stmt2; ... }
 ASTNodePtr Parser::parseBlock() {
     using namespace frontend;
-    
+
+    // ARIA-020: Check nesting depth to prevent stack overflow
+    if (currentNestingDepth >= MAX_NESTING_DEPTH) {
+        error("Maximum nesting depth exceeded (" + std::to_string(MAX_NESTING_DEPTH) +
+              " levels). Consider refactoring deeply nested code.");
+        return nullptr;
+    }
+    currentNestingDepth++;
+
     Token leftBrace = previous(); // We already consumed '{'
     std::vector<ASTNodePtr> statements;
-    
+
     while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
         if (auto stmt = parseStatement()) {
             statements.push_back(stmt);
@@ -2063,9 +2292,10 @@ ASTNodePtr Parser::parseBlock() {
             synchronize();
         }
     }
-    
+
     consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after block");
-    
+
+    currentNestingDepth--;
     return std::make_shared<BlockStmt>(statements, leftBrace.line, leftBrace.column);
 }
 
@@ -2074,10 +2304,19 @@ ASTNodePtr Parser::parseBlock() {
 //          and generic types (Array<int8>, Map<string, int32>)
 ASTNodePtr Parser::parseType() {
     using namespace frontend;
-    
+
     Token typeToken = peek();
     ASTNodePtr baseType;
-    
+
+    // Handle prefix pointer syntax for generic types: *T (pointer to generic T)
+    // This is used in generic function signatures: func<T>:identity = *T(*T:value)
+    bool prefixPointer = false;
+    if (typeToken.type == TokenType::TOKEN_STAR) {
+        advance(); // consume '*'
+        prefixPointer = true;
+        typeToken = peek(); // get the actual type token
+    }
+
     // Check for type keyword or identifier (for generic types)
     if (isTypeKeyword(typeToken.type) || typeToken.type == TokenType::TOKEN_IDENTIFIER) {
         advance(); // Consume the type token
@@ -2117,12 +2356,12 @@ ASTNodePtr Parser::parseType() {
     }
     
     // ARIA-015: Context-aware pointer syntax enforcement
-    // - @ creates fat pointers (native Aria) - only outside extern blocks
+    // - -> creates fat pointers (native Aria) - only outside extern blocks
     // - * creates thin pointers (FFI) - only inside extern blocks
-    if (match(TokenType::TOKEN_AT)) {
+    if (match(TokenType::TOKEN_ARROW)) {
         if (isInsideExternBlock) {
-            error("Use '*' for pointers inside extern blocks, not '@'. "
-                  "The '@' syntax creates fat pointers incompatible with C ABI.");
+            error("Use '*' for pointers inside extern blocks, not '->'. "
+                  "The '->' syntax creates fat pointers incompatible with C ABI.");
         }
         auto ptrType = std::make_shared<PointerType>(baseType, typeToken.line, typeToken.column);
         ptrType->isNative = true;  // Fat pointer (32 bytes)
@@ -2130,7 +2369,7 @@ ASTNodePtr Parser::parseType() {
     }
     else if (match(TokenType::TOKEN_STAR)) {
         if (!isInsideExternBlock) {
-            error("Use '@' for pointers in Aria code, not '*'. "
+            error("Use '->' for pointers in Aria code, not '*'. "
                   "The '*' syntax is only valid in extern blocks for FFI compatibility.");
         }
         auto ptrType = std::make_shared<PointerType>(baseType, typeToken.line, typeToken.column);
@@ -2162,7 +2401,15 @@ ASTNodePtr Parser::parseType() {
         
         baseType = std::make_shared<ArrayType>(baseType, sizeExpr, typeToken.line, typeToken.column);
     }
-    
+
+    // Apply prefix pointer if we saw '*' at the beginning (for generic type references)
+    // This handles: *T where T is a generic type parameter
+    if (prefixPointer) {
+        auto ptrType = std::make_shared<PointerType>(baseType, typeToken.line, typeToken.column);
+        ptrType->isNative = false;  // Prefix * is thin pointer (like FFI)
+        baseType = ptrType;
+    }
+
     return baseType;
 }
 
@@ -2186,6 +2433,42 @@ ASTNodePtr Parser::parseUseStatement() {
         }
         useStmt->path.push_back(path);
         useStmt->isFilePath = true;
+        
+        // Check for wildcard import: use "file.aria".*;
+        if (match(TokenType::TOKEN_DOT)) {
+            if (match(TokenType::TOKEN_STAR)) {
+                useStmt->isWildcard = true;
+                consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after use statement");
+                return useStmt;
+            }
+            
+            // Check for selective import: use "file.aria".{a, b};
+            if (match(TokenType::TOKEN_LEFT_BRACE)) {
+                if (!check(TokenType::TOKEN_IDENTIFIER) && !isTypeKeyword(peek().type)) {
+                    error("Expected identifier or keyword in import list");
+                    return useStmt;
+                }
+                Token firstItem = advance();
+                useStmt->items.push_back(firstItem.lexeme);
+                
+                while (match(TokenType::TOKEN_COMMA)) {
+                    if (!check(TokenType::TOKEN_IDENTIFIER) && !isTypeKeyword(peek().type)) {
+                        error("Expected identifier or keyword in import list");
+                        break;
+                    }
+                    Token nextItem = advance();
+                    useStmt->items.push_back(nextItem.lexeme);
+                }
+                
+                consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after import list");
+                consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after use statement");
+                return useStmt;
+            }
+            
+            // If we got a dot but neither wildcard nor selective, that's an error
+            error("Expected '*' or '{' after '.' in file path import");
+            return useStmt;
+        }
         
         // Check for 'as' alias
         if (match(TokenType::TOKEN_KW_AS)) {

@@ -71,7 +71,11 @@ private:
     llvm::LLVMContext& context;
     llvm::IRBuilder<>& builder;
     llvm::Module* module;
-    
+
+    // Recursion depth limit to prevent stack overflow on deeply nested code
+    static constexpr size_t MAX_CODEGEN_DEPTH = 256;
+    size_t codegen_depth_ = 0;
+
     // Symbol table (maps variable names to their LLVM values - allocas or params)
     std::map<std::string, llvm::Value*>& named_values;
 
@@ -86,6 +90,10 @@ private:
     
     // Loop context stack for break/continue resolution
     std::vector<LoopContext> loop_stack;
+    
+    // Pick context stack for fall() statement label resolution
+    // Maps case labels to their basic blocks within active pick statements
+    std::vector<std::map<std::string, llvm::BasicBlock*>> pick_context_stack;
     
     // Defer stack for block-scoped cleanup (RAII pattern)
     // Each scope has a vector of BlockStmt* to execute in LIFO order on exit
@@ -102,19 +110,6 @@ private:
     
     // Helper: Execute all defers up to function level
     void executeFunctionDefers();
-    
-    // Phase 4.4: Memory Model Helpers
-    // Helper: Get or declare aria_gc_alloc runtime function
-    llvm::Function* getOrDeclareGCAlloc();
-    
-    // Helper: Get or declare aria.alloc runtime function (wild memory)
-    llvm::Function* getOrDeclareWildAlloc();
-    
-    // Helper: Get or declare aria_alloc_exec runtime function (wildx memory)
-    llvm::Function* getOrDeclareWildXAlloc();
-    
-    // Helper: Get or declare aria.free runtime function
-    llvm::Function* getOrDeclareWildFree();
     
     // Phase 4.5.3: Coroutine Intrinsics for async/await
     // Helper: Get or declare @llvm.coro.id intrinsic
@@ -165,6 +160,22 @@ public:
      * @param mono Monomorphizer instance
      */
     void setMonomorphizer(sema::Monomorphizer* mono);
+    
+    // Phase 4.4: Memory Model Helpers (Public for ExprCodegen access)
+    // Helper: Get or declare aria_gc_alloc runtime function
+    llvm::Function* getOrDeclareGCAlloc();
+    
+    // Helper: Get or declare aria_gc_free runtime function (AUDIT FIX BUG-10)
+    llvm::Function* getOrDeclareGCFree();
+    
+    // Helper: Get or declare aria.alloc runtime function (wild memory)
+    llvm::Function* getOrDeclareWildAlloc();
+    
+    // Helper: Get or declare aria_alloc_exec runtime function (wildx memory)
+    llvm::Function* getOrDeclareWildXAlloc();
+    
+    // Helper: Get or declare aria.free runtime function
+    llvm::Function* getOrDeclareWildFree();
     
     /**
      * Generate code for all specialized generic functions

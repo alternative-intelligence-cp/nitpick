@@ -1,8 +1,8 @@
 # Aria Compiler Tasks
 
-**Last Updated**: 2025-12-26 (Evening - 12 new implementation specs added)
-
-This file tracks available work for contributors. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+**Last Updated**: 2025-12-29  
+**Current Active Work**: See [TODO_CURRENT.md](TODO_CURRENT.md) for what's being worked on RIGHT NOW  
+**For Contributors**: This file tracks available work. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 

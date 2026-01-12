@@ -1,0 +1,15 @@
+/**
+ * Test: Double Free
+ * Expected: COMPILER ERROR (freeing already freed memory)
+ * Why: Double free is undefined behavior and a security vulnerability
+ */
+
+func:main = int32() {
+    wild int8@:ptr = alloc(1024);
+    free(ptr);
+
+    // BUG: Freeing the same pointer again
+    free(ptr);  // ERROR: Double free
+
+    return 0;
+};

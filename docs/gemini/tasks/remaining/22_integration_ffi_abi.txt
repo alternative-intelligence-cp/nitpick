@@ -1,0 +1,62 @@
+I am building a custom programming language that emphasizes explicitness, predictability, stability, security, and performance above all. Developer convenience is a nice to have, not a language requirement. The main use case is for a physics based AGI I am building that I hope to one day use as companions for neurodivergent children, children in extended hospital stays, lonely people with degraded mental states, and other vulnerable populations. Long term goal is to develop a 'teacher' system that could work with a human teacher to provide customized lessons for each student to match their strengths and learning style. We have a moral obligation to eliminate any bugs or errors we possibly can as they may well lead to drifts that could cause physical or mental harm to a vulnerable individual. Everything must be as safe, stable, and secure as possible. Treat this as life/death scenario because there are several ways it actually could turn into one if we are not vigilant. One child harmed would be game over for the whole project. One final note, semantic searches seem to fail about 75% of the time per my observations over the last 20 reports which leads to you believeing they are not present. Do not rely on the search alone. I theorize the problem lies with Aria's novel concepts and constructs as well as new terminology and non standard file names/locations. If you can't find it you must read to ensure. Assumptions are not an option. If you don't know, it is preferable to say so rather than make things up which cost time for you but also time for me when I try to implement them. Honesty > sycophancy always.
+CRITICAL: This code will control physical actuators in robotic assistants. 
+Memory corruption = uncontrolled motor movement. Type errors = force limit bypass.
+Verify EVERY type mapping. Fail hard on unknowns. No silent defaults.
+
+---
+
+**AUDIT FOCUS: Integration - Foreign Function Call ABI**
+
+**Threat Model:**
+FFI calls cross ABI boundary between Aria and C. ABI mismatch: Aria passes struct by value, C expects pointer → stack corruption → return address overwritten → control flow hijacked → arbitrary code execution → robot reprogrammed maliciously.
+
+**Target Files:**
+- `src/backend/ir/codegen.cpp` (FFI calling convention)
+- `src/backend/ir/ffi_abi.cpp` (if exists - ABI handling)
+
+**Specific Items to Audit (5 items max):**
+
+1. **Calling convention correctness**
+   - Verify C functions called with correct convention (cdecl, etc.)
+   - Check register usage matches platform ABI
+   - Confirm stack alignment requirements met
+
+2. **Struct passing ABI**
+   - Verify small structs passed correctly (register vs stack)
+   - Check large structs passed by pointer
+   - Confirm struct layout matches C compiler expectations
+
+3. **Variadic function handling**
+   - Verify variadic args passed correctly (printf, etc.)
+   - Check va_list handling matches platform
+   - Confirm type safety maintained for varargs
+
+4. **Return value handling**
+   - Verify return values extracted from correct location
+   - Check large return values handled via hidden pointer
+   - Confirm no register corruption on return
+
+5. **Platform-specific ABI quirks**
+   - Verify x86_64 SysV ABI rules followed on Linux
+   - Check ARM AAPCS compliance if targeting ARM
+   - Confirm no assumptions about register sizes or endianness
+
+**SIL-4 Compliance Requirements:**
+- Calling conventions MUST match platform ABI exactly
+- Struct passing MUST follow ABI rules
+- Return values MUST be extracted correctly
+- Stack alignment MUST be maintained
+- No undefined behavior from ABI violation
+
+**Expected Deliverable:**
+For each item, report:
+- ✅ Compliant / ❌ Bug found / ⚠️ Unclear (need clarification)
+- If bug: Exact line number, root cause, proposed fix
+- If compliant: Briefly confirm what makes it safe
+- If unclear: Specific question about spec or implementation
+
+**Critical Note:**
+ABI bugs are subtle and platform-specific. They may work on one compiler/OS but fail on another. Check against ABI specifications, not just observed behavior.
+
+**Reference:**
+This audit follows the successful 2026-01-01 methodology that achieved 100% accuracy (5/5 real bugs found, 0 hallucinations). Maximum 5 items per audit to maintain focus.

@@ -5,9 +5,12 @@
 #ifndef ARIA_RUNTIME_ASYNC_FUTURE_H
 #define ARIA_RUNTIME_ASYNC_FUTURE_H
 
+#include <atomic>   // For atomic state transitions (BUG-06 fix)
 #include <cstdint>
+#include <cstdio>   // For fprintf in buffer overflow check
 #include <cstdlib>  // For malloc/free
 #include <cstring>
+#include <exception> // For std::terminate
 
 namespace aria {
 namespace runtime {
@@ -44,7 +47,7 @@ enum class PollResult {
  */
 class Future {
 private:
-    FutureState state;
+    std::atomic<FutureState> state;  // AUDIT FIX BUG-06: Atomic for thread-safe state transitions
     void* value;          // Points to T (type-erased)
     bool hasError;        // For TBB ERR propagation
     size_t valueSize;     // Size of T for memory management
@@ -72,8 +75,10 @@ public:
     
     // Enable move
     Future(Future&& other) noexcept
-        : state(other.state), value(other.value), 
-          hasError(other.hasError), valueSize(other.valueSize) {
+        : state(other.state.load(std::memory_order_relaxed)),  // Load from atomic
+          value(other.value), 
+          hasError(other.hasError), 
+          valueSize(other.valueSize) {
         other.value = nullptr;
         other.valueSize = 0;
     }
@@ -86,7 +91,9 @@ public:
      * Returns READY if value available (caller can extract)
      */
     PollResult poll() {
-        if (state == FutureState::READY || state == FutureState::ERROR) {
+        // AUDIT FIX BUG-06: Acquire semantics - see value writes if we see READY
+        FutureState current = state.load(std::memory_order_acquire);
+        if (current == FutureState::READY || current == FutureState::ERROR) {
             return PollResult::READY;
         }
         return PollResult::PENDING;
@@ -96,14 +103,15 @@ public:
      * Check if future is ready
      */
     bool isReady() const {
-        return state == FutureState::READY || state == FutureState::ERROR;
+        FutureState current = state.load(std::memory_order_acquire);
+        return current == FutureState::READY || current == FutureState::ERROR;
     }
     
     /**
      * Check if future is pending
      */
     bool isPending() const {
-        return state == FutureState::PENDING;
+        return state.load(std::memory_order_acquire) == FutureState::PENDING;
     }
     
     /**
@@ -117,7 +125,7 @@ public:
      * Get current state
      */
     FutureState getState() const {
-        return state;
+        return state.load(std::memory_order_acquire);
     }
     
     /**
@@ -126,16 +134,31 @@ public:
      * @param size Size of value in bytes
      */
     void setValue(const void* val, size_t size) {
+        // AUDIT FIX BUG-07: Bounds check for buffer overflow prevention
+        // For SIL-4 safety: fail hard rather than corrupt memory
+        if (valueSize > 0 && size > valueSize) {
+            fprintf(stderr, 
+                "FATAL: Future buffer overflow detected.\n"
+                "  Allocated: %zu bytes\n"
+                "  Required:  %zu bytes\n"
+                "  This indicates a type mismatch in async code.\n",
+                valueSize, size);
+            std::terminate();
+        }
+        
+        // Allocate if needed (first-time initialization)
         if (!value && size > 0) {
             value = malloc(size);
             valueSize = size;
         }
         
+        // Safe to copy - bounds checked above
         if (value && val) {
             memcpy(value, val, size);
         }
         
-        state = FutureState::READY;
+        // AUDIT FIX BUG-06: Release semantics - ensure value writes visible before READY
+        state.store(FutureState::READY, std::memory_order_release);
     }
     
     /**
@@ -143,7 +166,8 @@ public:
      */
     void setError(bool error = true) {
         hasError = error;
-        state = FutureState::ERROR;
+        // AUDIT FIX BUG-06: Release semantics for error state
+        state.store(FutureState::ERROR, std::memory_order_release);
     }
     
     /**

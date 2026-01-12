@@ -1,0 +1,61 @@
+I am building a custom programming language that emphasizes explicitness, predictability, stability, security, and performance above all. Developer convenience is a nice to have, not a language requirement. The main use case is for a physics based AGI I am building that I hope to one day use as companions for neurodivergent children, children in extended hospital stays, lonely people with degraded mental states, and other vulnerable populations. Long term goal is to develop a 'teacher' system that could work with a human teacher to provide customized lessons for each student to match their strengths and learning style. We have a moral obligation to eliminate any bugs or errors we possibly can as they may well lead to drifts that could cause physical or mental harm to a vulnerable individual. Everything must be as safe, stable, and secure as possible. Treat this as life/death scenario because there are several ways it actually could turn into one if we are not vigilant. One child harmed would be game over for the whole project. One final note, semantic searches seem to fail about 75% of the time per my observations over the last 20 reports which leads to you believeing they are not present. Do not rely on the search alone. I theorize the problem lies with Aria's novel concepts and constructs as well as new terminology and non standard file names/locations. If you can't find it you must read to ensure. Assumptions are not an option. If you don't know, it is preferable to say so rather than make things up which cost time for you but also time for me when I try to implement them. Honesty > sycophancy always.
+CRITICAL: This code will control physical actuators in robotic assistants. 
+Memory corruption = uncontrolled motor movement. Type errors = force limit bypass.
+Verify EVERY type mapping. Fail hard on unknowns. No silent defaults.
+
+---
+
+**AUDIT FOCUS: Type System - Primitive Type Mapping to LLVM**
+
+**Threat Model:**
+The 2026-01-01 audit found catastrophic bugs here: i32 defaulting could map 16-byte int128 → 4-byte i32 → 12 bytes unmapped → stack corruption → motor control values scrambled → uncontrolled movement. This is THE most critical type mapping layer. Every primitive must map correctly or physical safety is compromised.
+
+**Target Files:**
+- `src/backend/ir/codegen_expr.cpp` (function: `getLLVMType()`)
+
+**Specific Items to Audit (5 items max):**
+
+1. **Integer type mappings (i8, i16, i32, i64)**
+   - Verify each Aria int type maps to correct LLVM type
+   - Check TBB types map correctly (symmetric signed)
+   - Confirm no silent defaults or assumptions
+
+2. **Extended integer type mappings (int128, int256, int512, int1024, int2048, int4096)**
+   - Verify LBIM types map to struct arrays, not LLVM integers
+   - Check limb count matches bit width (int128 = 2 limbs, etc.)
+   - Confirm struct layout matches runtime library expectations
+
+3. **Fixed-point type mapping (fix256)**
+   - Verify maps to 4-limb struct (Q128.128 format)
+   - Check struct fields in correct order (low 128, high 128)
+   - Confirm no mapping to LLVM floating-point types
+
+4. **Boolean and void type mappings**
+   - Verify bool maps to i1 (single bit, not i8)
+   - Check void maps correctly
+   - Confirm no confusion between null and void
+
+5. **Error handling for unknown types**
+   - Verify THROWS EXCEPTION for unmapped types (no silent defaults)
+   - Check error message includes type information for debugging
+   - Confirm marked as ICE (Internal Compiler Error) not user error
+
+**SIL-4 Compliance Requirements:**
+- ZERO tolerance for silent defaults (no "default to i32")
+- Every type MUST have explicit mapping or throw
+- Struct layouts must match runtime ABI exactly
+- No platform-dependent size assumptions
+- Error messages must aid debugging (include type kind)
+
+**Expected Deliverable:**
+For each item, report:
+- ✅ Compliant / ❌ Bug found / ⚠️ Unclear (need clarification)
+- If bug: Exact line number, root cause, proposed fix
+- If compliant: Briefly confirm what makes it safe
+- If unclear: Specific question about spec or implementation
+
+**Critical Context:**
+The 2026-01-01 audit found TWO silent i32 defaults in this exact function (lines 48-50, 77). This audit should verify the fixes hold AND check for similar patterns elsewhere in type system.
+
+**Reference:**
+This audit follows the successful 2026-01-01 methodology that achieved 100% accuracy (5/5 real bugs found, 0 hallucinations). Maximum 5 items per audit to maintain focus.

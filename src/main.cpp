@@ -21,6 +21,8 @@
 #include <string>
 #include <memory>
 #include <cstdlib>
+#include <unistd.h>  // For readlink
+#include <filesystem> // For absolute path resolution
 
 // Aria compiler components
 #include "frontend/preprocessor/preprocessor.h"  // NEW: Phase 0
@@ -46,6 +48,17 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/Linker/Linker.h"
+#include "llvm/Support/CodeGen.h"  // CodeGenOptLevel for large integer support
+
+// LLVM New Pass Manager (for coroutine lowering)
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/StandardInstrumentations.h"
+#include "llvm/Analysis/LoopAnalysisManager.h"
+#include "llvm/Analysis/CGSCCPassManager.h"
+#include "llvm/Transforms/Coroutines/CoroEarly.h"
+#include "llvm/Transforms/Coroutines/CoroSplit.h"
+#include "llvm/Transforms/Coroutines/CoroElide.h"
+#include "llvm/Transforms/Coroutines/CoroCleanup.h"
 
 // Version information
 #define ARIA_VERSION_MAJOR 0
@@ -67,6 +80,7 @@ struct CompilerOptions {
     bool verbose = false;
     int opt_level = 0;  // -O0, -O1, -O2, -O3
     std::vector<std::string> warning_flags;  // -Wall, -Werror, -W<warning>, etc.
+    std::vector<std::string> include_paths;   // -I<dir> module search paths
 };
 
 /**
@@ -86,6 +100,7 @@ void print_help() {
     std::cout << "  ariac <input.aria> [<input2.aria> ...] [options]\n\n";
     std::cout << "Options:\n";
     std::cout << "  -o <file>         Write output to <file>\n";
+    std::cout << "  -I <dir>          Add directory to module search path\n";
     std::cout << "  -E                Preprocess only (output to stdout)\n";
     std::cout << "  --emit-llvm       Emit LLVM IR text (.ll)\n";
     std::cout << "  --emit-llvm-bc    Emit LLVM bitcode (.bc)\n";
@@ -133,6 +148,12 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
                 return false;
             }
             opts.output_file = argv[++i];
+        } else if (arg == "-I") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: -I requires an argument\n";
+                return false;
+            }
+            opts.include_paths.push_back(argv[++i]);
         } else if (arg == "--emit-llvm") {
             opts.emit_llvm_ir = true;
         } else if (arg == "--emit-llvm-bc") {
@@ -477,18 +498,64 @@ llvm::Module* compile_to_module(
     generic_resolver.setSymbolTable(&symbol_table);  // Task 4: Enable trait constraint checking
     aria::sema::Monomorphizer monomorphizer(&generic_resolver, &type_system);
     
-    // Module system: Extract project root from input file path
+    // Module system: Normalize input filename to absolute path for correct resolution
+    std::string absolute_filename;
+    try {
+        absolute_filename = std::filesystem::canonical(filename).string();
+    } catch (...) {
+        // If canonical() fails (file doesn't exist yet), use absolute path
+        std::filesystem::path p(filename);
+        if (p.is_relative()) {
+            absolute_filename = (std::filesystem::current_path() / p).lexically_normal().string();
+        } else {
+            absolute_filename = filename;
+        }
+    }
+    
+    // Extract project root from input file path
     std::string project_root = ".";
-    size_t last_slash = filename.find_last_of("/\\");
+    size_t last_slash = absolute_filename.find_last_of("/\\");
     if (last_slash != std::string::npos) {
-        project_root = filename.substr(0, last_slash);
+        project_root = absolute_filename.substr(0, last_slash);
     }
     
     // Create module loader for handling use statements
     aria::sema::ModuleLoader module_loader(project_root);
     
-    // Type checker with generic support and module loading
-    aria::sema::TypeChecker type_checker(&type_system, &symbol_table, &generic_resolver, &monomorphizer, &module_loader, filename);
+    // Add compiler installation directory to search paths for stdlib
+    // First try to find where this executable is located
+    std::string compiler_dir = ".";
+    try {
+        char exe_path[4096];
+        ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+        if (len != -1) {
+            exe_path[len] = '\0';
+            std::string exe_dir = std::string(exe_path);
+            size_t last_slash_exe = exe_dir.find_last_of("/\\");
+            if (last_slash_exe != std::string::npos) {
+                compiler_dir = exe_dir.substr(0, last_slash_exe);
+                // Go up one level from build/ to project root
+                size_t parent_slash = compiler_dir.find_last_of("/\\");
+                if (parent_slash != std::string::npos) {
+                    compiler_dir = compiler_dir.substr(0, parent_slash);
+                }
+            }
+        }
+        module_loader.getResolver().addSearchPath(compiler_dir);
+        // Add /lib subdirectory for stdlib
+        module_loader.getResolver().addSearchPath(compiler_dir + "/lib");
+    } catch (...) {
+        // Fallback: current working directory
+        module_loader.getResolver().addSearchPath(".");
+    }
+    
+    // Add user-provided include paths from -I flags
+    for (const auto& include_path : opts.include_paths) {
+        module_loader.getResolver().addSearchPath(include_path);
+    }
+    
+    // Type checker with generic support and module loading (use absolute path)
+    aria::sema::TypeChecker type_checker(&type_system, &symbol_table, &generic_resolver, &monomorphizer, &module_loader, absolute_filename);
     
     // Run type checking on entire module (activates generic specialization)
     type_checker.check(module_node.get());
@@ -564,12 +631,18 @@ llvm::Module* compile_to_module(
     const auto& specializations = monomorphizer.getSpecializations();
     if (!specializations.empty()) {
         if (opts.verbose) {
-            std::cout << "  Generating " << specializations.size() 
+            std::cout << "  Generating " << specializations.size()
                      << " specialized generic function(s)...\n";
         }
-        size_t generated = ir_gen.codegenSpecializedFunctions(specializations);
-        if (opts.verbose) {
-            std::cout << "  Generated " << generated << " specialization(s)\n";
+        try {
+            size_t generated = ir_gen.codegenSpecializedFunctions(specializations);
+            if (opts.verbose) {
+                std::cout << "  Generated " << generated << " specialization(s)\n";
+            }
+        } catch (const std::exception& e) {
+            diags.error(aria::SourceLocation(filename, 0, 0),
+                       std::string("Specialization IR error: ") + e.what());
+            return nullptr;
         }
     }
     
@@ -593,10 +666,16 @@ llvm::Module* compile_to_module(
             
             // Set the current module name so functions get external linkage
             ir_gen.setCurrentModuleName(module_name);
-            
-            auto module_value = ir_gen.codegen(loaded_module->ast.get());
-            if (!module_value) {
-                diags.error(aria::SourceLocation(path, 0, 0), "Module IR generation failed");
+
+            try {
+                auto module_value = ir_gen.codegen(loaded_module->ast.get());
+                if (!module_value) {
+                    diags.error(aria::SourceLocation(path, 0, 0), "Module IR generation failed");
+                    return nullptr;
+                }
+            } catch (const std::exception& e) {
+                diags.error(aria::SourceLocation(path, 0, 0),
+                           std::string("IR generation error: ") + e.what());
                 return nullptr;
             }
             
@@ -606,10 +685,16 @@ llvm::Module* compile_to_module(
     }
     
     // Now generate the main module code (which can call specialized functions and imported modules)
-    auto value = ir_gen.codegen(module_node.get());
-    
-    if (!value) {
-        diags.error(aria::SourceLocation(filename, 0, 0), "IR generation failed");
+    try {
+        auto value = ir_gen.codegen(module_node.get());
+
+        if (!value) {
+            diags.error(aria::SourceLocation(filename, 0, 0), "IR generation failed");
+            return nullptr;
+        }
+    } catch (const std::exception& e) {
+        diags.error(aria::SourceLocation(filename, 0, 0),
+                   std::string("IR generation error: ") + e.what());
         return nullptr;
     }
 
@@ -621,6 +706,11 @@ llvm::Module* compile_to_module(
  * Emit LLVM IR to file
  */
 bool emit_llvm_ir(llvm::Module* module, const std::string& output_file) {
+    // DEBUG: Dump module to stderr before writing to file
+    std::cerr << "\n=== MODULE DUMP BEFORE WRITE ===\n";
+    module->print(llvm::errs(), nullptr);
+    std::cerr << "=== END MODULE DUMP ===\n\n";
+    
     std::error_code ec;
     llvm::raw_fd_ostream out(output_file, ec, llvm::sys::fs::OF_None);
     
@@ -652,6 +742,38 @@ bool emit_llvm_bitcode(llvm::Module* module, const std::string& output_file) {
 }
 
 /**
+ * ARIA-021: Check if module contains large integer types (>=128 bits)
+ * LLVM has multiple bugs with large integers (128-bit+):
+ * 1. IPSCCP pass crashes in ConstantRange APInt operations for 128+ bits
+ * 2. DAGCombiner crashes in KnownBits APInt operations for 256+ bits
+ * We detect these cases and use a safer optimization level (O0).
+ *
+ * Note: 128-bit integers work in SOME contexts (e.g., if statements, for loops)
+ * but fail in while loops. We use O0 for all 128+ bit code to be safe.
+ */
+static bool hasLargeIntegerTypes(llvm::Module* module) {
+    for (auto& F : *module) {
+        for (auto& BB : F) {
+            for (auto& I : BB) {
+                // Check instruction result type (128+ bits needs O0)
+                llvm::Type* ty = I.getType();
+                if (ty->isIntegerTy() && ty->getIntegerBitWidth() >= 128) {
+                    return true;
+                }
+                // Check operand types
+                for (unsigned i = 0; i < I.getNumOperands(); ++i) {
+                    llvm::Type* opTy = I.getOperand(i)->getType();
+                    if (opTy->isIntegerTy() && opTy->getIntegerBitWidth() >= 128) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/**
  * Emit assembly to file
  */
 bool emit_assembly(llvm::Module* module, const std::string& output_file) {
@@ -671,14 +793,74 @@ bool emit_assembly(llvm::Module* module, const std::string& output_file) {
         return false;
     }
 
+    // ARIA-021: Check for large integers (>128 bits) BEFORE creating target machine
+    // LLVM has multiple bugs with large integers (256-bit+):
+    // 1. IPSCCP pass crashes in ConstantRange APInt operations
+    // 2. DAGCombiner crashes in KnownBits APInt operations
+    // We use O0 for both IR optimization and codegen to avoid these bugs.
+    bool useLargeIntMode = hasLargeIntegerTypes(module);
+    if (useLargeIntMode) {
+        std::cerr << "[WARN] Large integer types (128+ bit) detected. "
+                  << "Using unoptimized codegen to avoid LLVM bugs.\n";
+    }
+
     auto cpu = "generic";
     auto features = "";
     llvm::TargetOptions opt;
+
+    // ARIA-021: For large integers, try GlobalISel to avoid SelectionDAG bugs
+    // The SelectionDAG's DAGCombiner has bugs with 128+ bit integers.
+    // GlobalISel uses a different code path that may avoid these issues.
+    if (useLargeIntMode) {
+        opt.EnableGlobalISel = true;
+        opt.GlobalISelAbort = llvm::GlobalISelAbortMode::Disable;  // Fall back to DAG if needed
+    }
+
+    // Create target machine with appropriate codegen optimization level
+    llvm::CodeGenOptLevel codegenOpt = useLargeIntMode ?
+        llvm::CodeGenOptLevel::None : llvm::CodeGenOptLevel::Default;
+
     auto target_machine = target->createTargetMachine(
-        target_triple, cpu, features, opt, llvm::Reloc::PIC_
+        target_triple, cpu, features, opt, llvm::Reloc::PIC_,
+        std::nullopt,  // CodeModel
+        codegenOpt     // CodeGenOptLevel
     );
 
     module->setDataLayout(target_machine->createDataLayout());
+
+    // =========================================================================
+    // COROUTINE LOWERING (Required for async/await support)
+    // =========================================================================
+    // LLVM coroutines must be lowered before code generation.
+    // This uses the new pass manager to run coroutine passes.
+
+    // ARIA-021: For large integers (128+ bits), skip optimization entirely
+    // The LLVM optimization passes (IPSCCP, SCCP, DAGCombiner) have bugs with
+    // large integer arithmetic that cause crashes. We only skip optimization
+    // when large integers are detected; otherwise run normal O1 pipeline.
+    if (!useLargeIntMode) {
+        // Create analysis managers
+        llvm::LoopAnalysisManager LAM;
+        llvm::FunctionAnalysisManager FAM;
+        llvm::CGSCCAnalysisManager CGAM;
+        llvm::ModuleAnalysisManager MAM;
+
+        // Create pass builder and register analyses
+        llvm::PassBuilder PB(target_machine);
+        PB.registerModuleAnalyses(MAM);
+        PB.registerCGSCCAnalyses(CGAM);
+        PB.registerFunctionAnalyses(FAM);
+        PB.registerLoopAnalyses(LAM);
+        PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+        // Use the default O1 optimization pipeline which includes proper coroutine handling
+        // The coroutine passes need to be interleaved with optimization passes to work correctly
+        llvm::ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O1);
+
+        // Run optimization pipeline (includes coroutine lowering)
+        MPM.run(*module, MAM);
+    }
+    // For large integers: no optimization passes at all, direct codegen
 
     std::error_code ec;
     llvm::raw_fd_ostream out(output_file, ec, llvm::sys::fs::OF_None);
@@ -696,10 +878,6 @@ bool emit_assembly(llvm::Module* module, const std::string& output_file) {
         return false;
     }
 
-    // DEBUG: Dump module IR before running passes
-    std::cerr << "\n========== MODULE IR DUMP ==========\n";
-    module->print(llvm::errs(), nullptr);
-    std::cerr << "====================================\n\n";
 
     pass.run(*module);
     out.flush();

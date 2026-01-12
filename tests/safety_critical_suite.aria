@@ -1,0 +1,423 @@
+// ARIA SAFETY CRITICAL VERIFICATION SUITE
+// Version: 1.0.0
+// Target: Compiler Phase 4.3+ / Runtime ARIA-025
+// ============================================================================
+
+// Note: ARIA doesn't have imports yet - using direct type access
+
+// ----------------------------------------------------------------------------
+// Test Infrastructure
+// ----------------------------------------------------------------------------
+
+struct:TestResult = {
+   string:id;
+   bool:passed;
+   string:message;
+};
+
+// Global counters
+int32:total_tests = 0;
+int32:passed_tests = 0;
+
+func:report = void(res: TestResult) {
+   total_tests = total_tests + 1;
+   if (res.passed) {
+       passed_tests = passed_tests + 1;
+       io.print(" " + res.id + ": " + res.message + "\n");
+   } else {
+       io.stderr.write("[FAIL] " + res.id + ": " + res.message + "\n");
+   }
+}
+
+// ----------------------------------------------------------------------------
+// SUITE A: LBIM & INTEGRAL INTEGRITY
+// References: ARIA-024, LBIM-01, LBIM-02
+// ----------------------------------------------------------------------------
+
+func:test_lbim_overflow = TestResult() {
+   // LBIM-01: Verify multi-limb arithmetic doesn't silently wrap.
+   // We construct a value larger than 2^64 to ensure multi-limb usage.
+   
+   // 2^1000 is approx 1e301.
+   var base: int1024 = 2;
+   var exp: int1024 = 1000;
+   
+   // int1024.pow is a runtime intrinsic call
+   var huge: int1024 = base.pow(exp); 
+   
+   // Squaring 2^1000 gives 2^2000. 
+   // int1024 max is approx 2^1023. This MUST overflow.
+   var overflow: int1024 = huge * huge;
+   
+   if (overflow == int1024.ERR) {
+       return TestResult { 
+           id: "LBIM-01", 
+           passed: true, 
+           message: "Overflow correctly saturated to ERR" 
+       };
+   }
+   
+   // Failure case: Check if it wrapped to 0 or some other small number
+   return TestResult { 
+       id: "LBIM-01", 
+       passed: false, 
+       message: "Silent wrap detected on int1024 overflow. Result: " + overflow 
+   };
+}
+
+func:test_lbim_div_zero = TestResult() {
+   // LBIM-02: Division by zero safety
+   // This tests the runtime's sentinel check before the division algorithm.
+   var num: int1024 = 42;
+   var den: int1024 = 0;
+   
+   // Critical: Runtime must not SIGFPE. Must return ERR.
+   var result: int1024 = num / den;
+   
+   if (result == int1024.ERR) {
+       return TestResult { 
+           id: "LBIM-02", 
+           passed: true, 
+           message: "Division by zero returned ERR sentinel" 
+       };
+   }
+   
+   return TestResult { 
+       id: "LBIM-02", 
+       passed: false, 
+       message: "Division by zero yielded valid value" 
+   };
+}
+
+func:test_lbim_carry_chain = TestResult() {
+   // LBIM-03: Stress Test shift across limb boundaries.
+   // int1024 uses 16x 64-bit limbs. 
+   // Shifting by 65 bits must move data from limb to limb + 1 bit offset.
+   
+   var val: int1024 = 1;
+   var shifted: int1024 = val << 100;
+   
+   // 2^100.
+   // Limb 0 covers bits 0-63. Limb 1 covers 64-127.
+   // Bit 100 is bit 36 of Limb 1 (100 - 64 = 36).
+   // The value should be perfectly reconstructible.
+   
+   // We create the expected value via independent path (pow)
+   var expected: int1024 = (2:int1024).pow(100);
+   
+   if (shifted == expected) {
+       return TestResult { 
+           id: "LBIM-03", 
+           passed: true, 
+           message: "Multi-limb shift logic verified" 
+       };
+   }
+   return TestResult { 
+       id: "LBIM-03", 
+       passed: false, 
+       message: "Multi-limb shift failed. Expected " + expected + " got " + shifted 
+   };
+}
+
+// ----------------------------------------------------------------------------
+// SUITE B: TBB SENTINEL VERIFICATION
+// References: ARIA-018, TBB-01, TBB-02, TBB-03, TBB-04
+// ----------------------------------------------------------------------------
+
+func:test_tbb_sticky = TestResult() {
+   // TBB-01: Sticky Error Propagation
+   var err_val: tbb8 = tbb8.ERR; // -128 (0x80)
+   
+   // Operation on ERR must result in ERR
+   var result: tbb8 = err_val + 10;
+   
+   // If result is -118, the sentinel was treated as a number (FAILURE)
+   if (result == tbb8.ERR) {
+       return TestResult { 
+           id: "TBB-01", 
+           passed: true, 
+           message: "Error sentinel is sticky on addition" 
+       };
+   }
+   
+   return TestResult { 
+       id: "TBB-01", 
+       passed: false, 
+       message: "Error healing detected: ERR + 10!= ERR" 
+   };
+}
+
+func:test_tbb_widening = TestResult() {
+   // TBB-04: Explicit Widening Correctness
+   var small_err: tbb8 = tbb8.ERR; // -128 (0x80)
+   
+   // Use intrinsic to widen to 16-bit
+   var wide_err: tbb16 = tbb_widen(small_err);
+   
+   // Expected: wide_err should be tbb16.ERR (-32768)
+   // Failure: wide_err is -128 (0xFF80) - This is a valid tbb16 number!
+   
+   if (wide_err == tbb16.ERR) {
+       return TestResult { 
+           id: "TBB-04", 
+           passed: true, 
+           message: "Sentinel correctly mapped during widening" 
+       };
+   }
+   
+   if (wide_err == -128) {
+       return TestResult { 
+           id: "TBB-04", 
+           passed: false, 
+           message: "CRITICAL: Error Healed! -128 preserved as value" 
+       };
+   }
+   
+   return TestResult { 
+       id: "TBB-04", 
+       passed: false, 
+       message: "Unknown widening behavior" 
+   };
+}
+
+func:test_tbb_div_zero = TestResult() {
+   // TBB-02: Division Safety
+   var val: tbb32 = 100;
+   var zero: tbb32 = 0;
+   
+   var res: tbb32 = val / zero;
+   
+   if (res == tbb32.ERR) {
+       return TestResult { 
+           id: "TBB-02", 
+           passed: true, 
+           message: "TBB div by zero returned ERR" 
+       };
+   }
+   return TestResult { 
+       id: "TBB-02", 
+       passed: false, 
+       message: "TBB div by zero failed" 
+   };
+}
+
+// ----------------------------------------------------------------------------
+// SUITE C: FIX256 DETERMINISTIC PHYSICS
+// References: ARIA-025, FIX-01
+// ----------------------------------------------------------------------------
+
+func:test_fix256_commutativity = TestResult() {
+   // FIX-01: Commutativity A+B == B+A
+   // Using values that trigger fractional precision usage.
+   // 123.456... requires the fractional limbs (0 and 1).
+   var a: fix256 = 123.456789;
+   var b: fix256 = 987.654321;
+   
+   var res1: fix256 = a + b;
+   var res2: fix256 = b + a;
+   
+   // Bit-exact comparison
+   if (res1 == res2) {
+       // Further check: Overflow handling
+       var max: fix256 = fix256.MAX;
+       var sat: fix256 = max + 1;
+       
+       // Overflow should saturate or error
+       if (sat == fix256.ERR) {
+            return TestResult { 
+                id: "FIX-01", 
+                passed: true, 
+                message: "Commutativity and Overflow checks passed" 
+            };
+       }
+       return TestResult { 
+           id: "FIX-01", 
+           passed: false, 
+           message: "Overflow check failed" 
+       };
+   }
+   
+   return TestResult { 
+       id: "FIX-01", 
+       passed: false, 
+       message: "Commutativity violation (drift detected)" 
+   };
+}
+
+func:test_fix256_precision = TestResult() {
+   // FIX-02: Precision check
+   // fix256 has 128 fractional bits. 
+   // Smallest increment is 2^-128.
+   var one: fix256 = 1;
+   var epsilon: fix256 = fix256.EPSILON; // Should be 2^-128
+   
+   var sum: fix256 = one + epsilon;
+   
+   if (sum > one) {
+       return TestResult { 
+           id: "FIX-02", 
+           passed: true, 
+           message: "Sub-Planck precision verified" 
+       };
+   }
+   return TestResult { 
+       id: "FIX-02", 
+       passed: false, 
+       message: "Precision loss: 1 + EPSILON == 1" 
+   };
+}
+
+// ----------------------------------------------------------------------------
+// SUITE D: MEMORY & SAFETY CONTRACT
+// References: MEM-02, MEM-03, ACR Pattern
+// ----------------------------------------------------------------------------
+
+// Global flag to track free execution
+var freed_flag: bool = false;
+
+// Mock function to simulate free and set flag
+func:mock_free = void(ptr: wild int8*) {
+   // In a real scenario, this would call runtime.aria_free(ptr)
+   // Here we just set the flag to verify execution flow
+   freed_flag = true;
+}
+
+func:test_defer_execution = TestResult() {
+   // MEM-02: Basic Defer
+   freed_flag = false;
+   
+   // Create a scope for defer
+   {
+       unsafe {
+           // Allocate wild memory (requires unsafe block in PARANOID mode)
+           // aria_alloc is defined in std.internal.runtime
+           wild int8*: ptr = runtime.aria_alloc(64);
+           
+           // Register cleanup
+           defer mock_free(ptr);
+           
+           // Verify allocation happened
+           if (ptr == null) {
+               return TestResult { 
+                   id: "MEM-02", 
+                   passed: false, 
+                   message: "Allocation failed" 
+               };
+           }
+           
+           // Early exit from scope to test defer logic
+           if (true) {
+               // defer should trigger here upon exit
+           }
+       }
+   }
+   
+   // Check if free happened
+   if (freed_flag) {
+       return TestResult { 
+           id: "MEM-02", 
+           passed: true, 
+           message: "Defer executed on scope exit" 
+       };
+   }
+   
+   return TestResult { 
+       id: "MEM-02", 
+       passed: false, 
+       message: "Defer failed to execute (Memory Leak)" 
+   };
+}
+
+func:test_defer_pick = TestResult() {
+   // MEM-03: Defer inside complex branching (pick)
+   freed_flag = false;
+   var selector: int32 = 2;
+   
+   unsafe {
+       wild int8*: ptr = runtime.aria_alloc(10);
+       defer mock_free(ptr);
+       
+       pick (selector) {
+           case 1: { return TestResult { id: "MEM-03", passed: false, message: "Wrong branch" }; }
+           case 2: { 
+               // Exiting this block should trigger the function-level defer? 
+               // ARIA-022 says defer is block-scoped.
+               // The defer above is in the function scope (unsafe block), 
+               // so it triggers at end of unsafe block.
+           }
+           default: { return TestResult { id: "MEM-03", passed: false, message: "Default branch" }; }
+       }
+   }
+   
+   if (freed_flag) {
+       return TestResult { id: "MEM-03", passed: true, message: "Control flow defer verified" };
+   }
+   return TestResult { id: "MEM-03", passed: false, message: "Defer skipped in pick statement" };
+}
+
+// ----------------------------------------------------------------------------
+// SUITE E: EXOTIC LOGIC
+// References: ARIA-017
+// ----------------------------------------------------------------------------
+
+func:test_tryte_bias = TestResult() {
+   // EXOTIC-01: Verify tryte biased representation
+   // tryte is uint16. Bias is 29524.
+   // logical 0 == 29524.
+   
+   var t: tryte = 0;
+   // We cannot access raw bits easily in safe Aria, but we can verify arithmetic.
+   
+   // 1 + (-1) should equal 0.
+   var pos: tryte = 1;
+   var neg: tryte = -1;
+   var zero: tryte = pos + neg;
+   
+   if (zero == 0) {
+       return TestResult { id: "EXOTIC-01", passed: true, message: "Balanced ternary arithmetic holds" };
+   }
+   return TestResult { id: "EXOTIC-01", passed: false, message: "Ternary arithmetic failed" };
+}
+
+// ----------------------------------------------------------------------------
+// MAIN RUNNER
+// ----------------------------------------------------------------------------
+
+pub func:main = int32() {
+   io.print("Starting Safety-Critical Verification Suite...\n");
+   io.print("Targeting Phase 4.3 Compiler / ARIA-025 Runtime\n\n");
+   
+   // Run Suite A
+   report(test_lbim_overflow());
+   report(test_lbim_div_zero());
+   report(test_lbim_carry_chain());
+   
+   // Run Suite B
+   report(test_tbb_sticky());
+   report(test_tbb_widening());
+   report(test_tbb_div_zero());
+   
+   // Run Suite C
+   report(test_fix256_commutativity());
+   report(test_fix256_precision());
+   
+   // Run Suite D
+   report(test_defer_execution());
+   report(test_defer_pick());
+   
+   // Run Suite E
+   report(test_tryte_bias());
+   
+   io.print("\nTests Completed: " + total_tests + "\n");
+   io.print("Tests Passed:    " + passed_tests + "\n");
+   
+   if (passed_tests == total_tests) {
+       io.print("VERIFICATION SUCCESSFUL\n");
+       return 0;
+   } else {
+       io.stderr.write("VERIFICATION FAILED\n");
+       return 1;
+   }
+}
+
+8. Runtime and Stdlib Implications

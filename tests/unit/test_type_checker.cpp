@@ -1035,21 +1035,24 @@ TEST_CASE(type_checker_tbb_no_coercion_to_int) {
     ASSERT(checker.hasErrors(), "Should have error (tbb8 → int64 not allowed)");
 }
 
-TEST_CASE(type_checker_tbb_widening_allowed) {
+TEST_CASE(type_checker_tbb_widening_rejected) {
     TypeSystem types;
     SymbolTable symbols;
     TypeChecker checker(&types, &symbols);
-    
-    // tbb8:y = 10; tbb16:x = y;  // OK: tbb8 → tbb16 widening allowed
+
+    // ARIA-018: Sentinel Discontinuity Constraint
+    // tbb8:y = 10; tbb16:x = y;  // REJECTED: implicit TBB widening forbidden
+    // tbb8 ERR (-128) would become valid -128 in tbb16, breaking sticky error semantics
+    // Use explicit tbb_widen<T>() for safe sentinel-preserving conversion
     auto tbb8Type = types.getPrimitiveType("tbb8");
     symbols.defineSymbol("y", SymbolKind::VARIABLE, tbb8Type);
-    
+
     auto init = std::make_unique<IdentifierExpr>("y");
     aria::VarDeclStmt stmt("tbb16", "x", std::move(init));
-    
+
     checker.checkStatement(&stmt);
-    
-    ASSERT(!checker.hasErrors(), "Should have no errors (tbb8 → tbb16 widening)");
+
+    ASSERT(checker.hasErrors(), "Should have error (ARIA-018: implicit tbb8 → tbb16 widening forbidden)");
 }
 
 TEST_CASE(type_checker_tbb_assignment_err_sentinel) {

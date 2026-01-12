@@ -1,0 +1,19 @@
+/**
+ * Test: Move Host While Borrowed
+ * Expected: COMPILER ERROR - cannot move while borrowed
+ * Why Critical: Moving a borrowed variable invalidates the borrow
+ */
+
+func:take_ownership = void(int32:val) {
+    print("Got value\n");
+};
+
+func:main = int32() {
+    int32:x = 10;
+    int32$:r = $x;  // Borrow x
+
+    take_ownership(x);  // ERROR: Cannot move x while borrowed
+
+    print("Should not compile!\n");
+    return 0;
+};

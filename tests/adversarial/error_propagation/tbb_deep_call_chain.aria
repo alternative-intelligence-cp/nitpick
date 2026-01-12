@@ -1,0 +1,38 @@
+/**
+ * Test: TBB Sticky Error Propagation Through Deep Call Stack
+ * Expected: COMPILES SUCCESSFULLY (runtime test)
+ * Why: ERR must propagate through ALL function calls - never lost
+ *
+ * From TODO: "Test error propagation through deep call stacks"
+ * Sensor error propagating through level3 → level2 → level1 → result
+ */
+
+func:level3 = tbb32(tbb32:x) {
+    tbb32:result = tbb32_mul(x, tbb32_from_int(2));  // ERR * 2 → ERR
+    return result;
+};
+
+func:level2 = tbb32(tbb32:x) {
+    tbb32:temp = tbb32_add(x, tbb32_from_int(10));  // ERR + 10 → ERR
+    tbb32:result = level3(temp);
+    return result;
+};
+
+func:level1 = tbb32(tbb32:x) {
+    tbb32:temp = tbb32_sub(x, tbb32_from_int(5));  // ERR - 5 → ERR
+    tbb32:result = level2(temp);
+    return result;
+};
+
+func:main = int32() {
+    // Simulate sensor failure with division by zero
+    tbb32:sensor = tbb32_div(tbb32_from_int(10), tbb32_from_int(0));  // Returns ERR
+
+    // ERR must propagate through: level1 → level2 → level3 → result
+    tbb32:result = level1(sensor);
+
+    // At runtime: tbb32_is_err(result) must be true
+    bool:still_err = tbb32_is_err(result);
+
+    return 0;
+};

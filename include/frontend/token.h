@@ -83,6 +83,7 @@ enum class TokenType {
     TOKEN_KW_INT128,    // int128 - 128-bit signed
     TOKEN_KW_INT256,    // int256 - 256-bit signed
     TOKEN_KW_INT512,    // int512 - 512-bit signed
+    TOKEN_KW_INT1024,   // int1024 - 1024-bit signed (post-quantum crypto)
     
     // ========================================================================
     // Type Keywords - Integers (Unsigned)
@@ -97,6 +98,7 @@ enum class TokenType {
     TOKEN_KW_UINT128,   // uint128 - 128-bit unsigned
     TOKEN_KW_UINT256,   // uint256 - 256-bit unsigned
     TOKEN_KW_UINT512,   // uint512 - 512-bit unsigned
+    TOKEN_KW_UINT1024,  // uint1024 - 1024-bit unsigned (post-quantum crypto)
     
     // ========================================================================
     // Type Keywords - TBB (Twisted Balanced Binary)
@@ -108,6 +110,20 @@ enum class TokenType {
     TOKEN_KW_TBB64,     // tbb64 - symmetric 64-bit, ERR at min
     
     // ========================================================================
+    // Type Keywords - Fraction (Exact Rational)
+    // ========================================================================
+    TOKEN_KW_FRAC8,     // frac8 - {tbb8 whole, tbb8 num, tbb8 denom}
+    TOKEN_KW_FRAC16,    // frac16 - {tbb16 whole, tbb16 num, tbb16 denom}
+    TOKEN_KW_FRAC32,    // frac32 - {tbb32 whole, tbb32 num, tbb32 denom}
+    TOKEN_KW_FRAC64,    // frac64 - {tbb64 whole, tbb64 num, tbb64 denom}
+    
+    // ========================================================================
+    // Type Keywords - TFP (Twisted Floating Point)
+    // ========================================================================
+    TOKEN_KW_TFP32,     // tfp32 - deterministic 32-bit float (tbb16 exp + tbb16 mant)
+    TOKEN_KW_TFP64,     // tfp64 - deterministic 64-bit float (tbb16 exp + tbb48 mant)
+    
+    // ========================================================================
     // Type Keywords - Floating Point
     // ========================================================================
     TOKEN_KW_FLT32,     // flt32 - 32-bit float
@@ -115,6 +131,11 @@ enum class TokenType {
     TOKEN_KW_FLT128,    // flt128 - 128-bit float
     TOKEN_KW_FLT256,    // flt256 - 256-bit float
     TOKEN_KW_FLT512,    // flt512 - 512-bit float
+    
+    // ========================================================================
+    // Type Keywords - Fixed Point (Deterministic)
+    // ========================================================================
+    TOKEN_KW_FIX256,    // fix256 - Q128.128 deterministic physics (Report 7)
     
     // ========================================================================
     // Type Keywords - Special/Composite
@@ -139,9 +160,11 @@ enum class TokenType {
     // ========================================================================
     TOKEN_KW_VEC2,      // vec2 - 2D vector
     TOKEN_KW_VEC3,      // vec3 - 3D vector
-    TOKEN_KW_VEC9,      // vec9 - 9D vector
+    TOKEN_KW_VEC9,      // vec9 - 9D vector (toroidal AGI memory)
     TOKEN_KW_MATRIX,    // matrix - matrix type
+    TOKEN_KW_TMATRIX,   // tmatrix - twisted matrix (sentinel-aware)
     TOKEN_KW_TENSOR,    // tensor - tensor type
+    TOKEN_KW_TTENSOR,   // ttensor - 9D toroidal tensor (AGI memory)
     
     // ========================================================================
     // Type Keywords - I/O and System
@@ -216,10 +239,11 @@ enum class TokenType {
     // ========================================================================
     // Operators - Special
     // ========================================================================
-    TOKEN_AT,           // @ - address/pointer operator
+    TOKEN_AT,           // @ - address-of operator
     TOKEN_DOLLAR,       // $ - iteration variable, safe reference
     TOKEN_HASH,         // # - memory pinning operator
-    TOKEN_ARROW,        // -> - pointer member dereference (ptr->member)
+    TOKEN_ARROW,        // -> - pointer type & member access (int64->:ptr, ptr->member)
+    TOKEN_LEFT_ARROW,   // <- - pointer dereference (value <- ptr)
     TOKEN_SAFE_NAV,     // ?. - safe navigation
     TOKEN_NULL_COALESCE,// ?? - null coalescing
     TOKEN_QUESTION,     // ? - unwrap operator
@@ -255,11 +279,66 @@ enum class TokenType {
     // ========================================================================
     // Literals
     // ========================================================================
-    TOKEN_INTEGER,      // Integer literal (decimal, hex, binary, octal)
-    TOKEN_FLOAT,        // Float literal
+    TOKEN_INTEGER,      // Integer literal (decimal, hex, binary, octal) - DEPRECATED
+    TOKEN_FLOAT,        // Float literal - DEPRECATED
+    
+    // ========================================================================
+    // Typed Integer Literals (Zero Implicit Conversion Policy)
+    // ========================================================================
+    // Reference: docs/programming_guide/types/zero_implicit_conversion.md
+    // All numeric literals MUST have explicit type suffixes (e.g., 1u32, 0i64)
+    
+    // Unsigned integer literals
+    TOKEN_INTEGER_U8,       // 255u8
+    TOKEN_INTEGER_U16,      // 65535u16
+    TOKEN_INTEGER_U32,      // 4294967295u32
+    TOKEN_INTEGER_U64,      // 18446744073709551615u64
+    TOKEN_INTEGER_U128,     // ...u128
+    TOKEN_INTEGER_U256,     // ...u256
+    TOKEN_INTEGER_U512,     // ...u512
+    TOKEN_INTEGER_U1024,    // ...u1024
+    
+    // Signed integer literals
+    TOKEN_INTEGER_I8,       // -128i8, 127i8
+    TOKEN_INTEGER_I16,      // -32768i16, 32767i16
+    TOKEN_INTEGER_I32,      // -2147483648i32, 2147483647i32
+    TOKEN_INTEGER_I64,      // -9223372036854775808i64, 9223372036854775807i64
+    TOKEN_INTEGER_I128,     // ...i128
+    TOKEN_INTEGER_I256,     // ...i256
+    TOKEN_INTEGER_I512,     // ...i512
+    TOKEN_INTEGER_I1024,    // ...i1024
+    
+    // TBB (Twisted Balanced Binary) integer literals
+    TOKEN_INTEGER_TBB8,     // 127tbb8, -127tbb8 (ERR = -128)
+    TOKEN_INTEGER_TBB16,    // 32767tbb16, -32767tbb16 (ERR = -32768)
+    TOKEN_INTEGER_TBB32,    // ...tbb32
+    TOKEN_INTEGER_TBB64,    // ...tbb64
+    
+    // ========================================================================
+    // Typed Float Literals (Zero Implicit Conversion Policy)
+    // ========================================================================
+    
+    // Standard floating-point literals
+    TOKEN_FLOAT_F32,        // 3.14f32, -2.5f32
+    TOKEN_FLOAT_F64,        // 3.14159265358979f64
+    TOKEN_FLOAT_F128,       // ...f128
+    TOKEN_FLOAT_F256,       // ...f256
+    TOKEN_FLOAT_F512,       // ...f512
+    
+    // Fixed-point literal (deterministic physics)
+    TOKEN_FLOAT_FIX256,     // 1.5fix256 (Q128.128 format from Report 7)
+    
+    // TFP (Twisted Floating Point) literals - FUTURE
+    // TOKEN_FLOAT_TFP32,   // ...tfp32
+    // TOKEN_FLOAT_TFP64,   // ...tfp64
+    
+    // ========================================================================
+    // Other Literals
+    // ========================================================================
     TOKEN_STRING,       // String literal "..."
     TOKEN_CHAR,         // Character literal '...'
     TOKEN_TERNARY,      // Ternary literal 0t[01T]+ (balanced ternary)
+    TOKEN_NONARY,       // Nonary literal 0n[01234ABCD]+ (balanced nonary)
     
     // ========================================================================
     // Identifiers and Special Tokens

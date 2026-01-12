@@ -1,0 +1,15 @@
+/**
+ * Test: TBB Sentinel Value Construction Prevention
+ * Expected: COMPILER/RUNTIME ERROR for sentinel values
+ * Why: Sentinel values must NEVER be constructible - they're reserved for error states
+ *
+ * From TODO: "TBB sentinel values are NEVER constructible"
+ * -128 for tbb8 is the ERR sentinel - allowing construction defeats error propagation
+ */
+
+func:main = int32() {
+    // These should ERROR - sentinel values must be rejected
+    tbb8:x = tbb8_from_int(-128);  // ERROR: -128 is tbb8 sentinel
+
+    return 0;
+};

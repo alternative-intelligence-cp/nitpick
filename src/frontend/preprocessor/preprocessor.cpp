@@ -1209,7 +1209,15 @@ std::string Preprocessor::expandMacro(const std::string& macro_name, const std::
             }
             i--; // Back up one since loop will increment
             
-            int param_index = std::stoi(param_num);
+            // Parse parameter index with error handling
+            int param_index = 0;
+            try {
+                param_index = std::stoi(param_num);
+            } catch (const std::invalid_argument&) {
+                error("Macro parameter %" + param_num + " is not a valid number");
+            } catch (const std::out_of_range&) {
+                error("Macro parameter %" + param_num + " is too large");
+            }
             
             // Substitute parameter (1-indexed)
             if (param_index >= 1 && param_index <= static_cast<int>(args.size())) {
@@ -1344,7 +1352,7 @@ std::string Preprocessor::applyHygienicRenaming(const std::string& macro_body, u
     
     // Reserved keywords that should NEVER be renamed
     static const std::set<std::string> reserved_keywords = {
-        "result", "func", "wild", "defer", "async", "const", "use",
+        "Result", "func", "wild", "defer", "async", "const", "use",
         "mod", "pub", "extern", "ERR", "stack", "gc", "wildx",
         "struct", "enum", "type", "is", "in", "fall", "pass", "fail",
         "if", "else", "while", "for", "loop", "till", "when", "break",

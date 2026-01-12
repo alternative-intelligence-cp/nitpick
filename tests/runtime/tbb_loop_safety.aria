@@ -1,0 +1,180 @@
+// TBB Loop Safety Tests - GAP_2 Verification
+// Tests sentinel guard injection prevents infinite loops at TBB boundaries
+// Reference: docs/gemini/responses/remaining/TBB Loop Counter Overflow Verification.txt
+
+import "assert";
+
+// TEST 1: For Loop - Boundary Breach Detection
+// Counter should NOT infinite loop when it overflows to ERR
+func test_for_loop_boundary_breach() {
+    tbb8:count = 0;
+    
+    // This loop should execute exactly 2 iterations:
+    // i=126 (iteration 1), i=127 (iteration 2), i=ERR (exit)
+    for (tbb8:i = 126; i <= 127; i = i + 1) {
+        count = count + 1;
+        
+        // Safety: prevent accidental infinite loop during test failure
+        if (count > 10) {
+            assert(false, "Loop exceeded 10 iterations - infinite loop detected!");
+            break;
+        }
+    }
+    
+    // Should have executed exactly 2 times
+    assert(count == 2, "Expected 2 iterations, got different count");
+    print("[PASS] test_for_loop_boundary_breach: Loop correctly exited at ERR sentinel");
+}
+
+// TEST 2: For Loop - Reverse Underflow
+// Decrementing loop should exit when counter underflows to ERR
+func test_for_loop_underflow() {
+    tbb8:count = 0;
+    
+    // This loop should execute exactly 2 iterations:
+    // i=-126 (iteration 1), i=-127 (iteration 2), i=ERR (exit)
+    for (tbb8:i = -126; i >= -127; i = i - 1) {
+        count = count + 1;
+        
+        if (count > 10) {
+            assert(false, "Loop exceeded 10 iterations - infinite loop detected!");
+            break;
+        }
+    }
+    
+    assert(count == 2, "Expected 2 iterations for underflow test");
+    print("[PASS] test_for_loop_underflow: Loop correctly exited at ERR sentinel");
+}
+
+// TEST 3: For Loop - Large Step Overflow
+// Loop with large step should exit when skipping over max boundary
+func test_for_loop_large_step() {
+    tbb8:count = 0;
+    
+    // This loop: i=100, i=120 (both valid), i=ERR (overflow), exit
+    // Should execute exactly 2 iterations
+    for (tbb8:i = 100; i <= 127; i = i + 20) {
+        count = count + 1;
+        
+        if (count > 10) {
+            assert(false, "Loop exceeded 10 iterations - infinite loop detected!");
+            break;
+        }
+    }
+    
+    assert(count == 2, "Expected 2 iterations for large step test");
+    print("[PASS] test_for_loop_large_step: Loop correctly exited at ERR sentinel");
+}
+
+// TEST 4: Till Loop - Boundary Breach
+// Till loop with TBB counter should exit at ERR
+func test_till_loop_boundary() {
+    tbb8:count = 0;
+    tbb8:limit = 10;
+    tbb8:step = 1;
+    
+    // Manual simulation: start at 126, step to 127, overflow to ERR, exit
+    tbb8:start = 126;
+    
+    for (tbb8:i = start; i < limit + 120; i = i + step) {
+        count = count + 1;
+        
+        if (count > 10) {
+            assert(false, "Till loop exceeded 10 iterations - infinite loop detected!");
+            break;
+        }
+    }
+    
+    // Should have exited after hitting ERR
+    assert(count <= 5, "Till loop should exit quickly at ERR sentinel");
+    print("[PASS] test_till_loop_boundary: Till loop correctly exited at ERR sentinel");
+}
+
+// TEST 5: Nested Loops - Both Counters Safe
+// Ensure sentinel guard works correctly in nested loop scenarios
+func test_nested_loops_safety() {
+    tbb8:outer_count = 0;
+    tbb8:inner_count = 0;
+    tbb8:total = 0;
+    
+    for (tbb8:i = 125; i <= 127; i = i + 1) {
+        outer_count = outer_count + 1;
+        
+        for (tbb8:j = 125; j <= 127; j = j + 1) {
+            inner_count = inner_count + 1;
+            total = total + 1;
+            
+            if (total > 50) {
+                assert(false, "Nested loops exceeded 50 iterations - infinite loop!");
+                break;
+            }
+        }
+        
+        if (outer_count > 10) {
+            assert(false, "Outer loop exceeded 10 iterations!");
+            break;
+        }
+    }
+    
+    // Outer: 3 iterations (125, 126, 127)
+    // Inner: 3 iterations per outer = 9 total
+    assert(outer_count == 3, "Expected 3 outer iterations");
+    assert(inner_count == 9, "Expected 9 inner iterations");
+    print("[PASS] test_nested_loops_safety: Nested loops correctly bounded");
+}
+
+// TEST 6: TBB16 - Larger Sentinel
+// Ensure fix works for tbb16 (ERR = -32768)
+func test_tbb16_boundary() {
+    tbb16:count = 0;
+    
+    for (tbb16:i = 32766; i <= 32767; i = i + 1) {
+        count = count + 1;
+        
+        if (count > 10) {
+            assert(false, "TBB16 loop exceeded 10 iterations!");
+            break;
+        }
+    }
+    
+    assert(count == 2, "Expected 2 iterations for tbb16 boundary");
+    print("[PASS] test_tbb16_boundary: TBB16 loop correctly exited at ERR");
+}
+
+// TEST 7: TBB32 - Even Larger Sentinel
+// Ensure fix works for tbb32 (ERR = -2147483648)
+func test_tbb32_boundary() {
+    tbb32:count = 0;
+    
+    for (tbb32:i = 2147483645; i <= 2147483647; i = i + 1) {
+        count = count + 1;
+        
+        if (count > 10) {
+            assert(false, "TBB32 loop exceeded 10 iterations!");
+            break;
+        }
+    }
+    
+    assert(count == 3, "Expected 3 iterations for tbb32 boundary");
+    print("[PASS] test_tbb32_boundary: TBB32 loop correctly exited at ERR");
+}
+
+// Main test runner
+func main() {
+    print("========================================");
+    print("TBB Loop Safety Test Suite");
+    print("Testing GAP_2 Fix: Sentinel Guard Injection");
+    print("========================================");
+    
+    test_for_loop_boundary_breach();
+    test_for_loop_underflow();
+    test_for_loop_large_step();
+    test_till_loop_boundary();
+    test_nested_loops_safety();
+    test_tbb16_boundary();
+    test_tbb32_boundary();
+    
+    print("========================================");
+    print("ALL TBB LOOP SAFETY TESTS PASSED!");
+    print("========================================");
+}

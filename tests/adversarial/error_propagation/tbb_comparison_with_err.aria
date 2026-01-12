@@ -1,0 +1,19 @@
+/**
+ * Test: TBB Comparison Operations with ERR Values
+ * Expected: COMPILES SUCCESSFULLY (runtime test)
+ * Why: Comparisons involving ERR should behave consistently
+ *
+ * When comparing with ERR, the result should indicate error state
+ */
+
+func:main = int32() {
+    tbb32:err = tbb32_div(tbb32_from_int(10), tbb32_from_int(0));  // ERR
+    tbb32:valid = tbb32_from_int(50);
+
+    // Comparisons with ERR - behavior must be defined
+    // These are valid compilation tests - runtime behavior verified separately
+    bool:is_err = tbb32_is_err(err);      // Must be true
+    bool:is_valid = tbb32_is_err(valid);  // Must be false
+
+    return 0;
+};

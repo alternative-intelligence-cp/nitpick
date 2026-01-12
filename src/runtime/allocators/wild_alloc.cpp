@@ -37,18 +37,45 @@ static void update_peak_usage() {
 // Wild Allocator (Basic malloc/free)
 // =============================================================================
 
+// CRITICAL FIX 3: Global memory quota to prevent OOM crashes killing robot process
+static const size_t MAX_WILD_HEAP = 512 * 1024 * 1024;  // 512MB - configurable
+static const size_t EMERGENCY_RESERVE = 50 * 1024 * 1024;  // 50MB reserved for shutdown
+static const size_t NORMAL_LIMIT = MAX_WILD_HEAP - EMERGENCY_RESERVE;
+
 void* aria_alloc(size_t size) {
     if (size == 0) {
         return nullptr;
     }
 
-    void* ptr = std::malloc(size);
-    if (ptr) {
-        g_alloc_state.total_wild_allocated.fetch_add(size);
-        g_alloc_state.num_wild_allocations.fetch_add(1);
-        update_peak_usage();
+    // CRITICAL: Reserve quota BEFORE malloc to prevent OOM
+    // This was the "extreme severity" bug - post-facto accounting allowed unbounded growth
+    size_t current = g_alloc_state.total_wild_allocated.load();
+    size_t new_total = current + size;
+    
+    if (new_total > NORMAL_LIMIT) {
+        // Quota exceeded - fail gracefully instead of letting OOM killer terminate process
+        return nullptr;
+    }
+    
+    // Atomic CAS loop to reserve quota
+    while (!g_alloc_state.total_wild_allocated.compare_exchange_weak(current, new_total)) {
+        new_total = current + size;
+        if (new_total > NORMAL_LIMIT) {
+            return nullptr;  // Quota exhausted during race
+        }
     }
 
+    // Now safe to allocate - quota already reserved
+    void* ptr = std::malloc(size);
+    if (!ptr) {
+        // malloc failed despite quota - rollback reservation
+        g_alloc_state.total_wild_allocated.fetch_sub(size);
+        return nullptr;
+    }
+
+    g_alloc_state.num_wild_allocations.fetch_add(1);
+    update_peak_usage();
+    
     return ptr;
 }
 

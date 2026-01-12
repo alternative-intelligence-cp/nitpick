@@ -1,0 +1,62 @@
+I am building a custom programming language that emphasizes explicitness, predictability, stability, security, and performance above all. Developer convenience is a nice to have, not a language requirement. The main use case is for a physics based AGI I am building that I hope to one day use as companions for neurodivergent children, children in extended hospital stays, lonely people with degraded mental states, and other vulnerable populations. Long term goal is to develop a 'teacher' system that could work with a human teacher to provide customized lessons for each student to match their strengths and learning style. We have a moral obligation to eliminate any bugs or errors we possibly can as they may well lead to drifts that could cause physical or mental harm to a vulnerable individual. Everything must be as safe, stable, and secure as possible. Treat this as life/death scenario because there are several ways it actually could turn into one if we are not vigilant. One child harmed would be game over for the whole project. One final note, semantic searches seem to fail about 75% of the time per my observations over the last 20 reports which leads to you believeing they are not present. Do not rely on the search alone. I theorize the problem lies with Aria's novel concepts and constructs as well as new terminology and non standard file names/locations. If you can't find it you must read to ensure. Assumptions are not an option. If you don't know, it is preferable to say so rather than make things up which cost time for you but also time for me when I try to implement them. Honesty > sycophancy always.
+CRITICAL: This code will control physical actuators in robotic assistants. 
+Memory corruption = uncontrolled motor movement. Type errors = force limit bypass.
+Verify EVERY type mapping. Fail hard on unknowns. No silent defaults.
+
+---
+
+**AUDIT FOCUS: Concurrency - Actor Message Passing**
+
+**Threat Model:**
+Actor model isolates state - actors communicate via messages. Bug: message queue overflow → new messages dropped → motor disable command lost → robot continues moving uncontrolled. Or: message corruption → actor receives wrong command → executes unintended action.
+
+**Target Files:**
+- `src/runtime/async/actor.cpp` (if exists - actor implementation)
+- `src/backend/ir/codegen_async.cpp` (actor message send/receive)
+
+**Specific Items to Audit (5 items max):**
+
+1. **Message queue bounds checking**
+   - Verify message queue has size limit
+   - Check send() blocks or returns error when queue full
+   - Confirm no silent message dropping
+
+2. **Message serialization/deserialization**
+   - Verify message type preserved across send/receive
+   - Check no type confusion (message type A received as type B)
+   - Confirm no corruption during message passing
+
+3. **Actor state isolation**
+   - Verify actors cannot access each other's state directly
+   - Check only message passing allowed between actors
+   - Confirm no shared mutable state between actors
+
+4. **Actor lifecycle management**
+   - Verify actor cleanup when stopped
+   - Check pending messages handled on actor termination
+   - Confirm no resource leaks from stopped actors
+
+5. **Message ordering guarantees**
+   - Verify messages from A to B delivered in send order
+   - Check no message reordering within single channel
+   - Confirm ordering guarantees documented and enforced
+
+**SIL-4 Compliance Requirements:**
+- Message queues MUST NOT overflow silently
+- Message types MUST be preserved accurately
+- Actor state MUST be isolated (no shared mutable state)
+- Actor cleanup MUST be deterministic
+- Message ordering MUST be defined and enforced
+
+**Expected Deliverable:**
+For each item, report:
+- ✅ Compliant / ❌ Bug found / ⚠️ Unclear (need clarification)
+- If bug: Exact line number, root cause, proposed fix
+- If compliant: Briefly confirm what makes it safe
+- If unclear: Specific question about spec or implementation
+
+**Critical Note:**
+Message passing bugs are hard to detect - they manifest as missed commands or corrupted data. Check queue management and serialization carefully.
+
+**Reference:**
+This audit follows the successful 2026-01-01 methodology that achieved 100% accuracy (5/5 real bugs found, 0 hallucinations). Maximum 5 items per audit to maintain focus.

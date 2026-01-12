@@ -1,0 +1,438 @@
+﻿SIL-4 SAFETY AUDIT REPORT: ARIA COMPILER FFI & MEMORY BOUNDARY ANALYSIS
+1. Executive Summary
+1.1 Audit Objective and Operational Context
+This document presents the findings of a comprehensive safety audit conducted on the Aria programming language compiler and runtime environment. The audit was commissioned to evaluate the system’s readiness for SIL-4 (Safety Integrity Level 4) deployment, specifically within the context of Physics-Based Artificial General Intelligence (AGI) for robotic assistants serving vulnerable populations.
+The operational parameters defined for this system are extreme. The software will control physical actuators capable of exerting force in proximity to neurodivergent children and patients with degraded mental states. In this environment, the "Fail-Safe" condition is often insufficient; the system must be "Fail-Operational" or "Fail-Silent" with absolute certainty. A single memory corruption event, pointer misalignment, or type confusion error could result in uncommanded motor movement, bypassing force limits and causing severe physical injury or death. Consequently, this audit adopts a "Zero-Tolerance" stance toward ambiguity, implicit defaults, and architectural fragility.
+The primary focus of this investigation is the Foreign Function Interface (FFI)—the boundary where the managed, safe world of Aria interacts with the unmanaged, potentially hostile environment of C/C++ libraries. The threat model explicitly assumes that the external C code is adversarial: it may return null pointers without documentation, corrupt stack memory, ignore calling conventions, or inject invalid sentinel values. The Aria compiler must act as an impenetrable membrane, preventing any external entropy from compromising the internal robotic control state.
+1.2 Verdict and Compliance Status
+The analysis of the provided source code artifacts—specifically src/backend/ir/codegen_expr.cpp, lib/std/internal/runtime.aria, and the runtime header files—reveals that the current implementation is NON-COMPLIANT with SIL-4 requirements. While the internal type system of Aria demonstrates sophisticated safety mechanisms (such as the "Fail Hard" policy for unmapped types and the "Limb-Based Integral Model" for large integers), the translation of these concepts across the FFI boundary contains fundamental architectural defects.
+Critical Findings Summary:
+* ABI Incompatibility (Severity: CRITICAL): The implementation of Large Integers (LBIM) as LLVM aggregate structures (struct { [N x i64] }) rather than scalar integers creates a fatal mismatch with the System V AMD64 ABI used by C compilers for __int128. This guarantees register misalignment and data corruption when passing force values or sensor readings.1
+* Fat Pointer Injection (Severity: CRITICAL): The implicit mapping of Aria string types (which are structs containing { ptr, len }) to C function signatures expecting char* will result in immediate buffer over-reads and potential stack corruption. The C callee will interpret the string pointer as the first argument and the length as the second argument, leading to logic errors in actuator control parameters.1
+* Sentinel Collision (Severity: HIGH): The usage of Twisted Balanced Binary (TBB) types in FFI signatures introduces an in-band error signaling mechanism (e.g., -128 for tbb8) that is indistinguishable from valid data returned by standard C functions. This creates a vector for "Sentinel Injection," where valid sensor data triggers emergency stops or error handling logic.1
+* Unsafe Callback Closures (Severity: HIGH): The runtime bindings for callback-heavy subsystems like the Slab Cache lack the necessary context pointers (void* user_data) required to safely invoke Aria closures from C, leading to potential context loss or undefined behavior during asynchronous events.1
+Conclusion: The system in its current state poses an unacceptable risk to human life if deployed. The FFI layer effectively bypasses the safety guarantees of the language core. Immediate architectural remediation is required before any physical integration.
+________________
+2. Methodology and Threat Model
+2.1 The "Hostile C" Assumption
+In high-assurance software engineering, the boundary between managed and unmanaged code is the most frequent site of catastrophic failure. Aria provides a controlled environment with specific invariants: memory safety, determinism via fix256, and explicit error handling via result monads. The C language provides none of these.
+For the purpose of this audit, we assume the "Hostile C" Threat Model. This model postulates that any data crossing the FFI boundary into Aria is potentially malicious or malformed. This includes:
+* Return Values: Functions returning NULL when specific valid pointers are expected.
+* Memory Writes: C functions writing beyond the bounds of provided buffers (buffer overflows).
+* Data Layout: C functions expecting data in specific registers (e.g., RDI, XMM0) while Aria places them on the stack or in different registers due to type mismatches.
+* Concurrency: C functions retaining pointers to Aria memory and accessing them after the Aria call has returned (Use-After-Free).
+2.2 SIL-4 Compliance Criteria
+To achieve SIL-4 compliance for the FFI boundary, the compiler must enforce the following strictures:
+1. Isomorphic Type Mapping: Every bit pattern generated by Aria must be interpreted identically by the C compiler. There can be no "implicit" conversions that rely on undefined behavior or platform-specific coincidences.
+2. Explicit Validation: No pointer received from C can be dereferenced without a null-check. No integer can be widened without checking for sentinel values.
+3. Boundary Marshal: Complex types (strings, arrays, structs) must be manually marshaled into C-compatible layouts (e.g., decomposing a string struct into a char* and size_t pair) rather than passed raw.
+4. Fail-Safe Defaults: If a type cannot be safely mapped (e.g., a closure with captured environment), the compiler must refuse to compile the extern declaration.
+________________
+3. Detailed Audit: FFI Function Signature Validation
+3.1 Architecture of the Type System Breach
+The core of the Aria compiler's backend is located in src/backend/ir/codegen_expr.cpp.1 This file contains the ExprCodegen class, which is responsible for translating Aria's semantic types into LLVM Intermediate Representation (IR). The correctness of this translation determines whether the generated machine code adheres to the Application Binary Interface (ABI) of the target platform.
+The audit has identified a pervasive disconnect between the "Semantic Types" defined in the language specification and the "Physical Types" generated for the LLVM backend. This disconnect is particularly dangerous when interacting with external functions that adhere to the standard C ABI.
+3.2 The LBIM ABI Incompatibility (Bug #1)
+Target: ExprCodegen::getLLVMTypeFromString in src/backend/ir/codegen_expr.cpp 1
+Status: ❌ Critical Bug Found
+Mechanism of Failure:
+Aria implements "Limb-Based Integral Model" (LBIM) for large integers to bypass internal LLVM optimization bugs. The code explicitly defines int128 as a struct:
+
+
+C++
+
+
+
+
+// src/backend/ir/codegen_expr.cpp 
+if (typeName == "int128" |
+
+| typeName == "uint128") {
+   llvm::StructType* int128Struct = llvm::StructType::getTypeByName(context, "struct.int128");
+   if (!int128Struct) {
+       llvm::Type* limbArray = llvm::ArrayType::get(llvm::Type::getInt64Ty(context), 2);
+       int128Struct = llvm::StructType::create(context, {limbArray}, "struct.int128");
+   }
+   return int128Struct;
+}
+
+This effectively maps int128 to struct { int64_t limbs; }.
+The C ABI Reality:
+On the x86-64 System V ABI (Linux, BSD, MacOS), the C type __int128 is a scalar type, not a struct.
+* Scalar __int128 Passing: Passed in two general-purpose registers (typically RDI and RSI for the first argument).
+* Struct { int64_t } Passing: While often passed in registers (RDI, RSI), the classification rules for aggregates differ from scalars. Crucially, if the struct is part of a varargs call, or if the target architecture changes (e.g., Windows x64), the passing convention diverges significantly.
+   * Windows x64 ABI: Microsoft Visual C++ does not natively support __int128, but if interacting with MinGW libraries or assembly modules, __int128 is often passed by reference (pointer) because it exceeds 64 bits. A struct of the same size might be passed by value (copy). If Aria passes by value and C expects by reference, the C function receives a pointer to garbage (or the first 64 bits of the value interpreted as a pointer), leading to immediate segmentation faults or arbitrary memory writes.
+Robotic Control Scenario:
+Consider a function extern func set_actuator_torque(id: int64, torque: int128).
+* Aria (Caller): Generates code passing id in RDI, and the torque struct limbs in RSI and RDX (assuming System V "Eightbyte" classification holds).
+* C (Callee): If compiled with a compiler that treats __int128 differently (e.g., using XMM registers for vectorization optimization, or passing on the stack due to register pressure), the C function will look for torque in the wrong location.
+* Result: The C function reads the contents of RSI (which holds the low bits of torque from Aria) as the high bits of the torque, or reads uninitialized stack memory. This results in a torque command that is orders of magnitude larger than intended.
+Remediation:
+The compiler must strictly differentiate between "Internal LBIM" (safe, struct-based) and "External C-Int128".
+1. Immediate Fix: In codegenCall, detect if the target function is extern "C". If an argument is int128, inject LLVM IR to load the limbs and construct a native i128 scalar using builder.CreateBitCast or builder.CreateOr/Shl sequences. Pass this native scalar to the call instruction.
+2. Guard: If the target architecture does not support native i128 (e.g., 32-bit platforms), the compiler must error out or fall back to a pointer-based ABI if explicitly defined.
+3.3 The String Structure Vulnerability (Bug #2)
+Target: ExprCodegen::getLLVMType in src/backend/ir/codegen_expr.cpp 1
+Status: ❌ Critical Bug Found
+Mechanism of Failure:
+Aria defines strings as fat pointers (structs) for safety and performance:
+
+
+C++
+
+
+
+
+// src/backend/ir/codegen_expr.cpp 
+// Handle pointer types (str, any reference)
+if (type_name == "str" |
+
+| type_name.find('*')!= std::string::npos) {
+   return llvm::PointerType::get(context, 0); // LLVM 20.x opaque pointers
+}
+
+However, deeper in the file (Lines 1000+), specifically in literal generation, we see:
+
+
+C++
+
+
+
+
+llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
+// fields: { i8* data, i64 length }
+
+And in lib/std/internal/runtime.aria 1:
+
+
+Code snippet
+
+
+
+
+pub extern struct AriaResult {
+   err: wild int8*,
+   val: wild byte*,
+   val_size: uint64
+}
+
+The issue arises when a user declares:
+
+
+Code snippet
+
+
+
+
+extern "C" func log_message(msg: string);
+
+The Aria compiler, using the type mapping string -> struct { i8*, i64 }, will pass this struct to the C function.
+* System V ABI: The struct { i8*, i64 } is passed as two 64-bit values in registers (e.g., RDI = pointer, RSI = length).
+* C Signature: void log_message(char* msg) expects a single pointer in RDI.
+The Disconnect:
+Superficially, this appears to work: RDI holds the pointer, which C reads. RSI holds the length, which C ignores.
+HOWEVER, this relies on the Aria string data being null-terminated.
+* Aria strings are length-prefixed. They may be slices of other buffers. A slice s = big_string[10..20] points to the middle of a buffer and has length 10. It is NOT followed by a null byte; it is followed by the rest of big_string.
+* When passed to log_message, the C function reads RDI and continues reading past the length of the slice until it hits a random 0x00 byte in memory.
+* Consequence: Information Leak (Heartbleed-style) or Buffer Read Overflow crash.
+Parameter Shift Hazard:
+Consider: extern "C" func set_motor_params(name: string, limit: int64).
+* Aria passes: RDI=ptr, RSI=len, RDX=limit.
+* C expects: RDI=ptr, RSI=limit.
+* Result: The C function receives the string length as the force limit.
+* Scenario: The developer names the motor "Actuator_Elbow_Joint_Left" (length 24). They set the limit to 2 Newtons. The C code receives 24 Newtons. This is a 12x overdrive of the safe limit, purely due to ABI misalignment.
+Remediation:
+The compiler must FORBID the use of string in extern "C" signatures. It must require wild int8* (raw C pointer) and int64 (length) as separate, explicit arguments. This enforces the "Explicitness" requirement of the language.
+* Error Message: "Type Error: Managed type 'string' cannot be used in FFI signature. Use 'wild int8*' and explicitly marshal data."
+3.4 Optional and Boolean Types
+Target: ExprCodegen::getLLVMType
+Status: ⚠️ Unclear / Potential Hazard
+The code maps bool to int1 (1-bit integer).
+
+
+C++
+
+
+
+
+if (type_name == "bool") return llvm::Type::getInt1Ty(context);
+
+In C, bool (from stdbool.h) is typically int8 (byte-sized) or int32 (word-sized) depending on the platform/compiler.
+* LLVM Behavior: When passing i1 arguments, LLVM typically zero-extends to i8 or i32. However, when storing i1 in a struct, it takes 1 bit (byte-aligned).
+* Risk: If Aria passes an i1 (0/1) but C expects int (0/1...255), it usually works. But if Aria returns i1 and C returns int (e.g., 3), truncation may occur.
+* Critical Risk: T? maps to { i1, T }.
+   * Structure Packing: i1 usually has 1-byte alignment. T may have 8-byte alignment. There will be 7 bytes of padding.
+   * C Struct: struct { bool has_val; T val; }. The size of bool matters immensely here. If C uses 4-byte bool, the offset of val changes.
+   * Result: Aria reads val from offset 8. C writes val to offset 4. Aria reads padding/garbage.
+Remediation:
+Explicitly map bool to u8 or int8 at the FFI boundary. Verify structure packing rules match the target C compiler's default (usually -fpack-struct settings).
+________________
+4. Detailed Audit: Pointer Argument Safety and Memory Management
+4.1 The wild Pointer Paradigm
+The analysis of lib/std/internal/runtime.aria 1 and src/runtime/allocators.h 1 reveals a sophisticated memory model designed to separate managed (GC) memory from manual (wild) memory.
+
+
+Code snippet
+
+
+
+
+// lib/std/internal/runtime.aria 
+pub extern struct AriaResult {
+   err: wild int8*,
+   val: wild byte*,
+   val_size: uint64
+}
+
+The keyword wild denotes a pointer that is NOT scanned by the Garbage Collector. This is crucial for FFI, as passing a GC-managed pointer to C without pinning is a recipe for disaster (the GC might move the object while C is using it).
+4.2 Pinning and Lifetime Extension (Item 2)
+Status: ⚠️ Architectural Risk
+The runtime header src/runtime/gc.h 1 exposes pinning functions:
+
+
+C
+
+
+
+
+void aria_gc_pin(void* ptr);
+void aria_gc_unpin(void* ptr);
+
+The Vulnerability:
+There is no evidence in codegen_expr.cpp 1 that the compiler automatically inserts pinning calls when a managed pointer is passed to an extern function.
+* If a developer writes: c_function(my_array.data), where my_array is a managed array.
+* Aria passes the address of the data.
+* If c_function triggers a callback into Aria, or runs long enough for a concurrent GC cycle (in a multi-threaded runtime), the array might be moved (compacted).
+* The pointer held by c_function becomes a "Dangling Reference" to the old location.
+* Scenario: c_function writes to the old location. Meanwhile, the GC has allocated a new object (e.g., a force_limit configuration object) in that freed space. c_function overwrites the force_limit with array data.
+Compliance Requirement:
+The compiler must enforce a "Pin-before-Pass" rule.
+* Syntactic Enforcement: Arguments to extern functions must be of type wild T*.
+* Conversion: The only way to convert managed T to wild T* must be via a scoped pinning block (e.g., pin (x) { call(x); }).
+* Findings: The source code does not show this enforcement mechanism. The ExprCodegen::codegenCall logic (referenced but not fully shown) likely just emits the pointer value. This is a violation of SIL-4 memory safety principles.
+4.3 Null Pointer Validation (Item 4)
+Status: ❌ Bug Found in Runtime Wrapper
+The snippet lib/std/internal/runtime.aria 1 contains a logic error in string_from_cstr:
+
+
+Code snippet
+
+
+
+
+// lib/std/internal/runtime.aria 
+pub func:string_from_cstr = string(wild int8*:cstr) {
+   // Get string length
+   uint64:len = 0;
+   wild int8*:p = cstr;
+   while (p[len]!= 0) { // <--- DEREFERENCE WITHOUT NULL CHECK
+       len = len + 1;
+   }
+  ...
+};
+
+Analysis:
+If the external C function returns NULL (common for errors), string_from_cstr immediately dereferences NULL + 0.
+* Result: SIGSEGV / Crash.
+* Context: While a crash is "safe" in that it stops execution, in a robotic context, a crash of the main control loop essentially lobotomizes the robot. If the robot is holding a heavy object or supporting a patient, a sudden software termination causes the actuators to go limp (or lock, depending on hardware), potentially dropping the patient.
+* Requirement: The wrapper MUST check for NULL and return an Option<string> or a valid empty string, allowing for graceful degradation (e.g., locking joints, sounding alarm).
+Remediation:
+Patch lib/std/internal/runtime.aria:
+
+
+Code snippet
+
+
+
+
+if (cstr == null) {
+   return string.empty(); // Or panic with specific error code
+}
+
+________________
+5. Detailed Audit: Buffer Ownership and Bounds
+5.1 Buffer Bounds at FFI Boundary (Item 3)
+Status: ⚠️ High Risk
+The AriaResult struct 1 correctly includes val_size:
+
+
+Code snippet
+
+
+
+
+val_size: uint64 // Size of payload in bytes
+
+This is a positive finding. However, the write path is dangerous:
+
+
+Code snippet
+
+
+
+
+pub func:aria_write_file = wild AriaResult*(wild int8*:path, wild int8*:content);
+
+This function accepts wild int8*:content—a null-terminated C string. It lacks an explicit length argument.
+* Scenario: The Aria program wants to write a binary buffer that happens to contain a zero byte (0x00) in the middle.
+* Failure: The C++ implementation (likely using strlen or fputs) will stop writing at the first 0x00. The file is truncated.
+* Scenario: The Aria program passes a buffer that is not null-terminated.
+* Failure: The C++ implementation reads past the buffer end, writing process memory (secrets, keys, pointers) to the file until it hits a 0x00. This is a massive security leak.
+Remediation:
+All FFI functions interacting with buffers must take (pointer, length) pairs. The reliance on null-termination is a relic of C legacy that contradicts Aria's safety goals.
+________________
+6. Detailed Audit: Return Value Validation and TBB Safety
+6.1 The TBB Sentinel Injection Attack (Item 4)
+Target: Twisted Balanced Binary (TBB) types in FFI.
+Status: ⚠️ Major Warning
+Analysis:
+Aria uses TBB integers (e.g., tbb8) which are symmetric signed integers with a specific error sentinel.
+* tbb8: Range [-127, +127]. Value -128 (0x80) is ERR.
+* Standard C int8_t: Range [-128, +127]. Value -128 is valid data.
+The Failure Mode:
+An external C sensor library returns an int8_t reading.
+
+
+C
+
+
+
+
+int8_t read_temperature() {
+   return -128; // Valid reading in C context
+}
+
+Aria signature:
+
+
+Code snippet
+
+
+
+
+extern func read_temperature() -> tbb8;
+
+When Aria receives 0x80, the ExprCodegen logic (specifically generateTBBWiden and related checks) interprets this bit pattern as the ERR sentinel.
+* Result: The Aria runtime believes the sensor has failed/errored. The robot enters error handling mode.
+* Reality: The sensor was functioning perfectly; it just returned a value that aliased the sentinel.
+* Inverse Risk: The C code returns -1 (0xFF) to signal generic error. Aria interprets 0xFF as -1 (valid value) in tbb8. The error is ignored, and the robot operates on invalid data.
+Remediation:
+Strict Ban: TBB types must NEVER be used in extern function signatures.
+The FFIValidator (if it exists) or TypeChecker must enforce that FFI return types are standard int8, int16, etc. The wrapper code must then perform the conversion:
+
+
+Code snippet
+
+
+
+
+// Safe Wrapper
+extern func c_read_temp() -> int8;
+func read_temp_safe() -> tbb8 {
+   int8:raw = c_read_temp();
+   if (raw == -128) { return ERR; } // Explicit mapping
+   return raw as tbb8;
+}
+
+________________
+7. Detailed Audit: FFI Callback Safety
+7.1 The Missing Context Pointer (Item 5)
+Target: include/runtime/slab_cache.aria 1
+Status: ❌ Critical Bug Found
+Analysis:
+The snippet shows the interface for slab cache constructors:
+
+
+Code snippet
+
+
+
+
+extern fn aria_slab_cache_new(..., ctor: aria_slab_ctor,...);
+
+And the wrapper code:
+
+
+Code snippet
+
+
+
+
+fn cast_ctor_to_c<T>(ctor: slab_ctor<T>) -> aria_slab_ctor {
+   // TODO: Implement proper function pointer casting
+   return null; // Placeholder
+}
+
+The "Placeholder" comment is an admission of incompletion, but the architectural flaw is visible.
+* Aria closures (lambdas) are not just function pointers; they carry an environment (captured variables).
+* To call an Aria closure from C, the C function must accept a void* user_data or void* context argument, which is passed back to the callback.
+* The aria_slab_ctor typedef in C likely resembles void (*)(void* object). It lacks the context argument.
+The Failure:
+It is impossible to create a safe "Trampoline" or "Thunk" for this callback without a context pointer.
+* If cast_ctor_to_c generates a dynamic JIT thunk, it requires executable memory (WildX), which introduces security risks.
+* If it tries to pass a static function, it cannot access the closure's captured variables.
+* Result: Callbacks will crash or behave unpredictably if they attempt to access captured state.
+Remediation:
+All C runtime APIs interacting with Aria callbacks MUST include a void* context parameter. The Aria compiler must generate a static thunk:
+
+
+C
+
+
+
+
+void aria_callback_thunk(void* object, void* context) {
+   AriaClosure* closure = (AriaClosure*)context;
+   closure->invoke(object);
+}
+
+________________
+8. Specific Robotic Control Implications
+To contextualize these findings for the user's specific use case, we construct the following failure scenarios based on the identified bugs.
+8.1 Scenario A: The Force Limit Bypass
+Bug: String ABI Mismatch (Parameter Shift).
+Context: A function configure_motor(name: string, max_force: int64) is called via FFI to a C driver.
+Execution:
+1. Aria passes name as {ptr, len}. Registers: RDI=ptr, RSI=len.
+2. Aria passes max_force. Register: RDX=max_force.
+3. C expects name as char* (RDI) and max_force (RSI).
+4. C reads RSI (the string length) as the max_force.
+Result: If the motor name is "Shoulder_Pitch_Left" (19 chars), the force limit is set to 19N. If the intended limit was 2N (gentle interaction with a child), the robot is now configured to exert nearly 10x the safe force.
+8.2 Scenario B: The Phantom Obstacle
+Bug: TBB Sentinel Collision.
+Context: An external proximity sensor returns int8_t. -128 represents "Object touching sensor".
+Execution:
+   1. The robot is holding a child's hand. The proximity sensor reads "Touching" (-128).
+   2. Aria receives -128 as tbb8.
+   3. Aria interprets -128 as ERR (Sensor Malfunction).
+   4. The "Sensor Malfunction" handler triggers an immediate "Limp Mode" or "Joint Lock".
+   5. Result: The robot's arm goes limp or locks rigid unexpectedly while holding the child, potentially causing a fall or crushing injury.
+8.3 Scenario C: The Torque Spike
+Bug: LBIM int128 ABI Mismatch.
+Context: Calculating inverse kinematics requires high precision torque values passed to the physics engine (C++).
+Execution:
+   1. Aria passes a 128-bit torque value. LLVM passes it as a struct (e.g., on the stack or split registers).
+   2. The C++ physics engine expects a scalar __int128.
+   3. The C++ code reads the high 64 bits of the torque from a register that Aria did not populate (garbage).
+   4. Result: A commanded torque of 5 Nm becomes $5 + (Garbage \times 2^{64})$ Nm. The physics engine commands maximum voltage to the motors. The robot arm snaps into the hard stop at maximum velocity.
+________________
+9. Recommendations and Roadmap
+The following steps are mandatory to achieve SIL-4 certification status.
+Phase 1: Architectural hardening (Immediate)
+   1. Enforce ABI Scalarization: Modify ExprCodegen to decompose all LBIM structs (int128, fix256) into scalar primitives (or explicitly array-based C signatures) at the extern call site.
+   2. Ban Strings in FFI: Implement a semantic check in TypeChecker that raises a compile-time error if string is used in an extern signature. Force the use of wild int8* + int64.
+   3. Strict Pinning: Enforce the # operator for all managed pointers passed to FFI.
+Phase 2: Runtime Safety (Short Term)
+   1. Fix Wrappers: Update lib/std/internal/runtime.aria to null-check all pointers received from C.
+   2. Fix Allocators: Ensure aria_alloc and aria_free correctly handle size tracking to prevent heap corruption across the boundary.
+Phase 3: Validation (Long Term)
+   1. FFI Fuzzing: Implement a randomized fuzzer that generates C functions with known behaviors and calls them from Aria, verifying that parameters arrive correctly and return values remain intact.
+   2. Formal Verification: Given the SIL-4 requirement, formally verify the mapping between Aria types and LLVM IR to prove ABI compliance.
+Final Verdict:
+The Aria compiler is currently UNSAFE for the stated purpose. The FFI boundary acts as a conduit for corruption rather than a shield. By implementing the fixes detailed above, specifically regarding ABI alignment and pointer marshalling, the system can be brought into compliance with safety standards.
+________________
+Signed:
+Senior Safety-Critical Systems Compiler Auditor
+January 2, 2026
+Works cited
+   1. aria_source_full.txt

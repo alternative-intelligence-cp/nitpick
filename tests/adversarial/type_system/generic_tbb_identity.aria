@@ -1,0 +1,17 @@
+/**
+ * Test: Generic Function Preserves TBB Type
+ * Expected: Should PASS - TBB type preserved through generic
+ * Why Important: Generics should not degrade TBB to regular int
+ */
+
+func:identity<T> = T(T:x) {
+    pass(x);
+};
+
+func:main = int32() {
+    tbb8:x = 50;
+    tbb8:y = identity<tbb8>(x);  // Should preserve tbb8 type
+
+    print("Type preserved!\n");
+    return 0;
+};

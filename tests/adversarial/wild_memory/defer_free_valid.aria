@@ -1,0 +1,16 @@
+/**
+ * Test: Defer Free (Valid Pattern)
+ * Expected: COMPILES SUCCESSFULLY
+ * Why: This is the correct RAII pattern for wild memory
+ *
+ * defer { free(p); } ensures cleanup on all exit paths
+ */
+
+func:main = int32() {
+    wild int8@:p = alloc(1024);
+    defer { free(p); }
+
+    // Use p safely here - defer will clean up
+
+    return 0;  // defer runs, frees p
+};

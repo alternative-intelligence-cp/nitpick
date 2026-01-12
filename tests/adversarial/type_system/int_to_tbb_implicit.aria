@@ -1,0 +1,13 @@
+/**
+ * Test: int to TBB Implicit Conversion
+ * Expected: COMPILER ERROR - No implicit conversion
+ * Why Critical: Int value -128 would become sentinel, corrupting TBB semantics
+ */
+
+func:main = int32() {
+    int8:x = -128;  // Has sentinel value in int form
+    tbb8:y = x;     // ERROR: Implicit conversion could leak sentinel
+
+    print("Should not compile!\n");
+    return 0;
+};

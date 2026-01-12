@@ -1,0 +1,25 @@
+// aria.build - Build Configuration
+project: "kitchen_sink_audit"
+version: "0.1.0"
+
+// Compiler settings
+config:build = {
+    entry: "kitchen_sink.aria",
+    output: "bin/sink_test",
+    optimization: "O0",        // No opt for debugging
+    debug_symbols: true,       // Enable stack traces
+    strict_mode: true,         // Enforce strict typing
+    
+    // Feature flags matching your spec
+    features: [
+        "allow_wild_memory",   // For pointer/alloc usage
+        "enable_async",        // For coroutines
+        "exotic_types"         // For int1024, tbb, fix256
+    ]
+};
+
+// Dependency linkage
+link: {
+    use "std";
+    use "libc"; // For the extern blocks
+}

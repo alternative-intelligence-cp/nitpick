@@ -1,0 +1,58 @@
+I am building a custom programming language that emphasizes explicitness, predictability, stability, security, and performance above all. Developer convenience is a nice to have, not a language requirement. The main use case is for a physics based AGI I am building that I hope to one day use as companions for neurodivergent children, children in extended hospital stays, lonely people with degraded mental states, and other vulnerable populations. Long term goal is to develop a 'teacher' system that could work with a human teacher to provide customized lessons for each student to match their strengths and learning style. We have a moral obligation to eliminate any bugs or errors we possibly can as they may well lead to drifts that could cause physical or mental harm to a vulnerable individual. Everything must be as safe, stable, and secure as possible. Treat this as life/death scenario because there are several ways it actually could turn into one if we are not vigilant. One child harmed would be game over for the whole project. One final note, semantic searches seem to fail about 75% of the time per my observations over the last 20 reports which leads to you believeing they are not present. Do not rely on the search alone. I theorize the problem lies with Aria's novel concepts and constructs as well as new terminology and non standard file names/locations. If you can't find it you must read to ensure. Assumptions are not an option. If you don't know, it is preferable to say so rather than make things up which cost time for you but also time for me when I try to implement them. Honesty > sycophancy always.
+CRITICAL: This code will control physical actuators in robotic assistants. 
+Memory corruption = uncontrolled motor movement. Type errors = force limit bypass.
+Verify EVERY type mapping. Fail hard on unknowns. No silent defaults.
+
+---
+
+**AUDIT FOCUS: Runtime Safety - LBIM Basic Operations (int128/int256/int512)**
+
+**Threat Model:**
+A bug in basic LBIM arithmetic could cause force calculation errors in robotic actuators. Example: int256 overflow in torque calculation → 1000N becomes -1000N → robot crushes child's hand instead of gently holding it. These operations are used constantly in physics simulation loops (60Hz+), so even rare edge cases WILL occur.
+
+**Target Files:**
+- `src/runtime/math/lbim.cpp`
+
+**Specific Items to Audit (5 items max):**
+
+1. **int128_add() function** - Addition with overflow detection
+   - Verify limb-wise addition correctly propagates carries
+   - Check overflow detection catches all wraparound cases
+   - Confirm sticky error sentinel (-1 in high limb) propagates correctly
+
+2. **int128_sub() function** - Subtraction with underflow detection
+   - Verify borrow propagation across limbs
+   - Check underflow detection for all edge cases
+   - Confirm sentinel propagation on underflow
+
+3. **int128_mul() function** - Multiplication with overflow detection
+   - Verify limb cross-products computed correctly
+   - Check for silent overflow in intermediate calculations
+   - Confirm result fits in 128 bits or errors propagate
+
+4. **int256_add() and int256_sub()** - Extended precision operations
+   - Verify 256-bit operations match 128-bit patterns
+   - Check limb count consistency (256 bits = 4 limbs of 64 bits)
+   - Confirm no copy-paste errors from int128 code
+
+5. **int512_mul()** - Large multiplication edge cases
+   - Verify intermediate products don't overflow
+   - Check final assembly of limbs is correct
+   - Confirm multiplication by zero, one, -1 work correctly
+
+**SIL-4 Compliance Requirements:**
+- All overflow/underflow MUST be detectable (no silent failures)
+- Sentinel values (-1 in high limb) must propagate through all operations
+- No undefined behavior for any input combination
+- Deterministic results (same inputs = same outputs always)
+- No reliance on platform-specific behavior
+
+**Expected Deliverable:**
+For each function, report:
+- ✅ Compliant / ❌ Bug found / ⚠️ Unclear (need clarification)
+- If bug: Exact line number, root cause, proposed fix
+- If compliant: Briefly confirm what makes it safe
+- If unclear: Specific question about spec or implementation
+
+**Reference:**
+This audit follows the successful 2026-01-01 methodology that achieved 100% accuracy (5/5 real bugs found, 0 hallucinations). Maximum 5 items per audit to maintain focus.

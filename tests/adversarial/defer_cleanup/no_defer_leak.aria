@@ -1,0 +1,16 @@
+/**
+ * Test: Missing Defer Causes Memory Leak Error
+ * Expected: COMPILER ERROR (memory leak)
+ * Why: Wild memory without defer should be detected as leak
+ *
+ * Pattern: Must use defer { free(p); } for wild memory
+ */
+
+func:main = int32() {
+    wild int8@:p = alloc(1024);
+
+    // BUG: No defer { free(p); } - this is a memory leak
+    // Compiler should detect this
+
+    return 0;  // ERROR: Wild memory leak
+};

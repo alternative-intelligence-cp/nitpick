@@ -41,41 +41,119 @@ llvm::Type* StmtCodegen::getLLVMTypeFromString(const std::string& type_name) {
     // Void
     if (type_name == "void") return llvm::Type::getVoidTy(context);
     
-    // Floating point types
-    if (type_name == "flt16") return llvm::Type::getHalfTy(context);
-    if (type_name == "flt32") return llvm::Type::getFloatTy(context);
-    if (type_name == "flt64") return llvm::Type::getDoubleTy(context);
-    if (type_name == "flt128") return llvm::Type::getFP128Ty(context);
+    // Floating point types (with short aliases)
+    if (type_name == "flt16" || type_name == "f16") return llvm::Type::getHalfTy(context);
+    if (type_name == "flt32" || type_name == "f32") return llvm::Type::getFloatTy(context);
+    if (type_name == "flt64" || type_name == "f64") return llvm::Type::getDoubleTy(context);
+    if (type_name == "flt128" || type_name == "f128") return llvm::Type::getFP128Ty(context);
     
-    // Integer types - signed
-    if (type_name == "int1") return llvm::Type::getInt1Ty(context);
-    if (type_name == "int2") return llvm::Type::getIntNTy(context, 2);
-    if (type_name == "int4") return llvm::Type::getIntNTy(context, 4);
-    if (type_name == "int8") return llvm::Type::getInt8Ty(context);
-    if (type_name == "int16") return llvm::Type::getInt16Ty(context);
-    if (type_name == "int32") return llvm::Type::getInt32Ty(context);
-    if (type_name == "int64") return llvm::Type::getInt64Ty(context);
-    if (type_name == "int128") return llvm::Type::getInt128Ty(context);
-    if (type_name == "int256") return llvm::Type::getIntNTy(context, 256);
-    if (type_name == "int512") return llvm::Type::getIntNTy(context, 512);
+    // Integer types - signed (with short aliases)
+    if (type_name == "int1" || type_name == "i1") return llvm::Type::getInt1Ty(context);
+    if (type_name == "int2" || type_name == "i2") return llvm::Type::getIntNTy(context, 2);
+    if (type_name == "int4" || type_name == "i4") return llvm::Type::getIntNTy(context, 4);
+    if (type_name == "int8" || type_name == "i8") return llvm::Type::getInt8Ty(context);
+    if (type_name == "int16" || type_name == "i16") return llvm::Type::getInt16Ty(context);
+    if (type_name == "int32" || type_name == "i32") return llvm::Type::getInt32Ty(context);
+    if (type_name == "int64" || type_name == "i64") return llvm::Type::getInt64Ty(context);
+    if (type_name == "int128" || type_name == "i128") return llvm::Type::getInt128Ty(context);
+    if (type_name == "int256" || type_name == "i256") return llvm::Type::getIntNTy(context, 256);
+    if (type_name == "int512" || type_name == "i512") return llvm::Type::getIntNTy(context, 512);
     
-    // Integer types - unsigned (same representation in LLVM)
-    if (type_name == "uint1") return llvm::Type::getInt1Ty(context);
-    if (type_name == "uint2") return llvm::Type::getIntNTy(context, 2);
-    if (type_name == "uint4") return llvm::Type::getIntNTy(context, 4);
-    if (type_name == "uint8") return llvm::Type::getInt8Ty(context);
-    if (type_name == "uint16") return llvm::Type::getInt16Ty(context);
-    if (type_name == "uint32") return llvm::Type::getInt32Ty(context);
-    if (type_name == "uint64") return llvm::Type::getInt64Ty(context);
-    if (type_name == "uint128") return llvm::Type::getInt128Ty(context);
-    if (type_name == "uint256") return llvm::Type::getIntNTy(context, 256);
-    if (type_name == "uint512") return llvm::Type::getIntNTy(context, 512);
+    // Integer types - unsigned (same representation in LLVM, with short aliases)
+    if (type_name == "uint1" || type_name == "u1") return llvm::Type::getInt1Ty(context);
+    if (type_name == "uint2" || type_name == "u2") return llvm::Type::getIntNTy(context, 2);
+    if (type_name == "uint4" || type_name == "u4") return llvm::Type::getIntNTy(context, 4);
+    if (type_name == "uint8" || type_name == "u8") return llvm::Type::getInt8Ty(context);
+    if (type_name == "uint16" || type_name == "u16") return llvm::Type::getInt16Ty(context);
+    if (type_name == "uint32" || type_name == "u32") return llvm::Type::getInt32Ty(context);
+    if (type_name == "uint64" || type_name == "u64") return llvm::Type::getInt64Ty(context);
+    if (type_name == "uint128" || type_name == "u128") return llvm::Type::getInt128Ty(context);
+    if (type_name == "uint256" || type_name == "u256") return llvm::Type::getIntNTy(context, 256);
+    if (type_name == "uint512" || type_name == "u512") return llvm::Type::getIntNTy(context, 512);
     
     // TBB types
     if (type_name == "tbb8") return llvm::Type::getInt8Ty(context);
     if (type_name == "tbb16") return llvm::Type::getInt16Ty(context);
     if (type_name == "tbb32") return llvm::Type::getInt32Ty(context);
     if (type_name == "tbb64") return llvm::Type::getInt64Ty(context);
+    
+    // Fraction types: {whole, numerator, denominator} (all same TBB width)
+    if (type_name == "frac8") {
+        std::vector<llvm::Type*> fields = {
+            llvm::Type::getInt8Ty(context),   // whole (tbb8)
+            llvm::Type::getInt8Ty(context),   // numerator (tbb8)
+            llvm::Type::getInt8Ty(context)    // denominator (tbb8)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    if (type_name == "frac16") {
+        std::vector<llvm::Type*> fields = {
+            llvm::Type::getInt16Ty(context),  // whole (tbb16)
+            llvm::Type::getInt16Ty(context),  // numerator (tbb16)
+            llvm::Type::getInt16Ty(context)   // denominator (tbb16)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    if (type_name == "frac32") {
+        std::vector<llvm::Type*> fields = {
+            llvm::Type::getInt32Ty(context),  // whole (tbb32)
+            llvm::Type::getInt32Ty(context),  // numerator (tbb32)
+            llvm::Type::getInt32Ty(context)   // denominator (tbb32)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    if (type_name == "frac64") {
+        std::vector<llvm::Type*> fields = {
+            llvm::Type::getInt64Ty(context),  // whole (tbb64)
+            llvm::Type::getInt64Ty(context),  // numerator (tbb64)
+            llvm::Type::getInt64Ty(context)   // denominator (tbb64)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    
+    // Twisted Floating Point types: {tbb16 exp, tbbN mant}
+    if (type_name == "tfp32") {
+        std::vector<llvm::Type*> fields = {
+            llvm::Type::getInt16Ty(context),  // exponent (tbb16)
+            llvm::Type::getInt16Ty(context)   // mantissa (tbb16)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    if (type_name == "tfp64") {
+        std::vector<llvm::Type*> fields = {
+            llvm::Type::getInt16Ty(context),  // exponent (tbb16)
+            llvm::Type::getInt64Ty(context)   // mantissa (tbb48 in i64)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    
+    // Vec9: 16-element toroidal vector (16 x tbb32 = 512 bits)
+    if (type_name == "vec9") {
+        return llvm::ArrayType::get(llvm::Type::getInt32Ty(context), 16);
+    }
+    
+    // TMatrix: Composite structure with metadata + wild pointer
+    if (type_name == "tmatrix") {
+        std::vector<llvm::Type*> fields = {
+            llvm::Type::getInt64Ty(context),                // width
+            llvm::Type::getInt64Ty(context),                // height
+            llvm::Type::getInt32Ty(context),                // element_size
+            llvm::Type::getInt32Ty(context),                // padding/alignment
+            llvm::PointerType::get(context, 0)              // wild data pointer
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    
+    // TTensor: 9D toroidal tensor with metadata + wild pointer
+    if (type_name == "ttensor") {
+        std::vector<llvm::Type*> fields = {
+            llvm::ArrayType::get(llvm::Type::getInt64Ty(context), 9),  // dimensions[9]
+            llvm::Type::getInt32Ty(context),                // element_size
+            llvm::Type::getInt32Ty(context),                // padding/alignment
+            llvm::PointerType::get(context, 0)              // wild data pointer
+        };
+        return llvm::StructType::get(context, fields);
+    }
     
     // Balanced Ternary types (Session 15)
     if (type_name == "trit") return llvm::Type::getIntNTy(context, 3);   // Single trit (-1, 0, 1) in 3 bits
@@ -136,6 +214,30 @@ llvm::Function* StmtCodegen::getOrDeclareGCAlloc() {
             func_type,
             llvm::Function::ExternalLinkage,
             "aria_gc_alloc",
+            module
+        );
+    }
+    return func;
+}
+
+/**
+ * Get or declare aria_gc_free runtime function
+ * Signature: void aria_gc_free(void* ptr)
+ * AUDIT FIX BUG-10: Matching deallocator for aria_gc_alloc
+ */
+llvm::Function* StmtCodegen::getOrDeclareGCFree() {
+    llvm::Function* func = module->getFunction("aria_gc_free");
+    if (!func) {
+        // Declare: void aria_gc_free(void* ptr)
+        llvm::FunctionType* func_type = llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context),                              // void return
+            {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)}, // void* ptr param
+            false
+        );
+        func = llvm::Function::Create(
+            func_type,
+            llvm::Function::ExternalLinkage,
+            "aria_gc_free",
             module
         );
     }
@@ -373,6 +475,14 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
         // Use alloca instruction - fast LIFO allocation
         llvm::IRBuilder<> tmp_builder(&func->getEntryBlock(), func->getEntryBlock().begin());
         llvm::AllocaInst* alloca = tmp_builder.CreateAlloca(var_type, nullptr, stmt->varName);
+        
+        // CRITICAL FIX 2: Enforce 16-byte alignment for int128/uint128 types
+        // System V AMD64 ABI requires 16-byte alignment for __int128
+        // C code using movdqa (aligned SIMD) triggers #GP fault without this
+        if (stmt->typeName == "int128" || stmt->typeName == "uint128") {
+            alloca->setAlignment(llvm::Align(16));
+        }
+        
         var_ptr = alloca;
         
     } else if (stmt->isGC) {
@@ -427,6 +537,7 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
 
     // Track Aria type name for UFCS method resolution
     var_aria_types[stmt->varName] = stmt->typeName;
+    std::cerr << "[DEBUG] Registered var_aria_types[" << stmt->varName << "] = " << stmt->typeName << std::endl;
 
     // DEBUG: Check if initializer exists
     std::cerr << "[DEBUG] codegenVarDecl: Variable " << stmt->varName 
@@ -455,8 +566,19 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
         
         // Cast initializer to match variable type if necessary
         if (init_value->getType() != var_type) {
+            // Check if we're promoting a literal to an LBIM struct type
+            if (var_type->isStructTy() && init_value->getType()->isIntegerTy()) {
+                llvm::StructType* struct_type = llvm::cast<llvm::StructType>(var_type);
+                std::string struct_name = struct_type->getName().str();
+                
+                // If target is LBIM type, promote the literal
+                if (struct_name.find("struct.int") == 0 || struct_name.find("struct.uint") == 0) {
+                    std::cerr << "[DEBUG] codegenVarDecl: Promoting literal to LBIM type " << struct_name << std::endl;
+                    init_value = expr_codegen->promoteLiteralToLBIM(init_value, var_type);
+                }
+            }
             // For integer types, use trunc or sext/zext
-            if (init_value->getType()->isIntegerTy() && var_type->isIntegerTy()) {
+            else if (init_value->getType()->isIntegerTy() && var_type->isIntegerTy()) {
                 llvm::IntegerType* init_int_ty = llvm::cast<llvm::IntegerType>(init_value->getType());
                 llvm::IntegerType* var_int_ty = llvm::cast<llvm::IntegerType>(var_type);
                 
@@ -545,6 +667,15 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
         module
     );
     
+    // Mark async functions with metadata for await expression validation
+    if (stmt->isAsync) {
+        llvm::LLVMContext& ctx = module->getContext();
+        llvm::MDNode* async_node = llvm::MDNode::get(ctx, llvm::ConstantAsMetadata::get(
+            llvm::ConstantInt::get(llvm::Type::getInt1Ty(ctx), 1)
+        ));
+        func->setMetadata("aria.async", async_node);
+    }
+    
     // Set parameter names and create allocas for them
     unsigned idx = 0;
     for (auto& arg : func->args()) {
@@ -583,23 +714,11 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
         // i64 @llvm.coro.size.i64()
         llvm::Value* coro_size = builder.CreateCall(getCoroSize(), {}, "coro.size");
         
-        // 3. Allocate coroutine frame (heap allocation for now, RAMP optimization later)
-        // For now, use simple malloc (TODO: integrate with Aria memory model)
-        llvm::Function* malloc_func = module->getFunction("malloc");
-        if (!malloc_func) {
-            llvm::FunctionType* malloc_type = llvm::FunctionType::get(
-                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
-                {llvm::Type::getInt64Ty(context)},
-                false
-            );
-            malloc_func = llvm::Function::Create(
-                malloc_type,
-                llvm::Function::ExternalLinkage,
-                "malloc",
-                module
-            );
-        }
-        llvm::Value* coro_mem = builder.CreateCall(malloc_func, {coro_size}, "coro.alloc");
+        // 3. Allocate coroutine frame with GC integration
+        // AUDIT FIX BUG-01: Use GC allocator so frames are visible to GC
+        // This prevents collection of objects referenced only by suspended coroutines
+        llvm::Function* gc_alloc = getOrDeclareGCAlloc();
+        llvm::Value* coro_mem = builder.CreateCall(gc_alloc, {coro_size}, "coro.alloc.gc");
         
         // 4. Begin coroutine
         // i8* @llvm.coro.begin(token id, i8* mem)
@@ -693,22 +812,10 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
         // Get memory to free: i8* @llvm.coro.free(token id, i8* handle)
         llvm::Value* free_mem = builder.CreateCall(getCoroFree(), {coro_id, coro_handle}, "coro.free.mem");
         
-        // Free the memory (TODO: integrate with Aria memory model)
-        llvm::Function* free_func = module->getFunction("free");
-        if (!free_func) {
-            llvm::FunctionType* free_type = llvm::FunctionType::get(
-                llvm::Type::getVoidTy(context),
-                {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)},
-                false
-            );
-            free_func = llvm::Function::Create(
-                free_type,
-                llvm::Function::ExternalLinkage,
-                "free",
-                module
-            );
-        }
-        builder.CreateCall(free_func, {free_mem});
+        // Free the memory with GC integration
+        // AUDIT FIX BUG-10: Use GC free to match GC alloc from BUG-01 fix
+        llvm::Function* gc_free = getOrDeclareGCFree();
+        builder.CreateCall(gc_free, {free_mem});
         
         // End coroutine: i1 @llvm.coro.end(i8* handle, i1 unwind, token)
         llvm::Value* unwind = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
@@ -1085,6 +1192,12 @@ void StmtCodegen::codegenWhile(WhileStmt* stmt) {
  *   ; continue execution
  */
 void StmtCodegen::codegenFor(ForStmt* stmt) {
+    std::cout << "[FOR DEBUG] ======== codegenFor CALLED ========\n" << std::flush;
+    std::cout << "[FOR DEBUG] Has initializer: " << (stmt->initializer != nullptr) << "\n" << std::flush;
+    std::cout << "[FOR DEBUG] Has condition: " << (stmt->condition != nullptr) << "\n" << std::flush;
+    std::cout << "[FOR DEBUG] Has update: " << (stmt->update != nullptr) << "\n" << std::flush;
+    std::cout << "[FOR DEBUG] Is range-based: " << stmt->isRangeBased << "\n" << std::flush;
+    
     // Get current function
     llvm::Function* func = builder.GetInsertBlock()->getParent();
     
@@ -1093,6 +1206,29 @@ void StmtCodegen::codegenFor(ForStmt* stmt) {
     llvm::BasicBlock* body_block = llvm::BasicBlock::Create(context, "for.body");
     llvm::BasicBlock* inc_block = llvm::BasicBlock::Create(context, "for.inc");
     llvm::BasicBlock* end_block = llvm::BasicBlock::Create(context, "for.end");
+    
+    // TBB LOOP SAFETY (GAP_2 Fix): Extract counter variable info for sentinel checking
+    std::string counter_var_name;
+    std::string counter_type_name;
+    bool has_tbb_counter = false;
+    
+    std::cerr << "[TBB DEBUG] For loop - checking initializer\n";
+    std::cerr << "[TBB DEBUG]   Has initializer: " << (stmt->initializer != nullptr) << "\n";
+    
+    if (stmt->initializer && stmt->initializer->type == ASTNode::NodeType::VAR_DECL) {
+        VarDeclStmt* init_decl = static_cast<VarDeclStmt*>(stmt->initializer.get());
+        counter_var_name = init_decl->varName;
+        counter_type_name = init_decl->typeName;
+        
+        std::cerr << "[TBB DEBUG]   Counter var name: '" << counter_var_name << "'\n";
+        std::cerr << "[TBB DEBUG]   Counter type name: '" << counter_type_name << "'\n";
+        
+        // Check if counter is TBB type
+        has_tbb_counter = (counter_type_name == "tbb8" || counter_type_name == "tbb16" ||
+                          counter_type_name == "tbb32" || counter_type_name == "tbb64");
+        
+        std::cerr << "[TBB DEBUG]   Is TBB counter: " << has_tbb_counter << "\n";
+    }
     
     // Generate initialization statement (if present)
     if (stmt->initializer) {
@@ -1114,6 +1250,56 @@ void StmtCodegen::codegenFor(ForStmt* stmt) {
     
     if (!expr_codegen) {
         throw std::runtime_error("ExprCodegen not set in StmtCodegen");
+    }
+    
+    // TBB LOOP SAFETY (GAP_2 Fix): Check for ERR sentinel BEFORE user condition
+    // This prevents infinite loops when counter overflows to ERR value
+    std::cerr << "[TBB DEBUG] In condition block - has_tbb_counter: " << has_tbb_counter << "\n";
+    std::cerr << "[TBB DEBUG]   Has condition: " << (stmt->condition != nullptr) << "\n";
+    
+    if (has_tbb_counter && stmt->condition) {
+        std::cerr << "[TBB DEBUG] Entering TBB sentinel guard section\n";
+        std::cerr << "[TBB DEBUG]   Looking for counter: '" << counter_var_name << "'\n";
+        
+        // Get counter variable alloca
+        auto counter_it = named_values.find(counter_var_name);
+        std::cerr << "[TBB DEBUG]   Found in named_values: " << (counter_it != named_values.end()) << "\n";
+        
+        if (counter_it != named_values.end()) {
+            std::cerr << "[TBB DEBUG] Injecting sentinel guard!\n";
+            
+            llvm::Value* counter_alloca = counter_it->second;
+            
+            // Load current counter value
+            llvm::Type* counter_type = getLLVMTypeFromString(counter_type_name);
+            llvm::Value* counter_val = builder.CreateLoad(counter_type, counter_alloca, "counter_val");
+            
+            // Get ERR sentinel for this TBB type
+            llvm::Value* err_sentinel = nullptr;
+            if (counter_type_name == "tbb8") {
+                err_sentinel = llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), -128, true);
+            } else if (counter_type_name == "tbb16") {
+                err_sentinel = llvm::ConstantInt::get(llvm::Type::getInt16Ty(context), -32768, true);
+            } else if (counter_type_name == "tbb32") {
+                err_sentinel = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), -2147483648LL, true);
+            } else if (counter_type_name == "tbb64") {
+                err_sentinel = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), INT64_MIN, true);
+            }
+            
+            // Check if counter == ERR
+            llvm::Value* is_err = builder.CreateICmpEQ(counter_val, err_sentinel, "is_err_sentinel");
+            
+            // Create sentinel check block for user condition
+            llvm::BasicBlock* user_cond_block = llvm::BasicBlock::Create(context, "for.user_cond", func);
+            
+            // If ERR, exit loop immediately; otherwise check user condition
+            builder.CreateCondBr(is_err, end_block, user_cond_block);
+            
+            // Continue in user condition block
+            builder.SetInsertPoint(user_cond_block);
+        } else {
+            std::cerr << "[TBB DEBUG] Counter NOT found in named_values!\n";
+        }
     }
     
     // If no condition, treat as infinite loop (condition = true)
@@ -1699,6 +1885,9 @@ void StmtCodegen::codegenPick(PickStmt* stmt) {
     // Create map of labeled blocks for fall() statements
     std::map<std::string, llvm::BasicBlock*> labeled_blocks;
     
+    // Push pick context for fall() statement resolution
+    pick_context_stack.push_back(labeled_blocks);
+    
     // Create blocks for all cases first (for fall() support)
     std::vector<llvm::BasicBlock*> check_blocks;
     std::vector<llvm::BasicBlock*> body_blocks;
@@ -1718,6 +1907,7 @@ void StmtCodegen::codegenPick(PickStmt* stmt) {
         // Store labeled blocks for fall() statements
         if (!pick_case->label.empty()) {
             labeled_blocks[pick_case->label] = body_block;
+            pick_context_stack.back()[pick_case->label] = body_block;
         }
     }
     
@@ -1912,6 +2102,9 @@ void StmtCodegen::codegenPick(PickStmt* stmt) {
     // End block (continuation after pick)
     end_block->insertInto(func);
     builder.SetInsertPoint(end_block);
+    
+    // Pop pick context
+    pick_context_stack.pop_back();
 }
 
 /**
@@ -1933,10 +2126,30 @@ void StmtCodegen::codegenPick(PickStmt* stmt) {
  * unconditional branches to those blocks.
  */
 void StmtCodegen::codegenFall(FallStmt* stmt) {
-    // TODO: Implement fall() with label resolution
-    // For now, this is a placeholder that will be enhanced when we add
-    // full label tracking in pick statements
-    throw std::runtime_error("Fall statement not yet fully implemented - requires label resolution in pick");
+    // Verify we're inside a pick statement
+    if (pick_context_stack.empty()) {
+        throw std::runtime_error("fall() statement must be used inside a pick statement");
+    }
+    
+    // Get the current pick context (most recent)
+    const auto& labeled_blocks = pick_context_stack.back();
+    
+    // Look up the target label
+    auto it = labeled_blocks.find(stmt->target_label);
+    if (it == labeled_blocks.end()) {
+        throw std::runtime_error("fall() target label '" + stmt->target_label + "' not found in current pick statement");
+    }
+    
+    llvm::BasicBlock* target_block = it->second;
+    
+    // Generate unconditional branch to the labeled case block
+    builder.CreateBr(target_block);
+    
+    // Create unreachable block after fall (dead code marker)
+    // This ensures any code after fall() is properly marked as unreachable
+    llvm::Function* func = builder.GetInsertBlock()->getParent();
+    llvm::BasicBlock* dead_block = llvm::BasicBlock::Create(context, "after.fall", func);
+    builder.SetInsertPoint(dead_block);
 }
 
 // ============================================================================
@@ -2254,10 +2467,30 @@ void StmtCodegen::codegenExpressionStmt(ExpressionStmt* stmt) {
 // ============================================================================
 
 void StmtCodegen::codegenStatement(ASTNode* stmt) {
+    std::cerr << "[TRACE] codegenStatement entry, stmt ptr = " << stmt << "\n" << std::flush;
+    std::cout << "[TRACE] codegenStatement entry, stmt ptr = " << stmt << "\n" << std::flush;
+    
     if (!stmt) {
+        std::cerr << "[TRACE] stmt is nullptr, returning\n" << std::flush;
         return;
     }
-    
+
+    // ARIA-022: Prevent stack overflow from deeply nested statements
+    if (++codegen_depth_ > MAX_CODEGEN_DEPTH) {
+        --codegen_depth_;
+        throw std::runtime_error("Codegen depth limit exceeded (256 levels). "
+                                "Reduce nesting depth in your code.");
+    }
+
+    // RAII-style depth decrement on scope exit
+    struct DepthGuard {
+        size_t& depth;
+        DepthGuard(size_t& d) : depth(d) {}
+        ~DepthGuard() { --depth; }
+    } guard(codegen_depth_);
+
+    std::cout << "[STMT DEBUG] codegenStatement called, node type = " << static_cast<int>(stmt->type) << "\n" << std::flush;
+
     switch (stmt->type) {
         case ASTNode::NodeType::VAR_DECL:
             codegenVarDecl(static_cast<VarDeclStmt*>(stmt));

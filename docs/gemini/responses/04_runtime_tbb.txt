@@ -1,0 +1,381 @@
+﻿AUDIT REPORT: RUNTIME SAFETY VERIFICATION OF ARIA TBB OPERATIONS
+DATE: January 1, 2026
+TO: Lead Architect, Aria Language Development Team
+FROM: Senior Systems Verification Engineer (SIL-4 Specialist)
+SUBJECT: Forensic Audit of Twisted Balanced Binary (TBB) Integer Safety Mechanisms
+________________
+1. EXECUTIVE SUMMARY
+1.1 Scope and Criticality
+This report constitutes a comprehensive, SIL-4 (Safety Integrity Level 4) verification audit of the Twisted Balanced Binary (TBB) numeric system within the Aria programming language. The audit was triggered by the mandate to deploy Aria-based AGI systems as companions for vulnerable populations, including neurodivergent children. Under this threat model, software failures are not merely inconveniences; they are potential vectors for physical harm. A "glitch" in a robotic actuator's control loop, caused by an integer overflow or type conversion error, could result in uncontrolled force application. Therefore, the verification standard applied herein is absolute: zero tolerance for undefined behavior, silent data corruption, or "healing" of error states.
+The audit examined the compiler's Intermediate Representation (IR) generation logic (src/backend/ir/codegen_expr.cpp), the runtime atomic primitive implementations (src/runtime/atomic/atomic.c), and the type system definitions accessible within the provided source repository.
+1.2 Verdict Overview
+The TBB system is a theoretically robust architecture that successfully mitigates the inherent asymmetry flaws of standard two's complement arithmetic. However, the implementation is critically compromised by a single, catastrophic defect in the compiler's type narrowing logic.
+* Widening Operations: ✅ COMPLIANT. The system correctly detects error sentinels in narrower types and propagates them to wider types without "healing" the error.
+* Narrowing Operations: ❌ NON-COMPLIANT (CRITICAL FAILURE). The compiler performs raw bitwise truncation without range checking. This allows large, unsafe integer values to wrap around into valid, "safe" TBB values, effectively bypassing all safety limits defined by the type system. This is a SIL-4 violation.
+* Sentinel Detection: ✅ COMPLIANT. The signed minimum value (e.g., -128 for int8) is consistently reserved and detected as the error state.
+* Error Propagation: ✅ COMPLIANT. Both compiler-generated arithmetic and runtime atomic operations correctly latch the error state ("sticky errors") upon invalid inputs or overflows.
+* Symmetry Properties: ✅ COMPLIANT. The system successfully enforces symmetric ranges (e.g., [-127, +127]), eliminating trap representations for absolute value and negation operations.
+1.3 Immediate Action Items
+1. Emergency Patch (Compiler): The ExprCodegen logic for tbb_narrow operations must be rewritten immediately to include explicit range checking against the destination type's MAX and MIN bounds. Any value outside these bounds must resolve to the destination's ERR sentinel, never a truncated value.
+2. Runtime Harmonization: While atomic.c correctly implements overflow checks, the compiler's generated code for non-atomic narrowing does not. These distinct execution paths must be harmonized to ensure deterministic behavior.
+________________
+2. THEORETICAL FOUNDATION & THREAT LANDSCAPE
+2.1 The Moral Obligation of Safety
+The Aria language posits that "explicitness, predictability, stability, security, and performance" are paramount. In the context of a "Teacher" AGI interacting with children, the code controls physical reality. A variable representing force_newtons is not just a number; it is a command to a servo.
+Standard programming languages (C++, Rust, Java) utilize Two's Complement representation for signed integers. While efficient, this representation carries historical baggage:
+1. Asymmetry: An int8 ranges from [-128, 127]. The value -128 has no positive counterpart.
+2. Trap Representations: Attempting abs(-128) or -(-128) results in undefined behavior or a processor trap (SIGFPE) because +128 cannot be represented.
+3. Silent Wraparound: 127 + 1 often becomes -128. In a control loop, this sign flip turns "maximum forward thrust" into "maximum reverse thrust," causing violent oscillation.
+2.2 The Twisted Balanced Binary (TBB) Solution
+Aria addresses these systemic risks by defining the TBB type family (tbb8, tbb16, tbb32, tbb64). The "twist" is the reservation of the most negative bit pattern as a dedicated Error Sentinel.
+Mathematical Definition:
+For a TBB type of width $N$:
+* Total Bit Patterns: $2^N$
+* Reserved Sentinel ($ERR$): $-2^{N-1}$ (The standard Two's Complement Minimum).
+* Valid Minimum ($MIN$): $-2^{N-1} + 1$.
+* Valid Maximum ($MAX$): $2^{N-1} - 1$.
+Properties:
+* Symmetry: $|MIN| = |MAX|$. The range is perfectly balanced around zero.
+* Safe Negation: For any valid $x$, $-x$ is also a valid TBB value.
+* Sticky Error: Any operation involving $ERR$ yields $ERR$. $f(ERR, y) \to ERR$.
+2.3 The "Child Safety" Threat Model
+We analyze the implementation against three specific failure modes relevant to the "Teacher" robot scenario:
+1. The "Sentinel Healing" Attack:
+   * Mechanism: A sensor reading fails, returning tbb8:ERR (-128). The system widens this to tbb16 to perform high-precision averaging.
+   * Danger: If standard sign-extension is used, tbb8(-128) becomes tbb16(-128). In the 16-bit space, -128 is a valid number (the sentinel is -32768). The "Error" state is lost (healed), and the robot acts on phantom data.
+2. The "Force Limit Bypass" Attack:
+   * Mechanism: The physics engine calculates a torque of 300 Nm. The safe limit is 127 Nm (fits in tbb8). The code casts the calculation to tbb8 to enforce the type signature of the motor controller.
+   * Danger: If standard truncation is used, $300 \pmod{256} = 44$. The system sees "44 Nm" (safe) and engages the motor. The motor, however, might receive the raw voltage corresponding to the original calculation, or the logic loop might simply underestimate the force applied, leading to crushing.
+3. The "Phantom Feedback" Attack:
+   * Mechanism: An accumulator overflows during a control loop integration step.
+   * Danger: If the overflow wraps around, positive feedback becomes negative feedback, potentially causing the control system to destabilize and oscillate violently.
+________________
+3. AUDIT COMPONENT 1: WIDENING OPERATIONS
+The first critical verification point is the promotion of TBB values to larger bit widths. This allows for intermediate calculations to maintain precision without losing the safety context of the original data.
+Target Function: ExprCodegen::generateTBBWiden
+Source File: src/backend/ir/codegen_expr.cpp 1
+3.1 Code Analysis
+The implementation explicitly addresses the "Sentinel Healing" threat. The code generator does not rely on the implicit behavior of the LLVM sext (sign extend) instruction alone.
+
+
+C++
+
+
+
+
+// ARIA-018: Sentinel-Preserving TBB Widening
+// Implements branchless widening that preserves error sentinels across bit widths
+llvm::Value* ExprCodegen::generateTBBWiden(llvm::Value* srcVal, llvm::Type* dstType) {
+   llvm::Type* srcType = srcVal->getType();
+   unsigned srcWidth = srcType->getIntegerBitWidth();
+   unsigned dstWidth = dstType->getIntegerBitWidth();
+   
+   // 1. Define source and destination sentinels using APInt
+   //    getSignedMinValue creates 0b1000...0 (sign bit only)
+   llvm::APInt srcSentinelInt = llvm::APInt::getSignedMinValue(srcWidth);
+   llvm::APInt dstSentinelInt = llvm::APInt::getSignedMinValue(dstWidth);
+   
+   llvm::Value* srcSentinel = llvm::ConstantInt::get(context, srcSentinelInt);
+   llvm::Value* dstSentinel = llvm::ConstantInt::get(context, dstSentinelInt);
+
+   // 2. Emit Branchless Logic (translates to cmov/csel on x86/ARM)
+   //    Check: Is source value the ERR sentinel?
+   llvm::Value* isErr = builder.CreateICmpEQ(srcVal, srcSentinel, "tbb.is_err");
+   
+   //    Speculative Extension: Extend the value (this computes the "healed" value)
+   //    Safe because sext has no side effects
+   llvm::Value* extended = builder.CreateSExt(srcVal, dstType, "tbb.sext");
+
+   //    Conditional Selection: If ERR detected, inject destination sentinel
+   //    Otherwise use the extended value
+   return builder.CreateSelect(isErr, dstSentinel, extended, "tbb.widen");
+}
+
+3.2 Verification Logic
+1. Sentinel Identification: The code uses APInt::getSignedMinValue to identify the sentinel. For an 8-bit type, this is 10000000 (-128). This matches the TBB specification.
+2. Detection: builder.CreateICmpEQ(srcVal, srcSentinel) performs a strict equality check. If the input is the error sentinel, isErr becomes true.
+3. Branchless Propagation: The CreateSelect instruction acts as a multiplexer. If isErr is true, it outputs dstSentinel. If false, it outputs extended.
+   * Scenario: Input tbb8 is -128 (ERR). isErr is True. extended is -128 (valid tbb16). The select returns dstSentinel (-32768). Result: Error Preserved.
+   * Scenario: Input tbb8 is -1. isErr is False. extended is -1. The select returns -1. Result: Value Preserved.
+3.3 Compliance Verdict: ✅ COMPLIANT
+The implementation correctly handles the edge case where the error sentinel of a smaller type maps to a valid value in a larger type. By manually intercepting the sentinel and replacing it with the wider type's sentinel, the "sticky error" property is maintained. The use of branchless logic (select) is also optimal for performance and timing-channel security.
+________________
+4. AUDIT COMPONENT 2: NARROWING OPERATIONS
+This is the most critical surface for data corruption. When converting from a high-capacity type (e.g., int64 or tbb32) to a low-capacity type (e.g., tbb8), the system must ensure the value fits.
+Target Function: ExprCodegen (Intrinsic handling for tbb8_from_int)
+Source File: src/backend/ir/codegen_expr.cpp 1
+4.1 Code Analysis
+The compiler handles intrinsic calls like tbb8_from_int by emitting inline LLVM IR.
+
+
+C++
+
+
+
+
+// tbb8_from_int(int8) -> tbb8
+if (callee_ident->name == "tbb8_from_int") {
+   if (expr->arguments.size()!= 1) { 
+       throw std::runtime_error("tbb8_from_int() requires one argument");
+   }
+   llvm::Value* val = codegenExpressionNode(expr->arguments.get(), this);
+   
+   // Truncate/extend to i8
+   if (val->getType()->getIntegerBitWidth() > 8) {
+       val = builder.CreateTrunc(val, builder.getInt8Ty(), "trunc8");
+   }
+   
+   llvm::Value* errSentinel = getTBBErrSentinel(8);
+   llvm::Value* isErr = builder.CreateICmpEQ(val, errSentinel, "is_min");
+   return builder.CreateSelect(isErr, errSentinel, val, "tbb8_result");
+}
+
+4.2 Failure Scenario Construction: The "Force Limit Bypass"
+Let us simulate the execution of this code with a specific input that represents a dangerous physical condition.
+* Setup: A robot arm motor controller expects a tbb8 input where 127 represents 100% safe torque. The physics engine calculates a required torque of 300 units (stored in an int32).
+* Input: 300 (Decimal).
+   * Binary (32-bit): 0000 0000 0000 0000 0000 0001 0010 1100
+   * Hex: 0x0000012C
+* Operation: tbb8:safe_torque = tbb8_from_int(300);
+Execution Trace:
+1. val generation: The expression 300 is evaluated. val is an i32 with value 300.
+2. CreateTrunc: The code checks if (val...width > 8). It is true (32 > 8).
+   * The trunc instruction extracts the lowest 8 bits.
+   * Low 8 bits of 0x12C: 0x2C.
+   * Decimal value: 44.
+3. Sentinel Check: The code generates icmp eq 44, -128.
+   * 44 == -128 evaluates to FALSE.
+4. Selection: The select instruction sees false, so it returns val (which is now 44).
+Outcome:
+The dangerous value 300 has been silently converted to the safe value 44.
+* The Problem: The compiler assumes that simply truncating bits is a valid conversion strategy. It fails to check if the original value was within the representable range of the destination type [-127, 127].
+* Consequence: The safety checks downstream see "44", which is well within limits. The robotic system might behave unpredictably—either applying insufficient force (best case) or, if the hardware receives the raw command via a different path or interprets the semantic intent of "44" as a valid scaled output, it masks a massive physics error. If 300 represented a position coordinate, the robot has now teleported, causing a snap-back reaction.
+4.3 Root Cause Analysis
+The implementation relies on CreateTrunc which, in LLVM IR, is a modular arithmetic operation. It discards high-order bits. The subsequent check CreateICmpEQ(val, errSentinel) only checks if the result of the truncation coincidentally landed on the error sentinel.
+* If input was 128 (0x80), trunc yields -128 (0x80). Check passes. Result ERR. (Accidentally correct).
+* If input was 129 (0x81), trunc yields -127 (0x81). Check fails. Result -127. ( catastrophic sign flip).
+4.4 Compliance Verdict: ❌ NON-COMPLIANT (CRITICAL BUG)
+This implementation violates the core requirement: "Narrowing MUST detect out-of-range values." It exposes the system to silent data corruption, modular wraparound, and sign flipping. In a SIL-4 context, this is an automatic failure of the certification process.
+Required Remediation:
+The narrowing logic must be rewritten to:
+1. Establish the Max/Min valid values for the destination type (e.g., 127, -127).
+2. Compare the source value (val before truncation) against these limits.
+3. If src > dest_max OR src < dest_min, the result must be forced to dest_sentinel.
+4. Only perform truncation if the value is within bounds.
+________________
+5. AUDIT COMPONENT 3: SENTINEL DETECTION
+The system relies on a reserved bit pattern to indicate invalidity. We must verify that this pattern is unique and correctly identified across all types.
+Target Function: ExprCodegen::getTBBSentinel / tbbX_is_err
+Source File: src/backend/ir/codegen_expr.cpp 1
+5.1 Code Analysis
+The sentinel definition is centralized in getTBBSentinel:
+
+
+C++
+
+
+
+
+llvm::Value* ExprCodegen::getTBBSentinel(llvm::Type* type) {
+   unsigned width = type->getIntegerBitWidth();
+   // TBB sentinel is signed minimum: 0b1000...0000
+   return llvm::ConstantInt::get(context, llvm::APInt::getSignedMinValue(width));
+}
+
+This uses LLVM's APInt::getSignedMinValue().
+* For i8: 1000 0000 (-128)
+* For i16: 1000 0000 0000 0000 (-32768)
+* For i32: 0x80000000 (INT32_MIN)
+* For i64: 0x8000000000000000 (INT64_MIN)
+The detection logic tbb8_is_err simply performs an equality check:
+
+
+C++
+
+
+
+
+return builder.CreateICmpEQ(val, errSentinel, "is_err");
+
+5.2 Verification
+* Uniqueness: The valid range definitions (inferred from the symmetry requirement) exclude this specific value. Therefore, no valid calculation should ever result in this bit pattern unless it is marking an error.
+* Reliability: ICmpEQ is the standard, reliable method for checking integer equality. There are no floating-point approximations or fuzzy logic here.
+* Consistency: The same helper function is used for all TBB types, ensuring that tbb64 behaves exactly like tbb8 regarding its sentinel.
+5.3 Compliance Verdict: ✅ COMPLIANT
+The sentinel detection mechanism is robust. It correctly reserves the most negative number, which is the standard mechanism for achieving symmetric ranges in modified two's complement systems.
+________________
+6. AUDIT COMPONENT 4: ERROR PROPAGATION (ARITHMETIC)
+SIL-4 requires "Sticky Errors": once a value is corrupt, it must infect any calculation it touches to prevent the system from acting on partial data.
+Target Functions: ExprCodegen::generateTBBBinaryOp (Compiler) and atomic.c (Runtime)
+Source Files: src/backend/ir/codegen_expr.cpp 1, src/runtime/atomic/atomic.c 1
+6.1 Compiler Implementation Audit (codegen_expr.cpp)
+The compiler generates complex IR for every binary operation to ensure safety.
+
+
+C++
+
+
+
+
+llvm::Value* ExprCodegen::generateTBBBinaryOp(..., llvm::Value* left, llvm::Value* right) {
+   // 1. Check inputs for ERR
+   llvm::Value* lhsIsErr = builder.CreateICmpEQ(left, sentinel, "lhs_is_err");
+   llvm::Value* rhsIsErr = builder.CreateICmpEQ(right, sentinel, "rhs_is_err");
+   
+   // 2. Perform math with overflow detection
+   // Uses llvm.sadd.with.overflow intrinsic
+   llvm::Value* resStruct = builder.CreateCall(saddFunc, {left, right}, "sadd_ovf");
+   mathResult = builder.CreateExtractValue(resStruct, 0, "sum");
+   overflow = builder.CreateExtractValue(resStruct, 1, "ovf");
+
+   // 3. Sentinel Collision Check
+   // If a valid math op results in the sentinel value (e.g. -64 + -64 = -128)
+   // we must treat it as an error because -128 IS the error token.
+   llvm::Value* resIsSentinel = builder.CreateICmpEQ(mathResult, sentinel, "res_is_sentinel");
+
+   // 4. Combine failures
+   llvm::Value* failTemp = builder.CreateOr(lhsIsErr, rhsIsErr); // Input invalid?
+   llvm::Value* failTemp2 = builder.CreateOr(failTemp, overflow); // Overflow?
+   llvm::Value* failFinal = builder.CreateOr(failTemp2, resIsSentinel); // Collision?
+   
+   // 5. Select Result
+   return builder.CreateSelect(failFinal, sentinel, mathResult);
+}
+
+Analysis:
+* Input Gating: The CreateOr(lhsIsErr, rhsIsErr) ensures stickiness.
+* Overflow Gating: The use of with.overflow intrinsics guarantees that standard integer overflows (which wrap in C++) are caught and converted to the sentinel.
+* Collision Gating: This is a subtle but vital check. In tbb8, valid range is -127 to 127.
+   * Calculation: -64 - 64 = -128.
+   * In standard int8, this is valid (no overflow).
+   * In tbb8, -128 is ERR.
+   * The code explicitly checks resIsSentinel. Since the result is -128, it flags a failure. This prevents valid math from accidentally creating an error code (ambiguity), effectively reducing the valid range by 1 to maintain the reservation of the sentinel.
+6.2 Runtime Implementation Audit (atomic.c)
+The atomic.c file provides the implementation for TBB atomics, which must enforce these rules manually without LLVM intrinsics.
+
+
+C
+
+
+
+
+static inline int8_t tbb8_add(int8_t a, int8_t b) {
+   // 1. Input Check
+   if (a == ARIA_TBB8_ERR |
+
+| b == ARIA_TBB8_ERR) return ARIA_TBB8_ERR;
+   
+   // 2. Promotion to wider type for safe calculation
+   int16_t result = (int16_t)a + (int16_t)b;
+   
+   // 3. Explicit Range Check against Symmetric Limits
+   if (result > ARIA_TBB8_MAX |
+
+| result < ARIA_TBB8_MIN) return ARIA_TBB8_ERR;
+   
+   return (int8_t)result;
+}
+
+Analysis:
+* ARIA_TBB8_MAX is defined as 127.
+* ARIA_TBB8_MIN is defined as -127 (Note: Symmetric!).
+* The C code promotes to int16 to avoid C undefined behavior on overflow, checks the result against the symmetric bounds, and returns ERR if out of bounds.
+* This confirms that the runtime library strictly enforces the [-127, 127] range, preventing the -128 collision issue by excluding it from MIN.
+6.3 Compliance Verdict: ✅ COMPLIANT
+Both the compiler backend and the runtime library implement rigorous, redundant checks to ensure error propagation. The compiler handles the complexity of LLVM intrinsics and edge cases, while the runtime uses type promotion and explicit range checks. They agree on the fundamental invariant: The result is either mathematically correct and within the symmetric range, or it is ERR.
+________________
+7. AUDIT COMPONENT 5: TBB SYMMETRY PROPERTIES
+The requirement is that the type system must not contain "trap representations" like -0 or asymmetric minimums that cannot be negated.
+Target Definitions: include/runtime/atomic.h (inferred from atomic.c usage) and Compiler Logic.
+7.1 Symmetry Analysis
+In standard Two's Complement int8:
+* Range: [-128, 127]
+* abs(-128) -> 128 (Overflows int8).
+* x = -x fails for -128.
+In Aria TBB (tbb8):
+* Sentinel: -128.
+* Valid Min: -127.
+* Valid Max: +127.
+* Range: [-127, 127].
+Verification:
+* abs(-127) -> 127 (Valid).
+* neg(-127) -> 127 (Valid).
+* neg(127) -> -127 (Valid).
+* neg(ERR) -> ERR (via sticky propagation).
+The atomic.c code explicitly defines ARIA_TBB8_MIN as -127.
+
+
+C
+
+
+
+
+#define ARIA_TBB8_MIN ((int8_t)-127)
+
+This definition serves as the ground truth for the valid range. By excluding -128 from the valid set, the asymmetry is removed.
+7.2 The "Negative Zero" Question
+The underlying storage is Two's Complement binary.
+* 0 is 00000000.
+* There is no separate bit pattern for -0 in Two's Complement (unlike One's Complement or Sign-Magnitude).
+* Since TBB maps directly to LLVM int8, it inherits this property. There is exactly one zero.
+7.3 Compliance Verdict: ✅ COMPLIANT
+The TBB design successfully achieves symmetry. It eliminates the mathematical edge cases that plague standard integer arithmetic, making it highly suitable for physics simulations where coordinate inversion and absolute value calculations are frequent.
+________________
+8. THREAT SCENARIOS & FAILURE ANALYSIS
+To fully contextualize the criticality of the Narrowing failure, we outline the propagation of a fault through the "Teacher" system.
+8.1 Scenario: The "Handshake" Grip
+Context: A robot is programmed to shake a child's hand.
+Safety Limit: Grip force must not exceed 5 Newtons (represented as value 50 in tbb8).
+Bug: A sensor glitch or logic error calculates a grip force of 306 Newtons.
+Step-by-Step Failure:
+1. Calculation: int32 force = 306;
+2. Narrowing (The Flaw): The code attempts to cast this to the actuator's type: tbb8 safe_force = tbb8_from_int(force);
+3. Compiler Action:
+   * 306 is 0x00000132.
+   * trunc to 8 bits: 0x32 (Decimal 50).
+   * 50 is not the sentinel (-128), so the value 50 is returned.
+4. Safety Check: The code checks if (safe_force > 50) emergency_stop();.
+   * Since 50 > 50 is false, the check passes.
+5. Actuation: The system commands the motor.
+   * Case A (Smart Motor): Receives "50". The error is masked, but the child is safe (lucky outcome).
+   * Case B (Raw PWM): The variable force (306) might be used in a different register or the safe_force might be cast back up to int32 for the driver. If the driver sees "50", it applies 5N.
+   * Case C (Accumulator): If safe_force is added to a position target, the robot moves 50mm instead of 306mm. This discrepancy between "internal model" (I moved 50) and "reality" (I should have moved 306) creates a drift. The PID controller sees the error and overcompensates, potentially causing a violent jerk.
+Conclusion: The silent aliasing of 306 to 50 destroys the integrity of the control loop. The system thinks it is operating safely when it has actually discarded massive amounts of energy/information.
+________________
+9. CONCLUSION AND FINAL VERDICT
+The Aria language's TBB system is a sophisticated attempt to engineer safety into the primitive type system. The architectural decisions—sentinel reservation, sticky errors, and symmetric ranges—are scientifically sound and align with high-assurance principles.
+However, a chain is only as strong as its weakest link. The Narrowing Operation logic in the compiler backend is a broken link. It relies on standard truncation behavior which is fundamentally unsafe for the TBB semantics. This negates the safety guarantees for any code that involves type conversion, which is nearly all practical code.
+Overall Status: UNSAFE FOR DEPLOYMENT
+Audit Item
+	Status
+	Risk Level
+	Notes
+	Widening
+	✅ Compliant
+	Low
+	Sentinel preservation verified.
+	Narrowing
+	❌ Non-Compliant
+	CRITICAL
+	Silent overflow/wraparound detected.
+	Sentinels
+	✅ Compliant
+	Low
+	Unique error patterns verified.
+	Propagation
+	✅ Compliant
+	Low
+	Sticky error logic verified in compiler & runtime.
+	Symmetry
+	✅ Compliant
+	Low
+	Symmetric ranges enforced.
+	Recommendations:
+1. Block Release: Do not deploy Aria v0.1.0 to any physical hardware.
+2. Refactor codegen_expr.cpp: Implement the "Saturate-to-Error" logic for all narrowing intrinsics.
+3. Audit Runtime Parity: Once the compiler is fixed, verify that src/runtime/tbb/tbb.cpp (if it implements interpretation) shares the exact same range-check logic.
+Signed:
+SIL-4 Systems Verification Lead
+January 1, 2026
+Works cited
+1. aria_source_full.txt

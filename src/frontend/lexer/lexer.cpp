@@ -1,5 +1,6 @@
 #include "frontend/lexer/lexer.h"
 #include <sstream>
+#include <iostream>
 #include <unordered_map>
 #include <algorithm>
 
@@ -73,6 +74,7 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"int128", TokenType::TOKEN_KW_INT128},
     {"int256", TokenType::TOKEN_KW_INT256},
     {"int512", TokenType::TOKEN_KW_INT512},
+    {"int1024", TokenType::TOKEN_KW_INT1024},
     
     // Type keywords - unsigned integers
     {"uint1", TokenType::TOKEN_KW_UINT1},
@@ -85,12 +87,23 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"uint128", TokenType::TOKEN_KW_UINT128},
     {"uint256", TokenType::TOKEN_KW_UINT256},
     {"uint512", TokenType::TOKEN_KW_UINT512},
+    {"uint1024", TokenType::TOKEN_KW_UINT1024},
     
     // Type keywords - TBB
     {"tbb8", TokenType::TOKEN_KW_TBB8},
     {"tbb16", TokenType::TOKEN_KW_TBB16},
     {"tbb32", TokenType::TOKEN_KW_TBB32},
     {"tbb64", TokenType::TOKEN_KW_TBB64},
+    
+    // Type keywords - fractions
+    {"frac8", TokenType::TOKEN_KW_FRAC8},
+    {"frac16", TokenType::TOKEN_KW_FRAC16},
+    {"frac32", TokenType::TOKEN_KW_FRAC32},
+    {"frac64", TokenType::TOKEN_KW_FRAC64},
+    
+    // Type keywords - twisted floating point
+    {"tfp32", TokenType::TOKEN_KW_TFP32},
+    {"tfp64", TokenType::TOKEN_KW_TFP64},
     
     // Type keywords - floats
     {"flt32", TokenType::TOKEN_KW_FLT32},
@@ -99,12 +112,15 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"flt256", TokenType::TOKEN_KW_FLT256},
     {"flt512", TokenType::TOKEN_KW_FLT512},
     
+    // Type keywords - fixed point
+    {"fix256", TokenType::TOKEN_KW_FIX256},
+    
     // Type keywords - special
     {"bool", TokenType::TOKEN_KW_BOOL},
     {"string", TokenType::TOKEN_KW_STRING},
     {"dyn", TokenType::TOKEN_KW_DYN},
     {"obj", TokenType::TOKEN_KW_OBJ},
-    {"result", TokenType::TOKEN_KW_RESULT},
+    {"Result", TokenType::TOKEN_KW_RESULT},
     {"array", TokenType::TOKEN_KW_ARRAY},
     {"func", TokenType::TOKEN_KW_FUNC},
     
@@ -118,8 +134,10 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"vec2", TokenType::TOKEN_KW_VEC2},
     {"vec3", TokenType::TOKEN_KW_VEC3},
     {"vec9", TokenType::TOKEN_KW_VEC9},
-    {"tensor", TokenType::TOKEN_KW_TENSOR},
     {"matrix", TokenType::TOKEN_KW_MATRIX},
+    {"tmatrix", TokenType::TOKEN_KW_TMATRIX},
+    {"tensor", TokenType::TOKEN_KW_TENSOR},
+    {"ttensor", TokenType::TOKEN_KW_TTENSOR},
     
     // Type keywords - I/O and system
     {"binary", TokenType::TOKEN_KW_BINARY},
@@ -379,6 +397,8 @@ void Lexer::scanToken() {
                 }
             } else if (match('<')) {
                 addToken(TokenType::TOKEN_SHIFT_LEFT);
+            } else if (match('-')) {
+                addToken(TokenType::TOKEN_LEFT_ARROW);  // <- for pointer dereference
             } else if (match('|')) {
                 addToken(TokenType::TOKEN_PIPE_LEFT);
             } else {
@@ -575,13 +595,35 @@ void Lexer::scanNumber() {
             text = text.substr(2);
             text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
             
-            // Try to convert, but store raw string if overflow
+            // FITS-OR-FAILS: Type suffix optional (inferred from context if missing)
+            std::string suffix = scanTypeSuffix();
+            
+            if (suffix.empty()) {
+                // Untyped hex literal - will be validated in type checker
+                try {
+                    int64_t value = std::stoll(text, nullptr, 16);
+                    addToken(TokenType::TOKEN_INTEGER, value);
+                } catch (std::out_of_range&) {
+                    // Value exceeds int64 range, store as raw string
+                    addToken(TokenType::TOKEN_INTEGER, (int64_t)0, text);
+                }
+                return;
+            }
+            
+            TokenType tokenType = suffixToTokenType(suffix, false);
+            if (tokenType == TokenType::TOKEN_ERROR) {
+                error("Invalid type suffix '" + suffix + "' for hex literal.");
+                addToken(TokenType::TOKEN_ERROR);
+                return;
+            }
+            
+            // Typed hex literal
             try {
                 int64_t value = std::stoll(text, nullptr, 16);
-                addToken(TokenType::TOKEN_INTEGER, value);
+                addToken(tokenType, value);
             } catch (std::out_of_range&) {
                 // Value exceeds int64 range, store as raw string for high-precision handling
-                addToken(TokenType::TOKEN_INTEGER, (int64_t)0, text);
+                addToken(tokenType, (int64_t)0, text);
             }
             return;
         }
@@ -605,13 +647,33 @@ void Lexer::scanNumber() {
             text = text.substr(2);
             text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
             
+            // FITS-OR-FAILS: Type suffix optional (inferred from context if missing)
+            std::string suffix = scanTypeSuffix();
+            if (suffix.empty()) {
+                // Untyped binary literal - will be validated in type checker
+                try {
+                    int64_t value = std::stoll(text, nullptr, 2);
+                    addToken(TokenType::TOKEN_INTEGER, value);
+                } catch (std::out_of_range&) {
+                    addToken(TokenType::TOKEN_INTEGER, (int64_t)0, text);
+                }
+                return;
+            }
+            
+            TokenType tokenType = suffixToTokenType(suffix, false);
+            if (tokenType == TokenType::TOKEN_ERROR) {
+                error("Invalid type suffix '" + suffix + "' for binary literal.");
+                addToken(TokenType::TOKEN_ERROR);
+                return;
+            }
+            
             // Try to convert, but store raw string if overflow
             try {
                 int64_t value = std::stoll(text, nullptr, 2);
-                addToken(TokenType::TOKEN_INTEGER, value);
+                addToken(tokenType, value);
             } catch (std::out_of_range&) {
                 // Value exceeds int64 range, store as raw string for high-precision handling
-                addToken(TokenType::TOKEN_INTEGER, (int64_t)0, text);
+                addToken(tokenType, (int64_t)0, text);
             }
             return;
         }
@@ -635,13 +697,33 @@ void Lexer::scanNumber() {
             text = text.substr(2);
             text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
             
-            // Try to convert, but store raw string if overflow
+            // FITS-OR-FAILS: Type suffix optional (inferred from context if missing)
+            std::string suffix = scanTypeSuffix();
+            if (suffix.empty()) {
+                // Untyped octal literal - will be validated in type checker
+                try {
+                    int64_t value = std::stoll(text, nullptr, 8);
+                    addToken(TokenType::TOKEN_INTEGER, value);
+                } catch (std::out_of_range&) {
+                    addToken(TokenType::TOKEN_INTEGER, (int64_t)0, text);
+                }
+                return;
+            }
+            
+            TokenType tokenType = suffixToTokenType(suffix, false);
+            if (tokenType == TokenType::TOKEN_ERROR) {
+                error("Invalid type suffix '" + suffix + "' for octal literal.");
+                addToken(TokenType::TOKEN_ERROR);
+                return;
+            }
+            
+            // Typed octal literal
             try {
                 int64_t value = std::stoll(text, nullptr, 8);
-                addToken(TokenType::TOKEN_INTEGER, value);
+                addToken(tokenType, value);
             } catch (std::out_of_range&) {
                 // Value exceeds int64 range, store as raw string for high-precision handling
-                addToken(TokenType::TOKEN_INTEGER, (int64_t)0, text);
+                addToken(tokenType, (int64_t)0, text);
             }
             return;
         }
@@ -701,6 +783,73 @@ void Lexer::scanNumber() {
             addToken(TokenType::TOKEN_TERNARY, value);
             return;
         }
+        
+        // Nonary (Balanced Nonary): 0n
+        if (next == 'n' || next == 'N') {
+            advance(); // consume 'n' (0 already consumed)
+            
+            // Check for at least one nonary digit
+            char c = peek();
+            bool validNonaryDigit = (c >= '0' && c <= '4') || 
+                                   (c >= 'A' && c <= 'D') || 
+                                   (c >= 'a' && c <= 'd');
+            if (!validNonaryDigit) {
+                error("Expected nonary digits (0-4, A-D) after '0n'");
+                return;
+            }
+            
+            // Consume all nonary digits (0-4, A-D/a-d)
+            while (!isAtEnd()) {
+                c = peek();
+                bool isNonaryDigit = (c >= '0' && c <= '4') || 
+                                    (c >= 'A' && c <= 'D') || 
+                                    (c >= 'a' && c <= 'd') ||
+                                    c == '_';
+                if (isNonaryDigit) {
+                    advance();
+                } else {
+                    break;
+                }
+            }
+            
+            // Extract nonary string and convert to integer
+            std::string text = source.substr(start, current - start);
+            // Remove '0n' prefix and underscores
+            text = text.substr(2);
+            text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
+            
+            // Convert balanced nonary to integer
+            // D/d = -4, C/c = -3, B/b = -2, A/a = -1, 0 = 0, 1 = 1, 2 = 2, 3 = 3, 4 = 4
+            int64_t value = 0;
+            int64_t power = 1;
+            
+            // Process from right to left
+            for (int i = text.length() - 1; i >= 0; i--) {
+                char digit = text[i];
+                int nit_value;
+                
+                if (digit >= '0' && digit <= '4') {
+                    nit_value = digit - '0';
+                } else if (digit == 'A' || digit == 'a') {
+                    nit_value = -1;
+                } else if (digit == 'B' || digit == 'b') {
+                    nit_value = -2;
+                } else if (digit == 'C' || digit == 'c') {
+                    nit_value = -3;
+                } else if (digit == 'D' || digit == 'd') {
+                    nit_value = -4;
+                } else {
+                    error("Invalid nonary digit: " + std::string(1, digit));
+                    return;
+                }
+                
+                value += nit_value * power;
+                power *= 9;
+            }
+            
+            addToken(TokenType::TOKEN_NONARY, value);
+            return;
+        }
     }
     
     // Decimal number (integer or float)
@@ -744,18 +893,69 @@ void Lexer::scanNumber() {
     std::string cleaned_text = text;
     cleaned_text.erase(std::remove(cleaned_text.begin(), cleaned_text.end(), '_'), cleaned_text.end());
     
+    // ========================================================================
+    // ZERO IMPLICIT CONVERSION POLICY - Type suffix (OPTIONAL with context)
+    // ========================================================================
+    // Reference: docs/programming_guide/types/zero_implicit_conversion.md
+    // 
+    // DESIGN: "Fits-or-Fails" Literal Inference
+    // - Type suffix REQUIRED in ambiguous contexts (function args, expressions)
+    // - Type suffix OPTIONAL in typed contexts (variable declarations)
+    // - If untyped, type checker validates value fits in target type
+    // - NO truncation, NO precision loss, NO silent conversions
+    //
+    // Examples:
+    //   int8:a = 42;         ✅ OK: 42 fits in int8 (-128..127)
+    //   int8:b = 200;        ❌ ERROR: 200 doesn't fit in int8
+    //   print(42);           ❌ ERROR: Ambiguous (no suffix, no target type)
+    //   print(42i32);        ✅ OK: Explicit type
+    
+    std::string suffix = scanTypeSuffix();
+    
+    if (suffix.empty()) {
+        // UNTYPED LITERAL: Create generic token, let type checker validate context
+        // Type will be inferred from target context (declaration, assignment, etc.)
+        if (isFloat) {
+            double value = std::stod(cleaned_text);
+            addToken(TokenType::TOKEN_FLOAT, value, text);  // Raw text for high-precision
+        } else {
+            int64_t value = std::stoll(cleaned_text);
+            addToken(TokenType::TOKEN_INTEGER, value, text);  // Raw text for big integers
+        }
+        return;
+    }
+    
+    // TYPED LITERAL: Parse suffix and get appropriate token type
+    TokenType tokenType = suffixToTokenType(suffix, isFloat);
+    
+    if (tokenType == TokenType::TOKEN_ERROR) {
+        // Invalid suffix for this literal type
+        if (isFloat) {
+            error("Invalid type suffix '" + suffix + "' for floating-point literal. "
+                  "Float literals require: f32, f64, f128, f256, f512, or fix256.\n"
+                  "  Example: 3.14f32");
+        } else {
+            error("Invalid type suffix '" + suffix + "' for integer literal. "
+                  "Integer literals require: u8-u1024, i8-i1024, or tbb8-tbb64.\n"
+                  "  Example: 42u32 or -10i32");
+        }
+        addToken(TokenType::TOKEN_ERROR);
+        return;
+    }
+    
+    // Create typed token with appropriate value
     if (isFloat) {
         // Parse float value for immediate use, also store raw string for high-precision scenarios
         double float_value = std::stod(cleaned_text);
-        addToken(TokenType::TOKEN_FLOAT, float_value, cleaned_text);
+        addToken(tokenType, float_value, cleaned_text);
     } else {
         // Try to convert integer, store raw string if overflow
         try {
             int64_t value = std::stoll(cleaned_text);
-            addToken(TokenType::TOKEN_INTEGER, value);
+            addToken(tokenType, value);
         } catch (std::out_of_range&) {
             // Value exceeds int64 range, store as raw string for high-precision handling
-            addToken(TokenType::TOKEN_INTEGER, (int64_t)0, cleaned_text);
+            addToken(tokenType, (int64_t)0, cleaned_text);
         }
     }
 }
@@ -874,63 +1074,65 @@ void Lexer::scanCharacter() {
 
 void Lexer::scanTemplateLiteral() {
     int startLine = line;
+    int startCol = start_column;
 
     // Opening backtick already consumed by scanToken()
-    // Emit TOKEN_TEMPLATE_START to signal start of template literal
-    tokens.push_back(Token(TokenType::TOKEN_TEMPLATE_START,
-                           "`", startLine, start_column, ""));
+    // Emit TOKEN_TEMPLATE_START
+    tokens.push_back(Token(TokenType::TOKEN_TEMPLATE_START, "`", startLine, startCol, ""));
 
-    // Build current string part
+    // Build current text part
     std::string currentPart;
+    int partStartLine = line;
+    int partStartCol = column;
 
     while (!isAtEnd()) {
         // Check for interpolation start: &{
         if (peek() == '&' && peekNext() == '{') {
-            // Emit the accumulated string part (may be empty)
-            tokens.push_back(Token(TokenType::TOKEN_TEMPLATE_PART,
-                                   currentPart, line, column, currentPart));
+            // Emit the current text part (even if empty for proper structure)
+            tokens.push_back(Token(TokenType::TOKEN_TEMPLATE_PART, currentPart,
+                                   partStartLine, partStartCol, currentPart));
             currentPart.clear();
 
-            // Consume &{
+            int interpLine = line;
+            int interpCol = column;
             advance();  // consume '&'
             advance();  // consume '{'
 
             // Emit TOKEN_INTERP_START
-            tokens.push_back(Token(TokenType::TOKEN_INTERP_START,
-                                   "&{", line, column - 2, ""));
+            tokens.push_back(Token(TokenType::TOKEN_INTERP_START, "&{", interpLine, interpCol, ""));
 
-            // Now scan the interpolation expression
-            // We need to re-lex the tokens inside the interpolation
+            // Tokenize the interpolation expression by recursively scanning tokens
+            // until we hit the closing } at depth 0
             int braceDepth = 1;
-
             while (!isAtEnd() && braceDepth > 0) {
-                char c = peek();
+                // Skip whitespace
+                while (!isAtEnd() && (peek() == ' ' || peek() == '\t' || peek() == '\r')) {
+                    advance();
+                }
+                if (peek() == '\n') {
+                    line++;
+                    column = 1;
+                    advance();
+                    continue;
+                }
 
+                if (isAtEnd()) break;
+
+                char c = peek();
                 if (c == '{') {
                     braceDepth++;
-                    // Let the regular lexer handle this
+                    // Scan this as a token (could be object literal start)
                     scanToken();
                 } else if (c == '}') {
                     braceDepth--;
                     if (braceDepth == 0) {
-                        // This } closes the interpolation - don't scan as regular token
-                        advance();
+                        // Don't consume - will be handled below
                         break;
                     } else {
                         scanToken();
                     }
-                } else if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
-                    // Skip whitespace in interpolation
-                    if (c == '\n') {
-                        line++;
-                        column = 1;
-                    }
-                    advance();
                 } else {
-                    // Regular token - scan it
-                    start = current;
-                    start_line = line;
-                    start_column = column;
+                    // Scan a regular token
                     scanToken();
                 }
             }
@@ -940,25 +1142,31 @@ void Lexer::scanTemplateLiteral() {
                 return;
             }
 
-            // Emit TOKEN_INTERP_END
-            tokens.push_back(Token(TokenType::TOKEN_INTERP_END,
-                                   "}", line, column, ""));
+            // Consume and emit TOKEN_INTERP_END
+            int endLine = line;
+            int endCol = column;
+            advance();  // consume '}'
+            tokens.push_back(Token(TokenType::TOKEN_INTERP_END, "}", endLine, endCol, ""));
 
+            // Reset part tracking for next text segment
+            partStartLine = line;
+            partStartCol = column;
             continue;
         }
 
         // Check for template end: `
         if (peek() == '`') {
-            // Emit final string part
-            tokens.push_back(Token(TokenType::TOKEN_TEMPLATE_PART,
-                                   currentPart, line, column, currentPart));
+            // Always emit final text part (even if empty) to maintain invariant:
+            // parts.size() == interpolations.size() + 1
+            tokens.push_back(Token(TokenType::TOKEN_TEMPLATE_PART, currentPart,
+                                   partStartLine, partStartCol, currentPart));
 
-            // Consume closing backtick
-            advance();
+            int endLine = line;
+            int endCol = column;
+            advance();  // Consume closing backtick
 
             // Emit TOKEN_TEMPLATE_END
-            tokens.push_back(Token(TokenType::TOKEN_TEMPLATE_END,
-                                   "`", line, column, ""));
+            tokens.push_back(Token(TokenType::TOKEN_TEMPLATE_END, "`", endLine, endCol, ""));
             return;
         }
 
@@ -986,6 +1194,12 @@ void Lexer::scanTemplateLiteral() {
                     break;
             }
             continue;
+        }
+
+        // Handle newlines (track line numbers)
+        if (peek() == '\n') {
+            line++;
+            column = 1;
         }
 
         // Regular character - add to current part
@@ -1028,6 +1242,85 @@ bool Lexer::isBinaryDigit(char c) {
 
 bool Lexer::isOctalDigit(char c) {
     return c >= '0' && c <= '7';
+}
+
+// ============================================================================
+// Type Suffix Scanning (Zero Implicit Conversion Policy)
+// ============================================================================
+// Reference: docs/programming_guide/types/zero_implicit_conversion.md
+
+// Scan type suffix after numeric literal
+// Returns empty string if no suffix found
+std::string Lexer::scanTypeSuffix() {
+    size_t suffix_start = current;
+    
+    // Type suffixes start with letter (u, i, f, t) or "fix"
+    if (!isAlpha(peek())) {
+        return "";  // No suffix - this is an ERROR (caught by caller)
+    }
+    
+    // Scan letters and digits for suffix (e.g., "u32", "i64", "tbb16", "fix256")
+    while (isAlphaNumeric(peek())) {
+        advance();
+    }
+    
+    return source.substr(suffix_start, current - suffix_start);
+}
+
+// Convert type suffix to TokenType
+// Returns TOKEN_ERROR if invalid suffix for given context (int vs float)
+TokenType Lexer::suffixToTokenType(const std::string& suffix, bool isFloat) {
+    // Integer type suffixes (for literals without decimal point)
+    if (!isFloat) {
+        // Unsigned integers
+        if (suffix == "u8") return TokenType::TOKEN_INTEGER_U8;
+        if (suffix == "u16") return TokenType::TOKEN_INTEGER_U16;
+        if (suffix == "u32") return TokenType::TOKEN_INTEGER_U32;
+        if (suffix == "u64") return TokenType::TOKEN_INTEGER_U64;
+        if (suffix == "u128") return TokenType::TOKEN_INTEGER_U128;
+        if (suffix == "u256") return TokenType::TOKEN_INTEGER_U256;
+        if (suffix == "u512") return TokenType::TOKEN_INTEGER_U512;
+        if (suffix == "u1024") return TokenType::TOKEN_INTEGER_U1024;
+        
+        // Signed integers
+        if (suffix == "i8") return TokenType::TOKEN_INTEGER_I8;
+        if (suffix == "i16") return TokenType::TOKEN_INTEGER_I16;
+        if (suffix == "i32") return TokenType::TOKEN_INTEGER_I32;
+        if (suffix == "i64") return TokenType::TOKEN_INTEGER_I64;
+        if (suffix == "i128") return TokenType::TOKEN_INTEGER_I128;
+        if (suffix == "i256") return TokenType::TOKEN_INTEGER_I256;
+        if (suffix == "i512") return TokenType::TOKEN_INTEGER_I512;
+        if (suffix == "i1024") return TokenType::TOKEN_INTEGER_I1024;
+        
+        // TBB (Twisted Balanced Binary)
+        if (suffix == "tbb8") return TokenType::TOKEN_INTEGER_TBB8;
+        if (suffix == "tbb16") return TokenType::TOKEN_INTEGER_TBB16;
+        if (suffix == "tbb32") return TokenType::TOKEN_INTEGER_TBB32;
+        if (suffix == "tbb64") return TokenType::TOKEN_INTEGER_TBB64;
+        
+        // Float suffix on integer literal is ERROR
+        if (suffix.length() > 0 && (suffix[0] == 'f' || suffix.substr(0, 3) == "fix")) {
+            return TokenType::TOKEN_ERROR;
+        }
+    } else {
+        // Float type suffixes (for literals with decimal point or scientific notation)
+        if (suffix == "f32") return TokenType::TOKEN_FLOAT_F32;
+        if (suffix == "f64") return TokenType::TOKEN_FLOAT_F64;
+        if (suffix == "f128") return TokenType::TOKEN_FLOAT_F128;
+        if (suffix == "f256") return TokenType::TOKEN_FLOAT_F256;
+        if (suffix == "f512") return TokenType::TOKEN_FLOAT_F512;
+        
+        // Fixed-point (Q128.128 deterministic physics)
+        if (suffix == "fix256") return TokenType::TOKEN_FLOAT_FIX256;
+        
+        // Integer suffix on float literal is ERROR
+        if (suffix.length() > 0 && (suffix[0] == 'u' || suffix[0] == 'i' || suffix[0] == 't')) {
+            return TokenType::TOKEN_ERROR;
+        }
+    }
+    
+    // Unknown/invalid suffix
+    return TokenType::TOKEN_ERROR;
 }
 
 } // namespace frontend

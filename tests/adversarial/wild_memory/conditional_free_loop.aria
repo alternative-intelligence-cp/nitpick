@@ -1,0 +1,27 @@
+/**
+ * Test: Conditional Free in Loop (MAY_FREED state)
+ * Expected: COMPILER ERROR
+ * Why: After conditional free, p is in MAY_FREED state
+ *      Using MAY_FREED memory is undefined behavior
+ *
+ * This tests the widening analysis:
+ * - Iteration 1: p is ALLOCATED, cond may free it → MAY_FREED
+ * - Iteration 2: p might be FREED, using it is unsafe
+ */
+
+func:main = int32() {
+    wild int8@:p = alloc(100);
+    int32:i = 0;
+    bool:should_free = true;
+
+    while (i < 5) {
+        if (should_free) {
+            free(p);  // Conditionally free
+        }
+        // At this point: p is MAY_FREED (freed on some paths)
+        i = i + 1;
+        // On next iteration, using p should error
+    }
+
+    return 0;
+};

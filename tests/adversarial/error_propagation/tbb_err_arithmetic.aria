@@ -1,0 +1,27 @@
+/**
+ * Test: TBB ERR Never Becomes Valid Value Through Arithmetic
+ * Expected: COMPILES SUCCESSFULLY (runtime test)
+ * Why: ERR + 100 must still be ERR, not 100. ERR - ERR must be ERR, not 0.
+ *
+ * From TODO: "Test that ERR never becomes valid value"
+ * Critical: If ERR-ERR=0, error state could be silently lost
+ */
+
+func:main = int32() {
+    // Create an ERR value
+    tbb32:err = tbb32_div(tbb32_from_int(10), tbb32_from_int(0));  // ERR
+
+    // ERR + 100 → must still be ERR (not 100!)
+    tbb32:x = tbb32_add(err, tbb32_from_int(100));
+    bool:x_is_err = tbb32_is_err(x);  // Must be true
+
+    // ERR - ERR → must still be ERR (not 0!)
+    tbb32:y = tbb32_sub(err, err);
+    bool:y_is_err = tbb32_is_err(y);  // Must be true
+
+    // ERR * 0 → must still be ERR (not 0!)
+    tbb32:z = tbb32_mul(err, tbb32_from_int(0));
+    bool:z_is_err = tbb32_is_err(z);  // Must be true
+
+    return 0;
+};

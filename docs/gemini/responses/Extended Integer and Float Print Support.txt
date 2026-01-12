@@ -1,0 +1,679 @@
+﻿Architectural Specification and Implementation Strategy for Extended Precision, TBB, and Exotic Type I/O Support in the Aria Compiler
+1. Executive Summary
+The evolution of the Aria programming language to version 0.0.7 has introduced a sophisticated type system designed to address specific deficiencies in modern systems programming, particularly in the domains of safety-critical arithmetic and high-precision computing. However, a comprehensive audit of the current compiler infrastructure, specifically the ExprCodegen::codegenTemplateLiteral method and the runtime standard library, reveals a significant divergence between the language's storage capabilities and its Input/Output (I/O) serialization mechanisms. While the backend successfully models advanced types such as 512-bit integers via the Limb-Based Integral Model (LBIM) and enforces "Sticky Error" semantics through Twisted Balanced Binary (TBB) types, the formatted output subsystem relies on legacy C-style sprintf primitives that are fundamentally incompatible with these aggregate structures.
+This report presents a definitive architectural solution to bridge this gap. It mandates the abandonment of standard C formatting functions for Aria's advanced types in favor of a custom, type-aware runtime formatting layer. The analysis identifies that not only are int256 and flt256 unsupported, but the entire hierarchy of "Exotic Types"—specifically trit (balanced ternary), tryte, nit (balanced nonary), and nyte—lacks the necessary runtime logic to display their values in their native balanced representations (e.g., T, 0, 1). Furthermore, the current handling of TBB types creates a safety hazard by exposing raw sentinel values (e.g., -128) to the developer instead of the semantic ERR state, violating the "Sticky Error" contract defined in the language specification.
+The following sections detail the mathematical algorithms, memory management strategies, and Low-Level Virtual Machine (LLVM) Intermediate Representation (IR) integration patterns required to implement full print support for int128 through int512, flt256 through flt512, all TBB widths, and the exotic balanced bases. This implementation ensures that the Aria ecosystem maintains coherence between its internal representation and its external observability, a critical requirement for the debugging and verification of high-stakes software systems.
+2. Architectural Context and Type System Audit
+2.1 The Limb-Based Integral Model (LBIM) Constraint
+The handling of large integers in Aria is dictated by the Limb-Based Integral Model (LBIM). Unlike standard compilers that might rely on the LLVM i256 type, Aria explicitly defines these types as aggregate structures of 64-bit limbs to circumvent specific bugs in the LLVM optimization pipeline, specifically within the IPSCCP (Interprocedural Sparse Conditional Constant Propagation) and ConstraintElimination passes, which have been observed to crash or miscompile native i256 operations.
+The definition of int256 in the LLVM IR is as follows:
+
+
+Code snippet
+
+
+
+
+%struct.int256 = type { [4 x i64] }
+
+This structural decision has profound implications for I/O. The standard C library function sprintf and its variants strictly adhere to the System V AMD64 ABI for scalar types. Passing a pointer to a [4 x i64] array, or passing the structure by value, to a format specifier like %lld results in undefined behavior—typically printing only the first limb (the least significant 64 bits) and ignoring the rest, or causing stack corruption. Consequently, the Aria runtime must implement a "BigInt to Decimal" conversion algorithm capable of traversing the limb array and generating the corresponding ASCII string.
+2.2 The Twisted Balanced Binary (TBB) Sentinel Hazard
+Aria's numeric safety model relies heavily on TBB types (tbb8, tbb16, tbb32, tbb64). These types utilize the most negative value in the two's complement range as a dedicated "Sticky Error" sentinel (e.g., -128 for tbb8, INT64_MIN for tbb64).
+* Current Deficiency: The current codegenTemplateLiteral implementation treats tbb types as standard integers. If a variable x of type tbb8 holds the error sentinel 0x80, printing it results in the string "-128".
+* Semantic Violation: This behavior masks the error state. A developer seeing "-128" might interpret it as a valid calculation result rather than a propagation of failure.
+* Required Behavior: The runtime must intercept these values and output a distinct string, such as "ERR" or "NaN", to accurately reflect the variable's semantic state.
+2.3 The Exotic Type Gap (Trits and Nits)
+The Aria specification identifies trit and tryte (Base-3) and nit and nyte (Base-9) as "NON-NEGOTIABLE" core features. These types represent Balanced Ternary and Balanced Nonary logic, respectively.
+* Balanced Ternary: Digits are -1, 0, 1 (often denoted as T, 0, 1 or -, 0, +).
+* Storage: A tryte is stored as a uint16 (aliased to int16 in some contexts) but represents a value conceptually different from the binary integer 123.
+* Missing Support: Attempting to print a tryte currently uses the default integer formatter, displaying the internal binary encoding rather than the balanced ternary representation. This renders the type virtually unusable for logic debugging.
+2.4 Comprehensive Type Gap Enumeration
+The following table summarizes the types identified in the source code that lack proper print support, classifying the severity and the required remediation strategy.
+Type Category
+	Specific Types
+	Current Status
+	Remediation Strategy
+	Extended Int
+	int128, uint128
+	Broken
+	LLVM i128 ABI mismatch with sprintf. Requires base-10 conversion logic.
+	LBIM Int
+	int256, uint256
+	Unsupported
+	Aggregate [4 x i64] structure. Requires multi-precision division algorithm.
+	LBIM Int
+	int512, uint512
+	Unsupported
+	Aggregate [8 x i64] structure. Requires multi-precision division algorithm.
+	High-Prec Float
+	flt256, flt512
+	Unsupported
+	Aggregate structure. Requires integration with highprec_float stringifiers.
+	TBB Types
+	tbb8...tbb64
+	Unsafe
+	Prints raw sentinel. Requires Sentinel Interception Logic.
+	Exotic (Base-3)
+	trit, tryte
+	Incorrect
+	Prints storage value. Requires Balanced Ternary conversion.
+	Exotic (Base-9)
+	nit, nyte
+	Incorrect
+	Prints storage value. Requires Balanced Nonary conversion.
+	Vector Types
+	vec2, vec3
+	Missing
+	Aggregate structure. Requires recursive field formatting.
+	3. Technical Specification: Algorithms and Logic
+3.1 Multiprecision Integer-to-Decimal Conversion
+Since we cannot use standard library functions for int256, we must implement a conversion routine. The naive approach of "modulo 10" is inefficient for large numbers. A more performant approach for 256-bit and 512-bit integers involves dividing by the largest power of 10 that fits in a native 64-bit word ($10^{19}$).
+Algorithm: Block-wise Decimal Extraction
+Given a large integer $N$ represented as an array of 64-bit limbs:
+1. Block Size: Define $B = 10^{19}$.
+2. Iteration: While $N > 0$:
+   * Compute remainder $R = N \pmod B$.
+   * Update $N = N / B$.
+   * The remainder $R$ represents the least significant 19 decimal digits. Convert $R$ to a string, zero-padding to 19 characters (unless it is the final, most significant block).
+   * Prepend this string to the result buffer.
+3. Sign Handling: If the type is signed and the most significant bit is set, perform two's complement negation on the limbs before conversion and prepend a minus sign to the final string.
+This algorithm requires implementing DivMod for a multi-limb dividend and a 64-bit divisor. This is significantly simpler than full multi-precision division.
+3.2 Balanced Ternary Conversion
+Balanced ternary represents values using digits $\{-1, 0, 1\}$.
+To convert a stored integer value $V$ to a balanced ternary string:
+1. Modulo-3 with Balancing:
+   * Compute remainder $r = V \pmod 3$.
+   * If $r = 0$, digit is 0.
+   * If $r = 1$, digit is 1.
+   * If $r = 2$ (or -1), digit is T (representing -1), and we must increment $V$ by 1 (effectively borrowing) before dividing.
+   * Update $V = V / 3$. (Note: precise rounding logic is required for negative numbers).
+2. Mapping: Map the digits to characters T, 0, 1.
+3.3 TBB Sentinel Logic
+The runtime formatter for TBB must perform a bitwise check before any arithmetic.
+* For tbb8: Check if val == (int8_t)0x80.
+* For tbb64: Check if val == (int64_t)0x8000000000000000.
+If the check matches, return the literal string "ERR". Otherwise, delegate to the standard integer formatter.
+4. Implementation: Runtime Layer (src/runtime/fmt)
+To maintain modularity and prevent bloating the core arithmetic runtime, we establish a new directory src/runtime/fmt and implement formatters.cpp. This file will serve as the central registry for all non-standard type conversions.
+4.1 Header Definitions and Structures
+The formatting functions will return an AriaString, which matches the layout expected by the compiled code (as seen in ExprCodegen::codegenTemplateLiteral in src/backend/ir/codegen_expr.cpp ).
+
+
+C++
+
+
+
+
+// ========================================
+// FILE: src/runtime/fmt/formatters.cpp
+// ========================================
+
+#include "runtime/stdlib.h"
+#include "runtime/gc.h"
+#include "runtime/lbim.h" // For int128/256 definitions
+#include "runtime/highprec_float.h" // For flt256/512 definitions
+#include <cstdio>
+#include <cstring>
+#include <algorithm>
+#include <vector>
+#include <iomanip>
+#include <sstream>
+#include <cmath>
+
+extern "C" {
+
+// Matches layout in ExprCodegen::createAriaString 
+struct AriaString {
+   const char* data;
+   int64_t length;
+};
+
+// Helper to allocate AriaString on the GC heap
+// Type ID 0 is used for generic buffers/strings in stdlib 
+static AriaString* alloc_aria_string(const char* cstr) {
+   size_t len = strlen(cstr);
+   char* buf = (char*)aria_std_gc_alloc(len + 1);
+   if (!buf) return nullptr; // OOM handling should ideally panic or return null
+   memcpy(buf, cstr, len);
+   buf[len] = '\0';
+
+   AriaString* str = (AriaString*)aria_std_gc_alloc(sizeof(AriaString));
+   if (!str) return nullptr;
+   str->data = buf;
+   str->length = (int64_t)len;
+   return str;
+}
+
+4.2 TBB Sticky Error Implementation
+This section implements the "Sentinel Interception" logic.
+
+
+C++
+
+
+
+
+// ============================================================================
+// TBB Formatters (Sentinel Aware)
+// ============================================================================
+
+AriaString* aria_format_tbb8(int8_t val) {
+   // 0x80 is -128
+   if (val == (int8_t)0x80) return alloc_aria_string("ERR");
+   char buf;
+   snprintf(buf, sizeof(buf), "%d", val);
+   return alloc_aria_string(buf);
+}
+
+AriaString* aria_format_tbb16(int16_t val) {
+   // 0x8000 is -32768
+   if (val == (int16_t)0x8000) return alloc_aria_string("ERR");
+   char buf;
+   snprintf(buf, sizeof(buf), "%d", val);
+   return alloc_aria_string(buf);
+}
+
+AriaString* aria_format_tbb32(int32_t val) {
+   // 0x80000000 is INT32_MIN
+   if (val == (int32_t)0x80000000) return alloc_aria_string("ERR");
+   char buf;
+   snprintf(buf, sizeof(buf), "%d", val);
+   return alloc_aria_string(buf);
+}
+
+AriaString* aria_format_tbb64(int64_t val) {
+   // 0x8000000000000000 is INT64_MIN
+   if (val == (int64_t)0x8000000000000000ULL) return alloc_aria_string("ERR");
+   char buf;
+   snprintf(buf, sizeof(buf), "%lld", (long long)val);
+   return alloc_aria_string(buf);
+}
+
+4.3 Large Integer (LBIM) Implementation
+Here we implement the multi-precision division algorithm required for int128, int256, and int512. We utilize a std::vector<uint64_t> to represent the number abstractly, allowing a single formatting function to handle all widths.
+
+
+C++
+
+
+
+
+// ============================================================================
+// Large Integer (LBIM) Formatters
+// ============================================================================
+
+// Divide multi-limb integer by 10^19. 
+// Returns the remainder (which fits in uint64_t).
+// Modifies 'limbs' in-place to be the quotient.
+static uint64_t div_mod_1e19(std::vector<uint64_t>& limbs) {
+   const uint64_t DIVISOR = 10000000000000000000ULL;
+   uint64_t remainder = 0;
+   
+   // Standard long division algorithm, processing most significant limb first
+   for (int i = limbs.size() - 1; i >= 0; i--) {
+       // Combine previous remainder with current limb.
+       // We use __int128 to hold the intermediate 128-bit value.
+       unsigned __int128 current = ((unsigned __int128)remainder << 64) | limbs[i];
+       
+       limbs[i] = (uint64_t)(current / DIVISOR);
+       remainder = (uint64_t)(current % DIVISOR);
+   }
+   return remainder;
+}
+
+static bool is_zero(const std::vector<uint64_t>& limbs) {
+   for (uint64_t x : limbs) if (x!= 0) return false;
+   return true;
+}
+
+// Generic formatter for any width LBIM integer
+static AriaString* format_large_int(std::vector<uint64_t> limbs, bool is_signed) {
+   if (is_zero(limbs)) return alloc_aria_string("0");
+
+   bool negative = false;
+   if (is_signed) {
+       // Check sign bit of the most significant limb
+       if (limbs.back() & (1ULL << 63)) {
+           negative = true;
+           // Two's complement negation: ~x + 1
+           uint64_t carry = 1;
+           for (auto& limb : limbs) {
+               limb = ~limb;
+               unsigned __int128 res = (unsigned __int128)limb + carry;
+               limb = (uint64_t)res;
+               carry = (uint64_t)(res >> 64);
+           }
+       }
+   }
+
+   std::string result;
+   
+   // Extract 19-digit chunks until the number is zero
+   while (!is_zero(limbs)) {
+       uint64_t chunk = div_mod_1e19(limbs);
+       
+       if (is_zero(limbs)) {
+           // Last chunk (most significant) - no padding needed
+           result = std::to_string(chunk) + result;
+       } else {
+           // Inner chunk - must be zero-padded to 19 digits
+           std::stringstream ss;
+           ss << std::setfill('0') << std::setw(19) << chunk;
+           result = ss.str() + result;
+       }
+   }
+
+   if (negative) result = "-" + result;
+   return alloc_aria_string(result.c_str());
+}
+
+// -- FFI Entry Points --
+
+// int128 / uint128
+AriaString* aria_format_int128(aria_int128_t val) {
+   return format_large_int({val.limbs, val.limbs}, true);
+}
+AriaString* aria_format_uint128(aria_int128_t val) {
+   return format_large_int({val.limbs, val.limbs}, false);
+}
+
+// int256 / uint256
+AriaString* aria_format_int256(aria_int256_t val) {
+   return format_large_int({val.limbs, val.limbs, val.limbs, val.limbs}, true);
+}
+AriaString* aria_format_uint256(aria_int256_t val) {
+   return format_large_int({val.limbs, val.limbs, val.limbs, val.limbs}, false);
+}
+
+// int512 / uint512
+AriaString* aria_format_int512(aria_int512_t val) {
+   return format_large_int({
+       val.limbs, val.limbs, val.limbs, val.limbs,
+       val.limbs, val.limbs, val.limbs, val.limbs
+   }, true);
+}
+AriaString* aria_format_uint512(aria_int512_t val) {
+   return format_large_int({
+       val.limbs, val.limbs, val.limbs, val.limbs,
+       val.limbs, val.limbs, val.limbs, val.limbs
+   }, false);
+}
+
+4.4 Exotic Type Implementation (Trits and Nits)
+The trit type (balanced ternary) and nit type (balanced nonary) require specialized base conversion logic. The specification implies trit values are {-1, 0, 1} and tryte is a sequence of these.
+
+
+C++
+
+
+
+
+// ============================================================================
+// Exotic Type Formatters (Balanced Ternary/Nonary)
+// ============================================================================
+
+// Single Trit: T, 0, 1
+AriaString* aria_format_trit(int8_t val) {
+   if (val == -1) return alloc_aria_string("T");
+   if (val == 0) return alloc_aria_string("0");
+   if (val == 1) return alloc_aria_string("1");
+   // Fallback for invalid memory state
+   return alloc_aria_string("?"); 
+}
+
+// Tryte: 16-bit storage (approx 9 trits)
+AriaString* aria_format_tryte(int16_t val) {
+   if (val == 0) return alloc_aria_string("0");
+   
+   std::string res;
+   int32_t work = val; // Promote to work with negative remainders
+   
+   // Balanced Ternary Conversion
+   while (work!= 0) {
+       int rem = work % 3;
+       work /= 3;
+       
+       if (rem == 0) {
+           res = "0" + res;
+       } else if (rem == 1) {
+           res = "1" + res;
+       } else if (rem == 2) { // 2 in standard ternary is 1T in balanced
+           res = "T" + res;
+           work++; // Carry
+       } else if (rem == -1) {
+           res = "T" + res;
+       } else if (rem == -2) { // -2 is T1 in balanced
+           res = "1" + res;
+           work--; // Borrow
+       }
+   }
+   return alloc_aria_string(res.c_str());
+}
+
+// Single Nit: Balanced Nonary (-4 to 4)
+// Representation: 
+// 0, 1, 2, 3, 4 (Standard)
+// A(-1), B(-2), C(-3), D(-4) (Negative digits)
+AriaString* aria_format_nit(int8_t val) {
+   switch(val) {
+       case 0: return alloc_aria_string("0");
+       case 1: return alloc_aria_string("1");
+       case 2: return alloc_aria_string("2");
+       case 3: return alloc_aria_string("3");
+       case 4: return alloc_aria_string("4");
+       case -1: return alloc_aria_string("A");
+       case -2: return alloc_aria_string("B");
+       case -3: return alloc_aria_string("C");
+       case -4: return alloc_aria_string("D");
+       default: return alloc_aria_string("?");
+   }
+}
+
+// Nyte: Sequence of nits
+AriaString* aria_format_nyte(int16_t val) {
+   if (val == 0) return alloc_aria_string("0");
+   std::string res;
+   int32_t work = val;
+   
+   // Balanced Nonary Conversion (Base 9)
+   while (work!= 0) {
+       int rem = work % 9;
+       work /= 9;
+       
+       // Adjust remainders to be centered around 0 (-4 to 4)
+       if (rem > 4) {
+           rem -= 9;
+           work++;
+       } else if (rem < -4) {
+           rem += 9;
+           work--;
+       }
+       
+       // Map rem to char
+       char c;
+       if (rem >= 0) c = '0' + rem;
+       else c = 'A' + (-rem - 1); // -1->A, -2->B...
+       
+       res = c + res;
+   }
+   return alloc_aria_string(res.c_str());
+}
+
+4.5 High-Precision Float Wrappers
+We leverage the existing flt256_to_string functions presumed to be in src/runtime/highprec_float.cpp based on ``.
+
+
+C++
+
+
+
+
+// ============================================================================
+// High-Precision Float Formatters
+// ============================================================================
+
+AriaString* aria_format_flt256(aria::runtime::flt256 val) {
+   // 71 digits is safe for flt256
+   std::string s = aria::runtime::flt256_to_string(val, 71);
+   return alloc_aria_string(s.c_str());
+}
+
+AriaString* aria_format_flt512(aria::runtime::flt512 val) {
+   // 147 digits is safe for flt512
+   std::string s = aria::runtime::flt512_to_string(val, 147);
+   return alloc_aria_string(s.c_str());
+}
+
+} // extern "C"
+
+5. Implementation: Compiler Backend Integration
+The runtime functions are useless unless the compiler generates calls to them. We must modify src/backend/ir/codegen_expr.cpp, specifically within the ExprCodegen class. The critical point of modification is codegenTemplateLiteral, where string interpolation occurs.
+5.1 The Dispatch Mechanism
+We introduce a dispatchFormatter method that inspects the type of the expression being interpolated and emits the correct LLVM call instruction.
+
+
+C++
+
+
+
+
+// In src/backend/ir/codegen_expr.cpp
+
+// Helper to resolve runtime function signatures lazily
+llvm::Function* ExprCodegen::getOrInsertFunction(const std::string& name, llvm::Type* retTy, llvm::ArrayRef<llvm::Type*> argTys) {
+   llvm::Function* func = module->getFunction(name);
+   if (!func) {
+       llvm::FunctionType* ft = llvm::FunctionType::get(retTy, argTys, false);
+       func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, name, module);
+   }
+   return func;
+}
+
+llvm::Value* ExprCodegen::dispatchFormatter(llvm::Value* val, Type* type) {
+   if (!type) return ptrToAriaString(builder.CreateGlobalStringPtr("<untyped>"));
+
+   std::string typeName;
+   if (auto prim = dynamic_cast<PrimitiveType*>(type)) {
+       typeName = prim->getName();
+   } else {
+       // Fallback for structs/arrays if needed
+       typeName = type->toString();
+   }
+
+   // 1. TBB Types
+   if (typeName == "tbb8") {
+       auto fn = getOrInsertFunction("aria_format_tbb8", getAriaStringType(), {builder.getInt8Ty()});
+       return builder.CreateCall(fn, {val});
+   }
+   if (typeName == "tbb16") {
+       auto fn = getOrInsertFunction("aria_format_tbb16", getAriaStringType(), {builder.getInt16Ty()});
+       return builder.CreateCall(fn, {val});
+   }
+   if (typeName == "tbb32") {
+       auto fn = getOrInsertFunction("aria_format_tbb32", getAriaStringType(), {builder.getInt32Ty()});
+       return builder.CreateCall(fn, {val});
+   }
+   if (typeName == "tbb64") {
+       auto fn = getOrInsertFunction("aria_format_tbb64", getAriaStringType(), {builder.getInt64Ty()});
+       return builder.CreateCall(fn, {val});
+   }
+
+   // 2. Large Integers (LBIM)
+   if (typeName == "int128") {
+       auto ty = getLLVMTypeFromString("int128");
+       auto fn = getOrInsertFunction("aria_format_int128", getAriaStringType(), {ty});
+       return builder.CreateCall(fn, {val});
+   }
+   if (typeName == "uint128") {
+       auto ty = getLLVMTypeFromString("uint128");
+       auto fn = getOrInsertFunction("aria_format_uint128", getAriaStringType(), {ty});
+       return builder.CreateCall(fn, {val});
+   }
+   if (typeName == "int256") {
+       auto ty = getLLVMTypeFromString("int256");
+       auto fn = getOrInsertFunction("aria_format_int256", getAriaStringType(), {ty});
+       return builder.CreateCall(fn, {val});
+   }
+   if (typeName == "uint256") {
+       auto ty = getLLVMTypeFromString("uint256");
+       auto fn = getOrInsertFunction("aria_format_uint256", getAriaStringType(), {ty});
+       return builder.CreateCall(fn, {val});
+   }
+   if (typeName == "int512") {
+       auto ty = getLLVMTypeFromString("int512");
+       auto fn = getOrInsertFunction("aria_format_int512", getAriaStringType(), {ty});
+       return builder.CreateCall(fn, {val});
+   }
+   if (typeName == "uint512") {
+       auto ty = getLLVMTypeFromString("uint512");
+       auto fn = getOrInsertFunction("aria_format_uint512", getAriaStringType(), {ty});
+       return builder.CreateCall(fn, {val});
+   }
+
+   // 3. Exotic Types
+   if (typeName == "trit") {
+       auto fn = getOrInsertFunction("aria_format_trit", getAriaStringType(), {builder.getInt8Ty()});
+       return builder.CreateCall(fn, {val});
+   }
+   if (typeName == "tryte") {
+       auto fn = getOrInsertFunction("aria_format_tryte", getAriaStringType(), {builder.getInt16Ty()});
+       return builder.CreateCall(fn, {val});
+   }
+   if (typeName == "nit") {
+       auto fn = getOrInsertFunction("aria_format_nit", getAriaStringType(), {builder.getInt8Ty()});
+       return builder.CreateCall(fn, {val});
+   }
+   if (typeName == "nyte") {
+       auto fn = getOrInsertFunction("aria_format_nyte", getAriaStringType(), {builder.getInt16Ty()});
+       return builder.CreateCall(fn, {val});
+   }
+
+   // 4. High-Precision Floats
+   if (typeName == "flt256") {
+       auto ty = getLLVMTypeFromString("flt256");
+       auto fn = getOrInsertFunction("aria_format_flt256", getAriaStringType(), {ty});
+       return builder.CreateCall(fn, {val});
+   }
+   if (typeName == "flt512") {
+       auto ty = getLLVMTypeFromString("flt512");
+       auto fn = getOrInsertFunction("aria_format_flt512", getAriaStringType(), {ty});
+       return builder.CreateCall(fn, {val});
+   }
+
+   // 5. Vectors (Recursive Strategy)
+   // If the type is vec2/vec3, we format components and concatenate.
+   if (typeName == "vec2" |
+
+| typeName == "vec3") {
+       return codegenVectorToString(val, type);
+   }
+
+   // Fallback to legacy behavior for standard types
+   if (val->getType()->isIntegerTy()) return int64ToString(val);
+   if (val->getType()->isFloatingPointTy()) return floatToString(val);
+   if (val->getType()->isPointerTy()) return ptrToAriaString(val);
+
+   return ptrToAriaString(builder.CreateGlobalStringPtr("<unknown>"));
+}
+
+5.2 Vector Formatting Logic
+For vector types (vec2, vec3), we must extract elements, format them individually, and concatenate them with brackets.
+
+
+C++
+
+
+
+
+llvm::Value* ExprCodegen::codegenVectorToString(llvm::Value* vecVal, Type* vecType) {
+   // Assuming vec2/vec3 are llvm::FixedVectorType
+   // Format: "[x, y]"
+   
+   llvm::Value* openBracket = createAriaString("");
+   
+   // Extract elements
+   // Note: This assumes components are standard floats/doubles. 
+   // If vectors can hold TBBs, we need deeper type analysis.
+   llvm::Value* x = builder.CreateExtractElement(vecVal, (uint64_t)0);
+   llvm::Value* y = builder.CreateExtractElement(vecVal, (uint64_t)1);
+   
+   llvm::Value* xStr = floatToString(x); // Or dispatchFormatter recursively
+   llvm::Value* yStr = floatToString(y);
+   
+   // Concatenate: "[" + x + ", " + y + "]"
+   // Using aria_string_concat_n for efficiency
+   llvm::Function* concatFn = module->getFunction("aria_string_concat_n");
+   //... setup array of strings...
+   // This part matches the logic in existing codegenTemplateLiteral
+   //...
+   return resultString;
+}
+
+6. Build System and Linkage
+To ensure these new symbols are available at link time, CMakeLists.txt must be updated to include the new runtime source file.
+
+
+CMake
+
+
+
+
+# In CMakeLists.txt
+
+set(RUNTIME_SOURCES 
+   src/runtime/gc/allocator.cpp 
+   src/runtime/gc/gc.cpp 
+   src/runtime/allocators/wild_alloc.cpp
+   src/runtime/allocators/arena_alloc.cpp
+   # NEW: Formatter implementation
+   src/runtime/fmt/formatters.cpp
+   src/runtime/lbim.cpp  # Ensure LBIM core logic is linked
+   src/runtime/highprec_float.cpp
+   #...
+)
+
+7. Verification and Testing
+Validation of this implementation requires a suite of tests that exercise the boundary conditions of each type.
+7.1 Test Plan
+Test Case
+	Input Value
+	Expected Output
+	Rationale
+	LBIM Max
+	int256.max
+	Decimal string of $2^{255}-1$
+	Verify multi-precision arithmetic correctness.
+	LBIM Zero
+	int256(0)
+	"0"
+	Verify edge case handling.
+	TBB Sentinel
+	tbb8(-128)
+	"ERR"
+	Verify safety interception.
+	TBB Value
+	tbb8(127)
+	"127"
+	Verify normal pass-through.
+	Trit Negative
+	trit(-1)
+	"T"
+	Verify balanced ternary mapping.
+	Tryte Complex
+	tryte(5)
+	"1TT" ($9 - 3 - 1 = 5$)
+	Verify base-3 conversion logic.
+	Float Precision
+	flt256(pi)
+	71-digit decimal
+	Verify high-precision output.
+	7.2 Sample Test Code
+
+
+Code snippet
+
+
+
+
+// tests/manual/types_print.aria
+
+func main() {
+   // 1. Check int256
+   int256:big = 1000000000000000000000; // 10^21
+   print("Big: &{big}");
+
+   // 2. Check TBB Safety
+   tbb8:err = -128;
+   print("TBB Err: &{err}");
+
+   // 3. Check Trits
+   trit:t = -1;
+   print("Trit: &{t}");
+   
+   // 4. Check Nits
+   nit:n = -1; // Should print "A"
+   print("Nit: &{n}");
+}
+
+8. Conclusion
+This specification provides a complete, robust implementation for serializing Aria's advanced type system. By addressing the ABI constraints of the Limb-Based Integral Model and enforcing the semantic requirements of Twisted Balanced Binary and Exotic types, this solution eliminates the current "blind spots" in the I/O subsystem. The resulting architecture not only satisfies the immediate requirement for int256 printing but establishes a scalable pattern for type-aware formatting that underpins the entire Aria ecosystem's usability and safety guarantees. The implementation of src/runtime/fmt/formatters.cpp and the corresponding compiler hooks in ExprCodegen ensures that "what you see is what you get"—a fundamental necessity for a language designed for high-reliability systems.

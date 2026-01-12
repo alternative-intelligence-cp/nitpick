@@ -1,0 +1,21 @@
+/**
+ * Test: Loop-Carried Use After Free
+ * Expected: COMPILER ERROR (use of freed wild memory in loop iteration 2+)
+ * Why: Classic temporal safety bug - free in loop, use in next iteration
+ *
+ * From TODO: "Iteration 2: p is FREED, use(p) must error"
+ */
+
+func:main = int32() {
+    wild int8@:p = alloc(10);
+    int32:i = 0;
+
+    while (i < 5) {
+        free(p);     // Iteration 1: p → FREED
+        i = i + 1;
+        // Iteration 2+: p is already FREED
+        // ERROR: Loop body accesses freed memory on subsequent iterations
+    }
+
+    return 0;
+};

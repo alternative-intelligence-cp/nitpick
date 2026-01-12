@@ -1,0 +1,528 @@
+﻿Architectural Implementation of Safety-Critical Arbitrary Precision Arithmetic in the Aria Runtime Environment
+1. Introduction and Architectural Philosophy
+The development of a robust, arbitrary-precision integer (BigInt) primitive for the Aria programming language represents a fundamental challenge in systems engineering. It requires the reconciliation of two often opposing forces: the mathematical necessity for unbounded precision in Artificial General Intelligence (AGI) simulations and the rigid, deterministic constraints of real-time systems programming. This report provides a comprehensive technical specification and implementation strategy for the BigInt type, strictly adhering to Aria’s "wild" memory model, Twisted Balanced Binary (TBB) safety protocols, and a tiered algorithmic hierarchy for arithmetic operations.
+Aria’s design philosophy distinguishes itself from contemporary systems languages through its bifurcated memory model and its treatment of numeric types as signals carrying validity metadata rather than pure mathematical entities.1 In this context, a BigInt is not merely a container for bits; it is a safety-critical component responsible for preventing "game-over" scenarios in physical simulations by guaranteeing ironclad bounds checking and error propagation.1
+This implementation eschews the convenience of garbage collection (GC) in favor of the "wild" allocator—a manual memory management paradigm akin to traditional C heaps but integrated into Aria’s safety semantics. By decoupling large-number arithmetic from the non-deterministic pauses of a garbage collector, we ensure that the primitive remains viable for use in high-frequency control loops, cryptographic key generation, and real-time inference engines.
+The architectural solution proposed herein utilizes a Small Buffer Optimization (SBO) strategy to maintain stack-like performance for common values (up to 256 bits) while seamlessly scaling to heap allocation for larger operands. Furthermore, it introduces a novel integration of Aria’s TBB error sentinels into the domain of arbitrary precision, defining a "sticky" invalid state that propagates through calculations to prevent the silent corruption of state.1
+2. The Aria Memory Model and Allocator Constraints
+To understand the design decisions behind the BigInt structure, one must first analyze the execution environment provided by the Aria runtime. The language operates on a dual-memory architecture: the managed heap (GC) and the wild heap.
+2.1 The Wild Memory Subsystem
+The "wild" memory model is the domain of manual resource management. It is exposed to the developer via the wild keyword and managed through explicit runtime calls.
+* Determinism: Unlike the GC heap, allocations in the wild heap are deterministic. The time cost is strictly that of the allocator's search algorithm (typically $O(1)$ or $O(\log N)$ depending on fragmentation), with no risk of triggering a "stop-the-world" collection phase.
+* Lifecycle: Objects in wild memory have lifetimes defined by their scope or explicit deallocation. This imposes a strict ownership burden on the BigInt implementation to prevent memory leaks.
+* Interface: The runtime exposes void* aria_alloc(size_t size) and void aria_free(void* ptr) as the primitives for this domain. All dynamic buffer expansion for the BigInt must strictly utilize these interfaces to ensure compatibility with the runtime's accounting and security mechanisms.
+2.2 Small Buffer Optimization (SBO) Rationale
+In systems programming, the "efficiency" of a data structure is often determined by its cache locality rather than its theoretical algorithmic complexity. A naive BigInt implementation that allocates heap memory for every value (even small ones like 0, 1, or 255) incurs significant performance penalties:
+1. Allocator Overhead: A malloc call typically takes 10–50 nanoseconds, whereas stack allocation is effectively free (a pointer increment).
+2. Indirection: Accessing heap data requires pointer chasing (struct -> ptr -> data), which introduces data dependencies that can stall the CPU pipeline.
+3. Cache Coherency: Heap allocations are often spatially disjoint from the stack frame, increasing the probability of L1 cache misses.
+SBO addresses these issues by embedding a small buffer directly within the struct. Analysis of cryptographic and systems workloads suggests that a significant plurality of "large" integers actually fit within 256 bits (e.g., standard elliptic curve keys, hashes, UUIDs). By sizing the inline buffer to 4 limbs (256 bits), we ensure that the vast majority of operations remain stack-bound, utilizing the heap only for truly "arbitrary" precision values.
+3. Data Structure Engineering
+The BigInt structure is designed to fit within a standard CPU cache line (64 bytes) to maximize throughput. It employs a discriminated union to overlay the inline buffer with the heap pointer functionality.
+3.1 Structural Layout
+The following C++ definition implements the SBO strategy with a 256-bit inline capacity.
+
+
+C++
+
+
+
+
+#include <cstdint>
+#include <cstddef>
+#include <cstring>
+#include <algorithm>
+#include <type_traits>
+
+// Runtime Allocator Interface 
+extern "C" void* aria_alloc(size_t size);
+extern "C" void aria_free(void* ptr);
+
+// TBB Error Sentinel for 64-bit integers 
+// Defined as the minimum signed 64-bit integer.
+static const int64_t TBB64_ERR = static_cast<int64_t>(0x8000000000000000);
+
+struct BigInt {
+   // Storage Mode Discriminator
+   enum class Mode : uint8_t {
+       Inline = 0, // Data stored in inline_limbs
+       Heap = 1,   // Data stored at heap.ptr
+       Invalid = 2 // Represents TBB_ERR state (sticky error)
+   };
+
+   // 4 limbs * 64 bits = 256 bits inline capacity
+   static constexpr size_t INLINE_CAPACITY = 4;
+
+   union Storage {
+       // Option 1: Small Buffer Optimization
+       uint64_t inline_limbs;
+
+       // Option 2: Wild Heap Allocation
+       struct {
+           uint64_t* ptr;    // Pointer to wild memory
+           size_t capacity;  // Allocated size in limbs
+       } heap;
+   } storage;
+
+   uint32_t size;      // Number of active limbs (magnitude)
+   Mode mode;          // Active member of the union
+   bool sign;          // Sign bit: false = positive, true = negative
+   uint8_t _pad;    // Padding for 8-byte alignment
+
+   // =============================================================
+   // Lifecycle Management
+   // =============================================================
+
+   // Default Constructor: Initializes to valid Zero
+   BigInt() : size(0), mode(Mode::Inline), sign(false) {
+       std::memset(storage.inline_limbs, 0, sizeof(storage.inline_limbs));
+   }
+
+   // Move Constructor: Critical for efficiency
+   BigInt(BigInt&& other) noexcept : size(other.size), mode(other.mode), sign(other.sign) {
+       if (mode == Mode::Inline) {
+           std::memcpy(storage.inline_limbs, other.storage.inline_limbs, sizeof(storage.inline_limbs));
+       } else if (mode == Mode::Heap) {
+           storage.heap = other.storage.heap;
+           // Steal ownership
+           other.mode = Mode::Inline;
+           other.size = 0;
+       }
+       // Invalid state propagates naturally
+   }
+
+   // Move Assignment
+   BigInt& operator=(BigInt&& other) noexcept {
+       if (this!= &other) {
+           this->free_resource(); // Clean up current state
+           size = other.size;
+           mode = other.mode;
+           sign = other.sign;
+           
+           if (mode == Mode::Inline) {
+               std::memcpy(storage.inline_limbs, other.storage.inline_limbs, sizeof(storage.inline_limbs));
+           } else if (mode == Mode::Heap) {
+               storage.heap = other.storage.heap;
+               other.mode = Mode::Inline; // Steal ownership
+               other.size = 0;
+           }
+       }
+       return *this;
+   }
+
+   // Destructor
+   ~BigInt() {
+       free_resource();
+   }
+
+   // Helper to release wild memory
+   void free_resource() {
+       if (mode == Mode::Heap && storage.heap.ptr!= nullptr) {
+           aria_free(storage.heap.ptr);
+       }
+       // Reset to safe empty state
+       mode = Mode::Inline;
+       size = 0;
+       std::memset(storage.inline_limbs, 0, sizeof(storage.inline_limbs));
+   }
+   
+   // Explicitly delete copy semantics to enforce ownership model
+   BigInt(const BigInt&) = delete;
+   BigInt& operator=(const BigInt&) = delete;
+};
+
+3.2 The "Invalid" State Topology
+A critical requirement is the distinct representation of the "Invalid" state.1 In many libraries, an error is represented as a null pointer or an exception. In Aria, errors are first-class values.
+* Valid Zero: Represented by size = 0, mode = Inline, sign = false. The limbs array is zeroed.
+* Invalid (ERR): Represented by size = 0, mode = Invalid. The content of the limbs is irrelevant (undefined), but the mode tag acts as a high-priority interrupt flag for any operation consuming this value.
+This distinction allows the runtime to differentiate between a mathematical zero and a calculation failure (e.g., division by zero or TBB overflow), preserving the semantic integrity of the AGI's internal model.
+4. Arithmetic Core I: Linear Operations
+The foundation of the arithmetic engine lies in addition and subtraction. While conceptually simple, efficient implementation requires careful management of carry chains and memory resizing.
+4.1 Capacity Management
+Before implementing arithmetic, we require a robust internal mechanism to handle the transition between SBO and Heap storage.
+
+
+C++
+
+
+
+
+// Internal helper to ensure storage capacity
+void ensure_capacity(BigInt& bi, size_t needed_limbs) {
+   if (bi.mode == BigInt::Mode::Invalid) return;
+
+   // Case 1: Fits in SBO
+   if (needed_limbs <= BigInt::INLINE_CAPACITY) {
+       // If currently on heap, we implement lazy contraction:
+       // We do NOT free the heap memory immediately to prevent hysteresis loops
+       // (allocation thrashing) if the number grows again.
+       return; 
+   }
+
+   // Case 2: Currently Inline, needs Heap
+   if (bi.mode == BigInt::Mode::Inline) {
+       size_t alloc_size = needed_limbs * sizeof(uint64_t);
+       uint64_t* new_ptr = static_cast<uint64_t*>(aria_alloc(alloc_size));
+       
+       // Copy existing data
+       std::memcpy(new_ptr, bi.storage.inline_limbs, sizeof(bi.storage.inline_limbs));
+       
+       // Zero-initialize the new space
+       size_t old_byte_size = sizeof(bi.storage.inline_limbs);
+       std::memset(reinterpret_cast<uint8_t*>(new_ptr) + old_byte_size, 0, alloc_size - old_byte_size);
+
+       bi.mode = BigInt::Mode::Heap;
+       bi.storage.heap.ptr = new_ptr;
+       bi.storage.heap.capacity = needed_limbs;
+   }
+   // Case 3: Currently Heap, needs expansion
+   else if (bi.mode == BigInt::Mode::Heap) {
+       if (needed_limbs > bi.storage.heap.capacity) {
+           // Growth strategy: 1.5x expansion to amortize allocation cost
+           size_t new_capacity = std::max(needed_limbs, bi.storage.heap.capacity + (bi.storage.heap.capacity / 2));
+           size_t new_byte_size = new_capacity * sizeof(uint64_t);
+           
+           // Allocate new block (wild alloc implies manual copy/free, no realloc intrinsic assumed safe)
+           uint64_t* new_ptr = static_cast<uint64_t*>(aria_alloc(new_byte_size));
+           
+           // Copy old data
+           size_t old_byte_size = bi.size * sizeof(uint64_t); // Copy only used data
+           std::memcpy(new_ptr, bi.storage.heap.ptr, old_byte_size);
+           
+           // Zero new space
+           std::memset(reinterpret_cast<uint8_t*>(new_ptr) + old_byte_size, 0, new_byte_size - old_byte_size);
+           
+           // Free old block
+           aria_free(bi.storage.heap.ptr);
+           
+           bi.storage.heap.ptr = new_ptr;
+           bi.storage.heap.capacity = new_capacity;
+       }
+   }
+}
+
+4.2 Addition Implementation (bigint_add)
+Addition must handle sign-magnitude logic. If signs differ, it degrades to subtraction. If signs match, it performs magnitude addition.
+
+
+C++
+
+
+
+
+// Accessor helper
+inline uint64_t get_limb(const BigInt& bi, size_t index) {
+   if (index >= bi.size) return 0;
+   if (bi.mode == BigInt::Mode::Inline) return bi.storage.inline_limbs[index];
+   return bi.storage.heap.ptr[index];
+}
+
+// Mutator helper
+inline void set_limb(BigInt& bi, size_t index, uint64_t value) {
+   if (bi.mode == BigInt::Mode::Inline) bi.storage.inline_limbs[index] = value;
+   else bi.storage.heap.ptr[index] = value;
+}
+
+// Core unsigned addition: res = |a| + |b|
+void unsigned_add(const BigInt& a, const BigInt& b, BigInt& res) {
+   size_t n = std::max(a.size, b.size);
+   ensure_capacity(res, n + 1); // Worst case: 1 limb growth
+   
+   uint64_t carry = 0;
+   for (size_t i = 0; i < n; ++i) {
+       unsigned __int128 sum = (unsigned __int128)get_limb(a, i) + get_limb(b, i) + carry;
+       set_limb(res, i, (uint64_t)sum);
+       carry = (uint64_t)(sum >> 64);
+   }
+   
+   if (carry) {
+       set_limb(res, n, carry);
+       res.size = n + 1;
+   } else {
+       res.size = n;
+   }
+}
+
+extern "C" void bigint_add(BigInt* a, BigInt* b, BigInt* res) {
+   // 1. Sticky Error Check
+   if (a->mode == BigInt::Mode::Invalid |
+
+| b->mode == BigInt::Mode::Invalid) {
+       res->free_resource();
+       res->mode = BigInt::Mode::Invalid;
+       return;
+   }
+
+   // 2. Sign Logic
+   if (a->sign == b->sign) {
+       unsigned_add(*a, *b, *res);
+       res->sign = a->sign;
+   } else {
+       // Differing signs: subtraction
+       // Compare magnitudes to determine result sign
+       // (Implementation of unsigned_cmp and unsigned_sub omitted for brevity but required)
+       //...
+   }
+}
+
+5. Arithmetic Core II: Multiplicative Strategies
+Multiplication is the most computationally intensive operation for arbitrary precision integers. The Aria specification mandates a tiered approach based on limb count ($N$) to maintain optimal performance across all scales.
+5.1 Schoolbook Multiplication ($N < 32$)
+For small integers (up to ~2048 bits), the overhead of recursive algorithms like Karatsuba outweighs their asymptotic benefits. The simple $O(N^2)$ algorithm is preferred due to its tight loops, predictable branching, and high instruction-level parallelism potential.3
+Algorithm:
+Iterate through each limb of operand B, multiplying it by the entire vector A, and accumulating the partial products.
+
+
+C++
+
+
+
+
+void mul_schoolbook(const BigInt& a, const BigInt& b, BigInt& res) {
+   // Pre-calculate result size
+   size_t n = a.size;
+   size_t m = b.size;
+   ensure_capacity(res, n + m);
+   
+   // Zero initialize result accumulator
+   size_t res_limbs = n + m;
+   for(size_t i = 0; i < res_limbs; ++i) set_limb(res, i, 0);
+   res.size = res_limbs;
+
+   for (size_t i = 0; i < m; ++i) {
+       uint64_t carry = 0;
+       uint64_t b_limb = get_limb(b, i);
+       
+       // Inner loop: Optimize for vectorization
+       for (size_t j = 0; j < n; ++j) {
+           uint64_t a_limb = get_limb(a, j);
+           uint64_t current = get_limb(res, i + j);
+           
+           // 128-bit arithmetic is essential here
+           unsigned __int128 product = (unsigned __int128)a_limb * b_limb + current + carry;
+           
+           set_limb(res, i + j, (uint64_t)product);
+           carry = (uint64_t)(product >> 64);
+       }
+       set_limb(res, i + n, carry);
+   }
+   
+   // Normalize: remove leading zeros
+   while (res.size > 0 && get_limb(res, res.size - 1) == 0) {
+       res.size--;
+   }
+}
+
+5.2 Karatsuba Multiplication ($32 \le N < 256$)
+The Karatsuba algorithm reduces complexity to $O(N^{\log_2 3}) \approx O(N^{1.585})$ by replacing one multiplication with additions and subtractions.
+Formula:
+Given $A = A_1 B^k + A_0$ and $Y = B_1 B^k + B_0$:
+
+
+
+
+$$A \times B = (A_1 B^k + A_0)(B_1 B^k + B_0) = z_2 B^{2k} + z_1 B^k + z_0$$
+
+
+Where:
+* $z_2 = A_1 \times B_1$
+* $z_0 = A_0 \times B_0$
+* $z_1 = (A_1 + A_0)(B_1 + B_0) - z_2 - z_0$
+Implementation Challenge:
+The naive implementation allocates significant "wild" memory for the intermediate terms ($z$ values) at each recursive step. For the Aria runtime, we mitigate this by using a "scratchpad" approach or careful scope management to ensure aria_free is called as the stack unwinds.
+
+
+C++
+
+
+
+
+void mul_karatsuba(const BigInt& a, const BigInt& b, BigInt& res) {
+   size_t n = std::max(a.size, b.size);
+   size_t k = n / 2; // Split point
+
+   // Split inputs
+   BigInt a0, a1, b0, b1;
+   split_at(a, k, a1, a0); // Helper: A1 = upper, A0 = lower
+   split_at(b, k, b1, b0);
+
+   // Recursive calls (dispatch back to main mul function to handle thresholds)
+   BigInt z0, z1, z2;
+   bigint_mul_internal(a0, b0, z0); // z0 = a0 * b0
+   bigint_mul_internal(a1, b1, z2); // z2 = a1 * b1
+   
+   // z1 calculation: (a0 + a1) * (b0 + b1)
+   BigInt a_sum, b_sum, z1_raw;
+   unsigned_add(a0, a1, a_sum);
+   unsigned_add(b0, b1, b_sum);
+   bigint_mul_internal(a_sum, b_sum, z1_raw);
+   
+   // z1 = z1_raw - z2 - z0
+   BigInt temp;
+   unsigned_add(z2, z0, temp);
+   unsigned_sub(z1_raw, temp, z1); // Helper: unsigned subtraction
+
+   // Reassembly: z2 << 2k + z1 << k + z0
+   shift_left_limbs(z2, 2 * k);
+   shift_left_limbs(z1, k);
+   
+   unsigned_add(z2, z1, res);
+   unsigned_add(res, z0, res);
+   
+   // Destructors for local BigInts (a0...z1) fire automatically here
+   // cleaning up wild memory.
+}
+
+5.3 Number Theoretic Transform (NTT) ($N \ge 256$)
+For ultra-large integers ($N \ge 256$ limbs, roughly 16,384 bits), Karatsuba's recursion depth becomes problematic. We switch to the Number Theoretic Transform (NTT), which allows multiplication in $O(N \log N)$ time. Unlike Floating Point FFTs, NTT operates over a finite field $\mathbb{Z}_p$, eliminating precision loss.4
+Simplified Strategy:
+A full Schönhage-Strassen implementation is overly complex for a standard library. We adopt a simplified "3-primes" approach or a single large prime approach suitable for the target architecture.
+1. Field Selection: We select a "Goldilocks" prime $P$ of the form $c \cdot 2^k + 1$ that supports large transforms (large $k$) and fits in a 64-bit word (e.g., $P = 0xFFFFFFFF00000001$). This allows native 64-bit arithmetic for modular operations.
+2. Transform: Convert the limb vectors of $A$ and $B$ into the frequency domain using a radix-2 Cooley-Tukey NTT algorithm.
+3. Convolution: Perform point-wise modular multiplication in the frequency domain.
+4. Inverse Transform: Apply the Inverse NTT to retrieve the result.
+5. Carry Propagation: The result of the convolution is a vector of values that may exceed the limb size. A final pass normalizes these values by carrying the overflow to the next position.
+NTT Threshold:
+At $N=256$, the overhead of computing the transform tables and performing the bit-reversal permutation is amortized by the sheer volume of schoolbook multiplications avoided.
+6. TBB Compatibility and Sentinel Propagation
+The BigInt structure must serve as a compliant citizen of the TBB type system. This involves bidirectional conversion and strict error adherence.
+6.1 tbb_to_bigint Conversion Logic
+The conversion function must detect the TBB64_ERR sentinel. If detected, it must produce an "Invalid" BigInt rather than treating the sentinel as a large negative number.
+
+
+C++
+
+
+
+
+// Defined in header
+void tbb_to_bigint(int64_t input, BigInt& out) {
+   // 1. Sentinel Check 
+   if (input == TBB64_ERR) {
+       out.free_resource();
+       out.mode = BigInt::Mode::Invalid;
+       out.size = 0;
+       return;
+   }
+
+   // 2. Normal Conversion
+   out.free_resource(); // Clear previous state
+   out.mode = BigInt::Mode::Inline;
+   
+   if (input == 0) {
+       out.size = 0;
+       out.sign = false;
+       return;
+   }
+
+   // Handle Sign
+   // TBB range is symmetric EXCEPT for the sentinel.
+   // However, TBB64_ERR is usually MIN_INT.
+   // If input!= ERR, then -input is representable (mostly).
+   // Caution: In standard int64, -MIN_INT overflows. 
+   // In TBB, MIN_INT is ERR, so all valid values [-MAX, +MAX] are symmetric.
+   // Therefore, absolute value calculation is safe.
+   
+   out.sign = (input < 0);
+   uint64_t abs_val = (input < 0)? static_cast<uint64_t>(-input) : static_cast<uint64_t>(input);
+   
+   out.storage.inline_limbs = abs_val;
+   out.size = 1;
+   // Clear remaining inline limbs
+   std::memset(out.storage.inline_limbs + 1, 0, 3 * sizeof(uint64_t));
+}
+
+6.2 Sticky Error Propagation
+Every public-facing arithmetic function (e.g., bigint_add, bigint_mul) must begin with a guard clause.
+
+
+C++
+
+
+
+
+extern "C" void bigint_mul(BigInt* a, BigInt* b, BigInt* res) {
+   // Sticky Error Guard
+   if (a->mode == BigInt::Mode::Invalid |
+
+| b->mode == BigInt::Mode::Invalid) {
+       res->free_resource();
+       res->mode = BigInt::Mode::Invalid;
+       return;
+   }
+   
+   // Normal logic...
+   bigint_mul_internal(*a, *b, *res);
+}
+
+This ensures that an "Invalid" state acts like a NaN in floating-point math—it infects the result. In a long chain of calculations (e.g., a physics simulation update loop), a single TBB overflow early in the chain will result in the final state being Invalid, alerting the AGI supervisor to the failure immediately.1
+7. Memory Safety and Transition Mechanics
+The transitions between SBO and Heap modes represent the highest risk for memory errors.
+7.1 Transition: Inline $\to$ Heap
+Occurs when required_limbs > 4.
+1. Verify aria_alloc success (check for null).
+2. If alloc fails, the BigInt should enter the Invalid state (resource exhaustion is a form of error).
+3. Copy inline_limbs to the new heap buffer.
+4. Update mode to Heap.
+7.2 Transition: Heap $\to$ Inline
+Occurs when used_limbs <= 4.
+Policy: Lazy Contraction.
+We explicitly do not automatically shrink a heap BigInt back to inline mode during standard arithmetic. This avoids "thrashing" where a value oscillating around the 4-limb boundary causes rapid alloc/free cycles. Contraction is only performed if explicitly requested (e.g., bigint_shrink_to_fit) or during move assignment where the destination is being overwritten.
+8. Conclusion and Future Directions
+The implementation detailed above provides a high-performance, safety-compliant arbitrary precision integer for the Aria runtime. By strictly adhering to the "wild" memory model, we ensure predictable latency essential for real-time systems. The SBO strategy minimizes overhead for the majority of use cases, while the tiered algorithmic approach (Schoolbook/Karatsuba/NTT) guarantees scalability. Most importantly, the rigorous integration of TBB error sentinels transforms the BigInt from a passive data container into an active participant in Aria's safety architecture, safeguarding AGI systems against numerical instability.
+Table 1: Complexity and Thresholds
+Algorithm
+	Threshold (N)
+	Bit Width Range
+	Complexity
+	Justification
+	Schoolbook
+	$N < 32$
+	0 - 2,048 bits
+	$O(N^2)$
+	Low constant factor; cache-friendly sequential access.
+	Karatsuba
+	$32 \le N < 256$
+	2,048 - 16,384 bits
+	$O(N^{1.585})$
+	Reduces multiplier operations; scratchpad memory manageable.
+	NTT
+	$N \ge 256$
+	16,384+ bits
+	$O(N \log N)$
+	Necessary to prevent $N^2$ scaling from stalling the runtime.
+	Table 2: BigInt Structure Memory Layout
+Offset
+	Field
+	Type
+	Size
+	Description
+	0
+	storage
+	union
+	32 B
+	Overlaps inline_limbs and {ptr, capacity}.
+	32
+	size
+	uint32_t
+	4 B
+	Number of active limbs.
+	36
+	mode
+	uint8_t
+	1 B
+	Tag: Inline(0), Heap(1), Invalid(2).
+	37
+	sign
+	bool
+	1 B
+	Sign flag.
+	38
+	_pad
+	uint8_t
+	2 B
+	Align structure to 40 bytes (fits in 64B cache line).
+	Works cited
+1. Aria Language_ Advanced Types & Math.txt
+2. BigInteger numbers implementation and performance - Stack Overflow, accessed December 31, 2025, https://stackoverflow.com/questions/23967334/biginteger-numbers-implementation-and-performance
+3. Number-theoretic transform (integer DFT) - Project Nayuki, accessed December 31, 2025, https://www.nayuki.io/page/number-theoretic-transform-integer-dft

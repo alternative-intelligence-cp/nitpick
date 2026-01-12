@@ -1,0 +1,221 @@
+﻿Comprehensive Implementation Strategy for Cryptographically Secure 4096-bit Integers in the Aria Programming Language
+1. Executive Summary and Architectural Imperatives
+The development of the Aria programming language is driven by a singular, overarching directive: the absolute safety and stability of the physics-based Artificial General Intelligence (AGI) systems intended for therapeutic interaction with vulnerable populations. In this context, numerical precision is not merely a performance metric; it is a safety constraint. The "drift" inherent in standard floating-point arithmetic or insufficient integer widths represents a non-deterministic vector that could potentially manifest as erratic physical behavior in a robotic companion or incorrect curricular adjustments in a teacher system.
+To mitigate these risks and secure the system against post-quantum cryptographic threats, Aria mandates the inclusion of ultra-wide integral types. While 1024-bit integers provide a baseline for current RSA standards, the feature freeze necessitates a forward-looking implementation of 4096-bit integers (int4096 and uint4096). These types serve two critical roles: they enable the direct execution of post-quantum cryptographic primitives (such as high-dimension Lattice-Based Cryptography) and provide a fixed-point substrate for deterministic physics simulations that must remain stable over billions of ticks.
+This report details the exhaustive implementation of int4096 and uint4096. It rejects the standard approach of using variable-length BigInt libraries, which introduce heap allocation unpredictability and potential timing attacks. Instead, it utilizes the Limb-Based Integral Model (LBIM), extending the architecture established for int1024 to a 64-limb fixed-width structure. This approach guarantees constant-time execution paths for cryptographic security, explicit memory layouts for predictability, and "Sticky Error" propagation to prevent silent data corruption—a potentially life-threatening failure mode in a therapeutic AGI context.
+2. The Necessity of 4096-bit Precision in Safety-Critical AGI
+2.1 The Physics of Drift and Determinism
+In a physics-based AGI, the internal world model is updated recursively. Standard IEEE 754 floating-point arithmetic is non-associative; the order of operations changes the result. Over extended interaction sessions—potentially spanning months of therapy for a neurodivergent child—these microscopic errors accumulate. This phenomenon, known as numerical drift, can cause the AGI's internal model of the physical world to diverge from reality, leading to miscalculations in force, velocity, or spatial positioning.
+By replacing floating-point coordinates with high-precision fixed-point representations utilizing int4096 as the underlying storage, Aria ensures bit-exact determinism. A 4096-bit integer can represent the observable universe with Planck-length precision while maintaining hundreds of bits for fractional accuracy, effectively eliminating rounding error as a source of behavioral drift.
+2.2 Post-Quantum Cryptographic Security
+The safety of the "teacher" system relies on secure channels for updating curricular data and telemetric monitoring. The impending advent of quantum computing renders RSA-2048 and standard Elliptic Curve Cryptography (ECC) vulnerable to Shor's algorithm. To secure the AGI against future threats, the cryptographic module must support key sizes that exceed current standards. int4096 enables native implementation of RSA-4096 and provides the wide accumulators necessary for Ring Learning With Errors (RLWE) and other lattice-based homomorphic encryption schemes, allowing the AGI to process encrypted user data without exposing it—a moral obligation when handling the data of vulnerable children.1
+3. The Limb-Based Integral Model (LBIM) Architecture
+Standard compiler backends, specifically LLVM, exhibit instability when optimizing integers larger than 128 bits. Optimization passes such as Interprocedural Sparse Conditional Constant Propagation (IPSCCP) and Constraint Elimination have documented defects when handling native i1024 or larger types, often resulting in miscompilations where values are incorrectly folded to zero or undefined behavior.1
+To circumvent this, Aria employs the Limb-Based Integral Model (LBIM). In this model, int4096 is not treated as a scalar number by the compiler backend but as a composite aggregate of machine-word-sized "limbs."
+3.1 Structural Definition
+The fundamental atomic unit of the LBIM architecture is the 64-bit unsigned integer (uint64 or LLVM i64). This choice aligns with the general-purpose registers (GPRs) of the target architecture (x86-64 and AArch64), facilitating efficient load/store operations.
+For a 4096-bit integer, the calculation of the required storage is strictly deterministic:
+
+
+
+
+$$\text{Total Bits} = 4096$$
+
+
+$$\text{Limb Width} = 64$$
+
+
+$$\text{Limb Count} = \frac{4096}{64} = 64 \text{ limbs}$$
+Consequently, the int4096 and uint4096 types are defined internally as a structure containing a single array of 64 i64 elements.
+LLVM IR Representation:
+
+
+Code snippet
+
+
+
+
+%struct.int4096 = type { [64 x i64] }
+%struct.uint4096 = type { [64 x i64] }
+
+This structure occupies exactly 512 bytes ($64 \times 8$) of memory. It is passed by reference (pointer) in most contexts to avoid the overhead of copying 512 bytes onto the stack for every function call, although the "value semantics" of the language conceal this reference passing from the developer to maintain explicitness and safety.
+3.2 Memory Layout and Endianness
+The limbs are stored in Little-Endian order.
+* limbs contains the least significant 64 bits (bits 0-63).
+* limbs contains the most significant 64 bits (bits 4032-4095).
+This ordering simplifies the implementation of arithmetic algorithms (addition, multiplication) which naturally propagate carries from the least significant digit upwards. It also aligns with the little-endian nature of x86-64 and modern ARM processors, allowing for reinterpret-casts of the memory block if necessary for serialization, although Aria's strict type safety generally forbids such raw casting.
+3.3 The "Sticky Error" Sentinel Mechanism
+In a life-critical application, undefined behavior (UB) is unacceptable. Standard integer overflow or division by zero usually triggers UB or a hardware trap (SIGFPE). In Aria, these conditions must be handled deterministically without crashing the runtime, as a crash could leave the AGI in an unsafe physical state (e.g., "limp mode" while holding a heavy object).
+LBIM implements a "Sticky Error" mechanism. A specific bit pattern is reserved to represent the ERR state.
+* Signed int4096 ERR: The minimum representable value ($ -2^{4095} $). This is represented as 0x8000...0000 in the most significant limb (limbs) and zero in all other limbs.
+* Unsigned uint4096 ERR: The maximum representable value ($ 2^{4096} - 1 $). This is represented as 0xFFFF...FFFF in all limbs.
+Any arithmetic operation involving an ERR operand immediately returns ERR. Any operation that overflows (e.g., MAX_INT + 1) or violates domain constraints (e.g., x / 0) returns ERR. This ensures that errors propagate predictably through the calculation graph to a point where they can be safely handled by the "teacher" system's supervisory logic.1
+4. Compiler Frontend and Type System Integration
+The implementation of int4096 requires deep integration into the Aria compiler's frontend, moving beyond a simple library addition to a first-class primitive. This ensures the compiler can enforce type safety constraints before the code ever reaches the runtime.
+4.1 Semantic Analysis (Sema)
+In src/frontend/sema/type.cpp, the type system is augmented to recognize int4096 and uint4096. Unlike standard integers, these types generally forbid implicit coercion to prevent accidental precision loss.
+Coercion Rules:
+* Widening (Safe): int1024 $\rightarrow$ int4096 is allowed implicitly. The value is sign-extended (for signed) or zero-extended (for unsigned) into the larger container.
+* Narrowing (Unsafe): int4096 $\rightarrow$ int1024 is forbidden implicitly. It requires an explicit cast<int1024>(val) operation, which will return ERR if the value does not fit in the target width.
+* Sign Conversion: int4096 $\leftrightarrow$ uint4096 requires explicit casting. This is to prevent ambiguity regarding the interpretation of the high bit (sign bit vs. magnitude).
+4.2 Expression Code Generation
+The mapping from the frontend type system to the LLVM IR is handled in src/backend/ir/codegen_expr.cpp. The ExprCodegen class must be expanded to handle the new types.1
+The getLLVMTypeFromString function serves as the central registry for type mapping. The logic for int4096 mirrors that of int1024 but scales the array size.
+Implementation Strategy:
+1. Check Type Name: Identify if the requested type is "int4096" or "uint4096".
+2. Context Query: Attempt to retrieve struct.int4096 from the llvm::LLVMContext. This prevents redefining the type if it was already generated in a different compilation unit.
+3. Type Creation: If the struct does not exist:
+   * Create an llvm::Type for the 64-bit integer (i64).
+   * Create an llvm::ArrayType of 64 elements of i64.
+   * Create an llvm::StructType with this array as its single member.
+   * Register this type under the name "struct.int4096" (or "struct.uint4096").
+This creates a distinct type in the LLVM system, preventing the optimizer from confusing it with an arbitrary array of numbers and ensuring that only valid LBIM arithmetic functions operate on it.
+4.3 Literal Handling: The "String-as-Truth" Pipeline
+One of the most complex aspects of supporting 4096-bit integers is parsing literals. A 4096-bit number can have approximately 1,233 decimal digits ($4096 \times \log_{10} 2$). Standard C++ conversion functions like strtoll saturate at 64 bits.
+Aria employs a "String-as-Truth" architecture. The lexer captures the literal as a raw string. The ExprCodegen::codegenLiteral function is responsible for converting this string into the compile-time constant ConstantStruct that initializes the int4096.1
+Parsing Algorithm:
+To convert a 1233-digit decimal string into 64 64-bit limbs, we cannot use standard hardware division. We must implement a "Big Integer" parser within the compiler itself. Fortunately, LLVM provides APInt (Arbitrary Precision Integer), which can parse string literals of arbitrary width.
+Implementation Steps:
+1. Ingest String: The codegenLiteral function receives the raw string from the AST.
+2. APInt Construction: Instantiate an llvm::APInt with a bit-width of 4096, passing the raw string and the radix (10). LLVM's internal logic handles the massive base conversion.
+3. Limb Extraction: Iterate 64 times (0 to 63). For each iteration, extract the corresponding 64-bit word from the APInt's internal raw data.
+4. Constant Creation: Create an llvm::ConstantInt for each extracted 64-bit word.
+5. Aggregation: Collect these constants into a std::vector and create an llvm::ConstantArray.
+6. Struct Wrapping: Wrap the array in an llvm::ConstantStruct matching the struct.int4096 type layout.
+This approach ensures that the large integer literals written by the developer are compiled directly into the binary as static data, requiring no runtime parsing.
+5. Runtime Arithmetic Library: Full Implementation
+Since int4096 is a structure, LLVM cannot generate arithmetic instructions (add, sub) directly. The compiler must emit calls to the Aria Runtime Library. This section details the algorithms for the full suite of mathematical operations. These functions are defined in C++ (for performance) and exposed via include/runtime/lbim.h.
+5.1 Bitwise Operations (AND, OR, XOR, NOT)
+Bitwise operations are the simplest to implement as they carry no dependencies between limbs. They are critical for cryptographic masking and state manipulation.
+Algorithm:
+Iterate from $i = 0$ to $63$. Apply the native C++ operator (&, |, ^, ~) to limbs[i] of the operands.
+Safety:
+These operations generally do not overflow. However, if an input is the ERR sentinel, the result must be ERR.
+5.2 Bit Shifting (SHL, SHR, ASHR)
+Shifting a multi-limb integer is complex because bits shifted out of one limb must be shifted into the adjacent limb.
+Left Shift (shl):
+1. Input: Value $A$, Shift Amount $S$.
+2. Limb Shift: Calculate limb_jump = S / 64. If limb_jump > 0, essentially memmove the limbs "left" (to higher indices) by limb_jump positions. Fill lower limbs with zero.
+3. Bit Shift: Calculate bit_shift = S % 64.
+4. Carry Propagation: For each limb $i$, the new value is (limbs[i] << bit_shift) | (limbs[i-1] >> (64 - bit_shift)).
+5. Safety: If S >= 4096, the result is 0 (or strictly handled).
+Arithmetic Right Shift (ashr):
+This must preserve the sign bit.
+1. Sign Extension: Before shifting, record the sign bit of limbs.
+2. Shift: Similar to logical right shift, but when filling the "vacated" high bits, fill them with 1s if the original number was negative, and 0s otherwise.
+5.3 Addition and Subtraction (Ripple Carry)
+For 64 limbs, a ripple-carry adder is the most stable and predictable implementation.
+Addition Logic (aria_lbim_add4096):
+1. Sentinel Check: If a == ERR or b == ERR, return ERR.
+2. Accumulator: Use a 128-bit unsigned integer (unsigned __int128) as the working accumulator to capture the carry.
+3. Loop: For $i = 0$ to $63$:
+   * sum = (uint128)a.limbs[i] + b.limbs[i] + carry
+   * res.limbs[i] = (uint64)sum (Lower 64 bits)
+   * carry = sum >> 64 (Upper 64 bits)
+4. Overflow Check (Signed): If the sign of the result differs from the sign of both operands (e.g., pos + pos = neg), signed overflow occurred. Return ERR.
+5. Overflow Check (Unsigned): If carry > 0 after the last limb, unsigned overflow occurred. Return ERR.
+Subtraction Logic:
+Implemented similarly using a "borrow" instead of a carry. The accumulator logic handles a - b - borrow.
+5.4 Multiplication: Constant-Time Comba Method
+Multiplication is a high-risk operation for timing attacks. A naive implementation might optimize by skipping multiplication by zero limbs. In a cryptographic context, this leakage is unacceptable. Aria uses the Comba Multiplication (column-wise) method, which is strictly constant-time $O(N^2)$.
+Implementation Details:
+1. Accumulator: A three-word accumulator ($r0, r1, r2$) is maintained to hold the sum of partial products for the current column.
+2. Column Loop: Iterate through columns $k$ from $0$ to $127$ (result of $4096 \times 4096$ is 8192 bits / 128 limbs).
+3. Inner Loop: For each column $k$, compute all pairs $(i, j)$ such that $i + j = k$.
+   * multiply_accumulate(a[i], b[j]).
+   * This adds a[i] * b[j] to the $(r0, r1, r2)$ accumulator.
+4. Store: After processing column $k$, result[k] = r0. Shift the accumulator: r0 = r1, r1 = r2, r2 = 0.
+5. Truncation/Overflow: Since int4096 only stores the lower 64 limbs, we technically only need to compute columns $0$ to $63$.
+   * However, for safety, we must compute the upper columns ($64$ to $127$) to check for overflow. If any of the upper 64 limbs are non-zero, the result exceeds 4096 bits. Return ERR.
+This method accesses memory in a predictable pattern regardless of the data values, securing the AGI against side-channel analysis.
+5.5 Division: Knuth's Algorithm D
+Division is the most complex operation. Simple binary long division is too slow ($O(N^2)$ bits). Aria implements Knuth's Algorithm D from The Art of Computer Programming.
+The Algorithm (adapted for 64-bit limbs):
+1. Normalization: Shift the divisor $V$ left by $d$ bits such that the most significant bit of the most significant limb is 1. Shift the dividend $U$ by the same amount. This ensures the quotient estimate is accurate.
+2. Loop: Iterate from the most significant limb of the dividend down to the least.
+3. Estimation: Calculate a quotient estimate $\hat{q}$ for the current position based on the top two limbs of the dividend and the top limb of the divisor.
+
+$$\hat{q} = \min \left( \frac{u_j \times B + u_{j+1}}{v_1}, B-1 \right)$$
+
+(Where $B = 2^{64}$).
+4. Correction: The estimate $\hat{q}$ may be too large by at most 2. Refine it by checking against the second limb of the divisor.
+5. Multiply and Subtract: Subtract $\hat{q} \times V$ from the current portion of $U$.
+6. Add Back: If the subtraction result is negative (borrowed), it means $\hat{q}$ was one too large. Decrement $\hat{q}$ and add $V$ back to $U$.
+7. Denormalization: Shift the remainder right by $d$ bits to restore the original scale.
+Signed Wrapper:
+aria_lbim_sdiv4096 handles signed division by:
+   1. Converting inputs to absolute values.
+   2. Calling the unsigned Knuth D implementation.
+   3. Applying the sign rule (result is negative if operand signs differ).
+   4. Restoring Two's Complement representation.
+Safety Critical Check:
+Before any logic, check if divisor == 0. If so, return ERR. Do not rely on hardware traps.
+6. Coercion and Type Interaction Rules
+In the spirit of explicitness, Aria restricts implicit movements between types.
+Source
+	Target
+	Rule
+	Reasoning
+	int64
+	int4096
+	Implicit
+	Safe widening; no data loss possible.
+	int1024
+	int4096
+	Implicit
+	Safe widening.
+	int4096
+	int1024
+	Explicit
+	var x: int1024 = cast<int1024>(y). Checks for overflow at runtime.
+	int4096
+	int64
+	Explicit
+	High risk of truncation.
+	int4096
+	uint4096
+	Explicit
+	Sign reinterpretation must be intentional.
+	Mixed Arithmetic:
+If a user writes var x: int4096 = large_val + 1;, the compiler's ExprCodegen detects the mixed types (int4096 vs int64).
+   1. The int64 literal "1" is promoted to a temporary int4096 struct (with 63 zero limbs).
+   2. The aria_lbim_add4096 function is called with the two structs.
+This ensures the runtime arithmetic functions never need to handle overloaded signatures for every integer type combination.
+7. Performance and Optimization Strategy
+7.1 Constant-Time Guarantees
+For cryptographic paths, latency variation is a vulnerability. The implementation of int4096 explicitly forbids data-dependent branching in the mul and pow (modular exponentiation) routines. While this may result in slower performance for "small" numbers stored in int4096 containers (as leading zeros are processed fully), it guarantees that an adversary monitoring the AGI's power consumption or timing cannot infer the private keys or internal states.
+7.2 AVX-512 Future Proofing
+The current implementation uses portable C++. However, the 64-limb structure is perfectly aligned with 512-bit vector registers (ZMM) available on modern high-performance CPUs (AVX-512).
+      * A single ZMM register can hold 8 limbs.
+      * The entire 4096-bit integer fits in 8 ZMM registers.
+      * Future optimizations in the JIT compiler can replace the loop-based runtime calls with unrolled AVX-512 inline assembly, performing parallel additions and multiplications. The current memory alignment of the struct is set to 8 bytes, but the allocator (aria_alloc) will define a preferred alignment of 64 bytes for int4096 allocations to facilitate these future SIMD operations without cache-line splitting penalties.
+8. Safety Verification Protocol
+Given the "life/death" scenario, the implementation must undergo rigorous verification.
+      1. Fuzzing: The int4096 arithmetic will be subjected to continuous fuzzing using a "Oracle" approach, comparing results against the GMP (GNU Multiple Precision) library to detect any discrepancies in edge cases (e.g., transition points across limb boundaries).
+      2. Sentinel Checks: Unit tests will explicitly inject ERR sentinels into every argument position of every function to verify sticky propagation.
+      3. Drift Analysis: A specific test suite will run physics simulations (e.g., orbital mechanics) using int4096 fixed-point math vs. double floating-point math over $10^9$ iterations to quantify and validate the elimination of drift.
+9. Conclusion
+The implementation of int4096 and uint4096 in the Aria language represents a foundational commitment to safety and security. By rejecting standard variable-length integer libraries in favor of the explicit, deterministic Limb-Based Integral Model, Aria eliminates entire classes of runtime errors and security vulnerabilities. The exhaustive implementation of constant-time arithmetic, coupled with the rigorous "Sticky Error" sentinel system, provides the robust numerical bedrock required for an AGI entrusted with the education and companionship of vulnerable individuals. This architecture ensures that the "Teacher" system will remain a stable, predictable, and secure presence, regardless of the computational complexity of its tasks.
+________________
+Appendix: Implementation Artifact Summaries
+Component
+	Functionality
+	Location
+	Compiler Backend
+	Defines struct.int4096 (64 x i64 array).
+	src/backend/ir/codegen_expr.cpp
+	Literal Converter
+	Parses >1200 digit strings into limb arrays using APInt.
+	src/semantic/literal_converter.cpp
+	Runtime Header
+	Declares aria_lbim_add4096, aria_lbim_sdiv4096.
+	include/runtime/lbim.h
+	Runtime Implementation
+	Implements Comba Mul, Knuth Div D, Sentinel logic.
+	src/runtime/math/lbim.cpp
+	Safety Logic
+	Enforces Sticky Error propagation (if input==ERR return ERR).
+	src/runtime/math/lbim.cpp
+	Works cited
+      1. aria_specs.txt
+      2. arialang/aria: The Aria Programming Language - GitHub, accessed January 1, 2026, https://github.com/arialang/aria

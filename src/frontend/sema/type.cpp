@@ -20,86 +20,101 @@ bool PrimitiveType::isAssignableTo(const Type* target) const {
     if (!target) {
         return false;
     }
-    
-    // Exact match
+
+    // Exact match - always allowed
     if (equals(target)) {
         return true;
     }
-    
+
     // Only allow coercion between primitive types
     if (target->getKind() != TypeKind::PRIMITIVE) {
         return false;
     }
-    
+
     const PrimitiveType* targetPrim = static_cast<const PrimitiveType*>(target);
-    
+
     // ========================================================================
-    // TBB Type Coercion (Session 14)
+    // Aria Type Coercion Rules (Strict Type Safety)
     // ========================================================================
-    // Allow signed integers to be assigned to TBB types of same or larger width
-    // This enables: tbb8:x = 100 (where 100 is int64)
-    // Runtime will validate range and convert to ERR on overflow
-    
+    // Aria enforces STRICT type safety:
+    // - No implicit widening (int32 → int64 requires explicit cast)
+    // - No cross-family coercion (int ↔ tbb ↔ balanced NOT allowed)
+    // - TBB types only coerce within TBB family (tbb8 → tbb16 allowed)
+    // - Balanced types only coerce within Balanced sub-family
+    // - Float widening IS allowed (flt32 → flt64)
+    // - Literals are handled specially in TypeChecker (range-checked)
+    // ========================================================================
+
+    // ========================================================================
+    // TBB Type Family - NO implicit coercion (even between TBB sizes)
+    // ========================================================================
+    // ARIA-018: TBB sizes have different sentinel values:
+    //   tbb8 sentinel = -128, tbb16 sentinel = -32768, etc.
+    // Widening -128 from tbb8 to tbb16 would create a valid value,
+    // not a sentinel, breaking sticky error semantics.
+    // Use explicit tbb_widen<T>() functions for size conversion.
     if (targetPrim->isTBBType()) {
-        // Allow signed integers to coerce to TBB
-        if (isSigned && !isFloating && !isTBB) {
-            // int64 -> tbb8, tbb16, tbb32, tbb64 all allowed
-            // int32 -> tbb32, tbb64 allowed
-            // int8 -> tbb8, tbb16, tbb32, tbb64 allowed
-            // Runtime will check range and set ERR on overflow
-            return bitWidth <= targetPrim->getBitWidth();
-        }
-        
-        // Allow other TBB types to assign (for intermediate calculations)
         if (isTBB) {
-            return bitWidth <= targetPrim->getBitWidth();
+            // REJECT: tbb8 → tbb16, etc. Only allow exact same type
+            return name == targetPrim->getName();
         }
+        // REJECT: int → tbb, balanced → tbb, float → tbb
+        return false;
     }
-    
+
+    // If source is TBB, reject all other targets
+    if (isTBB) {
+        // REJECT: tbb → int, tbb → balanced, tbb → float
+        return false;
+    }
+
     // ========================================================================
-    // Balanced Ternary & Nonary Type Coercion (Session 15)
+    // Balanced Type Family (trit, tryte, nit, nyte)
     // ========================================================================
-    // Allow signed integers to be assigned to ternary/nonary types
-    // trit: -1, 0, 1 (balanced ternary digit)
-    // tryte: 10 trits in uint16
-    // nit: -4 to 4 (nonary digit)
-    // nyte: 5 nits in uint16
-    
     std::string targetName = targetPrim->getName();
-    if (targetName == "trit" || targetName == "tryte" || 
-        targetName == "nit" || targetName == "nyte") {
-        // Allow signed integers to coerce to balanced types
-        if (isSigned && !isFloating && !isTBB) {
-            // Runtime will check range
-            return true;
+    bool targetIsBalanced = (targetName == "trit" || targetName == "tryte" ||
+                             targetName == "nit" || targetName == "nyte");
+    bool sourceIsBalanced = (name == "trit" || name == "tryte" ||
+                             name == "nit" || name == "nyte");
+
+    if (targetIsBalanced) {
+        // Only allow Balanced → Balanced of same sub-family (ternary or nonary)
+        if (sourceIsBalanced) {
+            bool sourceIsTernary = (name == "trit" || name == "tryte");
+            bool targetIsTernary = (targetName == "trit" || targetName == "tryte");
+            // Only widen within same sub-family: trit → tryte, nit → nyte
+            if (sourceIsTernary == targetIsTernary) {
+                // trit (2 bits) → tryte (16 bits), nit (4 bits) → nyte (16 bits)
+                return bitWidth <= targetPrim->getBitWidth();
+            }
         }
+        // REJECT: int → balanced, tbb → balanced (handled above), ternary ↔ nonary
+        return false;
     }
-    
-    // ========================================================================
-    // Standard Integer Coercion
-    // ========================================================================
-    // Numeric widening (int8 -> int32 -> int64)
-    if (!isFloating && !targetPrim->isFloatingType()) {
-        // Both are integers
-        if (isSigned == targetPrim->isSignedType() && !isTBB && !targetPrim->isTBBType()) {
-            // Same signedness, allow widening
-            return bitWidth <= targetPrim->getBitWidth();
-        }
+
+    // If source is Balanced, reject all other targets
+    if (sourceIsBalanced) {
+        // REJECT: balanced → int, balanced → float
+        return false;
     }
-    
+
     // ========================================================================
-    // Float Coercion
+    // Float Coercion (only widening within float family)
     // ========================================================================
-    // Float widening (flt32 -> flt64)
+    // Float widening IS allowed (flt32 → flt64)
     if (isFloating && targetPrim->isFloatingType()) {
         return bitWidth <= targetPrim->getBitWidth();
     }
-    
-    // Integer to float (int32 -> flt32, int64 -> flt64)
-    if (!isFloating && targetPrim->isFloatingType() && !isTBB) {
-        return true;  // Allow any integer to float (may lose precision)
-    }
-    
+
+    // REJECT: Integer to float (int32 → flt32 requires explicit cast)
+    // REJECT: Float to integer
+
+    // ========================================================================
+    // Standard Integer Coercion (STRICT - no widening)
+    // ========================================================================
+    // REJECT: int32 → int64 (requires explicit cast)
+    // Only exact matches are allowed, which was handled at the top
+
     return false;
 }
 
@@ -553,24 +568,64 @@ TypeSystem::TypeSystem() {
         types.push_back(std::move(type));
     }
     
-    // Balanced Ternary types (trit, tryte) and Nonary types (nit, nyte)
-    // trit: Single balanced ternary digit (-1, 0, 1) - 3 states in 3 bits (extra bit for overflow detection)
-    auto tritType = std::make_unique<PrimitiveType>("trit", 3, true, false, false);
+    // Frac (Exact Rational) types: frac8, frac16, frac32, frac64
+    // Each stores {tbbN whole, tbbN numerator, tbbN denominator}
+    for (int bits : {8, 16, 32, 64}) {
+        std::string name = "frac" + std::to_string(bits);
+        // Size is 3x the underlying TBB size (whole + num + denom)
+        auto type = std::make_unique<PrimitiveType>(name, bits * 3, true, false, false);
+        primitiveCache[name] = type.get();
+        types.push_back(std::move(type));
+    }
+    
+    // TFP (Twisted Floating Point) types: tfp32, tfp64
+    // tfp32: {tbb16 exponent, tbb16 mantissa} = 32 bits
+    auto tfp32Type = std::make_unique<PrimitiveType>("tfp32", 32, true, true, false);
+    primitiveCache["tfp32"] = tfp32Type.get();
+    types.push_back(std::move(tfp32Type));
+    
+    // tfp64: {tbb16 exponent, tbb48 mantissa, 0 padding} = 64 bits
+    auto tfp64Type = std::make_unique<PrimitiveType>("tfp64", 64, true, true, false);
+    primitiveCache["tfp64"] = tfp64Type.get();
+    types.push_back(std::move(tfp64Type));
+    
+    // Vec9: 16x tbb32 elements (512 bits, 64 bytes)
+    auto vec9Type = std::make_unique<PrimitiveType>("vec9", 512, false, false, false);
+    primitiveCache["vec9"] = vec9Type.get();
+    types.push_back(std::move(vec9Type));
+    
+    // TMatrix: Sentinel-aware matrix (composite structure)
+    auto tmatrixType = std::make_unique<PrimitiveType>("tmatrix", 0, false, false, false);
+    primitiveCache["tmatrix"] = tmatrixType.get();
+    types.push_back(std::move(tmatrixType));
+    
+    // TTensor: 9D toroidal tensor (composite structure)
+    auto ttensorType = std::make_unique<PrimitiveType>("ttensor", 0, false, false, false);
+    primitiveCache["ttensor"] = ttensorType.get();
+    types.push_back(std::move(ttensorType));
+    
+    // Exotic Balanced Base types (balanced ternary and nonary)
+    // Reference: docs/gemini/responses/remaining/Exotic Balanced Base Arithmetic Implementation.txt
+    
+    // trit: Single balanced ternary digit (-1, 0, 1) stored as tbb8 with ERR=-128
+    auto tritType = std::make_unique<PrimitiveType>("trit", 8, true, false, false, true);
     primitiveCache["trit"] = tritType.get();
     types.push_back(std::move(tritType));
     
-    // tryte: 10 trits packed in uint16 (16 bits for 10 ternary digits)
-    auto tryteType = std::make_unique<PrimitiveType>("tryte", 16, false, false, false);
+    // tryte: 10 trits (59,049 values) stored in uint16 with biased representation
+    // Bias: 29,524, Range: ±29,524, Sentinel: 0xFFFF
+    auto tryteType = std::make_unique<PrimitiveType>("tryte", 16, false, false, false, true);
     primitiveCache["tryte"] = tryteType.get();
     types.push_back(std::move(tryteType));
     
-    // nit: Single nonary digit (-4 to 4) - 9 states in 4 bits
-    auto nitType = std::make_unique<PrimitiveType>("nit", 4, true, false, false);
+    // nit: Single nonary digit (base 9: -4 to +4) stored as int8
+    auto nitType = std::make_unique<PrimitiveType>("nit", 8, true, false, false, true);
     primitiveCache["nit"] = nitType.get();
     types.push_back(std::move(nitType));
     
-    // nyte: 5 nits packed in uint16 (16 bits for 5 nonary digits)
-    auto nyteType = std::make_unique<PrimitiveType>("nyte", 16, false, false, false);
+    // nyte: 5 nits (isomorphic to tryte) stored in uint16 with biased representation
+    // Same bias and sentinel as tryte (59,049 values = 9^5 = 3^10)
+    auto nyteType = std::make_unique<PrimitiveType>("nyte", 16, false, false, false, true);
     primitiveCache["nyte"] = nyteType.get();
     types.push_back(std::move(nyteType));
     
