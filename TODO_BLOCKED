@@ -1,5 +1,59 @@
 # BLOCKED ISSUES - Aria Compiler
 
+## ✅ PHASE 3 COMPLETE: Overflow Detection (Fits-or-Fails) (2026-01-12)
+
+**STATUS: BUG FIXED - OVERFLOW DETECTION WORKING**
+
+Fixed critical parser bug preventing overflow detection from working.
+
+### Bug Fix
+Parser was creating `LiteralExpr` with hardcoded `(int64_t)0` when `raw_text` was set, completely ignoring the actual token value. This made all overflow checks fail.
+
+**Root Cause**: In `parser.cpp` line ~447:
+```cpp
+// BROKEN:
+if (!raw_text.empty()) {
+    return std::make_shared<LiteralExpr>((int64_t)0, raw_text, line, col, true);
+}
+```
+
+**Fix**: Use token value for normal literals, raw_text only for true high-precision overflow:
+```cpp
+// FIXED:
+std::string raw_text = token.raw_literal_text;
+int64_t value = token.value.int_value;
+
+if (value != 0 || raw_text.empty()) {
+    // Normal literal - use parsed value
+    return LiteralExpr::makeTypedInt(value, type_str, line, col);
+} else {
+    // High-precision - use raw_text
+    return LiteralExpr::makeTypedIntWithRaw(value, raw_text, type_str, line, col);
+}
+```
+
+### Test Results
+```
+✅ int8:a = 127;      // OK - fits
+❌ int8:b = 128;      // ERROR - overflow
+❌ int8:c = 200;      // ERROR - out of range
+✅ int8:d = -128;     // OK - minimum value
+❌ int8:e = -129;     // ERROR - underflow
+✅ uint8:f = 255;     // OK - max value
+❌ uint8:g = 256;     // ERROR - overflow
+```
+
+### Implementation
+1. ✅ Parser reads token.value.int_value correctly
+2. ✅ Type checker validates value fits in declared type
+3. ✅ Error messages show actual range: "Value 200 out of range for int8 [-128, 127]"
+4. ✅ Both typed and untyped literals supported
+
+### Next Steps
+Phase 4: IR generation with explicit types + stdlib updates
+
+---
+
 ## ✅ PHASE 2 COMPLETE: Zero Implicit Conversion - Parser (2026-01-09)
 
 **STATUS: ALL 14 NEW TESTS PASSING**

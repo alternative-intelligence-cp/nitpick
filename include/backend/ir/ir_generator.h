@@ -361,6 +361,24 @@ public:
      * Dump the generated IR to stdout (for debugging)
      */
     void dump();
+    
+    // ========================================================================
+    // PHASE 4: Zero Implicit Conversion - Type Suffix Helpers
+    // ========================================================================
+    
+    /**
+     * Get LLVM type from explicit type suffix
+     * @param suffix Type suffix string (e.g., "u32", "i64", "f32")
+     * @return Corresponding LLVM type or nullptr if unknown
+     */
+    llvm::Type* getLLVMTypeFromSuffix(const std::string& suffix);
+    
+    /**
+     * Check if type suffix represents a signed integer
+     * @param suffix Type suffix string (e.g., "i32" -> true, "u32" -> false)
+     * @return true if signed, false if unsigned or non-integer
+     */
+    bool isSuffixSigned(const std::string& suffix);
 };
 
 } // namespace aria

@@ -3315,6 +3315,30 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Literal expression
             LiteralExpr* lit = static_cast<LiteralExpr*>(expr);
             
+            // ========================================================================
+            // PHASE 4: ZERO IMPLICIT CONVERSION - Use Explicit Type
+            // ========================================================================
+            // If literal has explicit type suffix (u32, i64, f32, etc.), use it!
+            if (!lit->explicit_type.empty()) {
+                // Get LLVM type from explicit suffix
+                llvm::Type* llvm_type = getLLVMTypeFromSuffix(lit->explicit_type);
+                
+                if (llvm_type) {
+                    // Handle integer types
+                    if (llvm_type->isIntegerTy()) {
+                        int64_t val = std::get<int64_t>(lit->value);
+                        bool is_signed = isSuffixSigned(lit->explicit_type);
+                        return llvm::ConstantInt::get(llvm_type, val, is_signed);
+                    }
+                    // Handle float types
+                    else if (llvm_type->isFloatingPointTy()) {
+                        double val = std::get<double>(lit->value);
+                        return llvm::ConstantFP::get(llvm_type, val);
+                    }
+                }
+                // If we can't find type, fall through to old behavior
+            }
+            
             // Phase 3.2.5: Check for high-precision literal with raw string value
             if (lit->hasRawValue()) {
                 const std::string& raw = lit->getRawValue();
@@ -5739,4 +5763,89 @@ void aria::IRGenerator::executeFunctionDefers() {
     }
 
     executing_defers = was_executing;
+}
+
+// =============================================================================
+// PHASE 4: Zero Implicit Conversion - Type Suffix Helpers
+// =============================================================================
+
+llvm::Type* aria::IRGenerator::getLLVMTypeFromSuffix(const std::string& suffix) {
+    // Unsigned integers
+    if (suffix == "u8") return builder.getInt8Ty();
+    if (suffix == "u16") return builder.getInt16Ty();
+    if (suffix == "u32") return builder.getInt32Ty();
+    if (suffix == "u64") return builder.getInt64Ty();
+    if (suffix == "u128") return builder.getInt128Ty();
+    
+    // Signed integers
+    if (suffix == "i8") return builder.getInt8Ty();
+    if (suffix == "i16") return builder.getInt16Ty();
+    if (suffix == "i32") return builder.getInt32Ty();
+    if (suffix == "i64") return builder.getInt64Ty();
+    if (suffix == "i128") return builder.getInt128Ty();
+    
+    // Floats
+    if (suffix == "f32") return builder.getFloatTy();
+    if (suffix == "f64") return builder.getDoubleTy();
+    if (suffix == "f128") return llvm::Type::getFP128Ty(context);
+    
+    // TBB types (symmetric range with error sentinel)
+    if (suffix == "tbb8") return builder.getInt8Ty();
+    if (suffix == "tbb16") return builder.getInt16Ty();
+    if (suffix == "tbb32") return builder.getInt32Ty();
+    if (suffix == "tbb64") return builder.getInt64Ty();
+    
+    // Large integers (LBIM - struct-based to avoid LLVM bugs)
+    if (suffix == "u256" || suffix == "i256") {
+        // { i64, i64, i64, i64 } - 4 limbs
+        std::vector<llvm::Type*> limbs = {
+            builder.getInt64Ty(), builder.getInt64Ty(),
+            builder.getInt64Ty(), builder.getInt64Ty()
+        };
+        return llvm::StructType::get(context, limbs);
+    }
+    if (suffix == "u512" || suffix == "i512") {
+        // { i64, ... } - 8 limbs
+        std::vector<llvm::Type*> limbs(8, builder.getInt64Ty());
+        return llvm::StructType::get(context, limbs);
+    }
+    if (suffix == "u1024" || suffix == "i1024") {
+        // { i64, ... } - 16 limbs
+        std::vector<llvm::Type*> limbs(16, builder.getInt64Ty());
+        return llvm::StructType::get(context, limbs);
+    }
+    if (suffix == "u2048" || suffix == "i2048") {
+        // { i64, ... } - 32 limbs
+        std::vector<llvm::Type*> limbs(32, builder.getInt64Ty());
+        return llvm::StructType::get(context, limbs);
+    }
+    if (suffix == "u4096" || suffix == "i4096") {
+        // { i64, ... } - 64 limbs
+        std::vector<llvm::Type*> limbs(64, builder.getInt64Ty());
+        return llvm::StructType::get(context, limbs);
+    }
+    
+    // Fixed-point (deterministic physics)
+    if (suffix == "fix256") {
+        // Q128.128 - { i64[4] } for 256-bit fixed-point
+        std::vector<llvm::Type*> limbs(4, builder.getInt64Ty());
+        return llvm::StructType::get(context, limbs);
+    }
+    
+    // Unknown suffix
+    return nullptr;
+}
+
+bool aria::IRGenerator::isSuffixSigned(const std::string& suffix) {
+    // Signed prefixes
+    if (suffix[0] == 'i') return true;  // i8, i16, i32, i64, i128, i256, ...
+    if (suffix.substr(0, 3) == "tbb") return true;  // tbb8, tbb16, tbb32, tbb64
+    if (suffix.substr(0, 3) == "fix") return true;  // fix256
+    
+    // Unsigned prefixes
+    if (suffix[0] == 'u') return false;  // u8, u16, u32, ...
+    if (suffix[0] == 'f') return false;  // f32, f64, f128 (not signed/unsigned, but return false)
+    
+    // Default to signed for unknown
+    return true;
 }
