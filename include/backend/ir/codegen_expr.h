@@ -25,6 +25,7 @@ namespace aria {
     class AwaitExpr;
     class TemplateLiteralExpr;
     class VectorConstructorExpr;
+    class CastExpr;
     
     namespace sema {
         class Type;
@@ -242,6 +243,15 @@ public:
      * Reference: research_029 (Async/Await System)
      */
     llvm::Value* codegenAwait(ASTNode* expr);
+    
+    /**
+     * Generate code for cast expressions (@cast and @cast_unchecked)
+     * Handles: safe widening, checked narrowing, unchecked truncation
+     * @param expr Cast expression node
+     * @return LLVM value with target type
+     * Reference: Zero Implicit Conversion (explicit casting)
+     */
+    llvm::Value* codegenCast(CastExpr* expr);
     
     // ========================================================================
     // Phase 2: Optional Types & Special Operators

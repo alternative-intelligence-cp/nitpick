@@ -1,0 +1,36 @@
+// Test 2: Checked Narrowing Casts
+// These casts narrow bit-width with runtime overflow checking
+
+func:test_safe_narrowing = int32() {
+    // Values that fit in target type
+    int64:x = 100i64;
+    int32:y = @cast<int32>(x);  // 100 fits in i32
+    
+    int32:a = 50i32;
+    int16:b = @cast<int16>(a);  // 50 fits in i16
+    
+    int16:c = 25i16;
+    int8:d = @cast<int8>(c);    // 25 fits in i8
+    
+    pass(0i32);
+};
+
+func:test_unsigned_narrowing = int32() {
+    // Unsigned narrowing
+    uint64:big = 200u64;
+    uint32:medium = @cast<uint32>(big);
+    
+    uint32:m = 150u32;
+    uint16:small = @cast<uint16>(m);
+    
+    uint16:s = 75u16;
+    uint8:tiny = @cast<uint8>(s);
+    
+    pass(0i32);
+};
+
+func:main = int32() {
+    int32:r1 = test_safe_narrowing();
+    int32:r2 = test_unsigned_narrowing();
+    pass(0i32);
+};

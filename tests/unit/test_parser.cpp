@@ -30,7 +30,7 @@ ASTNodePtr getFirstExpr(ASTNodePtr program) {
 }
 
 TEST_CASE(parser_primary_integer) {
-    auto program = parseExpr("42");
+    auto program = parseExpr("42i32");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -42,7 +42,7 @@ TEST_CASE(parser_primary_integer) {
 }
 
 TEST_CASE(parser_primary_float) {
-    auto program = parseExpr("3.14");
+    auto program = parseExpr("3.14f64");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -112,7 +112,7 @@ TEST_CASE(parser_primary_identifier) {
 }
 
 TEST_CASE(parser_primary_parenthesized) {
-    auto program = parseExpr("(42)");
+    auto program = parseExpr("(42i32)");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -123,7 +123,7 @@ TEST_CASE(parser_primary_parenthesized) {
 }
 
 TEST_CASE(parser_binary_addition) {
-    auto program = parseExpr("10 + 20");
+    auto program = parseExpr("10i32 + 20i32");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -134,7 +134,7 @@ TEST_CASE(parser_binary_addition) {
 }
 
 TEST_CASE(parser_binary_subtraction) {
-    auto program = parseExpr("50 - 30");
+    auto program = parseExpr("50i32 - 30i32");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -145,7 +145,7 @@ TEST_CASE(parser_binary_subtraction) {
 }
 
 TEST_CASE(parser_binary_multiplication) {
-    auto program = parseExpr("5 * 6");
+    auto program = parseExpr("5i32 * 6i32");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -156,7 +156,7 @@ TEST_CASE(parser_binary_multiplication) {
 }
 
 TEST_CASE(parser_binary_division) {
-    auto program = parseExpr("100 / 4");
+    auto program = parseExpr("100i32 / 4i32");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -167,7 +167,7 @@ TEST_CASE(parser_binary_division) {
 }
 
 TEST_CASE(parser_precedence_mult_before_add) {
-    auto program = parseExpr("2 + 3 * 4");
+    auto program = parseExpr("2i32 + 3i32 * 4i32");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -183,7 +183,7 @@ TEST_CASE(parser_precedence_mult_before_add) {
 }
 
 TEST_CASE(parser_precedence_parentheses) {
-    auto program = parseExpr("(2 + 3) * 4");
+    auto program = parseExpr("(2i32 + 3i32) * 4i32");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -199,7 +199,7 @@ TEST_CASE(parser_precedence_parentheses) {
 }
 
 TEST_CASE(parser_unary_minus) {
-    auto program = parseExpr("-42");
+    auto program = parseExpr("-42i32");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -246,7 +246,7 @@ TEST_CASE(parser_call_no_args) {
 }
 
 TEST_CASE(parser_call_one_arg) {
-    auto program = parseExpr("func(42)");
+    auto program = parseExpr("func(42i32)");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -257,7 +257,7 @@ TEST_CASE(parser_call_one_arg) {
 }
 
 TEST_CASE(parser_call_multiple_args) {
-    auto program = parseExpr("func(1, 2, 3)");
+    auto program = parseExpr("func(1i32, 2i32, 3i32)");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -268,7 +268,7 @@ TEST_CASE(parser_call_multiple_args) {
 }
 
 TEST_CASE(parser_index_access) {
-    auto program = parseExpr("arr[5]");
+    auto program = parseExpr("arr[5i64]");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -314,7 +314,7 @@ TEST_CASE(parser_array_literal_empty) {
 }
 
 TEST_CASE(parser_array_literal_with_elements) {
-    auto program = parseExpr("[1, 2, 3]");
+    auto program = parseExpr("[1i32, 2i32, 3i32]");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -345,7 +345,7 @@ TEST_CASE(parser_chained_calls) {
 }
 
 TEST_CASE(parser_comparison) {
-    auto program = parseExpr("x < 10");
+    auto program = parseExpr("x < 10i32");
     auto expr = getFirstExpr(program);
     
     ASSERT(expr != nullptr, "Expression should not be null");
@@ -399,7 +399,7 @@ ProgramNode* getProgram(ASTNodePtr node) {
 
 // 2.4.1: Expression Statement Tests
 TEST_CASE(parser_expression_statement) {
-    auto program = parseStmt("x + 5;");
+    auto program = parseStmt("x + 5i32;");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -415,7 +415,7 @@ TEST_CASE(parser_expression_statement) {
 }
 
 TEST_CASE(parser_function_call_statement) {
-    auto program = parseStmt("print(42);");
+    auto program = parseStmt("print(42i32);");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -445,7 +445,7 @@ TEST_CASE(parser_empty_block) {
 }
 
 TEST_CASE(parser_block_with_statements) {
-    auto program = parseStmt("{ x + 5; y * 2; }");
+    auto program = parseStmt("{ x + 5i32; y * 2i32; }");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -481,7 +481,7 @@ TEST_CASE(parser_var_decl_simple) {
 }
 
 TEST_CASE(parser_var_decl_with_init) {
-    auto program = parseStmt("int8:x = 42;");
+    auto program = parseStmt("int8:x = 42i8;");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -513,7 +513,7 @@ TEST_CASE(parser_var_decl_string) {
 }
 
 TEST_CASE(parser_var_decl_wild) {
-    auto program = parseStmt("wild int8:x = 10;");
+    auto program = parseStmt("wild int8:x = 10i8;");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -528,7 +528,7 @@ TEST_CASE(parser_var_decl_wild) {
 }
 
 TEST_CASE(parser_var_decl_const) {
-    auto program = parseStmt("const int8:x = 5;");
+    auto program = parseStmt("const int8:x = 5i8;");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -557,7 +557,7 @@ TEST_CASE(parser_return_void) {
 }
 
 TEST_CASE(parser_return_with_value) {
-    auto program = parseStmt("return 42;");
+    auto program = parseStmt("return 42i32;");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -601,7 +601,7 @@ TEST_CASE(parser_multiple_statements) {
 
 // Simple if statement without else
 TEST_CASE(parser_if_simple) {
-    auto program = parseStmt("if (x > 5) { print(x); }");
+    auto program = parseStmt("if (x > 5i32) { print(x); }");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -619,7 +619,7 @@ TEST_CASE(parser_if_simple) {
 
 // If with else
 TEST_CASE(parser_if_else) {
-    auto program = parseStmt("if (x > 5) { print(x); } else { print(0); }");
+    auto program = parseStmt("if (x > 5i32) { print(x); } else { print(0i32); }");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -637,7 +637,7 @@ TEST_CASE(parser_if_else) {
 
 // If-else if-else chain
 TEST_CASE(parser_if_else_if) {
-    auto program = parseStmt("if (x > 10) { print(1); } else if (x > 5) { print(2); } else { print(3); }");
+    auto program = parseStmt("if (x > 10i32) { print(1i32); } else if (x > 5i32) { print(2i32); } else { print(3i32); }");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -661,7 +661,7 @@ TEST_CASE(parser_if_else_if) {
 
 // If with single statement (no braces)
 TEST_CASE(parser_if_single_statement) {
-    auto program = parseStmt("if (x) return 1;");
+    auto program = parseStmt("if (x) return 1i32;");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -678,7 +678,7 @@ TEST_CASE(parser_if_single_statement) {
 
 // If-else with single statements
 TEST_CASE(parser_if_else_single_statements) {
-    auto program = parseStmt("if (x) return 1; else return 0;");
+    auto program = parseStmt("if (x) return 1i32; else return 0i32;");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -717,7 +717,7 @@ TEST_CASE(parser_if_nested) {
 
 // Complex condition
 TEST_CASE(parser_if_complex_condition) {
-    auto program = parseStmt("if (x > 5 && y < 10 || z == 0) { print(x); }");
+    auto program = parseStmt("if (x > 5i32 && y < 10i32 || z == 0i32) { print(x); }");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -767,7 +767,7 @@ TEST_CASE(parser_while_single_statement) {
 
 // While with complex condition
 TEST_CASE(parser_while_complex_condition) {
-    auto program = parseStmt("while (x > 0 && y < 100) { x--; y++; }");
+    auto program = parseStmt("while (x > 0i32 && y < 100i32) { x--; y++; }");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -1822,7 +1822,7 @@ TEST_CASE(parser_func_with_loop) {
 // variable declarations that exercise the type parsing functionality
 
 TEST_CASE(parser_type_simple_int8) {
-    auto program = parseStmt("int8:x = 42;");
+    auto program = parseStmt("int8:x = 42i8;");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");

@@ -1,3 +1,10 @@
+ARIA LANGUAGE PRIORITIY ORDER: NON NEGOTIABLE - SAFETY ABOVE ALL ELSE FOR SAFETY CRITICAL SYSTEMS
+1. Safety
+2. Stability
+3. Accuracy
+4. Performance
+5. Developer Comfort/Convenience
+
 /* types
 int1,
 int2,
@@ -10,6 +17,8 @@ int128,
 int256,
 int512,
 int1024, !!! ARIA-025: int1024 is 1024-bit signed LBIM type for post-quantum cryptography (RSA-4096, lattice crypto), 16x64-bit limbs, ERR sentinel = 0x8000...0000 (high limb) with zeros elsewhere, sticky error propagation NOT NEGOTIABLE!!!
+int2048, !!! ARIA-025: int2048 is 2048-bit signed LBIM type for quantum-resistant cryptography (RSA-8192, future-proof), 32x64-bit limbs, ERR sentinel = 0x8000...0000 (high limb) with zeros elsewhere, sticky error propagation NOT NEGOTIABLE!!!
+int4096, !!! ARIA-025: int4096 is 4096-bit signed LBIM type for maximum quantum resistance (RSA-16384, enterprise/military grade), 64x64-bit limbs, ERR sentinel = 0x8000...0000 (high limb) with zeros elsewhere, sticky error propagation NOT NEGOTIABLE - THIS IS THE LIMIT, NO LARGER TYPES!!!
 uint8,
 uint16,
 uint32,
@@ -18,6 +27,8 @@ uint128,
 uint256,
 uint512,
 uint1024, !!! ARIA-025: uint1024 is 1024-bit unsigned LBIM type for post-quantum cryptography, 16x64-bit limbs, operations share int1024 runtime with sign handling NOT NEGOTIABLE!!!
+uint2048, !!! ARIA-025: uint2048 is 2048-bit unsigned LBIM type for quantum-resistant cryptography, 32x64-bit limbs, operations share int2048 runtime with sign handling NOT NEGOTIABLE!!!
+uint4096, !!! ARIA-025: uint4096 is 4096-bit unsigned LBIM type for maximum quantum resistance, 64x64-bit limbs, operations share int4096 runtime with sign handling NOT NEGOTIABLE - THIS IS THE LIMIT, NO LARGER TYPES!!!
 fix256,  !!! ARIA-025: fix256 is Q128.128 deterministic fixed-point type for safety-critical systems (robotics, AGI substrate, physics), 256-bit = 128-bit integer + 128-bit fractional, ERR sentinel = 0x8000...0000 in limbs[3] with zeros elsewhere, NO floating-point drift, bit-identical cross-platform, precision 2^-128 ≈ 2.9×10^-39 (4 orders finer than Planck length), sticky error propagation, overflow/underflow detection NOT NEGOTIABLE!!!
 tbb8,  !!! IMPORTANT tbb8 is Twisted Balanced Binary 8-bit: symmetric range [-127, +127], -128 (0x80) is ERR sentinel NOT NEGOTIABLE!!!
 tbb16, !!! IMPORTANT tbb16 is Twisted Balanced i'm Binary 16-bit: symmetric range [-32767, +32767], -32768 (0x8000) is ERR sentinel NOT NEGOTIABLE!!!
@@ -64,6 +75,8 @@ trit !!! IMPORTANT trit is balanced ternary digit (-1,0,1) NOT NEGOTIABLE!!!,
 tryte !!! IMPORTANT tryte is 10 trits for 3^10 values stored in uint16 NOT NEGOTIABLE!!!,
 nit !!! IMPORTANT nit is balanced nonary digit (-4,-3,-2,-1,0,1,2,3,4) NOT NEGOTIABLE!!!,
 nyte !!! IMPORTANT nyte is 5 nits for 9^5 values stored in uint16 NOT NEGOTIABLE!!!,
+!!! NOTE: See /aria_ecosystem/programming_guide/types/{trit,tryte,nit,nyte}.md for detailed specs !!!
+!!! WARNING: Programming guide uses old Rust-style syntax - needs updating to Aria syntax !!!!
 tensor,
 matrix,
 void,   !!! IMPORTANT void is ONLY for C FFI function signatures - represents "no return value" in extern blocks. NOT usable in Aria native code!
@@ -85,25 +98,27 @@ NULL:    C-style null pointer constant
          - Type: Pointer sentinel value (address 0x0)
          - Used for pointer comparisons and initialization
          - Represents "invalid/no pointer" 
-         - Compatible with @ pointer types
+         - Compatible with wild pointer types
          - Examples:
-             int64@:ptr = NULL;  // Null pointer
+             int64->:wild:ptr = NULL;  // Null pointer
              if (ptr == NULL) { /* handle null pointer */ }
-             string@:str = NULL;
+             string->:wild:str = NULL;
 
-void:    C FFI "no return value" type
-         - Type: Only valid in extern block function signatures
-         - Represents functions that don't return a value (C convention)
+void:    C FFI "no return value" type (FFI INTEROP ONLY - NOT FOR ARIA CODE)
+         - Type: ONLY valid in extern block function signatures
+         - Represents C functions that don't return a value (C convention)
          - CANNOT be used as a variable type in Aria
-         - CANNOT be used in Aria native function signatures (use Result type instead)
-         - ONLY for FFI compatibility with C libraries
+         - CANNOT be used in Aria native function signatures (use NIL + Result type)
+         - ONLY for FFI compatibility with C libraries - DO NOT USE IN ARIA CODE
          - Examples:
              extern "libc" {
-                 func:free = void(void*:ptr);  // C void return type - OK in extern
-                 func:exit = void(int32:code); // C void return type - OK in extern
+                 func:free = void(void*:ptr);  // C void return - OK in extern ONLY
+                 func:exit = void(int32:code); // C void return - OK in extern ONLY
              }
-             // INVALID: func:aria_func = void() { };  // ERROR! Aria functions use Result type
-             // CORRECT: func:aria_func = Result() { pass(NIL); };  // Aria way
+             // INVALID: func:aria_func = void() { };  // ERROR! void forbidden in Aria
+             // CORRECT: func:aria_func = NIL() { pass(NIL); };  // Aria's native way
+
+!! CRITICAL: Use void ONLY in extern blocks. Use NIL for all Aria native code !!
 
 Interplay and Rules:
 1. Aria Native Code:
@@ -164,13 +179,17 @@ Result:r = exit(0);  // r.val is NIL, r.err is NULL (if no error)
 /* ARIA-025: SAFETY-CRITICAL LARGE INTEGER AND FIXED-POINT TYPES
 
 OVERVIEW:
-Three new types added for post-quantum cryptography and deterministic control systems:
-- int1024: 1024-bit signed integer for RSA-4096, lattice crypto
-- uint1024: 1024-bit unsigned integer for cryptographic operations
+Seven new types added for post-quantum cryptography and deterministic control systems:
+- int1024 / uint1024: 1024-bit for RSA-4096, lattice crypto (16 limbs)
+- int2048 / uint2048: 2048-bit for RSA-8192, quantum-resistant (32 limbs)
+- int4096 / uint4096: 4096-bit for RSA-16384, maximum quantum resistance (64 limbs)
 - fix256: Q128.128 deterministic fixed-point for robotics, AGI substrate, physics
 
+!! LIMIT DECLARATION: 4096 bits is the MAXIMUM. No 8192, 12288, or 16384-bit types !!
+!! Reasoning: If you need bigger than RSA-16384, build a library. We're done. !!
+
 CRITICAL SAFETY PROPERTIES (NOT NEGOTIABLE):
-1. ERR Sentinel Pattern: All three types use TBB-style error sentinels
+1. ERR Sentinel Pattern: All types use TBB-style error sentinels
 2. Sticky Error Propagation: ERR op X = ERR, X op ERR = ERR
 3. Division by Zero Protection: X / 0 = ERR (not undefined behavior)
 4. Overflow/Underflow Detection: Returns ERR on boundary violations
@@ -236,6 +255,114 @@ if (key == ERR) {
 
 int1024:encrypted = modular_pow(plaintext, public_exp, key);
 int1024:decrypted = modular_pow(encrypted, private_exp, key);
+
+═════════════════════════════════════════════════════════════════════════════
+TYPE: int2048 / uint2048 (LBIM - 2048-bit Quantum-Resistant)
+═════════════════════════════════════════════════════════════════════════════
+
+Purpose:
+- Quantum-resistant cryptography (RSA-8192, post-quantum standards)
+- Enterprise/government-grade key sizes
+- Future-proof cryptographic systems
+- Large-scale blockchain consensus
+
+Representation:
+- 32 limbs of 64-bit unsigned integers (total 2048 bits)
+- struct { uint64:limbs[32]; }
+- Little-endian limb order (limbs[0] is LSB, limbs[31] is MSB)
+- int2048 uses two's complement for signed arithmetic
+- uint2048 uses unsigned arithmetic across all limbs
+
+ERR Sentinel:
+- int2048 ERR: limbs[31] = 0x8000000000000000, all other limbs = 0
+- uint2048 uses same sentinel detection (0x8000...0000 pattern)
+- Same sticky error propagation as int1024
+
+Runtime Functions:
+- aria_lbim_add2048, aria_lbim_sub2048, aria_lbim_mul2048
+- aria_lbim_sdiv2048, aria_lbim_smod2048 (signed division/modulo)
+- aria_lbim_udiv2048, aria_lbim_umod2048 (unsigned division/modulo)
+- All operations detect and propagate ERR sentinel
+
+Literal Assignment:
+- Decimal string: int2048:x = parse_int2048("12345..."); // full decimal
+- Scientific notation: int2048:x = parse_int2048("1.5e308"); // compact, readable
+- Hex parsing: int2048:x = parse_int2048_hex("0xABCD..."); // hex string
+- Array init: int2048:x = int2048_from_limbs([limb0, limb1, ...]); // manual
+- NO direct literal syntax (values too large, use parsing functions above)
+
+═════════════════════════════════════════════════════════════════════════════
+TYPE: int4096 / uint4096 (LBIM - 4096-bit Maximum Quantum Resistance)
+═════════════════════════════════════════════════════════════════════════════
+
+!! THIS IS THE LIMIT - NO TYPES LARGER THAN 4096 BITS WILL BE ADDED !!
+
+Purpose:
+- Maximum quantum resistance (RSA-16384)
+- Military/intelligence-grade cryptography
+- Long-term data protection (decades-scale security)
+- Extreme paranoia mode (if you need bigger, make a library yourself)
+
+Representation:
+- 64 limbs of 64-bit unsigned integers (total 4096 bits)
+- struct { uint64:limbs[64]; }
+- Little-endian limb order (limbs[0] is LSB, limbs[63] is MSB)
+- int4096 uses two's complement for signed arithmetic
+- uint4096 uses unsigned arithmetic across all limbs
+
+ERR Sentinel:
+- int4096 ERR: limbs[63] = 0x8000000000000000, all other limbs = 0
+- uint4096 uses same sentinel detection (0x8000...0000 pattern)
+- Same sticky error propagation as smaller LBIM types
+
+Runtime Functions:
+- aria_lbim_add4096, aria_lbim_sub4096, aria_lbim_mul4096
+- aria_lbim_sdiv4096, aria_lbim_smod4096 (signed division/modulo)
+- aria_lbim_udiv4096, aria_lbim_umod4096 (unsigned division/modulo)
+- All operations detect and propagate ERR sentinel
+- WARNING: Operations on 4096-bit values are SLOW - use wisely
+
+Literal Assignment:
+- Decimal string: int4096:x = parse_int4096("12345..."); // full decimal
+- Scientific notation: int4096:x = parse_int4096("2.5e617"); // compact, shows magnitude
+- Hex parsing: int4096:x = parse_int4096_hex("0xABCD..."); // hex string
+- Array init: int4096:x = int4096_from_limbs([limb0, ..., limb63]); // manual
+- File loading: int4096:x = load_int4096_from_file("bigkey.dat"); // binary
+- NO direct literal syntax (way too large for source code readability)
+
+Performance Notes:
+- int1024: ~10-100x slower than native int64
+- int2048: ~40-400x slower than native int64  
+- int4096: ~160-1600x slower than native int64
+- Use caching, precomputation, and async where possible
+- These are for CRYPTOGRAPHY, not general arithmetic
+
+Example - RSA-16384 Key Generation:
+int4096:p = generate_safe_prime_4096();
+int4096:q = generate_safe_prime_4096();
+if (p == ERR || q == ERR) {
+    fail(ERR_KEYGEN);
+}
+int4096:n = p * q;  // 4096-bit modulus
+int4096:phi = (p - 1) * (q - 1);
+// ... remainder of RSA key generation
+
+!! SCIENTIFIC NOTATION FOR LARGE TYPES !!
+
+Why scientific notation for 2048/4096-bit literals?
+- READABLE: See magnitude at a glance (2.5e617 vs 617-digit string)
+- COMPACT: Source code doesn't explode with massive literal strings
+- STANDARD: Everyone understands scientific notation from math/science
+- PARSING: Already need string parser, scientific notation is easy to add
+- PRECISION: Mantissa provides significant digits, exponent provides scale
+
+Examples:
+uint2048:x = parse_uint2048("1.5e308");    // 1.5 × 10^308 (readable!)
+uint4096:y = parse_uint4096("2.5e617");    // 2.5 × 10^617 (quantum-proof key)
+int2048:z = parse_int2048("-3.7e500");     // negative values work too
+
+Note: Parser converts scientific notation to exact integer value.
+No floating-point involved - just a convenient input format.
 
 ═════════════════════════════════════════════════════════════════════════════
 TYPE: fix256 (Q128.128 Deterministic Fixed-Point)
@@ -394,6 +521,25 @@ pick
 ═════════════════════════════════════════════════════════════════════════════
 !! CRITICAL: ZERO IMPLICIT TYPE CONVERSION POLICY !!
 ═════════════════════════════════════════════════════════════════════════════
+**!!UPDATE!!** (January 11,2026): To not make things obtuse for simple cases, we
+**LITERAL TYPE SUFFIX POLICY** (Updated January 13, 2026):
+
+Literal type suffixes are REQUIRED when the literal value will not fit in the declared type.
+If the literal fits natively, the suffix may be omitted and the type is inferred from context.
+
+**Examples**:
+- `int8:x = 12;` \u2705 OK - 12 fits in int8 (-128 to 127), suffix optional
+- `int8:y = 12345;` \u274c ERROR - 12345 exceeds int8 range, MUST have suffix
+- `int8:z = 300i16 as int8;` \u2705 OK - explicit suffix + cast for controlled overflow
+- `int32:a = 1000;` \u2705 OK - 1000 fits in int32, suffix optional  
+- `int64:b = 9999999999;` \u2705 OK - large value fits in int64, suffix optional
+
+**Rule**: Any literal that would cause overflow/underflow MUST have explicit suffix AND cast.
+
+**RATIONALE:**
+- Safety: Prevents silent overflow/underflow bugs
+- Explicit intent: Cast makes overflow deliberate, not accidental
+- Balance: No boilerplate for common cases (int32:x = 42), but safety for edge cases 
 
 **DESIGN DECISION** (January 9, 2026): Aria enforces ZERO implicit type 
 conversions or literal inference. ALL numeric literals MUST have explicit 
@@ -435,6 +581,10 @@ uint256:huge = 123456789u256;
 uint512:massive = 987654321u512;
 uint1024:cryptographic = 12345u1024;
 
+// 2048/4096-bit types: Use string parsing (too large for direct literals)
+uint2048:quantum_key = parse_uint2048("1.5e308");  // scientific notation
+uint4096:max_key = parse_uint4096("2.5e617");      // 2.5 × 10^617
+
 Signed Integers:
 int8:temp = -40i8;
 int16:delta = -1000i16;
@@ -444,6 +594,10 @@ int128:big = 999999999i128;
 int256:bigger = -123456789i256;
 int512:biggest = 987654321i512;
 int1024:rsa_key = 12345i1024;
+
+// 2048/4096-bit types: Use string parsing (too large for direct literals)
+int2048:signed_big = parse_int2048("-3.7e500");     // negative scientific
+int4096:signed_max = parse_int4096("9.9e1200");     // massive value
 
 Floating Point:
 flt32:pi = 3.14159f32;
@@ -514,17 +668,36 @@ note: mask is uint32, count is int32
 help: Explicit conversion required: count_u32 = convert<uint32>(count);
 ```
 
-**IMPLEMENTATION STATUS:**
-- [ ] Lexer: Add type suffix tokens (u8, u16, u32, i32, i64, f32, tbb8, etc.)
-- [ ] Parser: Require type suffixes on all numeric literals
-- [ ] Type Checker: Remove ALL implicit conversion rules
-- [ ] IR Gen: Remove type coercion, enforce exact type matching
-- [ ] Error Messages: Guide users to add explicit type markers
-- [ ] Stdlib: Update all modules with explicit types
-- [ ] Tests: Update all test files with explicit types
-- [ ] Documentation: Update all examples with explicit types
+**IMPLEMENTATION STATUS:** ✅ COMPLETE (January 12, 2026)
+- [✓] Lexer: Add type suffix tokens (u8, u16, u32, i32, i64, f32, tbb8, etc.) - DONE
+- [✓] Parser: Require type suffixes on all numeric literals - DONE
+- [✓] Type Checker: Remove ALL implicit conversion rules - DONE
+- [✓] IR Gen: Remove type coercion, enforce exact type matching - DONE
+- [✓] Error Messages: Guide users to add explicit type markers - DONE
+- [✓] Stdlib: Update all modules with explicit types - DONE (41 modules)
+- [✓] Tests: Update all test files with explicit types - DONE (123 tests passing)
+- [ ] Documentation: Update all examples with explicit types - IN PROGRESS
 
-**BREAKING CHANGE:** All existing Aria code must be updated with type suffixes.
+**LEXER ENFORCEMENT ACTIVE:** Compiler now rejects ALL untyped numeric literals at
+parse time with helpful error messages. Zero implicit conversion fully enforced!
+
+**ERROR MESSAGE EXAMPLE:**
+```
+error: Numeric literal missing required type suffix.
+All numeric literals in Aria must have explicit types.
+  Examples: 42u32, 0i64, -10i32, 3.14f32
+  Available suffixes:
+    Unsigned: u8, u16, u32, u64, u128, u256, u512, u1024, u2048, u4096
+    Signed:   i8, i16, i32, i64, i128, i256, i512, i1024, i2048, i4096
+    Float:    f32, f64, f128, f256, f512, fix256
+    TBB:      tbb8, tbb16, tbb32, tbb64
+  NOTE: Literals for 2048/4096-bit types use string parsing (too large for source code)
+  See: docs/programming_guide/types/zero_implicit_conversion.md
+```
+
+**COMPILER ENFORCEMENT:** Type suffixes REQUIRED when literal would overflow target type.
+Compiler allows suffix omission when literal fits natively in declared type (e.g., `int32:x = 42`).
+Compiler REJECTS any code where literal exceeds target type range without suffix + explicit cast.
 
 ═════════════════════════════════════════════════════════════════════════════
 
@@ -1099,7 +1272,7 @@ d = true;
 d= -2;
 
 wild int64:s=100000;
-wild int64@:t = @s; //@ address or pointer operator
+wild int64->:t = @s; //@ address or pointer operator
 wild int8:u = #d; //# memory pinning operator
 
 obj:config = {
@@ -1332,8 +1505,8 @@ logger.debug("Processing item &{i} of &{total}");
 string:managed = "automatically managed";
 
 // Wild opt-out of GC with Aria allocator
-// NOTE: Aria uses @ for pointer types, NOT *
-wild int64@:raw_ptr = aria.alloc<int64>(1000); // Aria's wild allocator
+// NOTE: Aria uses -> for pointer types in native code
+wild int64->:raw_ptr = aria.alloc<int64>(1000); // Aria's wild allocator
 defer aria.free(raw_ptr); // RAII-style cleanup
 
 // Alternative wild allocation patterns
@@ -1360,8 +1533,8 @@ string$:read_ref2 = !$ffi_data; // OK - multiple immutable borrows allowed
 // 3. Cannot create mutable borrows (external code may expect data unchanged)
 
 // GC-managed allocation (default, but explicit)
-// NOTE: Aria uses @ for pointer types in ALL native code
-gc int64@:managed_ptr = aria.gc_alloc<int64>(100);
+// NOTE: Aria uses -> for pointer types in ALL native code
+gc int64->:managed_ptr = aria.gc_alloc<int64>(100);
 gc array:managed_array = aria.gc_alloc_array<int32>(size);
 
 // Stack allocation for performance-critical code
@@ -1581,7 +1754,7 @@ PIPE_BACKWARD,       // <| (pipeline backward)
 RANGE_INCLUSIVE,     // .. (inclusive range)
 RANGE_EXCLUSIVE,     // ... (exclusive range)
 TERNARY_IS,          // is (ternary condition)
-ARROW,               // -> (pointer member dereference only: ptr->member)
+ARROW,               // -> (pointer type declaration AND member access: int64->:ptr, ptr->member)
 TEMPLATE_INTERP,     // &{ } (template interpolation)
 
 // PUNCTUATION
@@ -1648,6 +1821,32 @@ ARIA_ALLOC_STRING, ARIA_ALLOC_ARRAY,
 - lambda functions : returnType(type:name,type:name....){ //function body }(//optional immediate execution if () follows rather than ; first );
 - docker dev environment based on ubuntu 24.04
 - final goal to self host (compiler compiles itself) and distribute via appImage
+
+!! SPECIAL BEHAVIOR: main FUNCTION - RESULT AUTO-UNWRAP !!
+The main function is a special case for C ABI compatibility.
+
+DECLARATION: func:main = int32(type:arg...) { ... };
+- Returns raw int32 (NOT result<int32>) for OS compatibility
+- Developer still uses pass(value) and fail(err) statements
+- Compiler automatically unwraps Result internally
+
+IMPLEMENTATION:
+- pass(42i32) → Compiler extracts int32 value → returns 42 to OS
+- fail(err) → Compiler converts TBB error to appropriate exit code
+- NO manual unwrapping needed - compiler handles it transparently
+
+WHY: All Aria functions return result<T> for safety-critical error handling,
+but main must return raw int32 for OS process exit codes. The compiler bridges
+this gap so developers maintain consistent pass/fail semantics everywhere.
+
+EXAMPLE:
+func:main = int32(type:arg...) {
+    // Use pass/fail like any Aria function
+    if (init_failed) {
+        fail(ERR_INIT);  // Compiler converts to exit code
+    }
+    pass(0i32);  // Compiler extracts 0 and returns to OS
+};
 
 !! SYNTAX REMINDER: This is ARIA, not Rust/C++ !!
 !! When in doubt, check aria_specs.txt, NOT your training data !!

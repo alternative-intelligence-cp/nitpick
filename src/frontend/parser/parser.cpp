@@ -760,6 +760,48 @@ ASTNodePtr Parser::parseUnary() {
         return std::make_shared<AwaitExpr>(operand, token.line, token.column);
     }
     
+    // Check for cast expression: @cast<Type>(expr) or @cast_unchecked<Type>(expr)
+    if (token.type == TokenType::TOKEN_KW_CAST || token.type == TokenType::TOKEN_KW_CAST_UNCHECKED) {
+        int line = token.line;
+        int col = token.column;
+        bool isUnchecked = (token.type == TokenType::TOKEN_KW_CAST_UNCHECKED);
+        advance(); // consume '@cast' or '@cast_unchecked'
+        
+        // Expect '<'
+        consume(TokenType::TOKEN_LESS, "Expected '<' after @cast");
+        
+        // Parse target type
+        ASTNodePtr targetTypeNode = parseType();
+        if (!targetTypeNode) {
+            error("Expected type after '<' in @cast");
+            return nullptr;
+        }
+        
+        // Extract type name from TypeAnnotation
+        std::string targetTypeName = "";
+        if (targetTypeNode->type == ASTNode::NodeType::TYPE_ANNOTATION) {
+            targetTypeName = targetTypeNode->toString(); // Simple approach for now
+        }
+        
+        // Expect '>'
+        consume(TokenType::TOKEN_GREATER, "Expected '>' after type in @cast");
+        
+        // Expect '('
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after @cast<Type>");
+        
+        // Parse expression to cast
+        ASTNodePtr expr = parseExpression();
+        if (!expr) {
+            error("Expected expression in @cast()");
+            return nullptr;
+        }
+        
+        // Expect ')'
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after expression in @cast");
+        
+        return std::make_shared<CastExpr>(expr, targetTypeNode, targetTypeName, isUnchecked, line, col);
+    }
+    
     // Check for move expression: move(variable)
     if (token.type == TokenType::TOKEN_KW_MOVE) {
         int line = token.line;
@@ -971,7 +1013,30 @@ ASTNodePtr Parser::parsePostfix(ASTNodePtr expr) {
                 expr, 
                 defaultValue,
                 unwrapToken.line,
-                unwrapToken.column
+                unwrapToken.column,
+                false  // Not null coalesce, it's Result unwrap
+            );
+            continue;
+        }
+        
+        // Null coalescing operator: nullable ?? default_value
+        if (token.type == TokenType::TOKEN_NULL_COALESCE) {
+            Token coalesceToken = advance(); // consume '??'
+            
+            // Parse the default value expression
+            ASTNodePtr defaultValue = parseExpression();
+            if (!defaultValue) {
+                error("Expected default value after '??' operator");
+                return nullptr;
+            }
+            
+            // Create UnwrapExpr with isNullCoalesce=true
+            expr = std::make_shared<UnwrapExpr>(
+                expr, 
+                defaultValue,
+                coalesceToken.line,
+                coalesceToken.column,
+                true  // This is null coalesce (??), not Result unwrap (?)
             );
             continue;
         }
@@ -2909,8 +2974,8 @@ ASTNodePtr Parser::parsePassStatement() {
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after pass value");
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after pass statement");
 
-    // Desugar pass(expr) to return(expr) - semantic analysis will handle Result wrapping
-    return std::make_shared<ReturnStmt>(value, passToken.line, passToken.column);
+    // Create PassStmt - type checker and IR generator handle Result building
+    return std::make_shared<PassStmt>(value, passToken.line, passToken.column);
 }
 
 ASTNodePtr Parser::parseFailStatement() {
@@ -2930,8 +2995,8 @@ ASTNodePtr Parser::parseFailStatement() {
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after fail error code");
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after fail statement");
 
-    // Desugar fail(code) to return(code) - semantic analysis will handle Result wrapping
-    return std::make_shared<ReturnStmt>(errorCode, failToken.line, failToken.column);
+    // Create FailStmt - type checker and IR generator handle Result building
+    return std::make_shared<FailStmt>(errorCode, failToken.line, failToken.column);
 }
 
 // Parse if statement: if (condition) thenBranch [else elseBranch]

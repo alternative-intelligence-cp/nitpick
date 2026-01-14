@@ -1941,6 +1941,8 @@ llvm::Value* ExprCodegen::codegenExpressionNode(ASTNode* node, ExprCodegen* code
             return codegen->codegenLambda(static_cast<LambdaExpr*>(node));
         case ASTNode::NodeType::AWAIT:
             return codegen->codegenAwait(node);
+        case ASTNode::NodeType::CAST:
+            return codegen->codegenCast(static_cast<CastExpr*>(node));
         default:
             throw std::runtime_error("Unsupported expression node type in operation");
     }
@@ -6997,6 +6999,140 @@ llvm::Value* ExprCodegen::codegenVectorConstructor(VectorConstructorExpr* expr) 
     }
     
     throw std::runtime_error("Unsupported vector dimension: " + std::to_string(dimension));
+}
+
+// ============================================================================
+// Cast Expression Code Generation (Zero Implicit Conversion)
+// ============================================================================
+
+/**
+ * Generate code for cast expressions (@cast and @cast_unchecked)
+ * Handles: safe widening, checked narrowing, unchecked truncation
+ */
+llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
+    if (!expr) {
+        throw std::runtime_error("Null cast expression");
+    }
+    
+    // Generate code for the expression being cast
+    llvm::Value* sourceValue = codegenExpressionNode(expr->expression.get(), this);
+    if (!sourceValue) {
+        throw std::runtime_error("Failed to generate code for cast source expression");
+    }
+    
+    // Get LLVM types
+    llvm::Type* sourceLLVMType = sourceValue->getType();
+    llvm::Type* targetLLVMType = getLLVMTypeFromString(expr->targetType);
+    
+    if (!targetLLVMType) {
+        throw std::runtime_error("Unknown target type in cast: " + expr->targetType);
+    }
+    
+    // If types are already the same, no cast needed
+    if (sourceLLVMType == targetLLVMType) {
+        return sourceValue;
+    }
+    
+    // Determine cast operation based on type categories
+    bool sourceIsInt = sourceLLVMType->isIntegerTy();
+    bool targetIsInt = targetLLVMType->isIntegerTy();
+    bool sourceIsFloat = sourceLLVMType->isFloatingPointTy();
+    bool targetIsFloat = targetLLVMType->isFloatingPointTy();
+    
+    // Integer to Integer casts
+    if (sourceIsInt && targetIsInt) {
+        unsigned sourceBits = sourceLLVMType->getIntegerBitWidth();
+        unsigned targetBits = targetLLVMType->getIntegerBitWidth();
+        
+        if (targetBits > sourceBits) {
+            // Widening: safe cast - use sign/zero extension
+            // Determine if source type is signed based on Aria type name
+            bool isSigned = (expr->targetType.find("int") == 0 || 
+                           expr->targetType.find("i8") == 0 ||
+                           expr->targetType.find("i16") == 0 ||
+                           expr->targetType.find("i32") == 0 ||
+                           expr->targetType.find("i64") == 0);
+            
+            if (isSigned) {
+                return builder.CreateSExt(sourceValue, targetLLVMType, "cast.sext");
+            } else {
+                return builder.CreateZExt(sourceValue, targetLLVMType, "cast.zext");
+            }
+        } else {
+            // Narrowing: potentially unsafe
+            if (expr->isUnchecked) {
+                // @cast_unchecked: just truncate
+                return builder.CreateTrunc(sourceValue, targetLLVMType, "cast.trunc");
+            } else {
+                // @cast: checked narrowing - add runtime overflow check
+                // For now, just truncate (TODO: add runtime check and panic)
+                // TODO: Implement overflow detection and call panic function
+                return builder.CreateTrunc(sourceValue, targetLLVMType, "cast.checked_trunc");
+            }
+        }
+    }
+    
+    // Float to Float casts
+    if (sourceIsFloat && targetIsFloat) {
+        unsigned sourceBits = sourceLLVMType->getPrimitiveSizeInBits();
+        unsigned targetBits = targetLLVMType->getPrimitiveSizeInBits();
+        
+        if (targetBits > sourceBits) {
+            // Widening: f32 -> f64 (safe)
+            return builder.CreateFPExt(sourceValue, targetLLVMType, "cast.fpext");
+        } else {
+            // Narrowing: f64 -> f32
+            if (expr->isUnchecked) {
+                // @cast_unchecked: just truncate
+                return builder.CreateFPTrunc(sourceValue, targetLLVMType, "cast.fptrunc");
+            } else {
+                // @cast: checked narrowing
+                // TODO: Add range check for overflow/underflow
+                return builder.CreateFPTrunc(sourceValue, targetLLVMType, "cast.checked_fptrunc");
+            }
+        }
+    }
+    
+    // Integer to Float
+    if (sourceIsInt && targetIsFloat) {
+        // Determine if source is signed
+        bool isSigned = true; // Default to signed
+        // TODO: Get signedness from type system
+        
+        if (isSigned) {
+            return builder.CreateSIToFP(sourceValue, targetLLVMType, "cast.sitofp");
+        } else {
+            return builder.CreateUIToFP(sourceValue, targetLLVMType, "cast.uitofp");
+        }
+    }
+    
+    // Float to Integer
+    if (sourceIsFloat && targetIsInt) {
+        // Determine if target is signed
+        bool isSigned = (expr->targetType.find("int") == 0 || 
+                       expr->targetType[0] == 'i');
+        
+        if (expr->isUnchecked) {
+            // @cast_unchecked: direct conversion (may overflow)
+            if (isSigned) {
+                return builder.CreateFPToSI(sourceValue, targetLLVMType, "cast.fptosi");
+            } else {
+                return builder.CreateFPToUI(sourceValue, targetLLVMType, "cast.fptoui");
+            }
+        } else {
+            // @cast: checked conversion
+            // TODO: Add range check (ensure float value fits in target int range)
+            if (isSigned) {
+                return builder.CreateFPToSI(sourceValue, targetLLVMType, "cast.checked_fptosi");
+            } else {
+                return builder.CreateFPToUI(sourceValue, targetLLVMType, "cast.checked_fptoui");
+            }
+        }
+    }
+    
+    throw std::runtime_error("Unsupported cast between types: " + 
+                           std::string(sourceLLVMType->isIntegerTy() ? "int" : "float") +
+                           " -> " + expr->targetType);
 }
 
 

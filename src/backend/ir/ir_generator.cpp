@@ -1721,11 +1721,28 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 param_types.push_back(mapTypeFromName(paramTypeStr));
             }
             
+            // Get the declared return type
             std::string returnTypeStr = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
-            llvm::Type* return_type = mapTypeFromName(returnTypeStr);
+            llvm::Type* value_type = mapTypeFromName(returnTypeStr);
+            
+            // All Aria functions return Result<T> except:
+            // 1. extern functions (no body)
+            // 2. main function (C ABI compatibility)
+            llvm::Type* actual_return_type;
+            if (!funcDecl->body || funcDecl->funcName == "main") {
+                // Extern functions and main return raw type
+                actual_return_type = value_type;
+            } else {
+                // Regular functions return Result{value, error*, is_error}
+                std::vector<llvm::Type*> result_fields = {
+                    value_type,                         // value (field 0)
+                    llvm::PointerType::get(context, 0), // error (field 1) - void*
+                    builder.getInt1Ty()                 // is_error (field 2) - bool
+                };
+                actual_return_type = llvm::StructType::get(context, result_fields);
+            }
             
             // Phase 4.6: Async functions return i8* (coroutine handle)
-            llvm::Type* actual_return_type = return_type;
             if (funcDecl->isAsync) {
                 actual_return_type = llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0);
                 std::cerr << "[DEBUG] Async function detected: " << funcDecl->funcName << ", changing return type to i8*" << std::endl;
@@ -1922,10 +1939,10 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 if (funcDecl->isAsync) {
                     // Async function: Jump to final suspend instead of returning directly
                     builder.CreateBr(coro_suspend_block);
-                } else if (return_type->isVoidTy()) {
+                } else if (actual_return_type->isVoidTy()) {
                     builder.CreateRetVoid();
                 } else {
-                    builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
+                    builder.CreateRet(llvm::ConstantInt::get(actual_return_type, 0));
                 }
             }
             
@@ -2891,6 +2908,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
 
         case ASTNode::NodeType::PASS: {
             // Pass statement - return success with value
+            // Builds Result{val: value, err: NULL, is_error: false}
             PassStmt* passStmt = static_cast<PassStmt*>(stmt);
             
             // Execute all defer blocks (LIFO order) before returning
@@ -2899,33 +2917,63 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // Generate code for the value expression
             llvm::Value* value = codegenExpression(passStmt->value.get());
             if (value) {
-                // Convert value to match function return type if necessary (Session 15: ternary support)
                 llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
                 llvm::Type* returnType = currentFunc->getReturnType();
                 
-                if (value->getType() != returnType) {
-                    // Handle integer conversions
-                    if (value->getType()->isIntegerTy() && returnType->isIntegerTy()) {
-                        llvm::IntegerType* valIntTy = llvm::cast<llvm::IntegerType>(value->getType());
-                        llvm::IntegerType* retIntTy = llvm::cast<llvm::IntegerType>(returnType);
-                        
-                        if (valIntTy->getBitWidth() < retIntTy->getBitWidth()) {
-                            // Sign extend for widening
-                            value = builder.CreateSExt(value, returnType, "ret_sext");
-                        } else if (valIntTy->getBitWidth() > retIntTy->getBitWidth()) {
-                            // Truncate for narrowing
-                            value = builder.CreateTrunc(value, returnType, "ret_trunc");
+                // Check if return type is a Result struct {value, error*, is_error}
+                if (returnType->isStructTy()) {
+                    llvm::StructType* resultStruct = llvm::cast<llvm::StructType>(returnType);
+                    
+                    // Build Result object: {value, NULL, false}
+                    llvm::Value* result = llvm::UndefValue::get(resultStruct);
+                    
+                    // Field 0: value (may need type conversion)
+                    llvm::Type* valueFieldType = resultStruct->getElementType(0);
+                    if (value->getType() != valueFieldType) {
+                        if (value->getType()->isIntegerTy() && valueFieldType->isIntegerTy()) {
+                            llvm::IntegerType* valIntTy = llvm::cast<llvm::IntegerType>(value->getType());
+                            llvm::IntegerType* fldIntTy = llvm::cast<llvm::IntegerType>(valueFieldType);
+                            if (valIntTy->getBitWidth() < fldIntTy->getBitWidth()) {
+                                value = builder.CreateSExt(value, valueFieldType, "val_sext");
+                            } else if (valIntTy->getBitWidth() > fldIntTy->getBitWidth()) {
+                                value = builder.CreateTrunc(value, valueFieldType, "val_trunc");
+                            }
                         }
                     }
+                    result = builder.CreateInsertValue(result, value, 0, "result.val");
+                    
+                    // Field 1: error = NULL
+                    llvm::Value* nullError = llvm::ConstantPointerNull::get(
+                        llvm::cast<llvm::PointerType>(resultStruct->getElementType(1)));
+                    result = builder.CreateInsertValue(result, nullError, 1, "result.err");
+                    
+                    // Field 2: is_error = false
+                    llvm::Value* falseVal = builder.getInt1(false);
+                    result = builder.CreateInsertValue(result, falseVal, 2, "result.is_error");
+                    
+                    builder.CreateRet(result);
+                } else {
+                    // Fallback: old behavior for non-Result returns (extern functions, etc.)
+                    if (value->getType() != returnType) {
+                        if (value->getType()->isIntegerTy() && returnType->isIntegerTy()) {
+                            llvm::IntegerType* valIntTy = llvm::cast<llvm::IntegerType>(value->getType());
+                            llvm::IntegerType* retIntTy = llvm::cast<llvm::IntegerType>(returnType);
+                            if (valIntTy->getBitWidth() < retIntTy->getBitWidth()) {
+                                value = builder.CreateSExt(value, returnType, "ret_sext");
+                            } else if (valIntTy->getBitWidth() > retIntTy->getBitWidth()) {
+                                value = builder.CreateTrunc(value, returnType, "ret_trunc");
+                            }
+                        }
+                    }
+                    builder.CreateRet(value);
                 }
-                
-                builder.CreateRet(value);
             }
             return nullptr;
         }
         
         case ASTNode::NodeType::FAIL: {
             // Fail statement - return failure with error code
+            // Builds Result{val: zero, err: error_code, is_error: true}
             FailStmt* failStmt = static_cast<FailStmt*>(stmt);
             
             // Execute all defer blocks (LIFO order) before returning
@@ -2934,27 +2982,55 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // Generate code for the error code expression
             llvm::Value* errorCode = codegenExpression(failStmt->errorCode.get());
             if (errorCode) {
-                // Convert error code to match function return type if necessary (Session 15: ternary support)
                 llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
                 llvm::Type* returnType = currentFunc->getReturnType();
                 
-                if (errorCode->getType() != returnType) {
-                    // Handle integer conversions
-                    if (errorCode->getType()->isIntegerTy() && returnType->isIntegerTy()) {
-                        llvm::IntegerType* valIntTy = llvm::cast<llvm::IntegerType>(errorCode->getType());
-                        llvm::IntegerType* retIntTy = llvm::cast<llvm::IntegerType>(returnType);
-                        
-                        if (valIntTy->getBitWidth() < retIntTy->getBitWidth()) {
-                            // Sign extend for widening
-                            errorCode = builder.CreateSExt(errorCode, returnType, "ret_sext");
-                        } else if (valIntTy->getBitWidth() > retIntTy->getBitWidth()) {
-                            // Truncate for narrowing
-                            errorCode = builder.CreateTrunc(errorCode, returnType, "ret_trunc");
+                // Check if return type is a Result struct {value, error*, is_error}
+                if (returnType->isStructTy()) {
+                    llvm::StructType* resultStruct = llvm::cast<llvm::StructType>(returnType);
+                    
+                    // Build Result object: {zero_value, error_ptr, true}
+                    llvm::Value* result = llvm::UndefValue::get(resultStruct);
+                    
+                    // Field 0: value = zero/default (TODO: proper nil value for non-integer types)
+                    llvm::Type* valueFieldType = resultStruct->getElementType(0);
+                    llvm::Value* zeroValue = llvm::Constant::getNullValue(valueFieldType);
+                    result = builder.CreateInsertValue(result, zeroValue, 0, "result.val");
+                    
+                    // Field 1: error = cast error_code to void*
+                    // For now, store error code as inttoptr
+                    // TODO: Proper TBB error type system
+                    llvm::Value* errorPtr;
+                    if (errorCode->getType()->isIntegerTy()) {
+                        errorPtr = builder.CreateIntToPtr(errorCode, 
+                            llvm::PointerType::get(context, 0), "err_ptr");
+                    } else {
+                        // Already a pointer or other type - cast to void*
+                        errorPtr = builder.CreateBitCast(errorCode,
+                            llvm::PointerType::get(context, 0), "err_ptr");
+                    }
+                    result = builder.CreateInsertValue(result, errorPtr, 1, "result.err");
+                    
+                    // Field 2: is_error = true
+                    llvm::Value* trueVal = builder.getInt1(true);
+                    result = builder.CreateInsertValue(result, trueVal, 2, "result.is_error");
+                    
+                    builder.CreateRet(result);
+                } else {
+                    // Fallback: old behavior for non-Result returns
+                    if (errorCode->getType() != returnType) {
+                        if (errorCode->getType()->isIntegerTy() && returnType->isIntegerTy()) {
+                            llvm::IntegerType* valIntTy = llvm::cast<llvm::IntegerType>(errorCode->getType());
+                            llvm::IntegerType* retIntTy = llvm::cast<llvm::IntegerType>(returnType);
+                            if (valIntTy->getBitWidth() < retIntTy->getBitWidth()) {
+                                errorCode = builder.CreateSExt(errorCode, returnType, "ret_sext");
+                            } else if (valIntTy->getBitWidth() > retIntTy->getBitWidth()) {
+                                errorCode = builder.CreateTrunc(errorCode, returnType, "ret_trunc");
+                            }
                         }
                     }
+                    builder.CreateRet(errorCode);
                 }
-                
-                builder.CreateRet(errorCode);
             }
             return nullptr;
         }
@@ -3386,7 +3462,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
             
             // Standard precision: Handle different literal types using variant
-            if (std::holds_alternative<int64_t>(lit->value)) {
+            // Check for NULL/NIL literal (monostate)
+            if (std::holds_alternative<std::monostate>(lit->value)) {
+                // NULL literal - return null pointer constant
+                // For pointer types, this creates a proper null pointer
+                return llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
+            } else if (std::holds_alternative<int64_t>(lit->value)) {
                 int64_t val = std::get<int64_t>(lit->value);
                 // Default to int64 for integer literals to match Aria's default integer type
                 // Type inference during semantic analysis determines the actual type needed
@@ -3514,6 +3595,86 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
         case ASTNode::NodeType::UNARY_OP: {
             // Unary operation
             UnaryExpr* unary = static_cast<UnaryExpr*>(expr);
+            
+            // Special handling for address-of operator (@)
+            // MUST be before general operand codegen because we need the ADDRESS not the VALUE
+            if (unary->op.type == frontend::TokenType::TOKEN_AT) {
+                // Address-of: @variable
+                // Operand must be an lvalue (identifier)
+                if (unary->operand->type != ASTNode::NodeType::IDENTIFIER) {
+                    return nullptr;  // Can only take address of variables
+                }
+                
+                IdentifierExpr* ident = static_cast<IdentifierExpr*>(unary->operand.get());
+                auto it = named_values.find(ident->name);
+                if (it == named_values.end()) {
+                    return nullptr;  // Variable not found
+                }
+                
+                // Return the alloca pointer itself (the ADDRESS), not the loaded value
+                llvm::Value* address = it->second;
+                return address;
+            }
+            
+            // Special handling for dereference operator (<-)
+            // Blueprint style: arrow shows data flow FROM pointer TO value
+            if (unary->op.type == frontend::TokenType::TOKEN_LEFT_ARROW) {
+                // Dereference: value <- ptr
+                // Generate the pointer value first
+                llvm::Value* ptr = codegenExpression(unary->operand.get());
+                if (!ptr) return nullptr;
+                
+                if (!ptr->getType()->isPointerTy()) {
+                    return nullptr;  // Type checker should have caught this
+                }
+                
+                // Determine the pointee type
+                // For opaque pointers in LLVM 20, we need to track the type separately
+                llvm::Type* pointeeType = nullptr;
+                
+                // Try to infer from the pointer's source
+                if (unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                    IdentifierExpr* ident = static_cast<IdentifierExpr*>(unary->operand.get());
+                    auto it = named_values.find(ident->name);
+                    if (it != named_values.end()) {
+                        llvm::Value* ptrAlloca = it->second;
+                        if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(ptrAlloca)) {
+                            // The alloca holds a pointer, get what that pointer points to
+                            // For a variable like "int32->:ptr", the alloca type is "ptr"
+                            // We need to look at the Aria type system to know what it points to
+                            
+                            // Check if we have Aria type info for this variable
+                            auto ariaTypeIt = var_aria_types.find(ident->name);
+                            if (ariaTypeIt != var_aria_types.end()) {
+                                std::string ariaTypeName = ariaTypeIt->second;
+                                // Type name is like "int32@" or "int32->" - extract base type
+                                if (ariaTypeName.size() > 2 && 
+                                    (ariaTypeName.back() == '@' || 
+                                     (ariaTypeName.size() > 1 && ariaTypeName.substr(ariaTypeName.size()-2) == "->"))) {
+                                    // Strip the pointer suffix
+                                    std::string baseTypeName;
+                                    if (ariaTypeName.back() == '@') {
+                                        baseTypeName = ariaTypeName.substr(0, ariaTypeName.size() - 1);
+                                    } else {
+                                        baseTypeName = ariaTypeName.substr(0, ariaTypeName.size() - 2);
+                                    }
+                                    // Map to LLVM type
+                                    pointeeType = mapTypeFromName(baseTypeName);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Fallback: default to i32 if we can't determine the type
+                if (!pointeeType) {
+                    pointeeType = builder.getInt32Ty();
+                }
+                
+                // Load the value from the pointer (dereference)
+                llvm::Value* derefValue = builder.CreateLoad(pointeeType, ptr, "deref");
+                return derefValue;
+            }
             
             // Special handling for increment/decrement operators
             if (unary->op.type == frontend::TokenType::TOKEN_PLUS_PLUS ||
@@ -4789,21 +4950,103 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
         }
         
         case ASTNode::NodeType::UNWRAP: {
-            // Unwrap expression: result ? default_value
-            // TODO: When full result types are implemented, check for error and use default if needed
-            // For now, simplified implementation: just return the result value
+            // Two operators use UnwrapExpr:
+            // ? operator: result ? default (unwraps Result<T>)
+            // ?? operator: nullable ?? default (null coalescing for pointers)
             UnwrapExpr* unwrap = static_cast<UnwrapExpr*>(expr);
             
-            // Generate code for the result expression
-            llvm::Value* resultVal = codegenExpression(unwrap->result.get());
-            if (!resultVal) return nullptr;
+            // Generate code for the left-hand expression
+            llvm::Value* leftVal = codegenExpression(unwrap->result.get());
+            if (!leftVal) return nullptr;
             
-            // TODO: Full implementation would:
-            // 1. Check if result.err is NULL
-            // 2. If NULL, return result.val
-            // 3. If not NULL, return default_value
-            // For now, just return the result value directly
-            return resultVal;
+            // Determine which operator based on the flag set during parsing
+            if (!unwrap->isNullCoalesce) {
+                // ? operator: Unwrap Result<T> struct
+                // Result struct: { value_type, ptr, i1 }
+                // Field 0: value (T)
+                // Field 1: error (ptr)
+                // Field 2: is_error (i1)
+                
+                // Extract the is_error field (field 2)
+                llvm::Value* isError = builder.CreateExtractValue(leftVal, 2, "is_error");
+                
+                // Create basic blocks for control flow
+                llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                llvm::BasicBlock* errorBlock = llvm::BasicBlock::Create(context, "error_block", currentFunc);
+                llvm::BasicBlock* successBlock = llvm::BasicBlock::Create(context, "success_block", currentFunc);
+                llvm::BasicBlock* mergeBlock = llvm::BasicBlock::Create(context, "merge_block", currentFunc);
+                
+                // Branch based on is_error
+                builder.CreateCondBr(isError, errorBlock, successBlock);
+                
+                // Error block: use default value
+                builder.SetInsertPoint(errorBlock);
+                llvm::Value* defaultVal = codegenExpression(unwrap->defaultValue.get());
+                if (!defaultVal) return nullptr;
+                llvm::BasicBlock* errorExitBlock = builder.GetInsertBlock();
+                builder.CreateBr(mergeBlock);
+                
+                // Success block: extract value from Result
+                builder.SetInsertPoint(successBlock);
+                llvm::Value* valueField = builder.CreateExtractValue(leftVal, 0, "value");
+                llvm::BasicBlock* successExitBlock = builder.GetInsertBlock();
+                builder.CreateBr(mergeBlock);
+                
+                // Merge block: use PHI to select between default and value
+                builder.SetInsertPoint(mergeBlock);
+                llvm::PHINode* phi = builder.CreatePHI(valueField->getType(), 2, "unwrap_result");
+                phi->addIncoming(defaultVal, errorExitBlock);
+                phi->addIncoming(valueField, successExitBlock);
+                
+                return phi;
+            } 
+            else {
+                // ?? operator: Null coalescing for pointers
+                // Check if pointer is null, use default if null, dereference if not
+                
+                // Create null pointer constant
+                llvm::Value* nullPtr = llvm::Constant::getNullValue(leftVal->getType());
+                
+                // Compare pointer to null
+                llvm::Value* isNull = builder.CreateICmpEQ(leftVal, nullPtr, "is_null");
+                
+                // Generate default value to get pointee type
+                llvm::Value* defaultVal = codegenExpression(unwrap->defaultValue.get());
+                if (!defaultVal) return nullptr;
+                llvm::Type* pointeeType = defaultVal->getType();
+                
+                // Create basic blocks for control flow
+                llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                llvm::BasicBlock* nullBlock = llvm::BasicBlock::Create(context, "null_block", currentFunc);
+                llvm::BasicBlock* nonNullBlock = llvm::BasicBlock::Create(context, "non_null_block", currentFunc);
+                llvm::BasicBlock* mergeBlock = llvm::BasicBlock::Create(context, "merge_block", currentFunc);
+                
+                // Branch based on is_null
+                builder.CreateCondBr(isNull, nullBlock, nonNullBlock);
+                
+                // Null block: use default value (already generated)
+                builder.SetInsertPoint(nullBlock);
+                llvm::BasicBlock* nullExitBlock = builder.GetInsertBlock();
+                builder.CreateBr(mergeBlock);
+                
+                // Non-null block: dereference pointer to get value
+                builder.SetInsertPoint(nonNullBlock);
+                llvm::Value* derefValue = builder.CreateLoad(
+                    pointeeType, 
+                    leftVal, 
+                    "deref_value"
+                );
+                llvm::BasicBlock* nonNullExitBlock = builder.GetInsertBlock();
+                builder.CreateBr(mergeBlock);
+                
+                // Merge block: use PHI to select between default and dereferenced value
+                builder.SetInsertPoint(mergeBlock);
+                llvm::PHINode* phi = builder.CreatePHI(pointeeType, 2, "coalesce_result");
+                phi->addIncoming(defaultVal, nullExitBlock);
+                phi->addIncoming(derefValue, nonNullExitBlock);
+                
+                return phi;
+            }
         }
         
         case ASTNode::NodeType::OBJECT_LITERAL: {

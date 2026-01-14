@@ -52,6 +52,9 @@ private:
     // Look ahead one character
     char peekNext() const;
     
+    // Look ahead N characters
+    char peekN(int n) const;
+    
     // Check if at end of source
     bool isAtEnd() const;
     
@@ -153,6 +156,16 @@ private:
     //   Appropriate TOKEN_INTEGER_* or TOKEN_FLOAT_* type
     //   Returns TOKEN_ERROR if suffix is invalid for the literal type
     TokenType suffixToTokenType(const std::string& suffix, bool isFloat);
+    
+    // ========================================================================
+    // @cast Keyword Scanning (Zero Implicit Conversion)
+    // ========================================================================
+    
+    // Check if we're at @cast or @cast_unchecked keyword
+    bool isAtCastKeyword();
+    
+    // Scan @cast or @cast_unchecked keyword
+    void scanCastKeyword();
 };
 
 } // namespace frontend

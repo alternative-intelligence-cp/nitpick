@@ -52,7 +52,12 @@ private:
     std::unordered_map<std::string, LoadedModule*> loadedModules;
     
     // Current function return type (for return statement checking)
+    // Functions return Result<T>, so currentFunctionReturnType is the Result type
     Type* currentFunctionReturnType;
+    
+    // Current function value type (the T in Result<T>)
+    // Used by pass/fail statements to validate value types
+    Type* currentFunctionValueType;
     
     // Current module path (for resolving relative imports)
     std::string currentModulePath;
@@ -162,6 +167,18 @@ private:
      * - Result type is vec2/vec3/vec9 with inferred component type
      */
     Type* inferVectorConstructor(VectorConstructorExpr* expr);
+    
+    /**
+     * Infer the type of a cast expression (@cast or @cast_unchecked)
+     * 
+     * Rules:
+     * - Safe casts (widening): i8→i64, f32→f64 always succeed
+     * - Checked casts (narrowing): i64→i8 require runtime check (unless unchecked)
+     * - Unchecked casts: no runtime check, may truncate
+     * - Invalid casts: incompatible types cause compile error
+     * - Result type is the target type specified in @cast<Type>(expr)
+     */
+    Type* inferCastExpr(CastExpr* expr);
     
     /**
      * Infer the type of an array index expression
@@ -473,7 +490,8 @@ public:
           constEvaluator(new ConstEvaluator(symbolTable)),  // Phase 2.2
           moduleLoader(loader),
           currentModulePath(modulePath),
-          currentFunctionReturnType(nullptr) {}
+          currentFunctionReturnType(nullptr),
+          currentFunctionValueType(nullptr) {}
     
     ~TypeChecker() {
         delete constEvaluator;  // Clean up

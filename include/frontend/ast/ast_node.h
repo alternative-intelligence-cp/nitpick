@@ -38,6 +38,7 @@ public:
         AWAIT,                // Await expression: await future (async/await)
         MOVE,                 // Move expression: move(x) - ownership transfer
         VECTOR_CONSTRUCTOR,   // Vector constructor: vec2(x, y), vec3(x, y, z), vec9(...)
+        CAST,                 // Type cast: @cast<TargetType>(expr), @cast_unchecked<T>(expr)
         
         // === STATEMENTS ===
         VAR_DECL,             // Variable declaration: type:name = value;

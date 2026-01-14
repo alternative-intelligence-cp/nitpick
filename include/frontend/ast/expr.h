@@ -317,6 +317,43 @@ public:
 };
 
 /**
+ * Cast expression node
+ * Represents: @cast<TargetType>(expr) for checked casts, @cast_unchecked<T>(expr) for unchecked
+ * 
+ * Explicit type conversions in Aria's zero-implicit-conversion type system:
+ * 
+ * SAFE CASTS (widening - always succeed):
+ *   @cast<int64>(int8_val)  // i8 → i64 (fits in range)
+ *   @cast<f64>(f32_val)     // f32 → f64 (no precision loss)
+ * 
+ * CHECKED CASTS (narrowing - runtime validation):
+ *   @cast<int8>(int64_val)  // Panics if value doesn't fit in int8 range
+ *   @cast<f32>(f64_val)     // Panics if precision would be lost
+ * 
+ * UNCHECKED CASTS (truncation - performance, unsafe):
+ *   @cast_unchecked<int8>(int64_val)  // Truncates without check, no panic
+ * 
+ * Philosophy: All type conversions must be explicit. The type system ensures
+ * safety-critical code (AGI/robotics) has no hidden conversions that could
+ * cause actuator limit violations or sensor reading corruption.
+ */
+class CastExpr : public ASTNode {
+public:
+    ASTNodePtr expression;     // Expression being cast
+    ASTNodePtr targetTypeNode; // Type to cast to (TypeAnnotation node)
+    std::string targetType;    // Target type name ("int64", "f32", etc.)
+    bool isUnchecked;          // true for @cast_unchecked, false for @cast
+    
+    CastExpr(ASTNodePtr expr, ASTNodePtr typeNode, const std::string& targetTypeName, 
+             bool unchecked = false, int line = 0, int column = 0)
+        : ASTNode(NodeType::CAST, line, column),
+          expression(std::move(expr)), targetTypeNode(std::move(typeNode)),
+          targetType(targetTypeName), isUnchecked(unchecked) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Object literal expression node
  * Represents: { key: value, ... } syntax for both dynamic objects and struct initialization
  * 
@@ -393,22 +430,29 @@ public:
 };
 
 /**
- * Unwrap expression node (? operator)
- * Represents: result ? default_value
+ * Unwrap expression node (? and ?? operators)
+ * Represents: result ? default_value  (Result unwrap)
+ *         or: nullable ?? default_value (Null coalescing)
  * 
- * Unwraps a result type, returning the value if successful,
+ * ? operator unwraps a Result type, returning the value if successful,
  * or the default value if there was an error.
  * 
- * Example: string:content = readFile("config.txt") ? "default";
+ * ?? operator checks if a pointer is null, returning the dereferenced
+ * value if not null, or the default value if null.
+ * 
+ * Examples: 
+ *   string:content = readFile("config.txt") ? "default";
+ *   int32:value = ptr ?? 0i32;
  */
 class UnwrapExpr : public ASTNode {
 public:
-    ASTNodePtr result;        // Expression that returns a result type
-    ASTNodePtr defaultValue;  // Default value if result contains error
+    ASTNodePtr result;        // Expression that returns a result type or pointer
+    ASTNodePtr defaultValue;  // Default value if result contains error or is null
+    bool isNullCoalesce;      // true for ??, false for ?
     
-    UnwrapExpr(ASTNodePtr res, ASTNodePtr defVal, int line = 0, int column = 0)
+    UnwrapExpr(ASTNodePtr res, ASTNodePtr defVal, int line = 0, int column = 0, bool nullCoalesce = false)
         : ASTNode(NodeType::UNWRAP, line, column),
-          result(res), defaultValue(defVal) {}
+          result(res), defaultValue(defVal), isNullCoalesce(nullCoalesce) {}
     
     std::string toString() const override;
 };

@@ -1,0 +1,17 @@
+// Test the ? operator (unwrap operator)
+
+// Helper functions that return Results
+func:getSuccess = int32() {
+    pass(5i32);
+};
+
+// Return an error with error code  
+func:getError = int32() {
+    fail(1i32);
+};
+
+func:main = int32() {
+    // Test: Unwrap successful result gives 5, error unwrap gives default 10
+    // Expected: 5 + 10 = 15 (exit code 15)
+    pass((getSuccess() ? 0i32) + (getError() ? 10i32));
+};

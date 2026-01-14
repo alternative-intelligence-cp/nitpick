@@ -53,7 +53,7 @@ Token::Token(TokenType t, const std::string& lex, int ln, int col, double val, c
 // ============================================================================
 
 bool Token::isKeyword() const {
-    return type >= TokenType::TOKEN_KW_WILD && type <= TokenType::TOKEN_KW_ERR;
+    return type >= TokenType::TOKEN_KW_WILD && type <= TokenType::TOKEN_KW_CAST_UNCHECKED;
 }
 
 bool Token::isOperator() const {
@@ -268,6 +268,10 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_TRUE: return "TRUE";
         case TokenType::TOKEN_KW_FALSE: return "FALSE";
         case TokenType::TOKEN_KW_ERR: return "ERR";
+        
+        // Type casting
+        case TokenType::TOKEN_KW_CAST: return "CAST";
+        case TokenType::TOKEN_KW_CAST_UNCHECKED: return "CAST_UNCHECKED";
         
         // Arithmetic operators
         case TokenType::TOKEN_PLUS: return "PLUS";

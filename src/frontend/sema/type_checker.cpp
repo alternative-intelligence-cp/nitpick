@@ -260,6 +260,9 @@ Type* TypeChecker::inferType(ASTNode* expr) {
             return operandType;
         }
         
+        case ASTNode::NodeType::CAST:
+            return inferCastExpr(static_cast<CastExpr*>(expr));
+        
         default:
             addError("Type inference not implemented for node type: " + 
                     ASTNode::nodeTypeToString(expr->type), expr);
@@ -975,6 +978,87 @@ Type* TypeChecker::inferVectorConstructor(VectorConstructorExpr* expr) {
     
     // Return vec2/vec3/vec9 type
     return typeSystem->getVectorType(componentType, expr->dimension);
+}
+
+// ============================================================================
+// Cast Expression Type Inference (Zero Implicit Conversion)
+// ============================================================================
+
+Type* TypeChecker::inferCastExpr(CastExpr* expr) {
+    // Infer the type of the expression being cast
+    Type* sourceType = inferType(expr->expression.get());
+    if (sourceType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Resolve target type from type annotation
+    Type* targetType = resolveTypeNode(expr->targetTypeNode.get());
+    if (targetType->getKind() == TypeKind::ERROR) {
+        addError("Invalid target type in cast expression", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // Both types must be primitive numeric types for now
+    // TODO: Support casting between other compatible types (pointers, etc.)
+    if (!sourceType->isPrimitive() || !targetType->isPrimitive()) {
+        addError("Cast currently only supports primitive numeric types", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    PrimitiveType* sourcePrim = static_cast<PrimitiveType*>(sourceType);
+    PrimitiveType* targetPrim = static_cast<PrimitiveType*>(targetType);
+    
+    // Check if both are numeric (int or float)
+    bool sourceNumeric = sourcePrim->getBitWidth() > 0;
+    bool targetNumeric = targetPrim->getBitWidth() > 0;
+    
+    if (!sourceNumeric || !targetNumeric) {
+        addError("Cannot cast between non-numeric types '" + 
+                 sourcePrim->getName() + "' and '" + targetPrim->getName() + "'", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // Check for invalid casts (int <-> float requires explicit decision)
+    bool sourceIsFloat = sourcePrim->isFloatingType();
+    bool targetIsFloat = targetPrim->isFloatingType();
+    
+    if (sourceIsFloat != targetIsFloat) {
+        // int <-> float cast: allowed with explicit cast
+        // Runtime behavior:
+        // - @cast: checked conversion (range check for float->int)
+        // - @cast_unchecked: direct bitwise reinterpretation
+        // This is allowed, validation handled at codegen
+    }
+    
+    // Determine if this is a safe cast (widening)
+    bool isSafe = false;
+    if (sourceIsFloat == targetIsFloat) {
+        // Same category (both int or both float)
+        if (sourceIsFloat) {
+            // Float widening: f32 -> f64 is safe
+            isSafe = (targetPrim->getBitWidth() > sourcePrim->getBitWidth());
+        } else {
+            // Integer widening with matching signedness is safe
+            // i8 -> i64 is safe, u8 -> u64 is safe
+            // BUT i8 -> u64 is NOT safe (signedness mismatch)
+            bool sameSign = (sourcePrim->isSignedType() == targetPrim->isSignedType());
+            isSafe = sameSign && (targetPrim->getBitWidth() > sourcePrim->getBitWidth());
+        }
+    }
+    
+    // For checked casts (@cast), narrowing conversions get runtime checks
+    // For unchecked casts (@cast_unchecked), no runtime checks are performed
+    // Store this info for IR generation
+    if (!isSafe && !expr->isUnchecked) {
+        // Narrowing cast with runtime check - this is OK
+        // IR generator will add overflow detection
+    } else if (!isSafe && expr->isUnchecked) {
+        // Unchecked narrowing cast - potentially unsafe but explicitly requested
+        // IR generator will do truncation without checks
+    }
+    
+    // Return the target type
+    return targetType;
 }
 
 // ============================================================================
@@ -4139,20 +4223,46 @@ Type* TypeChecker::inferUnwrapExpr(UnwrapExpr* expr) {
         return typeSystem->getErrorType();
     }
     
-    // For now, without full result type implementation, we require that
-    // the result and default value have compatible types
-    Type* commonType = findCommonType(resultType, defaultType);
+    // Two operators use UnwrapExpr:
+    // ? operator: result_expr ? default (unwraps Result<T>)
+    // ?? operator: nullable_expr ?? default (null coalescing for pointers)
     
-    if (commonType->getKind() == TypeKind::ERROR) {
-        addError("Unwrap operator (?) requires compatible types: result type '" + 
-                resultType->toString() + "' and default value type '" + 
-                defaultType->toString() + "'", expr);
+    Type* valueType = resultType;
+    
+    if (resultType->getKind() == TypeKind::RESULT) {
+        // ? operator: Extract T from Result<T>
+        ResultType* resType = static_cast<ResultType*>(resultType);
+        valueType = resType->getValueType();
+        
+        // Check that default value type matches the unwrapped value type
+        if (!defaultType->isAssignableTo(valueType) && !canCoerce(defaultType, valueType)) {
+            addError("Unwrap operator (?) default value type '" + defaultType->toString() + 
+                    "' does not match result value type '" + valueType->toString() + "'", expr);
+            return typeSystem->getErrorType();
+        }
+    } 
+    else if (resultType->getKind() == TypeKind::POINTER) {
+        // ?? operator: Extract T from ptr T
+        PointerType* ptrType = static_cast<PointerType*>(resultType);
+        valueType = ptrType->getPointeeType();
+        
+        // Check that default value type matches the pointee type
+        if (!defaultType->isAssignableTo(valueType) && !canCoerce(defaultType, valueType)) {
+            addError("Null coalesce operator (??) default value type '" + defaultType->toString() + 
+                    "' does not match pointer target type '" + valueType->toString() + "'", expr);
+            return typeSystem->getErrorType();
+        }
+    }
+    else {
+        addError("Unwrap/coalesce operators (? and ??) require either Result<T> or ptr T type, got '" + 
+                resultType->toString() + "'", expr);
         return typeSystem->getErrorType();
     }
     
-    // The unwrap expression returns the common type of result and default
-    return commonType;
+    // Both operators return the value type (T from Result<T> or ptr T)
+    return valueType;
 }
+
 
 Type* TypeChecker::inferMoveExpr(MoveExpr* expr) {
     // Move expression transfers ownership of a variable
@@ -5062,9 +5172,9 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
 
 void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     // Resolve return type from the type node
-    Type* returnType = resolveTypeNode(stmt->returnType.get());
+    Type* valueType = resolveTypeNode(stmt->returnType.get());
     
-    if (!returnType) {
+    if (!valueType) {
         if (stmt->returnType) {
             addError("Unknown return type: '" + stmt->returnType->toString() + "'", stmt);
         } else {
@@ -5076,7 +5186,7 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     // Validate main function signature
     // main must return int32 to be compatible with C runtime expectations
     if (stmt->funcName == "main") {
-        std::string returnTypeName = returnType->toString();
+        std::string returnTypeName = valueType->toString();
         if (returnTypeName != "int32") {
             addError("Function 'main' must return 'int32', but returns '" +
                      returnTypeName + "'", stmt);
@@ -5090,16 +5200,23 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     }
 
     // ARIA-026 FIX: FFI Safety - Ban string return types from extern functions
-    if (!stmt->body && returnType->toString() == "str") {  // No body = extern function
+    if (!stmt->body && valueType->toString() == "str") {  // No body = extern function
         addError("FFI Safety Violation: Cannot return 'str' from extern function '" + 
                  stmt->funcName + "'. Aria strings are fat pointers {data, len} incompatible " +
                  "with C char*. Use 'wild int8*' for C strings and convert with string_from_cstr().", 
                  stmt);
     }
 
-    // Set current function return type for return statement checking
+    // All Aria functions return Result<T> where T is the declared type
+    // func:foo = int32(...) returns Result{err: *tbb*, val: int32}
+    // func:bar = NIL(...) returns Result{err: *tbb*, val: NIL}
+    Type* resultType = new ResultType(valueType);
+
+    // Set current function return types for pass/fail/return statement checking
     Type* previousReturnType = currentFunctionReturnType;
-    currentFunctionReturnType = returnType;
+    Type* previousValueType = currentFunctionValueType;
+    currentFunctionReturnType = resultType;
+    currentFunctionValueType = valueType;
     
     // Check parameters
     for (const auto& param : stmt->parameters) {
@@ -5140,8 +5257,9 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
         checkStatement(stmt->body.get());
     }
     
-    // Restore previous function return type
+    // Restore previous function return types
     currentFunctionReturnType = previousReturnType;
+    currentFunctionValueType = previousValueType;
     
     // Build parameter types for function type
     std::vector<Type*> paramTypes;
@@ -5158,8 +5276,9 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
         }
     }
     
-    // Create proper function type with parameters and return type
-    Type* funcType = new FunctionType(paramTypes, returnType, stmt->isAsync, false);
+    // Create proper function type with Result<T> return type
+    // Functions declared as int32() return Result{err: *tbb*, val: int32}
+    Type* funcType = new FunctionType(paramTypes, resultType, stmt->isAsync, false);
     
     // Define function symbol in symbol table with complete function type
     Symbol* funcSymbol = symbolTable->defineSymbol(stmt->funcName, SymbolKind::FUNCTION,
@@ -5537,20 +5656,14 @@ void TypeChecker::checkReturnStmt(ReturnStmt* stmt) {
 
 void TypeChecker::checkPassStmt(PassStmt* stmt) {
     // Check if we're inside a function
-    if (!currentFunctionReturnType) {
+    if (!currentFunctionValueType) {
         addError("pass statement outside of function", stmt);
         return;
     }
     
-    // Get the primitive type "void" for comparison
-    Type* voidType = typeSystem->getPrimitiveType("void");
-    bool isVoidFunction = currentFunctionReturnType->equals(voidType);
-    
-    // void function cannot use pass
-    if (isVoidFunction) {
-        addError("void function cannot use pass statement", stmt);
-        return;
-    }
+    // Get the primitive type "NIL" for comparison
+    Type* nilType = typeSystem->getPrimitiveType("NIL");
+    bool isNilFunction = currentFunctionValueType->equals(nilType);
     
     // Infer type of the pass value
     Type* valueType = inferType(stmt->value.get());
@@ -5559,12 +5672,15 @@ void TypeChecker::checkPassStmt(PassStmt* stmt) {
         return;
     }
     
-    // Check if value type matches function return type
-    if (!valueType->isAssignableTo(currentFunctionReturnType) && 
-        !canCoerce(valueType, currentFunctionReturnType)) {
+    // pass(value) builds Result{val: value, err: NULL}
+    // Validate that value type matches the function's declared value type
+    // func:foo = int32(...) { pass(42i32); } - int32 must match int32
+    // func:bar = NIL(...) { pass(NIL); } - NIL must match NIL
+    if (!valueType->isAssignableTo(currentFunctionValueType) && 
+        !canCoerce(valueType, currentFunctionValueType)) {
         addError("Pass value type '" + valueType->toString() + 
-                "' does not match function return type '" + 
-                currentFunctionReturnType->toString() + "'", stmt);
+                "' does not match function value type '" + 
+                currentFunctionValueType->toString() + "'", stmt);
     }
 }
 
@@ -5582,8 +5698,9 @@ void TypeChecker::checkFailStmt(FailStmt* stmt) {
         return;
     }
     
-    // For now, just ensure error code is an integer type
-    // TODO: When full result types are implemented, this will be more sophisticated
+    // fail(err) builds Result{val: NULL, err: err}
+    // TODO: Validate error type matches TBB (to-be-built) error type system
+    // For now, ensure error code is an integer type
     if (errorType->getKind() != TypeKind::PRIMITIVE) {
         addError("Fail error code must be an integer type", stmt);
         return;
