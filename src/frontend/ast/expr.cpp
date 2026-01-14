@@ -194,6 +194,17 @@ std::string MoveExpr::toString() const {
     return oss.str();
 }
 
+std::string CastExpr::toString() const {
+    std::ostringstream oss;
+    if (isUnchecked) {
+        oss << "@cast_unchecked<" << targetType << ">(";
+    } else {
+        oss << "@cast<" << targetType << ">(";
+    }
+    oss << expression->toString() << ")";
+    return oss.str();
+}
+
 std::string UnwrapExpr::toString() const {
     std::ostringstream oss;
     oss << "Unwrap(" << result->toString() << " ? " << defaultValue->toString() << ")";

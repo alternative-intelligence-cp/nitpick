@@ -1,0 +1,32 @@
+// Demonstration of blueprint-style pointer syntax
+// Visual directionality encodes semantic meaning - like door swings on blueprints!
+//
+// POINTER TYPE: int32->  (arrow points TO the type being pointed to)
+// ADDRESS-OF:   @var     (at address of variable)  
+// DEREFERENCE:  <-ptr    (arrow pulls value FROM pointer)
+// NULL COALESCE: ptr ?? default (dereference or use default if null)
+
+func:main = int32() {
+    print("=== Blueprint-Style Pointer Syntax Demo ===\n");
+    
+    // 1. Create value and get its address
+    int32:original = 123i32;
+    int32->:pointer = @original;   // @ = "at address of original"
+    
+    print("1. Got address with @ operator\n");
+    
+    // 2. Dereference to get value back  
+    int32:retrieved = <-pointer;   // <- = "pull value FROM pointer"
+    
+    print("2. Dereferenced with <- operator\n");
+    
+    // 3. Null coalescing - pointer is valid, should dereference
+    int32:coalesced = pointer ?? 999i32;
+    
+    print("3. Null coalesce returned dereferenced value\n");
+    
+    // All three values should be 123
+    print("=== All operators working! ===\n");
+    
+    pass(coalesced);  // Exit with 123
+};

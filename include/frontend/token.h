@@ -188,6 +188,12 @@ enum class TokenType {
     TOKEN_KW_ERR,       // ERR - TBB error sentinel
     
     // ========================================================================
+    // Type Casting (Zero Implicit Conversion)
+    // ========================================================================
+    TOKEN_KW_CAST,           // @cast - checked type conversion
+    TOKEN_KW_CAST_UNCHECKED, // @cast_unchecked - unchecked type conversion
+    
+    // ========================================================================
     // Operators - Arithmetic
     // ========================================================================
     TOKEN_PLUS,         // +

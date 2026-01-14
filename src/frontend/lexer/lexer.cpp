@@ -316,7 +316,15 @@ void Lexer::scanToken() {
         case ';': addToken(TokenType::TOKEN_SEMICOLON); break;
         case ',': addToken(TokenType::TOKEN_COMMA); break;
         case '~': addToken(TokenType::TOKEN_TILDE); break;
-        case '@': addToken(TokenType::TOKEN_AT); break;
+        case '@': 
+            // Check for @cast or @cast_unchecked keywords
+            // At this point, '@' has been consumed, so peek() returns the next char
+            if (peek() == 'c' && isAtCastKeyword()) {
+                scanCastKeyword();
+            } else {
+                addToken(TokenType::TOKEN_AT); // Plain @ operator
+            }
+            break;
         case '$': addToken(TokenType::TOKEN_DOLLAR); break;
         case '#': addToken(TokenType::TOKEN_HASH); break;
         case '`': scanTemplateLiteral(); break; // Template literals
@@ -595,17 +603,17 @@ void Lexer::scanNumber() {
             text = text.substr(2);
             text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
             
-            // FITS-OR-FAILS: Type suffix optional (inferred from context if missing)
+            // ZERO IMPLICIT CONVERSION PHASE 2: Type suffix optional in typed contexts
             std::string suffix = scanTypeSuffix();
             
             if (suffix.empty()) {
-                // Untyped hex literal - will be validated in type checker
+                // Untyped hex literal - type checker will validate fit in typed contexts
                 try {
                     int64_t value = std::stoll(text, nullptr, 16);
                     addToken(TokenType::TOKEN_INTEGER, value);
                 } catch (std::out_of_range&) {
-                    // Value exceeds int64 range, store as raw string
-                    addToken(TokenType::TOKEN_INTEGER, (int64_t)0, text);
+                    error("Hexadecimal literal value too large");
+                    addToken(TokenType::TOKEN_ERROR);
                 }
                 return;
             }
@@ -647,15 +655,16 @@ void Lexer::scanNumber() {
             text = text.substr(2);
             text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
             
-            // FITS-OR-FAILS: Type suffix optional (inferred from context if missing)
+            // ZERO IMPLICIT CONVERSION PHASE 2: Type suffix optional in typed contexts
             std::string suffix = scanTypeSuffix();
             if (suffix.empty()) {
-                // Untyped binary literal - will be validated in type checker
+                // Untyped binary literal - type checker will validate fit
                 try {
                     int64_t value = std::stoll(text, nullptr, 2);
                     addToken(TokenType::TOKEN_INTEGER, value);
                 } catch (std::out_of_range&) {
-                    addToken(TokenType::TOKEN_INTEGER, (int64_t)0, text);
+                    error("Binary literal value too large");
+                    addToken(TokenType::TOKEN_ERROR);
                 }
                 return;
             }
@@ -697,15 +706,16 @@ void Lexer::scanNumber() {
             text = text.substr(2);
             text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
             
-            // FITS-OR-FAILS: Type suffix optional (inferred from context if missing)
+            // ZERO IMPLICIT CONVERSION PHASE 2: Type suffix optional in typed contexts
             std::string suffix = scanTypeSuffix();
             if (suffix.empty()) {
-                // Untyped octal literal - will be validated in type checker
+                // Untyped octal literal - type checker will validate fit
                 try {
                     int64_t value = std::stoll(text, nullptr, 8);
                     addToken(TokenType::TOKEN_INTEGER, value);
                 } catch (std::out_of_range&) {
-                    addToken(TokenType::TOKEN_INTEGER, (int64_t)0, text);
+                    error("Octal literal value too large");
+                    addToken(TokenType::TOKEN_ERROR);
                 }
                 return;
             }
@@ -913,14 +923,24 @@ void Lexer::scanNumber() {
     std::string suffix = scanTypeSuffix();
     
     if (suffix.empty()) {
-        // UNTYPED LITERAL: Create generic token, let type checker validate context
-        // Type will be inferred from target context (declaration, assignment, etc.)
+        // PHASE 2: Untyped literals allowed - type checker validates fit in typed contexts
+        // In ambiguous contexts (function args, expressions), type checker will error
         if (isFloat) {
-            double value = std::stod(cleaned_text);
-            addToken(TokenType::TOKEN_FLOAT, value, text);  // Raw text for high-precision
+            try {
+                double value = std::stod(cleaned_text);
+                addToken(TokenType::TOKEN_FLOAT, value);
+            } catch (std::out_of_range&) {
+                error("Float literal value out of range");
+                addToken(TokenType::TOKEN_ERROR);
+            }
         } else {
-            int64_t value = std::stoll(cleaned_text);
-            addToken(TokenType::TOKEN_INTEGER, value, text);  // Raw text for big integers
+            try {
+                int64_t value = std::stoll(cleaned_text);
+                addToken(TokenType::TOKEN_INTEGER, value);
+            } catch (std::out_of_range&) {
+                error("Integer literal value too large for int64");
+                addToken(TokenType::TOKEN_ERROR);
+            }
         }
         return;
     }
@@ -1265,6 +1285,71 @@ std::string Lexer::scanTypeSuffix() {
     }
     
     return source.substr(suffix_start, current - suffix_start);
+}
+
+// ============================================================================
+// @cast Keyword Scanning (Zero Implicit Conversion)
+// ============================================================================
+
+// Check if we're at @cast or @cast_unchecked keyword
+bool Lexer::isAtCastKeyword() {
+    // We're at the character after '@' (should be 'c' in "cast")
+    size_t saved = current;
+    
+    // Check for "cast" after @
+    if (peek() == 'c' && peekN(1) == 'a' && peekN(2) == 's' && peekN(3) == 't') {
+        // Could be @cast or @cast_unchecked
+        size_t after_cast = current + 4;
+        
+        // Check if it's followed by '_unchecked'
+        if (after_cast + 10 <= source.length() &&
+            source.substr(after_cast, 10) == "_unchecked") {
+            // Make sure it's not part of a longer identifier
+            size_t check_pos = after_cast + 10;
+            if (check_pos >= source.length() || !isAlphaNumeric(source[check_pos])) {
+                current = saved;
+                return true;  // @cast_unchecked
+            }
+        }
+        
+        // Just @cast - make sure it's not part of a longer identifier
+        if (after_cast >= source.length() || !isAlphaNumeric(source[after_cast])) {
+            current = saved;
+            return true;  // @cast
+        }
+    }
+    
+    current = saved;
+    return false;
+}
+
+// Scan @cast or @cast_unchecked keyword
+void Lexer::scanCastKeyword() {
+    // '@' has already been consumed by scanToken()
+    // Current position is at 'c' in "cast"
+    
+    // Read 'cast'
+    advance(); // 'c'
+    advance(); // 'a'
+    advance(); // 's'
+    advance(); // 't'
+    
+    // Check for '_unchecked' suffix
+    if (peek() == '_' && peekN(1) == 'u' && peekN(2) == 'n') {
+        // Read '_unchecked'
+        for (int i = 0; i < 10; i++) {
+            advance();
+        }
+        addToken(TokenType::TOKEN_KW_CAST_UNCHECKED);
+    } else {
+        addToken(TokenType::TOKEN_KW_CAST);
+    }
+}
+
+// Helper to peek N characters ahead
+char Lexer::peekN(int n) const {
+    if (current + n >= source.length()) return '\0';
+    return source[current + n];
 }
 
 // Convert type suffix to TokenType

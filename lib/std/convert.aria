@@ -8,19 +8,19 @@ func:digit_at = int32(int32:n, int32:pos) {
     int32:i = 0i32;
     
     // Handle negative
-    bool:negative = (val < 0);
+    bool:negative = (val < 0i32);
     if (negative) {
-        val = (0 - val);
+        val = (0i32 - val);
     } else {}
     
     // Divide by 10^pos
     while (i < pos) {
-        val = (val / 10);
-        i = (i + 1);
+        val = (val / 10i32);
+        i = (i + 1i32);
     }
     
     // Get last digit
-    int32:digit = (val - ((val / 10) * 10));
+    int32:digit = (val - ((val / 10i32) * 10i32));
     pass(digit);
 };
 
@@ -30,20 +30,20 @@ func:count_digits = int32(int32:n) {
     int32:count = 1i32;
     
     // Handle negative
-    bool:negative = (val < 0);
+    bool:negative = (val < 0i32);
     if (negative) {
-        val = (0 - val);
+        val = (0i32 - val);
     } else {}
     
     // Handle zero
-    bool:is_zero = (val == 0);
+    bool:is_zero = (val == 0i32);
     if (is_zero) {
-        count = 1;
+        count = 1i32;
     } else {
-        count = 0;
-        while (val > 0) {
-            val = (val / 10);
-            count = (count + 1);
+        count = 0i32;
+        while (val > 0i32) {
+            val = (val / 10i32);
+            count = (count + 1i32);
         }
     }
     
@@ -52,29 +52,29 @@ func:count_digits = int32(int32:n) {
 
 /// Print integer (positive only for now)
 func:print_int = void(int32:n) {
-    bool:is_zero = (n == 0);
+    bool:is_zero = (n == 0i32);
     
     if (is_zero) {
         int32:zero = 0i32;
         print_digit(zero);
     } else {
         int32:num_digits = count_digits(n);
-        int32:pos = (num_digits - 1);
+        int32:pos = (num_digits - 1i32);
         
-        while (pos >= 0) {
+        while (pos >= 0i32) {
             int32:digit = digit_at(n, pos);
             print_digit(digit);
-            pos = (pos - 1);
+            pos = (pos - 1i32);
         }
     }
 };
 
 /// Print signed integer
 func:print_signed_int = void(int32:n) {
-    bool:negative = (n < 0);
+    bool:negative = (n < 0i32);
     
     if (negative) {
-        int32:minus = 45;  // ASCII '-'
+        int32:minus = 45i32;  // ASCII '-'
         print_char(minus);
         int32:zero = 0i32;
         int32:pos_val = zero - n;
@@ -87,11 +87,11 @@ func:print_signed_int = void(int32:n) {
 /// Convert char to uppercase
 func:to_upper = int32(int32:c) {
     int32:result = c;
-    bool:is_lower = (c >= 97);  // 'a'
+    bool:is_lower = (c >= 97i32);  // 'a'
     bool:is_alpha = false;
     
     if (is_lower) {
-        bool:in_range = (c <= 122);  // 'z'
+        bool:in_range = (c <= 122i32);  // 'z'
         if (in_range) {
             is_alpha = true;
         } else {
@@ -102,7 +102,7 @@ func:to_upper = int32(int32:c) {
     }
     
     if (is_alpha) {
-        result = (c - 32);  // Convert to uppercase
+        result = (c - 32i32);  // Convert to uppercase
     } else {
         result = c;
     }
@@ -113,11 +113,11 @@ func:to_upper = int32(int32:c) {
 /// Convert char to lowercase
 func:to_lower = int32(int32:c) {
     int32:result = c;
-    bool:is_upper = (c >= 65);   // 'A'
+    bool:is_upper = (c >= 65i32);   // 'A'
     bool:is_alpha = false;
     
     if (is_upper) {
-        bool:in_range = (c <= 90);  // 'Z'
+        bool:in_range = (c <= 90i32);  // 'Z'
         if (in_range) {
             is_alpha = true;
         } else {
@@ -128,7 +128,7 @@ func:to_lower = int32(int32:c) {
     }
     
     if (is_alpha) {
-        result = (c + 32);  // Convert to lowercase
+        result = (c + 32i32);  // Convert to lowercase
     } else {
         result = c;
     }
@@ -139,8 +139,8 @@ func:to_lower = int32(int32:c) {
 /// Check if char is digit
 func:is_digit = bool(int32:c) {
     bool:result = false;
-    bool:gte = (c >= 48);  // '0'
-    bool:lte = (c <= 57);  // '9'
+    bool:gte = (c >= 48i32);  // '0'
+    bool:lte = (c <= 57i32);  // '9'
     
     if (gte) {
         if (lte) {
@@ -158,20 +158,20 @@ func:is_digit = bool(int32:c) {
 /// Check if char is alphabetic
 func:is_alpha = bool(int32:c) {
     bool:result = false;
-    bool:is_lower = (c >= 97);
+    bool:is_lower = (c >= 97i32);
     bool:lower_ok = false;
-    bool:is_upper = (c >= 65);
+    bool:is_upper = (c >= 65i32);
     bool:upper_ok = false;
     
     if (is_lower) {
-        bool:lte = (c <= 122);
+        bool:lte = (c <= 122i32);
         if (lte) {
             lower_ok = true;
         } else {}
     } else {}
     
     if (is_upper) {
-        bool:lte = (c <= 90);
+        bool:lte = (c <= 90i32);
         if (lte) {
             upper_ok = true;
         } else {}

@@ -1,0 +1,39 @@
+// Test 6: Mixed Cast Scenarios
+
+func:test_chain_casts = int64() {
+    // Chain multiple casts together
+    int8:start = 42i8;
+    int64:step1 = @cast<int64>(start);
+    flt64:step2 = @cast<flt64>(step1);
+    int32:step3 = @cast<int32>(step2);
+    int16:step4 = @cast<int16>(step3);
+    int64:result = @cast<int64>(step4);
+    
+    pass(result);
+};
+
+func:test_expression_casts = int32() {
+    // Cast results of expressions
+    int8:a = 10i8;
+    int8:b = 20i8;
+    int64:sum = @cast<int64>(a);  // Cast before arithmetic
+    
+    int32:x = 5i32;
+    int32:y = 3i32;
+    flt32:ratio = @cast<flt32>(x);  // Can use for division
+    
+    pass(0i32);
+};
+
+func:test_return_cast = uint8() {
+    // Cast in return expression
+    int32:value = 200i32;
+    pass(@cast<uint8>(value));
+};
+
+func:main = int32() {
+    int64:r1 = test_chain_casts();
+    int32:r2 = test_expression_casts();
+    uint8:r3 = test_return_cast();
+    pass(0i32);
+};
