@@ -35,6 +35,10 @@ echo "Corpus: $SCRIPT_DIR/corpus/"
 echo "Crashes: $SCRIPT_DIR/crashes/"
 echo "----------------------------------------------"
 
+# Clear any Python environment interference (VS Code Python extension issue)
+unset PYTHONSTARTUP
+unset PYTHON_BASIC_REPL
+
 # Create log file
 LOG_FILE="$SCRIPT_DIR/campaign_$(date +%Y%m%d_%H%M%S).log"
 echo "Logging to: $LOG_FILE"
