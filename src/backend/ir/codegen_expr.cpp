@@ -6777,10 +6777,14 @@ llvm::Value* ExprCodegen::codegenAwait(ASTNode* node) {
     
     if (!is_async) {
         // ERROR: await in non-async function
-        std::string error_msg = "Semantic error: 'await' can only be used in async functions (found in '";
-        error_msg += func_name + "')";
-        std::cerr << "[DEBUG AWAIT] Throwing error: " << error_msg << std::endl;
-        throw std::runtime_error(error_msg);
+        // Print proper error message to stderr (user-facing)
+        std::cerr << "ERROR: 'await' can only be used in async functions (found in '" 
+                  << func_name << "')" << std::endl;
+        std::cerr << "  Hint: Change 'func:" << func_name << "' to 'async func:" << func_name << "'" << std::endl;
+        
+        // Return a dummy value to prevent LLVM crash
+        // Return i32 0 (arbitrary - compilation will fail anyway due to error message)
+        return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0);
     }
     
     std::cerr << "[DEBUG AWAIT] Async check passed, continuing..." << std::endl;

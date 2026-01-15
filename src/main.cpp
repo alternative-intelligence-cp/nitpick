@@ -17,6 +17,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <vector>
 #include <string>
 #include <memory>
@@ -81,6 +82,9 @@ struct CompilerOptions {
     int opt_level = 0;  // -O0, -O1, -O2, -O3
     std::vector<std::string> warning_flags;  // -Wall, -Werror, -W<warning>, etc.
     std::vector<std::string> include_paths;   // -I<dir> module search paths
+    std::vector<std::string> link_libraries;  // -l<lib> libraries to link
+    std::vector<std::string> library_paths;   // -L<path> library search paths
+    std::vector<std::string> linker_flags;    // -Wl,<option> flags passed to linker
 };
 
 /**
@@ -110,6 +114,9 @@ void print_help() {
     std::cout << "  --tokens          Dump tokens and exit\n";
     std::cout << "  -O<level>         Optimization level (0-3)\n";
     std::cout << "  -v, --verbose     Verbose output\n";
+    std::cout << "  -l<library>       Link against library (e.g., -lm, -lpthread)\n";
+    std::cout << "  -L<path>          Add library search path\n";
+    std::cout << "  -Wl,<option>      Pass option to linker\n";
     std::cout << "  -Wall             Enable all warnings\n";
     std::cout << "  -Werror           Treat warnings as errors\n";
     std::cout << "  -W<warning>       Enable specific warning\n";
@@ -119,6 +126,7 @@ void print_help() {
     std::cout << "Examples:\n";
     std::cout << "  ariac hello.aria -o hello\n";
     std::cout << "  ariac main.aria utils.aria -o program\n";
+    std::cout << "  ariac program.aria -o program -lm -lpthread\n";
     std::cout << "  ariac program.aria --emit-llvm -o program.ll\n";
     std::cout << "  ariac test.aria --ast-dump\n";
 }
@@ -177,6 +185,27 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
                 std::cerr << "Error: Invalid optimization level: " << arg << "\n";
                 return false;
             }
+        } else if (arg.substr(0, 2) == "-l") {
+            // Link library: -lm, -lpthread, etc.
+            if (arg.length() > 2) {
+                opts.link_libraries.push_back(arg.substr(2));
+            } else {
+                std::cerr << "Error: -l requires a library name\n";
+                return false;
+            }
+        } else if (arg.substr(0, 2) == "-L") {
+            // Library search path: -L/usr/local/lib, etc.
+            if (arg.length() > 2) {
+                opts.library_paths.push_back(arg.substr(2));
+            } else if (i + 1 < argc) {
+                opts.library_paths.push_back(argv[++i]);
+            } else {
+                std::cerr << "Error: -L requires a path\n";
+                return false;
+            }
+        } else if (arg.substr(0, 4) == "-Wl,") {
+            // Linker flag: -Wl,-rpath,/usr/local/lib, etc.
+            opts.linker_flags.push_back(arg.substr(4));
         } else if (arg.substr(0, 2) == "-W") {
             // Warning flags: -Wall, -Werror, -Wunused-variable, -Wno-dead-code, etc.
             opts.warning_flags.push_back(arg);
@@ -888,7 +917,7 @@ bool emit_assembly(llvm::Module* module, const std::string& output_file) {
 /**
  * Link object file to executable
  */
-bool link_executable(const std::string& object_file, const std::string& output_file) {
+bool link_executable(const std::string& object_file, const std::string& output_file, const CompilerOptions& opts) {
     // Try to find the runtime library in several locations
     std::vector<std::string> search_paths = {
         "build/libaria_runtime.a",           // Build directory (development)
@@ -912,23 +941,44 @@ bool link_executable(const std::string& object_file, const std::string& output_f
         for (const auto& path : search_paths) {
             std::cerr << "    " << path << "\n";
         }
-        // Link without runtime (will fail if runtime functions are used)
-        std::string cmd = "clang " + object_file + " -o " + output_file;
-        int result = std::system(cmd.c_str());
-        return result == 0;
     }
     
-    // Link with clang, including runtime library
-    std::string cmd = "clang++ " + object_file + " " + runtime_lib + " -o " + output_file;
-    int result = std::system(cmd.c_str());
+    // Build linker command
+    std::ostringstream cmd;
+    cmd << "clang++";
     
-    if (result != 0) {
-        std::cerr << "Error: Linking failed\n";
-        std::cerr << "  Command: " << cmd << "\n";
-        return false;
+    // Add object file
+    cmd << " " << object_file;
+    
+    // Add runtime library if found
+    if (!runtime_lib.empty()) {
+        cmd << " " << runtime_lib;
     }
     
-    return true;
+    // Add library search paths (-L)
+    for (const auto& lib_path : opts.library_paths) {
+        cmd << " -L" << lib_path;
+    }
+    
+    // Add libraries to link (-l)
+    for (const auto& lib : opts.link_libraries) {
+        cmd << " -l" << lib;
+    }
+    
+    // Add linker flags (-Wl,...)
+    for (const auto& flag : opts.linker_flags) {
+        cmd << " -Wl," << flag;
+    }
+    
+    // Add output file
+    cmd << " -o " << output_file;
+    
+    if (opts.verbose) {
+        std::cout << "[LINK] " << cmd.str() << "\n";
+    }
+    
+    int result = std::system(cmd.str().c_str());
+    return result == 0;
 }
 
 /**
@@ -1088,7 +1138,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         
-        if (!link_executable(asm_file, opts.output_file)) {
+        if (!link_executable(asm_file, opts.output_file, opts)) {
             diags.printAll();
             return 1;
         }

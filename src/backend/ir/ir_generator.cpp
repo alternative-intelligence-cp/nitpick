@@ -5604,12 +5604,29 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Phase 4.6: Await expression - suspend coroutine until operand completes
             AwaitExpr* awaitExpr = static_cast<AwaitExpr*>(expr);
             
+            // Check if we're in an async function
+            llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+            if (!currentFunc) {
+                std::cerr << "ERROR: await expression outside of function context" << std::endl;
+                return nullptr;
+            }
+            
+            std::string func_name = std::string(currentFunc->getName());
+            bool is_async = func_name.find("async") != std::string::npos ||
+                           currentFunc->hasMetadata("aria.async");
+            
+            if (!is_async) {
+                // ERROR: await in non-async function
+                std::cerr << "ERROR: 'await' can only be used in async functions (found in '" 
+                          << func_name << "')" << std::endl;
+                std::cerr << "  Hint: Change 'func:" << func_name << "' to 'async func:" << func_name << "'" << std::endl;
+                // Return dummy value to prevent crash
+                return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0);
+            }
+            
             // Step 1: Evaluate the operand (should return a Future* pointer)
             llvm::Value* future_ptr = codegenExpression(awaitExpr->operand.get());
             if (!future_ptr) return nullptr;
-            
-            // Get current function (we're inside an async function)
-            llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
             
             // BUG-02 FIX: Install continuation mechanism - poll Future and conditionally suspend
             

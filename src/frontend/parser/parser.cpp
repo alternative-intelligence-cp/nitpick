@@ -1861,6 +1861,21 @@ ASTNodePtr Parser::parseVarDecl() {
         return nullptr;
     }
     
+    // Check for invalid variable types (void can only be used in return types)
+    std::string typeName = typeNode->toString();
+    if (typeName == "void") {
+        error("Cannot declare variables of type 'void'. The 'void' type is only valid for function return types (or in extern blocks).");
+        return nullptr;
+    }
+    if (typeName == "impl") {
+        error("Syntax error: 'impl' is a keyword for implementation blocks, not a type. Did you mean to use a struct or trait type?");
+        return nullptr;
+    }
+    if (typeName == "trait" || typeName == "func") {
+        error("Syntax error: '" + typeName + "' is a keyword, not a type. Use struct types or trait objects instead.");
+        return nullptr;
+    }
+    
     // Consume colon
     consume(TokenType::TOKEN_COLON, "Expected ':' after type in variable declaration");
     
@@ -2158,6 +2173,16 @@ ASTNodePtr Parser::parseTraitDecl() {
     // Expect assignment
     consume(TokenType::TOKEN_EQUAL, "Expected '=' after trait name");
 
+    // Check if they mistakenly used function syntax: trait:name = returnType(params) { ... }
+    // This is a common error when the fuzzer or user confuses 'trait' with 'func'
+    if (!check(TokenType::TOKEN_LEFT_BRACE)) {
+        error("Syntax error: 'trait' keyword cannot be used like 'func'. Did you mean 'func:" + nameToken.lexeme + "'? "
+              "Traits define interfaces with method signatures only, not implementations. "
+              "Use 'func:name = returnType(params) { body };' for function definitions.");
+        synchronize();
+        return nullptr;
+    }
+
     // Expect opening brace
     consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' to begin trait body");
 
@@ -2267,8 +2292,45 @@ ASTNodePtr Parser::parseImplDecl() {
 
     Token implToken = previous(); // We already consumed 'impl'
 
+    // Detect if 'impl' is being used incorrectly as a type (common fuzzer error)
+    // Example: impl int8@:ptr = alloc(1024);
+    // This happens when they confuse impl with a type name
+    if (!check(TokenType::TOKEN_COLON)) {
+        error("Syntax error: 'impl' is a keyword for implementation blocks, not a type. "
+              "Use 'impl:TraitName:for:TypeName = { methods };' to implement a trait for a type.");
+        synchronize();
+        return nullptr;
+    }
+    
     // Expect colon
     consume(TokenType::TOKEN_COLON, "Expected ':' after 'impl'");
+
+    // Check if next token is a type keyword (would indicate impl being used as type)
+    if (isTypeKeyword(peek().type) || check(TokenType::TOKEN_IDENTIFIER)) {
+        // Look ahead for :for: pattern
+        size_t saved = current;
+        advance(); // skip trait name
+        
+        // If next is not :for:, this is a syntax error
+        if (!check(TokenType::TOKEN_COLON)) {
+            current = saved;
+            error("Syntax error: Invalid impl declaration. Expected 'impl:TraitName:for:TypeName = { ... }'");
+            synchronize();
+            return nullptr;
+        }
+        advance(); // consume ':'
+        
+        if (!check(TokenType::TOKEN_KW_FOR)) {
+            current = saved;
+            error("Syntax error: Invalid impl syntax. Did you try to use 'impl' as a variable type? "
+                  "'impl' is a keyword for trait implementations, not a type.");
+            synchronize();
+            return nullptr;
+        }
+        
+        // Valid impl:Trait:for: pattern, restore position
+        current = saved;
+    }
 
     // Parse trait name
     Token traitNameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected trait name after 'impl:'");
@@ -2315,8 +2377,9 @@ ASTNodePtr Parser::parseImplDecl() {
                 methods.push_back(std::move(method));
             }
         } else {
-            throw std::runtime_error("Expected method implementation in impl block at line " +
-                                    std::to_string(peek().line));
+            error("Expected method implementation (func:name = ...) in impl block");
+            synchronize();
+            break;
         }
     }
 
