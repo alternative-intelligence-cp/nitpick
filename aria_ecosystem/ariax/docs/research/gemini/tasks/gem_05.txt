@@ -1,0 +1,67 @@
+## TODO 5: Systemd Shim "Overlap" Edge Case Testing
+
+**Priority**: MEDIUM (Correctness)
+**Estimated Complexity**: Low
+**Dependencies**: None (testing task)
+
+### Problem Statement
+The aria-activator shim relocates systemd-provided file descriptors from positions 3+ to positions 6+. When LISTEN_FDS > 3, the source and destination ranges overlap (e.g., moving FDs 3,4,5,6,7 to 6,7,8,9,10). The shim uses backward iteration to avoid corruption, but this logic needs stress testing.
+
+### Required Context Files
+
+**From ariax repository**:
+1. `docs/research/gemini/responses/research_033_kernel_bash.txt` - Shim design
+2. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (TODO 5)
+
+### Gemini Prompt
+
+```
+Write a comprehensive C unit test to validate the file descriptor relocation logic of the aria-activator shim, particularly testing the edge case where source and destination FD ranges overlap.
+
+Context: The shim receives N file descriptors from systemd starting at FD 3 (e.g., FDs 3,4,5,6,7 for N=5). It must relocate them to start at FD 6 (resulting in FDs 6,7,8,9,10), freeing up FDs 3,4,5 for Aria's stddbg/stddati/stddato.
+
+The overlap occurs when N > 3:
+- FD 3 → FD 6 (no conflict)
+- FD 4 → FD 7 (no conflict)
+- FD 5 → FD 8 (no conflict)
+- FD 6 → FD 9 (conflict: source FD 6 was just created as destination!)
+- FD 7 → FD 10 (same issue)
+
+The design iterates backward (start from highest FD) to avoid overwriting.
+
+Test Requirements:
+1. Simulate systemd's FD passing:
+   - Create N pipe file descriptors at positions 3 through 3+N-1
+   - Write unique data to each pipe's write end
+   - Close write ends
+   
+2. Implement shim logic:
+   - Iterate backward: for i = N-1 down to 0
+   - dup2(3+i, 6+i)
+   - close(3+i)
+   
+3. Validate results:
+   - Read from FDs 6 through 6+N-1
+   - Verify data matches what was written
+   - Ensure FDs 3,4,5 are closed (return EBADF on read)
+   
+4. Test cases:
+   - N=1 (single socket, no overlap)
+   - N=3 (edge of overlap)
+   - N=5 (overlap at FDs 6,7)
+   - N=10 (large overlap)
+
+Provide:
+- Complete C program (can compile standalone)
+- Use assert() for validation
+- Print diagnostic info for each test case
+- Test on Linux system
+```
+
+### Expected Deliverables
+- `tests/shim/test_fd_relocation.c` - Unit test
+- Makefile or compile command
+- Test output showing all cases passing
+
+---
+

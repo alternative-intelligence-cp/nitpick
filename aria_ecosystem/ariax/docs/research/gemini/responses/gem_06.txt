@@ -1,0 +1,493 @@
+﻿ARIA_DAP_SPEC.md: Architectural Specification for the Aria Debug Adapter
+1. Executive Summary
+The emergence of the Aria programming language, characterized by its "batteries-included" philosophy for high-performance systems programming, necessitates a debugging infrastructure commensurate with its sophisticated feature set. Unlike traditional C or C++ environments where generic debugging tools suffice, Aria introduces novel runtime paradigms—specifically Twisted Balanced Binary (TBB) arithmetic, a Hybrid Memory Model (GC/Wild/WildX), and a Six-Stream I/O topology—that render standard debugging approaches inadequate.1 A standard debugger, ignorant of Aria's semantics, would present a tbb8 error sentinel as a confusing integer value (-128) rather than a semantic error state (ERR), and would fail to capture the structured telemetry emitted on the dedicated stddbg channel.
+This report articulates the comprehensive technical specification for the Aria Debug Adapter (ariadbg), the requisite bridge between the Aria runtime environment and modern Integrated Development Environments (IDEs) such as VS Code and Neovim. Adhering to the Microsoft Debug Adapter Protocol (DAP), ariadbg is designed not merely as a protocol translator, but as a semantic enrichment engine. It intercepts low-level memory states and transforms them into high-level, human-readable representations consistent with Aria's "Appendage Theory" and safety guarantees.1
+The architecture detailed herein adopts a monolithic server model utilizing the LLDB C++ API (liblldb) for target control, ensuring high-fidelity introspection of JIT-compiled code and garbage-collected heaps. This specification defines the JSON-RPC message schemas, the internal threading models, the mapping logic for Aria's exotic types, and the implementation roadmap required to elevate the debugging experience from "functional" to "native," fulfilling the "Very High" complexity requirements of the compiler roadmap.1
+2. Architectural Design and System Components
+The Aria Debug Adapter is architected as a standalone executable, aria-dap, which functions as a mediator between the DAP Client (the editor) and the debugged process (the inferior). This design decouples the debugging logic from the editor, allowing a single implementation to serve the entire ecosystem of DAP-compliant tools.
+2.1 High-Level Component Topology
+The system is stratified into four primary layers, each responsible for a distinct aspect of the debugging lifecycle.
+2.1.1 The Protocol Layer (DAP Router)
+At the frontend, the Protocol Layer manages the stateful connection with the IDE. It listens on standard input (stdin) or a TCP socket for JSON-RPC messages.1
+* Message Framing: Implements the Content-Length header framing required by DAP.
+* Dispatcher: Parses incoming requests (command) and routes them to specific C++ handler functions.
+* Sequence Management: Maintains the seq counter to correlate responses with requests, critical for asynchronous operations.
+2.1.2 The Semantic Translation Layer
+This layer is the intellectual core of the adapter. It contains the logic to map Aria's runtime structures into generic debugger concepts.
+* TBB Inspector: A specialized component that intercepts integer reads to detect and format TBB sentinels and sticky errors.1
+* Memory Visualizer: A subsystem that scans the process heap to classify memory regions (GC Nursery, Old Gen, Wild, WildX) and decode 64-bit ObjHeader metadata.1
+* Async Reconstructor: A traverser that walks the chain of Future<T> objects in memory to synthesize "logical" call stacks from the fragmented state machines of suspended coroutines.1
+2.1.3 The Debug Engine Abstraction Layer (DEAL)
+To ensure robustness and performance, ariadbg links directly against liblldb rather than parsing the textual output of the lldb command-line interface. This layer wraps LLDB's SB (Scripting Bridge) objects:
+* SBDebugger: The root debugger object.
+* SBTarget: Represents the Aria binary or JIT context.
+* SBProcess: Controls execution (resume, interrupt, kill).
+* SBFrame / SBValue: Provides access to stack frames and variable memory.
+2.1.4 The Event Monitor
+Debugging is inherently asynchronous; a breakpoint hit or a segmentation fault can occur at any time. The Event Monitor runs on a dedicated thread, utilizing SBListener to wait for state changes in the inferior process. Upon detecting an event (e.g., eStateStopped), it freezes the state, queries the stop reason (breakpoint, exception, signal), and synthesizes a DAP stopped event to be sent to the client.1
+2.2 Threading Model and Synchronization
+The adapter operates using a Producer-Consumer threading model to handle the bidirectional nature of debugging (synchronous requests vs. asynchronous events).
+* Main Thread (Request Loop):
+   * Reads stdin blocking.
+   * Upon receiving a request (e.g., variables), it acquires a global std::recursive_mutex.
+   * It invokes the LLDB API to fetch data.
+   * It releases the mutex and writes the response to stdout.
+   * Constraint: This thread must never block on the execution of the inferior process. Commands like continue or next must return a response immediately after resuming the target, without waiting for the target to stop again.
+* Event Thread (Notifier):
+   * Spawned during the launch or attach sequence.
+   * Blocks on SBListener::WaitForEvent().
+   * When an event arrives (e.g., the process hits a breakpoint), it acquires the same global mutex.
+   * It processes the event state (e.g., fetching the thread ID that caused the stop).
+   * It constructs a JSON event message and writes it to stdout.
+This mutex-guarded approach prevents race conditions where the Main Thread might attempt to inspect variables while the Event Thread is processing a resumption or stop event, ensuring the internal state of liblldb remains consistent.1
+2.3 Protocol Transport Specification
+The specification mandates support for two transport mechanisms to cover all usage scenarios defined in the project scope.
+1. Standard Streams (stdio):
+   * Usage: Primary mode for local debugging with VS Code and Neovim.
+   * Mechanism: The editor spawns aria-dap as a subprocess and communicates via pipes.
+   * Log Handling: Since stdout is the protocol channel, debug logs from the adapter itself must be written to stderr or a log file to avoid corrupting the JSON-RPC stream.1
+2. TCP Socket:
+   * Usage: Remote debugging and the Web-based Debugger UI.1
+   * Mechanism: aria-dap --server --port 8080.
+   * Benefits: Allows the "Aria Web Debugger" (a browser-based React/WASM app) to connect via WebSocket (with a translation layer) or raw TCP, enabling visualization of memory maps on a secondary monitor while the primary coding happens in the IDE.1
+3. Aria-Specific State Mapping Specification
+The defining characteristic of ariadbg is its ability to present Aria's unique language features intelligibly. The generic DAP Variables and Evaluate requests must be intercepted and enriched with semantic data derived from the runtime memory model.
+3.1 Twisted Balanced Binary (TBB) Type Mapping
+Aria's TBB types (tbb8, tbb16, tbb32, tbb64) utilize symmetric integer ranges centered on zero, reserving the most negative value in the two's complement representation as a dedicated ERR sentinel.1
+Problem: A standard debugger interpreting a tbb8 value of 0x80 would display -128. To an Aria developer, this is incorrect; 0x80 signifies an error state (e.g., overflow or division by zero), not the scalar value -128.
+Specification:
+The debugger must implement a TypeSummaryProvider 1 that applies the following logic for any variable whose type name matches the regex ^tbb(\d+)$:
+1. Bit-Width Extraction: Parse the suffix ($N$) from the type name (e.g., 8 from tbb8).
+2. Sentinel Calculation: Compute the error sentinel value $S = -2^{(N-1)}$.
+   * tbb8: -128
+   * tbb16: -32,768
+   * tbb32: -2,147,483,648
+   * tbb64: -9,223,372,036,854,775,808
+3. Symmetric Range Calculation: Define the valid range as $[-(2^{N-1}-1), +(2^{N-1}-1)]$.
+4. Value Classification & Formatting:
+   * Case A (Sentinel): If value == S, format as "ERR (sentinel)".
+   * Case B (Valid): If value is within the symmetric range, format as standard decimal (e.g., "42").
+   * Case C (Overflow): If value is outside the symmetric range (e.g., -128 < value < -Max), format as "{value} (OVERFLOW)". Note: While the sentinel is the primary error indicator, bitwise operations could theoretically produce values in the "forbidden" negative gap. The debugger must flag these as anomalies.
+Presentation Hinting:
+To assist the IDE in rendering these states (e.g., highlighting errors in red), the variables response must utilize the DAP presentationHint attribute.
+* ERR/Overflow: {"kind": "virtual", "attributes": ["failed"]}
+* Valid: {"kind": "data", "attributes":}
+3.2 Hybrid Memory Model Visualization
+Aria's memory is segmented into "Garbage Collected" (GC), "Wild" (Manual), and "WildX" (Executable) regions.1 The debugger must provide transparency into the metadata governing these regions.
+3.2.1 GC References (gc_ptr<T>)
+GC objects are not simple pointers; they are preceded by a 64-bit ObjHeader containing critical runtime flags.
+Specification:
+For any pointer identified as a GC reference (via type metadata or address range checking against the nursery bounds), the debugger must synthesize a virtual child node named [header]. This node is constructed by reading the 8 bytes immediately preceding the object address (ptr - 8).
+Header Field Decoding Table:
+Bit Range
+	Field Name
+	Description
+	Visualization
+	Bit 0
+	mark_bit
+	GC Mark State
+	Marked / Unmarked
+	Bit 1
+	pinned_bit
+	Pinning Status (#)
+	Pinned / Movable
+	Bit 2
+	forwarded_bit
+	Copy Status
+	Forwarded / Active
+	Bit 3
+	is_nursery
+	Generation
+	Nursery / OldGen
+	Bits 8-31
+	size_class
+	Allocator Bin
+	Decimal Integer
+	Bits 32-63
+	type_id
+	Runtime Type ID
+	Hex ID
+	This synthetic structure allows developers to verify if an object is correctly pinned before passing it to C functions, a common source of bugs in hybrid memory languages.1
+3.2.2 Wild Pointers and Fat Pointer Safety
+In debug builds, Aria promotes wild pointers to "Fat Pointers" to enforce safety.1 A wild T* effectively becomes a struct:
+
+
+C++
+
+
+
+
+struct FatPtr { void* ptr; void* base; size_t size; uint64_t scope_id; }
+
+Specification:
+When a variables request targets a wild pointer:
+1. Validation: The debugger reads the sidecar metadata (or the fat pointer struct).
+2. Scope Check: It compares scope_id with the current valid scopes. If invalid, the value is displayed as <dangling: scope exited> rather than the raw address.
+3. Bounds Check: It verifies base <= ptr < base + size. If violated, the value is displayed as <out of bounds: offset +N>.
+4. Raw View: If valid, it displays the pointer address and the target value.
+3.3 The Six-Stream I/O Topology Mapping
+Aria expands the standard Unix I/O model to six streams.1 DAP only natively supports stdout and stderr via the OutputEvent. The specification mandates mapping the extended streams to DAP concepts using categorization and tagging.
+Stream Mapping Specification:
+Stream
+	FD
+	Purpose
+	DAP category
+	Output Formatting Strategy
+	stdin
+	0
+	Input
+	N/A
+	Handled via IDE console input
+	stdout
+	1
+	Standard Output
+	"stdout"
+	Raw text pass-through
+	stderr
+	2
+	Standard Error
+	"stderr"
+	Raw text pass-through
+	stddbg
+	3
+	Debug/Telemetry
+	"console"
+	Prepend `` marker. Sent to "Debug Console".
+	stddati
+	4
+	Binary Input
+	N/A
+	No display (binary data).
+	stddato
+	5
+	Binary Output
+	"stdout"
+	Hex-dump representation with `` marker.
+	Implementation Mechanism:
+The aria-dap process must create three additional pipes (or named pipes on Windows) and pass their write-ends to the debugged process at launch (FDs 3, 4, 5). The adapter's Event Thread monitors these pipes. Data arriving on stddbg (FD 3) is immediately wrapped in an OutputEvent with category: "console". This ensures structured logs from the runtime (e.g., GC statistics or user logging) appear in the IDE's debug console, distinct from the application's standard output.1
+3.4 Result Monad Visualization
+The result<T> type is ubiquitous in Aria. It is structurally a discriminated union { err: tbb, val: T }.1
+Specification:
+The debugger must provide a "Summary Provider" for Result types.
+* State Detection: Check the err field.
+* Success Display: If err == 0 (or NULL equivalent), format the summary as Ok({val_summary}). The variables expansion should prioritize showing the val field.
+* Error Display: If err!= 0, format the summary as Error({err_code}). The variables expansion should prioritize showing the err field.
+This declutters the variable view, allowing developers to see the status of operations (e.g., Ok("file.txt") vs Error(2)) at a glance without expanding the structure.
+4. DAP Request Implementation Logic
+This section details the specific algorithms required for the critical DAP requests defined in the Problem Statement.
+4.1 variables Request Handler
+The variables request is the primary interface for state inspection. It requires a sophisticated dispatch mechanism to handle standard types, TBB types, and pointers differently.
+Pseudocode Implementation:
+
+
+C++
+
+
+
+
+// Handler for 'variables' request
+void handleVariables(const json& request, json& response) {
+   int refId = request;
+   lldb::SBValue container = getVariableFromRef(refId);
+   
+   json variablesArray = json::array();
+   
+   // Iterate over children (fields, array elements, etc.)
+   for (uint32_t i = 0; i < container.GetNumChildren(); i++) {
+       lldb::SBValue child = container.GetChildAtIndex(i);
+       string typeName = child.GetTypeName();
+       string name = child.GetName();
+       string displayValue;
+       string evalType = typeName;
+       json presentationHint;
+
+       // --- MAPPING 1: TBB TYPES ---
+       if (regex_match(typeName, regex("tbb(\\d+)"))) {
+           int width = parseBitWidth(typeName);
+           int64_t val = child.GetValueAsSigned();
+           int64_t sentinel = getSentinelValue(width);
+           
+           if (val == sentinel) {
+               displayValue = "ERR (sentinel)";
+               presentationHint = {{"kind", "virtual"}, {"attributes", {"failed"}}};
+           } else if (isOverflow(val, width)) {
+               displayValue = to_string(val) + " (OVERFLOW)";
+               presentationHint = {{"kind", "virtual"}, {"attributes", {"failed"}}};
+           } else {
+               displayValue = to_string(val); // Standard decimal
+           }
+       }
+       // --- MAPPING 2: WILD POINTERS (Fat Pointer Check) ---
+       else if (isWildPointer(typeName)) {
+           // Retrieve fat pointer metadata (if in debug mode)
+           auto meta = getFatPointerMetadata(child); 
+           if (meta.isValid) {
+               if (meta.scope_id < current_scope_id) {
+                   displayValue = "<dangling: scope exited>";
+                   presentationHint = {{"attributes", {"readOnly"}}};
+               } else {
+                   displayValue = child.GetValue(); // Address
+               }
+           } else {
+               // Release mode fallback
+               displayValue = child.GetValue(); 
+           }
+       }
+       // --- MAPPING 3: GC REFERENCES ---
+       else if (isGCPtr(typeName)) {
+           displayValue = child.GetValue(); // Address
+           // Note: The synthetic [header] child is generated by the 
+           // SBSyntheticChildrenProvider in LLDB, so it appears naturally 
+           // in the loop if configured correctly.
+       }
+       // --- STANDARD TYPES ---
+       else {
+           displayValue = child.GetValue();
+       }
+
+       // Construct the DAP variable object
+       json var = {
+           {"name", name},
+           {"value", displayValue},
+           {"type", evalType},
+           {"variablesReference", child.MightHaveChildren()? registerRef(child) : 0}
+       };
+       
+       if (!presentationHint.empty()) {
+           var["presentationHint"] = presentationHint;
+       }
+       
+       variablesArray.push_back(var);
+   }
+   
+   response["body"]["variables"] = variablesArray;
+}
+
+4.2 evaluate Request Handler (REPL)
+The evaluate request allows users to type expressions in the debug console. Aria's syntax includes features like template literals (&{...}) and TBB arithmetic that standard LLDB expression evaluators cannot parse natively.
+Pseudocode Implementation:
+
+
+C++
+
+
+
+
+void handleEvaluate(const json& request, json& response) {
+   string expression = request["expression"];
+   string context = request["context"]; // "watch", "repl", or "hover"
+   int frameId = request.value("frameId", -1);
+   
+   lldb::SBFrame frame = getFrame(frameId);
+   if (!frame.IsValid()) {
+       sendError(response, "Invalid frame");
+       return;
+   }
+
+   // STEP 1: Pre-processing via Aria Frontend
+   // We link against the Aria compiler's Parser to desugar syntax.
+   // e.g., "val + 5" where val is tbb8 might need desugaring to 
+   // "__aria_tbb8_add(val, 5)" to preserve sticky error semantics.
+   string loweredExpr;
+   try {
+       loweredExpr = AriaCompiler::LowerExpressionForDebugger(expression);
+   } catch (const SyntaxError& e) {
+       sendError(response, "Syntax Error: " + e.message);
+       return;
+   }
+
+   // STEP 2: JIT Compilation & Evaluation
+   // Use LLDB to evaluate the lowered C-compatible expression
+   lldb::SBExpressionOptions options;
+   options.SetLanguage(lldb::eLanguageTypeC_plus_plus); // Use C++ view of runtime
+   
+   lldb::SBValue result = frame.EvaluateExpression(loweredExpr.c_str(), options);
+   
+   if (result.GetError().Fail()) {
+       sendError(response, result.GetError().GetCString());
+       return;
+   }
+
+   // STEP 3: Format Result (Reuse Variables Logic)
+   // The result needs the same TBB/FatPointer formatting logic.
+   string displayValue = formatValueUsingVariableLogic(result);
+   
+   response["body"] = {
+       {"result", displayValue},
+       {"type", result.GetTypeName()},
+       {"variablesReference", result.MightHaveChildren()? registerRef(result) : 0}
+   };
+}
+
+5. Custom Protocol Extensions
+To support the visual requirements of the Aria Memory Model 1, ariadbg defines custom JSON-RPC messages.
+5.1 ariaMemoryMap Request
+This request provides the data needed to render the "Memory Map Canvas" in the Web UI 1, visualizing the fragmentation and distribution of GC vs. Wild memory.
+JSON Schema:
+
+
+JSON
+
+
+
+
+{
+ "definitions": {
+   "MemoryRegionType": {
+     "type": "string",
+     "enum":
+   },
+   "MemoryBlock": {
+     "type": "object",
+     "properties": {
+       "start": { "type": "string", "description": "Hex address" },
+       "size": { "type": "integer", "description": "Bytes" },
+       "type": { "$ref": "#/definitions/MemoryRegionType" },
+       "fragmentation": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+       "objectCount": { "type": "integer" }
+     }
+   }
+ },
+ "request": {
+   "command": "ariaMemoryMap",
+   "arguments": {
+     "filter": { "$ref": "#/definitions/MemoryRegionType" } 
+   }
+ },
+ "response": {
+   "body": {
+     "regions": { "type": "array", "items": { "$ref": "#/definitions/MemoryBlock" } },
+     "totalHeapSize": { "type": "integer" },
+     "timestamp": { "type": "integer" }
+   }
+ }
+}
+
+Implementation: The handler queries the __aria_gc_nursery_start and __aria_gc_nursery_end symbols to define GC bounds, and iterates the FatPointer metadata table to identify Wild allocations.
+5.2 ariaAsyncStack Request
+Standard stack traces only show the runtime scheduler loop when an async task is suspended. This request reconstructs the logical flow.
+JSON Schema:
+
+
+JSON
+
+
+
+
+{
+ "request": {
+   "command": "ariaAsyncStack",
+   "arguments": {
+     "coroutineHandle": { "type": "string" }
+   }
+ },
+ "response": {
+   "body": {
+     "frames": {
+       "type": "array",
+       "items": {
+         "type": "object",
+         "properties": {
+           "name": { "type": "string" },
+           "file": { "type": "string" },
+           "line": { "type": "integer" },
+           "awaiting": { "type": "string", "description": "What is this frame waiting for?" }
+         }
+       }
+     }
+   }
+ }
+}
+
+Implementation: The handler dereferences the CoroutineFrame struct 1, locating the promise pointer. It recursively walks the promise chain (parent -> child) to build the stack.
+6. Implementation Strategy and Roadmap
+The implementation is divided into four distinct phases to manage complexity and ensure incremental delivery of value.
+Phase 1: Core Transport & Control (Weeks 1-2)
+Goal: Establish the DAP communication loop and basic process control.
+* Tasks:
+   * Scaffold aria-dap executable with JSON-RPC parser.
+   * Link liblldb and implement the initialize handshake.
+   * Implement launch (native binary mode) and attach.
+   * Implement setBreakpoints (mapping source lines to addresses).
+   * Implement continue, stepIn, stepOut, next using SBThread.
+   * Deliverable: A debugger that can start a process and stop at a breakpoint.
+Phase 2: Data Inspection & TBB Support (Weeks 3-4)
+Goal: Make variables visible and correctly formatted.
+* Tasks:
+   * Implement the variables and scopes handlers.
+   * Integrate the TBB Regex Formatter (Section 3.1).
+   * Implement GCPointerSyntheticProvider to expose headers (Section 3.2).
+   * Deliverable: TBB sentinels appear as "ERR", GC headers are visible.
+Phase 3: Advanced I/O & WildX Support (Weeks 5-6)
+Goal: Support the 6-stream topology and JIT debugging.
+* Tasks:
+   * Implement the "Shim" to create pipes for FDs 3, 4, 5 during launch.
+   * Route stddbg pipe output to OutputEvent (category: console).
+   * Implement JIT Event Listener in LLDB to resolve breakpoints in WildX memory (dynamically generated code).
+   * Deliverable: stddbg logs appear in the debug console; breakpoints work in JIT code.
+Phase 4: Extensions & Web Integration (Week 7)
+Goal: Enable visual debugging.
+* Tasks:
+   * Implement ariaMemoryMap and ariaAsyncStack handlers.
+   * Implement WebSocket transport layer in DAPServer.
+   * Bundle with the VS Code extension.
+   * Deliverable: Full visual debugging capability.
+7. High-Level Architecture Diagram
+
+
+Code snippet
+
+
+
+
+graph TD
+   subgraph "External Clients"
+       IDE
+       WebUI
+   end
+
+   subgraph "Aria Debug Adapter (aria-dap)"
+       subgraph "Protocol Layer"
+           Router
+           JSON_Parser
+       end
+
+       subgraph "Semantics Engine"
+           TBB_Insp
+           Mem_Vis[Memory Visualizer]
+           Async_Rec
+       end
+
+       subgraph "Debug Engine (DEAL)"
+           SB_Wrap
+           Event_Mon
+       end
+   end
+
+   subgraph "Runtime Environment"
+       Process[Aria Process]
+       Heap
+       Streams
+   end
+
+   IDE <-->|Stdin/Stdout| Router
+   WebUI <-->|WebSocket| Router
+   Router --> JSON_Parser
+   JSON_Parser --> SB_Wrap
+   
+   SB_Wrap -->|Ptrace/Mach| Process
+   SB_Wrap -->|Read| Heap
+   
+   Process -->|Events| Event_Mon
+   Event_Mon --> Router
+   
+   Process -->|FD 3,4,5| Event_Mon
+   
+   SB_Wrap <--> TBB_Insp
+   SB_Wrap <--> Mem_Vis
+   SB_Wrap <--> Async_Rec
+
+8. Conclusion
+This specification defines a robust, production-grade architecture for ariadbg that fully addresses the complexities of the Aria language. By baking semantic awareness of TBB types, hybrid memory safety, and the six-stream I/O topology directly into the adapter, we transform the debugging experience from a generic low-level inspection of bits into a high-level interaction with Aria's core concepts. This ensures that the safety guarantees of the "Appendage Theory" extend into the debugging phase, providing developers with the tooling necessary to build reliable, high-performance systems.
+Works cited
+1. aria_source_full.txt

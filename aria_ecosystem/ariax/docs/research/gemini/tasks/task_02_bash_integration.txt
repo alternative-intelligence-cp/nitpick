@@ -1,0 +1,141 @@
+Gemini Deep Research Task: Bash Loadable Builtin for Extended Redirection
+==========================================================================
+
+RESEARCH OBJECTIVE:
+Provide complete implementation guide for a Bash loadable builtin that extends shell redirection syntax to support file descriptors 3, 4, and 5 (stddbg, stddati, stddato).
+
+SCOPE:
+1. Bash loadable builtin API and architecture
+2. Complete implementation of redirection extension
+3. Integration with Bash's existing redirection system
+4. Error handling and user feedback
+5. Build and installation process
+6. Testing methodology
+
+REQUIRED DELIVERABLES:
+
+1. Bash Builtin API Overview:
+   - How loadable builtins work in Bash
+   - Registration and initialization
+   - Callback functions and signatures
+   - Memory management in builtin context
+   - Integration with Bash internals
+
+2. Complete C Code Implementation:
+   - Builtin structure definition
+   - Initialization function
+   - Handler for new redirection syntax
+   - Integration with existing redir_open() and related functions
+   - File descriptor management from within builtin
+
+3. Redirection Syntax Design:
+   - Extend existing 2> syntax to 3>, 4<, 5>
+   - Parsing implementation
+   - Conflict resolution with existing Bash features
+   - Backward compatibility
+
+4. Build System:
+   - Makefile for loadable builtin
+   - Compilation flags and dependencies
+   - Shared library (.so) creation
+   - Installation to correct Bash plugin directory
+
+5. Auto-loading Configuration:
+   - How to make Bash load builtin automatically
+   - /etc/bash.bashrc modifications
+   - User .bashrc integration
+   - System-wide vs per-user configuration
+
+6. Testing Suite:
+   - Shell scripts to test all redirection combinations
+   - Pipeline testing with 6 streams
+   - Error case handling
+   - Integration tests with Aria programs
+
+7. User Documentation:
+   - Syntax guide for 3>, 4<, 5> redirection
+   - Examples of common use cases
+   - Comparison with traditional 2> syntax
+   - Troubleshooting guide
+
+RESEARCH QUESTIONS TO ANSWER:
+
+1. What is the exact Bash builtin API for loadable modules?
+2. How does Bash's redirection parsing work internally?
+3. Where in the Bash source code is redirection handled?
+4. Can we hook into existing mechanisms or must we reimplement?
+5. How do we ensure FDs 3-5 are open before redirecting?
+6. What happens if a user tries to redirect a non-existent FD?
+7. How do pipelines interact with extended redirection?
+8. What are the performance implications?
+
+SPECIFIC EXAMPLES TO RESEARCH:
+
+1. Simple redirection:
+   command 3> debug.log
+
+2. Input and output:
+   processor 4< input.bin 5> output.bin
+
+3. All 6 streams:
+   tool 1> ui.txt 2> errors.log 3> debug.log 4< data.in 5> data.out
+
+4. Pipelines:
+   generator 5> | processor 4< | consumer
+
+5. Here documents and here strings with FDs 4-5
+
+6. Redirection to /dev/null:
+   command 3> /dev/null 4< /dev/null
+
+IMPLEMENTATION APPROACHES TO EVALUATE:
+
+Approach 1: Pure Bash Builtin
+- Implement completely in loadable builtin
+- Pros: Self-contained, no Bash core modification
+- Cons: May be limited in capabilities
+
+Approach 2: Bash Core Patch + Builtin
+- Patch Bash source to add syntax support
+- Builtin provides functionality
+- Pros: Deep integration, full features
+- Cons: Must maintain Bash fork
+
+Approach 3: Wrapper Script
+- Shell functions that manage FD redirection
+- Pros: No C code needed
+- Cons: Clunky syntax, performance overhead
+
+Recommend best approach with technical justification.
+
+BASH VERSION COMPATIBILITY:
+
+- Target: Bash 5.x (Ubuntu 24.04 LTS default)
+- Must work with: Bash 5.0+
+- Nice to have: Bash 4.x compatibility
+
+BUILD AND PACKAGING:
+
+- Create .deb package for ariax-bash
+- Installation script
+- Uninstallation/rollback
+- Update mechanism
+- Conflict handling with system bash
+
+SECURITY CONSIDERATIONS:
+
+- Injection attacks via redirection syntax
+- File descriptor leakage
+- Permission checks
+- Sandbox escapes
+- Privilege escalation risks
+
+DELIVERABLE FORMAT:
+- Complete implementation guide with code
+- Step-by-step build instructions
+- Testing procedures
+- Installation and configuration guide
+- Troubleshooting section
+
+DEPTH:
+Production-ready implementation that can be packaged and distributed. Include all edge cases, error handling, and user experience considerations.

@@ -1,0 +1,91 @@
+## TODO 7: Terminal Emulator Display of Extra Streams
+
+**Priority**: MEDIUM (User experience)
+**Estimated Complexity**: Medium
+**Dependencies**: TODO 1 (must preserve FDs first)
+
+### Problem Statement
+Standard terminal emulators only display stdout and stderr. The Aria six-stream topology adds stddbg (FD 3), stddati (FD 4), and stddato (FD 5). Users need a way to visualize stddbg output (debug messages) separately from stdout (program output) to take advantage of the six-stream design.
+
+### Required Context Files
+
+**From aria repository**:
+1. `docs/info/aria_specs.txt` - Six-stream contract
+2. `docs/info/six_stream_design.md` - If exists
+
+**From ariax repository**:
+1. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (TODO 7)
+
+**External Research**:
+- tmux configuration and scripting
+- multitail documentation
+- tilix panes
+
+### Gemini Prompt
+
+```
+Research and develop a terminal multiplexing solution that automatically displays Aria's stddbg stream (file descriptor 3) in a separate pane when running Aria programs.
+
+Context: Aria programs write:
+- stdout (FD 1): Primary program output
+- stderr (FD 2): Error messages (user-facing)
+- stddbg (FD 3): Debug telemetry (logs, traces, not errors)
+
+Current problem: Standard terminals only show FD 1 and 2. FD 3 writes go nowhere unless explicitly redirected.
+
+Requirements:
+1. Develop a shell wrapper or tmux configuration that:
+   - Detects when an Aria binary is executed
+   - Automatically creates a split pane
+   - Pipes FD 3 to the split pane
+   - Maintains stdout/stderr in main pane
+
+2. Research these approaches:
+
+**Approach A: tmux Wrapper**
+```bash
+#!/bin/bash
+# aria-dbg-run: Execute Aria program with split stddbg pane
+FIFO=$(mktemp -u)
+mkfifo $FIFO
+tmux split-window -v "tail -f $FIFO"
+"$@" 3>$FIFO
+```
+- Test if this works
+- Handle cleanup (remove FIFO on exit)
+- Make pane size configurable
+
+**Approach B: Named Pipes + multitail**
+- Create three FIFOs: /tmp/aria-stdout, /tmp/aria-stderr, /tmp/aria-stddbg
+- Redirect Aria program: `aria-prog 1>stdout 2>stderr 3>stddbg`
+- Run: `multitail -i stdout -i stderr -i stddbg`
+- Challenge: Integrate with shell workflow
+
+**Approach C: Custom Terminal Emulator**
+- Fork alacritty or wezterm
+- Add native support for FD 3 in separate pane
+- Overkill but cleanest UX
+
+**Approach D: Shell Integration**
+- Modify bash/zsh precmd hook
+- Detect Aria binaries (check ELF note: .note.aria.properties)
+- Automatically set up redirection
+- Example: `exec 3> >(tee /dev/tty3)` (doesn't split, just displays)
+
+3. Provide:
+- Working wrapper script
+- Integration with AriaX shell (add to /etc/profile.d/)
+- Documentation for users
+- Optional: man page for aria-dbg-run command
+
+Bonus: Colorize output (stdout=white, stderr=red, stddbg=cyan)
+```
+
+### Expected Deliverables
+- `scripts/aria-dbg-run` - Wrapper script
+- tmux or terminal configuration
+- Integration guide for /etc/profile.d/
+- User documentation
+
+---
+

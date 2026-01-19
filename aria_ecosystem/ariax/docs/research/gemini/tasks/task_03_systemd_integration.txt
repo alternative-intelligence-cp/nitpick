@@ -1,0 +1,140 @@
+Gemini Deep Research Task: systemd FD 3 Collision Resolution
+============================================================
+
+RESEARCH OBJECTIVE:
+Analyze the conflict between Aria's stddbg (FD 3) and systemd's socket activation mechanism, and provide detailed solutions with implementation guidance.
+
+THE PROBLEM:
+
+systemd Socket Activation:
+- Uses environment variable LISTEN_FDS to pass socket file descriptors
+- Base FD is SD_LISTEN_FDS_START which is hardcoded to 3
+- systemd-activated services expect FD 3 to be first socket
+- Direct conflict with Aria's stddbg stream
+
+Impact:
+- Aria services started by systemd will have FD 3 collision
+- Either Aria's stddbg or systemd's socket will malfunction
+- Cannot coexist without modification
+
+REQUIRED DELIVERABLES:
+
+1. Deep Analysis of systemd Socket Activation:
+   - How SD_LISTEN_FDS and SD_LISTEN_FDS_START work
+   - What systemd code is responsible
+   - What services rely on this mechanism
+   - Impact analysis if we change it
+
+2. Solution 1: Patch systemd to Start at FD 6
+   - Exact systemd source code modifications needed
+   - Files to modify and functions to change
+   - Backward compatibility concerns
+   - Testing methodology
+   - Probability of upstream acceptance
+   - Maintenance burden for forked systemd
+
+3. Solution 2: Kernel Boot Parameter
+   - Implement aria_streams=1 boot flag
+   - Kernel code to detect and honor flag
+   - systemd service detection (Aria vs non-Aria)
+   - How to configure via GRUB
+   - User experience implications
+   - Default behavior decisions
+
+4. Solution 3: Process-Level Detection
+   - Kernel mechanisms to detect Aria executables
+   - ELF header magic number approach
+   - Path-based detection (pros/cons)
+   - Binary signature verification
+   - Performance impact of detection
+   - Security implications
+
+5. Solution 4: Aria-Aware Service Manager
+   - Design for alternative to systemd
+   - Compatibility with existing systemd units
+   - Migration path from systemd
+   - Long-term maintenance considerations
+   - Community adoption challenges
+
+6. Comparative Analysis:
+   - Technical complexity (1-10 scale)
+   - User experience impact
+   - Maintenance burden
+   - Performance implications  
+   - Security considerations
+   - Ecosystem compatibility
+
+7. Recommended Solution:
+   - Which approach to implement first
+   - Justification with technical reasoning
+   - Implementation roadmap
+   - Fallback strategies
+
+8. Service Unit Templates:
+   - systemd service units for Aria applications
+   - Socket units with FD workarounds
+   - Environment variable configuration
+   - Aria-specific service activation
+
+RESEARCH QUESTIONS TO ANSWER:
+
+1. Can systemd's SD_LISTEN_FDS_START be changed via configuration?
+2. What other software depends on FD 3 for socket activation?
+3. How many systemd services actively use socket activation?
+4. Could we create a compatibility shim/wrapper?
+5. What does Docker do with FD management?
+6. How do other init systems (runit, OpenRC) handle this?
+7. Are there security implications of changing FD base?
+8. How does this interact with container runtimes?
+
+REAL-WORLD SCENARIOS TO ADDRESS:
+
+Scenario 1: Aria Web Server
+- Needs systemd socket activation for HTTP
+- Also needs stddbg for telemetry
+- How to make both work?
+
+Scenario 2: Aria Database
+- Systemd socket activation for connections
+- stddati/stddato for data pipelines
+- stddbg for query logging
+
+Scenario 3: Mixed Environment
+- Some systemd services (non-Aria)
+- Some Aria services
+- Must coexist on same system
+
+Scenario 4: Migration
+- Existing systemd-based infrastructure
+- Gradual migration to Aria
+- Backward compatibility critical
+
+ALTERNATIVE APPROACHES TO RESEARCH:
+
+Approach A: Virtual FD Mapping
+- Kernel translates FD 3 based on process type
+- systemd sees FD 3, Aria sees stddbg
+- Transparent to both systems
+
+Approach B: FD Namespace Per Process
+- Extend kernel to support multiple FD namespaces
+- systemd and Aria live in different namespaces
+- Completely isolated
+
+Approach C: Deprecate Socket Activation
+- Argue that socket activation is outdated
+- Modern approach: bind directly
+- Convince ecosystem to move away
+
+Evaluate feasibility and trade-offs of each.
+
+DELIVERABLE FORMAT:
+- Comprehensive technical analysis
+- Code modifications for each solution
+- Decision matrix for solution selection
+- Implementation priority and timeline
+- Risk assessment
+- Testing plan
+
+DEPTH:
+This is a critical blocker for production use. Research must be thorough enough to make a confident decision and implement successfully.

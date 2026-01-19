@@ -1,0 +1,180 @@
+AriaX Distribution Architecture
+===============================
+
+BASE SYSTEM DECISIONS:
+
+Current Recommendation: Modified Ubuntu 24.04 LTS
+Rationale:
+- Huge package ecosystem (avoid maintaining everything)
+- Well-tested and stable
+- Familiar to users
+- Good hardware support
+- Active security updates
+
+Alternative Approaches Considered:
+
+1. Debian Base:
+   Pros: More flexible, less bloated, stable
+   Cons: Still carries legacy baggage, systemd conflicts
+
+2. Linux From Scratch (LFS):
+   Pros: Complete control, minimal footprint, Aria-first design
+   Cons: Massive maintenance burden, must maintain all packages
+
+3. Arch Linux Base:
+   Pros: Rolling release, cutting edge, minimal
+   Cons: Less stable, requires constant updates
+
+PACKAGE MANAGEMENT:
+
+Format: .deb (Debian/Ubuntu compatibility)
+Repository: ariax.ai-liberation-platform.org/repo
+
+Core Packages to Create:
+- ariax-kernel: Modified Linux 6.8 with stream support
+- ariax-bash: Patched Bash with loadable builtin  
+- ariac: Aria compiler
+- aria-runtime: Aria runtime libraries
+- aria-stdlib: Aria standard library
+- aria-make: Aria build system
+- aria-ls: Aria Language Server
+
+Package Dependencies:
+- Standard build tools (gcc, make, cmake)
+- LLVM toolchain (for Aria compilation)
+- Development headers
+- Documentation
+
+INIT SYSTEM:
+
+Choice: systemd (with modifications)
+Rationale:
+- Too entrenched to avoid
+- Need to handle FD 3 collision
+- Can create Aria-aware service templates
+
+Required Modifications:
+- Handle FD 3 conflict (patch or workaround)
+- Environment variables for 6-stream awareness
+- Service templates for Aria daemons
+- Integration with Aria service manager (future)
+
+ROOT FILESYSTEM STRUCTURE:
+
+/
+├── bin/          Standard binaries
+├── sbin/         System binaries  
+├── etc/          Configuration (systemd, Aria configs)
+├── usr/
+│   ├── bin/      User binaries (ariac, aria-make)
+│   ├── lib/      Aria libraries and runtime
+│   ├── include/  Aria headers
+│   └── share/    Documentation, examples
+├── var/          Variable data (logs, caches)
+├── home/         User directories
+└── opt/          Optional packages
+
+BOOT PROCESS:
+
+1. GRUB bootloader
+2. Linux kernel with Aria patches loads
+3. initramfs unpacks
+4. systemd initializes (Aria-aware mode)
+5. Core services start (with 6-stream support)
+6. User login (Bash with extended redirection)
+
+BUILD PIPELINE:
+
+Stage 1: Kernel
+- Acquire Linux 6.8 source
+- Apply Aria patches
+- Configure and compile
+- Package as .deb
+
+Stage 2: Bash
+- Acquire Bash source  
+- Build loadable builtin (aria_redir.so)
+- Configure for auto-loading
+- Package as .deb
+
+Stage 3: Aria Toolchain
+- Compile ariac from source
+- Build runtime libraries
+- Build standard library
+- Package each component
+
+Stage 4: Root Filesystem
+- Debootstrap minimal Ubuntu 24.04
+- Install AriaX packages
+- Configure systemd
+- Set up networking and users
+- Create squashfs
+
+Stage 5: ISO Generation
+- Install GRUB to ISO
+- Bundle kernel + rootfs + bootloader
+- Add live boot support (optional)
+- Generate final .iso file
+
+ISO VARIANTS:
+
+Minimal (Server):
+- No GUI, command-line only
+- Essential packages for Aria development
+- Size target: <500MB
+
+Desktop:
+- Lightweight desktop environment (XFCE/LXDE)
+- Aria IDE/editor integration
+- Size target: <2GB
+
+Developer:
+- Full development tools
+- Multiple language support
+- Debug tools and profilers
+- Size target: <4GB
+
+RELEASE CADENCE:
+
+Major Releases: Tied to Aria language releases
+Minor Releases: Security updates, bug fixes
+Kernel Updates: Follow Ubuntu LTS kernel schedule
+Package Updates: As needed for Aria ecosystem
+
+INSTALLATION:
+
+Options:
+1. Live USB with installer
+2. Network install (minimal base, download packages)
+3. Cloud images (AWS, Azure, GCP)
+4. Container base images (Docker/Podman)
+
+Installer Features:
+- Disk partitioning
+- User creation
+- Network configuration
+- Package selection (minimal/desktop/developer)
+- Aria environment setup
+
+POST-INSTALL:
+
+Welcome Script:
+- Verify 6-stream support
+- Test Aria compiler
+- Display getting started guide
+- Set up shell environment
+
+Default Configuration:
+- Bash with Aria redirection enabled
+- Environment variables for Aria paths
+- Sample Aria projects in ~/examples
+- Documentation in /usr/share/doc/ariax
+
+UPDATE MECHANISM:
+
+Package Updates: apt/dpkg as normal
+Kernel Updates: Special handling (preserve Aria patches)
+Aria Toolchain: Custom repository with latest versions
+Security Updates: Follow Ubuntu security advisories
+
+Long-term: Custom update manager aware of Aria dependencies

@@ -1,0 +1,68 @@
+## TODO 3: LLVM 20 Snapshot ABI Stability
+
+**Priority**: HIGH (Affects compiler)
+**Estimated Complexity**: Medium
+**Dependencies**: None
+
+### Problem Statement
+AriaX requires LLVM 20+, which is currently a development snapshot with unstable ABI. The `ariac` compiler links against LLVM libraries. If the system updates LLVM 20 via apt (pulling a newer snapshot), the ABI may change, breaking the compiler.
+
+### Required Context Files
+
+**From aria repository**:
+1. CMakeLists.txt - LLVM linking configuration
+2. `docs/building/LLVM_INTEGRATION.md` - If exists
+
+**From ariax repository**:
+1. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (TODO 3)
+
+### Gemini Prompt
+
+```
+The AriaX distribution includes the Aria compiler (ariac) which links against LLVM 20+ libraries. LLVM 20 is a development snapshot with no ABI stability guarantee. Evaluate strategies to ensure ariac remains functional across LLVM 20 updates from the apt.llvm.org repository.
+
+Context: The Aria compiler is built in the ISO creation phase using LLVM 20. Users may later run apt-get upgrade, which could pull a newer LLVM 20 snapshot with breaking ABI changes.
+
+Research and compare:
+
+**Strategy 1: Static Linking**
+1. Configure CMake to statically link all LLVM libraries
+2. Command: cmake -DLLVM_LINK_LLVM_DYLIB=OFF (or similar)
+3. Pros: ariac binary is self-contained, immune to system LLVM changes
+4. Cons: Large binary size (~200MB?), longer compile time
+5. Feasibility: Does LLVM 20 provide static libraries? Any licensing concerns?
+
+**Strategy 2: Version Pinning**
+1. Use apt preferences to pin llvm-20 package to specific version
+2. File: /etc/apt/preferences.d/llvm-pin
+3. Content: Package: llvm-20* Pin: version 1:20.0.0~... Pin-Priority: 1001
+4. Pros: Simple, small binary
+5. Cons: User loses security updates, manual maintenance
+
+**Strategy 3: Vendored LLVM**
+1. Build LLVM 20 from source during ISO creation
+2. Install to /opt/llvm-aria/ (separate from system)
+3. ariac uses RPATH to link to vendored LLVM
+4. Pros: Complete control, stable ABI
+5. Cons: Massive ISO size increase, long build time
+
+**Strategy 4: AppImage or Snap**
+1. Distribute ariac as AppImage with bundled LLVM
+2. Isolate from system package updates
+3. Pros: Clean separation
+4. Cons: Startup overhead, complexity
+
+Recommendation: Provide detailed analysis with:
+- CMake flags for static linking LLVM
+- Binary size comparison (static vs dynamic)
+- Patch for ariac CMakeLists.txt if needed
+- Test procedure to verify ABI isolation
+```
+
+### Expected Deliverables
+- Technical report: "LLVM_STABILITY_STRATEGY.md"
+- CMakeLists.txt modifications for static linking
+- Or: apt preferences file for version pinning
+- Verification script to test ABI breakage
+
+---

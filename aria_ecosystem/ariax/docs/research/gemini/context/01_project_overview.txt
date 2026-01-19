@@ -1,0 +1,52 @@
+AriaX Linux Distribution - Project Overview
+===========================================
+
+PROJECT GOAL:
+Build a custom Linux distribution with native kernel-level support for Aria's Six-Stream I/O topology.
+
+WHAT IS ARIAX:
+AriaX is a specialized Linux distribution designed specifically for the Aria programming language ecosystem. It provides native, kernel-level support for Aria's revolutionary Six-Stream I/O model, extending Unix's traditional 3-stream paradigm (stdin/stdout/stderr) to 6 streams.
+
+THE SIX-STREAM TOPOLOGY:
+- FD 0: stdin (Standard Input) - Text input
+- FD 1: stdout (Standard Output) - Text/UI output  
+- FD 2: stderr (Standard Error) - Error messages
+- FD 3: stddbg (Standard Debug) - NEW: Telemetry and diagnostics
+- FD 4: stddati (Standard Data In) - NEW: Binary data input
+- FD 5: stddato (Standard Data Out) - NEW: Binary data output
+
+THE PROBLEM BEING SOLVED:
+Traditional Unix stdout is overloaded with multiple concerns:
+- Resultant data
+- User interface elements
+- Progress indicators
+- Debug messages
+- Operational logs
+
+This causes the "Noisy Channel" problem where any debug print in a binary pipeline corrupts the data stream, forcing Base64/Hex encoding with significant CPU and bandwidth overhead.
+
+TECHNICAL APPROACH:
+1. Modify Linux 6.8 kernel to reserve FDs 3-5 during execve
+2. Patch file descriptor allocation to skip reserved FDs
+3. Create Bash loadable builtin for extended redirection syntax
+4. Build minimal distribution (Ubuntu 24.04 LTS base)
+5. Integrate Aria toolchain natively
+
+TARGET USERS:
+- Aria developers (primary audience)
+- System programmers exploring advanced I/O
+- Research and academic use
+- Production Aria deployments
+
+KEY CHALLENGES:
+1. Kernel ABI stability while modifying core structures
+2. systemd FD 3 collision (socket activation uses FD 3)
+3. Security implications of kernel patches
+4. Long-term maintenance burden
+5. Hardware compatibility testing
+
+CURRENT STATUS:
+- Infrastructure setup complete
+- Website live at https://ariax.ai-liberation-platform.org
+- Kernel modification specification received (516 lines)
+- Planning phase for implementation

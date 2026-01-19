@@ -1,0 +1,98 @@
+Gemini Deep Research Task: Linux Kernel Modification Implementation Guide
+==========================================================================
+
+RESEARCH OBJECTIVE:
+Provide a comprehensive, production-ready implementation guide for modifying the Linux 6.8 kernel to support Aria's Six-Stream I/O topology. This must be detailed enough for an experienced systems programmer to implement without gaps.
+
+SCOPE:
+1. Detailed code implementation for fs/exec.c modifications
+2. Detailed code implementation for fs/file.c modifications  
+3. Error handling and edge cases
+4. Kernel data structure manipulation best practices
+5. Testing methodology for kernel patches
+6. Performance impact analysis
+7. Security considerations and hardening
+
+REQUIRED DELIVERABLES:
+
+1. Complete C Code for aria_ensure_streams():
+   - Exact function signature and placement
+   - spinlock usage patterns for files->file_lock
+   - filp_open() usage from kernel context
+   - FD table manipulation (fdtable operations)
+   - Error handling (what if /dev/null fails to open?)
+   - Memory management considerations
+   - Race condition prevention
+
+2. Complete C Code for alloc_fd() Modification:
+   - Exact location to inject ARIA_MIN_FD check
+   - Loop modification to skip FDs 3-5
+   - Backward compatibility (non-Aria processes)
+   - Performance optimization techniques
+
+3. Integration Points:
+   - Where exactly in setup_new_exec() to call aria_ensure_streams()
+   - Ordering relative to do_close_on_exec()
+   - Why this ordering matters (technical explanation)
+
+4. Kernel Build Process:
+   - Ubuntu 24.04 LTS specific build instructions
+   - Debian packaging for modified kernel
+   - kernel headers package creation
+   - DKMS integration (if applicable)
+
+5. Testing Strategy:
+   - How to write kernel test modules
+   - User-space test programs to validate FD reservation
+   - Stress testing methodology
+   - Regression testing (ensure no breakage)
+
+6. systemd FD 3 Collision Solutions:
+   - Technical analysis of systemd socket activation
+   - Detailed comparison of solution approaches:
+     * Patching systemd (code changes needed)
+     * Kernel boot parameter (implementation)
+     * Process detection heuristics (pros/cons)
+   - Recommended approach with justification
+
+7. Security Audit Checklist:
+   - Potential vulnerabilities introduced
+   - Attack vectors to consider
+   - SELinux policy implications
+   - AppArmor considerations
+   - Privilege escalation risks
+
+8. Performance Impact:
+   - Overhead analysis of modified code paths
+   - Benchmarking methodology
+   - Expected performance delta
+   - Optimization opportunities
+
+RESEARCH QUESTIONS TO ANSWER:
+
+1. What are ALL the kernel data structures involved in file descriptor management?
+2. What locking primitives are required and why?
+3. How does O_CLOEXEC interact with our modifications?
+4. What happens during fork() with CLONE_FILES?
+5. How do LSMs (Linux Security Modules) interact with FD operations?
+6. What are the failure modes and how to handle them gracefully?
+7. How to make this change as minimally invasive as possible?
+8. What existing kernel code can we leverage vs writing from scratch?
+
+CONSTRAINTS:
+- Must work on Linux 6.8 specifically
+- Must be compatible with Ubuntu 24.04 LTS patches
+- Must maintain ABI stability
+- Must not break existing applications
+- Must be maintainable long-term
+
+DELIVERABLE FORMAT:
+- Detailed technical document
+- Include code snippets with full context
+- Explain WHY each decision is made, not just HOW
+- Reference specific kernel source files and line numbers
+- Provide kernel documentation references
+- Include error scenarios and handling
+
+DEPTH:
+This should be production-quality research, not just a high-level overview. An engineer should be able to implement this directly from your research without additional investigation.

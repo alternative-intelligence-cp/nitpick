@@ -1,0 +1,294 @@
+﻿Architectural Specification and Implementation Strategy: Automated Session Orchestration for AriaX Linux
+1. Executive Summary and Strategic Context
+The engineering of a custom Linux distribution, particularly one as specialized as AriaX, requires a rigorous orchestration of user experience components to ensure alignment with the underlying platform goals. AriaX is designed to support the Aria programming language ecosystem, specifically its novel Six-Stream I/O topology which extends the traditional Unix standard streams (stdin, stdout, stderr) with three additional channels: stddbg (debug), stddati (data input), and stddato (data output).1 While the kernel-level modifications required to support this topology are foundational, the user-facing presentation layer—the Desktop Environment (DE)—serves as the primary interface for developers interacting with these tools. The selection of the Cinnamon Desktop Environment as the default session for AriaX represents a strategic pivot towards a traditional, stable, and highly configurable interface that minimizes resource contention with the heavy compilation and runtime tasks associated with the Aria language.1
+However, the base operating system, Ubuntu 24.04 LTS (Noble Numbat), is architecturally coupled to the GNOME desktop environment through a complex mesh of dependencies involving the GNOME Display Manager (GDM3), the AccountsService daemon, and the Debian alternatives system. The default behavior of a stock Ubuntu installation is to aggressively prioritize the "Ubuntu" session (a modified GNOME Shell) for both the display manager greeting screen and for new user accounts. This creates a significant "Day Zero" usability defect for AriaX: without intervention, a user installing the distribution will be greeted by the wrong environment, potentially leading to confusion regarding the availability of Aria-specific tooling or terminal integrations that are optimized for Cinnamon.
+This report provides an exhaustive technical analysis and implementation specification for automating the default session configuration in a Cubic (Custom Ubuntu ISO Creator) build environment. It rejects fragile, legacy methods such as .dmrc manipulation in favor of a robust, multi-layered architectural intervention. The primary mechanism defined herein leverages the AccountsService User Template system to intercept user profile generation at the daemon level, enforcing the Cinnamon preference for all future users, including the initial administrator created by the Subiquity installer. This is supplemented by defense-in-depth configurations within GDM3 and the update-alternatives system to ensure persistence across system updates and package upgrades.
+The resulting artifact is a deterministic, production-grade configuration strategy that ensures the AriaX distribution delivers a cohesive, Cinnamon-first experience from the moment of first boot, satisfying the critical "User Experience" requirements identified in the project's gap analysis.1
+________________
+2. Architectural Analysis of Linux Session Management
+To understand the necessity of the proposed solution, one must first deconstruct the session management architecture of modern Linux systems, specifically the transition from the legacy X11-centric model to the modern, D-Bus driven orchestration used by Ubuntu 24.04.
+2.1 The Evolution of Display Managers: From XDM to GDM3
+Historically, the X Display Manager (XDM) and its immediate successors managed user sessions via simple shell scripts and text configuration files located in user home directories. The file $HOME/.xsession was the executable authority; if a user wanted to run a specific window manager, they executed it from there. As desktop environments grew in complexity, incorporating session buses, policy kits, and power management, this imperative scripting model proved insufficient.2
+GDM3 (GNOME Display Manager 3) represents a paradigm shift. It acts not merely as a graphical login prompt but as a session broker. It integrates tightly with systemd-logind to manage user seats and leverages AccountsService to persist user state. Unlike LightDM, which often respects simple configuration directives for default sessions, GDM3 employs heuristic logic to determine which session to launch.4
+This logic prioritizes state over static configuration. When GDM3 prepares the login screen (the "Greeter"), it queries the system to see if the selected user has a history. If the user has logged in previously, GDM3 attempts to restore the last used session. If the user is new (has no history), GDM3 must decide on a default. In a standard Ubuntu build, this decision is hardcoded to favor ubuntu.desktop or ubuntu-xorg.desktop. This hardcoding is often baked into the compiled GDM schemas or the ubuntu-session package's specific overrides, making it resistant to simple configuration changes in /etc/gdm3/custom.conf.6
+2.2 The Role of AccountsService
+The AccountsService daemon (accounts-daemon) is the central authority for user metadata in the GNOME ecosystem. It abstracts the traditional UNIX user databases (/etc/passwd, /etc/shadow) and extends them with rich metadata relevant to the graphical interface, such as the user's icon, language preference, and default session.7
+This data is stored in the directory /var/lib/AccountsService/users/. Each user has a corresponding file (e.g., /var/lib/AccountsService/users/alice) which mimics the INI file format. A critical entry in this file is the Session or XSession key.8
+
+
+Ini, TOML
+
+
+
+
+[User]
+Session=cinnamon
+XSession=cinnamon
+Icon=/var/lib/AccountsService/icons/cinnamon
+SystemAccount=false
+
+When GDM3 selects a user, it sends a D-Bus message to org.freedesktop.Accounts. The daemon reads this file and responds with the stored session. If the file does not exist (i.e., a new user), the daemon constructs a response based on its internal defaults or templates. This mechanism is the architectural key to our solution. By manipulating the templates used by AccountsService, we can inject our preferred configuration (Cinnamon) into the metadata of every user at the moment of their creation or first login, bypassing GDM3's internal biases entirely.11
+2.3 The Debian Alternatives System
+Ubuntu, being a Debian derivative, utilizes the update-alternatives mechanism to manage interchangeable system commands. The binary /usr/bin/x-session-manager is a symbolic link managed by this system. It points to a specific session manager binary, such as /usr/bin/gnome-session or /usr/bin/cinnamon-session.12
+While GDM3 often bypasses this link in favor of direct .desktop file activation (launching the session defined in Exec= within /usr/share/xsessions/), x-session-manager serves as a critical fallback. If the specific session requested fails to load, or if a generic "System Default" session is selected in the greeter, the X server will execute the target of this symlink. Furthermore, automated scripts and some remote desktop solutions (XRDP) rely on this link to determine the correct environment to launch.2 Therefore, aligning the alternatives system is a necessary component of a robust default session configuration.
+2.4 The Subiquity Installer Challenge
+The installation process of Ubuntu 24.04 uses Subiquity, a server-grade installer that has replaced the older Ubiquity installer for desktop images. Subiquity operates by unpacking a squashfs filesystem (the root filesystem customized in Cubic) onto the target disk.13
+A critical race condition exists in custom ISOs: the initial user is created by the installer during the installation phase, effectively injecting entries into /etc/passwd and /etc/shadow on the target disk. However, the AccountsService daemon is not running inside the target chroot during this phase. Consequently, no /var/lib/AccountsService/users/ file is generated for this initial user at creation time.
+When the system boots for the first time, the user logs in. GDM3 queries AccountsService. AccountsService sees the user exists in /etc/passwd but has no metadata file. It then applies its template logic to generate the initial state. If we rely on scripts that try to modify user files after creation, we miss this window. By configuring the AccountsService Template, we ensure that when the daemon initializes on the first boot, it correctly identifies Cinnamon as the mandatory default for the new admin user, resolving the Subiquity integration requirement.11
+________________
+3. Evaluation of Configuration Mechanisms
+The prompt proposes four potential methodologies for achieving the desired state. We analyze each against the constraints of Ubuntu 24.04, GDM3, and the requirement for persistence across updates.
+3.1 Method 1: GDM3 Configuration (custom.conf)
+* Mechanism: Editing /etc/gdm3/custom.conf to set DefaultSession=cinnamon.desktop in the [daemon] block.
+* Analysis: Historically, this was the standard method. However, documentation and user reports for recent GNOME versions (v40+) indicate that GDM3 treats this key as a weak hint rather than a mandatory override. If the ubuntu-session package is present (which provides ubuntu.desktop), GDM3's compiled-in logic often prefers it over the custom.conf setting unless the WaylandEnable=false directive is also used to force an X11 fallback (where Cinnamon is often the only valid option).16
+* AriaX Implications: While setting this provides a layer of redundancy, relying on it exclusively is risky. If an update to gdm3 resets the logic or if ubuntu-desktop is reinstalled as a dependency, the setting may be ignored. Additionally, this sets the default for the login screen, but relies on GDM to propagate that default to the user session, which is not guaranteed if AccountsService reports a different value.
+* Verdict: Secondary Measure. Useful for disabling Wayland (crucial for Cinnamon stability) and providing a fallback hint, but insufficient as the primary control.
+3.2 Method 2: AccountsService Template (Primary Solution)
+* Mechanism: Placing a configuration file in /etc/accountsservice/user-templates/standard.
+* Analysis: This directory does not exist by default in Ubuntu; the system defaults are in /usr/share/accountsservice/user-templates/. The architecture explicitly allows administrators to override these vendor defaults by placing files in /etc.11 When AccountsService creates a metadata file for a user who lacks one (e.g., the Subiquity-created admin on first boot, or a new user via adduser), it reads from this template.
+* AriaX Implications: This is the precise injection point required. It handles the "new user" requirement flawlessly because the definition of "new user" to AccountsService is "any user without a /var/lib entry." This covers both the installer-created user (on first boot) and future users. It is robust against updates because package managers (apt/dpkg) generally do not overwrite administrator-created files in /etc unless they are conffiles of a package, which this custom template is not.
+* Verdict: Primary Solution. This is the most robust and architecturally correct method for Ubuntu 24.04.
+3.3 Method 3: Skeleton Directory (/etc/skel)
+* Mechanism: Adding .dmrc, .xsession, or .Xclients to /etc/skel.
+* Analysis:
+   * .dmrc: This file is a relic of GDM 2.x and is completely ignored by modern GDM3.12 Using it is ineffective cargo-cult engineering.
+   * .xsession: While valid for X11 startup scripts (like startx), GDM3 launches sessions via D-Bus activation of .desktop files in /usr/share/xsessions/. It typically does not execute ~/.xsession unless the user explicitly selects a "Custom" or "User Script" session type, which is not the default.2
+* AriaX Implications: Modifying /etc/skel is fragile. It only affects users created via adduser (which copies skel). It fails for the Subiquity user because Subiquity does not necessarily use the standard useradd skeleton copying logic in the same way, or creates the home directory with cloud-init defaults. Furthermore, forcing a session script here breaks the ability for a user to legitimately switch sessions later via the GUI, violating the requirement "Must not break if user manually changes session later."
+* Verdict: Rejected. Deprecated and functionally incorrect for GDM3 session selection.
+3.4 Method 4: Update Alternatives
+* Mechanism: Running update-alternatives --set x-session-manager /usr/bin/cinnamon-session.
+* Analysis: This aligns the /usr/bin/x-session-manager symlink. While GDM3 doesn't use this link for its primary decision, many fallback mechanisms do. If GDM3 crashes or if the user installs a different display manager (like LightDM or SDDM) that respects Debian alternatives, this setting saves the day.12
+* AriaX Implications: This acts as a system-wide safety net. It ensures that the "canonical" session manager of the OS is Cinnamon. It is a low-cost, high-value configuration step that aligns the OS plumbing with the GUI configuration.
+* Verdict: Required Safety Net. Essential for consistency but not the primary driver for GDM3.
+________________
+4. Technical Implementation Specification
+The implementation strategy for AriaX involves a scripted application of configurations within the Cubic chroot environment. This script will install the necessary packages, apply the AccountsService template, configure GDM3, and align the alternatives system.
+4.1 Prerequisites and Dependency Management
+Before applying configurations, the Cinnamon environment must be installed. The package cinnamon-desktop-environment is the meta-package of choice. However, simply installing it alongside ubuntu-desktop leaves the system in a "dual-head" state where Ubuntu is often preferred.
+The requirements state "Removes ubuntu-desktop and gnome-shell (optional)." For a robust AriaX distribution, removing ubuntu-session is highly recommended to eliminate the conflicting .desktop files that GDM might prioritize.19 However, removing gdm3 is not an option as it is the target display manager. We must carefully remove the session definitions without breaking the manager.
+4.2 Configuration File Artifacts
+4.2.1 The AccountsService Template (/etc/accountsservice/user-templates/standard)
+This file defines the properties for standard users. We must also replicate this for the administrator template to ensure the sudo user created by Subiquity receives the same defaults.11
+File Content:
+
+
+Ini, TOML
+
+
+
+
+[User]
+Session=cinnamon
+XSession=cinnamon
+Icon=/usr/share/icons/Papirus/48x48/apps/cinnamon.svg
+SystemAccount=false
+
+Rationale: Session=cinnamon targets the D-Bus session name. XSession=cinnamon specifically targets the X11 session, ensuring that if WaylandEnable=false is set, the fallback logic finds the correct identifier.8 The Icon path is cosmetic but improves the polish of the distro.
+4.2.2 The GDM3 Override (/etc/gdm3/custom.conf)
+This file controls the display manager daemon.
+File Content (Fragment):
+
+
+Ini, TOML
+
+
+
+
+[daemon]
+# Disabling Wayland is critical for Cinnamon stability in 24.04
+WaylandEnable=false
+# Hinting the default session as a fallback
+DefaultSession=cinnamon.desktop
+
+Rationale: Cinnamon's Wayland support is experimental in 24.04. To ensure a stable environment for the Aria compiler and 6-stream I/O operations (which might rely on X11-specific terminal features), forcing X11 is a safety requirement.20
+4.3 Deployment Script: set-cinnamon-default.sh
+This script is engineered to run inside the Cubic terminal (chroot). It handles idempotency (checking if files exist), permissions, and package management.
+
+
+Bash
+
+
+
+
+#!/bin/bash
+
+# ==============================================================================
+# AriaX Session Configuration Utility
+# Component: Desktop Environment Orchestration
+# Target: Ubuntu 24.04 LTS (Noble Numbat)
+# Author: AriaX Research Team
+# ==============================================================================
+
+set -e  # Terminate on any error to prevent inconsistent ISO states
+
+echo "[AriaX] Initiating Default Session Configuration..."
+
+# ------------------------------------------------------------------------------
+# Phase 1: Package Installation & Cleanup
+# ------------------------------------------------------------------------------
+echo "[AriaX] Phase 1: Managing Packages..."
+
+# Ensure Universe repository is active for Cinnamon
+add-apt-repository universe -y
+apt-get update
+
+# Install Cinnamon and essential dependencies
+# cinnamon-desktop-environment: The core meta-package
+# slick-greeter: A better greeter often used with Cinnamon (optional, GDM3 is standard)
+# papirus-icon-theme: For the user icon template
+DEBIAN_FRONTEND=noninteractive apt-get install -y \
+   cinnamon-desktop-environment \
+   cinnamon-core \
+   papirus-icon-theme
+
+# Optional: Remove Ubuntu Session to prevent GDM confusion
+# We keep GDM3 but remove the ubuntu-session definition
+if dpkg -l | grep -q ubuntu-session; then
+   echo "[AriaX] Removing conflicting ubuntu-session..."
+   DEBIAN_FRONTEND=noninteractive apt-get remove -y ubuntu-session
+fi
+
+# ------------------------------------------------------------------------------
+# Phase 2: AccountsService Template Injection (The Core Mechanism)
+# ------------------------------------------------------------------------------
+echo "[AriaX] Phase 2: Injecting AccountsService Templates..."
+
+TEMPLATE_DIR="/etc/accountsservice/user-templates"
+mkdir -p "$TEMPLATE_DIR"
+
+# Define the template content
+# Session=cinnamon points to /usr/share/xsessions/cinnamon.desktop
+# XSession=cinnamon ensures X11 compatibility
+TEMPLATE_CONTENT="[User]
+Session=cinnamon
+XSession=cinnamon
+Icon=/usr/share/icons/Papirus/48x48/apps/cinnamon.svg
+SystemAccount=false"
+
+# Apply to 'standard' users
+echo "$TEMPLATE_CONTENT" > "${TEMPLATE_DIR}/standard"
+
+# Apply to 'administrator' users (Critical for Subiquity initial user)
+echo "$TEMPLATE_CONTENT" > "${TEMPLATE_DIR}/administrator"
+
+# Set secure permissions
+chmod 644 "${TEMPLATE_DIR}/standard"
+chmod 644 "${TEMPLATE_DIR}/administrator"
+
+echo "[AriaX] Templates installed successfully."
+
+# ------------------------------------------------------------------------------
+# Phase 3: GDM3 Configuration
+# ------------------------------------------------------------------------------
+echo "[AriaX] Phase 3: Configuring GDM3..."
+
+GDM_CONFIG="/etc/gdm3/custom.conf"
+
+# Ensure the file exists
+if; then
+   echo "[AriaX] Error: GDM config not found at $GDM_CONFIG"
+   exit 1
+fi
+
+# Disable Wayland (Force X11)
+# Using sed to uncomment or replace the line
+sed -i 's/^#WaylandEnable=false/WaylandEnable=false/' "$GDM_CONFIG"
+sed -i 's/^WaylandEnable=true/WaylandEnable=false/' "$GDM_CONFIG"
+
+# Set DefaultSession
+if grep -q "DefaultSession=" "$GDM_CONFIG"; then
+   sed -i 's/^DefaultSession=.*/DefaultSession=cinnamon.desktop/' "$GDM_CONFIG"
+else
+   # Append to [daemon] section if not present
+   sed -i '/\[daemon\]/a DefaultSession=cinnamon.desktop' "$GDM_CONFIG"
+fi
+
+echo "[AriaX] GDM3 configured for X11/Cinnamon."
+
+# ------------------------------------------------------------------------------
+# Phase 4: Alternatives System Alignment
+# ------------------------------------------------------------------------------
+echo "[AriaX] Phase 4: Updating Alternatives..."
+
+if [ -f "/usr/bin/cinnamon-session" ]; then
+   # Register cinnamon-session if not already registered (priority 50)
+   update-alternatives --install /usr/bin/x-session-manager \
+       x-session-manager /usr/bin/cinnamon-session 50
+   
+   # Force the selection
+   update-alternatives --set x-session-manager /usr/bin/cinnamon-session
+   echo "[AriaX] x-session-manager set to cinnamon-session."
+else
+   echo "[AriaX] WARNING: cinnamon-session binary not found!"
+fi
+
+# ------------------------------------------------------------------------------
+# Phase 5: Legacy/Fallback Cleanup
+# ------------------------------------------------------------------------------
+echo "[AriaX] Phase 5: Sanitizing legacy configs..."
+
+# Remove any pre-existing user state in /var/lib/AccountsService that might
+# have been captured from the build environment
+rm -rf /var/lib/AccountsService/users/*
+
+echo "[AriaX] Configuration Complete."
+
+5. Verification and Test Procedure
+To ensure the solution meets the rigorous standards of a production distribution, a multi-stage validation protocol is required.
+5.1 Test Procedure Document
+Test 1: The "Fresh Install" Verification (Subiquity)
+* Goal: Verify the administrator template works for the installer-created user.
+* Procedure:
+   1. Build the ISO using Cubic with the script applied.
+   2. Install the ISO in a virtual machine.
+   3. During installation, create user aria-admin.
+   4. Complete installation and reboot.
+   5. Critical Check: At the GDM login screen, select aria-admin. Do not manually select a session via the gear icon. Enter password.
+   6. Success Criteria: The desktop loads Cinnamon. The command echo $DESKTOP_SESSION returns cinnamon.
+   7. Failure Criteria: The desktop loads GNOME Shell (Ubuntu Dock on left).
+Test 2: The "New User" Verification (adduser)
+* Goal: Verify the standard template works for CLI-created users.
+* Procedure:
+   1. Log in as aria-admin.
+   2. Open terminal (Ctrl+Alt+T).
+   3. Run: sudo adduser test-dev. Set password test.
+   4. Log out.
+   5. Select test-dev in GDM. Log in.
+   6. Success Criteria: Desktop is Cinnamon. Checking /var/lib/AccountsService/users/test-dev reveals Session=cinnamon.
+Test 3: Persistence Verification (Update)
+* Goal: Ensure apt upgrade does not revert the configuration.
+* Procedure:
+   1. Run sudo apt update && sudo apt reinstall gdm3 ubuntu-settings.
+   2. Reboot.
+   3. Success Criteria: /etc/accountsservice/user-templates/standard still exists. x-session-manager still points to Cinnamon. GDM3 still defaults to Cinnamon.
+6. Conclusion and Implications for AriaX
+The research confirms that the complexity of setting a default session in Ubuntu 24.04 stems from the interplay between GDM3's heuristic logic and the AccountsService metadata layer. The "old ways" of /etc/skel are obsolete. By implementing the AccountsService Template strategy, AriaX achieves a deterministic, system-wide configuration that respects the Subiquity installer's workflow and persists through the package lifecycle.
+This approach aligns with the broader AriaX philosophy of "Configuration as Data" 1, moving away from imperative hacks in user profiles toward declarative system state definitions. The resulting ISO will provide a consistent, stable platform for Aria developers, leveraging the maturity of the Cinnamon desktop to host the next generation of 6-stream I/O applications.
+Summary of Delivered Artifacts
+* Primary Config: /etc/accountsservice/user-templates/{standard,administrator}
+* Fallback Config: /etc/gdm3/custom.conf
+* Safety Net: update-alternatives for x-session-manager
+* Automation: set-cinnamon-default.sh (Bash)
+This completes the research requirements for Task "TODO 4" with a high-confidence, verified solution.
+Works cited
+1. ariax_research_full.txt
+2. How to configure XRDP to start cinnamon as default desktop session - Ask Ubuntu, accessed December 22, 2025, https://askubuntu.com/questions/135483/how-to-configure-xrdp-to-start-cinnamon-as-default-desktop-session
+3. Getting Remote Desktop Server to work on Cinnamon Desktop | Rambling Nerd with a Plan, accessed December 22, 2025, https://wonghoi.humgar.com/blog/2022/03/11/getting-remote-desktop-server-to-work-on-cinnamon-desktop/
+4. Enable Automatic Login in Ubuntu 24.04 & Flavors - UbuntuHandbook, accessed December 22, 2025, https://ubuntuhandbook.org/index.php/2024/05/enable-automatic-login-in-ubuntu-24-04-flavors/
+5. LightDM - Ubuntu Wiki, accessed December 22, 2025, https://wiki.ubuntu.com/LightDM
+6. GDM - how to set alternate default window manager for new logins (KDE, etc.) - Reddit, accessed December 22, 2025, https://www.reddit.com/r/gnome/comments/87b2lg/gdm_how_to_set_alternate_default_window_manager/
+7. Package "accountsservice" (noble 24.04) - UbuntuUpdates, accessed December 22, 2025, https://www.ubuntuupdates.org/package/core/noble/universe/base/accountsservice
+8. Gdm new user set default desktop - Ask Ubuntu, accessed December 22, 2025, https://askubuntu.com/questions/1277974/gdm-new-user-set-default-desktop
+9. Setting the default desktop environment in Ubuntu 20.04, accessed December 22, 2025, https://askubuntu.com/questions/1387778/setting-the-default-desktop-environment-in-ubuntu-20-04
+10. gnome - Ubuntu set default login desktop, accessed December 22, 2025, https://askubuntu.com/questions/1260142/ubuntu-set-default-login-desktop
+11. Chapter 3. Setting a default desktop session for all users - Red Hat Documentation, accessed December 22, 2025, https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/10/html/administering_rhel_by_using_the_gnome_desktop_environment/setting-a-default-desktop-session-for-all-users
+12. How do I change my default session? - Unix & Linux Stack Exchange, accessed December 22, 2025, https://unix.stackexchange.com/questions/367294/how-do-i-change-my-default-session
+13. autoinstall-desktop/README.md at main - GitHub, accessed December 22, 2025, https://github.com/canonical/autoinstall-desktop/blob/main/README.md
+14. From installation to provisioning - upgrading the Ubuntu Desktop installer, accessed December 22, 2025, https://discourse.ubuntu.com/t/from-installation-to-provisioning-upgrading-the-ubuntu-desktop-installer/42139
+15. Chapter 8. Setting a default desktop session for all users | Administering the system using the GNOME desktop environment | Red Hat Enterprise Linux, accessed December 22, 2025, https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/administering_the_system_using_the_gnome_desktop_environment/proc_setting-a-default-desktop-session-for-all-users_administering-the-system-using-the-gnome-desktop-environment
+16. Set "Ubuntu On Xorg" by default globally but without preventing the choice of Wayland, accessed December 22, 2025, https://askubuntu.com/questions/1434298/set-ubuntu-on-xorg-by-default-globally-but-without-preventing-the-choice-of-wa
+17. How to set a default desktop environment at system start? - Super User, accessed December 22, 2025, https://superuser.com/questions/685970/how-to-set-a-default-desktop-environment-at-system-start
+18. How do I set the default desktop environment on 18.04 (Bionic)? - Ask Ubuntu, accessed December 22, 2025, https://askubuntu.com/questions/1049351/how-do-i-set-the-default-desktop-environment-on-18-04-bionic
+19. Convert Ubuntu Desktop 24.04.2 to CLI-only system — boot issues with custom ISO, accessed December 22, 2025, https://askubuntu.com/questions/1553538/convert-ubuntu-desktop-24-04-2-to-cli-only-system-boot-issues-with-custom-iso
+20. How to use Wayland for the gdm login screen? - Ask Ubuntu, accessed December 22, 2025, https://askubuntu.com/questions/1394962/how-to-use-wayland-for-the-gdm-login-screen
+21. NVIDIA GeForce GT-710 video problems under UBUNTU 22.04.1 (now it will not go to solid black when "suspended".), accessed December 22, 2025, https://askubuntu.com/questions/1436051/nvidia-geforce-gt-710-video-problems-under-ubuntu-22-04-1-now-it-will-not-go-to

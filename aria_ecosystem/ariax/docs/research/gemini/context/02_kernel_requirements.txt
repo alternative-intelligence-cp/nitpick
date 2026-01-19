@@ -1,0 +1,93 @@
+AriaX Kernel Modification Requirements
+======================================
+
+TARGET: Linux 6.8 (Ubuntu 24.04 LTS)
+
+CRITICAL FILES TO MODIFY:
+
+1. fs/exec.c - Process Execution Path
+   Function: setup_new_exec()
+   Required: Add aria_ensure_streams() function
+   Purpose: Reserve FDs 3, 4, 5 during execve system call
+   Implementation: Open /dev/null for any missing stream FDs
+   Goal: Guarantee Aria programs never see EBADF on standard streams
+
+2. fs/file.c - File Descriptor Allocation
+   Function: get_unused_fd_flags() / __alloc_fd()
+   Required: Skip FDs 3, 4, 5 during normal allocation
+   Implementation: Define ARIA_MIN_FD 6, modify allocation loop
+   Purpose: Prevent random open() calls from claiming FDs 3-5
+   Goal: Protect reservation before Aria runtime initializes
+
+TECHNICAL CONSTRAINTS:
+
+Allocation Determinism:
+- Kernel must treat FDs 3-5 as reserved system resources
+- Must be robust against O_CLOEXEC flag
+- Must populate with valid stream objects or sanitize to /dev/null
+- Must occur before user-space entry point
+
+Race Conditions:
+- Handle spinlock (files->file_lock) correctly
+- Deal with multi-threaded scenarios (clone with CLONE_FILES)
+- Prevent corruption of file descriptor table
+
+ABI Stability:
+- No changes to syscall interface
+- Transparent to non-Aria programs
+- Must interoperate with SELinux and AppArmor
+
+Performance:
+- Minimal overhead in hot paths
+- Extra check in alloc_fd (if fd < 6, skip)
+- Happens once per file open (not critical path)
+
+SYSTEMD COLLISION ISSUE:
+
+Problem: systemd uses FD 3 as base for socket activation
+- Environment variable: LISTEN_FDS
+- Base FD: SD_LISTEN_FDS_START = 3
+- Direct conflict with Aria's stddbg
+
+Potential Solutions:
+1. Patch systemd to start at FD 6 (upstream resistance likely)
+2. Kernel boot flag: aria_streams=1 (only reserve if enabled)
+3. Process-level detection (detect if binary is Aria executable)
+4. Aria-aware service manager (long-term, complex)
+
+SECURITY CONSIDERATIONS:
+
+Attack Surface:
+- New code in kernel execution path
+- Must not introduce privilege escalation
+- Must handle malformed file descriptor tables gracefully
+
+Audit Requirements:
+- SELinux policy review
+- AppArmor policy review  
+- Security audit before production release
+- Fuzzing of modified kernel code paths
+
+TESTING REQUIREMENTS:
+
+Unit Tests:
+- Verify FD reservation with simple C program
+- Check inheritance across fork/exec
+- Validate CLOEXEC behavior
+
+Integration Tests:
+- Run Aria programs, check stream availability
+- Test with systemd services
+- Verify non-Aria programs unaffected
+
+Stress Tests:
+- Concurrent processes with high FD churn
+- Long-running daemons
+- Memory pressure scenarios
+
+IMPLEMENTATION PRIORITY:
+1. Implement aria_ensure_streams() in fs/exec.c (HIGH)
+2. Modify alloc_fd() in fs/file.c (HIGH)
+3. Handle systemd collision (HIGH - blocker for production)
+4. Security audit (MEDIUM - before any release)
+5. Performance benchmarking (LOW - optimize after functional)

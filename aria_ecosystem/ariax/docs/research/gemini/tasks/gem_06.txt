@@ -1,0 +1,110 @@
+## TODO 6: Aria Debug Adapter Protocol Implementation
+
+**Priority**: LOW (Future feature)
+**Estimated Complexity**: Very High
+**Dependencies**: Requires debugger implementation in aria
+
+### Problem Statement
+The AriaX distribution pre-configures editors (VS Code, Neovim) with debug support via Debug Adapter Protocol (DAP). However, the actual ariadbg debugger and its DAP implementation are not yet specified. This task defines the protocol mapping for Aria-specific features.
+
+### Required Context Files
+
+**From aria repository**:
+1. `docs/info/aria_specs.txt` - Language features (TBB types, wild pointers)
+2. `docs/runtime/MEMORY_MODEL.md` - If exists
+3. Any existing debugger design docs
+
+**From ariax repository**:
+1. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (TODO 6)
+
+**External**:
+- DAP specification: https://microsoft.github.io/debug-adapter-protocol/
+
+### Gemini Prompt
+
+```
+Draft a technical specification for the Aria Debug Adapter (ariadbg) defining how Aria language runtime state maps to the Debug Adapter Protocol (DAP) JSON-RPC messages.
+
+Context: Aria has unique features not present in C/C++:
+- TBB types (tbb8, tbb16, etc.) with special ERR and NaN sentinel values
+- wild keyword for opt-out garbage collection
+- Six-stream I/O topology
+- Memory model with borrow checker
+
+The debugger must expose these features through DAP to editors like VS Code and Neovim.
+
+Specification Requirements:
+
+**1. DAP Messages to Implement**:
+- initialize: Advertise support for Aria-specific features
+- launch/attach: Start debugging an Aria binary (via lli or native)
+- setBreakpoints: File/line breakpoints
+- continue, next, stepIn, stepOut: Standard stepping
+- stackTrace: Show call stack with Aria function names
+- scopes: Local variables, globals, this (if applicable)
+- variables: Retrieve variable values (critical for TBB)
+- evaluate: REPL-like expression evaluation
+
+**2. Aria-Specific Mappings**:
+
+**Variables Request**:
+- For tbb8 variable, return:
+  ```json
+  {
+    "name": "x",
+    "value": "tbb8: 42",
+    "type": "tbb8",
+    "variablesReference": 0
+  }
+  ```
+- If TBB holds ERR sentinel, display as:
+  ```json
+  {
+    "name": "x",
+    "value": "tbb8: ERR (sentinel)",
+    "type": "tbb8",
+    "variablesReference": 0
+  }
+  ```
+- For wild pointers, show:
+  ```json
+  {
+    "name": "ptr",
+    "value": "0x7f... (wild, no borrow check)",
+    "type": "*int32",
+    "variablesReference": 0
+  }
+  ```
+
+**Evaluate Request**:
+- Support Aria expression syntax
+- Handle TBB operations (wrapping, error propagation)
+- Return result with correct type
+
+**Output Events**:
+- Map Aria's six streams to DAP categories:
+  - stdout → "stdout"
+  - stderr → "stderr"
+  - stddbg → "console" (with special marker?)
+  - stddati/stddato → custom category? (may not fit DAP)
+
+**3. Implementation Plan**:
+- What protocol transport? (stdio, TCP, named pipe)
+- Threading model (DAP server on separate thread?)
+- State synchronization with Aria runtime/VM
+- Breakpoint injection mechanism (LLVM JIT modification?)
+
+Deliverable:
+- Formal specification document: "ARIA_DAP_SPEC.md"
+- JSON schema for Aria-specific extension messages
+- Pseudocode for Variables and Evaluate handlers
+- High-level architecture diagram (components, data flow)
+```
+
+### Expected Deliverables
+- `docs/debugger/ARIA_DAP_SPEC.md` - Formal specification
+- JSON schemas for messages
+- Architecture diagram
+- Proof-of-concept implementation plan
+
+---

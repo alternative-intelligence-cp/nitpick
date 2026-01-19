@@ -1,0 +1,65 @@
+## TODO 1: Verify Terminal Emulator FD Preservation
+
+**Priority**: CRITICAL (Can break kernel work)
+**Estimated Complexity**: Medium
+**Dependencies**: None (research task)
+
+### Problem Statement
+Terminal emulators like gnome-terminal (via libvte) may aggressively close file descriptors 3-5 when spawning shells to prevent FD leaks from the GUI process. If the terminal closes these FDs before the shell starts, the kernel's aria_ensure_streams patch may be ineffective, leaving the shell without stddbg/stddati/stddato.
+
+Research indicates VTE may use close_range() to close all FDs above 2. This would defeat the six-stream topology.
+
+### Required Context Files
+
+**From ariax repository**:
+1. `docs/research/gemini/responses/research_033_kernel_bash.txt` - Kernel integration design
+2. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (Section 6)
+
+**From aria repository** (for context):
+1. `docs/info/aria_specs.txt` - Six-stream contract specification
+2. `docs/info/six_stream_design.md` - If exists
+
+**External Research Needed**:
+- VTE library source for Ubuntu 24.04 (libvte-2.91)
+- gnome-terminal source
+- alacritty configuration documentation
+
+### Gemini Prompt
+
+```
+Analyze the file descriptor handling behavior of terminal emulators on Ubuntu 24.04 specifically regarding the spawning of child shells. The AriaX OS project requires file descriptors 3, 4, and 5 to remain open (mapped to /dev/null or appropriate streams) when a shell starts.
+
+Context: The Linux kernel has been patched to preserve these FDs during exec() (see research_033_kernel_bash.txt), but terminal emulators may close them in the parent process before fork/exec.
+
+Research Tasks:
+1. Analyze vte_pty_spawn_async in libvte-2.91 source:
+   - Does it call close_range() or equivalent?
+   - What is the range of FDs closed?
+   - Is there a configuration option to preserve specific FDs?
+
+2. Examine gnome-terminal (or gnome-console on 24.04):
+   - What VTE version does it use?
+   - Does it add additional FD closing beyond VTE?
+   - Can we configure it via GSettings to modify this behavior?
+
+3. Research alternative terminals:
+   - Does alacritty preserve FDs 3-5?
+   - Does kitty or wezterm have configurable FD handling?
+   - What about xterm (legacy but simple)?
+
+4. Provide solutions:
+   - If VTE closes FDs 3-5: Create a patch specification to exempt these FDs
+   - If configurable: Document the configuration method
+   - If unfixable: Recommend a shell wrapper that reopens them immediately
+
+Deliverable: A technical report with source code references, VTE version numbers, and either a patch or a workaround strategy.
+```
+
+### Expected Deliverables
+- Technical report: "VTE_FD_ANALYSIS.md"
+- If patch needed: "vte-preserve-aria-streams.patch"
+- If workaround: Shell wrapper script and integration guide
+- Recommendation for default AriaX terminal emulator
+
+---
+

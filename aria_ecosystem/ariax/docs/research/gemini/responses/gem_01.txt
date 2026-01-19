@@ -1,0 +1,321 @@
+﻿VTE_FD_ANALYSIS: Comprehensive Analysis of Terminal Emulator File Descriptor Preservation Strategies for the AriaX Operating System
+1. Executive Summary
+The AriaX Operating System represents a fundamental evolution in the Unix process model by institutionalizing a Six-Stream I/O Topology. This architecture extends the traditional standard streams (stdin, stdout, stderr) with three dedicated channels: stddbg (telemetry), stddati (binary input), and stddato (binary output). While the Linux kernel has been successfully modified with the aria_ensure_streams patch to prevent runtime panics by sanitizing missing descriptors to /dev/null, a critical discontinuity exists in the user-space session layer.
+Terminal emulators, acting as the primary parents for interactive user shells, have evolved to implement aggressive file descriptor hygiene. Our deep analysis confirms that libvte-2.91, the rendering engine powering gnome-terminal and gnome-console in Ubuntu 24.04, systematically closes all file descriptors beyond the standard three prior to executing child processes. This behavior utilizes the efficient close_range() system call via GLib, effectively severing the connection between the AriaX session manager—which populates FDs 3, 4, and 5 with valid pipes—and the user's shell. Consequently, while the kernel protection prevents the shell from crashing due to EBADF, the shell receives disconnected, null-routed streams, resulting in the silent loss of all telemetry and binary data capabilities.
+This report exhaustively examines the process spawning logic within VTE, GLib, and alternative emulators including Alacritty, Kitty, and WezTerm. The investigation concludes that no mainstream terminal emulator exposes the necessary configuration granularity to preserve arbitrary file descriptors. Therefore, a source-level modification to libvte is identified as the only viable mechanism to guarantee the inheritance of the Aria six-stream topology within a graphical desktop environment. We present a complete specification for this patch, leveraging the underutilized vte_terminal_spawn_with_fds_async API, and recommend gnome-console as the reference implementation. Additionally, we evaluate workaround strategies involving shell wrappers, analyzing their inability to restore true stream connectivity.
+2. Architectural Context: The Six-Stream Topology and the Inheritance Gap
+To fully appreciate the technical challenge posed by terminal emulators, one must first deconstruct the architectural requirements of the AriaX I/O model and the specific mechanics of file descriptor inheritance in the Linux process lifecycle.
+2.1 The AriaX Six-Stream Contract
+The Aria programming language specification mandates a Six-Stream I/O model to resolve the "Noisy Channel" problem that has plagued Unix systems for decades. In the traditional three-stream model, stdout (FD 1) is overloaded; it acts as the carrier for resultant data (e.g., the binary output of a compiler), user interface elements (progress bars), and often diagnostic messages that are not strictly errors. This conflation necessitates complex encoding schemes (Base64) to transmit binary data safely and complicates observability pipelines.1
+AriaX formalizes the separation of concerns by reserving three additional descriptors in the process control block:
+* FD 0 (stdin): Standard Input (Text/Control).
+* FD 1 (stdout): Standard Output (Text/UI).
+* FD 2 (stderr): Standard Error (Critical Failures).
+* FD 3 (stddbg): Standard Debug (Structured Telemetry).
+* FD 4 (stddati): Standard Data In (Raw Binary Pipeline).
+* FD 5 (stddato): Standard Data Out (Raw Binary Pipeline).
+For this topology to function effectively, these file descriptors must represent continuous channels—pipes, sockets, or log files—connected to a consumer (such as the Aria session manager or a logging daemon). The continuity of these channels relies entirely on the Unix process inheritance model: when fork() creates a child process, it duplicates the parent's open file table. When execve() replaces the process image, these descriptors remain open unless the FD_CLOEXEC flag is set.2
+2.2 The Kernel Patch: Sanitization vs. Preservation
+The aria_ensure_streams kernel patch, integrated into fs/exec.c at the setup_new_exec hook, provides a critical safety baseline but does not solve the inheritance problem.1
+The kernel patch logic acts as a sanitizer:
+1. Inspection: During the execve transition, the kernel inspects the file descriptor table of the new process image.
+2. Detection: It checks if slots 3, 4, or 5 are empty (closed).
+3. Intervention: If a slot is empty, the kernel opens /dev/null and assigns it to that descriptor.
+The Crucial Distinction: The kernel patch guarantees that a call to write(3,...) is valid (returns success or a harmless bit-bucket write), preventing the Aria runtime from panicking with EBADF. However, the kernel cannot invent a connection that the parent process destroyed. If the terminal emulator explicitly closes the pipe connected to the session logger on FD 3 before spawning the shell, the kernel sees a closed FD and substitutes /dev/null. The telemetry data is successfully written to the null device, meaning it is effectively lost. Thus, the kernel patch provides stability but not functionality. True functionality requires the parent process (the terminal) to actively preserve the file descriptors.
+2.3 The Adversarial Nature of Modern Process Spawning
+The operating environment for modern Linux applications is increasingly hostile to the concept of "implicit inheritance." Historically, leaking file descriptors into child processes was a common source of security vulnerabilities (e.g., leaking a privileged database connection to an untrusted subprocess) and resource exhaustion bugs.
+In response, modern systems software has adopted a "close-by-default" hygiene policy. This is enforced via two primary mechanisms:
+1. Iterative Closure: The legacy approach involves a loop iterating from FD = 3 up to sysconf(_SC_OPEN_MAX), calling close(FD) on each index.4 This ensures that any descriptor not explicitly whitelisted is destroyed.
+2. The close_range() Syscall: Introduced in Linux 5.9, close_range(first, last, flags) allows a process to close an entire range of file descriptors in a single kernel operation.6 This is highly efficient (O(1)) and is now the preferred method for process sanitization in glib, systemd, and container runtimes.
+Terminal emulators, which are responsible for spawning untrusted user shells, are particularly rigorous in this regard. They must ensure that the shell does not inherit internal file descriptors used by the terminal's GUI toolkit (GTK, Qt) or IPC mechanisms. Unfortunately, this rigorous hygiene targets the exact range (3-5) that AriaX relies upon.
+2.4 The Systemd Conflict
+Further complicating the landscape is the collision with systemd's socket activation protocol. By convention (and hardcoded macro SD_LISTEN_FDS_START), systemd passes socket activation file descriptors starting at FD 3.1 This creates a direct conflict with stddbg. If a terminal emulator were to blindly pass FD 3, and that terminal was itself socket-activated, the shell might inherit a listening socket instead of a debug stream. While AriaX addresses this at the distribution level (likely by patching systemd or shifting the Aria range), the terminal emulator's behavior acts as the gatekeeper for this conflict.
+3. Deep Analysis: LibVTE and Gnome-Terminal
+libvte (Virtual Terminal Emulator) is the foundational library powering the standard GNOME terminal stack (gnome-terminal, gnome-console, xfce4-terminal, guake). As the default terminal infrastructure for Ubuntu 24.04 (Noble Numbat), its behavior is the primary constraint for the AriaX desktop experience.
+3.1 The Spawn Sequence and API Surface
+The execution path for spawning a shell in gnome-terminal is initiated by a call to vte_terminal_spawn_async. Analysis of the libvte-2.91 source code reveals a critical architectural decision in how this API is implemented.
+The public API vte_terminal_spawn_async is defined in src/vtegtk.cc as a convenience wrapper. It delegates immediately to a more capable, but internal-facing function:
+
+
+C++
+
+
+
+
+// src/vtegtk.cc
+void vte_terminal_spawn_async(VteTerminal *terminal,
+                             VtePtyFlags pty_flags,
+                             const char *working_directory,
+                             char **argv,
+                             char **envv,
+                             GSpawnFlags spawn_flags,
+                             //... callbacks...
+                             ) noexcept
+{
+   vte_terminal_spawn_with_fds_async(terminal, 
+                                     pty_flags, 
+                                     working_directory, 
+                                     argv, 
+                                     envv, 
+                                     nullptr, 0,   // source_fds (fds to pass)
+                                     nullptr, 0,   // target_fds (map_to)
+                                     spawn_flags, 
+                                     //... callbacks...
+                                     );
+}
+
+8
+This delegation reveals the root cause of the issue: the standard spawn function explicitly passes nullptr and 0 for the fds arguments. This tells the underlying implementation that zero additional file descriptors should be preserved. Because gnome-terminal only calls this convenience wrapper and does not utilize vte_terminal_spawn_with_fds_async directly, there is no configuration path—GSettings or otherwise—to inject the Aria descriptors.
+3.2 The GLib Backend and close_range
+VTE relies on the GLib library (libglib-2.0) to handle the low-level mechanics of fork() and exec(). Recent updates to GLib have incorporated support for close_range() to improve performance and security.
+When vte_terminal_spawn_with_fds_async is called with no FDs to preserve, the execution flow descends into glib/gspawn.c. The child setup routine performs the following operations between fork() and exec():
+1. Standard Stream Redirection: The logic calls dup2() to map the PTY slave device to stdin (0), stdout (1), and stderr (2).
+2. Hygiene Enforcement: The code then executes a closure routine for all other descriptors. In modern GLib versions (as found in Ubuntu 24.04), this utilizes close_range(3, ~0U, 0).9
+The use of close_range starting at index 3 is definitive. It instructs the kernel to indiscriminately close every file descriptor from 3 to the maximum possible value. This happens before the execve syscall. Consequently, when the kernel executes execve and the Aria patch hook aria_ensure_streams runs, it correctly identifies that FDs 3, 4, and 5 are closed. Adhering to its sanitization logic, the kernel opens /dev/null for them. The shell starts successfully, but with its telemetry lines cut.
+3.3 The vte_terminal_spawn_with_fds_async Opportunity
+The existence of vte_terminal_spawn_with_fds_async 8 in the libvte ABI presents a clear solution path. This function allows the caller to specify two integer arrays:
+* fds: An array of file descriptors in the parent process to be inherited.
+* map_fds: An array of target descriptors in the child process.
+If this function is invoked with fds = and map_fds = , VTE's internal logic (in src/spawn.cc) is designed to:
+1. Clear FD_CLOEXEC: It explicitly unsets the close-on-exec flag for these descriptors using fcntl.
+2. Exempt from Closure: It modifies the closure loop (or close_range parameters) to ensure these specific indices are skipped or re-opened.
+3. Pass to Child: It guarantees they are present when execve is called.
+This API confirms that libvte can support the Aria topology, but the consuming application (gnome-terminal) fails to utilize it. This necessitates a patch to the library itself to force this behavior globally for all VTE-based terminals.
+4. Comparative Analysis: Alternative Terminal Emulators
+If patching the default terminal stack is undesirable, do alternative terminal emulators offer a configuration-based solution? We analyzed Alacritty, Kitty, WezTerm, and XTerm.
+4.1 Alacritty (Rust)
+Alacritty is a high-performance, GPU-accelerated terminal emulator written in Rust.
+* Process Spawning Model: Rust's std::process::Command sets FD_CLOEXEC on all new file descriptors by default.11 This is a safety feature of the language runtime.
+* Configuration: Alacritty uses a YAML or TOML configuration file (alacritty.toml).12 While it allows defining the shell command and args, strict analysis of the documentation and source code confirms there is no configuration option (e.g., keep_fds) to whitelist file descriptors for inheritance.
+* Source Code Reality: To pass FDs in Rust, one must use the CommandExt::pre_exec unsafe block to manually manipulate file descriptors in the child process before exec.11 Snippets suggest Alacritty or its dependencies may explicitly use the close_fds crate, which wraps close_range or closefrom 11, further enforcing the "scorched earth" policy regarding FDs.
+* Conclusion: Alacritty effectively destroys the Aria topology by default. Enabling it would require forking the codebase and injecting a pre_exec closure in src/tty/unix.rs.
+4.2 Kitty (Python/C)
+Kitty uses a hybrid architecture with a C core and Python logic for UI and orchestration.
+* Process Spawning Model: Kitty's process spawning is handled by the boss.py module, which utilizes Python's subprocess module or internal C extensions.15
+* Python's pass_fds: Python 3.2+ introduced the pass_fds argument to subprocess.Popen.16 This allows explicitly listing FDs to preserve.
+* Configuration: Kitty's kitty.conf is extensive 18, offering options like close_on_child_death.19 However, there is no exposed setting to populate the pass_fds list for the child shell.
+* Internal Handling: Source analysis of boss.py 15 shows that Kitty builds a pass_fds list internally, but only for its own IPC sockets (remote control) and potentially stdout/stderr redirection. It does not blindly inherit FDs 3-5 from the environment.
+* Conclusion: While the underlying technology (Python) supports it easily, Kitty does not expose this capability to the user. A patch to boss.py would be simpler than a C/Rust patch but is still a code modification.
+4.3 WezTerm (Lua/Rust)
+WezTerm uses Lua for configuration and Rust for its backend.
+* Process Spawning: Like Alacritty, it relies on Rust's process primitives. The wezterm.lua configuration exposes a SpawnCommand struct.20
+* Configuration: The SpawnCommand allows setting environment variables (set_environment_variables), working directory (cwd), and arguments. It notably lacks any field for file descriptors.
+* Source Behavior: WezTerm's pty crate implementation explicitly clears signal dispositions and likely enforces FD hygiene in its pre_exec block.21
+* Conclusion: WezTerm does not support arbitrary FD inheritance out of the box.
+4.4 Xterm (Legacy C)
+Xterm is the reference implementation for X11 terminals.
+* Behavior: Xterm predates close_range but implements the classic for (i=3; i<MAX; i++) close(i) loop to ensure it doesn't leak connection handles to the X server.22
+* Conclusion: Legacy codebase, difficult to configure, and aggressive FD closure makes it unsuitable without significant modification.
+4.5 Summary of Findings
+Terminal Emulator
+	Language
+	Spawning Mechanism
+	Default FD Behavior
+	Configurable FD Inheritance?
+	AriaX Viability
+	Gnome-Terminal
+	C++
+	libvte -> GLib
+	close_range(3,...)
+	No
+	High (Via LibVTE Patch)
+	Gnome-Console
+	C++
+	libvte -> GLib
+	close_range(3,...)
+	No
+	High (Via LibVTE Patch)
+	Alacritty
+	Rust
+	std::process
+	FD_CLOEXEC on all
+	No
+	Medium (Requires Code Fork)
+	Kitty
+	Python/C
+	subprocess.Popen
+	close_fds=True
+	No
+	Medium (Requires Python Patch)
+	WezTerm
+	Rust
+	std::process
+	FD_CLOEXEC on all
+	No
+	Medium (Requires Code Fork)
+	5. Technical Solution: The VTE Preservation Patch
+Since gnome-terminal (and the modern gnome-console) relies on the shared library libvte, patching this single library provides a comprehensive fix for the entire Ubuntu desktop environment. This is the recommended strategy for AriaX.
+5.1 Patch Specification
+The patch targets src/vtegtk.cc, effectively overriding the behavior of the default vte_terminal_spawn_async wrapper. Instead of passing nullptr, it will inspect the parent process's file descriptor table and explicitly request preservation of FDs 3, 4, and 5 if they are open.
+Filename: vte-preserve-aria-streams.patch
+
+
+C++
+
+
+
+
+--- a/src/vtegtk.cc
++++ b/src/vtegtk.cc
+@@ -23,6 +23,7 @@
+#include "vtegtk.hh"
+#include "cxx-utils.hh"
+#include "gobject-glue.hh"
++#include <fcntl.h> // Required for fcntl()
+
+/*... existing includes... */
+
+@@ -3450,13 +3451,36 @@
+                            VteTerminalSpawnAsyncCallback callback,
+                            gpointer user_data) noexcept
+{
++        /* ARIAX PATCH: Auto-detect and preserve Aria Six-Stream Topology */
++        int aria_fds;
++        int aria_map;
++        int n_aria_fds = 0;
++
++        /* Check FD 3 (stddbg) - Standard Debug / Telemetry */
++        if (fcntl(3, F_GETFD)!= -1) {
++                aria_fds[n_aria_fds] = 3;
++                aria_map[n_aria_fds] = 3;
++                n_aria_fds++;
++        }
++        /* Check FD 4 (stddati) - Standard Data Input */
++        if (fcntl(4, F_GETFD)!= -1) {
++                aria_fds[n_aria_fds] = 4;
++                aria_map[n_aria_fds] = 4;
++                n_aria_fds++;
++        }
++        /* Check FD 5 (stddato) - Standard Data Output */
++        if (fcntl(5, F_GETFD)!= -1) {
++                aria_fds[n_aria_fds] = 5;
++                aria_map[n_aria_fds] = 5;
++                n_aria_fds++;
++        }
++
+        vte_terminal_spawn_with_fds_async(terminal,
+                                          pty_flags,
+                                          working_directory,
+                                          argv,
+                                          envv,
+-                                          nullptr, 0,
+-                                          nullptr, 0,
++                                          (n_aria_fds > 0)? aria_fds : nullptr, n_aria_fds,
++                                          (n_aria_fds > 0)? aria_map : nullptr, n_aria_fds,
+                                          spawn_flags,
+                                          child_setup,
+                                          child_setup_data,
+@@ -3465,6 +3489,7 @@
+                                          cancellable,
+                                          callback,
+                                          user_data);
++        /* ARIAX PATCH END */
+}
+
+5.2 Patch Mechanics and Safety
+1. Runtime Detection: The patch uses fcntl(fd, F_GETFD) to check if FDs 3, 4, and 5 are actually valid in the terminal process. This ensures that if the terminal was started without the Aria streams (e.g., in a legacy environment), the patch degrades gracefully and passes nullptr, preserving standard behavior.
+2. Identity Mapping: It constructs mapping arrays where source equals target (e.g., 3 -> 3). This maintains the topological invariants expected by the Aria runtime.
+3. API Utilization: By routing these arrays into vte_terminal_spawn_with_fds_async, we leverage VTE's robust internal logic which handles the clearing of FD_CLOEXEC flags and exempts these specific FDs from the close_range hygiene pass.
+4. Security Impact: This patch specifically whitelists only FDs 3, 4, and 5. It does not open the door for leaking arbitrary descriptors (like sockets or database handles) that might reside at higher indices. This constrained scope minimizes security risks.
+5.3 Deployment Strategy for AriaX
+To deploy this fix within the AriaX distribution (based on Ubuntu 24.04), the libvte-2.91-0 package must be rebuilt and pinned.
+Build and Installation Procedure:
+1. Source Enablement:
+Bash
+sudo sed -i 's/^# deb-src/deb-src/' /etc/apt/sources.list
+sudo apt update
+
+2. Dependency Installation:
+Bash
+sudo apt build-dep libvte-2.91-0
+
+3. Source Acquisition:
+Bash
+apt source libvte-2.91-0
+cd vte2.91-*
+
+4. Patch Application:
+Bash
+patch -p1 < vte-preserve-aria-streams.patch
+
+5. Package Regeneration:
+Bash
+debuild -b -uc -us
+
+6. Installation and Pinning:
+Bash
+sudo apt install../libvte-2.91-0_*.deb../gir1.2-vte-2.91_*.deb
+sudo apt-mark hold libvte-2.91-0
+
+6. Workaround Strategy: The Shell Wrapper
+A workaround using a shell wrapper script (aria-shim) was investigated. While it can theoretically satisfy the kernel's EBADF check, it fundamentally fails to achieve the architectural goals of AriaX.
+6.1 The "Shim" Concept
+The user would configure their terminal to execute /usr/bin/aria-shim instead of /bin/bash.
+Draft Wrapper Script (aria-shim):
+
+
+Bash
+
+
+
+
+#!/bin/bash
+# aria-shim: Attempt to restore streams
+
+# 1. Initialize streams if closed to satisfy kernel EBADF check
+# Check if FD 3 is open
+if! { true >&3; } 2>/dev/null; then
+   exec 3> /dev/null  # Or a local log file: $HOME/.aria/debug.log
+fi
+
+# Check if FD 4 is open
+if! { true <&4; } 2>/dev/null; then
+   exec 4< /dev/null
+fi
+
+# Check if FD 5 is open
+if! { true >&5; } 2>/dev/null; then
+   exec 5> /dev/null
+fi
+
+# 2. Execute the real shell
+exec /bin/bash
+
+6.2 The Connectivity Failure
+This wrapper solves the Sanitization problem: the shell will start, and writes to stddbg will not crash. However, it fails the Connectivity requirement.
+   * The Broken Chain: The terminal emulator (parent) has already closed the original pipes connecting to the session manager.
+   * Local Scope: The wrapper runs as a child of the terminal. Any file it opens (like /dev/null or a local log file) is local to that shell session. It cannot magically re-attach to the global system telemetry pipe because the file descriptor representing that pipe was destroyed by libvte before the shim ever started.
+   * Result: The user gets a shell that doesn't crash, but their debug logs go nowhere (or to a local file), breaking the centralized observability model of AriaX.
+Conclusion: The wrapper is a useful stopgap for preventing crashes on unpatched systems, but it cannot replace the VTE patch for a fully functional AriaX environment.
+7. Conclusions and Roadmap
+The default behavior of modern terminal emulators, driven by security and hygiene concerns, poses a significant obstacle to the AriaX Six-Stream I/O topology. Specifically, the libvte library's use of close_range effectively dismantles the custom I/O environment orchestrated by the AriaX session manager.
+The kernel patch aria_ensure_streams is a necessary but insufficient component; it prevents crashes but effectively validates the disconnection. To restore the data pipelines, user-space preservation is mandatory.
+Final Recommendations:
+   1. Adopt the VTE Patch: The source-level patch to src/vtegtk.cc is the only robust solution. It leverages existing VTE API capabilities (vte_terminal_spawn_with_fds_async) to selectively preserve FDs 3, 4, and 5.
+   2. Standardize on Gnome-Console: AriaX should ship gnome-console linked against the patched libvte. Its minimal codebase reduces the surface area for other interference while benefiting fully from the shared library fix.
+   3. Reject Workarounds: Do not rely on shell wrappers for the default experience, as they result in "Silent Failure" of the telemetry system.
+   4. System Integration: Ensure the modified libvte package is pinned in the AriaX apt repositories to prevent regression during system updates.
+By implementing this user-space fix alongside the kernel modification, AriaX ensures that the Six-Stream Topology is a pervasive reality, allowing developers to trust that stddbg, stddati, and stddato are always available and always connected.
+Works cited
+   1. ariax_research_full.txt
+   2. What does the FD_CLOEXEC fcntl() flag do? - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/6125068/what-does-the-fd-cloexec-fcntl-flag-do
+   3. In C, are file descriptors that the child closes also closed in the parent? - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/35447474/in-c-are-file-descriptors-that-the-child-closes-also-closed-in-the-parent
+   4. Close all file descriptors in bash - Unix & Linux Stack Exchange, accessed December 22, 2025, https://unix.stackexchange.com/questions/123413/close-all-file-descriptors-in-bash
+   5. Getting the highest allocated file descriptor - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/899038/getting-the-highest-allocated-file-descriptor
+   6. close_range(2) - Linux manual page - man7.org, accessed December 22, 2025, https://man7.org/linux/man-pages/man2/close_range.2.html
+   7. 8.4 Release Notes | Red Hat Enterprise Linux | 8, accessed December 22, 2025, https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/8/html-single/8.4_release_notes/index
+   8. src/vtegtk.cc · master · GNOME / vte - GitLab, accessed December 22, 2025, https://gitlab.gnome.org/GNOME/vte/-/blob/master/src/vtegtk.cc
+   9. accessed December 22, 2025, https://git.openjdk.org/jfx/pull/768.diff
+   10. glib/glib/gspawn.c at main · frida/glib - GitHub, accessed December 22, 2025, https://github.com/frida/glib/blob/master/glib/gspawn.c
+   11. Crate close_fds - Rust - Docs.rs, accessed December 22, 2025, https://docs.rs/close_fds/latest/close_fds/
+   12. Alacritty - ArchWiki, accessed December 22, 2025, https://wiki.archlinux.org/title/Alacritty
+   13. Alacritty - TOML configuration file format., accessed December 22, 2025, https://alacritty.org/config-alacritty.html
+   14. accessed December 22, 2025, https://raw.githubusercontent.com/kornelski/crev-proofs/HEAD/debian.toml?utm_source=feedly
+   15. kitty/kitty/boss.py at master · kovidgoyal/kitty - GitHub, accessed December 22, 2025, https://github.com/kovidgoyal/kitty/blob/master/kitty/boss.py
+   16. subprocess — Subprocess management — Python 3.14.2 documentation, accessed December 22, 2025, https://docs.python.org/3/library/subprocess.html
+   17. Why does `script.py <(cat *.gz)` work with subprocess.Popen in python 2 but not python 3?, accessed December 22, 2025, https://stackoverflow.com/questions/57098553/why-does-script-py-cat-gz-work-with-subprocess-popen-in-python-2-but-not
+   18. kitty.conf Documentation - Ubuntu Manpage, accessed December 22, 2025, https://manpages.ubuntu.com/manpages/jammy/man5/kitty.conf.5.html
+   19. kitty.conf - Kovid's software projects, accessed December 22, 2025, https://sw.kovidgoyal.net/kitty/conf/
+   20. object: SpawnCommand - Wez's Terminal Emulator, accessed December 22, 2025, https://wezterm.org/config/lua/SpawnCommand.html
+   21. wezterm/pty/src/unix.rs at main - GitHub, accessed December 22, 2025, https://github.com/wez/wezterm/blob/main/pty/src/unix.rs
+   22. File descriptor handling changes in 2.6.27 - LWN.net, accessed December 22, 2025, https://lwn.net/Articles/292843/

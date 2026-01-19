@@ -1,0 +1,308 @@
+﻿LLVM_STABILITY_STRATEGY.md: Architectural Strategy for LLVM 20 Snapshot ABI Stability in AriaX
+1. Executive Summary
+The AriaX Linux distribution represents a novel paradigm in operating system design, integrating the Aria programming language’s specific runtime requirements—such as the Six-Stream I/O topology and hybrid memory model—directly into the kernel and userspace subsystems. A critical dependency in this ecosystem is the Aria compiler (ariac), which translates Aria source code into machine instructions via the LLVM compiler infrastructure. The current architectural specification mandates the use of LLVM 20+, a development branch currently available only via volatile nightly snapshots from apt.llvm.org.1
+This dependency introduces a significant risk to system stability. Development snapshots of LLVM explicitly disavow Application Binary Interface (ABI) stability. Consequently, a routine system update (e.g., apt-get upgrade) that pulls a newer LLVM 20 snapshot can silently alter the internal layout of C++ classes and virtual tables exported by the shared library (libLLVM-20.so). If ariac is dynamically linked against this library, such an update will inevitably render the compiler non-functional, manifesting as runtime crashes (SIGSEGV) or loader errors (undefined symbol), thereby breaking the entire development toolchain of the distribution.1
+This report provides an exhaustive technical analysis of four potential mitigation strategies: Static Linking, Version Pinning, Vendored LLVM, and Containerization (AppImage). The evaluation criteria include build-time complexity, runtime performance, binary size, maintenance overhead, and resilience to upstream volatility.
+Strategic Recommendation: The analysis concludes unequivocally that Strategy 1: Static Linking is the optimal and necessary solution for AriaX. By embedding the specific LLVM object code required by ariac directly into the executable binary, the compiler achieves hermetic isolation from the system’s shared libraries. This approach decouples the language toolchain’s stability from the operating system’s package management cadence, allowing AriaX to track the bleeding edge of LLVM development without exposing users to the inherent fragility of nightly ABI changes. While this increases the binary size of the compiler, the cost is negligible compared to the catastrophic failure modes inherent in dynamic linking against unstable snapshots.
+________________
+2. Architectural Context and System Dependencies
+To understand the severity of the LLVM stability issue, one must first analyze the complex interdependencies between the Aria language architecture and the underlying LLVM infrastructure. The ariac compiler is not merely a consumer of a stable API; it is deeply entangled with the internal representations of the LLVM backend.
+2.1 The Aria Compiler Architecture
+The Aria compiler backend, as detailed in src/backend/codegen_context.h and src/backend/codegen.cpp, serves as the bridge between the high-level semantic constructs of Aria (Twisted Balanced Binary arithmetic, Wild/GC memory models) and the low-level Intermediate Representation (IR) of LLVM.2
+The CodeGenContext class acts as the central state machine for this translation. It manages the lifecycle of core LLVM objects, including llvm::LLVMContext, llvm::Module, and llvm::IRBuilder<>.
+* Deep C++ API Usage: The compiler does not interact with LLVM via a stable C interface (like libllvm-c). Instead, it instantiates complex C++ templates and inherits from LLVM classes. For example, the Symbol structure in CodeGenContext maps Aria variable names directly to llvm::Value* pointers.
+* TBB Integration: The implementation of Twisted Balanced Binary (TBB) arithmetic relies on specific intrinsic generation logic. The TBBLowerer emits sequences of instructions that check for error sentinels and handle "sticky" error propagation.2 This logic depends on the precise behavior of llvm::IRBuilder methods (e.g., CreateICmpEQ, CreateSelect). Any change in the signature or memory layout of these builder methods in a newer LLVM snapshot would break the TBB lowering pass.
+* Memory Model Lowering: Aria’s hybrid memory model (Wild vs. GC) requires the backend to emit specific pointer handling code. Debug builds use "Fat Pointers" (struct.aria_fat_pointer), defined as a 32-byte struct containing the pointer, base, size, and allocation ID.2 The generation of these structures involves direct manipulation of llvm::StructType and llvm::Type. If the internal representation of llvm::Type changes—a common occurrence in the LLVM development branch—the compiler’s type mapping logic will fail at runtime if dynamically linked.
+2.2 The LLVM 20 Snapshot Ecosystem
+The target toolchain, LLVM 20, represents the "tip of tree" development branch of the LLVM project.1 Unlike stable releases (e.g., LLVM 18.1), where the API and ABI are frozen for the duration of the release cycle, the development branch is a moving target.
+* Volatility: Commits are merged into the main branch continuously. These commits frequently involve refactoring core classes (like llvm::Value, llvm::Instruction, or llvm::Type) to optimize memory usage or support new architectures.
+* No ABI Guarantees: The LLVM project explicitly states that no ABI compatibility is maintained between builds of the development branch. A class layout change in llvm::Module in revision X makes it binary-incompatible with revision X-1.
+* Distribution via Apt: The apt.llvm.org repository packages these snapshots. Crucially, the package naming convention (llvm-20) does not distinguish between different snapshots at the package name level.1 An apt-get upgrade effectively replaces the installed libLLVM-20.so with a newer, binary-incompatible version, without changing the SONAME in a way that allows coexistence.
+2.3 The AriaX Distribution Environment
+AriaX is a specialized Linux distribution designed to support the unique requirements of the Aria language, specifically the Six-Stream I/O topology (stdin, stdout, stderr, stddbg, stddati, stddato).2
+* Kernel Integration: The distribution relies on a modified Linux 6.8 kernel to enforce the reservation of file descriptors 3, 4, and 5 for Aria streams.2 The stability of the userspace tools (including the compiler) is paramount to validating these kernel modifications.
+* Systemd Collision: The distribution already faces significant integration challenges, such as the collision between stddbg (FD 3) and systemd's socket activation mechanism.2 Adding toolchain instability to this mix would make the platform impossible to maintain. If the compiler breaks due to an LLVM update, developers cannot rebuild the kernel modules or system utilities required to debug the systemd issues.
+________________
+3. Theoretical Analysis of ABI Instability
+To fully appreciate the necessity of static linking, one must understand the mechanisms of Application Binary Interface (ABI) failure in C++ applications. Unlike C, where ABI is largely determined by struct layouts and function calling conventions, C++ ABI involves complex interactions including virtual table (vtable) layouts, name mangling, and template instantiation.
+3.1 The Fragile Base Class Problem and Vtables
+The Aria compiler code uses inheritance and polymorphism inherent in the LLVM API. When ariac is compiled against Header Set A (Snapshot A), the compiler generates machine code that hardcodes offsets into virtual tables.
+* Scenario: Consider the llvm::IRBuilderBase class. ariac calls a virtual method CreateAdd. In Snapshot A, this method might be the 15th entry in the vtable.
+* Breakage: In Snapshot B, an LLVM developer adds a new virtual method CreateUnaryOp before CreateAdd in the class definition. In the new libLLVM-20.so, CreateAdd is now the 16th entry.
+* Runtime Failure: When the old ariac binary (linked against Snapshot A) runs against the new library (Snapshot B), it jumps to the 15th offset in the vtable. It ends up executing CreateUnaryOp instead of CreateAdd, passing arguments intended for an addition operation. This results in undefined behavior, memory corruption, or an immediate segfault.
+3.2 Name Mangling and Symbol Resolution
+C++ compilers "mangle" function names to encode argument types and namespaces (e.g., _ZN4llvm9IRBuilder...).
+* Signature Changes: If LLVM refactors a function to take an additional optional parameter, or changes a const std::string& argument to llvm::StringRef, the mangled name changes.
+* Linker Error: The dynamic linker (ld.so) will fail to find the symbol required by ariac in the new shared library. The user sees:
+ariac: symbol lookup error: ariac: undefined symbol: _ZN4llvm...
+This renders the compiler executable completely unusable until it is recompiled against the new library.
+3.3 Template Instantiation Divergence
+LLVM relies heavily on templates. When ariac is compiled, it instantiates templates based on the headers present at build time. If the implementation of a template in the library headers changes (e.g., llvm::SmallVector), but the shared library contains explicit instantiations or helper functions that correspond to the new implementation, the ariac binary (using the old object layout) will interact incorrectly with the library code. This type of memory corruption is subtle, often silent, and extremely difficult to debug.
+________________
+4. Strategic Evaluation of Mitigation Options
+We have evaluated four strategies to address this instability. The following detailed analysis weighs the technical trade-offs of each.
+4.1 Strategy 1: Static Linking (Recommended)
+Definition:
+Static linking involves configuring the ariac build system to link against the LLVM static archives (libLLVMCore.a, libLLVMSupport.a, etc.) instead of the shared object (libLLVM-20.so). The linker copies the machine code for every used LLVM function directly into the ariac executable.
+Pros:
+   1. Hermetic Stability: The resulting binary contains all its LLVM dependencies. It is completely immune to changes in the system’s libLLVM-20.so. The system administrator can upgrade llvm-20-dev packages daily without affecting the functionality of the installed ariac.
+   2. Deployment Portability: The binary depends only on the system C library (glibc) and C++ standard library (libstdc++), which have extremely stable ABIs. This allows the same ariac binary to run on slightly different versions of the OS if needed.
+   3. Optimization Potential: Static linking allows the linker to perform Link-Time Optimization (LTO) across the boundary between Aria code and LLVM code. Unused LLVM functions are stripped out, and cross-module inlining becomes possible, potentially improving compiler performance.
+Cons:
+   1. Binary Size: LLVM is a massive library. A statically linked binary is significantly larger. However, as detailed in Section 7, modern strip tools and dead-code elimination effectively mitigate this.
+   2. Link Time Resources: Linking a static binary with LLVM requires substantial RAM (often >8GB) and CPU time. This impacts the developer inner loop but is a one-time cost for the CI/CD pipeline building the ISO.
+Feasibility Analysis:
+The llvm-20-dev packages provided by apt.llvm.org standardly include static libraries (.a files) alongside headers.1 While some distributions occasionally separate these into llvm-static packages, the Debian/Ubuntu ecosystem typically bundles them. Snippets indicate that users have historically encountered issues with missing static libraries for specific components (like libPolly.a or libLLVMCore.a due to packaging bugs) 3, but robust CMake configuration can handle these edge cases (see Section 6).
+Verdict: This is the only strategy that guarantees the required stability for a core system component.
+4.2 Strategy 2: Version Pinning (Rejected)
+Definition:
+This strategy utilizes the APT preference system (/etc/apt/preferences) to lock the installed llvm-20 packages to a specific version hash (e.g., 1:20.0.0~++20251211...).
+Mechanism:
+Package: llvm-20*
+Pin: version 1:20.0.0~++20251211*
+Pin-Priority: 1001
+Critical Failure Mode: The Retention Policy Problem
+The fatal flaw in this strategy lies in the retention policy of the apt.llvm.org repository. It is a snapshot repository, not an archival storage service.
+   * Aggressive Pruning: To save bandwidth and storage, older nightly builds are routinely deleted as new ones are uploaded.5
+   * The "404" Scenario: If AriaX pins a specific version in its ISO configuration, that version may exist today. However, two weeks later, when a user attempts to install AriaX or creates a derivative container, apt-get install will fail because the pinned version no longer exists on the server. The user receives a 404 Not Found error.
+   * Manual Intervention: To fix this, the user (or the AriaX maintainers) must manually update the pin to the current snapshot and rebuild ariac. This creates a high-maintenance "treadmill" that breaks automation.
+Verdict: Rejected due to incompatibility with upstream repository policies.
+4.3 Strategy 3: Vendored LLVM (Rejected)
+Definition:
+This strategy involves downloading the full LLVM source code tree and compiling it from scratch as part of the AriaX build pipeline, installing it to a custom, isolated prefix (e.g., /opt/llvm-aria). ariac is then built against this custom installation using RPATH to find the libraries.
+Pros:
+   1. Total Control: The AriaX team controls the exact commit hash of LLVM. Stability is guaranteed.
+   2. Shared Library Efficiency: If multiple Aria tools (compiler, language server, formatter) are developed, they can share the single /opt/llvm-aria/lib/libLLVM.so, saving disk space compared to statically linking LLVM into each tool.
+Cons:
+   1. Massive Build Cost: Compiling LLVM from source is one of the most resource-intensive tasks in software engineering. On a standard CI runner, a full LLVM build can take 1 to 4 hours. Adding this overhead to every ISO build or compiler update cycle is prohibitive.
+   2. Maintenance Burden: The AriaX team becomes effectively a package maintainer for a custom LLVM distribution. Security patches and build fixes must be applied manually.
+   3. Complexity: Bootstrapping a custom LLVM requires managing complex CMake invocations, target architecture flags, and verifying self-hosting capabilities.
+Verdict: Rejected. The computational cost outweighs the benefits, especially when static linking achieves the same stability goal with zero compilation overhead for the LLVM portion (since we use pre-built static libs).
+4.4 Strategy 4: AppImage or Snap (Rejected)
+Definition:
+This strategy involves distributing ariac as a self-contained container image (AppImage) that bundles all dependencies, including libLLVM.so and libc.
+Pros:
+   1. Isolation: Complete decoupling from the host system libraries.
+Cons:
+   1. System Integration Friction: ariac is a compiler. It must read system headers (/usr/include), link against system libraries (/usr/lib), and potentially interact with kernel headers. Running inside a containerized environment (AppImage/Snap) introduces filesystem namespaces and sandboxing that actively interfere with these tasks. Configuring a "classic" confinement Snap or an AppImage that transparently handles host system paths adds unnecessary complexity.
+   2. Runtime Overhead: AppImages use FUSE (Filesystem in Userspace) to mount the compressed image. This introduces startup latency and CPU overhead on every compiler invocation. For a tool meant to be run thousands of times in a build loop, this is suboptimal.
+   3. Redundancy: An AppImage is essentially just a complicated way to achieve static linking (bundling libs) but with added runtime costs.
+Verdict: Rejected. Static linking provides the same isolation benefits without the runtime overhead or integration headaches.
+________________
+5. Detailed Implementation: Static Linking
+The following section details the specific engineering steps required to implement static linking in the Aria build system.
+5.1 CMake Configuration Analysis
+The Aria build system uses CMake.2 By default, find_package(LLVM) loads configuration files provided by the LLVM installation. A key variable in this configuration is LLVM_LINK_LLVM_DYLIB.
+   * Default Behavior: If the installed LLVM package was built with -DLLVM_LINK_LLVM_DYLIB=ON (which is standard for Linux distributions to save space), the LLVMConfig.cmake will default to linking against the shared library libLLVM.so.7
+   * The Override: We must explicitly force LLVM_LINK_LLVM_DYLIB to OFF in our CMakeLists.txt before processing the LLVM components. Furthermore, we must use the utility function llvm_map_components_to_libnames to resolve the component list (e.g., core, support) into the actual static library filenames (e.g., libLLVMCore.a).
+5.2 Handling Packaging Inconsistencies (The "Polly" Issue)
+Research into Ubuntu/Debian LLVM packaging 4 reveals a recurring bug: the CMake export files sometimes reference static libraries that are not actually present in the package, or they define targets that are broken. Specifically, Polly libraries are often missing or misconfigured in the static export set.
+   * Mitigation: The CMake configuration should explicitly list only the components strictly required by ariac (as defined in codegen_context.h) rather than using the all pseudo-component. This minimizes the risk of pulling in a broken or missing optional library.
+5.3 Detailed CMakeLists.txt Patch
+The following patch updates the ariac build configuration to strictly enforce static linking. It includes safety checks and explicit component mapping.
+File: aria/CMakeLists.txt
+
+
+CMake
+
+
+
+
+cmake_minimum_required(VERSION 3.20)
+project(AriaCompiler VERSION 0.0.7)
+
+# --- Step 1: LLVM Dependency Resolution ---
+# We require LLVM 20. The 'CONFIG' mode ensures we use the
+# LLVMConfig.cmake provided by the package, not a module finder.
+find_package(LLVM 20 REQUIRED CONFIG)
+
+# Add LLVM modules to CMake path to access 'add_llvm_executable'
+list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+include(AddLLVM)
+
+message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+message(STATUS "LLVM Installation: ${LLVM_INSTALL_PREFIX}")
+
+# --- Step 2: Enforce Static Linking ---
+# This is the critical stability fix. We force the build system to
+# ignore the libLLVM.so shared library and use static archives.
+set(LLVM_LINK_LLVM_DYLIB OFF CACHE BOOL "Force static linking" FORCE)
+set(LLVM_BUILD_LLVM_DYLIB OFF CACHE BOOL "Force static linking" FORCE)
+
+# Define the specific LLVM components required by Aria.
+# Derived from codegen_context.h dependencies (Core, IR, Support, etc.)
+set(ARIA_LLVM_COMPONENTS
+   Core
+   Support
+   CodeGen
+   ExecutionEngine
+   RuntimeDyld
+   Object
+   OrcJIT
+   MC
+   MCParser
+   Target
+   BitReader
+   BitWriter
+   Analysis
+   TransformUtils
+   ScalarOpts
+   # Add native target components (X86, AArch64, etc.) to allow code generation
+   native
+)
+
+# Map these components to their actual static library filenames (e.g., libLLVMCore.a)
+# Because LLVM_LINK_LLVM_DYLIB is OFF, this function will resolve to.a files.
+llvm_map_components_to_libnames(llvm_libs ${ARIA_LLVM_COMPONENTS})
+
+# Debug: Print the resolved libraries to verify they are.a files
+foreach(lib ${llvm_libs})
+   message(STATUS "Resolving LLVM lib: ${lib}")
+endforeach()
+
+# --- Step 3: Compilation Settings ---
+add_definitions(${LLVM_DEFINITIONS})
+include_directories(${LLVM_INCLUDE_DIRS})
+
+# Enable RTTI (Run-Time Type Information) if LLVM was built with it.
+# This is often necessary for dynamic_cast<> used within LLVM headers.
+if(NOT LLVM_ENABLE_RTTI)
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
+endif()
+
+# --- Step 4: Define the Executable ---
+add_executable(ariac
+   src/driver/main.cpp
+   src/backend/codegen.cpp
+   src/frontend/parser.cpp
+   src/frontend/lexer.cpp
+   #... Add other source files here...
+)
+
+# Link against the resolved static LLVM libraries
+target_link_libraries(ariac PRIVATE ${llvm_libs})
+
+# Link against system libraries required by LLVM static libs (zlib, ncurses, etc.)
+# The ${LLVM_SYSTEM_LIBS} variable is populated by LLVMConfig.cmake
+target_link_libraries(ariac PRIVATE ${LLVM_SYSTEM_LIBS})
+
+# --- Step 5: Post-Build Verification ---
+# This custom command runs immediately after the build to verify isolation.
+# It fails the build if the resulting binary depends on libLLVM.
+add_custom_command(TARGET ariac POST_BUILD
+   COMMAND ${CMAKE_COMMAND} -E echo "Verifying static linkage..."
+   COMMAND bash -c "! ldd $<TARGET_FILE:ariac> | grep libLLVM"
+   COMMENT "SECURITY CHECK: Verifying that ariac is not dynamically linked to libLLVM"
+)
+
+________________
+6. Binary Size and Performance Analysis
+A common concern with static linking is the inflation of binary size. However, in the context of a system compiler, robustness outweighs storage efficiency.
+6.1 Size Impact
+   * Dynamic Linking: If linked dynamically, ariac would be essentially a thin wrapper around libLLVM-20.so. The executable size would be ~2 MB. However, the system must carry the ~100MB shared library.
+   * Static Linking (Raw): Linking statically pulls in code from all referenced LLVM components. A debug build can easily exceed 200 MB due to DWARF symbols.10
+   * Static Linking (Stripped): For production distribution in the AriaX ISO, we do not need debug symbols in the compiler binary. Using strip --strip-all ariac removes symbol tables and debugging information.
+   * Dead Code Elimination: The linker only includes the object files reachable from ariac's main function. Unused LLVM targets (e.g., Hexagon, Lanai) are not linked if we specify native components only.
+   * Estimated Size: Based on similar tools (e.g., clang binaries or rustc), a stripped, statically linked ariac will be approximately 35 MB - 60 MB.10
+Conclusion: A 60 MB binary is trivial for a modern Linux distribution ISO (typically 2GB+). The stability guarantee justifies this 0.3% increase in ISO size.
+6.2 Link Time Overhead
+Static linking places a heavy load on the linker.
+   * Memory Usage: Linking LLVM statically can consume 8GB+ of RAM. The CI/CD environment building the AriaX ISO must be provisioned with sufficient memory to prevent OOM kills during the build.
+   * Time: The link step may take 30-60 seconds, compared to sub-second linking for dynamic builds. This is acceptable for release builds.
+________________
+7. Verification and Quality Assurance
+Trust, but verify. Implementing static linking is useless if a misconfiguration silently reverts to dynamic linking. We implement a rigorous verification script verify_abi_isolation.sh to be run as part of the CI pipeline.
+7.1 Verification Script
+
+
+Bash
+
+
+
+
+#!/bin/bash
+# verify_abi_isolation.sh
+# Automated check to ensure ariac is hermetically sealed from system LLVM.
+
+BINARY_PATH="./build/ariac"
+
+# 1. Existence Check
+if; then
+   echo "CRITICAL ERROR: Binary not found at $BINARY_PATH"
+   exit 1
+fi
+
+echo "Starting ABI Isolation Verification for: $BINARY_PATH"
+
+# 2. Dynamic Dependency Analysis (ldd)
+# ldd lists the shared libraries required by the program.
+# We expect to see standard system libraries (libc, libstdc++, libm, libz, libpthread).
+# We MUST NOT see any reference to libLLVM.
+DYNAMIC_DEPS=$(ldd "$BINARY_PATH")
+
+if echo "$DYNAMIC_DEPS" | grep -q "libLLVM"; then
+   echo "❌ FAILURE: ABI LEAK DETECTED!"
+   echo "   The binary is dynamically linked against system LLVM."
+   echo "   It will break when apt-get upgrade runs."
+   echo "   Detected dependency:"
+   echo "$DYNAMIC_DEPS" | grep "libLLVM"
+   exit 1
+else
+   echo "✅ SUCCESS: No dynamic link to libLLVM detected."
+fi
+
+# 3. Internal Symbol Verification (nm)
+# We verify that LLVM symbols are actually present inside the binary's text section.
+# We look for a core LLVM function, e.g., LLVMContextCreate.
+# 'T' indicates the symbol is in the Text (code) section of this binary.
+# 'U' would indicate it is Undefined (loaded from shared lib).
+
+# Note: If binary is stripped, nm will fail. We handle this.
+if nm "$BINARY_PATH" >/dev/null 2>&1; then
+   SYMBOLS=$(nm "$BINARY_PATH" 2>/dev/null | grep " T LLVMContextCreate")
+   if; then
+       # This might happen if LLVM namespaces names (mangling). 
+       # Check for mangled name of llvm::LLVMContext::LLVMContext()
+       MANGLED=$(nm "$BINARY_PATH" | grep "ZN4llvm11LLVMContextC")
+       if; then
+            echo "⚠️  WARNING: Could not find LLVM symbols. Binary might be heavily optimized/stripped."
+       else
+            echo "✅ SUCCESS: Found internal LLVM symbols (Static Linking confirmed)."
+       fi
+   else
+       echo "✅ SUCCESS: Found internal LLVM symbols (Static Linking confirmed)."
+   fi
+else
+   echo "ℹ️  INFO: Binary is stripped (nm failed). Relying on ldd check."
+fi
+
+# 4. Kernel ABI Compatibility Check (AriaX specific)
+# Ensure the binary doesn't have accidental dependencies on ephemeral libraries
+echo "Checking for unexpected dependencies..."
+FORBIDDEN_LIBS="libsystemd"
+if echo "$DYNAMIC_DEPS" | grep -q "$FORBIDDEN_LIBS"; then
+    echo "⚠️  WARNING: Dependency on $FORBIDDEN_LIBS detected. Check systemd collision risks."
+fi
+
+echo "------------------------------------------------"
+echo "ABI Isolation Verification Passed."
+echo "ariac is safe for distribution."
+exit 0
+
+________________
+8. Conclusion
+The instability of LLVM 20 snapshots presents a clear and present danger to the AriaX distribution's reliability. Reliance on dynamic linking in this context creates a fragile system where routine updates result in catastrophic toolchain failure.
+The Static Linking Strategy effectively neutralizes this threat. It converts the compiler from a dependent component into a self-contained unit, immune to the volatility of the host system's libraries. While this incurs a modest cost in terms of binary size and build resources, it provides the absolute stability guarantee required for a production operating system.
+By applying the CMake configuration detailed in Section 5 and enforcing it via the verification protocol in Section 7, AriaX can safely leverage the advanced features of LLVM 20 without inheriting its instability. This architectural decision aligns with the project's broader goals of robust system engineering and reliable developer tooling.
+Works cited
+   1. LLVM Debian/Ubuntu packages, accessed December 22, 2025, https://apt.llvm.org/
+   2. aria_source_full.txt
+   3. [llvm-dev] (Thin)LTO llvm build - Google Groups, accessed December 22, 2025, https://groups.google.com/g/llvm-dev/c/_m3wRDfZqXg
+   4. Error when using CMake with LLVM - c++ - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/38171543/error-when-using-cmake-with-llvm
+   5. LLVM Developer Policy — LLVM 22.0.0git documentation, accessed December 22, 2025, https://llvm.org/docs/DeveloperPolicy.html
+   6. Why do previous versions of Debian packages vanish in the package repositories? (highly relevant for version-controlled system configuration) - Unix & Linux Stack Exchange, accessed December 22, 2025, https://unix.stackexchange.com/questions/544432/why-do-previous-versions-of-debian-packages-vanish-in-the-package-repositories
+   7. Building LLVM with CMake — LLVM 22.0.0git documentation, accessed December 22, 2025, https://llvm.org/docs/CMake.html
+   8. bcc doesn't find llvm cmake files on Ubuntu Xenial · Issue #492 - GitHub, accessed December 22, 2025, https://github.com/iovisor/bcc/issues/492
+   9. libPolly missing · Issue #44414 · llvm/llvm-project - GitHub, accessed December 22, 2025, https://github.com/llvm/llvm-project/issues/44414
+   10. Static linked binaries are a generally *lot* smaller than a dynamically linked l... | Hacker News, accessed December 22, 2025, https://news.ycombinator.com/item?id=39148420
+   11. Glibc and Musl static and dynamic linked program sizes. : r/C_Programming - Reddit, accessed December 22, 2025, https://www.reddit.com/r/C_Programming/comments/csri9p/glibc_and_musl_static_and_dynamic_linked_program/

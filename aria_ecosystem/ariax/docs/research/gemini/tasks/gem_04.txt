@@ -1,0 +1,70 @@
+## TODO 4: Cinnamon Desktop Default Session Automation
+
+**Priority**: MEDIUM (User experience)
+**Estimated Complexity**: Low
+**Dependencies**: None
+
+### Problem Statement
+Ubuntu 24.04 uses GDM3 and AccountsService to manage desktop sessions. Simply installing cinnamon-desktop-environment doesn't make it the default for new users. The session may default to non-existent GNOME (if removed) or back to Ubuntu session, causing login failures or confusion.
+
+### Required Context Files
+
+**From ariax repository**:
+1. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (TODO 4)
+
+**External Research**:
+- GDM3 configuration on Ubuntu 24.04
+- AccountsService user template documentation
+
+### Gemini Prompt
+
+```
+Determine the precise configuration method to set Cinnamon as the default desktop session for all new users on Ubuntu 24.04 LTS using GDM3 display manager. This must work in a Cubic ISO build environment.
+
+Context: The AriaX ISO build process:
+1. Installs cinnamon-desktop-environment
+2. Removes ubuntu-desktop and gnome-shell (optional)
+3. Needs to ensure new users (created by installer or useradd) default to Cinnamon
+
+Research the following mechanisms:
+
+**Method 1: GDM3 Configuration**
+- File: /etc/gdm3/custom.conf
+- Or: /etc/gdm3/greeter.dconf-defaults
+- Can we set DefaultSession=cinnamon.desktop?
+- Test if this affects new users or just the greeter default
+
+**Method 2: AccountsService Template**
+- Directory: /var/lib/AccountsService/users/
+- Understand the template mechanism (if any)
+- Create a default profile that sets XSession=cinnamon
+
+**Method 3: Skeleton Directory**
+- File: /etc/skel/.dmrc (deprecated?)
+- Or: /etc/skel/.xsession
+- Or: /etc/skel/.config/autostart/ (wrong level)
+- Determine if .dmrc is still respected in 24.04
+
+**Method 4: Update Alternatives**
+- Command: update-alternatives --set x-session-manager /usr/bin/cinnamon-session
+- Test if this sets system-wide default
+
+Requirements:
+1. Must work for users created by Subiquity installer
+2. Must work for users created by sudo adduser
+3. Must survive system updates
+4. Must not break if user manually changes session later
+
+Provide:
+- Exact file paths and content
+- Bash script to apply configuration in Cubic chroot
+- Test procedure (how to verify default is set)
+```
+
+### Expected Deliverables
+- Configuration files (gdm3, AccountsService, or skel)
+- Bash script: "set-cinnamon-default.sh"
+- Test procedure document
+
+---
+

@@ -1,0 +1,73 @@
+## TODO 2: VS Code Global Extension Deployment Strategy
+
+**Priority**: MEDIUM (User experience)
+**Estimated Complexity**: Low
+**Dependencies**: None
+
+### Problem Statement
+VS Code stores extensions in user home directories (~/.vscode/extensions), making it difficult to pre-install them globally in a custom ISO. Multiple strategies exist (bootstrap folder, skeleton directory, global installation), but their effectiveness on Ubuntu 24.04 is unclear.
+
+Goal: Determine the canonical method to pre-install Aria language extensions such that every new user created post-install has them available without internet access.
+
+### Required Context Files
+
+**From ariax repository**:
+1. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (TODO 2)
+
+**External Research**:
+- VS Code documentation on extension deployment
+- Ubuntu 24.04 /etc/skel best practices
+
+### Gemini Prompt
+
+```
+Develop a robust strategy for pre-installing Visual Studio Code extensions in a custom Ubuntu 24.04 ISO such that all users created post-installation have these extensions available immediately without requiring internet access or manual installation.
+
+Context: The AriaX distribution needs to pre-install:
+- Aria language server extension (.vsix file, custom)
+- clangd (C/C++ LSP)
+- lldb-dap (debugger adapter)
+
+Requirements:
+1. Research the following methods and rank by reliability:
+   
+   **Method A: Skeleton Directory**
+   - Copy .vsix files to /etc/skel/.vscode/extensions/
+   - Set correct permissions (what user:group?)
+   - Verify VS Code recognizes them on first run
+   
+   **Method B: Bootstrap Script**
+   - Place .vsix in /usr/share/ariax/vscode/
+   - Create /etc/profile.d/ariax-vscode-init.sh
+   - Script checks if ~/.vscode/extensions exists
+   - If not, run: code --install-extension <path> for each extension
+   - Test if this works for headless users (sudo adduser)
+   
+   **Method C: System Extensions Directory**
+   - Research if VS Code supports /usr/share/code/extensions/
+   - Test on Ubuntu 24.04 with .deb installation
+   - Document any permission issues
+   
+   **Method D: Extension Marketplace Override**
+   - Can we modify product.json to point to a local extension repo?
+   - Overkill but ensures updates work
+
+2. Provide a concrete implementation:
+   - Bash script for Cubic chroot environment
+   - File permissions and ownership requirements
+   - Verification command to test in chroot
+   
+3. Handle edge cases:
+   - What if user has VS Code Insiders?
+   - What if user installs Codium (open-source VS Code)?
+   - How to handle extension updates (user can update normally?)
+
+Deliverable: A complete bash script named "install-vscode-extensions-global.sh" with detailed comments, plus a test procedure.
+```
+
+### Expected Deliverables
+- `scripts/cubic/install-vscode-extensions-global.sh`
+- Test procedure document
+- Fallback strategy if primary method fails
+
+---
