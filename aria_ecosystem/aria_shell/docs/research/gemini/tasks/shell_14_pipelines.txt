@@ -1,0 +1,62 @@
+Pipeline and Redirection Implementation
+
+PRIORITY: HIGH
+STATUS: Core Shell Feature
+SOURCE: Custom Shell Design For Aria.txt, Section 7 (Zero-Copy)
+
+PROBLEM:
+Need to implement Unix pipeline semantics (|) and I/O redirection (<, >, >>). Must support all 6 streams, not just stdout/stderr.
+
+REQUIREMENTS:
+1. Pipeline Operator (|):
+   - cmd1 | cmd2: stdout of cmd1 → stdin of cmd2
+   - cmd1 |5> cmd2: stddato (FD 5) of cmd1 → stddati (FD 4) of cmd2
+   - Support arbitrary stream connections
+
+2. Output Redirection:
+   - > file: Redirect stdout to file (truncate)
+   - >> file: Redirect stdout to file (append)
+   - 2> file: Redirect stderr to file
+   - 3> file: Redirect stddbg to file
+   - 5> file: Redirect stddato to file
+
+3. Input Redirection:
+   - < file: Redirect file to stdin
+   - 4< file: Redirect file to stddati
+
+4. Zero-Copy Optimization:
+   - Use splice() on Linux for direct pipe→pipe transfers
+   - Detect opportunities for kernel-level transfer
+   - Measure performance improvement
+
+IMPLEMENTATION TASKS:
+- [ ] Implement pipe creation and management
+- [ ] Add stream redirection logic
+- [ ] Create pipeline graph builder
+- [ ] Implement file redirection (open, dup2)
+- [ ] Add support for all 6 streams
+- [ ] Implement splice() optimization (Linux)
+- [ ] Add error handling (broken pipe, file errors)
+- [ ] Create pipeline execution coordinator
+- [ ] Add proper cleanup on failure
+
+FILES TO CREATE:
+- src/pipeline/pipeline_builder.cpp
+- src/pipeline/redirection.cpp
+- src/pipeline/splice_optimizer.cpp
+- include/aria/shell/pipeline.h
+- tests/pipeline/redirection_tests.cpp
+
+RESEARCH NOTES:
+- splice() can achieve GB/s throughput with minimal CPU
+- Need to detect when splice is applicable
+- Broken pipe (SIGPIPE) handling critical
+
+ACCEPTANCE CRITERIA:
+- ls | grep .txt works correctly
+- cmd 3> debug.log redirects stddbg
+- cmd1 |5> cmd2 pipes binary data stream
+- splice() used for eligible pipelines
+- Broken pipe handled gracefully
+- All 6 streams support redirection
+- Complex pipelines work: cmd1 | cmd2 3> log | cmd3

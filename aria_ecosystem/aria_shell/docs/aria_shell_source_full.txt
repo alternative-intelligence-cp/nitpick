@@ -1,0 +1,2292 @@
+================================================================================
+ARIA_SHELL SOURCE CODE COMPILATION
+Generated: $(date)
+Repository: aria_shell
+================================================================================
+
+
+================================================================================
+FILE: CMakeLists.txt
+================================================================================
+
+# aria_shell - Aria Shell (AriaSH)
+# Interactive REPL and scripting shell for Aria language
+#
+# ARIA-021: Shell Job Control State Machine
+#
+# Build:
+#   mkdir build && cd build
+#   cmake ..
+#   make
+
+cmake_minimum_required(VERSION 3.16)
+project(aria_shell
+    VERSION 0.1.0
+    DESCRIPTION "Interactive Shell for Aria Language"
+    LANGUAGES CXX
+)
+
+# Require C++17 for std::optional, std::variant, etc.
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Compiler warnings
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-Wall -Wextra -Wpedantic -Werror=return-type)
+elseif(MSVC)
+    add_compile_options(/W4)
+endif()
+
+# Build type defaults
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# Threading support
+find_package(Threads REQUIRED)
+
+# -----------------------------------------------------------------------------
+# Library: aria_shell_job (Job Control - ARIA-021)
+# -----------------------------------------------------------------------------
+add_library(aria_shell_job STATIC
+    src/job/job_state.cpp
+    src/job/job_control.cpp
+    src/job/stream_controller.cpp
+)
+
+target_include_directories(aria_shell_job
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/inc>
+        $<INSTALL_INTERFACE:include>
+)
+
+target_link_libraries(aria_shell_job PUBLIC Threads::Threads)
+
+set_target_properties(aria_shell_job PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    POSITION_INDEPENDENT_CODE ON
+)
+
+# -----------------------------------------------------------------------------
+# Main executable: ariash
+# -----------------------------------------------------------------------------
+add_executable(ariash
+    src/repl/main.cpp
+)
+
+target_link_libraries(ariash PRIVATE aria_shell_job)
+
+set_target_properties(ariash PROPERTIES
+    OUTPUT_NAME "ariash"
+)
+
+# -----------------------------------------------------------------------------
+# Tests
+# -----------------------------------------------------------------------------
+option(BUILD_TESTS "Build test executable" ON)
+
+if(BUILD_TESTS)
+    enable_testing()
+
+    # Job control tests would go here
+    # add_executable(test_job_control tests/test_job_control.cpp)
+    # target_link_libraries(test_job_control PRIVATE aria_shell_job)
+    # add_test(NAME job_control_tests COMMAND test_job_control)
+endif()
+
+# -----------------------------------------------------------------------------
+# Installation
+# -----------------------------------------------------------------------------
+include(GNUInstallDirs)
+
+install(TARGETS aria_shell_job
+    EXPORT aria_shellTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+install(DIRECTORY inc/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+# -----------------------------------------------------------------------------
+# Summary
+# -----------------------------------------------------------------------------
+message(STATUS "")
+message(STATUS "aria_shell ${PROJECT_VERSION} - Aria Interactive Shell")
+message(STATUS "  Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Tests: ${BUILD_TESTS}")
+message(STATUS "")
+
+================================================================================
+FILE: README.md
+================================================================================
+
+
+
+================================================================================
+FILE: LICENSE
+================================================================================
+
+                    GNU AFFERO GENERAL PUBLIC LICENSE
+                       Version 3, 19 November 2007
+
+ Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
+
+                            Preamble
+
+  The GNU Affero General Public License is a free, copyleft license for
+software and other kinds of works, specifically designed to ensure
+cooperation with the community in the case of network server software.
+
+  The licenses for most software and other practical works are designed
+to take away your freedom to share and change the works.  By contrast,
+our General Public Licenses are intended to guarantee your freedom to
+share and change all versions of a program--to make sure it remains free
+software for all its users.
+
+  When we speak of free software, we are referring to freedom, not
+price.  Our General Public Licenses are designed to make sure that you
+have the freedom to distribute copies of free software (and charge for
+them if you wish), that you receive source code or can get it if you
+want it, that you can change the software or use pieces of it in new
+free programs, and that you know you can do these things.
+
+  Developers that use our General Public Licenses protect your rights
+with two steps: (1) assert copyright on the software, and (2) offer
+you this License which gives you legal permission to copy, distribute
+and/or modify the software.
+
+  A secondary benefit of defending all users' freedom is that
+improvements made in alternate versions of the program, if they
+receive widespread use, become available for other developers to
+incorporate.  Many developers of free software are heartened and
+encouraged by the resulting cooperation.  However, in the case of
+software used on network servers, this result may fail to come about.
+The GNU General Public License permits making a modified version and
+letting the public access it on a server without ever releasing its
+source code to the public.
+
+  The GNU Affero General Public License is designed specifically to
+ensure that, in such cases, the modified source code becomes available
+to the community.  It requires the operator of a network server to
+provide the source code of the modified version running there to the
+users of that server.  Therefore, public use of a modified version, on
+a publicly accessible server, gives the public access to the source
+code of the modified version.
+
+  An older license, called the Affero General Public License and
+published by Affero, was designed to accomplish similar goals.  This is
+a different license, not a version of the Affero GPL, but Affero has
+released a new version of the Affero GPL which permits relicensing under
+this license.
+
+  The precise terms and conditions for copying, distribution and
+modification follow.
+
+                       TERMS AND CONDITIONS
+
+  0. Definitions.
+
+  "This License" refers to version 3 of the GNU Affero General Public License.
+
+  "Copyright" also means copyright-like laws that apply to other kinds of
+works, such as semiconductor masks.
+
+  "The Program" refers to any copyrightable work licensed under this
+License.  Each licensee is addressed as "you".  "Licensees" and
+"recipients" may be individuals or organizations.
+
+  To "modify" a work means to copy from or adapt all or part of the work
+in a fashion requiring copyright permission, other than the making of an
+exact copy.  The resulting work is called a "modified version" of the
+earlier work or a work "based on" the earlier work.
+
+  A "covered work" means either the unmodified Program or a work based
+on the Program.
+
+  To "propagate" a work means to do anything with it that, without
+permission, would make you directly or secondarily liable for
+infringement under applicable copyright law, except executing it on a
+computer or modifying a private copy.  Propagation includes copying,
+distribution (with or without modification), making available to the
+public, and in some countries other activities as well.
+
+  To "convey" a work means any kind of propagation that enables other
+parties to make or receive copies.  Mere interaction with a user through
+a computer network, with no transfer of a copy, is not conveying.
+
+  An interactive user interface displays "Appropriate Legal Notices"
+to the extent that it includes a convenient and prominently visible
+feature that (1) displays an appropriate copyright notice, and (2)
+tells the user that there is no warranty for the work (except to the
+extent that warranties are provided), that licensees may convey the
+work under this License, and how to view a copy of this License.  If
+the interface presents a list of user commands or options, such as a
+menu, a prominent item in the list meets this criterion.
+
+  1. Source Code.
+
+  The "source code" for a work means the preferred form of the work
+for making modifications to it.  "Object code" means any non-source
+form of a work.
+
+  A "Standard Interface" means an interface that either is an official
+standard defined by a recognized standards body, or, in the case of
+interfaces specified for a particular programming language, one that
+is widely used among developers working in that language.
+
+  The "System Libraries" of an executable work include anything, other
+than the work as a whole, that (a) is included in the normal form of
+packaging a Major Component, but which is not part of that Major
+Component, and (b) serves only to enable use of the work with that
+Major Component, or to implement a Standard Interface for which an
+implementation is available to the public in source code form.  A
+"Major Component", in this context, means a major essential component
+(kernel, window system, and so on) of the specific operating system
+(if any) on which the executable work runs, or a compiler used to
+produce the work, or an object code interpreter used to run it.
+
+  The "Corresponding Source" for a work in object code form means all
+the source code needed to generate, install, and (for an executable
+work) run the object code and to modify the work, including scripts to
+control those activities.  However, it does not include the work's
+System Libraries, or general-purpose tools or generally available free
+programs which are used unmodified in performing those activities but
+which are not part of the work.  For example, Corresponding Source
+includes interface definition files associated with source files for
+the work, and the source code for shared libraries and dynamically
+linked subprograms that the work is specifically designed to require,
+such as by intimate data communication or control flow between those
+subprograms and other parts of the work.
+
+  The Corresponding Source need not include anything that users
+can regenerate automatically from other parts of the Corresponding
+Source.
+
+  The Corresponding Source for a work in source code form is that
+same work.
+
+  2. Basic Permissions.
+
+  All rights granted under this License are granted for the term of
+copyright on the Program, and are irrevocable provided the stated
+conditions are met.  This License explicitly affirms your unlimited
+permission to run the unmodified Program.  The output from running a
+covered work is covered by this License only if the output, given its
+content, constitutes a covered work.  This License acknowledges your
+rights of fair use or other equivalent, as provided by copyright law.
+
+  You may make, run and propagate covered works that you do not
+convey, without conditions so long as your license otherwise remains
+in force.  You may convey covered works to others for the sole purpose
+of having them make modifications exclusively for you, or provide you
+with facilities for running those works, provided that you comply with
+the terms of this License in conveying all material for which you do
+not control copyright.  Those thus making or running the covered works
+for you must do so exclusively on your behalf, under your direction
+and control, on terms that prohibit them from making any copies of
+your copyrighted material outside their relationship with you.
+
+  Conveying under any other circumstances is permitted solely under
+the conditions stated below.  Sublicensing is not allowed; section 10
+makes it unnecessary.
+
+  3. Protecting Users' Legal Rights From Anti-Circumvention Law.
+
+  No covered work shall be deemed part of an effective technological
+measure under any applicable law fulfilling obligations under article
+11 of the WIPO copyright treaty adopted on 20 December 1996, or
+similar laws prohibiting or restricting circumvention of such
+measures.
+
+  When you convey a covered work, you waive any legal power to forbid
+circumvention of technological measures to the extent such circumvention
+is effected by exercising rights under this License with respect to
+the covered work, and you disclaim any intention to limit operation or
+modification of the work as a means of enforcing, against the work's
+users, your or third parties' legal rights to forbid circumvention of
+technological measures.
+
+  4. Conveying Verbatim Copies.
+
+  You may convey verbatim copies of the Program's source code as you
+receive it, in any medium, provided that you conspicuously and
+appropriately publish on each copy an appropriate copyright notice;
+keep intact all notices stating that this License and any
+non-permissive terms added in accord with section 7 apply to the code;
+keep intact all notices of the absence of any warranty; and give all
+recipients a copy of this License along with the Program.
+
+  You may charge any price or no price for each copy that you convey,
+and you may offer support or warranty protection for a fee.
+
+  5. Conveying Modified Source Versions.
+
+  You may convey a work based on the Program, or the modifications to
+produce it from the Program, in the form of source code under the
+terms of section 4, provided that you also meet all of these conditions:
+
+    a) The work must carry prominent notices stating that you modified
+    it, and giving a relevant date.
+
+    b) The work must carry prominent notices stating that it is
+    released under this License and any conditions added under section
+    7.  This requirement modifies the requirement in section 4 to
+    "keep intact all notices".
+
+    c) You must license the entire work, as a whole, under this
+    License to anyone who comes into possession of a copy.  This
+    License will therefore apply, along with any applicable section 7
+    additional terms, to the whole of the work, and all its parts,
+    regardless of how they are packaged.  This License gives no
+    permission to license the work in any other way, but it does not
+    invalidate such permission if you have separately received it.
+
+    d) If the work has interactive user interfaces, each must display
+    Appropriate Legal Notices; however, if the Program has interactive
+    interfaces that do not display Appropriate Legal Notices, your
+    work need not make them do so.
+
+  A compilation of a covered work with other separate and independent
+works, which are not by their nature extensions of the covered work,
+and which are not combined with it such as to form a larger program,
+in or on a volume of a storage or distribution medium, is called an
+"aggregate" if the compilation and its resulting copyright are not
+used to limit the access or legal rights of the compilation's users
+beyond what the individual works permit.  Inclusion of a covered work
+in an aggregate does not cause this License to apply to the other
+parts of the aggregate.
+
+  6. Conveying Non-Source Forms.
+
+  You may convey a covered work in object code form under the terms
+of sections 4 and 5, provided that you also convey the
+machine-readable Corresponding Source under the terms of this License,
+in one of these ways:
+
+    a) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by the
+    Corresponding Source fixed on a durable physical medium
+    customarily used for software interchange.
+
+    b) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by a
+    written offer, valid for at least three years and valid for as
+    long as you offer spare parts or customer support for that product
+    model, to give anyone who possesses the object code either (1) a
+    copy of the Corresponding Source for all the software in the
+    product that is covered by this License, on a durable physical
+    medium customarily used for software interchange, for a price no
+    more than your reasonable cost of physically performing this
+    conveying of source, or (2) access to copy the
+    Corresponding Source from a network server at no charge.
+
+    c) Convey individual copies of the object code with a copy of the
+    written offer to provide the Corresponding Source.  This
+    alternative is allowed only occasionally and noncommercially, and
+    only if you received the object code with such an offer, in accord
+    with subsection 6b.
+
+    d) Convey the object code by offering access from a designated
+    place (gratis or for a charge), and offer equivalent access to the
+    Corresponding Source in the same way through the same place at no
+    further charge.  You need not require recipients to copy the
+    Corresponding Source along with the object code.  If the place to
+    copy the object code is a network server, the Corresponding Source
+    may be on a different server (operated by you or a third party)
+    that supports equivalent copying facilities, provided you maintain
+    clear directions next to the object code saying where to find the
+    Corresponding Source.  Regardless of what server hosts the
+    Corresponding Source, you remain obligated to ensure that it is
+    available for as long as needed to satisfy these requirements.
+
+    e) Convey the object code using peer-to-peer transmission, provided
+    you inform other peers where the object code and Corresponding
+    Source of the work are being offered to the general public at no
+    charge under subsection 6d.
+
+  A separable portion of the object code, whose source code is excluded
+from the Corresponding Source as a System Library, need not be
+included in conveying the object code work.
+
+  A "User Product" is either (1) a "consumer product", which means any
+tangible personal property which is normally used for personal, family,
+or household purposes, or (2) anything designed or sold for incorporation
+into a dwelling.  In determining whether a product is a consumer product,
+doubtful cases shall be resolved in favor of coverage.  For a particular
+product received by a particular user, "normally used" refers to a
+typical or common use of that class of product, regardless of the status
+of the particular user or of the way in which the particular user
+actually uses, or expects or is expected to use, the product.  A product
+is a consumer product regardless of whether the product has substantial
+commercial, industrial or non-consumer uses, unless such uses represent
+the only significant mode of use of the product.
+
+  "Installation Information" for a User Product means any methods,
+procedures, authorization keys, or other information required to install
+and execute modified versions of a covered work in that User Product from
+a modified version of its Corresponding Source.  The information must
+suffice to ensure that the continued functioning of the modified object
+code is in no case prevented or interfered with solely because
+modification has been made.
+
+  If you convey an object code work under this section in, or with, or
+specifically for use in, a User Product, and the conveying occurs as
+part of a transaction in which the right of possession and use of the
+User Product is transferred to the recipient in perpetuity or for a
+fixed term (regardless of how the transaction is characterized), the
+Corresponding Source conveyed under this section must be accompanied
+by the Installation Information.  But this requirement does not apply
+if neither you nor any third party retains the ability to install
+modified object code on the User Product (for example, the work has
+been installed in ROM).
+
+  The requirement to provide Installation Information does not include a
+requirement to continue to provide support service, warranty, or updates
+for a work that has been modified or installed by the recipient, or for
+the User Product in which it has been modified or installed.  Access to a
+network may be denied when the modification itself materially and
+adversely affects the operation of the network or violates the rules and
+protocols for communication across the network.
+
+  Corresponding Source conveyed, and Installation Information provided,
+in accord with this section must be in a format that is publicly
+documented (and with an implementation available to the public in
+source code form), and must require no special password or key for
+unpacking, reading or copying.
+
+  7. Additional Terms.
+
+  "Additional permissions" are terms that supplement the terms of this
+License by making exceptions from one or more of its conditions.
+Additional permissions that are applicable to the entire Program shall
+be treated as though they were included in this License, to the extent
+that they are valid under applicable law.  If additional permissions
+apply only to part of the Program, that part may be used separately
+under those permissions, but the entire Program remains governed by
+this License without regard to the additional permissions.
+
+  When you convey a copy of a covered work, you may at your option
+remove any additional permissions from that copy, or from any part of
+it.  (Additional permissions may be written to require their own
+removal in certain cases when you modify the work.)  You may place
+additional permissions on material, added by you to a covered work,
+for which you have or can give appropriate copyright permission.
+
+  Notwithstanding any other provision of this License, for material you
+add to a covered work, you may (if authorized by the copyright holders of
+that material) supplement the terms of this License with terms:
+
+    a) Disclaiming warranty or limiting liability differently from the
+    terms of sections 15 and 16 of this License; or
+
+    b) Requiring preservation of specified reasonable legal notices or
+    author attributions in that material or in the Appropriate Legal
+    Notices displayed by works containing it; or
+
+    c) Prohibiting misrepresentation of the origin of that material, or
+    requiring that modified versions of such material be marked in
+    reasonable ways as different from the original version; or
+
+    d) Limiting the use for publicity purposes of names of licensors or
+    authors of the material; or
+
+    e) Declining to grant rights under trademark law for use of some
+    trade names, trademarks, or service marks; or
+
+    f) Requiring indemnification of licensors and authors of that
+    material by anyone who conveys the material (or modified versions of
+    it) with contractual assumptions of liability to the recipient, for
+    any liability that these contractual assumptions directly impose on
+    those licensors and authors.
+
+  All other non-permissive additional terms are considered "further
+restrictions" within the meaning of section 10.  If the Program as you
+received it, or any part of it, contains a notice stating that it is
+governed by this License along with a term that is a further
+restriction, you may remove that term.  If a license document contains
+a further restriction but permits relicensing or conveying under this
+License, you may add to a covered work material governed by the terms
+of that license document, provided that the further restriction does
+not survive such relicensing or conveying.
+
+  If you add terms to a covered work in accord with this section, you
+must place, in the relevant source files, a statement of the
+additional terms that apply to those files, or a notice indicating
+where to find the applicable terms.
+
+  Additional terms, permissive or non-permissive, may be stated in the
+form of a separately written license, or stated as exceptions;
+the above requirements apply either way.
+
+  8. Termination.
+
+  You may not propagate or modify a covered work except as expressly
+provided under this License.  Any attempt otherwise to propagate or
+modify it is void, and will automatically terminate your rights under
+this License (including any patent licenses granted under the third
+paragraph of section 11).
+
+  However, if you cease all violation of this License, then your
+license from a particular copyright holder is reinstated (a)
+provisionally, unless and until the copyright holder explicitly and
+finally terminates your license, and (b) permanently, if the copyright
+holder fails to notify you of the violation by some reasonable means
+prior to 60 days after the cessation.
+
+  Moreover, your license from a particular copyright holder is
+reinstated permanently if the copyright holder notifies you of the
+violation by some reasonable means, this is the first time you have
+received notice of violation of this License (for any work) from that
+copyright holder, and you cure the violation prior to 30 days after
+your receipt of the notice.
+
+  Termination of your rights under this section does not terminate the
+licenses of parties who have received copies or rights from you under
+this License.  If your rights have been terminated and not permanently
+reinstated, you do not qualify to receive new licenses for the same
+material under section 10.
+
+  9. Acceptance Not Required for Having Copies.
+
+  You are not required to accept this License in order to receive or
+run a copy of the Program.  Ancillary propagation of a covered work
+occurring solely as a consequence of using peer-to-peer transmission
+to receive a copy likewise does not require acceptance.  However,
+nothing other than this License grants you permission to propagate or
+modify any covered work.  These actions infringe copyright if you do
+not accept this License.  Therefore, by modifying or propagating a
+covered work, you indicate your acceptance of this License to do so.
+
+  10. Automatic Licensing of Downstream Recipients.
+
+  Each time you convey a covered work, the recipient automatically
+receives a license from the original licensors, to run, modify and
+propagate that work, subject to this License.  You are not responsible
+for enforcing compliance by third parties with this License.
+
+  An "entity transaction" is a transaction transferring control of an
+organization, or substantially all assets of one, or subdividing an
+organization, or merging organizations.  If propagation of a covered
+work results from an entity transaction, each party to that
+transaction who receives a copy of the work also receives whatever
+licenses to the work the party's predecessor in interest had or could
+give under the previous paragraph, plus a right to possession of the
+Corresponding Source of the work from the predecessor in interest, if
+the predecessor has it or can get it with reasonable efforts.
+
+  You may not impose any further restrictions on the exercise of the
+rights granted or affirmed under this License.  For example, you may
+not impose a license fee, royalty, or other charge for exercise of
+rights granted under this License, and you may not initiate litigation
+(including a cross-claim or counterclaim in a lawsuit) alleging that
+any patent claim is infringed by making, using, selling, offering for
+sale, or importing the Program or any portion of it.
+
+  11. Patents.
+
+  A "contributor" is a copyright holder who authorizes use under this
+License of the Program or a work on which the Program is based.  The
+work thus licensed is called the contributor's "contributor version".
+
+  A contributor's "essential patent claims" are all patent claims
+owned or controlled by the contributor, whether already acquired or
+hereafter acquired, that would be infringed by some manner, permitted
+by this License, of making, using, or selling its contributor version,
+but do not include claims that would be infringed only as a
+consequence of further modification of the contributor version.  For
+purposes of this definition, "control" includes the right to grant
+patent sublicenses in a manner consistent with the requirements of
+this License.
+
+  Each contributor grants you a non-exclusive, worldwide, royalty-free
+patent license under the contributor's essential patent claims, to
+make, use, sell, offer for sale, import and otherwise run, modify and
+propagate the contents of its contributor version.
+
+  In the following three paragraphs, a "patent license" is any express
+agreement or commitment, however denominated, not to enforce a patent
+(such as an express permission to practice a patent or covenant not to
+sue for patent infringement).  To "grant" such a patent license to a
+party means to make such an agreement or commitment not to enforce a
+patent against the party.
+
+  If you convey a covered work, knowingly relying on a patent license,
+and the Corresponding Source of the work is not available for anyone
+to copy, free of charge and under the terms of this License, through a
+publicly available network server or other readily accessible means,
+then you must either (1) cause the Corresponding Source to be so
+available, or (2) arrange to deprive yourself of the benefit of the
+patent license for this particular work, or (3) arrange, in a manner
+consistent with the requirements of this License, to extend the patent
+license to downstream recipients.  "Knowingly relying" means you have
+actual knowledge that, but for the patent license, your conveying the
+covered work in a country, or your recipient's use of the covered work
+in a country, would infringe one or more identifiable patents in that
+country that you have reason to believe are valid.
+
+  If, pursuant to or in connection with a single transaction or
+arrangement, you convey, or propagate by procuring conveyance of, a
+covered work, and grant a patent license to some of the parties
+receiving the covered work authorizing them to use, propagate, modify
+or convey a specific copy of the covered work, then the patent license
+you grant is automatically extended to all recipients of the covered
+work and works based on it.
+
+  A patent license is "discriminatory" if it does not include within
+the scope of its coverage, prohibits the exercise of, or is
+conditioned on the non-exercise of one or more of the rights that are
+specifically granted under this License.  You may not convey a covered
+work if you are a party to an arrangement with a third party that is
+in the business of distributing software, under which you make payment
+to the third party based on the extent of your activity of conveying
+the work, and under which the third party grants, to any of the
+parties who would receive the covered work from you, a discriminatory
+patent license (a) in connection with copies of the covered work
+conveyed by you (or copies made from those copies), or (b) primarily
+for and in connection with specific products or compilations that
+contain the covered work, unless you entered into that arrangement,
+or that patent license was granted, prior to 28 March 2007.
+
+  Nothing in this License shall be construed as excluding or limiting
+any implied license or other defenses to infringement that may
+otherwise be available to you under applicable patent law.
+
+  12. No Surrender of Others' Freedom.
+
+  If conditions are imposed on you (whether by court order, agreement or
+otherwise) that contradict the conditions of this License, they do not
+excuse you from the conditions of this License.  If you cannot convey a
+covered work so as to satisfy simultaneously your obligations under this
+License and any other pertinent obligations, then as a consequence you may
+not convey it at all.  For example, if you agree to terms that obligate you
+to collect a royalty for further conveying from those to whom you convey
+the Program, the only way you could satisfy both those terms and this
+License would be to refrain entirely from conveying the Program.
+
+  13. Remote Network Interaction; Use with the GNU General Public License.
+
+  Notwithstanding any other provision of this License, if you modify the
+Program, your modified version must prominently offer all users
+interacting with it remotely through a computer network (if your version
+supports such interaction) an opportunity to receive the Corresponding
+Source of your version by providing access to the Corresponding Source
+from a network server at no charge, through some standard or customary
+means of facilitating copying of software.  This Corresponding Source
+shall include the Corresponding Source for any work covered by version 3
+of the GNU General Public License that is incorporated pursuant to the
+following paragraph.
+
+  Notwithstanding any other provision of this License, you have
+permission to link or combine any covered work with a work licensed
+under version 3 of the GNU General Public License into a single
+combined work, and to convey the resulting work.  The terms of this
+License will continue to apply to the part which is the covered work,
+but the work with which it is combined will remain governed by version
+3 of the GNU General Public License.
+
+  14. Revised Versions of this License.
+
+  The Free Software Foundation may publish revised and/or new versions of
+the GNU Affero General Public License from time to time.  Such new versions
+will be similar in spirit to the present version, but may differ in detail to
+address new problems or concerns.
+
+  Each version is given a distinguishing version number.  If the
+Program specifies that a certain numbered version of the GNU Affero General
+Public License "or any later version" applies to it, you have the
+option of following the terms and conditions either of that numbered
+version or of any later version published by the Free Software
+Foundation.  If the Program does not specify a version number of the
+GNU Affero General Public License, you may choose any version ever published
+by the Free Software Foundation.
+
+  If the Program specifies that a proxy can decide which future
+versions of the GNU Affero General Public License can be used, that proxy's
+public statement of acceptance of a version permanently authorizes you
+to choose that version for the Program.
+
+  Later license versions may give you additional or different
+permissions.  However, no additional obligations are imposed on any
+author or copyright holder as a result of your choosing to follow a
+later version.
+
+  15. Disclaimer of Warranty.
+
+  THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
+APPLICABLE LAW.  EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
+HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY
+OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE.  THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM
+IS WITH YOU.  SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF
+ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+
+  16. Limitation of Liability.
+
+  IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS
+THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY
+GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE
+USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT LIMITED TO LOSS OF
+DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD
+PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER PROGRAMS),
+EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGES.
+
+  17. Interpretation of Sections 15 and 16.
+
+  If the disclaimer of warranty and limitation of liability provided
+above cannot be given local legal effect according to their terms,
+reviewing courts shall apply local law that most closely approximates
+an absolute waiver of all civil liability in connection with the
+Program, unless a warranty or assumption of liability accompanies a
+copy of the Program in return for a fee.
+
+                     END OF TERMS AND CONDITIONS
+
+            How to Apply These Terms to Your New Programs
+
+  If you develop a new program, and you want it to be of the greatest
+possible use to the public, the best way to achieve this is to make it
+free software which everyone can redistribute and change under these terms.
+
+  To do so, attach the following notices to the program.  It is safest
+to attach them to the start of each source file to most effectively
+state the exclusion of warranty; and each file should have at least
+the "copyright" line and a pointer to where the full notice is found.
+
+    <one line to give the program's name and a brief idea of what it does.>
+    Copyright (C) <year>  <name of author>
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+Also add information on how to contact you by electronic and paper mail.
+
+  If your software can interact with users remotely through a computer
+network, you should also make sure that it provides a way for users to
+get its source.  For example, if your program is a web application, its
+interface could display a "Source" link that leads users to an archive
+of the code.  There are many ways you could offer source, and different
+solutions will be better for different programs; see section 13 for the
+specific requirements.
+
+  You should also get your employer (if you work as a programmer) or school,
+if any, to sign a "copyright disclaimer" for the program, if necessary.
+For more information on this, and how to apply and follow the GNU AGPL, see
+<https://www.gnu.org/licenses/>.
+
+================================================================================
+FILE: src/job/job_control.cpp
+================================================================================
+
+/**
+ * AriaSH Job Control Implementation
+ *
+ * ARIA-021: Shell Job Control State Machine Design
+ *
+ * Platform-specific implementations for job management.
+ */
+
+#include "job/job_control.hpp"
+#include "job/stream_controller.hpp"
+#include <chrono>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <sys/ioctl.h>
+#include <termios.h>
+#include <fcntl.h>
+#ifdef __linux__
+#include <sys/syscall.h>
+#include <sys/epoll.h>
+#endif
+#endif
+
+namespace ariash {
+namespace job {
+
+// =============================================================================
+// ProcessHandle Implementation
+// =============================================================================
+
+bool ProcessHandle::isValid() const {
+#ifdef _WIN32
+    return handle != INVALID_HANDLE_VALUE;
+#else
+    return pidfd >= 0 || pid > 0;
+#endif
+}
+
+void ProcessHandle::close() {
+#ifdef _WIN32
+    if (handle != INVALID_HANDLE_VALUE) {
+        CloseHandle(handle);
+        handle = INVALID_HANDLE_VALUE;
+    }
+#else
+    if (pidfd >= 0) {
+        ::close(pidfd);
+        pidfd = -1;
+    }
+#endif
+}
+
+// =============================================================================
+// JobControlBlock Implementation
+// =============================================================================
+
+JobControlBlock::~JobControlBlock() {
+    // Close all process handles
+    for (auto& proc : processes) {
+        proc.close();
+    }
+
+#ifdef _WIN32
+    if (jobObject != INVALID_HANDLE_VALUE) {
+        CloseHandle(jobObject);
+    }
+#endif
+}
+
+// =============================================================================
+// JobManager Private Implementation
+// =============================================================================
+
+struct JobManager::Impl {
+#ifdef __linux__
+    int epollFd = -1;
+#endif
+};
+
+// =============================================================================
+// JobManager Implementation
+// =============================================================================
+
+JobManager::JobManager()
+    : impl(std::make_unique<Impl>()) {}
+
+JobManager::~JobManager() {
+    shutdown();
+}
+
+bool JobManager::initialize() {
+#ifndef _WIN32
+    // Get TTY file descriptor
+    ttyFd = open("/dev/tty", O_RDWR);
+    if (ttyFd < 0) {
+        // Fallback to stdin
+        ttyFd = STDIN_FILENO;
+    }
+
+    // Save shell's process group
+    shellPgid = getpgrp();
+
+    // Try to save current terminal modes - determines if we have a TTY
+    if (tcgetattr(ttyFd, &shellModes) == 0) {
+        hasTty = true;
+
+        // Make shell the foreground process group (only if we have TTY)
+        tcsetpgrp(ttyFd, shellPgid);
+    } else {
+        // No TTY available - shell runs in non-interactive mode
+        // Job control features will be limited but shell is still functional
+        hasTty = false;
+    }
+
+    // Ignore job control signals in shell
+    signal(SIGTTOU, SIG_IGN);
+    signal(SIGTTIN, SIG_IGN);
+    signal(SIGTSTP, SIG_IGN);
+
+#ifdef __linux__
+    // Create epoll instance for async event handling
+    impl->epollFd = epoll_create1(EPOLL_CLOEXEC);
+    // epoll failure is also non-fatal - we can fall back to polling
+#endif
+#endif
+
+    return true;
+}
+
+void JobManager::shutdown() {
+    // Terminate all jobs
+    std::lock_guard<std::mutex> lock(jobsMutex);
+
+    for (auto& pair : jobs) {
+        if (pair.second->state != JobState::TERMINATED) {
+            terminate(pair.first, true);  // Force kill
+        }
+    }
+
+    jobs.clear();
+
+#ifndef _WIN32
+    // Restore terminal modes (only if we have a TTY)
+    if (hasTty && inRawMode) {
+        exitRawMode();
+    }
+
+#ifdef __linux__
+    if (impl->epollFd >= 0) {
+        ::close(impl->epollFd);
+        impl->epollFd = -1;
+    }
+#endif
+#endif
+}
+
+uint32_t JobManager::spawn(const SpawnOptions& options) {
+    std::lock_guard<std::mutex> lock(jobsMutex);
+
+    uint32_t jobId = nextJobId++;
+
+    auto jcb = std::make_unique<JobControlBlock>();
+    jcb->jobId = jobId;
+    jcb->command = options.command;
+    jcb->state = options.background ? JobState::BACKGROUND : JobState::FOREGROUND;
+    jcb->startTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+
+    // Create stream controller
+    jcb->streams = std::make_unique<StreamController>();
+    if (!jcb->streams->createPipes()) {
+        return 0;
+    }
+
+#ifndef _WIN32
+    pid_t pid = fork();
+    if (pid < 0) {
+        return 0;  // Fork failed
+    }
+
+    if (pid == 0) {
+        // Child process
+
+        // Create new process group
+        if (options.createPipeGroup) {
+            setpgid(0, 0);
+        }
+
+        // If foreground, take control of TTY
+        if (!options.background) {
+            tcsetpgrp(ttyFd, getpid());
+        }
+
+        // Restore default signal handlers
+        signal(SIGINT, SIG_DFL);
+        signal(SIGQUIT, SIG_DFL);
+        signal(SIGTSTP, SIG_DFL);
+        signal(SIGTTIN, SIG_DFL);
+        signal(SIGTTOU, SIG_DFL);
+        signal(SIGCHLD, SIG_DFL);
+
+        // Setup pipes for child
+        jcb->streams->setupChild();
+
+        // Build argv
+        std::vector<const char*> argv;
+        argv.push_back(options.command.c_str());
+        for (const auto& arg : options.args) {
+            argv.push_back(arg.c_str());
+        }
+        argv.push_back(nullptr);
+
+        // Execute
+        execvp(options.command.c_str(), const_cast<char**>(argv.data()));
+
+        // If exec fails
+        _exit(127);
+    }
+
+    // Parent process
+    ProcessHandle ph;
+    ph.pid = pid;
+
+#ifdef __linux__
+    // Get pidfd for race-free process management
+    ph.pidfd = syscall(SYS_pidfd_open, pid, 0);
+
+    // Register with epoll
+    if (ph.pidfd >= 0 && impl->epollFd >= 0) {
+        struct epoll_event ev;
+        ev.events = EPOLLIN;
+        ev.data.u32 = jobId;
+        epoll_ctl(impl->epollFd, EPOLL_CTL_ADD, ph.pidfd, &ev);
+    }
+#endif
+
+    jcb->processes.push_back(ph);
+    jcb->pgid = pid;
+
+    // Setup parent side of pipes
+    jcb->streams->setupParent();
+    jcb->streams->startDraining();
+
+    // If foreground and we have a TTY, save terminal modes
+    if (!options.background && hasTty) {
+        tcgetattr(ttyFd, &jcb->savedModes);
+        jcb->hasSavedModes = true;
+        tcsetpgrp(ttyFd, pid);
+    }
+
+    jcb->streams->setForegroundMode(!options.background);
+
+#endif  // !_WIN32
+
+    jobs[jobId] = std::move(jcb);
+    return jobId;
+}
+
+JobControlBlock* JobManager::getJob(uint32_t jobId) {
+    std::lock_guard<std::mutex> lock(jobsMutex);
+    auto it = jobs.find(jobId);
+    return (it != jobs.end()) ? it->second.get() : nullptr;
+}
+
+std::vector<uint32_t> JobManager::getActiveJobs() const {
+    std::lock_guard<std::mutex> lock(jobsMutex);
+    std::vector<uint32_t> result;
+    for (const auto& pair : jobs) {
+        if (pair.second->state != JobState::TERMINATED) {
+            result.push_back(pair.first);
+        }
+    }
+    return result;
+}
+
+JobControlBlock* JobManager::getForegroundJob() {
+    std::lock_guard<std::mutex> lock(jobsMutex);
+    for (auto& pair : jobs) {
+        if (pair.second->state == JobState::FOREGROUND) {
+            return pair.second.get();
+        }
+    }
+    return nullptr;
+}
+
+bool JobManager::foreground(uint32_t jobId) {
+    auto* job = getJob(jobId);
+    if (!job) return false;
+
+    JobState current = job->state.load();
+    auto result = StateMachine::transition(current, JobEvent::FG_CMD);
+    if (!result.valid) return false;
+
+#ifndef _WIN32
+    // Resume if stopped
+    if (current == JobState::STOPPED) {
+        kill(-job->pgid, SIGCONT);
+    }
+
+    // Terminal control operations only if we have a TTY
+    if (hasTty) {
+        // Give terminal control to job
+        tcsetpgrp(ttyFd, job->pgid);
+
+        // Restore job's terminal modes
+        if (job->hasSavedModes) {
+            tcsetattr(ttyFd, TCSADRAIN, &job->savedModes);
+        }
+    }
+#endif
+
+    job->streams->setForegroundMode(true);
+
+    JobState oldState = job->state.exchange(result.newState);
+    notifyStatusChange(jobId, oldState, result.newState);
+
+    return true;
+}
+
+bool JobManager::background(uint32_t jobId, bool resume) {
+    auto* job = getJob(jobId);
+    if (!job) return false;
+
+    JobState current = job->state.load();
+    auto result = StateMachine::transition(current, JobEvent::BG_CMD);
+    if (!result.valid) return false;
+
+#ifndef _WIN32
+    // Resume if stopped
+    if (resume && current == JobState::STOPPED) {
+        kill(-job->pgid, SIGCONT);
+    }
+
+    // Shell takes terminal control (only if we have a TTY)
+    if (hasTty) {
+        tcsetpgrp(ttyFd, shellPgid);
+    }
+#endif
+
+    job->streams->setForegroundMode(false);
+
+    JobState oldState = job->state.exchange(result.newState);
+    notifyStatusChange(jobId, oldState, result.newState);
+
+    return true;
+}
+
+bool JobManager::stop(uint32_t jobId) {
+    auto* job = getJob(jobId);
+    if (!job) return false;
+
+#ifndef _WIN32
+    return sendSignal(job, SIGTSTP);
+#else
+    return false;  // TODO: Windows implementation
+#endif
+}
+
+bool JobManager::terminate(uint32_t jobId, bool force) {
+    auto* job = getJob(jobId);
+    if (!job) return false;
+
+#ifndef _WIN32
+    int sig = force ? SIGKILL : SIGTERM;
+    return sendSignal(job, sig);
+#else
+    if (job->jobObject != INVALID_HANDLE_VALUE) {
+        TerminateJobObject(job->jobObject, 1);
+        return true;
+    }
+    return false;
+#endif
+}
+
+int JobManager::wait(uint32_t jobId, uint32_t timeout_ms) {
+    auto* job = getJob(jobId);
+    if (!job) return -1;
+
+    auto start = std::chrono::steady_clock::now();
+
+    while (job->state != JobState::TERMINATED) {
+        processEvents(100);
+
+        if (timeout_ms > 0) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - start
+            ).count();
+            if (elapsed >= timeout_ms) {
+                return -1;  // Timeout
+            }
+        }
+    }
+
+    return job->exitCode;
+}
+
+void JobManager::handleCtrlC() {
+    auto* job = getForegroundJob();
+    if (job) {
+#ifndef _WIN32
+        kill(-job->pgid, SIGINT);
+#endif
+    }
+}
+
+void JobManager::handleCtrlZ() {
+    auto* job = getForegroundJob();
+    if (job) {
+#ifndef _WIN32
+        kill(-job->pgid, SIGTSTP);
+
+        // Terminal control operations only if we have a TTY
+        if (hasTty) {
+            // Shell reclaims terminal
+            tcsetpgrp(ttyFd, shellPgid);
+
+            // Save job's terminal modes
+            tcgetattr(ttyFd, &job->savedModes);
+            job->hasSavedModes = true;
+
+            // Restore shell's terminal modes
+            tcsetattr(ttyFd, TCSADRAIN, &shellModes);
+        }
+#endif
+
+        JobState oldState = job->state.exchange(JobState::STOPPED);
+        notifyStatusChange(job->jobId, oldState, JobState::STOPPED);
+    }
+}
+
+void JobManager::handleCtrlD() {
+    // EOF on stdin - typically handled by the shell
+}
+
+int JobManager::processEvents(uint32_t timeout_ms) {
+    int count = 0;
+
+#ifdef __linux__
+    if (impl->epollFd >= 0) {
+        struct epoll_event events[16];
+        int n = epoll_wait(impl->epollFd, events, 16, timeout_ms);
+
+        for (int i = 0; i < n; ++i) {
+            uint32_t jobId = events[i].data.u32;
+            auto* job = getJob(jobId);
+            if (job) {
+                reapJob(job);
+                ++count;
+            }
+        }
+    }
+#else
+    // Fallback: poll all jobs with waitpid
+    std::lock_guard<std::mutex> lock(jobsMutex);
+
+    for (auto& pair : jobs) {
+        auto* job = pair.second.get();
+        if (job->state == JobState::TERMINATED) continue;
+
+#ifndef _WIN32
+        for (auto& proc : job->processes) {
+            if (proc.pid > 0) {
+                int status;
+                pid_t result = waitpid(proc.pid, &status, WNOHANG | WUNTRACED);
+
+                if (result > 0) {
+                    if (WIFEXITED(status)) {
+                        job->exitCode = WEXITSTATUS(status);
+                        job->exitedNormally = true;
+
+                        JobState oldState = job->state.exchange(JobState::TERMINATED);
+                        notifyStatusChange(job->jobId, oldState, JobState::TERMINATED);
+                        ++count;
+                    } else if (WIFSTOPPED(status)) {
+                        job->stopSignal = WSTOPSIG(status);
+                        job->stoppedBySignal = true;
+
+                        JobState oldState = job->state.exchange(JobState::STOPPED);
+                        notifyStatusChange(job->jobId, oldState, JobState::STOPPED);
+                        ++count;
+                    }
+                }
+            }
+        }
+#endif
+    }
+#endif
+
+    return count;
+}
+
+void JobManager::onStatusChange(JobStatusCallback callback) {
+    statusCallbacks.push_back(callback);
+}
+
+bool JobManager::saveTerminalModes() {
+#ifndef _WIN32
+    if (!hasTty) return true;  // No-op without TTY
+    return tcgetattr(ttyFd, &shellModes) == 0;
+#else
+    return true;
+#endif
+}
+
+bool JobManager::restoreTerminalModes() {
+#ifndef _WIN32
+    if (!hasTty) return true;  // No-op without TTY
+    return tcsetattr(ttyFd, TCSADRAIN, &shellModes) == 0;
+#else
+    return true;
+#endif
+}
+
+bool JobManager::enterRawMode() {
+#ifndef _WIN32
+    if (!hasTty) return true;  // No-op without TTY
+
+    struct termios raw = shellModes;
+
+    // Disable canonical mode and echo
+    raw.c_lflag &= ~(ICANON | ECHO | ISIG);
+
+    // Disable special character processing
+    raw.c_iflag &= ~(IXON | ICRNL);
+
+    // Set minimum input and timeout
+    raw.c_cc[VMIN] = 1;
+    raw.c_cc[VTIME] = 0;
+
+    if (tcsetattr(ttyFd, TCSAFLUSH, &raw) < 0) {
+        return false;
+    }
+
+    inRawMode = true;
+#endif
+    return true;
+}
+
+bool JobManager::exitRawMode() {
+#ifndef _WIN32
+    if (!hasTty) return true;  // No-op without TTY
+    if (tcsetattr(ttyFd, TCSAFLUSH, &shellModes) < 0) {
+        return false;
+    }
+    inRawMode = false;
+#endif
+    return true;
+}
+
+void JobManager::notifyStatusChange(uint32_t jobId, JobState oldState,
+                                     JobState newState) {
+    for (auto& cb : statusCallbacks) {
+        cb(jobId, oldState, newState);
+    }
+}
+
+bool JobManager::sendSignal(JobControlBlock* job, int signal) {
+#ifndef _WIN32
+    // Send to process group (negative PGID)
+    return kill(-job->pgid, signal) == 0;
+#else
+    return false;
+#endif
+}
+
+void JobManager::reapJob(JobControlBlock* job) {
+#ifndef _WIN32
+    for (auto& proc : job->processes) {
+        if (proc.pid > 0) {
+            int status;
+            if (waitpid(proc.pid, &status, WNOHANG) > 0) {
+                if (WIFEXITED(status)) {
+                    job->exitCode = WEXITSTATUS(status);
+                    job->exitedNormally = true;
+                } else if (WIFSIGNALED(status)) {
+                    job->exitCode = 128 + WTERMSIG(status);
+                    job->exitedNormally = false;
+                }
+            }
+        }
+    }
+
+    job->endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+
+    JobState oldState = job->state.exchange(JobState::TERMINATED);
+    notifyStatusChange(job->jobId, oldState, JobState::TERMINATED);
+#endif
+}
+
+void JobManager::cleanupJob(uint32_t jobId) {
+    std::lock_guard<std::mutex> lock(jobsMutex);
+    jobs.erase(jobId);
+}
+
+// =============================================================================
+// Global Job Manager
+// =============================================================================
+
+static std::unique_ptr<JobManager> globalJobManager;
+
+JobManager& getJobManager() {
+    if (!globalJobManager) {
+        globalJobManager = std::make_unique<JobManager>();
+    }
+    return *globalJobManager;
+}
+
+} // namespace job
+} // namespace ariash
+
+================================================================================
+FILE: src/job/job_state.cpp
+================================================================================
+
+/**
+ * AriaSH Job State Machine Implementation
+ *
+ * ARIA-021: Shell Job Control State Machine Design
+ */
+
+#include "job/job_state.hpp"
+#include <vector>
+
+namespace ariash {
+namespace job {
+
+TransitionResult StateMachine::transition(JobState current, JobEvent event) {
+    // State transition table from ARIA-021 spec
+    switch (current) {
+        case JobState::NONE:
+            switch (event) {
+                case JobEvent::SPAWN:
+                    return TransitionResult::ok(JobState::FOREGROUND);
+                case JobEvent::SPAWN_BG:
+                    return TransitionResult::ok(JobState::BACKGROUND);
+                default:
+                    return TransitionResult::fail("Invalid event for NONE state");
+            }
+
+        case JobState::FOREGROUND:
+            switch (event) {
+                case JobEvent::CTRL_Z:
+                    // User suspend - transition to STOPPED
+                    return TransitionResult::ok(JobState::STOPPED);
+                case JobEvent::CTRL_C:
+                    // User interrupt - usually terminates
+                    return TransitionResult::ok(JobState::TERMINATED);
+                case JobEvent::CHILD_EXIT:
+                    // Process exited normally
+                    return TransitionResult::ok(JobState::TERMINATED);
+                case JobEvent::CHILD_STOP:
+                    // Process stopped by signal
+                    return TransitionResult::ok(JobState::STOPPED);
+                case JobEvent::ERROR:
+                    return TransitionResult::ok(JobState::TERMINATED);
+                default:
+                    return TransitionResult::fail("Invalid event for FOREGROUND state");
+            }
+
+        case JobState::BACKGROUND:
+            switch (event) {
+                case JobEvent::FG_CMD:
+                    // fg %n - bring to foreground
+                    return TransitionResult::ok(JobState::FOREGROUND);
+                case JobEvent::BG_CMD:
+                    // bg %n - resume if stopped (no-op if running)
+                    return TransitionResult::ok(JobState::BACKGROUND);
+                case JobEvent::CHILD_EXIT:
+                    // Process exited
+                    return TransitionResult::ok(JobState::TERMINATED);
+                case JobEvent::CHILD_STOP:
+                    // Stopped by signal (SIGTTIN/SIGTTOU)
+                    return TransitionResult::ok(JobState::STOPPED);
+                case JobEvent::TTY_READ:
+                    // Background process tried to read TTY
+                    // Kernel sends SIGTTIN, process stops
+                    return TransitionResult::ok(JobState::STOPPED);
+                case JobEvent::ERROR:
+                    return TransitionResult::ok(JobState::TERMINATED);
+                default:
+                    return TransitionResult::fail("Invalid event for BACKGROUND state");
+            }
+
+        case JobState::STOPPED:
+            switch (event) {
+                case JobEvent::FG_CMD:
+                    // fg %n - resume in foreground
+                    return TransitionResult::ok(JobState::FOREGROUND);
+                case JobEvent::BG_CMD:
+                    // bg %n - resume in background
+                    return TransitionResult::ok(JobState::BACKGROUND);
+                case JobEvent::CTRL_C:
+                    // Terminate stopped job
+                    return TransitionResult::ok(JobState::TERMINATED);
+                case JobEvent::CHILD_EXIT:
+                    // Stopped process terminated (e.g., SIGKILL)
+                    return TransitionResult::ok(JobState::TERMINATED);
+                case JobEvent::ERROR:
+                    return TransitionResult::ok(JobState::TERMINATED);
+                default:
+                    return TransitionResult::fail("Invalid event for STOPPED state");
+            }
+
+        case JobState::TERMINATED:
+            // Terminal state - no transitions out
+            return TransitionResult::fail("Job already terminated");
+    }
+
+    return TransitionResult::fail("Unknown state");
+}
+
+bool StateMachine::canTransition(JobState current, JobEvent event) {
+    return transition(current, event).valid;
+}
+
+std::vector<JobEvent> StateMachine::validEvents(JobState state) {
+    std::vector<JobEvent> events;
+
+    // Check each event
+    const JobEvent allEvents[] = {
+        JobEvent::SPAWN,
+        JobEvent::SPAWN_BG,
+        JobEvent::CTRL_C,
+        JobEvent::CTRL_Z,
+        JobEvent::FG_CMD,
+        JobEvent::BG_CMD,
+        JobEvent::CHILD_EXIT,
+        JobEvent::CHILD_STOP,
+        JobEvent::TTY_READ,
+        JobEvent::TIMEOUT,
+        JobEvent::ERROR
+    };
+
+    for (JobEvent event : allEvents) {
+        if (canTransition(state, event)) {
+            events.push_back(event);
+        }
+    }
+
+    return events;
+}
+
+} // namespace job
+} // namespace ariash
+
+================================================================================
+FILE: src/job/stream_controller.cpp
+================================================================================
+
+/**
+ * AriaSH Hex-Stream Controller Implementation
+ *
+ * ARIA-021: Shell Job Control State Machine Design
+ *
+ * Implements the Threaded Draining Model for deadlock-free I/O.
+ */
+
+#include "job/stream_controller.hpp"
+#include <cstring>
+#include <algorithm>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/select.h>
+#ifdef __linux__
+#include <sys/syscall.h>
+#endif
+#endif
+
+namespace ariash {
+namespace job {
+
+// =============================================================================
+// Ring Buffer Implementation
+// =============================================================================
+
+RingBuffer::RingBuffer(size_t cap)
+    : buffer(cap), capacity(cap) {}
+
+RingBuffer::~RingBuffer() = default;
+
+size_t RingBuffer::write(const void* data, size_t size) {
+    size_t free = freeSpace();
+    size_t toWrite = std::min(size, free);
+
+    if (toWrite == 0) return 0;
+
+    size_t wpos = writePos.load(std::memory_order_relaxed);
+    const uint8_t* src = static_cast<const uint8_t*>(data);
+
+    // Write in up to two parts (wrap around)
+    size_t firstPart = std::min(toWrite, capacity - wpos);
+    std::memcpy(buffer.data() + wpos, src, firstPart);
+
+    if (toWrite > firstPart) {
+        std::memcpy(buffer.data(), src + firstPart, toWrite - firstPart);
+    }
+
+    writePos.store((wpos + toWrite) % capacity, std::memory_order_release);
+    return toWrite;
+}
+
+size_t RingBuffer::read(void* data, size_t maxSize) {
+    size_t avail = available();
+    size_t toRead = std::min(maxSize, avail);
+
+    if (toRead == 0) return 0;
+
+    size_t rpos = readPos.load(std::memory_order_relaxed);
+    uint8_t* dst = static_cast<uint8_t*>(data);
+
+    // Read in up to two parts (wrap around)
+    size_t firstPart = std::min(toRead, capacity - rpos);
+    std::memcpy(dst, buffer.data() + rpos, firstPart);
+
+    if (toRead > firstPart) {
+        std::memcpy(dst + firstPart, buffer.data(), toRead - firstPart);
+    }
+
+    readPos.store((rpos + toRead) % capacity, std::memory_order_release);
+    return toRead;
+}
+
+size_t RingBuffer::peek(void* data, size_t maxSize) const {
+    size_t avail = available();
+    size_t toPeek = std::min(maxSize, avail);
+
+    if (toPeek == 0) return 0;
+
+    size_t rpos = readPos.load(std::memory_order_acquire);
+    uint8_t* dst = static_cast<uint8_t*>(data);
+
+    size_t firstPart = std::min(toPeek, capacity - rpos);
+    std::memcpy(dst, buffer.data() + rpos, firstPart);
+
+    if (toPeek > firstPart) {
+        std::memcpy(dst + firstPart, buffer.data(), toPeek - firstPart);
+    }
+
+    return toPeek;
+}
+
+size_t RingBuffer::available() const {
+    size_t w = writePos.load(std::memory_order_acquire);
+    size_t r = readPos.load(std::memory_order_acquire);
+    return (w >= r) ? (w - r) : (capacity - r + w);
+}
+
+size_t RingBuffer::freeSpace() const {
+    return capacity - available() - 1;  // -1 to distinguish full from empty
+}
+
+bool RingBuffer::empty() const {
+    return available() == 0;
+}
+
+bool RingBuffer::full() const {
+    return freeSpace() == 0;
+}
+
+void RingBuffer::clear() {
+    readPos.store(0, std::memory_order_release);
+    writePos.store(0, std::memory_order_release);
+}
+
+// =============================================================================
+// Hex-Stream Pipes Implementation
+// =============================================================================
+
+HexStreamPipes::HexStreamPipes() {
+#ifdef _WIN32
+    for (int i = 0; i < 12; ++i) {
+        handles[i] = INVALID_HANDLE_VALUE;
+    }
+#else
+    for (int i = 0; i < 12; ++i) {
+        fds[i] = -1;
+    }
+#endif
+}
+
+void HexStreamPipes::close() {
+#ifdef _WIN32
+    for (int i = 0; i < 12; ++i) {
+        if (handles[i] != INVALID_HANDLE_VALUE) {
+            CloseHandle(handles[i]);
+            handles[i] = INVALID_HANDLE_VALUE;
+        }
+    }
+#else
+    for (int i = 0; i < 12; ++i) {
+        if (fds[i] >= 0) {
+            ::close(fds[i]);
+            fds[i] = -1;
+        }
+    }
+#endif
+}
+
+bool HexStreamPipes::isValid() const {
+#ifdef _WIN32
+    // Check at least stdin, stdout, stderr are valid
+    return handles[0] != INVALID_HANDLE_VALUE &&
+           handles[2] != INVALID_HANDLE_VALUE &&
+           handles[4] != INVALID_HANDLE_VALUE;
+#else
+    return fds[0] >= 0 && fds[2] >= 0 && fds[4] >= 0;
+#endif
+}
+
+// =============================================================================
+// Stream Controller Implementation
+// =============================================================================
+
+StreamController::StreamController() {
+    // Create ring buffers for output streams
+    for (int i = 0; i < static_cast<int>(StreamIndex::COUNT); ++i) {
+        buffers[i] = std::make_unique<RingBuffer>(64 * 1024);
+    }
+}
+
+StreamController::~StreamController() {
+    stopDraining();
+    close();
+}
+
+bool StreamController::createPipes() {
+#ifdef _WIN32
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = NULL;
+
+    // Create pipes for each stream
+    for (int i = 0; i < 6; ++i) {
+        int readIdx = i * 2;
+        int writeIdx = i * 2 + 1;
+
+        if (!CreatePipe(&pipes.handles[readIdx], &pipes.handles[writeIdx],
+                        &sa, 0)) {
+            close();
+            return false;
+        }
+    }
+    return true;
+#else
+    // Create pipes with O_CLOEXEC for security
+    for (int i = 0; i < 6; ++i) {
+        int pipefd[2];
+#ifdef __linux__
+        if (pipe2(pipefd, O_CLOEXEC) < 0) {
+#else
+        if (pipe(pipefd) < 0) {
+#endif
+            close();
+            return false;
+        }
+        pipes.fds[i * 2] = pipefd[0];      // Read end
+        pipes.fds[i * 2 + 1] = pipefd[1];  // Write end
+    }
+    return true;
+#endif
+}
+
+bool StreamController::setupChild() {
+#ifndef _WIN32
+    // Redirect FDs 0-5 to pipes
+    // stdin: read from parent's write end
+    if (dup2(pipes.fds[1], STDIN_FILENO) < 0) return false;
+
+    // stdout: write to parent's read end
+    if (dup2(pipes.fds[2], STDOUT_FILENO) < 0) return false;
+
+    // stderr: write to parent's read end
+    if (dup2(pipes.fds[4], STDERR_FILENO) < 0) return false;
+
+    // stddbg (FD 3): write to parent's read end
+    if (dup2(pipes.fds[6], 3) < 0) return false;
+
+    // stddati (FD 4): read from parent's write end
+    if (dup2(pipes.fds[9], 4) < 0) return false;
+
+    // stddato (FD 5): write to parent's read end
+    if (dup2(pipes.fds[10], 5) < 0) return false;
+
+    // Close all original pipe FDs
+    for (int i = 0; i < 12; ++i) {
+        if (pipes.fds[i] >= 0) {
+            ::close(pipes.fds[i]);
+        }
+    }
+#endif
+    return true;
+}
+
+bool StreamController::setupParent() {
+#ifndef _WIN32
+    // Close child-side FDs
+
+    // stdin: close read end (child uses it)
+    ::close(pipes.fds[0]);
+    pipes.fds[0] = -1;
+
+    // stdout: close write end (child uses it)
+    ::close(pipes.fds[3]);
+    pipes.fds[3] = -1;
+
+    // stderr: close write end
+    ::close(pipes.fds[5]);
+    pipes.fds[5] = -1;
+
+    // stddbg: close write end
+    ::close(pipes.fds[7]);
+    pipes.fds[7] = -1;
+
+    // stddati: close read end
+    ::close(pipes.fds[8]);
+    pipes.fds[8] = -1;
+
+    // stddato: close write end
+    ::close(pipes.fds[11]);
+    pipes.fds[11] = -1;
+#endif
+    return true;
+}
+
+bool StreamController::startDraining() {
+    stopFlag.store(false);
+
+#ifndef _WIN32
+    // Start drain threads for output streams
+    // stdout (fd index 2)
+    if (pipes.fds[2] >= 0) {
+        drainThreads[0] = std::thread(&StreamController::drainLoop, this,
+                                       StreamIndex::STDOUT, pipes.fds[2]);
+    }
+
+    // stderr (fd index 4)
+    if (pipes.fds[4] >= 0) {
+        drainThreads[1] = std::thread(&StreamController::drainLoop, this,
+                                       StreamIndex::STDERR, pipes.fds[4]);
+    }
+
+    // stddbg (fd index 6)
+    if (pipes.fds[6] >= 0) {
+        drainThreads[2] = std::thread(&StreamController::drainLoop, this,
+                                       StreamIndex::STDDBG, pipes.fds[6]);
+    }
+
+    // stddato (fd index 10)
+    if (pipes.fds[10] >= 0) {
+        drainThreads[3] = std::thread(&StreamController::drainLoop, this,
+                                       StreamIndex::STDDATO, pipes.fds[10]);
+    }
+#endif
+
+    return true;
+}
+
+void StreamController::stopDraining() {
+    stopFlag.store(true);
+
+    // Wait for threads to finish
+    for (int i = 0; i < 4; ++i) {
+        if (drainThreads[i].joinable()) {
+            drainThreads[i].join();
+        }
+    }
+}
+
+void StreamController::drainLoop(StreamIndex stream, int fd) {
+#ifndef _WIN32
+    uint8_t buf[4096];
+
+    while (!stopFlag.load()) {
+        // Use select with timeout for cancellation
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(fd, &readfds);
+
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 100000;  // 100ms
+
+        int ret = select(fd + 1, &readfds, nullptr, nullptr, &tv);
+        if (ret < 0) {
+            break;  // Error
+        }
+        if (ret == 0) {
+            continue;  // Timeout, check stop flag
+        }
+
+        ssize_t n = read(fd, buf, sizeof(buf));
+        if (n <= 0) {
+            break;  // EOF or error
+        }
+
+        // In foreground mode, write directly to TTY for stdout/stderr
+        if (foregroundMode.load() &&
+            (stream == StreamIndex::STDOUT || stream == StreamIndex::STDERR)) {
+            int ttyFd = (stream == StreamIndex::STDOUT) ? STDOUT_FILENO : STDERR_FILENO;
+            ssize_t written = ::write(ttyFd, buf, n);
+            (void)written;  // Ignore return value in foreground passthrough
+        }
+
+        // Always buffer the data
+        int idx = static_cast<int>(stream);
+        buffers[idx]->write(buf, n);
+
+        // Notify callbacks
+        notifyData(stream, buf, n);
+    }
+#endif
+}
+
+ssize_t StreamController::writeStdin(const void* data, size_t size) {
+#ifdef _WIN32
+    DWORD written;
+    if (!WriteFile(pipes.handles[1], data, (DWORD)size, &written, NULL)) {
+        return -1;
+    }
+    return written;
+#else
+    return write(pipes.fds[1], data, size);
+#endif
+}
+
+size_t StreamController::readBuffer(StreamIndex stream, void* data, size_t maxSize) {
+    int idx = static_cast<int>(stream);
+    return buffers[idx]->read(data, maxSize);
+}
+
+size_t StreamController::availableData(StreamIndex stream) const {
+    int idx = static_cast<int>(stream);
+    return buffers[idx]->available();
+}
+
+bool StreamController::hasPendingData(StreamIndex stream) const {
+    return availableData(stream) > 0;
+}
+
+void StreamController::onData(StreamCallback callback) {
+    std::lock_guard<std::mutex> lock(callbackMutex);
+    callbacks.push_back(callback);
+}
+
+void StreamController::notifyData(StreamIndex stream, const void* data, size_t size) {
+    std::lock_guard<std::mutex> lock(callbackMutex);
+    for (auto& cb : callbacks) {
+        cb(stream, data, size);
+    }
+}
+
+void StreamController::setForegroundMode(bool foreground) {
+    foregroundMode.store(foreground);
+}
+
+void StreamController::flushBuffers() {
+    uint8_t buf[4096];
+
+    for (int i = 0; i < static_cast<int>(StreamIndex::COUNT); ++i) {
+        while (!buffers[i]->empty()) {
+            size_t n = buffers[i]->read(buf, sizeof(buf));
+            if (n > 0) {
+                notifyData(static_cast<StreamIndex>(i), buf, n);
+            }
+        }
+    }
+}
+
+void StreamController::close() {
+    stopDraining();
+    pipes.close();
+}
+
+} // namespace job
+} // namespace ariash
+
+================================================================================
+FILE: src/repl/main.cpp
+================================================================================
+
+/**
+ * AriaSH - Aria Interactive Shell
+ *
+ * ARIA-021: Shell Job Control State Machine Design
+ *
+ * Simple REPL (Read-Eval-Print Loop) for the Aria shell.
+ * Provides command execution with job control support.
+ */
+
+#include "job/job_control.hpp"
+#include "job/job_state.hpp"
+#include <iostream>
+#include <string>
+#include <sstream>
+#include <vector>
+#include <csignal>
+#include <cstring>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <termios.h>
+#endif
+
+using namespace ariash::job;
+
+// Global job manager reference for signal handlers
+static JobManager* g_jobManager = nullptr;
+
+// Signal handler for SIGINT (Ctrl+C)
+#ifndef _WIN32
+static void sigint_handler(int) {
+    if (g_jobManager) {
+        g_jobManager->handleCtrlC();
+    }
+}
+
+// Signal handler for SIGTSTP (Ctrl+Z)
+static void sigtstp_handler(int) {
+    if (g_jobManager) {
+        g_jobManager->handleCtrlZ();
+    }
+}
+
+// Signal handler for SIGCHLD
+static void sigchld_handler(int) {
+    if (g_jobManager) {
+        g_jobManager->processEvents(0);
+    }
+}
+#endif
+
+// Parse command line into command and arguments
+std::pair<std::string, std::vector<std::string>> parseCommand(const std::string& line) {
+    std::istringstream iss(line);
+    std::string cmd;
+    std::vector<std::string> args;
+
+    iss >> cmd;
+    std::string arg;
+    while (iss >> arg) {
+        args.push_back(arg);
+    }
+
+    return {cmd, args};
+}
+
+// Check if command should run in background
+bool isBackgroundCommand(std::string& line) {
+    if (!line.empty() && line.back() == '&') {
+        line.pop_back();
+        // Trim trailing whitespace
+        while (!line.empty() && std::isspace(line.back())) {
+            line.pop_back();
+        }
+        return true;
+    }
+    return false;
+}
+
+// Built-in commands
+bool handleBuiltin(JobManager& jm, const std::string& cmd,
+                   const std::vector<std::string>& args) {
+    if (cmd == "exit" || cmd == "quit") {
+        std::cout << "Goodbye!\n";
+        exit(0);
+    }
+
+    if (cmd == "jobs") {
+        auto jobs = jm.getActiveJobs();
+        if (jobs.empty()) {
+            std::cout << "No active jobs\n";
+        } else {
+            for (uint32_t jobId : jobs) {
+                auto* job = jm.getJob(jobId);
+                if (job) {
+                    const char* stateStr = "unknown";
+                    switch (job->state.load()) {
+                        case JobState::FOREGROUND: stateStr = "Running (fg)"; break;
+                        case JobState::BACKGROUND: stateStr = "Running (bg)"; break;
+                        case JobState::STOPPED:    stateStr = "Stopped"; break;
+                        case JobState::TERMINATED: stateStr = "Done"; break;
+                        default: break;
+                    }
+                    std::cout << "[" << jobId << "] " << stateStr
+                              << " " << job->command << "\n";
+                }
+            }
+        }
+        return true;
+    }
+
+    if (cmd == "fg") {
+        if (args.empty()) {
+            // Foreground most recent job
+            auto jobs = jm.getActiveJobs();
+            if (!jobs.empty()) {
+                jm.foreground(jobs.back());
+                jm.wait(jobs.back(), 0);
+            } else {
+                std::cerr << "fg: no current job\n";
+            }
+        } else {
+            uint32_t jobId = std::stoul(args[0]);
+            if (!jm.foreground(jobId)) {
+                std::cerr << "fg: job not found: " << jobId << "\n";
+            } else {
+                jm.wait(jobId, 0);
+            }
+        }
+        return true;
+    }
+
+    if (cmd == "bg") {
+        if (args.empty()) {
+            auto jobs = jm.getActiveJobs();
+            for (uint32_t jobId : jobs) {
+                auto* job = jm.getJob(jobId);
+                if (job && job->state == JobState::STOPPED) {
+                    jm.background(jobId, true);
+                    std::cout << "[" << jobId << "] " << job->command << " &\n";
+                    break;
+                }
+            }
+        } else {
+            uint32_t jobId = std::stoul(args[0]);
+            if (!jm.background(jobId, true)) {
+                std::cerr << "bg: job not found: " << jobId << "\n";
+            }
+        }
+        return true;
+    }
+
+    if (cmd == "cd") {
+        const char* dir = args.empty() ? getenv("HOME") : args[0].c_str();
+        if (dir && chdir(dir) != 0) {
+            std::cerr << "cd: " << strerror(errno) << ": " << dir << "\n";
+        }
+        return true;
+    }
+
+    if (cmd == "help") {
+        std::cout << "AriaSH - Aria Interactive Shell\n\n";
+        std::cout << "Built-in commands:\n";
+        std::cout << "  jobs        List active jobs\n";
+        std::cout << "  fg [n]      Bring job n to foreground\n";
+        std::cout << "  bg [n]      Resume job n in background\n";
+        std::cout << "  cd [dir]    Change directory\n";
+        std::cout << "  exit/quit   Exit the shell\n";
+        std::cout << "  help        Show this help\n\n";
+        std::cout << "Job control:\n";
+        std::cout << "  Ctrl+C      Interrupt foreground job\n";
+        std::cout << "  Ctrl+Z      Suspend foreground job\n";
+        std::cout << "  command &   Run command in background\n";
+        return true;
+    }
+
+    return false;
+}
+
+void printPrompt() {
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd))) {
+        // Shorten home directory to ~
+        const char* home = getenv("HOME");
+        if (home && strncmp(cwd, home, strlen(home)) == 0) {
+            std::cout << "~" << (cwd + strlen(home));
+        } else {
+            std::cout << cwd;
+        }
+    }
+    std::cout << " $ " << std::flush;
+}
+
+int main(int argc, char* argv[]) {
+    (void)argc;
+    (void)argv;
+
+    std::cout << "AriaSH - Aria Interactive Shell v0.1.0\n";
+    std::cout << "Type 'help' for available commands.\n\n";
+
+    // Initialize job manager
+    JobManager& jm = getJobManager();
+    g_jobManager = &jm;
+
+    if (!jm.initialize()) {
+        std::cerr << "Failed to initialize job manager\n";
+        return 1;
+    }
+
+    // Register status change callback
+    jm.onStatusChange([](uint32_t jobId, JobState oldState, JobState newState) {
+        if (newState == JobState::TERMINATED && oldState != JobState::TERMINATED) {
+            auto* job = g_jobManager->getJob(jobId);
+            if (job) {
+                std::cout << "\n[" << jobId << "] Done: " << job->command << "\n";
+            }
+        } else if (newState == JobState::STOPPED && oldState != JobState::STOPPED) {
+            auto* job = g_jobManager->getJob(jobId);
+            if (job) {
+                std::cout << "\n[" << jobId << "] Stopped: " << job->command << "\n";
+            }
+        }
+    });
+
+#ifndef _WIN32
+    // Install signal handlers
+    struct sigaction sa;
+    sa.sa_flags = SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+
+    sa.sa_handler = sigint_handler;
+    sigaction(SIGINT, &sa, nullptr);
+
+    sa.sa_handler = sigtstp_handler;
+    sigaction(SIGTSTP, &sa, nullptr);
+
+    sa.sa_handler = sigchld_handler;
+    sigaction(SIGCHLD, &sa, nullptr);
+#endif
+
+    // Main REPL loop
+    std::string line;
+    while (true) {
+        // Process any pending events
+        jm.processEvents(0);
+
+        printPrompt();
+
+        if (!std::getline(std::cin, line)) {
+            std::cout << "\n";
+            break;  // EOF
+        }
+
+        // Skip empty lines
+        if (line.empty() || line.find_first_not_of(" \t") == std::string::npos) {
+            continue;
+        }
+
+        // Check for background command
+        bool background = isBackgroundCommand(line);
+
+        // Parse command
+        auto [cmd, args] = parseCommand(line);
+
+        if (cmd.empty()) {
+            continue;
+        }
+
+        // Try built-in commands first
+        if (handleBuiltin(jm, cmd, args)) {
+            continue;
+        }
+
+        // External command - spawn via job control
+        SpawnOptions opts;
+        opts.command = cmd;
+        opts.args = args;
+        opts.background = background;
+        opts.createPipeGroup = true;
+
+        uint32_t jobId = jm.spawn(opts);
+        if (jobId == 0) {
+            std::cerr << "ariash: command not found: " << cmd << "\n";
+            continue;
+        }
+
+        if (background) {
+            std::cout << "[" << jobId << "] " << cmd << " &\n";
+        } else {
+            // Wait for foreground job
+            jm.wait(jobId, 0);
+
+            // Restore shell terminal control
+            jm.restoreTerminalModes();
+        }
+    }
+
+    jm.shutdown();
+    return 0;
+}

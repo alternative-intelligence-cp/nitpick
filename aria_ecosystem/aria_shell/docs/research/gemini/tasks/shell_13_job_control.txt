@@ -1,0 +1,62 @@
+Job Control and Background Processes
+
+PRIORITY: MEDIUM
+STATUS: Standard Shell Feature
+SOURCE: Implied by process orchestration requirements
+
+PROBLEM:
+Users need to run processes in background, suspend/resume jobs, and manage multiple concurrent tasks. Standard shell feature.
+
+REQUIREMENTS:
+1. Background Execution:
+   - command & runs in background
+   - Returns job ID immediately
+   - Shell remains interactive
+
+2. Job Management:
+   - jobs: List active jobs
+   - fg %n: Bring job n to foreground
+   - bg %n: Resume suspended job in background
+   - kill %n: Terminate job
+
+3. Signal Handling:
+   - Ctrl+Z: Suspend foreground job (SIGTSTP)
+   - Ctrl+C: Terminate foreground job (SIGINT)
+   - Job state tracking (running, stopped, done)
+
+4. Process Groups:
+   - Each job in separate process group
+   - Terminal control (foreground process group)
+   - Proper signal delivery to job
+
+IMPLEMENTATION TASKS:
+- [ ] Create JobManager class
+- [ ] Implement process group management (setpgid)
+- [ ] Add job state tracking
+- [ ] Implement background execution (&)
+- [ ] Add Ctrl+Z signal handling
+- [ ] Implement fg/bg commands
+- [ ] Create jobs listing
+- [ ] Add terminal control (tcsetpgrp)
+- [ ] Handle job completion notifications
+- [ ] Implement Windows equivalent (suspend/resume)
+
+FILES TO CREATE:
+- src/jobs/job_manager.cpp
+- src/jobs/process_group.cpp
+- include/aria/shell/job.h
+- src/signal/ctrl_z_handler.cpp
+
+RESEARCH NOTES:
+- Process groups critical for proper signal handling
+- Windows doesn't have direct equivalent (must use threads/suspend)
+- Job control requires terminal in raw mode cooperation
+
+ACCEPTANCE CRITERIA:
+- command & runs in background
+- jobs shows active background jobs
+- Ctrl+Z suspends foreground process
+- fg brings job to foreground
+- bg resumes suspended job
+- Job completion notified asynchronously
+- Works on POSIX systems (limited on Windows)

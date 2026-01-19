@@ -1,0 +1,63 @@
+Process Orchestration Class (Cross-Platform)
+
+PRIORITY: CRITICAL
+STATUS: Core Abstraction
+SOURCE: Custom Shell Design For Aria.txt, Section 6.1, Table 1
+
+PROBLEM:
+Need unified Process abstraction that handles fork/exec (POSIX) and CreateProcess (Windows) with consistent API for 6-stream management.
+
+REQUIREMENTS:
+1. Platform Abstraction Layer (PAL):
+   - POSIX: fork() → dup2() → execve()
+   - Windows: CreateProcess with STARTUPINFOEX
+   - Unified Process::spawn() factory method
+
+2. Process Lifecycle Management:
+   - spawn() returns Process object
+   - wait() returns result<int> (Aria result type)
+   - kill() sends termination signal/message
+   - is_running() checks process state
+
+3. Linux-Specific:
+   - Use pidfd_open() for race-free process tracking
+   - Integrate pidfd with epoll event loop
+   - Handle zombie reaping automatically
+
+4. Windows-Specific:
+   - Handle inheritance via attribute lists
+   - UTF-8 ↔ UTF-16 transcoding for arguments
+   - WaitForSingleObject for process exit
+   - Console group management for Ctrl+C
+
+IMPLEMENTATION TASKS:
+- [ ] Design Process class interface
+- [ ] Implement POSIX spawn (fork/exec)
+- [ ] Implement Windows spawn (CreateProcess)
+- [ ] Add pidfd support for Linux (kernel 5.3+)
+- [ ] Create UTF-8/UTF-16 transcoding layer
+- [ ] Implement wait() with timeout support
+- [ ] Add signal handling (SIGTERM, SIGKILL, etc.)
+- [ ] Create process state tracking
+- [ ] Implement zombie reaping
+- [ ] Add environment variable manipulation
+
+FILES TO CREATE:
+- include/aria/shell/process.h
+- src/process/posix_process.cpp
+- src/process/windows_process.cpp
+- src/process/process_factory.cpp
+- src/platform/encoding.cpp (UTF transcoding)
+
+RESEARCH NOTES:
+- pidfd prevents PID recycling race conditions
+- Windows requires explicit handle cleanup
+- Both platforms have pipe inheritance subtleties
+
+ACCEPTANCE CRITERIA:
+- Can spawn process on Linux and Windows
+- All 6 streams connected correctly
+- wait() returns correct exit code
+- kill() terminates process gracefully
+- No zombie processes accumulate
+- Handles Unicode arguments correctly on Windows

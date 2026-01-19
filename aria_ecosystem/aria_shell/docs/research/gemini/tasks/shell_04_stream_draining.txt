@@ -1,0 +1,57 @@
+Threaded Stream Draining for Deadlock Prevention
+
+PRIORITY: HIGH
+STATUS: Safety-Critical
+SOURCE: Custom Shell Design For Aria.txt, Section 6.2
+
+PROBLEM:
+Pipe deadlock occurs when child writes >64KB to pipe while parent blocks waiting for child exit. Parent must actively drain pipes to prevent kernel buffer saturation.
+
+REQUIREMENTS:
+1. Active Pump Architecture:
+   - Spawn std::jthread for each output stream (stdout, stderr, stddbg, stddato)
+   - Continuous read from pipe → user-space ring buffer
+   - Up to 4 threads per spawned process
+
+2. Ring Buffer Management:
+   - Lock-free or mutex-protected ring buffer
+   - Configurable size (default 1MB per stream)
+   - Handle overflow (drop or block based on stream type)
+
+3. Thread Lifecycle:
+   - Spawn on process launch
+   - Terminate on pipe EOF or process exit
+   - Join threads in Process::wait()
+
+4. Zero-Copy Path (Advanced):
+   - If Process A pipes to Process B (stddato → stddati)
+   - Use splice() on Linux (kernel-to-kernel transfer)
+   - Bypass user-space threads entirely
+
+IMPLEMENTATION TASKS:
+- [ ] Create StreamDrainer class (thread worker)
+- [ ] Implement ring buffer data structure
+- [ ] Add thread pool management to StreamController
+- [ ] Implement pipe EOF detection
+- [ ] Add graceful shutdown logic
+- [ ] Implement splice() optimization for Linux pipelines
+- [ ] Add performance monitoring (bytes drained, thread activity)
+- [ ] Create "Torture Test" suite (spawn processes writing GB of data)
+
+FILES TO CREATE:
+- src/stream/stream_drainer.cpp
+- src/stream/ring_buffer.h
+- src/stream/splice_optimizer.cpp (Linux)
+- tests/torture/pipe_deadlock_test.cpp
+
+RESEARCH NOTES:
+- Linux pipe buffer typically 64KB (can query with fcntl F_GETPIPE_SZ)
+- Windows unnamed pipes have similar limits
+- splice() syscall critical for high-throughput scenarios
+
+ACCEPTANCE CRITERIA:
+- Process writing 1GB to stdout doesn't deadlock
+- Multiple processes piping large data streams work
+- splice() optimization measurably faster than thread copy
+- No memory leaks in long-running shell sessions
+- Torture tests pass (sustained GB/s throughput)

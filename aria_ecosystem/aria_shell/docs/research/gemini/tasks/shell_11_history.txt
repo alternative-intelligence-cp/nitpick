@@ -1,0 +1,60 @@
+Command History and Search (Persistent)
+
+PRIORITY: MEDIUM
+STATUS: UX Enhancement
+SOURCE: Implied by REPL discussion
+
+PROBLEM:
+Users need command history with search (Ctrl+R), persistence across sessions, and deduplication. Standard feature in modern shells.
+
+REQUIREMENTS:
+1. History Storage:
+   - Location: ~/.aria_history or $ARIA_HISTORY
+   - Format: Plain text or structured (JSON/SQLite)
+   - Configurable size limit (default 10,000 commands)
+
+2. History Operations:
+   - Up/Down arrows: Navigate history
+   - Ctrl+R: Reverse search (incremental)
+   - !n: Execute command number n
+   - !!: Re-execute last command
+   - !pattern: Execute last command matching pattern
+
+3. Deduplication:
+   - Don't store duplicate consecutive commands
+   - Optional: Don't store duplicates anywhere in history
+
+4. Privacy:
+   - Commands starting with space not saved (like Bash HISTCONTROL)
+   - Sensitive command filtering (passwords in args)
+   - History clearing command
+
+IMPLEMENTATION TASKS:
+- [ ] Create History class for storage/retrieval
+- [ ] Implement file-based persistence
+- [ ] Add history navigation (up/down arrows)
+- [ ] Implement Ctrl+R reverse search UI
+- [ ] Add history expansion (!, !!, !pattern)
+- [ ] Implement deduplication logic
+- [ ] Add privacy filtering
+- [ ] Create history management commands (history, clear)
+- [ ] Add thread-safe access (concurrent shells)
+
+FILES TO CREATE:
+- src/history/history_manager.cpp
+- src/history/search_ui.cpp
+- include/aria/shell/history.h
+- tests/history/persistence_tests.cpp
+
+RESEARCH NOTES:
+- Readline library provides good reference implementation
+- Consider SQLite for advanced features (timestamp, tags)
+- Reverse search UI needs careful terminal manipulation
+
+ACCEPTANCE CRITERIA:
+- History persists across shell sessions
+- Ctrl+R search works intuitively
+- Up arrow retrieves last command
+- Duplicate consecutive commands filtered
+- Space-prefixed commands not saved
+- History file doesn't grow unbounded

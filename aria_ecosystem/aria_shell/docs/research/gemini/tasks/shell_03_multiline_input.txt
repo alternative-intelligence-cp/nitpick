@@ -1,0 +1,62 @@
+Modal Multi-Line Input Architecture (Raw Mode REPL)
+
+PRIORITY: CRITICAL
+STATUS: Core UX Feature
+SOURCE: Custom Shell Design For Aria.txt, Section 4
+
+PROBLEM:
+Standard canonical terminal mode treats Enter as submit. Need raw mode where Enter = newline, Ctrl+Enter = submit. Eliminates heredocs and backslash line continuations.
+
+REQUIREMENTS:
+1. Raw Mode Terminal:
+   - POSIX: Disable ICANON, ECHO, ISIG in termios
+   - Windows: SetConsoleMode for raw input
+   - Immediate character delivery (no buffering)
+
+2. Input State Machine:
+   - Idle → Character → Accumulation
+   - Accumulation → Enter → Insert \n (stay in Accumulation)
+   - Accumulation → Ctrl+Enter → Submission
+   - Support Ctrl chord detection
+
+3. Brace-Aware Auto-Indentation:
+   - Track brace depth ({ } nesting)
+   - Auto-indent after Enter inside braces
+   - Visual continuation prompt (aria> → ....)
+
+4. Protocol Negotiation:
+   - Query for Kitty Keyboard Protocol support
+   - Fallback to Alt+Enter if Ctrl+Enter undetectable
+   - Configurable in .aria_shrc
+
+IMPLEMENTATION TASKS:
+- [ ] Create Terminal class for raw mode abstraction
+- [ ] Implement termios manipulation (POSIX)
+- [ ] Implement SetConsoleMode (Windows)
+- [ ] Build input state machine (FSM)
+- [ ] Add chord detection (Ctrl, Alt modifier tracking)
+- [ ] Implement brace depth tracker
+- [ ] Add auto-indentation logic
+- [ ] Implement Kitty protocol negotiation
+- [ ] Add fallback binding system
+- [ ] Create continuation prompt rendering
+
+FILES TO CREATE:
+- include/aria/shell/terminal.h
+- src/terminal/raw_mode.cpp
+- src/terminal/input_fsm.cpp
+- src/terminal/indentation.cpp
+- src/terminal/protocol_detect.cpp
+
+RESEARCH NOTES:
+- Ctrl+Enter detection is non-trivial in legacy terminals
+- May need time-based heuristics for disambiguation
+- User configurable fallback critical for compatibility
+
+ACCEPTANCE CRITERIA:
+- Enter inserts newline without submitting
+- Ctrl+Enter submits multi-line command
+- Auto-indents after { and inside braces
+- Works on modern terminals (Kitty, WezTerm, Alacritty)
+- Fallback works on legacy terminals (xterm, gnome-terminal)
+- Visual feedback for multi-line mode

@@ -1,0 +1,64 @@
+Configuration System (.aria_shrc)
+
+PRIORITY: LOW
+STATUS: Usability Feature
+SOURCE: Custom Shell Design For Aria.txt, Section 4.2
+
+PROBLEM:
+Users need to customize shell behavior (prompt, key bindings, environment). Need configuration file system similar to .bashrc but using Aria syntax.
+
+REQUIREMENTS:
+1. Configuration File:
+   - Location: ~/.aria_shrc or $ARIA_SHRC
+   - Syntax: Aria language subset
+   - Executed on shell startup
+
+2. Configurable Options:
+   - Prompt format and colors
+   - Submit key binding (Ctrl+Enter, Alt+Enter, custom)
+   - History size and location
+   - Alias definitions
+   - Environment variable setup
+   - Initialization scripts
+
+3. Prompt Customization:
+   - Support ANSI color codes
+   - Variable expansion in prompt (&{USER}, &{PWD})
+   - Git branch integration (if in git repo)
+   - Exit status indication
+
+4. Key Binding Configuration:
+   - Map keyboard chords to actions
+   - Custom submit trigger (for terminal compatibility)
+   - Editor-like bindings (Emacs, Vi modes)
+
+IMPLEMENTATION TASKS:
+- [ ] Create config file parser (Aria subset)
+- [ ] Define configuration schema
+- [ ] Implement prompt rendering engine
+- [ ] Add key binding remapping system
+- [ ] Create alias expansion logic
+- [ ] Add environment variable management
+- [ ] Implement startup script execution
+- [ ] Create default .aria_shrc template
+- [ ] Add validation and error reporting
+
+FILES TO CREATE:
+- src/config/shrc_parser.cpp
+- src/config/prompt_engine.cpp
+- src/config/key_bindings.cpp
+- templates/default_shrc.aria
+- docs/CONFIGURATION.md
+
+DEFERRED FEATURES:
+- Plugin system (future)
+- Themes (future)
+- Cloud sync of config (future)
+
+ACCEPTANCE CRITERIA:
+- .aria_shrc loaded on shell startup
+- Prompt customizable with colors and variables
+- Submit key rebindable to Alt+Enter
+- Aliases work like Bash aliases
+- Syntax errors in .aria_shrc reported helpfully
+- Default config provided for new users

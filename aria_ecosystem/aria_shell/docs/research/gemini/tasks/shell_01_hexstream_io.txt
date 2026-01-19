@@ -1,0 +1,55 @@
+Hex-Stream I/O Topology Core Implementation
+
+PRIORITY: CRITICAL
+STATUS: Foundational Architecture
+SOURCE: Custom Shell Design For Aria.txt, Section 2-3
+
+PROBLEM:
+Need to implement 6-stream I/O topology (stdin/stdout/stderr + stddbg/stddati/stddato) to replace traditional 3-stream model. Required for Aria language integration.
+
+REQUIREMENTS:
+1. Stream Definitions:
+   - stdin (FD 0): Command input (UTF-8 text)
+   - stdout (FD 1): User output (formatted text)
+   - stderr (FD 2): Fatal errors (plain text)
+   - stddbg (FD 3): Telemetry/debug (JSON/structured)
+   - stddati (FD 4): Binary data input (zero-copy)
+   - stddato (FD 5): Binary data output (zero-copy)
+
+2. Platform-Specific Implementation:
+   - Linux: dup2() sequence after fork(), before execve()
+   - Windows: STARTUPINFOEX with attribute lists
+
+3. Stream Characteristics:
+   - Text streams (0-2): UTF-8, line-buffered
+   - Debug stream (3): Structured, async buffered
+   - Data streams (4-5): Binary, block-buffered, zero-copy
+
+IMPLEMENTATION TASKS:
+- [ ] Create StreamController class (manages all 6 streams)
+- [ ] Implement Linux pidfd + dup2 logic
+- [ ] Implement Windows STARTUPINFOEX handle inheritance
+- [ ] Create pipe banks (6 pipes per spawned process)
+- [ ] Implement O_CLOEXEC flag handling
+- [ ] Add process file descriptor mapping
+- [ ] Create stream type abstraction (Text vs Binary)
+- [ ] Implement buffering strategies per stream type
+
+FILES TO CREATE:
+- include/aria/shell/stream_controller.h
+- src/stream/stream_controller.cpp
+- src/stream/linux_streams.cpp
+- src/stream/windows_streams.cpp
+- src/stream/pipe_manager.cpp
+
+INTEGRATION POINTS:
+- Must align with Aria std.io module (io.stddbg, io.stddati)
+- Must support wild buffer types for binary streams
+- Must integrate with Process class
+
+ACCEPTANCE CRITERIA:
+- Can spawn process with all 6 streams functional
+- stddbg doesn't corrupt stdout output
+- stddato supports binary piping without corruption
+- Works on Linux and Windows
+- Zero-copy transfers for data streams

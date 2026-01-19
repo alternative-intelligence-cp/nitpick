@@ -1,0 +1,48 @@
+Windows Bootstrap Protocol for Handle Mapping
+
+PRIORITY: HIGH
+STATUS: Windows-Specific Requirement
+SOURCE: Custom Shell Design For Aria.txt, Section 3.2.2
+
+PROBLEM:
+Windows handles are opaque pointers, not fixed integers like POSIX FDs. Child processes don't know which handle is stddbg, stddati, etc. Need protocol to communicate handle assignments.
+
+REQUIREMENTS:
+1. Environment Variable Injection:
+   - Format: __ARIA_FD_MAP=3:0x1234;4:0x5678;5:0x9ABC
+   - Injected before CreateProcess
+   - Parsed by Aria runtime crt0 equivalent
+
+2. Alternative: Command-Line Flag
+   - Format: --aria-fd-map=3:0x1234;4:0x5678;5:0x9ABC
+   - Less invasive than env var pollution
+
+3. Aria Runtime Integration:
+   - Parse bootstrap data before main()
+   - Wrap Windows handles into Aria File objects
+   - Expose via std.io module
+
+IMPLEMENTATION TASKS:
+- [ ] Design bootstrap protocol format
+- [ ] Implement handle serialization (HANDLE to hex string)
+- [ ] Add protocol to CreateProcess setup
+- [ ] Create Aria runtime parser (in Aria codebase)
+- [ ] Implement handle-to-File wrapper logic
+- [ ] Add error handling for malformed maps
+- [ ] Document protocol specification
+
+FILES TO CREATE:
+- src/platform/windows_bootstrap.cpp
+- docs/BOOTSTRAP_PROTOCOL.md
+- (Aria runtime): src/runtime/windows_init.cpp
+
+RELATED:
+- Requires coordination with Aria compiler team
+- Must be in place before Windows shell can spawn Aria processes
+
+ACCEPTANCE CRITERIA:
+- Windows shell can spawn Aria process with 6 streams
+- Child process successfully wraps handles
+- std.io.stddbg works in spawned process
+- Protocol documented for third-party implementers
+- Graceful failure if protocol data missing

@@ -1,0 +1,65 @@
+Tab Completion Engine (Context-Aware)
+
+PRIORITY: MEDIUM
+STATUS: UX Enhancement
+SOURCE: Implied by modern shell requirements
+
+PROBLEM:
+Users expect Tab completion for commands, files, variables, and arguments. Need context-aware completion system integrated with Aria module system.
+
+REQUIREMENTS:
+1. Completion Sources:
+   - Commands in PATH
+   - Files/directories in current directory
+   - Shell variables and environment variables
+   - Aria modules and imports
+   - Command-specific arguments (if metadata available)
+
+2. Completion UI:
+   - Tab: Cycle through completions
+   - Display completion candidates
+   - Highlight selected completion
+   - Show descriptions for commands
+
+3. Context Awareness:
+   - After spawn("...", : Complete command names
+   - After file operations: Complete file paths
+   - After &{: Complete variable names
+   - After use: Complete Aria module paths
+
+4. Integration:
+   - Query aria_make for available modules
+   - Parse Aria project structure for completion
+   - Support custom completion functions
+
+IMPLEMENTATION TASKS:
+- [ ] Create CompletionEngine class
+- [ ] Implement command PATH scanning
+- [ ] Add filesystem completion
+- [ ] Implement variable name completion
+- [ ] Add Aria module completion
+- [ ] Create completion UI rendering
+- [ ] Add cycling through candidates
+- [ ] Implement description display
+- [ ] Add custom completion hooks
+- [ ] Optimize for performance (caching)
+
+FILES TO CREATE:
+- src/completion/completion_engine.cpp
+- src/completion/path_completer.cpp
+- src/completion/module_completer.cpp
+- src/completion/ui_renderer.cpp
+- include/aria/shell/completion.h
+
+RESEARCH NOTES:
+- Bash completion system overly complex
+- Fish shell has excellent completion UX
+- Caching critical for PATH scanning performance
+
+ACCEPTANCE CRITERIA:
+- Tab completes commands from PATH
+- Completes filenames with proper escaping
+- Completes variable names after &{
+- Shows completion candidates
+- Fast enough to feel instant (<50ms)
+- Works in multi-line input mode

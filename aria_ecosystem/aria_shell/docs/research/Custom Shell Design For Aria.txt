@@ -1,0 +1,221 @@
+﻿Architectural Specification for AriaSH: A Hex-Stream, Multi-Line Process Orchestrator
+1. Executive Summary and Strategic Architectural Context
+The contemporary landscape of systems programming is undergoing a paradigm shift, moving away from loose, imperative scripting towards rigorous, type-safe, and concurrency-aware orchestration. The Aria programming language, with its introduction of Twisted Balanced Binary (TBB) arithmetic, a hybrid memory model utilizing both garbage-collected and "wild" manual allocation, and a strict module system, represents a significant leap forward in this domain. However, the ecosystem surrounding such a language cannot rely on legacy infrastructure. The traditional command-line shells—Bash, Zsh, and PowerShell—are predicated on architectural assumptions from the 1970s that fundamentally conflict with Aria’s design philosophy. Specifically, the tripartite I/O model (stdin, stdout, stderr) and the line-oriented input discipline create friction when interfacing with Aria’s rich type system and block-structured syntax.1
+This report presents a comprehensive, expert-level architectural specification for AriaSH, a native shell designed specifically for the Aria ecosystem. Implemented in modern C++20, AriaSH is not merely a command runner but a sophisticated runtime environment that extends the operating system's process contract. The architecture introduces two radical innovations: a Hex-Stream I/O Topology and a Modal Multi-Line Input Model.
+The Hex-Stream topology expands the standard file descriptor table from three to six, formalizing the separation of data, diagnostics, and errors. This resolves the "noisy channel" problem in distributed systems, where log messages corrupt binary pipelines, by introducing stddbg, stddati, and stddato as first-class citizens.1 The Input Model rejects the canonical "cooked" terminal mode in favor of a raw, event-driven loop. By capturing keystrokes individually, AriaSH treats the Enter key as a literal newline injector and Ctrl+Enter as the explicit submission trigger. This eliminates the syntactic fragility of heredocs and line-splicing (backslashes), aligning the shell’s interactive experience with Aria’s whitespace-insensitive, brace-delimited grammar.1
+The proposed design leverages advanced OS primitives—pidfd and splice on Linux, and STARTUPINFOEX with attribute lists on Windows—to achieve these capabilities with zero runtime overhead. This document serves as the definitive blueprint for the implementation of AriaSH, detailing the theoretical framework, kernel-level integration strategies, and the C++ software architecture required to realize this vision.
+2. Theoretical Framework: The Hex-Stream I/O Topology
+The fundamental unit of interaction in a Unix-like operating system is the process, conventionally bounded by three Input/Output streams. This tripartite model, while revolutionary in the 1970s, has become a limiting factor in modern software architecture. The conflation of human-readable text, machine-readable data, and diagnostic telemetry into just two output channels (stdout and stderr) necessitates complex and fragile parsing logic in downstream consumers. AriaSH proposes a foundational expansion of this contract.
+2.1 The Semantic Crisis of the Tripartite Model
+In the standard model, stdout (File Descriptor 1) is structurally overloaded. It is expected to carry the "result" of a computation. However, in modern microservices or build pipelines, a "result" is often a binary artifact (an object file, a compressed image, a serialized struct). Simultaneously, the user or the orchestration system requires status updates (progress bars, "Processing..." messages). If a binary emits status messages to stdout, the data stream is corrupted.
+Developers historically mitigate this by routing logs to stderr (File Descriptor 2). However, stderr is semantically reserved for errors—conditions that require immediate attention or signal failure. Routing informational logs to stderr breaks monitoring systems that trigger alerts on non-empty error streams. This forces a binary choice: silence the tool (zero observability) or risk data corruption.
+2.2 The Hex-Stream Solution
+AriaSH formalizes a six-stream topology, assigning a distinct semantic role and file descriptor index to each channel. This topology allows an Aria process to simultaneously emit a high-throughput binary payload, log structured telemetry for debugging, and present a clean human-readable status to the user, with zero interference between channels.
+Stream Identifier
+	Descriptor Index
+	Semantic Role
+	Data Protocol
+	Blocking Behavior
+	stdin
+	0
+	Command Input
+	Text (UTF-8)
+	Blocking, Line-Buffered
+	stdout
+	1
+	User Output
+	Text (Formatted)
+	Line-Buffered / TTY-aware
+	stderr
+	2
+	Fatal Errors
+	Text (Plain)
+	Unbuffered
+	stddbg
+	3
+	Telemetry/Debug
+	Structured (JSON/Logfmt)
+	Asynchronous / Buffered
+	stddati
+	4
+	Data Input
+	Binary (Raw)
+	Block-Buffered (Zero-Copy)
+	stddato
+	5
+	Data Output
+	Binary (Raw)
+	Block-Buffered (Zero-Copy)
+	The introduction of stddbg (Standard Debug) creates a dedicated channel for observability.1 Compilers can write verbose dependency graphs to FD 3 without polluting the build output on FD 1. The stddati and stddato streams (Standard Data In/Out) form a dedicated "Data Plane," optimized for piping binary content between processes using mechanisms like splice() on Linux, bypassing user-space copy overhead entirely.1
+2.3 Integration with Aria Language Semantics
+This topology is not just an operating system construct but is deeply integrated into the Aria language runtime. The Aria standard library (as referenced in 1 and 1) exposes these streams as global singleton objects within the io module (io.stddbg, io.stddati).
+The separation mirrors the Aria type system's distinction between string (UTF-8 text) and buffer (raw bytes). stdin, stdout, and stderr are typed to operate on string streams, enforcing encoding correctness. stddati and stddato operate on wild buffer types, allowing for direct memory manipulation and interaction with the "wild" memory allocator, which is critical for high-performance systems programming where Garbage Collection (GC) pauses are unacceptable during I/O operations.1
+3. Kernel-Level Implementation Strategy
+Implementing the Hex-Stream topology requires bypassing the standard C++ process spawning facilities (std::system, popen), which are hardcoded to the 3-stream model.3 The architecture must interact directly with the OS kernel to manipulate the process control block and file descriptor tables during creation.
+3.1 Linux Implementation: The pidfd and dup2 Sequence
+On Linux, the implementation leverages the modern pidfd API to avoid the race conditions inherent in traditional PID-based signaling. The setup of the six streams occurs in the critical window between fork() and execve().
+3.1.1 The File Descriptor Dance
+The shell must maintain a bank of pipes. When spawning a process, AriaSH creates six pipes using pipe2() with the O_CLOEXEC flag set. This flag is crucial for security, ensuring that file descriptors do not leak into child processes unintentionally.4
+However, for the specific descriptors destined to become the child's standard streams, this flag must be cleared inside the child process. The sequence is rigorous:
+1. Fork: The process clones itself.
+2. Child Context: The child closes the write ends of input pipes and the read ends of output pipes.
+3. Mapping: It uses dup2(src, dest) to map the pipe ends to the fixed integers:
+   * dup2(pipe_in, 0) (stdin)
+   * dup2(pipe_out, 1) (stdout)
+   * dup2(pipe_err, 2) (stderr)
+   * dup2(pipe_dbg, 3) (stddbg)
+   * dup2(pipe_dati, 4) (stddati)
+   * dup2(pipe_dato, 5) (stddato)
+4. Hygiene: It calls close() on the original pipe descriptors to leave only the standard 0-5 descriptors open.
+5. Execution: Finally, it calls execve().
+3.1.2 Race-Free Management with pidfd
+Traditional shells use waitpid to monitor children. This is vulnerable to PID recycling. AriaSH utilizes pidfd_open (available in Linux 5.3+) to obtain a file descriptor that persistently refers to the specific child process.5 This pidfd is registered with the shell's central epoll loop, allowing the shell to handle process termination events asynchronously alongside I/O events, integrating process lifecycle management directly into the event loop.
+3.2 Windows Implementation: STARTUPINFOEX and Attribute Lists
+Windows presents a significantly higher complexity barrier. Handles are not fixed integers but opaque 64-bit pointers (on x64), and the CreateProcess API does not natively support passing more than three standard handles in the STARTUPINFO structure.6
+3.2.1 Handle Inheritance via Attribute Lists
+To support stddbg, stddati, and stddato, AriaSH must utilize the STARTUPINFOEX structure. This extension allows the caller to attach an lpAttributeList. Within this list, the PROC_THREAD_ATTRIBUTE_HANDLE_LIST attribute is used to explicitly specify which kernel handles should be inherited by the child process.7
+This explicit whitelisting is a security improvement over the legacy bInheritHandles = TRUE flag, which dangerously inherited all inheritable handles. AriaSH strictly restricts inheritance to exactly the six handles representing the streams.
+3.2.2 The Bootstrap Protocol
+Since Windows handles don't map to fixed numbers like 0-5, the child process has no inherent way to know that Handle 0x1234 is stddbg. AriaSH implements a Bootstrap Protocol to solve this.
+When spawning a process, the shell injects a specific environment variable or command-line flag (e.g., __ARIA_FD_MAP=3:0x1234;4:0x5678;5:0x9ABC). The Aria Runtime (linked into every Aria executable) contains initialization code (crt0 equivalent) that parses this map before main() executes.1 It essentially performs a logical dup2, wrapping these raw Windows handles into the Aria File objects exposed by std.io.
+4. The Multi-Line Input Model: Architecture of the REPL
+The user requirement to eliminate heredocs and support whitespace-insensitive syntax dictates that the shell cannot use standard "cooked" or canonical input modes. In canonical mode, the terminal driver buffers input until Enter is pressed, making it impossible to treat Enter as a data character (newline) rather than a control character (submit). AriaSH implements a Modal Input Architecture.
+4.1 Raw Mode State Machine
+AriaSH places the terminal into Raw Mode immediately upon startup. This involves manipulating the termios structure on POSIX or using SetConsoleMode on Windows to disable ICANON (canonical mode), ECHO (local echo), and ISIG (signal generation like Ctrl+C).8
+In this mode, the shell receives every key-down event instantly. The Input Engine is modeled as a hierarchical state machine:
+1. Idle: Waiting for events.
+2. Chord Analysis: When a modifier key (Ctrl, Alt) is held, the engine waits for the subsequent key to determine the action.
+3. Buffer Manipulation: Standard keys append to the current cursor position. Enter inserts a literal \n character into the buffer.
+4. Submission: Only the specific chord Ctrl+Enter triggers the transition to the Execution State.
+4.2 The Ctrl+Enter Ambiguity Problem
+Detecting Ctrl+Enter is non-trivial because legacy terminals often send identical byte sequences for Enter (Ctrl+M) and Ctrl+Enter.10
+AriaSH addresses this via a Protocol Negotiation Strategy:
+* Modern Terminals: The shell queries for support of the Kitty Keyboard Protocol or equivalent extended reporting schemes that distinguish modifiers unambiguously.
+* Legacy Fallback: If extended protocols are unavailable, the shell relies on time-based heuristics (monitoring inter-key timing) or defaults to an alternative, unambiguous binding like Alt+Enter.12 The configuration system allows the user to define the submission trigger explicitly in .aria_shrc.
+4.3 Brace-Aware Auto-Indentation
+Since Aria syntax is brace-delimited ({... }), the shell's input loop includes a lightweight lexical analyzer. When the user presses Enter while the cursor is inside an open brace scope (i.e., brace_depth > 0), the shell:
+1. Inserts the newline.
+2. Calculates the required indentation level (typically 4 spaces per depth level).
+3. Inserts the indentation automatically.
+4. Visually indicates the continuation state (e.g., changing the prompt from aria> to .... ).
+This feature makes the multi-line input model ergonomic, effectively embedding a micro-editor within the shell.13
+5. The Process Orchestration Language (POL)
+AriaSH is not just a runner; it is an interpreter for the Aria shell language. This language is a subset of Aria itself, optimized for process orchestration.
+5.1 Whitespace-Insensitivity and Syntax
+Unlike Bash, where a missing space near a bracket can cause a syntax error, AriaSH uses a tokenizer derived from the Aria compiler frontend. It ignores whitespace, relying on delimiters.
+* Bash: if [ $a -eq 1 ]; then... fi (Fragile)
+* AriaSH: if (a == 1) {... } (Robust)
+The syntax supports variable declarations using Aria types: int8:status = 0;. This ensures type safety even in shell scripts.
+5.2 Variable Interpolation Engine
+AriaSH reuses the Variable Substitution Engine designed for AriaBuild.1 It parses strings for the &{VAR} pattern.
+* Scope Resolution: The engine resolves &{VAR} by checking local shell variables first, then environment variables.1
+* Type Safety: Unlike shell string expansion which is prone to injection attacks (splitting arguments on spaces), AriaSH performs Typed Injection. If a variable is interpolated into a process argument list, it is passed as a single argument regardless of spaces it contains. spawn("ls", ["&{filename}"]) is safe even if filename contains ; rm -rf /.14
+5.3 TBB Integration and Sticky Errors
+AriaSH is unique in its handling of exit codes. Standard shells treat 0 as success and non-zero as failure. AriaSH maps these to Aria's result type.
+Furthermore, it integrates Aria's Twisted Balanced Binary (TBB) arithmetic. The shell's internal math operations use TBB types (e.g., tbb8). If a script performs a calculation that overflows (e.g., tbb8:x = 127 + 1), the result becomes the ERR sentinel (-128).1
+* Propagation: If this ERR value is passed as an exit code or used in a logic condition, the shell halts execution with a "Sticky Error" violation, preventing the silent corruption of logic common in Bash scripts that ignore overflow.
+6. C++ Software Architecture
+The implementation is encapsulated in the aria::shell namespace, utilizing C++20 features for concurrency and resource management.
+6.1 Class Hierarchy
+* class Shell: The main controller. Initializes the Terminal, manages the Environment, and runs the event loop.
+* class Terminal: Abstracts the raw mode manipulation. Handles VT100 escape sequences and key decoding.
+* class StreamController: Manages the 6-stream I/O. It owns the thread pool responsible for draining pipes.
+* class Process: The core abstraction.
+   * Process::spawn(): The factory method handling fork/exec or CreateProcess.
+   * Process::wait(): Returns a result<int> compatible with Aria's error handling.
+6.2 Threaded Stream Draining
+A critical failure mode in custom shells is the "Pipe Deadlock." If a child writes more data to a pipe than the kernel buffer can hold (typically 64KB on Linux), it blocks.15 If the parent is blocked waiting for the child to exit and not reading the pipe, a deadlock occurs.
+AriaSH solves this using a Threaded Draining Model.4 For every spawned process, the StreamController spins up dedicated std::jthread workers (up to 4 per process for stdout, stderr, stddbg, stddato). These threads continuously read from the pipes into user-space ring buffers. This "active pump" architecture ensures the kernel buffers never saturate, guaranteeing deadlock-free execution.
+7. Zero-Copy Performance Optimizations
+While the threaded model is safe, it involves copying data. For high-throughput scenarios (e.g., stddati -> stddato pipelines), AriaSH implements zero-copy optimizations.
+On Linux, the shell inspects the pipeline graph. If Process A pipes stddato to Process B's stddati, the shell does not read the data into its own memory. Instead, it utilizes the splice() system call to move data pages directly from one pipe to another within kernel space.1 This allows AriaSH to orchestrate gigabyte-scale data transfers with negligible CPU overhead, fulfilling the requirement for a high-performance system tool.
+8. Implementation Roadmap and Integration
+The development of AriaSH is a critical component of the "Post-LSP Phase 7.3.7" roadmap.
+1. Phase 1: PAL Implementation: Building the Process class with pidfd (Linux) and STARTUPINFOEX (Windows). Validation via the "Torture Tests" suite to prove deadlock freedom.
+2. Phase 2: The Hex-Stream: Implementing the 6-pipe logic and the Bootstrap Protocol for Windows handles.
+3. Phase 3: The Modal REPL: Implementing the raw mode state machine and Ctrl+Enter handling.
+4. Phase 4: Syntax Integration: Porting the Aria Lexer/Parser to the shell for whitespace-insensitive command parsing.
+9. Conclusion
+The architecture defined herein establishes AriaSH as a state-of-the-art systems orchestrator. It rejects the historical compromises of legacy shells in favor of a design that prioritizes data integrity, observability, and developer ergonomics. By standardizing on a Hex-Stream topology, it solves long-standing observability issues in pipeline design. By adopting a modal, multi-line input model, it aligns the CLI experience with modern development workflows.
+The implementation leverages the full power of C++20 and OS-specific APIs to ensure that these abstractions incur zero runtime penalty. Through the use of pidfd on Linux and STARTUPINFOEX on Windows, AriaSH provides a robust, cross-platform foundation for the Aria language, bridging the gap between a build tool and a fully interactive runtime environment.
+10. Tables and Data Structures
+Table 1: Comparative Analysis of Process Creation Primitives
+Feature
+	POSIX (fork + exec)
+	Windows (CreateProcess)
+	AriaSH Implementation Strategy
+	Stream Setup
+	dup2 inside child process.
+	STARTUPINFOEX attribute list.
+	Platform-specific polymorphism in Process::spawn.
+	Handle Types
+	Integers (FDs).
+	Pointers (HANDLE).
+	Bootstrap Protocol (Env Var) to map Handles to Aria IDs.
+	Signal Handling
+	kill, SIGTERM, SIGINT.
+	TerminateProcess, Console Groups.
+	Abstracted Process::kill() method.
+	Zombie Reaping
+	waitpid / signalfd.
+	WaitForSingleObject.
+	pidfd (Linux) / Thread Pool Wait (Windows).
+	String Encoding
+	UTF-8 (Native char*).
+	UTF-16 (wchar_t*).
+	Transparent transcoding layer in PAL.
+	Table 2: Input State Machine Transitions
+Current State
+	Input Event
+	Action
+	Next State
+	Idle
+	Character Key
+	Append to buffer, Echo char.
+	Accumulation
+	Accumulation
+	Enter
+	Insert \n, Auto-indent.
+	Accumulation
+	Accumulation
+	Ctrl (Modifier)
+	Set modifier flag.
+	Chord Detection
+	Chord Detection
+	Enter
+	Trigger Submission.
+	Submission
+	Accumulation
+	Backtick (`)
+	Start Template Literal.
+	Template Mode
+	Template Mode
+	& + {
+	Start Variable Interpolation.
+	Interpolation
+	11. Citations
+* Aria Language Specifications: 1 (Syntax, TBB types)1 (Runtime I/O)1 (Stream definitions).
+* Build System Architecture: 1 (Variable interpolation, C++ implementation needs)1 (Globbing, Runtime gaps).
+* Process Management: 16 (Python FD leaks)5 (Popen bugs)7 (Windows Handle Inheritance)17 (Windows Pipe Deadlocks).
+* Terminal I/O: 8 (Raw mode)10 (Ctrl+Enter ambiguity)11 (Readline bindings)12 (Julia REPL behaviors).
+* Shell Implementation: 18 (POSIX shell structure)19 (Custom shell piping).
+Works cited
+1. full.txt
+2. REPL multiline editing · Issue #6379 · JuliaLang/julia - GitHub, accessed December 20, 2025, https://github.com/JuliaLang/julia/issues/6379
+3. subprocess: A no nonsense library for writing shell commands in C++ : r/cpp - Reddit, accessed December 20, 2025, https://www.reddit.com/r/cpp/comments/pmnnl0/subprocess_a_no_nonsense_library_for_writing/
+4. Pipes, dup2 and exec() - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/33884291/pipes-dup2-and-exec
+5. Issue 43308: subprocess.Popen leaks file descriptors opened for DEVNULL or PIPE stdin/stdout/stderr arguments - Python tracker, accessed December 20, 2025, https://bugs.python.org/issue43308
+6. Inheritance (Processes and Threads) - Win32 apps | Microsoft Learn, accessed December 20, 2025, https://learn.microsoft.com/en-us/windows/win32/procthread/inheritance
+7. Select which handles are inherited by child process - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/2344887/select-which-handles-are-inherited-by-child-process
+8. 2. Entering raw mode | Build Your Own Text Editor, accessed December 20, 2025, https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
+9. High-Level Console Modes - Windows Console - Microsoft Learn, accessed December 20, 2025, https://learn.microsoft.com/en-us/windows/console/high-level-console-modes
+10. Capture Ctrl-Enter in raw mode with getchar()? - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/55821314/capture-ctrl-enter-in-raw-mode-with-getchar
+11. how to bind Ctrl+Enter when using "readline" library? - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/38917588/how-to-bind-ctrlenter-when-using-readline-library
+12. PSA: Inserting a new line in the REPL - General Usage - Julia Programming Language, accessed December 20, 2025, https://discourse.julialang.org/t/psa-inserting-a-new-line-in-the-repl/3524
+13. [Discussion] Accepting multi-line input in a REPL · Issue #799 · munificent/craftinginterpreters - GitHub, accessed December 20, 2025, https://github.com/munificent/craftinginterpreters/issues/799
+14. (C) Windows Handles and Createprocess - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/18751042/c-windows-handles-and-createprocess
+15. Pipes, Forks, & Dups: Understanding Command Execution and Input/Output Data Flow, accessed December 20, 2025, https://www.rozmichelle.com/pipes-forks-dups/
+16. Python subprocess running out of file descriptors - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/6669996/python-subprocess-running-out-of-file-descriptors
+17. win32 CreateProcess with custom output and input redirection : r/cpp_questions - Reddit, accessed December 20, 2025, https://www.reddit.com/r/cpp_questions/comments/191jecq/win32_createprocess_with_custom_output_and_input/
+18. Build a POSIX compliant shell in C++ | by Innocent Anyaele | Medium, accessed December 20, 2025, https://innocentanyaele.medium.com/build-a-posix-compliant-shell-in-c-f793f66e91ea
+19. How to implement pipes in custom shell? - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/71807638/how-to-implement-pipes-in-custom-shell

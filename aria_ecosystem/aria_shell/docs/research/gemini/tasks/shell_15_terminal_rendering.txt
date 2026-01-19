@@ -1,0 +1,65 @@
+VT100/ANSI Terminal Rendering Engine
+
+PRIORITY: MEDIUM
+STATUS: UI/UX Feature
+SOURCE: Custom Shell Design For Aria.txt, Section 6.1 (Terminal class)
+
+PROBLEM:
+Need to render UI elements (prompt, syntax highlighting, completion menu, multi-line editing) using VT100/ANSI escape codes in raw mode.
+
+REQUIREMENTS:
+1. Terminal Capabilities:
+   - Cursor movement (up, down, left, right)
+   - Line clearing (erase to end, clear line)
+   - Color support (256-color, TrueColor)
+   - Attribute setting (bold, italic, underline)
+
+2. Multi-Line Editing:
+   - Render multi-line buffer correctly
+   - Handle line wrapping
+   - Reposition cursor accurately
+   - Redraw on edit without flicker
+
+3. Syntax Highlighting:
+   - Colorize keywords, strings, variables
+   - Real-time as user types
+   - Configurable color scheme
+
+4. UI Components:
+   - Prompt (with colors and variables)
+   - Continuation prompt for multi-line
+   - Completion menu
+   - Reverse search UI (Ctrl+R)
+
+IMPLEMENTATION TASKS:
+- [ ] Create Terminal class for VT100 abstraction
+- [ ] Implement cursor movement primitives
+- [ ] Add color/attribute methods
+- [ ] Implement multi-line buffer renderer
+- [ ] Add syntax highlighting engine
+- [ ] Create completion menu renderer
+- [ ] Implement line wrapping logic
+- [ ] Add terminal capability detection
+- [ ] Optimize redraw (only changed regions)
+- [ ] Handle terminal resize (SIGWINCH)
+
+FILES TO CREATE:
+- src/terminal/vt100.cpp
+- src/terminal/syntax_highlight.cpp
+- src/terminal/buffer_renderer.cpp
+- include/aria/shell/terminal_renderer.h
+- tests/terminal/rendering_tests.cpp
+
+RESEARCH NOTES:
+- VT100 escape codes well-documented but quirky
+- Line wrapping math surprisingly complex
+- Terminal resize handling critical for UX
+
+ACCEPTANCE CRITERIA:
+- Multi-line input renders correctly
+- Syntax highlighting works in real-time
+- Cursor positioning accurate
+- Completion menu displays properly
+- No flicker during redraw
+- Handles terminal resize gracefully
+- Works on common terminals (Kitty, Alacritty, xterm)

@@ -1,0 +1,59 @@
+Whitespace-Insensitive Shell Language Parser
+
+PRIORITY: MEDIUM
+STATUS: Syntax Enhancement
+SOURCE: Custom Shell Design For Aria.txt, Section 5
+
+PROBLEM:
+Traditional shells (Bash, Zsh) are whitespace-sensitive, causing fragile syntax errors. Need JS-like, brace-delimited syntax that ignores whitespace (except in quotes).
+
+REQUIREMENTS:
+1. Tokenizer Design:
+   - Reuse/adapt Aria language lexer
+   - Ignore whitespace outside strings
+   - Recognize keywords: if, for, while, func
+   - Support operators: ==, !=, &&, ||, |, >>, <
+
+2. Grammar:
+   - Control flow: if (condition) { body }
+   - Loops: for (item in list) { body }
+   - Functions: func name(args) { body }
+   - Variable declaration: int8:status = 0;
+
+3. Type System Integration:
+   - Support Aria primitive types (int8, tbb8, string, buffer)
+   - Type-safe variable interpolation (&{VAR})
+   - Prevent injection attacks via typed arguments
+
+4. Command Invocation:
+   - Bare words: ls -la (traditional syntax)
+   - Explicit spawn: spawn("ls", ["-la"])
+   - Typed spawn: spawn(cmd: string, args: [string])
+
+IMPLEMENTATION TASKS:
+- [ ] Port Aria lexer to shell (or link against ariac)
+- [ ] Create shell-specific token types (PIPE, REDIRECT, etc.)
+- [ ] Implement recursive descent parser for shell grammar
+- [ ] Add type inference for variables
+- [ ] Implement variable scope (local vs environment)
+- [ ] Create AST for shell commands
+- [ ] Build interpreter for AST execution
+- [ ] Add syntax error reporting with helpful messages
+
+FILES TO CREATE:
+- src/parser/shell_lexer.cpp
+- src/parser/shell_parser.cpp
+- src/parser/shell_ast.h
+- src/interpreter/executor.cpp
+- tests/parser/syntax_tests.cpp
+
+RELATED:
+- May reuse aria_make variable interpolation engine
+- Should share tokenizer logic with Aria compiler where possible
+
+ACCEPTANCE CRITERIA:
+- if (x == 1) { echo "yes" } works with arbitrary whitespace
+- Variable interpolation safe: spawn("rm", ["&{filename}"])
+- Type errors caught at parse time: int8:x = "string" fails
+- Syntax errors give helpful messages
+- Compatible with Aria module import syntax

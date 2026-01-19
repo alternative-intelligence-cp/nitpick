@@ -1,0 +1,300 @@
+﻿Architectural Specification: Modal Multi-Line Input Systems for High-Fidelity Read-Eval-Print Loops in the Aria Ecosystem
+1. Executive Summary: The Paradigm Shift in Interactive Runtime Environments
+The contemporary landscape of systems programming is witnessing a renaissance of high-performance, safety-critical languages that seek to reconcile the raw power of manual memory management with the ergonomic safety of modern type systems. The Aria programming language, characterized by its hybrid memory model—distinguishing between garbage-collected (gc) and manual (wild) allocation—and its adoption of Twisted Balanced Binary (TBB) arithmetic, stands at the forefront of this evolution.1 Central to the adoption and utility of such a language is the Read-Eval-Print Loop (REPL), a tool that transcends mere code execution to become the primary interface for exploratory programming, debugging, and runtime introspection. However, the traditional architectural patterns of command-line interfaces (CLIs), inherited from the teleprinter era of the 1970s, possess inherent limitations that are increasingly dissonant with the syntactical and semantic requirements of modern, block-structured languages like Aria.1
+The standard "canonical" or "cooked" input model, wherein the operating system kernel buffers input until a newline delimiter is received, imposes a rigid line-oriented discipline that fundamentally conflicts with Aria’s brace-delimited, whitespace-insensitive grammar. When a developer attempts to define a complex structure—such as a struct with multiple fields or a function with a generic signature—the canonical model interprets the Enter key as an immediate submission signal, creating a disjointed and fragile user experience often mitigated by clumsy "continuation prompts" or heredoc syntaxes.2 This report presents a comprehensive architectural specification for the Modal Multi-Line Input Architecture, a novel design paradigm for the Aria shell (AriaSH) that rejects the canonical model in favor of a "Raw Mode" event loop.
+By systematically dismantling the traditional TTY abstraction and implementing a sophisticated, application-level Finite State Machine (FSM), AriaSH decouples the physical act of pressing Enter from the logical intent of command submission. This architecture introduces a modal interaction pattern: a Buffer Manipulation Mode where the Enter key acts as a data injector for literal newlines, facilitating natural multi-line editing, and a Submission Trigger activated by specific chords (e.g., Ctrl+Enter) to signal execution readiness.1 This specification provides an exhaustive technical analysis of the required kernel-level integrations, the cross-platform abstraction layers for Linux and Windows, the protocol negotiation strategies needed to disambiguate modern control sequences, and the deep integration with Aria’s unique "Hex-Stream" I/O topology to ensure a robust, secure, and highly responsive developer environment.
+2. Theoretical Foundations: Deconstructing the TTY Abstraction
+To appreciate the necessity of the Modal Multi-Line Input Architecture, one must first engage in a rigorous deconstruction of the teletypewriter (TTY) abstraction that underpins virtually all modern terminal emulators. This abstraction, while historically resilient, enforces a separation of concerns that is antithetical to the needs of a context-aware REPL.
+2.1 The Kernel Line Discipline: An Obstacle to Modernity
+In UNIX-like operating systems, the interaction between a user and a shell is mediated by the TTY driver, specifically the "Line Discipline" (ldisc), typically N_TTY.4 This kernel-level software component is responsible for implementing the canonical input processing features that users take for granted in standard command-line utilities.
+The Line Discipline performs several critical functions:
+* Canonical Buffering: Input characters are stored in a kernel-space buffer and are not made available to the reading process until a line delimiter (newline, EOF, or EOL) is received. This behavior was originally designed to minimize system calls and context switches on slow, time-shared mainframes.2
+* Automatic Echoing: The kernel reflects typed characters back to the display output immediately, relieving the application of the responsibility to update the screen.
+* Signal Generation: Specific control characters are intercepted by the kernel and converted into process signals. For instance, Ctrl+C generates SIGINT, Ctrl+Z generates SIGTSTP, and Ctrl+\ generates SIGQUIT.3
+* Input Processing: The driver transforms input characters based on configuration flags, such as converting carriage returns (\r) to newlines (\n) via the ICRNL flag.5
+For the AriaSH REPL, this kernel intervention acts as an opaque barrier. The kernel possesses no semantic understanding of Aria’s syntax; it cannot discern that an opening brace { signifies the start of a logical block requiring indentation, nor can it distinguish between a newline intended for formatting and a newline intended for submission. Consequently, the canonical model forces the REPL to operate blindly, receiving chunks of text only after the user has effectively "committed" them, rendering features like real-time syntax highlighting and "smart" auto-indentation impossible to implement reliably.
+2.2 The Mechanics of Raw Mode Implementation
+"Raw Mode" is not a single configuration bit but rather a state achieved by meticulously disabling a specific set of flags within the terminal interface. This transition strips away the kernel's processing logic, creating a transparent, byte-level channel between the terminal emulator and the Aria application.6
+Implementing Raw Mode on POSIX-compliant systems involves direct manipulation of the termios structure. The architecture mandates a precise sequence of bitwise operations to ensure consistent behavior across diverse UNIX flavors (Linux, macOS, BSD).
+Table 1: POSIX Termios Flag Configuration for AriaSH Raw Mode
+
+
+Category
+	Flag
+	Action
+	Implementation Rationale
+	Input
+	BRKINT
+	Disable
+	Prevents a break condition on the input line from sending a SIGINT signal to the process group, ensuring the REPL handles line breaks as data or interrupts manually.
+	Input
+	ICRNL
+	Disable
+	Disables the mapping of Carriage Return (\r) to Newline (\n). This is critical for protocol negotiation, allowing the application to distinguish between Enter (\r) and Ctrl+Enter if the terminal supports such differentiation.5
+	Input
+	INPCK
+	Disable
+	Disables input parity checking, which is obsolete for modern pseudo-terminals (PTYs) and ensures 8-bit clean data paths.
+	Input
+	ISTRIP
+	Disable
+	Prevents the stripping of the 8th bit of input bytes, which is essential for supporting UTF-8 multi-byte characters used in Aria strings and comments.
+	Input
+	IXON
+	Disable
+	Disables software flow control (Ctrl+S/Ctrl+Q). In canonical mode, Ctrl+S freezes terminal output; in a modern REPL, this keystroke is often reclaimed for application shortcuts (e.g., "Save" or "Search").5
+	Output
+	OPOST
+	Disable
+	Turns off implementation-defined output processing. The application assumes full responsibility for cursor movement and line wrapping, ensuring pixel-perfect control over the visual prompt.5
+	Local
+	ECHO
+	Disable
+	Prevents the kernel from printing typed characters. The REPL must manually "paint" each character to stdout, enabling syntax highlighting (coloring keywords like func, wild, gc) as the user types.4
+	Local
+	ICANON
+	Disable
+	Disables canonical mode. Input is available immediately, byte-by-byte, rather than being buffered until a newline. This is the cornerstone of the event-driven architecture.5
+	Local
+	ISIG
+	Disable
+	Prevents the kernel from generating signals on Ctrl+C or Ctrl+Z. The REPL intercepts these bytes (0x03, 0x1A) and handles them as edit actions (e.g., cancel line) rather than process termination events.5
+	Local
+	IEXTEN
+	Disable
+	Disables implementation-defined extensions, such as the Ctrl+V (literal next) behavior, ensuring consistent input handling across different UNIX implementations.2
+	2.3 Windows Console Architecture Divergence
+The Windows operating system presents a fundamentally different abstraction for console interaction, necessitating a distinct implementation path in the Aria Runtime's Platform Abstraction Layer (PAL). The Windows Console subsystem (hosted by conhost.exe or the modern Windows Terminal) exposes two parallel APIs: the High-Level Console I/O and the Low-Level Console I/O.
+The High-Level API, encompassing functions like ReadFile and ReadConsole, operates on processed input streams, mirroring the behavior of POSIX canonical mode.7 This API applies input modes such as ENABLE_LINE_INPUT and ENABLE_ECHO_INPUT, which perform buffering and echoing within the console host process. While convenient for simple CLIs, this model is insufficient for the granular control required by AriaSH.
+Consequently, AriaSH leverages the Low-Level Console Input functions, specifically ReadConsoleInput and SetConsoleMode.8 This API provides direct access to the console's input event buffer, returning a sequence of INPUT_RECORD structures rather than a stream of bytes. Each INPUT_RECORD can contain a KEY_EVENT_RECORD, MOUSE_EVENT_RECORD, or WINDOW_BUFFER_SIZE_RECORD.9
+The KEY_EVENT_RECORD structure is particularly robust, offering distinct fields for bKeyDown (boolean state), wVirtualKeyCode (device-independent key identifier), and dwControlKeyState (bitmask of active modifiers).10 This structural separation of key identity and modifier state inherently solves many of the ambiguity problems present in byte-oriented POSIX streams (discussed in Section 6), as the OS explicitly reports "Enter pressed with Left Control" rather than an ambiguous byte sequence. However, to maintain cross-platform consistency, the Aria runtime must normalize these structured Windows events into the unified event stream consumed by the core FSM.
+Furthermore, modern Windows (Windows 10 v1607 and later) introduced "Virtual Terminal Sequences," enabling the console to parse and generate ANSI escape codes.12 By setting the ENABLE_VIRTUAL_TERMINAL_INPUT mode, the Windows console can be configured to emit POSIX-like byte sequences for input events. The Aria architecture prefers this mode when available, as it unifies the parsing logic across Linux and Windows, reducing the surface area for platform-specific bugs. However, the legacy ReadConsoleInput path remains a critical fallback for older environments (e.g., Windows 7/8 or unpatched servers).
+3. The Modal Input Architecture: Finite State Machine Design
+The nucleus of the Aria REPL is a hierarchical Finite State Machine (FSM) that governs the interpretation of input events. In a standard shell, the readline loop acts as a linear consumer of bytes. In contrast, the Aria Input Engine maintains a persistent, complex state regarding the editing buffer, the cursor position, and the semantic validity of the code being entered.1 This FSM approach allows the shell to differentiate context—knowing, for example, that an Enter key press inside a string literal should be handled differently than an Enter key press at the global scope.
+3.1 State Definitions and Transition Logic
+The FSM is comprised of four primary states, designed to handle the high-velocity stream of raw input events while maintaining a responsive user interface.1
+State 1: IDLE
+* Description: The engine is quiescent, blocking on the OS event queue. It waits for a poll event from the underlying mechanism (select, poll, epoll, or WaitForMultipleObjects).
+* Transitions:
+   * On Key_Down: If the key is a standard printable character or a simple control code (like Backspace), the machine transitions to BUFFER_MANIPULATION.
+   * On Modifier_Key_Down: If a modifier key such as Ctrl or Alt is depressed, the machine transitions to CHORD_ANALYSIS, anticipating a complex command sequence.
+   * On Paste_Start: Detection of the Bracketed Paste start sequence (`\x1B It does not trigger command submission.
+   * Backspace/Delete: These keys modify the buffer content. If the buffer becomes empty, the visual prompt resets from the continuation state to the initial state.
+   * Navigation: Arrow keys and Home/End move the cursor within the multi-line buffer without triggering state transitions.
+State 3: CHORD_ANALYSIS
+* Description: The engine has entered a transient state where it is analyzing a multi-key chord. This state is necessary to disambiguate rapid sequences of bytes that characterize escape codes.
+* Transitions:
+   * Ctrl + Enter: This specific chord is the designated signal for SUBMISSION. Upon detection, the machine transitions to the SUBMISSION state.
+   * Ctrl + C: This chord triggers the INTERRUPT logic. The buffer is discarded, the visual prompt is reset, and a new line is emitted, mimicking the standard SIGINT behavior without killing the shell process.
+   * Ctrl + D: If the buffer is empty, this signals EXIT (EOF). If the buffer is populated, it may act as a delete-forward command or be ignored, depending on user configuration.
+   * Editing Macros: Other chords (e.g., Alt+F for forward-word, Ctrl+W for delete-word) execute specific buffer manipulation routines and return the machine to the BUFFER_MANIPULATION state.
+State 4: SUBMISSION
+* Description: The user has explicitly signaled intent to execute the current code block.
+* Actions:
+   * Syntactic Validation: The engine performs a lightweight parse of the buffer (using the brace counting logic described in Section 7).
+   * Valid State: If the code is syntactically complete (balanced braces/quotes), the buffer is flushed to the Evaluator, and the machine returns to IDLE with a fresh buffer.
+   * Invalid State: If the code is incomplete (e.g., missing closing brace), the shell displays a transient error message (e.g., "Unbalanced Braces") and returns to IDLE without clearing the buffer, allowing the user to correct the mistake.
+3.2 The Submission Trigger: Decoupling Intent
+The defining characteristic of the Aria architecture is the decoupling of the "Newline" intent from the "Submit" intent. In legacy shells (bash, zsh), the default behavior of Enter is to submit, forcing users to escape the newline (e.g., with \) to continue typing. AriaSH inverts this: Enter defaults to "Insert Newline," and submission requires the explicit, deliberate action of Ctrl+Enter.
+This inversion relies heavily on the terminal's ability to distinguish Enter from Ctrl+Enter. As noted in the research 14, legacy terminals often transmit identical byte sequences (0x0D or ^M) for both actions. This technological constraint necessitates the implementation of the "Protocol Negotiation Strategy" detailed in Section 6.
+3.3 Event Loop Integration and the 6-Stream Topology
+The FSM does not operate in isolation; it is embedded within an asynchronous event loop that integrates with the Aria runtime's unique "Hex-Stream" I/O topology.1 This topology, researched extensively in research_006_modern_streams.txt 1, mandates the use of six standard streams rather than the traditional three.
+Table 2: Aria 6-Stream I/O Topology Integration
+
+
+Stream
+	Descriptor
+	Role in REPL
+	stdin
+	FD 0
+	Legacy input (redirected or closed in favor of stddati).
+	stdout
+	FD 1
+	The UI Plane. The REPL writes syntax highlighting, prompts (aria> ), and auto-indentation spaces here.
+	stderr
+	FD 2
+	System-level errors (e.g., OOM, internal runtime crashes).
+	stddbg
+	FD 3
+	Telemetry. The REPL logs FSM state transitions (e.g., IDLE -> CHORD) and debugging info here. This separates diagnostics from the user interface.1
+	stddati
+	FD 4
+	Standard Data Input. The source of raw key events. The FSM consumes bytes from this stream exclusively.
+	stddato
+	FD 5
+	Standard Data Output. The destination for the user's code output (e.g., print() results). The REPL logic generally avoids writing here, reserving it for the evaluation result.
+	This separation ensures a robust user experience. If a user program executes while(true) { print("data"); }, the output floods stddato (FD 5). Because the REPL paints its UI to stdout (FD 1), the visual interface remains distinct from the program output, allowing the shell to maintain control over the display hierarchy (e.g., by rendering program output in a separate pane or scrolling region).
+4. Platform Implementation: POSIX & Linux Implementation Details
+Implementing Raw Mode on Linux requires traversing the intricacies of the termios API. The Aria runtime encapsulates this logic in a PlatformTerminal class, which serves as the interface between the abstract FSM and the concrete OS primitives.
+4.1 The termios Interface Mechanics
+The termios structure is the standard POSIX interface for terminal I/O control. To enter Raw Mode, the Aria runtime performs a sequence of operations patterned after the standard cfmakeraw function but customized for Aria’s specific requirements regarding signal handling and flow control.5
+1. State Preservation: The runtime first calls tcgetattr(STDIN_FILENO, &orig_termios) to capture the terminal's state at startup. This step is non-negotiable; the shell must restore the terminal to its original canonical state upon exit or suspension (e.g., when backgrounded via Ctrl+Z), otherwise the user's terminal would be left in an unusable state (no echo, no processing).6
+2. Flag Modification: The bitwise operations described in Table 1 are applied to the local termios copy.
+3. Timeout Configuration (VMIN / VTIME): The control characters c_cc[VMIN] and c_cc govern the blocking behavior of read().
+   * VMIN = 0: read() does not wait for a minimum number of bytes.
+   * VTIME = 1: Sets a read timeout of 1 decisecond (100ms).
+This configuration creates a non-blocking read with a slight latency. This is crucial for parsing escape sequences. When the parser detects an ESC byte (0x1B), it must determine if this is a standalone Escape key press or the start of a control sequence (e.g., `\x1B
+   4. State Application: The modified structure is applied using tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw). The TCSAFLUSH flag is vital as it discards any pending input that hasn't been read, preventing the shell from processing stale keystrokes entered before initialization.
+4.2 Handling ANSI Escape Sequences
+In Raw Mode, functional keys (Arrows, Home, End, F-keys) do not generate single-byte codes. Instead, they generate sequences of bytes beginning with the Escape character. For example, the Up Arrow typically sends `\x1B
+The Input Engine implements a recursive descent parser for these sequences:
+   1. Detection: Identify 0x1B (ESC) in the input stream.
+   2. Lookahead: Check the input queue (using poll or the VTIME timeout) for immediate successors.
+   3. Parsing: If bytes follow (e.g., The parser must coalesce these two distinct bytes into a singleALT_ENTER` event to prevent the FSM from interpreting them as "Cancel" (Esc) followed by "Newline" (Enter).
+4.3 Signal Handling in Raw Mode
+Because ISIG is disabled, the kernel no longer sends SIGINT when Ctrl+C is pressed. The application must manually scan the input stream for the ETX byte (0x03) and trigger the interrupt logic.19
+Similarly, window resize events (SIGWINCH) must be handled asynchronously. The standard approach involves installing a signal handler that writes to a self-pipe or sets an atomic flag. The main event loop monitors this flag and, upon detection, calls ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) to query the new terminal dimensions.20 This allows the REPL to re-flow text and redraw the prompt dynamically, maintaining visual coherence even as the terminal window changes size.
+5. Platform Implementation: Windows Console Primitives
+The Windows platform requires a bifurcated implementation strategy to handle the disparity between modern Windows Terminal environments and legacy conhost.exe consoles.
+5.1 Virtual Terminal Sequences (Modern Path)
+For Windows 10 (v1607+) and Windows 11, the preferred implementation mirrors the POSIX approach by enabling Virtual Terminal Processing.12
+
+
+C++
+
+
+
+
+HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+DWORD dwMode;
+
+// Enable Input Processing
+GetConsoleMode(hIn, &dwMode);
+dwMode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
+SetConsoleMode(hIn, dwMode);
+
+// Enable Output Processing
+GetConsoleMode(hOut, &dwMode);
+dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN;
+SetConsoleMode(hOut, dwMode);
+
+Enabling ENABLE_VIRTUAL_TERMINAL_INPUT instructs the Windows console driver to translate native input events into standard ANSI escape sequences.7 This unification allows the core FSM to share parsing logic across Linux and Windows; the Up Arrow appears as `\x1B
+The KEY_EVENT_RECORD allows for highly specific event filtering:
+   * Event Filtering: The loop ignores key-up events (bKeyDown == FALSE) to prevent double-processing of keystrokes.21
+   * Modifier Detection: The dwControlKeyState field provides a bitmask (e.g., LEFT_CTRL_PRESSED, RIGHT_ALT_PRESSED) that is checked against the desired chord state.10
+   * Key Mapping: The wVirtualKeyCode (e.g., VK_RETURN) is mapped to the Aria internal key representation.
+While more verbose, this API is robust. It inherently solves the "Ctrl+Enter Ambiguity" because VK_RETURN combined with LEFT_CTRL_PRESSED is a distinct event from VK_RETURN alone, requiring no heuristics or protocol negotiation. The Windows implementation of PlatformTerminal::readEvent() abstracts this complexity, normalizing the INPUT_RECORD into the same Event class used by the POSIX implementation.
+6. The Control Sequence Ambiguity Problem and Protocol Negotiation
+A significant challenge in implementing the Modal Architecture on POSIX systems is the "Ctrl+Enter Ambiguity." In the ASCII standard, the Ctrl key operates by clearing the 6th and 7th bits of a character. The Enter key corresponds to Ctrl+M (ASCII 13, 0x0D). Applying the Ctrl modifier to Ctrl+M is an idempotent operation; the result remains 0x0D.14 Consequently, legacy terminals transmit the exact same byte sequence for Enter and Ctrl+Enter, leaving the application unable to distinguish between "Insert Newline" and "Submit."
+6.1 The Protocol Negotiation Strategy
+To resolve this, AriaSH implements a three-tier Protocol Negotiation Strategy that attempts to upgrade the terminal connection to a disambiguated mode.1
+Tier 1: Kitty Keyboard Protocol (The Gold Standard)
+The Kitty Keyboard Protocol represents the modern solution to this ambiguity. It introduces a mechanism to query support and enable "progressive enhancements" that encode key events with explicit modifier information.22
+   * Handshake:
+   1. Query: The shell sends \x1B[?u to query for progressive enhancement support.23
+   2. Response: If the terminal supports the protocol, it replies with a device attribute sequence (e.g., `\x1B
+Tier 2: XTerm modifyOtherKeys
+If the terminal does not support the Kitty protocol, the shell attempts to enable the XTerm modifyOtherKeys resource. This is a widely supported extension (found in iTerm2, GNOME Terminal) that alters the escape sequences for modified keys.24
+   * Handshake: The shell sends `\x1B
+Tier 3: Heuristic Fallback & Legacy Bindings
+If neither protocol is supported (common in raw Linux consoles or rudimentary serial terminals), the shell falls back to heuristics and alternative bindings.
+   * Alt+Enter: Terminals almost universally transmit Alt+Key as ESC followed by Key. Thus, Alt+Enter sends \x1B \x0D.17 This sequence is unambiguous. AriaSH binds Alt+Enter as a secondary submission trigger by default to ensure usability on legacy systems.
+   * User Configuration: The FSM allows users to define custom submission keys (e.g., Ctrl+J or Ctrl+]) via a configuration file, providing an escape hatch for environments with restrictive input capabilities.
+7. Syntactic Intelligence: Auto-Indentation and Visual Cues
+To fully leverage the multi-line capability, the REPL acts as a micro-editor, incorporating "Syntactic Intelligence" to assist the user. This requires a lightweight lexical analyzer running within the input loop—effectively a subset of the Aria Compiler's frontend embedded in the shell.
+7.1 Brace Counting and Scope Analysis
+Aria's syntax relies on braces {} to delimit scope blocks. The input engine maintains a running counter, brace_depth, to track the current nesting level. This logic cannot be a simple character count; it must be context-aware to ignore braces that appear within string literals or comments.27
+Algorithm: Context-Aware Brace Counting
+The algorithm iterates through the input buffer character by character, maintaining a state variable in_string (tracking quote type) and in_comment.
+
+
+C++
+
+
+
+
+int calculate_brace_depth(const std::string& buffer) {
+   int depth = 0;
+   bool in_string = false;
+   char quote_char = 0;
+   bool in_comment = false;
+
+   for (size_t i = 0; i < buffer.length(); ++i) {
+       char c = buffer[i];
+       
+       // Handle Comment State
+       if (in_comment) {
+           if (c == '\n') in_comment = false;
+           continue;
+       }
+       if (c == '/' && i + 1 < buffer.length() && buffer[i+1] == '/') {
+           in_comment = true;
+           i++; 
+           continue;
+       }
+
+       // Handle String State
+       if (in_string) {
+           if (c == quote_char && buffer[i-1]!= '\\') in_string = false;
+           continue;
+       }
+       if (c == '"' |
+
+| c == '\'' |
+| c == '`') { // Aria supports backticks for templates
+           in_string = true;
+           quote_char = c;
+           continue;
+       }
+
+       // Handle Scope
+       if (c == '{') depth++;
+       if (c == '}') depth = std::max(0, depth - 1);
+   }
+   return depth;
+}
+
+This logic ensures that code like print("Unbalanced { brace") does not incorrectly trigger indentation logic.
+7.2 Auto-Indentation Implementation
+When the user presses Enter in the BUFFER_MANIPULATION state, the engine triggers the Auto-Indenter. It calculates the target indentation level as indent_level = brace_depth * 4 (assuming 4-space indentation).29
+The engine then inserts a newline character \n followed by indent_level space characters into the buffer. This mimics the "Smart Enter" behavior of full-fledged IDEs, significantly reducing the keystrokes required to write structured code in the REPL.
+7.3 Visual Feedback: Dynamic Prompt Rewriting
+To reinforce the modal nature of the interface, the visual prompt changes dynamically based on the state of the buffer.
+   * Standard Prompt (aria> ): Displayed when the buffer is empty or the previous command has been submitted.
+   * Continuation Prompt (.... ): Displayed when brace_depth > 0 or when the buffer contains incomplete lines.
+This update is performed by redrawing the prompt line after every key press if the state changes. The implementation utilizes ANSI cursor save/restore codes (`\x1B
+8. Integration with the Aria Runtime and I/O Topology
+The Modal REPL is not a standalone utility; it is the primary consumer interface for the Aria Runtime Environment. As such, it must integrate seamlessly with the language's unique "Hex-Stream" I/O topology and the Twisted Balanced Binary (TBB) type system.
+8.1 The 6-Stream Mapping
+Aria defines six standard streams to separate concerns: stdin, stdout, stderr, stddbg, stddati, and stddato. The REPL's interaction with these streams is strictly defined to preventing "noisy channel" issues.1
+   * stddati (FD 4): This is the exclusive source of input for the FSM. The REPL reads raw key events from this descriptor.
+   * stdout (FD 1): This is treated as the UI Plane. The REPL writes all syntax highlighting codes, prompt characters, and auto-indentation spaces to this stream.
+   * stddato (FD 5): This stream is reserved for the output of the user's code. If the user executes print("Hello"), the runtime writes "Hello" to stddato. This separation allows the REPL to render the UI on stdout without it being corrupted by program output, which can be redirected or piped independently.
+   * stddbg (FD 3): This stream is used for telemetry and FSM debugging. Transitions (e.g., State: CHORD -> SUBMIT) are logged here. This allows developers to debug the shell itself without polluting the visual interface on stdout.
+8.2 TBB Type System Integration
+The Aria type system includes TBB types (e.g., tbb8) which utilize a specific bit pattern (e.g., 0x80 for int8) as a sticky error sentinel (ERR).1 The REPL's value printer must be TBB-aware.
+When the Evaluator returns a result, the REPL inspects the type metadata. If a value matches the ERR sentinel for its type, the REPL does not print the integer value. Instead, it renders a formatted error indicator (e.g., tbb8: <ERR>) to stdout. This prevents the user from confusing a valid integer with an error state, a common pitfall in systems that expose raw memory values.
+8.3 Security Considerations: Pastejacking Defense
+In Raw Mode, the terminal is vulnerable to "Pastejacking," where a user pastes text containing hidden control characters or newlines that trigger immediate execution.32 To mitigate this, the Aria REPL enables Bracketed Paste Mode by sending \x1B[?2004h during initialization.
+When a paste event occurs, the terminal wraps the content in \x1B[200~ and \x1B[201~ markers. The FSM detects these markers and transitions to the BULK_INSERT state. In this state, all input is treated strictly as data; newline characters are inserted as literals, and no control sequences (like Ctrl+Enter) are executed. This ensures that pasted code is buffered for user review before it can be executed, adhering to the "Secure by Design" philosophy of the Aria project.
+9. Conclusion
+The Modal Multi-Line Input Architecture represents a necessary evolution of the command-line interface for block-structured systems languages. By abandoning the limitations of canonical TTY input and implementing a full-stack solution—ranging from low-level termios manipulation to high-level protocol negotiation and syntactic analysis—AriaSH provides a developer experience that rivals graphical IDEs while remaining entirely text-based.
+This specification delivers the robust foundation required to support Aria's "batteries-included" philosophy. It solves the critical usability friction of writing complex code in a REPL, ensures compatibility across the fragmented landscape of terminal emulators and operating systems via Virtual Terminal sequences and legacy fallbacks, and integrates deeply with the language's unique I/O topology. Implementing this architecture establishes AriaSH not just as a shell, but as a sophisticated runtime environment capable of supporting the next generation of high-performance software development.
+Works cited
+   1. aria_source_full.txt
+   2. CS3214 Computer Systems - Spring 2024, accessed December 21, 2025, https://courses.cs.vt.edu/cs3214/spring2024/questions/rawmode
+   3. POSIX termios Two terminal I/O modes termios structure Getting and setting terminal attributes Terminal window size, accessed December 21, 2025, https://www.cs.uah.edu/~hlin/cs590/lectures/termios.pdf
+   4. Serial Programming/termios - Wikibooks, open books for an open world, accessed December 21, 2025, https://en.wikibooks.org/wiki/Serial_Programming/termios
+   5. termios(3) - Linux manual page - man7.org, accessed December 21, 2025, https://man7.org/linux/man-pages/man3/termios.3.html
+   6. 2. Entering raw mode | Build Your Own Text Editor, accessed December 21, 2025, https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
+   7. High-Level Console Modes - Windows Console - Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/windows/console/high-level-console-modes
+   8. Low-Level Console Input Functions - Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/windows/console/low-level-console-input-functions
+   9. Reading Input Buffer Events - Windows Console - Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/windows/console/reading-input-buffer-events
+   10. KEY_EVENT_RECORD, accessed December 21, 2025, https://csc.csudh.edu/mmccullough/asm/help/source/winstruct/key_event_record.htm
+   11. KEY_EVENT_RECORD structure - Windows Console | Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/windows/console/key-event-record-str
+   12. Windows console with ANSI colors handling - Super User, accessed December 21, 2025, https://superuser.com/questions/413073/windows-console-with-ansi-colors-handling
+   13. Console Virtual Terminal Sequences - Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
+   14. vim - Can terminals detect
+   15. What are the characters printed when Alt+Arrow keys are pressed?, accessed December 21, 2025, https://unix.stackexchange.com/questions/73669/what-are-the-characters-printed-when-altarrow-keys-are-pressed
+   16. Ctrl + C interrupt event handling in Linux - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/17766550/ctrl-c-interrupt-event-handling-in-linux
+   17. termios.h File - IBM, accessed December 21, 2025, https://www.ibm.com/docs/en/aix/7.1.0?topic=files-termiosh-file
+   18. How to ignore "key-up events" while using ReadConsoleInput - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/74374618/how-to-ignore-key-up-events-while-using-readconsoleinput
+   19. Kitty keyboard protocol - Rio Terminal, accessed December 21, 2025, https://rioterm.com/docs/features/kitty-keyboard-protocol
+   20. Comprehensive keyboard handling in terminals - kitty - Kovid Goyal, accessed December 21, 2025, https://sw.kovidgoyal.net/kitty/keyboard-protocol/
+   21. ctlseqs(ms) - invisible-island.net, accessed December 21, 2025, https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+   22. XTerm – “Other” Modified Keys - invisible-island.net, accessed December 21, 2025, https://invisible-island.net/xterm/modified-keys.html
+   23. Ignore brackets in string literal - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/47774982/ignore-brackets-in-string-literal
+   24. 722. Remove Comments - In-Depth Explanation - AlgoMonster, accessed December 21, 2025, https://algo.monster/liteproblems/722
+   25. visual studio 2017 - VS2017 indenting on braces in C++ - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/47998373/vs2017-indenting-on-braces-in-c
+   26. How to avoid escape sequence attacks in terminals? - Unix & Linux Stack Exchange, accessed December 21, 2025, https://unix.stackexchange.com/questions/15101/how-to-avoid-escape-sequence-attacks-in-terminals

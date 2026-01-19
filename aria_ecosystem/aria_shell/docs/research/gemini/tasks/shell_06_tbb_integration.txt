@@ -1,0 +1,57 @@
+TBB Arithmetic Integration and Sticky Error Handling
+
+PRIORITY: MEDIUM
+STATUS: Aria-Specific Feature
+SOURCE: Custom Shell Design For Aria.txt, Section 5.3
+
+PROBLEM:
+Standard shells silently overflow integers and ignore errors. Need Aria's Twisted Balanced Binary (TBB) arithmetic with sticky error propagation in shell scripts.
+
+REQUIREMENTS:
+1. TBB Type Support:
+   - Shell variables can be declared as tbb8, tbb16, tbb32
+   - Arithmetic operations use TBB semantics
+   - Overflow produces ERR sentinel (-128 for tbb8)
+
+2. Sticky Error Propagation:
+   - If TBB operation produces ERR, value is "poisoned"
+   - Any further operation with ERR propagates ERR
+   - Using ERR in condition or exit code halts execution
+
+3. Exit Code Mapping:
+   - Exit code 0 → pass(0) result type
+   - Exit code non-zero → fail(code) result type
+   - ERR value as exit code → runtime error
+
+4. Error Handling:
+   - Shell script halts on sticky error (like set -e but for math)
+   - Prevents silent corruption of logic
+   - Error message shows origin of ERR value
+
+IMPLEMENTATION TASKS:
+- [ ] Link against Aria TBB library or reimplement
+- [ ] Add TBB type declarations to shell type system
+- [ ] Implement TBB arithmetic operators
+- [ ] Add ERR sentinel detection
+- [ ] Implement sticky error propagation
+- [ ] Create error origin tracking (stack trace)
+- [ ] Add configuration option to disable (for compatibility)
+- [ ] Document TBB semantics in shell context
+
+FILES TO CREATE:
+- src/types/tbb_integration.cpp
+- src/interpreter/error_propagation.cpp
+- docs/TBB_IN_SHELL.md
+- tests/tbb/overflow_tests.cpp
+
+RESEARCH NOTES:
+- TBB prevents silent overflow bugs common in shell scripts
+- May be surprising to users coming from Bash
+- Good documentation and error messages critical
+
+ACCEPTANCE CRITERIA:
+- tbb8:x = 127 + 1 produces ERR (-128)
+- Using ERR in exit status halts script
+- Error message shows where ERR originated
+- Compatible with Aria language TBB semantics
+- Can be disabled for legacy compatibility

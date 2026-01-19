@@ -1,0 +1,216 @@
+﻿Architectural Specification: Cross-Platform Process Orchestration and Hex-Stream I/O Topology for the Aria Runtime Environment
+1. Executive Introduction and Strategic Alignment
+The architectural trajectory of the Aria programming language has arrived at a pivotal juncture where the robustness of its compiler infrastructure must be matched by an equally sophisticated runtime environment. While the compiler backend, leveraging the CodeGenContext class and LLVM 18 infrastructure, has achieved a high degree of maturity in code generation—supporting complex features such as Twisted Balanced Binary (TBB) arithmetic, hybrid memory models, and platform-specific hardware optimizations 1—the system interaction capabilities of the standard library remain nascent.
+The development of the Process Orchestration Class is not merely a functional requirement; it is a structural imperative driven by the "batteries-included" philosophy mandated by the project specifications.1 In the contemporary landscape of systems programming, a language that lacks intrinsic, high-performance facilities for spawning, managing, and synchronizing child processes is fundamentally incomplete. Users expect a standard library to provide robust abstractions over the operating system's process model, shielding them from the vagaries of platform-specific system calls while exposing the full power of the underlying kernel.
+This report articulates a comprehensive, expert-level design and implementation strategy for the Aria Process Orchestration Class. This subsystem is designed to be the definitive interface between the Aria runtime and the operating system kernel, bridging the divergent paradigms of Unix fork/exec and Windows CreateProcess without compromising on performance, safety, or concurrency. Furthermore, this architecture introduces and formalizes the Hex-Stream I/O Topology, a novel approach to input/output management that addresses the systemic deficiencies of the traditional stdin/stdout/stderr model.1
+1.1 The Orchestration Gap and Implementation Imperative
+Current audits of the Aria ecosystem reveal a significant "Orchestration Gap." While the language syntax defines the necessity for process primitives—specifically spawn, fork, exec, and wait—the runtime implementation is currently classified as a "High Priority" research gap.1 Relying on naive wrappers around legacy C standard library functions like system() or popen() is structurally incompatible with Aria’s architectural goals for several reasons:
+* Concurrency Violation: Aria employs an M:N coroutine scheduler (where M tasks map to N OS threads). Blocking a kernel thread to wait for a child process using a synchronous waitpid call removes a valuable worker from the pool, potentially stalling thousands of concurrent tasks.1
+* Safety Compromise: Legacy process creation (specifically fork()) interacts poorly with multi-threaded environments, introducing deadlock hazards if mutexes are held during the fork operation.
+* Observability Deficit: The standard tripartite I/O model fails to distinguish between functional output, user interaction, and diagnostic telemetry, leading to "noisy channel" issues in complex data pipelines.
+1.2 Architectural Objectives
+The design proposed herein is governed by three primary architectural objectives:
+1. Asynchronous Sovereignty: The process orchestration system must be fully integrated with the Aria async/await runtime. Process creation, I/O, and termination waiting must be non-blocking operations that hook directly into the system reactor (Linux epoll or Windows IOCP), allowing the scheduler to manage process lifecycles as efficiently as network sockets.
+2. Platform Fidelity: The abstraction layer must expose the capabilities of the underlying OS rather than reducing them to the lowest common denominator. This implies supporting modern Linux features like pidfd for race-free signaling and Windows security attributes for precise handle inheritance.1
+3. Topology Enforcement: The runtime must strictly enforce the Hex-Stream topology, guaranteeing the integrity of six distinct I/O channels and preventing the cross-contamination of binary data and textual logs.1
+2. Theoretical Framework: The Hex-Stream I/O Topology
+The prevailing I/O abstraction in systems programming—the Unix standard stream model—has remained largely static since the 1970s. While foundational, the conflation of human-readable text, machine-readable binary data, and diagnostic telemetry into three channels (stdin, stdout, stderr) creates the "noisy channel" problem. The Aria language specification addresses this by formalizing a six-stream topology, treating stddbg, stddati, and stddato as first-class citizens alongside the traditional streams.1
+2.1 The Binary-Text Dichotomy and Data Plane Separation
+Modern applications frequently function as nodes in complex, automated data pipelines. A process might be responsible for ingesting a binary tensor stream, performing matrix operations, and emitting a transformed binary result. In the legacy model, stdout is overloaded to carry both the result data and any user-facing status updates (e.g., "Processing... 50%"). This overloading creates fragility: if a library used by the application prints a debug message to stdout, the downstream consumer (e.g., a JSON parser or image decoder) crashes due to data corruption.
+To mitigate this, developers often resort to encoding binary data (e.g., Base64), which incurs significant CPU overhead and increases bandwidth consumption by approximately 33%. The Aria topology resolves this by segregating concerns at the protocol level:
+Stream Identifier
+	Descriptor Index
+	Semantic Role
+	Protocol
+	Blocking Behavior
+	stdin
+	0
+	Command Input
+	Text (UTF-8)
+	Blocking / Line Buffered
+	stdout
+	1
+	User Interface
+	Text (Formatted)
+	Line Buffered
+	stderr
+	2
+	Fatal Errors
+	Text (Plain)
+	Unbuffered
+	stddbg
+	3
+	Telemetry/Log
+	Structured
+	Async / Buffered
+	stddati
+	4
+	Data Ingress
+	Binary (Raw)
+	Block Buffered
+	stddato
+	5
+	Data Egress
+	Binary (Raw)
+	Block Buffered
+	Table 1: The Aria Hex-Stream I/O Topology 1
+This separation allows an Aria process to maintain a high-fidelity conversation with a user via stdout while simultaneously streaming gigabytes of raw binary data via stddato without mutual interference or encoding overhead. The stddati and stddato streams are specifically optimized for zero-copy operations (e.g., splice on Linux), allowing direct kernel-space transfer of buffers.1
+2.2 Kernel-Level Determinism and Reservation
+Implementing this topology requires enforcing "Allocation Determinism" at the kernel or runtime level. On POSIX systems, file descriptors are allocated sequentially. If the runtime does not explicitly reserve descriptors 3, 4, and 5 during the execve transition, the operating system will assign these IDs to the first files opened by the application (e.g., database connections or configuration files), leading to catastrophic topology collisions.
+The proposed architecture mandates a strict Stream Reservation Policy. The process spawner must ensure that FDs 0 through 5 are populated—either with valid IPC pipes or sanitized to /dev/null—before the child process execution begins. This guarantees that open() calls in the child process always start allocating from FD 6, preserving the integrity of the Aria standard streams.1
+For Windows, which does not use small integer file descriptors, the mapping is achieved via the Bootstrap Protocol. When the Aria runtime initializes, it parses a specific environment variable (__ARIA_FD_MAP) injected by the parent process. This variable maps the logical stream IDs (3, 4, 5) to the raw Windows HANDLE values inherited from the parent, allowing the runtime to reconstruct the topology before main() executes.1
+3. Platform Abstraction Layer: Unix and Linux Strategy
+The core of the Process Orchestration Class is a unifying abstraction over the fragmented landscape of OS process APIs. For Unix-like systems, specifically Linux, the design rejects the traditional fork() model in favor of posix_spawn and clone3, driven by requirements for thread safety and performance.1
+3.1 The Fallacy of Fork in Multi-Threaded Runtimes
+Historically, Unix process creation relied on fork(), which duplicates the entire virtual memory layout of the parent. In modern multi-threaded applications, fork() is fraught with peril. When a thread in a multi-threaded application calls fork(), only that thread is duplicated in the child process. Any mutexes held by other threads in the parent (e.g., inside malloc or a logging routine) remain locked in the child, but the owners of those locks do not exist in the child to release them. If the child attempts to acquire such a lock before calling exec(), a deadlock ensues instantly.1
+Furthermore, fork() imposes a performance penalty due to the necessity of copying page tables, even with Copy-on-Write (CoW) optimizations. In large-memory applications, this latency can cause significant scheduler stalls.
+3.2 The posix_spawn Paradigm
+Aria adopts posix_spawn as the primary primitive for Unix systems. This function acts as a fused fork + exec, allowing the runtime to specify a list of file actions (opening, closing, duplicating descriptors) and process attribute modifications that the kernel or libc executes safely before transitioning to the new process image.
+Crucially, posix_spawn allows for the atomic handling of file descriptors required for the Hex-Stream topology. The runtime constructs a posix_spawn_file_actions_t object that performs the necessary dup2 operations to map the parent's pipes to the child's FDs 0 through 5, ensuring the topology is established before the first instruction of the child process runs.1
+3.3 The pidfd Revolution and Race-Free Signaling
+Standard Unix process management relies on Process IDs (PIDs), which are small, recyclable integers. This creates a dangerous race condition: a parent process might attempt to send a signal to a child PID that has already exited and been recycled by the OS for a new, unrelated process. This could lead to the Aria runtime killing innocent processes.
+To resolve this, Aria integrates the modern Linux pidfd_open system call.2 A pidfd is a file descriptor that maintains a stable reference to a specific process instance. Unlike a PID, a pidfd is not recycled until the file descriptor is closed.
+3.3.1 Implementation of pidfd Integration
+The Aria runtime implements a wrapper around the clone3 syscall (or pidfd_open on kernels > 5.3) to obtain this descriptor:
+1. Creation: When spawn() is called, the runtime uses syscall(SYS_pidfd_open, pid, 0) to retrieve the file descriptor for the new child.3
+2. Signaling: The runtime uses pidfd_send_signal instead of kill, ensuring signals are strictly delivered to the intended process handle.2
+3. Polling: Crucially, pidfds are pollable. The Aria scheduler registers the pidfd with the thread's epoll instance. When the child process terminates, the kernel signals the pidfd as "readable" (EPOLLIN).3 This transforms process waiting into a standard asynchronous I/O event, allowing the runtime to sleep efficiently without blocking threads.4
+4. Waiting: Upon notification, the runtime uses waitid(P_PIDFD, fd, &info,...) to retrieve the exit status and reap the zombie process without race conditions.4
+4. Platform Abstraction Layer: Windows Strategy
+The Windows NT kernel does not support fork. Process creation is atomic via CreateProcessW. While this avoids the threading hazards of fork, it introduces significant complexity regarding handle inheritance and argument parsing.
+4.1 Explicit Handle Inheritance via STARTUPINFOEX
+By default, Windows handle inheritance is coarse-grained; a handle is either inheritable or not. In a multi-threaded runtime spawning multiple children simultaneously, a global "inheritable" flag causes race conditions where Child A accidentally inherits the pipes intended for Child B. This can lead to handle leaks that keep pipes open indefinitely, causing application hangs.
+Aria leverages the STARTUPINFOEX structure and the PROC_THREAD_ATTRIBUTE_HANDLE_LIST attribute.5 This API allows the spawner to explicitly whitelist exactly which handles are inherited by a specific child process.
+Implementation Logic:
+1. Initialize Attribute List: The runtime calls InitializeProcThreadAttributeList to determine the required buffer size, allocates the memory, and then calls it again to initialize the list.6
+2. Update Attribute: It calls UpdateProcThreadAttribute with PROC_THREAD_ATTRIBUTE_HANDLE_LIST, passing an array of HANDLEs comprising the specific stdin, stdout, stderr, stddbg, stddati, and stddato handles for this child.6
+3. Creation: CreateProcessW is called with the EXTENDED_STARTUPINFO_PRESENT flag and the STARTUPINFOEX structure.7
+This "Explicit Inheritance" model strictly isolates child processes, ensuring secure and robust topology management.5
+4.2 The Argument Injection Defense
+Unlike Unix argv arrays which are passed intact to the main function, Windows passes a single command-line string (LPWSTR lpCommandLine). The child process is responsible for parsing this string back into arguments (usually via CommandLineToArgvW or the MSVCRT). This discrepancy introduces massive command injection vulnerabilities if arguments are merely concatenated with spaces (e.g., a filename containing & or |).
+The Aria Process Class implements a rigorous escaping algorithm compliant with Microsoft C Runtime parsing rules to prevent injection 1:
+1. Backslash Escaping: A sequence of $2n$ backslashes followed by a quote becomes $n$ backslashes and a delimiter. $2n+1$ backslashes followed by a quote becomes $n$ backslashes and a literal escaped quote.
+2. Quote Encapsulation: Any argument containing whitespace, tabs, or empty strings must be wrapped in double quotes.
+3. Meta-character Prevention: The runtime explicitly differentiates between executing a raw executable vs. a batch file (.bat/.cmd). For batch files, additional caret escaping (^) is applied to shell meta-characters, or the operation is rejected by default to enforce security.1
+4.3 Unicode and String Conversion
+Windows APIs (CreateProcessW) utilize UTF-16 encoding (wchar_t). Since Aria uses UTF-8 natively for its string type, the runtime must perform robust conversion. The implementation uses MultiByteToWideChar with the CP_UTF8 code page to convert the command line and environment block from Aria strings to Windows wide strings.9 This ensures correct handling of international characters in file paths and arguments.
+5. Class Design: The Process and Command Architecture
+To expose these capabilities to the Aria developer, we define a two-stage API based on the Builder Pattern. This separates the configuration of a process from its execution and lifecycle management, aligning with patterns seen in Rust and Go.
+5.1 The Command Builder Class
+The Command class acts as a factory. It is a mutable configuration object that aggregates the arguments, environment, and I/O topology settings before the system call is made.
+
+
+Code snippet
+
+
+
+
+// Aria Process Orchestration Class Design
+class Command {
+   // Core Attributes
+   string: executable;
+   vector<string>: args;
+   map<string, string>: env;
+   string: cwd;
+   
+   // Hex-Stream Configuration
+   StdioConfig: stdin;
+   StdioConfig: stdout;
+   StdioConfig: stderr;
+   StdioConfig: stddbg;
+   StdioConfig: stddati;
+   StdioConfig: stddato;
+
+   // Methods
+   func arg(string: val) -> Command;
+   func env(string: key, string: val) -> Command;
+   
+   // Explicit safety: No implicit shell execution
+   static func new(string: exec_path) -> Command;
+   
+   // Execution
+   func spawn() -> Result<Child>;
+}
+
+The spawn() method executes the platform-specific logic (posix_spawn or CreateProcessW). It creates the necessary pipes for requested streams, sets up the pidfd or Job Object, and returns a Child handle.1
+5.2 The Child Handle Class
+The Child class represents a running process. It owns the OS resources (handles, FDs) and implements RAII (Resource Acquisition Is Initialization) to ensure cleanup.
+
+
+Code snippet
+
+
+
+
+class Child {
+   // OS Identifier (PID)
+   int32: id;
+   
+   // Stream Handles (Optional, dependent on configuration)
+   Option<PipeWriter>: stdin;
+   Option<PipeReader>: stdout;
+   Option<PipeReader>: stderr;
+   Option<PipeReader>: stddbg; // Async telemetry stream
+   Option<PipeWriter>: stddati; // Zero-copy binary input
+   Option<PipeReader>: stddato; // Zero-copy binary output
+
+   // Platform specific handle (opaque wild pointer)
+   // Linux: pidfd | Windows: HANDLE
+   wild void*: _handle;
+
+   // Asynchronous Synchronization
+   async func wait() -> Result<ExitStatus>;
+   
+   // Termination
+   func kill() -> Result<void>;
+}
+
+The Child class integrates with Aria's memory model by treating the internal handle as a "wild" pointer (unmanaged resource) that is wrapped in a safe interface. The destructor of Child ensures that if the handle is dropped without waiting, the child process is either reaped or detached, preventing zombie accumulation.1
+6. Asynchronous Integration and Scheduler Mechanics
+The most critical innovation in this architecture is the integration of process lifecycle events with the Aria Scheduler. In a naive implementation, wait() blocks the calling thread until the child exits. In Aria's M:N scheduler, this is catastrophic.
+6.1 The Reactor Pattern for Process Events
+Aria treats a process exit as an I/O event. The architecture utilizes the "Reactor" pattern to handle this asynchronously.
+Linux Implementation:
+The pidfd obtained during spawn is registered with the epoll instance of the current worker thread. The Child::wait() method creates a Waker (callback) and suspends the current coroutine (Task).
+1. The Task yields execution.
+2. When the child process terminates, the kernel signals the pidfd as "readable" (EPOLLIN).
+3. The epoll_wait loop in the scheduler detects this event.
+4. The Reactor triggers the Waker, which pushes the Task back onto the run queue.
+5. The Task resumes and calls waitid to retrieve the exit code, which is guaranteed to be non-blocking.3
+Windows Implementation:
+Windows handles cannot be directly epolled. The runtime associates the child process handle with a Job Object linked to an I/O Completion Port (IOCP). When the process exits, the OS queues a completion packet to the port. The scheduler thread dequeues this packet and wakes the associated coroutine, achieving the same non-blocking behavior as Linux.1
+6.2 Wild Affinity and Thread Local Storage
+Process handles and certain OS resources are often thread-affinity sensitive. Aria’s scheduler supports Wild Affinity. If a Task holding a wild pointer (unmanaged resource) or a thread-local handle suspends, the scheduler ensures it is resumed on the same OS thread.1 This is critical for Windows API calls that depend on Thread Local Storage (TLS) or specific COM apartments, ensuring that the Child handle remains valid and accessible upon resumption.
+7. Memory Safety and Type System Integration
+The interaction between low-level process primitives and Aria's high-level type system is governed by strict safety guarantees derived from the compiler's CodeGenContext.
+7.1 Fat Pointer Safety
+In debug builds (ARIA_DEBUG), pointers passed to spawn (e.g., buffers for arguments or environment blocks) are wrapped in Fat Pointers (aria_fat_pointer). This structure, defined as { i8* ptr, i8* base, i64 size, i64 alloc_id }, allows the runtime to verify bounds before passing data to the OS kernel.1 This prevents buffer overflow vulnerabilities during the construction of the argument vector or environment block. The compiler emits calls to aria_scope_enter() and aria_scope_exit() to track the validity of these pointers during the spawn call.1
+7.2 Twisted Balanced Binary (TBB) Integration
+Aria’s Twisted Balanced Binary (TBB) integers utilize specific bit patterns as error sentinels (ERR). For example, tbb8 uses -128 (0x80) as its error sentinel.1 The Process class integrates this into exit code analysis.
+* Exit Code Mapping: A standard Unix exit code (0-255) maps safely to int8. However, if a process terminates due to a signal (e.g., SEGFAULT), this state is mapped to a TBB ERR value in the ExitStatus struct.
+* Sticky Propagation: If a developer performs arithmetic on the exit code (e.g., status + 1), the ERR sentinel propagates through the logic. This ensures that a crashed process cannot be silently mistaken for a successful one in logic checks.1
+7.3 Shadow Stack for GC Roots
+The CodeGenContext maintains a shadow stack (shadowStack, size 1024) to track pinned objects for the garbage collector.1 When spawn is called, any managed strings (arguments, environment) must be pinned to ensure the GC does not move them while the OS syscall is reading them. The Process class internally handles this pinning, ensuring memory safety during the transition to kernel space.
+8. Case Study: The Aria Build System
+The efficacy of this architecture is demonstrated by its usage in AriaBuild (aria_make), the deterministic build system for Aria.1
+8.1 Parallel Compilation
+aria_make constructs a dependency graph of compilation units. To maximize throughput, it must compile independent nodes in parallel. Using the Process Orchestration Class, aria_make spawns multiple instances of the compiler (ariac) simultaneously.
+* Hex-Stream Usage: The build system uses the stddbg stream to capture structured compiler telemetry (timings, memory usage) separately from the human-readable warnings on stderr.
+* Buffer Strategy: To prevent output interleaving, aria_make utilizes the Child handle's async pipes to buffer the output of each compiler process in memory. When a process completes, its buffered output is atomically flushed to the user's console.1
+8.2 Determinism via Environment Control
+AriaBuild relies on the Command class's ability to strictly control the environment. By default, Command::spawn does not inherit the parent's environment variables. aria_make constructs a sanitized environment for the compiler, ensuring that builds are reproducible and unaffected by the user's local shell configuration.1
+9. Conclusion
+The architectural specification for the Aria Process Orchestration Class represents a significant advancement over traditional system library designs. By rejecting the synchronous legacy of fork/exec and embracing a fully asynchronous, hex-stream topology, Aria positions itself as a premier language for systems orchestration.
+The integration of pidfd on Linux and STARTUPINFOEX on Windows allows the runtime to scale to tens of thousands of concurrent processes, limited only by system resources rather than thread counts. The Hex-Stream model solves the observability crisis in distributed systems, guaranteeing clean data pipelines alongside rich telemetry. Combined with the safety guarantees of TBB types and Fat Pointers, this subsystem provides the robust foundation necessary for Aria to operate as a true systems language.
+This design is ready for immediate implementation, with specific attention required for the Windows argument escaping logic and the Linux pidfd reactor integration to ensure the "batteries included" promise of the Aria Standard Library is fulfilled.
+Works cited
+1. aria_source_full.txt
+2. Completing the pidfd API - LWN.net, accessed December 22, 2025, https://lwn.net/Articles/794707/
+3. pidfd_open(2) - Linux manual page - man7.org, accessed December 22, 2025, https://man7.org/linux/man-pages/man2/pidfd_open.2.html
+4. wait(2) - Linux manual page - man7.org, accessed December 22, 2025, https://man7.org/linux/man-pages/man2/wait.2.html
+5. subprocess: use PROC_THREAD_ATTRIBUTE_HANDLE_LIST with STARTUPINFOEX on Windows Vista · Issue #63963 · python/cpython - GitHub, accessed December 22, 2025, https://github.com/python/cpython/issues/63963
+6. UpdateProcThreadAttribute function (processthreadsapi.h) - Win32 apps - Microsoft Learn, accessed December 22, 2025, https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute
+7. How to pass a pointer to a list of handles to the UpdateProcThreadAttribute function - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/60563608/how-to-pass-a-pointer-to-a-list-of-handles-to-the-updateprocthreadattribute-func
+8. Effect of PROC_THREAD_ATTRIBUTE_HANDLE_LIST on child process standard input, standard output, standard error, relationship to STARTF_USESTDHANDLES - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/66801770/effect-of-proc-thread-attribute-handle-list-on-child-process-standard-input-sta
+9. MultiByteToWideChar function (stringapiset.h) - Win32 apps - Microsoft Learn, accessed December 22, 2025, https://learn.microsoft.com/en-us/windows/win32/api/stringapiset/nf-stringapiset-multibytetowidechar
+10. Converting file in UTF-8 to UTF-16 - c++ - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/10766838/converting-file-in-utf-8-to-utf-16

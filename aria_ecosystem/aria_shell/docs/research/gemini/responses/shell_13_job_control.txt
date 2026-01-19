@@ -1,0 +1,315 @@
+﻿Architectural Specification: Implementation of Job Control and Background Process Management for the Aria Shell
+1. Introduction: The Imperative for Advanced Process Orchestration
+The contemporary landscape of systems programming demands a paradigm shift in how command-line interfaces (CLIs) and shells manage the execution lifecycle of processes. The Aria Shell (AriaSH), designed as the native orchestration interface for the Aria programming language, aims to transcend the capabilities of traditional shells like Bash or Zsh by integrating deeply with the language's unique features—specifically its "Hex-Stream" input/output topology, Twisted Balanced Binary (TBB) error propagation, and memory-safe concurrency model. While the initial implementation of AriaSH provided a robust foundation for synchronous command execution, the transition to a production-grade system requires the implementation of sophisticated Job Control.
+Job control is the mechanism by which a shell arbitrates the scarce resources of the computing environment—CPU time, memory, and, most critically, the controlling terminal—among multiple competing process groups. It transforms a shell from a serial command dispatcher into a concurrent supervisor capable of managing foreground tasks, background daemons, and suspended workflows. For AriaSH, this is not merely a feature addition but an architectural overhaul that touches the kernel-userspace boundary on both Linux and Windows.
+The complexity of this undertaking is compounded by Aria's cross-platform mandate. The POSIX standard provides a rigorous, albeit archaic, set of signals and system calls (SIGTSTP, SIGTTIN, tcsetpgrp) to manage job control.3 In contrast, the Windows NT kernel lacks these specific primitives, operating instead on a model of Job Objects, Console Groups, and opaque Handles.5 Consequently, AriaSH must implement a Platform Abstraction Layer (PAL) that synthesizes a unified "Job" concept, bridging the gap between UNIX process groups and Windows Job Objects.
+This report specifies the architectural design for implementing full Job Control in AriaSH. It details the necessary data structures (Job, JobManager), the kernel-level integration strategies for Linux (pidfd, epoll) and Windows (NtSuspendProcess, STARTUPINFOEX), and the user-facing command logic (fg, bg, jobs, &). Furthermore, it addresses the integration of these features with Aria's specific safety guarantees, ensuring that background processes adhere to the "Appendage Theory" of memory management and utilizing TBB types for robust error state propagation.1
+________________
+2. Theoretical Framework: The Process Group and the Controlling Terminal
+To engineer a robust job control system, one must rigorously define the relationship between the shell, the operating system kernel, and the terminal device. The fundamental challenge of job control is arbitration: determining which process has the right to read from the keyboard and write to the screen at any given instant.
+2.1 The POSIX Process Hierarchy Model
+In the POSIX model (Linux, macOS), the atomic unit of execution is the process, but the atomic unit of signal delivery and terminal control is the Process Group (PGID).2
+2.1.1 Process Groups and Sessions
+Every process belongs to a process group, identified by a Process Group ID (PGID). When a shell executes a command pipeline (e.g., grep error log.txt | sort | uniq), all constituent processes are assigned to a single, newly created process group.8 This grouping is essential for signal atomicity; when the user presses Ctrl+C, the terminal driver sends the SIGINT signal to every process in the current foreground process group, ensuring the entire pipeline terminates simultaneously.9
+Above the process group sits the Session. A session is a collection of process groups, typically established during user login. The shell acts as the Session Leader. This hierarchy enforces security boundaries: job control signals (SIGTSTP, SIGTTIN) are restricted to processes within the same session, preventing a user from accidentally suspending processes belonging to another login instance.
+2.1.2 The Controlling Terminal (TTY)
+The Controlling Terminal is the shared resource governed by job control. At any point in time, exactly one process group is designated as the Foreground Process Group.
+* Input Privilege: Only the foreground group can read from the terminal. If a background process attempts to read, the kernel intervenes by sending the SIGTTIN signal, which suspends the process by default.7
+* Output Privilege: By default, background processes can write to the terminal. However, if the TOSTOP flag is set in the terminal attributes (termios), background writes trigger a SIGTTOU signal, suspending the writer.
+* Signal Generation: The terminal driver constantly monitors input for special control characters (Ctrl+C, Ctrl+Z, Ctrl+\). When detected, it generates the corresponding signal (SIGINT, SIGTSTP, SIGQUIT) and broadcasts it to the foreground process group.10
+AriaSH must manage this state using the tcsetpgrp() system call. This function atomically switches the foreground group of the terminal. A critical implementation detail is that the shell itself must block SIGTTOU while calling tcsetpgrp(), as the shell places itself in the background relative to the terminal during the command execution phase.11
+2.2 The Windows Console Subsystem Architecture
+Windows NT utilizes a fundamentally different model for console management, lacking the strict hierarchy of sessions and process groups found in UNIX.
+2.2.1 Console Groups and Signals
+Windows supports a limited form of process grouping via the CREATE_NEW_PROCESS_GROUP flag in CreateProcess.13 This allows the generation of CTRL_C_EVENT and CTRL_BREAK_EVENT signals to a specific group of processes sharing a console. However, Windows does not natively support SIGTSTP (Suspend) or SIGCONT (Resume) as signals. Ctrl+Z in a Windows console is treated merely as the End-of-File (EOF) marker for standard input, not a signal to suspend execution.14
+2.2.2 Job Objects
+To provide the grouping semantics required for job control, AriaSH must leverage Job Objects. A Job Object is a kernel-level construct that allows a group of processes to be managed as a unit.5 Operations performed on the Job Object—such as termination or priority class modification—cascade to all associated processes. Crucially, Job Objects provide a mechanism to guarantee that if the shell crashes or is terminated, all child processes are automatically cleaned up by the OS, preventing "zombie" processes or orphaned daemons.16
+2.3 The Architectural Divergence
+The divergence between these two models dictates the architecture of the AriaSH Job Manager. The system cannot simply wrap POSIX calls; it must implement a logical state machine that abstracts the underlying mechanisms.
+Feature
+	Linux/POSIX Implementation
+	Windows Implementation
+	Grouping
+	Process Groups (setpgid)
+	Job Objects (CreateJobObject)
+	Suspension
+	SIGTSTP (Interactive), SIGSTOP
+	NtSuspendProcess (Undocumented API)
+	Resumption
+	SIGCONT
+	NtResumeProcess (Undocumented API)
+	Termination
+	SIGINT, SIGTERM, SIGKILL
+	GenerateConsoleCtrlEvent, TerminateJobObject
+	Terminal Access
+	tcsetpgrp, SIGTTIN/SIGTTOU
+	Console Screen Buffers, Input Focus API
+	Monitoring
+	pidfd, epoll, waitid
+	IOCP, WaitForMultipleObjects
+	________________
+3. Data Structures and State Management
+Implementing job control requires a robust internal accounting system. AriaSH must maintain a JobTable that mirrors the kernel's process table but enriches it with logical metadata required for user interaction and orchestration.
+3.1 The Process Class Abstraction
+The existing Process class in AriaSH acts as the fundamental building block. To support job control, this class must be extended to track the lifecycle state of individual processes within a pipeline.
+
+
+C++
+
+
+
+
+namespace aria::shell {
+
+enum class ProcessState {
+   RUNNING,
+   STOPPED,    // via SIGTSTP or NtSuspendProcess
+   COMPLETED,  // Exited normally
+   SIGNALED,   // Terminated by signal (e.g., SIGSEGV)
+   UNKNOWN
+};
+
+struct Process {
+   pid_t pid;                  // OS Process ID
+   int exit_code;              // Mapped to TBB result types
+   ProcessState state;         // Current lifecycle state
+   std::string command_line;   // Full command string for display
+   
+   // Linux Specifics
+   int pid_fd;                 // File descriptor for race-free monitoring 
+   
+   // Windows Specifics
+   HANDLE hProcess;            // Process Handle
+   HANDLE hThread;             // Main Thread Handle (for suspension)
+   
+   // Hex-Stream Handles
+   std::array<int, 6> streams; // 0-5 descriptors/handles
+};
+
+}
+
+3.2 The Job Structure
+A "Job" in AriaSH corresponds to a command line entered by the user, which may consist of multiple processes connected via pipes. The Job structure aggregates these processes and maintains the collective state.
+
+
+C++
+
+
+
+
+struct Job {
+   uint32_t id;                // Job ID (e.g., , ) - Small integer 
+   pid_t pgid;                 // Process Group ID (Linux) or Root PID (Windows)
+   std::string command_line;   // Full command line for 'jobs' output 
+   
+   // State Tracking
+   ProcessState state;         // Aggregate state of the job
+   bool notified;              // True if user has been notified of state change
+   bool foreground;            // True if currently controlling the terminal
+   
+   // Constituent Processes
+   std::vector<std::shared_ptr<Process>> processes;
+   
+   // I/O Configuration
+   // On Windows, background jobs may need separate screen buffers
+   void* platform_console_handle; 
+   
+   // TBB Error Integration
+   // Stores the 'sticky error' if any process in the pipeline fails
+   int32_t tbb_error_code;
+};
+
+3.3 The JobManager Subsystem
+The JobManager is a singleton service responsible for the lifecycle of all jobs. It acts as the bridge between the user's commands (fg, bg, jobs) and the kernel's process management APIs.
+Responsibilities:
+1. Allocation: Assigning generic, small integer IDs to jobs. When a job completes, its ID is recycled for future use.18
+2. Lookup: Maintaining a mapping between Job IDs, PGIDs, and PIDs. This is critical for signal handling; when SIGCHLD arrives with a PID, the manager must identify which Job that process belongs to.20
+3. Terminal Arbitration: Managing the tcsetpgrp transitions to ensure the correct group owns the terminal.
+4. Reaping: Collecting exit statuses to prevent zombies and propagating TBB error codes to the shell's Result register.
+________________
+4. Kernel-Level Implementation Strategy: Linux
+The implementation on Linux must strictly adhere to the POSIX job control standard. Deviations or simplifications (e.g., ignoring process groups) will result in dysfunctional signal handling and race conditions.
+4.1 The "Process Group Dance"
+Correctly setting up process groups requires synchronization between the parent (shell) and the child (new process) to avoid race conditions. If the child executes and exits before the parent calls setpgid, the call will fail. If the child attempts to take the terminal before the parent assigns the group, it receives SIGTTOU and stops immediately.
+Algorithm: Forking with Job Control 21
+1. Parent (Shell) Preparation:
+   * Block SIGCHLD to prevent the signal handler from reaping the process before it is fully registered in the JobManager.
+   * Call fork().
+2. Child Context:
+   * Unblock Signals: Reset signal masks (unblock SIGCHLD, SIGINT, SIGTSTP) to default behavior.
+   * Create Group: Call setpgid(0, 0). This places the child in a new process group with a PGID equal to its PID.22
+   * Terminal Control (Foreground Only): If the job is foreground, call tcsetpgrp(STDIN_FILENO, getpid()). This atomically claims the terminal.
+   * Hex-Stream Setup: Perform the dup2 sequence to map pipes to FDs 0-5.
+   * Execute: Call execve().
+3. Parent Context:
+   * Redundant Grouping: Call setpgid(child_pid, child_pid). This redundant call guarantees the process group exists even if the child is slow to start.23
+   * Terminal Control (Foreground Only): Call tcsetpgrp(STDIN_FILENO, child_pid). This ensures the terminal is transferred even if the child execs quickly.
+   * Register: Add the process to the JobManager.
+   * Unblock Signals: Restore SIGCHLD mask.
+4.2 Race-Free Monitoring with pidfd
+Traditional shells rely on waitpid(-1) inside a SIGCHLD handler. This is problematic because signals are asynchronous and do not queue; multiple child exits can result in a single signal, forcing the handler to loop non-deterministically.24 Furthermore, PIDs are recycled by the kernel, creating race conditions where the shell might wait on a new, unrelated process that reused an old PID.
+AriaSH leverages the pidfd_open system call (Linux 5.3+) to solve this.17
+1. Acquisition: Immediately after fork, the parent calls pidfd_open(child_pid, 0) to get a file descriptor referring to the child.
+2. Integration: This pidfd is registered with the shell's central epoll event loop.25
+3. Notification: When the child terminates, the kernel signals EPOLLIN on the pidfd.
+4. Reaping: The shell handles the event in its main loop (synchronously) by calling waitid(P_PIDFD, pidfd,...).26
+This architecture eliminates the need for complex, reentrancy-safe signal handlers and integrates process management directly into the Aria StreamController event loop.
+4.3 Handling SIGTSTP (Ctrl+Z)
+When the user presses Ctrl+Z, the terminal driver sends SIGTSTP to the foreground process group.
+1. The child processes stop (state becomes TASK_STOPPED).
+2. The parent (shell) receives SIGCHLD.
+3. The waitid call returns with CLD_STOPPED.
+4. Shell Action:
+   * Update Job state to STOPPED.
+   * Print status: + Stopped command.
+   * Reclaim Terminal: Call tcsetpgrp(STDIN_FILENO, shell_pgid) to return control to the REPL.
+________________
+5. Kernel-Level Implementation Strategy: Windows
+Windows implementation requires emulating UNIX behavior using disparate APIs. The goal is to provide a user experience identical to the Linux version despite the underlying kernel differences.
+5.1 Job Objects for Lifecycle Management
+AriaSH must wrap every spawned pipeline in a Windows Job Object.
+* Creation: CreateJobObjectW(NULL, NULL) creates an anonymous job.
+* Assignment: AssignProcessToJobObject(hJob, hProcess) binds the child process.
+* Safety: The JOBOBJECT_EXTENDED_LIMIT_INFORMATION structure is configured with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE. This ensures that if the Aria shell crashes or is terminated, the OS automatically kills all child processes, maintaining system hygiene.16
+5.2 Implementing Process Suspension (NtSuspendProcess)
+Windows does not have a "Suspend" signal. While DebugActiveProcess 27 can suspend a process, it attaches the shell as a debugger, which prevents other debuggers from attaching and handles exceptions improperly for this use case. Iterating threads with SuspendThread 27 is prone to deadlocks if a thread is suspended while holding a heap lock.
+Solution: AriaSH will utilize the Native API function NtSuspendProcess, exported by ntdll.dll.28
+* Mechanism: This kernel function suspends all threads in a process atomically. It is the same mechanism used by Task Manager and Process Explorer.
+* Implementation:
+C++
+typedef LONG (NTAPI *NtSuspendProcess)(HANDLE ProcessHandle);
+// Load dynamically to avoid link errors
+auto pNtSuspendProcess = (NtSuspendProcess)GetProcAddress(hNtdll, "NtSuspendProcess");
+pNtSuspendProcess(job->process_handle);
+
+* Resumption: Symmetrically, NtResumeProcess is used to continue execution.
+5.3 Input Interception and Ctrl+Z
+Since the Windows console doesn't generate SIGTSTP, AriaSH must intercept Ctrl+Z at the input layer.
+   1. Raw Mode: The shell uses SetConsoleMode to disable ENABLE_PROCESSED_INPUT. This allows it to read Ctrl+Z (0x1A) as a raw key event.30
+   2. Foreground Check: The shell tracks which Job object is currently "foreground."
+   3. Action: Upon detecting Ctrl+Z, the shell invokes NtSuspendProcess on the foreground job's handle and updates its internal state.
+5.4 Hex-Stream Inheritance via STARTUPINFOEX
+Windows CreateProcess only allows passing three standard handles (stdin, stdout, stderr). To support Aria's 6-stream topology (stddbg, stddati, stddato), AriaSH uses STARTUPINFOEX with Attribute Lists.
+   * Mechanism: InitializeProcThreadAttributeList is called with PROC_THREAD_ATTRIBUTE_HANDLE_LIST.
+   * Whitelist: The shell explicitly lists the six handles to be inherited. This is more secure than the global bInheritHandles=TRUE flag, which leaks all open handles to the child.
+   * Bootstrap: The values of these handles are serialized into an environment variable __ARIA_FD_MAP. The Aria runtime in the child process reads this variable to reconstruct the aria::io objects.
+________________
+6. Implementation of User Commands: fg, bg, and &
+The user-facing commands manipulate the state of the JobManager and trigger the kernel primitives described above.
+6.1 The Background Operator (&)
+The & token is a command terminator that instructs the shell to execute the pipeline asynchronously.
+   * Parsing: The parser identifies & at the end of a command list.31
+   * Execution:
+   * Spawn: The process is spawned as usual.
+   * Terminal: tcsetpgrp is not called. The shell retains the terminal.
+   * State: The job is marked RUNNING but not FOREGROUND.
+   * Feedback: The shell prints PID immediately and returns to the prompt.19
+   * I/O Handling: The shell must redirect the background job's stdin to /dev/null (Linux) or NUL (Windows) to prevent it from contending for input. If the job tries to read stdin, it receives EOF immediately (or SIGTTIN if not redirected, which stops it).32
+6.2 The fg (Foreground) Command
+Brings a background or suspended job to the foreground.
+   * Syntax: fg [%job_id]
+   * Logic:
+   1. Lookup: Find the job in JobManager.
+   2. Terminal Transfer: Call tcsetpgrp(STDIN_FILENO, job->pgid).
+   3. Signal: Send SIGCONT (Linux) or call NtResumeProcess (Windows) to ensure the process is running.33
+   4. Wait: The shell calls waitpid (Linux) or blocks on the Job Object handle (Windows) until the job changes state.
+   5. Restore: Once the job stops or exits, the shell calls tcsetpgrp to reclaim the terminal.
+6.3 The bg (Background) Command
+Resumes a suspended job in the background.
+   * Syntax: bg [%job_id]
+   * Logic:
+   1. Lookup: Find the job.
+   2. Signal: Send SIGCONT / NtResumeProcess.
+   3. State: Mark as RUNNING.
+   4. Feedback: Print the command line appended with &.
+   5. No Wait: The shell returns to the prompt immediately.
+6.4 The jobs Command
+Displays the status of all active jobs.
+   * Output Format: Matches POSIX standards.
+   * Running server_daemon --port 8080 &
+   * Stopped vim config.aria
+Running data_pipeline | filter
+      * Markers: + denotes the current job (default for fg), - denotes the previous job.
+      * Cleanup: This command also serves as a garbage collection point to prune completed jobs from the table if they haven't been reported yet.
+________________
+7. I/O Stream Arbitration and the Hex-Stream Topology
+Aria's unique 6-stream topology presents specific challenges for job control, particularly regarding "Data Plane" integrity.
+7.1 Preventing Data Corruption
+In the Hex-Stream model, stddati and stddato are binary streams. If a background process writes to stddato while the foreground process is also writing, the binary stream becomes interleaved and corrupted.
+      * Solution: AriaSH implements Stream Locking. The StreamController ensures that only the foreground job's stddato is connected to the primary data sink. Background jobs attempting to write to stddato are buffered into a temporary ring buffer or file. If the buffer fills, the background process is suspended (flow control).
+7.2 Preventing SIGTTIN on stddati
+The standard behavior for background reads applies to stddati (Stream 4) if it refers to the terminal.
+      * Mechanism: AriaSH ensures that for background jobs, stddati is explicitly disconnected from the TTY. It is either connected to a source file (if redirected) or /dev/null. This prevents the kernel from generating SIGTTIN signals which would confusingly stop background data processing jobs.32
+7.3 Windows Console Input Sharing
+On Windows, multiple processes can attach to the same console. If a background process calls ReadFile on CONIN$, it steals input from the foreground process.34
+      * Mitigation: AriaSH uses the GetStdHandle API to replace the background process's input handle with a non-readable pipe handle before spawning. This emulates the UNIX behavior where background reads fail or block, rather than stealing user keystrokes.
+________________
+8. Security, Safety, and Error Propagation
+8.1 Typed Injection Prevention
+AriaSH includes a "Typed Injection" security feature. When spawning processes, variable interpolation (e.g., spawn("cmd", ["&{arg}"])) is handled by passing arguments as a typed array directly to execve or CreateProcess (via proper escaping). This bypasses the shell implementation's parser entirely, neutralizing injection attacks associated with system() or popen().
+8.2 TBB "Sticky Error" Integration
+Aria's Twisted Balanced Binary (TBB) types introduce "Sticky Errors"—values that propagate failure states through arithmetic operations.1
+      * Exit Code Mapping: The Process::wait() method maps OS exit codes to TBB types.
+      * 0 -> tbb::Success
+      * 1..255 -> tbb::ERR (with specific sentinel values mapping to signal numbers).
+      * Propagation: If a background job terminates with a TBB Error, the JobManager retains this state. When the user brings the job to the foreground or queries it, the error is reported using the TBB semantics (e.g., Result<int>), allowing orchestration scripts to handle the failure safely using Aria's ? (unwrap) or ?? (coalesce) operators.
+8.3 Resource Limits
+Using Windows Job Objects, AriaSH enforces resource limits on spawned jobs to prevent denial-of-service scenarios.
+      * Memory Limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION.ProcessMemoryLimit.
+      * CPU Limits: JOBOBJECT_CPU_RATE_CONTROL_INFORMATION.
+This aligns AriaSH with its goal of being a systems orchestration tool, allowing it to act as a supervisor for resource-intensive background tasks.
+________________
+9. Implementation Roadmap
+The implementation of this specification should proceed in three distinct phases to ensure stability and cross-platform consistency.
+Phase 1: The Foundation (Core Structs & Windows Jobs)
+         1. Extend the Process class to include PGID/Job Object handles.
+         2. Implement the Job and JobManager classes.
+         3. Implement the Windows NtSuspendProcess wrapper and Job Object lifecycle management.
+         4. Deliverable: Ability to spawn processes on Windows that are automatically killed when the shell exits.
+Phase 2: The POSIX Compliance (Linux Job Control)
+         1. Implement the fork/setpgid/tcsetpgrp dance.
+         2. Implement the pidfd / epoll monitoring loop.
+         3. Implement signal handlers for SIGCHLD, SIGTSTP, SIGTTIN, SIGTTOU.
+         4. Deliverable: A Linux shell that correctly handles Ctrl+C and Ctrl+Z without orphaning processes.
+Phase 3: The User Experience (Commands & Hex-Streams)
+         1. Implement fg, bg, jobs built-in commands.
+         2. Integrate the StreamController to handle background output buffering.
+         3. Implement the & parser logic.
+         4. Deliverable: Full feature parity with Bash/Zsh, plus Aria's specific Hex-Stream safety.
+10. Conclusion
+The architecture defined in this report positions AriaSH not merely as a command interpreter, but as a robust process supervisor suitable for modern systems engineering. By synthesizing the rigorous POSIX process group model with the powerful Windows Job Object API, AriaSH achieves a unified, cross-platform job control capability. The integration of modern kernel features like pidfd and the strict enforcement of the Hex-Stream topology ensures that this implementation is performant, race-free, and memory-safe. This system empowers developers to orchestrate complex, asynchronous workflows with the confidence that the underlying runtime creates a deterministic and secure execution environment.
+Works cited
+         1. aria_shell_research_full.txt
+         2. implementingjobcontrol [Wiki], accessed December 22, 2025, https://wiki.minix3.org/doku.php?id=implementingjobcontrol
+         3. tcsetpgrp() — Set the Foreground Process Group ID - IBM, accessed December 22, 2025, https://www.ibm.com/docs/en/zvm/7.3.0?topic=descriptions-tcsetpgrp-set-foreground-process-group-id
+         4. tcsetpgrp, accessed December 22, 2025, https://pubs.opengroup.org/onlinepubs/9699919799/functions/tcsetpgrp.html
+         5. Job Objects - Win32 apps - Microsoft Learn, accessed December 22, 2025, https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects
+         6. Signal handling - cargo-nextest, accessed December 22, 2025, https://nexte.st/docs/design/architecture/signal-handling/
+         7. Job Control Basics (Bash Reference Manual) - GNU, accessed December 22, 2025, https://www.gnu.org/software/bash/manual/html_node/Job-Control-Basics.html
+         8. What determines whether a script's background processes get a terminal's SIGINT signal?, accessed December 22, 2025, https://unix.stackexchange.com/questions/594141/what-determines-whether-a-scripts-background-processes-get-a-terminals-sigint
+         9. Signal (IPC) - Wikipedia, accessed December 22, 2025, https://en.wikipedia.org/wiki/Signal_(IPC)
+         10. What happens when you hit Ctrl + z on a process? - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/19074956/what-happens-when-you-hit-ctrl-z-on-a-process
+         11. foreground signal tcsetpgrp c - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/41102482/foreground-signal-tcsetpgrp-c
+         12. Using setpgid in a mini-shell breaks interactive commands - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/66627808/using-setpgid-in-a-mini-shell-breaks-interactive-commands
+         13. GenerateConsoleCtrlEvent function - Windows Console - Microsoft Learn, accessed December 22, 2025, https://learn.microsoft.com/en-us/windows/console/generateconsolectrlevent
+         14. Different behaviour of Ctrl-D (Unix) and Ctrl-Z (Windows) - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/41222635/different-behaviour-of-ctrl-d-unix-and-ctrl-z-windows
+         15. accessed December 22, 2025, https://williamb1024.github.io/fs-processes/articles/jobobjects.html#:~:text=A%20Windows%20Job%20Object%20allows,supports%20creating%20unnamed%20Job%20Objects.
+         16. CreateProcess such that child process is killed when parent is killed? - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/6259055/createprocess-such-that-child-process-is-killed-when-parent-is-killed
+         17. pidfd_open(2) - Linux manual page - man7.org, accessed December 22, 2025, https://man7.org/linux/man-pages/man2/pidfd_open.2.html
+         18. Job control in the C shell - IBM, accessed December 22, 2025, https://www.ibm.com/docs/hr/ssw_aix_72/osmanagement/c_jobcontrol.html
+         19. 15-395: Lab # 4 Implementing a Job Control Shell - andrew.cmu.ed, accessed December 22, 2025, https://www.andrew.cmu.edu/course/15-310/applications/homework/homework4/lab4.pdf
+         20. Is possible to know which process sended the SIGCHLD without calling wait / reaping it?, accessed December 22, 2025, https://www.reddit.com/r/C_Programming/comments/xg45i9/is_possible_to_know_which_process_sended_the/
+         21. The GNU C Library - Job Control, accessed December 22, 2025, https://ftp.gnu.org/old-gnu/Manuals/glibc-2.2.3/html_chapter/libc_27.html
+         22. setpgid, accessed December 22, 2025, https://pubs.opengroup.org/onlinepubs/9699919799/functions/setpgid.html
+         23. Launching Jobs (The GNU C Library) - Sourceware, accessed December 22, 2025, https://sourceware.org/glibc/manual/2.41/html_node/Launching-Jobs.html
+         24. linux - Handling multiple SIGCHLD - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/8398298/handling-multiple-sigchld
+         25. epoll on pidfd - Dropbear, accessed December 22, 2025, https://dropbear.xyz/2025/06/22/epoll-on-pidfd/
+         26. Guarantees for waitpid() after epoll() from pidfd - linux - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/73387481/guarantees-for-waitpid-after-epoll-from-pidfd
+         27. How to suspend/resume a process in Windows? - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/11010165/how-to-suspend-resume-a-process-in-windows
+         28. Anatomy of the thread suspension mechanism in Windows (Windows Internals) - Opcode, accessed December 22, 2025, https://ntopcode.wordpress.com/2018/01/16/anatomy-of-the-thread-suspension-mechanism-in-windows-windows-internals/
+         29. How to pause / resume any external process under Windows? - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/100480/how-to-pause-resume-any-external-process-under-windows
+         30. High-Level Console Modes - Windows Console - Microsoft Learn, accessed December 22, 2025, https://learn.microsoft.com/en-us/windows/console/high-level-console-modes
+         31. Shell grammar - IBM, accessed December 22, 2025, https://www.ibm.com/docs/en/zos/3.1.0?topic=shell-grammar
+         32. What would stop a task from being run in the background? - Unix & Linux Stack Exchange, accessed December 22, 2025, https://unix.stackexchange.com/questions/152515/what-would-stop-a-task-from-being-run-in-the-background
+         33. Implementing shell-like job control in C - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/52909326/implementing-shell-like-job-control-in-c
+         34. Allow background application to set foreground window of different process - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/23715026/allow-background-application-to-set-foreground-window-of-different-process

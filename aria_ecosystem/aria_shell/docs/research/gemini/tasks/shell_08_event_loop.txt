@@ -1,0 +1,62 @@
+Event Loop and Asynchronous I/O Architecture
+
+PRIORITY: HIGH
+STATUS: Performance-Critical
+SOURCE: Custom Shell Design For Aria.txt, Section 3.1.2
+
+PROBLEM:
+Shell must handle multiple concurrent processes and streams efficiently. Need event-driven architecture integrating process lifecycle and I/O events.
+
+REQUIREMENTS:
+1. Event Loop Design:
+   - POSIX: epoll (Linux) or kqueue (macOS/BSD)
+   - Windows: IOCP or select() fallback
+   - Single-threaded event dispatch (+ worker threads for draining)
+
+2. Event Sources:
+   - pidfd events (process exit)
+   - Pipe read readiness (stream data available)
+   - Timer events (for timeouts)
+   - Signal events (Ctrl+C, SIGCHLD)
+
+3. Integration with pidfd:
+   - Register pidfd with epoll
+   - Handle POLLIN event as process exit
+   - Retrieve exit code via waitid()
+
+4. Async Stream Handling:
+   - Register pipe read ends with event loop
+   - Trigger StreamDrainer threads on readiness
+   - Handle EPOLLHUP (pipe closed)
+
+IMPLEMENTATION TASKS:
+- [ ] Create EventLoop class
+- [ ] Implement epoll backend (Linux)
+- [ ] Implement kqueue backend (macOS)
+- [ ] Implement IOCP or select backend (Windows)
+- [ ] Add pidfd registration logic
+- [ ] Implement pipe FD registration
+- [ ] Add timer support
+- [ ] Create signal handling integration
+- [ ] Build event dispatch mechanism
+- [ ] Add graceful shutdown logic
+
+FILES TO CREATE:
+- include/aria/shell/event_loop.h
+- src/event/epoll_loop.cpp (Linux)
+- src/event/kqueue_loop.cpp (macOS)
+- src/event/iocp_loop.cpp (Windows)
+- src/event/event_dispatcher.cpp
+
+RESEARCH NOTES:
+- epoll more scalable than select for many FDs
+- pidfd requires Linux 5.3+ (fallback to signalfd)
+- Windows IOCP complex but highest performance
+
+ACCEPTANCE CRITERIA:
+- Can monitor 100+ concurrent processes
+- Process exit detected within milliseconds
+- Low CPU usage when idle
+- Handles Ctrl+C gracefully (signal propagation)
+- Works on Linux, macOS, Windows
+- Integrates cleanly with StreamDrainer threads

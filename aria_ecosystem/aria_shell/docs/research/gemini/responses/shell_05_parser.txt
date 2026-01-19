@@ -1,0 +1,237 @@
+﻿Architectural Specification and Implementation Strategy for the Whitespace-Insensitive Aria Shell Parser
+1. Executive Summary: The Case for a Structured Shell Architecture
+The paradigm of shell scripting has remained largely stagnant since the inception of the Bourne Shell in the late 1970s. While operating systems and systems programming languages have evolved toward rigorous type safety, structured concurrency, and deterministic resource management, the interactive shell—the primary interface between the administrator and the kernel—retains a parsing model rooted in text substitution and whitespace significance. This historical legacy manifests as "syntactic fragility," where the semantic correctness of a script hinges on invisible characters. The omission of a space bracket in a conditional statement or the accidental insertion of a whitespace around an assignment operator in Bash triggers runtime errors that are often opaque, misleading, and dangerous in production orchestration contexts.
+This report articulates the comprehensive architectural design for AriaSH, the native shell for the Aria operating system ecosystem. The design mandate is to eradicate the fragility of legacy shells by implementing a whitespace-insensitive, brace-delimited grammar that aligns strictly with the syntax of the Aria systems programming language. By decoupling syntactic structure from whitespace, AriaSH treats the shell command line not as a raw character stream to be split by spaces, but as a structured language parseable by a formal Recursive Descent Parser.
+The proposed architecture leverages the existing compiler infrastructure of the Aria language (ariac), specifically adapting its lexical analyzer and type system to create a runtime environment that enforces type safety, prevents injection attacks via typed process spawning, and integrates Aria’s novel Twisted Balanced Binary (TBB) arithmetic for error-checked numerical operations. The resulting system transforms the shell from a text macro processor into a robust interpreter for the Process Orchestration Language (POL), ensuring that scripts are as reliable as compiled binaries.
+2. Theoretical Foundations and Grammatical Philosophy
+To understand the architectural necessity of a whitespace-insensitive parser, one must first analyze the deficiencies of the status quo. Legacy shells typically utilize an ad-hoc scanner that treats the space character (0x20) as the primary delimiter for both tokenization and syntactic structure. This overloads the semantic meaning of whitespace: it separates arguments in a command (ls -la), delimits keywords in control flow (if [ $a ]), and acts as an operator in variable assignment (a=b vs a = b). This overloading creates a grammar that is context-sensitive at the lexical level, preventing the application of standard parsing techniques and requiring complex "quoting hell" to manage strings containing spaces.
+AriaSH rejects this model in favor of a Formal Context-Free Grammar (CFG). In this paradigm, structure is defined by explicit delimiters—parentheses (), braces {}, and semicolons ;—rather than whitespace. The parser operates on a stream of typed tokens, allowing the physical layout of the code to be flexible. A script can be minified to a single line or expanded with elaborate indentation without altering its execution logic. This fundamental shift necessitates a complete reimplementation of the shell’s parsing layer, moving away from simple string splitting toward a multi-stage compilation pipeline consisting of Lexical Analysis, Abstract Syntax Tree (AST) construction, and Semantic Interpretation.
+2.1 The Process Orchestration Language (POL)
+The language executed by AriaSH is defined as POL, a strict subset of the Aria language optimized for interactive process control. The grammar requirements for POL dictate a dual-mode parsing strategy:
+1. Command Mode: The default state where identifiers are treated as executable names (Bare Words) and subsequent tokens are treated as string arguments. This preserves the ergonomic efficiency of the CLI (e.g., ls -la works as expected).
+2. Expression Mode: Triggered by control flow keywords (if, while, for) or assignment operators. In this mode, the parser enforces strict Aria expression syntax, allowing for arithmetic, logical operations, and function calls.
+The capability to switch deterministically between these modes without whitespace cues is the central innovation of this parser design.
+3. Lexical Analysis: Implementation of shell_lexer.cpp
+The foundation of the parser is the Lexical Analyzer (Lexer). Its responsibility is to convert the raw source string into a stream of Token objects, stripping away insignificant whitespace while preserving semantic structure. To ensure consistency with the Aria language, the shell lexer is an adaptation of the AriaLexer found in the compiler frontend.
+3.1 Lexer Architecture and State Management
+The ShellLexer class (to be implemented in src/parser/shell_lexer.cpp) utilizes a stack-based state machine to handle the complexities of string interpolation and nested template literals. The lexer maintains a std::stack<LexerState> where LexerState can be:
+* STATE_ROOT: The default state for scanning code.
+* STATE_STRING_TEMPLATE: Inside a backticked string (`...`).
+* STATE_INTERPOLATION: Inside an interpolation block (&{...}).
+3.1.1 Whitespace Handling Logic
+The critical requirement "Ignore whitespace outside strings" is implemented in the nextToken() method. When the state is STATE_ROOT or STATE_INTERPOLATION, the lexer sits in a while loop consuming characters 0x20 (space), 0x09 (tab), and 0x0D (carriage return) without emitting tokens. The newline character 0x0A is treated as a token (TOKEN_NEWLINE) only if it serves as a statement terminator in interactive mode; otherwise, it is treated as whitespace, enforcing the use of semicolons ; for reliable multi-line scripts.
+However, when the stack top is STATE_STRING_TEMPLATE or STATE_STRING (double quotes), whitespace is preserved literally as part of the string content. This rigorous separation prevents the "missing space" syntax errors common in Bash.
+3.2 Extended Token Set for Process Orchestration
+While reusing the TokenType enum from the Aria compiler, the shell lexer must recognize shell-specific operators. The AriaLexer logic is extended to identify:
+* Pipe (|): Distinguished from Bitwise OR by context or by a specific token type TOKEN_PIPE if the language allows regular | for arithmetic. Given Aria has bitwise operators, the parser will likely rely on context, but distinct tokens are safer.
+* Redirections (>, >>, <): These must be scanned greedily. >> is TOKEN_REDIRECT_APPEND, distinct from > (TOKEN_REDIRECT_OUT) followed by >.
+* Background (&): Used for asynchronous execution. This must be distinguished from the start of interpolation &{. The scanner looks ahead one character: if { follows &, it emits TOKEN_INTERP_START; otherwise, TOKEN_AMPERSAND (or TOKEN_BACKGROUND).
+3.3 Variable Interpolation Mechanism
+AriaSH adopts the &{VAR} interpolation syntax used in AriaBuild. This mechanism provides "Typed Injection," a security feature ensuring that interpolated values are passed as single arguments to processes, immune to word-splitting attacks.
+Lexing Algorithm for &{...}:
+1. In STATE_STRING_TEMPLATE, scanning encounters &.
+2. Lookahead verifies next char is {.
+3. Emit TOKEN_INTERP_START.
+4. Push STATE_INTERPOLATION to stack.
+5. Recurse: nextToken() is called. The lexer now behaves as if in STATE_ROOT, parsing the expression inside the braces (e.g., variable, x + 1, func()).
+6. Upon encountering }, emit TOKEN_RBRACE.
+7. Pop STATE_INTERPOLATION. Resume scanning string content.
+This structure allows complex expressions inside strings, e.g., `Value: &{obj.property}`, which is impossible in standard shells without command substitution command structures.
+4. Syntactic Analysis: The Recursive Descent Parser
+The parser (src/parser/shell_parser.cpp) is the core logic engine. It constructs the Abstract Syntax Tree (AST) from the token stream. Given the requirement for a brace-delimited grammar, a Recursive Descent parser is the optimal choice for its direct mapping to the language grammar and ease of manual implementation without external generator dependencies (like Bison/Yacc).
+4.1 Formal Grammar Specification (EBNF)
+The grammar of AriaSH POL can be formalized as follows:
+
+
+EBNF
+
+
+
+
+Program         ::= Statement* EOF
+Statement       ::= Block | VarDecl | ControlFlow | FunctionDecl | CommandStmt | ";"
+
+Block           ::= "{" Statement* "}"
+
+VarDecl         ::= Type Identifier "=" Expression ";"
+Type            ::= "int8" | "tbb8" | "string" | "buffer" |...
+
+ControlFlow     ::= IfStmt | WhileStmt | ForStmt
+IfStmt          ::= "if" "(" Expression ")" Block ("else" Block)?
+WhileStmt       ::= "while" "(" Expression ")" Block
+ForStmt         ::= "for" "(" Identifier "in" Expression ")" Block
+
+CommandStmt     ::= Pipeline (";" | "&")?
+Pipeline        ::= SimpleCommand ("|" SimpleCommand)*
+SimpleCommand   ::= Identifier (Argument)* (Redirection)*
+Argument        ::= Literal | Identifier | InterpolatedString
+Redirection     ::= (">" | ">>" | "<") Argument
+
+Expression      ::= Term (( "+" | "-" | "==" | "&&" ) Term)*
+Term            ::= Factor (( "*" | "/" ) Factor)*
+Factor          ::= Literal | Variable | "(" Expression ")" | ExplicitSpawn
+ExplicitSpawn   ::= "spawn" "(" Expression "," Expression ")"
+
+4.2 Disambiguating Command vs. Expression Modes
+The parser encounters an ambiguity when it sees an identifier at the start of a statement. Is x a command or a variable assignment?
+Disambiguation Logic:
+1. Keyword Check: If the token is if, while, func, wild, gc, dispatch to specific statement parsers.
+2. Type Check: If the token matches a known type (int8, string), dispatch to parseVarDecl().
+3. Assignment Lookahead: If the token is an identifier, peek at the next token.
+   * If next is =, +=, -=, dispatch to parseAssignment().
+   * If next is ( and the identifier is a function name, dispatch to parseFunctionCall().
+   * Otherwise, treat as parseCommandStmt().
+This lookahead logic allows x = 1 (assignment) and x -l (command x with arg -l) to coexist without whitespace sensitivity. In x -l, the - token is not an assignment operator, so the parser defaults to Command Mode.
+4.3 Parsing "Bare Words" vs. Typed Arguments
+In Command Mode, the parser must aggressively consume tokens as string arguments unless they are control characters.
+* Input: ls -la /tmp
+* Tokens: ID(ls), MINUS, ID(la), SLASH, ID(tmp)
+* Parsing: parseCommandStmt consumes ID(ls) as the command. It enters a loop to parse arguments. It sees MINUS. In a generic expression, this is an operator. In Command Mode, it is the start of a flag. The parser heuristics must combine MINUS + ID into a single string argument "-la" or the Lexer must be context-aware.
+* Refined Strategy: The Lexer should arguably treat -la as a single identifier if preceded by whitespace in command mode, but since we are whitespace-insensitive, the Parser must reconstruct flags. The ShellParser will treat operators like -, /, ., as valid parts of a Bare Word argument if they appear in a command argument position.
+4.4 Explicit Spawn Syntax
+To bypass heuristics, the explicit spawn requirement is handled as a standard function call expression.
+spawn("ls", ["-la"])
+This is parsed by parseExpression. The spawn identifier is recognized as a built-in function. The arguments are parsed as a StringLiteral and an ArrayLiteral. This path enables rigorous type checking—validating that the first argument is a string and the second is string or [string].
+5. Abstract Syntax Tree (AST) Design
+The AST (src/parser/shell_ast.h) represents the structural hierarchy of the script. It serves as the interface between the Parser and the Interpreter.
+5.1 Node Hierarchy
+
+
+C++
+
+
+
+
+class ASTNode {
+public:
+   virtual ~ASTNode() = default;
+   virtual void accept(ASTVisitor& visitor) = 0;
+};
+
+// --- Control Flow ---
+class BlockNode : public ASTNode {
+   std::vector<std::unique_ptr<ASTNode>> statements;
+};
+
+class IfNode : public ASTNode {
+   std::unique_ptr<ExprNode> condition;
+   std::unique_ptr<BlockNode> thenBranch;
+   std::unique_ptr<BlockNode> elseBranch;
+};
+
+// --- Process Orchestration ---
+class CommandNode : public ASTNode {
+   std::string executable;
+   std::vector<std::unique_ptr<ExprNode>> arguments; // Args can be expressions!
+   std::vector<Redirection> redirections;
+};
+
+class PipelineNode : public ASTNode {
+   std::unique_ptr<CommandNode> left;
+   std::unique_ptr<ASTNode> right; // Can be another Pipeline or Command
+};
+
+// --- Expressions ---
+class BinaryOpNode : public ExprNode {
+   TokenType op;
+   std::unique_ptr<ExprNode> left, right;
+};
+
+class InterpolationNode : public ExprNode {
+   std::string identifier;
+};
+
+This hierarchy allows arguments to command nodes to be dynamic expressions. For example, echo "Result: " + (x * 2) is valid if the parser allows expression arguments, or strict string interpolation echo "Result: &{x * 2}" is enforced.
+6. Type System Integration and TBB Semantics
+AriaSH differs from Bash by enforcing a strong type system at the shell level. Variables are not just strings; they are int8, bool, buffer, etc.
+6.1 Type Inference and Checking
+The ShellParser maintains a symbol table during parsing to track variable types.
+* Declaration: int8:status = 0; registers status as Type::INT8.
+* Usage: status = "error" is detected as a type mismatch (INT8 vs STRING) during the parsing phase, raising a compile-time error before any commands are executed.
+6.2 Twisted Balanced Binary (TBB) Integration
+The shell runtime must utilize Aria's TBB arithmetic for safety.
+* Data Model: tbb8 is an 8-bit signed integer where -128 (0x80) is a sentinel value ERR.
+* Arithmetic Logic: The interpreter's evaluation of BinaryOpNode for TBB types must check for overflow.
+   * Operation: 127 + 1 (on tbb8).
+   * Result: ERR (not -128 as value, but Semantic Error).
+* Sticky Error Propagation: If a variable holding ERR is used in a subsequent calculation, the result remains ERR.
+* Critical Safety: If an ERR value is passed as an argument to a command spawn(cmd, [err_val]) or used in an if condition, the Interpreter must halt execution (Panic). This prevents the "silent failure" cascade common in shell scripts.
+7. Runtime Execution Model: executor.cpp
+The Executor component traverses the AST and performs the actual system operations.
+7.1 Process Management
+The execution of CommandNode utilizes the low-level process primitives provided by the Aria runtime (wrapping Linux/POSIX syscalls).
+1. Argument Evaluation: Evaluate all argument expressions to strings.
+2. Fork: Call fork().
+3. Redirection (Child): Use dup2() to bind file descriptors for < > operators.
+4. Pipeline (Child): If part of a pipeline, bind stdout/stdin to the pipe file descriptors.
+5. Execution (Child): Call execvp(). The "Typed Injection" requirement means we pass the evaluated arguments array directly to execvp, bypassing the shell expansion phase that causes injection vulnerabilities.
+6. Wait (Parent): Call waitpid() to retrieve the exit code.
+7.2 Variable Scoping
+The interpreter implements lexical scoping.
+* Environment: The global scope is pre-populated with ENV variables.
+* Block Scope: Entering a {... } block pushes a new SymbolTable onto the scope stack. Variables declared inside are dropped (RAII) when the block exits. This aligns with defer semantics if implemented.
+7.3 Integration with Aria Modules
+Since the shell is an interpreter for POL, it can theoretically load Aria modules. The import std.io; statement would link the shell's runtime symbol table against the std.io shared library or internal functions. This allows script access to std.io.println() directly, bypassing the overhead of spawning a printf process.
+8. Implementation Roadmap and File Structure
+8.1 File Inventory
+1. src/parser/shell_lexer.cpp & .h:
+   * Role: Tokenizes input.
+   * Key Logic: State stack for interpolation &{}, whitespace skipping loop, extended token enum.
+2. src/parser/shell_parser.cpp & .h:
+   * Role: recursive descent parser.
+   * Key Logic: parseBlock, parseCommand, parseExpression, lookahead disambiguation.
+3. src/parser/shell_ast.h:
+   * Role: Defines AST node classes (CommandNode, IfNode, etc.).
+4. src/interpreter/executor.cpp & .h:
+   * Role: AST Visitor for execution.
+   * Key Logic: visit(CommandNode), visit(IfNode), TBB arithmetic implementation, process spawning.
+5. tests/parser/syntax_tests.cpp:
+   * Role: Unit testing.
+   * Cases: Nested if, pipelines with redirection, variable interpolation, type error detection.
+8.2 Phase 1: The Core Parser (Weeks 1-2)
+* Port AriaLexer logic.
+* Implement grammar for Control Flow (if, while) and Variable Declarations.
+* Validate whitespace insensitivity (e.g., if(x){y} vs if ( x ) { y }).
+8.3 Phase 2: Command & Pipeline Logic (Weeks 3-4)
+* Implement CommandNode parsing (Bare words vs Expression modes).
+* Implement Pipeline and Redirection parsing.
+* Build the Explicit Spawn AST generation.
+8.4 Phase 3: Runtime & Type System (Weeks 5-6)
+* Implement the Interpreter (Executor).
+* Integrate TBB arithmetic logic (software emulation of 8-bit sticky errors).
+* Implement fork/exec logic.
+* Verify "Typed Injection" security with penetration tests (e.g., filenames with ;).
+9. Error Reporting and Diagnostics Architecture
+To satisfy the requirement for "helpful messages," the DiagnosticEngine class must be integrated.
+* Source Location: Every Token and ASTNode must carry line and column metadata.
+* Contextual Errors: Instead of "Unexpected Token," the parser should report "Expected '}' to close block started at line 10, but found EOF."
+* Suggestions: Using Levenshtein distance, if a user types funct, the error should ask "Did you mean 'func'?".
+* Type Errors: "Type Mismatch: Cannot assign value of type 'string' to variable 'status' of type 'int8'."
+10. Conclusion
+The AriaSH parser architecture presented herein addresses the fundamental flaws of legacy shells by adopting the rigor of a systems programming language. By enforcing whitespace insensitivity, strong typing, and explicit structure, it eliminates entire classes of bugs related to formatting and injection. The reuse of the Aria compiler's frontend components ensures maintainability and consistency, while the integration of TBB semantics extends Aria's safety guarantees to the orchestration layer. This design not only fulfills the immediate requirements but positions AriaSH as a next-generation tool for reliable, secure infrastructure management.
+Citations
+1 Custom Shell Design For Aria, Section 5: Grammar Requirements.
+1 AriaBuild Variable Substitution Engine and Interpolation Logic.
+1 Aria Compiler Backend: Scope Execution and Management.
+1 Aria Compiler Backend: TBB Type System and Arithmetic.
+1 Process Orchestration Language (POL) Requirements.
+1 Variable Substitution Engine Syntax and Parsing.
+1 Symbol Table and Scoping Implementation.
+1 Runtime Process Management and Fork/Exec Logic.
+1 Aria Token Definitions and Type Keywords.
+1 Variable Substitution Engine Design Philosophy.
+2 Recursive Descent Parser for Shell Grammars.
+3 AST Design for Pipelines and Redirections.
+2 Distinguishing Keywords from Commands in Recursive Descent.
+4 Building Whitespace-Sensitive Languages Using Whitespace-Insensitive Components.
+5 Building Recursive Descent Parsers Definitive Guide.
+6 Abstract Syntax Tree Design Requirements.
+1 Aria Source Code Compilation (Lexer/Parser).
+1 AriaBuild Architectural Specification.
+Works cited
+1. aria_shell_research_full.txt
+2. Making a shell grammar for a recursive descent parser - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/71769632/making-a-shell-grammar-for-a-recursive-descent-parser
+3. Create an AST from bash in C - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/52666511/create-an-ast-from-bash-in-c
+4. [Literature Review] Building Whitespace-Sensitive Languages Using Whitespace-Insensitive Components - Moonlight, accessed December 22, 2025, https://www.themoonlight.io/en/review/building-whitespace-sensitive-languages-using-whitespace-insensitive-components
+5. Building Recursive Descent Parsers: The Definitive Guide - Boolean World, accessed December 22, 2025, https://www.booleanworld.com/building-recursive-descent-parsers-definitive-guide/
+6. Abstract syntax tree - Wikipedia, accessed December 22, 2025, https://en.wikipedia.org/wiki/Abstract_syntax_tree

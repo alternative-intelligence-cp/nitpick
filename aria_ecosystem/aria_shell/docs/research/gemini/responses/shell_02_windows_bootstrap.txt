@@ -1,0 +1,210 @@
+﻿Architectural Specification: Windows Bootstrap Protocol for Hex-Stream Topology Handle Mapping
+1. Introduction: The Interface Impedance Mismatch
+The development of the Aria programming language has introduced a novel Input/Output (I/O) topology known as the Hex-Stream Model. Unlike the traditional triad of Standard Input (stdin), Standard Output (stdout), and Standard Error (stderr) that has dominated systems programming since the inception of UNIX, Aria mandates the existence of three additional, first-class communication channels: Standard Debug (stddbg), Standard Data In (stddati), and Standard Data Out (stddato). This six-stream architecture is designed to enforce a strict separation of concerns—decoupling human-readable text from machine-readable binary payloads and isolating diagnostic telemetry from application logic.
+While the implementation of this topology on POSIX-compliant systems (Linux, macOS, BSD) is relatively straightforward due to the indexed nature of file descriptors and the flexibility of the fork/exec process creation model, the Microsoft Windows operating system presents a formidable architectural challenge. The Windows Executive and the Win32 Subsystem were fundamentally architected around the C-runtime conventions of the 1980s, enabling explicit inheritance for only three standard handles via the STARTUPINFO structure. The underlying kernel objects—Handles—are opaque, 64-bit pointers that lack the deterministic, zero-indexed ordering of Unix file descriptors.
+This architectural divergence creates an "Impedance Gap" between the high-level semantic requirements of the Aria specification and the low-level process creation primitives of the Windows OS. A child process spawned on Windows receives a set of inherited handles but possesses no intrinsic mechanism to identify which handle corresponds to the logical stddbg or stddati streams. Without a metadata transmission layer, the handles are effectively anonymous, rendering the Hex-Stream topology unimplementable.
+To bridge this gap, this report specifies the design, implementation, and verification of the Windows Bootstrap Protocol. This user-space protocol serves as a virtualization layer, reintroducing the concept of deterministic stream mapping to the Windows environment. By serializing handle values into a strict format (__ARIA_FD_MAP) and injecting them into the child process—via either Environment Variables or Command-Line Flags—the Aria runtime can reconstruct the logical I/O topology during initialization. This document details the protocol's syntax, the shell-side injection logic (src/platform/windows_bootstrap.cpp), the runtime-side parsing algorithms (src/runtime/windows_init.cpp), and the integration with Aria’s std.io module, satisfying the requirement for a robust, cross-platform I/O system.1
+2. Theoretical Framework: Divergent Resource Models
+To understand the necessity and design of the Bootstrap Protocol, one must analyze the fundamental differences in how resources are managed and inherited across the two dominant operating system families.
+2.1 The POSIX Model: The Descriptor Table
+In the Unix paradigm, the kernel maintains a per-process file descriptor table. This table is essentially an array of pointers to open file descriptions (struct file). The indices of this array are the "File Descriptors" (FDs).
+* Determinism: The indices are fixed integers (0, 1, 2, 3...).
+* Convention: Indices 0, 1, and 2 are universally reserved for stdin, stdout, and stderr.
+* Manipulation: The dup2(oldfd, newfd) system call allows a process to atomically clone a file description into a specific integer slot.
+When an Aria shell on Linux spawns a child process, it performs the following sequence:
+1. fork(): Creates a clone of the parent.
+2. dup2(pipe_dbg_read, 3): Places the read end of the debug pipe into FD slot 3.
+3. dup2(pipe_dati_read, 4): Places the data-in pipe into FD slot 4.
+4. dup2(pipe_dato_write, 5): Places the data-out pipe into FD slot 5.
+5. exec(): Replaces the memory image.
+The new program, upon entry, simply attempts to read from File Descriptor 3. It does not need to know what resource backs FD 3, nor does it need to perform any lookup; the resource is guaranteed to be at that index by the OS contract.1
+2.2 The Windows Model: The Object Handle Table
+Windows processes do not share a unified, indexed table of "descriptors" in the same sense. Resources are managed via Handles—references to kernel objects maintained by the Object Manager.
+* Opacity: A Handle is a 64-bit value (on x64) like 0x0000000000000124. It is an index into a kernel-space handle table, but this index is not guaranteed to be contiguous or deterministic.
+* Inheritance: Inheritance is a property of the handle itself (set via SECURITY_ATTRIBUTES at creation or SetHandleInformation).
+* Explicit Passing: The CreateProcess API accepts a STARTUPINFOW structure. This structure has three specific fields: hStdInput, hStdOutput, and hStdError. The parent explicitly populates these fields with the handles it wishes the child to use for standard I/O.2
+The Gap: There are no fields in STARTUPINFOW for hStdDebug, hStdDataIn, or hStdDataOut. Even if the parent marks additional handles as inheritable, and even if those handles are copied into the child's handle table, the child has no way of knowing which handle serves which purpose. A child process might inherit generic handles 0x124 and 0x128. Without external metadata, it cannot distinguish stddbg from stddati.
+2.3 The Bootstrap Solution: Metadata Injection
+The Bootstrap Protocol solves this by creating a side-channel of metadata. It effectively transmits a "map" that correlates the arbitrary kernel handle values to the fixed logical indices required by the Aria runtime. This map tells the child: "Handle 0x124 corresponds to Logical Stream 3 (stddbg), and Handle 0x128 corresponds to Logical Stream 4 (stddati)." This restoration of index-based determinism allows the Aria standard library to function identically on Windows and Linux, abstracting the OS-level differences from the application developer.
+3. Protocol Specification
+The Bootstrap Protocol defines the data structure and transport mechanisms for the handle mapping. The design prioritizes robustness, parsing simplicity (as parsing occurs during the critical early initialization phase), and minimal invasiveness.
+3.1 The __ARIA_FD_MAP Format
+The mapping data is serialized into a string format. To ensure forward compatibility and ease of debugging, a text-based format is chosen over a binary blob.
+Syntax:
+__ARIA_FD_MAP=:<handle_hex>;:<handle_hex>;...
+Components:
+1. Variable Name: __ARIA_FD_MAP. The double underscore prefix conventionally denotes an internal system variable, reducing the likelihood of collision with user-defined variables.1
+2. Key-Value Pairs: The string consists of pairs separated by semicolons (;).
+3. Key (Index): A decimal integer representing the Aria Logical Stream ID.
+   * 3: stddbg (Standard Debug)
+   * 4: stddati (Standard Data In)
+   * 5: stddato (Standard Data Out)
+4. Separator: A colon (:) strictly separates the index from the handle.
+5. Value (Handle): A hexadecimal representation of the Windows HANDLE value.
+   * Must represent the raw pointer value (void*).
+   * On 64-bit systems, this is a 64-bit integer.
+   * The 0x prefix is optional in the spec but recommended for clarity in logs. The parser must handle both.
+   * Case-insensitive (Windows handles are numbers, but hex representation usually uses uppercase).
+Example Payload:
+If the shell opens three pipes and obtains the following handles for the child:
+* Debug Write End: 0x00000000000001A4
+* Data In Read End: 0x00000000000001B8
+* Data Out Write End: 0x00000000000002C0
+The injected string will be:
+__ARIA_FD_MAP=3:0x1A4;4:0x1B8;5:0x2C0
+3.2 Transport Mechanism 1: Environment Variables (Primary)
+The primary transport mechanism for this map is the Environment Block.
+* Mechanism: Before calling CreateProcess, the shell appends the __ARIA_FD_MAP string to the environment block passed to the lpEnvironment parameter.2
+* Pros:
+   * Implicit Inheritance: By default, child processes inherit the parent's environment.
+   * Reduced Visibility: Unlike command-line arguments, environment variables are not immediately visible in simple process listings (like ps or standard Task Manager views), offering slight obfuscation of internal handle values.
+   * Standard Parsing: The GetEnvironmentVariable API is highly optimized and available immediately upon process startup.
+* Cons: Requires the parent to explicitly manage the environment block if it is also modifying other variables.
+3.3 Transport Mechanism 2: Command-Line Flags (Secondary)
+As required by the specification, an alternative transport using command-line arguments is defined. This is crucial for scenarios where environment variable injection is restricted or unreliable (e.g., certain containerized Windows environments or constrained shells).
+* Mechanism: The shell appends a flag to the lpCommandLine string.
+* Format: --aria-fd-map=<index>:<handle_hex>;...
+* Pros: Explicit visibility; easier to debug launch parameters.
+* Cons: "Pollutes" the argv array. If the user's application does not expect this flag, it might cause argument parsing errors in the application logic. The Aria Runtime (windows_init.cpp) must strip this flag from the command line before the user's main() is invoked to prevent this pollution.
+Precedence Rule: The runtime parser checks for the Environment Variable first. If present, it is used. If absent, the runtime scans the Command Line. This priority ensures that the cleaner (env var) method is preferred, falling back to the explicit flag only when necessary.
+4. Architecture: The Shell-Side Injector
+The "Injector" logic resides in the Aria Shell (AriaSH) or the build system (AriaBuild). This component orchestrates the creation of the communication channels and the launching of the child process. This logic will be implemented in src/platform/windows_bootstrap.cpp.
+4.1 Channel Instantiation
+Unlike Linux, where pipe() creates a simple pair, Windows requires CreatePipe or CreateNamedPipe. For the bootstrap protocol, we utilize anonymous pipes with security attributes adjusted for inheritance.
+
+
+C++
+
+
+
+
+// src/platform/windows_bootstrap.cpp pseudo-code
+
+SECURITY_ATTRIBUTES saAttr;
+saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+saAttr.bInheritHandle = TRUE; // CRITICAL: Handles must be inheritable
+saAttr.lpSecurityDescriptor = NULL;
+
+HANDLE hChildStdDbgRd, hChildStdDbgWr;
+CreatePipe(&hChildStdDbgRd, &hChildStdDbgWr, &saAttr, 0);
+// Ensure the parent's end is NOT inherited to prevent handle leaks
+SetHandleInformation(hChildStdDbgRd, HANDLE_FLAG_INHERIT, 0); 
+
+The shell creates three such pipe pairs. For stddbg and stddato, the child receives the Write end. For stddati, the child receives the Read end.
+4.2 The STARTUPINFOEX Whitelist Strategy
+A naive implementation might simply set bInheritHandles = TRUE in CreateProcess. However, this causes all inheritable handles in the shell process to be inherited by the child. If the shell has open files, sockets, or database connections unrelated to the child, leaking them is a severe security risk and resource leak (preventing files from being closed, etc.).
+The Bootstrap Protocol mandates the use of STARTUPINFOEX and the PROC_THREAD_ATTRIBUTE_HANDLE_LIST. This modern Win32 API allows the shell to provide an explicit Whitelist of handles.
+Implementation Logic:
+1. List Compilation: Create a std::vector<HANDLE> containing exactly the 6 handles intended for the child: hStdIn, hStdOut, hStdErr, hChildStdDbgWr, hChildStdDatiRd, hChildStdDatoWr.
+2. Attribute Initialization:
+C++
+SIZE_T size = 0;
+InitializeProcThreadAttributeList(NULL, 1, 0, &size);
+lpAttributeList = (LPPROC_THREAD_ATTRIBUTE_LIST)HeapAlloc(GetProcessHeap(), 0, size);
+InitializeProcThreadAttributeList(lpAttributeList, 1, 0, &size);
+
+3. Update Attribute:
+C++
+UpdateProcThreadAttribute(
+   lpAttributeList,
+   0,
+   PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+   handleList.data(),
+   handleList.size() * sizeof(HANDLE),
+   NULL,
+   NULL
+);
+
+4. Process Creation: The STARTUPINFOEX is passed to CreateProcess with the EXTENDED_STARTUPINFO_PRESENT creation flag.3 This guarantees that only the mapped handles are copied to the child's handle table, maintaining strict isolation.
+4.3 Payload Construction and Injection
+The injector constructs the payload string by iterating over the handle values intended for the child.
+Environment Injection:
+The shell must construct a new environment block. On Windows, the environment block is a sequence of null-terminated strings ending with a double null. The shell copies its current environment, appends the __ARIA_FD_MAP string, and passes the pointer to CreateProcessW. Note that if CreateProcessW is used (Unicode), the environment block must be sorted alphabetically (in some versions) or simply valid wide-char strings. The shell handles the ANSI-to-Wide conversion if necessary.4
+CLI Flag Injection:
+If configured to use the flag, the shell appends --aria-fd-map=... to the lpCommandLine string. It must respect Windows command-line escaping rules (handling quotes and spaces) to ensure the flag is parsed as a single argument.
+5. Architecture: The Runtime-Side Consumer
+The "Consumer" logic resides within the Aria Runtime, specifically in src/runtime/windows_init.cpp. This file acts as the platform-specific initialization routine, executing before the user's main program logic.
+5.1 The Initialization Hook (windows_init.cpp)
+In the C/C++ runtime (CRT), code can be registered to run during initialization via global object constructors or specific CRT sections (.CRT$XI*). Aria's runtime will utilize a dedicated initialization function, aria_runtime_init(), which is the entry point for the executable (the actual main linked by the compiler).
+Functionality of aria_runtime_init:
+   1. Variable Retrieval:
+C++
+wchar_t buffer;
+DWORD res = GetEnvironmentVariableW(L"__ARIA_FD_MAP", buffer, 2048);
+
+   2. Fallback to CLI: If res == 0 (variable not found), the runtime calls GetCommandLineW() and parses the string to find --aria-fd-map=. If found, it extracts the value and—crucially—removes the flag from the command line string (or reconstructs argv) so the user application does not see it.
+   3. Parsing: The string is tokenized by semicolon (;) and then by colon (:). The handle part is parsed using wcstoull with base 16.
+5.2 Handle Verification and Mapping
+Once a handle value (e.g., 0x1A4) is extracted, it must be validated.
+      1. Validation: Call GetHandleInformation((HANDLE)0x1A4, &flags). If this fails, the handle is invalid (not inherited or closed). The runtime logs a warning to stderr and initializes the corresponding stream to a safe "Null" state (NUL device).
+      2. Wrapping: The valid handle is wrapped in an Aria File object.
+      * The Aria compiler backend defines structures for streams.1 The runtime instantiates a WindowsFileStream (a subclass of AriaStream) that holds the raw HANDLE.
+      3. Global Assignment: The runtime assigns these objects to the global std::io pointers:
+      * aria::io::stddbg = new WindowsFileStream(hDbg, MODE_WRITE);
+      * aria::io::stddati = new WindowsFileStream(hDati, MODE_READ);
+      * aria::io::stddato = new WindowsFileStream(hDato, MODE_WRITE);
+5.3 Buffering Configuration
+The std.io module must apply appropriate buffering policies.
+      * stddbg: Configured as Line Buffered or Unbuffered to ensure debug logs are emitted immediately even in the event of a crash.
+      * stddati/stddato: Configured as Block Buffered (e.g., 4KB or 64KB) to maximize throughput for binary data transfer.1
+6. Security Analysis and Robustness
+The Bootstrap Protocol introduces a mechanism for handle injection, which necessitates a security review.
+6.1 Handle Injection Risks
+      * Threat: A malicious user sets __ARIA_FD_MAP=3:0x123... in the environment to trick a privileged Aria process into writing debug logs to a sensitive file handle.
+      * Mitigation: Windows handle tables are strictly per-process. A handle value 0x123 in the context of the user's shell has no meaning in the child process unless that specific handle was explicitly inherited. The kernel zeros out the child's handle table and copies only the inherited handles. If a user guesses a handle value, it will likely point to NULL or a non-existent object in the child's table.
+      * Defense in Depth: The STARTUPINFOEX whitelist ensures that even if the parent process has sensitive handles open, they are not copied to the child unless they correspond to the intended streams. This prevents "Handle Squatting" attacks.
+6.2 Wild Pointer / WildX Interaction
+Aria supports "Wild" (unmanaged) and "WildX" (executable) memory.1 If stddati is used to stream binary code for JIT compilation, ensuring the integrity of the stream is vital. The Bootstrap Protocol acts only as the transport layer; the validation of the content of the handles remains the responsibility of the application logic. However, the runtime must ensure that the handles provided in the map are strictly wrapped as AriaStream objects and not cast to raw pointers or executable memory regions directly. The Type Mapping system in the compiler backend 1 aids this by enforcing strict typing on std.io objects.
+6.3 Malformed Data Handling
+The parser in windows_init.cpp must be defensive.
+      * Buffer Overflows: Use safe string functions (wcsncpy_s, etc.) when parsing the environment variable.
+      * Garbage Data: If the map string is malformed (e.g., 3:xyz), the parser must skip the entry and initialize the stream to NUL, ensuring the process can still start (Graceful Failure). It should log a diagnostic warning to stderr.
+7. Cross-Platform Parity and Integration
+The ultimate goal of this protocol is to ensure that Aria code behaves identically on Windows and Linux.
+7.1 Integration with std.io
+The std.io module 1 exposes the streams. On Linux, std.io.stddbg internally wraps File Descriptor 3. On Windows, thanks to this protocol, std.io.stddbg wraps the handle provided in the bootstrap map. The user code:
+
+
+Code snippet
+
+
+
+
+io.stddbg.write("Starting service...");
+
+compiles to the same high-level IR. The platform-specific backend (codegen_context.h) and runtime implementation handle the divergence.
+7.2 Comparison with Other Ecosystems
+      * Rust: Uses STARTUPINFO for standard streams but lacks a native protocol for 4th/5th streams, relying on OS-specific extensions (std::os::windows::io).
+      * Go: Passes extra files via handle inheritance but relies on implicit ordering, which is fragile.
+      * Node.js: Uses Named Pipes and libuv for complex IPC, which is heavier than Aria's anonymous pipe approach.
+Aria's protocol offers a middle ground: lighter than Node.js, but more explicit and robust than Go's implicit inheritance.
+8. Verification Plan
+To ensure the protocol meets the Acceptance Criteria, the following tests are defined:
+Test Case
+	Procedure
+	Expected Result
+	Basic Connectivity
+	Shell spawns child, writes "ping" to stddati.
+	Child reads "ping", writes "pong" to stddato.
+	Debug Logging
+	Child writes to stddbg.
+	Shell receives log on its debug read pipe.
+	Missing Map
+	Run child directly (double-click).
+	Child starts, stddbg writes go to bit bucket (no crash).
+	Malformed Map
+	Inject __ARIA_FD_MAP=3:INVALID.
+	Child starts, logs warning to stderr, stddbg is disabled.
+	CLI Priority
+	Set Env Var to Map A, CLI Flag to Map B.
+	Runtime uses Map A (Env Var preference).
+	Handle Isolation
+	Parent opens sensitive file, spawns child.
+	Child attempts to access file handle; fails (handle not in whitelist).
+	9. Conclusion
+The Windows Bootstrap Protocol is a critical infrastructure component for the Aria ecosystem. By formalizing the mapping of kernel handles to logical stream indices via the __ARIA_FD_MAP contract, it effectively emulates the POSIX descriptor model on Windows. This enables the Hex-Stream topology—vital for Aria's advanced observability and data processing features—to function seamlessly across platforms. The implementation leverages modern Windows security features (STARTUPINFOEX) to prevent handle leaks, and the runtime integration ensures a transparent developer experience. This specification provides the complete blueprint for implementing windows_bootstrap.cpp and windows_init.cpp, fulfilling all requirements for the high-priority Windows implementation task.
+Works cited
+         1. aria_shell_research_full.txt
+         2. CreateProcessW function (processthreadsapi.h) - Win32 apps | Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
+         3. Genesis - The Birth of a Windows Process (Part 1) - FourCore ATTACK, accessed December 21, 2025, https://fourcore.io/blogs/how-a-windows-process-is-created-part-1
+         4. CreateProcess() with I/O redirection: setting lpEnvironment disables redirection?, accessed December 21, 2025, https://stackoverflow.com/questions/74742303/createprocess-with-i-o-redirection-setting-lpenvironment-disables-redirection

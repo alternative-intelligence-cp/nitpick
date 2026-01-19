@@ -1,0 +1,240 @@
+﻿Architectural Specification: Hex-Stream I/O Topology Core Implementation
+1. Introduction: The Evolution of System Input/Output Paradigms
+The history of computing is, in many respects, the history of Input/Output (I/O) abstraction. From the punch cards of the mainframe era to the teletypes that defined the early Unix command line, the mechanisms by which software interacts with the external world have shaped the design of operating systems, programming languages, and system architectures. The dominant paradigm for the last half-century has been the Standard Streams model—stdin, stdout, and stderr—formalized in the 1970s during the development of Version 7 Unix. This tripartite model was revolutionary in its simplicity: it decoupled processes from specific hardware devices, allowing for the composition of complex behaviors via pipelines. However, as software systems have evolved from monolithic local binaries into distributed, high-throughput, and observable microservices, the limitations of this legacy model have become increasingly acute.1
+This report presents a definitive research and implementation guide for the Hex-Stream I/O Topology, a core architectural innovation of the Aria programming language and its associated runtime environment, AriaSH (Aria Shell). The Hex-Stream topology challenges the "Everything is a File" reductionism by expanding the standard descriptor table from three to six dedicated channels: stdin, stdout, stderr, stddbg, stddati, and stddato.1 This expansion is not arbitrary; it represents a fundamental re-categorization of process communication into three distinct planes: the Control Plane (human interaction), the Observability Plane (telemetry and debugging), and the Data Plane (raw, high-throughput binary transfer).
+Implementing such a topology requires a departure from standard library abstractions. It necessitates a "thick" runtime layer that interacts directly with the kernel syscall interfaces of Linux and Windows. This report details the implementation of race-free process orchestration using Linux pidfd primitives, the mechanics of zero-copy data transfer via splice, and the secure handling of Windows kernel objects using STARTUPINFOEX attribute lists.3 Furthermore, it explores the deep integration of this topology with Aria's unique "Twisted Balanced Binary" (TBB) type system and "Wild" memory model, demonstrating how language-level semantics can enforce I/O safety and performance at the operating system boundary.
+2. Theoretical Framework: The Semantic Crisis of the Tripartite Model
+To fully appreciate the necessity of the Hex-Stream topology, one must first analyze the structural deficiencies of the existing Unix standard stream model in the context of modern computing requirements. The core failure mode of the legacy model is semantic overloading: the conflation of disparate data types and intents into a single channel.
+2.1 The "Noisy Channel" Phenomenon
+In standard systems programming, stdout (File Descriptor 1) is the default destination for all process output. This simplicity leads to a dangerous conflation of purposes. A typical CLI application might use stdout to transmit the result of a computation (e.g., the compressed bytes of a file), display a progress bar to the user, and emit non-critical operational logs.
+When such an application is placed in a pipeline (producer | consumer), this overloading creates the "noisy channel" problem. If the producer emits a single byte of textual data—a library warning, a debug print left in by a developer, or a user interface update—into a stream intended for binary data, the downstream consumer receives corrupted input. This fragility forces developers into defensive programming patterns:
+* Fragile Heuristics: Downstream consumers attempt to "sniff" the input stream to distinguish between log text and binary headers, a practice prone to failure.
+* Inefficient Encoding: Developers abandon raw binary transfer entirely, encoding binary payloads into text-safe formats like Base64 or Hex strings. This incurs a massive performance penalty—typically a 33% increase in bandwidth and significant CPU overhead for encoding/decoding—solely to survive the transit through a text-biased medium.1
+2.2 The Observability Gap
+stderr (File Descriptor 2) suffers from a similar crisis of identity. It was originally intended for error messages, but the lack of a dedicated diagnostic channel has turned it into a dumping ground for all forms of out-of-band communication. It simultaneously carries:
+1. Fatal Panics: Stack traces indicating process crashes.
+2. Structured Telemetry: JSON blobs intended for log aggregators (e.g., Splunk, Datadog).
+3. Interactive Prompts: Some tools use stderr for UI elements to keep stdout clean for piping.
+This conflation makes automated observability difficult. A monitoring system watching stderr for errors will trigger false positives on verbose debug logs. Conversely, if stderr is ignored to reduce noise, critical failures may be missed. The lack of a standard, dedicated file descriptor for "Debug/Trace" information means there is no OS-level mechanism to separate signal from noise.1
+2.3 The Hex-Stream Solution
+The Hex-Stream topology resolves these conflicts by enforcing a strict Type-Level separation of concerns. It creates three "Planes" of communication, each with two directional streams (Input/Output).
+Stream
+	Descriptor
+	Plane
+	Semantic Role
+	Data Protocol
+	Buffer Strategy
+	stdin
+	0
+	Control
+	Human Input / Command Control
+	UTF-8 Text
+	Line Buffered
+	stdout
+	1
+	Control
+	Human Output / UI
+	UTF-8 Text
+	Line Buffered
+	stderr
+	2
+	Control
+	Error Reporting
+	UTF-8 Text
+	Unbuffered
+	stddbg
+	3
+	Observability
+	Telemetry / Diagnostics
+	Structured Object
+	Async Ring Buffer
+	stddati
+	4
+	Data
+	Raw Binary Input
+	Wild Buffer
+	Block / Zero-Copy
+	stddato
+	5
+	Data
+	Raw Binary Output
+	Wild Buffer
+	Block / Zero-Copy
+	This topology allows an Aria application to simultaneously stream gigabytes of raw video data to a GPU via stddato, display a high-fidelity textual progress bar on stdout, and emit structured JSON telemetry to stddbg, without any risk of stream corruption or resource contention.1
+3. The Observability Plane: stddbg Implementation
+The stddbg stream (Standard Debug, File Descriptor 3) is a first-class citizen in the Aria runtime, designed to solve the observability gap. Unlike stderr, which is often unbuffered to ensure errors are seen before a crash, stddbg is optimized for high-volume telemetry that must not impact application performance.
+3.1 Asynchronous Ring Buffer Architecture
+Writing to stddbg must be a non-blocking operation from the perspective of the application thread. In high-performance systems (e.g., a high-frequency trading engine or a game server), blocking on a disk write or a pipe full condition during a logging call is unacceptable.
+The implementation utilizes a Lock-Free Single-Producer-Single-Consumer (SPSC) Ring Buffer in user space.6
+1. Write Operation: When the user calls io.stddbg.log(...), the runtime serializes the data into a binary or text format and attempts to write it to the ring buffer.
+2. Atomic Commit: The write involves a memory copy and an atomic increment of the write_head index. No mutexes are acquired, ensuring the operation completes in nanoseconds.
+3. Drain Thread: A dedicated runtime thread (the "Logger Thread") wakes up periodically or upon a signal, reads from the read_tail of the ring buffer, and performs the actual write() syscall to File Descriptor 3.1
+3.2 Buffer Overflow Policies
+Since stddbg is an observability channel, the integrity of the application's primary function takes precedence over the completeness of the logs. The StreamController implements distinct policies for buffer overflow:
+* Drop-on-Full: If the ring buffer is full, new log entries are discarded (and a "dropped" counter is incremented). This ensures that backpressure from a slow logging consumer (e.g., a slow disk or network pipe) never propagates back to the application thread.
+* Block-on-Full: Configurable for debugging sessions where completeness is required, this policy blocks the application thread until space is available.
+3.3 Integration with Aria Object Types
+stddbg is typed as a DebugStream. Unlike stdout which takes strings, stddbg accepts arbitrary Aria objects (obj, struct, map). The runtime includes a default serializer that converts these objects into a structured format (JSON or Aria Object Notation) before buffering. This enforces a "Structured Logging by Default" philosophy, ensuring that all telemetry emitted by Aria programs is machine-parseable without complex regex parsing.1
+4. The Data Plane: stddati and stddato Implementation
+The Data Plane streams (stddati at FD 4, stddato at FD 5) are the high-performance arteries of the Aria runtime. They are specifically designed for the transmission of raw binary data, bypassing the encoding overhead of text streams and the Garbage Collection (GC) overhead of managed languages.
+4.1 "Wild" Memory and Zero-Copy I/O
+Aria's memory model distinguishes between GC Memory (managed, movable) and Wild Memory (unmanaged, fixed). Standard I/O libraries in managed languages (Java, Go, C#) typically require copying data from the kernel buffer into a managed byte array. This copy is expensive and puts pressure on the Garbage Collector.
+The stddati/stddato streams are optimized for Wild Buffers:
+* Definition: A wild buffer is a region of memory allocated outside the GC heap (using aria_alloc). It is stable (never moved by the GC) and manually managed (using defer aria_free).
+* Direct Kernel Access: Because wild buffers are stable, the runtime can pass their memory addresses directly to system calls like read and write (or io_uring operations) without "pinning." This allows data to move directly from the kernel to the processing buffer with zero intermediate copies.1
+4.2 Zero-Copy Splicing on Linux
+On Linux, the implementation goes a step further by leveraging the splice() system call. splice moves data between two file descriptors without copying data between kernel-space and user-space memory.4
+Scenario: A data pipeline Process A |> Process B.
+In Aria, this maps to Process A (stddato) connected to Process B (stddati).
+1. Detection: The StreamController detects that the output of Process A is being piped directly to Process B.
+2. Splice Activation: Instead of reading data from A into a user-space buffer and then writing it to B, the runtime issues a splice() call.
+C
+splice(pipe_out_A, NULL, pipe_in_B, NULL, len, SPLICE_F_MOVE);
+
+3. Kernel Mechanics: The Linux kernel modifies the page pointers in the pipe buffers. The physical memory pages containing the data are remapped from the source pipe to the destination pipe. No actual data copying occurs on the CPU.
+4. Throughput: This technique allows Aria pipelines to achieve memory-bandwidth-limited throughput, significantly outperforming standard read/write loops found in shells like Bash or languages like Python.9
+4.3 Windows Optimization Strategies
+Windows does not possess a direct equivalent to splice for anonymous pipes. However, the Aria runtime approximates this efficiency through Handle Duplication and Direct Piping.11
+   * Direct Connection: When setting up the pipeline A |> B, the StreamController does not create an intermediate proxy. Instead, it creates a single pipe. The Write Handle is passed to Process A as its stddato (Handle 5 bootstrap). The Read Handle is passed to Process B as its stddati (Handle 4 bootstrap).
+   * Kernel Object: Data flows directly through the Windows kernel pipe object from A to B. The shell manages the process lifecycles but does not touch the data stream, minimizing context switches.
+5. Linux Kernel-Level Implementation Strategy
+The implementation of the Hex-Stream topology on Linux requires deep interaction with the kernel's process creation machinery. Standard library functions like fork, exec, and popen are insufficient because they do not account for file descriptors beyond 2. Aria implements a custom process spawner using raw system calls.
+5.1 Race-Free Process Management with pidfd
+Traditional Unix process management relies on Process IDs (PIDs), which are integers that the kernel recycles. This creates a race condition: if a parent process waits on a PID, and that PID has been recycled for a new process, the parent might erroneously signal or wait on the wrong target.
+Aria adopts the pidfd API (introduced in Linux 5.3) to guarantee race-free management.3
+   * pidfd_open: Upon creating a child process (via clone or fork), the runtime calls pidfd_open. This returns a file descriptor that maintains a stable reference to the struct pid in the kernel, independent of the recycling of the numeric PID.
+   * Unified Event Loop: The pidfd is a pollable file descriptor. The StreamController registers it with epoll (alongside the I/O pipes).
+   * Event: When the process terminates, the pidfd becomes readable (EPOLLIN).
+   * Handling: The event loop detects this and triggers the process exit handler.
+This architecture unifies I/O handling and process lifecycle management into a single, non-blocking event loop, eliminating the need for blocking waitpid calls or SIGCHLD signal handlers.1
+5.2 The "File Descriptor Dance": pipe2 and dup2
+To establish the six-stream topology, the runtime performs a precise sequence of operations between fork() and execve(). This critical section configures the file descriptor table of the child process.2
+The Implementation Sequence:
+      1. Pipe Creation: The runtime creates six pipes using pipe2(). Crucially, the O_CLOEXEC flag is set on all descriptors. This is a security default: unless explicitly cleared, these descriptors will close automatically upon execve, preventing unintended handle leakage.15
+      2. Fork: The process bifurcates.
+      3. Child Context (Pre-Exec):
+      * Pruning: The runtime closes the unused ends of the pipes (e.g., closing the write end of an input pipe).
+      * Mapping (dup2): The runtime uses dup2(src, dest) to force the pipe ends onto the target descriptors 0 through 5.
+      * dup2(pipe_in_read, 0) -> stdin
+      * dup2(pipe_out_write, 1) -> stdout
+      * dup2(pipe_err_write, 2) -> stderr
+      * dup2(pipe_dbg_write, 3) -> stddbg
+      * dup2(pipe_dati_read, 4) -> stddati
+      * dup2(pipe_dato_write, 5) -> stddato
+      * Inheritance: dup2 clears the O_CLOEXEC flag on the destination descriptor. This ensures that these specific six descriptors—and only these six—are inherited by the new executable.
+      4. Exec: The child calls execve. The new program image starts with FDs 0-5 pre-connected to the parent's StreamController.1
+5.3 Kernel-Level Reservation (AriaX)
+While the userspace implementation handles mapping, a theoretical conflict exists: standard Linux applications (like the dynamic linker) might open a file (e.g., a config file) immediately upon startup. The kernel's default allocator assigns the lowest available FD. If FDs 3, 4, 5 are free, the kernel might assign them to these random files, breaking the Aria topology.
+For the AriaX Linux Distribution (a custom distro optimized for Aria), the implementation includes a kernel patch to fs/file.c.1
+      * The Patch: Modifies __alloc_fd to enforce a "Soft Reservation".
+      * Logic: If a process requests a generic file descriptor (start search at 0), the allocator skips 3, 4, and 5, starting the search at 6.
+      * Result: Descriptors 3, 4, and 5 remain free unless explicitly requested via dup2. This guarantees that the Hex-Stream slots are preserved for stddbg, stddati, and stddato, providing "Allocation Determinism" at the kernel level.1
+6. Windows Kernel-Level Implementation Strategy
+Windows process creation (CreateProcessW) and handle management differ fundamentally from Unix. Handles are opaque 64-bit pointers, not small integers, and there is no native dup2 equivalent for setting specific handle values in a new process. Implementing the Hex-Stream topology on Windows requires leveraging advanced features of the STARTUPINFOEX structure.
+6.1 STARTUPINFOEX and Attribute Lists
+The standard STARTUPINFO structure only supports passing hStdInput, hStdOutput, and hStdError. To pass six handles, Aria utilizes STARTUPINFOEX and its lpAttributeList field.1
+Secure Inheritance with Whitelisting:
+Historically, Windows handle inheritance was binary: bInheritHandles was TRUE or FALSE. If TRUE, the child inherited all inheritable handles from the parent. This is a security risk (leaking sockets/files) and a performance penalty.
+Aria employs the PROC_THREAD_ATTRIBUTE_HANDLE_LIST attribute.17
+      1. List Construction: The StreamController constructs a list containing exactly the six handles corresponding to the streams.
+      2. Attribute Update: UpdateProcThreadAttribute is called to attach this list to the STARTUPINFOEX.
+      3. CreateProcess: When CreateProcess is called with EXTENDED_STARTUPINFO_PRESENT, the kernel ensures that only the handles in the list are copied into the child's handle table. This implements the "Principle of Least Privilege" for handle inheritance.20
+6.2 The Bootstrap Environment Protocol
+Since Windows handles are not fixed indices (like 0-5), a child process receiving six handles has no way to know which one is stddbg and which is stddati. The values might be 0x14, 0x20, 0x108, etc., assigned non-deterministically.
+To resolve this, Aria implements a Bootstrap Protocol via Environment Variables.1
+      1. Map Serialization: Before spawning, the parent process creates a string mapping the semantic indices to the actual handle values.
+      * Format: __ARIA_FD_MAP=3:20;4:516;5:520 (where 20, 516, 520 are the integer casts of the Handles).
+      2. Injection: This string is added to the environment block passed to CreateProcess.
+      3. Runtime Hydration: The Aria runtime includes a static initializer (executing before main). It checks for __ARIA_FD_MAP. If found, it parses the values, casts them back to HANDLE, and assigns them to the global io.stddbg, io.stddati, and io.stddato objects.1
+      4. C Runtime (CRT) Compatibility: For the standard streams 0, 1, and 2, the runtime uses _open_osfhandle to associate the Windows HANDLEs with the C runtime's file descriptors, ensuring compatibility with standard printf and scanf functions.
+7. Runtime Architecture: The StreamController
+The complexity of managing these OS-specific primitives is encapsulated in the StreamController class. This component is the engine of the AriaSH and the process management runtime.
+7.1 The Threaded Draining Model (Active Pumps)
+A pervasive failure mode in process orchestration is the Pipe Deadlock.
+      * Mechanism: A child writes to a pipe. The kernel buffer (64KB on Linux) fills up. The child blocks on write. The parent is blocked on wait, waiting for the child to finish. Deadlock.
+      * Solution: The StreamController implements an Active Pump architecture.1
+      * For every child process, the controller spins up a set of std::jthread workers (C++20).
+      * Each worker is dedicated to one output stream (stdout, stderr, stddbg, stddato).
+      * The worker executes a blocking read loop on the pipe. As soon as data arrives, it is drained from the kernel buffer.
+      * This guarantees that the child process never blocks on output, decoupling its execution speed from the parent's consumption speed.
+7.2 Integration with Ring Buffers
+The data drained by the workers is pushed into per-stream User-Space Ring Buffers.
+      * Architecture: Lock-free SPSC (Single-Producer-Single-Consumer) buffers.
+      * Advantages:
+      * Memory Safety: Fixed maximum size prevents OOM attacks from verbose logging processes.
+      * Performance: Zero-allocation writes.
+      * Flow Control: If the ring buffer fills (e.g., stddati backpressure), the worker stops reading. This propagates backpressure to the kernel pipe, and eventually to the producing process, implementing natural flow control for data pipelines.21
+8. Type System and Memory Safety Integration
+Aria's implementation of I/O is not just a runtime feature; it is deeply integrated with the language's static analysis and type system.
+8.1 Twisted Balanced Binary (TBB) and Sticky Errors
+Aria's integer types (TBB) include inherent error states (sentinels). The I/O library leverages this for "Sticky Error" propagation.1
+      * Scenario: Reading a file size into a tbb64 variable.
+      * Failure: If the stat call fails, io.file.size() does not throw an exception. It returns TBB_ERR (the sentinel value).
+      * Propagation: If the user then writes wild buffer:b = alloc(size + 1024), the addition TBB_ERR + 1024 results in TBB_ERR. The allocation function receives TBB_ERR and fails safely.
+      * Safety: This prevents "garbage values" (like -1 cast to unsigned huge number) from causing buffer overflows. The error state persists through arithmetic operations until explicitly handled.
+8.2 WildX Memory Protection
+Aria distinguishes between wild (read/write heap) and wildx (executable JIT memory). Writing executable memory to an output stream is a common vector for ROP (Return-Oriented Programming) gadget exfiltration.
+      * Policy: The StreamController and io module enforce a strict type check. The write() methods accept wild byte* but reject wildx byte*.
+      * Enforcement: This is enforced at the compiler level (CodeGenContext). Attempting to output raw JIT memory results in a compilation error E_SECURITY_WILDX_LEAK, securing the runtime against introspection attacks.1
+9. Comprehensive Comparison
+Feature
+	Unix Standard Model
+	Aria Hex-Stream Model
+	Linux Implementation
+	Windows Implementation
+	Stream Count
+	3 (In, Out, Err)
+	6 (In, Out, Err, Dbg, DataIn, DataOut)
+	pipe2 + dup2 (0-5)
+	STARTUPINFOEX + Env Map
+	Debug Isolation
+	None (Pollutes stderr)
+	Dedicated stddbg (FD 3)
+	FD 3 Reservation
+	Handle Inheritance
+	Binary Safety
+	Low (Text/Binary mixed)
+	High (stddati/stddato)
+	splice Zero-Copy
+	Direct Pipe Handles
+	Process Control
+	fork/waitpid (Racy)
+	pidfd (Stable Reference)
+	pidfd_open + epoll
+	Job Objects + IOCP
+	Handle Security
+	Open by default
+	Whitelist by default
+	O_CLOEXEC
+	PROC_THREAD_ATTRIBUTE_HANDLE_LIST
+	Async I/O
+	select/poll
+	io_uring / IOCP
+	io_uring
+	I/O Completion Ports
+	10. Conclusion
+The Hex-Stream I/O Topology is a comprehensive re-imagining of system interfaces for the modern era. By identifying the semantic conflation inherent in the legacy 3-stream model, Aria introduces a robust alternative that rigorously separates Control, Data, and Observability planes.
+The implementation is a tour de force of modern kernel programming. On Linux, it marshals pidfd, epoll, and splice to create a race-free, zero-copy, high-throughput environment. On Windows, it navigates the complexities of the Win32 API, utilizing STARTUPINFOEX and Attribute Lists to achieve parity in security and capability. When fused with Aria's TBB type safety and Wild memory model, the result is a runtime environment that offers the raw power of C with the safety guarantees of a modern managed language, setting a new standard for systems programming I/O.
+Works cited
+      1. ariax_research_full.txt
+      2. Linux Beyond the Basics: How Linux Redirects I/O Streams | by Dagang Wei - Medium, accessed December 21, 2025, https://medium.com/@weidagang/linux-beyond-the-basics-i-o-redirection-d2362e2bed0b
+      3. pidfd_open(2) - Linux manual page - man7.org, accessed December 21, 2025, https://man7.org/linux/man-pages/man2/pidfd_open.2.html
+      4. The Zero-Copy Frontier - Aniket Kumar, accessed December 21, 2025, https://cmmon.medium.com/the-zero-copy-frontier-a7d2a4e05127
+      5. STARTUPINFOEXW (winbase.h) - Win32 apps - Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-startupinfoexw
+      6. An asynchronous lock free ring buffer for logging, accessed December 21, 2025, https://steven-giesel.com/blogPost/11f0ded8-7119-4cfc-b7cf-317ff73fb671
+      7. Circular lock-free buffer - c++ - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/871234/circular-lock-free-buffer
+      8. Zero copy system call - Introduction - Linux-OS, accessed December 21, 2025, https://dengking.github.io/Linux-OS/System-call/Zero-copy/splice%E7%B3%BB%E5%88%97-zero-copy-system-call/
+      9. Does Linux have zero-copy? splice or sendfile? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/24254098/does-linux-have-zero-copy-splice-or-sendfile
+      10. How is splice() actually doing zero-copy in Linux? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/73653710/how-is-splice-actually-doing-zero-copy-in-linux
+      11. How to pass (multiple) arguments to CreateProcess winapi - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/75552683/how-to-pass-multiple-arguments-to-createprocess-winapi
+      12. pidfd_open - obtain a file descriptor that refers to a process - Ubuntu Manpage, accessed December 21, 2025, https://manpages.ubuntu.com/manpages/focal/en/man2/pidfd_open.2.html
+      13. Using dup2 for piping - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/3642732/using-dup2-for-piping
+      14. Linux IPC with Pipes - Johnny Huang, accessed December 21, 2025, https://hzqtc.github.io/2012/07/linux-ipc-with-pipes.html
+      15. pipe2() — Create a pipe - IBM, accessed December 21, 2025, https://www.ibm.com/docs/en/zos/3.1.0?topic=functions-pipe2-create-pipe
+      16. pipe(2) - Linux manual page - man7.org, accessed December 21, 2025, https://man7.org/linux/man-pages/man2/pipe.2.html
+      17. Select which handles are inherited by child process - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/2344887/select-which-handles-are-inherited-by-child-process
+      18. In Windows, how can one create a child process and capture its stdin, stdout, and stderr, without duplicating any inheritable handles? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/1601804/in-windows-how-can-one-create-a-child-process-and-capture-its-stdin-stdout-an
+      19. UpdateProcThreadAttribute function (processthreadsapi.h) - Win32 apps - Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute
+      20. Effect of PROC_THREAD_ATTRIBUTE_HANDLE_LIST on child process standard input, standard output, standard error, relationship to STARTF_USESTDHANDLES - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/66801770/effect-of-proc-thread-attribute-handle-list-on-child-process-standard-input-sta
+      21. Creating a Circular Buffer in C and C++ - Embedded Artistry, accessed December 21, 2025, https://embeddedartistry.com/blog/2017/05/17/creating-a-circular-buffer-in-c-and-c/
+      22. Wait-free queueing and ultra-low latency logging - Musing Mortoray, accessed December 21, 2025, https://mortoray.com/wait-free-queueing-and-ultra-low-latency-logging/

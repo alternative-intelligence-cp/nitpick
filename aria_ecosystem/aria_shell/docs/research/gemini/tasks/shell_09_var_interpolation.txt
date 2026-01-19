@@ -1,0 +1,58 @@
+Variable Interpolation Engine (Type-Safe)
+
+PRIORITY: MEDIUM
+STATUS: Security-Critical
+SOURCE: Custom Shell Design For Aria.txt, Section 5.2
+
+PROBLEM:
+Traditional shell variable expansion ($VAR, ${VAR}) prone to injection attacks and word splitting bugs. Need type-safe interpolation using Aria &{VAR} syntax.
+
+REQUIREMENTS:
+1. Interpolation Syntax:
+   - &{VAR} pattern (matches aria_make style)
+   - Scope resolution: local vars → environment vars
+   - Recursive substitution support
+
+2. Type Safety:
+   - Typed Injection: &{filename} always single argument
+   - No word splitting on spaces inside variable value
+   - Prevents injection: spawn("rm", ["&{file}"]) safe even if file = "; rm -rf /"
+
+3. Variable Scopes:
+   - Local shell variables (declared in script)
+   - Environment variables (inherited/exported)
+   - Built-in variables ($?, $!, $$, etc.)
+
+4. Integration:
+   - Reuse Variable Substitution Engine from aria_make
+   - Support Aria type system (typed variables)
+   - Handle undefined variable errors gracefully
+
+IMPLEMENTATION TASKS:
+- [ ] Port/link aria_make interpolation engine
+- [ ] Create variable scope manager (local vs env)
+- [ ] Implement &{VAR} pattern parser
+- [ ] Add type-aware substitution logic
+- [ ] Implement built-in variable expansion ($?, etc.)
+- [ ] Add undefined variable detection
+- [ ] Create substitution error reporting
+- [ ] Add escaping mechanism for literal &{
+
+FILES TO CREATE:
+- src/interpreter/var_interpolation.cpp
+- src/interpreter/scope_manager.cpp
+- include/aria/shell/variable.h
+- tests/interpolation/injection_tests.cpp
+
+RESEARCH NOTES:
+- Can likely reuse aria_make code with minimal changes
+- Type safety critical for preventing shell injection
+- Must handle edge cases (empty var, undefined var, etc.)
+
+ACCEPTANCE CRITERIA:
+- &{VAR} substitutes variable value correctly
+- spawn("ls", ["&{dir}"]) safe with dir = ". ; rm -rf /"
+- Local variables shadow environment variables
+- Undefined variable produces helpful error
+- No word splitting surprises
+- Compatible with Aria type system

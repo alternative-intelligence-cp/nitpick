@@ -1,0 +1,223 @@
+﻿Comprehensive Architectural Specification for the AriaSH High-Performance Event Loop and Asynchronous I/O Subsystem
+1. Executive Summary and Architectural Philosophy
+The development of AriaSH, a custom shell designed for the Aria programming language, presents a unique set of systems engineering challenges that diverge significantly from typical application development. The requirement to monitor over one hundred concurrent processes while managing high-throughput binary and text streams necessitates a departure from the blocking I/O models that characterized early Unix shells. This report articulates a comprehensive architectural specification for the AriaSH Event Loop, a high-performance, single-threaded reactor system designed to meet the project's "Performance-Critical" status.
+Traditional shells largely rely on blocking system calls—waitpid for process management and blocking read for stream processing. This model scales linearly with the number of child processes and frequently introduces latency jitter, unresponsive signal handling, and "pipe deadlock," where a child process blocks on a full output buffer because the parent shell is busy elsewhere. AriaSH must overcome these limitations to support the language's "Six-Stream Topology" (stdin, stdout, stderr, stddbg, stddati, stddato) without compromising the interactive user experience.1
+The proposed architecture adopts a Hybrid Event-Driven Model centered on a unified EventLoop abstraction. This abstraction normalizes the disparate asynchronous primitives of modern operating systems—epoll and pidfd on Linux, kqueue and EVFILT_PROC on macOS/BSD, and I/O Completion Ports (IOCP) with Job Objects on Windows. By leveraging kernel-level event notification mechanisms, the shell achieves $O(1)$ complexity for event dispatching relative to the number of monitored resources, fulfilling the acceptance criterion of monitoring 100+ processes with negligible idle CPU usage.
+Furthermore, to reconcile the impedance mismatch between Unix "readiness" models and Windows "completion" models—and to handle anonymous pipes which often lack robust asynchronous support—the architecture introduces the Active Pump Pattern. This pattern utilizes a pool of lightweight StreamDrainer threads to bridge blocking OS handles to the non-blocking main event loop, ensuring data flow continuity and system responsiveness.
+2. Theoretical Framework: The Unified Event Reactor
+The heart of the AriaSH runtime is the EventLoop, a mechanism that inverts the flow of control. Instead of the shell querying the state of the world (polling), the shell registers interest in specific state changes and sleeps until the kernel notifies it of an event. This design is predicated on the Reactor pattern, widely regarded as the optimal solution for I/O-bound workloads requiring high concurrency.2
+2.1 The Event Taxonomy
+To provide a consistent interface across Linux, macOS, and Windows, the architecture defines a normalized event taxonomy. The EventLoop acts as a multiplexer for four distinct categories of asynchronous occurrences, each requiring specific kernel integrations:
+1. Process Lifecycle Events: The termination of child processes. Traditional SIGCHLD handling is prone to race conditions and signal coalescing, where multiple children exit simultaneously but only one signal is delivered.3 AriaSH mandates the use of file-descriptor-based monitoring (pidfd on Linux, EVFILT_PROC on BSD, Job Objects on Windows) to guarantee precise, race-free exit detection for every individual process.4
+2. Stream I/O Events: The availability of data on output pipes (stdout, stderr, stddbg, stddati, stddato) or the closure of input pipes. Given the six-stream topology, a pipeline of 10 processes involves monitoring up to 60 distinct file descriptors. The event loop must handle POLLIN (readiness) and EPOLLHUP (hang-up/EOF) events efficiently.4
+3. Signal Events: Asynchronous notifications from the OS or user, such as SIGINT (Ctrl+C) or SIGWINCH (window resize). These must be serialized into the event stream to be handled synchronously by the main loop, avoiding the reentrancy hazards associated with traditional signal handlers.7
+4. Timer Events: High-resolution scheduling for command timeouts and periodic maintenance tasks. These are integrated as file descriptors (timerfd on Linux) or kernel events (EVFILT_TIMER on BSD), allowing time to be treated identically to I/O resources.9
+2.2 The Single-Threaded Dispatch Constraint
+The requirements specify a "Single-threaded event dispatch" model. This constraint is architecturally significant. By enforcing sequential execution of event handlers on the main thread, AriaSH eliminates the need for complex locking mechanisms within the shell's core logic (e.g., job control lists, environment variable maps). Concurrency is restricted to the I/O periphery (the StreamDrainer threads), while the logical core remains deterministic and thread-safe by design.11
+The EventDispatcher component (src/event/event_dispatcher.cpp) serves as the consumer of the event queue. It implements a tight loop that calls the backend-specific wait function (epoll_wait, kevent, or GetQueuedCompletionStatus) and dispatches the resulting events to registered callback functions. This design ensures that the shell is responsive to process exits within milliseconds, as the kernel wakes the dispatch thread immediately upon event generation.
+3. Linux Implementation: The Epoll and Pidfd Paradigm
+On the Linux platform, the architecture leverages the most advanced kernel features to address the scalability limits of select and poll. The implementation is encapsulated in src/event/epoll_loop.cpp and include/aria/shell/event_loop.h.
+3.1 The Scalability of Epoll
+The legacy select system call is limited to monitoring FD_SETSIZE (typically 1024) descriptors and performs a linear scan of the provided sets, resulting in $O(N)$ performance overhead where $N$ is the highest file descriptor number. For a shell managing hundreds of processes, each with multiple streams, this becomes a bottleneck.
+AriaSH utilizes epoll, the stateful I/O event notification facility introduced in Linux 2.6. epoll scales at $O(1)$ relative to the number of watched descriptors because the kernel maintains the interest set in a Red-Black Tree and populates a ready list only when events occur.12
+* Initialization: The loop is initialized via epoll_create1(EPOLL_CLOEXEC). The EPOLL_CLOEXEC flag is critical; it ensures that the epoll file descriptor is automatically closed in child processes created via exec, preventing file descriptor leaks that could keep resources alive unintentionally.12
+* Edge-Triggered Mode (EPOLLET): The architecture prefers Edge-Triggered (EPOLLET) mode for high-throughput binary streams (stddati/stddato). In this mode, the kernel delivers an event only when the state of the file descriptor changes (e.g., from no data to data available). This reduces the volume of system calls compared to Level-Triggered mode, which repeatedly signals as long as data remains. However, EPOLLET requires the StreamDrainer to read continuously until EAGAIN is returned to ensure no data is left buffered.14
+3.2 Race-Free Process Management: The pidfd Revolution
+A critical requirement is the integration of pidfd for process monitoring. Traditional Unix shells use SIGCHLD handlers and waitpid. This approach suffers from PID Recycling races: on a heavily loaded system, a child process might die, and its PID might be immediately reassigned to a new process before the shell calls waitpid. The shell might then inadvertently wait on or signal the wrong process.5
+AriaSH implements the pidfd strategy available in Linux 5.3+:
+1. Stable References: When aria_spawn creates a child, it uses clone3 or calls pidfd_open(pid, 0) immediately after fork to obtain a file descriptor that refers to the specific process description in the kernel, not just the numeric PID.16
+2. Epoll Integration: This pidfd is registered with the epoll instance using EPOLLIN. The kernel guarantees that a pidfd becomes readable only when the referred process terminates.4
+3. Reaping via waitid: Upon receiving an EPOLLIN event on a pidfd, the shell calls waitid(P_PIDFD, fd, &infop, WEXITED). This retrieves the exit code and reaps the zombie process without any ambiguity regarding which process terminated. This satisfies the requirement to "Retrieve exit code via waitid()".5
+3.3 Signal Serialization: signalfd
+Handling signals (like Ctrl+C) in a multi-threaded application (main thread + drainer threads) using traditional signal handlers is perilous. Signal handlers run in an interrupt context where most standard library functions (like malloc or printf) are unsafe to call.7
+AriaSH utilizes signalfd to transform signals into standard I/O events.18
+1. Signal Masking: The initialization routine calls sigprocmask with SIG_BLOCK to prevent the default delivery of SIGINT, SIGQUIT, and SIGCHLD to any thread in the process.
+2. Descriptor Creation: signalfd is called to create a file descriptor that receives these blocked signals.
+3. Unified Handling: This descriptor is added to the epoll set. When a user presses Ctrl+C, the kernel writes a signalfd_siginfo structure to the descriptor. epoll_wait wakes up, and the EventLoop reads this structure.
+4. Graceful Handling: Because the signal is processed as a standard event on the main thread, the shell can safely manipulate its internal state, cancel running jobs, or initiate graceful shutdown logic without reentrancy fears.8
+3.4 Timer Integration: timerfd
+To implement command timeouts or non-blocking delays, the shell employs timerfd_create. This system call creates a file descriptor that becomes readable when a timer expires. Unlike setitimer, which relies on signals (SIGALRM), timerfd integrates natively with epoll, allowing the shell to manage thousands of concurrent timers (e.g., for individual command timeouts in a massive batch job) with minimal overhead.9
+4. macOS/BSD Implementation: The Kqueue Event Filter
+The Darwin kernel (macOS) and FreeBSD offer kqueue, a highly sophisticated event notification interface that supersedes select and poll. While conceptually similar to epoll, kqueue offers richer semantics for process monitoring via kernel filters (EVFILT), eliminating the need for a specific pidfd equivalent while maintaining race-free guarantees.
+4.1 The Reactor: kqueue and kevent
+The macOS backend (src/event/kqueue_loop.cpp) centers on the kevent structure. Unlike epoll which separates control (epoll_ctl) and waiting (epoll_wait), kqueue combines these into the kevent() syscall, which accepts a "changelist" (events to register/modify) and an "eventlist" (events to retrieve). This batching capability allows for highly efficient updates to the interest set.22
+4.2 Process Monitoring: EVFILT_PROC
+The kqueue system provides a dedicated filter, EVFILT_PROC, for monitoring process state. This mechanism is superior to Linux's standard waitpid and functionally equivalent to pidfd for the shell's purposes.10
+* Registration: The shell registers a kevent with:
+   * ident: The child PID.
+   * filter: EVFILT_PROC.
+   * flags: EV_ADD | EV_ENABLE.
+   * fflags: NOTE_EXIT.
+* Zero-Latency Notification: When the monitored process terminates, the kernel posts an event to the queue. Crucially, the data field of the event structure immediately contains the process exit status. This allows the shell to record the exit code without necessarily calling waitpid, although a waitpid call is still performed to formally reap the zombie process entry from the system table.24
+* Race Condition Mitigation: While kqueue uses PIDs (which can recycle), the registration happens immediately after fork/spawn. The kernel attaches the event to the process structure at that moment. If the process exits before registration, kqueue handles the failure gracefully, but typically the shell registers the event before the child runs (using kqueue inheritance or parent-side registration).24
+4.3 Signal and Timer Handling
+* Signals (EVFILT_SIGNAL): This filter replaces signalfd. The shell blocks the relevant signals and registers EVFILT_SIGNAL events for SIGINT, etc. When the signal is generated, kevent returns the signal number in the ident field. This provides the same synchronous handling guarantee as the Linux backend.26
+* Timers (EVFILT_TIMER): kqueue supports nanosecond-precision timers directly. The shell registers a timer event, and the kernel handles the countdown. Upon expiration, the event triggers. This eliminates the need for a user-space priority queue for managing timeouts.10
+5. Windows Implementation: IOCP and the Handle Impedance Mismatch
+Windows represents the most significant architectural divergence. The Windows kernel uses a "Completion" model (Proactor) rather than a "Readiness" model (Reactor). Furthermore, standard anonymous pipes used for stdout/stderr do not natively support Overlapped I/O, meaning they cannot be directly associated with an I/O Completion Port (IOCP).28 The design of src/event/iocp_loop.cpp addresses these challenges through the Active Pump pattern.
+5.1 The Reactor: I/O Completion Ports (IOCP)
+The IocpLoop class wraps a Windows I/O Completion Port created via CreateIoCompletionPort. This port serves as the unified high-performance queue for all asynchronous events.29
+* Completion Keys: The shell uses the CompletionKey parameter to distinguish between event sources. Each registered handle is assigned a pointer to a context structure (e.g., ProcessContext or StreamContext) as its key.
+* GetQueuedCompletionStatus: The run() method blocks on GetQueuedCompletionStatus. This function returns when an I/O operation completes or when a custom packet is posted to the port.
+5.2 The Anonymous Pipe Conundrum and the Active Pump
+Since anonymous pipes on Windows are strictly synchronous 28, we cannot issue an asynchronous ReadFile request that completes on the IOCP. To bridge this, AriaSH spawns a dedicated worker thread (the StreamDrainer) for each open pipe connected to a child process.
+* Synchronous Blocking Bridge: The worker thread performs a blocking ReadFile on the pipe handle.
+* Synthetic Completion: When ReadFile returns with data, the worker thread manually posts a completion packet to the main loop using PostQueuedCompletionStatus. This packet contains the buffer pointer and the number of bytes read.31
+* Unification: To the main EventLoop thread processing the IOCP, this synthetic packet looks indistinguishable from a native async I/O completion. This unifies the programming model, allowing the shell logic to remain platform-agnostic.
+5.3 Process Lifecycle: Job Objects
+Windows does not support waitid or pidfd. The most robust mechanism for monitoring process groups and individual process exits is the Job Object.
+* Association: When AriaSH spawns a child, it assigns the process to a named Job Object.
+* IOCP Linkage: The Job Object is associated with the shell's IOCP using JOBOBJECT_ASSOCIATE_COMPLETION_PORT.34
+* Exit Notification: When a process within the job terminates, the system automatically posts a JOB_OBJECT_MSG_EXIT_PROCESS message to the completion port. This provides the Process ID and allows the shell to detect termination instantly without polling or wait threads.6
+* Fallback: For scenarios where Job Objects are restrictive (e.g., nested jobs), the architecture supports a fallback to RegisterWaitForSingleObject. This API utilizes the Windows system thread pool to wait on the process handle and executes a callback which posts to the IOCP.35
+5.4 Signal Handling: SetConsoleCtrlHandler
+Windows does not use POSIX signals. Instead, console events (Ctrl+C, Ctrl+Break) are handled via a callback function registered with SetConsoleCtrlHandler.37
+* Thread Injection: When Ctrl+C is pressed, Windows spawns a new thread in the process to run the handler.
+* Bridging: To maintain thread safety, the AriaSH handler function simply captures the event type and calls PostQueuedCompletionStatus to notify the main EventLoop. The main thread then processes the "Signal" event safely, ensuring that state mutations (like cancelling a job list) happen on the main thread.33
+6. The Stream Draining Architecture
+Handling Aria's "Six-Stream Topology" (stdin, stdout, stderr, stddbg, stddati, stddato) requires a robust buffering subsystem that can handle high throughput without blocking the kernel pipes.
+6.1 The StreamDrainer Component
+The StreamDrainer is a class designed to govern the lifecycle of a single data stream. It is responsible for buffer allocation, flow control, and thread management.
+* Wild Memory Integration: To maximize performance, the drainer allocates buffers using Aria's "Wild" memory allocator (unmanaged heap).1 This facilitates Zero-Copy operations where pointers are passed directly to the consumer without intermediate copying.
+* Ring Buffering: Internally, the drainer maintains a lock-free ring buffer. The pump thread (or epoll handler) writes to the head, and the main loop reads from the tail. This decouples the OS pipe speed from the shell's processing speed.
+* Backpressure: If the ring buffer fills, the drainer stops reading from the OS pipe (in the Active Pump model) or removes the EPOLLIN interest (in the epoll model). This asserts backpressure to the child process via the kernel's pipe buffer mechanism, preventing memory exhaustion in the shell.
+6.2 Handling stddbg and stddati
+The stddbg stream (FD 3) is critical for "separation of concerns," carrying structured telemetry separate from standard output. The StreamDrainer for stddbg is configured with a line-oriented parsing logic to ensure that log messages are atomic. The stddati (FD 4) and stddato (FD 5) streams are treated as raw binary pipes. The drainer guarantees strict ordering of bytes, essential for binary protocols passed between Aria processes.
+7. Implementation Plan and File Structure
+The implementation is structured to isolate platform-specific code behind a clean interface.
+7.1 Interface Definition: include/aria/shell/event_loop.h
+
+
+C++
+
+
+
+
+enum class EventType {
+   ProcessExit,
+   StreamData,
+   StreamClose,
+   Signal,
+   Timer,
+   Shutdown
+};
+
+struct Event {
+   EventType type;
+   uint64_t source_id; // PID for Process, FD for Stream, ID for Timer
+   void* data;         // Pointer to buffer (Stream) or Exit Code info (Process)
+   size_t length;      // Size of data
+   int status;         // Error code or Signal number
+};
+
+class EventLoop {
+public:
+   virtual ~EventLoop() = default;
+   
+   // Core API
+   virtual void run() = 0;
+   virtual void stop() = 0;
+   
+   // Registration
+   virtual void watch_process(int64_t pid, int fd = -1) = 0; // fd used for pidfd
+   virtual void watch_stream(int fd, StreamDrainer* drainer) = 0;
+   virtual void add_timer(uint64_t id, uint64_t milliseconds) = 0;
+   
+   // Handler registration
+   using EventHandler = std::function<void(const Event&)>;
+   void set_handler(EventHandler handler);
+};
+
+// Factory
+std::unique_ptr<EventLoop> create_platform_event_loop();
+
+7.2 Source Components
+1. src/event/epoll_loop.cpp (Linux): Implements epoll_ctl logic, pidfd_open integration, and signalfd setup. Handles EPOLLIN events and translates them into generic Event structures.
+2. src/event/kqueue_loop.cpp (macOS/BSD): Implements kevent logic. Maps EVFILT_PROC to EventType::ProcessExit and EVFILT_READ to EventType::StreamData.
+3. src/event/iocp_loop.cpp (Windows): Implements the Job Object association logic and the PostQueuedCompletionStatus handling for pump threads and signal callbacks.
+4. src/event/event_dispatcher.cpp: The platform-agnostic driver. It instantiates the correct loop, manages the StreamDrainer lifecycle, and routes events to the Shell's high-level logic (e.g., JobManager, PromptRenderer).
+8. Graceful Shutdown and Resource Management
+Ensuring a clean shutdown is critical to prevent zombie processes and leaked handles.
+1. Shutdown Event: The EventLoop supports a synthetic Shutdown event. When stop() is called, this event is enqueued (via eventfd write on Linux, EVFILT_USER on macOS, or PostQueuedCompletionStatus on Windows).
+2. Drainer Teardown: Upon receiving the shutdown signal, the loop iterates through all active StreamDrainer instances. It signals their cancellation tokens (atomic booleans), joins the threads, and closes the pipe handles.
+3. Process Termination: The shell sends SIGTERM (or TerminateProcess on Windows) to all active child processes tracked in the JobManager. It then runs a final drainage loop to capture any last-gasp output from these processes before exiting.
+9. Performance Analysis and Scalability
+The proposed architecture specifically targets the C10K problem (or "C100P" for shells—Concurrent 100 Processes).
+* O(1) Dispatch: epoll, kqueue, and IOCP all provide $O(1)$ event retrieval complexity. This ensures that the shell's CPU usage does not degrade as the number of background jobs increases.
+* Zero-Copy Optimizations: By passing "Wild" memory pointers from the StreamDrainer directly to the Event structure, the system minimizes memory copying overhead.
+* Latency: The use of kernel-level readiness notification (pidfd, IOCP) ensures that process exit is detected within microseconds of the actual kernel event, satisfying the "milliseconds" acceptance criteria.
+* Idle Usage: When no processes are active or outputting data, the EventLoop remains blocked in the kernel wait state, consuming effectively zero CPU cycles.
+10. Conclusion
+The AriaSH Event Loop architecture represents a state-of-the-art solution for system orchestration. By rejecting the legacy select/waitpid models in favor of epoll/pidfd, kqueue, and IOCP, it achieves the high reliability and performance required by the Aria language specification. The architecture successfully unifies the disparate I/O models of Windows and Unix through the Active Pump abstraction and guarantees race-free process management across all platforms. This foundation will allow AriaSH to serve as a robust, high-performance interface for the next generation of systems programming tasks.
+Reference Data Structures Table
+Component
+	Linux Implementation
+	macOS/BSD Implementation
+	Windows Implementation
+	Multiplexer
+	epoll (epoll_create1)
+	kqueue (kqueue)
+	IOCP (CreateIoCompletionPort)
+	Process Watch
+	pidfd_open + EPOLLIN
+	EVFILT_PROC + NOTE_EXIT
+	Job Object (JOB_OBJECT_MSG_EXIT_PROCESS)
+	Process Reap
+	waitid(P_PIDFD,...)
+	kevent.data (status)
+	GetExitCodeProcess
+	Stream I/O
+	EPOLLIN (Edge-Triggered)
+	EVFILT_READ
+	Thread Pump + PostQueuedCompletionStatus
+	Signal Handling
+	signalfd
+	EVFILT_SIGNAL
+	SetConsoleCtrlHandler + PostQueuedCompletionStatus
+	Timers
+	timerfd
+	EVFILT_TIMER
+	Thread Pool Timer / CreateWaitableTimer
+	Concurrency
+	Single-threaded Dispatch
+	Single-threaded Dispatch
+	Single-threaded Dispatch + Pump Threads
+	Works cited
+1. aria_shell_research_full.txt
+2. Design Patterns for Connection Handling | by Abhishek Kr - Medium, accessed December 22, 2025, https://medium.com/@abhishek.kr121/core-design-patterns-for-connection-handling-8130e72f57fc
+3. linux - Handling multiple SIGCHLD - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/8398298/handling-multiple-sigchld
+4. epoll on pidfd - Dropbear, accessed December 22, 2025, https://dropbear.xyz/2025/06/22/epoll-on-pidfd/
+5. Guarantees for waitpid() after epoll() from pidfd - linux - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/73387481/guarantees-for-waitpid-after-epoll-from-pidfd
+6. Investigate using job objects and IOCP on Windows · Issue #11 · alexcrichton/tokio-process, accessed December 22, 2025, https://github.com/alexcrichton/tokio-process/issues/11
+7. signalfd is useless - Geoffrey Thomas (geofft), accessed December 22, 2025, https://ldpreload.com/blog/signalfd-is-useless
+8. Using signalfd and pidfd to make signals less painful under Linux - Unixism, accessed December 22, 2025, https://unixism.net/2021/02/making-signals-less-painful-under-linux/
+9. timerfd_create(2) - Linux manual page - man7.org, accessed December 22, 2025, https://man7.org/linux/man-pages/man2/timerfd_create.2.html
+10. kqueue(2) - FreeBSD Manual Pages, accessed December 22, 2025, https://man.freebsd.org/kqueue(2)
+11. Event loop - Wikipedia, accessed December 22, 2025, https://en.wikipedia.org/wiki/Event_loop
+12. The method to epoll's madness - Cindy Sridharan - Medium, accessed December 22, 2025, https://copyconstruct.medium.com/the-method-to-epolls-madness-d9d2d6378642
+13. epoll(7) - Linux manual page - man7.org, accessed December 22, 2025, https://man7.org/linux/man-pages/man7/epoll.7.html
+14. Mastering epoll: The Engine Behind High-Performance Linux Networking - Medium, accessed December 22, 2025, https://medium.com/@m-ibrahim.research/mastering-epoll-the-engine-behind-high-performance-linux-networking-85a15e6bde90
+15. Why should fork() have been designed to return a file descriptor?, accessed December 22, 2025, https://unix.stackexchange.com/questions/531171/why-should-fork-have-been-designed-to-return-a-file-descriptor
+16. pidfd_open - obtain a file descriptor that refers to a process - Ubuntu Manpage, accessed December 22, 2025, https://manpages.ubuntu.com/manpages/noble/man2/pidfd_open.2.html
+17. pidfd_open(2) - Linux manual page - man7.org, accessed December 22, 2025, https://man7.org/linux/man-pages/man2/pidfd_open.2.html
+18. signalfd - create a file descriptor for accepting signals - Ubuntu Manpage, accessed December 22, 2025, https://manpages.ubuntu.com/manpages/bionic/man2/signalfd.2.html
+19. signalfd(2) - Linux manual page - man7.org, accessed December 22, 2025, https://man7.org/linux/man-pages/man2/signalfd.2.html
+20. Signalfd is useless - Hacker News, accessed December 22, 2025, https://news.ycombinator.com/item?id=9564975
+21. ssebot-samples/sample-timerfd-epoll.c at master - GitHub, accessed December 22, 2025, https://github.com/seiyak/ssebot-samples/blob/master/sample-timerfd-epoll.c
+22. kqueue tutorial - NetBSD Wiki, accessed December 22, 2025, https://wiki.netbsd.org/tutorials/kqueue_tutorial/
+23. Scheduling Timers on OS X with Rust and Kqueue - daschl writes. sometimes., accessed December 22, 2025, https://nitschinger.at/Scheduling-Timers-on-OS-X-with-Rust-and-Kqueue/
+24. Get exit code from non-child process - c++ - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/26129532/get-exit-code-from-non-child-process
+25. How to wait for exit of non-children processes - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/1157700/how-to-wait-for-exit-of-non-children-processes
+26. Kqueue: A generic and scalable event notification facility, accessed December 22, 2025, https://trimstray.github.io/assets/pdfs/kqueue.pdf
+27. kqueue(2) - NetBSD Manual Pages, accessed December 22, 2025, https://man.netbsd.org/kqueue.2
+28. Anonymous Pipe Operations - Win32 apps - Microsoft Learn, accessed December 22, 2025, https://learn.microsoft.com/en-us/windows/win32/ipc/anonymous-pipe-operations
+29. I/O Completion Ports - Win32 apps - Microsoft Learn, accessed December 22, 2025, https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports
+30. I/O completions ports - Completion packets not seen with simultaneous connections, accessed December 22, 2025, https://learn.microsoft.com/en-us/answers/questions/548009/i-o-completions-ports-completion-packets-not-seen
+31. PostQueuedCompletionStatus function (IoAPI.h) - Win32 apps - Microsoft Learn, accessed December 22, 2025, https://learn.microsoft.com/en-us/windows/win32/fileio/postqueuedcompletionstatus
+32. PostQueuedCompletionStatus function (ioapiset.h) - Win32 apps - Microsoft Learn, accessed December 22, 2025, https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-postqueuedcompletionstatus
+33. Windows-classic-samples/Samples/Win7Samples/netds/winsock/iocp/server/IocpServer.Cpp at main - GitHub, accessed December 22, 2025, https://github.com/microsoft/Windows-classic-samples/blob/main/Samples/Win7Samples/netds/winsock/iocp/server/IocpServer.Cpp
+34. Detecting exit/failure of child processes using IOCP - C++ - Windows - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/17724859/detecting-exit-failure-of-child-processes-using-iocp-c-windows
+35. RegisterWaitForSingleObject function (winbase.h) - Win32 apps | Microsoft Learn, accessed December 22, 2025, https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-registerwaitforsingleobject
+36. WaitForSingleObject() vs RegisterWaitForSingleObject()? - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/18694593/waitforsingleobject-vs-registerwaitforsingleobject
+37. Registering a Control Handler Function - Windows Console - Microsoft Learn, accessed December 22, 2025, https://learn.microsoft.com/en-us/windows/console/registering-a-control-handler-function
+38. SetConsoleCtrlHandler function - Windows Console - Microsoft Learn, accessed December 22, 2025, https://learn.microsoft.com/en-us/windows/console/setconsolectrlhandler
